@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from nora.agent.prefill import (
     _BLOCKS,
+    _declared,
     build_prefill,
     build_tag_message,
     escape,
@@ -827,14 +828,22 @@ def test_every_catalogue_line_survives_its_block_being_absent():
     )
     for name, _order, _key, header in _BLOCKS:
         line = header.format(context_window=40)
-        if "bsent" not in line and "No block" not in line:
-            continue
-        assert any(h in line for h in hedges), (
-            f"the catalogue line for <{name}> tells her what an ABSENT block "
-            "means without saying that the read may simply not have happened. "
-            "A turn that never looked must not read as a turn that looked and "
-            f"found nothing (R-27). Add one of {hedges}:\n  {line}"
-        )
+        # PER SENTENCE, not per line. Matching anywhere in the line let a
+        # hedge sitting in an unrelated clause authorise a bare «Absent means
+        # you have nothing on them» three sentences away — which is the exact
+        # wording this test exists to refuse, so the first version of it could
+        # be satisfied by the bug. The claim and its qualifier have to be the
+        # same sentence because that is the unit she reads them in.
+        for sentence in re.split(r"(?<=\.)\s+", line):
+            if "bsent" not in sentence and "No block" not in sentence:
+                continue
+            assert any(h in sentence for h in hedges), (
+                f"the catalogue line for <{name}> tells her what an ABSENT "
+                "block means without saying, IN THE SAME SENTENCE, that the "
+                "read may simply not have happened. A turn that never looked "
+                "must not read as a turn that looked and found nothing "
+                f"(R-27). Add one of {hedges}:\n  {sentence}"
+            )
 
 
 def test_no_block_in_this_table_belongs_in_the_cached_head():
@@ -848,7 +857,12 @@ def test_no_block_in_this_table_belongs_in_the_cached_head():
     fine; doing it while the block is still keyed `room` fragments a 13-17k
     prefix that measures 95-99% hit, permanently and across every room.
     """
-    misplaced = [name for name, _o, key, _h in _BLOCKS if key == "global"]
+    # Read off the BUILT blocks, not off `_BLOCKS`, so `ContextBlock.key` has a
+    # reader. A field the table sets and nothing ever reads is the same shape
+    # this branch deleted `BlockSource` and `Placement` for.
+    built = _declared(40, [])
+    assert built, "no blocks were declared at all"
+    misplaced = [b.name for b in built if b.key == "global"]
     assert not misplaced, (
         f"{misplaced} are keyed `global` but served in the per-turn message. A "
         "block that is identical for everybody belongs in `_context_header`, "
@@ -1206,6 +1220,70 @@ def test_the_newest_message_is_last_and_carries_the_smallest_age():
     assert window.rstrip().endswith("the judged line</m>")
     ages = re.findall(r'age="([^"]+)"', window)
     assert ages[-1] == "just now" and "d ago" not in ages[-1], ages
+
+
+def test_a_reply_points_backwards_or_at_nothing_and_never_down_the_page():
+    """`quoted_ts` arrives in the SENDER'S envelope, so it can name a message
+    that is below this one in the window — by clock skew, by a shared
+    timestamp, or because somebody wrote it that way.
+
+    A reply pointing down the page is not a reply, and the model has no way to
+    tell it from one that is: it would read «Tyler answered Miles» about a
+    message Miles had not sent yet. `_parent_index` refuses it rather than
+    rendering it, for `_parent_of`'s reason — a reference that can mean
+    "somewhere else" invites the model to follow it anyway.
+    """
+    now = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
+    base = int(now.timestamp() * 1000)
+    # Row 1 claims to answer row 3, which is AFTER it.
+    rows = [_row(1, "Grant", "去邊食", base - 3_600_000, quoted_ts=base - 60_000),
+            _row(2, "Tyler", "好呀", base - 600_000),
+            _row(3, "Miles", "later", base - 60_000)]
+    body = build_prefill(_ctx(rows), display_name="Nora",
+                         context_window=40, now=now)[1]["content"][0]["text"]
+    assert "replying_to=" not in body, (
+        "a forward-pointing quote rendered a reference:\n" + _window(body)
+    )
+    # The block is otherwise unharmed — the row itself still renders.
+    assert "去邊食" in body
+
+
+def test_two_rows_sharing_a_timestamp_resolve_to_one_parent_in_both_places():
+    """`ts` is not unique — a burst, a re-import, or a platform that stamps by
+    the second can give two rows the same one.
+
+    Until `_by_ts`, the two places that resolve a quote disagreed about which
+    row it meant: `_replying_to_block` scanned with `next(...)` (FIRST wins)
+    while `_parent_of` read a dict comprehension (LAST wins). One prompt could
+    then carry `<replying_to>` quoting one message and `replying_to="n"`
+    pointing at another, for the SAME pointer — the model reading two different
+    parents for one reply, with no way to tell which was meant.
+
+    FIRST is the answer both now give: a reply points at something that already
+    existed, so the earliest row bearing the timestamp is the one that was there
+    to be quoted.
+    """
+    now = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
+    base = int(now.timestamp() * 1000)
+    shared = base - 3_600_000
+    rows = [_row(1, "Grant", "去邊食", shared),
+            _row(2, "Blake", "唔記得帶銀包", shared),
+            _row(3, "Tyler", "好呀", base - 60_000, quoted_ts=shared)]
+    # The quote's own `text` is the QUOTING sender's, verified against nothing
+    # (R-20) — it is here to prove the render never reads it.
+    quote = Quote(quoted_ts=shared, author_id="+8521", text="whatever they claimed")
+    msgs = build_prefill(_ctx(rows, quote=quote), display_name="Nora",
+                         context_window=40, now=now)
+    body = msgs[1]["content"][0]["text"]
+    pointer = re.findall(r'replying_to="(\d+)"', body)
+    assert pointer == ["1"], f"the index resolved to the wrong row: {pointer}"
+
+    # And `<replying_to>`, in the message after the prefill, quotes the SAME row.
+    quoted = build_tag_message(
+        _ctx(rows, quote=quote), tagger_name="Tyler", display_name="Nora",
+    )
+    assert "去邊食" in quoted and "唔記得帶銀包" not in quoted, quoted
+    assert "whatever they claimed" not in quoted, "R-20: the sender's own text"
 
 
 def test_a_reply_only_ever_points_at_a_handle_in_this_window():

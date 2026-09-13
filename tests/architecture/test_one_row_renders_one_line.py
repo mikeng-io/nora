@@ -135,10 +135,10 @@ _NOT_A_LINE = {
         "result, so collapsing it here would destroy the line structure the "
         "collapse exists to protect — an N-row transcript would render as one "
         "line. What makes the exemption safe is not that this is the only "
-        "place a block becomes text — it is not, and "
-        "`test_blocks_become_text_through_render.py` is the list of the ones "
-        "that are not — it is that every body reaching HERE was joined by a "
-        "row renderer in this same module."
+        "place a block becomes text — it is not: `prefill.build_tag_message` "
+        "and `_replying_to_block` still build their tags by hand, which is "
+        "issue #239 — it is that every body reaching HERE was joined by a row "
+        "renderer in this same module."
     ),
 }
 
