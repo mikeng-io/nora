@@ -19,16 +19,19 @@ edges:
 
 # The Note Dreamer
 
-## 1. Two adaptors, and neither exists
+## 1. Two adaptors, and neither exists ~~— as of this node's 2026-08-24 write~~
 
 The note tier ships its tag-path half — the index, the four tools, the
-read-before-write latch. **Its background half is two adaptors and there are
-zero objective files for either**: `nora/dreamer/objectives/` holds only
-`fact-*` and `room-*`.
+read-before-write latch. **Its background half is two adaptors and there were
+zero objective files for either** at the time this was written:
+`nora/dreamer/objectives/` held only `fact-*` and `room-*`. **That is no longer
+true** — the curator shipped 2026-08-28 and `nora/dreamer/objectives/`
+now also carries `note-curation.md` and `note-candidates.md`. The revisitor
+remains spec-blocked (§3) and has no objective file.
 
 | adaptor | job | state |
 |---|---|---|
-| **curator** | merge, retire, promote, coherence-rewrite — **acts ACROSS notes**, which the tag path may never do | unblocked, unbuilt |
+| **curator** | ~~merge,~~ retire, promote, coherence-rewrite — **acts ACROSS notes**, which the tag path may never do | ~~unblocked, unbuilt~~ **shipped 2026-08-28** (retire only; merge deleted 2026-09-08, promote is a gated discharge path, coherence-rewrite was never built) |
 | **revisitor** | reaches a person about a note whose moment has come | **was spec-blocked** — §3 |
 
 The split is the tier's own rule: the tag path may only touch a note it read

@@ -1256,8 +1256,10 @@ def test_gate_actions_vocabulary_matches_the_metric_help_text():
 def test_both_label_vocabularies_are_enforced_at_runtime_not_only_in_a_test():
     """A vocabulary read only by a test is a claim, not a guard.
 
-    `GATE_ACTIONS`' own header says it is enforced at RUNTIME because
-    `nora/language` sits outside `make gate`'s mypy scope (#61), and
+    `GATE_ACTIONS`' own header says it is enforced at RUNTIME because the
+    metric call this value reaches takes `**labels: object`, which mypy
+    cannot check no matter which module runs it (`nora/language` is IN
+    `make gate`'s mypy scope — issue #61 closed 2026-09-11), and
     `STAGING_OUTCOMES`' says it is derived "for the same reason" — but
     `_VOCABULARIES` named only the gate counter until 2026-09-13, so a typo
     in an `outcome` label reached the registry unchecked and opened a new

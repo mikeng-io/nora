@@ -47,6 +47,20 @@ shipped, and pretending otherwise would be the decoration this repo's
 `landing.tier.knowledge` and `landing.tier.language` describe two tiers
 deleted on 2026-09-07 (#115), identically in both files, so this guard passes
 them. Issue #240 carries that.
+
+A fourth hole, and not a hypothetical one either: the parametrization below
+is one-directional (`loc != "en"`), so it only asks whether a non-English
+locale names a term the English copy does not. The mirror of the shipped
+defect — a term corrected in `zh-Hant` and left standing in `en` — would pass
+silently. Making the check symmetric was tried and measured impractical as a
+literal mirror: comparing English's block text against `zh-Hant`'s word set
+the same way flags ~800 words, because the English copy is ordinary prose
+("close", "chat", "send", ...) rather than a small set of embedded loanwords
+— the asymmetry this file's argument for exactness (¶3 above) rests on runs
+only one way. Closing this hole for real needs English measured against a
+known backend-vocabulary list, not against whatever four-letter words
+`zh-Hant` happens to use; that is a different, larger guard and is not this
+one. Tracked as a follow-up rather than fixed here.
 """
 
 from __future__ import annotations
@@ -111,6 +125,31 @@ def _locales() -> list[str]:
     found = sorted(p.stem for p in MESSAGES.glob("*.json"))
     assert found, f"no locale files under {MESSAGES} — this guard measures nothing"
     return found
+
+
+def test_pinned_list_only_shrinks() -> None:
+    """`_PINNED`'s docstring says the list only shrinks — this is the guard
+    that makes that true instead of a comment.
+
+    Without this, `_PINNED` is a back door: any (key, word) pair can be added
+    to make a real drift disappear, and nothing anywhere reddens. That is not
+    hypothetical — appending `("landing.tier.notes.description", "merge")`
+    restores the exact defect this file exists to catch (`merge` standing in
+    the zh-Hant copy after the English copy dropped it) and the parametrized
+    test still passes, because the pin swallows the one word that would have
+    caught it.
+
+    6 is the count measured on 2026-09-13, the day this guard was added. A
+    shrink lowers this number along with the list; growing the list without
+    lowering this number is the back door, and this is what turns that red.
+    """
+    assert len(_PINNED) <= 6, (
+        f"_PINNED grew to {len(_PINNED)} entries without this ceiling "
+        "moving with it. Its docstring says the list only shrinks — if a "
+        "new pin is genuinely a style difference, argue it in the pin's "
+        "comment AND raise this number in the same change; if it silences "
+        "a real claim difference, fix the copy instead."
+    )
 
 
 def test_the_default_locale_is_the_one_this_guard_assumes_is_at_risk() -> None:

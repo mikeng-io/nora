@@ -307,8 +307,12 @@ STORE_CALLS_PER_TICK = 10
 #: Every value `nora_note_candidate_gate_total{action}` may carry, DERIVED
 #: rather than hand-copied into the metric's help text (`nora.obs.
 #: metric_specs`) — `nora.language.note_curator.CURATOR_ACTIONS`' own
-#: precedent, enforced at RUNTIME because `nora/language` is outside `make
-#: gate`'s mypy scope (issue #61).
+#: precedent, enforced at RUNTIME because the metric call this value reaches
+#: (`Metrics.inc`/`.observe`, `nora/obs/metrics.py`) takes `**labels: object`
+#: — mypy cannot check a string passed through an `object` parameter no
+#: matter which module it runs on, so a `Literal` alone would be checked by
+#: nothing here. (`nora/language` is not out of mypy's scope: issue #61
+#: closed 2026-09-11 and `make typecheck` names this package explicitly.)
 GATE_ACTIONS: frozenset[str] = frozenset({
     "created",          # materialized as a brand new note
     "updated",          # materialized as a revision APPENDED to the standing

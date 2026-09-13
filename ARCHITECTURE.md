@@ -416,8 +416,9 @@ the language tier were **deprecated 2026-09-07** and their code deleted (issue
 were **deprecated 2026-09-08** — with the create gate's anchor-date match, which
 had taken duplicate-handling over from merge, deleted in turn on **2026-09-13**
 (#228), so nothing merges a duplicate in that tier at all (#236). Their database
-tables are deliberately not dropped. Design documents describing them carry `DEPRECATED` banners, and their
-decision-index rows are marked rather than renumbered.
+tables are deliberately not dropped. Design documents describing them carry
+`DEPRECATED` banners, and their decision-index rows are marked rather than
+renumbered.
 
 ## 12. Glossary
 

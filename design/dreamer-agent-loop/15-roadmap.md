@@ -106,7 +106,7 @@ failing. Keep that distinction.
 
 | piece | state |
 |---|---|
-| **`NoteCurator`** (merge, retire, promote, coherence-rewrite) | **unblocked, unbuilt.** Its blocker landed. It waited by *decision*, not necessity: building it on the old one-shot port would have shipped sooner and then required rewriting onto the runtime |
+| **`NoteCurator`** ~~(merge, retire, promote, coherence-rewrite)~~ **(retire; merge deleted 2026-09-08 — its resolved-anchor input could never be populated once the knowledge tier stopped minting entities; promote exists only as `_run_discharge`, gated `discharge_enabled = false`; coherence-rewrite was never built)** | ~~**unblocked, unbuilt.**~~ **shipped 2026-08-28.** It had waited by *decision*, not necessity: building it on the old one-shot port would have shipped sooner and then required rewriting onto the runtime |
 | **`NoteRevisitor`** (the revisit adaptor) | **spec-blocked**, and the flag is not what stands in its way. Its specced tool subset includes an **act verb**, so the startup check would refuse it — and that verb is the entire mechanism by which its own spec has a background pass reach a person. Removing it leaves that section with no implementation path |
 | **joining the shared sink contract suite** | unbuilt. The note store is not a sink at all yet — it implements neither sink verb |
 | **the debrief's fourth output** | moved to the Standing workstream (§6) |
@@ -118,8 +118,10 @@ corpus:
 
 - **1a** — everything above under "built and live". **Done**, except the
   debrief's fourth output, which moved.
-- **1b** — the curator, plus the contract-suite join. **Unblocked, unbuilt.**
-  One item in its scope was built by the other side instead.
+- **1b** — the curator, plus the contract-suite join. The curator ~~**Unblocked,
+  unbuilt.**~~ **shipped 2026-08-28** (retire only — its merge half was deleted
+  2026-09-08); the contract-suite join remains unbuilt. One item in its scope
+  was built by the other side instead.
 - **2** — the revisitor. **Spec-blocked** (see the table above), then
   deploy-blocked behind the flag.
 

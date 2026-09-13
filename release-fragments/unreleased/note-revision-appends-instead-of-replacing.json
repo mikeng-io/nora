@@ -2,10 +2,8 @@
   "type": "fix",
   "summary": "A note the background pass revises now keeps what it already said. Two arrangements from one day that land on the same note are both written down; before this, the newer one replaced the older outright and what had been recorded was gone.",
   "details": [
-    "The note-candidates pass matches a candidate to a standing note on the ANCHOR DATE alone, so two unrelated things discussed on one day become one note. That was the intended, looser reading — the module and the revision type both say a revision is APPENDED — but the code handed the candidate's body to the proposal on its own, which replaces the head. Measured 2026-09-13: the update arm had fired exactly twice in production and destroyed an unrelated body both times, and one of those notes was then read by a proactive turn that spoke a false claim to the room because its body no longer matched its own subject (issue #228).",
+    "The note-candidates pass matched a candidate to a standing note on the ANCHOR DATE alone, so two unrelated things discussed on one day became one note. That was the intended, looser reading — the module and the revision type both say a revision is APPENDED — but the code handed the candidate's body to the proposal on its own, which replaced the head. Measured 2026-09-13: the update arm had fired exactly twice in production and destroyed an unrelated body both times, and one of those notes was then read by a proactive turn that spoke a false claim to the room because its body no longer matched its own subject (issue #228).",
     "A revision that would push the note past the body ceiling is now REFUSED rather than truncated, and counted separately: nora_note_candidate_gate_total{action=\"full\"}. A rate there reads as the curator not retiring notes, never as a model fault."
   ],
-  "limitations": [
-    "The date-only match itself is unchanged, so two unrelated arrangements on one day still share one note — its title and description describe one of them and its body now carries both. Narrowing the key is open on issue #228."
-  ]
+  "limitations": []
 }

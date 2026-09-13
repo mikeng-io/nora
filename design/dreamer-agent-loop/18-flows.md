@@ -220,7 +220,8 @@ genuinely different shapes.
 10. **Read back by** — writes by kind; and a search miss is recorded as a
     candidate, which is how the tier earns its next capability.
 
-**Background half — curator** *(workspace-keyed, cursor-shaped, unbuilt)*
+**Background half — curator** *(workspace-keyed, cursor-shaped, shipped
+2026-08-28)*
 
 1. **Fires when** — lag over a revision watermark, or lag plus quiet, or age.
    Age matters most here: **retirement is time-driven** — a note whose date has
