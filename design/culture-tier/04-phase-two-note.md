@@ -20,6 +20,35 @@ to answer anything.
 
 > 慢慢昇華 Nora，由一個 AI assistant 變成一個有 cognition 嘅 AI agent。
 
+**Measured, 2026-09-13 — this is the one claim in this document with a number
+behind it.** The adjacent experiment (#215, memory reaching the participation
+turn) carries a case, `admin-joke-known`, in which the room jokingly calls her
+管理員 and asks her to deal with spam. Two arms, n=20 each, live:
+
+| | spoke |
+|---|---|
+| without memory | 5/20 = **0.25** |
+| with memory | 12/20 = **0.60** |
+
+**+0.35, p = 0.054 (Fisher).** The sibling case `asked-before-known` — a
+deadline she had given before — moved 4/20 → 12/20, **+0.40, p = 0.023**. The
+three cases seeded from `notes` or `standing` rather than Honcho conclusions
+moved by 0.10, 0.05 and −0.05, p ≥ 0.74. **2 of 2 memory-seeded cases moved; 0
+of 3 others did.**
+
+What she said on the passing runs: 「管理員嚟咗。邊個 spam 邊個，話我知」 — she
+took the role the room assigned her.
+
+So the capability in this document is not speculative, and it is
+**memory-dependent**: without the block she declines the role at 0.25, with it
+she takes it at 0.60. Two caveats that belong with the number. It was measured
+*before* #220's renderer work landed, and `<people_in_window>` is a block #215
+introduces, so it was never in #220's byte-identity corpus — a re-take is owed
+once the larger prompt-format change lands. And an earlier reading of this same
+case at n=5 said the opposite (master 3/5, "not memory-driven"); that was a high
+draw off a true 0.25, which is why §4's caution about n=5 applies to this
+document's own evidence too.
+
 Two things make this reachable that were not obvious at the start:
 
 - The dialectic **already produces this shape of understanding**. Asked about
@@ -74,7 +103,7 @@ friend riffing about a secretary is not asking for anything, and there is no
 correct answer to score against.
 
 The only grounded signal left is **uptake**: she said something; did anyone
-engage. Slow, noisy, confounded by everything — and #216 shows the current
+engage. Slow, noisy, confounded by everything — and #216 — n=5, not re-taken — reports the current
 turn false-speaking on 4 of 5 silence twins, which uptake would score as
 failure only after the room had already been interrupted.
 

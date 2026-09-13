@@ -150,8 +150,8 @@ exist, and the refactor changes neither. Putting culture in front of the gate
 is a decision owned by the gate, and #220 neither helps nor blocks it.
 
 It is also the decision with the most evidence against it: #144/#147 measured
-the gate getting **worse** when given more context, and #216 shows the turn
-behind the gate false-speaking on 4 of 5 silence twins today. Adding a block
+the gate getting **worse** when given more context, and #216 — an n=5 reading, not re-taken — reports the turn
+behind the gate false-speaking on 4 of 5 silence twins. Adding a block
 to the gate is therefore sequenced last and measured, not assumed — see
 `02-measurement.md §5`.
 
@@ -173,8 +173,13 @@ every conversation)"*, and no router is wired. Nora's own policy workspaces
 different axis and do not select a Honcho corpus. A Honcho workspace named
 `ridgeline` exists and nothing routes to it.
 
-The store's own key is DEC-181 and is not answered here. The scope scheduler
-hands a bare `primary_id`; `standing` and `decision_log` key rooms as
-`(platform, conversation_id)`. A store key that does not match the loop key
-makes the watermark match zero rows and the adaptor never fire — silently, no
-error, no metric.
+**The store keys on `primary_id`**, and that is a consequence rather than a
+choice: a Dreamer adaptor is handed `scopes()`, so `primary_id` is its key.
+`standing` and `decision_log` key `(platform, conversation_id)` because the
+ingest and tag paths are handed the message that arrived. `GLOSSARY.md` carries
+the rule (PR #230) and DEC-181 is withdrawn accordingly.
+
+A store keyed differently from its loop matches zero rows on the watermark
+query, so the adaptor is scheduled, raises nothing, logs nothing and never
+fires. That is why it is worth stating rather than leaving to whoever writes the
+migration.

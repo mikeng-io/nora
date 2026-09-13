@@ -1,6 +1,6 @@
 # Decisions
 
-**RESERVED, not claimed.** `DEC-181 .. DEC-185`. Per AGENTS.md, re-read
+**RESERVED, not claimed.** `DEC-181 .. DEC-185` — DEC-181 is withdrawn, see below. Per AGENTS.md, re-read
 `design/09-decision-index.md` at MERGE time and take the numbers then.
 
 The index tops out at **DEC-162**; `ambient-loop` reserved DEC-176..180, and
@@ -9,19 +9,35 @@ gap** — find its holder before banking on anything in this range.
 
 ---
 
-## DEC-181 — one key, settled before any code
+## DEC-181 — the key follows from the writer, and is not a choice
 
-The scope scheduler hands a bare `primary_id`. `standing` and `decision_log`
-key rooms as `(platform, conversation_id)`. `room_portrait` used `scope_id`.
+**WITHDRAWN as an operator question.** It was escalated as "which key does
+culture use" and it is not a preference. `GLOSSARY.md` now carries the rule
+(PR #230), and it is this:
 
-A store key that does not match the loop key makes the watermark match zero
-rows, so the adaptor is scheduled, logs nothing, raises nothing, and never
-fires. That is the "a subsystem did nothing for days and nobody noticed"
-failure this bundle is a post-mortem of.
+> Which key a store uses follows from **which scheduler hands it the key**. The
+> ingest and tag paths get the message that arrived, so they key
+> `(platform, conversation_id)` — `messages`, `standing`, `decision_log`. A
+> Dreamer adaptor gets `scopes()`, so it keys `primary_id`.
 
-**OPERATOR. Blocks implementation.** Settling it afterwards means migrating a
-store that already has revisions. #202 is the precedent for what the
-mismatch costs.
+Culture is Dreamer-written. **Therefore `primary_id`.** Nothing to decide.
+
+What made this look like a choice is that `"room"` named four things and the
+glossary defined two of them. `nora.policy.Conversation` carries
+`ids: frozenset[str]` plus one `primary_id`, so `(platform, conversation_id)`
+and `primary_id` are different concepts — which thread arrived, versus which
+conversation it belongs to — not two spellings of one.
+
+All six live conversations hold exactly one id, so the two are equal today.
+That is an accident of data: give one a second id and a single conversation has
+two `standing` rows and two `decision_log` streams against one `scope`, and
+nothing reports it because nothing holds both keyings and so nothing compares
+them. **Issue #229** carries the load-time guard and the open question of what
+a multi-id conversation should mean for the per-room stores.
+
+The original failure mode still stands as the reason to get it right: a store
+keyed differently from its loop matches zero rows on the watermark query, so
+the adaptor is scheduled, raises nothing, logs nothing and never runs.
 
 ---
 
@@ -88,7 +104,7 @@ firing early or late costs one revision and corrupts nothing.
 ## Not decided here
 
 - **Whether the gate ever reads culture.** Owned by the gate, unhelped by
-  #220, sequenced last, and with #144/#147 and #216 as evidence against
+  #220, sequenced last, and with #144/#147 and #216 (n=5, unconfirmed) as evidence against
   assuming it. `02-measurement §5`.
 - **The block's rendering.** #219/#220 owns the vocabulary. Its `key` axis
   landed 2026-09-13, so the declaration is now pinned rather than described:

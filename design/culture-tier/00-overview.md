@@ -83,7 +83,7 @@ judgement we want: the reasoning moves out of the model.
 
 Two existing issues carry the rest of this and are not restated here: #163
 (the same admission measurement, taken 2026-09-10), #194 (the gate instruction
-has no non-degeneracy floor), #216 (when the turn *does* run it false-speaks on
+has no non-degeneracy floor), #216 (**n=5, not re-taken** — when the turn *does* run it false-speaks on
 4 of 5 silence twins — the strongest reason to fix measurement before doctrine).
 
 ## 3. Chronicle is not culture

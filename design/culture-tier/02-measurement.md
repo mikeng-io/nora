@@ -73,7 +73,8 @@ that override stays approximate until someone does.
   exactly this kind, so the blind spot is not hypothetical.
 - **Nothing measures harm.** All four score refusal and uptake; none asks
   whether what she said was wrong, unwelcome, or duplicated. #216 is a live
-  example the four would score backwards, and the raw material for a harm
+  example the four would score backwards — **though #216 is itself an n=5
+  reading and has not been re-taken at n=20; see §6**, and the raw material for a harm
   measure exists unused (`nora_guard_vetoes_total`, `nora_replies_total{status}`,
   `messages.is_nora`).
 - **Correct silence is unmeasurable and has never happened.**
@@ -122,7 +123,7 @@ gate gives a 50/50 answer for the same input, it is not a gate.*
 
 What replaces it, weakest first.
 
-**Tier 1 — the negative properties are still exact.** Content varies; shape
+**The shape check — the negative properties are still exact.** Content varies; shape
 does not. One block; escaped; collapsed; carries its `note` and `header`;
 non-empty when it claims content; no identifier egress (`scan_identifiers`).
 All byte-checkable, all fail-closed. This is most of what a byte diff would
@@ -135,7 +136,7 @@ it was last derived is R-27's trap in prose form — and this tier is
 specifically one whose head revision may legitimately be weeks old, because
 nothing here retires.
 
-**Tier 2 — grounding, not equivalence.** Do not ask *is this the same account
+**The grounding check — not equivalence.** Do not ask *is this the same account
 as last time*. Ask *is any claim here unsupported by the window it came
 from*. DEC-75 is the worked example including its failure mode: the judge
 caught 0/3 blind and 3/3 once given the source, and still passed a fabricated
@@ -144,7 +145,7 @@ and attribution as two independent checks, bind the majority of k=3, and
 expect detection to fall on diverse fabrications (3/5, not 3/3) rather than on
 a narrow corpus.
 
-**Tier 3 — measure the decision, not the block.** If culture has a purpose it
+**The decision check — measure the decision, not the block.** If culture has a purpose it
 is that some downstream judgement is better with it than without. That is a
 labelled-case A/B on that judgement's error rate. Prose quality is
 unfalsifiable; a moved metric on held-out cases is not — and this is exactly
@@ -152,17 +153,37 @@ what settled the Relevance Gate, where rendering an age per row cut the error
 rate by two thirds over 40 labelled cases after three instruction rewrites had
 changed nothing or made it worse.
 
-**Tier 3 is not optional for this block, and the prior runs against it.**
+**The decision check is not optional for this block, and the prior runs against it.**
 #144/#147 measured the gate getting *worse* with more context, and `CMS.md`
 records a capability list making that same gate measurably worse while context
 framing fixed it. A culture block is more context. **If it cannot move a
 labelled metric, the honest conclusion is that it does not ship into that
-prompt** — and designing tier 3 in from the start is what makes that
+prompt** — and designing the decision check in from the start is what makes that
 discoverable cheaply instead of after it is wired to five consumers.
 
 Practical shape: freeze the window, generate the block k times, run the
 downstream suite against each. One run yields the decision's error rate *and*
 the block's own variance, and "compatible" never has to be defined.
+
+**What the decision check costs, measured 2026-09-13.** This was stated as a
+principle with no price attached. The price is real and it was read off the
+adjacent experiment (#215, memory reaching the participation turn):
+
+- **n=20 per case per arm.** At n=5 the same branch, same cases, same model and
+  same instrument drew `admin-joke-known` at 0.60 and then 0.20 against a true
+  rate of 0.60 — enough to flip PASS/FAIL in both directions. Measured swing on
+  identical configuration is up to 2/5.
+- **~100 live model calls per arm, ~45 minutes per arm.** Two arms per change.
+- **Read rates, never PASS counts.** PASS is a threshold on a noisy quantity,
+  so it amplifies away the movement being looked for. Two of the three verdict
+  flips seen at n=5 were threshold crossings on a one-sample delta.
+- **Noise is NOT symmetric near the bounds.** A case at 0/5 can only move up
+  and one at 5/5 can only move down, so a mixed set regresses from its bounds
+  and produces a tidy-looking asymmetric story with no mechanism behind it.
+
+So this check is affordable as a gate before shipping into a prompt, and **not
+affordable for iteration**. That asymmetry is the honest shape of it: it can
+tell you whether to ship, and it cannot tell you what to change.
 
 ## 7. What the suite has never had
 
