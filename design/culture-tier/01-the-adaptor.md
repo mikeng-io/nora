@@ -115,22 +115,50 @@ quiet room's culture is not stale; it is accurate. `parent_revision_id` reads
 
 ## 4. The trigger
 
-`AdaptorSchedule`, on the Dreamer clock, keyed per room.
+**`uses_watermark = True`, `min_interval_seconds = 86400`.**
 
-The one thing to get right is that a **time-driven pass must not require
-backlog**. `runtime.py:703` is `fires = lag > 0 and age >= min_interval`, and
-`runtime.py:635` already records the lesson — *"requiring `lag > 0` would make
-a silent room's schedule never fire at all"* — with `note_curator.py:525`
-already fixed for it (`uses_watermark = False`, because *"retirement is
-TIME-driven, not evidence-driven"*).
+```
+fires = lag > 0 and age >= min_interval
+```
 
-Culture is the same class. A room that has gone quiet still has a culture, and
-this is the defect this bundle criticises `standing` for; reintroducing it
-under a different trigger would be the joke writing itself.
+New human messages in this room, and a day since the last fold. A silent room
+does not fire, **and that is correct rather than a defect**: nothing here
+retires, so a quiet room's culture is accurate, not stale, and there is nothing
+to refresh it against. Re-running the dialectic with no new material yields
+either the same account (a wasted 25s call) or a different one — and the second
+is pure model variance polluting the one signal the revision chain carries.
 
-Because every write is a **new revision** rather than an in-place update,
-firing early or late costs one extra revision and corrupts nothing. This is
-genuinely low-stakes — unlike `standing`, which overwrites.
+An earlier draft had `uses_watermark = False`, borrowed from `note_curator.py:526`.
+That was wrong. The curator needs it because **an anchor date passing IS the
+event** — retirement is time-driven whether or not anyone speaks. Culture has no
+equivalent clock event. The precedent does not transfer.
+
+**`lag` excludes her own messages** (`language.py:130`, `is_nora == 0`), so she
+cannot trigger her own refresh. The room triggers it; her acts still reach the
+CONTENT through `decision_log`. Trigger and content are separate, and only the
+trigger needs the guard.
+
+### The watermark is a gate here, not a cursor — and conflating them costs weeks
+
+`batch_limit` bounds how far one run advances the watermark, and a new adaptor
+starts at 0. `runtime.py:508-513` names the trap: an adaptor with a new name
+*"re-reads the room from the beginning, `batch_limit` rows at a time, paying a
+model call per batch… slow, expensive, and looks exactly like a bug."*
+
+At `min_interval = 86400` that is one batch per DAY. The busiest live room holds
+1,362 messages; at `batch_limit = 80` culture would spend **17 days** walking a
+backlog it never reads, burning a dialectic call a day to catch up to a present
+Honcho already knows.
+
+So:
+
+- **`batch_limit = 1`.** Culture never consumes the batch — it asks Honcho,
+  which holds the whole corpus already. The batch is dead weight.
+- **Seed the watermark at the record HEAD on first run, not 0.** The mechanism
+  exists (`runtime.py:515-516`, `advance_watermark(last_message_id=inherited)`).
+
+The watermark answers *"has anything new happened"*. It is not this tier's
+cursor into the transcript, because this tier has no cursor.
 
 ## 5. The block
 

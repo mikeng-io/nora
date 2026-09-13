@@ -87,17 +87,27 @@ sits *around* the text. Here the runtime supplies that provenance itself.
 
 ---
 
-## DEC-185 — a time-driven pass does not require backlog
+## DEC-185 — the watermark gates the fold; it is not a cursor
 
-`AdaptorSchedule` on the Dreamer clock, `uses_watermark = False` in the sense
-that a quiet room must still fire.
+`uses_watermark = True`, `min_interval_seconds = 86400`, `batch_limit = 1`,
+watermark seeded at the record head on first run.
 
-`runtime.py:635` already records the lesson and `note_curator.py:525` already
-applies it. Requiring `lag > 0` would make culture go stale precisely in quiet
-rooms — the defect this bundle criticises `standing` for.
+Culture fires when the room has produced new human messages and a day has
+passed. A silent room does not fire, which is correct: nothing retires here, so
+there is nothing to go stale and no new evidence to fold. Re-running on silence
+buys either a duplicate account or model variance, and the second corrupts the
+only signal the revision chain carries.
 
-Because every write is a new revision, trigger timing is genuinely low-stakes:
-firing early or late costs one revision and corrupts nothing.
+An earlier version of this decision said the opposite, borrowed from the note
+curator's `uses_watermark = False`. The curator needs that because an anchor
+date passing is itself the event; culture has no clock event. The precedent
+does not transfer, and DEC-183 ("a quiet room's culture is accurate, not
+stale") already contradicted it.
+
+`batch_limit = 1` and head-seeding because the watermark here is a GATE, not a
+cursor: `batch_limit` caps how far one run advances it, and a new adaptor starts
+at 0, so the default shape would spend ~17 days on the busiest live room walking
+a backlog it never reads at one batch per day.
 
 ---
 
