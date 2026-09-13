@@ -161,7 +161,50 @@ should propose it.
 It also falsifies one sentence in `04-phase-two-note.md`: the 秘書 case, as
 seeded, **is** a lookup, and a same-window one.
 
-## 4. The memory system can already produce an account
+## 4. The memory system cannot scope an account — and does not need to
+
+**An earlier version of this section claimed `chat` with `session_id` gives a
+room-scoped account, and built the tier on it. That is false.** The measurement
+behind it landed on the wrong question: asked *"how many distinct people have
+spoken in this room"*, `chat` answers 7 / 1 / 2 correctly per room — because
+that is answerable from the session's MESSAGES. A culture account is a question
+about CONCLUSIONS, and conclusions are workspace-wide.
+
+Falsified directly, 2026-09-13: `chat` scoped to a probe session holding two
+messages answers freely about people appearing nowhere in it. `search` is worse
+— scoped to that same session it returns six hits from other rooms, byte-identical
+to the unscoped query. **Neither endpoint honours session scoping for the layer
+this tier needs**, and there is one Honcho workspace behind all of Nora's rooms
+(`_workspace_for` returns the single default; no router is wired).
+
+So there is no room boundary in Honcho, and no workspace boundary either.
+
+### What that changes: the tier stops asking Honcho
+
+Nora already holds every room's messages in Postgres keyed by
+`conversation_id` — **hard-scoped by construction** — and a Dreamer adaptor is
+handed exactly that batch via `record.since(conversation_id=key,
+after_id=watermark)`. The account is written by the Dreamer's own model from
+that batch.
+
+The chronicle-versus-account distinction in §3 still stands and is still the
+point. What was wrong was attributing it to Honcho: **producing an account is a
+property of asking a model to write prose, not a property of the dialectic
+endpoint.** The Dreamer has a model and a loop already, and it reads a corpus
+that is actually scoped.
+
+Three consequences, all simplifications:
+
+- **No new tool.** `ask_room_memory` / `ask_workspace_memory` were built and
+  then closed unmerged (#237) once the path was falsified.
+- **Workspace culture comes back.** Fold the messages of one workspace's rooms
+  and the boundary is DEC-105's own, enforced in our schema rather than hoped
+  for in someone else's API.
+- **The watermark is a cursor again, not a gate** (`01-the-adaptor §4`): the
+  adaptor now reads its batch, so `batch_limit` must be sized for it rather
+  than pinned at 1.
+
+## 4.1 What the dialectic measurement still supports
 
 Measured 2026-09-12, live, against the deployed instance. `chat` — the
 dialectic endpoint, an LLM inside Honcho — answers a culture question with

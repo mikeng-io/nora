@@ -41,18 +41,28 @@ the adaptor is scheduled, raises nothing, logs nothing and never runs.
 
 ---
 
-## DEC-182 — the tier stores an answer; it does not derive one
+## DEC-182 — the tier folds its own room's messages into an account
 
-The adaptor calls `ask_memory` (Honcho's dialectic `chat`) once per room per
-Dreamer pass and stores the prose. It builds no model of its own.
+The adaptor reads the batch the Dreamer hands it —
+`record.since(conversation_id=key, after_id=watermark)`, `WHERE
+conversation_id = :key` in our own Postgres — and its model writes one short
+account from it. Nothing is asked of Honcho.
 
-Measured 2026-09-12: `chat` returns an **account** with causation, self-naming
-and her own standing, where `representation` returns a **chronicle** of
-`[when] what happened`. Latency 17–30s against a 20s gate timeout — so it
-cannot be inline, and that gap is the whole reason a store exists.
+An earlier version of this decision said the opposite: call Honcho's dialectic
+`chat` and cache its answer. That was built (#237) and closed unmerged, because
+**Honcho does not scope at the layer this needs.** `chat` on a two-message probe
+session answers freely about people who appear nowhere in it; `search` scoped to
+that session returns hits from other rooms identical to the unscoped query; and
+one Honcho workspace sits behind all of Nora's rooms.
 
-This is what keeps the tier from becoming a second, drifting model of the same
-rooms Honcho already models. One system reasons; the tier remembers.
+The chronicle-versus-account distinction that motivated the Honcho route
+(`00-overview §3`) is unaffected and remains the reason this tier exists. What
+was wrong was the attribution: an account comes from **asking a model to write
+prose**, not from that endpoint. The Dreamer already has a model, a loop, and a
+corpus that is genuinely scoped.
+
+This also restores the workspace half: fold one workspace's rooms together and
+the boundary is DEC-105's own.
 
 ---
 
@@ -175,3 +185,9 @@ which claims were tested rather than argued.
 11. **"`go` = 1."** At least 2. Step-60 grid aliasing stepped over a sample
     shorter than the step. This is the third wrong value for the same counter,
     and §1.1 now carries all three clauses of the rule instead of one.
+12. **"The memory system can already produce a room-scoped account."** False,
+    and it was this bundle's load-bearing premise for a day. `session_id`
+    scopes message retrieval and not conclusions, so the measurement that
+    seemed to prove it — correct per-room speaker counts — landed on the one
+    question that happens to fall on the scoped side. Falsified by asking a
+    two-message probe session about people it has never seen.

@@ -14,7 +14,7 @@ budget, its own doctrine, and R-18/R-28 screening.
 
 | piece | where it already is |
 |---|---|
-| **a room-scoped dialectic verb** | **DOES NOT EXIST — this tier writes it (§1.1)** |
+| the room's own messages, hard-scoped | **the batch the Dreamer already hands it (§1.1)** |
 | `search_memory`, `web_search`, `web_fetch` | tool registry |
 | agent loop, tool ceiling, budget | Dreamer runtime |
 | watermark / volume / timeout trigger | `AdaptorSchedule` |
@@ -25,113 +25,30 @@ That last row deleted a whole column-set from the first draft: provenance is
 not this tier's problem, it is the runtime's, and `accept` returns payloads
 precisely so an adaptor never has to know its own `instruction_sha256`.
 
-## 1.1 The one thing that does not exist: a room-scoped memory verb
+## 1.1 It reads its own batch — no new tool
 
-An earlier draft of this file said "everything it needs exists" and named
-`ask_memory`. **That was false**, and the reason is worth stating because it
-also shows the fix is small.
+An earlier draft of this file specified two new Honcho verbs
+(`ask_room_memory` / `ask_workspace_memory`). They were built, and closed
+unmerged (#237), because the path they served does not scope: see
+`00-overview §4`.
 
-`ask_memory` is **person-scoped by design and correctly so**. Its whole roster
-dependency exists to turn a person's NAME into a peer id: `view.find(person)`
-→ `matches[0]` → `chat(target=ref.honcho_peer_id)` (`tools.py:3123-3140`). A
-scope-keyed adaptor is built with `Room(roster_source=None)`
-(`dreamer.py:850`), so `RoomView.available` is `False` and the tool returns
-`unavailable` on every call — forever, while the run still reports `ok`.
-
-**That is not a blocker; it is the wrong verb.** Culture does not resolve a
-name. It asks about a *place*. So this tier ships one new tool:
+What the adaptor reads instead is the batch the Dreamer already hands it:
 
 ```
-ask_room_memory(depth, query)      scope: this room     -> chat(target=nora, session_id=<this room's session>)
-ask_workspace_memory(depth, query) scope: the workspace -> chat(target=nora)   (no session_id: workspace-wide is the default)
+record.since(conversation_id=key, after_id=watermark)
 ```
 
-**Neither needs a roster**, because neither resolves a person — which is the
-only thing the roster was ever for. `Room` already carries `_conversation_id`
-(`room.py:160`), and that is what builds the session id. The `AdaptorGrant.
-home_room` machinery, which is workspace-keyed and which this bundle's earlier
-draft worried about deleting, is not on this path at all.
+`WHERE conversation_id = :key` in our own Postgres. **Hard-scoped by
+construction**, which is the property Honcho could not give at any layer. For a
+workspace-keyed variant, the same read across that workspace's rooms — the
+boundary being DEC-105's own rather than an assumption about someone else's API.
 
-**Room scoping is real and measured, 2026-09-13.** `session_id` on `/chat` is
-validated (a nonsense id is a 404) and genuinely narrows the corpus — asked how
-many distinct people have spoken, the one-person room answers 1, the
-seven-person room answers 7, a probe room answers 2. The scoping works; only
-the verb was missing.
-
-```
-culture adaptor            DreamAdaptor, key_kind = "scope"
-  schedule                 watermark / volume / timeout via AdaptorSchedule
-  tools                    ask_room_memory -> the account (NEW, §1.1)
-                           web_search   -> ground a reference the room assumes
-  accept                   the prose
-  commit                   propose a new revision, link parent
-                           (no supersede — nothing here retires)
-```
-
-**Screening cuts in the right place for this tier.** R-18 blocks identifiers —
-E.164, UUIDs, key-shaped strings, the model's own name — and not names or
-nicknames. So an account carrying the room's in-group names survives intact
-while a phone number never could, which is exactly the line culture needs.
-
-## 1.2 The two verbs, specified
-
-Enough detail to implement without re-deciding anything.
-
-### `HonchoClient.chat` gains one parameter
-
-```python
-async def chat(self, *, peer_id, query, reasoning_level="low",
-               target=None, session_id=None, workspace_id=None) -> str | None:
-    ...
-    if session_id is not None:
-        body["session_id"] = session_id
-```
-
-Three lines. The endpoint already accepts and validates it — measured
-2026-09-13: a real session narrows the corpus (one-person room answers 1,
-seven-person room answers 7), a nonsense one is a 404. Only the client could
-not send it.
-
-The session id is **derived, never guessed**: `f"nora-conv-{_safe_conversation_key(conversation_id)}"`,
-the same expression `ensure_session` uses (`client.py:415`). A Signal group id
-422s the API on its `+ / =`, which is what `_safe_conversation_key` exists for,
-so a hand-built id is a live outage waiting to happen.
-
-### `ask_room_memory(depth, query)` and `ask_workspace_memory(depth, query)`
-
-```
-ask_room_memory       -> chat(peer_id=nora, target=nora, session_id=<this room>)
-ask_workspace_memory  -> chat(peer_id=nora, target=nora)      # no session: workspace-wide is the default
-```
-
-Both `read_only=True`. Both take the same `depth` vocabulary as `ask_memory`.
-
-**Neither resolves a person, so neither calls `room.scope()`.** That is the
-whole difference from `ask_memory`, whose roster dependency exists only to turn
-a name into `ref.honcho_peer_id` (`tools.py:3123-3140`). These verbs take the
-conversation id straight off the `Room` (`room.py:160`), which a scope-keyed
-adaptor always has even when `roster_source is None`. **Do not add a
-`view.available` guard to these tools** — it is the guard that makes
-`ask_memory` return `unavailable` forever for a scope-keyed adaptor, and copying
-it would reproduce the bug these verbs exist to route around.
-
-**Outcomes, matching `ask_memory`'s contract:** `ok` with the answer;
-`unavailable` when the call failed or returned nothing — the reasoner cannot
-separate "nothing known" from "could not reach", so both are `unavailable`,
-honestly. `scan_identifiers` still withholds an answer that carries one
-(`tools.py:3162`), which for this tier means no revision that tick rather than a
-leak.
-
-**Timeout is `_chat_timeout`, not the tool default.** These are 17–30s
-reasoning calls; the measured range on real rooms is 22.4 / 24.5 / 29.7s.
-
-**Metrics:** declare a `nora_culture_*` family. Every sibling tier declared one,
-and the generic `nora_dream_*{adaptor}` series carries no key label, so with six
-rooms it cannot say which ones ever produced a revision.
+No tool registry change, no roster question, no 25s dialectic call, and no
+`session_id` anywhere.
 
 ## 2. What the model is asked
 
-One question, per room, on the Dreamer clock, through `ask_room_memory`: *describe this room's culture as
+One question, per room, on the Dreamer clock, over the batch: *describe this room's culture as
 a short account — how they talk, how decisions get made, what they call
 themselves, my own standing here, and **why** it is like that; not dated
 observations.*
@@ -208,13 +125,17 @@ Honcho already knows.
 
 So:
 
-- **`batch_limit = 1`.** Culture never consumes the batch — it asks Honcho,
-  which holds the whole corpus already. The batch is dead weight.
-- **Seed the watermark at the record HEAD on first run, not 0.** The mechanism
-  exists (`runtime.py:515-516`, `advance_watermark(last_message_id=inherited)`).
+- **`batch_limit` must be sized for a real read**, because the batch IS the
+  corpus now. An earlier draft pinned it at 1 on the assumption that culture
+  asks Honcho and never reads its batch; that assumption is gone
+  (`00-overview §4`), and 1 would starve the fold.
+- **Seed the watermark at the record HEAD on first run, not 0** — otherwise the
+  first fold walks the whole history one batch per day (`runtime.py:508-513`;
+  the busiest live room holds 1,383 messages). Culture wants what a room has
+  been saying lately, not its origin story replayed at one batch a day.
 
-The watermark answers *"has anything new happened"*. It is not this tier's
-cursor into the transcript, because this tier has no cursor.
+So the watermark is BOTH gate and cursor here, and the two must be sized
+together: it gates on `lag > 0` and it delimits what the fold reads.
 
 ## 5. The block
 
