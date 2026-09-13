@@ -86,6 +86,11 @@ _ALLOWED: dict[str, str] = {
     "tests/test_web_fetch_tool.py::_FakeSearchProvider": _NO_SHARED_FAKE,
     "tests/test_tools.py::_GifSource": _NO_SHARED_FAKE,
     "tests/test_social_fetch_tool.py::_FakeSocialProvider": _NO_SHARED_FAKE,
+    # ImageGenerator — the only implementation is `XaiImageGenerator`
+    # (`nora/infra/image_gen/xai_adapter.py`), and its own contract suite
+    # (`tests/contract/test_image_generator_contract.py`) runs against THAT
+    # adapter, not a fake; no in-memory `ImageGenerator` exists to promote to yet.
+    "tests/test_skill_content.py::_ImageGenerator": _NO_SHARED_FAKE,
     # TrackSource / MusicToolBridge — nora/testing/music.py holds the two
     # STORE fakes; the source and the bridge have none.
     "tests/unit/test_music_player.py::_StubSource": _NO_SHARED_FAKE,

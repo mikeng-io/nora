@@ -170,23 +170,36 @@ def _live_inputs() -> tuple[tuple[str, str], ...]:
     was in the haystack. AGENTS.md: never read an instrument's output as evidence
     without first checking it can measure the thing.
 
-    So the haystack now contains them, and the property measured over them is the
-    one that is actually true — these channels RELAY an address, they do not carry
-    one. Everything they hand her is derived from `SENTINEL_ORIGIN`, which only
-    this test knows; a constant baked into either path shows up as an address the
-    test never supplied."""
+    B3, 2026-09-13. Still only two of the five real relay paths: `place_info`'s
+    `maps_url` (`nora/agent/tools.py:3720-3722`, the same shortener/origin as
+    `route`'s, screened through the same `_screen_and_resolve_place`),
+    `make_artifact`'s synchronous return (`:7782`, `{"status": "ok", "url":
+    result.url, ...}` off the same `JobResult` the compute-occasion path already
+    covered), and `generate_image`'s hosted-artifact branch (`:5278`, `{"status":
+    "ok", "url": artifact}` — taken only when the provider answers with a URL
+    rather than raw bytes, so no `deliverer` is needed to reach it). All three go
+    through this same closure, `build_tools`, EXECUTED — not read off the source,
+    the same discipline B2 established.
+
+    So the haystack now contains all five, and the property measured over them is
+    the one that is actually true — these channels RELAY an address, they do not
+    carry one. Everything they hand her is derived from `SENTINEL_ORIGIN`, which
+    only this test knows; a constant baked into any of the five shows up as an
+    address the test never supplied."""
     import asyncio
     import json
     from datetime import UTC, datetime
     from uuid import UUID
 
     from nora.agent.room import Room
-    from nora.agent.tools import build_tools
+    from nora.agent.tools import build_tool_specs
     from nora.app.fire import compute_occasion
     from nora.domain.compute import ComputeJob, ComputeJobState
-    from nora.domain.ports import JobResult, JobStatus
+    from nora.domain.models import PersonRef
+    from nora.domain.ports import ImageResult, JobResult, JobStatus
     from nora.obs.metrics import Metrics
     from nora.persons import Persons
+    from nora.testing.fakes import FakeComputeBackend
 
     class _Shortener:
         """`[shortener]` as the deployment has it: it mints on the portal's own
@@ -201,20 +214,83 @@ def _live_inputs() -> tuple[tuple[str, str], ...]:
             return {"status": "ok", "origin": origin, "destination": destination,
                     "mode": "transit", "legs": []}
 
+        async def place_info(self, name: str) -> dict:
+            """`screen_and_resolve_place`'s call target — `place_info` builds
+            its own `maps_url` from `name` afterwards, through the same
+            shortener, so this reply only needs a resolved place to trigger it."""
+            return {"status": "ok", "name": name, "rating": 4.5}
+
+    class _ComputeJobs:
+        """Unused by the sync path this test exercises — `make_artifact` only
+        reaches `ComputeJobStore.create` on the slow path. Raises if that ever
+        changes, so a silent slow-path drift would fail loudly here instead of
+        this fixture quietly starting to measure the wrong path."""
+
+        async def create(self, job) -> None:
+            raise AssertionError(
+                "make_artifact took the slow path; the compute backend must "
+                "resolve on the first poll for this to stay a live-relay test"
+            )
+
+    #: `ImageGenerator` has no fake in `nora/testing/` yet (R-C, issue #113 —
+    #: `tests/architecture/test_port_fakes_live_in_nora_testing.py::_ALLOWED`
+    #: pins this the same way it pins `_FakeSearchProvider`/`_GifSource`/
+    #: `_FakeSocialProvider`: NO_SHARED_FAKE, not a scaffolding exemption).
+    class _ImageGenerator:
+        async def generate(self, *, prompt, reference_images=None, size=None,
+                            quality=None, reference_resolver=None) -> ImageResult:
+            return ImageResult(
+                status="ok", artifact=f"{SENTINEL_ORIGIN}/img/xYz9", provider="test",
+            )
+
+        async def health(self) -> bool:
+            return True
+
     persons = Persons(by_person={}, index={})
+    # `make_artifact` refuses before it ever calls `compute_backend` unless
+    # `room.tagger` is set (it needs somewhere to persist and someone to
+    # deliver to) — so this room, unlike `route`/`place_info`'s, carries one.
+    tagger = PersonRef(person_id="p1", name="Asker", honcho_peer_id="p1")
+    room = Room(platform="signal", conversation_id="g1",
+                roster_source=None, persons=persons, tagger=tagger)
+    # `FakeComputeBackend` (nora/testing/fakes.py) — the shared `ComputeBackend`
+    # fake, not a local stand-in. Its first `launch()` on a fresh instance is
+    # always assigned `job_000001` (its own `_next_id` counter starts at 1), so
+    # the result can be seeded before `make_artifact` ever calls `launch` —
+    # `launch`'s own `setdefault` leaves a pre-seeded result untouched.
+    compute_backend = FakeComputeBackend()
+    compute_backend.set_result(
+        job_id="job_000001",
+        result=JobResult(
+            status=JobStatus.SUCCEEDED,
+            url=f"{SENTINEL_ORIGIN}/drop/artifact1",
+            summary="a document",
+        ),
+    )
+    # `build_tool_specs`, not `build_tools`: the latter is the narrower,
+    # test-facing wrapper that `tests/architecture/test_tool_builders_forward_
+    # everything.py::_SPECS_ONLY` pins as NEVER forwarding `compute_backend`/
+    # `compute_jobs` — production reaches them through `ToolRegistry.build`,
+    # not through `build_tools`. `make_artifact`'s live relay is unreachable
+    # through the wrapper this file used to call.
     tools = {
-        t.tool_name: t
-        for t in build_tools(
+        s.name: s
+        for s in build_tool_specs(
             store=None, conversation_id="g1", conversation_type="group",
             persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
-            room=Room(platform="signal", conversation_id="g1",
-                      roster_source=None, persons=persons),
+            room=room,
             transit_source=None, route_source=_RouteSource(),
             shortener=_Shortener(), question="點去", context_window=40,
+            compute_backend=compute_backend, compute_jobs=_ComputeJobs(),
+            image_generator=_ImageGenerator(),
         )
     }
     routed = asyncio.run(
-        tools["route"]._tool_func(origin="A站", destination="B Mall"))
+        tools["route"].call(origin="A站", destination="B Mall"))
+    placed = asyncio.run(tools["place_info"].call(name="Soi 29"))
+    artifact = asyncio.run(
+        tools["make_artifact"].call(task="draw something"))
+    image = asyncio.run(tools["generate_image"].call(prompt="a cat"))
 
     job = ComputeJob(
         id=UUID(int=1), backend_job_id="j1", task="draw something", artifact_id=None,
@@ -231,6 +307,9 @@ def _live_inputs() -> tuple[tuple[str, str], ...]:
     return (
         ("tool-result:route", json.dumps(routed, ensure_ascii=False)),
         ("occasion:compute", finished.body),
+        ("tool-result:place_info", json.dumps(placed, ensure_ascii=False)),
+        ("tool-result:make_artifact", json.dumps(artifact, ensure_ascii=False)),
+        ("tool-result:generate_image", json.dumps(image, ensure_ascii=False)),
     )
 
 
@@ -263,27 +342,43 @@ def test_the_self_account_carries_no_address(self_account):
 
 
 def test_no_input_of_hers_carries_a_baked_address_or_an_inventory(self_account):
-    """The GROUNDING for the body's address claim, measured over EVERY channel
-    text about the portal reaches her by — not, as the reviewed version had it,
-    over two of them while the sentence spoke for all.
+    """The GROUNDING for the body's address claim, measured over every LIVE
+    channel a URL reaches her by, plus what BAKES into her prompt every turn
+    regardless of the room — not, as an earlier version of this docstring
+    claimed, over "EVERY channel" while the fixtures underneath it measured
+    two.
 
     What is pinned, and why each half is where it is:
 
     * **Baked** (doctrine, every skill) — no address at all. This is what «Its
-      address is not baked into you either» is a claim about, and it is the half
-      that can rot silently: a hostname written into a file that ships inside an
-      image is right today and wrong the first time anything moves.
-    * **Live** (a `route` tool result with the shortener wired, a finished compute
-      job's occasion body) — an address DOES arrive here, which is exactly why the
-      old denial was false, and the skill now says so: «one that reaches you came
-      in with the turn, inside something you were handed». The property that makes
-      that true is that these paths RELAY. Every address they hand her is built
-      from `SENTINEL_ORIGIN`, a value only this test knows, so a constant baked
-      into either path reddens this as an address the test never supplied.
+      address is not baked into you either» is a claim about: the login-gated
+      view's OWN address, not every URL literal anywhere in her prompt. It is
+      the half that can rot silently — a hostname written into a file that
+      ships inside an image is right today and wrong the first time anything
+      moves. It deliberately does NOT include the tool-schema layer (the
+      docstrings handed to the model as the tool surface, also baked into every
+      turn): `social_fetch`'s `https://x.com/<user>/status/<id>` example
+      (`nora/agent/tools.py:5672`) is a real URL literal there today, but it
+      names a foreign site's URL SHAPE for a human reading the tool's own docs,
+      not the portal's address — it does not bear on this sentence's claim, and
+      folding the tool-schema layer in would need a narrower measurement (only
+      the portal's own origin, not "no URL at all") to avoid flagging every
+      illustrative example any tool docstring carries. Left for a future pass
+      if that narrower claim is ever worth making; not measured here.
+    * **Live** (`route` and `place_info`'s `maps_url` with the shortener wired,
+      a finished compute job's occasion body, `make_artifact`'s synchronous
+      return, and `generate_image`'s hosted-artifact branch — five, all of
+      `nora.agent.tools`'s relay paths) — an address DOES arrive here, which is
+      exactly why the old denial was false, and the skill now says so: «one
+      that reaches you came in with the turn, inside something you were
+      handed». The property that makes that true is that these paths RELAY.
+      Every address they hand her is built from `SENTINEL_ORIGIN`, a value only
+      this test knows, so a constant baked into any of the five reddens this as
+      an address the test never supplied.
     * **Both** — nothing anywhere hands her an account of what the view HOLDS. A
-      route named as a page is #227's own failure arriving as an input instead of
-      as a guess, and until 2026-09-13 the two live channels could not be seen by
-      anything that would have said so.
+      route named as a page is #227's own failure arriving as an input instead
+      of as a guess, and until 2026-09-13 none of the five live channels could
+      be seen by anything that would have said so.
     """
     assert _flat("Its address is not baked into you either; one that reaches you "
                  "came in with the turn, inside something you were handed.") in _flat(
