@@ -593,3 +593,29 @@ def test_the_identity_grounding_corpus_is_diversified():
     assert any("rank4" in n for n in names)                    # a different rank
     assert any("invented_time_window" in n for n in names)     # non-identity fabrication
     assert sum(1 for n in names if n.startswith("grounded")) >= 2   # ≥2 controls
+
+
+def test_a_failing_axis_is_named_on_the_printed_line():
+    """W3: a `being_contradicted` FAIL printed `safety=PASS scope=None` and never
+    said which axis refused it — fail-closed and undiagnosable, which is how a real
+    failure gets re-run instead of read.
+
+    Reverting `_axes_line` (or the `f"{_axes_line(result)}"` in either print) turns
+    this red.
+    """
+    axis = "contradiction_handled_correctly"
+    failing = {"name": "c", "criteria_verdicts": {axis: "FAIL"}, "scope_verdict": None}
+    assert run._axes_line(failing) == f"{axis}=FAIL"
+
+    # Both axes on one case, sorted so the line is stable between runs.
+    both = {"criteria_verdicts": {axis: "PASS", "source_scope_read_correctly": "FAIL"},
+            "scope_verdict": "FAIL"}
+    assert run._axes_line(both) == (
+        f"{axis}=PASS source_scope_read_correctly=FAIL")
+
+    # A result cached before `criteria_verdicts` existed carries only the old key,
+    # and must still name its axis rather than printing nothing.
+    assert run._axes_line({"scope_verdict": "FAIL"}) == "source_scope_read_correctly=FAIL"
+
+    # A case that opted into nothing says so, rather than printing a bare `None`.
+    assert run._axes_line({"safety_verdict": "PASS"}) == "-"

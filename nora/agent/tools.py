@@ -408,8 +408,11 @@ RETRY_POLICIES: frozenset[str] = frozenset({"safe", "unsafe_without_key", "never
 # DEC-95 for the burst, and still sized by what the GROUP should receive rather
 # than by what a call costs; `ask_memory` (1) is a ~14-19s
 # dialectic call whose second invocation blows the turn's wall-clock; and
-# `group_members` / `saved_places` / `skills` (1) each return a per-tag CACHED,
+# and `group_members` / `saved_places` (1) each return a per-tag CACHED,
 # provably-identical result, so a second call only crowds out `send_reply`.
+# (`skills` was on that list and is not: it was raised to 2 in 2026-09-03, and
+# its repeat call is the one on this table that returns DIFFERENT content —
+# the argument picks which body loads. `guards.py`'s ceiling branch says so.)
 NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # Cheap, local, and the answer changes every second, so there is no reason
     # to ration it — but a budget is still required: R-7 default-denies any
@@ -1064,6 +1067,18 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # recommendation weighed, so the pair that can co-occur is still a pair.
     # Raise it when a message is measured spanning three, not because the
     # directory grew.
+    #
+    # **What that decision COST, and where it was paid** (review of the same
+    # change). Until the third skill, budget == directory size, so exhausting
+    # this budget meant every skill had been loaded — and R-7's generic veto
+    # («you already called skills N time(s) and have that context, answer from
+    # what you already have») was true. With three skills against 2 it is not:
+    # two mis-routed activations leave the third unreachable and the model is
+    # told it holds a context it does not, which is an invitation to improvise
+    # the missing body. The fix is in the SENTENCE, not the number —
+    # `guards.py`'s ceiling branch now says what is actually true for this tool
+    # — because a number that only happens to equal the directory size today
+    # would go false again on the fourth skill with nothing reporting it.
     #
     # `terminal=False`: activating a skill is the START of using its judgement —
     # she still has to route, or reply — never the end of a turn. `time_shiftable`

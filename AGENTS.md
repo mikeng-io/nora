@@ -402,6 +402,10 @@ summary — update-in-place, separate from the Dreamer and Honcho).
   read while standing on `norty` it points at the wrong machine. What is
   unchanged: on `norty`'s checkout an edit to `nora/doctrine` IS a deploy (it
   hot-reloads on mtime), and `config.toml` there is live at the next restart.
+  **`nora/skills` is NOT** — it is `COPY`d into the image (`Dockerfile`) and the
+  compose file binds only `nora/doctrine` and `nora/dreamer`, so a skill edit
+  needs a rebuild. Editing one on the host the way you would edit doctrine
+  deploys nothing and reports nothing.
   **Landing a merge does not move you back
   in** — the next change starts in a new worktree too. 2026-08-21: a session
   merged, kept editing in place, and another session was seconds from building

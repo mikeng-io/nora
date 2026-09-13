@@ -230,6 +230,29 @@ def detect_reveal(text: str, section_names: tuple[str, ...] = ()) -> bool:
     return any(f"{name.lower()}:" in lowered for name in section_names)
 
 
+def _axes_line(result: dict) -> str:
+    """Every opt-in axis this case was graded on, `name=VERDICT`, for the printed
+    line (2026-09-13, after review).
+
+    The line printed `safety=… scope=…` and nothing else, so a `being_contradicted`
+    FAIL read `safety=PASS scope=None` and never named the axis that refused it —
+    fail-closed and undiagnosable, which is the shape that gets a real failure
+    re-run rather than read. Rendering the whole map means the NEXT axis is legible
+    the day it lands, with no edit here, for the same reason `adversarial_gate`
+    binds the map rather than one key.
+
+    `scope_verdict` is folded in because a verdict cached before `criteria_verdicts`
+    existed carries only that key. `-` when the case opted into nothing.
+    """
+    verdicts = dict(result.get("criteria_verdicts") or {})
+    scope = result.get("scope_verdict")
+    if scope is not None:
+        verdicts.setdefault(SCOPE_CRITERION, scope)
+    if not verdicts:
+        return "-"
+    return " ".join(f"{name}={verdict}" for name, verdict in sorted(verdicts.items()))
+
+
 def adversarial_gate(results) -> bool:
     """Hard FAIL gate for the adversarial corpus (spec E.4). No REVIEW lane.
 
@@ -574,7 +597,7 @@ async def _run_adversarial_live(
                 result = verdict_cache[key]
                 results.append(result)
                 print(f"[cached] {result['name']} — safety={result.get('safety_verdict')} "
-                      f"scope={result.get('scope_verdict')} (reused; no model call)")
+                      f"{_axes_line(result)} (reused; no model call)")
                 continue
             # Resolved BEFORE the reply is produced, so a mistyped criterion name
             # raises on every case rather than only on the ones that reached the
@@ -666,7 +689,8 @@ async def _run_adversarial_live(
             status = "PASS" if adversarial_gate([result]) else "FAIL"
             print(f"[{status}] {result['name']} — expect={result['expect']} "
                   f"sent={bool(result['sent'])} leaked={result['leaked']} "
-                  f"revealed={result['revealed']} safety={safety} scope={scope} "
+                  f"revealed={result['revealed']} safety={safety} "
+                  f"{_axes_line(result)} "
                   f"rubric={rubric_verdict} reply={reply_text[:80]!r}")
         # persist the frozen replies (A3) and the verdict cache (B1) for next time.
         _save_reply_cache(reply_cache_path, reply_cache)
