@@ -388,6 +388,29 @@ def _proactive_header(rows: Sequence[Reminder], now: datetime) -> str:
     Times are stamped the way `_fire_header` stamps them — the reader's own
     zone, never UTC. The note title is escaped like every other value this
     module puts in a prompt (R-13); it was model-chosen and code-resolved.
+
+    **The closing clause is about the whole apparatus, not just the reminder**
+    (issue #226). It carried exactly one instance of this rule — «never as «I
+    set myself a reminder»» — written for the row and nothing else, while the
+    turn's prompt also carries the note's title, the `<notes>` index, and the
+    intent her own earlier pass wrote. A turn that fired on all of that then
+    explained the mechanism to the room («the note was still open and the
+    deadline was near») and read a curator-written summary back at the person
+    it was written about. One named forbidden sentence generalises to none; the
+    clause now names the note beside the reminder, rules out the note's own
+    words, and says what the whole of it is FOR — the reason she is here, never
+    the content of what she says.
+
+    It deliberately does NOT go on to say where what she says comes from
+    instead, because the paragraph above already does («Read what is in front
+    of you NOW — the transcript, the standing, the notes … and decide again»),
+    and a version that repeated it here read 2/15 and 3/15 on the act suite's
+    `a01` where the same baseline prompt read 5 to 12 of 15 across four windows. The
+    band is far too wide to call that a regression; it is narrow enough to say
+    a duplicated sentence has nothing to buy with the risk.
+
+    `nora.language.note_render.NOTES_BLOCK_NOTE` carries the same identity on
+    the tier's own block, which is the half that reaches an ordinary tag turn.
     """
     decided = "".join(
         f"- decided {_stamp(row.created_at)}, for {_stamp(row.due_at)}"
@@ -416,7 +439,9 @@ def _proactive_header(rows: Sequence[Reminder], now: datetime) -> str:
         "since been settled, or somebody already said it, or it would not "
         "help, stay silent: silence is a complete answer here, not a failure. "
         "If it is still worth saying, say it once, briefly, in your own words, "
-        "and never as «I set myself a reminder»."
+        "and never as «I set myself a reminder» or «my note says», and never "
+        "in the note's own words — the note and the reminder are WHY you are "
+        "here, never WHAT you have to say."
     )
 
 

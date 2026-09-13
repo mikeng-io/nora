@@ -10,6 +10,13 @@
 #
 #   silent  — nothing was sent. A screened-out row counts as silent.
 #   speak   — something was sent, and every `must_cite` substring is in it.
+#   either  — the DECISION is not labelled, because on this input both are
+#             defensible; what is graded is the message, if there was one.
+#             A silent sample is ERROR (the case measured nothing), not PASS.
+#
+# `must_not_cite` is the negative half and applies on any expectation: a reply
+# carrying one of its substrings FAILS before anything else is checked. It is
+# matched case-insensitively, where `must_cite` is exact.
 #
 # `failed_*` (timeout, error) is ERROR, never PASS. Majority `silent` on
 # purpose, for the decide corpus's reason.
@@ -157,3 +164,66 @@
   transcript:
     - {name: Ada, body: "今晚睇波"}
     - {name: Ben, body: "🍺"}
+
+# ---------------------------------------------------------------------------
+# Issue #226 — the two halves of one proactive message that went out wrong.
+#
+# Both are `expect: either`, and that is a measurement, not a hedge. On both
+# inputs speaking and staying quiet are defensible, and she splits: 2/5 and 3/5
+# spoken over identical prompts (measured 2026-09-13, ollamacloud/deepseek-v4-
+# flash:0731). Labelling them `speak` would have graded that threshold and said
+# nothing about the defect; what is under test is the MESSAGE — if the room
+# hears anything, what does it hear. A silent sample grades ERROR, so a case
+# that was quiet throughout reports as unmeasured rather than as clean.
+# ---------------------------------------------------------------------------
+
+- name: a09_her_own_machinery_is_never_named
+  expect: either
+  now: "2026-09-11T16:00:00+08:00"
+  # Her own bookkeeping's vocabulary, which reaches this turn through the
+  # <notes> block and the note tools' schemas. None of it is the room's, and
+  # none of it belongs in a message — she named it out loud once, asked what
+  # she had changed, and answered by explaining the mechanism.
+  must_not_cite: ["open note", "note", "筆記", "備忘", "reminder", "提醒自己"]
+  row:
+    note: 十月長跑報名
+    intent: "報名今晚截,Ben 話今日覆都未覆。趁仲趕得切問一次。"
+    decided_hours_ago: 7
+  notes:
+    - title: 十月長跑報名
+      description: 十月長跑報名今晚截 — Ada 話會報,Ben 話今日覆,兩個都未講
+      body: "十月長跑,報名 11 Sep 夜晚截。Ada 話想報。Ben 話今日會覆報唔報。到而家兩個都未講。"
+      anchor_date: 20260911
+  standing: "十月長跑報名今晚截;Ada 想報,Ben 話今日覆,兩個都未講。"
+  transcript:
+    - {name: Ada, body: "今日返工好攰"}
+    - {name: Ben, body: "我都係"}
+
+- name: a10_the_transcript_outranks_her_own_summary
+  expect: either
+  now: "2026-09-11T16:00:00+08:00"
+  # The note's description says 灣仔; the transcript says the room moved it to
+  # 觀塘, and that word appears nowhere else in the prompt. A reply grounded in
+  # the summary cannot produce it; a reply grounded in the room does.
+  # 觀塘 and NOT a ban on 灣仔, which is where the first version of this case
+  # was wrong. Run live, it failed «聽日幾點?灣仔嗰間訂唔到轉咗觀塘,時間都未定喎» —
+  # a reply that had followed the transcript exactly and named the old venue
+  # only to say it fell through. The defect is asserting the summary as
+  # current, and no substring says that; what a summary-led reply CANNOT do is
+  # land on the venue only the transcript knows about.
+  must_cite: ["觀塘"]
+  row:
+    note: 星期六聚餐
+    intent: "聽日聚餐,冇人講過幾點。趁今晚問一問。"
+    decided_hours_ago: 8
+  notes:
+    - title: 星期六聚餐
+      description: 星期六聚餐喺灣仔 — 幾點未定,冇人講過
+      body: "星期六聚餐,地點灣仔。時間未定,冇人講過。"
+      anchor_date: 20260912
+  standing: "星期六聚餐照去;時間仲未有人講過。"
+  transcript:
+    - {name: Ada, body: "灣仔嗰間訂唔到,我改咗去觀塘"}
+    - {name: Ben, body: "好"}
+    - {name: Cat, body: "今日好攰"}
+    - "係"

@@ -1236,6 +1236,47 @@ async def test_send_reply_still_says_refused_when_a_guard_stops_it(wiring):
     assert capped.held_count == 0
 
 
+def test_the_note_schemas_do_not_teach_her_a_phrase_to_say_out_loud(wiring):
+    """Issue #226. Asked point-blank what she had changed, she answered by
+    explaining the mechanism — that the room's 「open note」 was still unsettled.
+    That is nobody's phrase but the tool layer's: `note_update`'s schema said
+    «Call this when an open note's content changes», and a schema is the
+    surface the model matches on (DEC-78 measured a schema-token change moving
+    routing 0/16 → 16/16 where an always-on doctrine maxim moved nothing).
+
+    A ban in `voice.md` would have been competing with the phrase in her own
+    tool schema, so the phrase goes instead. The tools' CONTRACT is untouched —
+    the three states, the read-before-write latch, the argument descriptions —
+    and this pins the vocabulary.
+
+    **Only the phrase moves, and the replacement stays concrete**, which is not
+    a stylistic note: a first attempt replaced it with «when what one of these
+    is keeping track of changes» and the act suite's `a01` speak rate fell to
+    4/15 and 5/15 against a baseline that ran 5 to 12 of 15. That is inside a very
+    wide noise band and so proves nothing about the vaguer wording, but it is
+    the direction DEC-78 measured in the other direction (a schema-token change
+    moved routing 0/16 → 16/16), and a docstring that opens on a dangling «one
+    of these» costs legibility for nothing. «a note's content» drops the phrase
+    and keeps the referent.
+
+    Asserted on `tool_spec["description"]`, which is what Strands actually
+    sends, not on `__doc__`.
+    """
+    def described(name: str) -> str:
+        return " ".join(wiring["tools"][name].tool_spec["description"].split()).lower()
+
+    for name in ("note_read", "note_update", "note_create", "note_search"):
+        assert "open note" not in described(name), (
+            f"{name}'s schema teaches «open note» — the tool layer's phrase, "
+            "not the room's, and she says what her schemas call things."
+        )
+    # The latch and the three states are untouched by the rephrasing.
+    update = described("note_update")
+    assert "you must call note_read on this note first, in this same turn" in update
+    for state in ("`ok`", "`refused`", "`unavailable`"):
+        assert state.strip("`") in update
+
+
 # ---- a note title survives the trip through the index (2026-09-10) ----------
 
 

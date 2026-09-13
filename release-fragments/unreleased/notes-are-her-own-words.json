@@ -1,0 +1,14 @@
+{
+  "type": "fix",
+  "summary": "Nora no longer reads her own note summaries back to a room, and no longer names her note-keeping machinery in a message.",
+  "details": [
+    "The <notes> block now says whose words the index is in — her own notes, written by her for herself — and that a claim about what a room actually did comes from the transcript in front of her, never from a line of the index.",
+    "The proactive turn's opening paragraph now rules out the whole apparatus rather than one sentence about reminders: never the reminder, never the note, never the note's own words.",
+    "The note tools' schemas no longer teach her the phrase \"open note\".",
+    "The proactive act eval suite gained two cases and a negative check for them: a reply must not carry her bookkeeping's vocabulary, and must not repeat a note summary the transcript in the same prompt contradicts."
+  ],
+  "limitations": [
+    "Prompt wording is measured, not enforced: nothing at the send path rejects a message that names a note or repeats a summary.",
+    "Whether these wordings change how often she speaks at all is not established. The act suite's speak cases are too noisy to tell: the unchanged prompt scored between 5/15 and 12/15 on the same case across four windows of one session."
+  ]
+}

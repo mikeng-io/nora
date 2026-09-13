@@ -1280,9 +1280,12 @@ async def _run_proactive_act_live(
     ]
     await _score_proactive(sink, dataset="proactive_act", run_name=run_name, tallies=tallies)
     # A quiet case is graded on EVERY sample: one speak is a room that heard
-    # it. A speak case binds on the majority.
+    # it. An `either` case is graded the same way on its ban list, for the same
+    # reason — one message carrying her own bookkeeping is a room that heard
+    # that. A speak case binds on the majority.
     ok = all(
-        (t.majority_pass and "FAIL" not in t.verdicts) if t.expect == "silent"
+        (t.majority_pass and "FAIL" not in t.verdicts)
+        if t.expect in ("silent", "either")
         else t.majority_pass
         for t in tallies
     )

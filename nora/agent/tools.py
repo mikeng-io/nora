@@ -7567,8 +7567,8 @@ Args:
         return {"status": "ok", "title": note.title}
 
     async def note_update(title: str, body: str) -> dict:
-        """Revise a note you have JUST read this turn. Call this when an
-open note's content changes — a detail settles, a plan moves.
+        """Revise a note you have JUST read this turn. Call this when a
+note's content changes — a detail settles, a plan moves.
 
 Give the WHOLE note back with your change folded in, not just the new
 part — `body` replaces what note_read handed you as the note's current

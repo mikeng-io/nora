@@ -36,7 +36,16 @@ from typing import Any, Literal
 import yaml
 
 DECIDE_EXPECTS: tuple[str, ...] = ("none", "remind")
-ACT_EXPECTS: tuple[str, ...] = ("silent", "speak")
+#: `either` is the third act expectation and it grades the MESSAGE rather than
+#: the decision (issue #226): a case where speaking and staying quiet are both
+#: defensible, and what is under test is what the room hears IF it hears
+#: anything. It exists because grading the decision on such a case measures the
+#: threshold instead — measured on the two #226 cases, 2/5 and 3/5 spoken over
+#: identical prompts, so a `speak` label there would have reported her mood and
+#: nothing about the defect. A silent sample is ERROR, never PASS: the case
+#: measured nothing, and an unmeasured sample that reads as a pass is exactly
+#: R-27's forbidden substitution.
+ACT_EXPECTS: tuple[str, ...] = ("silent", "speak", "either")
 
 Verdict = Literal["PASS", "FAIL", "ERROR"]
 
@@ -251,6 +260,16 @@ class ActCase:
     transcript: tuple[Any, ...] = ()
     standing: str | None = None
     must_cite: tuple[str, ...] = ()
+    #: The NEGATIVE half of the same measurement (issue #226), and the suite had
+    #: none: `must_cite` can only say a reply reached the subject, never that it
+    #: reached it the wrong way. The two failures this exists for are both
+    #: "she spoke, and speaking was right" — a reply carrying her own
+    #: bookkeeping's vocabulary («open note», «my note says»), and a reply
+    #: repeating a note's summary where the transcript in the same prompt says
+    #: otherwise. Graded on whatever the room HEARD, so a `silent` case
+    #: satisfies it vacuously and the substrings must be chosen to appear only
+    #: when the reply is actually wrong.
+    must_not_cite: tuple[str, ...] = ()
     note_moved: bool = False
 
     @classmethod
@@ -262,6 +281,7 @@ class ActCase:
             transcript=tuple(raw.get("transcript", ())),
             standing=raw.get("standing"),
             must_cite=tuple(str(c) for c in raw.get("must_cite", ())),
+            must_not_cite=tuple(str(c) for c in raw.get("must_not_cite", ())),
             note_moved=bool(raw.get("note_moved", False)),
         )
         case.validate()
@@ -277,6 +297,16 @@ class ActCase:
             raise ValueError(f"{self.name}: row names a note the case does not seed")
         if self.expect == "silent" and self.must_cite:
             raise ValueError(f"{self.name}: a `silent` case has no must_cite")
+        if self.expect == "either" and not (self.must_cite or self.must_not_cite):
+            raise ValueError(
+                f"{self.name}: an `either` case grades only what was heard, so it "
+                "needs must_cite or must_not_cite — without either it asserts nothing"
+            )
+        overlap = set(self.must_cite) & set(self.must_not_cite)
+        if overlap:
+            raise ValueError(
+                f"{self.name}: {sorted(overlap)} is both required and forbidden"
+            )
         if self.expect == "speak" and self.note_moved:
             raise ValueError(f"{self.name}: a `speak` case cannot have note_moved (screened)")
 
@@ -300,10 +330,17 @@ class ActResult:
 
 
 def grade_act(case: ActCase, result: ActResult) -> Grade:
-    """`speak`: the room heard something and every `must_cite` substring is
-    in it. `silent`: the room heard nothing — a row the screen cancelled
-    before any model call counts as silent, which is the point of the
-    screen. `failed_*` is ERROR: a turn that timed out is not a decision."""
+    """`speak`: the room heard something, every `must_cite` substring is in
+    it and no `must_not_cite` one is. `silent`: the room heard nothing — a
+    row the screen cancelled before any model call counts as silent, which
+    is the point of the screen. `failed_*` is ERROR: a turn that timed out
+    is not a decision.
+
+    `must_not_cite` is checked on ANYTHING that was heard, before the
+    positive half and on either expectation, because the reply it catches is
+    one that would otherwise pass: the subject is right and the words came
+    out of her own bookkeeping rather than out of the room (issue #226).
+    """
     if result.outcome.startswith("failed_"):
         return Grade("ERROR", f"fire path {result.outcome} (stop_reason={result.stop_reason})")
     if result.silent_failures:
@@ -313,14 +350,32 @@ def grade_act(case: ActCase, result: ActResult) -> Grade:
             "a refused send or a budget cut is not a decision",
         )
     heard = bool(result.sent)
+    joined = "\n".join(result.sent)
+    # Case-INSENSITIVE, unlike `must_cite`: a ban list is the negative half of
+    # the measurement and «Note» must not pass where «note» fails. `must_cite`
+    # stays exact — it names a word the room used, and case is part of it.
+    lowered = joined.lower()
+    banned = [c for c in case.must_not_cite if c.lower() in lowered]
+    if heard and banned:
+        return Grade("FAIL", f"reply said {banned}: {joined[:120]!r}")
     if case.expect == "silent":
         if heard:
             return Grade("FAIL", f"the room heard: {result.sent[0][:80]!r}")
         return Grade("PASS")
+    if case.expect == "either":
+        # Silence is not wrong here and it is not a pass either — there was no
+        # message, so the thing this case measures did not happen. ERROR keeps
+        # it out of both rates and out of `majority_pass`'s denominator, so a
+        # case that was quiet every sample reports as unmeasured rather than as
+        # clean.
+        if not heard:
+            return Grade("ERROR", "the room heard nothing — this case grades the "
+                                  "message, so the sample measured nothing")
+        missing = [c for c in case.must_cite if c not in joined]
+        return Grade("FAIL", f"reply did not cite {missing}") if missing else Grade("PASS")
     if not heard:
         why = f"screened: {result.screened}" if result.screened else f"outcome {result.outcome}"
         return Grade("FAIL", f"the room heard nothing ({why})")
-    joined = "\n".join(result.sent)
     missing = [c for c in case.must_cite if c not in joined]
     if missing:
         return Grade("FAIL", f"reply did not cite {missing}")
@@ -356,6 +411,12 @@ class CaseTally:
 #: The expectations that mean «do nothing», per suite.
 QUIET: frozenset[str] = frozenset({"none", "silent"})
 
+#: Expectations that do NOT label the decision, so they belong to neither rate:
+#: counting `either` as quiet would invent false positives out of every message
+#: it approves of, and counting it as positive would credit recall to a case
+#: that never asked her to act.
+UNLABELLED_DECISION: frozenset[str] = frozenset({"either"})
+
 
 def summarise(tallies: Sequence[CaseTally]) -> dict[str, Any]:
     """Over SAMPLES. `false_positive_rate` — a quiet case that acted — is
@@ -365,6 +426,8 @@ def summarise(tallies: Sequence[CaseTally]) -> dict[str, Any]:
     quiet_graded = quiet_acted = 0
     positive_graded = positive_hit = 0
     for t in tallies:
+        if t.expect in UNLABELLED_DECISION:
+            continue
         for v in t.verdicts:
             if v == "ERROR":
                 continue
@@ -377,6 +440,7 @@ def summarise(tallies: Sequence[CaseTally]) -> dict[str, Any]:
     return {
         "cases": len(tallies),
         "quiet_cases": sum(1 for t in tallies if t.expect in QUIET),
+        "message_only_cases": sum(1 for t in tallies if t.expect in UNLABELLED_DECISION),
         "majority_pass": sum(1 for t in tallies if t.majority_pass),
         "samples": sum(len(t.verdicts) for t in tallies),
         "errors": sum(t.errors for t in tallies),

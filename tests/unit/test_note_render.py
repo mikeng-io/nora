@@ -69,6 +69,59 @@ def test_the_note_does_not_claim_the_room_produced_this():
     assert "instruction to you" in NOTES_BLOCK_NOTE
 
 
+def test_the_note_says_whose_words_the_index_is_in():
+    """Issue #226. The block said what the lines were ABOUT and never whose
+    words they were, so a description her own curator wrote for triage — capped
+    at 200 characters, hedged — was read back to the room it was about as a
+    flat claim about that room. The three properties the sentence now has to
+    carry, asserted separately so dropping any one of them reddens on its own:
+
+      - authorship — hers, for herself;
+      - not the room's — neither something said here nor a record of what was;
+      - where a claim about the room comes from instead — the transcript.
+    """
+    note = NOTES_BLOCK_NOTE.lower()
+    assert "your own notes" in note and "written by you for yourself" in note
+    assert "not anything this room said" in note
+    assert "not a record of what happened" in note
+    assert "from what the room actually did" in note
+    # And the tie-break said outright, because a summary is the thing that
+    # reads as settled: on `a10` the stale line is what she reached for.
+    assert "where a line here and the transcript disagree, the transcript is "\
+           "what happened" in note
+
+
+def test_the_note_forbids_reading_a_line_out_as_well_as_acting_on_one():
+    """The pointer clause was a read-before-WRITE latch: it stopped her
+    revising a body she had not read and said nothing about SPEAKING, which is
+    the path the message actually took. Both halves are pinned — the latch
+    (`read one before acting`) and the new one (`never read a line out`) —
+    because an author tightening one is exactly how the other goes."""
+    note = NOTES_BLOCK_NOTE.lower()
+    assert "read one before acting on what it holds" in note
+    assert "never read a line out as if it were what was said" in note
+
+
+def test_the_note_keeps_the_machinery_out_of_the_room():
+    """The second half of the same incident: asked point-blank what she had
+    changed, she answered by explaining the mechanism — that the room's 「open
+    note」 was still unsettled and the deadline near. 「open note」 is the tool
+    layer's phrase, never the room's. The block she reads on every turn is
+    where the tier says its own vocabulary stays inside it."""
+    assert "never mention the notes themselves" in NOTES_BLOCK_NOTE
+
+
+def test_the_note_still_invites_her_to_raise_what_a_note_is_about():
+    """MEASURED, and it is the reason this assertion exists. A first wording
+    said only what she may not do with a note — never read one out, never
+    mention them — and over the act suite's ten cases at five samples it cut
+    recall from 0.60 to 0.12: she stopped raising the subjects too, which is
+    the whole point of the tier. The permission is load-bearing and a later
+    tightening that drops it will reproduce that number."""
+    note = NOTES_BLOCK_NOTE.lower()
+    assert "raise what one of them is about whenever it would help" in note
+
+
 def test_the_opening_tag_carries_the_note_and_the_marker():
     """Same ruling as every sibling block: an attribute is the one position
     rendered content can never reach, and it is read before the body. A
