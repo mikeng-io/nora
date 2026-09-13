@@ -3,6 +3,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 from evals.evaluators import (
@@ -13,11 +14,14 @@ from evals.evaluators import (
     ToolBudget,
 )
 from evals.harness import REPO_ROOT, TRIGGER_TEXT, Trajectory
+from evals.proactive import CaseTally
 from evals.run import (
     CASES_DIR,
     SUITES,
     _build_sink,
+    _print_proactive_gate,
     _run_suite,
+    _tally_line,
 )
 from evals.sink import LangfuseEvalSink, NullEvalSink
 from nora.tag import is_tagged
@@ -314,3 +318,72 @@ def test_the_harness_trigger_is_the_configured_one():
         (REPO_ROOT / "config.example.toml").read_text(encoding="utf-8"),
     )
     assert conf["engagement"]["trigger"]["text"] == TRIGGER_TEXT
+
+
+# ---------------------------------------------------------------------------
+# the proactive gate LINE — a summary that cannot be quoted without its verdict
+# ---------------------------------------------------------------------------
+
+
+def test_the_proactive_gate_line_cannot_be_printed_without_its_verdict(capsys):
+    """A failing act run printed
+
+        proactive_act gate: false-positive rate 0.00 on 6 quiet case(s);
+        recall 0.50; 8/10 cases majority-pass over 50 samples; errors 9
+
+    and then, separately and later, GATE FAILED. The first half reads healthy
+    on its own and that is the half that reached a PR body as the result of the
+    run. The verdict is now computed BEFORE the line and printed ON it, and
+    `verdict` is a required keyword argument so a caller cannot print numbers it
+    has not yet decided about.
+
+    Falsification: make `verdict` optional with a default, or move the
+    `[PASS]`/`[FAIL]` marker off this line, and the first assertion reddens.
+    """
+    failing = [
+        CaseTally(name="a01", expect="speak", verdicts=["PASS", "FAIL", "FAIL"]),
+        CaseTally(name="a02", expect="silent", verdicts=["PASS", "PASS", "PASS"]),
+    ]
+    _print_proactive_gate("proactive_act", failing, verdict=False,
+                          label="m/low", instructions=None)
+    line = capsys.readouterr().out.splitlines()[0]
+    assert line.startswith("proactive_act gate [FAIL]:")
+    assert "recall" in line and "majority-pass" in line
+
+    _print_proactive_gate("proactive_act", failing, verdict=True,
+                          label="m/low", instructions=None)
+    assert capsys.readouterr().out.splitlines()[0].startswith("proactive_act gate [PASS]:")
+
+    with pytest.raises(TypeError):
+        _print_proactive_gate("proactive_act", failing, label="m/low",  # type: ignore[call-arg]
+                              instructions=None)
+
+
+def test_the_gate_line_counts_outages_and_non_measurements_apart(capsys):
+    """Two different words for two different things, because folding them
+    together inverted this line's own promise: a run with ZERO outages reported
+    `errors 9`, which reads as a broken gateway and was a quiet model."""
+    _print_proactive_gate(
+        "proactive_act",
+        [CaseTally(name="e1", expect="either",
+                   verdicts=["UNMEASURED", "UNMEASURED", "UNMEASURED"])],
+        verdict=True, label="m/low", instructions=None,
+    )
+    line = capsys.readouterr().out.splitlines()[0]
+    assert "errors 0" in line
+    assert "unmeasured 3 sample(s) in 1 case(s)" in line
+
+
+def test_a_case_line_reports_the_suites_own_verdict_not_majority_pass(capsys):
+    """`[UNMEASURED]` is a third status and the act suite needs it: a fully
+    quiet `either` case has no majority to pass, so the default
+    `majority_pass` rendering would print `[FAIL]` next to a run the gate
+    passed. A per-case line disagreeing with the gate is the same defect one
+    level down."""
+    quiet = CaseTally(name="a09", expect="either",
+                      verdicts=["UNMEASURED", "UNMEASURED"])
+    _tally_line("proactive_act", quiet, status="UNMEASURED")
+    assert capsys.readouterr().out.startswith("[UNMEASURED] proactive_act/a09")
+    # The mark for it is its own, too — never `!`, which means an outage.
+    _tally_line("proactive_act", quiet)
+    assert "samples=--" in capsys.readouterr().out

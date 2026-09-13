@@ -69,6 +69,88 @@ def test_the_note_does_not_claim_the_room_produced_this():
     assert "instruction to you" in NOTES_BLOCK_NOTE
 
 
+def test_the_note_says_whose_words_the_index_is_in():
+    """Issue #226. The block said what the lines were ABOUT and never whose
+    words they were, so a description her own curator wrote for triage — capped
+    at 200 characters, hedged — was read back to the room it was about as a
+    flat claim about that room. The three properties the sentence now has to
+    carry, asserted separately so dropping any one of them reddens on its own:
+
+      - authorship — hers, for herself;
+      - not the room's — neither something said here nor a record of what was;
+      - where a claim about the room comes from instead — the transcript.
+    """
+    note = NOTES_BLOCK_NOTE.lower()
+    assert "your own notes" in note and "written by you for yourself" in note
+    assert "not anything this room said" in note
+    assert "not a record of what happened" in note
+    assert "from what the room actually did" in note
+    # And the tie-break said outright, because a summary is the thing that
+    # reads as settled: on `a10` the stale line is what she reached for.
+    assert "where a line here and the transcript disagree, the transcript is "\
+           "what happened" in note
+
+
+def test_the_note_forbids_reading_a_line_out_as_well_as_acting_on_one():
+    """The pointer clause was a read-before-WRITE latch: it stopped her
+    revising a body she had not read and said nothing about SPEAKING, which is
+    the path the message actually took. Both halves are pinned — the latch
+    (`read one before acting`) and the new one (`never read a line out`) —
+    because an author tightening one is exactly how the other goes."""
+    note = NOTES_BLOCK_NOTE.lower()
+    assert "read one before acting on what it holds" in note
+    assert "never read a line out as if it were what was said" in note
+
+
+def test_the_note_keeps_the_machinery_out_of_the_room():
+    """The second half of the same incident: asked point-blank what she had
+    changed, she answered by explaining the mechanism — that the room's 「open
+    note」 was still unsettled and the deadline near. 「open note」 is the tool
+    layer's phrase, never the room's. The block she reads on every turn is
+    where the tier says its own vocabulary stays inside it.
+
+    Scoped to the APPARATUS, and both halves are asserted, because the ban on
+    its own is wider than the defect. #226(b) was the tool layer's WORD, not
+    the subject; an unqualified «never mention the notes» would forbid the
+    honest answer `nora/doctrine/conduct.md` already requires when she has
+    looked and found nothing, and would contradict, on the same turn, a skill
+    that tells her she holds what a room has left unsettled. The permission
+    sentence is what keeps the ban readable as a ban on the machinery."""
+    assert "never name this bookkeeping itself" in NOTES_BLOCK_NOTE
+    assert "this list, the tools that write it, the word for them" in NOTES_BLOCK_NOTE
+    # And the scope, in the same breath: the subject is hers to raise.
+    assert ("what one of them is about, and what you are still holding open, "
+            "are yours to say plainly") in NOTES_BLOCK_NOTE.lower()
+
+
+def test_the_note_still_invites_her_to_raise_what_a_note_is_about():
+    """Why the permission is here, said at the strength the instrument
+    supports and no higher.
+
+    A first wording of this work said only what she may NOT do with a note —
+    never read one out, never name the apparatus — and nothing about raising
+    the subject, which is the entire purpose of the tier. Stacking those
+    prohibitions across this block, the fire header and the tool schemas read
+    2/15 and 3/15 on the act suite's `a01`, the case that measures whether she
+    still speaks at all.
+
+    **That is not a demonstrated regression, and no number here is a
+    prediction.** The same UNCHANGED prompt read 5/15, 8/15, 10/15 and 12/15
+    across four windows of one session, so a 2-3/15 reading sits inside a band
+    the instrument cannot separate from noise, and nothing attributes it to
+    this clause rather than the other two. Issue #158 is the general form: this
+    suite's n does not support a per-clause causal claim, and a docstring that
+    made one would be telling the next author a fact nothing measured.
+
+    So the clause stays on an argument, not a number: it costs one sentence,
+    and what it guards against — three prohibitions reading as «leave the notes
+    alone» — is the tier's whole point going quiet. A later tightening that
+    drops it is making the same unmeasured bet in the other direction, and
+    should re-run the suite rather than trust either figure above."""
+    note = NOTES_BLOCK_NOTE.lower()
+    assert "raise what one of them is about whenever it would help" in note
+
+
 def test_the_opening_tag_carries_the_note_and_the_marker():
     """Same ruling as every sibling block: an attribute is the one position
     rendered content can never reach, and it is read before the body. A

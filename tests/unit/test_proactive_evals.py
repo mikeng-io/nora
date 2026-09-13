@@ -21,6 +21,7 @@ from evals.proactive import (
     DecideCase,
     DecideResult,
     WrittenRow,
+    act_case_ok,
     grade_act,
     grade_decide,
     load_act_cases,
@@ -180,6 +181,215 @@ def test_act_grades_speak_silent_screened_and_error():
     assert grade_act(speak, timed_out).verdict == "ERROR"
 
 
+def test_act_fails_a_reply_that_says_what_it_must_not():
+    """Issue #226's grading half. `must_cite` can only say a reply reached its
+    subject; both failures this suite now measures are replies that reached the
+    subject the WRONG WAY — one carrying her own bookkeeping's vocabulary, one
+    repeating a note's summary where the transcript in the same prompt says
+    otherwise. Checked BEFORE `must_cite`, so the reason names the real defect
+    rather than a missing token; case-insensitively, because «Note» must not
+    pass where «note» fails; and on either expectation, with a silent room
+    satisfying it vacuously."""
+    case = ActCase.from_dict({
+        "name": "b", "expect": "speak", "now": "2026-09-11T16:00:00+08:00",
+        "must_cite": ["報名"], "must_not_cite": ["open note", "灣仔"],
+        "row": {"note": "Dinner", "intent": "i"},
+        "notes": [{"title": "Dinner", "description": "d", "body": "b"}],
+    })
+    clean = ActResult(outcome="sent", sent=("報名截今晚,報咗未？",), stop_reason="end_turn")
+    machinery = ActResult(
+        outcome="sent", sent=("見到個 Open Note 未 close,報名截今晚",),
+        stop_reason="end_turn",
+    )
+    stale = ActResult(outcome="sent", sent=("報名同埋灣仔嗰間,幾點？",), stop_reason="end_turn")
+    quiet = ActResult(outcome="silent", sent=(), stop_reason="end_turn")
+
+    assert grade_act(case, clean).verdict == "PASS"
+    bad = grade_act(case, machinery)
+    # Case-INSENSITIVELY: «Open Note» must not pass where «open note» fails.
+    assert bad.verdict == "FAIL" and "open note" in bad.reason
+    assert grade_act(case, stale).verdict == "FAIL"
+    # Silence is graded by the expectation, never by the ban list.
+    assert grade_act(case, quiet).verdict == "FAIL"
+    assert "heard nothing" in grade_act(case, quiet).reason
+
+
+def test_an_either_case_grades_the_message_and_is_unmeasured_on_silence():
+    """Issue #226's third expectation. On both cases it was written for,
+    speaking and staying quiet are defensible and she splits — 2/5 and 3/5
+    spoken over identical prompts — so a `speak` label would have graded the
+    threshold instead of the defect. Silence is never PASS: there was no
+    message, so the thing the case measures did not happen, and an unmeasured
+    sample reading as a pass is R-27's forbidden substitution.
+
+    It is not ERROR either, and the distinction is the whole of the fourth
+    verdict: ERROR means «something went wrong», UNMEASURED means «there was
+    nothing to grade». An outage still outranks both."""
+    case = ActCase.from_dict({
+        "name": "e", "expect": "either", "now": "2026-09-11T16:00:00+08:00",
+        "must_cite": ["觀塘"], "must_not_cite": ["灣仔"],
+        "row": {"note": "Dinner", "intent": "i"},
+        "notes": [{"title": "Dinner", "description": "d", "body": "b"}],
+    })
+    grounded = ActResult(outcome="sent", sent=("聽日觀塘,幾點？",), stop_reason="end_turn")
+    stale = ActResult(outcome="sent", sent=("聽日灣仔,幾點？",), stop_reason="end_turn")
+    off_topic = ActResult(outcome="sent", sent=("食咗飯未？",), stop_reason="end_turn")
+    quiet = ActResult(outcome="silent", sent=(), stop_reason="end_turn")
+
+    assert grade_act(case, grounded).verdict == "PASS"
+    assert grade_act(case, stale).verdict == "FAIL"
+    assert grade_act(case, off_topic).verdict == "FAIL"
+    silent = grade_act(case, quiet)
+    assert silent.verdict == "UNMEASURED" and "measured nothing" in silent.reason
+    # And an outage still outranks it: `failed_*` is ERROR for its own reason.
+    assert grade_act(
+        case, ActResult(outcome="failed_timeout", sent=(), stop_reason=None)
+    ).verdict == "ERROR"
+    # As does a refused send: silence the guard imposed is not silence she chose.
+    assert grade_act(
+        case, ActResult(outcome="silent", sent=(), stop_reason="end_turn",
+                        silent_failures=1)
+    ).verdict == "ERROR"
+
+
+def test_act_case_ok_is_the_whole_act_verdict_and_every_arm_is_pinned():
+    """**The function that flips the act gate's PASS/FAIL, and it shipped with
+    no guard at all.** It lives in `evals.proactive` rather than inline in
+    `evals.run._run_proactive_act_live` for exactly that reason: reverting the
+    `either` arm there turned nothing red, because every test importing the
+    runner (five files, 90 tests) reaches the live driver through nothing.
+
+    Falsification, per arm, is to flip that arm's line and re-run this test:
+
+      - drop `"FAIL" in verdicts` and the `silent` row with one speak in five
+        goes green — a room that heard it, waved through by a majority;
+      - grade `either` on `majority_pass` alone (what shipped) and the
+        fully-quiet row goes RED on behaviour `act.yaml` itself calls
+        defensible;
+      - return True for `fully_unmeasured` on ANY expectation and the quiet
+        `speak` row goes green — silence is the defect there, not an abstention;
+      - let one ERROR count as unmeasured and the outage row goes green.
+    """
+    def tally(expect: str, *verdicts: str) -> CaseTally:
+        return CaseTally(name=expect, expect=expect, verdicts=list(verdicts))
+
+    # A `silent` case fails on ONE speak in five: the room heard it.
+    assert act_case_ok(tally("silent", "PASS", "PASS", "PASS", "PASS", "PASS"))
+    assert not act_case_ok(tally("silent", "PASS", "PASS", "FAIL", "PASS", "PASS"))
+    # A `speak` case binds on the majority — one quiet sample is a threshold.
+    assert act_case_ok(tally("speak", "PASS", "PASS", "PASS", "FAIL", "PASS")) is False
+    assert act_case_ok(tally("speak", "PASS", "PASS", "ERROR"))
+    # An `either` case fails on ONE bad message, for the `silent` case's reason.
+    assert act_case_ok(tally("either", "PASS", "UNMEASURED", "PASS"))
+    assert not act_case_ok(tally("either", "PASS", "UNMEASURED", "FAIL"))
+    # Fully unmeasured: not a failure, because the YAML declares the silence
+    # defensible — but only for `either`, and only with no outage in the run.
+    assert act_case_ok(tally("either", *["UNMEASURED"] * 5))
+    assert not act_case_ok(tally("either", *["UNMEASURED"] * 4, "ERROR"))
+    assert not act_case_ok(tally("speak", *["UNMEASURED"] * 5))
+    # And it never reads as a pass silently: the caller has the count.
+    assert tally("either", *["UNMEASURED"] * 5).fully_unmeasured is True
+    assert tally("either", *["UNMEASURED"] * 4, "ERROR").fully_unmeasured is False
+
+
+def test_an_unmeasured_sample_is_not_an_outage_in_the_summary():
+    """W1's inversion, pinned. `_print_proactive_gate` promises that «an outage
+    during a run cannot read as a quiet model»; folding UNMEASURED into
+    `errors` made the inverse true instead, and a branch run with zero outages
+    reported `errors 9`. The two counts are separate, both are out of both
+    rates, and `majority_pass` counts neither as graded."""
+    tallies = [
+        CaseTally(name="q1", expect="silent", verdicts=["PASS", "PASS"]),
+        CaseTally(name="p1", expect="speak", verdicts=["PASS", "ERROR"]),
+        CaseTally(name="e1", expect="either",
+                  verdicts=["UNMEASURED", "UNMEASURED", "PASS"]),
+        CaseTally(name="e2", expect="either", verdicts=["UNMEASURED", "UNMEASURED"]),
+    ]
+    s = summarise(tallies)
+    assert s["errors"] == 1              # the outage, and only the outage
+    assert s["unmeasured"] == 4
+    assert s["unmeasured_cases"] == 1    # e2 only: e1 has a graded sample
+    # Neither count reaches a rate, and neither is graded for the majority.
+    assert s["false_positive_rate"] == pytest.approx(0.0)
+    assert s["recall"] == pytest.approx(1.0)
+    assert tallies[2].majority_pass is True   # 1 of 1 graded
+    assert tallies[3].majority_pass is False  # nothing graded at all
+
+
+def test_a_banned_term_must_not_fire_on_a_word_that_merely_contains_it():
+    """`ActCase.must_not_cite` sets its own bar — a term «must be chosen to
+    appear only when the reply is actually wrong» — and bare `note` as a plain
+    substring failed it, banning «noted», «notebook» and «denote» along with
+    the apparatus.
+
+    The anchor is an ASCII-class lookaround, NOT `\\b`, and the last assertion
+    here is why: `\\b` is defined over `\\w`, which CJK satisfies, so `\\bnote\\b`
+    would silently stop matching 「我個note仲未close」 — an English word pressed
+    against Chinese with no space, which is how this room actually writes.
+    A CJK end has nothing to anchor on and stays a plain substring."""
+    case = ActCase.from_dict({
+        "name": "w", "expect": "either", "now": "2026-09-11T16:00:00+08:00",
+        "must_not_cite": ["note", "提醒自己"],
+        "row": {"note": "Dinner", "intent": "i"},
+        "notes": [{"title": "Dinner", "description": "d", "body": "b"}],
+    })
+
+    def said(text: str) -> str:
+        return grade_act(case, ActResult(
+            outcome="sent", sent=(text,), stop_reason="end_turn")).verdict
+
+    assert said("Noted,聽日見") == "PASS"
+    assert said("我 denote 咗個 notebook") == "PASS"
+    assert said("我個 note 仲未 close") == "FAIL"
+    assert said("my NOTE says 灣仔") == "FAIL"
+    # No space, CJK on both sides — `\b` would NOT match this, and this is the
+    # spelling a Cantonese reply is most likely to use.
+    assert said("我個note仲未close") == "FAIL"
+    # CJK: matched as a substring, which is why the term is the long one.
+    assert said("我提醒自己問你") == "FAIL"
+    assert said("提醒你聽日") == "PASS"
+
+
+def test_an_either_case_belongs_to_neither_rate():
+    """It labels no decision, so counting it as quiet would invent a false
+    positive out of every message it approves of, and counting it as positive
+    would credit recall to a case that never asked her to act."""
+    tallies = [
+        CaseTally(name="q1", expect="silent", verdicts=["PASS", "FAIL"]),
+        CaseTally(name="p1", expect="speak", verdicts=["PASS", "PASS"]),
+        CaseTally(name="e1", expect="either", verdicts=["PASS", "FAIL", "ERROR"]),
+    ]
+    s = summarise(tallies)
+    assert s["message_only_cases"] == 1
+    assert s["false_positive_rate"] == pytest.approx(1 / 2)
+    assert s["recall"] == pytest.approx(1.0)
+    assert s["samples"] == 7
+
+
+def test_a_case_cannot_require_and_forbid_the_same_string():
+    """Refused at LOAD time, like every other ungradeable case in this file —
+    a case that can never pass is a broken instrument, not a hard case."""
+    with pytest.raises(ValueError, match="both required and forbidden"):
+        ActCase.from_dict({
+            "name": "x", "expect": "speak", "now": "2026-09-11T16:00:00+08:00",
+            "must_cite": ["觀塘"], "must_not_cite": ["觀塘"],
+            "row": {"note": "Dinner", "intent": "i"},
+            "notes": [{"title": "Dinner", "description": "d", "body": "b"}],
+        })
+
+
+def test_an_either_case_with_nothing_to_grade_is_refused():
+    """It would assert nothing at all: the decision is unlabelled, so the only
+    things left to grade are what the message must and must not say. Either
+    will do; neither is a case that cannot fail."""
+    with pytest.raises(ValueError, match="must_cite or must_not_cite"):
+        ActCase.from_dict({
+            "name": "y", "expect": "either", "now": "2026-09-11T16:00:00+08:00",
+            "row": {"note": "Dinner", "intent": "i"},
+            "notes": [{"title": "Dinner", "description": "d", "body": "b"}],
+        })
+
+
 def test_summary_puts_the_false_positive_rate_first_and_errors_apart():
     tallies = [
         CaseTally(name="q1", expect="none", verdicts=["PASS", "PASS", "FAIL"]),
@@ -215,6 +425,29 @@ def test_the_act_corpus_loads_and_is_majority_silent():
     assert len(cases) >= 8
     assert sum(c.expect == "silent" for c in cases) * 2 > len(cases)
     assert any(c.note_moved for c in cases)
+    # Issue #226: the corpus measures the two ways a RIGHT decision to speak
+    # still produces a wrong message. Without these the suite is blind to both,
+    # because every other case grades only whether she spoke.
+    by_name = {c.name: c for c in cases}
+    vocabulary = by_name["a09_her_own_machinery_is_never_named"]
+    assert vocabulary.expect == "either"
+    # The apparatus word itself, not the tool layer's whole phrase: with word
+    # boundaries on the ASCII terms `note` already catches «open note», and a
+    # term subsumed by a sibling is one nobody will keep true.
+    assert {"note", "notes"} <= set(vocabulary.must_not_cite)
+    assert "open note" not in vocabulary.must_not_cite
+    grounding = by_name["a10_the_transcript_outranks_her_own_summary"]
+    assert grounding.expect == "either"
+    # The cited token is reachable ONLY from the transcript: the note that
+    # describes the same gathering says something else, and nothing in the row,
+    # the standing line or the note carries it. That is what makes citing it a
+    # measurement of grounding rather than of phrasing.
+    cited = grounding.must_cite[0]
+    assert any(cited in str(t) for t in grounding.transcript)
+    assert cited not in grounding.notes[0]["description"]
+    assert cited not in grounding.notes[0]["body"]
+    assert cited not in str(grounding.standing)
+    assert cited not in str(grounding.row)
 
 
 # ---- the harness pieces ------------------------------------------------------

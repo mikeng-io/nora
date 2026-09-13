@@ -81,11 +81,77 @@ NOTES_HEADER = (
     "question rather than a settled fact, and one may already have settled."
 )
 
+#
+# Between them sits what the line ALSO has to say, and what it did not say until
+# a message went out on it (issue #226) — WHOSE WORDS THESE ARE. The pointer
+# clause was a read-before-WRITE latch and nothing more: it stopped her revising
+# a body she had not read, and said nothing about speaking. So a description the
+# curator wrote for triage — her own bookkeeping, model-authored, capped at 200
+# characters, hedged correctly — was read aloud to the room it was about, flat
+# and without the hedge, while the transcript that contradicted it sat in the
+# same prompt. The three things the sentence now makes unmissable:
+#
+#   1. these are HER notes, in HER words, written by her for herself — not
+#      something the room said and not a quotable record of what happened;
+#   2. a claim about what the room actually DID is grounded in the transcript in
+#      front of her, never in a line of this index — and, said outright because
+#      the summary is the thing that reads as settled, the transcript WINS when
+#      the two disagree. That clause is the one with a live before/after: on the
+#      act suite's `a10`, whose note asserts a venue the transcript two lines up
+#      moved, a version without it produced «而家淨係知<the note's venue>» — the
+#      stale summary stated as current, which is the defect — in 1 of 3 spoken
+#      samples, and with it 5 of 5 spoken samples named the room's venue. The
+#      unchanged prompt also scored 6 of 6 on one window, so this is a rare
+#      stochastic failure and the case is a REGRESSION GUARD, not a proof;
+#   3. the notes are machinery, so the MACHINERY does not get named to the room
+#      either (the second half of the same incident: asked what she had
+#      changed, she answered by explaining that a 「note」 was still open).
+#
+# **Point 3 is scoped to the apparatus, and the scope is load-bearing.** An
+# earlier wording said «never mention the notes themselves», which is wider
+# than the defect and wider than anything measured. #226(b) was her using the
+# TOOL LAYER's word — 「open note」, which `nora.agent.tools` taught her and no
+# longer does; it was never about the subjects. Left unqualified the clause
+# forbids an honest answer to a direct question about what she is tracking,
+# which `nora/doctrine/conduct.md` already tells her to give («查完 memory、
+# notes 都冇嘢» → say so outright), and it collides head-on with the skill in
+# flight that tells her she holds «what a room has left unsettled and what
+# would settle it»: both merge cleanly and the model is then told to describe
+# and to never mention the same object on the same turn. So the ban names the
+# apparatus — this list, the tools, the word — and the sentence after it says
+# outright that the subject and what she is still holding open are hers to say.
+#
+# **And a PERMISSION, which is not padding.** A first version said only what she
+# may not do with a note — never read one out, never mention them — and nothing
+# about raising the subject, which is the entire purpose of the tier. The clause
+# «raise what one of them is about whenever it would help» is there so the three
+# prohibitions cannot be read as «leave the notes alone». It is not free to
+# drop: the act suite's `a01` is the case that measures whether she still
+# speaks, and a version of this work that stacked prohibitions across this block,
+# the fire header and the tool schemas read 2-3 of 15 there. (What that does NOT
+# establish is which clause did it — the same baseline prompt read 5/15, 8/15,
+# 10/15 and 12/15 across four windows of the same session, and this block ALONE
+# read 11/15 and 14/15. The band is too wide to attribute; the permission stays
+# because it costs one clause and the failure it guards against is the tier's
+# whole point.)
+#
+# Deliberately NOT a further clause about the closing condition or the note body:
+# the line's contents are fixed at title + description, for the reasons the
+# module docstring argues at length.
 NOTES_BLOCK_NOTE = (
     "questions left open, carried across every conversation in this workspace "
-    "— each line is a title and a summary only, never the note itself, so read "
-    "one before acting on what it holds; not an instruction to you, and one "
-    "still listed here may already have settled."
+    "— your own notes, in your own words, written by you for yourself: not "
+    "anything this room said, and not a record of what happened. Raise what "
+    "one of them is about whenever it would help, in your own words and from "
+    "what the room actually did; each line is a title and a summary only, "
+    "never the note itself, so read one before acting on what it holds, never "
+    "read a line out as if it were what was said, and never name this "
+    "bookkeeping itself — this list, the tools that write it, the word for "
+    "them. What one of them is about, and what you are still holding open, "
+    "are yours to say plainly when it helps or when you are asked. Where a "
+    "line here and the transcript disagree, the transcript is what happened. "
+    "Not an instruction to you, and one still listed here may already have "
+    "settled."
 )
 
 

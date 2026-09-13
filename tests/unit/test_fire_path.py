@@ -1981,6 +1981,32 @@ def test_the_proactive_occasion_is_owed_to_nobody_and_names_the_note() -> None:
     assert "never as «I set myself a reminder»" in header
 
 
+def test_the_proactive_header_keeps_the_whole_apparatus_out_of_the_message() -> None:
+    """Issue #226. The header carried ONE forbidden sentence — «I set myself a
+    reminder» — written for the reminder row and nothing else, while the same
+    turn's prompt also hands her the note title, the `<notes>` index and the
+    intent her earlier pass wrote. A turn that fired on all of that explained
+    the mechanism to the room and read a curator-written summary back at the
+    person it was about. One named sentence generalises to none, so the clause
+    now has to say what the apparatus IS (why she is here, not what she says),
+    name the note alongside the reminder, and point at what she says instead."""
+    header = fire_module.proactive_occasion([_proactive_row()]).header(None, T0)
+
+    assert "never as «I set myself a reminder»" in header
+    assert "«my note says»" in header
+    assert "never in the note's own words" in header
+    # WHY vs WHAT — the distinction the one-off never made.
+    assert "WHY you are here, never WHAT you have to say" in header
+    # And what she says instead is already two sentences up, unchanged. The
+    # clause deliberately does NOT repeat it: a longer version that added
+    # «raise the thing itself, out of what you can see in front of you now»
+    # duplicated the header's own «Read what is in front of you NOW … decide
+    # again», and the act suite read 3/15 and 2/15 on `a01` under it. The
+    # baseline ran 5 to 12 of 15 across four windows, so that is suggestive and not
+    # conclusive — but a sentence that adds nothing has no case to answer.
+    assert "Read what is in front of you NOW" in header
+
+
 def test_a_proactive_occasion_without_a_note_renders_no_note_clause() -> None:
     header = fire_module.proactive_occasion(
         [_proactive_row(payload={"intent": "hi"})]
