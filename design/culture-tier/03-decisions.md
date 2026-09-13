@@ -153,3 +153,15 @@ which claims were tested rather than argued.
    detect. Replaced by `02-measurement §6`, whose third tier — move a labelled
    metric or do not ship into that prompt — is the only one that can falsify
    this tier's value.
+8. **"n=20 is the price of the decision check."** Wrong. Power at n=20/arm is
+   0.14–0.18 for a 0.20 difference; 80% needs ~86. And the price was quoted for
+   5 cases when the check is specified over a suite — 12h for two arms on the
+   40-case suite, ~36h at k=3.
+9. **"Everything the adaptor needs exists."** False. `ask_memory` is
+   person-scoped and returns `unavailable` forever for a scope-keyed adaptor.
+   The tier ships a new room-scoped verb; see `01-the-adaptor §1.1`.
+10. **"She has never been admitted and chosen silence."** A `shadow = true`
+    artifact — no turn ran for the first ~10 hours of the window.
+11. **"`go` = 1."** At least 2. Step-60 grid aliasing stepped over a sample
+    shorter than the step. This is the third wrong value for the same counter,
+    and §1.1 now carries all three clauses of the rule instead of one.

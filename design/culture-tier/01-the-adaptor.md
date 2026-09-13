@@ -14,7 +14,7 @@ budget, its own doctrine, and R-18/R-28 screening.
 
 | piece | where it already is |
 |---|---|
-| `ask_memory` — the dialectic `chat`, 17–30s | tool registry |
+| **a room-scoped dialectic verb** | **DOES NOT EXIST — this tier writes it (§1.1)** |
 | `search_memory`, `web_search`, `web_fetch` | tool registry |
 | agent loop, tool ceiling, budget | Dreamer runtime |
 | watermark / volume / timeout trigger | `AdaptorSchedule` |
@@ -25,10 +25,43 @@ That last row deleted a whole column-set from the first draft: provenance is
 not this tier's problem, it is the runtime's, and `accept` returns payloads
 precisely so an adaptor never has to know its own `instruction_sha256`.
 
+## 1.1 The one thing that does not exist: a room-scoped memory verb
+
+An earlier draft of this file said "everything it needs exists" and named
+`ask_memory`. **That was false**, and the reason is worth stating because it
+also shows the fix is small.
+
+`ask_memory` is **person-scoped by design and correctly so**. Its whole roster
+dependency exists to turn a person's NAME into a peer id: `view.find(person)`
+→ `matches[0]` → `chat(target=ref.honcho_peer_id)` (`tools.py:3123-3140`). A
+scope-keyed adaptor is built with `Room(roster_source=None)`
+(`dreamer.py:850`), so `RoomView.available` is `False` and the tool returns
+`unavailable` on every call — forever, while the run still reports `ok`.
+
+**That is not a blocker; it is the wrong verb.** Culture does not resolve a
+name. It asks about a *place*. So this tier ships one new tool:
+
+```
+ask_room_memory(depth, query)      scope: this room     -> chat(target=nora, session_id=<this room's session>)
+ask_workspace_memory(depth, query) scope: the workspace -> chat(target=nora)   (no session_id: workspace-wide is the default)
+```
+
+**Neither needs a roster**, because neither resolves a person — which is the
+only thing the roster was ever for. `Room` already carries `_conversation_id`
+(`room.py:160`), and that is what builds the session id. The `AdaptorGrant.
+home_room` machinery, which is workspace-keyed and which this bundle's earlier
+draft worried about deleting, is not on this path at all.
+
+**Room scoping is real and measured, 2026-09-13.** `session_id` on `/chat` is
+validated (a nonsense id is a 404) and genuinely narrows the corpus — asked how
+many distinct people have spoken, the one-person room answers 1, the
+seven-person room answers 7, a probe room answers 2. The scoping works; only
+the verb was missing.
+
 ```
 culture adaptor            DreamAdaptor, key_kind = "scope"
   schedule                 watermark / volume / timeout via AdaptorSchedule
-  tools                    ask_memory   -> the account
+  tools                    ask_room_memory -> the account (NEW, §1.1)
                            web_search   -> ground a reference the room assumes
   accept                   the prose
   commit                   propose a new revision, link parent
@@ -42,7 +75,7 @@ while a phone number never could, which is exactly the line culture needs.
 
 ## 2. What the model is asked
 
-One question, per room, on the Dreamer clock: *describe this room's culture as
+One question, per room, on the Dreamer clock, through `ask_room_memory`: *describe this room's culture as
 a short account — how they talk, how decisions get made, what they call
 themselves, my own standing here, and **why** it is like that; not dated
 observations.*

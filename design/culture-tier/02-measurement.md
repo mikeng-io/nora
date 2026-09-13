@@ -176,10 +176,15 @@ the block's own variance, and "compatible" never has to be defined.
 principle with no price attached. The price is real and it was read off the
 adjacent experiment (#215, memory reaching the participation turn):
 
-- **n=20 per case per arm.** At n=5 the same branch, same cases, same model and
-  same instrument drew `admin-joke-known` at 0.60 and then 0.20 against a true
-  rate of 0.60 — enough to flip PASS/FAIL in both directions. Measured swing on
-  identical configuration is up to 2/5.
+- **n=20 is NOT enough, and an earlier draft of this section said it was.**
+  Exact Fisher power at n=20 per arm: **0.14–0.18 for a 0.20 difference**,
+  0.49 for the +0.35 actually observed. Eighty percent power on a 0.20
+  difference needs **~86 per arm**. So a real +0.20 goes undetected 82% of the
+  time, and "0 of 3 cases moved" is the *expected* outcome whether those
+  effects are 0.00 or 0.20 — it carries no information and must not be read as
+  evidence of absence.
+- **n=20 does not stop the verdict flipping either.** At a true rate of 0.60
+  the majority bind flips 32% of runs at n=5 and still 25% at n=20.
 - **~100 live model calls per arm, ~45 minutes per arm.** Two arms per change.
 - **Read rates, never PASS counts.** PASS is a threshold on a noisy quantity,
   so it amplifies away the movement being looked for. Two of the three verdict
@@ -188,9 +193,29 @@ adjacent experiment (#215, memory reaching the participation turn):
   and one at 5/5 can only move down, so a mixed set regresses from its bounds
   and produces a tidy-looking asymmetric story with no mechanism behind it.
 
-So this check is affordable as a gate before shipping into a prompt, and **not
-affordable for iteration**. That asymmetry is the honest shape of it: it can
-tell you whether to ship, and it cannot tell you what to change.
+**And the price above is for five cases.** The check is specified over a
+suite, and §6's own exemplar is the 40-case gate suite, with `k` repeats of the
+block on top:
+
+| scope | calls/arm | two arms |
+|---|---|---|
+| the 5 cases priced above | 100 | 1.5 h |
+| the full participation suite | 300 | 4.5 h |
+| the 40-case gate suite | 800 | **12 h** |
+| the gate suite at k=3 | 2,400 | **~36 h** |
+
+So "affordable as a ship gate" was drawn from a figure roughly 1/24 of the
+procedure this section specifies. The honest statement: **the decision check
+is affordable once, for one consumer, at a scope chosen deliberately** — and
+choosing that scope is part of the design, not a detail.
+
+It remains the only check that can falsify this tier, and it cannot tell you
+what to change. Both of those stay true at any price.
+
+**The arm this tier actually needs does not exist yet.** No case anywhere
+compares a chronicle against an account; #215's arms compare a seeded string
+against nothing. Before culture is judged, the suite needs
+*chronicle-only vs chronicle-plus-culture* on cases where the two differ.
 
 ## 7. What the suite has never had
 

@@ -22,15 +22,27 @@ it (§1.1).
 
 | series | total |
 |---|---|
-| `nora_relevance_gate_total{verdict="no_go"}` | **148** (discord 67, signal 81) |
-| `nora_relevance_gate_total{verdict="go"}` | **1** |
-| `nora_relevance_gate_errors_total{kind="call_failed"}` | 11 |
-| `nora_participation_spoke_total` | **1** (signal) |
-| `nora_participation_silence_total` | **no series** |
+| `nora_relevance_gate_total{verdict="no_go"}` | ~148 (discord 67, signal 81) |
+| `nora_relevance_gate_total{verdict="go"}` | **>= 2** |
+| `nora_relevance_gate_errors_total{kind="call_failed"}` | 13 |
+| `nora_participation_spoke_total` | 1 (signal) |
 
-**One admission in 149 verdicts — 0.67%.** And on that one admission she
-spoke, so she has never once been admitted and then chosen silence:
-`silence.md`'s "healthy default" has never been exercised on this path.
+**Admission is under 2%.** The exact numerator is not settled and the table
+should not be read as though it were — see §1.1, which is now about two
+errors rather than one.
+
+**The gate was in `shadow = true` for the first ~10 hours of this window**
+(`config.toml` flipped 2026-09-09 17:10 UTC). While shadow is on, a `go`
+short-circuits and **no turn runs at all**. So the admissions before that
+point could not produce a turn, and one of them is recorded in Prometheus as
+a *failed send* (`stage="relevance_gate_shadow"`).
+
+An earlier draft concluded from the absent `nora_participation_silence_total`
+series that "she has never been admitted and then chosen silence, so
+`silence.md`'s healthy default has never been exercised." **That conclusion is
+withdrawn.** The absence is explained by configuration, and the number of
+admissions on which silence was even reachable is 1 — a doctrinal claim drawn
+from n=1, which is the thing `CMS.md` exists to forbid.
 
 The one `go`, in full:
 
@@ -51,11 +63,23 @@ Prometheus labels counters lazily and the new process never re-created a label
 it had not yet used. An instant query 19 hours later read absence-of-series as
 never-happened.
 
-That is precisely the failure `CMS.md` records and that this bundle quotes:
-bind to the real property, never a proxy. The proxy was "is there a series
-right now". The property was "has she ever spoken". **Any claim about a
-counter in this repo needs a range query and reset-aware arithmetic**, and the
-numbers above are stated with their method for that reason.
+**And the replacement was wrong too, by the same class of error.** The second
+draft said `go` = 1. It is at least 2: a sample lived under 30 seconds inside a
+46-minute hole, so a step-60 grid point falls either before it or after its
+staleness marker and positive-delta summation adds nothing. The same aliasing
+hid a 2→1→2 reset on `call_failed`, which is 13 rather than 11.
+
+So the rule this section exists to state needs all three clauses, not one:
+
+1. **Raw samples, not a grid** — `query?query=metric[5d]`, because
+   `query_range` at any step can step over a sample shorter than the step.
+2. **Reset-aware summation**, treating a drop as all-new.
+3. **Prove the target was scraped during every absence** — check `up{job=...}`.
+   Absence of a series means zero increments only if the scrape was alive.
+
+Clause 3 does hold here (`up` is continuous over the window bar 11 failed
+scrapes) but the earlier drafts did not check it, and without it "absence =
+zero" is the exact inference this section condemns.
 
 Related but distinct: `nora_relevance_gate_errors_total` is counted
 *separately* and fail-closed refusals are **not** in the 149
@@ -118,10 +142,24 @@ price — were read off **#215**, a separate branch that gives the participation
 turn memory. That work is not this bundle's, and resolving and measuring it was
 a detour from this line.
 
-The evidence is cited because it is the closest thing to this tier's own
-decision check that exists, and because it was measured rather than argued. It
-is **borrowed**, and a reader should not take it as something this bundle
-established.
+**And it is evidence of something other than what this bundle needs.** The
+"with memory" arm is a `FakeMemoryStore` replaying seeded literal strings
+(`harness.py:508,531`); neither `representation` nor `chat` was called. The
+`admin-joke` seed is a flat pre-stated fact — *"the room jokingly calls nora
+the channel's 管理員"* — and the transcript already contains 管理員 three
+times. So it is neither a chronicle nor an account, and no arm compared the
+two.
+
+The honest reading, which the earlier draft did not state: **the number sets
+this tier's bar rather than supporting it.** A one-line flat fact delivered in
+~0.2s already reaches 0.60 on the flagship capability. Culture proposes a
+17–30s dialectic call, a store, a revision chain and a daily adaptor against
+that baseline. The arm that would settle it — chronicle-only versus
+chronicle-plus-culture — does not exist in any suite, and `02-measurement`
+should propose it.
+
+It also falsifies one sentence in `04-phase-two-note.md`: the 秘書 case, as
+seeded, **is** a lookup, and a same-window one.
 
 ## 4. The memory system can already produce an account
 
