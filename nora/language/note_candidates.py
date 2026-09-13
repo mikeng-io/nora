@@ -28,11 +28,13 @@ which the model is asked about:
 3. **Materialize or refuse.** No match: the candidate becomes a
    `NoteCreationProposal`, written through `DreamSink.propose` exactly as the
    tag path's future create tool would. A match: the candidate becomes a
-   `NoteRevisionProposal` against the matched note's own head, but ONLY if it
-   adds something the existing head lacks (`_adds_information`) — otherwise
-   it is refused as a duplicate. Either way the candidate row is advanced to
-   a TERMINAL status (`created`/`refused`) so a re-observation of the same
-   occasion never relitigates a settled decision.
+   `NoteRevisionProposal` against the matched note's own head whose body is
+   the head's text with the candidate's **appended** (`_appended`) — never
+   the candidate's alone — and only if it adds something the existing head
+   lacks (`_adds_information`); otherwise it is refused as a duplicate, or as
+   `full` when the appended body would pass `BODY_MAX_CHARS`. Either way the
+   candidate row is advanced to a TERMINAL status (`created`/`refused`) so a
+   re-observation of the same occasion never relitigates a settled decision.
 
 **Why scope-keyed and watermarked, unlike the curator or the revisitor.** A
 note's arrangement spans days of conversation, not one turn — the operator's
@@ -98,6 +100,19 @@ mints any more, and was removed with it on 2026-09-08. *The reading that
 would reopen this:* two genuinely different occasions on one date in one
 workspace, updated into each other — at which point the entity half of the
 key is worth a registry of its own.
+
+**That reading arrived on 2026-09-13, and it arrived with a second defect
+under it (issue #228).** The update arm had fired exactly twice in
+production and both times it merged two genuinely different occasions, so
+the reversal condition above is now MET and the key is live scope on #228.
+But the reason those collisions were visible at all is that the body was
+**replaced** rather than appended, against this docstring's own sentence
+three lines up, and that is what `_appended` fixes here. The two are
+separable and were separated deliberately: with an appended body a
+collision costs a conflated note, which the reader can still
+see both halves of; with a replaced body it costs the older arrangement
+outright. Narrowing the key is a change to what this gate decided; appending
+is the gate doing what it already said it did.
 """
 
 from __future__ import annotations
@@ -182,9 +197,15 @@ STORE_CALLS_PER_TICK = 10
 #: gate`'s mypy scope (issue #61).
 GATE_ACTIONS: frozenset[str] = frozenset({
     "created",          # materialized as a brand new note
-    "updated",          # materialized as a revision to a standing note —
-                        # unreachable today; see the module docstring
+    "updated",          # materialized as a revision APPENDED to a standing
+                        # note sharing its date. Carried «unreachable today»
+                        # until 2026-09-13, which was false by then: it had
+                        # fired twice in production, and both times it
+                        # replaced a body rather than extending one (#228).
     "refused",          # a duplicate with nothing new, or malformed
+    "full",             # the appended body would pass BODY_MAX_CHARS — the
+                        # revision is refused rather than truncated, and a
+                        # rate here says the curator is not retiring
     "deferred",         # a transient failure; left pending, retried next tick
 })
 
@@ -496,6 +517,54 @@ def _adds_information(new_body: str, existing_body: str) -> bool:
         return " ".join(text.split()).casefold()
 
     return _norm(new_body) not in _norm(existing_body)
+
+
+def _appended(existing_body: str, new_body: str) -> str:
+    """The head a revision of `existing_body` by `new_body` should carry: the
+    existing text, then the new text, as one body.
+
+    **The verb was always APPEND, and the code did the opposite.** Both this
+    module's docstring ("two arrangements on one day become one note with an
+    appended body rather than two notes") and `NoteRevisionProposal`'s ("a
+    revision to append") say what a revision from this path is, and
+    `_adds_information` above describes its own miss as a paraphrase
+    "appended as a revision". `_update` nonetheless handed the candidate's
+    body to the proposal on its own, which REPLACES the head — so a match
+    made on the date alone did not widen a note, it overwrote one.
+
+    Measured in production, 2026-09-13 (issue #228). The update arm had fired
+    exactly twice since the tier shipped, and both times it destroyed an
+    unrelated body:
+
+    - one note about a sign-up deadline lost the half of its body recording
+      that somebody HAD answered, to a summary of a games thread from the
+      same evening that shared nothing with it but the calendar day. The note
+      then carried one subject's title and description over another's body
+      for two days, until a proactive fire turn read it, found nothing about
+      the deadline in the body, fell back to the index description and told
+      the room something false about who had answered. That message is how
+      the tier came to be looked at at all.
+    - one gathering note was created from one room's pass and overwritten
+      forty minutes later by another room's, on an unrelated subject. Notes
+      are workspace-keyed, so every room in a workspace writes onto whichever
+      note shares the date.
+
+    Appending keeps the collision non-destructive: the note is still a
+    conflation of two arrangements, which is the looser reading the date-only
+    key deliberately chose, but nothing that was written down is lost and the
+    reader downstream sees both threads instead of one. Whether the key
+    itself should narrow stays open on #228 — this is the half that loses
+    data, and it is a bug against the module's own stated intent rather than
+    a change to what it intended.
+
+    The separator is a blank line rather than a marker: a body is prose a
+    model reads, and the one other writer of these bodies (the tag path's
+    `note_update`) hands back whole paragraphs. The caller — never this
+    function — decides what to do when the result exceeds `BODY_MAX_CHARS`;
+    truncating here is the silent loss `nora.domain.notes` moved into its
+    constructors to be rid of.
+    """
+    return f"{existing_body.rstrip()}\n\n{new_body.strip()}"
 
 
 class NoteCandidateAdaptor:
@@ -822,15 +891,34 @@ class NoteCandidateAdaptor:
             self._inc("nora_note_candidate_gate_total", action="deferred")
             return 0
         _, head = current
-        if not _adds_information(row.body, head.body):
+        # Two refusals, ONE store-call site: `STORE_CALLS_PER_TICK` counts
+        # sites off this module's AST, so a second `set_create_candidate_status`
+        # here would have to be declared even though only one of the two can
+        # run. They keep separate metric actions because they are separate
+        # diagnoses — `refused` is the healthy one (this occasion is already
+        # written down), `full` says a note has accumulated
+        # `BODY_MAX_CHARS` without the curator retiring it.
+        composed = _appended(head.body, row.body)
+        action = (
+            "refused" if not _adds_information(row.body, head.body)
+            else "full" if len(composed) > BODY_MAX_CHARS
+            else None
+        )
+        if action is not None:
+            if action == "full":
+                log.warning(
+                    "note-candidates: note %s is at the body ceiling; the "
+                    "revision was refused rather than truncated (workspace=%s)",
+                    match.id, workspace,
+                )
             await self._candidates.set_create_candidate_status(
                 workspace=workspace, candidate_id=row.id,
                 status=CANDIDATE_REFUSED, now_ms=now_ms,
             )
-            self._inc("nora_note_candidate_gate_total", action="refused")
+            self._inc("nora_note_candidate_gate_total", action=action)
             return 0
         payload = NoteRevisionProposal(
-            note_id=match.id, body=row.body,
+            note_id=match.id, body=composed,
             parent_revision_id=match.head_revision_id,
             entity_ids=row.anchor_entity_ids,
         )

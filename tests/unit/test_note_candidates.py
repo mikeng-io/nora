@@ -15,12 +15,14 @@ import pytest
 
 from nora.agent.dreamer import AdaptorToolError, verify_tool_subsets
 from nora.domain.models import DeliveryStatus, TranscriptRow
+from nora.domain.notes import BODY_MAX_CHARS
 from nora.domain.ports import Proposal
 from nora.language.note_candidates import (
     GATE_ACTIONS,
     UNNAMED_ROOM,
     NoteCandidateAdaptor,
     _adds_information,
+    _appended,
     _CreateCandidate,
     _find_anchor_match,
     _parse_candidate,
@@ -594,9 +596,92 @@ async def test_commit_updates_the_standing_note_sharing_its_date():
     [note] = standing
     head = await store.read(workspace=WS, note_id=note.id)
     assert head is not None
-    assert head[1].body == "a second sighting of the same date"
+    assert head[1].body == (
+        "original arrangement\n\na second sighting of the same date"
+    ), "a revision APPENDS to the head; it does not replace it"
     [row] = store.create_candidates.values()
     assert row.status == "created"
+
+
+async def test_an_unrelated_candidate_on_the_same_date_cannot_destroy_the_head():
+    """Issue #228, measured in production 2026-09-13. The update arm had
+    fired twice since the tier shipped and both times it replaced a note's
+    body with a thread that shared nothing with it but the calendar day. Two
+    days later a proactive fire turn read one of those notes, found nothing
+    about its own subject in the body, fell back to the index description
+    and told the room something false.
+
+    The date-only key is a separate decision (still open on #228): what this
+    pins is that a collision may CONFLATE two arrangements but may never
+    lose one. The head's own text has to survive the revision verbatim.
+    """
+    adaptor, store = _adaptor()
+    await store.create(
+        workspace=WS, title="Sign-up deadline", description="d",
+        uncertainty="u", closing_condition="c", established_in="conv-1",
+        body="one of them answered; nobody has committed to going",
+        established_by="tag:miles", now_ms=NOW, anchor_date=20260911,
+    )
+
+    written = await adaptor.commit(
+        key=SCOPE,
+        proposals=(_proposal(_CreateCandidate(
+            title="Which night the game session is",
+            description="d2",
+            body="tonight was floated and turned down; no time settled",
+            closing_condition="c", anchor_date=20260911,
+            anchor_entity_ids=(), message_ids=(2,),
+        )),),
+        now_ms=NOW + 1,
+    )
+
+    assert written == 1
+    [note] = await store.standing(workspace=WS)
+    head = await store.read(workspace=WS, note_id=note.id)
+    assert head is not None
+    assert "nobody has committed to going" in head[1].body, (
+        "the arrangement that was already written down was destroyed"
+    )
+    assert "no time settled" in head[1].body, "the new thread never landed"
+
+
+async def test_a_revision_past_the_body_ceiling_is_refused_not_truncated():
+    """`full`, not a silent cut. `nora.domain.notes` moved every length
+    decision into its constructors so an over-long value is unrepresentable
+    rather than quietly shortened; the same rule has to hold for a body this
+    module composes. A refusal keeps what is written and reads, in the
+    metric, as the curator not retiring — which is the thing to fix.
+    """
+    adaptor, store = _adaptor()
+    await store.create(
+        workspace=WS, title="Wedding venue", description="d",
+        uncertainty="u", closing_condition="c", established_in="conv-1",
+        body="x" * (BODY_MAX_CHARS - 4), established_by="tag:miles",
+        now_ms=NOW, anchor_date=20260919,
+    )
+
+    written = await adaptor.commit(
+        key=SCOPE,
+        proposals=(_proposal(_CreateCandidate(
+            title="Wedding venue (again)", description="d2",
+            body="a new sighting that does not fit",
+            closing_condition="c", anchor_date=20260919,
+            anchor_entity_ids=(), message_ids=(2,),
+        )),),
+        now_ms=NOW + 1,
+    )
+
+    assert written == 0
+    [note] = await store.standing(workspace=WS)
+    head = await store.read(workspace=WS, note_id=note.id)
+    assert head is not None
+    assert head[1].body == "x" * (BODY_MAX_CHARS - 4), "the head moved"
+    [row] = store.create_candidates.values()
+    assert row.status == "refused", "a full note is terminal, never retried"
+
+
+def test_appended_keeps_both_bodies_and_separates_them_with_a_blank_line():
+    assert _appended("first\n", "  second  ") == "first\n\nsecond"
 
 
 async def test_commit_raises_for_an_unresolvable_scope():
