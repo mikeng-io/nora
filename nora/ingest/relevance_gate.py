@@ -53,7 +53,7 @@ import asyncio
 import json
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
 from xml.sax.saxutils import escape
@@ -93,6 +93,13 @@ GATE_ERROR_KINDS: tuple[str, ...] = (
     "no_context",      # the transcript read failed — nothing was measured
     "no_instruction",  # participation.md is missing or empty — no criteria exist
 )
+
+#: The OTel attribute value for an ABSENT score. OTel attributes cannot carry
+#: `None`, and `0.0` would read as «this room scored 0.00», so absence is a
+#: sentinel. Shared by the gate span and the participation root span that
+#: threads the score through (`fire.py`), so a `score > -1` filter means
+#: «a score was stated» in both places.
+SCORE_ABSENT = -1.0
 
 
 @dataclass(frozen=True)
@@ -226,15 +233,21 @@ class GateVerdict:
     source: VerdictSource
     #: Set only when `source == "fail_closed"`; one of `GATE_ERROR_KINDS`.
     error_kind: str | None = None
+    #: The provider's own finish reason when the model answered, `""` when
+    #: the verdict was fail-closed (nothing was answered, or the truncation
+    #: was decided before the answer was trusted). Carried onto the span so
+    #: the trace writes a REAL provider fact and never an invented one.
+    finish_reason: str = ""
 
     @property
     def admits(self) -> bool:
         return self.verdict == "go"
 
 
-def _fail_closed(kind: str) -> GateVerdict:
+def _fail_closed(kind: str, *, finish_reason: str = "") -> GateVerdict:
     return GateVerdict(
         verdict="no_go", score=None, source="fail_closed", error_kind=kind,
+        finish_reason=finish_reason,
     )
 
 
@@ -498,6 +511,36 @@ class RelevanceGate:
         self._transcript_limit = transcript_limit
         self._standing_timeout_seconds = standing_timeout_seconds
 
+    def _emit(self, verdict: GateVerdict, platform: str) -> None:
+        """Write ONE verdict to the wire on every path — model and
+        fail-closed alike.
+
+        The verdict JSON is the gate's OWN output, safe for the wire (no room
+        content), and WITHOUT it the span renders in Langfuse as a bare
+        rectangle — usage and latency, no readable payload (measured
+        2026-09-14: every 7-day `relevance_gate` trace was a single
+        observation with `output = null`). The early returns (`no_context`,
+        `no_instruction`) used to skip this — the exact traces an operator
+        most needs to read — so both now emit the same tiny document, with
+        `finish_reason=""` saying «the model never answered».
+        """
+        annotate_generation(
+            completion=_verdict_json(verdict),
+            finish_reason=verdict.finish_reason,
+        )
+        annotate(**{
+            "nora.relevance_gate.verdict": verdict.verdict,
+            # OTel attributes cannot carry `None`: an absent score is
+            # `SCORE_ABSENT`, so `score > -1` is the «a score was stated»
+            # filter in both this span and the participation root.
+            "nora.relevance_gate.score": (
+                verdict.score if verdict.score is not None else SCORE_ABSENT
+            ),
+            "nora.relevance_gate.source": verdict.source,
+            "nora.relevance_gate.error_kind": verdict.error_kind or "",
+        })
+        self._count(verdict, platform)
+
     async def decide(self, *, platform: str, conversation_id: str) -> GateVerdict:
         """Judge one closed window. NEVER raises — every failure is a
         counted `no_go`, because a gate that propagates an exception to the
@@ -527,24 +570,12 @@ class RelevanceGate:
         ):
             transcript = await self._read_transcript(platform, conversation_id)
             if transcript is None:
-                verdict = _fail_closed("no_context")
-                annotate(**{
-                    "nora.relevance_gate.verdict": verdict.verdict,
-                    "nora.relevance_gate.source": verdict.source,
-                    "nora.relevance_gate.error_kind": verdict.error_kind or "",
-                })
-                self._count(verdict, platform)
-                return verdict
+                self._emit(_fail_closed("no_context"), platform)
+                return _fail_closed("no_context")
             instruction = self._instruction()
             if instruction is None:
-                verdict = _fail_closed("no_instruction")
-                annotate(**{
-                    "nora.relevance_gate.verdict": verdict.verdict,
-                    "nora.relevance_gate.source": verdict.source,
-                    "nora.relevance_gate.error_kind": verdict.error_kind or "",
-                })
-                self._count(verdict, platform)
-                return verdict
+                self._emit(_fail_closed("no_instruction"), platform)
+                return _fail_closed("no_instruction")
             standing = await self._read_standing(platform, conversation_id)
             system = build_system_prompt(instruction.text, self._capabilities)
             prompt = build_user_message(render_context(transcript, standing))
@@ -567,28 +598,7 @@ class RelevanceGate:
                 "nora.relevance_gate.standing": standing is not None,
             })
             verdict = await self._ask(system, prompt)
-            # The gate's VERDICT is its own output — a tiny JSON document, no
-            # private room content — so it goes on the wire as the generation's
-            # `output`. Without it the span renders in Langfuse as a bare
-            # rectangle: usage and latency, no readable payload (measured
-            # 2026-09-14: every 7-day `relevance_gate` trace was a single
-            # observation with `output = null`). The prompt stays OFF the wire
-            # (room words, DEC-5 rule) — the digest below re-derives it.
-            annotate_generation(
-                completion=_verdict_json(verdict),
-                finish_reason=(
-                    "tool_use" if verdict.source == "model" else ""
-                ),
-            )
-            annotate(**{
-                "nora.relevance_gate.verdict": verdict.verdict,
-                "nora.relevance_gate.score": (
-                    verdict.score if verdict.score is not None else -1.0
-                ),
-                "nora.relevance_gate.source": verdict.source,
-                "nora.relevance_gate.error_kind": verdict.error_kind or "",
-            })
-            self._count(verdict, platform)
+            self._emit(verdict, platform)
             return verdict
 
     async def _ask(self, system: str, prompt: str) -> GateVerdict:
@@ -599,10 +609,22 @@ class RelevanceGate:
             return _fail_closed("call_failed")
         if completion.finish_reason == "length":
             # NOT parsed. See the module docstring: a truncated JSON body can
-            # parse into something shorter and wrong.
+            # parse into something shorter and wrong. The REAL stop reason
+            # still rides on the verdict, so the trace reads «truncated by
+            # the provider», not «the gate silently decided» — and the span's
+            # JSON output carries `"finish_reason": "length"` rather than a
+            # fabricated one.
             log.warning("relevance gate answer was truncated; failing closed")
-            return _fail_closed("truncated")
-        return parse_verdict(completion.content)
+            return _fail_closed("truncated", finish_reason="length")
+        verdict = parse_verdict(completion.content)
+        if verdict.source == "model":
+            # The PROVIDER's own stop reason, only when the model actually
+            # answered. A fail-closed verdict (unparseable, bad_verdict)
+            # must NOT carry a reason that would read as «the model answered
+            # and stopped» — the same lie the review caught in
+            # `finish_reason="tool_use"`, one call site over.
+            return replace(verdict, finish_reason=completion.finish_reason)
+        return verdict
 
     def _instruction(self) -> _Instruction | None:
         """`participation.md`, or `None` — and `None` FAILS CLOSED.
@@ -766,14 +788,17 @@ def _verdict_json(verdict: GateVerdict) -> str:
     """The gate's verdict as the compact JSON the trace carries as `output`.
 
     Safe for the wire by construction: it contains only the verdict, the
-    score, and the source — nothing from the room. `None` score renders as
-    absent (the same omission rule `annotate_generation` uses for empty
-    strings: an absent field reads as "not stated").
+    score, the source, and the provider's finish reason — nothing from the
+    room. `None` score renders as absent (the same omission rule
+    `annotate_generation` uses for empty strings: an absent field reads as
+    "not stated").
     """
     out: dict[str, object] = {"verdict": verdict.verdict}
     if verdict.score is not None:
         out["relevance_score"] = verdict.score
     out["source"] = verdict.source
+    if verdict.finish_reason:
+        out["finish_reason"] = verdict.finish_reason
     return json.dumps(out, sort_keys=True)
 
 

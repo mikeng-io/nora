@@ -355,11 +355,13 @@ async def test_the_run_opens_an_app_root_span_and_annotates_its_outcome(
     assert attrs["nora.outcome"] == "ok"
 
 
-async def test_a_failed_run_still_annotates_unavailable_on_the_root(
+async def test_a_blank_input_run_still_annotates_its_status_on_the_root(
     monkeypatch, exported_spans,
 ) -> None:
-    """The span records failures too — the reason the wrapper exists. A
-    nothing-found run (blank inputs) is a REAL outcome, not a silent gap."""
+    """The span records the outcome even when nothing is found — the reason
+    the wrapper exists. A blank-input run is a REAL outcome
+    (nothing_found), not a silent gap. (Named for what the assert checks;
+    an early draft asserted `unavailable`, which this path never is.)"""
     sink = _Sink()
     adaptor = _Adaptor(sink=sink)
 

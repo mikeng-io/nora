@@ -604,7 +604,8 @@ async def test_the_verdict_is_written_on_the_generation_span(
                    if s.name == "relevance_gate"]
     attrs = dict(span_row.attributes or {})
     assert attrs["langfuse.observation.output"] == (
-        '{"relevance_score": 0.4, "source": "model", "verdict": "go"}'
+        '{"finish_reason": "stop", "relevance_score": 0.4, '
+        '"source": "model", "verdict": "go"}'
     )
     # A fail-closed verdict is still the gate's own statement, so it is on
     # the wire too — never confused with «the gate wrote nothing».
@@ -616,6 +617,37 @@ async def test_the_verdict_is_written_on_the_generation_span(
     fail_attrs = dict(fail_row.attributes or {})
     assert fail_attrs["langfuse.observation.output"]  # fail_closed also carries
     assert fail_attrs["langfuse.observation.output"].startswith("{")
+    # …but a fail-closed verdict NEVER fakes a provider stop reason: the
+    # JSON carries no `finish_reason` at all (the model never answered).
+    assert '"finish_reason"' not in fail_attrs["langfuse.observation.output"]
+
+
+async def test_pre_model_fail_closed_paths_write_their_verdict_too(
+    exported_spans,
+) -> None:
+    """`no_context` and `no_instruction` — the failures an operator most
+    needs to read — used to render the same bare rectangle this PR fixes
+    (measured 2026-09-14, review finding 2026-09-14). Both now emit their
+    fail-closed verdict, still with NO finish_reason (no model answered)."""
+    gate = _gate(_Client("unused"), records=_Records(fail=True), prompts=_Doctrine())
+    await gate.decide(platform="discord", conversation_id="g/1")
+    (row,) = [s for s in exported_spans.get_finished_spans()
+              if s.name == "relevance_gate"]
+    attrs = dict(row.attributes or {})
+    assert attrs["langfuse.observation.output"] == (
+        '{"source": "fail_closed", "verdict": "no_go"}'
+    )
+    assert attrs["nora.relevance_gate.error_kind"] == "no_context"
+    assert '"finish_reason"' not in attrs["langfuse.observation.output"]
+
+    # Same for a missing instruction.
+    gate_no_inst = _gate(_Client("unused"), prompts=_Doctrine(body="", sections=0))
+    await gate_no_inst.decide(platform="discord", conversation_id="g/2")
+    (row2,) = [s for s in exported_spans.get_finished_spans()
+               if s.name == "relevance_gate" and s is not row]
+    assert dict(row2.attributes or {})["nora.relevance_gate.error_kind"] == (
+        "no_instruction"
+    )
 
 
 def test_a_row_cannot_forge_another_row():
@@ -634,8 +666,6 @@ def test_a_row_cannot_forge_another_row():
     body = body.split("\n</group_transcript>", 1)[0]
     assert body.count("\n") == 0, "one row rendered as two"
     assert "[assistant]:" in body, "the text is kept — it is quoted, not dropped"
-
-
 
 
 def test_every_line_separator_collapses_not_just_newline():

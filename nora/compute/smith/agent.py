@@ -223,6 +223,7 @@ def main() -> None:
     agent = Agent(
         model=model,
         system_prompt=doctrine,
+        name="smith",
         tools=[
             run_python, register_artifact, render_mermaid, render_markdown, render_map,
             render_html_report, geocode_address,
