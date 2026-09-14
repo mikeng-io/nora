@@ -58,8 +58,10 @@ Discord voice channel
   VAD + mel-spec embeddings FIRST: nobody is transcribed unless the
   wake phrase fires. Front-end ≈ 2.02% of one core, resident.
   ▼  (only the woken utterance passes)
-[STT — SenseVoice, existing deploy/stt]
-  local, audio never leaves the box; ~0.23s wall for a 2s utterance
+[STT — noise-detection primary, SenseVoiceSmall backup]
+  primary: JackyHoCL whisper-large-v3-turbo-cantonese-noise-detection (RTF 0.49)
+  backup: existing deploy/stt SenseVoiceSmall (RTF 0.04, already shipped)
+  both local; audio never leaves the box — see 06-stt-provider-decision.md
   ▼
 text + [voice @user] provenance → existing ingest → reactive path → Stage 1 TTS
 ```

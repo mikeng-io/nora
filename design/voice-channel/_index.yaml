@@ -22,6 +22,7 @@ members:
   - 03-wake-word-training.md
   - 04-deferred.md
   - 05-sidecar-receive.md
+  - 06-stt-provider-decision.md
 edges:
   - {src: 01-tts-playback-and-ducking, dst: 00-overview, rel: realizes, provenance: asserted}
   - {src: 02-module-layout-ddd, dst: 00-overview, rel: realizes, provenance: asserted}
@@ -30,6 +31,7 @@ edges:
   - {src: 04-deferred, dst: 00-overview, rel: motivated_by, provenance: asserted}
   - {src: 05-sidecar-receive, dst: 00-overview, rel: realizes, provenance: asserted}
   - {src: 05-sidecar-receive, dst: 03-wake-word-training, rel: enables, provenance: asserted}
+  - {src: 06-stt-provider-decision, dst: 05-sidecar-receive, rel: decides, provenance: asserted}
 scope:
   v1:
     - "Nora speaks a turn's answer into the voice channel as Cantonese TTS (MiniMax CN, speech-2.8-turbo, Cantonese_CuteGirl)"
