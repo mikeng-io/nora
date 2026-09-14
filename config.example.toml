@@ -915,6 +915,28 @@ api_key_env = "EXA_API_KEY"      # NAMES the env var; the key never lives here (
 # `truncated`, because reporting only its OWN clamp hands the model a cut page
 # as a complete one (live probe, 2026-09-06).
 
+[online]
+# online_now (design/online-status/) — READ-ONLY live digital activity for the
+# room: who is online, who is playing what (Steam), who is in a voice channel
+# (Discord). Ships INERT (`enabled = false`) like [search]: a config.toml
+# without this section keeps loading, and while off the `online`/`playing` arms
+# answer `unavailable`, never a confident "everyone is offline".
+#
+# This section gates the STEAM half only. The `voice` arm reads the live
+# Discord client Nora already holds (member.voice — `voice_states` is in the
+# default intents; `presences` stays OFF on purpose), so it wires whenever the
+# Discord platform is enabled and needs nothing here.
+enabled = false
+# NAMES the env var holding the Steam Web API key; the key never lives here
+# (DEC-8). Enabled with the variable unset logs a warning and leaves the Steam
+# half unwired — a wiring gap is `unavailable`, never a 403 per call.
+api_key_env = "STEAM_WEB_API_KEY"
+# Bounds the ONE batched GetPlayerSummaries call a question costs (the room's
+# whole id set goes out in a single request — never one per person). On the
+# reply path, so a dead api.steampowered.com costs seconds and an
+# `unavailable`, never a hung turn.
+# timeout_seconds = 8.0
+
 [social]
 # social_fetch (DEC-151) — READ-ONLY X/Instagram reads via the host-side
 # OpenCLI bridge (`python -m nora.infra.social`, run as the systemd user

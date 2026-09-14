@@ -80,11 +80,11 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import Callable, Coroutine, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol, TypeVar, get_args
 
-from ..domain.models import TranscriptRow
+from ..domain.models import PersonRef, TranscriptRow
 from ..domain.ports import (
     DEFAULT_DREAM_STORE_TIMEOUT_SECONDS,
     DreamAdaptor,
@@ -773,6 +773,7 @@ class RegistryToolSource:
         home_rooms: Mapping[str, HomeRoom] | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
         self_ids: frozenset[str] = frozenset(),
+        online_scope_for: Callable[[str], Awaitable[tuple[PersonRef, ...]]] | None = None,
     ) -> None:
         self._registry = registry
         self._store = store
@@ -797,6 +798,14 @@ class RegistryToolSource:
         # workspaces). The COUNTER carries the ongoing reading; the log carries
         # the news.
         self._home_room_reported: set[tuple[str, str]] = set()
+        # `online_now`'s input-domain resolver (design/online-status/03):
+        # workspace -> the home roster unioned with the note subjects. Bound
+        # per BUILD below, and ONLY when a home-room grant resolved — the
+        # decide turn is the one occasion that may answer about people
+        # outside the room it stands in, and a background loop never gets
+        # it. `None` (every composition that did not wire one) leaves
+        # `online_now` on its tag-path domain: the room's own roster.
+        self._online_scope_for = online_scope_for
 
     def read_only(self) -> frozenset[str]:
         return self._registry.read_only_tools()
@@ -836,6 +845,20 @@ class RegistryToolSource:
         wanted = frozenset(names) & (self.read_only() | acts)
         if not wanted:
             return []
+        # `online_now`'s input-domain resolver (design/online-status/03),
+        # bound to exactly THIS decide turn: only when the home-room grant
+        # resolved — a background loop (home is None) keeps the tag-path
+        # domain, so the union scope can never leak into one. The resolver
+        # raising is the tool's `unavailable`, never a narrowed guess. A
+        # LOCAL, not the attribute: mypy does not narrow `self._x is not
+        # None` into a closure, and the guard above it is what makes the
+        # call safe.
+        online_scope_for = self._online_scope_for
+        online_scope = (
+            (lambda: online_scope_for(workspace or ""))
+            if home is not None and online_scope_for is not None
+            else None
+        )
         if home is not None:
             room = Room(
                 platform=home.platform, conversation_id=home.conversation_id,
@@ -887,6 +910,8 @@ class RegistryToolSource:
             # whose tools resolve through the room exactly as the tag path's
             # do.
             supplied_workspace=workspace,
+            # Bound above, where the home-room grant was resolved.
+            online_scope=online_scope,
         )
         return [
             tool for tool in built

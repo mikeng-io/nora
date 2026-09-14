@@ -132,6 +132,13 @@ def test_the_declared_shape_is_the_designs():
         "about", "ask_memory", "search_memory_workspace",
         "note_read", "note_search",
         "web_search", "web_fetch", "weather", "now",
+        # `online_now` since 2026-09-15 (design/online-status/04, issue #248):
+        # the live-state cross-check — a note saying "Blake sick, wants the
+        # night off" was spoken while the group was mid-game, because the
+        # decide turn held no verb that could observe the state contradicting
+        # the note. Its input domain is the home roster unioned with the note
+        # subjects, supplied per build — NOT `WORKSPACE_SAFE_TOOLS`.
+        "online_now",
     })
     assert adaptor.tools == PROACTIVE_TOOLS
     assert "remind" in adaptor.tools

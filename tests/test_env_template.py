@@ -23,7 +23,7 @@ def test_config_example_exists_and_parses():
         "agent",
         "platforms", "llm", "memory", "store", "media", "route", "presence",
         "analytics", "shortener", "compute",
-        "search", "weather", "preview", "heartbeat", "reminders",
+        "search", "online", "weather", "preview", "heartbeat", "reminders",
         "speech", "social",
         "notes", "standing", "music", "image_gen",
         "version", "engagement", "participation", "relevance_gate", "doctrine", "dreamer",

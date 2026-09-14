@@ -788,7 +788,11 @@ def test_the_header_names_no_tool_at_all():
     from nora.agent.tools import NATIVE_TOOLS
     # The same set `nora.doctrine.loader`'s `tool_names` half exists for: tools
     # whose names are ordinary English and so invisible to a structural check.
-    ordinary_english = {"now", "about", "remember"}
+    # `online`/`playing`/`voice` are `online_now`'s ARM names (design/
+    # online-status/04's checklist row) — not tools today, but ordinary
+    # sentence words this header may legitimately contain, so they join the
+    # catalogue-shape half now rather than contorting prose later.
+    ordinary_english = {"now", "about", "remember", "online", "playing", "voice"}
     header = _context_header(40)
     for tool in NATIVE_TOOLS:
         if tool in ordinary_english:

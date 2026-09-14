@@ -150,6 +150,15 @@ PROACTIVE_TOOLS: frozenset[str] = frozenset({
     "about", "ask_memory", "search_memory_workspace",
     "note_read", "note_search",
     "web_search", "web_fetch", "weather", "now",
+    # `online_now` GRANTED 2026-09-15 (design/online-status/04, issue #248):
+    # the live-state cross-check the decide turn had no verb for — a note
+    # saying "Blake sick, wants the night off" was spoken into the home room
+    # while the group was mid-game, because nothing in the turn could observe
+    # the state contradicting the note. READ-ONLY, so the ceiling admits it;
+    # its input domain is the home roster unioned with the note subjects,
+    # supplied per build by `RegistryToolSource` — NOT in
+    # `WORKSPACE_SAFE_TOOLS` (room-roster-scoped, same rule as `where_been`).
+    "online_now",
 })
 
 #: The two `dream_schedule_state` names this adaptor keeps beside the

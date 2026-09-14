@@ -277,3 +277,26 @@ def test_the_image_generator_adapter_satisfies_the_port():
 
     oauth = XaiOAuth(refresh_token="k", state_file=Path("no-state"))  # noqa: S106
     assert isinstance(XaiImageGenerator(oauth=oauth), ImageGenerator)
+
+
+def test_the_online_now_ports_conform_in_both_implementations():
+    """`SteamPresenceProvider` and `VoicePresenceSource` (design/online-status/),
+    both implementations each — the name-level floor every other port gets.
+    `DiscordVoicePresence(adapter=DiscordAdapter("tok"))` constructs without a
+    live client the same way `test_discord_adapter_satisfies_platform_adapter`
+    constructs the adapter itself. Behaviour is
+    `tests/contract/test_steam_presence_contract.py` and
+    `test_voice_presence_contract.py`, one suite over both implementations
+    each; the shape is mypy's where the override reaches.
+    """
+    from nora.domain.ports import SteamPresenceProvider, VoicePresenceSource
+    from nora.infra.steam import SteamPresenceClient
+    from nora.platform.discord.voice_presence import DiscordVoicePresence
+    from nora.testing import FakeSteamPresenceProvider, FakeVoicePresenceSource
+
+    assert isinstance(SteamPresenceClient(api_key="k"), SteamPresenceProvider)
+    assert isinstance(FakeSteamPresenceProvider(), SteamPresenceProvider)
+    assert isinstance(
+        DiscordVoicePresence(adapter=DiscordAdapter("tok")), VoicePresenceSource,
+    )
+    assert isinstance(FakeVoicePresenceSource(), VoicePresenceSource)
