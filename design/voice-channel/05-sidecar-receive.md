@@ -26,6 +26,18 @@ host absorbs trivially (measured 2026-09-14: Node v22.22.3 present, nora
 containers all <0.1% CPU, 13GiB RAM available; a receive-only sidecar costs
 tens of MB RAM and ~0% CPU idle, 2–5% of one core while someone speaks).
 
+**Repository home (operator expectation, 2026-09-14): the sidecar ships IN
+the nora repo**, mirroring how STT landed — prototype/spike lives in
+`~/workspace/voice-lab/` first (the voice-labs pattern Miles established:
+prototype outside the repo, design + implementation inside), then the
+production sidecar moves into the repo's `deploy/` tree as a sibling of
+`deploy/stt/` (own `Dockerfile` + healthcheck + smoke test), with its
+package.json pinned in the repo. It is a deployment artifact of Nora, not an
+external tool — exactly as `deploy/stt/` is. Prototype location is
+`~/workspace/voice-lab/sidecar/` (scaffolding + spike harness, 2026-09-14);
+the repo placement happens as part of stage 2 implementation after the DAVE
+spike gate passes.
+
 ## The sidecar is a dumb pipe — wake lives in Python
 
 Corrected architecture (Miles's catch, 2026-09-14 — a naive diagram drew the
