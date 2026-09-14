@@ -4,8 +4,8 @@ title: "Data sources — Steam Web API + Discord gateway state"
 description: "What is already wired (identity steam_id, voice_states intent), what needs a new credential (Steam key) and what is explicitly deferred (rich presence intent)."
 timestamp: '2026-09-15'
 edges:
-  - {src: 00-overview, rel: realizes}
-  - {src: 01-tool-shape-and-naming, rel: realizes}
+  - {dst: 00-overview, rel: realizes, provenance: asserted}
+  - {dst: 01-tool-shape-and-naming, rel: depends_on, provenance: asserted}
 ---
 
 # Data sources

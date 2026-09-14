@@ -4,8 +4,8 @@ title: "Tool shape and naming — one tool, closed `what` vocabulary"
 description: "One `online_now`-family tool with `what ∈ {online, playing, voice}`; naming measured, never freestyled, per ADR 0004/DEC-58."
 timestamp: '2026-09-15'
 edges:
-  - {src: 00-overview, rel: realizes}
-  - {src: 02-data-sources, rel: depends_on}
+  - {dst: 00-overview, rel: realizes, provenance: asserted}
+  - {dst: 02-data-sources, rel: depends_on, provenance: asserted}
 ---
 
 # Tool shape and naming
@@ -19,7 +19,7 @@ considered:
 | Shape | Description | Verdict |
 |---|---|---|
 | Two tools: `steam_status` + `discord_status` | Each mechanism its own tool | **Rejected** — mechanism names (GLOSSARY rule: a tool's name names the capability's full scope, not the mechanism); the `where_been` precedent shows the accepted shape is one capability word |
-| One tool, closed `what` vocabulary | `online_now(what, names?)` with `what ∈ {online, playing, voice}` | **Chosen** — mirrors `where_been(what ∈ {day, places, rhythm, routes})` (DEC-155) |
+| One tool, closed `what` vocabulary | `online_now(what, names?)` with `what ∈ {online, playing, voice}` | **Chosen** — mirrors `where_been(what ∈ {day, places, rhythm, routes})` (DEC-155 presence-analytics P1; see the `where_been` docstring, `nora/agent/tools.py`) |
 
 Rationale for one tool, following the `where_been` precedent (`tools.py:541`,
 closed vocabulary verified in `tests/unit/test_tool_registry.py` and
@@ -52,7 +52,7 @@ docstrings byte-identical, against the real tool schema set as it exists at
 measurement time, on the real assembled doctrine, with `tool_choice="required"`
 on the live model, measuring first-tool selection per question family:
 
-- 「Blake 而家係咪喺度」→ online arm
+- 「Blake 而家 online 嗎」→ online arm
 - 「而家有咩人打緊機」→ playing arm
 - 「有冇人喺 voice channel 傾緊偈」→ voice arm
 - Negative controls: 「阿豹係邊個」must stay on `lookup_person`; 「Blake
@@ -99,5 +99,6 @@ quoted examples. Draft opening:
 > now."
 
 The three arms are multi-state (`ok` / `nothing_found` / `unavailable` — the
-R-27 core vocabulary), so the docstring is L3 (full contract), matching
+R-27 core vocabulary), so the docstring is a Level 3 description (what +
+when-to-call + one contract line — ADR 0007's longest ladder rung), matching
 `where_been`.

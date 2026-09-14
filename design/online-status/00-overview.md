@@ -4,11 +4,7 @@ title: "Online Status — digital activity state as a tool surface"
 description: "One read-only tool, closed `what` vocabulary, for who is online / playing / in voice — the digital counterpart of where_is/where_been."
 tags: [tool, presence, digital-activity, steam, discord, proactive]
 timestamp: '2026-09-15'
-edges:
-  - {src: 01-tool-shape-and-naming, rel: depends_on}
-  - {src: 02-data-sources, rel: realizes}
-  - {src: 03-guards-and-disclosure, rel: realizes}
-  - {src: 04-consumers, rel: realizes}
+edges: []
 ---
 
 # Online Status — design overview

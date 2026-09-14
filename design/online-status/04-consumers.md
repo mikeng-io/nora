@@ -4,8 +4,8 @@ title: "Consumers — the proactive decide turn and the #248 tie-in"
 description: "Who calls the tool: proactive decide (the #248 failure family), tag turns later; participation stays no-tool by design."
 timestamp: '2026-09-15'
 edges:
-  - {src: 00-overview, rel: realizes}
-  - {src: 01-tool-shape-and-naming, rel: depends_on}
+  - {dst: 00-overview, rel: realizes, provenance: asserted}
+  - {dst: 01-tool-shape-and-naming, rel: depends_on, provenance: asserted}
 ---
 
 # Consumers
@@ -23,8 +23,12 @@ contradicting the note.
 With `online_now` wired into the proactive turn, the decide pass can:
 
 - read the note's `established_in` and the room roster,
-- call `online_now(what="playing", names=roster)` (or `voice`) and see that
-  the people the note talks about are actually in-game,
+- call `online_now(what="playing", names=roster ∪ established_in_roster)`
+  (the decide turn passes that resolved union — the tool's input domain
+  for the proactive occasion, 03-guards — so a note born in Zone 42 about
+  Blake is checked against Blake's live state even though the decide turn
+  stands in the Signal home room), and see that the people the note talks
+  about are actually in-game,
 - ground its reply in that state — or decline to speak a stale leave
   acceptance at all.
 
@@ -82,6 +86,12 @@ lives in the operator's agent skills, not in this repo):
 - **Exposed-tool set** — both registry exposure tests.
 - **ordinary_english** — add `online`/`playing`/`voice` sentence words to the
   narrow catalogue-shape check so ordinary phrases stay honest.
+- **Metrics** — `online_now` records via the existing
+  `nora_tool_calls_total{tool="online_now", status}` three-state series
+  (same `_record` machinery every native tool uses, `tools.py:1322`); no
+  new counter, no R-22 `nora_room_lookups_total` (that family stays
+  reserved to the R-31 tools). A names-filtered outsider call is therefore
+  visible as `nothing_found` in the tool's own status series.
 - **Port conformance Fake** — if a new port (Steam client) is added, its
   Fake joins `test_port_conformance`.
 - **DEC-150 gate** — doctrine must NOT name the tool; teaching stays at

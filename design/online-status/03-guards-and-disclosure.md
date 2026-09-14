@@ -4,8 +4,8 @@ title: "Scope and disclosure — the room's own people, no guard machinery"
 description: "The tool answers ONLY about the room's members; no R-31 DisclosureGuard machinery — digital activity is not a location data class. R-27 core vocabulary only."
 timestamp: '2026-09-15'
 edges:
-  - {src: 00-overview, dst: 00-overview, rel: realizes, provenance: asserted}
-  - {src: 02-data-sources, dst: 00-overview, rel: depends_on, provenance: asserted}
+  - {dst: 00-overview, rel: realizes, provenance: asserted}
+  - {dst: 02-data-sources, rel: depends_on, provenance: asserted}
 ---
 
 # Scope and disclosure
@@ -23,6 +23,22 @@ whole disclosure story:
 - The data itself (who is in a voice channel, who is online/playing on
   Steam) is the friend-circle's own state — visible to participants and
   low-sensitivity, unlike physical location.
+
+**Proactive-occasion input domain:** the decide turn is home-room-keyed
+(DEC-162), but a note may carry subjects from its `established_in` room.
+For the proactive occasion the per-call input domain is the union of the
+home room's roster and the note's `established_in` roster — still
+friend-circle members, never strangers. The tool is passed that resolved
+union by the decide turn, the same way a tag turn is passed its own
+`RoomView`; the tool itself never queries a roster (04-consumers).
+
+**DM residual (accepted for now):** DM support is deliberately not shipped
+(parser refuses non-group; `references/dm-support.md` records v1 scope
+drop). When DMs land, the roster of a 1:1 is `{asker, Nora}`, which would
+let a DM ask about any mapped member — outside what the friend-circle
+argument covers. Recorded here so the DM project applies the one-line
+docstring rule ("in a DM, answer only about the asker") rather than
+re-discovering it.
 
 This is deliberately NOT the `where_is`/`where_been` R-31 `DisclosureGuard`
 machinery. That machinery exists because coordinates are person-linked
