@@ -18,21 +18,20 @@ considered:
 
 | Shape | Description | Verdict |
 |---|---|---|
-| Two tools: `steam_status` + `discord_status` | Each mechanism its own tool | **Rejected** — mechanism names (GLOSSARY rule: a tool's name names the capability's full scope, not the mechanism; same class as `presence_analytics` being rejected for `where_been`) |
+| Two tools: `steam_status` + `discord_status` | Each mechanism its own tool | **Rejected** — mechanism names (GLOSSARY rule: a tool's name names the capability's full scope, not the mechanism); the `where_been` precedent shows the accepted shape is one capability word |
 | One tool, closed `what` vocabulary | `online_now(what, names?)` with `what ∈ {online, playing, voice}` | **Chosen** — mirrors `where_been(what ∈ {day, places, rhythm, routes})` (DEC-155) |
 
-Rationale for one tool, following `where_been`:
-
-- The R-31 disclosure seam is ONE seam; four tools would quadruple the
-  surface where `refused`/`unavailable` can drift (`presence-analytics-p1`
-  reference, "ONE tool, closed vocabulary").
+Rationale for one tool, following the `where_been` precedent (`tools.py:541`,
+closed vocabulary verified in `tests/unit/test_tool_registry.py` and
+`tests/test_where_been.py` — "DEC-155, presence-analytics P1"):
 - The three facets share a single live-state property: they answer "right
   now". A tool split by mechanism invites the model to think the answer is
   about a vendor, not about a person.
 - Budgets, `time_shiftable=False` (this is live state — same declaration
-  `now` and `transit` carry), `cacheable=False` (live roster/state can
-  change between calls — same rule as `where_been`'s roster-gate reason),
-  and `read_only=True` are all set once, on one declaration.
+  `now` and `transit` carry), `cacheable=False` (live state is the point —
+  a cached "playing" answer is the exact stale-note failure this tool
+  exists to kill; same rule and reason as `where_been`'s live-roster
+  declaration), and `read_only=True` are all set once, on one declaration.
 
 ## Naming — candidates and the measurement gate
 
@@ -77,11 +76,16 @@ online_now(what ∈ {online, playing, voice}, names?)
 - `voice` — who is in which Discord voice channel (existing `voice_states`
   intent; zero privileged changes).
 
+The tag-turn ask 「Blake 而家係咪 online 喺 Steam」 is answered by
+`online_now(what="online", names=["blake_lindqvist"])` — the tool is reachable
+from any tag turn once registered. Scope is the invoking room's roster; a
+`names` argument referencing a non-member is filtered out (03-guards).
+
 `names?` is an optional filter — DEC-24-shaped arguments only: Nora already
 holds which room and which people; a `names` argument exists to bound a
 single query to the people actually on topic, not to invent scope. When
-omitted, the answer covers the room's roster (same audience the R-31 guard
-computes on).
+omitted, the answer covers the room's roster (the invoking conversation's
+members — the tool's scope boundary, 03-guards).
 
 ## ADR 0007 obligations (tool-surface policy)
 
@@ -90,9 +94,10 @@ SHOULD-labelled style; RFC 2119 register; English prose with CJK only in
 quoted examples. Draft opening:
 
 > "Live digital activity for the people in this room — who is online, who is
-> in a voice channel, who is playing what (Steam). Call this when a question
-> or a decision turns on whether someone is actually present or playing
-> right now."
+> in a voice channel, who is playing what. Call this when a question or a
+> decision turns on whether someone is actually present or playing right
+> now."
 
-The three arms are multi-state (ok / not_found / unavailable — R-27 shape),
-so the docstring is L3 (full contract), matching `where_been`.
+The three arms are multi-state (`ok` / `nothing_found` / `unavailable` — the
+R-27 core vocabulary), so the docstring is L3 (full contract), matching
+`where_been`.

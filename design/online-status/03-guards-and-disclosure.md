@@ -1,84 +1,57 @@
 ---
 type: design
-title: "Guards and disclosure — the Steam arm is person-linked privacy surface"
-description: "Parity decision: does the Steam arm reuse the R-31 DisclosureGuard, or does a friend-circle gate apply? Fail-closed, never omit."
+title: "Scope and disclosure — the room's own people, no guard machinery"
+description: "The tool answers ONLY about the room's members; no R-31 DisclosureGuard machinery — digital activity is not a location data class. R-27 core vocabulary only."
 timestamp: '2026-09-15'
 edges:
-  - {src: 00-overview, rel: realizes}
-  - {src: 02-data-sources, rel: depends_on}
+  - {src: 00-overview, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 02-data-sources, dst: 00-overview, rel: depends_on, provenance: asserted}
 ---
 
-# Guards and disclosure
+# Scope and disclosure
 
-## The asymmetry that forces the decision
+## The boundary is the room
 
-The three arms are NOT equally sensitive:
+`online_now` answers **only about the room's own members** — the roster of
+the conversation it is invoked from. That is the scope statement and the
+whole disclosure story:
 
-| Arm | Sensitivity | Existing guard |
-|---|---|---|
-| `voice` | **Low** — the room's own participants can see who is in the channel themselves | none needed; the tool answers what the group can already see |
-| `online` (Steam) | **Medium** — exposes whether someone is at their machine / away / in-game, visible beyond the room | needs a decision (this doc) |
-| `playing` (Steam) | **High** — the exact title tells the room what someone is doing, including a game they might not want announced | needs a decision (this doc) |
+- It never accepts a name outside the invoking room's roster. A `names`
+  argument referencing a non-member is filtered out, and a question about
+  an outsider answers `nothing_found`/`unavailable` — never a look-up of a
+  stranger.
+- The data itself (who is in a voice channel, who is online/playing on
+  Steam) is the friend-circle's own state — visible to participants and
+  low-sensitivity, unlike physical location.
 
-Spatial presence got the strict treatment: `where_is` carries the R-31
-guard — room ⊄ circle → refuse, never omit (`nora/agent/whereis.py`,
-`DisclosureGuard`); coordinates never leave in tool args. Digital activity is
-**person-linked the same way a coordinate is**: it identifies what a person
-is doing right now, beyond what the room can observe.
+This is deliberately NOT the `where_is`/`where_been` R-31 `DisclosureGuard`
+machinery. That machinery exists because coordinates are person-linked
+sensitive data (home/work addresses, DEC-74/DEC-79). Digital activity is a
+different class: the audience is the room that already sees each other's
+presence. Applying the location guard here would be mechanism-copying, not
+reasoning (operator correction, 2026-09-15: "我唔諗到需要有啲咩 guard").
+No new policy flag is introduced.
 
-## Two candidate positions
+## Result vocabulary — R-27 core only
 
-### A. Exact parity — reuse DisclosureGuard
+The three R-27 states apply (DEC-153 core vocabulary; `refused` is NOT
+used — there is no guard that may say no):
 
-The tool composes `Room` + `DisclosureGuard` + `location_trusted` exactly as
-`Whereis.locate` does, and resolves names the R-47 way. Refuse into any room
-that fails the subset test, exactly as `where_is` does.
+- `ok` — real result per arm
+- `nothing_found` — person has no steam_id, or the id resolves to nothing
+- `unavailable` — wiring gap: no `[online]` config / no key, transport
+  failure, non-JSON body, unreadable roster state
 
-- Pro: one seam, no weaker guard invented; "more sensitive than a live fix"
-  argument from `presence-analytics-p1` applies a fortiori to "playing what".
-- Con: the friends rooms already carry `location = true` (whole-room waiver,
-  DEC-79), so in practice every current room passes — the guard's cost is
-  complexity, not restrictiveness. It also requires the room to be mapped
-  and the roster readable, which is already true for all four policy rooms.
+`personastate` honesty: an away/Snooze person is reported `away`/`snooze`,
+never flattened to `online` (age-honesty rule, same class as `where_been`
+never presenting derived history as "right now").
 
-### B. Lighter friend-circle gate
+## Fail-closed posture
 
-A `[online]` section knob (`disclose = "mapped" | "circle-gated"`) that
-answers for mapped persons in any room where Nora already speaks, without
-the circle-subset machinery.
-
-- Pro: simpler; the tool is read-only and low-stakes vs location.
-- Con: **weakens a principle** — any answer about what a person is doing
-  right now is the same disclosure class as where they are. A room-specific
-  weaker gate is exactly the pattern `where_been`'s spec warned against
-  ("reuse, don't re-derive… must REUSE the same guard, not invent a weaker
-  one").
-
-## Position
-
-**A — exact parity.** The `playing` arm is at least as sensitive as a live
-fix, and `online` is not far behind. The tool composes the same
-`DisclosureGuard` seam as `where_is`/`where_been`. This is the fail-closed
-default: no new guard shape, no new privacy surface.
-
-The one nuance: `voice` arm stays UNGUARDED and separate — it answers the
-already-visible room state and is the arm the operator's use case ("are we
-all here") actually leans on. The docstring must teach that `voice` needs no
-room-gate while `online`/`playing` do — otherwise the model conflates the
-two and either over-refuses a trivia question or discloses a game title
-ungated. (Same class of surface-teaching obligation as the
-`where_is`/`where_been` live-vs-history boundary rule.)
-
-## Fail-closed states (R-5, three-state)
-
-- `ok` — real result, per-arm.
-- `not_found` — a person genuinely has no Steam id mapped, or the id
-  resolves to nothing. NEVER a guess.
-- `unavailable` — wiring gap (no key), transport failure, unreadable room
-  roster, or the guard refused. `unavailable`, never `not_found`, for a
-  guard refusal — the refusal has its own honest wording ("I can't check
-  that here"), same as `where_is`.
-
-`refused` is recorded via the same `nora_presence_disclosure_*` metrics
-family pattern (a counter, never silent), so a guard that starts blocking
-real asks becomes visible, not anecdote.
+- A room-state read that cannot be obtained is `unavailable`, never a
+  guess — the R-27 discipline: an ERROR is never a PASS.
+- The room-scope filter is enforced in code (the invoking conversation's
+  roster is the input domain), not taught as a preference: a `names`
+  argument that cannot resolve into the roster is filtered, and the answer
+  names only roster members. No partial-disclosure subtleties — the tool
+  returns the room's state or an honest unavailable.

@@ -30,15 +30,13 @@ scope:
     - "One read-only tool with closed `what ∈ {online, playing, voice}` vocabulary"
     - "Steam Web API presence (online / in-game / playing title) keyed off identity.toml steam_id"
     - "Discord voice-channel membership from existing voice_states intent (no privileged upgrade)"
-    - "R-31-style room-gate parity decision for the Steam arm (privacy-sensitive)"
+    - "Room-scoped audience: the tool answers only about the invoking room's roster; no R-31 guard machinery, R-27 core vocabulary"
     - "Wiring into the proactive decide turn so #248-class source-agnostic reads have live state"
   deferred:
+    - "Activity history substrate (so Nora can answer 「琴日幾點一齊打緊機」 from her own record) — separate event store + writer + fold integration, mirroring the presence P0 substrate"
     - "Discord rich presence / custom status (requires privileged `presences` intent + portal change)"
-    - "Historical activity capture (this is live-state only; derived history is a different substrate)"
     - "Activity in the lightweight participation determination (no-tool by design)"
     - "Cross-source dedup / identity merge beyond steam_id presence"
 open_questions:
   - "Steam Web API key: obtain one (free) or use an existing key from Pulse stack?"
   - "Naming confirmed only after a DEC-39/DEC-58-style identifier run"
-  - "Guard parity: does the Steam arm reuse DisclosureGuard exactly, or is a lighter friend-circle gate justified?"
-  - "Rich presence vs voice-only for Discord: operator decides intent upgrade separately"

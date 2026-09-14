@@ -39,9 +39,12 @@ says they cannot" can be grounded, not guessed.
   the `steam_id`s already in identity.toml) and **Discord gateway voice
   state** (the `voice_states` intent Nora already holds — no privileged
   upgrade in v1).
-- A **disclosure seam** for the Steam arm (online state is person-linked
-  and privacy-sensitive) — decided by parity with the presence tools'
-  R-31 guard, not invented fresh.
+- **Room-scoped audience, no guard machinery.** The tool answers ONLY
+  about the invoking room's own members — the boundary is the roster
+  itself. Deliberately NOT the `where_is`/`where_been` R-31
+  `DisclosureGuard` machinery: digital activity is not a location data
+  class, and the friend-circle already sees its own presence (operator
+  2026-09-15). No new policy flag; R-27 core vocabulary only.
 - Wiring so the **proactive decide turn** can consume it, which is the
   direct fix for the #248 failure family: a note's claim about someone's
   state should be checked against live state before it is spoken.
@@ -56,8 +59,10 @@ says they cannot" can be grounded, not guessed.
   activity require the privileged `presences` intent and a developer-portal
   change. Out of v1; recorded as deferred (02-data-sources).
 - **Not a history substrate.** This is live state only, like `where_is` is
-  live position. A derived history of activity would be a separate
-  substrate (mirroring `where_been`'s role) and is deferred.
+  live position. A derived history of activity (so Nora can answer
+  「琴日幾點一齊打緊機」 from her own record) would be a separate event
+  substrate mirroring `where_been`'s role — v2, recorded in
+  `_index.yaml` `scope.deferred`.
 - **Not a participation change.** The lightweight participation
   determination stays no-tool (operator-established shape). The consumer
   is proactive (and eventually tag turns).
@@ -68,24 +73,19 @@ says they cannot" can be grounded, not guessed.
    naming candidates + the DEC-58-style measurement gate.
 2. `02-data-sources.md` — Steam API + Discord intents, what is already
    wired, what needs a new credential / intent.
-3. `03-guards-and-disclosure.md` — the disclosure seam, parity with R-31,
-   the friend-circle framing.
+3. `03-guards-and-disclosure.md` — scope and disclosure: the room's own
+   roster is the boundary; no R-31 machinery, R-27 core vocabulary.
 4. `04-consumers.md` — proactive decide consumption, the #248 tie-in,
    tool-surface policy (ADR 0007) obligations.
 
 ## Status checkpoint
 
 Proposed. Awaiting operator decisions in `open_questions` (Steam key,
-naming run timing, guard parity, Discord intent depth). Implementation
-happens in a worktree per repo convention; master receives only an approved
-merge.
+naming run timing). Implementation happens in a worktree per repo
+convention; master receives only an approved merge.
 
 ## Open questions
 
 - Steam Web API key: obtain a free key, or reuse an existing key in the
   Pulse stack?
 - Naming: confirmed only after a DEC-39/DEC-58-style identifier run.
-- Guard parity: exact DisclosureGuard reuse, or a lighter friend-circle
-  gate for the Steam arm?
-- Discord: voice-only for v1 (no intent change) or pursue rich presence
-  separately?

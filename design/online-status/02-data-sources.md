@@ -16,11 +16,17 @@ edges:
 
 12 `steam_id` values exist in `identity.toml` today (grepped 2026-09-15),
 added for Pulse (game-server-monitor) player attribution. The comment at
-`identity.toml:85` explains why SteamID64 is the stable key: "steam_id is
-stable across every Steam-launched game, matched against Abiotic Factor's
-EOS player_key; GET /v1/servers/{id}/players/{playerKey}.steamId". So the
-person → SteamID64 mapping the tool needs is **already the identity layer's
-data model**, not a new table.
+`identity.toml` explains why SteamID64 is the stable key —
+"SteamID64, not the game's own EOS player_key — steam_id is stable across
+every Steam-launched game, matched against Abiotic Factor's login line
+(\"山田花子.하나\"/\"熱咖啡\"/... aliases above are the same in-game names Pulse
+reports) and confirmed live 2026-08-19 via
+GET /v1/servers/{id}/players/{playerKey}.steamId."
+So the person → SteamID64 mapping the tool needs is **already the identity
+layer's data model**, not a new table. The ids live under
+`[[persons.<id>.pulse]]` (nora/domain/identity.py), and the implementation
+reads them through `persons.platform_ids("pulse", ...)` — a person with no
+`pulse` block has no steam_id and answers `nothing_found`, never a guess.
 
 ### Discord voice_states intent is already on
 
@@ -51,10 +57,13 @@ Steam's `ISteamUser/GetPlayerSummaries/v2` needs an API key. `.env` has no
   key, or check whether the Pulse stack (game-server-monitor on orion)
   already holds one that can be reused with the operator's blessing.
 - Config shape follows the established `[search]` / `[presence]` precedent:
-  `[online]` section, `api_key_env = "STEAM_API_KEY"` env-indirection,
-  `timeout_seconds` — same fail-closed posture as `PulseGamesClient`:
-  missing key / non-200 / non-JSON → `unavailable`, never `nothing_found`
-  (R-5, three-state).
+  a `[online]` section that **ships INERT by default** — no section, or
+  `enabled = false`, registers the tool but has it answer `unavailable`
+  (same posture as whereis with no `[presence]` wiring —
+  `composition.py:1654-1672`); `api_key_env = "STEAM_API_KEY"`
+  env-indirection, `timeout_seconds`. Missing key / non-200 / non-JSON →
+  `unavailable`, never `nothing_found` (R-27 core vocabulary; no `refused`
+  — there is no guard that says no, see 03-guards).
 
 ## What is read, per arm
 

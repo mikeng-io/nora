@@ -56,23 +56,29 @@ If the operator later wants participation to consider live state, the path
 is a *separate* decision about that occasion's tool surface — not an
 automatic consequence of this bundle.
 
-## Tag turns — eligible, not granted
+## Tag turns — reachable on registration
 
 A tag turn can already choose any registered tool; `online_now` will simply
 be on the list after the standard tool-surface registration checklist
-(`adding-a-new-tool-surfaces.md`: registry, budgets, READ_ONLY partition,
-exposed-tool set, doctrine version, DEC-150 gate, RUF001/RUF002). No
+(registry entry, budgets, READ_ONLY partition, exposed-tool set, doctrine
+version, DEC-150 gate, RUF001/RUF002 — all inlined below). No
 occasion-specific change is needed for tag turns to use it — the docstring's
-trigger conditions (ADR 0007) teach when to reach for it.
+trigger conditions (ADR 0007) teach when to reach for it. The operator's
+ask 「Blake 而家係咪 online 喺 Steam」in Signal or Discord is answered by a
+tag turn calling `online_now(what="online", names=["blake_lindqvist"])`.
 
 ## Tool-surface checklist the implementer must run
 
-From `references/adding-a-new-tool-surfaces.md`, applied to `online_now`:
+Applied to `online_now` (checklist follows the class-level procedure that
+also produced `where_been`/`remember`; inlined here because the procedure
+lives in the operator's agent skills, not in this repo):
 
 - **Tool wiring** — `tools.py` (`build_tool_specs` + callable), `registry.py`.
 - **ACT_VERBS** — `read_only=True` → READ_ONLY half, never ACT_VERBS.
-- **Budgets table** — `"online_now": N` (sized like `where_is`/`where_been`:
-  the calls are cheap; the currency is the model round trip).
+- **Budgets table** — `"online_now": N`, sized on NETWORK COST not on
+  local-SELECT cost: the Steam arm is a keyed HTTP call with rate limits
+  (100 steamids per request), so the budget follows `transit`'s economy —
+  one question = one batched call, a second batch is a new question.
 - **Exposed-tool set** — both registry exposure tests.
 - **ordinary_english** — add `online`/`playing`/`voice` sentence words to the
   narrow catalogue-shape check so ordinary phrases stay honest.
@@ -86,8 +92,12 @@ From `references/adding-a-new-tool-surfaces.md`, applied to `online_now`:
   changes (only if a teaching line actually changes).
 - **Zero-wiring check first** — grep the composition root for the Steam
   client / Discord state accessor before adding new wiring; if the Discord
-  arm can reuse the listener's existing state object, do not thread a
+  arm can reuse the listener's existing state object (or
+  `current_client()` as `music_tool_bridge.py` does), do not thread a
   second copy.
+- **Discord channel resolution** — `channel_name` resolves through the
+  client's guild/channel cache, the same path `music_tool_bridge.py` uses;
+  do not hardcode channel labels.
 
 ## Verification discipline
 
