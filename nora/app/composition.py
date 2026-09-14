@@ -470,9 +470,17 @@ class _DebriefModelClient:
     def __init__(
         self, *, base_url: str, api_key: str, model: str, timeout_seconds: float,
         reasoning_effort: ReasoningEffort, max_tokens: int, temperature: float,
+        agent_name: str = "debrief",
     ) -> None:
         self._model_id = model
         self._timeout_seconds = timeout_seconds
+        # `agent_name` becomes the Strands agent span (`invoke_agent <name>`)
+        # inside `ask_text` — without it every debrief/standing-fold Strands
+        # agent fell back to the SDK default "Strands Agents", so the call
+        # under `engagement.debrief.fold` was indistinguishable from any other
+        # unnamed agent (measured: 56 detached `invoke_agent Strands Agents`
+        # roots in Langfuse over 7 days, including 2 rootless debrief folds).
+        self._agent_name = agent_name
         self._provider = build_structured_model(
             base_url=base_url, api_key=api_key, model_id=model,
             max_tokens=max_tokens, temperature=temperature,
@@ -487,6 +495,7 @@ class _DebriefModelClient:
         got = await ask_text(
             model=self._provider, prompt=prompt,
             timeout_seconds=self._timeout_seconds, system_prompt=system,
+            agent_name=self._agent_name,
         )
         _annotate_usage_triple(got.usage)
         return DebriefCompletion(
@@ -1538,6 +1547,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                         else "[llm] reasoning_effort (inherited)"
                     ),
                 ),
+                # The event fold's Strands agents are named for the fold it
+                # is, so its traces are filterable apart from the tag path's
+                # debrief — both flow through this one client class.
+                agent_name="standing.event_fold",
             ),
             objective=dreamer_instructions,
             slots=slots,

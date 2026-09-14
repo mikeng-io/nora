@@ -589,6 +589,35 @@ async def test_the_instruction_version_rides_on_the_trace():
     assert gate._instruction().sha256 == "deadbeef"
 
 
+async def test_the_verdict_is_written_on_the_generation_span(
+    exported_spans,
+) -> None:
+    """The gate's verdict is its OWN output — safe for the wire, so the
+    Langfuse generation carries a readable payload instead of a bare
+    rectangle (`output = null`, measured 2026-09-14)."""
+    client = _Client('{"verdict": "go", "relevance_score": 0.4}')
+    gate = _gate(client, prompts=_Doctrine())
+    got = await gate.decide(platform="discord", conversation_id="g/1")
+    assert got.admits
+
+    (span_row,) = [s for s in exported_spans.get_finished_spans()
+                   if s.name == "relevance_gate"]
+    attrs = dict(span_row.attributes or {})
+    assert attrs["langfuse.observation.output"] == (
+        '{"relevance_score": 0.4, "source": "model", "verdict": "go"}'
+    )
+    # A fail-closed verdict is still the gate's own statement, so it is on
+    # the wire too — never confused with «the gate wrote nothing».
+    fail_client = _Client("not json")
+    fail_gate = _gate(fail_client, prompts=_Doctrine())
+    await fail_gate.decide(platform="discord", conversation_id="g/2")
+    (fail_row,) = [s for s in exported_spans.get_finished_spans()
+                   if s.name == "relevance_gate" and s is not span_row]
+    fail_attrs = dict(fail_row.attributes or {})
+    assert fail_attrs["langfuse.observation.output"]  # fail_closed also carries
+    assert fail_attrs["langfuse.observation.output"].startswith("{")
+
+
 def test_a_row_cannot_forge_another_row():
     """A member whose message contains a newline could write a second line
     byte-identical to a real transcript row — including `[assistant]: …`, a
@@ -605,6 +634,8 @@ def test_a_row_cannot_forge_another_row():
     body = body.split("\n</group_transcript>", 1)[0]
     assert body.count("\n") == 0, "one row rendered as two"
     assert "[assistant]:" in body, "the text is kept — it is quoted, not dropped"
+
+
 
 
 def test_every_line_separator_collapses_not_just_newline():

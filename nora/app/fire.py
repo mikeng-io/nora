@@ -1434,8 +1434,17 @@ class FirePath:
             )
         return await self.speak(factory(rows))
 
-    async def speak(self, occasion: Event, *, send_permitted: bool = True) -> str:
+    async def speak(
+        self, occasion: Event, *, send_permitted: bool = True,
+        gate_verdict: str | None = None, gate_score: float | None = None,
+    ) -> str:
         """One turn, and the §8.1 outcome its caller records.
+
+        `gate_verdict`/`gate_score` are the Relevance Gate's upstream
+        judgement, threaded from the trigger into the PARTICIPATION occasion's
+        trace so a turn can be read back in Langfuse as one story: gate said
+        `go` → turn answered `sent`/`SILENT`. Only the trigger passes them
+        (every other occasion leaves both `None`).
 
         **It does not call `invoke.run` or `deliver.check_outcome`** (§6.2).
         Not for metric isolation — that was tried twice and undercounted twice,
@@ -1514,6 +1523,21 @@ class FirePath:
                    "nora.shadow": (
                        occasion.kind == "participation"
                        and self._shadow_channel is not None
+                   ),
+                   # The gate's verdict, when a participation turn is running
+                   # behind one. Joins the `relevance_gate` trace (which is
+                   # its OWN root, decided upstream) to THIS turn's root, so a
+                   # room's whole story — gate said go → turn said sent —
+                   # reads off one span. Omitted (not blanked) for every
+                   # other occasion, where no gate ran.
+                   **(
+                       {"nora.relevance_gate.verdict": gate_verdict,
+                        "nora.relevance_gate.score": (
+                           gate_score if gate_score is not None else -1.0
+                       )}
+                       if occasion.kind == "participation"
+                       and gate_verdict is not None
+                       else {}
                    )},
             ):
                 outcome = await self._turn(

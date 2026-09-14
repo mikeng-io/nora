@@ -69,7 +69,7 @@ from nora.domain.prompt import escape_attr
 from nora.domain.prompt import one_line as _one_line
 from nora.domain.provenance import instruction_sha256
 from nora.obs.metrics import Metrics
-from nora.obs.tracing import annotate, generation
+from nora.obs.tracing import annotate, annotate_generation, generation
 from nora.persons import Persons
 
 log = logging.getLogger("nora.ingest.relevance_gate")
@@ -567,6 +567,19 @@ class RelevanceGate:
                 "nora.relevance_gate.standing": standing is not None,
             })
             verdict = await self._ask(system, prompt)
+            # The gate's VERDICT is its own output — a tiny JSON document, no
+            # private room content — so it goes on the wire as the generation's
+            # `output`. Without it the span renders in Langfuse as a bare
+            # rectangle: usage and latency, no readable payload (measured
+            # 2026-09-14: every 7-day `relevance_gate` trace was a single
+            # observation with `output = null`). The prompt stays OFF the wire
+            # (room words, DEC-5 rule) — the digest below re-derives it.
+            annotate_generation(
+                completion=_verdict_json(verdict),
+                finish_reason=(
+                    "tool_use" if verdict.source == "model" else ""
+                ),
+            )
             annotate(**{
                 "nora.relevance_gate.verdict": verdict.verdict,
                 "nora.relevance_gate.score": (
@@ -747,6 +760,21 @@ def parse_verdict(raw: str) -> GateVerdict:
     return GateVerdict(
         verdict=verdict, score=_score(parsed.get("relevance_score")), source="model",
     )
+
+
+def _verdict_json(verdict: GateVerdict) -> str:
+    """The gate's verdict as the compact JSON the trace carries as `output`.
+
+    Safe for the wire by construction: it contains only the verdict, the
+    score, and the source — nothing from the room. `None` score renders as
+    absent (the same omission rule `annotate_generation` uses for empty
+    strings: an absent field reads as "not stated").
+    """
+    out: dict[str, object] = {"verdict": verdict.verdict}
+    if verdict.score is not None:
+        out["relevance_score"] = verdict.score
+    out["source"] = verdict.source
+    return json.dumps(out, sort_keys=True)
 
 
 def _score(value: object) -> float | None:

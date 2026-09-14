@@ -333,6 +333,51 @@ async def test_a_well_formed_return_is_validated_screened_written_and_ok(monkeyp
     assert metrics.get("nora_dream_run_total", adaptor="test-adaptor", status="ok") == 1
 
 
+async def test_the_run_opens_an_app_root_span_and_annotates_its_outcome(
+    monkeypatch, exported_spans,
+) -> None:
+    """A dream pass is one trace UNDER the adaptor's root, not a bare Strands
+    agent span. Before this wrapper existed the pass traced as only
+    `invoke_agent dreamer:<name>` — no `nora.*` attributes, no outcome
+    (measured 2026-09-14: 119 dreamer traces, every one rootless)."""
+    sink = _Sink()
+    runtime, _ = _runtime(monkeypatch, raw='{"observations": [{"term": "a"}]}')
+
+    outcome = await runtime.run(adaptor=_Adaptor(sink=sink), key="g1", batch=())
+
+    assert outcome.status == "ok"
+    (root,) = [s for s in exported_spans.get_finished_spans()
+               if s.name == "dream:test-adaptor"]
+    attrs = dict(root.attributes or {})
+    assert attrs["nora.trace_kind"] == "generation"
+    assert attrs["nora.dreamer.adaptor"] == "test-adaptor"
+    assert attrs["nora.dreamer.key"] == "g1"
+    assert attrs["nora.outcome"] == "ok"
+
+
+async def test_a_failed_run_still_annotates_unavailable_on_the_root(
+    monkeypatch, exported_spans,
+) -> None:
+    """The span records failures too — the reason the wrapper exists. A
+    nothing-found run (blank inputs) is a REAL outcome, not a silent gap."""
+    sink = _Sink()
+    adaptor = _Adaptor(sink=sink)
+
+    async def _empty_inputs(self, *, key, batch):
+        return ""
+
+    adaptor.inputs = _empty_inputs.__get__(adaptor, type(adaptor))
+    runtime, _ = _runtime(monkeypatch)
+
+    outcome = await runtime.run(adaptor=adaptor, key="g1", batch=())
+
+    assert outcome.status == "nothing_found"
+    (root,) = [s for s in exported_spans.get_finished_spans()
+               if s.name == "dream:test-adaptor"]
+    attrs = dict(root.attributes or {})
+    assert attrs["nora.outcome"] == "nothing_found"
+
+
 async def test_every_proposal_carries_the_runs_own_provenance(monkeypatch):
     """The adaptor returns payloads; the RUNTIME stamps. An adaptor cannot know
     the instruction digest, the model or the run id, and a `Proposal` filled in

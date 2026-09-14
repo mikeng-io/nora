@@ -92,6 +92,7 @@ from ..domain.ports import (
     RosterSource,
 )
 from ..obs.metrics import Metrics
+from ..obs.tracing import TRACE_KIND, annotate, span
 from . import factory
 from .dream_guard import DreamGuard
 from .dream_screen import screen
@@ -1071,6 +1072,33 @@ class DreamerRuntime:
         return MAX_ITEMS
 
     async def run(
+        self, *, adaptor: DreamAdaptor, key: str, batch: Sequence[TranscriptRow]
+    ) -> DreamOutcome:
+        """One adaptor, one key, one bounded read-only loop — traced.
+
+        The root span names the adaptor and annotates the outcome (`_run_body`
+        holds the body; see it for all the reasons a failure returns
+        `unavailable` rather than raising). Before this root existed a dream
+        pass traced as only the Strands agent span — `invoke_agent
+        dreamer:<name>` with NO app-level span, no `nora.*` attributes, and no
+        outcome, so a pass's decision (remind / decline / nothing_found) was
+        readable only by expanding the model call (measured 2026-09-14: 119
+        dreamer traces, every one rootless-without-wrapper).
+        """
+        with span(
+            f"dream:{adaptor.name}",
+            **{TRACE_KIND: "generation",
+               "nora.dreamer.adaptor": adaptor.name,
+               "nora.dreamer.key": key,
+               "nora.dreamer.objective": adaptor.objective},
+        ):
+            outcome = await self._run_body(
+                adaptor=adaptor, key=key, batch=batch,
+            )
+            annotate(**{"nora.outcome": outcome.status})
+            return outcome
+
+    async def _run_body(
         self, *, adaptor: DreamAdaptor, key: str, batch: Sequence[TranscriptRow]
     ) -> DreamOutcome:
         """One adaptor, one key, one bounded read-only loop.
