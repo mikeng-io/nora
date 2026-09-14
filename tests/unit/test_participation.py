@@ -37,8 +37,11 @@ class _Speak:
         self.calls: list = []
         self.outcome = outcome
 
-    async def __call__(self, occasion, *, send_permitted: bool = True) -> str:
-        self.calls.append((occasion, send_permitted))
+    async def __call__(
+        self, occasion, *, send_permitted: bool = True,
+        gate_verdict: str | None = None, gate_score: float | None = None,
+    ) -> str:
+        self.calls.append((occasion, send_permitted, gate_verdict, gate_score))
         return self.outcome
 
 
@@ -110,7 +113,10 @@ async def test_a_faulting_evaluation_still_closes_the_window() -> None:
     window would make one quiet burst cost a turn every tick."""
 
     class _Raising:
-        async def __call__(self, occasion, *, send_permitted: bool = True) -> str:
+        async def __call__(
+            self, occasion, *, send_permitted: bool = True,
+            gate_verdict: str | None = None, gate_score: float | None = None,
+        ) -> str:
             raise RuntimeError("model down")
 
     clock = _Clock()
@@ -198,7 +204,7 @@ async def test_the_occasion_is_personless_bodiless_and_room_shaped() -> None:
     clock.now += SETTLE + 1
     await trigger.close_due_windows()
 
-    occasion, send_permitted = speak.calls[-1]
+    occasion, send_permitted, _gv, _gs = speak.calls[-1]
     assert occasion.kind == "participation"
     assert occasion.platform == "signal"
     assert occasion.conversation_id == "g9"
@@ -303,7 +309,7 @@ async def test_a_go_verdict_runs_the_turn_and_carries_the_score():
 
     await trigger.close_due_windows()
     assert len(speak.calls) == 1
-    occasion, _permitted = speak.calls[0]
+    occasion, _permitted, _gv, _gs = speak.calls[0]
     header = occasion.header(None, None)
     assert "0.73" in header, "the gate's score reached the turn"
     assert "stay silent anyway if you hold nothing" in header, (
@@ -321,7 +327,7 @@ async def test_the_score_is_absent_from_the_header_when_no_gate_is_wired():
     clock.now += SETTLE
 
     await trigger.close_due_windows()
-    occasion, _ = speak.calls[0]
+    occasion, _, _gv, _gs = speak.calls[0]
     assert "relevance check upstream" not in occasion.header(None, None)
 
 
@@ -461,7 +467,7 @@ async def test_a_declined_window_does_not_spend_the_send_cooldown():
     await trigger.close_due_windows()
 
     assert len(speak.calls) == 1
-    _occasion, permitted = speak.calls[0]
+    _occasion, permitted, _gv, _gs = speak.calls[0]
     assert permitted is True, "the declined window burned the cooldown"
 
 

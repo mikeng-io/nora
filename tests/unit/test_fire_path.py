@@ -1200,6 +1200,31 @@ def _participation(conversation_id: str = "conv-1") -> Event:
     return participation_occasion(platform="signal", conversation_id=conversation_id)
 
 
+async def test_a_participation_turn_carries_the_gate_verdict_on_its_root(
+    persons, doctrine_store, metrics, exported_spans,
+) -> None:
+    """The gate's verdict rides on the turn's root span, joining the
+    `relevance_gate` trace (a separate root decided upstream) to the turn
+    that ran behind it — so the room's whole story reads off one span."""
+    adapter = _FireAdapter()
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        adapter=adapter, runner=FakeAgentRunner([]),
+        participation_runner=FakeAgentRunner([ScriptedTurn(final_text="")]),
+    )
+
+    outcome = await path.speak(
+        _participation(), gate_verdict="go", gate_score=0.6,
+    )
+
+    assert outcome == fire_module.SILENT
+    (root,) = [s for s in exported_spans.get_finished_spans()
+               if s.name == "participation"]
+    attrs = dict(root.attributes or {})
+    assert attrs["nora.relevance_gate.verdict"] == "go"
+    assert attrs["nora.relevance_gate.score"] == 0.6
+
+
 async def test_the_participation_turn_never_passes_through_indicate(
     fire_path: FirePath,
 ) -> None:

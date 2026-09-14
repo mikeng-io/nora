@@ -66,6 +66,14 @@ from .tool_choice import FIRST_CALL
 
 T = TypeVar("T", bound=BaseModel)
 
+#: The Strands SDK defaults an unnamed `Agent(name=None)` to "Strands Agents",
+#: which made every `ask_text`/`ask_structured` span identical and unsearchable
+#: (measured in Langfuse: 56 detached `invoke_agent Strands Agents` roots over
+#: 7 days — debrief, standing fold and eval arms all collapsed into one name).
+#: A caller that names its call gets a span it can filter on. The default
+#: stays honest ("structured") rather than pretending to be a caller's lane.
+DEFAULT_STRUCTURED_AGENT_NAME = "structured"
+
 
 @dataclass(frozen=True)
 class StructuredResult:
@@ -128,6 +136,7 @@ def build_structured_model(
 async def ask_structured(
     *, model: OpenAIModel, prompt: str, schema: type[T], timeout_seconds: float,
     system_prompt: str | None = None,
+    agent_name: str = DEFAULT_STRUCTURED_AGENT_NAME,
 ) -> StructuredResult:
     """One call, `tools=[]`, no streaming, bounded.
 
@@ -137,13 +146,19 @@ async def ask_structured(
     into one user string has thrown away the only structural difference
     between the two, and nothing downstream can put it back.
 
+    `agent_name` names the Strands agent span (`invoke_agent <name>`) so a
+    Langfuse trace is filterable by the CALLER's lane instead of collapsing
+    into the SDK default "Strands Agents" — set it to the lane that owns the
+    call (e.g. "gate-measuring" from `eval_support`), never leave the default
+    in production code paths that a filter needs to tell apart.
+
     A fresh `Agent` per call: `OpenAIModel` carries mutable `config["params"]`
     and an agent carries conversation state, so a shared one would let one
     call's exchange decide the next one's (`factory.ModelSpec`'s argument, and
     `create_agent` builds per-tag for exactly this).
     """
     agent = Agent(model=model, tools=[], callback_handler=None,
-                  system_prompt=system_prompt)
+                  system_prompt=system_prompt, name=agent_name)
     result = await asyncio.wait_for(
         agent.invoke_async(prompt, structured_output_model=schema),
         timeout=timeout_seconds,
@@ -169,6 +184,7 @@ async def ask_structured(
 async def ask_text(
     *, model: OpenAIModel, prompt: str, timeout_seconds: float,
     system_prompt: str | None = None,
+    agent_name: str = DEFAULT_STRUCTURED_AGENT_NAME,
 ) -> StructuredResult:
     """One call returning TEXT, through the SDK, with no loop and no tools.
 
@@ -177,9 +193,14 @@ async def ask_text(
     same agent construction, same system/user split, no tool specification in
     the request at all. `content` is the model's text; `finish_reason` is
     translated into the raw-completion vocabulary its callers already check.
+
+    `agent_name` means what it means in `ask_structured`: the span the call
+    traces under, so the debrief's fold/verdict calls are distinguishable
+    from the event fold's in Langfuse instead of all reading
+    `invoke_agent Strands Agents`.
     """
     agent = Agent(model=model, tools=[], callback_handler=None,
-                  system_prompt=system_prompt)
+                  system_prompt=system_prompt, name=agent_name)
     result = await asyncio.wait_for(
         agent.invoke_async(prompt), timeout=timeout_seconds,
     )

@@ -589,6 +589,67 @@ async def test_the_instruction_version_rides_on_the_trace():
     assert gate._instruction().sha256 == "deadbeef"
 
 
+async def test_the_verdict_is_written_on_the_generation_span(
+    exported_spans,
+) -> None:
+    """The gate's verdict is its OWN output — safe for the wire, so the
+    Langfuse generation carries a readable payload instead of a bare
+    rectangle (`output = null`, measured 2026-09-14)."""
+    client = _Client('{"verdict": "go", "relevance_score": 0.4}')
+    gate = _gate(client, prompts=_Doctrine())
+    got = await gate.decide(platform="discord", conversation_id="g/1")
+    assert got.admits
+
+    (span_row,) = [s for s in exported_spans.get_finished_spans()
+                   if s.name == "relevance_gate"]
+    attrs = dict(span_row.attributes or {})
+    assert attrs["langfuse.observation.output"] == (
+        '{"finish_reason": "stop", "relevance_score": 0.4, '
+        '"source": "model", "verdict": "go"}'
+    )
+    # A fail-closed verdict is still the gate's own statement, so it is on
+    # the wire too — never confused with «the gate wrote nothing».
+    fail_client = _Client("not json")
+    fail_gate = _gate(fail_client, prompts=_Doctrine())
+    await fail_gate.decide(platform="discord", conversation_id="g/2")
+    (fail_row,) = [s for s in exported_spans.get_finished_spans()
+                   if s.name == "relevance_gate" and s is not span_row]
+    fail_attrs = dict(fail_row.attributes or {})
+    assert fail_attrs["langfuse.observation.output"]  # fail_closed also carries
+    assert fail_attrs["langfuse.observation.output"].startswith("{")
+    # …but a fail-closed verdict NEVER fakes a provider stop reason: the
+    # JSON carries no `finish_reason` at all (the model never answered).
+    assert '"finish_reason"' not in fail_attrs["langfuse.observation.output"]
+
+
+async def test_pre_model_fail_closed_paths_write_their_verdict_too(
+    exported_spans,
+) -> None:
+    """`no_context` and `no_instruction` — the failures an operator most
+    needs to read — used to render the same bare rectangle this PR fixes
+    (measured 2026-09-14, review finding 2026-09-14). Both now emit their
+    fail-closed verdict, still with NO finish_reason (no model answered)."""
+    gate = _gate(_Client("unused"), records=_Records(fail=True), prompts=_Doctrine())
+    await gate.decide(platform="discord", conversation_id="g/1")
+    (row,) = [s for s in exported_spans.get_finished_spans()
+              if s.name == "relevance_gate"]
+    attrs = dict(row.attributes or {})
+    assert attrs["langfuse.observation.output"] == (
+        '{"source": "fail_closed", "verdict": "no_go"}'
+    )
+    assert attrs["nora.relevance_gate.error_kind"] == "no_context"
+    assert '"finish_reason"' not in attrs["langfuse.observation.output"]
+
+    # Same for a missing instruction.
+    gate_no_inst = _gate(_Client("unused"), prompts=_Doctrine(body="", sections=0))
+    await gate_no_inst.decide(platform="discord", conversation_id="g/2")
+    (row2,) = [s for s in exported_spans.get_finished_spans()
+               if s.name == "relevance_gate" and s is not row]
+    assert dict(row2.attributes or {})["nora.relevance_gate.error_kind"] == (
+        "no_instruction"
+    )
+
+
 def test_a_row_cannot_forge_another_row():
     """A member whose message contains a newline could write a second line
     byte-identical to a real transcript row — including `[assistant]: …`, a

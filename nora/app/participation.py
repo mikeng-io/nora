@@ -168,7 +168,7 @@ class ParticipationTrigger:
                 )
                 continue
             try:
-                admitted, score = await self._admitted(platform, conversation_id)
+                admitted, score, verdict = await self._admitted(platform, conversation_id)
                 if not admitted:
                     # NO-GO, or the gate failed closed. Nothing runs, nothing
                     # is posted, nothing is counted here — the gate counted
@@ -197,6 +197,8 @@ class ParticipationTrigger:
                         relevance_score=score,
                     ),
                     send_permitted=send_permitted,
+                    gate_verdict=verdict,
+                    gate_score=score,
                 )
                 # Only a DELIVERED message spends the cooldown: a held,
                 # silent or failed turn left the room exactly as it was, and
@@ -209,8 +211,8 @@ class ParticipationTrigger:
 
     async def _admitted(
         self, platform: str, conversation_id: str,
-    ) -> tuple[bool, float | None]:
-        """`(admitted, score)`.
+    ) -> tuple[bool, float | None, str | None]:
+        """`(admitted, score, verdict)`.
 
         Two values and not a nullable score, because "admitted with no score"
         is a real state and collapsing it into `0.0` would put
@@ -223,16 +225,25 @@ class ParticipationTrigger:
         job is "run a turn or not" and both answers are "not". They are kept
         apart where it matters, on the two counters the gate itself moves.
 
+        `verdict` is the gate's verdict string ("go"/"no_go"), threaded to the
+        fire path's trace so the turn announces which gate verdict admitted
+        it. `None` when no gate is wired (pre-gate behaviour) or when the
+        gate failed closed — "go" is the only value that reaches a turn.
+
         No gate wired admits unconditionally with no score — the pre-gate
         behaviour. A trigger that refused without a gate would make an
         optional component mandatory by silently turning the path off.
         """
         if self._gate is None:
-            return True, None
+            return True, None, None
         verdict = await self._gate.decide(
             platform=platform, conversation_id=conversation_id,
         )
-        return verdict.admits, (verdict.score if verdict.admits else None)
+        return (
+            verdict.admits,
+            (verdict.score if verdict.admits else None),
+            (verdict.verdict if verdict.admits else None),
+        )
 
     def sweep(self, older_than: float) -> int:
         """Drop rooms idle longer than `older_than` and return how many.

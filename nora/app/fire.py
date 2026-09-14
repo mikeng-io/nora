@@ -123,6 +123,7 @@ from nora.engagement.context import StandingNotesReader
 from nora.engagement.mentions import MentionRenderer
 from nora.engagement.stages import deliver, feedback
 from nora.engagement.stages.invoke import AgentRunner
+from nora.ingest.relevance_gate import SCORE_ABSENT
 from nora.obs.determination import (
     WINDOW_BODY_CHARS,
     Determination,
@@ -1434,8 +1435,17 @@ class FirePath:
             )
         return await self.speak(factory(rows))
 
-    async def speak(self, occasion: Event, *, send_permitted: bool = True) -> str:
+    async def speak(
+        self, occasion: Event, *, send_permitted: bool = True,
+        gate_verdict: str | None = None, gate_score: float | None = None,
+    ) -> str:
         """One turn, and the §8.1 outcome its caller records.
+
+        `gate_verdict`/`gate_score` are the Relevance Gate's upstream
+        judgement, threaded from the trigger into the PARTICIPATION occasion's
+        trace so a turn can be read back in Langfuse as one story: gate said
+        `go` → turn answered `sent`/`SILENT`. Only the trigger passes them
+        (every other occasion leaves both `None`).
 
         **It does not call `invoke.run` or `deliver.check_outcome`** (§6.2).
         Not for metric isolation — that was tried twice and undercounted twice,
@@ -1509,11 +1519,27 @@ class FirePath:
                    "nora.conversation_id": occasion.conversation_id,
                    "nora.occasion": occasion.kind,
                    # Meaningful only for participation, and False elsewhere
-                   # rather than absent: an attribute that appears on some roots
-                   # and not others cannot be filtered on.
+                   # rather than absent — an attribute that appears on some
+                   # roots and not others cannot be filtered on.
                    "nora.shadow": (
                        occasion.kind == "participation"
                        and self._shadow_channel is not None
+                   ),
+                   # The gate's verdict when a participation turn runs behind
+                   # one (joins the `relevance_gate` root trace to this turn's
+                   # root — gate said go → turn said sent reads off one span).
+                   # Same absence rule as `nora.shadow`: every occasion root
+                   # carries the pair, blank when no gate ran, so the
+                   # attribute is filterable across ALL occasions.
+                   **(
+                       {"nora.relevance_gate.verdict": gate_verdict or "",
+                        "nora.relevance_gate.score": (
+                           gate_score if gate_score is not None
+                           else SCORE_ABSENT
+                       )}
+                       if occasion.kind == "participation"
+                       else {"nora.relevance_gate.verdict": "",
+                             "nora.relevance_gate.score": SCORE_ABSENT}
                    )},
             ):
                 outcome = await self._turn(
