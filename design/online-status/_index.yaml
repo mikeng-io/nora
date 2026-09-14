@@ -1,0 +1,44 @@
+kind: design_index
+title: "Online Status — digital activity state as a tool surface"
+description: >
+  Gives Nora a read-only tool that answers "who is online / who is playing /
+  who is in voice" from Steam Web API and Discord gateway state. One tool, a
+  closed `what` vocabulary, mirroring `where_been`'s shape. Consumers: the
+  proactive decide turn (the #248 failure family), and eventually tag turns.
+  Excludes spatial presence (`where_is`/`where_been` own that dimension).
+status: proposed
+governance: pre-governance-input
+timestamp: '2026-09-15'
+revision: '2026-09-15 — initial draft after operator direction in #nora thread; naming discussion narrowed to `online_now`/`now_playing` family (mechanism names steam_status/discord_status rejected).'
+origin: "operator session 2026-09-15: Nora could have known the group was playing while a note said Blake was sick (#248)"
+members:
+  - 00-overview.md
+  - 01-tool-shape-and-naming.md
+  - 02-data-sources.md
+  - 03-guards-and-disclosure.md
+  - 04-consumers.md
+edges:
+  - {src: 01-tool-shape-and-naming, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 02-data-sources, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 02-data-sources, dst: 01-tool-shape-and-naming, rel: depends_on, provenance: asserted}
+  - {src: 03-guards-and-disclosure, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 03-guards-and-disclosure, dst: 02-data-sources, rel: depends_on, provenance: asserted}
+  - {src: 04-consumers, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 04-consumers, dst: 01-tool-shape-and-naming, rel: depends_on, provenance: asserted}
+scope:
+  v1:
+    - "One read-only tool with closed `what ∈ {online, playing, voice}` vocabulary"
+    - "Steam Web API presence (online / in-game / playing title) keyed off identity.toml steam_id"
+    - "Discord voice-channel membership from existing voice_states intent (no privileged upgrade)"
+    - "R-31-style room-gate parity decision for the Steam arm (privacy-sensitive)"
+    - "Wiring into the proactive decide turn so #248-class source-agnostic reads have live state"
+  deferred:
+    - "Discord rich presence / custom status (requires privileged `presences` intent + portal change)"
+    - "Historical activity capture (this is live-state only; derived history is a different substrate)"
+    - "Activity in the lightweight participation determination (no-tool by design)"
+    - "Cross-source dedup / identity merge beyond steam_id presence"
+open_questions:
+  - "Steam Web API key: obtain one (free) or use an existing key from Pulse stack?"
+  - "Naming confirmed only after a DEC-39/DEC-58-style identifier run"
+  - "Guard parity: does the Steam arm reuse DisclosureGuard exactly, or is a lighter friend-circle gate justified?"
+  - "Rich presence vs voice-only for Discord: operator decides intent upgrade separately"

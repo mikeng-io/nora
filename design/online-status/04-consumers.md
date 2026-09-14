@@ -1,0 +1,100 @@
+---
+type: design
+title: "Consumers — the proactive decide turn and the #248 tie-in"
+description: "Who calls the tool: proactive decide (the #248 failure family), tag turns later; participation stays no-tool by design."
+timestamp: '2026-09-15'
+edges:
+  - {src: 00-overview, rel: realizes}
+  - {src: 01-tool-shape-and-naming, rel: depends_on}
+---
+
+# Consumers
+
+## Primary consumer — the proactive decide turn
+
+The failure that started this (#248, filed 2026-09-15): the proactive
+adaptor read a friends-workspace note that said "Blake sick, wants the
+night off" and spoke an answer into the Signal home room — while the group
+was mid-game in Discord. The note was born in Zone 42
+(`note.established_in`, verified in the DB), the delivery used the home
+room, and the decide turn had **no tool that could observe the live state**
+contradicting the note.
+
+With `online_now` wired into the proactive turn, the decide pass can:
+
+- read the note's `established_in` and the room roster,
+- call `online_now(what="playing", names=roster)` (or `voice`) and see that
+  the people the note talks about are actually in-game,
+- ground its reply in that state — or decline to speak a stale leave
+  acceptance at all.
+
+The tool is a **read verb**, so it fits the proactive adaptor's grant
+(`AdaptorGrant`, `nora/agent/dreamer.py:362` — every read verb through the
+home room, one act verb). DEC-162's D21 boundary holds: this bundle adds a
+read verb available to the decide turn; it adds no deliver verb.
+
+Wiring shape (per DEC-155 / `where_been` precedent): the tool's store/port
+is threaded at the composition root (`composition.py` builds clients), and
+the tool appears in the registry (`tools.py` / `registry.py`) like any
+other. The proactive turn gets the tool through the same grant machinery
+that already hands it `note_read` — eligibility does not require a new
+occasion, and `verify_tool_subsets` must stay green with the tool granted
+to proactive but NOT (in v1) to the Dreamer background loops
+(`WORKSPACE_SAFE_TOOLS` eligibility is not a grant — same rule as
+`where_been`).
+
+## NOT a participation consumer
+
+The participation determination stays **lightweight, no-tool** — the shape
+the operator rejected over (the Phase-2 build ran Nora as a full agent loop
+when what was wanted was a cheap single-call decision; 2-4k tokens,
+transcript + standing only). Adding a tool to that path would be a shape
+change, not an extension, and it is explicitly deferred in
+`_index.yaml` `scope.deferred`.
+
+If the operator later wants participation to consider live state, the path
+is a *separate* decision about that occasion's tool surface — not an
+automatic consequence of this bundle.
+
+## Tag turns — eligible, not granted
+
+A tag turn can already choose any registered tool; `online_now` will simply
+be on the list after the standard tool-surface registration checklist
+(`adding-a-new-tool-surfaces.md`: registry, budgets, READ_ONLY partition,
+exposed-tool set, doctrine version, DEC-150 gate, RUF001/RUF002). No
+occasion-specific change is needed for tag turns to use it — the docstring's
+trigger conditions (ADR 0007) teach when to reach for it.
+
+## Tool-surface checklist the implementer must run
+
+From `references/adding-a-new-tool-surfaces.md`, applied to `online_now`:
+
+- **Tool wiring** — `tools.py` (`build_tool_specs` + callable), `registry.py`.
+- **ACT_VERBS** — `read_only=True` → READ_ONLY half, never ACT_VERBS.
+- **Budgets table** — `"online_now": N` (sized like `where_is`/`where_been`:
+  the calls are cheap; the currency is the model round trip).
+- **Exposed-tool set** — both registry exposure tests.
+- **ordinary_english** — add `online`/`playing`/`voice` sentence words to the
+  narrow catalogue-shape check so ordinary phrases stay honest.
+- **Port conformance Fake** — if a new port (Steam client) is added, its
+  Fake joins `test_port_conformance`.
+- **DEC-150 gate** — doctrine must NOT name the tool; teaching stays at
+  behaviour layer ("a claim about whether someone's state matches the note →
+  check live state first").
+- **RUF001/RUF002** — halfwidth punctuation everywhere; CJK only quoted.
+- **Doctrine version** — bump `version:` + PINNED sha when doctrine text
+  changes (only if a teaching line actually changes).
+- **Zero-wiring check first** — grep the composition root for the Steam
+  client / Discord state accessor before adding new wiring; if the Discord
+  arm can reuse the listener's existing state object, do not thread a
+  second copy.
+
+## Verification discipline
+
+Per repo convention: worktree → PR → merge, never a direct master commit;
+independent adversarial review of the bundle before merge (never
+self-review); release fragment written (`release-fragments/unreleased/online-status.json`,
+`type: "feat"` for the tool, or "none" for a design-only branch per the
+release-fragment gate); both gates run green:
+`scripts/check_release_fragments.py --base master` +
+`scripts/render_release_notes.py`.
