@@ -1504,6 +1504,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             endpoint=cfg.speech.stt.endpoint,
             language=cfg.speech.stt.language,
             timeout_seconds=cfg.speech.stt.timeout_seconds,
+            model=cfg.speech.stt.model,
         )
     # `[speech.tts]`'s speaker (design/voice-channel/01 §5): wired ONLY when
     # enabled AND a provider is named AND that provider's key is present —

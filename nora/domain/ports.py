@@ -1147,9 +1147,9 @@ class MediaInterpreter(Protocol):
 
     `summarize` is the AUDIO half, and it takes text rather than bytes on
     purpose: a voice note's `content` is already in hand — `nora/infra/speech
-    .py` transcribed it at ingest with SenseVoice — so asking a vision model to
-    listen again would spend a second, larger call to learn what Nora already
-    knows. The title and description come from a cheap text pass over that
+    .py` transcribed it at ingest via the local STT service — so asking a
+    vision model to listen again would spend a second, larger call to learn
+    what Nora already knows. The title and description come from a cheap text pass over that
     transcript instead. Same port, same never-raises promise, same three-field
     result; `content` is what the CALLER already holds and this verb does not
     return it.

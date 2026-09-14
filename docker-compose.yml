@@ -694,26 +694,28 @@ services:
       timeout: 5s
       retries: 5
 
-  # stt — Nora's local Cantonese STT (SenseVoice/FunASR). Own image, own
-  # dependency set (deploy/stt/), NOT built from nora:latest — the same
-  # "separate app that lives in this repo" shape `drop` uses. Spec:
-  # docs/superpowers/specs/2026-08-21-nora-stt-infrastructure-design.md.
+  # stt — Nora's local Cantonese STT. Own image, own dependency set
+  # (deploy/stt/), NOT built from nora:latest — the same "separate app that
+  # lives in this repo" shape `drop` uses.
   #
-  # Purpose: [media.describe.audio] in config.toml needs a model for voice
-  # notes. faster-whisper mangles Cantonese into Mandarin-sounding output
-  # (measured in voice-lab 2026-08-21); SenseVoiceSmall natively tags `yue`
-  # and preserves 口語 particles (唔/嘅/喺/哋). Serves OpenAI-compatible
-  # /v1/audio/transcriptions so Nora calls it like any other ASR.
+  # Two engines behind one OpenAI-compatible /v1/audio/transcriptions
+  # (decision: design/voice-channel/06-stt-provider-decision.md, 2026-09-15):
+  # the DEFAULT is JackyHoCL whisper-large-v3-turbo-cantonese-noise-detection
+  # (transformers, fp32 CPU) — the only A/B engine that kept both `RV` and
+  # `discord` intact on real Discord voice audio, Hant + punctuation out of
+  # the box. SenseVoiceSmall (FunASR) stays as the always-loaded backup —
+  # the latency floor (RTF ~0.04) and zero-new-infrastructure failover.
   #
   # Posture mirrors signal-cli/drop: NO `ports:` publish at all — reachable
   # only as `stt:8000` on the private `nora` network. Audio from the group
   # stays on the box; there is no reason to ever expose the transcription
   # surface to the host or the internet.
   #
-  # The model (~936MB) downloads from ModelScope on FIRST boot into the
-  # container's ~/.cache/modelscope. The named volume pins that cache so a
-  # restart/recreate doesn't re-download; first start_period is long
-  # because of the download, subsequent starts are fast.
+  # The default model (~3.2GB fp32) downloads from Hugging Face on FIRST boot
+  # into the container's ~/.cache/huggingface; the SenseVoice backup (~936MB)
+  # downloads from ModelScope into ~/.cache/modelscope on first use. The named
+  # volumes pin both caches so a restart/recreate doesn't re-download; first
+  # start_period is long because of the download, subsequent starts are fast.
   stt:
     build:
       context: ./deploy/stt
@@ -728,14 +730,17 @@ services:
     networks: [nora]
     volumes:
       - stt-modelscope-cache:/home/stt/.cache/modelscope
+      - stt-huggingface-cache:/home/stt/.cache/huggingface
     healthcheck:
-      # /health is served by the FunASR server process itself (deploy/stt/server.py)
+      # /health is served by the server process itself (deploy/stt/server.py)
       # — proves the HTTP layer is up; the model may still be downloading on
       # first boot, hence the long start_period below.
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
       interval: 30s
       timeout: 5s
-      start_period: 240s
+      # 900s: the first boot downloads ~3.2GB of fp32 whisper weights from
+      # Hugging Face and then loads them on CPU before /health serves.
+      start_period: 900s
       retries: 3
 
   # voice-sidecar — stage 2 of the voice-channel design
@@ -896,6 +901,10 @@ volumes:
   valkey-data:
   rustfs-data:
   # ModelScope weights cache for the `stt` service (~/.cache/modelscope inside
-  # the container) — pins the ~936MB SenseVoiceSmall download across
+  # the container) — pins the ~936MB SenseVoiceSmall backup download across
   # restarts/recreates so it happens once, not every boot.
   stt-modelscope-cache:
+  # Hugging Face weights cache for the `stt` service (~/.cache/huggingface
+  # inside the container) — pins the ~3.2GB noise-detection whisper download
+  # (the DEFAULT model since 2026-09-15) the same way.
+  stt-huggingface-cache:

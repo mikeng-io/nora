@@ -323,7 +323,7 @@ class VisionClient:
 
         The audio half of issue #116 and the video synthesis half of #117 both
         need a cheap pass over text Nora already holds — a voice note's
-        SenseVoice transcript, a video's chunk run. Neither is a vision call
+        STT transcript, a video's chunk run. Neither is a vision call
         and neither should build a second client for it: the aggregate timeout
         proof `derive_vision_timeout` makes is about ONE budget, and a separate
         client would be a second one that could outlast the loop.

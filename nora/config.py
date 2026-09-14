@@ -896,7 +896,7 @@ class MediaConfig(BaseModel):
     # identity ladder (custody, and what makes a repeat sighting free) alone.
     #
     # `comprehension_text_model` is the CHEAP TEXT pass — a voice note's
-    # title/description over the SenseVoice transcript already in hand, and a
+    # title/description over the STT transcript already in hand, and a
     # video's over its chunk run. Empty means no text pass: a voice note keeps
     # its words with no title (the words are the evidence, the title is a
     # convenience) and a video keeps its timecoded chunk run. Never a vision
@@ -1499,7 +1499,8 @@ class WeatherConfig(BaseModel):
 
 
 class SpeechSttConfig(BaseModel):
-    """Local speech-to-text: which endpoint, which language, and a timeout.
+    """Local speech-to-text: which endpoint, which model, which language, and
+    a timeout.
 
     `[speech.stt]` is a first-class `[speech]` child (not a reuse of
     `[media.describe.audio]` — a voice note is conversation content, not an
@@ -1509,18 +1510,26 @@ class SpeechSttConfig(BaseModel):
     shape: `enabled = false` means Nora never calls out, and a config.toml
     written before this existed keeps loading (`extra="forbid"` makes that a
     real constraint). When enabled, the voice-note ingest path calls
-    `endpoint` with the OpenAI-compatible `/v1/audio/transcriptions` contract;
-    `language` hints the model's LID — NOT a BCP-47 tag, but one of
-    FunASR/SenseVoice's own short codes (`auto`/`zh`/`en`/`yue`/`ja`/`ko`/
-    `nospeech`, per `deploy/stt/server.py`'s `lid_dict`) — any other string is
-    silently treated as `auto` by the model itself; `timeout_seconds` bounds
-    ONE call (the whole ingest path waits for it — see the stage docstring).
+    `endpoint` with the OpenAI-compatible `/v1/audio/transcriptions` contract.
+
+    `model` is one of the ids the STT service advertises on `/v1/models`
+    (`deploy/stt/server.py`'s `MODEL_CONFIGS`): `noise-detection` — the
+    default since 2026-09-15 (design/voice-channel/06), the JackyHoCL
+    Cantonese whisper that won the A/B on real voice audio — or `sensevoice`,
+    the FunASR backup. A config.toml written before `model` existed keeps
+    loading: the default applies, which is exactly the engine the service
+    itself defaults to. `language` hints the model's LID — NOT a BCP-47 tag,
+    but one of the engines' own short codes (`auto`/`zh`/`en`/`yue`/`ja`/`ko`/
+    `nospeech`) — any other string is silently treated as `auto` by the model
+    itself; `timeout_seconds` bounds ONE call (the whole ingest path waits
+    for it — see the stage docstring).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
     endpoint: str = "http://stt:8000"
+    model: str = "noise-detection"
     language: str = "yue"
     timeout_seconds: float = Field(default=30.0, gt=0)
 
@@ -2705,8 +2714,8 @@ class Config(BaseModel):
     weather: WeatherConfig = WeatherConfig()
     # Optional and defaulted — see `SpeechConfig`. Ships INERT (`enabled =
     # false`); off, Nora neither transcribes voice notes at ingest nor speaks
-    # outbound (TTS deferred). On, `[speech.stt]` calls the local SenseVoice
-    # endpoint (`stt:8000`) during the voice-note custody stage.
+    # outbound (TTS deferred). On, `[speech.stt]` calls the local STT endpoint
+    # (`stt:8000`) during the voice-note custody stage.
     speech: SpeechConfig = SpeechConfig()
     # Optional and defaulted — see `HeartbeatConfig`/`RemindersConfig`. The tick
     # ships INERT (`enabled = false`); the caps apply the moment a reminder can

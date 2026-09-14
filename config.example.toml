@@ -567,7 +567,7 @@ sticker_descriptions = true
 # identity ladder keeps turning a repeat sighting into zero platform RPC.
 # `sticker_descriptions` above is the sticker sub-gate on the READ only.
 comprehension = true
-# The CHEAP TEXT pass: a voice note's title/description over the SenseVoice
+# The CHEAP TEXT pass: a voice note's title/description over the STT
 # transcript that [speech.stt] already produced, and a video's over its
 # timecoded chunk run. NEVER a second listen or a second watch — the expensive
 # read has already happened.
@@ -974,7 +974,10 @@ provider = "hko"           # the WeatherProvider adapter; "hko" is the only one 
 [speech.stt]
 enabled = false
 endpoint = "http://stt:8000"   # the deploy/stt service on the private nora network
-language = "yue"               # FunASR/SenseVoice's own LID code, not BCP-47
+model = "noise-detection"      # STT engine: the JackyHoCL Cantonese whisper
+                               # (default since 2026-09-15, design/voice-channel/06);
+                               # "sensevoice" selects the FunASR backup
+language = "yue"               # the engines' own LID code, not BCP-47
 [speech.tts]
 enabled = false
 # provider = "minimax_cn"      # MiniMax CN, speech-2.8-turbo (decided 2026-09-14,

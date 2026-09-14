@@ -389,7 +389,7 @@ class MediaComprehension:
         self._count(platform, label, "ok", "")
 
     async def _read_transcript(self, subject: Subject) -> MediaDescription:
-        """The audio lane. A voice note's `content` is the SenseVoice transcript
+        """The audio lane. A voice note's `content` is the STT transcript
         `nora/infra/speech.py` produced inline at ingest — no vision call, and
         no second listen: the title and the description come from a cheap text
         pass over words Nora already has."""
