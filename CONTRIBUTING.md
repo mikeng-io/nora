@@ -118,6 +118,12 @@ request #N from …"*. Because the branch's own commits stay visible in
 arc: what the branch set out to fix, what was measured, what shipped. That is
 what makes `git log master` readable without opening every PR.
 
+**`merge: <the arc>` — the arc is the point.** The checker (see §Commit
+messages) requires a non-empty arc and rejects an authored-merge prefix worn by
+a GitHub-default body: `merge: Merge pull request #1 from …` is the default
+wearing the sanctioned prefix, not an authored message. If you have nothing to
+say about the arc, the merge is not ready to land.
+
 ## Pull requests
 
 **Title** — the same Conventional-Commit shape as the commit subject, with
@@ -274,8 +280,9 @@ time and never a judgement call afterwards. The historical state — measured
 2026-09-08, 11 of 44 open issues labelled, all GitHub's auto-applied default
 `enhancement` — is what happens when labels mean something: they mean nothing.
 **Area is deliberately NOT a label.** It is the title prefix (`<Area>: …`) and
-the form's Area dropdown, which writes `**Area:** …` into the body — grep-able
-in both places, and it cannot go stale the way a label on a closed issue does.
+the form's Area dropdown — GitHub renders each form field under a `### <label>`
+heading, so a filed issue carries a grep-able `### Area` line in its body, and
+it cannot go stale the way a label on a closed issue does.
 The 47-open-issue backlog having no visible grouping axis (measured 2026-09-14:
 19 of 108 issues labelled across 2 values, 0 milestones) is the drift this
 section exists to stop.

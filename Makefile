@@ -24,7 +24,7 @@ setup:
 
 hooks:
 	git config core.hooksPath .githooks
-	@echo "core.hooksPath -> $$(git config core.hooksPath) (run once per clone/worktree)"
+	@echo "core.hooksPath -> $$(git config core.hooksPath) (repo-level: one run per clone covers all worktrees; a hook fires only where the branch carries .githooks/)"
 
 # --- gate (AGENTS.md: run before claiming anything is done, and before every commit) ---
 

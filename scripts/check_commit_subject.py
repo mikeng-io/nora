@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Commit-subject convention check: `type(scope): description`.
 
-Two failure shapes this catches (each measured on this repo's log before the
+Three failure shapes this catches (each measured on this repo's log before the
 rule was written):
 
 1. A subject with NO type at all — 294 of 2195 commits since 2026-08-01 were
@@ -11,10 +11,16 @@ rule was written):
    CONTRIBUTING.md did not declare (`design` x69, `config` x20, `build` x12,
    `style` x11, `ops` x7, `security`, `spec`, `plan`, ...). A type that is in
    use but not declared is a convention that only looks agreed.
+3. A superseded or default MERGE subject — `Merge pull request #N ...` (the
+   GitHub default) and `Merge <branch>: ...` (the previous generation). Both
+   are replaced by `merge: <the arc>`; the shape is checked, not just the
+   prefix.
 
 The type list below is CLOSED: it is CONTRIBUTING.md's declared table plus the
-six de-facto types this repo already used heavily. Add a type by changing both
-files in one commit — the table is the contract, this script only enforces it.
+nine de-facto types this repo already used heavily (`design`, `config`,
+`build`, `style`, `ci`, `ops`, `doctrine`, plus `perf` and `security` from the
+standard). Add a type by changing both files in one commit — the table is the
+contract, this script only enforces it.
 
 Wired as a `commit-msg` hook (see `.githooks/README.md`); the Makefile `hooks`
 target installs it. It reads the message file git passes as $1 and exits 1 on
@@ -61,13 +67,49 @@ REVERT_RE = re.compile(r'^Revert "')
 WIP_RE = re.compile(r"^(wip|WIP)\b")
 
 
-AUTHORED_MERGE_RE = re.compile(r"^merge\s*:")    # merge: <the arc> — current generation
+# `merge: <the arc>` is the current generation. The arc must be REAL text: a
+# bare `merge:` (or whitespace) states nothing, and it was the cheapest way to
+# satisfy this check without writing the arc — so it is rejected explicitly.
+# `\s*` before the colon, not `\s*` inside it: `merge\t: x` is a typo, not a
+# subject, and must not sneak through.
+AUTHORED_MERGE_RE = re.compile(r"^merge:\s+\S")  # merge: <non-empty arc> — current generation
+# The GitHub-default bodies, checked AFTER the authored prefix matched: without
+# this, `merge: Merge pull request #1 from x` passed on the prefix alone — the
+# exact defect this script exists to catch, wearing the sanctioned type.
+# Measured 2026-09-14: that subject exited 0 before this check existed.
+DEFAULT_BODY_RE = re.compile(
+    r"^Merge (pull request|branch|remote-tracking branch)\b"
+)
 OLD_MERGE_RE = re.compile(r"^Merge\s+[^ ]*\s*:")  # Merge <branch>: <desc> — superseded
 
 
 def check_subject(subject: str) -> list[str]:
     problems: list[str] = []
     if AUTHORED_MERGE_RE.match(subject):
+        # The prefix is right; the body still has to be an authored arc. A
+        # GitHub-default body behind the `merge:` prefix is the same defect,
+        # one keystroke away from looking compliant.
+        body = subject.split(":", 1)[1].strip()
+        if DEFAULT_BODY_RE.match(body):
+            problems.append(
+                "authored-merge prefix on a GitHub-DEFAULT body. The prefix is right;\n"
+                "    the body is the default merge message. Write the arc instead:\n"
+                "    merge: <what the branch set out to fix, what was measured, what shipped>\n"
+                "    (CONTRIBUTING.md §Merge strategy)"
+            )
+        return problems
+    if re.match(r"^merge\s*:", subject):
+        # Reached when the subject mentions `merge` as a type but is not the
+        # authored shape: either the arc is empty/whitespace-only, or the colon
+        # is not flush against the type (`merge :  x`, `merge\t: x`). Both are
+        # cheap ways to satisfy the check without stating the arc, so both are
+        # named rather than silently accepted.
+        problems.append(
+            "malformed `merge:` subject — the arc is empty, or the prefix is not\n"
+            "    flush (`merge: <arc>`). Say what the branch set out to fix and what\n"
+            "    shipped, e.g. `merge: the conventions get delivered (#246)`.\n"
+            "    (CONTRIBUTING.md §Merge strategy)"
+        )
         return problems
     if OLD_MERGE_RE.match(subject):
         problems.append(

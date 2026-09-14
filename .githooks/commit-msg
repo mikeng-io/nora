@@ -4,4 +4,26 @@
 # but the rule it enforces is not optional — this is the typing aid, not the law.
 # Bypass for a genuinely exceptional subject: git commit --no-verify, and name
 # the reason in the commit body.
-exec uv run python "$(git rev-parse --git-common-dir)/../scripts/check_commit_subject.py" "$1"
+#
+# Two things this file must get right, both learned by breaking them:
+#
+# 1. RESOLVE AGAINST --show-toplevel, NEVER --git-common-dir. In a linked
+#    worktree (git worktree add) the common dir is the MAIN checkout, so a
+#    common-dir path points at main's tree — where the checker does not exist
+#    until this branch merges. Every commit then fails, including valid ones,
+#    and the hook reads as "the convention is broken" rather than "the hook is
+#    broken". Measured 2026-09-14: `git commit -m 'chore: x'` in a linked
+#    worktree exited 1 with "can't open file '.git/../scripts/...'".
+# 2. USE `python3`, NOT `uv run`. The checker is stdlib-only (re + sys) for
+#    exactly this reason: the hook must not depend on a toolchain the
+#    contributor may not have installed, and it must not care which venv is
+#    active.
+set -euo pipefail
+
+CHECKER="$(git rev-parse --show-toplevel)/scripts/check_commit_subject.py"
+if [ ! -f "$CHECKER" ]; then
+  echo "commit-msg: checker not found at $CHECKER" >&2
+  echo "  are you on a branch without the conventions commit? (see .githooks/README.md)" >&2
+  exit 1
+fi
+exec python3 "$CHECKER" "$1"

@@ -152,6 +152,7 @@ def test_commit_checker_rejects_the_measured_defect_shapes() -> None:
         "feat: new capability",
         "design(culture-tier): the tier stores an answer",        # declared de-facto type
         "merge: the ambient loop is the system's (DEC-176)",      # authored merge
+        "merge: her notes are her own words, not the room's record (#226)",  # real history
         'Revert "fix(gate): x"',                                  # git plumbing
     ]
     for subject in allowed:
@@ -160,10 +161,20 @@ def test_commit_checker_rejects_the_measured_defect_shapes() -> None:
     rejected = [
         "did some stuff",                                          # no type
         "Merge pull request #240 from mikeng-io/x",                # GitHub default
+        "Merge remote-tracking branch 'origin/master'",            # GitHub default
         "Merge worktree-unguard-r85: remove the guard",            # superseded generation
         "Merge branch 'x' into y",                                 # superseded generation
         "wip: checkpoint",                                         # rebase fuel
         "obs(engagement): a standing counter",                     # undeclared type
+        # The disguise (review round 2026-09-14): the GitHub default wearing the
+        # sanctioned `merge:` prefix — it passed on the prefix alone before the
+        # body check existed.
+        "merge: Merge pull request #1 from x",
+        "merge: Merge branch 'x' into y",
+        "merge: Merge remote-tracking branch 'origin/master'",
+        # An authored-merge prefix stating nothing.
+        "merge:",
+        "merge: ",
     ]
     for subject in rejected:
         assert check(subject) != 0, f"should be rejected: {subject}"
@@ -188,3 +199,47 @@ def test_contributing_declares_the_same_types_the_checker_enforces() -> None:
         f"doc table vs checker TYPES disagree: doc-only={doc_only} "
         f"checker-only={checker_only}"
     )
+
+def test_every_declared_type_is_actually_enforced() -> None:
+    """Coordinated-drift guard (review round 2026-09-14).
+
+    The accept/reject lists above only sample `design` and `obs`; dropping a
+    DIFFERENT declared type from BOTH the TYPES map and the CONTRIBUTING table
+    at once stayed green — `perf` and `security` could silently become
+    undeclared while every pin still passed. This closes that by asserting,
+    per declared type, that the checker's own regex machinery would REJECT
+    `<type>: x` if that type were absent from the map — i.e. the type is in
+    the map BECAUSE the table declares it, not by accident of sampling.
+
+    Implemented without touching any file: the map minus one type is
+    re-derived and the SUBJECT_RE rebuilt from it, exactly as the checker
+    builds it.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "checker_module", ROOT / "scripts" / "check_commit_subject.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    declared = sorted(mod.TYPES)
+    assert len(declared) == 17, (
+        f"declared types moved ({len(declared)}); re-run the census and update"
+        " the census comments in this file and CONTRIBUTING.md")
+
+    doc = (ROOT / "CONTRIBUTING.md").read_text()
+    sec = doc[doc.index("## Commit messages"):doc.index("## Merge strategy")]
+
+    for ty in declared:
+        without = {k: v for k, v in mod.TYPES.items() if k != ty}
+        rebuilt = re.compile(
+            rf"^({'|'.join(sorted(without))})(\([^)]+\))?!?: .+")
+        subject = f"{ty}: anything"
+        assert not rebuilt.match(subject), (
+            f"`{ty}:` still passes the checker's SUBJECT_RE with `{ty}` removed"
+            " from TYPES — removing it would not actually undeclare it, so the"
+            " closed-list claim is not enforced")
+        # and the doc really declares it, so the parity test would fire
+        assert f"| `{ty}` |" in sec, (
+            f"`{ty}` is in TYPES but its row is missing from CONTRIBUTING.md —"
+            " the parity test alone cannot catch coordinated drift; this"
+            " assertion is what names the type")

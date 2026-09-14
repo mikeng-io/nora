@@ -1,16 +1,61 @@
 #!/usr/bin/env bash
-# pre-push hook: refuses a push whose head commit's subject violates
-# CONTRIBUTING.md §Commit messages — the last local chance before the branch
-# is visible to others. Same checker, same rules, one source of truth.
-while read local_ref local_sha remote_ref remote_sha; do
-  [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
-  subject=$(git log -1 --format=%s "$local_sha")
-  tmp=$(mktemp)
-  printf '%s\n' "$subject" > "$tmp"
-  if ! uv run python "$(git rev-parse --git-common-dir)/../scripts/check_commit_subject.py" "$tmp"; then
-    rm -f "$tmp"
-    exit 1
+# pre-push hook: refuses a push carrying commits whose subjects violate
+# CONTRIBUTING.md §Commit messages — the last local chance before the branch is
+# visible to others. Same checker, same rules, one source of truth.
+#
+# Checks EVERY commit in the pushed range, not just the tip: the batches that
+# need this hook most are the ones committed BEFORE `make hooks` was installed,
+# which means the defects are in the middle of the range, not on top of it.
+# The range is capped at 200 commits per ref; past the cap it says so out loud,
+# because silence there would read as "everything checked out".
+#
+# Path resolution and `python3` (not `uv run`) match .githooks/commit-msg —
+# see that file for why (linked-worktree + stdlib-only).
+set -euo pipefail
+
+TOPLEVEL="$(git rev-parse --show-toplevel)"
+CHECKER="$TOPLEVEL/scripts/check_commit_subject.py"
+if [ ! -f "$CHECKER" ]; then
+  echo "pre-push: checker not found at $CHECKER - refusing to pass unverified" >&2
+  exit 1
+fi
+
+zero=0000000000000000000000000000000000000000
+checked=0
+failed=0
+
+check_one() {  # $1 = sha
+  local sha="$1" subject msgfile
+  subject="$(git log -1 --format=%s "$sha")"
+  msgfile="$(mktemp)"
+  printf '%s\n' "$subject" > "$msgfile"
+  if ! python3 "$CHECKER" "$msgfile"; then
+    echo "  offending commit: $sha" >&2
+    failed=1
   fi
-  rm -f "$tmp"
+  rm -f "$msgfile"
+  checked=$((checked + 1))
+}
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue   # branch deletion
+  if [ "$remote_sha" = "$zero" ]; then
+    # New ref: everything reachable from the tip that no remote already has.
+    # Passed as SEPARATE arguments (never one unquoted string) - a single
+    # "$sha --not --remotes" word is not a revision, and rev-list refuses it.
+    mapfile -t shas < <(git rev-list --max-count=201 "$local_sha" --not --remotes)
+  else
+    mapfile -t shas < <(git rev-list --max-count=201 "$remote_sha..$local_sha")
+  fi
+  if [ "${#shas[@]}" -gt 200 ]; then
+    echo "pre-push: $local_ref has more than 200 commits; checking the newest 200 only" >&2
+    shas=("${shas[@]:0:200}")
+  fi
+  for sha in "${shas[@]}"; do
+    [ -z "$sha" ] && continue
+    check_one "$sha"
+  done
 done
-exit 0
+
+echo "pre-push: checked $checked commit subject(s)"
+exit "$failed"
