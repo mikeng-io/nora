@@ -528,6 +528,13 @@ RULE_TESTS = {
     # MODEL gets back: an error result is a correction, and a model corrects by
     # retrying, which is the loop the ceiling exists to end.
     "R-91": "test_a_third_memory_read_is_answered_unavailable_and_the_pass_completes",
+    # R-92 (DEC-186): a duck cycle never touches the listener's persisted
+    # volume — the duck gain is applied to the music frames inside the mix,
+    # never through `set_volume()`. The named test is the regression the
+    # design bundle itself mandates (01 §6.4), and it carries its own
+    # positive control: the ducked-then-restored frames, without which a
+    # session that never ducked at all would pass the same assertion.
+    "R-92": "test_a_duck_cycle_never_touches_the_user_volume",
 }
 
 

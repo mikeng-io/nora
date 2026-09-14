@@ -23,6 +23,7 @@ reproducing `stop()`'s real `after`-firing behaviour.
 from __future__ import annotations
 
 import asyncio
+import struct
 import threading
 from collections.abc import Callable
 from unittest.mock import patch
@@ -30,6 +31,7 @@ from unittest.mock import patch
 import discord
 import pytest
 
+from nora.platform.discord.duck_source import DuckSource
 from nora.platform.discord.voice_session import DiscordVoiceSession
 
 
@@ -914,3 +916,154 @@ async def test_a_failed_play_cleans_up_the_just_spawned_source() -> None:
 
     assert len(cleaned) == 1, "the failed play's source must be cleaned up"
     assert cleaned[0].label == "https://cdn.example/a"
+
+
+# ── speak(): TTS playback + ducking (design/voice-channel/01 §3-§4) ──────────
+
+
+class _FramesSource(_FakeAudioSource):
+    """A source with real frames to read — `_FakeAudioSource` sits at EOF
+    forever, which a duck cycle cannot exercise."""
+
+    def __init__(self, label: str, frames: int, amplitude: int) -> None:
+        super().__init__(label)
+        self._frames = frames
+        self._amplitude = amplitude
+
+    def read(self) -> bytes:
+        if self._frames <= 0:
+            return b""
+        self._frames -= 1
+        return struct.pack("<h", self._amplitude) * 8
+
+
+def _first_sample(frame: bytes) -> int:
+    return struct.unpack("<h", frame[:2])[0]
+
+
+async def test_speak_while_music_plays_ducks_via_a_live_swap_and_keeps_the_music_source() -> None:
+    """The duck path (01 §4): no new `play()` — the mixer goes in through ONE
+    live `.source` swap so the `AudioPlayer` thread never sees a gap, and the
+    session's raw source stays the MUSIC, because the music is still playing
+    underneath and a crossfade mid-sentence must mix against the track, never
+    against the answer."""
+    voice_client = _FakeVoiceClient()
+    speech_built: list[bytes] = []
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(), on_finished=lambda: None,
+        audio_source_factory=lambda url: _FramesSource(f"music-{url}", frames=200, amplitude=1000),
+        speech_source_factory=lambda data: (
+            speech_built.append(data), _FramesSource("speech", frames=3, amplitude=500)
+        )[1],
+        duck_gain=0.25, duck_ramp_ms=20,
+    )
+    session.play("https://cdn.example/a")
+    [music_wrapper] = voice_client.played_sources
+
+    session.speak(b"fake-mp3-bytes", media_type="audio/mpeg")
+
+    assert speech_built == [b"fake-mp3-bytes"]
+    [swapped] = voice_client.live_swaps
+    assert isinstance(swapped, discord.PCMVolumeTransformer)
+    assert isinstance(swapped.original, DuckSource)
+    # The mixer's music input IS the raw source that was playing — the
+    # original under the first wrapper, not a fresh source and not the speech.
+    duck = swapped.original
+    assert isinstance(duck, DuckSource)
+    assert duck._music is music_wrapper.original
+    # `_current_raw` is read by the NEXT crossfade as what to mix against;
+    # with speech on top it must still be the track.
+    assert session._current_raw is music_wrapper.original
+
+
+async def test_a_duck_cycle_never_touches_the_user_volume() -> None:
+    """01 §6.4's regression test for §3's called-out trap: the duck gain is
+    applied to the music frames INSIDE the mix; `set_volume` is never called
+    by a duck cycle, so the listener's persisted `/music volume` survives it
+    byte-for-byte. The ducked-then-restored frames are the positive control —
+    without them a session that never ducked at all passes the same
+    assertion."""
+    voice_client = _FakeVoiceClient()
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(), on_finished=lambda: None,
+        audio_source_factory=lambda url: _FramesSource("music", frames=200, amplitude=1000),
+        speech_source_factory=lambda data: _FramesSource("speech", frames=3, amplitude=500),
+        duck_gain=0.25, duck_ramp_ms=20,
+    )
+    session.play("https://cdn.example/a")
+    session.set_volume(0.5)
+
+    session.speak(b"fake-mp3-bytes", media_type="audio/mpeg")
+    [swapped] = voice_client.live_swaps
+    duck = swapped.original
+    assert isinstance(duck, DuckSource)
+    during = [duck.read() for _ in range(3)]
+    after = [duck.read() for _ in range(3)]
+
+    # The duck really happened: 0.25 x 1000 music + 500 speech during, and
+    # the music restored to unity after — measured on the mixer's OWN frames,
+    # before the outer transformer.
+    assert [_first_sample(f) for f in during] == [750, 750, 750]
+    assert [_first_sample(f) for f in after] == [1000, 1000, 1000]
+    # And the user's volume was never the mechanism: untouched on the session
+    # and carried by the new outer wrapper exactly as set.
+    assert session._volume == 0.5
+    assert swapped.volume == 0.5
+
+
+async def test_speak_with_nothing_playing_plays_directly_without_a_mixer() -> None:
+    """`duck=False` is the honest default-when-nothing-plays path (01 §4): no
+    `DuckSource` is allocated, and the `after` the speech's end fires is NOT
+    `_after` — there is no track whose end is being signalled, so nothing may
+    reach `on_finished` and invent a queue advance."""
+    voice_client = _FakeVoiceClient()
+    finished = asyncio.Event()
+
+    async def on_finished() -> None:
+        finished.set()
+
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(), on_finished=on_finished,
+        audio_source_factory=lambda url: _FakeAudioSource(url),
+        speech_source_factory=lambda data: _FakeAudioSource("speech"),
+    )
+
+    session.speak(b"fake-mp3-bytes", media_type="audio/mpeg")
+
+    [played] = voice_client.played_sources
+    assert isinstance(played, discord.PCMVolumeTransformer)
+    assert not isinstance(played.original, DuckSource)
+    assert voice_client.live_swaps == []
+    # The speech ends; the player fires `after`. No completion may be
+    # scheduled — nothing was playing.
+    voice_client.stop()
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert finished.is_set() is False
+
+
+async def test_speak_on_a_dead_connection_cleans_up_and_raises() -> None:
+    """Same orphan-ffmpeg guard as `play()` (2026-09-03 live bug): when the
+    voice connection is dead, `voice_client.play()` raises and the piped
+    speech source must be cleaned up before the failure propagates."""
+    voice_client = _FakeVoiceClient(connected=False)
+    cleaned: list[object] = []
+
+    class _TrackingSpeech(_FakeAudioSource):
+        def cleanup(self) -> None:
+            cleaned.append(self)
+
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(), on_finished=lambda: None,
+        audio_source_factory=lambda url: _FakeAudioSource(url),
+        speech_source_factory=lambda data: _TrackingSpeech("speech"),
+    )
+
+    with pytest.raises(discord.ClientException):
+        session.speak(b"fake-mp3-bytes", media_type="audio/mpeg")
+
+    # AT LEAST once: unlike `play()`, the direct-speech branch keeps no
+    # reference to the wrapper, so CPython's `AudioSource.__del__` fires a
+    # second (harmless — real ffmpeg cleanup is idempotent) cleanup the
+    # moment the exception's traceback is released.
+    assert cleaned, "the failed speak's source must be cleaned up"

@@ -197,6 +197,7 @@ change at every call site; keyword-only buys free extensibility forever.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -950,6 +951,82 @@ class SttResult:
     available: bool
     text: str = ""
     reason: str = ""
+
+
+@runtime_checkable
+class Speaker(Protocol):
+    """Text to speech audio (voice-channel TTS, design/voice-channel/01 §1).
+
+    Bound to `[speech.tts]`: `enabled = false` (or an unset provider) leaves
+    the composition root with no speaker, and nothing about Nora's behaviour
+    changes. Implementations NEVER raise into a caller's turn: any failure
+    (network, timeout, unknown voice, empty audio) returns an unavailable
+    `SpeakResult`, and the turn proceeds text-only — a reply that fails to
+    sound is still a reply, never a dropped turn.
+
+    The audio is BYTES, not a path or URL: the voice-channel mixer consumes
+    frames in memory, a file path would force every caller into disk
+    lifecycle, and Discord's player has no file concept — it reads an
+    `AudioSource`. `voice` is a per-call override of the configured default;
+    an empty string means the implementation's own default.
+    """
+
+    async def speak(self, *, text: str, voice: str = "") -> SpeakResult: ...
+
+
+@dataclass(frozen=True)
+class SpeakResult:
+    """Outcome of one synthesis call (design/voice-channel/01 §1). `available`
+    is the single truth a caller reads. `reason` names why not (`error`,
+    `timeout`, `empty`, `unsupported`) and `empty` stays distinct from
+    `error` — the same distinction `SttResult` makes, for the same reason: a
+    silent synthesis and an outage must not collapse into one metric.
+    `media_type` rides along because one provider emits MP3 while another may
+    emit WAV; the adapter that decodes to PCM needs to know which, and
+    discovering it by sniffing is a guess."""
+
+    available: bool
+    audio: bytes = b""
+    media_type: str = ""
+    reason: str = ""
+
+
+_URL_RUN = re.compile(
+    r"https?://|www\.|[\w-]+\.(?:com|net|org|io|dev|app|gg|me|co|hk|cn|xyz)(?:/\S*)?",
+    re.IGNORECASE,
+)
+_HANDLE_RUN = re.compile(r"@\S+")
+_HEX_RUN = re.compile(r"\b[0-9a-fA-F]{16,}\b")
+# A base64-ish run long enough to be a token, required to carry a digit or a
+# base64-only character so an ordinary long WORD («antidisestablishment…»)
+# is not misread as one. A UUID is mostly dashes and short hex groups, which
+# `_HEX_RUN` alone would miss.
+_B64_RUN = re.compile(r"\b(?=[A-Za-z0-9+/]*[0-9+/])[A-Za-z0-9+/]{24,}={0,2}\b")
+_UUID_RUN = re.compile(
+    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
+)
+
+
+def speakable(text: str) -> bool:
+    """The fail-closed content gate for TTS (design/voice-channel/01 §7):
+    is this text fit to be READ ALOUD?
+
+    Anything that reads as a long opaque string must not be spoken — URLs,
+    hostnames, `@handles`, hashes, UUIDs, keys. If it was pasted as a machine
+    token, it stays a machine token: the caller either rewords the reply or
+    sends it text-only, and this function is the check, not a model's memory
+    of the rule mid-turn. The bias is deliberate: a false negative costs one
+    reply its voice (safe — the text still lands), a false positive reads a
+    40-character token aloud in a shared channel (unrecoverable).
+    """
+
+    return not (
+        _URL_RUN.search(text)
+        or _HANDLE_RUN.search(text)
+        or _UUID_RUN.search(text)
+        or _HEX_RUN.search(text)
+        or _B64_RUN.search(text)
+    )
 
 
 @runtime_checkable

@@ -1526,13 +1526,22 @@ class SpeechSttConfig(BaseModel):
 
 
 class SpeechTtsConfig(BaseModel):
-    """`[speech.tts]` — outbound speech, deliberately deferred.
+    """`[speech.tts]` — outbound speech: voice-channel TTS (design/voice-
+    channel/01 §5).
 
-    Present so the `[speech]` shape is stable and a later part lands without a
-    schema migration. Inert (`enabled = false`) — nothing reads this yet, and
-    the deploy/stt service does not do TTS. No provider is chosen or
-    committed here (MiniMax / edge-tts / xAI undecided; operator deferred the
-    TTS part as more complex).
+    Optional, defaulted, and INERT by default — the same `[search]`/`[weather]`
+    shape as its STT sibling: `enabled = false` (or an empty `provider`) leaves
+    the composition root with no speaker, and nothing about Nora's behaviour
+    changes. The provider decided 2026-09-14 (design/voice-channel/04 §3b) is
+    MiniMax CN (`provider = "minimax_cn"`): `speech-2.8-turbo` with a native
+    Cantonese `voice` and `language_boost` hard-set in the adapter. The key is
+    read from the env var `api_key_env` NAMES (DEC-8) — never from this file.
+
+    `duck_gain`/`duck_ramp_ms` are the ducking law for `DuckSource`: while
+    speech plays over music, the music is scaled to `duck_gain` and back along
+    a `duck_ramp_ms` linear ramp (a hard step is audible as a click). They are
+    the mix's own transient gain — the listener's persisted `/music volume` is
+    never touched by a duck cycle.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -1540,10 +1549,15 @@ class SpeechTtsConfig(BaseModel):
     enabled: bool = False
     provider: str = ""
     voice: str = ""
+    api_key_env: str = "MINIMAX_CN_API_KEY"
+    duck_gain: float = Field(default=0.25, gt=0, lt=1)
+    duck_ramp_ms: int = Field(default=150, gt=0)
 
 
 class SpeechConfig(BaseModel):
-    """`[speech]` — Nora's voice capability, STT now and TTS later.
+    """`[speech]` — Nora's voice capability: STT (inbound, local) and TTS
+    (outbound, cloud — the deliberate asymmetry design/voice-channel/00
+    records).
 
     Optional, defaulted, and INERT by default — the same convention as
     `[presence]`/`[search]`/`[weather]`/`[compute]`: a config.toml written

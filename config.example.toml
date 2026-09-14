@@ -964,18 +964,30 @@ provider = "hko"           # the WeatherProvider adapter; "hko" is the only one 
 # timeout_seconds = 8.0
 
 [speech]
-# Voice capability (spec 2026-08-21). STT = Cantonese voice-note transcription
-# at ingest via the LOCAL deploy/stt endpoint — audio never leaves the box.
-# Ships INERT like [weather]/[heartbeat]: turning it on is an operator
-# decision, never something a missing section decides. TTS is deferred
-# (present-but-inert; nothing reads it yet).
+# Voice capability (spec 2026-08-21, design/voice-channel). STT = Cantonese
+# voice-note transcription at ingest via the LOCAL deploy/stt endpoint — audio
+# never leaves the box. TTS = voice-channel speech via MiniMax's CN cloud
+# endpoint — text Nora already decided is fit to say aloud leaves the box; the
+# asymmetry is deliberate (design/voice-channel/00). Both ship INERT like
+# [weather]/[heartbeat]: turning either on is an operator decision, never
+# something a missing section decides.
 [speech.stt]
 enabled = false
 endpoint = "http://stt:8000"   # the deploy/stt service on the private nora network
 language = "yue"               # FunASR/SenseVoice's own LID code, not BCP-47
 [speech.tts]
 enabled = false
-# provider = ""
+# provider = "minimax_cn"      # MiniMax CN, speech-2.8-turbo (decided 2026-09-14,
+#                              # design/voice-channel/04 §3b); the key is read from
+#                              # the env var api_key_env NAMES (default
+#                              # MINIMAX_CN_API_KEY), never from this file.
+#                              # Empty provider = no speaker.
+# voice = "Cantonese_CuteGirl" # a NATIVE Cantonese voice — the lever is the
+#                              # voice, not the model tier; language_boost is
+#                              # hard-set in the adapter ("auto" mis-renders 係/唔該)
+# duck_gain = 0.25             # music scales to this while she speaks (0<x<1)
+# duck_ramp_ms = 150           # ramp down and back up over this many ms — a
+#                              # hard step is audible as a click
 
 [heartbeat]
 # The background tick that fires due reminders — Nora's first unprompted-speech

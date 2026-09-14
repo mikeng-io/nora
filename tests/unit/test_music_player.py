@@ -104,6 +104,12 @@ class _FakeVoiceSession:
     def set_volume(self, volume: float) -> None:
         self.volume_calls.append(volume)
 
+    def speak(self, speech_audio: bytes, *, media_type: str, duck: bool = True) -> None:
+        # The `VoiceSession` port's TTS verb (design/voice-channel/01 §4).
+        # `MusicPlayer` never calls it — speech is not music — but the fake
+        # stands in for the WHOLE port, so it declares the whole port.
+        pass
+
     async def disconnect(self) -> None:
         self.disconnected += 1
 
