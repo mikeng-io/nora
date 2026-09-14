@@ -18,7 +18,7 @@ considered:
 
 | Shape | Description | Verdict |
 |---|---|---|
-| Two tools: `steam_status` + `discord_status` | Each mechanism its own tool | **Rejected** — mechanism names (GLOSSARY rule: a tool's name names the capability's full scope, not the mechanism); the `where_been` precedent shows the accepted shape is one capability word |
+| Two tools: `steam_status` + `discord_status` | Each mechanism its own tool | **Rejected** — mechanism names (ADR 0004: a tool's name names the capability the router matches on, and a name is measured, never argued); the `where_been` precedent shows the accepted shape is one capability word |
 | One tool, closed `what` vocabulary | `online_now(what, names?)` with `what ∈ {online, playing, voice}` | **Chosen** — mirrors `where_been(what ∈ {day, places, rhythm, routes})` (DEC-155 presence-analytics P1; see the `where_been` docstring, `nora/agent/tools.py`) |
 
 Rationale for one tool, following the `where_been` precedent (`tools.py:541`,
@@ -79,7 +79,8 @@ online_now(what ∈ {online, playing, voice}, names?)
 The tag-turn ask 「Blake 而家係咪 online 喺 Steam」 is answered by
 `online_now(what="online", names=["blake_lindqvist"])` — the tool is reachable
 from any tag turn once registered. Scope is the invoking room's roster; a
-`names` argument referencing a non-member is filtered out (03-guards).
+`names` argument referencing a non-member of the occasion's input domain
+(03-guards) is filtered out.
 
 `names?` is an optional filter — DEC-24-shaped arguments only: Nora already
 holds which room and which people; a `names` argument exists to bound a

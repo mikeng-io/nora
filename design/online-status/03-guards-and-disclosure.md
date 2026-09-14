@@ -27,14 +27,18 @@ whole disclosure story:
 **Proactive-occasion input domain:** the decide turn is home-room-keyed
 (DEC-162), but a note may carry subjects from its `established_in` room.
 For the proactive occasion the per-call input domain is the union of the
-home room's roster and the note's `established_in` roster — still
-friend-circle members, never strangers. The tool is passed that resolved
-union by the decide turn, the same way a tag turn is passed its own
-`RoomView`; the tool itself never queries a roster (04-consumers).
+home room's roster and the note's established-in **subjects** (the person
+names resolved from the note itself — the architecture binds room-scoped
+tools to ONE home `RoomView` at build time, so a second room's roster is
+not resolvable by the decide turn). Still friend-circle members, never
+strangers. The tool is passed that resolved union by the decide turn, the
+same way a tag turn is passed its own `RoomView`; the tool itself never
+queries a roster (04-consumers).
 
 **DM residual (accepted for now):** DM support is deliberately not shipped
-(parser refuses non-group; `references/dm-support.md` records v1 scope
-drop). When DMs land, the roster of a 1:1 is `{asker, Nora}`, which would
+(parser refuses non-group; the DM v1-scope drop is recorded in the Nora
+skill reference `references/dm-support.md`, operator's skill space). When
+DMs land, the roster of a 1:1 is `{asker, Nora}`, which would
 let a DM ask about any mapped member — outside what the friend-circle
 argument covers. Recorded here so the DM project applies the one-line
 docstring rule ("in a DM, answer only about the asker") rather than

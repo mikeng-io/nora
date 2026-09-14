@@ -14,8 +14,9 @@ edges:
 
 ### identity.toml already carries Steam IDs
 
-12 `steam_id` values exist in `identity.toml` today (grepped 2026-09-15),
-added for Pulse (game-server-monitor) player attribution. The comment at
+6 `steam_id` values exist in `identity.toml` today (grepped 2026-09-15:
+miles_novak, tyler_cortez, grant_carver, blake_lindqvist, aaron_larsen,
+clara_lawson), added for Pulse (game-server-monitor) player attribution. The comment at
 `identity.toml` explains why SteamID64 is the stable key —
 "SteamID64, not the game's own EOS player_key — steam_id is stable across
 every Steam-launched game, matched against Abiotic Factor's login line

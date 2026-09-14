@@ -23,7 +23,7 @@ contradicting the note.
 With `online_now` wired into the proactive turn, the decide pass can:
 
 - read the note's `established_in` and the room roster,
-- call `online_now(what="playing", names=roster ∪ established_in_roster)`
+- call `online_now(what="playing", names=home_roster ∪ established_in_subjects)`
   (the decide turn passes that resolved union — the tool's input domain
   for the proactive occasion, 03-guards — so a note born in Zone 42 about
   Blake is checked against Blake's live state even though the decide turn
