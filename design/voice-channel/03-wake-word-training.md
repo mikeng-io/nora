@@ -109,6 +109,11 @@ A synthetic 1.000 AUC is not evidence for a music-bearing channel.
   `Transcriber` — a `WakeDetector` protocol, with the openWakeWord
   implementation in `infra/`. The probe's models already load from
   `voice-lab/models/`.
+- **The receive path underneath it is a Node sidecar** (`@discordjs/voice` +
+  DAVE decrypt) forwarding per-user PCM to a Python wake process — see
+  `05-sidecar-receive.md`. The wake word itself is Python; only the
+  receive/decrypt is Node. Decided 2026-09-14 after a live comparison of
+  the three receive routes (discord-ext-voice-recv / pycord / sidecar).
 - **`喂 Nora` is the phrase.** Confirmed as the tested wake phrase; the probe's
   positives are all built around it.
 - **Fire on onset, not on phrase+command** (Finding 2).
