@@ -738,6 +738,57 @@ services:
       start_period: 240s
       retries: 3
 
+  # voice-sidecar — stage 2 of the voice-channel design
+  # (design/voice-channel/05-sidecar-receive.md): a Node receive-only sidecar
+  # (@discordjs/voice + libdave, Discord's own stack) that joins a Discord
+  # voice channel, DAVE-decrypts per-user Opus, decodes to PCM, and forwards
+  # {user_id, pcm} over a local TCP seam to the FUTURE Python wake gate
+  # (stage 3, separately gated — nothing consumes the stream yet). Dumb pipe:
+  # no wake, no STT, no AI; audio is forwarded, never stored.
+  #
+  # Posture mirrors stt: own image from deploy/voice-sidecar/, NO `ports:`
+  # publish — reachable only on the private `nora` network. Without
+  # DISCORD_BOT_TOKEN + VOICE_GUILD_ID + VOICE_CHANNEL_ID the service is
+  # healthy-but-idle (its /health is liveness, see the README in
+  # deploy/voice-sidecar/), so a deployment with voice receive off still
+  # starts clean.
+  voice-sidecar:
+    build:
+      context: ./deploy/voice-sidecar
+      # network: host is REQUIRED, same reason as every other build in this
+      # file (operational constraint 1): BuildKit's bridge can't resolve
+      # deb.debian.org on this host, so apt-get stalls/fails. This Dockerfile
+      # does apt-get install curl.
+      network: host
+    image: voice-sidecar:latest
+    container_name: voice-sidecar
+    restart: unless-stopped
+    networks: [nora]
+    environment:
+      # The same bot token the nora service uses (Discord adapter, DEC-102) —
+      # the sidecar joins voice as the same bot. `:-` not `:?` so a
+      # deployment with voice receive off starts without it (idle, above).
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+      # Where to join. Namespaced VOICE_* so the operator's .env carries no
+      # bare GUILD_ID that some other service might grow a meaning for.
+      - GUILD_ID=${VOICE_GUILD_ID:-}
+      - CHANNEL_ID=${VOICE_CHANNEL_ID:-}
+      # The wake-gate seam (deploy/voice-sidecar/TRANSPORT.md). 127.0.0.1 is
+      # inert inside the container until stage 3 points this at the wake
+      # gate's service name on this network.
+      - PUMP_HOST=${VOICE_PUMP_HOST:-127.0.0.1}
+      - PUMP_PORT=${VOICE_PUMP_PORT:-4599}
+    healthcheck:
+      # /health is process liveness served by src/service.mjs; it answers
+      # while the service idles without a token (healthy-but-idle).
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:$${PORT:-4600}/health"]
+      interval: 30s
+      timeout: 5s
+      # No model download here — but the first `npm ci`-built image boot and
+      # the Discord gateway handshake get headroom anyway.
+      start_period: 60s
+      retries: 3
+
   # --- the metrics reader, and the path an alert takes to a human -----------
   #
   # Added 2026-09-09. Until then NOTHING scraped the 94 `nora_*` series: they
