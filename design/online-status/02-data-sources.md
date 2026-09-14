@@ -48,8 +48,17 @@ state; the tool reads it.
 
 ## New credential — Steam Web API key
 
-Steam's `ISteamUser/GetPlayerSummaries/v2` needs an API key. `.env` has no
-`STEAM_API_KEY` today (grep = 0, 2026-09-15).
+Steam's `ISteamUser/GetPlayerSummaries/v2` needs an API key. `.env` has
+`STEAM_WEB_API_KEY` now (operator 2026-09-15). Live verification against
+the real key succeeded (2026-09-15): all 6 mapped steam_ids returned with
+`communityvisibilitystate=3` (**public profiles**), so `gameextrainfo` /
+`gameid` are readable for every current member. A privacy caveat governs
+future members: Steam honors per-user profile visibility — a Public profile
+returns `personastate` + `gameextrainfo`; a Friends-Only/Private profile
+hides `gameextrainfo` (and limits state fields). Fail-closed handling: when
+`gameextrainfo` is absent but the person is present, the tool reports
+`profile_hidden` alongside the state — hidden is NOT offline, and the tool
+must never claim "not playing" when the field is simply withheld.
 
 - Key is **free** (Steam Web API registration: login → key form), standard
   rate limits (100k calls/day per key in practice; GetPlayerSummaries is
