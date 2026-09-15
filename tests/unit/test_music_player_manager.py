@@ -573,6 +573,73 @@ async def test_a_track_finishing_with_an_empty_queue_does_not_notify() -> None:
     assert notify.messages == []
 
 
+async def test_leave_notifies_the_channel_when_it_tears_a_session_down() -> None:
+    """2026-09-15 live: voice death tore the session down with ZERO
+    notification — the room only noticed the silence. `_leave` must
+    announce the teardown the same way it announces a now-playing line,
+    using the session's registered notify closure."""
+    manager = _manager({"track a": _TRACK_A})
+    notify = _RecordingNotify()
+
+    async def connect() -> _FakeVoiceSession:
+        return _FakeVoiceSession()
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1", notify=notify,
+    )
+
+    await manager._leave("guild-1", announce=True)
+
+    assert notify.messages == [
+        "Music stopped — voice connection lost. Use /music play to restart."
+    ]
+
+
+async def test_leave_without_announce_does_not_notify() -> None:
+    """`/music stop` replies `Stopped.` itself; an idle timeout is
+    expected silence. Only the voice-death path announces — a plain
+    `_leave` must stay silent (2026-09-15 live: the old code would have
+    double-posted after `/music stop`)."""
+    manager = _manager({"track a": _TRACK_A})
+    notify = _RecordingNotify()
+
+    async def connect() -> _FakeVoiceSession:
+        return _FakeVoiceSession()
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1", notify=notify,
+    )
+
+    await manager._leave("guild-1")
+
+    assert notify.messages == []
+
+
+async def test_leave_on_an_already_torn_down_guild_does_not_double_notify() -> None:
+    """`_leave` runs idempotently (an emptied channel + an idle timer can
+    both fire) — a second call must not double-post the teardown line."""
+    manager = _manager({"track a": _TRACK_A})
+    notify = _RecordingNotify()
+
+    async def connect() -> _FakeVoiceSession:
+        return _FakeVoiceSession()
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1", notify=notify,
+    )
+
+    await manager._leave("guild-1", announce=True)
+    await manager._leave("guild-1", announce=True)
+
+    assert len(notify.messages) == 1
+
+
 async def test_reusing_a_session_from_another_channel_keeps_the_original_notify() -> None:
     """"The channel where it started" means the FIRST `/music play` for this
     session, not the most recent one -- a later reuse must not move where

@@ -72,6 +72,21 @@ class _FakeVoiceChannel:
         return _FakeVoiceClient()
 
 
+class _AlreadyConnectedChannel:
+    """A channel whose `connect()` always raises
+    `Already connected to a voice channel.` — the exact shape a LIVE
+    connection produces when the death monitor mis-fires (2026-09-15: a
+    pause made the monitor probe "dead", but `guild.voice_client` still
+    held the channel, so a fresh `connect()` refused)."""
+
+    def __init__(self) -> None:
+        self.connect_calls = 0
+
+    async def connect(self) -> _FakeVoiceClient:
+        self.connect_calls += 1
+        raise discord.ClientException("Already connected to a voice channel.")
+
+
 class _FakeVoiceClient:
     def __init__(self, *, connected: bool = True, ws_closed: bool = False) -> None:
         self.played_sources: list[object] = []
@@ -85,6 +100,7 @@ class _FakeVoiceClient:
         self.disconnected = 0
         self.disconnect_force_calls: list[bool] = []
         self._playing = False
+        self._resumed = True  # discord.py AudioPlayer starts resumed
         self._after = None
         self._source: object = None
         # Real `discord.VoiceClient.is_connected()` -- toggled by a test to
@@ -117,6 +133,7 @@ class _FakeVoiceClient:
         self._source = source
         self._after = after
         self._playing = True
+        self._resumed = True
 
     @property
     def source(self) -> object:
@@ -128,13 +145,23 @@ class _FakeVoiceClient:
         self.live_swaps.append(value)
 
     def is_playing(self) -> bool:
-        return self._playing
+        # Real `discord.py` behaviour: `AudioPlayer.pause()` clears
+        # `_resumed` so `is_playing()` returns False for the whole pause,
+        # even though the source is still loaded and the connection is
+        # healthy. Reproduced here so the death monitor's pause handling is
+        # tested against the real signal it gets in production (found live
+        # 2026-09-15: a pause made the monitor declare the connection dead).
+        return self._playing and self._resumed
 
     def pause(self) -> None:
         self.paused += 1
+        # Real discord.py: `AudioPlayer.pause()` clears `_resumed`.
+        self._resumed = False
 
     def resume(self) -> None:
         self.resumed += 1
+        # Real discord.py: `AudioPlayer.resume()` sets `_resumed`.
+        self._resumed = True
 
     def stop(self) -> None:
         # The real `discord.py` behaviour this fake exists to reproduce:
@@ -804,6 +831,73 @@ async def test_the_voice_death_monitor_stays_silent_after_a_natural_track_end() 
     session.stop()
 
     assert deaths == 0
+
+
+async def test_the_voice_death_monitor_stays_silent_while_paused() -> None:
+    """2026-09-15 live: a pause clicked while a track was loaded made the
+    death monitor see `is_playing()==False` for two consecutive 5s ticks
+    and tear the session down — reconnect then failed with \"Already
+    connected to a voice channel\" (the connection was ALIVE) and the room
+    had no idea music had stopped. A paused track is intentional silence,
+    not a death signal: the monitor must never fire while paused."""
+    voice_client = _FakeVoiceClient()
+    deaths = 0
+
+    async def on_voice_death() -> None:
+        nonlocal deaths
+        deaths += 1
+
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(), on_finished=lambda: None,
+        on_voice_death=on_voice_death,
+        audio_source_factory=lambda url: _FakeAudioSource(url),
+        monitor_interval_seconds=0.02,
+    )
+    session.play("https://cdn.example/a")
+
+    session.pause()
+    # More than two dead ticks' worth of paused time — pre-fix this fired
+    # death after two ticks, exactly like the live incident.
+    await asyncio.sleep(0.1)
+    session.resume()
+
+    assert deaths == 0, "a paused track must never be read as a dead voice connection"
+
+    # After resume the monitor goes back to normal: a REAL death still fires.
+    voice_client._resumed = False  # simulate a real dropped audio thread
+    await asyncio.sleep(0.1)
+    assert deaths == 1, "resume must re-arm the monitor against real deaths"
+
+
+async def test_voice_reconnect_survives_a_false_positive_death_probe() -> None:
+    """2026-09-15 live companion: when the death monitor mis-fires while
+    the connection is actually alive, `channel.connect()` raises
+    `Already connected to a voice channel.` — that is PROOF the connection
+    is alive, not a failed reconnect. `_try_reconnect` must treat it as a
+    false positive and keep the session, never signal death."""
+    voice_client = _FakeVoiceClient(ws_closed=True)  # probe says "dead"
+    # A channel whose connect() always raises "Already connected" — the
+    # shape the REAL connection-alive state produces.
+    channel = _AlreadyConnectedChannel()
+    deaths = 0
+
+    async def on_voice_death() -> None:
+        nonlocal deaths
+        deaths += 1
+
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(), on_finished=lambda: None,
+        on_voice_death=on_voice_death,
+        audio_source_factory=lambda url: _FakeAudioSource(url),
+        monitor_interval_seconds=0.02,
+        reconnect_channel=channel,
+    )
+    session.play("https://cdn.example/a")
+
+    await asyncio.sleep(0.12)
+
+    assert deaths == 0, "Already connected must be read as alive, not as death"
+    assert session._voice_client is voice_client, "no client swap on a false positive"
 
 
 async def test_voice_death_reconnects_and_restarts_the_track() -> None:

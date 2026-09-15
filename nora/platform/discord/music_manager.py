@@ -225,13 +225,15 @@ class MusicPlayerManager:
         `voice.play()` raised `Not connected to voice.`). The player still
         believes it is playing; end the session like a stop so a fresh
         `/music play` joins a clean connection instead of streaming into a
-        dead socket."""
+        dead socket. Announces the teardown — this is the one transition
+        with no command reply of its own, and the room used to have no idea
+        (found live 2026-09-15)."""
         # Same per-guild lock as `play()`/`on_track_finished` — the monitor
         # can fire while a natural track-end is mid-`_advance` (external
         # audit MAJOR-3, 2026-08-26).
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
         async with lock:
-            await self._leave(guild_id)
+            await self._leave(guild_id, announce=True)
 
     async def persisted_sessions(self) -> Sequence[MusicSession]:
         """Every session a PRIOR process left behind — the boot-time
@@ -408,9 +410,26 @@ class MusicPlayerManager:
         async with lock:
             await self._leave(guild_id)
 
-    async def _leave(self, guild_id: str) -> None:
+    async def _leave(self, guild_id: str, *, announce: bool = False) -> None:
         self._cancel_idle_disconnect(guild_id)
-        self._notify.pop(guild_id, None)
+        notify = self._notify.pop(guild_id, None)
         player = self._players.pop(guild_id, None)
         if player is not None:
             await player.stop()
+        if announce and notify is not None and player is not None:
+            # Announce the teardown ONLY on the one transition with no
+            # command reply of its own — `on_voice_death`. `/music stop`
+            # already replies `Stopped.`, an idle timeout is expected, and
+            # an emptied channel has nobody left to read it (found live
+            # 2026-09-15: voice death tore the session down with zero
+            # notification — listeners only noticed the silence).
+            # `_leave` is idempotent and can be re-run on an already-torn
+            # guild; a second call has no player and must not double-post.
+            # `silent=True` matches every other music notify.
+            try:
+                await notify(m.connection_lost_line())
+            except Exception:
+                log.warning(
+                    "could not announce music teardown for guild %s", guild_id,
+                    exc_info=True,
+                )
