@@ -69,6 +69,11 @@ its services are built from subtrees here (`stt/`, `drop/`, …). The newest:
   Python wake gate. Dumb pipe; audio is never stored. See
   `design/voice-channel/05-sidecar-receive.md` and
   `deploy/voice-sidecar/README.md`.
+* **`voice-wake/`** — Python wake gate (stage 3), the seam's only consumer:
+  openWakeWord 「喂 Nora」 detection per user, utterance collection,
+  transcription via the local `stt` service, and the transcript POSTed to
+  Nora's `/app/v1/voice/utterance` as text. Audio is transient end to end.
+  See `deploy/voice-wake/README.md`.
 
 ## Watchdog — retired 2026-09-09
 

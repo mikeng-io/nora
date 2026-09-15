@@ -778,10 +778,12 @@ services:
       # bare GUILD_ID that some other service might grow a meaning for.
       - GUILD_ID=${VOICE_GUILD_ID:-}
       - CHANNEL_ID=${VOICE_CHANNEL_ID:-}
-      # The wake-gate seam (deploy/voice-sidecar/TRANSPORT.md). 127.0.0.1 is
-      # inert inside the container until stage 3 points this at the wake
-      # gate's service name on this network.
-      - PUMP_HOST=${VOICE_PUMP_HOST:-127.0.0.1}
+      # The wake-gate seam (deploy/voice-sidecar/TRANSPORT.md). Stage 3 made
+      # the consumer real: `voice-wake` below listens on 4599, so the shipped
+      # default is the service name on this same private network — the
+      # sidecar connects OUT, no port is ever published. 127.0.0.1 remains as
+      # an explicit VOICE_PUMP_HOST override for the consume.mjs stand-in.
+      - PUMP_HOST=${VOICE_PUMP_HOST:-voice-wake}
       - PUMP_PORT=${VOICE_PUMP_PORT:-4599}
     healthcheck:
       # /health is process liveness served by src/service.mjs; it answers
@@ -791,6 +793,57 @@ services:
       timeout: 5s
       # No model download here — but the first `npm ci`-built image boot and
       # the Discord gateway handshake get headroom anyway.
+      start_period: 60s
+      retries: 3
+
+  # voice-wake — stage 3 of the voice-channel design
+  # (design/voice-channel/00-overview.md): the Python wake gate, and the ONLY
+  # consumer of the sidecar's seam. Per-user PCM in, openWakeWord 「喂 Nora」
+  # detection (the v3 ONNX is baked into the image), utterance collection,
+  # transcription via the local `stt` service, and the TRANSCRIPT forwarded
+  # to Nora's POST /app/v1/voice/utterance — audio is transient end to end,
+  # never stored. Failure posture: no wake → no cost (one STT retry with
+  # language unset, then a silent drop).
+  #
+  # Posture mirrors stt/voice-sidecar: own image from deploy/voice-wake/, NO
+  # `ports:` publish — the seam (4599) and /health (4601) are reachable only
+  # on the private `nora` network. Without VOICE_GUILD_ID + VOICE_CHANNEL_ID
+  # the service is healthy-but-idle (detects, but has no conversation to
+  # forward into), so a deployment with voice wake off still starts clean.
+  voice-wake:
+    build:
+      context: ./deploy/voice-wake
+      # network: host is REQUIRED, same reason as every other build in this
+      # file (operational constraint 1): BuildKit's bridge can't resolve
+      # deb.debian.org on this host, so apt-get stalls/fails. This Dockerfile
+      # does apt-get install curl.
+      network: host
+    image: voice-wake:latest
+    container_name: voice-wake
+    restart: unless-stopped
+    networks: [nora]
+    environment:
+      # Where the wake happened — become conversation_id, Discord's flattened
+      # "<guild>/<channel>" (the shape nora/platform/discord/parser.py
+      # produces for typed messages), so a voice utterance lands in the same
+      # conversation namespace as the channel's typed chat.
+      - VOICE_GUILD_ID=${VOICE_GUILD_ID:-}
+      - VOICE_CHANNEL_ID=${VOICE_CHANNEL_ID:-}
+      - WAKE_THRESHOLD=${VOICE_WAKE_THRESHOLD:-0.5}
+      # The two hop targets, by SERVICE NAME on this network. `nora` is the
+      # nora container's aiohttp app (health + web routes on 9100 — the
+      # container publishes 9100 to host loopback, but service-name reach is
+      # the network path, not the publish); `stt` is the local transcription
+      # service stage 3 reuses.
+      - NORA_INGEST_URL=http://nora:9100
+      - STT_URL=http://stt:8000
+    healthcheck:
+      # /health is process liveness served by the wake service itself; it
+      # answers while the service idles without a channel configured
+      # (healthy-but-idle), same posture as the sidecar's.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4601/health"]
+      interval: 30s
+      timeout: 5s
       start_period: 60s
       retries: 3
 
