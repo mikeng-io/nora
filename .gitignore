@@ -93,3 +93,13 @@ deploy/shortener/*.tfvars
 nora/version.json
 RELEVANCE_GATE_TASK.md
 .venv
+
+# Voice-wake runtime artifacts — REGENERATED, never committed (the same rule
+# as nora/version.json: a committed copy is a second, stale answer to "what
+# model is running"). The ONNX is a trained artifact from
+# ~/workspace/voice-lab (v3 export, ~205 KB); the seam fixture is PCM audio
+# frames for the codec test. Both are produced/buildable, so leaving them
+# untracked costs nothing and keeps the identifier gate's "no binaries in
+# this repo" invariant intact.
+deploy/voice-wake/models/
+deploy/voice-wake/tests/fixtures/seam_frames.bin
