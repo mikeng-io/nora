@@ -88,6 +88,15 @@ def stopped_line() -> str:
     return "Stopped."
 
 
+def connection_lost_line() -> str:
+    """Announced when the voice connection died and the session was torn
+    down — the one transition that used to end playback with ZERO
+    notification (found live 2026-09-15: pause mis-read as voice death,
+    reconnect failed, session torn down, nobody in the channel knew). The
+    line tells the room to re-invoke `/music play` to start again."""
+    return "Music stopped — voice connection lost. Use /music play to restart."
+
+
 def volume_line(percent: int) -> str:
     return f"Volume set to {percent}%."
 
