@@ -51,7 +51,7 @@ import logging
 import re
 import urllib.parse
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
 from typing import Literal, Protocol, cast
@@ -82,7 +82,7 @@ from ..domain.media import (
     sniff_media_type,
 )
 from ..domain.media_join import MediaJoin
-from ..domain.models import TranscriptRow, WeatherObservation
+from ..domain.models import PersonRef, TranscriptRow, WeatherObservation
 from ..domain.notes import (
     TAG_PATH_PREFIX,
     Note,
@@ -92,6 +92,8 @@ from ..domain.notes import (
 )
 from ..domain.ports import (
     ComputeBackend,
+    DiscordPresenceSource,
+    DiscordPresenceState,
     GifSource,
     ImageGenerator,
     ImageReference,
@@ -104,6 +106,10 @@ from ..domain.ports import (
     OutboundAttachment,
     OutboundQuote,
     Recollection,
+    SteamPlayerState,
+    SteamPresenceProvider,
+    VoiceChannelRef,
+    VoicePresenceSource,
 )
 from ..domain.reminders import (
     UNIT_SECONDS,
@@ -540,6 +546,23 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # The spec pinned True; the audit overturned it.
     "where_been": NativeTool(8,
                              time_shiftable=True, source_tier="confirmed", cacheable=False,
+                             read_only=True,
+                             side_effect_state="none", idempotency="idempotent", retry="safe",
+                             output_contract="three_state"),
+    # 4, sized on NETWORK cost like `transit` (design/online-status/04's own
+    # budgets row): one question is ONE batched GetPlayerSummaries call — the
+    # room's whole id set goes out in a single request, up to Steam's
+    # documented 100 ids — and/or one read of the Discord gateway's voice
+    # cache. A second call is a second question, never a per-person fan-out.
+    #
+    # `time_shiftable=False`: live state, the same declaration `now` and
+    # `transit` carry — the answer describes this instant and decays.
+    # `cacheable=False` is load-bearing: a cached "playing" replayed minutes
+    # later is the exact stale-note failure (#248) this tool exists to kill.
+    # Contrast `transit`'s cacheable=True — transit answers a STABLE schedule;
+    # this answers a mutable instant.
+    "online_now": NativeTool(4,
+                             time_shiftable=False, source_tier="confirmed", cacheable=False,
                              read_only=True,
                              side_effect_state="none", idempotency="idempotent", retry="safe",
                              output_contract="three_state"),
@@ -1410,6 +1433,38 @@ def _record_created(metrics, status: str, **detail: object) -> None:
         _record(metrics, "remind", "unavailable", **detail)
     else:
         _record(metrics, "remind", "refused", reason=status, **detail)
+
+
+@dataclass(frozen=True)
+class OriginRoom:
+    """One policy room, keyed by its conversation ids, for a note-linked
+    proactive row's DESTINATION (design/dreamer-agent-loop/40, issue #248).
+
+    A workspace-keyed adaptor is handed its home room at `build` time, and
+    under Dreamer provenance `remind` stamps every row into it. A note can
+    be born in ANY room of the workspace — Zone 42 on Discord, say, while
+    the home room is the Signal group — so a note-linked row's destination
+    is the room the note carries (`Note.established_in`), read through this
+    map, not the home room. Same policy-independence seam as `home_rooms`:
+    `RegistryToolSource` receives a prebuilt `Mapping[str, OriginRoom]` from
+    the composition root and never reads `nora.policy` itself
+    (`nora/agent/dreamer.py` docstring).
+
+    `proactive` mirrors `Conversation.proactive` at build time so the decide
+    turn can refuse BEFORE a row that could never fire is written; the
+    fire-time `ProactiveScreen` re-checks the row's own room regardless
+    (`proactive_screen.py`).
+    """
+
+    platform: str
+    conversation_id: str
+    conversation_type: str = "group"
+    proactive: bool = False
+    # The workspace this room belongs to, from policy.toml at load time. Kept
+    # so a row can be refused when the note's origin room drifted into a
+    # DIFFERENT social unit since the note was born — cross-workspace speech
+    # is the one thing the workspace boundary exists to prevent.
+    workspace: str = ""
 
 
 def _parse_when(raw: str) -> datetime | None:
@@ -2424,9 +2479,22 @@ def build_tool_specs(
     workspace_for: Callable[[str, str], str | None] | None = None,
     supplied_workspace: str | None = None,
     music: MusicToolBridge | None = None,
+    online_source: SteamPresenceProvider | None = None,
+    voice_source: VoicePresenceSource | None = None,
+    presence: DiscordPresenceSource | None = None,
+    online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
     image_generator: ImageGenerator | None = None,
     image_refs_allowed: bool = False,
     media_store: MediaObjectStore | None = None,
+    # Proactive destination map (design/dreamer-agent-loop/40, #248): policy
+    # conversation ids -> OriginRoom, built by the composition root exactly
+    # like `home_rooms` and handed through the same seam
+    # (`RegistryToolSource` -> `build_tool_specs`). `remind` under `dream_adaptor`
+    # provenance reads a linked note's `established_in` through it to stamp a
+    # row into the room the note was born in instead of the home room. `None`
+    # (every tag-path caller, and a workspace with no proactive wiring) keeps
+    # the home-room behaviour — the honest, unchanged default.
+    origin_rooms: Mapping[str, OriginRoom] | None = None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -2526,6 +2594,28 @@ def build_tool_specs(
     optional collaborator above uses. All four music tools ALSO refuse on
     `room.platform != "discord"` before ever touching it, so a non-Discord
     room never reaches this collaborator at all.
+
+    `online_source`/`voice_source`/`presence` are `online_now`'s live-state
+    reads (design/online-status/): the Steam summaries client, the Discord
+    voice-membership source (the narrow `voice` sub-arm), and the Discord
+    per-person PRESENCE source (the `online` arm's Discord half — status +
+    rich presence, the 2026-09-15 correction: presence, never voice
+    membership, is what "Discord online" means). Each is `None` in every
+    composition that has not wired it — the same honest wiring-gap shape as
+    `mobility` above: an arm whose source is missing answers `unavailable`
+    (R-5), never `nothing_found`, and never crashes; the `online` arm
+    answers from whichever half IS wired and says so
+    (`steam_wired`/`discord_wired`/`voice_wired`).
+
+    `online_scope` is the proactive decide turn's input-domain override
+    (design/online-status/03): a per-CALL resolver for "who this call may
+    answer about", supplied by `RegistryToolSource` only for a home-room
+    decide turn — the home roster unioned with the note's established-in
+    subjects — where a tag turn leaves it `None` and the domain is the
+    invoking room's own roster. When supplied it WINS and `room.scope()` is
+    never queried; when it raises, the call answers `unavailable`, never a
+    narrowed guess. It must never become a registry field — it is bound to
+    exactly one decide turn, the way `supplied_workspace` below is.
 
     `supplied_workspace` is the Dreamer's half of the key-path fix (32 §3.4,
     and `08-state.md` §10's named trap): a WORKSPACE-keyed adaptor's key IS
@@ -4312,6 +4402,406 @@ Args:
         )
         _record(metrics, "where_been", str(answer.get("status", "unavailable")))
         return answer
+
+    # ---- online_now (design/online-status/, the #248 live-state cross-check) --
+    #
+    # Steam's own personastate vocabulary, spelled for the model. The port
+    # deliberately carries the RAW int (nora/domain/ports.py); the string is
+    # presentation and lives here, at the one seam that presents. An int the
+    # mapping does not know is "unknown" — never a guessed word.
+    _online_states = {
+        0: "offline",
+        1: "online",
+        2: "busy",
+        3: "away",
+        4: "snooze",
+        5: "looking_to_trade",
+        6: "looking_to_play",
+    }
+    _online_arms = ("online", "playing", "voice")
+
+    async def online_now(what: str, names: list[str] | None = None) -> dict:
+        """Live digital activity for the people in this room — who is online,
+        who is in a voice channel, who is playing what. Call this when a
+        question or a decision turns on whether someone is actually present
+        or playing right now.
+
+        One of three arms, exactly one per call:
+          - `what="online"` — 「Blake 而家 online 嗎」「而家有冇人喺度」: who is
+            around digitally right now — Steam presence merged with Discord
+            per-person PRESENCE (`discord_status`: Discord's own word —
+            online/idle/dnd/offline — plus rich presence: `discord_game`
+            when they are playing a game there, `discord_listening` when
+            they are listening to music). `away`/`snooze` are Steam's words,
+            never Discord's. NEVER answer "Discord online" from voice
+            membership — an online Discord user may be in no channel at all;
+            voice membership appears only as an extra `in_voice` fact.
+            `steam_wired`/`discord_wired`/`voice_wired` in the result say
+            which halves could actually be checked; `false` means that half
+            could not be checked at all — never present the answer as the
+            whole picture. An entry carries `state` when Steam answered for
+            that person and the `discord_*` fields when the Discord half
+            checked them — either or both.
+          - `what="playing"` — 「而家有咩人打緊機」「Blake 打緊咩」: who is in a
+            game right now, and the title.
+          - `what="voice"` — 「有冇人喺 voice channel 傾緊偈」: who is in which
+            Discord voice channel right now.
+
+        `status` is one of three and they mean different things:
+          - `ok` — live state for the people asked about. It describes THIS
+            instant: report it as right now, and never carry it forward as
+            still true minutes later.
+          - `nothing_found` — nobody asked about could be checked (no linked
+            account, or the name matches nobody in this room). Say there is
+            nothing to see — do not guess.
+          - `unavailable` — you could not check (that half is not wired, or
+            the read failed). Say so — never report it as "everyone is
+            offline" and never as "nobody is playing".
+
+        Honesty rules that are part of the result, not style:
+          - `state` is Steam's own word: `away` and `snooze` are answers.
+            NEVER flatten them to "online", and never to "offline" either.
+          - `profile_hidden` means Steam withholds the play state — the
+            profile is private, so you cannot see whether they are in a
+            game. It is NOT "not playing" and NOT "offline"; say you cannot
+            see.
+          - An entry with `state="unknown"` names a person who could not be
+            checked at all, and its `reason` says why (`no_steam_id`,
+            `not_on_steam`, `no_discord_id`). Never fill the gap.
+
+        Args:
+            what: "online", "playing" or "voice" — exactly one of the three.
+            names: Who they asked about, exactly as said (["Blake"], [「阿豹」]).
+                Leave it out for the people in THIS conversation — the room
+                asking about the room. A name outside the room is dropped,
+                never looked up.
+        """
+        # The closed `what` vocabulary (the `where_been` shape). Anything else
+        # is ONE `unavailable` — fail-closed, never a silent `{}` and never a
+        # guessed arm.
+        if str(what) not in _online_arms:
+            _record(metrics, "online_now", "unavailable", reason="what")
+            return {
+                "status": "unavailable",
+                "note": "I can't answer that with online_now — it answers who "
+                        "is online, who is playing what, or who is in a voice "
+                        "channel.",
+            }
+        # The wiring check BEFORE any read (R-5): an arm whose source is not
+        # wired is «I could not check», never «nothing». `online` answers from
+        # whichever half IS wired; the other two arms need their own source.
+        steam_wired = online_source is not None
+        voice_wired = voice_source is not None
+        presence_wired = presence is not None
+        if (
+            (what == "playing" and not steam_wired)
+            or (what == "voice" and not voice_wired)
+            or (what == "online" and not (steam_wired or presence_wired or voice_wired))
+        ):
+            _record(metrics, "online_now", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "I have no way to check that right now. Say you "
+                        "couldn't check — never guess who is online, playing, "
+                        "or in voice.",
+            }
+        # The input domain (03-guards): the decide turn's supplied union WINS
+        # when present — and `room.scope()` is then never queried — otherwise
+        # the invoking room's own roster. A scope the tool cannot obtain is
+        # `unavailable`, never a narrowed guess; a DEGRADED room (narrowed to
+        # the tagger alone) is the same — answering from it would report one
+        # person as the room (the where_been discipline: an ERROR, never a
+        # policy answer).
+        if online_scope is not None:
+            try:
+                refs = _dedupe(tuple(await online_scope()))
+            except Exception:
+                log.exception("online_now scope resolver failed")
+                _record(metrics, "online_now", "unavailable", reason="scope")
+                return {
+                    "status": "unavailable",
+                    "note": "I couldn't work out who I may check just now. Say "
+                            "you couldn't check — do not guess.",
+                }
+        else:
+            view = await room.scope()
+            if not view.available or view.degraded:
+                _record(metrics, "online_now", "unavailable", reason="room")
+                return {
+                    "status": "unavailable",
+                    "note": "I can't confirm who is in this conversation right "
+                            "now, so I can't say who is online. Say you "
+                            "couldn't check — do not guess.",
+                }
+            refs = _dedupe(view.people)
+        # `names` bounds the question to the people actually on topic
+        # (DEC-24-shaped: it narrows the domain, it never widens it). A name
+        # matching several in-domain people admits ALL of them — the answer
+        # names everyone it could mean rather than refusing; a name matching
+        # nobody in scope simply drops out, and outsiders are never looked up.
+        if names:
+            picked: list[PersonRef] = []
+            for raw in names:
+                wanted = str(raw).strip()
+                if wanted:
+                    picked.extend(find_by_name(refs, wanted))
+            refs = _dedupe(tuple(picked))
+        if not refs:
+            _record(metrics, "online_now", "nothing_found", what=what)
+            return {
+                "status": "nothing_found",
+                "note": "Nobody I may check here matches that. Say you're not "
+                        "sure who they mean — do not guess.",
+            }
+
+        # The account ids, resolved once: SteamID64s ride the `pulse` platform
+        # blocks (nora/domain/identity.py), Discord ids the `discord` ones.
+        # Both go through the ONE identity index, so what the tool checks and
+        # what resolves an inbound sender can never disagree.
+        steam_ids_by_person = {
+            ref.person_id: persons.platform_ids("pulse", ref.person_id)
+            for ref in refs
+        }
+        discord_ids_by_person = {
+            ref.person_id: persons.platform_ids("discord", ref.person_id)
+            for ref in refs
+        }
+
+        # ONE batched read for the whole question (the budget's own sizing):
+        # the room's id set goes out in a single GetPlayerSummaries request,
+        # never one call per person. `None` is the WHOLE READ unavailable —
+        # never an absent key, which is one account's nothing_found.
+        players: dict[str, SteamPlayerState] | None = None
+        if online_source is not None and what in ("online", "playing"):
+            all_steam_ids = frozenset().union(*steam_ids_by_person.values())
+            players = await online_source.summaries(steam_ids=all_steam_ids)
+            if players is None:
+                _record(metrics, "online_now", "unavailable", what=what)
+                return {
+                    "status": "unavailable",
+                    "note": "I couldn't check Steam just now. Say you couldn't "
+                            "check — never say everyone is offline or that "
+                            "nobody is playing when you haven't looked.",
+                }
+
+        channels: dict[str, VoiceChannelRef] | None = None
+        voice_checked = False
+        if voice_source is not None and what in ("online", "voice"):
+            all_member_ids = frozenset().union(*discord_ids_by_person.values())
+            channels = await voice_source.in_voice(member_ids=all_member_ids)
+            if channels is None and what == "voice":
+                _record(metrics, "online_now", "unavailable", what=what)
+                return {
+                    "status": "unavailable",
+                    "note": "I couldn't check the voice channels just now. Say "
+                            "you couldn't check — never say nobody is in voice "
+                            "when you haven't looked.",
+                }
+            # In the `online` arm a failed voice read DEGRADES instead of
+            # sinking the answer: the Steam half still stands, and
+            # `voice_wired: false` says the voice half could not be checked.
+            voice_checked = channels is not None
+
+        # The `online` arm's Discord half (the 2026-09-15 correction):
+        # per-person PRESENCE — status + rich presence — never voice
+        # membership. Same degrade discipline as the voice read: a failed
+        # read flips `discord_wired` to false and the other halves still
+        # stand; it never sinks the arm.
+        presence_states: dict[str, DiscordPresenceState] | None = None
+        presence_checked = False
+        if presence is not None and what == "online":
+            all_member_ids = frozenset().union(*discord_ids_by_person.values())
+            presence_states = await presence.presence(member_ids=all_member_ids)
+            presence_checked = presence_states is not None
+
+        def _steam_state(ref: PersonRef) -> SteamPlayerState | None:
+            """The one answered summary for this person, or None — an id
+            Steam did not answer for is that account's nothing_found. A
+            person with several mapped accounts reads the first id Steam
+            answered for (sorted, so the pick is stable)."""
+            if players is None:
+                return None
+            for sid in sorted(steam_ids_by_person[ref.person_id]):
+                if sid in players:
+                    return players[sid]
+            return None
+
+        def _voice_ref(ref: PersonRef) -> VoiceChannelRef | None:
+            if not voice_checked or channels is None:
+                return None
+            for did in sorted(discord_ids_by_person[ref.person_id]):
+                if did in channels:
+                    return channels[did]
+            return None
+
+        def _voice_entry(hit: VoiceChannelRef) -> dict:
+            out: dict = {"channel_id": hit.channel_id}
+            if hit.channel_name:
+                out["channel_name"] = hit.channel_name
+            return out
+
+        def _presence_state(ref: PersonRef) -> DiscordPresenceState | None:
+            if not presence_checked or presence_states is None:
+                return None
+            for did in sorted(discord_ids_by_person[ref.person_id]):
+                if did in presence_states:
+                    return presence_states[did]
+            return None
+
+        def _discord_fields(state: DiscordPresenceState) -> dict:
+            """The Discord-presence half of an `online` entry: Discord's own
+            status word, plus rich presence only when the activity named it
+            (never a guessed field)."""
+            out: dict = {"discord_status": state.status}
+            if state.game:
+                out["discord_game"] = state.game
+            if state.listening:
+                out["discord_listening"] = state.listening
+            return out
+
+        people: list[dict] = []
+        readable = 0
+        if what == "playing":
+            for ref in refs:
+                if not steam_ids_by_person[ref.person_id]:
+                    people.append({
+                        "person": ref.name, "state": "unknown",
+                        "reason": "no_steam_id",
+                    })
+                    continue
+                state = _steam_state(ref)
+                if state is None:
+                    people.append({
+                        "person": ref.name, "state": "unknown",
+                        "reason": "not_on_steam",
+                    })
+                    continue
+                readable += 1
+                word = _online_states.get(state.personastate, "unknown")
+                if not state.profile_public:
+                    # Hidden is NOT offline and NOT "not playing" — Steam
+                    # withholds the field, so the tool asserts nothing.
+                    people.append({
+                        "person": ref.name, "state": word, "profile_hidden": True,
+                    })
+                elif state.game:
+                    entry: dict = {"person": ref.name, "state": word, "game": state.game}
+                    if state.game_id:
+                        entry["game_id"] = state.game_id
+                    people.append(entry)
+                else:
+                    people.append({"person": ref.name, "state": word, "playing": False})
+        elif what == "voice":
+            for ref in refs:
+                if not discord_ids_by_person[ref.person_id]:
+                    people.append({
+                        "person": ref.name, "state": "unknown",
+                        "reason": "no_discord_id",
+                    })
+                    continue
+                readable += 1
+                hit = _voice_ref(ref)
+                people.append(
+                    {"person": ref.name, "in_voice": _voice_entry(hit)}
+                    if hit is not None
+                    else {"person": ref.name, "in_voice": False}
+                )
+        else:  # online — the merged arm
+            for ref in refs:
+                has_steam = bool(steam_ids_by_person[ref.person_id])
+                has_discord = bool(discord_ids_by_person[ref.person_id])
+                state = _steam_state(ref) if has_steam else None
+                hit = _voice_ref(ref)
+                dstate = _presence_state(ref)
+                if state is not None:
+                    # Steam answered for them; Discord presence and voice may
+                    # add to the picture.
+                    readable += 1
+                    entry = {
+                        "person": ref.name,
+                        "state": _online_states.get(state.personastate, "unknown"),
+                    }
+                    if not state.profile_public:
+                        # Hidden is NOT offline — Steam withholds the play
+                        # state, so the entry asserts nothing about it.
+                        entry["profile_hidden"] = True
+                    if state.game:
+                        entry["game"] = state.game
+                    if dstate is not None:
+                        entry.update(_discord_fields(dstate))
+                    if hit is not None:
+                        entry["in_voice"] = _voice_entry(hit)
+                    people.append(entry)
+                    continue
+                if has_steam and steam_wired:
+                    # Steam was asked and answered nothing for this id — that
+                    # account's nothing_found, never "offline". Discord may
+                    # still place them.
+                    entry = {
+                        "person": ref.name, "state": "unknown",
+                        "reason": "not_on_steam",
+                    }
+                    if dstate is not None:
+                        readable += 1
+                        entry.update(_discord_fields(dstate))
+                    if hit is not None:
+                        readable += 1
+                        entry["in_voice"] = _voice_entry(hit)
+                    people.append(entry)
+                    continue
+                if dstate is not None:
+                    # The Discord presence half DID check them — a real
+                    # answer in Discord's own words, whether or not they are
+                    # online. (Steam had nothing to say: unwired, or no
+                    # linked account.) Voice membership rides along as one
+                    # more fact, never the definition of "online".
+                    readable += 1
+                    entry = {"person": ref.name, **_discord_fields(dstate)}
+                    if hit is not None:
+                        entry["in_voice"] = _voice_entry(hit)
+                    elif voice_checked:
+                        entry["in_voice"] = False
+                    people.append(entry)
+                    continue
+                if voice_checked and has_discord:
+                    # The voice half DID check them — a real answer whether or
+                    # not they are in a channel. (Neither Steam nor Discord
+                    # presence had anything to say.)
+                    readable += 1
+                    people.append({
+                        "person": ref.name,
+                        "in_voice": _voice_entry(hit) if hit is not None else False,
+                    })
+                    continue
+                # Unreadable: no wired source could say anything about them.
+                people.append({
+                    "person": ref.name, "state": "unknown",
+                    "reason": "no_steam_id" if not has_steam else "no_discord_id",
+                })
+
+        if readable == 0:
+            # Every asked-about person was unreadable — the read answered
+            # about NOBODY, which is `nothing_found`, never an `ok` full of
+            # unknowns (R-27: an answered-nothing is not a result).
+            _record(metrics, "online_now", "nothing_found", what=what)
+            return {
+                "status": "nothing_found",
+                "note": "There is no live state I can see for any of them. "
+                        "Say there's nothing to see — do not guess.",
+            }
+        out = {
+            "status": "ok",
+            "what": what,
+            "steam_wired": steam_wired and players is not None,
+            "voice_wired": voice_checked,
+            "people": people,
+        }
+        if what == "online":
+            # Whether the Discord per-person presence half could be checked
+            # (the merged arm's own flag; the other arms are unchanged).
+            out["discord_wired"] = presence_checked
+        _record(metrics, "online_now", "ok", what=what, people=len(people))
+        return out
 
     # ---- reverse_geocode (DEC-156's fetch surface, coordinate → place) -------
     #
@@ -6458,6 +6948,14 @@ when somebody asks what song is on.
                 "note_id": linked.id,
                 "revision_id": linked.head_revision_id,
                 "note_title": linked.title,
+                # The room this note was born in (design/dreamer-agent-loop/40,
+                # issue #248). It is a routing key, never a filter
+                # (`nora/domain/notes.py`), and it is what a note-linked
+                # proactive row's destination is resolved from below — the
+                # payload already carried the id and the head revision, and
+                # this is the third field that resolution needs. Tagged rows
+                # ignore it (only the Dreamer branch reads it).
+                "established_in": linked.established_in,
             }
         if proactive:
             # THE SINK (39 D3): «if the model writes directly there is no
@@ -6476,6 +6974,50 @@ when somebody asks what song is on.
                             "cannot be held. Say what you mean without it.",
                 }
             payload = {**(payload or {}), "intent": text}
+        # DESTINATION BY ORIGIN (design/dreamer-agent-loop/40, issue #248).
+        # Under Dreamer provenance a note-linked row's destination is the room
+        # the note was born in — the note's own routing key
+        # (`Note.established_in`) — NOT the home room. The live failure was
+        # exactly two facts conflated: where the note was born (Zone 42
+        # Discord) and where Nora stands (Signal Friends, the home room).
+        # Fail closed on every way the origin cannot be reached, and NEVER
+        # fall back to the home room — a fallback is the bug. Unlinked rows
+        # keep the home-room destination (there is no origin to route by).
+        origin: OriginRoom | None = None
+        if proactive and payload is not None and payload.get("established_in"):
+            origin = (
+                None if origin_rooms is None
+                else origin_rooms.get(payload["established_in"])
+            )
+            if origin is None:
+                _record_created(metrics, "refused_origin_unresolvable")
+                return {
+                    "status": "refused",
+                    "note": (
+                        "That note was born in a room I can't resolve, so a "
+                        "proactive message about it would have nowhere to go. "
+                        "Leave it rather than promise."
+                    ),
+                }
+            if origin.workspace != (supplied_workspace or _workspace()):
+                _record_created(metrics, "refused_origin_wrong_workspace")
+                return {
+                    "status": "refused",
+                    "note": (
+                        "That note's room drifted outside this workspace — I "
+                        "won't speak across the boundary. Leave it."
+                    ),
+                }
+            if not origin.proactive:
+                _record_created(metrics, "refused_origin_not_proactive")
+                return {
+                    "status": "refused",
+                    "note": (
+                        "That note was born in a room I'm not trusted to speak "
+                        "into unprompted. Leave it rather than raise it where "
+                        "the person who asked won't see it."
+                    ),
+                }
         try:
             pending = await reminders.count_pending(owner)
             if pending >= caps.max_pending_per_requester:
@@ -6510,10 +7052,19 @@ when somebody asks what song is on.
                 # set in. A `target` parameter here would be an unprompted-speech
                 # lever into a room the requester may not even be in. Under
                 # Dreamer provenance «the conversation it was set in» is the
-                # home room the tool source bound (39 D2).
-                platform=room.platform,
-                conversation_id=bound_conversation_id,
-                conversation_type=conversation_type,
+                # home room the tool source bound (39 D2) — EXCEPT for a
+                # note-linked proactive row, whose destination is the room the
+                # note was born in (design/dreamer-agent-loop/40, #248), which
+                # `origin` above resolved and validated.
+                platform=origin.platform if origin is not None else room.platform,
+                conversation_id=(
+                    origin.conversation_id
+                    if origin is not None else bound_conversation_id
+                ),
+                conversation_type=(
+                    origin.conversation_type
+                    if origin is not None else conversation_type
+                ),
                 text=text,
                 created_at=now,
                 due_at=due_at,
@@ -8086,6 +8637,7 @@ Args:
         _spec("where_is", where_is),
         _spec("reverse_geocode", reverse_geocode),
         _spec("where_been", where_been),
+        _spec("online_now", online_now),
         _spec("who_said", who_said),
         _spec("load_transcript", load_transcript),
         _spec("group_members", group_members),
@@ -8188,6 +8740,10 @@ def build_tools(
     image_generator: ImageGenerator | None = None,
     image_refs_allowed: bool = False,
     media_store: MediaObjectStore | None = None,
+    online_source: SteamPresenceProvider | None = None,
+    voice_source: VoicePresenceSource | None = None,
+    presence: DiscordPresenceSource | None = None,
+    online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
     the docstrings above become the tool's model-facing description/schema
@@ -8217,6 +8773,9 @@ def build_tools(
         supplied_workspace=supplied_workspace,
         image_generator=image_generator, image_refs_allowed=image_refs_allowed,
         media_store=media_store,
+        online_source=online_source, voice_source=voice_source,
+        presence=presence,
+        online_scope=online_scope,
         # FORWARDED, and three of these were not. `build_tools` declares every
         # parameter `build_tool_specs` does and hands them on by name, so one
         # accepted and dropped here is a caller configuring something that

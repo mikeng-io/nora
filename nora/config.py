@@ -1164,6 +1164,36 @@ class PresenceConfig(BaseModel):
     hkgov_lang_en: str = "en"
 
 
+class OnlineConfig(BaseModel):
+    """The `online_now` tool's Steam half (design/online-status/).
+
+    **The whole section is optional and every field defaults, and `enabled`
+    defaults to False**, like `[search]`/`[route]` before it: the tool ships
+    INERT. A `config.toml` without an `[online]` section loads unchanged,
+    and while off no Steam client is constructed — the `online`/`playing`
+    arms answer `unavailable` (R-5), never a confident "everyone is
+    offline". The `voice` arm is NOT gated here: it reads the live Discord
+    client Nora already holds and needs no key, so it wires whenever the
+    Discord platform is enabled.
+
+    The key is named, never inlined (DEC-8): `api_key_env` names the env
+    var holding the Steam Web API key; the composition root reads the VALUE
+    from the environment and a committed file never carries it. An enabled
+    section with the variable unset logs a warning and leaves the Steam
+    half unwired — a wiring gap is `unavailable`, never a 403 per call.
+
+    `timeout_seconds` bounds the one batched GetPlayerSummaries call a
+    question costs; it sits on the reply path, so a dead api.steampowered.com
+    must cost seconds and an `unavailable`, never a hung turn.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    api_key_env: str = "STEAM_WEB_API_KEY"
+    timeout_seconds: float = Field(default=8.0, gt=0)
+
+
 class AnalyticsConfig(BaseModel):
     """The presence analytics substrate — the DERIVED layer (docs/superpowers/
     specs/2026-08-18-presence-analytics-substrate-design), DEC-115.
@@ -2748,6 +2778,11 @@ class Config(BaseModel):
     # turns it on AND a Tavily key is present (`api_key_env`, DEC-8/DEC-73); a
     # config.toml without a `[search]` section keeps loading.
     search: SearchConfig = SearchConfig()
+    # Optional and defaulted — see `OnlineConfig`. Off (inert) unless an
+    # operator turns it on AND a Steam Web API key is present (`api_key_env`);
+    # a config.toml without an `[online]` section keeps loading, and the
+    # `voice` arm is gated on the Discord platform, not on this section.
+    online: OnlineConfig = OnlineConfig()
     # Optional and defaulted — see `SocialConfig`. Off (inert) unless an
     # operator turns it on AND the host-side bridge runs (DEC-151); keyless,
     # so `enabled` is the whole gate.

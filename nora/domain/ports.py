@@ -1468,6 +1468,47 @@ class SearchProvider(Protocol):
     async def fetch(self, *, url: str) -> dict[str, Any]: ...
 
 
+@dataclass(frozen=True)
+class SteamPlayerState:
+    """One Steam account's live player summary, as the `online_now` tool
+    reads it (design/online-status/). `personastate` is Steam's own integer
+    (0 offline, 1 online, 2 busy, 3 away, 4 snooze, 5 looking-to-trade,
+    6 looking-to-play) — carried RAW, never flattened to a bool, because
+    "away" and "snooze" are answers the model must be able to give.
+    `profile_public` is derived from `communityvisibilitystate == 3`: when
+    it is False, `game` being None means "cannot see", never "not playing"
+    — the tool reports `profile_hidden` and asserts nothing about play
+    state. `game`/`game_id` are present only while a title is running."""
+
+    steam_id: str
+    personastate: int
+    profile_public: bool
+    game: str | None = None
+    game_id: str | None = None
+
+
+@runtime_checkable
+class SteamPresenceProvider(Protocol):
+    """Live Steam player summaries behind the `online_now` tool
+    (design/online-status/). NEVER raises — `None` is the WHOLE READ being
+    unavailable (transport failure, auth failure, a body that is not
+    Steam's envelope), and the tool reports `unavailable` (R-5), never a
+    confident "everyone is offline". A request the server answered fine
+    simply omits the ids it does not know, so an ABSENT KEY is that
+    account's `nothing_found` — the two never share a shape.
+
+    One call takes the whole batch (`steam_ids` is a frozenset; Steam's
+    GetPlayerSummaries accepts up to 100 comma-separated ids per request)
+    because the tool's one question must cost one network round trip, not
+    one per person. A PORT (operator: same shape as `WeatherProvider`) so
+    a second implementation — including a test double — means a shared
+    contract suite both pass (tests/contract/)."""
+
+    async def summaries(
+        self, *, steam_ids: frozenset[str],
+    ) -> dict[str, SteamPlayerState] | None: ...
+
+
 @runtime_checkable
 class SocialProvider(Protocol):
     """`{platform, what, target, limit} -> {status, ...}` social reads, behind
@@ -2046,6 +2087,81 @@ class MusicToolBridge(Protocol):
     async def stop(self, *, conversation_id: str) -> MusicToolOutcome: ...
 
     async def status(self, *, conversation_id: str) -> MusicToolOutcome: ...
+
+
+@dataclass(frozen=True)
+class VoiceChannelRef:
+    """A live voice-channel membership, as the `online_now` tool reports it
+    (design/online-status/). `channel_id` is the platform's own snowflake —
+    design-sanctioned for the reply (the 02 table) — and `channel_name` is
+    what the model actually says; either may be all the platform exposes."""
+
+    channel_id: str
+    channel_name: str | None = None
+
+
+@runtime_checkable
+class VoicePresenceSource(Protocol):
+    """Who is in a Discord voice channel RIGHT NOW, behind the `online_now`
+    tool (design/online-status/) — a READ-ONLY seam so `nora.agent` never
+    imports `discord.py` (same layered-architecture argument
+    `MusicToolBridge`'s docstring gives). NEVER raises — `None` is "no live
+    client / the read failed", and the tool reports `unavailable` (R-5),
+    never "nobody is in voice". Keyed by Discord user id; an absent key is
+    that member's `nothing_found` (not in any voice channel, or not a
+    member of a guild the client can see).
+
+    Live-guilds only, zero new intents: the implementation scans the
+    connected client's guilds and reads `member.voice` — `voice_states` is
+    already in `Intents.default()`. Voice membership answers ONLY the
+    narrow "who is in which voice channel" question: since the 2026-09-15
+    correction it no longer stands in for "Discord online" — that is
+    `DiscordPresenceSource`'s read, behind the `presences` intent. A second
+    implementation — including a test double — means a shared contract
+    suite both pass (tests/contract/)."""
+
+    async def in_voice(
+        self, *, member_ids: frozenset[str],
+    ) -> dict[str, VoiceChannelRef] | None: ...
+
+
+@dataclass(frozen=True)
+class DiscordPresenceState:
+    """One member's per-person Discord presence, as the `online_now` tool
+    reports it (design/online-status/02's CORRECTION): Discord's own status
+    word plus rich presence. `status` is whatever `member.status` gives
+    (`online` / `idle` / `dnd` / `offline` — an invisible member presents
+    to the bot as `offline`, so `offline` stays honest: checked-and-offline,
+    never a guess). The rich fields are present-optional, never
+    load-bearing."""
+
+    status: str
+    game: str | None = None
+    listening: str | None = None
+    custom_status: str | None = None
+
+
+@runtime_checkable
+class DiscordPresenceSource(Protocol):
+    """Per-person Discord presence — status + rich presence — behind
+    `online_now`'s `online` arm (design/online-status/, the 2026-09-15
+    correction: presence, NOT voice-channel membership, is what "Discord
+    online" means). A READ-ONLY seam so `nora.agent` never imports
+    `discord.py` (same layered-architecture argument `VoicePresenceSource`'s
+    docstring gives). NEVER raises — `None` is "no live client / the read
+    failed", and the tool reports `unavailable` (R-5), never "everyone is
+    offline". Keyed by Discord user id; an absent key is that member's
+    `nothing_found` (not a member of a guild the client can see).
+
+    Live-guilds only: the implementation scans the connected client's
+    guilds and reads `member.status` / `member.activities`, which the
+    `presences` privileged intent keeps populated (`adapter.py`). A second
+    implementation — including a test double — means a shared contract
+    suite both pass (tests/contract/)."""
+
+    async def presence(
+        self, *, member_ids: frozenset[str],
+    ) -> dict[str, DiscordPresenceState] | None: ...
 
 
 @dataclass(frozen=True)

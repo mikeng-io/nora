@@ -33,13 +33,21 @@ from nora.domain.decision_log import DecisionLogRecorder, DecisionRow
 from nora.domain.events import Event
 from nora.domain.models import ConversationTarget, PersonRef
 from nora.domain.notes import Note, NoteRevision
-from nora.domain.ports import JobResult, JobStatus, PlatformIdentity, SendResult
+from nora.domain.ports import (
+    JobResult,
+    JobStatus,
+    PlatformIdentity,
+    SendResult,
+    SteamPlayerState,
+)
 from nora.domain.reminders import Reminder, ReminderCaps, ReminderState
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import Conversation, Policy, permissive_policy
 from nora.testing import (
     FakeAgentRunner,
+    FakeRosterSource,
+    FakeSteamPresenceProvider,
     InMemoryDecisionLogStore,
     InMemoryNoteStore,
     ScriptedTurn,
@@ -304,6 +312,7 @@ def _fire_path(
     memory: FakeMemoryStore | None = None,
     records: FakeRecordStore | None = None,
     registry: ToolRegistry | None = None,
+    rosters: dict | None = None,
     participation_runner=None,
     shadow_channel: str | None = None,
     shadow_platform: str = "discord",
@@ -332,6 +341,7 @@ def _fire_path(
             "signal": adapter if adapter is not None else _FireAdapter()
         },
         registry=registry if registry is not None else ToolRegistry(),
+        rosters=rosters,
         canary="test-canary", display_name="Nora",
         ai_peer="nora", context_window=40,
         limits=LIMITS, timeout_seconds=timeout_seconds, clock=lambda: T0,
@@ -1200,6 +1210,31 @@ def _participation(conversation_id: str = "conv-1") -> Event:
     return participation_occasion(platform="signal", conversation_id=conversation_id)
 
 
+async def test_a_participation_turn_carries_the_gate_verdict_on_its_root(
+    persons, doctrine_store, metrics, exported_spans,
+) -> None:
+    """The gate's verdict rides on the turn's root span, joining the
+    `relevance_gate` trace (a separate root decided upstream) to the turn
+    that ran behind it — so the room's whole story reads off one span."""
+    adapter = _FireAdapter()
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        adapter=adapter, runner=FakeAgentRunner([]),
+        participation_runner=FakeAgentRunner([ScriptedTurn(final_text="")]),
+    )
+
+    outcome = await path.speak(
+        _participation(), gate_verdict="go", gate_score=0.6,
+    )
+
+    assert outcome == fire_module.SILENT
+    (root,) = [s for s in exported_spans.get_finished_spans()
+               if s.name == "participation"]
+    attrs = dict(root.attributes or {})
+    assert attrs["nora.relevance_gate.verdict"] == "go"
+    assert attrs["nora.relevance_gate.score"] == 0.6
+
+
 async def test_the_participation_turn_never_passes_through_indicate(
     fire_path: FirePath,
 ) -> None:
@@ -1413,6 +1448,137 @@ async def test_the_participation_turn_reads_the_may_speak_doctrine(
         "the participation assembly is byte-identical to the tag one — the "
         "occasion-specific file is not reaching it"
     )
+
+
+# The live-state tool on the participation occasion (design/online-status/
+# on design/dreamer-agent-loop/35's turn). `FirePath._turn` builds the tool
+# list through `registry.build(...)` with NO per-occasion filter, so the
+# participation turn carries the full native catalogue by construction —
+# which is exactly why nothing pinned it: there was no decision to test.
+# These three pin the exposure itself, the room-roster input domain, and the
+# tagger-less fail-closed branch.
+
+_MILES_ONLINE = SteamPlayerState(
+    steam_id="111", personastate=1, profile_public=True,
+    game="Counter-Strike 2", game_id="730",
+)
+
+
+def _online_persons() -> Persons:
+    """The `persons` fixture plus the `pulse` index entry `online_now` reads —
+    Miles's Steam id, so the room roster resolves to a checkable account."""
+    return Persons(
+        by_person={"miles": MILES},
+        index={
+            ("signal", "+85212345678"): "miles",
+            ("pulse", "111"): "miles",
+        },
+    )
+
+
+def _captured_online_now(calls: list):
+    """The `online_now` tool the turn was ACTUALLY handed — found in the
+    `tools` kwarg the participation runner's `invoke` received (the same list
+    `LiveAgentRunner.invoke` gets in production), driven through
+    `_tool_func`, the seam every adapted-tool test in this repo uses."""
+    tools = calls[-1]["tools"]
+    return next(t for t in tools if t.tool_name == "online_now")
+
+
+async def test_a_participation_turn_exposes_the_online_now_tool(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """The exposure pin this whole brief exists for. The participation turn
+    is `FirePath.speak`, and `speak` builds its tools with no per-occasion
+    filter — `online_now` is on the turn by construction, not by decision.
+    That is precisely the shape that regresses silently: a future occasion
+    filter that excluded tools would strip `online_now` from the one
+    unprompted occasion («有冇人喺度», asked of a quiet room with nobody to
+    tag) and every test in this file would stay green."""
+    adapter = _FireAdapter()
+    calls: list = []
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        adapter=adapter, runner=FakeAgentRunner([]),
+        registry=ToolRegistry(online=FakeSteamPresenceProvider()),
+        participation_runner=FakeAgentRunner(
+            [ScriptedTurn(final_text="")], on_call=calls.append,
+        ),
+    )
+
+    outcome = await path.speak(_participation())
+
+    assert outcome == fire_module.SILENT         # the full turn really ran
+    assert "online_now" in {t.tool_name for t in calls[-1]["tools"]}
+
+
+async def test_a_participation_turn_answers_online_now_from_the_room_roster(
+    doctrine_store, metrics: Metrics,
+) -> None:
+    """The input domain on this occasion. A participation turn has no tagger
+    and no `online_scope` override (that seam belongs to the proactive decide
+    turn alone), so the tool's domain must be the INVOKING room's own roster —
+    `room.scope()` over the fire path's per-platform roster source. Driving
+    the tool the turn was actually handed proves the answer comes from THAT
+    roster: Miles, in the room, online — never a degraded one-person fallback
+    and never an empty domain."""
+    steam = FakeSteamPresenceProvider(players={"111": _MILES_ONLINE})
+    roster = FakeRosterSource(groups={"conv-1": (frozenset({"+85212345678"}),)})
+    adapter = _FireAdapter()
+    calls: list = []
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=_online_persons(),
+        metrics=metrics, adapter=adapter, runner=FakeAgentRunner([]),
+        registry=ToolRegistry(online=steam), rosters={"signal": roster},
+        participation_runner=FakeAgentRunner(
+            [ScriptedTurn(final_text="")], on_call=calls.append,
+        ),
+    )
+
+    await path.speak(_participation())
+
+    out = await _captured_online_now(calls)._tool_func(what="online", names=["Miles"])
+
+    assert out["status"] == "ok"
+    (miles,) = out["people"]
+    assert miles["person"] == "Miles"
+    assert miles["state"] == "online"
+    assert miles["game"] == "Counter-Strike 2"
+    # The roster WAS the domain: the room's one conversation was read, and
+    # Miles's id went out in the single batched Steam call the budget promises.
+    assert roster.calls == ["conv-1"]
+    assert steam.calls == [frozenset({"111"})]
+
+
+async def test_a_participation_turn_with_an_unreadable_room_makes_online_now_unavailable(
+    doctrine_store, metrics: Metrics,
+) -> None:
+    """The fail-closed half, for the one occasion with NO tagger. A tag turn
+    whose roster read fails still narrows to the tagger alone (the degraded
+    branch); a participation turn has nobody to narrow TO, so `room.scope()`
+    is simply `available=False` and the tool must answer `unavailable` —
+    «I couldn't check» — never `nothing_found` («nobody is online») and never
+    a guessed one-person room. And no Steam read happens behind a room the
+    turn could not confirm."""
+    steam = FakeSteamPresenceProvider(players={"111": _MILES_ONLINE})
+    adapter = _FireAdapter()
+    calls: list = []
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=_online_persons(),
+        metrics=metrics, adapter=adapter, runner=FakeAgentRunner([]),
+        registry=ToolRegistry(online=steam),
+        rosters={"signal": FakeRosterSource(fail=True)},
+        participation_runner=FakeAgentRunner(
+            [ScriptedTurn(final_text="")], on_call=calls.append,
+        ),
+    )
+
+    await path.speak(_participation())
+
+    out = await _captured_online_now(calls)._tool_func(what="online")
+
+    assert out["status"] == "unavailable"
+    assert steam.calls == []
 
 
 # ---------------------------------------------------------------------------

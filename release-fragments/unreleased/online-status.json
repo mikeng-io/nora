@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "reason": "Design only: online-status bundle proposing a read-only online_now tool (Steam + Discord voice) for the proactive turn — the #248 failure family (note said Blake sick while the group was mid-game). No behaviour change yet; implementation is a separate branch after operator decisions on the Steam key and the naming run.",
+  "summary": "Design: online-status bundle — one read-only tool for who is online / playing / in voice, feeding the proactive decide turn.",
+  "details": [],
+  "limitations": []
+}

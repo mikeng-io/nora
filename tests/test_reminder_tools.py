@@ -27,11 +27,13 @@ from __future__ import annotations
 
 import itertools
 import uuid
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 
 from nora.agent import tools as tools_module
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
+from nora.agent.tools import OriginRoom
 from nora.domain.models import ConversationTarget, PersonRef
 from nora.domain.ports import JobResult, JobStatus
 from nora.domain.reminders import (
@@ -114,6 +116,7 @@ def _tools(
     dream_adaptor: str = "",
     notes=None,
     room: Room | None = None,
+    origin_rooms: Mapping[str, OriginRoom] | None = None,
 ) -> dict:
     """Every native tool, closed over one turn — keyed by name.
 
@@ -138,7 +141,7 @@ def _tools(
         honcho=FakeMemoryStore(), deliverer=SinkSender(),
         metrics=metrics or Metrics(), room=room if room is not None else _room(tagger=tagger),
         fire_turn=fire_turn, location_trusted=location_trusted,
-        dream_adaptor=dream_adaptor,
+        dream_adaptor=dream_adaptor, origin_rooms=origin_rooms,
     )
     return {spec.name: spec.call for spec in specs}
 
@@ -1366,6 +1369,12 @@ async def test_a_dreamer_provenance_stamps_the_row_in_code():
     tools = _tools(
         reminders=store, metrics=metrics, tagger=None, notes=notes,
         dream_adaptor="proactive",
+        origin_rooms={
+            CONVERSATION: OriginRoom(
+                platform="signal", conversation_id=CONVERSATION,
+                conversation_type="group", proactive=True, workspace=WORKSPACE,
+            ),
+        },
     )
 
     result = await tools["remind"](
@@ -1382,6 +1391,7 @@ async def test_a_dreamer_provenance_stamps_the_row_in_code():
     assert row.payload == {
         "note_id": note.id, "revision_id": note.head_revision_id,
         "note_title": "AI Hackathon dinner plan",
+        "established_in": CONVERSATION,
         "intent": "ask where everyone is coming from before dinner",
     }
     assert await store.count_pending("nora") == 1
@@ -1473,6 +1483,7 @@ async def test_the_note_link_resolves_a_title_and_refuses_an_unknown_one():
     assert row.payload == {
         "note_id": note.id, "revision_id": note.head_revision_id,
         "note_title": "AI Hackathon dinner plan",
+        "established_in": "conv-1",
     }
 
 

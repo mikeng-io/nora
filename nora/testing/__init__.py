@@ -53,6 +53,17 @@ refusals rather than accepting everything — the compare-and-swap on a note's
 head is the one that matters: a fake that took a stale parent would turn a
 missing guarantee into a passing gate.
 
+`FakeSteamPresenceProvider` (`SteamPresenceProvider`, bound to
+`nora.infra.steam.SteamPresenceClient` by
+`tests/contract/test_steam_presence_contract.py`),
+`FakeVoicePresenceSource` (`VoicePresenceSource`, bound to
+`nora.platform.discord.voice_presence.DiscordVoicePresence` by
+`tests/contract/test_voice_presence_contract.py`) and
+`FakeDiscordPresenceSource` (`DiscordPresenceSource`, bound to
+`nora.platform.discord.discord_presence.DiscordPresence` by
+`tests/contract/test_discord_presence_contract.py`) are the same rule for
+the `online_now` tool's ports, in their own module (`nora.testing.online`).
+
 `FakeAdapter` is exempt *as a whole*: it keeps
 `.parse()` public and `.listen()` a no-op rather than mirroring
 `SignalAdapter.listen(*, on_message=...)`'s internal parse-and-drop (nothing
@@ -107,6 +118,11 @@ from nora.testing.fakes import (
     transcript_rows,
 )
 from nora.testing.note_store import InMemoryNoteStore, NoteCandidate
+from nora.testing.online import (
+    FakeDiscordPresenceSource,
+    FakeSteamPresenceProvider,
+    FakeVoicePresenceSource,
+)
 from nora.testing.scripted_agent import (
     TOOL_CHOICE_FIRST_CALL,
     FakeAgentRunner,
@@ -140,6 +156,7 @@ __all__ = [
     "FakeBlobStore",
     "FakeComputeBackend",
     "FakeComputeJobStore",
+    "FakeDiscordPresenceSource",
     "FakeGeocodeCacheStore",
     "FakeLinkPreviewSource",
     "FakeMediaDescriptionStore",
@@ -150,8 +167,10 @@ __all__ = [
     "FakeRecordStore",
     "FakeReverseGeocoder",
     "FakeRosterSource",
+    "FakeSteamPresenceProvider",
     "FakeToolCallLogStore",
     "FakeTranscriber",
+    "FakeVoicePresenceSource",
     "InMemoryDecisionLogStore",
     "InMemoryDreamScheduleClock",
     "InMemoryNoteStore",

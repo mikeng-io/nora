@@ -930,6 +930,10 @@ class _StrandsGateClient:
         got = await ask_structured(
             model=self._model, prompt=prompt, schema=GateVerdictSchema,
             timeout_seconds=self._cfg.timeout_seconds, system_prompt=system,
+            # Name the eval arm's Strands agent so its traces are filterable
+            # apart from the production gate's raw `json_object` call — this
+            # one goes through the SDK, which the production gate must not.
+            agent_name="gate-measuring",
         )
         self.usage = got.usage
         return GateCompletion(

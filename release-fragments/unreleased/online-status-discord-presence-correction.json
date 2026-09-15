@@ -1,0 +1,12 @@
+{
+  "type": "fix",
+  "summary": "online_now's Discord arm now reads per-person presence — status (online/idle/dnd/offline) plus rich presence (game, music) — instead of voice-channel membership.",
+  "details": [
+    "The online arm merged Steam state with Discord voice membership and called that \"Discord online\", so a member typing in a forum thread — online, in no voice channel — was reported as nobody online. The arm now reads member.status and member.activities: discord_status is Discord's own word, with discord_game and discord_listening when a game or listening activity names them.",
+    "Voice membership is not gone: it stays in the online arm as an extra in_voice fact, and the narrow voice arm (\"who is in which voice channel\") is unchanged, as are the playing arm and every Steam field.",
+    "The result carries three wiring flags — steam_wired, discord_wired, voice_wired — so a half that could not be checked is said so, never presented as the whole picture; a failed presence read degrades the flag rather than sinking the answer."
+  ],
+  "limitations": [
+    "The Discord presence half needs the privileged presences intent, enabled in the Developer Portal and in the client's intents; without it member.status reads offline for everyone."
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "type": "feature",
+  "summary": "Nora can check who is online, who is playing what, and who is in a voice channel right now — live, read-only, per question.",
+  "details": [
+    "A new read-only tool, online_now, answers three arms: online (Steam state merged with Discord voice membership), playing (who is in a game, with the title), and voice (who is in which Discord voice channel). One question costs one batched Steam request, never one call per person.",
+    "Honesty is built into the result: away and snooze are reported as such and never flattened to online or offline, and a private Steam profile is reported as profile_hidden — Nora will not claim someone is not playing when Steam simply withholds the field.",
+    "The proactive decide turn holds the tool too: a note about someone can now be cross-checked against their live state before Nora speaks — the failure (a stale note spoken while the group was mid-game) this tool exists to kill.",
+    "Answers stay inside the room: the tool only ever reports about the invoking conversation's own members (for the proactive turn, the home roster unioned with the people the standing notes name), and a name outside that domain is dropped, never looked up."
+  ],
+  "limitations": [
+    "The Steam half ships inert until an operator sets [online] enabled = true and exports STEAM_WEB_API_KEY; off or keyless, the online and playing arms answer unavailable, never a confident everyone-is-offline.",
+    "Discord rich presence (custom status, playing activity on Discord itself) is deliberately not shipped in v1 — it needs the privileged presences intent; the voice arm reads only who is in a channel. (Superseded before release by online-status-discord-presence-correction.json: the online arm now reads per-person presence and voice is a narrow sub-arm.)",
+    "People answer only if their identity.toml carries a steam_id (a pulse block) or a Discord account; a person with neither is reported as not checkable rather than as offline."
+  ]
+}

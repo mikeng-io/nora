@@ -233,6 +233,13 @@ services:
       #   provider X but Y is unset" and answers `unavailable` forever.
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - EXA_API_KEY=${EXA_API_KEY:-}
+      #   STEAM_WEB_API_KEY   — the `online_now` Steam half ([online],
+      #   design/online-status/, PR #252). Same OPTIONAL posture: `[online]
+      #   enabled` AND this key present turns the Steam arms on; unset logs
+      #   "online enabled but STEAM_WEB_API_KEY is unset" and everything
+      #   stays `unavailable`. Must be passed explicitly — Compose does not
+      #   inherit host .env values into a service.
+      - STEAM_WEB_API_KEY=${STEAM_WEB_API_KEY:-}
       #   GIPHY_API_KEY         — described reaction GIF search and download.
       #   Unset means GIF tools are unavailable; it must be explicitly passed
       #   because Compose does not inherit host .env values into a service.

@@ -48,6 +48,7 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.relay import Relay
 from nora.agent.room import Room
 from nora.agent.structured import ask_text, build_structured_model
+from nora.agent.tools import OriginRoom
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.config import Config, DreamBudgetConfig
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
@@ -59,6 +60,7 @@ from nora.domain.ports import (
     BlobStore,
     ComputeBackend,
     ContextAssembler,
+    DiscordPresenceSource,
     DreamAdaptor,
     EngagePolicy,
     MemoryStore,
@@ -68,6 +70,8 @@ from nora.domain.ports import (
     RosterSource,
     SearchProvider,
     Speaker,
+    SteamPresenceProvider,
+    VoicePresenceSource,
 )
 from nora.domain.reminders import ReminderCaps, ReminderStore
 from nora.domain.tool_call_log import ToolCallLogStore
@@ -138,7 +142,7 @@ from nora.platform.registry import AdapterRegistry, AdapterRegistryError, MediaS
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.media import SignalMediaSource
 from nora.platform.signal.roster import SignalRoster
-from nora.policy import Policy, PolicyError, load_policy
+from nora.policy import Conversation, Policy, PolicyError, load_policy
 from nora.tag import Debounce
 from nora.web.games import PulseGamesClient
 
@@ -206,6 +210,66 @@ def _home_room_people(
         return view.people if view.available else ()
 
     return read
+
+
+def _online_scope_of(
+    homes: Mapping[str, Conversation],
+    rosters: Mapping[str, RosterSource],
+    persons: Persons,
+    notes: SqlNoteStore | None,
+    self_ids: frozenset[str],
+) -> Callable[[str], Awaitable[tuple[PersonRef, ...]]]:
+    """`online_now`'s proactive input domain (design/online-status/03): the
+    home room's roster UNIONED with the standing notes' subjects, resolved
+    per decide turn.
+
+    The union is 03's own rule: the decide turn stands in the home room,
+    but a note may name people from its `established_in` room, and the #248
+    failure was exactly a note about someone the home roster alone would
+    not have covered. The roster half is the SAME `Room` the tag path
+    builds (one idea of who is in a room); a workspace with no home room,
+    or a roster that cannot be read, contributes nothing from that half.
+
+    Subjects come from each standing note's `title` + `description` ONLY —
+    not the head revision's body: the title is the model's own naming of
+    who the note is about, and the body is free prose where a name
+    substring would over-match. A person whose name, first/last name or
+    alias (two characters or more — a one-letter alias matches everything)
+    appears case-folded in that text is a subject. Still friend-circle
+    members, never strangers: the candidates are identity.toml's people,
+    never parsed-out handles. `notes=None` (the note tier off) is the
+    roster alone. A resolver that RAISES is the tool's `unavailable`, never
+    a narrowed guess — the tool wraps the call.
+    """
+    async def resolve(workspace: str) -> tuple[PersonRef, ...]:
+        people: dict[str, PersonRef] = {}
+        home = homes.get(workspace)
+        if home is not None:
+            source = rosters.get(home.platform)
+            if source is not None:
+                view = await Room(
+                    platform=home.platform, conversation_id=home.primary_id,
+                    roster_source=source, persons=persons, self_ids=self_ids,
+                ).members()
+                if view.available:
+                    people.update((p.person_id, p) for p in view.people)
+        if notes is not None:
+            for note in await notes.standing(workspace=workspace):
+                text = f"{note.title} {note.description}".casefold()
+                for person in persons.by_person.values():
+                    if person.person_id in people:
+                        continue
+                    names = (
+                        person.name, person.first_name, person.last_name,
+                        *person.aliases,
+                    )
+                    if any(
+                        len(n) >= 2 and n.casefold() in text for n in names if n
+                    ):
+                        people[person.person_id] = person
+        return tuple(people.values())
+
+    return resolve
 
 
 def _reasoning_effort(value: str, *, source: str) -> ReasoningEffort:
@@ -472,9 +536,17 @@ class _DebriefModelClient:
     def __init__(
         self, *, base_url: str, api_key: str, model: str, timeout_seconds: float,
         reasoning_effort: ReasoningEffort, max_tokens: int, temperature: float,
+        agent_name: str = "debrief",
     ) -> None:
         self._model_id = model
         self._timeout_seconds = timeout_seconds
+        # `agent_name` becomes the Strands agent span (`invoke_agent <name>`)
+        # inside `ask_text` — without it every debrief/standing-fold Strands
+        # agent fell back to the SDK default "Strands Agents", so the call
+        # under `engagement.debrief.fold` was indistinguishable from any other
+        # unnamed agent (measured: 56 detached `invoke_agent Strands Agents`
+        # roots in Langfuse over 7 days, including 2 rootless debrief folds).
+        self._agent_name = agent_name
         self._provider = build_structured_model(
             base_url=base_url, api_key=api_key, model_id=model,
             max_tokens=max_tokens, temperature=temperature,
@@ -489,6 +561,7 @@ class _DebriefModelClient:
         got = await ask_text(
             model=self._provider, prompt=prompt,
             timeout_seconds=self._timeout_seconds, system_prompt=system,
+            agent_name=self._agent_name,
         )
         _annotate_usage_triple(got.usage)
         return DebriefCompletion(
@@ -1589,6 +1662,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                         else "[llm] reasoning_effort (inherited)"
                     ),
                 ),
+                # The event fold's Strands agents are named for the fold it
+                # is, so its traces are filterable apart from the tag path's
+                # debrief — both flow through this one client class.
+                agent_name="standing.event_fold",
             ),
             objective=dreamer_instructions,
             slots=slots,
@@ -1688,6 +1765,28 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             log.warning(
                 "weather enabled but provider %r is unknown — weather stays unavailable",
                 cfg.weather.provider,
+            )
+    # `online_now`'s Steam half (design/online-status/) is wired ONLY when
+    # `[online] enabled` AND the key the section NAMES is present — the
+    # enabled-AND-keyed gate `search` uses. Off, or keyless, leaves the
+    # registry without a provider and the `online`/`playing` arms answer
+    # `unavailable` (R-5's honest «not configured»), never a 403 per call.
+    # The `voice` arm is NOT gated here — see its own block at the registry
+    # build below.
+    steam_client: SteamPresenceProvider | None = None
+    if cfg.online.enabled:
+        steam_key = os.environ.get(cfg.online.api_key_env, "")
+        if steam_key:
+            from nora.infra.steam import SteamPresenceClient
+            steam_client = SteamPresenceClient(
+                api_key=steam_key,
+                timeout_seconds=cfg.online.timeout_seconds,
+            )
+        else:
+            log.warning(
+                "online enabled but %s is unset — online_now's Steam arms "
+                "stay unavailable",
+                cfg.online.api_key_env,
             )
     # `whereis` (DEC-59, activating DEC-54's inert seam) is wired ONLY when
     # `[presence] enabled` AND identity.toml yields at least one circle — the
@@ -1978,6 +2077,31 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 "internal error: registry's 'discord' entry is not a DiscordAdapter "
                 "— music agent tools stay unavailable"
             )
+    # `DiscordVoicePresence` (design/online-status/) — `online_now`'s voice
+    # arm. Built whenever a Discord adapter exists: it reads the live
+    # client's guild cache (`voice_states` is already in the default
+    # intents), so unlike the Steam half there is no `[online]` gate and
+    # no key — the same narrowing `music_bridge` above needs, for the same
+    # `current_client()` reason.
+    voice_presence: VoicePresenceSource | None = None
+    # `DiscordPresence` (design/online-status/, the 2026-09-15 correction)
+    # — the `online` arm's Discord half: per-person presence (status +
+    # rich presence), NOT voice membership. Same construction rule as
+    # `voice_presence`: it reads the live Discord client (now with the
+    # `presences` intent enabled), so no `[online]` gate and no key.
+    discord_presence: DiscordPresenceSource | None = None
+    if "discord" in registry:
+        discord_adapter = registry.get("discord")
+        if isinstance(discord_adapter, DiscordAdapter):
+            from nora.platform.discord.discord_presence import DiscordPresence
+            from nora.platform.discord.voice_presence import DiscordVoicePresence
+            voice_presence = DiscordVoicePresence(adapter=discord_adapter)
+            discord_presence = DiscordPresence(adapter=discord_adapter)
+        else:
+            log.error(
+                "internal error: registry's 'discord' entry is not a DiscordAdapter "
+                "— online_now's Discord arms stay unavailable"
+            )
     tool_registry = ToolRegistry(
         route=route_client, vision=vision_client,
         describe_models=_describe_models(cfg),
@@ -2062,6 +2186,13 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         versions=version_manifest,
         giphy=giphy_client,
         music=music_bridge,
+        # `online_now`'s two live-state reads (design/online-status/). Either
+        # None leaves its arms answering `unavailable` (R-5), never
+        # `nothing_found` — the same optional-collaborator shape `mobility`
+        # above uses.
+        online=steam_client,
+        voice=voice_presence,
+        discord_presence=discord_presence,
         image_generator=image_generator,
         image_refs_allowed=image_refs_allowed,
         # `[llm.budgets]`, the per-deployment delta over the table. Threaded
@@ -3022,12 +3153,38 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 )
                 for ws, conv in proactive_homes.items()
             },
+            # Proactive destination map (design/dreamer-agent-loop/40, #248):
+            # every policy conversation id -> its `OriginRoom`, so a
+            # note-linked proactive row can be stamped into the room the note
+            # was born in instead of the home room. Passed whether or not the
+            # proactive adaptor is wired: the map is inert for tag paths, and
+            # `remind` refuses (never falls back) when the id is not here.
+            origin_rooms={
+                cid: OriginRoom(
+                    platform=conv.platform,
+                    conversation_id=conv.primary_id,
+                    conversation_type="group",
+                    proactive=conv.proactive,
+                    workspace=conv.workspace,
+                )
+                for conv in allowlist.conversations
+                for cid in conv.ids
+            },
             rosters=rosters,
             # EVERY platform's aliases, for `_presence_preflight`'s reason: a
             # home room's roster must skip Nora's own account rather than
             # count it as one unnamed stranger — which alone makes `where_is`
             # refuse in a location-trusted room (39 D2, review finding).
             self_ids=registry.self_aliases(),
+            # `online_now`'s proactive input domain (design/online-status/03):
+            # the home roster unioned with the standing notes' subjects,
+            # resolved per decide turn. `note_store` may be None (the note
+            # tier off) — the resolver then carries the roster alone, and
+            # `RegistryToolSource` hands it out ONLY for a home-room build.
+            online_scope_for=_online_scope_of(
+                proactive_homes, rosters, persons, note_store,
+                registry.self_aliases(),
+            ),
         )
         # The ONE allowance past the read-only ceiling (39 D3), by NAME: the
         # proactive adaptor's `remind`, and its home-room build. Handed to

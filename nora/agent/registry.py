@@ -26,7 +26,7 @@ policy) built once per process by the composition root.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
@@ -35,10 +35,11 @@ from strands.tools.decorator import FunctionToolMetadata
 
 from ..domain.compute import ComputeJobStore
 from ..domain.media_join import MediaJoin
-from ..domain.models import TranscriptRow
+from ..domain.models import PersonRef, TranscriptRow
 from ..domain.ports import (
     BlobStore,
     ComputeBackend,
+    DiscordPresenceSource,
     GifSource,
     MediaDescriptionStore,
     MediaObjectStore,
@@ -46,7 +47,9 @@ from ..domain.ports import (
     ParkingProvider,
     SearchProvider,
     SocialProvider,
+    SteamPresenceProvider,
     StreetParkingProvider,
+    VoicePresenceSource,
     WeatherProvider,
 )
 from ..domain.reminders import ReminderCaps, ReminderStore
@@ -69,6 +72,7 @@ from .tools import (
     EventsCollaborator,
     ImageGenerator,
     NoteCollaborator,
+    OriginRoom,
     build_tool_specs,
     utc_now,
 )
@@ -172,6 +176,9 @@ class ToolRegistry:
         versions: VersionManifest | None = None,
         giphy: GifSource | None = None,
         music: MusicToolBridge | None = None,
+        online: SteamPresenceProvider | None = None,
+        voice: VoicePresenceSource | None = None,
+        discord_presence: DiscordPresenceSource | None = None,
         image_generator: ImageGenerator | None = None,
         image_refs_allowed: bool = False,
         media_store: MediaObjectStore | None = None,
@@ -392,6 +399,21 @@ class ToolRegistry:
         # Discord-only gate is a SEPARATE check each tool makes on
         # `room.platform` before ever touching this collaborator.
         self._music = music
+        # `online_now`'s live-state reads (design/online-status/), wired
+        # the identical honest way `mobility`/`music` are: NOT
+        # default-constructed — there is no clientless default — so every
+        # composition that has not wired them (offline, eval, `[online]`
+        # disabled or keyless, Discord disabled) leaves them None and the
+        # matching arms answer `unavailable` (R-5), never `nothing_found`.
+        # `voice` and `discord_presence` are independent of `[online]`:
+        # they read the live Discord client and wire whenever the Discord
+        # platform is enabled. `voice` is the narrow "who is in which
+        # voice channel" sub-arm; `discord_presence` is the `online` arm's
+        # Discord half — per-person presence (status + rich presence),
+        # the 2026-09-15 correction.
+        self._online = online
+        self._voice = voice
+        self._discord_presence = discord_presence
         # `ImageGenerator` (DEC-137), wired the same honest way: NOT
         # default-constructed. `None` (config `[image_gen] enabled = false`)
         # leaves the `generate_image` tool present in the catalogue answering
@@ -646,6 +668,8 @@ class ToolRegistry:
         links: LinkCarry | None = None,
         supplied_workspace: str | None = None,
         dream_adaptor: str = "",
+        online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
+        origin_rooms: Mapping[str, OriginRoom] | None = None,
     ) -> tuple[ToolSpec, ...]:
         """The registered tools as plain `ToolSpec`s, closed over this tag's
         dependencies — before any Strands adaptation.
@@ -696,7 +720,16 @@ class ToolRegistry:
         (design/dreamer-agent-loop/39 D3): the Dreamer adaptor's NAME when
         `nora.agent.dreamer.RegistryToolSource` built this set, `""` for
         every tag and every fire turn. `remind` reads it to stamp a proactive
-        row in code rather than from a tagger it does not have."""
+        row in code rather than from a tagger it does not have.
+
+        `online_scope` is per-CALL for the same reason `supplied_workspace`
+        is, from that same caller: `RegistryToolSource` supplies it only for
+        a home-room decide turn, resolving `online_now`'s input domain to the
+        home roster unioned with the note's established-in subjects
+        (design/online-status/03). It must not become a registry field — it
+        is bound to exactly one decide turn, never to background loops, and
+        every tag-path caller leaves it None so the domain is the invoking
+        room's own roster."""
         return build_tool_specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
@@ -733,9 +766,13 @@ class ToolRegistry:
             compute_backend=self._compute_backend, compute_jobs=self._compute_jobs,
             tool_call_log_store=self._tool_call_log_store,
             music=self._music,
+            online_source=self._online, voice_source=self._voice,
+            presence=self._discord_presence,
+            online_scope=online_scope,
             image_generator=self._image_generator,
             image_refs_allowed=self._image_refs_allowed,
             media_store=self._media_store,
+            origin_rooms=origin_rooms,
         )
 
     def build(
@@ -758,6 +795,8 @@ class ToolRegistry:
         links: LinkCarry | None = None,
         supplied_workspace: str | None = None,
         dream_adaptor: str = "",
+        online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
+        origin_rooms: Mapping[str, OriginRoom] | None = None,
     ) -> list[Any]:
         """The registered tools, adapted to what `Agent(tools=...)` wants —
         what `nora.engagement.pipeline.EngagementPipeline` calls in place of
@@ -777,7 +816,8 @@ class ToolRegistry:
 
         `supplied_workspace` passes straight through to `specs()` — see that
         method's docstring; it exists for the Dreamer's workspace-keyed build
-        and every other caller leaves it None."""
+        and every other caller leaves it None. `online_scope` is the same
+        pass-through, for the same caller's home-room decide turn."""
         specs = self.specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
@@ -785,6 +825,7 @@ class ToolRegistry:
             transcript=transcript,
             fire_turn=fire_turn, location_trusted=location_trusted, links=links,
             supplied_workspace=supplied_workspace, dream_adaptor=dream_adaptor,
+            online_scope=online_scope, origin_rooms=origin_rooms,
         )
         tools = [adapt(spec) for spec in specs]
         for name in allowed_mcp:
