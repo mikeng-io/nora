@@ -400,10 +400,11 @@ RULE_TESTS = {
     # R-65: a dead voice connection tears the session down like a stop
     # instead of stranding now-playing state.
     "R-65": "test_a_dead_voice_connection_tears_down_the_session",
-    # R-66: DiscordVoiceSession monitors the voice websocket + audio thread
-    # while a track is loaded, and on two consecutive dead observations
-    # signals on_voice_death so the session is torn down like a stop.
-    "R-66": "test_the_voice_death_monitor_signals_death_after_two_dead_ticks",
+    # R-66 was removed 2026-09-16: its subject (`DiscordVoiceSession`'s
+    # voice-death monitor) was deleted when DEC-187 moved the voice
+    # connection into the audio-controller, which detects death itself and
+    # reports it as a `voice-death` event. The index row carries the
+    # DEPRECATED banner; the rule is not renumbered.
     # R-67: a completed prewarm that answered EMPTY gets ONE live `related()`
     # retry at the actual track end, never more -- only if the live answer is
     # also empty does the chain fall through to idle (R-62's "never retried"
@@ -528,13 +529,30 @@ RULE_TESTS = {
     # MODEL gets back: an error result is a correction, and a model corrects by
     # retrying, which is the loop the ceiling exists to end.
     "R-91": "test_a_third_memory_read_is_answered_unavailable_and_the_pass_completes",
-    # R-92 (DEC-186): a duck cycle never touches the listener's persisted
-    # volume — the duck gain is applied to the music frames inside the mix,
-    # never through `set_volume()`. The named test is the regression the
-    # design bundle itself mandates (01 §6.4), and it carries its own
-    # positive control: the ducked-then-restored frames, without which a
-    # session that never ducked at all would pass the same assertion.
-    "R-92": "test_a_duck_cycle_never_touches_the_user_volume",
+    # R-92 was removed 2026-09-16: the ducking mixer it guarded went with
+    # `DuckSource`/`CrossfadeSource` when DEC-187 replaced duck-and-restore
+    # with a hard cut inside the audio-controller. The index row carries the
+    # DEPRECATED banner; the rule is not renumbered.
+    # R-93 (DEC-187): ONE Discord voice connection, owned by the
+    # audio-controller — nothing in nora's production tree opens a voice
+    # connection or holds a VoiceClient. The named test is the architecture
+    # gate that fails the build if one creeps back.
+    "R-93": "test_nora_never_opens_a_discord_voice_connection",
+    # R-94 (DEC-187, §10 B3): end-music and leave-voice are separate
+    # lifecycles — `/music stop` and idle expiry end the session, but the
+    # voice connection STAYS; only `/discord exit`, an emptied channel and
+    # voice-death destroy it.
+    "R-94": "test_music_stop_is_end_music_and_stays_connected",
+    # R-95 (DEC-187, §3.3 B5): a `track-finished` naming a superseded
+    # playback_id is the old track's tail — the staleness check runs UNDER
+    # the guild lock against the currently-expected playback, and the queue
+    # never advances twice.
+    "R-95": "test_a_track_end_for_a_superseded_playback_does_not_advance",
+    # R-96 (DEC-187, §12.2/§12.3): voice commands pass a pure gate — guild
+    # member + caller physically in a voice channel + that channel in
+    # `voice_channel_ids` — and auto-join joins the CALLER's channel or
+    # rejects `not_in_allowed_channel`. The named test is the full matrix.
+    "R-96": "test_the_join_decision_matrix",
 }
 
 
