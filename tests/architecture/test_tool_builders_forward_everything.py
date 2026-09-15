@@ -81,6 +81,12 @@ _SPECS_ONLY = frozenset({
     # loop/39 D3): only `ToolRegistry.specs` passes it, from the Dreamer's
     # `RegistryToolSource`; `build_tools` has no caller that is a Dreamer.
     "dream_adaptor",
+    # Proactive destination map (design/dreamer-agent-loop/40, #248): the
+    # note-linked proactive row's origin-room resolution. Same seam as
+    # `dream_adaptor` — built by the composition root, threaded through
+    # `ToolRegistry.build`, and never touched by `build_tools`' non-Dreamer
+    # callers.
+    "origin_rooms",
 })
 
 

@@ -97,6 +97,7 @@ from . import factory
 from .dream_guard import DreamGuard
 from .dream_screen import screen
 from .registry import ToolRegistry
+from .tools import OriginRoom
 
 log = logging.getLogger("nora.dreamer")
 
@@ -771,6 +772,7 @@ class RegistryToolSource:
         self, *, registry: ToolRegistry, store: Any, persons: Any, honcho: Any,
         metrics: Metrics, ai_peer: str = "nora",
         home_rooms: Mapping[str, HomeRoom] | None = None,
+        origin_rooms: Mapping[str, OriginRoom] | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
         self_ids: frozenset[str] = frozenset(),
         online_scope_for: Callable[[str], Awaitable[tuple[PersonRef, ...]]] | None = None,
@@ -785,6 +787,11 @@ class RegistryToolSource:
         # for every composition that names none, which builds exactly what
         # it built before.
         self._home_rooms = dict(home_rooms or {})
+        # Conversation id -> origin room (design/dreamer-agent-loop/40, #248).
+        # Built by the composition root from `Policy.conversations`; empty for
+        # every composition that names none, which keeps the home-room
+        # destination unchanged for tag paths and unwired workspaces.
+        self._origin_rooms = dict(origin_rooms or {})
         # Platform -> roster source, the same map `FirePath` holds: a home
         # room on a platform with no roster answers `available=False`, the
         # honest state, never an empty room.
@@ -912,6 +919,10 @@ class RegistryToolSource:
             supplied_workspace=workspace,
             # Bound above, where the home-room grant was resolved.
             online_scope=online_scope,
+            # Proactive destination map (design/dreamer-agent-loop/40, #248):
+            # conversation ids -> OriginRoom, threaded to `remind` so a
+            # note-linked proactive row is stamped into the note's own room.
+            origin_rooms=self._origin_rooms,
         )
         return [
             tool for tool in built

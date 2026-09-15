@@ -1435,6 +1435,38 @@ def _record_created(metrics, status: str, **detail: object) -> None:
         _record(metrics, "remind", "refused", reason=status, **detail)
 
 
+@dataclass(frozen=True)
+class OriginRoom:
+    """One policy room, keyed by its conversation ids, for a note-linked
+    proactive row's DESTINATION (design/dreamer-agent-loop/40, issue #248).
+
+    A workspace-keyed adaptor is handed its home room at `build` time, and
+    under Dreamer provenance `remind` stamps every row into it. A note can
+    be born in ANY room of the workspace — Zone 42 on Discord, say, while
+    the home room is the Signal group — so a note-linked row's destination
+    is the room the note carries (`Note.established_in`), read through this
+    map, not the home room. Same policy-independence seam as `home_rooms`:
+    `RegistryToolSource` receives a prebuilt `Mapping[str, OriginRoom]` from
+    the composition root and never reads `nora.policy` itself
+    (`nora/agent/dreamer.py` docstring).
+
+    `proactive` mirrors `Conversation.proactive` at build time so the decide
+    turn can refuse BEFORE a row that could never fire is written; the
+    fire-time `ProactiveScreen` re-checks the row's own room regardless
+    (`proactive_screen.py`).
+    """
+
+    platform: str
+    conversation_id: str
+    conversation_type: str = "group"
+    proactive: bool = False
+    # The workspace this room belongs to, from policy.toml at load time. Kept
+    # so a row can be refused when the note's origin room drifted into a
+    # DIFFERENT social unit since the note was born — cross-workspace speech
+    # is the one thing the workspace boundary exists to prevent.
+    workspace: str = ""
+
+
 def _parse_when(raw: str) -> datetime | None:
     """The model's `when`, as an instant — or `None` when it is not one.
 
@@ -2454,6 +2486,15 @@ def build_tool_specs(
     image_generator: ImageGenerator | None = None,
     image_refs_allowed: bool = False,
     media_store: MediaObjectStore | None = None,
+    # Proactive destination map (design/dreamer-agent-loop/40, #248): policy
+    # conversation ids -> OriginRoom, built by the composition root exactly
+    # like `home_rooms` and handed through the same seam
+    # (`RegistryToolSource` -> `build_tool_specs`). `remind` under `dream_adaptor`
+    # provenance reads a linked note's `established_in` through it to stamp a
+    # row into the room the note was born in instead of the home room. `None`
+    # (every tag-path caller, and a workspace with no proactive wiring) keeps
+    # the home-room behaviour — the honest, unchanged default.
+    origin_rooms: Mapping[str, OriginRoom] | None = None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -6907,6 +6948,14 @@ when somebody asks what song is on.
                 "note_id": linked.id,
                 "revision_id": linked.head_revision_id,
                 "note_title": linked.title,
+                # The room this note was born in (design/dreamer-agent-loop/40,
+                # issue #248). It is a routing key, never a filter
+                # (`nora/domain/notes.py`), and it is what a note-linked
+                # proactive row's destination is resolved from below — the
+                # payload already carried the id and the head revision, and
+                # this is the third field that resolution needs. Tagged rows
+                # ignore it (only the Dreamer branch reads it).
+                "established_in": linked.established_in,
             }
         if proactive:
             # THE SINK (39 D3): «if the model writes directly there is no
@@ -6925,6 +6974,50 @@ when somebody asks what song is on.
                             "cannot be held. Say what you mean without it.",
                 }
             payload = {**(payload or {}), "intent": text}
+        # DESTINATION BY ORIGIN (design/dreamer-agent-loop/40, issue #248).
+        # Under Dreamer provenance a note-linked row's destination is the room
+        # the note was born in — the note's own routing key
+        # (`Note.established_in`) — NOT the home room. The live failure was
+        # exactly two facts conflated: where the note was born (Zone 42
+        # Discord) and where Nora stands (Signal Friends, the home room).
+        # Fail closed on every way the origin cannot be reached, and NEVER
+        # fall back to the home room — a fallback is the bug. Unlinked rows
+        # keep the home-room destination (there is no origin to route by).
+        origin: OriginRoom | None = None
+        if proactive and payload is not None and payload.get("established_in"):
+            origin = (
+                None if origin_rooms is None
+                else origin_rooms.get(payload["established_in"])
+            )
+            if origin is None:
+                _record_created(metrics, "refused_origin_unresolvable")
+                return {
+                    "status": "refused",
+                    "note": (
+                        "That note was born in a room I can't resolve, so a "
+                        "proactive message about it would have nowhere to go. "
+                        "Leave it rather than promise."
+                    ),
+                }
+            if origin.workspace != (supplied_workspace or _workspace()):
+                _record_created(metrics, "refused_origin_wrong_workspace")
+                return {
+                    "status": "refused",
+                    "note": (
+                        "That note's room drifted outside this workspace — I "
+                        "won't speak across the boundary. Leave it."
+                    ),
+                }
+            if not origin.proactive:
+                _record_created(metrics, "refused_origin_not_proactive")
+                return {
+                    "status": "refused",
+                    "note": (
+                        "That note was born in a room I'm not trusted to speak "
+                        "into unprompted. Leave it rather than raise it where "
+                        "the person who asked won't see it."
+                    ),
+                }
         try:
             pending = await reminders.count_pending(owner)
             if pending >= caps.max_pending_per_requester:
@@ -6959,10 +7052,19 @@ when somebody asks what song is on.
                 # set in. A `target` parameter here would be an unprompted-speech
                 # lever into a room the requester may not even be in. Under
                 # Dreamer provenance «the conversation it was set in» is the
-                # home room the tool source bound (39 D2).
-                platform=room.platform,
-                conversation_id=bound_conversation_id,
-                conversation_type=conversation_type,
+                # home room the tool source bound (39 D2) — EXCEPT for a
+                # note-linked proactive row, whose destination is the room the
+                # note was born in (design/dreamer-agent-loop/40, #248), which
+                # `origin` above resolved and validated.
+                platform=origin.platform if origin is not None else room.platform,
+                conversation_id=(
+                    origin.conversation_id
+                    if origin is not None else bound_conversation_id
+                ),
+                conversation_type=(
+                    origin.conversation_type
+                    if origin is not None else conversation_type
+                ),
                 text=text,
                 created_at=now,
                 due_at=due_at,
