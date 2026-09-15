@@ -8,6 +8,9 @@ edges:
   - {dst: 00-overview, rel: realizes, provenance: asserted}
 ---
 
+> **PARTLY DEPRECATED 2026-09-16 — the «What already exists» section names machinery that phase 1 of the audio-owner controller (`design/voice-channel/07-audio-owner-controller.md`, DEC-187) removed or superseded.**
+> `CrossfadeSource` and `DiscordVoiceSession` are deleted: the controller owns the one voice connection, speech hard-cuts music (no ducking mixer in phase 1), and her reply audio reaches it over `POST /stream`. The staging argument (TTS first, receive later, wake last) and the MiniMax TTS-provider decision still stand.
+
 # Voice Channel — Overview & Why TTS Lands First
 
 ## The goal
@@ -50,14 +53,17 @@ Nora hears a voice channel.
 
 The design leans entirely on shipped machinery:
 
-- **`CrossfadeSource`** (`nora/platform/discord/crossfade.py`) already solves
-  the hard mechanical constraint: Discord's player reads **one**
-  `discord.AudioSource` at a time, and this class reads two sources
-  simultaneously, blending them per 20 ms frame. Ducking is the same mechanic
-  with a different gain law.
-- **`VoiceSession` port + `DiscordVoiceSession`** (`music_player.py:44`,
-  `voice_session.py`) already own the voice connection, a persisted volume,
-  and a live `.source` swap that never gaps the `AudioPlayer` thread.
+- **`CrossfadeSource`** (`nora/platform/discord/crossfade.py`) — deleted
+  2026-09-16 (DEC-187) — solved the hard mechanical constraint: Discord's
+  player reads **one** `discord.AudioSource` at a time, and this class read
+  two sources simultaneously, blending them per 20 ms frame. Ducking was the
+  same mechanic with a different gain law. The controller now hard-cuts
+  instead; the spike record is `design/discord-music/05-crossfade-spike.md`.
+- **`VoiceSession` port + `DiscordVoiceSession`** — the local session is
+  deleted (DEC-187): the audio-controller owns the voice connection, and the
+  `VoiceSession` port survives as `HttpVoiceSession` over the controller's
+  HTTP control plane. The persisted volume is a `/music/volume` call; the
+  live `.source` swap is the controller's replace-play.
 - **`SpeechTtsConfig`** (`nora/config.py`) already exists with
   `enabled/provider/voice`, and `config.toml` already carries
   `[speech.tts] enabled = false`. **No schema migration is needed** — the

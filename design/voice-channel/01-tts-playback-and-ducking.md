@@ -8,6 +8,9 @@ edges:
   - {dst: 00-overview, rel: realizes, provenance: asserted}
 ---
 
+> **PARTLY DEPRECATED 2026-09-16 — the ducking half is superseded.**
+> Phase 1 of the audio-owner controller (`design/voice-channel/07-audio-owner-controller.md`, DEC-187) replaced duck-and-restore with a hard cut: speech preempts music inside the controller, `DuckSource`/`CrossfadeSource` are deleted, and `VoiceSession` no longer carries `speak()`. The `Speaker` port, `SpeakResult`, the speakable gate (§7) and the MiniMax decision stand — speech audio reaches the controller over `POST /stream`, which owns the mixing decision.
+
 # Voice Channel — TTS Playback & the Ducking Mixer
 
 ## 1. The port (domain — pure contract, no I/O)

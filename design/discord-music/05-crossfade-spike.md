@@ -9,6 +9,10 @@ edges:
   - {dst: 03-state-and-persistence, rel: extends, provenance: asserted}
 ---
 
+> **DEPRECATED 2026-09-16 — `CrossfadeSource` is deleted.**
+> Phase 1 of the audio-owner controller (`design/voice-channel/07-audio-owner-controller.md`, DEC-187) moved the Discord voice connection out of nora into the voice-sidecar controller, and with it the source-blending machinery this spike built: the controller hard-cuts between music and speech, and crossfade is explicitly out of phase-1 scope (the config knob is accepted but effective zero, surfaced as `crossfade_seconds: 0` in `/voice/status`).
+> This document is retained as the record of how true crossfade works under discord.py's one-source-at-a-time player — the reasoning a future blending phase re-derives from — not as a description of code that exists.
+
 # Discord Music — Crossfade Spike
 
 **Status: spike, 2026-08-24.** Built fast on the operator's own instruction
