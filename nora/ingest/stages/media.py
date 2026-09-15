@@ -217,7 +217,7 @@ async def run(
                 blob, plaintext = taken
                 # NO SPAN HERE, and that is a decision rather than an omission
                 # (`docs/observability.md`, "what counts as a generation").
-                # SenseVoice is a local ASR service on Nora's own private
+                # The STT service is a local ASR on Nora's own private
                 # network, not an LLM, and Langfuse is an LLM-observability
                 # tool — R-76's whole lesson is what happens when everything
                 # that runs gets a trace. Its outcome ships on

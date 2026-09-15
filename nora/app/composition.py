@@ -68,6 +68,7 @@ from nora.domain.ports import (
     ReverseGeocoder,
     RosterSource,
     SearchProvider,
+    Speaker,
     SteamPresenceProvider,
     VoicePresenceSource,
 )
@@ -872,6 +873,12 @@ class Dependencies:
     # agent's event tools use, rather than a second `GatheringService` over the
     # same store.
     events: GatheringService
+    # `[speech.tts]`'s speaker (design/voice-channel/01 §5), annotated with the
+    # port like `audit`/`memory` above. `None` unless `enabled` AND a provider
+    # AND its key are all present — the inert-ship default. Stage 1 wires no
+    # caller: this is the yield point the voice answer path reads when it
+    # lands, and it must behave correctly with `None`.
+    speaker: Speaker | None
 
 
 async def build_dependencies(cfg: Config) -> Dependencies:
@@ -1569,7 +1576,31 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             endpoint=cfg.speech.stt.endpoint,
             language=cfg.speech.stt.language,
             timeout_seconds=cfg.speech.stt.timeout_seconds,
+            model=cfg.speech.stt.model,
         )
+    # `[speech.tts]`'s speaker (design/voice-channel/01 §5): wired ONLY when
+    # enabled AND a provider is named AND that provider's key is present —
+    # the same inert-ship rule as the transcriber above, plus the keyless-
+    # `route`/`search` shape. Off (or providerless, or keyless) leaves no
+    # speaker and nothing about Nora's behaviour changes. This root is the
+    # only place that knows MiniMax is real; everything downstream receives
+    # `Speaker | None`. Stage 1 has no caller yet — the field below is the
+    # yield point a later stage's voice path reads.
+    speaker: Speaker | None = None
+    if cfg.speech.tts.enabled:
+        tts_key = os.environ.get(cfg.speech.tts.api_key_env, "")
+        if cfg.speech.tts.provider == "minimax_cn" and tts_key:
+            from nora.infra.tts import MiniMaxTtsSpeaker
+            speaker = MiniMaxTtsSpeaker(
+                api_key=tts_key,
+                voice=cfg.speech.tts.voice or "Cantonese_CuteGirl",
+            )
+        else:
+            log.warning(
+                "[speech.tts] enabled but provider=%r or %s unset — no speaker "
+                "is wired; voice answers stay text-only",
+                cfg.speech.tts.provider, cfg.speech.tts.api_key_env,
+            )
     # R-10's per-conversation lock and R-30's FIFO queue, built ONCE here.
     # Every path that may speak into a conversation holds this same instance —
     # two would be two locks and no serialisation at all. Built HERE, above the
@@ -3189,6 +3220,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         dream_schedule_clock=dream_schedule_clock,
         workspace_scopes=workspace_scopes,
         events=events,
+        speaker=speaker,
     )
 
 

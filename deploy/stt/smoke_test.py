@@ -4,11 +4,15 @@
 
 Verifies the three independent checks funasr.com's production guidance names:
 1. health — the process is serving
-2. model identity — /v1/models lists sensevoice
-3. a REAL transcription round-trip — an actual mp3 comes back as Hant text
+2. model identity — /v1/models lists BOTH engines (noise-detection default,
+   sensevoice backup — design/voice-channel/06, 2026-09-15)
+3. a REAL transcription round-trip — an actual audio file comes back as Hant
+   text (against the DEFAULT model; pass --model sensevoice to smoke the
+   backup)
 
 Usage:
-    python deploy/stt/smoke_test.py [--base-url http://127.0.0.1:8000] [--audio path/to/yue.mp3]
+    python deploy/stt/smoke_test.py [--base-url http://127.0.0.1:8000] \
+        [--audio path/to/yue.mp3] [--model noise-detection]
 """
 import argparse
 import json
@@ -20,6 +24,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base-url", default="http://127.0.0.1:8000")
     ap.add_argument("--audio", default=None, help="path to a Cantonese audio file (mp3/wav)")
+    ap.add_argument("--model", default="noise-detection",
+                    help="model the transcription round-trip exercises")
     args = ap.parse_args()
 
     base = args.base_url.rstrip("/")
@@ -30,12 +36,13 @@ def main() -> int:
     print("health:", health)
     assert health.get("status") == "ok", "health.status != ok"
 
-    # 2. model identity
+    # 2. model identity — both engines advertised
     with urllib.request.urlopen(f"{base}/v1/models", timeout=10) as r:
         models = json.loads(r.read())
     ids = [m["id"] for m in models.get("data", [])]
     print("models:", ids)
-    assert "sensevoice" in ids, "sensevoice not advertised"
+    assert "noise-detection" in ids, "noise-detection (default) not advertised"
+    assert "sensevoice" in ids, "sensevoice (backup) not advertised"
 
     # 3. transcription — needs an audio file
     if not args.audio:
@@ -49,7 +56,7 @@ def main() -> int:
     body = (
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="model"\r\n\r\n'
-        f"sensevoice\r\n"
+        f"{args.model}\r\n"
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="file"; filename="{audio_path.name}"\r\n'
         f"Content-Type: audio/mpeg\r\n\r\n"

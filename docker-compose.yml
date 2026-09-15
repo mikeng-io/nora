@@ -701,26 +701,28 @@ services:
       timeout: 5s
       retries: 5
 
-  # stt — Nora's local Cantonese STT (SenseVoice/FunASR). Own image, own
-  # dependency set (deploy/stt/), NOT built from nora:latest — the same
-  # "separate app that lives in this repo" shape `drop` uses. Spec:
-  # docs/superpowers/specs/2026-08-21-nora-stt-infrastructure-design.md.
+  # stt — Nora's local Cantonese STT. Own image, own dependency set
+  # (deploy/stt/), NOT built from nora:latest — the same "separate app that
+  # lives in this repo" shape `drop` uses.
   #
-  # Purpose: [media.describe.audio] in config.toml needs a model for voice
-  # notes. faster-whisper mangles Cantonese into Mandarin-sounding output
-  # (measured in voice-lab 2026-08-21); SenseVoiceSmall natively tags `yue`
-  # and preserves 口語 particles (唔/嘅/喺/哋). Serves OpenAI-compatible
-  # /v1/audio/transcriptions so Nora calls it like any other ASR.
+  # Two engines behind one OpenAI-compatible /v1/audio/transcriptions
+  # (decision: design/voice-channel/06-stt-provider-decision.md, 2026-09-15):
+  # the DEFAULT is JackyHoCL whisper-large-v3-turbo-cantonese-noise-detection
+  # (transformers, fp32 CPU) — the only A/B engine that kept both `RV` and
+  # `discord` intact on real Discord voice audio, Hant + punctuation out of
+  # the box. SenseVoiceSmall (FunASR) stays as the always-loaded backup —
+  # the latency floor (RTF ~0.04) and zero-new-infrastructure failover.
   #
   # Posture mirrors signal-cli/drop: NO `ports:` publish at all — reachable
   # only as `stt:8000` on the private `nora` network. Audio from the group
   # stays on the box; there is no reason to ever expose the transcription
   # surface to the host or the internet.
   #
-  # The model (~936MB) downloads from ModelScope on FIRST boot into the
-  # container's ~/.cache/modelscope. The named volume pins that cache so a
-  # restart/recreate doesn't re-download; first start_period is long
-  # because of the download, subsequent starts are fast.
+  # The default model (~3.2GB fp32) downloads from Hugging Face on FIRST boot
+  # into the container's ~/.cache/huggingface; the SenseVoice backup (~936MB)
+  # downloads from ModelScope into ~/.cache/modelscope on first use. The named
+  # volumes pin both caches so a restart/recreate doesn't re-download; first
+  # start_period is long because of the download, subsequent starts are fast.
   stt:
     build:
       context: ./deploy/stt
@@ -735,14 +737,121 @@ services:
     networks: [nora]
     volumes:
       - stt-modelscope-cache:/home/stt/.cache/modelscope
+      - stt-huggingface-cache:/home/stt/.cache/huggingface
     healthcheck:
-      # /health is served by the FunASR server process itself (deploy/stt/server.py)
+      # /health is served by the server process itself (deploy/stt/server.py)
       # — proves the HTTP layer is up; the model may still be downloading on
       # first boot, hence the long start_period below.
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
       interval: 30s
       timeout: 5s
-      start_period: 240s
+      # 900s: the first boot downloads ~3.2GB of fp32 whisper weights from
+      # Hugging Face and then loads them on CPU before /health serves.
+      start_period: 900s
+      retries: 3
+
+  # voice-sidecar — stage 2 of the voice-channel design
+  # (design/voice-channel/05-sidecar-receive.md): a Node receive-only sidecar
+  # (@discordjs/voice + libdave, Discord's own stack) that joins a Discord
+  # voice channel, DAVE-decrypts per-user Opus, decodes to PCM, and forwards
+  # {user_id, pcm} over a local TCP seam to the FUTURE Python wake gate
+  # (stage 3, separately gated — nothing consumes the stream yet). Dumb pipe:
+  # no wake, no STT, no AI; audio is forwarded, never stored.
+  #
+  # Posture mirrors stt: own image from deploy/voice-sidecar/, NO `ports:`
+  # publish — reachable only on the private `nora` network. Without
+  # DISCORD_BOT_TOKEN + VOICE_GUILD_ID + VOICE_CHANNEL_ID the service is
+  # healthy-but-idle (its /health is liveness, see the README in
+  # deploy/voice-sidecar/), so a deployment with voice receive off still
+  # starts clean.
+  voice-sidecar:
+    build:
+      context: ./deploy/voice-sidecar
+      # network: host is REQUIRED, same reason as every other build in this
+      # file (operational constraint 1): BuildKit's bridge can't resolve
+      # deb.debian.org on this host, so apt-get stalls/fails. This Dockerfile
+      # does apt-get install curl.
+      network: host
+    image: voice-sidecar:latest
+    container_name: voice-sidecar
+    restart: unless-stopped
+    networks: [nora]
+    environment:
+      # The same bot token the nora service uses (Discord adapter, DEC-102) —
+      # the sidecar joins voice as the same bot. `:-` not `:?` so a
+      # deployment with voice receive off starts without it (idle, above).
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+      # Where to join. Namespaced VOICE_* so the operator's .env carries no
+      # bare GUILD_ID that some other service might grow a meaning for.
+      - GUILD_ID=${VOICE_GUILD_ID:-}
+      - CHANNEL_ID=${VOICE_CHANNEL_ID:-}
+      # The wake-gate seam (deploy/voice-sidecar/TRANSPORT.md). Stage 3 made
+      # the consumer real: `voice-wake` below listens on 4599, so the shipped
+      # default is the service name on this same private network — the
+      # sidecar connects OUT, no port is ever published. 127.0.0.1 remains as
+      # an explicit VOICE_PUMP_HOST override for the consume.mjs stand-in.
+      - PUMP_HOST=${VOICE_PUMP_HOST:-voice-wake}
+      - PUMP_PORT=${VOICE_PUMP_PORT:-4599}
+    healthcheck:
+      # /health is process liveness served by src/service.mjs; it answers
+      # while the service idles without a token (healthy-but-idle).
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:$${PORT:-4600}/health"]
+      interval: 30s
+      timeout: 5s
+      # No model download here — but the first `npm ci`-built image boot and
+      # the Discord gateway handshake get headroom anyway.
+      start_period: 60s
+      retries: 3
+
+  # voice-wake — stage 3 of the voice-channel design
+  # (design/voice-channel/00-overview.md): the Python wake gate, and the ONLY
+  # consumer of the sidecar's seam. Per-user PCM in, openWakeWord 「喂 Nora」
+  # detection (the v3 ONNX is baked into the image), utterance collection,
+  # transcription via the local `stt` service, and the TRANSCRIPT forwarded
+  # to Nora's POST /app/v1/voice/utterance — audio is transient end to end,
+  # never stored. Failure posture: no wake → no cost (one STT retry with
+  # language unset, then a silent drop).
+  #
+  # Posture mirrors stt/voice-sidecar: own image from deploy/voice-wake/, NO
+  # `ports:` publish — the seam (4599) and /health (4601) are reachable only
+  # on the private `nora` network. Without VOICE_GUILD_ID + VOICE_CHANNEL_ID
+  # the service is healthy-but-idle (detects, but has no conversation to
+  # forward into), so a deployment with voice wake off still starts clean.
+  voice-wake:
+    build:
+      context: ./deploy/voice-wake
+      # network: host is REQUIRED, same reason as every other build in this
+      # file (operational constraint 1): BuildKit's bridge can't resolve
+      # deb.debian.org on this host, so apt-get stalls/fails. This Dockerfile
+      # does apt-get install curl.
+      network: host
+    image: voice-wake:latest
+    container_name: voice-wake
+    restart: unless-stopped
+    networks: [nora]
+    environment:
+      # Where the wake happened — become conversation_id, Discord's flattened
+      # "<guild>/<channel>" (the shape nora/platform/discord/parser.py
+      # produces for typed messages), so a voice utterance lands in the same
+      # conversation namespace as the channel's typed chat.
+      - VOICE_GUILD_ID=${VOICE_GUILD_ID:-}
+      - VOICE_CHANNEL_ID=${VOICE_CHANNEL_ID:-}
+      - WAKE_THRESHOLD=${VOICE_WAKE_THRESHOLD:-0.5}
+      # The two hop targets, by SERVICE NAME on this network. `nora` is the
+      # nora container's aiohttp app (health + web routes on 9100 — the
+      # container publishes 9100 to host loopback, but service-name reach is
+      # the network path, not the publish); `stt` is the local transcription
+      # service stage 3 reuses.
+      - NORA_INGEST_URL=http://nora:9100
+      - STT_URL=http://stt:8000
+    healthcheck:
+      # /health is process liveness served by the wake service itself; it
+      # answers while the service idles without a channel configured
+      # (healthy-but-idle), same posture as the sidecar's.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4601/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
       retries: 3
 
   # --- the metrics reader, and the path an alert takes to a human -----------
@@ -852,6 +961,10 @@ volumes:
   valkey-data:
   rustfs-data:
   # ModelScope weights cache for the `stt` service (~/.cache/modelscope inside
-  # the container) — pins the ~936MB SenseVoiceSmall download across
+  # the container) — pins the ~936MB SenseVoiceSmall backup download across
   # restarts/recreates so it happens once, not every boot.
   stt-modelscope-cache:
+  # Hugging Face weights cache for the `stt` service (~/.cache/huggingface
+  # inside the container) — pins the ~3.2GB noise-detection whisper download
+  # (the DEFAULT model since 2026-09-15) the same way.
+  stt-huggingface-cache:

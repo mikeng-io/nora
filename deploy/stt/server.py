@@ -1,27 +1,41 @@
-"""FunASR OpenAI-Compatible API Server — Cantonese-first.
+"""OpenAI-Compatible STT API Server — Cantonese-first, multi-model.
 
 Drop-in replacement for OpenAI's `/v1/audio/transcriptions` endpoint. Works with
-any agent framework that supports OpenAI audio API (Nora's [media.describe.audio]
-is wired to hit this via an OpenAI-compatible client).
+any agent framework that supports OpenAI audio API (Nora's [speech.stt] path is
+wired to hit this via an OpenAI-compatible client).
 
-Cantonese-first deviations from the upstream `modelscope/FunASR
-examples/openai_api/server.py`:
+Two engines behind one endpoint, selected per-request with the `model` form
+field (decision: design/voice-channel/06-stt-provider-decision.md, 2026-09-15):
 
-- Default model is SenseVoiceSmall (`iic/SenseVoiceSmall`), which natively
-  understands Cantonese (`yue`) — verified on this host (voice-lab) that it
-  preserves 口語 particles like 唔/嘅/喺/哋 that faster-whisper mangles.
-- `language` default is `auto` (SenseVoice does LID itself; we do NOT pin yue —
-  the group mixes English and Mandarin too).
-- Post-processing runs OpenCC `s2t` so Nora always receives yue-Hant-HK text
-  (her doctrine is 繁體; SenseVoice emits Simplified).
-- Also returns the raw text + detected language + duration for the caller.
+- `noise-detection` (DEFAULT) — JackyHoCL
+  `whisper-large-v3-turbo-cantonese-noise-detection` on the plain transformers
+  runtime (fp32 CPU). Won the 2026-09-15 A/B on real Discord voice audio: the
+  only engine that kept both `RV` and `discord` intact, emits Traditional
+  Chinese with punctuation out of the box, RTF ~0.49. Trained for streaming
+  noise: silence/background comes back tagged `%nz`, which post-processing
+  strips.
+- `sensevoice` (BACKUP) — `iic/SenseVoiceSmall` via FunASR, the original
+  2026-08-21 deployment. The latency floor (RTF ~0.04) and the failover when
+  the primary is unavailable. Natively understands Cantonese (`yue`) —
+  verified on this host (voice-lab) that it preserves 口語 particles like
+  唔/嘅/喺/哋 that faster-whisper mangles — but emits Simplified Chinese and no
+  punctuation.
+
+Post-processing runs OpenCC `s2t` for BOTH backends so Nora always receives
+yue-Hant-HK text (her doctrine is 繁體) regardless of which engine answered.
+`language` is the engines' own short code (`yue`/`zh`/`en`/`auto`/...), NOT a
+BCP-47 tag; SenseVoice does LID itself on `auto`, the whisper backend defaults
+to `yue` (the model is Cantonese-tuned — see its model card).
+
+Also returns the raw text + detected language + duration for the caller.
 
 Env knobs (all optional):
   STT_DEVICE — default cpu (this host has no CUDA; Radeon 680M iGPU not used).
-  STT_MODEL — default sensevoice; see MODEL_CONFIGS for aliases.
+  STT_MODEL — which model to pre-load at startup; default noise-detection.
 """
 import argparse
 import asyncio
+import os
 import re
 import subprocess
 import tempfile
@@ -34,11 +48,31 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from opencc import OpenCC
 
-app = FastAPI(title="Nora STT (FunASR SenseVoice)", version="0.1.0")
+app = FastAPI(title="Nora STT", version="0.2.0")
+
+DEFAULT_MODEL = "noise-detection"
 
 DEVICE = "cpu"
-MODEL_CONFIGS = {
+MODEL_CONFIGS: dict[str, dict[str, Any]] = {
+    "noise-detection": {
+        "backend": "transformers",
+        "model": "JackyHoCL/whisper-large-v3-turbo-cantonese-noise-detection",
+        # Generation params from the model card (the A/B that picked this
+        # engine ran with them): temperature/top_p imply sampling. The card's
+        # `seed=4419` is an OpenAI-API serving param, NOT a transformers
+        # generate kwarg (generate() rejects it), so it is not carried here.
+        "generate_kwargs": {
+            "temperature": 0.3,
+            "top_p": 0.5,
+            "repetition_penalty": 1.05,
+            "do_sample": True,
+        },
+        # Cantonese-tuned whisper: pin yue unless the caller says otherwise.
+        # (SenseVoice below is the one that LIDs itself.)
+        "default_language": "yue",
+    },
     "sensevoice": {
+        "backend": "funasr",
         "model": "iic/SenseVoiceSmall",
         "vad_model": "fsmn-vad",
         "vad_kwargs": {"max_single_segment_time": 30000},
@@ -51,26 +85,80 @@ MODEL_REGISTRY: dict = {}
 _cc = OpenCC("s2t")
 
 
+def _load_funasr(cfg: dict[str, Any]):
+    from funasr import AutoModel
+
+    _LOADER_KEYS = ("backend", "generate_kwargs", "default_language")
+    kwargs = {k: v for k, v in cfg.items() if k not in _LOADER_KEYS}
+    kwargs["device"] = DEVICE
+    kwargs["disable_update"] = True
+    return AutoModel(**kwargs)
+
+
+def _load_transformers(cfg: dict[str, Any]):
+    import torch
+    from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+
+    model = AutoModelForSpeechSeq2Seq.from_pretrained(
+        cfg["model"], dtype=torch.float32, low_cpu_mem_usage=True,
+    )
+    processor = AutoProcessor.from_pretrained(cfg["model"])
+    return pipeline(
+        "automatic-speech-recognition",
+        model=model,
+        tokenizer=processor.tokenizer,
+        feature_extractor=processor.feature_extractor,
+        chunk_length_s=30,
+        device=DEVICE,
+    )
+
+
+_LOADERS = {"funasr": _load_funasr, "transformers": _load_transformers}
+
+
 def load_model(model_name: str):
     """Load a model into the process-global registry (one per model, lazy)."""
     if model_name in MODEL_REGISTRY:
         return MODEL_REGISTRY[model_name]
     if model_name not in MODEL_CONFIGS:
         raise ValueError(f"Unknown model '{model_name}'. Available: {list(MODEL_CONFIGS)}")
-    from funasr import AutoModel
-
-    cfg = dict(MODEL_CONFIGS[model_name])
-    cfg["device"] = DEVICE
-    cfg["disable_update"] = True
-    t0 = time.time()
-    model = AutoModel(**cfg)
+    cfg = MODEL_CONFIGS[model_name]
+    model = _LOADERS[cfg["backend"]](cfg)
     MODEL_REGISTRY[model_name] = model
     return model
 
 
 def clean_text(text: str) -> str:
-    """Remove SenseVoice special tags like <|yue|><|NEUTRAL|><|Speech|><|withitn|>."""
-    return re.sub(r"<\|[^|]*\|>", "", text).strip()
+    """Remove SenseVoice special tags like <|yue|><|NEUTRAL|><|Speech|><|withitn|>
+    and the noise-detection model's `%nz` noise markers (its model card: "the
+    noise is labeled as %nz, please remove/replace this pattern")."""
+    text = re.sub(r"<\|[^|]*\|>", "", text)
+    text = text.replace("%nz", "")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _generate_funasr(model_name: str, wav_path: str, language: str | None) -> list:
+    asr_model = load_model(model_name)
+    gen_kwargs: dict[str, Any] = {"input": wav_path, "batch_size": 1}
+    if language:
+        gen_kwargs["language"] = language
+    return asr_model.generate(**gen_kwargs)
+
+
+def _generate_transformers(model_name: str, wav_path: str, language: str | None) -> list:
+    """Run the whisper pipeline and reshape its result into FunASR's
+    `[{"text": ...}]` list so the response builder below has ONE shape."""
+    import soundfile as sf
+
+    cfg = MODEL_CONFIGS[model_name]
+    pipe = load_model(model_name)
+    array, sampling_rate = sf.read(wav_path)
+    gen_kwargs = dict(cfg.get("generate_kwargs", {}))
+    lang = language or cfg.get("default_language")
+    if lang:
+        gen_kwargs["language"] = lang
+    out = pipe({"array": array, "sampling_rate": sampling_rate}, generate_kwargs=gen_kwargs)
+    return [{"text": out["text"]}]
 
 
 def _run_stt_blocking(
@@ -84,26 +172,26 @@ def _run_stt_blocking(
         ["ffmpeg", "-y", "-i", tmp_path, "-ar", "16000", "-ac", "1", wav_path],
         check=True, capture_output=True,
     )
-    asr_model = load_model(model)
-    gen_kwargs: dict[str, Any] = {"input": wav_path, "batch_size": 1}
-    if language:
-        gen_kwargs["language"] = language
     t0 = time.time()
-    result = asr_model.generate(**gen_kwargs)
+    if MODEL_CONFIGS[model]["backend"] == "transformers":
+        result = _generate_transformers(model, wav_path, language)
+    else:
+        result = _generate_funasr(model, wav_path, language)
     return result, time.time() - t0
 
 
 @app.post("/v1/audio/transcriptions")
 async def transcribe(
     file: UploadFile = File(...),
-    model: str = Form(default="sensevoice"),
+    model: str = Form(default=DEFAULT_MODEL),
     language: Optional[str] = Form(default=None),
     response_format: Optional[str] = Form(default="json"),
 ):
     """OpenAI-compatible audio transcription endpoint.
 
     Returns same shape as OpenAI: `{"text": ...}` (json) or verbose_json with
-    segments. Language hint: pass `language=yue` to force Cantonese (BCP-47).
+    segments. Language hint: pass `language=yue` to force Cantonese (the
+    engines' own short code, NOT BCP-47).
     """
     if model not in MODEL_CONFIGS:
         raise HTTPException(status_code=400, detail=f"Model '{model}' not found.")
@@ -168,7 +256,7 @@ async def list_models():
                 "id": name,
                 "object": "model",
                 "created": 1700000000,
-                "owned_by": "funasr",
+                "owned_by": "nora-stt",
                 "ready": name in MODEL_REGISTRY,
             }
             for name in MODEL_CONFIGS
@@ -187,11 +275,16 @@ async def health():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="FunASR OpenAI-Compatible API Server")
+    parser = argparse.ArgumentParser(description="OpenAI-Compatible STT API Server")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--device", default="cpu", help="cuda / cpu / mps")
-    parser.add_argument("--model", default="sensevoice", help="pre-load model at startup")
+    parser.add_argument(
+        "--device", default=os.environ.get("STT_DEVICE", "cpu"), help="cuda / cpu / mps",
+    )
+    parser.add_argument(
+        "--model", default=os.environ.get("STT_MODEL", DEFAULT_MODEL),
+        help="pre-load model at startup",
+    )
     args = parser.parse_args()
 
     DEVICE = args.device

@@ -1,0 +1,24 @@
+{
+  "name": "nora-voice-sidecar",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Receive-only voice sidecar for Nora: @discordjs/voice join -> per-user DAVE-decrypted PCM -> local TCP transport. Dumb pipe; wake/STT live in Python.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/service.mjs",
+    "smoke": "node smoke_test.mjs",
+    "spike:mock": "node spike.mjs --mock",
+    "spike:live": "node spike.mjs --live",
+    "consume": "node consume.mjs"
+  },
+  "dependencies": {
+    "@discordjs/opus": "^0.10.0",
+    "@discordjs/voice": "0.19.2",
+    "@snazzah/davey": "0.1.12",
+    "discord.js": "^14.23.2",
+    "prism-media": "^1.3.5"
+  }
+}

@@ -73,6 +73,7 @@ there.
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 from collections.abc import Callable, Coroutine
 from concurrent.futures import Future
@@ -82,6 +83,7 @@ import discord
 from discord.utils import MISSING
 
 from nora.platform.discord.crossfade import CrossfadeSource
+from nora.platform.discord.duck_source import DuckSource
 
 log = logging.getLogger("nora.music")
 
@@ -92,6 +94,13 @@ def _default_audio_source(stream_url: str) -> discord.AudioSource:
     return discord.FFmpegPCMAudio(
         stream_url, before_options="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
     )
+
+
+def _default_speech_source(speech_audio: bytes) -> discord.AudioSource:
+    """The TTS clip as a source: ffmpeg sniffs the container from the piped
+    bytes, so MP3 (MiniMax) and a future WAV provider both play without the
+    session parsing `media_type`."""
+    return discord.FFmpegPCMAudio(io.BytesIO(speech_audio), pipe=True)
 
 
 def _voice_connection_ws(voice_client: discord.VoiceClient) -> Any:
@@ -119,17 +128,24 @@ class DiscordVoiceSession:
         on_finished: Callable[[], Coroutine[Any, Any, None]],
         on_voice_death: Callable[[], Coroutine[Any, Any, None]] | None = None,
         audio_source_factory: AudioSourceFactory = _default_audio_source,
+        speech_source_factory: Callable[[bytes], discord.AudioSource] = _default_speech_source,
         crossfade_seconds: float = 0.0,
         monitor_interval_seconds: float = 5.0,
         reconnect_channel: discord.VoiceChannel | None = None,
         reconnect_attempts: int = 2,
         reconnect_delay_seconds: float = 1.0,
+        duck_gain: float = 0.25,
+        duck_ramp_ms: int = 150,
     ) -> None:
         self._voice_client = voice_client
         self._loop = loop
         self._on_finished = on_finished
         self._on_voice_death = on_voice_death
         self._audio_source_factory = audio_source_factory
+        # The same seam as `audio_source_factory`, for the same reason: the
+        # real default spawns an `ffmpeg` subprocess in its constructor,
+        # which a unit test must never do.
+        self._speech_source_factory = speech_source_factory
         self._crossfade_seconds = crossfade_seconds
         self._monitor_interval_seconds = monitor_interval_seconds
         self._monitor_task: asyncio.Task[None] | None = None
@@ -179,6 +195,14 @@ class DiscordVoiceSession:
         # reconnect can restart the same track on the fresh connection.
         self._current_stream_url: str | None = None
         self._current_duration_seconds: float | None = None
+        # The ducking law for `speak()` (design/voice-channel/01 §3):
+        # `[speech.tts] duck_gain`/`duck_ramp_ms` as shipped defaults. These
+        # are the session's OWN transient gain, applied to music frames inside
+        # `DuckSource` — deliberately NOT `self._volume`, which is the
+        # listener's persisted setting and must survive a duck cycle
+        # untouched.
+        self._duck_gain = duck_gain
+        self._duck_ramp_ms = duck_ramp_ms
 
     def is_playing(self) -> bool:
         return bool(self._voice_client.is_playing())
@@ -290,6 +314,82 @@ class DiscordVoiceSession:
         self._volume = volume
         if self._current_source is not None:
             self._current_source.volume = volume
+
+    def speak(self, speech_audio: bytes, *, media_type: str, duck: bool = True) -> None:
+        """Play synthesised speech into the voice channel (design/voice-
+        channel/01 §4), ducking the music under it when music is playing.
+
+        `speech_audio` is the clip exactly as the `Speaker` port returned it
+        (MiniMax emits MP3); ffmpeg sniffs the container from the piped bytes,
+        which is why `media_type` is logged for the trace rather than parsed
+        here. Two paths, and ducking is conditional on `is_playing()`, never
+        unconditional:
+
+        * Music playing + `duck=True`: the music's RAW source goes into a
+          `DuckSource` behind one live `.source` swap, so the `AudioPlayer`
+          thread never sees a gap. `_current_raw` stays the MUSIC source —
+          the music is still playing underneath, and a crossfade that starts
+          mid-sentence must mix against the track, never against the answer.
+          (Mid-crossfade, `_current_raw` is the INCOMING track: the outgoing
+          tail is lost to the duck exactly as a rapid double-skip loses it —
+          the same spike-era approximation `CrossfadeSource` documents.)
+        * Otherwise: no mixer is allocated and the speech plays directly,
+          with an `after` that is NOT `_after` — there is no track whose end
+          is being signalled, so nothing may reach `on_finished`.
+
+        NEVER touches `self._volume`/`set_volume()`: the duck gain is applied
+        to the music frames INSIDE the mix, the outer `PCMVolumeTransformer`
+        keeps the listener's persisted volume throughout, and the music comes
+        back at exactly the gain it left (01 §3's trap, §6.4's regression
+        test). Failure mirrors `play()` exactly: a dead voice connection
+        raises, after the piped source is cleaned up so no ffmpeg is orphaned.
+        """
+        speech_source = self._speech_source_factory(speech_audio)
+        music = self._current_raw
+        already_playing = (
+            self._voice_client.is_playing()
+            and self._voice_client.is_connected()
+            and music is not None
+        )
+        log.info(
+            "voice speak() called: media_type=%s bytes=%s duck=%s already_playing=%s",
+            media_type, len(speech_audio), duck, already_playing,
+        )
+        if duck and already_playing and music is not None:
+            # Captured BEFORE `self._current_source` is reassigned, and handed
+            # to `DuckSource` as `keep_alive` — the same CPython `__del__` ->
+            # `cleanup()` cascade `CrossfadeSource`'s docstring documents
+            # (verified live 2026-08-24), one wrapper up: without it, dropping
+            # the old wrapper's last reference here poisons the music source
+            # the mixer is about to read.
+            old_wrapper = self._current_source
+            mixed: discord.AudioSource = DuckSource(
+                music, speech_source,
+                duck_gain=self._duck_gain, ramp_ms=self._duck_ramp_ms,
+                keep_alive=old_wrapper,
+            )
+            wrapped = discord.PCMVolumeTransformer(mixed, volume=self._volume)
+            self._current_source = wrapped
+            self._voice_client.source = wrapped
+            return
+        wrapped_speech = discord.PCMVolumeTransformer(speech_source, volume=self._volume)
+        try:
+            self._voice_client.play(wrapped_speech, after=self._after_speech)
+        except Exception:
+            try:
+                wrapped_speech.cleanup()
+            except Exception:
+                log.exception("speech source cleanup after failed play() failed")
+            raise
+
+    def _after_speech(self, error: Exception | None) -> None:
+        """`after` for a speech-ONLY playback. Runs on the audio player's own
+        thread, like `_after` — and deliberately does NOTHING `_after` does:
+        no music track was playing, so there is no completion to signal and
+        no queue to advance, and reaching `on_finished` here would invent a
+        track end that never happened."""
+        if error is not None:
+            log.warning("speech playback ended with an error: %s", error)
 
     def stop(self) -> None:
         # Invalidate a completion this `stop()` is about to SUPERSEDE — see

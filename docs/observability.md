@@ -196,7 +196,7 @@ comprehension does the same for a description of somebody's photo.
 | the tag turn (Strands) | yes | instrumented by the SDK itself |
 | the relevance gate, the debrief, the standing fold | yes | raw `chat.completions.create`, instrumented by hand through the helper |
 | the media comprehension (`comprehend`) | yes | a describer or a summarizer under every branch |
-| SenseVoice STT | **no** | local ASR on Nora's own private network, not an LLM |
+| the STT service (`deploy/stt`) | **no** | local ASR on Nora's own private network, not an LLM |
 
 The STT line is the one that needs saying out loud, because its absence looks
 like an oversight. Its outcome ships on `nora_speech_transcriptions_total` with

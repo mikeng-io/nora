@@ -161,6 +161,42 @@ async def test_dependencies_builds_a_games_client_when_pulse_api_token_is_set(cf
     assert deps.games_client is not None
 
 
+async def test_dependencies_speaker_is_none_when_tts_is_disabled(cfg, monkeypatch):
+    """`[speech.tts]` ships INERT like every other optional capability: the
+    template config has `enabled = false`, so even with a key in the
+    environment the root wires no speaker and nothing about the deployment
+    changes."""
+    monkeypatch.setenv("MINIMAX_CN_API_KEY", "test-minimax-key")
+    deps = await build_dependencies(cfg)
+    assert deps.speaker is None
+
+
+async def test_dependencies_speaker_is_none_when_tts_is_enabled_but_keyless(cfg, monkeypatch):
+    """The keyless-`route`/`search` shape (design/voice-channel/01 §5):
+    enabled with a provider named but the env var unset is a loud warning and
+    NO speaker — never a speaker that fails on every call."""
+    monkeypatch.delenv("MINIMAX_CN_API_KEY", raising=False)
+    keyless = override_config(cfg, {
+        "speech.tts.enabled": True,
+        "speech.tts.provider": "minimax_cn",
+    })
+    deps = await build_dependencies(keyless)
+    assert deps.speaker is None
+
+
+async def test_dependencies_builds_a_speaker_when_tts_is_enabled_and_keyed(cfg, monkeypatch):
+    from nora.infra.tts import MiniMaxTtsSpeaker
+
+    monkeypatch.setenv("MINIMAX_CN_API_KEY", "test-minimax-key")
+    keyed = override_config(cfg, {
+        "speech.tts.enabled": True,
+        "speech.tts.provider": "minimax_cn",
+        "speech.tts.voice": "Cantonese_CuteGirl",
+    })
+    deps = await build_dependencies(keyed)
+    assert isinstance(deps.speaker, MiniMaxTtsSpeaker)
+
+
 async def test_the_doctrine_the_root_builds_carries_no_capability_section(cfg):
     """DEC-150: the composition root must no longer wire a capability block.
 

@@ -774,8 +774,8 @@ async def test_a_fenced_json_answer_is_not_lost_to_its_fence():
 
 
 async def test_summarize_is_a_text_call_and_never_a_second_listen():
-    """The audio lane. A voice note's content is already in hand — SenseVoice
-    transcribed it at ingest — so the title and description come from a cheap
+    """The audio lane. A voice note's content is already in hand — the STT
+    service transcribed it at ingest — so the title and description come from a cheap
     text pass over those words, never from asking a model to listen again."""
     client = _RecordingVisionClient()
 

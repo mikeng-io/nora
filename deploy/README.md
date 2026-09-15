@@ -58,6 +58,23 @@ The old BARE-METAL floor (iptables `uid-owner nora` OUTPUT rules for the pre-con
 systemd deployment) is preserved in git history; it did not constrain containers and is
 superseded here.
 
+## Container-era sidecars in this tree
+
+The live deployment runs from the repo-root `docker-compose.yml`; several of
+its services are built from subtrees here (`stt/`, `drop/`, …). The newest:
+
+* **`voice-sidecar/`** — Node receive-only voice sidecar (stage 2 of the
+  voice-channel design): joins a Discord voice channel, DAVE-decrypts
+  per-user audio, and forwards PCM over a local TCP seam toward the future
+  Python wake gate. Dumb pipe; audio is never stored. See
+  `design/voice-channel/05-sidecar-receive.md` and
+  `deploy/voice-sidecar/README.md`.
+* **`voice-wake/`** — Python wake gate (stage 3), the seam's only consumer:
+  openWakeWord 「喂 Nora」 detection per user, utterance collection,
+  transcription via the local `stt` service, and the transcript POSTed to
+  Nora's `/app/v1/voice/utterance` as text. Audio is transient end to end.
+  See `deploy/voice-wake/README.md`.
+
 ## Watchdog — retired 2026-09-09
 
 `deploy/watchdog.sh` polled `/health` and alerted if the SSE listener had been silent
