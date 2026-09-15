@@ -48,6 +48,7 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.relay import Relay
 from nora.agent.room import Room
 from nora.agent.structured import ask_text, build_structured_model
+from nora.agent.tools import OriginRoom
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.config import Config, DreamBudgetConfig
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
@@ -3131,6 +3132,23 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     location_trusted=conv.location,
                 )
                 for ws, conv in proactive_homes.items()
+            },
+            # Proactive destination map (design/dreamer-agent-loop/40, #248):
+            # every policy conversation id -> its `OriginRoom`, so a
+            # note-linked proactive row can be stamped into the room the note
+            # was born in instead of the home room. Passed whether or not the
+            # proactive adaptor is wired: the map is inert for tag paths, and
+            # `remind` refuses (never falls back) when the id is not here.
+            origin_rooms={
+                cid: OriginRoom(
+                    platform=conv.platform,
+                    conversation_id=conv.primary_id,
+                    conversation_type="group",
+                    proactive=conv.proactive,
+                    workspace=conv.workspace,
+                )
+                for conv in allowlist.conversations
+                for cid in conv.ids
             },
             rosters=rosters,
             # EVERY platform's aliases, for `_presence_preflight`'s reason: a

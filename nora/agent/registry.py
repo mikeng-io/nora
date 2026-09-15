@@ -72,6 +72,7 @@ from .tools import (
     EventsCollaborator,
     ImageGenerator,
     NoteCollaborator,
+    OriginRoom,
     build_tool_specs,
     utc_now,
 )
@@ -668,6 +669,7 @@ class ToolRegistry:
         supplied_workspace: str | None = None,
         dream_adaptor: str = "",
         online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
+        origin_rooms: Mapping[str, OriginRoom] | None = None,
     ) -> tuple[ToolSpec, ...]:
         """The registered tools as plain `ToolSpec`s, closed over this tag's
         dependencies — before any Strands adaptation.
@@ -770,6 +772,7 @@ class ToolRegistry:
             image_generator=self._image_generator,
             image_refs_allowed=self._image_refs_allowed,
             media_store=self._media_store,
+            origin_rooms=origin_rooms,
         )
 
     def build(
@@ -793,6 +796,7 @@ class ToolRegistry:
         supplied_workspace: str | None = None,
         dream_adaptor: str = "",
         online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
+        origin_rooms: Mapping[str, OriginRoom] | None = None,
     ) -> list[Any]:
         """The registered tools, adapted to what `Agent(tools=...)` wants —
         what `nora.engagement.pipeline.EngagementPipeline` calls in place of
@@ -821,7 +825,7 @@ class ToolRegistry:
             transcript=transcript,
             fire_turn=fire_turn, location_trusted=location_trusted, links=links,
             supplied_workspace=supplied_workspace, dream_adaptor=dream_adaptor,
-            online_scope=online_scope,
+            online_scope=online_scope, origin_rooms=origin_rooms,
         )
         tools = [adapt(spec) for spec in specs]
         for name in allowed_mcp:
