@@ -116,6 +116,15 @@ _MAY_DIFFER = {
     # decision about retirement alone. A fresh deployment must not inherit
     # that — it has no notes and no operator who has decided it.
     "image_gen.enabled",
+    # The LIVE operator's ON/OFF decisions (2026-09: notes curation, obs
+    # error reporting, online/participation/relevance-gate/whatsapp/tts are
+    # all enabled in the deployment while the template ships every one OFF —
+    # DEC-43 posture: a copied config must never start speaking, reporting
+    # or participating on its own). Same class as image_gen.enabled above.
+    "notes.candidates_enabled", "obs.errors.enabled",
+    "obs.errors.environment", "online.enabled", "participation.enabled",
+    "platforms.whatsapp.enabled", "relevance_gate.enabled",
+    "relevance_gate.shadow", "speech.tts.enabled",
     # Env-var NAMES are the operator's choice of what to call a secret.
     "media.encryption_key_env",
     # The five model lanes, added 2026-09-06 after ea626821 routed them through
@@ -236,6 +245,16 @@ _MAY_DIFFER = {
 # still spawns — so writing the key into the template would silently delete
 # that assertion. The template argues the case for `false` in prose instead.
 _MAY_BE_ABSENT = {"store.prune_enabled"}
+
+# The shadow-review keys carry REAL Discord coordinates (the guild/channel
+# pair the operator watches) and the online probe's timeout is deployment
+# tuning — neither belongs in a template a fresh install copies; the
+# existence of the knobs is documented in the template prose instead.
+_MAY_BE_ABSENT |= {
+    "online.timeout_seconds",
+    "participation.shadow_channel", "participation.shadow_platform",
+    "relevance_gate.shadow_channel", "relevance_gate.shadow_platform",
+}
 
 
 def test_config_example_declares_every_key_the_deployment_sets():

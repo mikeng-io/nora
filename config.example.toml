@@ -1006,11 +1006,16 @@ enabled = false
 # ALOUD in the voice channel (the wake path below ends in this speaker).
 # Leave it false until the operator has decided voice answers are wanted —
 # a copied config must never start speaking in a voice channel on its own.
-# provider = "minimax_cn"      # MiniMax CN, speech-2.8-turbo (decided 2026-09-14,
-#                              # design/voice-channel/04 §3b); the key is read from
-#                              # the env var api_key_env NAMES (default
-#                              # MINIMAX_CN_API_KEY), never from this file.
-#                              # Empty provider = no speaker.
+provider = ""                  # empty provider = no speaker; a real deployment
+                               # sets "minimax_cn" (MiniMax CN, speech-2.8-turbo,
+                               # design/voice-channel/04 §3b). The key is read
+                               # from the env var api_key_env NAMES (default
+                               # MINIMAX_CN_API_KEY), never from this file.
+sidecar_endpoint = ""          # the /play POST target that actually SPEAKS in
+                               # the voice channel (stage-3 closure); deployment
+                               # topology, ships empty.
+voice_channel_ids = []         # "guild_id/channel_id" pairs Nora may answer
+                               # aloud in; empty = nowhere (fail-closed)
 # voice = "Cantonese_CuteGirl" # a NATIVE Cantonese voice — the lever is the
 #                              # voice, not the model tier; language_boost is
 #                              # hard-set in the adapter ("auto" mis-renders 係/唔該)
