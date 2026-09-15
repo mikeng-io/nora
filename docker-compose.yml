@@ -792,6 +792,13 @@ services:
       # an explicit VOICE_PUMP_HOST override for the consume.mjs stand-in.
       - PUMP_HOST=${VOICE_PUMP_HOST:-voice-wake}
       - PUMP_PORT=${VOICE_PUMP_PORT:-4599}
+      # Stage 3 closure: Nora POSTs synthesized replies to /play on this
+      # service. The Node server's own default HOST is 127.0.0.1 (a host-run
+      # sidecar should stay loopback-only); inside compose it must listen on
+      # the private nora network so the nora container can reach
+      # http://voice-sidecar:4600/play. 0.0.0.0 here is still private: the
+      # service publishes NO host port (no `ports:` at all, above).
+      - HOST=0.0.0.0
     healthcheck:
       # /health is process liveness served by src/service.mjs; it answers
       # while the service idles without a token (healthy-but-idle).
