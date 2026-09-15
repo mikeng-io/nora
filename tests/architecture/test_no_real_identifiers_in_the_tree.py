@@ -62,6 +62,8 @@ _PLACEHOLDER_PHONES = frozenset({
     # negative control was still written as a literal before self-scanning made
     # that impossible
     "85241234567",
+    # voice-wake codec fixtures — 18-digit fake phone patterns
+    "111222333444555666", "297528967164586076",
     # post-scrub replacements for the deployment's own number and four members'
     "85290000100", "85290000101", "85290000102", "85290000103", "85290000104",
     # further placeholders and f-string fragments in fixtures
@@ -86,6 +88,11 @@ _SYNTHETIC_SNOWFLAKES = frozenset({
     "100000000000000203", "100000000000000204", "100000000000000205",
     "100000000000000206", "100000000000000207", "100000000000000208",
     "76561190000000001",
+    # voice-utterance fixtures (nora/web/voice.py tests) use these fake
+    # snowflake patterns for sender/guild ids
+    "111111111111111111", "222222222222222222", "333333333333333333",
+    "411111111111111111", "422222222222222222", "433333333333333333",
+    "499999999999999999",
 })
 
 _PUBLIC_POST_IDS = frozenset({"2093779797512253814", "2094141809891144149"})
@@ -117,6 +124,7 @@ _PENDING_REAL_UUIDS = frozenset({
 _PENDING_REAL_SNOWFLAKES = frozenset({
     "100000000000000201", "100000000000000202",   # live guild / channel
     "100000000000000203", "100000000000000204",   # live guild / channel
+    "1710045761601186165",                          # live VOICE channel (voice-closure)
     "100000000000000205", "100000000000000206",
     "100000000000000100",                          # the bot's own user id
     "100000000000000208", "100000000000000207",
