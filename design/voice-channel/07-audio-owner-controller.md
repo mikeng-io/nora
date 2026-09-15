@@ -446,40 +446,32 @@ Clean = each layer keeps its one responsibility. Nora decides and never
 plays; audio-controller plays and never decides; the queue ORDER (speech > music) is
 audio-controller's one allowed decision, documented here and nowhere in nora's domain.
 
-## 12. Open decisions for Miles (blocking before code — Codex-audit B11, B15)
+## 12. Decisions (CLOSED 2026-09-16, Miles approved all 5)
 
-1. **Boot join**: after `/discord exit`, should the service auto-rejoin on
-   container restart (env `CHANNEL_ID` still set → boot join)? Codex B11:
-   this is **load-bearing** — "persist per-run state" cannot durably express
-   exit intent across a restart; controller restart leaves nora holding a
-   stale session, nora restart can enqueue onto a still-playing controller.
-   Proposals:
-   a. **Durable desired-state (recommended):** the controller keeps
-      `desired_connection` in a small state file (`.git`-style local
-      volume, NOT git) — `/discord exit` writes `idle`; boot honors it.
-      Restart reconciliation: nora's boot resume asks `/voice/status` for
-      `generation` + current playback BEFORE re-persisting its session,
-      preserving human-presence checks.
-   b. Simpler: env-only; exit is forfeit on restart. Pick one.
-2. **Auto-join on `/music play`**: Miles's spec says yes (play joins if
-   necessary). Which channel does it join — the caller's current channel,
-   or the configured `voice_channel_ids` one? Proposal: caller's current
-   channel, allowed only if it matches the configured list (B15 channel
-   identity must be carried on wake/speech paths — if caller-selected
-   channels are allowed in phase 1, the wake seam needs channel/generation
-   propagation instead of the claimed "unchanged"; if NO, restrict phase 1
-   to ONE immutable configured channel and reject dynamic joins).
-3. **Permission ruleset**: `/discord` group — "same as existing ruleset".
-   Which list exactly: guild member + caller-in-channel + channel in
-   `voice_channel_ids` (proposal), or the chat-admission allowlist
-   (`DISCORD_ALLOWED_USERS`-style) also applies?
-4. **`/music` when voice not connected**: with auto-join the old reject
-   path disappears for allowed channels — confirm; and what `/music stop`
-   does when `state=idle`: no-op ok (Codex: routine contract choice).
-5. **Controller scope (B8/B15)**: single guild hard-bound (reject others
-   with 400) vs multi-guild. Proposal: **single guild** for phase 1 —
-   the one-connection rule is already per-guild; multi-guild multiplies
-   every generation/outbox/lifecycle path.
+1. **Boot join: DURABLE desired-state (a).** The controller keeps
+   `desired_connection` in a small state file on a local volume — `/discord
+   exit` writes `idle`; boot joins ONLY when the file says `connected` (or
+   the file is absent AND env `CHANNEL_ID` is set — first boot). On restart,
+   nora's boot resume asks `/voice/status` for `generation` + current
+   playback BEFORE re-persisting its session (B11 reconciliation).
+   Implementation: `/var/lib/audio-controller/desired_state.json` mounted
+   via compose volume (NOT in git, NOT in the image).
+2. **Auto-join channel: CALLER'S CURRENT CHANNEL, must match the
+   configured `voice_channel_ids` list.** If the caller is in a channel NOT
+   on the list → reject (`not_in_allowed_channel`). Phase 1 = effectively
+   ONE immutable configured channel (B15): single guild + single allowed
+   channel; wake seam stays unchanged.
+3. **Permission ruleset (`/discord` group): guild member + caller
+   physically in a voice channel + that channel in `voice_channel_ids`**
+   (the three-condition gate from the original design). NO extra
+   `DISCORD_ALLOWED_USERS`-style allowlist for voice — the existing
+   chat-admission list stays for chat ONLY.
+4. **`/music stop` when `state=idle` → no-op** (200 with unchanged state).
+   Routine contract choice.
+5. **Controller scope: SINGLE GUILD, hard-bound.** Any request with a
+   `guild_id` ≠ configured guild → 400. Multi-guild is phase 2+; nothing in
+   the data model assumes multi-guild (generation is a single counter, the
+   outbox is a single queue, the state file is single-connection).
 
 ## 13. What this does NOT do (anti-scope, pre-locked)
 
