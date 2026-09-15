@@ -12,6 +12,7 @@ from uuid import uuid4
 from nora.domain.music import QueuedTrack
 from nora.platform.discord.music_messages import (
     autoplay_now_playing_line,
+    cannot_pause_now_line,
     join_failed_line,
     join_failed_note,
     join_voice_channel_line,
@@ -90,6 +91,7 @@ def test_the_fixed_state_lines_are_verbatim_from_the_pre_table_surface() -> None
     assert not_paused_line() == "Not paused."
     assert paused_line() == "Paused."
     assert resumed_line() == "Resumed."
+    assert cannot_pause_now_line() == "Can't pause or resume right now — a reply is playing."
     assert stopped_line() == "Stopped."
 
 

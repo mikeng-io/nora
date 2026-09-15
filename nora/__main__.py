@@ -142,8 +142,16 @@ class App:
         # The voice channel's text entry point (design/voice-channel/, stage
         # 3): the wake service POSTs transcripts here, and they enter through
         # the dispatcher exactly like a typed Discord message — same adapter
-        # callback, same ingest, same reactive path.
-        register_voice(health_app, ingest=deps.dispatcher.on_message)
+        # callback, same ingest, same reactive path. `on_voice_event` is the
+        # audio-controller's callback channel (design/voice-channel/07 §5) —
+        # present only when the consumer was built (hub + music manager).
+        register_voice(
+            health_app, ingest=deps.dispatcher.on_message,
+            on_voice_event=(
+                deps.voice_event_consumer.consume
+                if deps.voice_event_consumer is not None else None
+            ),
+        )
         self._health_runner = await serve(health_app, self.cfg.obs.metrics.port)
 
         deps.background.spawn(heartbeat(deps.metrics))

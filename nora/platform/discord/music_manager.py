@@ -1,13 +1,22 @@
-"""`MusicPlayerManager` — per-guild lookup, join-or-reject, and idle/empty
--channel disconnect (design/discord-music/03-state-and-persistence.md).
+"""`MusicPlayerManager` — per-guild lookup, join-or-reject, and the
+idle/empty-channel teardown policies (design/discord-music/
+03-state-and-persistence.md).
 
 This is the ACTUAL entry point the slash-command layer calls — `MusicPlayer`
 is an internal implementation detail this class constructs and owns one of
 per guild. `connect` (a zero-arg async factory returning a `VoiceSession`)
-is how the caller hands over "I already joined the requester's channel" —
+is how the caller hands over "the requester's channel is joined" —
 `None` means the requester is not in any voice channel, the rejection this
 class enforces BEFORE `MusicPlayer` or a `VoiceSession` ever exists for a
 guild that doesn't have one yet.
+
+Lifecycle split (design/voice-channel/07 §10, B3): **end-music** (`/music
+stop`, the idle-expiry timer) tears down the session but STAYS in the voice
+channel — the audio-controller keeps the connection, e.g. for the wake
+path. **Leave-voice** (`/discord exit` via `leave_voice`, an emptied
+channel, a voice-death event, the dead-session eviction) additionally
+destroys the connection. The old convergence of both onto one teardown is
+deliberately gone.
 """
 
 from __future__ import annotations
@@ -39,6 +48,10 @@ ClockSleep = Callable[[float], Awaitable[None]]
 # the `MusicPlayer` (never updated on a later reuse from a different
 # channel, matching "the channel where it started").
 Notify = Callable[[str], Awaitable[None]]
+# Reads the playback id nora currently expects the controller to be playing
+# for a guild (`VoiceControllerHub.expected_playback_id` in production) —
+# the B5 staleness probe `on_track_finished` applies UNDER the guild lock.
+PlaybackProbe = Callable[[str], str | None]
 
 
 class MusicPlayerManager:
@@ -53,6 +66,7 @@ class MusicPlayerManager:
         clock_sleep: ClockSleep = asyncio.sleep,
         autoplay_enabled: bool = False,
         autoplay_prewarm_seconds: float = 0.0,
+        playback_probe: PlaybackProbe | None = None,
     ) -> None:
         self._queue_store = queue_store
         self._session_store = session_store
@@ -62,6 +76,7 @@ class MusicPlayerManager:
         self._clock_sleep = clock_sleep
         self._autoplay_enabled = autoplay_enabled
         self._autoplay_prewarm_seconds = autoplay_prewarm_seconds
+        self._playback_probe = playback_probe
         self._players: dict[str, MusicPlayer] = {}
         self._idle_tasks: dict[str, asyncio.Task[None]] = {}
         self._notify: dict[str, Notify] = {}
@@ -151,24 +166,50 @@ class MusicPlayerManager:
         await self._notify_now_playing(guild_id, status)
         return skipped
 
-    async def on_track_finished(self, guild_id: str) -> None:
-        # Under the same per-guild lock as `play()` — the monitor's
-        # `on_voice_death` can fire while a natural track-end is mid-
-        # `_advance`; without serialization the two transitions would
-        # interleave `stop()`/`queue.clear()`/`session.delete()` with
+    async def on_track_finished(self, guild_id: str, *, playback_id: str | None = None) -> bool:
+        """Advance after a track end. Returns `True` when the queue actually
+        advanced — `False` when the event was stale or there was no player.
+
+        `playback_id` is the controller's (design/voice-channel/07 §3.3, B5):
+        the voice-event consumer passes it from the callback, and the match
+        against the currently-expected playback is checked UNDER the guild
+        lock — never before taking it. That ordering is the whole point: a
+        `track-finished` that arrives while a skip holds the lock mid-`play()`
+        would pass an outside check against the OLD expected id and then
+        advance a second time once the lock released; checked here, the
+        skip's own advance has already moved the expected id and the event
+        is recognised as the tail of the superseded track. A `None`
+        `playback_probe` (tests, or a wiring that cannot answer) skips the
+        check rather than guessing."""
+        # Under the same per-guild lock as `play()` — a voice-death event
+        # can fire while a natural track-end is mid-`_advance`; without
+        # serialization the two transitions would interleave
+        # `stop()`/`queue.clear()`/`session.delete()` with
         # `pop_next()`/`resolve()`/`voice.play()` on the same `MusicPlayer`
         # (external audit MAJOR-3, 2026-08-26).
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
         async with lock:
+            if (
+                playback_id is not None
+                and self._playback_probe is not None
+                and playback_id != self._playback_probe(guild_id)
+            ):
+                log.info(
+                    "track-finished for guild %s ignored: playback %s is not the "
+                    "currently-expected one (a superseded track's tail)",
+                    guild_id, playback_id,
+                )
+                return False
             player = self._players.get(guild_id)
             if player is None:
-                return
+                return False
             await player.on_track_finished()
             status = await self._after_transition(guild_id, player)
         # This is the ONE transition with no slash-command reply of its own
         # — a track ending naturally and the next one auto-starting is
         # otherwise silent in Discord.
         await self._notify_now_playing(guild_id, status)
+        return True
 
     async def pause(self, guild_id: str) -> bool:
         player = self._players.get(guild_id)
@@ -199,7 +240,9 @@ class MusicPlayerManager:
         return None if player is None else await player.status()
 
     async def stop(self, guild_id: str) -> None:
-        """`/music stop` — same shape as leaving, an explicit command
+        """`/music stop` — END-MUSIC (design/voice-channel/07 §10, B3): the
+        session ends but the voice connection STAYS (the controller keeps it,
+        e.g. for the wake path). Same shape as leaving, an explicit command
         rather than a timer/event triggering it."""
         # Same per-guild lock as `play()` — a stop can race a natural
         # track-end's `_advance` or the monitor's `on_voice_death`; without
@@ -207,11 +250,21 @@ class MusicPlayerManager:
         # or double-teardown (external audit Codex MAJOR-2, 2026-08-26).
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
         async with lock:
+            await self._end_music(guild_id)
+
+    async def leave_voice(self, guild_id: str) -> None:
+        """`/discord exit` — LEAVE-VOICE (end-music AND destroy the
+        connection), with no announcement: the command replies itself."""
+        # Same per-guild lock as `play()`/`stop()`.
+        lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
+        async with lock:
             await self._leave(guild_id)
 
     async def on_voice_channel_emptied(self, guild_id: str) -> None:
-        """The channel's human count dropped to zero — leaves immediately,
-        no idle grace period (03's disconnect-timer rules, trigger 1)."""
+        """The channel's human count dropped to zero — LEAVE-VOICE
+        immediately, no idle grace period (03's disconnect-timer rules,
+        trigger 1). Fires from the controller's `channel-emptied` event
+        (design/voice-channel/07 §10, B10)."""
         # Same per-guild lock (Codex MAJOR-2, 2026-08-26).
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
         async with lock:
@@ -345,9 +398,9 @@ class MusicPlayerManager:
             # itself from `_players` — drop the dead player entirely so the
             # next `/music play` joins a clean connection and the idle timer
             # is not armed for a zombie (external audit MAJOR-2, 2026-08-26).
-            # `_leave` re-runs `player.stop()`, which is safe on the torn
-            # state (clear/stop/disconnect on empty/already-left are
-            # idempotent no-ops in `DiscordVoiceSession`).
+            # `_leave` re-runs the leave-voice path, which is safe on the
+            # torn state (`HttpVoiceSession.disconnect` tolerates an
+            # already-invalid generation; clear/stop on empty are no-ops).
             await self._leave(guild_id)
             return status
         if status.now_playing is None:
@@ -408,14 +461,30 @@ class MusicPlayerManager:
         # fire while a track-end `_advance` or a `/music play` is mid-flight.
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
         async with lock:
-            await self._leave(guild_id)
+            # Idle expiry is END-MUSIC (design/voice-channel/07 §10, B3) —
+            # the session ends but the connection STAYS; the controller
+            # keeps it, e.g. for the wake path.
+            await self._end_music(guild_id)
+
+    async def _end_music(self, guild_id: str) -> None:
+        """END-MUSIC: tear the session down (queue, persistence, playback)
+        and STAY connected — `/music stop` and the idle-expiry timer."""
+        self._cancel_idle_disconnect(guild_id)
+        self._notify.pop(guild_id, None)
+        player = self._players.pop(guild_id, None)
+        if player is not None:
+            await player.stop()
 
     async def _leave(self, guild_id: str, *, announce: bool = False) -> None:
+        """LEAVE-VOICE: end-music AND destroy the voice connection — an
+        emptied channel, a voice-death event, `/discord exit`, the
+        dead-session eviction. `MusicPlayer.leave` tolerates a connection
+        that is already gone controller-side."""
         self._cancel_idle_disconnect(guild_id)
         notify = self._notify.pop(guild_id, None)
         player = self._players.pop(guild_id, None)
         if player is not None:
-            await player.stop()
+            await player.leave()
         if announce and notify is not None and player is not None:
             # Announce the teardown ONLY on the one transition with no
             # command reply of its own — `on_voice_death`. `/music stop`

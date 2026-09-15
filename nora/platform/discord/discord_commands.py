@@ -1,0 +1,116 @@
+"""`/discord join|exit` — the voice-connection control surface
+(design/voice-channel/07 §2/§12.3).
+
+The audio-controller owns the ONE Discord voice connection; these two
+commands are how a human drives its lifecycle explicitly (everything else —
+`/music play`'s auto-join, the wake boot join — reuses the same hub).
+
+**Not unit-tested beyond the pure gate** (`voice_gate.py`, covered by
+`tests/unit/test_voice_gate.py`) — same posture `music_commands.py`'s own
+docstring explains: a real `discord.Interaction` is not faithfully fakeable,
+and every actual DECISION (the admission gate, join caching/adoption,
+leave-voice teardown) lives in `voice_gate` / `VoiceControllerHub` /
+`MusicPlayerManager`, all fully unit-tested. This module is pure
+translation.
+"""
+
+from __future__ import annotations
+
+import logging
+
+import discord
+from discord import app_commands
+
+from nora.infra.voice.http_controller import VoiceControllerError
+from nora.infra.voice.hub import VoiceControllerHub
+from nora.platform.discord import music_messages as m
+from nora.platform.discord.music_manager import MusicPlayerManager
+from nora.platform.discord.voice_gate import voice_join_decision
+
+log = logging.getLogger("nora.music")
+
+
+def _member_voice_channel_id(interaction: discord.Interaction) -> str | None:
+    member = interaction.user
+    if not isinstance(member, discord.Member) or member.voice is None:
+        return None
+    channel = member.voice.channel
+    return str(channel.id) if isinstance(channel, discord.VoiceChannel) else None
+
+
+class DiscordCommands(app_commands.Group):
+    """Registered as `/discord` beside `/music` in
+    `music_commands.register` — same lifecycle (one per connection
+    attempt)."""
+
+    def __init__(
+        self,
+        *,
+        hub: VoiceControllerHub | None,
+        voice_channel_ids: frozenset[str],
+        manager: MusicPlayerManager | None = None,
+    ) -> None:
+        super().__init__(name="discord", description="Control Nora's voice connection.")
+        self._hub = hub
+        self._voice_channel_ids = voice_channel_ids
+        self._manager = manager
+
+    @app_commands.command(name="join", description="Join your voice channel.")
+    async def join(self, interaction: discord.Interaction) -> None:
+        if interaction.guild_id is None:
+            await interaction.response.send_message(
+                m.music_not_in_server_line(), ephemeral=True,
+            )
+            return
+        guild_id = str(interaction.guild_id)
+        channel_id = _member_voice_channel_id(interaction)
+        decision = voice_join_decision(
+            is_member=isinstance(interaction.user, discord.Member),
+            guild_id=guild_id, caller_channel_id=channel_id,
+            allowed=self._voice_channel_ids,
+        )
+        if decision != "ok" or channel_id is None:
+            line = (
+                m.join_voice_channel_line()
+                if decision == "not_in_voice"
+                else m.not_in_allowed_channel_line()
+            )
+            await interaction.response.send_message(line, ephemeral=True)
+            return
+        log.info("discord command: /discord join guild=%s channel=%s", guild_id, channel_id)
+        await interaction.response.defer(ephemeral=True)
+        if self._hub is None:
+            await interaction.followup.send(m.join_failed_line(), ephemeral=True)
+            return
+        if self._hub.session_for(guild_id) is not None:
+            await interaction.followup.send(m.already_in_voice_line(), ephemeral=True)
+            return
+        try:
+            await self._hub.join(guild_id, channel_id)
+        except VoiceControllerError:
+            log.exception("voice join failed for guild %s", guild_id)
+            await interaction.followup.send(m.join_failed_line(), ephemeral=True)
+            return
+        await interaction.followup.send(m.joined_voice_line())
+
+    @app_commands.command(name="exit", description="Leave the voice channel.")
+    async def exit(self, interaction: discord.Interaction) -> None:
+        # The exit gate is the join gate MINUS the in-voice requirement: a
+        # member may end Nora's connection without standing in the channel
+        # themselves (decision 2026-09-16 — kicking the bot out of a room
+        # you just left must not require re-entering it).
+        if interaction.guild_id is None or not isinstance(interaction.user, discord.Member):
+            await interaction.response.send_message(
+                m.music_not_in_server_line(), ephemeral=True,
+            )
+            return
+        guild_id = str(interaction.guild_id)
+        log.info("discord command: /discord exit guild=%s", guild_id)
+        await interaction.response.defer(ephemeral=True)
+        if self._manager is not None:
+            await self._manager.leave_voice(guild_id)
+        left = await self._hub.exit(guild_id) if self._hub is not None else False
+        await interaction.followup.send(
+            m.left_voice_line() if left else m.not_in_voice_channel_line(),
+            ephemeral=True,
+        )

@@ -10,14 +10,14 @@ attempted, only "what track, paused-or-not, what volume, which channels").
 Every transition that changes what a restart would need to know writes
 through to `self._session` before returning.
 
-`VoiceSession` deliberately does NOT take an `after` callback the way
-`discord.py`'s real `VoiceClient.play(source, after=...)` does — that
-callback fires off the event loop thread in production, and scheduling it
-back onto the loop is the Discord integration layer's job
-(`02-control-surface.md`'s own boundary), not this class's. This class
-exposes `on_track_finished()` for that layer to call once it has done its
-own thread-safe scheduling; `skip()` is the same advance, driven directly
-by a command instead."""
+`VoiceSession` is an AWAITABLE port (design/voice-channel/07 B4): the one
+real implementation, `nora/infra/voice/http_controller.py`'s
+`HttpVoiceSession`, drives the audio-controller over HTTP rather than
+holding a local voice connection. Track completion arrives as the
+controller's `track-finished` event (`POST /app/v1/voice/event`), which the
+voice-event consumer routes to `MusicPlayerManager.on_track_finished` —
+advancement happens on ACTUAL completion only, never on a local timer.
+`skip()` is the same advance, driven directly by a command instead."""
 
 from __future__ import annotations
 
@@ -42,18 +42,20 @@ log = logging.getLogger("nora.music")
 
 
 class VoiceSession(Protocol):
-    def is_playing(self) -> bool: ...
-    def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None: ...
-    def pause(self) -> None: ...
-    def resume(self) -> None: ...
-    def stop(self) -> None: ...
-    def set_volume(self, volume: float) -> None: ...
-    # design/voice-channel/01 §4: spoken answers live on the SESSION, not on
-    # `MusicPlayer` — only the session owns the one source Discord reads and
-    # knows whether music is playing (the precondition for ducking), and a
-    # spoken answer is not music. `duck=False` is the honest path when
-    # nothing is playing: no mixer is allocated and the speech plays directly.
-    def speak(self, speech_audio: bytes, *, media_type: str, duck: bool = True) -> None: ...
+    """The player's handle on the voice connection — awaitable because the
+    real implementation POSTs to the audio-controller's HTTP control plane
+    (`play` is REPLACE semantics there, so a `play()` while audible
+    supersedes the current track, matching what skip/advance rely on).
+
+    Speech (TTS) deliberately has NO verb here: spoken replies ride the
+    controller's `/stream` endpoint through `VoiceControllerHub`, which owns
+    the per-guild generation — never through the music session."""
+
+    async def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None: ...
+    async def pause(self) -> None: ...
+    async def resume(self) -> None: ...
+    async def stop(self) -> None: ...
+    async def set_volume(self, volume: float) -> None: ...
     async def disconnect(self) -> None: ...
 
 
@@ -209,31 +211,29 @@ class MusicPlayer:
         `None` if nothing was.
 
         Deliberately does NOT call `voice.stop()` up front when there IS a
-        next track: `_advance()`'s own `voice.play()` call for it replaces
-        whatever's currently audible (a crossfade if `[music]
-        crossfade_seconds` is set, otherwise `DiscordVoiceSession`'s own
-        live-swap does an instant cut) — the same mechanism a natural
-        track-end crossfade already relies on, just triggered by a command
-        instead of the early-fire timer. Only when the queue is EMPTY is
-        there nothing to supersede the skipped track's still-live audio,
-        so `stop()` is the explicit fallback for that case."""
+        next track: `_advance()`'s own `voice.play()` call for it REPLACES
+        whatever's currently audible (the controller's `/music/play` is
+        replace-not-enqueue, design/voice-channel/07 §3.2) — the same
+        mechanism a natural track-end relies on, just triggered by a command
+        instead of the controller's `track-finished` event. Only when the
+        queue is EMPTY is there nothing to supersede the skipped track's
+        still-live audio, so `stop()` is the explicit fallback for that case."""
         skipped = self._now_playing
         await self._advance()
         if self._now_playing is None:
-            self._voice.stop()
+            await self._voice.stop()
         return skipped
 
     async def on_track_finished(self) -> None:
-        """The Discord integration layer's `after` callback lands here once
-        it has scheduled itself back onto the event loop — the real voice
-        client already stopped on its own, so this does NOT call
-        `voice.stop()` again."""
+        """The controller's `track-finished` event lands here via the
+        voice-event consumer — the controller already stopped the track on
+        its own, so this does NOT call `voice.stop()` again."""
         await self._advance()
 
     async def pause(self) -> bool:
         if self._now_playing is None or self._paused:
             return False
-        self._voice.pause()
+        await self._voice.pause()
         self._paused = True
         await self._persist_session()
         return True
@@ -241,7 +241,7 @@ class MusicPlayer:
     async def resume(self) -> bool:
         if self._now_playing is None or not self._paused:
             return False
-        self._voice.resume()
+        await self._voice.resume()
         self._paused = False
         await self._persist_session()
         return True
@@ -256,7 +256,7 @@ class MusicPlayer:
         to whatever plays next either way."""
         if not 0.0 <= volume <= 2.0:
             return False
-        self._voice.set_volume(volume)
+        await self._voice.set_volume(volume)
         self._volume = volume
         await self._persist_session()
         return True
@@ -272,7 +272,7 @@ class MusicPlayer:
         `on_track_finished()` to pick up wherever the ACTUAL queue
         continues, exactly like a stale queued track already does."""
         self._volume = volume
-        self._voice.set_volume(volume)
+        await self._voice.set_volume(volume)
         resolved = await self._source.resolve(query_or_url=locator)
         if not resolved:
             return False
@@ -294,7 +294,9 @@ class MusicPlayer:
         self._last_played = self._now_playing
         self._paused = False
         try:
-            self._voice.play(resolved[0].stream_url, duration_seconds=resolved[0].duration_seconds)
+            await self._voice.play(
+                resolved[0].stream_url, duration_seconds=resolved[0].duration_seconds,
+            )
         except Exception:
             # External audit Codex MAJOR-3 (2026-08-26): the same dead-voice
             # teardown as `_advance` — a boot-time resume into a voice
@@ -312,7 +314,7 @@ class MusicPlayer:
             self._session_dead = True
             return False
         if paused:
-            self._voice.pause()
+            await self._voice.pause()
             self._paused = True
         await self._persist_session()
         return True
@@ -338,10 +340,12 @@ class MusicPlayer:
         )
 
     async def stop(self) -> None:
-        """Clears the whole queue, stops playback, and leaves the voice
-        channel — `/music stop`. Deletes the persisted session row too:
-        this is the one transition that actually ENDS the session, as
-        opposed to every other one just changing what's in it."""
+        """END-MUSIC (design/voice-channel/07 §10, B3): clears the whole
+        queue, stops playback, and deletes the persisted session row — but
+        does NOT leave the voice channel (`/music stop` ≠ `/discord exit`;
+        the controller keeps the connection, e.g. for the wake path). This
+        is the one transition that actually ENDS the session, as opposed to
+        every other one just changing what's in it."""
         self._cancel_prewarm()
         await self._queue.clear(self._guild_id)
         self._now_playing = None
@@ -350,9 +354,17 @@ class MusicPlayer:
         # is the correct "nothing to autoplay from" case.
         self._last_played = None
         self._paused = False
-        self._voice.stop()
-        await self._voice.disconnect()
+        await self._voice.stop()
         await self._session.delete(self._guild_id)
+
+    async def leave(self) -> None:
+        """LEAVE-VOICE (design/voice-channel/07 §10, B3): end-music AND
+        destroy the voice connection — `/discord exit`, an emptied channel,
+        a voice-death event. `disconnect` tolerates a connection that is
+        already gone controller-side (the controller saw the death first),
+        so this is safe on a half-torn session."""
+        await self.stop()
+        await self._voice.disconnect()
 
     async def top(self, position: int) -> QueuedTrack | None:
         """`/music top` / the `top_music` agent tool: moves the `position`-th
@@ -385,14 +397,13 @@ class MusicPlayer:
         pick was already resolved during the track that just ended, so the
         only work here is the same `voice.play()` any queued track gets.
 
-        A voice connection that dies mid-session (a gateway/voice websocket
-        drop Discord doesn't surface as a state change — found live
-        2026-08-26: \"now its NOT even playing\", after a `discord gateway
-        resumed`) makes `voice.play()` raise `ClientException: Not
-        connected to voice.` The session is torn down like a stop instead
-        of letting that exception climb into the `on_finished` handler and
-        strand `_now_playing` claiming a track is audible when nothing
-        is."""
+        A voice connection that dies mid-session (a drop the controller
+        reports as `voice-death`, or one it hasn't noticed yet — found live
+        2026-08-26: "now its NOT even playing", after a `discord gateway
+        resumed`) makes `voice.play()` raise. The session is torn down like
+        a stop instead of letting that exception climb into the track-end
+        handler and strand `_now_playing` claiming a track is audible when
+        nothing is."""
         while True:
             # Captured before `pop_next` overwrites it -- the SEED autoplay
             # recommends from, once the queue turns out empty below
@@ -452,7 +463,7 @@ class MusicPlayer:
                 # by the next `_advance`).
                 self._last_played = self._now_playing
                 try:
-                    self._voice.play(
+                    await self._voice.play(
                         resolved[0].stream_url, duration_seconds=resolved[0].duration_seconds,
                     )
                 except Exception:

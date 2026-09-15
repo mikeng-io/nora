@@ -20,10 +20,12 @@ from datetime import UTC, datetime
 import discord
 
 from nora.domain.ports import MusicToolOutcome
+from nora.infra.voice.hub import VoiceControllerHub
 from nora.platform.discord import music_messages as m
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.music_commands import _connect_factory
 from nora.platform.discord.music_manager import MusicPlayerManager
+from nora.platform.discord.voice_gate import voice_join_decision
 
 log = logging.getLogger("nora.music")
 
@@ -48,12 +50,17 @@ class DiscordMusicToolBridge:
     """Satisfies `nora.domain.ports.MusicToolBridge`."""
 
     def __init__(
-        self, *, adapter: DiscordAdapter, manager: MusicPlayerManager,
-        crossfade_seconds: float = 0.0,
+        self,
+        *,
+        adapter: DiscordAdapter,
+        manager: MusicPlayerManager,
+        hub: VoiceControllerHub | None = None,
+        voice_channel_ids: frozenset[str] = frozenset(),
     ) -> None:
         self._adapter = adapter
         self._manager = manager
-        self._crossfade_seconds = crossfade_seconds
+        self._hub = hub
+        self._voice_channel_ids = voice_channel_ids
 
     def _guild_id(self, conversation_id: str) -> str:
         guild_id, _, _ = conversation_id.partition("/")
@@ -122,12 +129,26 @@ class DiscordMusicToolBridge:
             return _UNAVAILABLE_DISCONNECTED
         guild_id = self._guild_id(conversation_id)
         channel = self._member_voice_channel(conversation_id, sender_ids)
-        connect = (
-            _connect_factory(
-                self._manager, guild_id, channel, crossfade_seconds=self._crossfade_seconds,
+        connect = None
+        voice_channel_id = None
+        if channel is not None:
+            # The same auto-join gate `/music play` applies (design/
+            # voice-channel/07 §12.2): a FRESH session may only join the
+            # requester's channel when it is on the allow-list. An existing
+            # session is reused without a join, so the refusal binds only
+            # when one would be needed.
+            decision = voice_join_decision(
+                is_member=True,  # the channel came from a guild member lookup
+                guild_id=guild_id, caller_channel_id=str(channel.id),
+                allowed=self._voice_channel_ids,
             )
-            if channel is not None else None
-        )
+            if decision == "ok":
+                connect = _connect_factory(self._hub, guild_id, str(channel.id))
+                voice_channel_id = str(channel.id)
+            elif await self._manager.status(guild_id) is None:
+                return MusicToolOutcome(
+                    status="unavailable", note=m.not_in_allowed_channel_note(),
+                )
         _, _, notify_channel_id = conversation_id.partition("/")
         # Attribution only (who gets credit for queuing the track) -- unlike
         # the voice-channel lookup above, this doesn't need to be the
@@ -138,7 +159,7 @@ class DiscordMusicToolBridge:
             outcome = await self._manager.play(
                 guild_id=guild_id, query_or_url=query_or_url, requested_by=requested_by,
                 added_at=datetime.now(UTC), connect=connect, notify=self._notify(conversation_id),
-                voice_channel_id=str(channel.id) if channel is not None else None,
+                voice_channel_id=voice_channel_id,
                 notify_channel_id=notify_channel_id or None,
             )
         except Exception:

@@ -9,14 +9,12 @@ REST calls instead of signal-cli's JSON-RPC.
 
 from __future__ import annotations
 
-import base64
 import contextlib
 import logging
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-import aiohttp
 import discord
 
 from ...domain.models import ConversationTarget, NormalizedMessage
@@ -32,6 +30,7 @@ from ...domain.ports import (
     TextStyle,
     speakable,
 )
+from ...infra.voice.hub import VoiceControllerHub
 from .listener import DiscordListener
 from .music_commands import register as register_music_commands
 from .music_commands import resume_persisted_sessions as resume_persisted_music_sessions
@@ -53,9 +52,8 @@ class DiscordAdapter:
         *,
         base_url: str = DEFAULT_API_BASE,
         music_manager: MusicPlayerManager | None = None,
-        crossfade_seconds: float = 0.0,
         speaker: Any = None,
-        voice_playout_endpoint: str = "",
+        voice_hub: VoiceControllerHub | None = None,
         voice_channel_ids: frozenset[str] = frozenset(),
     ) -> None:
         self._token = token
@@ -69,15 +67,14 @@ class DiscordAdapter:
         # keeps this adapter unchanged for every deployment that hasn't
         # turned the feature on.
         self._music_manager = music_manager
-        self._crossfade_seconds = crossfade_seconds
-        # Stage-3 voice playout (design/voice-channel/01 §5): the MiniMax
-        # speaker and the sidecar's HTTP base. BOTH None/empty on every
-        # deployment that hasn't wired the voice path — the text-only posture
-        # stays byte-identical. A target on `voice_channel_ids` routes
-        # through speak → POST /play instead of REST text, because Discord
-        # refuses text POSTs into a voice channel (400).
+        # The voice path (design/voice-channel/07): the MiniMax speaker and
+        # the audio-controller hub. BOTH None on every deployment that hasn't
+        # wired the voice path — the text-only posture stays byte-identical.
+        # A target on `voice_channel_ids` routes through speak → the
+        # controller's `/stream` endpoint instead of REST text, because
+        # Discord refuses text POSTs into a voice channel (400).
         self._speaker = speaker
-        self._voice_playout_endpoint = voice_playout_endpoint.rstrip("/")
+        self._voice_hub = voice_hub
         self._voice_channel_ids = set(voice_channel_ids)
         # Built fresh in `listen()`, NOT here. A `discord.Client` is single-use:
         # once it closes, `is_closed()` stays True for that instance forever
@@ -135,14 +132,16 @@ class DiscordAdapter:
             # docstring is explicit about that boundary.
             if self._music_manager is not None:
                 await register_music_commands(
-                    client, self._music_manager, crossfade_seconds=self._crossfade_seconds,
+                    client, self._music_manager,
+                    hub=self._voice_hub,
+                    voice_channel_ids=frozenset(self._voice_channel_ids),
                 )
                 # design/discord-music/06-session-persistence.md stage 2 --
                 # safe to run on every on_ready, not just a genuine boot
                 # (resume_persisted_sessions's own guard against clobbering
                 # an already-live player).
                 await resume_persisted_music_sessions(
-                    client, self._music_manager, crossfade_seconds=self._crossfade_seconds,
+                    client, self._music_manager, hub=self._voice_hub,
                 )
 
         self._listener = DiscordListener(
@@ -190,12 +189,12 @@ class DiscordAdapter:
         attachments: tuple[OutboundAttachment, ...] = (),
         quote: OutboundQuote | None = None,
     ) -> SendResult:
-        # Stage-3 voice playout: a target that IS a voice channel cannot take
-        # a text POST (Discord answers 400). Route it through the speaker →
-        # sidecar /play seam instead. Fail-closed: without a speaker or an
-        # endpoint the reply is SILENT (ok=False, text-only fallback is the
-        # caller's business) — never a text POST, which would be a 400 anyway
-        # and would look like a delivery.
+        # Voice playout: a target that IS a voice channel cannot take a text
+        # POST (Discord answers 400). Route it through the speaker → the
+        # audio-controller's `/stream` seam instead. Fail-closed: without a
+        # speaker or a hub the reply is SILENT (ok=False, text-only fallback
+        # is the caller's business) — never a text POST, which would be a
+        # 400 anyway and would look like a delivery.
         if target.conversation_id in self._voice_channel_ids:
             return await self._send_voice(target=target, text=text)
         return await self._sender.send(
@@ -204,9 +203,9 @@ class DiscordAdapter:
         )
 
     async def _send_voice(self, *, target: ConversationTarget, text: str) -> SendResult:
-        if self._speaker is None or not self._voice_playout_endpoint:
+        if self._speaker is None or self._voice_hub is None:
             log.warning(
-                "voice-channel send to %s but speaker/endpoint unset — "
+                "voice-channel send to %s but speaker/voice hub unset — "
                 "voice replies stay silent (config [speech.tts])",
                 target.conversation_id,
             )
@@ -216,32 +215,22 @@ class DiscordAdapter:
             # read aloud. A voice channel has no text surface; the honest
             # result is a refused send, matching what Discord would do with
             # the string anyway.
-            log.info("voice-channel send refused: not speakable (target=%s)", target.conversation_id)
+            log.info(
+                "voice-channel send refused: not speakable (target=%s)",
+                target.conversation_id,
+            )
             return SendResult(ok=False)
         result = await self._speaker.speak(text=text)
         if not result.available or not result.audio:
             log.warning("voice-channel send failed: tts unavailable (reason=%s)", result.reason)
             return SendResult(ok=False)
-        try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
-                async with session.post(
-                    f"{self._voice_playout_endpoint}/play",
-                    json={
-                        "audio_b64": base64.b64encode(result.audio).decode("ascii"),
-                        "media_type": result.media_type,
-                    },
-                ) as resp:
-                    if resp.status not in (200, 202):
-                        body = await resp.text()
-                        log.error(
-                            "voice playout failed: HTTP %s from sidecar (target=%s) %s",
-                            resp.status, target.conversation_id, body[:200],
-                        )
-                        return SendResult(ok=False)
-                    return SendResult(ok=True)
-        except Exception as exc:  # noqa: BLE001 — a playout failure is never fatal
-            log.error("voice playout raised: %s", exc)
-            return SendResult(ok=False)
+        # The ONLY speech path (design/voice-channel/07 §3): the
+        # controller's `/stream` endpoint, generation-scoped via the hub.
+        # `False` covers every failure (no session, stale generation,
+        # controller down) — the hub already logged which.
+        guild_id, _, _ = target.conversation_id.partition("/")
+        ok = await self._voice_hub.stream_speech(guild_id, result.audio, result.media_type)
+        return SendResult(ok=ok)
 
     async def react(
         self,

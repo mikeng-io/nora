@@ -1576,11 +1576,14 @@ class SpeechTtsConfig(BaseModel):
     Cantonese `voice` and `language_boost` hard-set in the adapter. The key is
     read from the env var `api_key_env` NAMES (DEC-8) — never from this file.
 
-    `duck_gain`/`duck_ramp_ms` are the ducking law for `DuckSource`: while
-    speech plays over music, the music is scaled to `duck_gain` and back along
-    a `duck_ramp_ms` linear ramp (a hard step is audible as a click). They are
-    the mix's own transient gain — the listener's persisted `/music volume` is
-    never touched by a duck cycle.
+    `duck_gain`/`duck_ramp_ms` are the ducking law for speech-over-music:
+    while speech plays, the music is scaled to `duck_gain` and back along a
+    `duck_ramp_ms` linear ramp (a hard step is audible as a click). They are
+    the mix's own transient gain — the listener's persisted `/music volume`
+    is never touched by a duck cycle. NOTE (design/voice-channel/07, phase
+    1): the audio-controller currently HARD-CUTS speech over music instead
+    of ducking — these values are accepted and validated, but nothing reads
+    them until phase 2 restores ducking controller-side.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -1591,13 +1594,16 @@ class SpeechTtsConfig(BaseModel):
     api_key_env: str = "MINIMAX_CN_API_KEY"
     duck_gain: float = Field(default=0.25, gt=0, lt=1)
     duck_ramp_ms: int = Field(default=150, gt=0)
-    # The stage-3 sidecar's HTTP base (deploy/voice-sidecar, src/service.mjs).
-    # Empty (the default) leaves the voice playout UNWIRED: a reply to a
-    # Discord voice channel is still delivered as an audit row, but no audio
-    # reaches the channel. Non-empty wires the playout seam — `send` to a
-    # GUILD_VOICE channel synthesizes the reply via the speaker and POSTs it
-    # to `{sidecar_endpoint}/play`, which plays it into the same connection
-    # that hears the wake word.
+    # The audio-controller's HTTP base (design/voice-channel/07 — the
+    # sidecar IS the audio-controller, the sole owner of the Discord voice
+    # connection). Empty (the default) leaves the whole voice seam UNWIRED:
+    # a reply to a Discord voice channel is still delivered as an audit row,
+    # but no audio reaches the channel, and every `/music`/`/discord join`
+    # fails closed. Non-empty wires both planes — `send` to a GUILD_VOICE
+    # channel synthesizes the reply via the speaker and POSTs it to
+    # `{sidecar_endpoint}/stream`, and the music verbs drive
+    # `{sidecar_endpoint}/music/*` on the same connection that hears the
+    # wake word.
     sidecar_endpoint: str = ""
     # Discord conversation ids ("<guild_id>/<channel_id>") that are VOICE
     # channels — the wake-answer room (design/voice-channel/, stage 3). A
@@ -2255,13 +2261,12 @@ class MusicConfig(BaseModel):
     channel emptied of humans) has no config, since there is no grace period
     to size for an event that already means "leave now".
 
-    `crossfade_seconds` — 0 (the default) disables crossfading entirely: a
-    track ends and the next starts with a hard cut, today's behaviour.
-    Above 0, `DiscordVoiceSession` blends the outgoing and incoming tracks'
-    audio for that many seconds before a track's own natural end. Spike
-    (2026-08-24): only a natural track-end crossfades; `/music skip` stays
-    an instant cut on purpose (skipping is "get me out of this NOW", not a
-    DJ transition).
+    `crossfade_seconds` — accepted but treated as EFFECTIVE ZERO in phase 1
+    of the audio-owner controller (design/voice-channel/07 §10, B17): there
+    is no local playback to blend, and advancement happens on ACTUAL track
+    completion (the controller's `track-finished` event). The controller
+    surfaces the value in its `/voice/status` as `crossfade_seconds: 0`;
+    phase 2 restores crossfading controller-side.
 
     `autoplay_enabled` — False (default) means the bundle's ordinary
     idle-timeout behaviour: the queue empties, nothing next, leave after

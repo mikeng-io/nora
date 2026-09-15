@@ -50,11 +50,20 @@ def register_voice(
     app: web.Application,
     *,
     ingest: Callable[[NormalizedMessage], Awaitable[None]],
+    on_voice_event: Callable[[object], Awaitable[tuple[int, dict]]] | None = None,
 ) -> None:
     """`ingest` is the SAME callable a platform adapter's `listen()` loop
     receives — production wires `deps.dispatcher.on_message` (see
     `nora/__main__.py`), so nothing about the voice path re-implements any
-    part of the typed-message path."""
+    part of the typed-message path.
+
+    `on_voice_event`, when provided, also registers
+    `POST /app/v1/voice/event` — the audio-controller's callback channel
+    (design/voice-channel/07 §5). The consumer owns every validation and
+    routing decision; this route only parses JSON and passes the
+    (status, payload) verdict through. When `None`, the event route does
+    not exist at all — a deployment without the controller wired has no
+    endpoint to poke."""
 
     async def voice_utterance(request: web.Request) -> web.Response:
         try:
@@ -94,3 +103,15 @@ def register_voice(
         return web.json_response({"status": "accepted"}, status=202)
 
     app.router.add_post("/app/v1/voice/utterance", voice_utterance)
+
+    if on_voice_event is not None:
+
+        async def voice_event(request: web.Request) -> web.Response:
+            try:
+                body = await request.json()
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                return web.json_response({"error": "invalid json"}, status=400)
+            status, payload = await on_voice_event(body)
+            return web.json_response(payload, status=status)
+
+        app.router.add_post("/app/v1/voice/event", voice_event)

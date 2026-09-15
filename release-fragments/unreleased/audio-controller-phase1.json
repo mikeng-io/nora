@@ -1,0 +1,17 @@
+{
+  "type": "change",
+  "summary": "One voice connection, owned outside Nora: music and the wake-word ear no longer fight over the voice channel, /music stop leaves her in the channel, and new /discord join|exit commands control the connection itself.",
+  "details": [
+    "The Discord voice connection now has a single owner — the voice-sidecar, turned into an audio-controller that Nora drives over HTTP. Previously Nora held her own connection for music while the sidecar held one for the wake word, and the same bot account cannot hold two: the two kicked each other off, silently. That conflict is gone by construction.",
+    "/music stop now ends the music — clears the queue, stops the player — but leaves Nora IN the voice channel, so the wake word keeps working after a stop. Leaving the channel is a separate, explicit act: the new /discord exit (and /discord join to come back).",
+    "/music play with no live connection joins the voice channel YOU are sitting in, provided it is one Nora is allowed in; anywhere else she says so instead of picking a channel herself.",
+    "Her spoken replies now cut the music off sharply rather than dipping it, and the music starts again from the beginning once she finishes. The smooth volume dip (ducking) required audio machinery that only existed while Nora owned the connection herself.",
+    "Pausing or resuming while she is mid-reply is refused with a note (\"a reply is playing\") instead of the command failing silently.",
+    "A replaced track can no longer advance the queue a second time: the late \"finished\" signal from a track that was already cut off is recognised and ignored."
+  ],
+  "limitations": [
+    "Music interrupted by a spoken reply restarts from the beginning, not from where it left off — position-perfect resume is a later phase.",
+    "Crossfade between tracks is gone for now: the next track starts only after the previous one fully ends, with a short audible gap. The crossfade setting still parses but does nothing (reported as 0 in the controller's status).",
+    "Music availability now includes the audio-controller's: if that service is down, music answers \"unavailable\" rather than playing."
+  ]
+}

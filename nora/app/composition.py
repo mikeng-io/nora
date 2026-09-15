@@ -50,6 +50,7 @@ from nora.agent.room import Room
 from nora.agent.structured import ask_text, build_structured_model
 from nora.agent.tools import OriginRoom
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
+from nora.app.voice_events import VoiceEventConsumer
 from nora.config import Config, DreamBudgetConfig
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
 from nora.domain.compute import ComputeJobStore
@@ -106,6 +107,8 @@ from nora.infra.sql.turn_verdicts import SqlTurnVerdictStore
 from nora.infra.version import OK as VERSION_OK
 from nora.infra.version import VersionManifest
 from nora.infra.vision import MediaComprehender, VisionClient, derive_vision_timeout
+from nora.infra.voice.http_controller import VoiceControllerClient
+from nora.infra.voice.hub import VoiceControllerHub
 from nora.ingest.comprehension import MediaComprehension
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import (
@@ -881,6 +884,14 @@ class Dependencies:
     # caller: this is the yield point the voice answer path reads when it
     # lands, and it must behave correctly with `None`.
     speaker: Speaker | None
+    # The audio-controller seam (design/voice-channel/07): the per-guild
+    # voice-session registry every voice path shares, and the consumer for
+    # the controller's `/app/v1/voice/event` callbacks. Both `None` when
+    # `[speech.tts] sidecar_endpoint` is empty (the consumer additionally
+    # needs `[music] enabled`) — a deployment without the controller boots
+    # unchanged and every voice verb fails closed.
+    voice_hub: VoiceControllerHub | None
+    voice_event_consumer: VoiceEventConsumer | None
 
 
 async def build_dependencies(cfg: Config) -> Dependencies:
@@ -1087,6 +1098,20 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # reads the environment once and hands the already-resolved value to
     # whatever constructs the client that needs it (design/discord-integration/).
     discord_token = os.environ.get(cfg.platforms.discord.token_env, "")
+    # The audio-controller base (design/voice-channel/07): the value of
+    # `[speech.tts] sidecar_endpoint` IS the audio-controller's HTTP base —
+    # the sole owner of the Discord voice connection. Empty (the default)
+    # leaves the whole voice seam unwired: no hub, no speech playout, and
+    # every `/music` or `/discord join` failing CLOSED (the join-failed
+    # reply), never a local connection attempt. Non-empty builds the client
+    # + hub every voice path shares. Built BEFORE the music manager: the
+    # manager's B5 staleness probe (`playback_probe`) reads the hub's
+    # expected playback id from construction.
+    voice_hub: VoiceControllerHub | None = None
+    if cfg.speech.tts.sidecar_endpoint:
+        voice_hub = VoiceControllerHub(
+            VoiceControllerClient(cfg.speech.tts.sidecar_endpoint)
+        )
     # design/discord-music/00-overview.md. `spawn=asyncio.ensure_future`
     # rather than the `BackgroundTasks` instance built further down this
     # function (out of scope here) — safe because `MusicPlayerManager`
@@ -1099,10 +1124,18 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             track_source=YtDlpSource(), idle_timeout_seconds=cfg.music.idle_timeout_seconds,
             spawn=asyncio.ensure_future, autoplay_enabled=cfg.music.autoplay_enabled,
             autoplay_prewarm_seconds=cfg.music.autoplay_prewarm_seconds,
+            playback_probe=voice_hub.expected_playback_id if voice_hub is not None else None,
         )
         if cfg.music.enabled
         else None
     )
+    if music_manager is not None and voice_hub is None:
+        log.warning(
+            "[music] enabled but [speech.tts] sidecar_endpoint is empty — no "
+            "audio-controller is wired, so every /music join will fail closed "
+            "(the join-failed reply); music stays silent until the endpoint "
+            "is configured"
+        )
     # `[speech.tts]`'s speaker (design/voice-channel/01 §5): wired ONLY when
     # enabled AND a provider is named AND that provider's key is present —
     # the same inert-ship rule as the transcriber above, plus the keyless-
@@ -1127,19 +1160,24 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 "is wired; voice answers stay text-only",
                 cfg.speech.tts.provider, cfg.speech.tts.api_key_env,
             )
-    # The stage-3 voice playout endpoint — `deploy/voice-sidecar`'s own
-    # HTTP listener (`http://<compose-service>:4600`). Empty (the default)
-    # leaves the playout seam unwired even when a speaker exists; non-empty
-    # makes a reply to a Discord VOICE channel play AUDIO instead of trying
-    # a text POST (which Discord refuses with 400 on a voice channel).
-    voice_playout_endpoint = cfg.speech.tts.sidecar_endpoint
     voice_channel_ids = frozenset(cfg.speech.tts.voice_channel_ids)
+    # The controller → nora callback consumer (`POST /app/v1/voice/event`,
+    # design/voice-channel/07 §5) — only when BOTH halves it glues exist:
+    # the hub (whose event-id dedupe and expected-playback bookkeeping it
+    # reads) and the music manager (whose per-guild-locked methods it
+    # drives). `nora/__main__.py` registers the route only when this is
+    # not None.
+    voice_event_consumer = (
+        VoiceEventConsumer(music_manager, voice_hub)
+        if music_manager is not None and voice_hub is not None
+        else None
+    )
     try:
         registry = await AdapterRegistry.from_config(
             cfg.platforms, metrics=metrics, discord_token=discord_token,
-            music_manager=music_manager, music_crossfade_seconds=cfg.music.crossfade_seconds,
+            music_manager=music_manager,
             discord_speaker=speaker,
-            voice_playout_endpoint=voice_playout_endpoint,
+            voice_hub=voice_hub,
             voice_channel_ids=voice_channel_ids,
         )
     except AdapterRegistryError as exc:
@@ -2070,7 +2108,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         if isinstance(discord_adapter, DiscordAdapter):
             music_bridge = DiscordMusicToolBridge(
                 adapter=discord_adapter, manager=music_manager,
-                crossfade_seconds=cfg.music.crossfade_seconds,
+                hub=voice_hub, voice_channel_ids=voice_channel_ids,
             )
         else:
             log.error(
@@ -3259,6 +3297,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         workspace_scopes=workspace_scopes,
         events=events,
         speaker=speaker,
+        voice_hub=voice_hub,
+        voice_event_consumer=voice_event_consumer,
     )
 
 
