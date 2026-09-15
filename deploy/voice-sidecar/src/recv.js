@@ -52,7 +52,11 @@ export async function join(guildId, channelId, token) {
     guildId,
     adapterCreator: guild.voiceAdapterCreator,
     selfDeaf: false,
-    selfMute: true,
+    // Must be audible to PLAY TTS (stage 3+ playback). Discord.js never
+    // receives the bot's own audio (it speaks via its own socket, and the
+    // receiver's speaking map excludes self), so un-muting does not feed
+    // Nora's replies back into the wake gate.
+    selfMute: false,
   });
   await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
 
@@ -88,7 +92,7 @@ export async function join(guildId, channelId, token) {
     connection.destroy();
     client.destroy();
   }
-  return { bus, leave };
+  return { bus, leave, connection };
 }
 
 // --- Wake-gate seam: TCP with length-prefixed binary frames ---------------

@@ -111,6 +111,7 @@ from nora.ingest.policy import (
     ReplyToNoraPolicy,
     TriggerTextPolicy,
     VoiceNotePolicy,
+    VoiceWakePolicy,
 )
 from nora.ingest.relevance_gate import Completion as GateCompletion
 from nora.ingest.relevance_gate import RelevanceGate
@@ -1029,10 +1030,44 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         if cfg.music.enabled
         else None
     )
+    # `[speech.tts]`'s speaker (design/voice-channel/01 §5): wired ONLY when
+    # enabled AND a provider is named AND that provider's key is present —
+    # the same inert-ship rule as the transcriber above, plus the keyless-
+    # `route`/`search` shape. Off (or providerless, or keyless) leaves no
+    # speaker and nothing about Nora's behaviour changes. Built BEFORE the
+    # adapter registry (below) because DiscordAdapter's voice playout seam
+    # (stage 3 closure) receives this same instance — the registry's
+    # `discord_speaker=` keyword is the one place that knows MiniMax is real;
+    # everything downstream receives `Speaker | None`.
+    speaker: Speaker | None = None
+    if cfg.speech.tts.enabled:
+        tts_key = os.environ.get(cfg.speech.tts.api_key_env, "")
+        if cfg.speech.tts.provider == "minimax_cn" and tts_key:
+            from nora.infra.tts import MiniMaxTtsSpeaker
+            speaker = MiniMaxTtsSpeaker(
+                api_key=tts_key,
+                voice=cfg.speech.tts.voice or "Cantonese_CuteGirl",
+            )
+        else:
+            log.warning(
+                "[speech.tts] enabled but provider=%r or %s unset — no speaker "
+                "is wired; voice answers stay text-only",
+                cfg.speech.tts.provider, cfg.speech.tts.api_key_env,
+            )
+    # The stage-3 voice playout endpoint — `deploy/voice-sidecar`'s own
+    # HTTP listener (`http://<compose-service>:4600`). Empty (the default)
+    # leaves the playout seam unwired even when a speaker exists; non-empty
+    # makes a reply to a Discord VOICE channel play AUDIO instead of trying
+    # a text POST (which Discord refuses with 400 on a voice channel).
+    voice_playout_endpoint = cfg.speech.tts.sidecar_endpoint
+    voice_channel_ids = frozenset(cfg.speech.tts.voice_channel_ids)
     try:
         registry = await AdapterRegistry.from_config(
             cfg.platforms, metrics=metrics, discord_token=discord_token,
             music_manager=music_manager, music_crossfade_seconds=cfg.music.crossfade_seconds,
+            discord_speaker=speaker,
+            voice_playout_endpoint=voice_playout_endpoint,
+            voice_channel_ids=voice_channel_ids,
         )
     except AdapterRegistryError as exc:
         raise StartupError(str(exc)) from exc
@@ -1169,6 +1204,14 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # body by the time the gate runs. Last so the deterministic text paths
     # keep their reasons, but it fires on any note regardless.
     engage_policies.append(VoiceNotePolicy())
+    # Any transcript that arrived via the voice-wake channel engages her too
+    # (stage 3, design/voice-channel/): the wake service only POSTs after the
+    # operator said 「喂 Nora」, which is the voice channel's closest thing to
+    # an explicit tag — without this, a transcript lands in the audit row and
+    # the engage gate says `no_trigger` (measured 2026-09-16: DB row inserted,
+    # reply count 0). Same position as VoiceNotePolicy: after the text paths,
+    # fired by content-shape rather than words.
+    engage_policies.append(VoiceWakePolicy())
     # The participation occasion's room gate (design/dreamer-agent-loop/35
     # §7): LAST, and only when the occasion is enabled at all. It never
     # engages — it marks an untagged message in an opted-in room with
@@ -1506,29 +1549,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             timeout_seconds=cfg.speech.stt.timeout_seconds,
             model=cfg.speech.stt.model,
         )
-    # `[speech.tts]`'s speaker (design/voice-channel/01 §5): wired ONLY when
-    # enabled AND a provider is named AND that provider's key is present —
-    # the same inert-ship rule as the transcriber above, plus the keyless-
-    # `route`/`search` shape. Off (or providerless, or keyless) leaves no
-    # speaker and nothing about Nora's behaviour changes. This root is the
-    # only place that knows MiniMax is real; everything downstream receives
-    # `Speaker | None`. Stage 1 has no caller yet — the field below is the
-    # yield point a later stage's voice path reads.
-    speaker: Speaker | None = None
-    if cfg.speech.tts.enabled:
-        tts_key = os.environ.get(cfg.speech.tts.api_key_env, "")
-        if cfg.speech.tts.provider == "minimax_cn" and tts_key:
-            from nora.infra.tts import MiniMaxTtsSpeaker
-            speaker = MiniMaxTtsSpeaker(
-                api_key=tts_key,
-                voice=cfg.speech.tts.voice or "Cantonese_CuteGirl",
-            )
-        else:
-            log.warning(
-                "[speech.tts] enabled but provider=%r or %s unset — no speaker "
-                "is wired; voice answers stay text-only",
-                cfg.speech.tts.provider, cfg.speech.tts.api_key_env,
-            )
     # R-10's per-conversation lock and R-30's FIFO queue, built ONCE here.
     # Every path that may speak into a conversation holds this same instance —
     # two would be two locks and no serialisation at all. Built HERE, above the

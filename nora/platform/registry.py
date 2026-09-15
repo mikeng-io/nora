@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 
 from nora.domain.ports import MediaSource, PlatformAdapter, PlatformIdentity
 from nora.platform.discord.adapter import DiscordAdapter
@@ -123,6 +123,9 @@ class AdapterRegistry:
         discord_token: str = "",
         music_manager: MusicPlayerManager | None = None,
         music_crossfade_seconds: float = 0.0,
+        discord_speaker: Any = None,
+        voice_playout_endpoint: str = "",
+        voice_channel_ids: frozenset[str] = frozenset(),
     ) -> AdapterRegistry:
         """Build+resolve every enabled platform — Signal, Discord, WhatsApp;
         each one more `if platforms.<x>.enabled:` block, not a rewrite of this
@@ -179,6 +182,9 @@ class AdapterRegistry:
             discord_adapter = DiscordAdapter(
                 discord_token, music_manager=music_manager,
                 crossfade_seconds=music_crossfade_seconds,
+                speaker=discord_speaker,
+                voice_playout_endpoint=voice_playout_endpoint,
+                voice_channel_ids=voice_channel_ids,
             )
             try:
                 discord_identity = await discord_adapter.resolve_identity()

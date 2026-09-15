@@ -1561,6 +1561,21 @@ class SpeechTtsConfig(BaseModel):
     api_key_env: str = "MINIMAX_CN_API_KEY"
     duck_gain: float = Field(default=0.25, gt=0, lt=1)
     duck_ramp_ms: int = Field(default=150, gt=0)
+    # The stage-3 sidecar's HTTP base (deploy/voice-sidecar, src/service.mjs).
+    # Empty (the default) leaves the voice playout UNWIRED: a reply to a
+    # Discord voice channel is still delivered as an audit row, but no audio
+    # reaches the channel. Non-empty wires the playout seam — `send` to a
+    # GUILD_VOICE channel synthesizes the reply via the speaker and POSTs it
+    # to `{sidecar_endpoint}/play`, which plays it into the same connection
+    # that hears the wake word.
+    sidecar_endpoint: str = ""
+    # Discord conversation ids ("<guild_id>/<channel_id>") that are VOICE
+    # channels — the wake-answer room (design/voice-channel/, stage 3). A
+    # text POST to a voice channel is refused by Discord with 400, so Nora
+    # must know which reply targets are voice BEFORE trying to send; those
+    # targets route through the speaker + sidecar instead. Empty (default)
+    # keeps the adapter's text-only behaviour everywhere.
+    voice_channel_ids: list[str] = Field(default_factory=list)
 
 
 class SpeechWakeConfig(BaseModel):

@@ -16,7 +16,7 @@ FROM node:22.22.3-slim
 # so python3/make/g++ are needed for node-pre-gyp despite the prebuilds
 # (this is the "future bump drops the prebuilds" case the README foresaw).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl python3 make g++ \
+    && apt-get install -y --no-install-recommends curl python3 make g++ ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # node:22-slim already ships user `node` (uid/gid 1000 — the SAME uid the

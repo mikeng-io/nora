@@ -9,11 +9,14 @@ REST calls instead of signal-cli's JSON-RPC.
 
 from __future__ import annotations
 
+import base64
 import contextlib
+import logging
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+import aiohttp
 import discord
 
 from ...domain.models import ConversationTarget, NormalizedMessage
@@ -27,6 +30,7 @@ from ...domain.ports import (
     ReactionResult,
     SendResult,
     TextStyle,
+    speakable,
 )
 from .listener import DiscordListener
 from .music_commands import register as register_music_commands
@@ -36,6 +40,8 @@ from .parser import parse_discord_message
 from .react import DiscordReactor
 from .self_id import derive_identity
 from .send import DEFAULT_API_BASE, DiscordSender
+
+log = logging.getLogger("nora.platform.discord")
 
 
 class DiscordAdapter:
@@ -48,6 +54,9 @@ class DiscordAdapter:
         base_url: str = DEFAULT_API_BASE,
         music_manager: MusicPlayerManager | None = None,
         crossfade_seconds: float = 0.0,
+        speaker: Any = None,
+        voice_playout_endpoint: str = "",
+        voice_channel_ids: frozenset[str] = frozenset(),
     ) -> None:
         self._token = token
         self._base_url = base_url
@@ -61,6 +70,15 @@ class DiscordAdapter:
         # turned the feature on.
         self._music_manager = music_manager
         self._crossfade_seconds = crossfade_seconds
+        # Stage-3 voice playout (design/voice-channel/01 §5): the MiniMax
+        # speaker and the sidecar's HTTP base. BOTH None/empty on every
+        # deployment that hasn't wired the voice path — the text-only posture
+        # stays byte-identical. A target on `voice_channel_ids` routes
+        # through speak → POST /play instead of REST text, because Discord
+        # refuses text POSTs into a voice channel (400).
+        self._speaker = speaker
+        self._voice_playout_endpoint = voice_playout_endpoint.rstrip("/")
+        self._voice_channel_ids = set(voice_channel_ids)
         # Built fresh in `listen()`, NOT here. A `discord.Client` is single-use:
         # once it closes, `is_closed()` stays True for that instance forever
         # (`_closing_task` is never cleared except by `Client.clear()`), so
@@ -171,10 +189,58 @@ class DiscordAdapter:
         attachments: tuple[OutboundAttachment, ...] = (),
         quote: OutboundQuote | None = None,
     ) -> SendResult:
+        # Stage-3 voice playout: a target that IS a voice channel cannot take
+        # a text POST (Discord answers 400). Route it through the speaker →
+        # sidecar /play seam instead. Fail-closed: without a speaker or an
+        # endpoint the reply is SILENT (ok=False, text-only fallback is the
+        # caller's business) — never a text POST, which would be a 400 anyway
+        # and would look like a delivery.
+        if target.conversation_id in self._voice_channel_ids:
+            return await self._send_voice(target=target, text=text)
         return await self._sender.send(
             target, text, mentions=mentions, styles=styles, preview=preview,
             attachments=attachments, quote=quote,
         )
+
+    async def _send_voice(self, *, target: ConversationTarget, text: str) -> SendResult:
+        if self._speaker is None or not self._voice_playout_endpoint:
+            log.warning(
+                "voice-channel send to %s but speaker/endpoint unset — "
+                "voice replies stay silent (config [speech.tts])",
+                target.conversation_id,
+            )
+            return SendResult(ok=False)
+        if not speakable(text):
+            # design/voice-channel/01 §7 — a long opaque string must not be
+            # read aloud. A voice channel has no text surface; the honest
+            # result is a refused send, matching what Discord would do with
+            # the string anyway.
+            log.info("voice-channel send refused: not speakable (target=%s)", target.conversation_id)
+            return SendResult(ok=False)
+        result = await self._speaker.speak(text=text)
+        if not result.available or not result.audio:
+            log.warning("voice-channel send failed: tts unavailable (reason=%s)", result.reason)
+            return SendResult(ok=False)
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+                async with session.post(
+                    f"{self._voice_playout_endpoint}/play",
+                    json={
+                        "audio_b64": base64.b64encode(result.audio).decode("ascii"),
+                        "media_type": result.media_type,
+                    },
+                ) as resp:
+                    if resp.status not in (200, 202):
+                        body = await resp.text()
+                        log.error(
+                            "voice playout failed: HTTP %s from sidecar (target=%s) %s",
+                            resp.status, target.conversation_id, body[:200],
+                        )
+                        return SendResult(ok=False)
+                    return SendResult(ok=True)
+        except Exception as exc:  # noqa: BLE001 — a playout failure is never fatal
+            log.error("voice playout raised: %s", exc)
+            return SendResult(ok=False)
 
     async def react(
         self,

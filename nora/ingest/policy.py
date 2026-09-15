@@ -118,6 +118,32 @@ class VoiceNotePolicy:
         return EngageDecision(engage=False, reason="no_trigger")
 
 
+class VoiceWakePolicy:
+    """Engage when the message came from the voice-wake channel (stage 3).
+
+    The wake gate (`deploy/voice-wake/`) hears 「喂 Nora」 in a Discord VOICE
+    channel, transcribes the utterance and POSTs it to `nora/web/voice.py`,
+    which builds a `NormalizedMessage` tagged `raw={"voice": True, ...}` and
+    hands it to the SAME dispatcher a typed message walks. Speech in a voice
+    channel is the same intent-shaped content a typed tag is — the operator
+    said the wake word, which is the closest thing a voice channel has to an
+    explicit tag, and the whole point of the stage is that the reply comes
+    back ALOUD. Without this policy the transcript lands in the audit row but
+    the engage gate says `no_trigger` and the turn never runs — the 2026-09-16
+    live test's exact failure (DB row inserted, reply count 0).
+
+    It checks `message.raw["voice"]`, the marker `voice.py` sets — NOT the
+    body text. A failed STT still engages (Nora should see that somebody said
+    her name, even if the words came back empty) and a body that happens to
+    contain the trigger but arrived from a TYPED message is untouched.
+    """
+
+    async def should_engage(self, *, message: NormalizedMessage) -> EngageDecision:
+        if message.raw.get("voice") is True:
+            return EngageDecision(engage=True, reason="voice_wake")
+        return EngageDecision(engage=False, reason="no_trigger")
+
+
 class RelevanceGatePolicy:
     """The Relevance Gate's ROOM gate (design/dreamer-agent-loop/36 §1).
 

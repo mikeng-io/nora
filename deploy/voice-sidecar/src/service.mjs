@@ -23,6 +23,7 @@
 
 import http from 'node:http';
 import { join, createPump } from './recv.js';
+import { createPlayer, parsePlayBody } from './player.js';
 
 const HOST = process.env.HOST ?? '127.0.0.1';
 const PORT = Number(process.env.PORT ?? 4600);
@@ -46,11 +47,53 @@ const server = http.createServer((req, res) => {
       JSON.stringify({
         status: 'ok',
         voice: voiceState,
+        ...(player ? { player: { playing: player.playing(), queued: player.queued() } } : {}),
         ...(lastError ? { last_error: lastError } : {}),
         pump: { host: PUMP_HOST, port: PUMP_PORT },
         users,
       }),
     );
+    return;
+  }
+  if (req.method === 'POST' && req.url === '/play') {
+    // Stage 3 closure: Nora POSTs a synthesized reply (mp3 base64) and this
+    // plays it into the same channel it is listening in. No auth, same
+    // posture as /health: reachable only on the private nora network, and the
+    // only caller is Nora herself (or an operator on the same box).
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > 2 * 1024 * 1024) {
+        req.destroy();
+        return;
+      }
+    });
+    req.on('end', () => {
+      if (!player || voiceState !== 'connected') {
+        res.writeHead(503, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: 'not connected to a voice channel' }));
+        return;
+      }
+      let parsed;
+      try {
+        parsed = parsePlayBody(JSON.parse(body || '{}'));
+      } catch {
+        parsed = { error: 'invalid json' };
+      }
+      if (parsed.error) {
+        res.writeHead(400, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: parsed.error }));
+        return;
+      }
+      const accepted = player.play(parsed.audio, parsed.media_type);
+      if (!accepted) {
+        res.writeHead(503, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: 'play queue full' }));
+        return;
+      }
+      res.writeHead(202, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ status: 'queued' }));
+    });
     return;
   }
   res.writeHead(404, { 'content-type': 'application/json' });
@@ -70,6 +113,7 @@ server.listen(PORT, HOST, () => {
 
 let leave = null;
 let pump = null;
+let player = null;
 
 async function startReceive() {
   voiceState = 'connecting';
@@ -77,6 +121,7 @@ async function startReceive() {
   const joined = await join(GUILD_ID, CHANNEL_ID, TOKEN);
   leave = joined.leave;
   const bus = joined.bus;
+  player = createPlayer(joined.connection);
   voiceState = 'connected';
   console.log(`[service] joined channel ${CHANNEL_ID}; forwarding PCM to ${PUMP_HOST}:${PUMP_PORT}`);
 

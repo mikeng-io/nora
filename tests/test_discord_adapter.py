@@ -4,7 +4,7 @@ from aiohttp import web
 
 from nora.domain.identity import Identifier
 from nora.domain.models import ConversationTarget
-from nora.domain.ports import PlatformIdentity
+from nora.domain.ports import PlatformIdentity, SpeakResult
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.listener import DiscordListener
 
@@ -174,3 +174,83 @@ async def test_resolve_identity_returns_a_platform_identity(aiohttp_server):
     assert identity.platform == "discord"
     assert identity.primary == "555"
     assert Identifier("discord", "user_id", "555") in identity.identifiers
+
+
+class _FakeSpeaker:
+    """The minimal shape `DiscordAdapter._send_voice` reads — same seam the
+    production wiring uses (`nora.infra.tts.MiniMaxTtsSpeaker`)."""
+
+    def __init__(self, result: SpeakResult) -> None:
+        self.result = result
+        self.calls: list[str] = []
+
+    async def speak(self, *, text: str, voice: str = "") -> SpeakResult:
+        self.calls.append(text)
+        return self.result
+
+
+async def test_voice_channel_send_goes_through_speaker_not_rest(aiohttp_server):
+    """A target on `voice_channel_ids` must never hit the REST text path —
+    Discord refuses text POSTs into a voice channel."""
+
+    seen: list[str] = []
+
+    async def handler(request: web.Request) -> web.Response:
+        seen.append(request.method + request.path)
+        body = await request.json()
+        seen.append(body.get("media_type", ""))
+        return web.json_response({"status": "queued"}, status=202)
+
+    app = web.Application()
+    app.router.add_post("/play", handler)
+    server = await aiohttp_server(app)
+
+    speaker = _FakeSpeaker(SpeakResult(available=True, audio=b"\x00\x01fake-mp3", media_type="audio/mpeg"))
+    adapter = DiscordAdapter(
+        "tok", base_url=str(server.make_url("")).rstrip("/"),
+        speaker=speaker, voice_playout_endpoint=str(server.make_url("")).rstrip("/"),
+        voice_channel_ids=frozenset({"111/222"}),
+    )
+    result = await adapter.send(
+        target=ConversationTarget("discord", "111/222", "group"), text="喂 Nora，收到。",
+    )
+
+    assert result.ok is True
+    assert speaker.calls == ["喂 Nora，收到。"]
+    assert seen == ["POST/play", "audio/mpeg"], "must route to the sidecar /play, never REST"
+
+
+async def test_voice_channel_send_without_speaker_is_silent_fail(aiohttp_server):
+    """Fail-closed: a voice-channel target with no speaker/endpoint returns a
+    refused send — never a text POST that Discord would 400 anyway."""
+
+    app = web.Application()
+    server = await aiohttp_server(app)
+
+    adapter = DiscordAdapter("tok", base_url=str(server.make_url("")).rstrip("/"))
+    result = await adapter.send(
+        target=ConversationTarget("discord", "111/222", "group"), text="喂 Nora。",
+    )
+
+    assert result.ok is False
+
+
+async def test_non_speakable_text_is_refused_on_voice_channel(aiohttp_server):
+    """design/voice-channel/01 §7 — a machine token must never be read aloud."""
+
+    app = web.Application()
+    server = await aiohttp_server(app)
+
+    speaker = _FakeSpeaker(SpeakResult(available=True, audio=b"mp3", media_type="audio/mpeg"))
+    adapter = DiscordAdapter(
+        "tok", base_url=str(server.make_url("")).rstrip("/"),
+        speaker=speaker, voice_playout_endpoint=str(server.make_url("")).rstrip("/"),
+        voice_channel_ids=frozenset({"111/222"}),
+    )
+    result = await adapter.send(
+        target=ConversationTarget("discord", "111/222", "group"),
+        text="個 hash 係 a3f2c1d4e5b60718293a4b5c",
+    )
+
+    assert result.ok is False
+    assert speaker.calls == [], "must not synthesize a machine token either"
