@@ -227,7 +227,11 @@ room).
 
 **Reopens if:** a workspace needs two home rooms (then the home room is per
 platform, and `send_to`'s «one room per platform per workspace» rule already
-constrains it that way).
+constrains it that way). **Superseded in part by 40 (issue #248, 2026-09-15):**
+a proactive row LINKED to a note fires into the note's `established_in` room,
+not the home room — the home room stays where she stands, and the write verb
+routes by the note's own «routing key, never a filter» (`notes.py:277`).
+See `40-proactive-origin-delivery.md`.
 
 ### D3. Every read tool is accessible; the one act verb is `remind`, stamped by provenance.
 
