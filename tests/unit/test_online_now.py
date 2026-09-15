@@ -2,10 +2,10 @@
 the live digital-activity tool and its fail-closed matrix.
 
 The shape mirrors `tests/test_where_been.py`: the tool is driven through
-`build_tool_specs` — the same wiring the tag path uses — against the two
+`build_tool_specs` — the same wiring the tag path uses — against the three
 contracted fakes (`nora.testing.FakeSteamPresenceProvider` /
-`FakeVoicePresenceSource`), with the room resolved through
-`FakeRosterSource`. The pinned behaviours are the design's honesty rules:
+`FakeVoicePresenceSource` / `FakeDiscordPresenceSource`), with the room
+resolved through `FakeRosterSource`. The pinned behaviours are the design's honesty rules:
 away/snooze are never flattened, `profile_hidden` is never "not playing",
 an unwired or failed read is `unavailable` never `nothing_found`, a
 degraded room is `unavailable` never a one-person answer, and a names
@@ -18,10 +18,11 @@ import pytest
 
 from nora.agent.room import Room
 from nora.agent.tools import build_tool_specs
-from nora.domain.ports import SteamPlayerState, VoiceChannelRef
+from nora.domain.ports import DiscordPresenceState, SteamPlayerState, VoiceChannelRef
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.testing import (
+    FakeDiscordPresenceSource,
     FakeRosterSource,
     FakeSteamPresenceProvider,
     FakeVoicePresenceSource,
@@ -90,10 +91,11 @@ def _room(persons, *, members, fail=False, tagger=None, roster=None):
 
 def _online_now(
     persons, *, members=(MILES, BLAKE), online_source=None, voice_source=None,
-    online_scope=None, fail=False, tagger=None, metrics=None, roster=None,
+    presence=None, online_scope=None, fail=False, tagger=None, metrics=None,
+    roster=None,
 ):
     """The built `online_now` closure, through `build_tool_specs` — the same
-    wiring the tag path uses (registry -> specs -> call), with the two
+    wiring the tag path uses (registry -> specs -> call), with the three
     sources threaded exactly as the composition root threads them."""
     specs = build_tool_specs(
         store=None, conversation_id=GROUP, conversation_type="group",
@@ -102,6 +104,7 @@ def _online_now(
         room=_room(persons, members=members, fail=fail, tagger=tagger, roster=roster),
         transit_source=None,
         online_source=online_source, voice_source=voice_source,
+        presence=presence,
         online_scope=online_scope,
     )
     return next(s for s in specs if s.name == "online_now").call
@@ -324,44 +327,136 @@ async def test_voice_arm_unwired_and_failed_are_unavailable(persons):
 # ---- the merged online arm ----
 
 
-async def test_online_arm_merges_steam_and_voice(persons):
+async def test_online_arm_merges_steam_and_discord_presence(persons):
+    """The correction: the merged arm reads per-person Discord PRESENCE —
+    status + rich presence — with voice membership riding along as one
+    more fact, never the definition of "online"."""
     steam = FakeSteamPresenceProvider(players={
         "111": MILES_ONLINE, "222": BLAKE_AWAY,
+    })
+    presence = FakeDiscordPresenceSource(states={
+        "1001": DiscordPresenceState(status="online", game="Elden Ring"),
+        "1002": DiscordPresenceState(status="idle", listening="Spotify"),
     })
     voice = FakeVoicePresenceSource(channels={
         "1002": VoiceChannelRef(channel_id="555", channel_name="general"),
     })
-    tool = _online_now(persons, online_source=steam, voice_source=voice)
+    tool = _online_now(
+        persons, online_source=steam, presence=presence, voice_source=voice,
+    )
     out = await tool("online")
     assert out["status"] == "ok"
     assert out["steam_wired"] is True
+    assert out["discord_wired"] is True
     assert out["voice_wired"] is True
     people = _by_person(out)
     miles = people["Miles Novak"]
     assert miles["state"] == "online"
     assert miles["game"] == "Counter-Strike 2"
+    assert miles["discord_status"] == "online"
+    assert miles["discord_game"] == "Elden Ring"
     blake = people["Blake Lindqvist"]
     assert blake["state"] == "away"
+    assert blake["discord_status"] == "idle"
+    assert blake["discord_listening"] == "Spotify"
     assert blake["in_voice"] == {"channel_id": "555", "channel_name": "general"}
+
+
+async def test_online_arm_forum_typing_member_is_online(persons):
+    """The exact case the operator called out: a member typing in a forum
+    thread is ONLINE on Discord and in no voice channel — v1 read
+    `member.voice` and reported 「冇人上線」. The corrected arm answers
+    from presence: `discord_status` online, no rich presence, `in_voice`
+    False as an extra fact."""
+    presence = FakeDiscordPresenceSource(states={
+        "1002": DiscordPresenceState(status="online"),
+    })
+    voice = FakeVoicePresenceSource()  # checked; Blake is in no channel
+    tool = _online_now(persons, presence=presence, voice_source=voice)
+    out = await tool("online", names=["Blake"])
+    assert out["status"] == "ok"
+    blake = _by_person(out)["Blake Lindqvist"]
+    assert blake["discord_status"] == "online"
+    assert "discord_game" not in blake
+    assert "discord_listening" not in blake
+    assert blake["in_voice"] is False
+    assert "state" not in blake  # Steam was never wired — no guessed word
+
+
+async def test_online_arm_presence_read_failure_degrades_not_sinks(persons):
+    """A failed presence read in the merged arm flips `discord_wired` to
+    False — the Steam half still stands, and the flag says the Discord
+    half could not be checked. It is NOT a whole-arm `unavailable`."""
+    steam = FakeSteamPresenceProvider(players={"111": MILES_ONLINE, "222": BLAKE_AWAY})
+    presence = FakeDiscordPresenceSource(fail=True)
+    tool = _online_now(persons, online_source=steam, presence=presence)
+    out = await tool("online")
+    assert out["status"] == "ok"
+    assert out["steam_wired"] is True
+    assert out["discord_wired"] is False
+    miles = _by_person(out)["Miles Novak"]
+    assert miles["state"] == "online"
+    assert "discord_status" not in miles
+
+
+async def test_online_arm_no_presence_source_is_discord_unwired(persons):
+    """No presence source wired (Discord disabled): the arm answers from
+    the wired halves and says the Discord presence half could not be
+    checked — never a guessed `discord_status`."""
+    steam = FakeSteamPresenceProvider(players={"111": MILES_ONLINE, "222": BLAKE_AWAY})
+    tool = _online_now(persons, online_source=steam)
+    out = await tool("online")
+    assert out["status"] == "ok"
+    assert out["discord_wired"] is False
+    assert "discord_status" not in _by_person(out)["Miles Novak"]
 
 
 async def test_online_arm_voice_read_failure_degrades_not_sinks(persons):
     """A failed voice read in the merged arm flips `voice_wired` to False —
-    the Steam half still stands, and the flag says the voice half could not
-    be checked. It is NOT a whole-arm `unavailable`."""
+    the Steam and presence halves still stand, and the flag says the voice
+    half could not be checked. It is NOT a whole-arm `unavailable`."""
     steam = FakeSteamPresenceProvider(players={"111": MILES_ONLINE, "222": BLAKE_AWAY})
+    presence = FakeDiscordPresenceSource(states={
+        "1001": DiscordPresenceState(status="online"),
+    })
     voice = FakeVoicePresenceSource(fail=True)
-    tool = _online_now(persons, online_source=steam, voice_source=voice)
+    tool = _online_now(
+        persons, online_source=steam, presence=presence, voice_source=voice,
+    )
     out = await tool("online")
     assert out["status"] == "ok"
     assert out["steam_wired"] is True
+    assert out["discord_wired"] is True
     assert out["voice_wired"] is False
-    assert _by_person(out)["Miles Novak"]["state"] == "online"
+    miles = _by_person(out)["Miles Novak"]
+    assert miles["state"] == "online"
+    assert miles["discord_status"] == "online"
+    assert "in_voice" not in miles
+
+
+async def test_online_arm_discord_only_composition(persons):
+    """No `[online]` key but Discord wired: the arm answers from the
+    presence half alone and says the Steam half could not be checked."""
+    presence = FakeDiscordPresenceSource(states={
+        "1001": DiscordPresenceState(status="online"),
+        "1002": DiscordPresenceState(status="dnd", game="Balatro"),
+    })
+    tool = _online_now(persons, presence=presence)
+    out = await tool("online")
+    assert out["status"] == "ok"
+    assert out["steam_wired"] is False
+    assert out["discord_wired"] is True
+    people = _by_person(out)
+    assert people["Miles Novak"]["discord_status"] == "online"
+    blake = people["Blake Lindqvist"]
+    assert blake["discord_status"] == "dnd"
+    assert blake["discord_game"] == "Balatro"
 
 
 async def test_online_arm_voice_only_composition(persons):
-    """No `[online]` key but Discord wired: the arm answers from the voice
-    half alone and says the Steam half could not be checked."""
+    """Voice wired but neither Steam nor presence: the arm still answers
+    from the voice half alone (one more Discord fact), and says the other
+    halves could not be checked."""
     voice = FakeVoicePresenceSource(channels={
         "1001": VoiceChannelRef(channel_id="555", channel_name="general"),
     })
@@ -369,6 +464,7 @@ async def test_online_arm_voice_only_composition(persons):
     out = await tool("online")
     assert out["status"] == "ok"
     assert out["steam_wired"] is False
+    assert out["discord_wired"] is False
     assert out["voice_wired"] is True
     people = _by_person(out)
     assert people["Miles Novak"]["in_voice"] == {

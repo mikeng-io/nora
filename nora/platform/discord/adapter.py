@@ -105,6 +105,7 @@ class DiscordAdapter:
         intents.message_content = True  # privileged; see design/discord-integration/01
         intents.guilds = True
         intents.members = True          # privileged; the roster read needs it
+        intents.presences = True        # privileged; presence intent (design/online-status/02)
         client = discord.Client(intents=intents)
         self._current_client = client
 

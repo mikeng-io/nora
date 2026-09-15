@@ -69,12 +69,13 @@ half is replaced, not argued.
 online_now(what ∈ {online, playing, voice}, names?)
 ```
 
-- `online` — who is online right now (Steam presence + Discord voice
-  membership merged; the "who's around digitally" answer).
+- `online` — who is online right now (Steam presence + Discord per-person
+  **presence** — status + rich presence — merged; the "who's around
+  digitally" answer).
 - `playing` — who is playing what (Steam `GetPlayerSummaries.gameextrainfo`;
   the "is the group mid-game" cross-check #248 wanted).
-- `voice` — who is in which Discord voice channel (existing `voice_states`
-  intent; zero privileged changes).
+- `voice` — who is in which Discord voice channel (the narrow
+  channel-membership question; does NOT mean "online").
 
 The tag-turn ask 「Blake 而家係咪 online 喺 Steam」 is answered by
 `online_now(what="online", names=["blake_lindqvist"])` — the tool is reachable

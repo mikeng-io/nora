@@ -92,6 +92,8 @@ from ..domain.notes import (
 )
 from ..domain.ports import (
     ComputeBackend,
+    DiscordPresenceSource,
+    DiscordPresenceState,
     GifSource,
     ImageGenerator,
     ImageReference,
@@ -2447,6 +2449,7 @@ def build_tool_specs(
     music: MusicToolBridge | None = None,
     online_source: SteamPresenceProvider | None = None,
     voice_source: VoicePresenceSource | None = None,
+    presence: DiscordPresenceSource | None = None,
     online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
     image_generator: ImageGenerator | None = None,
     image_refs_allowed: bool = False,
@@ -2551,13 +2554,17 @@ def build_tool_specs(
     `room.platform != "discord"` before ever touching it, so a non-Discord
     room never reaches this collaborator at all.
 
-    `online_source`/`voice_source` are `online_now`'s two live-state reads
-    (design/online-status/): the Steam summaries client and the Discord
-    voice-presence source. Each is `None` in every composition that has not
-    wired it — the same honest wiring-gap shape as `mobility` above: an arm
-    whose source is missing answers `unavailable` (R-5), never
-    `nothing_found`, and never crashes; the `online` arm answers from
-    whichever half IS wired and says so (`steam_wired`/`voice_wired`).
+    `online_source`/`voice_source`/`presence` are `online_now`'s live-state
+    reads (design/online-status/): the Steam summaries client, the Discord
+    voice-membership source (the narrow `voice` sub-arm), and the Discord
+    per-person PRESENCE source (the `online` arm's Discord half — status +
+    rich presence, the 2026-09-15 correction: presence, never voice
+    membership, is what "Discord online" means). Each is `None` in every
+    composition that has not wired it — the same honest wiring-gap shape as
+    `mobility` above: an arm whose source is missing answers `unavailable`
+    (R-5), never `nothing_found`, and never crashes; the `online` arm
+    answers from whichever half IS wired and says so
+    (`steam_wired`/`discord_wired`/`voice_wired`).
 
     `online_scope` is the proactive decide turn's input-domain override
     (design/online-status/03): a per-CALL resolver for "who this call may
@@ -4380,13 +4387,20 @@ Args:
 
         One of three arms, exactly one per call:
           - `what="online"` — 「Blake 而家 online 嗎」「而家有冇人喺度」: who is
-            around digitally right now — Steam state merged with Discord voice
-            membership. `steam_wired`/`voice_wired` in the result say which
-            halves could actually be checked; `false` means that half could
-            not be checked at all — never present the answer as the whole
-            picture. An entry carries `state` when Steam answered for that
-            person and `in_voice` when the voice half checked them — either
-            or both.
+            around digitally right now — Steam presence merged with Discord
+            per-person PRESENCE (`discord_status`: Discord's own word —
+            online/idle/dnd/offline — plus rich presence: `discord_game`
+            when they are playing a game there, `discord_listening` when
+            they are listening to music). `away`/`snooze` are Steam's words,
+            never Discord's. NEVER answer "Discord online" from voice
+            membership — an online Discord user may be in no channel at all;
+            voice membership appears only as an extra `in_voice` fact.
+            `steam_wired`/`discord_wired`/`voice_wired` in the result say
+            which halves could actually be checked; `false` means that half
+            could not be checked at all — never present the answer as the
+            whole picture. An entry carries `state` when Steam answered for
+            that person and the `discord_*` fields when the Discord half
+            checked them — either or both.
           - `what="playing"` — 「而家有咩人打緊機」「Blake 打緊咩」: who is in a
             game right now, and the title.
           - `what="voice"` — 「有冇人喺 voice channel 傾緊偈」: who is in which
@@ -4437,10 +4451,11 @@ Args:
         # whichever half IS wired; the other two arms need their own source.
         steam_wired = online_source is not None
         voice_wired = voice_source is not None
+        presence_wired = presence is not None
         if (
             (what == "playing" and not steam_wired)
             or (what == "voice" and not voice_wired)
-            or (what == "online" and not (steam_wired or voice_wired))
+            or (what == "online" and not (steam_wired or presence_wired or voice_wired))
         ):
             _record(metrics, "online_now", "unavailable")
             return {
@@ -4546,6 +4561,18 @@ Args:
             # `voice_wired: false` says the voice half could not be checked.
             voice_checked = channels is not None
 
+        # The `online` arm's Discord half (the 2026-09-15 correction):
+        # per-person PRESENCE — status + rich presence — never voice
+        # membership. Same degrade discipline as the voice read: a failed
+        # read flips `discord_wired` to false and the other halves still
+        # stand; it never sinks the arm.
+        presence_states: dict[str, DiscordPresenceState] | None = None
+        presence_checked = False
+        if presence is not None and what == "online":
+            all_member_ids = frozenset().union(*discord_ids_by_person.values())
+            presence_states = await presence.presence(member_ids=all_member_ids)
+            presence_checked = presence_states is not None
+
         def _steam_state(ref: PersonRef) -> SteamPlayerState | None:
             """The one answered summary for this person, or None — an id
             Steam did not answer for is that account's nothing_found. A
@@ -4570,6 +4597,25 @@ Args:
             out: dict = {"channel_id": hit.channel_id}
             if hit.channel_name:
                 out["channel_name"] = hit.channel_name
+            return out
+
+        def _presence_state(ref: PersonRef) -> DiscordPresenceState | None:
+            if not presence_checked or presence_states is None:
+                return None
+            for did in sorted(discord_ids_by_person[ref.person_id]):
+                if did in presence_states:
+                    return presence_states[did]
+            return None
+
+        def _discord_fields(state: DiscordPresenceState) -> dict:
+            """The Discord-presence half of an `online` entry: Discord's own
+            status word, plus rich presence only when the activity named it
+            (never a guessed field)."""
+            out: dict = {"discord_status": state.status}
+            if state.game:
+                out["discord_game"] = state.game
+            if state.listening:
+                out["discord_listening"] = state.listening
             return out
 
         people: list[dict] = []
@@ -4625,8 +4671,10 @@ Args:
                 has_discord = bool(discord_ids_by_person[ref.person_id])
                 state = _steam_state(ref) if has_steam else None
                 hit = _voice_ref(ref)
+                dstate = _presence_state(ref)
                 if state is not None:
-                    # Steam answered for them; voice may add to the picture.
+                    # Steam answered for them; Discord presence and voice may
+                    # add to the picture.
                     readable += 1
                     entry = {
                         "person": ref.name,
@@ -4638,27 +4686,46 @@ Args:
                         entry["profile_hidden"] = True
                     if state.game:
                         entry["game"] = state.game
+                    if dstate is not None:
+                        entry.update(_discord_fields(dstate))
                     if hit is not None:
                         entry["in_voice"] = _voice_entry(hit)
                     people.append(entry)
                     continue
                 if has_steam and steam_wired:
                     # Steam was asked and answered nothing for this id — that
-                    # account's nothing_found, never "offline". Voice may
+                    # account's nothing_found, never "offline". Discord may
                     # still place them.
                     entry = {
                         "person": ref.name, "state": "unknown",
                         "reason": "not_on_steam",
                     }
+                    if dstate is not None:
+                        readable += 1
+                        entry.update(_discord_fields(dstate))
                     if hit is not None:
                         readable += 1
                         entry["in_voice"] = _voice_entry(hit)
                     people.append(entry)
                     continue
+                if dstate is not None:
+                    # The Discord presence half DID check them — a real
+                    # answer in Discord's own words, whether or not they are
+                    # online. (Steam had nothing to say: unwired, or no
+                    # linked account.) Voice membership rides along as one
+                    # more fact, never the definition of "online".
+                    readable += 1
+                    entry = {"person": ref.name, **_discord_fields(dstate)}
+                    if hit is not None:
+                        entry["in_voice"] = _voice_entry(hit)
+                    elif voice_checked:
+                        entry["in_voice"] = False
+                    people.append(entry)
+                    continue
                 if voice_checked and has_discord:
                     # The voice half DID check them — a real answer whether or
-                    # not they are in a channel. (Steam had nothing to say:
-                    # unwired, or no linked account.)
+                    # not they are in a channel. (Neither Steam nor Discord
+                    # presence had anything to say.)
                     readable += 1
                     people.append({
                         "person": ref.name,
@@ -4688,6 +4755,10 @@ Args:
             "voice_wired": voice_checked,
             "people": people,
         }
+        if what == "online":
+            # Whether the Discord per-person presence half could be checked
+            # (the merged arm's own flag; the other arms are unchanged).
+            out["discord_wired"] = presence_checked
         _record(metrics, "online_now", "ok", what=what, people=len(people))
         return out
 
@@ -8569,6 +8640,7 @@ def build_tools(
     media_store: MediaObjectStore | None = None,
     online_source: SteamPresenceProvider | None = None,
     voice_source: VoicePresenceSource | None = None,
+    presence: DiscordPresenceSource | None = None,
     online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
@@ -8600,6 +8672,7 @@ def build_tools(
         image_generator=image_generator, image_refs_allowed=image_refs_allowed,
         media_store=media_store,
         online_source=online_source, voice_source=voice_source,
+        presence=presence,
         online_scope=online_scope,
         # FORWARDED, and three of these were not. `build_tools` declares every
         # parameter `build_tool_specs` does and hands them on by name, so one

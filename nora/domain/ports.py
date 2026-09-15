@@ -2036,15 +2036,55 @@ class VoicePresenceSource(Protocol):
 
     Live-guilds only, zero new intents: the implementation scans the
     connected client's guilds and reads `member.voice` — `voice_states` is
-    already in `Intents.default()` — and `presences` is deliberately NEVER
-    enabled (the design's privacy call: Nora reads who is in a channel,
-    not everyone's idle/status stream). A second implementation — including
-    a test double — means a shared contract suite both pass
-    (tests/contract/)."""
+    already in `Intents.default()`. Voice membership answers ONLY the
+    narrow "who is in which voice channel" question: since the 2026-09-15
+    correction it no longer stands in for "Discord online" — that is
+    `DiscordPresenceSource`'s read, behind the `presences` intent. A second
+    implementation — including a test double — means a shared contract
+    suite both pass (tests/contract/)."""
 
     async def in_voice(
         self, *, member_ids: frozenset[str],
     ) -> dict[str, VoiceChannelRef] | None: ...
+
+
+@dataclass(frozen=True)
+class DiscordPresenceState:
+    """One member's per-person Discord presence, as the `online_now` tool
+    reports it (design/online-status/02's CORRECTION): Discord's own status
+    word plus rich presence. `status` is whatever `member.status` gives
+    (`online` / `idle` / `dnd` / `offline` — an invisible member presents
+    to the bot as `offline`, so `offline` stays honest: checked-and-offline,
+    never a guess). The rich fields are present-optional, never
+    load-bearing."""
+
+    status: str
+    game: str | None = None
+    listening: str | None = None
+    custom_status: str | None = None
+
+
+@runtime_checkable
+class DiscordPresenceSource(Protocol):
+    """Per-person Discord presence — status + rich presence — behind
+    `online_now`'s `online` arm (design/online-status/, the 2026-09-15
+    correction: presence, NOT voice-channel membership, is what "Discord
+    online" means). A READ-ONLY seam so `nora.agent` never imports
+    `discord.py` (same layered-architecture argument `VoicePresenceSource`'s
+    docstring gives). NEVER raises — `None` is "no live client / the read
+    failed", and the tool reports `unavailable` (R-5), never "everyone is
+    offline". Keyed by Discord user id; an absent key is that member's
+    `nothing_found` (not a member of a guild the client can see).
+
+    Live-guilds only: the implementation scans the connected client's
+    guilds and reads `member.status` / `member.activities`, which the
+    `presences` privileged intent keeps populated (`adapter.py`). A second
+    implementation — including a test double — means a shared contract
+    suite both pass (tests/contract/)."""
+
+    async def presence(
+        self, *, member_ids: frozenset[str],
+    ) -> dict[str, DiscordPresenceState] | None: ...
 
 
 @dataclass(frozen=True)

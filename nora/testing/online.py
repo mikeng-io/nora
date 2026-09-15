@@ -1,13 +1,16 @@
-"""Fakes for the `online_now` tool's two ports (design/online-status/).
+"""Fakes for the `online_now` tool's ports (design/online-status/).
 
 `FakeSteamPresenceProvider` (`SteamPresenceProvider`, bound to
 `nora.infra.steam.SteamPresenceClient` by
-`tests/contract/test_steam_presence_contract.py`) and
+`tests/contract/test_steam_presence_contract.py`),
 `FakeVoicePresenceSource` (`VoicePresenceSource`, bound to
 `nora.platform.discord.voice_presence.DiscordVoicePresence` by
-`tests/contract/test_voice_presence_contract.py`).
+`tests/contract/test_voice_presence_contract.py`), and
+`FakeDiscordPresenceSource` (`DiscordPresenceSource`, bound to
+`nora.platform.discord.discord_presence.DiscordPresence` by
+`tests/contract/test_discord_presence_contract.py`).
 
-Both behave like the real thing rather than answering every call the same
+All behave like the real thing rather than answering every call the same
 way (the repo's fake rule): they answer per-id from the data they were
 configured with and no other id, they distinguish the WHOLE READ failing
 (`fail=True` -> `None`, the tool's `unavailable`) from one id having no
@@ -20,7 +23,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from nora.domain.ports import SteamPlayerState, VoiceChannelRef
+from nora.domain.ports import DiscordPresenceState, SteamPlayerState, VoiceChannelRef
 
 
 class FakeSteamPresenceProvider:
@@ -68,3 +71,28 @@ class FakeVoicePresenceSource:
         if not member_ids:
             return {}
         return {mid: self._channels[mid] for mid in member_ids if mid in self._channels}
+
+
+class FakeDiscordPresenceSource:
+    """In-memory `DiscordPresenceSource`. Passes
+    tests/contract/test_discord_presence_contract.py."""
+
+    def __init__(
+        self,
+        *,
+        states: Mapping[str, DiscordPresenceState] | None = None,
+        fail: bool = False,
+    ) -> None:
+        self._states = dict(states or {})
+        self.fail = fail
+        self.calls: list[frozenset[str]] = []
+
+    async def presence(
+        self, *, member_ids: frozenset[str],
+    ) -> dict[str, DiscordPresenceState] | None:
+        self.calls.append(member_ids)
+        if self.fail:
+            return None
+        if not member_ids:
+            return {}
+        return {mid: self._states[mid] for mid in member_ids if mid in self._states}

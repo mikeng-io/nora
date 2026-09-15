@@ -32,9 +32,11 @@ says they cannot" can be grounded, not guessed.
   mechanism (`steam_status` / `discord_status` are mechanism names — same
   class of error GLOSSARY and ADR 0004 forbid).
 - Two live data sources: **Steam Web API** (`GetPlayerSummaries` keyed off
-  the `steam_id`s already in identity.toml) and **Discord gateway voice
-  state** (the `voice_states` intent Nora already holds — no privileged
-  upgrade in v1).
+  the `steam_id`s already in identity.toml) and **Discord gateway presence**
+  (per-person `member.status` + rich presence via the privileged
+  `presences` / `members` / `message_content` intents, all
+  operator-enabled 2026-09-15). Voice-channel membership is a narrow
+  sub-arm, never the meaning of "online".
 - **Room-scoped audience, no guard machinery.** The tool answers ONLY
   about the invoking room's own members — the boundary is the roster
   itself. Deliberately NOT the `where_is`/`where_been` R-31
@@ -51,9 +53,13 @@ says they cannot" can be grounded, not guessed.
   location dimension (Life360-derived). This tool answers the *digital*
   dimension. `who_is_around` was rejected in discussion precisely because
   "around" collides with the spatial scope those tools already own.
-- **Not rich presence / custom status.** Discord custom status and playing
-  activity require the privileged `presences` intent and a developer-portal
-  change. Out of v1; recorded as deferred (02-data-sources).
+- **Not rich presence / custom status.** ~~Discord custom status and playing
+  activity require the privileged `presences` intent~~ — CORRECTED 2026-09-15:
+  the operator has enabled presences + members + message_content in the
+  portal, so rich presence IS v1-core for this bundle. What remains NOT in
+  scope: custom *status text* (the free-text emoji+words line) is read but
+  is not a designed answer surface; treat it as present-optional, never
+  load-bearing.
 - **Not a history substrate.** This is live state only, like `where_is` is
   live position. A derived history of activity (so Nora can answer
   「琴日幾點一齊打緊機」 from her own record) would be a separate event

@@ -6,9 +6,11 @@ the client can see instead of one conversation's guild, because the
 `online_now` question is room-scoped, not channel-scoped.
 
 Zero new intents: `voice_states` is already in `Intents.default()`
-(`adapter.py`), which is what keeps `member.voice` populated; `presences`
-is deliberately NEVER enabled — the design's privacy call is that Nora
-reads who is sitting in a channel, never everyone's idle/status stream.
+(`adapter.py`), which is what keeps `member.voice` populated. Voice
+membership answers ONLY the narrow "who is in which voice channel"
+question — since the 2026-09-15 correction it no longer stands in for
+"Discord online"; per-person status + rich presence is
+`discord_presence.py`'s read, behind the `presences` intent.
 
 NEVER raises — matches `TrackSource`/`WeatherProvider`'s discipline
 (`nora/domain/ports.py`): no live client, a guild-cache miss, or anything

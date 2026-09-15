@@ -39,6 +39,7 @@ from ..domain.models import PersonRef, TranscriptRow
 from ..domain.ports import (
     BlobStore,
     ComputeBackend,
+    DiscordPresenceSource,
     GifSource,
     MediaDescriptionStore,
     MediaObjectStore,
@@ -176,6 +177,7 @@ class ToolRegistry:
         music: MusicToolBridge | None = None,
         online: SteamPresenceProvider | None = None,
         voice: VoicePresenceSource | None = None,
+        discord_presence: DiscordPresenceSource | None = None,
         image_generator: ImageGenerator | None = None,
         image_refs_allowed: bool = False,
         media_store: MediaObjectStore | None = None,
@@ -396,16 +398,21 @@ class ToolRegistry:
         # Discord-only gate is a SEPARATE check each tool makes on
         # `room.platform` before ever touching this collaborator.
         self._music = music
-        # `online_now`'s two live-state reads (design/online-status/), wired
+        # `online_now`'s live-state reads (design/online-status/), wired
         # the identical honest way `mobility`/`music` are: NOT
         # default-constructed — there is no clientless default — so every
         # composition that has not wired them (offline, eval, `[online]`
         # disabled or keyless, Discord disabled) leaves them None and the
         # matching arms answer `unavailable` (R-5), never `nothing_found`.
-        # `voice` is independent of `[online]`: it reads the live Discord
-        # client and wires whenever the Discord platform is enabled.
+        # `voice` and `discord_presence` are independent of `[online]`:
+        # they read the live Discord client and wire whenever the Discord
+        # platform is enabled. `voice` is the narrow "who is in which
+        # voice channel" sub-arm; `discord_presence` is the `online` arm's
+        # Discord half — per-person presence (status + rich presence),
+        # the 2026-09-15 correction.
         self._online = online
         self._voice = voice
+        self._discord_presence = discord_presence
         # `ImageGenerator` (DEC-137), wired the same honest way: NOT
         # default-constructed. `None` (config `[image_gen] enabled = false`)
         # leaves the `generate_image` tool present in the catalogue answering
@@ -758,6 +765,7 @@ class ToolRegistry:
             tool_call_log_store=self._tool_call_log_store,
             music=self._music,
             online_source=self._online, voice_source=self._voice,
+            presence=self._discord_presence,
             online_scope=online_scope,
             image_generator=self._image_generator,
             image_refs_allowed=self._image_refs_allowed,

@@ -29,14 +29,14 @@ scope:
   v1:
     - "One read-only tool with closed `what ∈ {online, playing, voice}` vocabulary"
     - "Steam Web API presence (online / in-game / playing title) keyed off identity.toml steam_id"
-    - "Discord voice-channel membership from existing voice_states intent (no privileged upgrade)"
+    - "Discord per-person presence — status (online / idle / dnd / offline) + rich presence (game / listening) via privileged `presences` + `members` + `message_content` intents, all operator-enabled 2026-09-15"
     - "Room-scoped audience: the tool answers only about the invoking room's roster; no R-31 guard machinery, R-27 core vocabulary"
     - "Wiring into the proactive decide turn so #248-class source-agnostic reads have live state"
   deferred:
-    - "Activity history substrate (so Nora can answer 「琴日幾點一齊打緊機」 from her own record) — derived analytics pattern mirroring the presence → mobility rollup (DEC-115: stays/trips from raw fixes), with the writer's clock named at design time (a poller for Steam/Discord state, or fold-at-read-time from decide-turn calls)"
-    - "Discord rich presence / custom status (requires privileged `presences` intent + portal change)"
+    - "Activity history substrate (so Nora can answer 「琴日幾點一齊打緊機」 / 「兩三個鐘前打過咩」 from her own record) — derived analytics pattern mirroring the presence → mobility rollup (DEC-115: stays/trips from raw fixes), with the writer's clock named at design time (a poller for Steam/Discord state, or fold-at-read-time from decide-turn calls)"
     - "Activity in the lightweight participation determination (no-tool by design)"
     - "Cross-source dedup / identity merge beyond steam_id presence"
+    - "Steam inventory reads"
 open_questions:
   - "Steam Web API key: obtain one (free) or use an existing key from Pulse stack?"
   - "Naming confirmed only after a DEC-39/DEC-58-style identifier run"

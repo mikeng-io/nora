@@ -9,7 +9,7 @@
   ],
   "limitations": [
     "The Steam half ships inert until an operator sets [online] enabled = true and exports STEAM_WEB_API_KEY; off or keyless, the online and playing arms answer unavailable, never a confident everyone-is-offline.",
-    "Discord rich presence (custom status, playing activity on Discord itself) is deliberately not shipped — it needs the privileged presences intent, which stays off; the voice arm reads only who is in a channel.",
+    "Discord rich presence (custom status, playing activity on Discord itself) is deliberately not shipped in v1 — it needs the privileged presences intent; the voice arm reads only who is in a channel. (Superseded before release by online-status-discord-presence-correction.json: the online arm now reads per-person presence and voice is a narrow sub-arm.)",
     "People answer only if their identity.toml carries a steam_id (a pulse block) or a Discord account; a person with neither is reported as not checkable rather than as offline."
   ]
 }

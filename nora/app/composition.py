@@ -59,6 +59,7 @@ from nora.domain.ports import (
     BlobStore,
     ComputeBackend,
     ContextAssembler,
+    DiscordPresenceSource,
     DreamAdaptor,
     EngagePolicy,
     MemoryStore,
@@ -2027,19 +2028,27 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # `DiscordVoicePresence` (design/online-status/) — `online_now`'s voice
     # arm. Built whenever a Discord adapter exists: it reads the live
     # client's guild cache (`voice_states` is already in the default
-    # intents; `presences` stays OFF on purpose), so unlike the Steam half
-    # there is no `[online]` gate and no key — the same narrowing
-    # `music_bridge` above needs, for the same `current_client()` reason.
+    # intents), so unlike the Steam half there is no `[online]` gate and
+    # no key — the same narrowing `music_bridge` above needs, for the same
+    # `current_client()` reason.
     voice_presence: VoicePresenceSource | None = None
+    # `DiscordPresence` (design/online-status/, the 2026-09-15 correction)
+    # — the `online` arm's Discord half: per-person presence (status +
+    # rich presence), NOT voice membership. Same construction rule as
+    # `voice_presence`: it reads the live Discord client (now with the
+    # `presences` intent enabled), so no `[online]` gate and no key.
+    discord_presence: DiscordPresenceSource | None = None
     if "discord" in registry:
         discord_adapter = registry.get("discord")
         if isinstance(discord_adapter, DiscordAdapter):
+            from nora.platform.discord.discord_presence import DiscordPresence
             from nora.platform.discord.voice_presence import DiscordVoicePresence
             voice_presence = DiscordVoicePresence(adapter=discord_adapter)
+            discord_presence = DiscordPresence(adapter=discord_adapter)
         else:
             log.error(
                 "internal error: registry's 'discord' entry is not a DiscordAdapter "
-                "— online_now's voice arm stays unavailable"
+                "— online_now's Discord arms stay unavailable"
             )
     tool_registry = ToolRegistry(
         route=route_client, vision=vision_client,
@@ -2131,6 +2140,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # above uses.
         online=steam_client,
         voice=voice_presence,
+        discord_presence=discord_presence,
         image_generator=image_generator,
         image_refs_allowed=image_refs_allowed,
         # `[llm.budgets]`, the per-deployment delta over the table. Threaded

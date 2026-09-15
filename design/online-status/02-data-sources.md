@@ -29,9 +29,9 @@ layer's data model**, not a new table. The ids live under
 reads them through `persons.platform_ids("pulse", ...)` — a person with no
 `pulse` block has no steam_id and answers `nothing_found`, never a guess.
 
-### Discord voice_states intent is already on
+### Discord presence intents are ON (operator 2026-09-15)
 
-`nora/platform/discord/adapter.py:104-107`:
+`nora/platform/discord/adapter.py:104-107` (pre-correction):
 
 ```python
 intents = discord.Intents.default()
@@ -40,11 +40,23 @@ intents.guilds = True
 intents.members = True          # privileged; the roster read needs it
 ```
 
-`discord.Intents.default()` includes `voice_states=True` (verified against
-the installed discord.py, 2026-09-15). Nora's music player already consumes
-voice state. Reading "who is in which voice channel" is therefore **zero new
-privileges, zero portal changes** — the listener already holds the gateway
-state; the tool reads it.
+**CORRECTION (operator 2026-09-15, `#nora` thread):** the Discord half of
+this tool is **per-person presence** — status (online / idle / dnd / offline)
+plus rich presence (playing a game, listening to music) — NOT voice-channel
+membership. The v1 design shipped the wrong preposition: it read "who is in
+which voice channel" and called that Discord online state. The operator's
+example: a member typing in a forum thread is Discord-online but in no voice
+channel; the v1 tool reported "Discord 冇人上線".
+
+The operator has enabled **all three** privileged gateway intents in the
+Discord Developer Portal — presence, server members, and message content.
+The adapter must add `intents.presences = True` so `member.status` and
+`member.activities` are populated. Presence events then stream to the
+gateway exactly like voice state does — still a read of state the listener
+already holds, now the presence dimension.
+
+Voice-channel membership remains a **narrow sub-arm** (`what="voice"`), never
+the meaning of "online".
 
 ## New credential — Steam Web API key
 
@@ -75,13 +87,24 @@ must never claim "not playing" when the field is simply withheld.
   `unavailable`, never `nothing_found` (R-27 core vocabulary; no `refused`
   — there is no guard that says no, see 03-guards).
 
-## What is read, per arm
+## What is read, per arm (post-correction)
 
 | Arm | Source | Call | Shape |
 |---|---|---|---|
-| `online` | Steam | `GetPlayerSummaries` (batch) + Discord voice states | merged set: person → `{online, in_voice, game?}` |
+| `online` | Steam + Discord | `GetPlayerSummaries` (batch) + gateway presence | merged set: person → `{status, game?, discord_status?, rich?}` |
 | `playing` | Steam | `GetPlayerSummaries` → `gameextrainfo` + `gameid` | person → title (absent when not in game) |
-| `voice` | Discord | gateway `voice_states` | person → `{channel_id, channel_name?}` |
+| `voice` | Discord | gateway voice state | person → `{channel_id, channel_name?}` (narrow sub-arm) |
+
+Correction (operator 2026-09-15): the `online` arm's DISCORD side reads
+**per-person presence** — `member.status` (`online` / `idle` / `dnd` /
+`offline`) plus `member.activities` rich presence (game title from
+`discord.Game`, music from `discord.Spotify`/listening) — NOT just voice
+channel membership. The two are different questions: "is Blake online on
+Discord" vs "is Blake sitting in a voice channel". v1 answered only the
+second and the model rendered it as the first.
+
+The `voice` arm is preserved as the explicit channel-membership question —
+"有冇人喺 voice channel 傾緊偈" — it does not collapse into `online`.
 
 Note on "online": Steam `personastate` distinguishes online/away/Snooze/in-game.
 The tool's `online` arm reports `online | away | in_game` honestly — it must
@@ -94,12 +117,14 @@ minutes later is the exact stale-note failure (#248) this tool exists to
 kill. (Distinct from `transit`'s cacheable=True: transit answers a stable
 schedule; this answers a mutable instant.)
 
-## Explicitly deferred — Discord rich presence
+## Explicitly deferred — activity history (still deferred)
 
-Custom status / playing activity on Discord requires `intents.presences =
-True`, which is a **privileged intent** — Discord Developer Portal toggle +
-restart, not a code change, and it raises privacy surface (every member's
-presence streamed to the bot). v1 ships voice-only on Discord; the Steam arm
-already covers "playing what" for the people who have steam_ids. Rich
-presence is recorded as deferred in `_index.yaml` `scope.deferred`, and would
-be an operator decision at portal level before any code.
+"兩三個鐘之前打過咩 game" / "琴日一齊打緊機" needs an **activity event
+store** (person → time → state snapshot) — a substrate, not a tool read.
+Deferred to the #250 backlog (DEC-115-derived pattern: raw presence samples
+rolled into per-person activity spans; a writer clock named at design time).
+The v1 live tool answers THIS instant only and must never render like history.
+
+(2026-09-15 correction removed the old "Discord rich presence deferred"
+paragraph — that was the wrong preposition; rich presence is now v1-core
+with the operator's portal intents.)
