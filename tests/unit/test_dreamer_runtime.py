@@ -661,6 +661,13 @@ def test_every_read_only_tool_is_classified_workspace_safe_or_room_scoped():
         # deliberately NOT in WORKSPACE_SAFE_TOOLS: spec §7.4 records the
         # grant was NOT made.)
         "where_been",
+        # `online_now` (design/online-status/) answers about the ROOM's own
+        # members — the invoking conversation's roster is its input domain
+        # (03-guards), which a workspace-keyed Dreamer tick does not have.
+        # The PROACTIVE decide turn reaches it through the home-room grant
+        # with its per-build input-domain override, never through
+        # `WORKSPACE_SAFE_TOOLS` — the same fail-closed side as `where_been`.
+        "online_now",
         # `reverse_geocode` (DEC-156) is a pure coordinate -> address lookup
         # with no room state in its ARGUMENTS, which is exactly why it must be
         # here rather than beside `weather`. Since 13c530aa it is the ONLY tool

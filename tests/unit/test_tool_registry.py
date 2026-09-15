@@ -79,6 +79,9 @@ def test_the_registry_exposes_every_declared_tool():
         "reverse_geocode",
         # DEC-155: the derived-presence history tool (where someone HAS BEEN).
         "where_been",
+        # design/online-status/: the LIVE digital-activity tool (who is
+        # online / playing / in voice right now) — the #248 cross-check.
+        "online_now",
         "media_fetch",
         "generate_image",
         "media_search", "media_send",
@@ -167,6 +170,13 @@ def test_budgets_match_todays_table():
         # live-refresh block — so the currency is the model round trip, and
         # one question can legitimately walk day -> places in a turn.
         "where_been": 8,
+        # 4, sized on NETWORK cost like `transit` (design/online-status/04):
+        # one question is ONE batched Steam GetPlayerSummaries call (the
+        # room's whole id set in a single request) and/or one gateway-cache
+        # read — a second call is a second question. `cacheable=False` is
+        # load-bearing: a cached "playing" replayed later is the stale-note
+        # failure (#248) this tool exists to kill.
+        "online_now": 4,
         # 2, like `where_is` before the raise: one turn can ask after two
         # coordinates, each a cached Google reverse-geocode.
         "reverse_geocode": 2,
@@ -608,6 +618,12 @@ READ_ONLY = frozenset({
     # (spec §7.4): a read verb that forgets the flag turns the classification
     # test red by name, so it is pinned here like every other read.
     "where_been",
+    # design/online-status/: `online_now` is a pure read at every layer —
+    # one batched Steam GetPlayerSummaries call and the Discord gateway's
+    # voice cache, no writes anywhere. Dreamer-ELIGIBLE (the proactive
+    # decide turn holds it — the #248 cross-check) but NOT in
+    # `WORKSPACE_SAFE_TOOLS`: it is room-roster-scoped, same as where_been.
+    "online_now",
     "saved_places", "who_said", "load_transcript", "group_members", "lookup_person",
     "about", "ask_memory", "search_memory", "recall_lookups", "media_fetch",
     "media_search",
