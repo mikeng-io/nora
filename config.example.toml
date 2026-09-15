@@ -980,6 +980,10 @@ model = "noise-detection"      # STT engine: the JackyHoCL Cantonese whisper
 language = "yue"               # the engines' own LID code, not BCP-47
 [speech.tts]
 enabled = false
+# GUARD (stage 3): `enabled = true` is what lets a 「喂 Nora」 wake answer
+# ALOUD in the voice channel (the wake path below ends in this speaker).
+# Leave it false until the operator has decided voice answers are wanted —
+# a copied config must never start speaking in a voice channel on its own.
 # provider = "minimax_cn"      # MiniMax CN, speech-2.8-turbo (decided 2026-09-14,
 #                              # design/voice-channel/04 §3b); the key is read from
 #                              # the env var api_key_env NAMES (default
@@ -991,6 +995,17 @@ enabled = false
 # duck_gain = 0.25             # music scales to this while she speaks (0<x<1)
 # duck_ramp_ms = 150           # ramp down and back up over this many ms — a
 #                              # hard step is audible as a click
+[speech.wake]
+# The wake gate (「喂 Nora」 in a Discord voice channel, stage 3). NOTHING in
+# the nora process reads this section — the wake service is its own container
+# (deploy/voice-wake/) configured by ENV VARS (VOICE_GUILD_ID /
+# VOICE_CHANNEL_ID / VOICE_WAKE_THRESHOLD in .env, mapped by compose); this
+# section is the committed record of its knobs beside its STT/TTS stage
+# siblings, matching the container's own defaults. Ships INERT: without the
+# VOICE_* env vars the service is healthy-but-idle and hears nothing.
+enabled = false
+threshold = 0.5                    # wake score that starts utterance collection
+model_path = "/app/models/喂Nora.onnx"  # baked into the voice-wake image
 
 [heartbeat]
 # The background tick that fires due reminders — Nora's first unprompted-speech

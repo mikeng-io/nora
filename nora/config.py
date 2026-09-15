@@ -1563,6 +1563,33 @@ class SpeechTtsConfig(BaseModel):
     duck_ramp_ms: int = Field(default=150, gt=0)
 
 
+class SpeechWakeConfig(BaseModel):
+    """`[speech.wake]` — the operator-facing record of the wake gate's knobs
+    (design/voice-channel/, stage 3).
+
+    UNUSUAL for this file, and the docstring carries the why: **nothing in
+    the nora process reads these values.** The wake gate is its own container
+    (`deploy/voice-wake/`) with its own dependency set; it is configured by
+    ENV VARS (compose maps the operator's `VOICE_*` .env names onto them),
+    not by bind-mounting Nora's config.toml into a second app. This section
+    exists because the three-config convention makes `config.example.toml`
+    the committed record of every operator knob — the wake gate's knobs are
+    operator knobs, so they are documented here beside their STT/TTS stage
+    siblings, with the values the container's env falls back to. Keep them
+    in step with `deploy/voice-wake/wakegate/service.py`'s `Config`.
+
+    Ships INERT like its siblings: the wake service starts healthy-but-idle
+    without `VOICE_GUILD_ID`/`VOICE_CHANNEL_ID`, and `enabled` here is the
+    documented default for that posture, not a switch anything reads.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    threshold: float = Field(default=0.5, ge=0, le=1)
+    model_path: str = "/app/models/喂Nora.onnx"
+
+
 class SpeechConfig(BaseModel):
     """`[speech]` — Nora's voice capability: STT (inbound, local) and TTS
     (outbound, cloud — the deliberate asymmetry design/voice-channel/00
@@ -1578,6 +1605,7 @@ class SpeechConfig(BaseModel):
 
     stt: SpeechSttConfig = SpeechSttConfig()
     tts: SpeechTtsConfig = SpeechTtsConfig()
+    wake: SpeechWakeConfig = SpeechWakeConfig()
 
 
 class HeartbeatConfig(BaseModel):
