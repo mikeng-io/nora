@@ -184,6 +184,13 @@ class DiscordVoiceSession:
         return bool(self._voice_client.is_playing())
 
     def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
+        # A new track starts a fresh playback epoch — the pause flag from a
+        # previous track must not carry over. Without this, pause → skip
+        # started the next track while `_paused` stayed True and the death
+        # monitor was permanently disabled (Codex review MAJOR-2,
+        # 2026-09-15: in-memory pause → play probe, ws closed, zero death
+        # callbacks).
+        self._paused = False
         # Remember the CURRENT track so a voice reconnect can restart it on
         # the fresh connection (2026-09-03). Recorded BEFORE the factory
         # call below -- if the factory itself raises (ffmpeg missing, a
@@ -465,14 +472,17 @@ class DiscordVoiceSession:
                 await asyncio.sleep(self._monitor_interval_seconds)
                 if self._current_raw is None:
                     continue  # nothing expected to be audible; idle
-                if self._paused:
-                    # Intentionally paused — `is_playing()` is False for
-                    # the whole pause by design, not a death signal.
-                    self._dead_consecutive = 0
-                    continue
                 ws = _voice_connection_ws(self._voice_client)
                 ws_dead = ws is not MISSING and getattr(ws, "closed", False)
-                if not ws_dead and self._voice_client.is_playing():
+                if not ws_dead and (self._paused or self._voice_client.is_playing()):
+                    # A healthy connection: actively playing OR intentionally
+                    # paused both mean "not dead". `is_playing()` is expected
+                    # to be False for the whole pause (discord.py clears
+                    # `AudioPlayer._resumed`), so the playing check alone
+                    # would misread a pause as death (found live 2026-09-15).
+                    # The websocket is still probed during a pause — a closed
+                    # ws is a REAL death signal regardless of pause state
+                    # (Codex review MINOR→fixed, 2026-09-15).
                     self._dead_consecutive = 0
                     continue
                 # Either the voice WS closed, or discord.py stopped
@@ -524,23 +534,34 @@ class DiscordVoiceSession:
                     new_client: discord.VoiceClient = await self._reconnect_channel.connect()
                 except discord.ClientException as exc:
                     if "Already connected to a voice channel" in str(exc):
-                        # The connection is actually ALIVE — this is a
-                        # false-positive death (found live 2026-09-15: a
-                        # pause made the monitor declare the connection
-                        # dead, and `channel.connect()` refused because the
-                        # existing `VoiceClient` never left). Treat the
-                        # monitor's own probe as the authority: a client
-                        # that still holds the guild's voice state is not
-                        # dead, so the session must NOT be torn down. The
-                        # track is resumed by the caller's `pause`/`resume`
-                        # flow, not by a reconnect.
-                        log.info(
-                            "voice reconnect for guild %s found an alive connection "
-                            "(Already connected); treating the death probe as a false "
-                            "positive and keeping the session",
+                        ws = _voice_connection_ws(self._voice_client)
+                        ws_dead = ws is not MISSING and getattr(ws, "closed", False)
+                        if not ws_dead:
+                            # The connection is actually ALIVE — this is a
+                            # false-positive death probe (found live
+                            # 2026-09-15: a pause made the monitor declare
+                            # the connection dead at ws_closed=False, and
+                            # `channel.connect()` refused because the
+                            # existing `VoiceClient` never left). Only
+                            # trust the registry when the websocket agrees
+                            # it is open: `Already connected` alone is just
+                            # discord.py's guild→voice-client bookkeeping,
+                            # which survives a truly dead websocket (Codex
+                            # review MAJOR-1, 2026-09-15 — a closed ws with
+                            # stale registration must still reach teardown).
+                            log.info(
+                                "voice reconnect for guild %s found an alive connection "
+                                "(Already connected, ws open); treating the death probe "
+                                "as a false positive and keeping the session",
+                                getattr(self._voice_client, "guild", "<unknown>"),
+                            )
+                            return True
+                        log.warning(
+                            "voice reconnect for guild %s raised 'Already connected' but "
+                            "the websocket is closed — stale discord.py registration, "
+                            "continuing reconnect",
                             getattr(self._voice_client, "guild", "<unknown>"),
                         )
-                        return True
                     raise
                 # Swap the live client. The old one is dead; disconnect it
                 # forcefully so discord.py's bookkeeping is clean (the

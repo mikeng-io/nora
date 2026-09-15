@@ -124,10 +124,13 @@ class _FakeVoiceClient:
         # Real `discord.VoiceClient.play()` checks connection state BEFORE
         # `is_playing()` and raises rather than silently doing nothing --
         # this fake must reproduce that shape, not just the happy path
-        # (CLAUDE.md's fake-realism rule).
+        # (CLAUDE.md's fake-realism rule). The playing check uses
+        # `is_playing()`, which is False while paused — real discord.py
+        # permits starting a NEW source while paused (Codex review
+        # MAJOR-2 note, 2026-09-15).
         if not self.connected:
             raise discord.ClientException("Not connected to voice.")
-        if self._playing:
+        if self.is_playing():
             raise discord.ClientException("Already playing audio.")
         self.played_sources.append(source)
         self._source = source
@@ -872,12 +875,14 @@ async def test_the_voice_death_monitor_stays_silent_while_paused() -> None:
 async def test_voice_reconnect_survives_a_false_positive_death_probe() -> None:
     """2026-09-15 live companion: when the death monitor mis-fires while
     the connection is actually alive, `channel.connect()` raises
-    `Already connected to a voice channel.` — that is PROOF the connection
-    is alive, not a failed reconnect. `_try_reconnect` must treat it as a
-    false positive and keep the session, never signal death."""
-    voice_client = _FakeVoiceClient(ws_closed=True)  # probe says "dead"
+    `Already connected to a voice channel.` — with the websocket OPEN that
+    is proof the connection is alive, not a failed reconnect.
+    `_try_reconnect` must treat it as a false positive and keep the
+    session, never signal death."""
+    voice_client = _FakeVoiceClient()  # ws OPEN, but playing=False after pause
     # A channel whose connect() always raises "Already connected" — the
-    # shape the REAL connection-alive state produces.
+    # shape a LIVE connection produces when the monitor probes while the
+    # session is paused.
     channel = _AlreadyConnectedChannel()
     deaths = 0
 
@@ -893,11 +898,73 @@ async def test_voice_reconnect_survives_a_false_positive_death_probe() -> None:
         reconnect_channel=channel,
     )
     session.play("https://cdn.example/a")
+    session.pause()  # playing=False while paused — the false-positive shape
 
     await asyncio.sleep(0.12)
 
-    assert deaths == 0, "Already connected must be read as alive, not as death"
+    assert deaths == 0, "Already connected + open ws must be read as alive"
     assert session._voice_client is voice_client, "no client swap on a false positive"
+
+
+async def test_voice_reconnect_does_not_trust_already_connected_with_a_closed_ws() -> None:
+    """Codex review MAJOR-1 (2026-09-15): `Already connected` alone is just
+    discord.py's guild→voice-client registry — a genuinely closed websocket
+    with stale registration must STILL reach teardown. `channel.connect()`
+    raising 'Already connected' counts as recovery only when the websocket
+    probe agrees it is open."""
+    voice_client = _FakeVoiceClient(ws_closed=True)  # the REAL death shape
+    channel = _AlreadyConnectedChannel()
+    deaths = 0
+
+    async def on_voice_death() -> None:
+        nonlocal deaths
+        deaths += 1
+
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(), on_finished=lambda: None,
+        on_voice_death=on_voice_death,
+        audio_source_factory=lambda url: _FakeAudioSource(url),
+        monitor_interval_seconds=0.02,
+        reconnect_channel=channel,
+        reconnect_delay_seconds=0.01,  # both fails land inside the test window
+    )
+    session.play("https://cdn.example/a")
+
+    await asyncio.sleep(0.12)
+
+    assert deaths == 1, "closed ws + Already connected must still tear the session down"
+
+
+async def test_a_pause_then_skip_re_arms_the_monitor_for_the_next_track() -> None:
+    """Codex review MAJOR-2 (2026-09-15): pause set `_paused=True`, then a
+    skip started the NEXT track while the session flag stayed True — the
+    death monitor was permanently disabled (every tick skipped, even with a
+    genuinely closed websocket). `play()` must clear the pause flag so the
+    next track's health is monitored again."""
+    voice_client = _FakeVoiceClient()
+    deaths = 0
+
+    async def on_voice_death() -> None:
+        nonlocal deaths
+        deaths += 1
+
+    session = DiscordVoiceSession(
+        voice_client, loop=asyncio.get_running_loop(), on_finished=lambda: None,
+        on_voice_death=on_voice_death,
+        audio_source_factory=lambda url: _FakeAudioSource(url),
+        monitor_interval_seconds=0.02,
+    )
+    session.play("https://cdn.example/a")
+    session.pause()  # the live incident's pause
+    # A skip/advance starts the next track — real discord.py permits
+    # `play()` while paused; the flag must not survive into the new track.
+    session.play("https://cdn.example/b")
+
+    # Now a REAL death (closed websocket) while the new track plays.
+    voice_client._connection.ws.closed = True
+    await asyncio.sleep(0.12)
+
+    assert deaths == 1, "play() must re-arm the monitor after a paused skip"
 
 
 async def test_voice_death_reconnects_and_restarts_the_track() -> None:
