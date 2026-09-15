@@ -92,7 +92,7 @@ export async function join(guildId, channelId, token) {
     connection.destroy();
     client.destroy();
   }
-  return { bus, leave, connection };
+  return { bus, leave, connection, client };
 }
 
 // --- Wake-gate seam: TCP with length-prefixed binary frames ---------------
@@ -137,21 +137,45 @@ export function createFrameParser(onFrame) {
  * handshake a small bounded buffer (200 frames ≈ 4 s) holds audio so the
  * start of an utterance is not lost; when the wake gate is genuinely down,
  * frames are dropped rather than queued unboundedly.
+ *
+ * Connected-state bound (B12, design/voice-channel/07 §7): once the socket
+ * is up, each user gets a backlog bound of `maxUserBacklog` frames (16 ×
+ * 20 ms by default) measured as written-but-not-yet-flushed. A frame that
+ * would exceed the bound is DROPPED and counted; pump.stats() exposes the
+ * drop counters for /voice/status. The wake gate degrades into gaps for a
+ * slow consumer, never into a memory grow.
  */
-export function createPump({ host = '127.0.0.1', port = 4599, maxPending = 200 } = {}) {
+export function createPump({ host = '127.0.0.1', port = 4599, maxPending = 200, maxUserBacklog = 16, connectImpl = net.connect } = {}) {
   let socket = null;
   let connecting = false;
   let pending = [];
+  const userBacklog = new Map(); // userId -> frames written but not yet flushed
+  let backlogDropped = 0;
+  let noListenerDropped = 0;
+
+  function writeCounted(userId, frame) {
+    const backlog = userBacklog.get(userId) ?? 0;
+    if (backlog >= maxUserBacklog) {
+      backlogDropped += 1;
+      return;
+    }
+    userBacklog.set(userId, backlog + 1);
+    socket.write(frame, () => {
+      const n = userBacklog.get(userId) ?? 0;
+      if (n > 0) userBacklog.set(userId, n - 1);
+    });
+  }
 
   function ensureSocket() {
     if (socket || connecting) return;
     connecting = true;
-    const s = net.connect({ host, port });
+    const s = connectImpl({ host, port });
     s.once('connect', () => {
       connecting = false;
       socket = s;
-      for (const frame of pending) s.write(frame);
+      const held = pending;
       pending = [];
+      for (const { userId, frame } of held) writeCounted(userId, frame);
     });
     const drop = () => {
       connecting = false;
@@ -165,17 +189,24 @@ export function createPump({ host = '127.0.0.1', port = 4599, maxPending = 200 }
   function pump(pcm, userId) {
     const frame = encodeFrame(userId, pcm);
     if (socket) {
-      socket.write(frame);
+      writeCounted(userId, frame);
       return;
     }
     ensureSocket();
     if (connecting) {
-      // Mid-handshake: hold briefly, drop oldest beyond the cap.
-      pending.push(frame);
-      if (pending.length > maxPending) pending.shift();
+      // Mid-handshake: hold briefly; beyond the cap the listener is
+      // genuinely down — drop the oldest and count it.
+      pending.push({ userId, frame });
+      if (pending.length > maxPending) {
+        pending.shift();
+        noListenerDropped += 1;
+      }
     }
-    // No listener and not connecting: drop the frame.
   }
   pump.close = () => socket?.destroy();
+  pump.stats = () => ({
+    backlog_dropped: backlogDropped,
+    no_listener_dropped: noListenerDropped,
+  });
   return pump;
 }

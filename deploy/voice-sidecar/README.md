@@ -1,29 +1,81 @@
 # nora-voice-sidecar
 
-Receive-only voice sidecar for Nora's Discord voice channel, per
-`design/voice-channel/05-sidecar-receive.md` (stage 2). It joins a voice
-channel with `@discordjs/voice`, subscribes per-user Opus streams, relies on
-the library's built-in DAVE decrypt path (see `DAVE-NOTES.md`), decodes to
-PCM, and forwards `{user_id, pcm}` over a local TCP socket for the future
-Python wake gate (stage 3 — see `TRANSPORT.md`).
+Audio-controller for Nora's Discord voice channel, per
+`design/voice-channel/07-audio-owner-controller.md` (phase 1). It is the
+SOLE owner of the Discord voice connection: every audio stream in and out
+of the channel goes through it, and nora drives it over an HTTP control
+plane (nora decides everything — queue, resolve; the controller only
+plays). The receive side of the original stage-2 design
+(`design/voice-channel/05-sidecar-receive.md`) is unchanged: per-user Opus
+streams are DAVE-decrypted (see `DAVE-NOTES.md`), decoded to PCM, and
+forwarded `{user_id, pcm}` over the local TCP seam for the wake gate (see
+`TRANSPORT.md`).
 
-**Dumb pipe:** no wake-word, no STT, no AI. All of that lives in the Python
-stack. **Audio is transient:** PCM is forwarded, never stored — WAV writing
-exists only in the spike/verification harness (`spike.mjs`).
+**Dumb pipe:** no wake-word, no STT, no AI, no resolve, no music queue.
+All of that lives in the Python stack. **Audio is transient:** PCM is
+forwarded, music flows CDN → ffmpeg → Discord, TTS arrives as a bounded
+POST body — nothing is stored.
+
+## Control plane (HTTP)
+
+Every POST answers `{ ok, request_id, state }` or
+`{ error, request_id, state }`; `state` is the pinned snapshot
+`{voice, generation, channel_id, playback_id, player, speech_queue,
+crossfade_seconds}`. All state-changing commands except `/voice/join` are
+generation-scoped (stale generation → `409 generation_conflict`); any body
+`guild_id` ≠ the configured guild → `400 wrong_guild` (single-guild
+hard-bound). `request_id` is deduped for 5 minutes.
+
+| route | semantics |
+|---|---|
+| `POST /voice/join` | join (idempotent on the same channel; `409 connected_elsewhere`) |
+| `POST /voice/exit` | stop music + speech + wake pump, destroy the connection, persist `idle` |
+| `POST /music/play` | REPLACE the current music slot (ffmpeg pulls `stream_url`); mints a `playback_id` |
+| `POST /music/stop` | stop music only — stays connected, keeps the wake pump |
+| `POST /music/pause` / `resume` | current-track state (`409 pause_during_speech` while speech is active) |
+| `POST /music/volume` | 0–200 %, applied now and remembered for the next track |
+| `POST /stream` | high-priority TTS (replaces the old `/play`); ≤1 active + ≤4 queued, ≤2 MB decoded |
+| `GET /voice/status` | snapshot + `last_event_seq`, `outbox_dropped`, `streaming`, `last_error`, `wake`, `pump` |
+| `GET /health` | process liveness (see below) |
+
+Events (`track-finished`, `stream-failed`, `speech-finished`,
+`voice-death`, `channel-emptied`) are POSTed to `NORA_EVENT_URL` with
+`event_id` + strictly increasing `event_seq`; failed deliveries are kept
+in a bounded outbox (≤256, oldest dropped + counted) and retried with
+exponential backoff until 2xx.
+
+Speech preempts music with a hard cut (no ducking): the music ffmpeg is
+killed, the slot remembered as suspended, and the track revives from 0
+when speech drains (`position_ms` is `approximate_restart` — no seek in
+phase 1). Durable desired-state (`STATE_FILE`): `/voice/exit` writes
+`idle`, a successful join writes `connected`; boot joins only when the
+file says `connected`, or the file is absent AND `CHANNEL_ID` is set.
 
 ## Layout
 
 - `src/service.mjs` — **production entry** (the container's ENTRYPOINT).
-  Serves a loopback `/health` endpoint and, when configured, joins Discord
-  and pumps PCM to the wake-gate seam.
+  Thin: env reading, real seams (discord.js join, AudioPlayer, ffmpeg
+  spawn, fetch, timers), boot decision, wiring.
+- `src/controller.mjs` — HTTP routes, response shapes, request dedupe,
+  `createCore` (wires the seams).
+- `src/lifecycle.mjs` — serialized connection lifecycle + generation
+  tokens + desired-state + voice-death / channel-emptied observation.
+- `src/arbiter.mjs` — music/speech arbitration state machine, ffmpeg
+  ownership (spawn → SIGTERM → SIGKILL escalation, 30 s stall watch),
+  bounded speech queue.
+- `src/outbox.mjs` — event queue with backoff retry.
+- `src/state_store.mjs` — atomic desired-state file.
 - `src/recv.js` — `join(guildId, channelId, token)` → PCM event bus;
-  `createPump()` → `pump(pcm, userId)` TCP forwarder; frame codec.
+  `createPump()` → `pump(pcm, userId)` TCP forwarder with a per-user
+  connected-state backlog bound; frame codec.
 - `src/wav.js` — streaming WAV writer (spike verification only).
 - `spike.mjs` — harness: `--mock` (no token, proves the plumbing) and
   `--live` (operator-run real-guild spike).
 - `consume.mjs` — stand-in wake-gate consumer printing
   bytes/frames/silence stats.
 - `smoke_test.mjs` — self-contained smoke test (see below).
+- `test/` — `node --test` suites (`npm test`): endpoint contract, arbiter,
+  outbox, desired-state/boot, pump bound.
 - `DAVE-NOTES.md` — file:line proof the pinned library decrypts DAVE.
 - `TRANSPORT.md` — the TCP frame format on the wake-gate seam.
 
@@ -32,12 +84,14 @@ exists only in the spike/verification harness (`spike.mjs`).
 | var | default | meaning |
 |---|---|---|
 | `DISCORD_BOT_TOKEN` | — | bot token; from the operator's `.env`, never committed |
-| `GUILD_ID` | — | guild to join |
-| `CHANNEL_ID` | — | voice channel to join |
+| `GUILD_ID` | — | the single guild the controller is hard-bound to |
+| `CHANNEL_ID` | — | voice channel for the FIRST boot (desired-state file wins afterwards) |
 | `PUMP_HOST` | `127.0.0.1` | where the wake gate (stage 3) will listen |
 | `PUMP_PORT` | `4599` | wake-gate seam port (frame format: `TRANSPORT.md`) |
-| `HOST` | `127.0.0.1` | health-endpoint bind (loopback only) |
-| `PORT` | `4600` | health-endpoint port |
+| `HOST` | `127.0.0.1` | HTTP bind |
+| `PORT` | `4600` | HTTP port |
+| `NORA_EVENT_URL` | `http://nora:9100/app/v1/voice/event` | where controller → nora events are POSTed |
+| `STATE_FILE` | `/var/lib/audio-controller/desired_state.json` | durable desired-state file (atomic write) |
 
 The token is read from the environment only — it is never logged, never
 written, and there is no default that would "work".

@@ -2,13 +2,14 @@
   "name": "nora-voice-sidecar",
   "version": "0.2.0",
   "private": true,
-  "description": "Receive-only voice sidecar for Nora: @discordjs/voice join -> per-user DAVE-decrypted PCM -> local TCP transport. Dumb pipe; wake/STT live in Python.",
+  "description": "Audio-controller for Nora's Discord voice channel: sole owner of the voice connection — per-user PCM to the wake seam, TTS playback, music via ffmpeg — driven by nora over an HTTP control plane.",
   "type": "module",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "start": "node src/service.mjs",
+    "test": "node --test \"test/**/*.test.mjs\"",
     "smoke": "node smoke_test.mjs",
     "spike:mock": "node spike.mjs --mock",
     "spike:live": "node spike.mjs --live",
