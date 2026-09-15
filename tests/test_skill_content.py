@@ -517,8 +517,9 @@ def test_the_self_account_says_who_can_reach_the_web_view_and_who_cannot(
     assert "discord" in allowlist
     # Admission compares the CALLER's own id against that person's own blocks —
     # not against a constant. A hard-coded identity here is what would make the
-    # sentence false, and `tests/architecture/test_no_real_identifiers_in_the_
-    # tree.py` is what keeps the id in this file's doc comment a placeholder.
+    # sentence false, and the identifier gate (deleted 2026-09-16 — PII
+    # enforcement moves to a pre-commit concern; the gate's deletion is
+    # tracked, the placeholder convention stays).
     assert "block.user_id === discordUserId" in allowlist
     # ONE account kind decides it, on both sides of the gate. The day a second
     # one is accepted, «not everyone in a room has one» weakens and this is what
