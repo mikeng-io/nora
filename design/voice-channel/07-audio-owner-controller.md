@@ -3,12 +3,13 @@ type: design
 title: "Audio Owner Controller — one connection, every audio stream routed through it"
 description: >
   Resolves the one-bot-one-voice-connection conflict (music bot vs wake
-  sidecar, both on the same token) by making the sidecar the SOLE owner of
-  the voice connection: join/exit are explicit commands, music plays through
-  it as an HTTP client does today for TTS, and nora keeps every decision.
-  Defines the control/data plane split, queue arbitration, cache policy,
-  memory/CPU budget, and the debug/trace/log contract — before code moves.
-tags: [nora, discord, voice, sidecar, music, architecture, ddd, clean-architecture]
+  controller, both on the same token) by making the audio-controller the
+  SOLE owner of the Discord voice connection: join/exit are explicit
+  commands, music plays through it via HTTP (ffmpeg pulls from CDN), and
+  nora keeps every decision. Defines the control/data plane split, arbiter
+  state machine, cache policy, memory/CPU budget, and the debug/trace/log
+  contract — before code moves.
+tags: [nora, discord, voice, audio, music, architecture, ddd, clean-architecture]
 timestamp: '2026-09-16'
 edges:
   - {src: 07-audio-owner-controller, dst: 00-overview, rel: extends, provenance: asserted}
@@ -109,25 +110,78 @@ has; `GET /voice/status` for the operator. Auth: none — same posture as
 existing `/play` (reachable only on the private nora network, caller is
 Nora). Every response carries `request_id` (echoed) + `state` snapshot.
 
+### 3.1 Connection lifecycle (single serialized owner, Codex-audit B1/B8)
+
+The audio-controller has **one serialized connection lifecycle per guild**,
+shared by boot join, HTTP join, reconnect, and exit:
+
+```
+GENERATION: a connection's identity token. Minted on join, invalidated on
+destroy (exit / death / replaced connection). Every command carries it;
+a command whose generation ≠ current is REJECTED with 409 — closes the
+exit-vs-pending-join and delayed-play-crosses-exit races (B8).
+
+State transitions (controller-internal, atomic):
+  idle ──join──▶ connecting ──ready──▶ connected
+  connected ──exit──▶ destroying ──▶ idle      (stop everything, destroy socket)
+  connected/connecting ──voice-death──▶ idle   (same teardown, event pushed)
+```
+
+- Boot join and HTTP join serialize through the same lifecycle — two joins
+  cannot be in flight (one process, one state machine).
+- **Cutover ordering**: when a reconnect is needed, the old owner STOPS
+  before the new owner joins (explicit `destroying` state; no overlap).
+- `POST /voice/join {guild_id, channel_id}` when `connected` to a different
+  channel ⇒ 409 (must exit first) or implement move as destroy→join under
+  one lock — pick ONE; proposal: **409**, `/discord exit` then join.
+
+### 3.2 Play semantics — replace, not enqueue (Codex-audit B2)
+
+`VoiceSession.play()` today REPLACES the current track. The controller's
+music `play` is the same: **replace the current music slot**. The UPCOMING
+queue lives EXCLUSIVELY in nora (its DB, its skip logic — `music_player.py`
+already reorders its own queue at 357–367; nothing in the controller may
+own an upcoming music queue).
+
+- Remove the proposed `/music/next` / `play_next_url` semantics — the
+  controller has no queue of upcoming music.
+- `/music/play` while a track is playing: stops the current source
+  (generation bump) and starts the new one. nora only calls it when it
+  wants an immediate switch (e.g. skip to the next in its OWN queue).
+- Track-end event → nora decides the next track and POSTs it. nora's
+  `on_track_finished` → `_advance` → `POST /music/play` for B.
+
 | Endpoint | Body | Semantics |
 |---|---|---|
-| `POST /voice/join` | `{guild_id, channel_id}` | Join channel (idempotent if already there). Overrides the boot-time env-var channel? NO — see §10 |
-| `POST /voice/exit` | `{}` | Leave channel + stop everything + stop wake pump. The `voice` state returns to `idle`. |
-| `POST /music/play` | `{stream_url, title, duration_seconds?}` | Push onto the music queue; start if idle |
-| `POST /music/stop` | `{}` | Stop current track + clear music queue. **Stays connected** (per Miles's spec: stop ≠ exit). |
-| `POST /music/skip` | `{}` | `player.stop()` → next queued |
-| `POST /music/pause` / `resume` | `{}` | Current track state |
-| `POST /music/volume` | `{percent}` | 0–200 |
-| `POST /stream` (TTS) | `{audio_b64, media_type, request_id?}` | High-priority queue (existing `/play` path, renamed) |
-| `POST /app/v1/voice/track-finished` *see §5* | — | audio-controller → nora callback |
+| `POST /voice/join` | `{guild_id, channel_id, generation?}` | Join (idempotent if already there). 409 if connected elsewhere. |
+| `POST /voice/exit` | `{generation}` | Leave channel + stop everything + stop wake pump. `voice` → `idle`; invalidates `generation`. **409 if generation mismatch.** |
+| `POST /music/play` | `{generation, stream_url, title?, duration_seconds?}` | **REPLACE current music slot** (start if idle). 409 if generation mismatch. |
+| `POST /music/stop` | `{generation}` | Stop current music, clear any controller-side music buffer. **Stays connected.** |
+| `POST /music/pause` / `resume` | `{generation}` | Current track state. `pause` during speech: undefined → reject with 409 (arbiter state, §5). |
+| `POST /music/volume` | `{generation, percent}` | 0–200, applied to current music resource. |
+| `POST /stream` (TTS) | `{generation, audio_b64, media_type, request_id?, guild_id?}` | High-priority speech. 409 if generation mismatch (speech for an exited channel is dropped). |
+| `POST /app/v1/voice/event` *see §5* | — | audio-controller → nora callback (track-ended, voice-death, empty-channel). |
 
 `/voice/exit` semantics: **everything** stops — music, TTS, wake pump, then
-the connection is destroyed. `state: idle`. This is Miles's decision 3: "All
-leave, mean nora leave the discord voice channel."
+the connection is destroyed. `state: idle`. (Miles decision 3 — "All leave,
+mean nora leave the discord voice channel".)
 
-`/music/stop` semantics: **stop only**. Music queue cleared, player stopped,
-connection and wake pump stay. This is Miles's decision 2: "佢就唔會直接
-離開，就會停咗喺度".
+`/music/stop` semantics: **stop only**. Music queue cleared (nora side),
+controller player stopped, connection and wake pump stay. (Miles decision 2 —
+stop ≠ exit.)
+
+### 3.3 Idempotency & retry (Codex-audit B5/B8)
+
+- Every control POST carries a client-minted `request_id` (UUID); the
+  controller dedupes on `(request_id)` for 5 minutes — a retried POST does
+  not double-advance (B5).
+- The callbacks (§5) carry `playback_id` + `event_id`; nora consumes
+  `event_id` exactly once (dedupe within guild lock), and only for the
+  playback whose `playback_id` is currently expected (B5).
+- Delivery failure (nora down when a track ends): controller keeps the
+  terminal event in a bounded outbox (≤256 events) and retries with
+  backoff; nora requests re-delivery on reconnect via `/voice/status`'s
+  `last_event_seq` (B11 reconciliation).
 
 ## 4. Music flow (the thing that was broken)
 
@@ -138,41 +192,89 @@ moves only the *playing*:
 1. `/music play <q>` — nora's `MusicPlayerManager.play` (unchanged: queue
    DB, resolve, session persistence)
 2. nora's new `VoiceSession` HTTP impl sends `POST /music/play
-   {stream_url, title, duration_seconds}` (resolved at start; a track that
-   fails to resolve is `nothing_found` before any POST)
-3. audio-controller: if the music player is idle → spawn ffmpeg (pull from `stream_url`
-   via curl/ffmpeg, NOT download-then-upload — nora holds no audio bytes;
-   see §8)
-4. audio-controller: on track end → `POST /app/v1/voice/track-finished {guild_id,
+   {generation, stream_url, title, duration_seconds}` (resolved at start; a
+   track that fails to resolve is `nothing_found` before any POST)
+3. audio-controller: **replace** the current music slot — spawn ffmpeg (pull
+   from `stream_url` via ffmpeg itself, NOT download-then-upload — nora
+   holds no audio bytes; see §8)
+4. audio-controller: on track end → `POST /app/v1/voice/event
+   {type:"track-finished", guild_id, playback_id, event_id, generation,
    request_id}` → nora `MusicPlayerManager.on_track_finished` (existing
-   method, unchanged) → next track or idle
+   method, unchanged) → nora decides next track from ITS OWN queue → POST
+   `/music/play`
 
 **Playlists** stay in nora: `resolve` expands to N `ResolvedTrack`s, queued
-in nora's DB, and each is POSTed to audio-controller as the previous ends. audio-controller never sees
-"playlist" — only single-track `play` with an optional `play_next_url`.
+in nora's DB, and each is POSTed to audio-controller as the previous ends.
+audio-controller never sees "playlist" and owns no upcoming queue (B2 —
+replace semantics, not enqueue).
 
-## 5. Queue arbitration — two producers, ONE ear
+## 5. Queue arbitration — one arbiter, three states (Codex-audit B6)
 
 audio-controller owns a single audio pipeline (`@discordjs/voice` `AudioPlayer`), the
-same one today. Two queues feed it:
+same one today. It arbitrates exactly ONE current music slot and ONE speech
+queue — the upcoming music queue lives in nora (§3.2), the speech queue is
+the existing bounded TTS queue (§7).
 
-- **Speech queue (high, bounded 4)** — TTS replies. Current `/play`
-  semantics unchanged.
-- **Music queue (low, bounded 4096)** — the music player.
+### Arbiter states (serialized; every async result carries its generation)
+
+```
+MUSIC-STOPPED ──music/play(g)──▶ MUSIC-STARTING ──ffmpeg ready──▶ MUSIC-PLAYING
+MUSIC-PLAYING ──speech arrives──▶ SPEECH-SUSPENDED(hold music gen g)
+SPEECH-SUSPENDED ──speech ends──▶ MUSIC-RESUMING(g same)──▶ MUSIC-PLAYING
+MUSIC-STARTING / -PLAYING / -RESUMING ──music/stop──▶ MUSIC-STOPPED (gen g invalidated)
+MUSIC-PLAYING ──user pause──▶ MUSIC-PAUSED
+MUSIC-PAUSED ──user resume──▶ MUSIC-PLAYING
+any ──exit/voice-death──▶ TERMINAL (all gens invalidated)
+```
 
 Rules (fail-closed, no overlap ever):
 
-1. Music plays as the *default* stream.
-2. A speech item **preempts** music: music's `AudioResource` is stopped,
-   music's position is remembered (`position_ms`), speech plays, then music
-   resumes from `position_ms`. This is the ducking behaviour in its simplest
-   form (phase 2 refines the gain ramp — see §10).
-3. A second speech item while one speaks: queue (max 4), never overlap.
-4. `music/stop` clears the music queue and kills the ffmpeg, but **not**
-   anything in the speech queue.
-5. `voice/exit` clears BOTH and destroys the connection.
+1. **Speech preempts music** — hard-cut at phase 1 (B6): current music
+   `AudioResource` is STOPPED (not paused — position policy below), music
+   generation `g` is remembered as *suspended*, speech plays, then music
+   is REVIVED from the suspended slot.
+2. **Late music-start cannot kill speech**: a `MUSIC-STARTING` ffmpeg
+   continuation from an old generation is ignored once speech arrived (its
+   generation is no longer current).
+3. **`/music/stop` or `/music/skip` during speech** invalidates the
+   suspended music generation and does NOT touch speech (B6).
+4. **`/music/pause` during speech** → 409 (undefined; reject loudly).
+5. Music stop clears controller-side music state entirely — no remembered
+   resume action can resurrect music after `/music/stop` (B6).
+6. `POST /stream` (speech) validates `generation` — speech for an exited or
+   replaced connection is dropped 409 (B15).
 
-No TTS reply is ever cut off by a music skip; no music ever overlaps speech.
+### Position policy (Codex-audit B7 — no seek capability today)
+
+Today's code cannot seek a destroyed resource (`music_player.py:46` carries
+no seek; restart deliberately starts from 0). Phase 1 therefore does **NOT
+attempt position-perfect resume**:
+
+- `position_ms` is accumulated from **consumed playback frames** (excluding
+  speech suspension and buffering), and retained as an offset.
+- On speech-suspend → revive, phase 1 **restarts the stream from 0** (hard
+  cut) UNLESS the controller has a fresh `stream_url` and the source is
+  seekable — seekable check per source type; fallback = restart from 0 with
+  `position_ms` reported as `approximate_restart`.
+- Repeated interruptions compound position error in the fallback; document
+  this explicitly in phase 1. Position-perfect resume + seekable policy is
+  phase 2 (B7).
+- Live/non-seekable streams (radio) get NO resume — speech preempts and the
+  stream ends; nora treats that as natural end.
+
+### Events (controller → nora, replacing track-finished)
+
+| Event | Payload | Meaning |
+|---|---|---|
+| `track-finished` | `{playback_id, event_id, generation, duration_ms}` | Music ended naturally. nora advances its OWN queue. |
+| `stream-failed` | `{playback_id, event_id, generation, reason}` | ffmpeg failed (not a natural end). nora may bounded-retry re-resolve; distinct from `nothing_found` (B14). |
+| `speech-finished` | `{event_id, request_id}` | TTS played. |
+| `voice-death` | `{event_id, generation}` | Connection died. nora tears down session (existing `on_voice_death` semantics). |
+| `channel-emptied` | `{event_id, generation, channel_id}` | Humans left the channel. nora applies empty-channel policy (§6). |
+
+Phase-1 invariant: **no TTS reply is ever cut off by a music skip; no music
+ever overlaps speech** — enforced by the arbiter states above, not by
+convention.
 
 ## 6. Cache — the honest starting point
 
@@ -262,22 +364,44 @@ traceable end-to-end with zero extra moving parts.
 
 **Phase 1 — stop the bleeding (this change):**
 
-- audio-controller: `/voice/join`, `/voice/exit`, `/music/*` endpoints; ffmpeg music
-  player; priority queue (speech preempts music, position resume);
-  structured logs + `request_id`; `/voice/status`.
-- nora: `VoiceSession` HTTP adapter (replaces `DiscordVoiceSession`); music
+- audio-controller: `/voice/join`, `/voice/exit`, `/music/play|stop|pause|
+  resume|volume`, `/stream` (TTS) — all generation-scoped; arbiter state
+  machine (§5, B6); serialized connection lifecycle (§3.1, B1/B8);
+  structured logs + `request_id`; `/voice/status`; `POST /app/v1/voice/event`
+  callbacks (B5: `playback_id` + `event_id` + outbox retry).
+- nora: **remove the local `DiscordVoiceSession` from production wiring and
+  delete its reconnect path** — nothing in nora may call `channel.connect()`
+  (B1, enforced by an architecture test, not by compose convention);
+  replace with awaitable HTTP `VoiceSession` (`nora/infra/voice/
+  http_controller.py`), typed acceptance/failure results (B4); music
   commands re-pointed; new `/discord` command group (`join`, `exit`);
-  `track-finished` callback route (aiohttp 9100).
-- Drop: crossfade (`CrossfadeSource` not ported — phase 1 plays
-  stop→start); drop ducking's gain ramp (speech preemption is hard-cut,
-  position-resume).
+  `/app/v1/voice/event` consumer (aiohttp 9100) consuming inside the guild
+  lock, dedupe on `event_id` (B5).
+- Lifecycle separation (B3): nora's application layer distinguishes
+  **end-music** (clears queue, stops player, stays connected — what
+  `/music stop` and idle-expiry do) from **leave-voice** (what `/discord
+  exit`, empty-channel, and voice-death do). The old convergence of both
+  onto one teardown is deliberately split.
+- Empty-channel policy moves to the controller's observation + an event to
+  nora (B10): nora can no longer `guild.voice_client` — the event
+  `channel-emptied` triggers the same decision, and it fires even when no
+  music session exists.
+- Crossfade is **explicitly unsupported in phase 1**: the configuration
+  knob is reported/validated as effective zero (`crossfade_seconds`
+  accepted but treated as 0 and surfaced in `/voice/status`), and the
+  early-completion behavior (old adapter signals completion to start
+  crossfade pre-mix) is removed — advancement happens on ACTUAL music
+  completion only (B17). Inter-track gap = callback + resolve + startup,
+  documented.
+- Drop ducking's gain ramp: speech preemption is hard-cut; position resume
+  is **not attempted** (B7) — suspended music restarts from 0 with
+  `position_ms` as `approximate_restart`, except seekable sources.
 - Gate: `/discord join` requires (a) guild member, (b) caller in a voice
   channel, (c) channel id in `voice_channel_ids` config (existing
-  fail-closed list). `/music play` keeps today's join-reject only when
-  `[music].enabled` … unchanged; auto-join per Miles's spec (play joins if
-  connected-voc idle, stays on stop).
-- Deploy: build audio-controller image (has ffmpeg already), nora image; compose env
-  unchanged (HOST=0.0.0.0, GUILD/CHANNEL for boot join).
+  fail-closed list). Auto-join per Miles's spec (play joins if
+  connected-idle, stays on stop).
+- Deploy: build audio-controller image (has ffmpeg already), nora image;
+  compose env unchanged (HOST=0.0.0.0, GUILD/CHANNEL for boot join).
 
 **Phase 2 — the Siri polish:**
 
@@ -311,39 +435,106 @@ The change must NOT punch holes in the existing seams:
   voice state. It is NOT an agent; it is infrastructure, like the STT
   container. Its interface is the HTTP contract in §3 — no nora imports,
   no shared domain.
-- **The one connection invariant lives in compose, not in code:** only
-  `audio-controller` gets the voice socket; nora's container never
-  `connect()`s.
+- **The one connection invariant is CODE-ENFORCED, not compose prose
+  (B1):** an architecture test forbids `channel.connect()`/`VoiceClient`
+  outside `discord/infra`; production composition wires ONLY
+  `nora/infra/voice/http_controller.py`; `DiscordVoiceSession` (and its
+  reconnect path) is deleted from the production tree, kept only as a
+  contract-suite reference or removed outright.
 
 Clean = each layer keeps its one responsibility. Nora decides and never
 plays; audio-controller plays and never decides; the queue ORDER (speech > music) is
 audio-controller's one allowed decision, documented here and nowhere in nora's domain.
 
-## 12. Open decisions for Miles (blocking before code)
+## 12. Open decisions for Miles (blocking before code — Codex-audit B11, B15)
 
 1. **Boot join**: after `/discord exit`, should the service auto-rejoin on
-   container restart (env `CHANNEL_ID` still set → boot join)? Proposal:
-   NO — `exit` persists per-run state (`state=idle`), auto-join only when
-   env says so at first boot. Simpler: after exit, the env is still there
-   and restart re-joins. Pick one.
+   container restart (env `CHANNEL_ID` still set → boot join)? Codex B11:
+   this is **load-bearing** — "persist per-run state" cannot durably express
+   exit intent across a restart; controller restart leaves nora holding a
+   stale session, nora restart can enqueue onto a still-playing controller.
+   Proposals:
+   a. **Durable desired-state (recommended):** the controller keeps
+      `desired_connection` in a small state file (`.git`-style local
+      volume, NOT git) — `/discord exit` writes `idle`; boot honors it.
+      Restart reconciliation: nora's boot resume asks `/voice/status` for
+      `generation` + current playback BEFORE re-persisting its session,
+      preserving human-presence checks.
+   b. Simpler: env-only; exit is forfeit on restart. Pick one.
 2. **Auto-join on `/music play`**: Miles's spec says yes (play joins if
    necessary). Which channel does it join — the caller's current channel,
    or the configured `voice_channel_ids` one? Proposal: caller's current
-   channel, allowed only if it matches the configured list.
+   channel, allowed only if it matches the configured list (B15 channel
+   identity must be carried on wake/speech paths — if caller-selected
+   channels are allowed in phase 1, the wake seam needs channel/generation
+   propagation instead of the claimed "unchanged"; if NO, restrict phase 1
+   to ONE immutable configured channel and reject dynamic joins).
 3. **Permission ruleset**: `/discord` group — "same as existing ruleset".
    Which list exactly: guild member + caller-in-channel + channel in
    `voice_channel_ids` (proposal), or the chat-admission allowlist
-   (`DISCORD_ALLOWED_USERS`-style) also applies? Need the operator to name
-   it.
-4. **`/music` when voice not connected**: currently the manager returns
-   `None` (reject) if requester not in a channel. With audio-controller auto-join, the
-   reject path disappears for allowed channels — confirm that's desired,
-   and what `/music stop` does to a `state=idle` audio-controller (no-op ok).
+   (`DISCORD_ALLOWED_USERS`-style) also applies?
+4. **`/music` when voice not connected**: with auto-join the old reject
+   path disappears for allowed channels — confirm; and what `/music stop`
+   does when `state=idle`: no-op ok (Codex: routine contract choice).
+5. **Controller scope (B8/B15)**: single guild hard-bound (reject others
+   with 400) vs multi-guild. Proposal: **single guild** for phase 1 —
+   the one-connection rule is already per-guild; multi-guild multiplies
+   every generation/outbox/lifecycle path.
 
 ## 13. What this does NOT do (anti-scope, pre-locked)
 
 - audio-controller does not resolve URLs, run autoplay, or persist sessions.
+- audio-controller does not own an upcoming music queue (B2 — replace only).
 - audio-controller does not hold a second connection for music ("separate music token")
   — rejected.
 - No new audio format negotiation beyond ffmpeg's existing sniffing.
-- No change to the wake/STT path (still receives on the same connection).
+- The wake/STT path keeps receiving on the same connection, BUT its
+  channel/session identity is explicit once dynamic joins are allowed
+  (B15); with the single-immutable-channel option it is literally unchanged.
+
+## 14. Codex audit record (2026-09-16)
+
+`codex exec --sandbox read-only` (codex-cli 0.153.4) reviewed this design
+plus the existing sidecar/nora music sources. Verdict: **"The sole-owner
+direction is sound. The proposed contract is not ready to implement."**
+All findings are incorporated above (B1…B17 map into the §3.1–§3.3 / §4–§5 /
+§10–§11 revisions).
+
+| Ref | Severity | Finding | Resolved by |
+|---|---|---|---|
+| B1 | BLOCKER | Connection ownership asserted, not enforced; reconnect path remains | §11 code-enforced invariant + phase-1 removes `DiscordVoiceSession` |
+| B2 | BLOCKER | Enqueue semantics break skip; upcoming queue must be nora-only | §3.2 replace-not-enqueue |
+| B3 | BLOCKER | stop/exit converge in application teardown | §10 lifecycle separation |
+| B4 | BLOCKER | sync port vs async HTTP; typed acceptance | §10 awaitable HTTP adapter |
+| B5 | BLOCKER | Callback double-advance; playback identity | §3.3 `playback_id`+`event_id`+dedupe in guild lock |
+| B6 | BLOCKER | Speech arbitration lacks states | §5 arbiter state machine |
+| B7 | MAJOR | Position resume unsupported | §5 position policy (restart-from-0, seekable in phase 2) |
+| B8 | BLOCKER | exit/play race | §3.1 generation + 409 + §12.5 single-guild |
+| B9 | MAJOR | Voice-death doesn't cross HTTP | §5 `voice-death` event + §9 freshness |
+| B10 | MAJOR | Empty-channel leave inert | §5 `channel-emptied` event |
+| B11 | MAJOR | Restart reconciliation missing | §12.1 durable desired-state |
+| B12 | MAJOR | PCM pump not memory-bounded | §7 revised (below): connected-state backlog bound |
+| B13 | MAJOR | One AudioPlayer ≠ bounded subprocesses | §7 revised: subprocess ownership + termination |
+| B14 | MAJOR | Stale-stream retry path absent | §5 `stream-failed` + nora bounded retry |
+| B15 | MAJOR | Dynamic joins lack channel identity | §12.2 / §13: single immutable channel in phase 1 |
+| B16 | MINOR | Endpoint naming + latency claims inconsistent | §3 table (one canonical schema); §9 latency measured per-stage, not inferred |
+| B17 | MINOR | Crossfade drop needs explicit config migration | §10 crossfade-unsupported + effective-zero surfaced |
+
+### §7 revision (B12/B13 — memory/CPU budget, measured not assumed)
+
+- PCM pump: enforce a **connected-state backlog bound** (e.g. ≤16 frames
+  of 20 ms per user) and observe write backpressure on the TCP seam; when
+  the bound is hit, DROP frames and count a metric — define the
+  frame-drop/discontinuity policy explicitly (B12). Long-lived per-user
+  decoder subscriptions are bounded and cleaned up (recv.js:63-87).
+- ffmpeg subprocess ownership: define spawn → kill → reap escalation (TERM
+  then KILL after grace), terminate on replacement, and reap via `close`
+  handlers so superseded processes cannot outlive the player (B13).
+- Bound the ACTIVE + queued speech bytes, not just the body cap: ≤1 active
+  + ≤4 queued, each ≤2 MB decode budget (B13 note: duration/cpu cost of a
+  2 MB mp3 is itself bounded by decode, not by bytes).
+- `streaming:false` reports a STALL (30 s no-bytes watch) but does not
+  KILL the process — the stall must terminate the stream with `stream-failed`
+  (B13).
+- The 50-90 MB RSS figure is a measurement TARGET for phase 1, not an
+  enforced limit.
