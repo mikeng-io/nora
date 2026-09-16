@@ -197,3 +197,133 @@ synthetic→real domain gap properly); then re-run the full eval on real audio.
 - **Fire on onset, not on phrase+command** (Finding 2).
 - **Receive must precede it.** No wake word without the voice receive path,
   which does not exist today (see `00-overview.md`).
+
+## 2026-09-16 (evening): why V4 still failed, and the V5 recipe (append)
+
+V4 (Modal run, contamination removed, 50k steps) reported **Accuracy 0.767 /
+Recall 0.619 / FP-per-hour 245.4** and was correctly blocked by the publish
+gate. This section is the experiment-driven diagnosis. Every number below was
+measured in this session on this host; scripts, clip lists, transcripts and
+the candidate model are checked in under `wake-v5-lab/` next to this file.
+The V4 artefacts (ONNX + the four feature arrays) were recovered from the
+Modal volume (`wakeword-data:/output/`); the V4 `train-run.log` really is lost
+(the older script overwrote it with a one-line note).
+
+### The trainer was not the culprit — the features/labels were
+
+A plain 32-unit MLP (no negative-weight schedule, no hard-example mining, no
+merge) trained on the **same V4 feature arrays** tops out at test AUC 0.90,
+recall 0.81, 18 % adversarial-negative FPR and ~3,900 frame-FP/hr on the 11 h
+validation set. The openWakeWord schedule actually did *better* on FP (245/hr)
+by trading recall. So candidates (b) weight-schedule spiral and (c) the
+per-batch-backward patch are **not** the root cause: the data the head was
+given was not separable enough. Candidate (a) — wake audio inside
+`validation_set_features.npy` — is refuted by the fact that the final model
+fires on only 0.45 % of validation frames and those fires are 2-frame blips
+spread across the whole 10.7 h.
+
+(Two upstream `train.py` facts, verified in source, worth knowing: `best_val_fp`
+is initialised to 1000 and **never updated**, so `max_negative_weight` doubles
+unconditionally in sequences 2 and 3; and `self.fp` counts every 80 ms frame
+≥ 0.5, so "FP/hr" is frame-level, ~2× the debounced event rate.)
+
+### Five defects in the V4 data, each measured by ablation
+
+Ablations re-augment the corpus locally (CPU, ~70 clips/s, same
+`augment_clips` pipeline) and train the plain MLP, unless stated otherwise.
+
+| # | Defect | Evidence | Effect when fixed |
+|---|---|---|---|
+| 1 | **Uncommitted `end_jitter` 0.2 → 1.5 s in `oww-src/data.py`.** Positives float anywhere in the 2 s window instead of ending at it; a flat MLP has to learn 16 shifted copies. | V4 features (jitter 1.5) vs same corpus re-augmented at 0.2 | AUC 0.90 → 0.93, bare-phrase recall 0.95 |
+| 2 | **12 of 15 positive patterns end on a command** (「喂 Nora 而家幾點呀」…). End-aligned, the head learns the command tail. | On Miles's real recordings the top false alarms were literally the tails: 「而家幾點」「你睇下」「幫我 check…」. Training on the 3 bare patterns only: real-audio false fires 36/56 → 11/56 bursts, validation FP 3,411 → 322/hr | 10× validation FP |
+| 3 | **RIR p=0.5 over 1,000 BIRD rooms** smears the onset for no measured gain. | Same corpus, RIR off | validation FP 2,798 → 631/hr, AUC unchanged (0.931 → 0.935) |
+| 4 | **Negatives were only ever shown end-aligned (whole 2 s window)**, but the sliding window in production also sees "silence, then the first 60 % of 「喂勞拉」" — which looks exactly like the positive template (silence + 喂 Nora onset). | Per-clip peak on raw trap wavs: 33 of 44 false peaks were mid-clip; a window ending 60 % into a trap clip fired 28 % vs 10 % for the full clip. Adding *prefix* negatives (window ends at a random point ≥ 0.3 s into the clip, left-padded) | raw-clip speech FP 43 % → 1.7 %, trap FP 61 % → 2.3 %, frame-FP 24.7 → 10.5/hr |
+| 5 | **`max_negative_weight: 150`** while `auto_train`'s own default is 1000 and the upstream example uses 1500. | Same features, 150 vs 1500 | frame-FP 193 → 24.7/hr (recall 0.83 → 0.78) |
+
+Things that did **not** help, so nobody re-tries them: raising the background
+SNR floor to 5 dB (FP up 1.5×); the full 2,000 h ACAV pool instead of the 150k
+subsample (identical FP — 50k steps touch only ~1M windows anyway);
+`layer_size` 64 (worse); 100k steps (worse); random-alignment *whole-clip*
+negatives (jitter 1.5 on negatives — no change, because 2 s clips fill the
+window regardless of jitter). Same-voice MiniMax trap negatives matter a
+little (held-out same-voice trap FPR 24 % → 7.5 %), so keep the 774 we have.
+`augmentation_rounds: 3` was a **no-op** in V3/V4: `compute_features_from_generator`
+is passed `n_total=len(os.listdir(dir))`, so the memmap holds one pass
+(13,590 rows, verified on the recovered V4 array).
+
+### V5 recipe (all experiments local, ~3 min per training run)
+
+- **Positives**: bare wake only — MiniMax 「喂 Nora」「喂，Nora」「喂Nora」「喂 Nora 呀」
+  (3,624) + edge-tts 「喂Nora啦喂Nora啦」 (500, previously mislabelled negative);
+  3 augmentation rounds → 12,372 rows; `end_jitter` 0.2 (upstream); RIR off;
+  background mix p=0.75 at −10…15 dB (unchanged).
+- **Negatives**: 8,000 edge-tts generic/trap + 774 MiniMax traps + 180 new
+  edge-tts *command-only* clips (the tails, without 喂 Nora), each as a
+  full-window row **and** two prefix-window rows → 26,862 rows; plus the
+  usual ACAV (150k) and zh-HK speech (20k) pools.
+- **Trainer**: upstream `Model.auto_train`, unmodified, 50k steps,
+  `max_negative_weight` 1500, layer 32; FP-validation fed in 20k-window chunks
+  (the stock loader materialises ~3 GB and copies it — that is what took the
+  host down earlier today).
+
+### Where V5 stands against the acceptance bar
+
+Measured with `wake-v5-lab/scripts/accept.py` (the exp5 peak-score AUC on raw
+test wavs, 300/class; exp7 debounced activations on the 10.7 h validation
+set) and `real_eval3.py` (timeline over Miles's two Discord recordings, 38 s,
+7 wake utterances located by the STT container's transcripts).
+
+| Metric (bar) | Production Sep-15 | V4 | **V5e** (recall side) | **V5h** (= V5e + Nora-mention negatives) |
+|---|---|---|---|---|
+| exp5 AUC, bare wake vs speech negatives (> 0.97) | 0.25 | — | **0.983** ✅ | 0.941 ❌ |
+| exp5 AUC, user's definition (all 15 patterns vs all speech negs incl. 「唔該Nora」-style mentions) | 0.59 | — | 0.88 ❌ (mentions never trained as negatives; see V5h) | 0.932 |
+| positive recall @0.5, bare wake (> 95 %) | 0.93 | — | 0.91 ❌ (misses concentrate in ProfessionalHost-F/M and PlayfulMan voices; 5 % of clips score < 0.01) | 0.73 ❌ |
+| speech-negative FP @0.5 (raw clips) | 99.7 % | — | 1.7 % | 1.3 % |
+| trap-negative FP @0.5 (< 1 %) | 74 % | — | 2.3 % ❌ | 2.0 % ❌ |
+| validation FP/hr, frame-level (train.py gate ≤ 1.0) | 482 | 245 | 10.5 ❌ | **0.53** ✅ |
+| validation FP/hr, debounced 2 s (< 1.0) | 168 | 106 | 5.5 ❌ | **0.37** ✅ (no run ≥ 3 frames in 10.7 h) |
+| real 「喂 Nora」 peak ≥ 0.6 (7 utterances) | 7/7 (but fires on everything) | 7/7 | **7/7, min 0.89** ✅ | 4/7 ❌ (min 0.07) |
+| real non-wake false fires in 38 s | 3 | 1 | **0** ✅ | **0** ✅ |
+
+**Two Pareto probes on the V5h negative set:** `max_negative_weight` 500 (V5i)
+→ frame-FP 6.3/hr, bare recall 0.84, real wakes 6/7; positives doubled to
+100 per batch (V5j) → frame-FP 5.9/hr (debounced 3.3/hr, 0.84/hr for runs
+≥ 3 frames), bare recall 0.83, trap FP 2.3 %, **real wakes 7/7 (min 0.78), 0
+false fires**. V5j is the best single compromise so far and is checked in as
+`wake-v5-lab/models/v5j-喂Nora.onnx`; it still fails recall (> 95 %) and FP/hr
+(< 1.0).
+
+**Seed variance (V5e config, seeds 0/1/2):** frame-FP 10.5 / 12.0 / 9.6 per hour,
+augmented-test recall 0.744 / 0.742 / 0.734, all 0 false fires on the real
+recordings, real wakes ≥ 0.6: 7/7, 6/7, 6/7. The recipe is stable; the real-audio
+wake margin is not yet (7 utterances is a thin sample).
+
+**Deploy recommendation: do not deploy either V5 artefact yet.** V5h is the
+first model that would *pass the publish gate's FP criterion* (0.53 frame-FP/hr,
+zero runs ≥ 3 frames in 10.7 h) and is silent on Miles's non-wake speech, but
+the Nora-mention negatives buy that by suppressing "Nora" itself: bare-wake
+recall drops to 0.73 and 3 of 7 real wakes fall under 0.6. V5e keeps the wakes
+(7/7 ≥ 0.89) at 10 FP/hr. The two sit on a Pareto front whose recall end is
+capped by the **positive set**: misses concentrate in three of the six MiniMax
+voices and 5 % of bare clips score < 0.01 regardless of training. The next
+lever is therefore not another negative set but **more and realer positives**
+— Miles's and at least one other speaker's 「喂 Nora」 through the Discord path
+(the Post-V4 item above), or at minimum more TTS voices — after which the V5h
+negative set should be re-applied. Threshold stays 0.5; nothing here justifies
+moving it.
+
+### Operational notes from this session
+
+- **Never build the FP-validation tensor whole.** `train.py:875` builds a
+  481k × 16 × 96 float32 array (~3 GB) and then copies it; two such jobs in
+  parallel froze the host (24 GB swap, no OOM-kill). Every heavy job now runs
+  under `systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0`.
+- The `/tmp` evidence (`gate16k.wav`, V3 `modal-train.log`) did not survive
+  the reboot; the real recordings are still in `voice-lab/sidecar/recordings/`
+  and the STT container (`/v1/audio/transcriptions`, model `sensevoice`)
+  labels bursts well enough to build a real-audio eval.
+- openWakeWord upstream: last release v0.6.0 (2024-02), last commit 2025-12,
+  README "English only", adversarial-phrase generator is CMU-phoneme based.
+  Alternatives survey (Porcupine has no Cantonese; sherpa-onnx KWS has no yue
+  model; STT-as-wake via SenseVoice is the only path with verified Cantonese
+  today) is in `wake-v5-lab/oww-and-alternatives.md`.
