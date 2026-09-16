@@ -208,3 +208,37 @@ test('a transport error (fetch rejects) is retained and retried, not lost', asyn
   await tick();
   assert.equal(delivered.length, 1);
 });
+
+test('a voice-death pushed while a delivery is in flight is serialized behind it — never concurrent, never lost, never reordered', async () => {
+  // Teardown under contention (2026-09-16 audit coverage): the connection
+  // dies while the outbox is mid-POST. The death event must wait for the
+  // in-flight delivery, then land exactly once, in seq order.
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  let hanging = true;
+  const { outbox, attempts, delivered } = makeOutbox({
+    fetchBehavior: async () => {
+      if (hanging) await gate;
+      return { status: 200 };
+    },
+  });
+  outbox.push('track-finished', { playback_id: 'p1' }); // popped, hangs in flight
+  await tick();
+  assert.equal(attempts.length, 1);
+  outbox.push('voice-death', { reason: 'stream-stall' }); // pushed mid-delivery
+  await tick();
+  await tick();
+  assert.equal(attempts.length, 1); // no concurrent second attempt
+  hanging = false;
+  release();
+  await tick();
+  await tick();
+  assert.deepEqual(
+    delivered.map((e) => e.type),
+    ['track-finished', 'voice-death'],
+  );
+  assert.ok(delivered[1].event_seq > delivered[0].event_seq);
+  assert.equal(outbox.pendingCount(), 0);
+});
