@@ -1724,13 +1724,19 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Whether a closed, retired note had anything to discharge, by "
         "result: items (its classification named at least one commitment "
         "or person-claim — regardless of whether each one then "
-        "wrote or was refused) or empty (the ordinary, common answer — most "
+        "wrote or was refused), empty (the ordinary, common answer — most "
         "closed notes settle one question with nothing else worth routing, "
-        "and that is R-27's nothing_found, not a wiring gap). Absence of a "
-        "sample for a note is different from result=\"empty\" for it: the "
-        "former means discharge never ran (discharge_enabled is false, or "
-        "the verdict was expired/moot/ungrounded), the latter means it ran "
-        "and found nothing.",
+        "and that is R-27's nothing_found, not a wiring gap), or lost "
+        "(discharge STARTED and did not finish — the dream pass was "
+        "cancelled by its wall clock part-way through, and because the note "
+        "is already retired its content is gone with nothing to re-derive it "
+        "from: issue #195, R-27's unavailable, counted from a finally "
+        "because CancelledError is a BaseException). Absence of a "
+        "sample for a note is different from all three: it means discharge "
+        "never ran at all (discharge_enabled is false, or the verdict was "
+        "expired/moot/ungrounded). A non-zero lost once discharge_enabled is "
+        "on is the stated condition for building the durable, resumable "
+        "version instead.",
         ("result",),
     ),
     _CounterSpec(

@@ -253,7 +253,18 @@ DISCHARGE_OUTCOMES: frozenset[str] = frozenset({
 #: is `nothing_found`, not a wiring gap), so this is what lets the operator
 #: tell "discharge ran and found nothing" apart from "discharge never ran"
 #: (the latter has NO sample under this metric for that note at all).
-DISCHARGE_NOTE_RESULTS: frozenset[str] = frozenset({"items", "empty"})
+#:
+#: **`lost` is the third state, and it is R-27's `unavailable` — the one the
+#: pair above was missing (#195).** The note is already retired when discharge
+#: runs, and `DreamerRuntime` runs `commit` under a wall clock (#60), so a
+#: sink that stops answering CANCELS the call. Its content is then gone with
+#: nothing to re-derive it from: `anchored_before` filters `retired_at is
+#: null`, the classified items were a model judgement about a body that is now
+#: history, and the grounding came from a transcript read this tick never
+#: wrote down. `items`/`empty` say discharge FINISHED; `lost` says it started
+#: and did not. Counted from a `finally`, because `CancelledError` is a
+#: `BaseException` and `_run_discharge`'s own `except Exception` cannot see it.
+DISCHARGE_NOTE_RESULTS: frozenset[str] = frozenset({"items", "empty", "lost"})
 
 #: How many due-by-`revisit_at` notes one tick will judge — the revisitor's own
 #: default, carried across with the mechanism (design 33/34; spec §9.6).
@@ -1191,17 +1202,53 @@ class NoteCuratorAdaptor:
                     # re-derive them from. `_run_discharge`'s own `except` is
                     # no help: `CancelledError` is a `BaseException`.
                     #
-                    # NOT reordered here, because discharge-then-retire trades
-                    # a silent LOSS for a silent DUPLICATE (a cancel between
-                    # the two re-runs discharge next tick), and which of those
-                    # this tier wants is a decision, not a cleanup. Inert
-                    # today — `discharge_enabled` ships False — and filed as
-                    # issue #195 rather than left in a comment nobody greps.
-                    await self._run_discharge(
-                        note=current[0], verdict=verdict,
-                        evidence_rows=shown.evidence_rows.get(note_id, {}),
-                        now_ms=now_ms, provenance=provenance,
-                    )
+                    # NOT reordered, and #195 settled why: discharge-then-
+                    # retire trades a silent LOSS for a silent DUPLICATE, and
+                    # the duplicate is not benign — `GatheringService.
+                    # create_event` dedupes on nothing, discharge passes
+                    # `when=None` so its events are permanently `still_open`,
+                    # and the second one wedges `create_event` for that whole
+                    # conversation behind `AmbiguousOpenGatheringsError` until
+                    # a human cancels one. Making the discharge re-derivable
+                    # instead needs a durable payload, not a flag: neither the
+                    # classified items nor the closing citation's sender is
+                    # persisted anywhere, and `_shown` is per-process.
+                    #
+                    # **So the loss is ACCEPTED and COUNTED.** The rate is
+                    # measured at zero today — `nora_dream_store_timeout_total`
+                    # has never been sampled, and `discharge_enabled` ships
+                    # False — which is exactly what makes paying for the
+                    # durable version premature and makes counting it the
+                    # thing that could justify paying later. The reversal
+                    # condition, stated so a flip is visible as a flip: ANY
+                    # non-zero `result="lost"` once the flag is on.
+                    discharged = False
+                    try:
+                        await self._run_discharge(
+                            note=current[0], verdict=verdict,
+                            evidence_rows=shown.evidence_rows.get(note_id, {}),
+                            now_ms=now_ms, provenance=provenance,
+                        )
+                        discharged = True
+                    finally:
+                        if not discharged:
+                            # The note is RETIRED and its discharge did not
+                            # finish — the content is gone with nothing to
+                            # re-derive it from (#195).
+                            #
+                            # **A PURE IN-MEMORY INCREMENT, AND THAT IS WHAT
+                            # MAKES IT SAFE.** This frame is being unwound by
+                            # a `CancelledError`, which is a `BaseException`
+                            # and which `_run_discharge`'s own `except
+                            # Exception` therefore cannot see. A `finally`
+                            # that AWAITS during cancellation is not reliable,
+                            # so any future attempt to REPORT this loss — a
+                            # store call, a write to a remote sink — must not
+                            # go here. Counting is all this block may do.
+                            self._inc(
+                                "nora_note_discharge_notes_total",
+                                result="lost",
+                            )
 
         # -- wakes: record_wake's first production caller (§5.3) -------------
         #
