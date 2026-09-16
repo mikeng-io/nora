@@ -20,6 +20,7 @@ from nora.infra.voice.http_controller import (
     VoiceControllerRejected,
     VoiceControllerUnavailable,
 )
+from nora.testing.voice import FakeVoiceController
 
 
 def _state(**overrides):
@@ -235,3 +236,90 @@ async def test_an_injected_session_is_used_instead_of_a_per_call_one(aiohttp_cli
     state = await vc.join("guild-1", "cortez-1", request_id="req-1")
 
     assert state["generation"] == "gen-1"
+
+
+async def test_play_sends_resumable_only_when_given(aiohttp_client):
+    """§5 position policy: `resumable` rides the play body when the caller
+    marks a live source, and is absent otherwise (the controller's default
+    applies)."""
+    record: list = []
+    vc = await _client(aiohttp_client, _app(record=record))
+
+    await vc.play("gen-1", "https://cdn.example/live", resumable=False, request_id="r1")
+    await vc.play("gen-1", "https://cdn.example/vod", request_id="r2")
+
+    bodies = [r[2] for r in record if r[1] == "/music/play"]
+    assert bodies[0]["resumable"] is False
+    assert "resumable" not in bodies[1]
+
+
+async def test_a_generation_conflict_reconciles_and_retries_once(aiohttp_client):
+    """Stale generation after a controller restart (§12.1): the session
+    reads `/voice/status`, ADOPTS the live generation into itself — the
+    hub's cache and the manager's player hold this same object, so both
+    agree afterwards — and retries the verb, which then succeeds. No
+    409-loop."""
+    fake = FakeVoiceController("guild-1", "cortez-1")
+    test_client = await aiohttp_client(fake.app())
+    vc = VoiceControllerClient(str(test_client.make_url("")).rstrip("/"))
+    state = await vc.join("guild-1", "cortez-1", request_id="r-join")
+    session = HttpVoiceSession(vc, guild_id="guild-1", generation=state["generation"])
+    fake.restart()  # connection survives under a NEW generation; ours is stale
+    assert fake.generation != session.generation
+
+    await session.play("https://cdn.example/a", duration_seconds=10.0)
+
+    assert session.generation == fake.generation
+    assert fake.plays, "the retried play reached the controller"
+    assert session.playback_id == fake.playback_id
+
+
+async def test_a_conflict_with_no_live_connection_does_not_reconcile(aiohttp_client):
+    """An EXITED connection is not a stale generation — it is a gone one.
+    There is nothing to adopt, and the conflict climbs."""
+    fake = FakeVoiceController("guild-1", "cortez-1")
+    test_client = await aiohttp_client(fake.app())
+    vc = VoiceControllerClient(str(test_client.make_url("")).rstrip("/"))
+    state = await vc.join("guild-1", "cortez-1", request_id="r-join")
+    session = HttpVoiceSession(vc, guild_id="guild-1", generation=state["generation"])
+    await vc.exit(state["generation"], request_id="r-exit")
+
+    with pytest.raises(GenerationConflict):
+        await session.play("https://cdn.example/a")
+    assert not fake.plays
+
+
+async def test_an_arbiter_rejection_is_not_retried(aiohttp_client):
+    """`pause_during_speech` is a refusal, not staleness: no status read,
+    no retry, the conflict climbs as-is."""
+    fake = FakeVoiceController("guild-1", "cortez-1")
+    test_client = await aiohttp_client(fake.app())
+    vc = VoiceControllerClient(str(test_client.make_url("")).rstrip("/"))
+    state = await vc.join("guild-1", "cortez-1", request_id="r-join")
+    session = HttpVoiceSession(vc, guild_id="guild-1", generation=state["generation"])
+    await session.play("https://cdn.example/a")
+    await vc.stream(
+        state["generation"], b"speech", media_type="audio/mpeg", request_id="r-s",
+    )
+
+    with pytest.raises(GenerationConflict) as excinfo:
+        await session.pause()
+    assert excinfo.value.reason == "pause_during_speech"
+
+
+async def test_stop_tolerates_a_dead_generation(aiohttp_client):
+    """B7: a 409 `generation_conflict` on /music/stop means the controller
+    already forgot this generation — the music slot is definitionally
+    stopped, so the teardown that called stop COMPLETES instead of dying
+    on a controller that is already gone."""
+    fake = FakeVoiceController("guild-1", "cortez-1")
+    test_client = await aiohttp_client(fake.app())
+    vc = VoiceControllerClient(str(test_client.make_url("")).rstrip("/"))
+    state = await vc.join("guild-1", "cortez-1", request_id="r-join")
+    session = HttpVoiceSession(vc, guild_id="guild-1", generation=state["generation"])
+    await session.play("https://cdn.example/a")
+    fake.restart()  # our generation is now unrecognised
+
+    await session.stop()  # must not raise
+
+    assert session.playback_id is None

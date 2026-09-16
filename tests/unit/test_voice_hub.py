@@ -7,6 +7,7 @@ the bounded exactly-once event-id dedupe.
 from __future__ import annotations
 
 import base64
+import logging
 
 import pytest
 from aiohttp import web
@@ -34,6 +35,7 @@ def _app(
     join_status: int = 200,
     status_voice: str = "connected",
     status_channel: str = "cortez-1",
+    status_last_event_seq: int | None = None,
     stream_status: int = 200,
     exit_status: int = 200,
     record: list | None = None,
@@ -54,10 +56,13 @@ def _app(
     async def status(request: web.Request) -> web.Response:
         if record is not None:
             record.append(("status", None))
-        return web.json_response(_state(
+        body = _state(
             voice=status_voice, channel_id=status_channel,
             generation="gen-boot", playback_id="pb-boot",
-        ))
+        )
+        if status_last_event_seq is not None:
+            body["last_event_seq"] = status_last_event_seq
+        return web.json_response(body)
 
     async def stream(request: web.Request) -> web.Response:
         if record is not None:
@@ -239,3 +244,71 @@ async def test_the_event_id_window_is_bounded_fifo(aiohttp_client):
     # The oldest entry fell out of the window; newer ones are still held.
     assert hub.consume_event_id("evt-oldest") is True
     assert hub.consume_event_id(f"evt-{_EVENT_ID_BOUND - 1}") is False
+
+
+async def test_adopting_a_status_with_an_event_seq_gap_warns(aiohttp_client, caplog):
+    """§3.3 reconciliation guard: the controller's `last_event_seq` ahead
+    of the last seq nora consumed means events were emitted while nora was
+    not consuming — the adoption still succeeds, but the gap is surfaced."""
+    hub = await _hub(
+        aiohttp_client, _app(join_status=409, status_last_event_seq=9),
+    )
+    hub.note_event_seq(4)
+
+    with caplog.at_level(logging.WARNING, logger="nora.infra.voice"):
+        session = await hub.join("guild-1", "cortez-1")
+
+    assert session.generation == "gen-boot"
+    assert any(
+        "event gap" in record.message and "guild-1" in record.message
+        for record in caplog.records
+    ), caplog.records
+
+
+async def test_adoption_without_a_seq_gap_does_not_warn(aiohttp_client, caplog):
+    """The null case that keeps the warning meaningful: caught-up seqs
+    (and a status carrying no seq at all) stay silent."""
+    for last_event_seq in (4, None):
+        caplog.clear()
+        hub = await _hub(
+            aiohttp_client, _app(join_status=409, status_last_event_seq=last_event_seq),
+        )
+        hub.note_event_seq(4)
+
+        with caplog.at_level(logging.WARNING, logger="nora.infra.voice"):
+            await hub.join("guild-1", "cortez-1")
+
+        assert not any("event gap" in r.message for r in caplog.records), last_event_seq
+
+
+async def test_note_event_seq_is_monotonic(aiohttp_client):
+    hub = await _hub(aiohttp_client, _app())
+
+    assert hub.last_event_seq is None
+    hub.note_event_seq(5)
+    hub.note_event_seq(3)  # a replayed/out-of-order delivery never moves it back
+    hub.note_event_seq(7)
+
+    assert hub.last_event_seq == 7
+
+
+async def test_seen_event_reads_the_dedupe_window_without_consuming(aiohttp_client):
+    """The B7 check-then-commit split: `seen_event` is the pure check the
+    consumer runs BEFORE processing; `consume_event_id` is the commit it
+    runs only after success."""
+    hub = await _hub(aiohttp_client, _app())
+
+    assert hub.seen_event("evt-1") is False
+    assert hub.seen_event("evt-1") is False, "a pure check consumes nothing"
+
+    assert hub.consume_event_id("evt-1") is True
+    assert hub.seen_event("evt-1") is True
+
+
+async def test_generation_for_reads_the_cached_sessions_generation(aiohttp_client):
+    hub = await _hub(aiohttp_client, _app())
+
+    assert hub.generation_for("guild-1") is None
+    await hub.join("guild-1", "cortez-1")
+
+    assert hub.generation_for("guild-1") == "gen-1"

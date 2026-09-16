@@ -1,15 +1,21 @@
 """`VoiceEventConsumer` (nora/app/voice_events.py) — the controller → nora
-callback routing (design/voice-channel/07 §5, B5/B9/B10).
+callback routing (design/voice-channel/07 §5, B5/B7/B8/B9/B10).
 
 The manager and the hub's client are inline stubs: neither is a
 `nora/domain/ports.py` port (`MusicPlayerManager` and `VoiceControllerClient`
 are concrete application/infra classes), so the port-fake gate does not
 apply. What is pinned here is the CONSUMER's own contract: shape validation,
-exactly-once dedupe, stale-playback rejection, and which manager method each
-event type reaches.
+exactly-once dedupe COMMITTED ONLY ON SUCCESS (B7 — a failed delivery is
+retryable, never acknowledged as a duplicate), stale-playback rejection,
+and which manager method each event type reaches with which generation.
+The generation/channel staleness checks themselves live in the REAL
+manager under its per-guild lock (covered in
+`tests/unit/test_music_player_manager.py` and `test_voice_pipeline.py`).
 """
 
 from __future__ import annotations
+
+import logging
 
 from nora.app.voice_events import VoiceEventConsumer
 from nora.infra.voice.hub import VoiceControllerHub
@@ -33,23 +39,29 @@ class _StubClient:
 
 
 class _StubManager:
-    """The staleness decision itself lives in the REAL manager (the probe
-    match happens under its per-guild lock — covered in
+    """The staleness decisions themselves live in the REAL manager (the
+    probe matches happen under its per-guild lock — covered in
     `tests/unit/test_music_player_manager.py`); this stub emulates its
-    verdict so the consumer's own routing is what gets pinned here."""
+    verdicts so the consumer's own routing is what gets pinned here."""
 
     def __init__(self) -> None:
         self.calls: list[str] = []
+        self.failures: int = 0
 
     async def on_track_finished(self, guild_id: str, *, playback_id: str | None = None) -> bool:
+        if self.failures:
+            self.failures -= 1
+            raise RuntimeError("controller gone mid-transition")
         self.calls.append(f"track-finished:{guild_id}:{playback_id}")
         return playback_id == PLAYBACK
 
-    async def on_voice_death(self, guild_id: str) -> None:
-        self.calls.append(f"voice-death:{guild_id}")
+    async def on_voice_death(self, guild_id: str, *, generation: str | None = None) -> None:
+        self.calls.append(f"voice-death:{guild_id}:{generation}")
 
-    async def on_voice_channel_emptied(self, guild_id: str) -> None:
-        self.calls.append(f"channel-emptied:{guild_id}")
+    async def on_voice_channel_emptied(
+        self, guild_id: str, *, generation: str | None = None, channel_id: str | None = None,
+    ) -> None:
+        self.calls.append(f"channel-emptied:{guild_id}:{generation}:{channel_id}")
 
 
 async def _consumer() -> tuple[VoiceEventConsumer, _StubManager, VoiceControllerHub]:
@@ -97,6 +109,22 @@ async def test_an_unknown_event_type_is_a_400():
     assert status == 400
 
 
+async def test_a_validation_failure_leaves_the_event_retryable():
+    """B7: consumption is committed ONLY on success — a 400 must not burn
+    the `event_id`, so a corrected re-delivery of the same id is
+    processed, not answered `duplicate`."""
+    consumer, manager, _ = await _consumer()
+
+    bad, _ = await consumer.consume(_event("something-else", event_id="evt-9"))
+    good, payload = await consumer.consume(
+        _event("track-finished", event_id="evt-9", playback_id=PLAYBACK)
+    )
+
+    assert bad == 400
+    assert (good, payload["status"]) == (200, "ok")
+    assert manager.calls == [f"track-finished:{GUILD}:{PLAYBACK}"]
+
+
 async def test_an_event_id_is_consumed_exactly_once():
     consumer, manager, _ = await _consumer()
     event = _event("track-finished", playback_id=PLAYBACK)
@@ -108,6 +136,25 @@ async def test_an_event_id_is_consumed_exactly_once():
     assert (second, payload["status"]) == (200, "duplicate")
     assert manager.calls == [f"track-finished:{GUILD}:{PLAYBACK}"], (
         "a replayed delivery must not advance the queue twice"
+    )
+
+
+async def test_a_failed_delivery_is_500_and_the_retry_is_processed():
+    """B7 (the audit's probe): the first delivery raises mid-transition —
+    the `event_id` must NOT be consumed, so the controller's outbox retry
+    is PROCESSED instead of acknowledged as a duplicate while the work is
+    still undone."""
+    consumer, manager, _ = await _consumer()
+    manager.failures = 1
+    event = _event("track-finished", playback_id=PLAYBACK)
+
+    first, payload = await consumer.consume(event)
+    second, payload2 = await consumer.consume({**event, "event_seq": 2})
+
+    assert first == 500, payload
+    assert (second, payload2["status"]) == (200, "ok")
+    assert manager.calls == [f"track-finished:{GUILD}:{PLAYBACK}"], (
+        "the retry advances exactly once — the failure was never acknowledged"
     )
 
 
@@ -153,26 +200,29 @@ async def test_a_stale_stream_failed_never_advances():
     assert (status, payload["status"]) == (200, "stale")
 
 
-async def test_voice_death_clears_the_hub_session_and_tears_down():
+async def test_voice_death_reaches_the_manager_with_its_generation():
+    """B8: the generation check and the hub-session drop moved INTO the
+    manager (under the guild lock) — the consumer's own contract is just
+    forwarding the generation faithfully."""
     consumer, manager, hub = await _consumer()
 
     status, _ = await consumer.consume(_event("voice-death"))
 
     assert status == 200
-    assert hub.session_for(GUILD) is None, (
-        "the connection is already gone controller-side — the cached session "
-        "must be forgotten WITHOUT an exit call"
+    assert manager.calls == [f"voice-death:{GUILD}:gen-1"]
+    assert hub.session_for(GUILD) is not None, (
+        "the consumer no longer drops the hub session itself — that is the "
+        "manager's drop seam, exercised under the guild lock"
     )
-    assert manager.calls == [f"voice-death:{GUILD}"]
 
 
-async def test_channel_emptied_reaches_the_manager():
+async def test_channel_emptied_reaches_the_manager_with_generation_and_channel():
     consumer, manager, _ = await _consumer()
 
     status, _ = await consumer.consume(_event("channel-emptied", channel_id="cortez-1"))
 
     assert status == 200
-    assert manager.calls == [f"channel-emptied:{GUILD}"]
+    assert manager.calls == [f"channel-emptied:{GUILD}:gen-1:cortez-1"]
 
 
 async def test_speech_finished_is_a_noop():
@@ -192,3 +242,36 @@ async def test_a_missing_guild_id_is_a_400():
     status, _ = await consumer.consume(event)
 
     assert status == 400
+
+
+async def test_an_event_seq_gap_is_warned_about(caplog):
+    """§3.3 consumption guard: an event whose seq skips ahead of the last
+    successfully processed one means deliveries were lost in between."""
+    consumer, _manager, hub = await _consumer()
+
+    await consumer.consume(_event("track-finished", playback_id=PLAYBACK, event_seq=2))
+    with caplog.at_level(logging.WARNING, logger="nora.app.voice_events"):
+        status, _ = await consumer.consume(
+            _event("track-finished", playback_id=PLAYBACK, event_id="evt-2", event_seq=5)
+        )
+
+    assert status == 200
+    assert any(
+        "seq gap" in record.message and "guild-1" in record.message
+        for record in caplog.records
+    )
+    assert hub.last_event_seq == 5, (
+        "a SUCCESSFUL delivery moves the bookmark; the gap warning compared "
+        "against the previous one"
+    )
+
+
+async def test_a_failed_delivery_does_not_move_the_seq_bookmark():
+    consumer, manager, hub = await _consumer()
+    manager.failures = 1
+
+    await consumer.consume(_event("track-finished", playback_id=PLAYBACK, event_seq=3))
+
+    assert hub.last_event_seq is None, (
+        "a failed delivery stays retryable — its seq is not consumed either"
+    )
