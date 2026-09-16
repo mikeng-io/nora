@@ -201,3 +201,29 @@ class DiscordMusicToolBridge:
         return MusicToolOutcome(
             status="ok", title=status.now_playing.title, url=status.now_playing.url,
         )
+
+    async def set_volume(
+        self, *, conversation_id: str, percent: int,
+    ) -> MusicToolOutcome:
+        """Same single-outcome shape `/music volume` uses
+        (`music_manager.set_volume`: `None` = no session, `False` = out of
+        range) — the agent tool must never raise past it (R-5)."""
+        try:
+            result = await self._manager.set_volume(
+                self._guild_id(conversation_id), percent / 100.0,
+            )
+        except Exception:
+            log.exception("agent tool set_volume failed for guild %s", conversation_id)
+            return _UNAVAILABLE_DISCONNECTED
+        if result is None:
+            return _NOTHING_PLAYING
+        if not result:
+            # `False` = out of range or the N-4 teardown race — never a
+            # "nothing playing" claim. The agent tool body gates 0-200
+            # before reaching here, so this branch is defense-in-depth;
+            # unavailable (couldn't apply) beats nothing_found (there's
+            # no session), which would contradict the note.
+            return MusicToolOutcome(
+                status="unavailable", note=m.volume_out_of_range_line(),
+            )
+        return MusicToolOutcome(status="ok", note=m.volume_line(percent))

@@ -1024,6 +1024,12 @@ voice_channel_ids = []         # "guild_id/channel_id" pairs Nora may answer
 # voice = "Cantonese_CuteGirl" # a NATIVE Cantonese voice — the lever is the
 #                              # voice, not the model tier; language_boost is
 #                              # hard-set in the adapter ("auto" mis-renders 係/唔該)
+speed = 1.0                    # voice_setting.speed [0.5, 2.0]; operator chose
+                               # 1.3 for a livelier pace (2026-09-16)
+pitch = 0.0                    # voice_setting.pitch semitones [-12, 12]
+vol = 1.0                      # voice_setting.vol [0.1, 10]
+emotion = ""                   # voice_setting.emotion when set (e.g. "fluent"
+                               # for smoother delivery); "" keeps it off-wire
 # duck_gain = 0.25             # music scales to this while she speaks (0<x<1).
 #                              # PHASE 1: accepted but UNREAD — the controller
 #                              # hard-cuts speech over music; phase 2 restores

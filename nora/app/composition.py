@@ -1157,6 +1157,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             speaker = MiniMaxTtsSpeaker(
                 api_key=tts_key,
                 voice=cfg.speech.tts.voice or "Cantonese_CuteGirl",
+                speed=cfg.speech.tts.speed,
+                pitch=cfg.speech.tts.pitch,
+                vol=cfg.speech.tts.vol,
+                emotion=cfg.speech.tts.emotion or None,
             )
         else:
             log.warning(

@@ -2088,6 +2088,10 @@ class MusicToolBridge(Protocol):
 
     async def status(self, *, conversation_id: str) -> MusicToolOutcome: ...
 
+    async def set_volume(
+        self, *, conversation_id: str, percent: int,
+    ) -> MusicToolOutcome: ...
+
 
 @dataclass(frozen=True)
 class VoiceChannelRef:

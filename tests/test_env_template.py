@@ -125,6 +125,12 @@ _MAY_DIFFER = {
     "obs.errors.environment", "online.enabled", "participation.enabled",
     "platforms.whatsapp.enabled", "relevance_gate.enabled",
     "relevance_gate.shadow", "speech.tts.enabled",
+    # Voice tuning is the LIVE operator's ear (2026-09-16: speed 1.3 +
+    # emotion "fluent" for a livelier, smoother delivery); the template
+    # ships vendor defaults so a copied config sounds neutral, the same
+    # DEC-43 posture as speech.tts.enabled above.
+    "speech.tts.speed", "speech.tts.pitch", "speech.tts.vol",
+    "speech.tts.emotion",
     # Env-var NAMES are the operator's choice of what to call a secret.
     "media.encryption_key_env",
     # The five model lanes, added 2026-09-06 after ea626821 routed them through

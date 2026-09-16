@@ -816,7 +816,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # never guessing a channel on a platform with no voice concept at all.
     # Budget 2, matching `weather`'s reasoning: one call is the ordinary shape,
     # a second covers "no, the other one" after a bad match. `terminal=False`
-    # on all four — playing/skipping/stopping a track is the middle of a turn,
+    # on all six — playing/skipping/stopping/volume is the middle of a turn,
     # she still has to say what happened.
     "play_music": NativeTool(2,
                              side_effect_state="unknown", idempotency="non_idempotent",
@@ -844,6 +844,17 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                 read_only=True,
                                side_effect_state="none", idempotency="idempotent", retry="safe",
                                output_contract="three_state"),
+    # `set_music_volume` — the agent-side twin of the `/music volume 0-200`
+    # slash verb (design/discord-music/07-agent-tool.md, 2026-09-16
+    # operator decision: Nora must be able to answer directly when someone
+    # asks her to turn the music down). Same Discord-only gate as the other
+    # music verbs; the volume is a 0-200 percent integer, exactly the range
+    # `/music volume` enforces, so the tool and the slash command can never
+    # drift apart on what is acceptable.
+    "set_music_volume": NativeTool(2,
+                                   side_effect_state="unknown", idempotency="non_idempotent",
+                                   retry="never",
+                                   output_contract="three_state"),
     # The three reminder verbs (design spec §7). All 2, and the number is sized
     # by the CONVERSATION rather than by cost: none of the three leaves the host
     # or the database, so a call is one model round trip and nothing else, and
@@ -6721,6 +6732,48 @@ when somebody asks what song is on.
         _record(metrics, "music_status", outcome.status)
         return _music_result(outcome)
 
+    async def set_music_volume(percent: int) -> dict:
+        """Set the Discord music-player volume, when someone asks her to
+        turn the music up or down (「較細聲啲」, 「大聲啲」).
+
+        `percent` is the volume as a whole number 0-200 (100 = normal).
+        Only reachable when Nora can hear a music session in the room's
+        Discord voice channel — same Discord-only gate the other music
+        verbs carry.
+
+        `status`: `ok` (volume applied), `nothing_found` (nothing is
+        playing — say so, don't guess a session), or `unavailable`
+        (music isn't available here).
+
+        `percent` is bounded HERE (0-200, same as the slash command's
+        app_commands.Range) because the model is the only gate otherwise
+        — a hallucinated `percent=500` would fall through to the manager's
+        out-of-range `False`, which must not be labelled `nothing_found`."""
+        if not 0 <= percent <= 200:
+            _record(metrics, "set_music_volume", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "Volume must be between 0 and 200.",
+            }
+        if room.platform != "discord":
+            _record(metrics, "set_music_volume", "unavailable")
+            return dict(_MUSIC_NOT_DISCORD)
+        if music is None:
+            _record(metrics, "set_music_volume", "unavailable")
+            return dict(_MUSIC_OFF)
+        try:
+            outcome = await music.set_volume(
+                conversation_id=conversation_id, percent=percent,
+            )
+        except Exception:  # a tool never raises into the loop (R-5)
+            log.exception("set_music_volume failed")
+            outcome = None
+        if outcome is None:
+            _record(metrics, "set_music_volume", "unavailable")
+            return dict(_MUSIC_OFF)
+        _record(metrics, "set_music_volume", outcome.status)
+        return _music_result(outcome)
+
     async def remind(
         when: str, text: str, repeat: str = "none",
         every_n: int | None = None,
@@ -8627,6 +8680,28 @@ Args:
             from_conversation_id=conversation_id,
         )
 
+    # Music verbs are Discord-only by construction (their bodies gate on
+    # `room.platform != "discord"` first) — but the BODY gate still ships
+    # them in every non-Discord catalog, costing prompt tokens for a tool
+    # that can only ever answer "unavailable" there. 2026-09-16 operator
+    # decision (set_music_volume add): filter at CATALOG level, so a Signal
+    # (or any non-Discord) turn never sees the six music verbs at all.
+    # `room is None` appears on the REGISTRY-table path — ToolRegistry.specs()
+    # is called by tests/test_guards_terminal.py with room=None to compare
+    # specs against terminal_tools() — and keeps that caller's full table
+    # (a caller asking "what is declared" wants everything, not one room's
+    # catalog). The web catalog's full table comes from _catalog_room()
+    # returning platform="discord", not from None.
+    music_specs: tuple[ToolSpec, ...] = ()
+    if room is not None and room.platform == "discord":
+        music_specs = (
+            _spec("play_music", play_music),
+            _spec("skip_music", skip_music),
+            _spec("top_music", top_music),
+            _spec("stop_music", stop_music),
+            _spec("music_status", music_status),
+            _spec("set_music_volume", set_music_volume),
+        )
     return (
         _spec("now", now),
         _spec("calculate", calculate),
@@ -8656,11 +8731,7 @@ Args:
         _spec("weather", weather),
         _spec("parking_status", parking_status),
         _spec("find_parking", find_parking),
-        _spec("play_music", play_music),
-        _spec("skip_music", skip_music),
-        _spec("top_music", top_music),
-        _spec("stop_music", stop_music),
-        _spec("music_status", music_status),
+        *music_specs,
         _spec("remind", remind),
         _spec("list_reminders", list_reminders),
         _spec("cancel_reminder", cancel_reminder),

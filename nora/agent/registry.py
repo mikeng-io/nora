@@ -679,7 +679,14 @@ class ToolRegistry:
         catalog needs none of it.
         """
         return SimpleNamespace(
-            platform="signal", conversation_id="catalog", tagger=None,
+            # platform="discord": the catalog is the REGISTRY FULL TABLE, the
+            # operator-facing surface of what the deployed agent can call —
+            # not one room's per-turn catalog. Since 2026-09-16 music verbs
+            # are filtered at catalog-BUILD time for non-Discord rooms, so a
+            # "signal" stand-in here would silently hide the six music verbs
+            # from the portal. Discord shows the whole table; per-turn
+            # catalogs still filter correctly for their own room.
+            platform="discord", conversation_id="catalog", tagger=None,
         )
 
     def specs(

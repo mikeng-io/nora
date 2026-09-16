@@ -75,10 +75,18 @@ class MiniMaxTtsSpeaker:
         fallback_host: str = "https://api.minimax.chat",
         timeout_seconds: float = 30.0,
         transport: httpx.AsyncBaseTransport | None = None,
+        speed: float = 1.0,
+        pitch: int = 0,
+        vol: float = 1.0,
+        emotion: str | None = None,
     ) -> None:
         self._api_key = api_key
         self._voice = voice
         self._model = model
+        self._speed = speed
+        self._pitch = pitch
+        self._vol = vol
+        self._emotion = emotion
         self._hosts = (host.rstrip("/"), fallback_host.rstrip("/"))
         self._timeout = httpx.Timeout(timeout_seconds)
         # The seam a test drives: with no transport injected, httpx's own
@@ -102,9 +110,10 @@ class MiniMaxTtsSpeaker:
             "stream": False,
             "voice_setting": {
                 "voice_id": voice or self._voice,
-                "speed": 1.0,
-                "vol": 1.0,
-                "pitch": 0,
+                "speed": self._speed,
+                "vol": self._vol,
+                "pitch": self._pitch,
+                **({"emotion": self._emotion} if self._emotion else {}),
             },
             "audio_setting": {
                 "sample_rate": 32000,

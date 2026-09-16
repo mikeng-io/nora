@@ -1431,7 +1431,7 @@ async def test_a_hung_play_does_not_block_stop_for_the_guild() -> None:
     )
 
 
-async def test_a_stale_play_failure_after_stop_and_new_play_does_not_disconnect_the_new_session() -> None:
+async def test_a_stale_play_failure_after_stop_and_new_play_does_not_disconnect_the_new_session() -> None:  # noqa: E501
     """CN-7 (2026-09-16 audit): `stop()`/`leave()` never disconnect the
     underlying voice connection, so a `/music stop` immediately followed
     by a fresh `/music play` for the SAME guild reuses the very same
@@ -1486,7 +1486,7 @@ async def test_a_stale_play_failure_after_stop_and_new_play_does_not_disconnect_
     assert status.now_playing is not None and status.now_playing.title == "Track C"
 
 
-async def test_a_stale_play_success_after_stop_and_new_play_does_not_corrupt_the_new_session() -> None:
+async def test_a_stale_play_success_after_stop_and_new_play_does_not_corrupt_the_new_session() -> None:  # noqa: E501
     """CN-7, companion to the failure case above: when the stale hung play
     for track B instead SUCCEEDS after a stop→new-play reuse of the
     shared connection, `finish_pending`'s zombie guard may still

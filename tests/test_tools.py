@@ -158,8 +158,14 @@ def test_every_declared_tool_is_built(wiring):
         "parking_status",
         # Google Nearby Search parking discovery around a named place/position.
         "find_parking",
-        # Discord-only music (design/discord-music/07-agent-tool.md).
-        "play_music", "skip_music", "top_music", "stop_music", "music_status",
+        # Discord-only music verbs are NOT in this signal-room catalog
+        # (2026-09-16 catalog-level platform filter — they would only ever
+        # answer `unavailable` here). The full table, including the six
+        # music verbs, is pinned for the Discord room in
+        # tests/unit/test_tool_registry.py (both halves: `_room()` = discord
+        # and `test_non_discord_catalog_omits_music_tools`).
+        # "play_music", "skip_music", "top_music", "stop_music",
+        # "music_status", "set_music_volume",  # Discord-only (omitted here)
         "remind", "list_reminders", "cancel_reminder",
         # The Event module (gatherings/RSVP/venue suggestions).
         "create_event", "update_event", "rsvp_event", "cancel_event",

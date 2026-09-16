@@ -91,6 +91,37 @@ async def test_a_per_call_voice_overrides_the_configured_default():
     assert body["voice_setting"]["voice_id"] == "Cantonese_KindWoman"
 
 
+async def test_voice_setting_knobs_ride_the_wire_and_emotion_stays_off_when_unset():
+    """F4 (PR #270 audit): the speed/pitch/vol knobs must reach the request
+    body with their exact types (pitch is MiniMax's one INTEGER knob —
+    `0.0` would be a type regression on the default path), and an unset
+    emotion must stay OFF the wire so the vendor default applies."""
+    server = _Server()
+    speaker = _speaker(server, speed=1.3, pitch=2, vol=0.8)
+
+    result = await speaker.speak(text="喂")
+
+    assert result.available is True
+    body = json.loads(server.requests[0].content)
+    vs = body["voice_setting"]
+    assert vs["speed"] == 1.3
+    assert vs["pitch"] == 2
+    assert type(vs["pitch"]) is int
+    assert vs["vol"] == 0.8
+    assert "emotion" not in vs
+
+
+async def test_an_emotion_rides_the_wire_when_set():
+    server = _Server()
+    speaker = _speaker(server, emotion="fluent")
+
+    result = await speaker.speak(text="喂")
+
+    assert result.available is True
+    vs = json.loads(server.requests[0].content)["voice_setting"]
+    assert vs["emotion"] == "fluent"
+
+
 async def test_an_http_error_is_an_unavailable_result():
     speaker = _speaker(_Server(status=500, raw="boom"))
 
