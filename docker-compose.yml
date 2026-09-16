@@ -804,15 +804,18 @@ services:
       # Audio-controller durable desired-state + event callback
       # (design/voice-channel/07 §12.1, §3.3). Both match the defaults in
       # src/service.mjs; pinned here so the posture is explicit. The state
-      # file lives on the bind-mounted ./state/audio-controller volume below
-      # (gitignored runtime state, same convention as ./state/signal-cli).
+      # lives on the NAMED volume below, not a host bind mount (B-1: a bind
+      # mount MASKS the image's chown of /var/lib/audio-controller — a fresh
+      # host would see root:root and every write would EACCES; a named
+      # volume inherits the image path's ownership on first use).
       - STATE_FILE=/var/lib/audio-controller/desired_state.json
       - NORA_EVENT_URL=http://nora:9100/app/v1/voice/event
     volumes:
       # Desired-state durability (§12.1): /discord exit writes idle, a join
       # writes connected, and the boot decision reads this file — it must
-      # survive container restarts/recreates.
-      - ./state/audio-controller:/var/lib/audio-controller
+      # survive container restarts/recreates. Named volume (not a bind
+      # mount) so it inherits the Dockerfile's `chown node:node` (B-1).
+      - audio-controller-state:/var/lib/audio-controller
     healthcheck:
       # /health is process liveness served by src/service.mjs; it answers
       # while the service idles without a token (healthy-but-idle).
@@ -989,3 +992,7 @@ volumes:
   # inside the container) — pins the ~3.2GB noise-detection whisper download
   # (the DEFAULT model since 2026-09-15) the same way.
   stt-huggingface-cache:
+  # audio-controller's desired-state file (design/voice-channel/07 §12.1).
+  # Named (not a bind mount) so the volume inherits the image's
+  # `chown node:node /var/lib/audio-controller` on first use (B-1).
+  audio-controller-state:
