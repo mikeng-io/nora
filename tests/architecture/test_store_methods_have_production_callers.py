@@ -179,6 +179,19 @@ class _Pin(NamedTuple):
 # the artifact that gets re-derived from scratch by the next session that
 # notices one of them.
 _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
+    ("culture.py", "chain"): _Pin(
+        "deferred_consumer",
+        "The revision chain, newest first, walked through parent links. The "
+        "tier's ONE genuine contribution is that the chain exists — a single "
+        "account is a snapshot, because the model that wrote it had no memory "
+        "of the one before — so this verb is the point of the store rather "
+        "than an extra. It has no caller because `02-measurement §5` sequences "
+        "the culture tier as WRITING-ONLY (step 4): the chain must accumulate "
+        "real revisions before any prompt reads it, since a tier judged on its "
+        "first snapshot is judged on the one thing it does not contribute. "
+        "Step 5 is the consumer, and it is gated on a measured improvement "
+        "rather than assumed.",
+    ),
     ("announcements.py", "announced"): _Pin(
         "read_back_affordance",
         "Its own docstring: «the operator's read, and what the tests assert the "
@@ -242,7 +255,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
 _STORE_MODULES: frozenset[str] = frozenset(
     {
         "announcements.py", "audit.py", "compute_jobs.py",
-        "decision_log.py", "dream_schedule.py",
+        "culture.py", "decision_log.py", "dream_schedule.py",
         "gatherings.py", "geocode_cache.py", "language.py",
         "media_descriptions.py", "media_objects.py", "mobility.py",
         "music_queue.py", "music_session.py", "notes.py", "presence.py",

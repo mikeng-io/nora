@@ -126,6 +126,8 @@ from nora.ingest.stages import standing_event
 from nora.ingest.stickers import StickerReader
 from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
+from nora.infra.sql.culture import SqlCultureStore
+from nora.language.culture import CultureAdaptor
 from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.language.note_curator import NoteCuratorAdaptor
 from nora.language.proactive import (
@@ -3037,6 +3039,45 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     timezone=ZoneInfo(cfg.reminders.timezone),
                 ),
             )
+        # THE CULTURE TIER (design/culture-tier, DEC-182..185). An account of
+        # how each room works and why, folded once a day from that room's own
+        # messages and appended to a chain.
+        #
+        # CONSUMED BY NOBODY, and that is step 4 of `02-measurement §5` rather
+        # than an unfinished wiring: the tier's one genuine contribution is the
+        # CHAIN, so a tier judged on its first snapshot is judged on the one
+        # thing it does not contribute. The prompt-facing step is separate and
+        # is gated on a measured improvement.
+        #
+        # Gated on `[culture] enabled` alone — no note-tier dependency, unlike
+        # the proactive adaptor below: the corpus is `messages`, which every
+        # deployment has, and nothing it writes is read by another tier.
+        if cfg.culture.enabled:
+            dream_schedules = {
+                **dream_schedules,
+                "culture": AdaptorSchedule(
+                    # DEC-185. `uses_watermark = True`, so this reads as «new
+                    # human messages in this room AND a day since the last
+                    # fold» — a SILENT ROOM DOES NOT FIRE, which is correct
+                    # rather than a defect: nothing in this tier retires, so a
+                    # quiet room's account is accurate and there is nothing to
+                    # refresh it against.
+                    min_interval_seconds=cfg.culture.fold_interval_seconds,
+                    # THE BATCH IS THE CORPUS — see `CultureConfig.batch_limit`.
+                    # This is how much of the room the model gets to see, not a
+                    # throttle, and an earlier draft of the design pinned it at
+                    # 1 on an assumption that has since been falsified.
+                    batch_limit=cfg.culture.batch_limit,
+                ),
+            }
+            dream_adaptors = (
+                *dream_adaptors,
+                CultureAdaptor(
+                    culture=SqlCultureStore(engine),
+                    metrics=metrics,
+                ),
+            )
+
         # THE PROACTIVE ADAPTOR — Nora's other half (design/dreamer-agent-
         # loop/39, DEC-162). Gated on the note tier being on (its inputs are
         # the notes) and on `policy.toml` naming at least one home room

@@ -347,6 +347,15 @@ _MUST_SEE: dict[str, frozenset[str]] = {
         "self._notes.standing", "self._notes.record_wake",
         "self._clock_store.record_fire", "self._reminders.history",
     }),
+    # The SMALLEST entry here, and that is the tier rather than an oversight:
+    # culture reads one thing (the account written last time) and writes one
+    # thing (the next account). `head` appears at two sites — once in `inputs`
+    # to render the previous account, once in `commit` to refuse a
+    # byte-identical one — and the site count, not the call count, is what
+    # `STORE_CALLS_PER_TICK` is sized against.
+    "CultureAdaptor": frozenset({
+        "self._culture.head", "self._culture.append",
+    }),
 }
 
 
