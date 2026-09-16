@@ -327,3 +327,53 @@ moving it.
   Alternatives survey (Porcupine has no Cantonese; sherpa-onnx KWS has no yue
   model; STT-as-wake via SenseVoice is the only path with verified Cantonese
   today) is in `wake-v5-lab/oww-and-alternatives.md`.
+
+## 2026-09-17 (overnight): V6 — 278 cloned Cantonese speakers (append)
+
+**Why.** V5's recall ceiling was the positive set: six MiniMax voices, and the head
+partly learned timbre. Cantonese TTS catalogues top out at ~13 speakers, so speaker
+diversity has to come from zero-shot cloning seeded by real speakers. Plan and the
+verified model facts: `wake-v5-lab/PLAN-v6-cloned-voices.md`,
+`wake-v5-lab/cosyvoice-cantonese-plan.md`.
+
+**Pilots (Modal T4).** `ASLP-lab/Cosyvoice2-Yue` renders every Cantonese negative
+perfectly but not the Latin name (2/120 positives pass the STT gate; 諾拉 → nok-laai,
+= the trap, never a positive — Miles's call). Stock `CosyVoice2-0.5B` in
+**cross-lingual** mode is the only working arm (50 % of 「喂，Nora。」/「喂Nora。」 pass;
+the 呀 variant 0 %). Gate = SenseVoice transcript must contain nora/nova/喂ra; control:
+28/30 MiniMax positives pass, **1/10 edge-tts 「喂Nora啦」 pass** → those 500 V5
+positives were mispronounced and are removed from V6.
+
+**Phase 1.** 278 Common Voice yue speakers (one 3–10 s prompt each, transcript as
+prompt text), 2 texts × 3 speeds + 8 negatives per speaker, 4 containers, 3,892 clips,
+0 errors, 2.2 s/utterance. Gate: **989/1,668 positives over all 278 speakers**,
+2,070 negatives (traps/commands 100 %, mentions 66–78 %). Speaker-disjoint split
+(28 held-out speakers). Same-speaker real Common Voice clips added as real-speech
+negatives (1,626). Final V6: 13,545 positive rows / 43,376 negative rows.
+
+**V6 results** (upstream `auto_train`, 50k steps, weight 1500, 100 positives/batch, three seeds):
+
+| Metric (bar) | V5j | V6 s0 | V6 s1 | V6 s2 |
+|---|---|---|---|---|
+| exp5 AUC, user's definition (> 0.97) | 0.94 | 0.970 | 0.971 | **0.972** ✅ |
+| bare-wake recall @0.5 (> 95 %) | 0.83 | 0.80 | 0.81 | 0.83 ❌ |
+| trap FP @0.5 (< 1 %) | 2.3 % | 0.7 % ✅ | **0.0 %** ✅ | 1.3 % |
+| speech-negative FP @0.5 | 2.0 % | 0.0 % | 0.3 % | 0.0 % |
+| frame FP/hr (train.py gate ≤ 1.0) | 5.9 | **0.97** ✅ | 2.2 | 3.1 |
+| debounced FP/hr (< 1.0) | 3.3 | **0.65** ✅ | 1.5 | 1.7 |
+| real wakes ≥ 0.6 (of 7) | 7 | 4 | 7 (min 0.75) | 7 (min 0.79) |
+| real false fires / 38 s | 0 | 0 | 0 | 0 |
+| held-out cloned-speaker recall @0.5 | 0.27 | 0.49 | 0.58 | 0.58 |
+
+**Where the remaining recall goes.** The hard misses (score < 0.05) are real,
+correctly pronounced wake utterances (STT hears 「喂 nora」 in 43/54) that are
+**short**: median 0.81 s vs 1.09 s for hits; recall is 0.92 on clips ≥ 1 s and 0.74 on
+the 35 % under 1 s. Not a streaming-startup artifact (leading silence/noise changes
+nothing; openWakeWord seeds its buffer with noise embeddings). Training positives
+are only 10 % under 1 s and the cloned clips are ~2 s. V7 (running) adds
+time-stretch 1.1–1.5× on positives.
+
+**Deploy recommendation (V6):** seed 0 is the first artefact that clears the publish
+gate (0.97 frame-FP/hr) and the trap bar, but it loses 3 of 7 real wakes; seeds 1/2
+keep all real wakes and the trap bar at 1.5–1.7 debounced FP/hr. Recall @0.5 on
+fast utterances is the open item. Not deployed; nothing changed in production.
