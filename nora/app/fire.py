@@ -1695,6 +1695,27 @@ class FirePath:
                 # than sitting in the trigger alone is that the trigger decides
                 # and the `Deliverer` enforces, at the last inch.
                 send_permitted=send_permitted,
+                # R-97, armed on the participation occasion ALONE (issue
+                # #216). `None` everywhere else is the rule off, and each
+                # `None` is a decision rather than an omission: a reminder, a
+                # relay, a finished compute job and a version announcement
+                # all exist BECAUSE something is owed to somebody, so a turn
+                # that looked and found nothing still owes them that sentence
+                # — `lost_job_occasion` is the extreme case, a whole occasion
+                # whose only content is «I couldn't check». Proactive is the
+                # one near-miss: it shares participation's right to silence
+                # (39 D12) and nobody asked there either, but its false-speak
+                # rate has never been measured, and arming a rule on an
+                # occasion no instrument is watching is how a change ships
+                # with nothing able to report what it did.
+                #
+                # The set comes from the REGISTRY, so the tools R-97 watches
+                # are derived from the same table that declares them. A
+                # literal here would be the pre-DEC-10 hardcoded `BUDGETS`
+                # mistake in a third place.
+                lookups=(
+                    self._registry.lookup_tools() if participation else None
+                ),
                 # A fire turn is still a message into a real group, so it gets
                 # the same outbound decoration the tag path does — the same
                 # `roster_source`, the same `Persons`. Threaded rather than

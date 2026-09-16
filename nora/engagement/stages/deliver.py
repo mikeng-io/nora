@@ -75,6 +75,7 @@ def build(
     cacheable_tools: frozenset[str] = frozenset(),
     tool_call_log_store: Any = None,
     send_permitted: bool = True,
+    lookups: Collection[str] | None = None,
 ) -> DeliveryHandle:
     """Build the pair `invoke` needs.
 
@@ -105,6 +106,15 @@ def build(
     wrong claim available to it (True is the behaviour every pre-participation
     caller already has), whereas those two would get a missing value WRONG while
     looking right.
+
+    `lookups` arms R-97 and names the tools it watches
+    (`ToolRegistry.lookup_tools()`); `None`, the default, is the rule OFF. It
+    takes the same shape as `send_permitted` and for the same reason: `None` is
+    the behaviour every caller before issue #216 already had, and the ONE caller
+    that arms it is the participation occasion — where nobody asked, so a reply
+    reporting that a lookup found nothing is noise rather than an answer owed.
+    The tag path leaves it off deliberately: there she was called, and «I looked
+    and there is nothing» is exactly what she owes the person who asked.
     """
     # DEC-89: one carrier per turn, built HERE because this is the only place
     # both users of it are in scope — the `Deliverer` below, and (via the
@@ -140,6 +150,7 @@ def build(
     guard = ReplyGuard(
         conversation_id=conversation_id, budgets=budgets, terminal=terminal,
         deliverer=deliverer, metrics=metrics, forced_first_tool=forced_first_tool,
+        lookups=lookups,
     )
     tool_call_log = ToolCallLog(
         conversation_id=conversation_id, conversation_type=target.conversation_type,

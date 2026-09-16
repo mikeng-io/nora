@@ -1,0 +1,13 @@
+{
+  "type": "fix",
+  "summary": "In a room that did not call her, Nora no longer speaks up to say she looked and found nothing — she stays silent instead.",
+  "details": [
+    "A participation turn that opened one or more of its lookup tools and had every one of them come back empty ('nothing found' or 'I couldn't check') can no longer send a message. It ends silently, which is what the design has always said an ungrounded participation turn should do; the room simply sees nothing.",
+    "Measured on the participation suite once the honest-age fix landed: four of the five silence cases took the floor to announce an absence — «查咗但搵唔到實質嘢», «no booking on record», «the forecast is unreliable». Those four now stay silent, and the cases where she actually holds something are unchanged.",
+    "It applies to untagged participation turns only. When somebody tags her, «I checked and it isn't there» is still the answer she owes them, and reminders, relays, compute results and announcements are unaffected."
+  ],
+  "limitations": [
+    "A participation turn that never opens a tool at all and still announces an absence is out of scope: the rule fires on having looked and found nothing, not on having nothing. Whether that shape remains is the reading that would reopen issue #216.",
+    "The proactive occasion — where nobody asked either — deliberately keeps the old behaviour until its own rate is measured."
+  ]
+}

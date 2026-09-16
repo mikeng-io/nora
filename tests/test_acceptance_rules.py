@@ -553,6 +553,12 @@ RULE_TESTS = {
     # `voice_channel_ids` — and auto-join joins the CALLER's channel or
     # rejects `not_in_allowed_channel`. The named test is the full matrix.
     "R-96": "test_the_join_decision_matrix",
+    # R-97 (issue #216, design/dreamer-agent-loop/35 §3②/§10.5): a turn nobody
+    # asked for does not take the floor to report an absence. The named test is
+    # the five silence twins driven with the trajectory the live suite measured
+    # once #213 made its ages honest — four of them false-spoke, and reverting
+    # either production line puts all four back in the room.
+    "R-97": "test_the_five_silence_twins_stay_silent",
 }
 
 

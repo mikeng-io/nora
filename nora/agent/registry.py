@@ -497,6 +497,39 @@ class ToolRegistry:
         """
         return frozenset(name for name, spec in NATIVE_TOOLS.items() if spec.cacheable)
 
+    def lookup_tools(self) -> frozenset[str]:
+        """The tools that LOOK and report whether they found anything — R-97's
+        set, and the one thing "did this turn come back with something" can be
+        asked of.
+
+        Two declared fields ANDed, derived here and hand-listed nowhere: a tool
+        is a lookup when it only reads (`read_only`) **and** its result carries
+        R-27's status axis (`output_contract == "three_state"`). Both halves are
+        load-bearing.
+
+        Without `read_only` the set would swallow the write verbs, which also
+        declare `three_state` (`note_update`, `remind`, the events family, the
+        music verbs — see `NativeTool.output_contract`, which says so and says
+        why). A failed WRITE is a different fact from an empty READ, and
+        counting one as the other would let a `note_update` that came back
+        `unavailable` silence a reply she had every reason to send.
+
+        Without `output_contract` it would swallow `load_transcript`, the one
+        read on the table that deliberately carries NO status — its empty list
+        IS the answer (ADR 0009 §2). Reading an unparseable result as "found
+        nothing" is exactly the `unavailable`-as-`nothing_found` substitution
+        R-27 exists to prevent, and it would have made "she read older messages
+        and then spoke" indistinguishable from "she went looking and came back
+        empty".
+
+        A `frozenset`, the same shape the three above return and for the same
+        reason: membership is the whole question.
+        """
+        return frozenset(
+            name for name, spec in NATIVE_TOOLS.items()
+            if spec.read_only and spec.output_contract == "three_state"
+        )
+
     def read_only_tools(self) -> frozenset[str]:
         """The tools that only LOOK — the Dreamer's ceiling (keystone §4).
 
