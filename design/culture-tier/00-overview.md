@@ -6,8 +6,14 @@ The first version of this bundle proposed a new tier with its own store, its
 own derivation, a three-section body under a CHECK constraint, and two
 synthesizers. Almost all of that is now deleted. What survives is much smaller:
 
-> **A Dreamer adaptor that asks the memory system a question it can already
-> answer, on a slow clock, and keeps every answer.**
+> **A Dreamer adaptor that folds its own room's messages into a short account,
+> on a slow clock, and keeps every answer.**
+
+That sentence read *"asks the memory system a question it can already answer"*
+until §4 falsified it: Honcho does not scope at the layer this tier needs, so
+the tier writes the account itself from a corpus that is genuinely scoped
+(DEC-182). The rest of the summary is unchanged — the clock, the chain, and
+the fact that nothing retires all survive the swap of who writes the prose.
 
 The path to that is worth recording, because two of the three corrections came
 from the operator catching a category error, and the third came from a probe
@@ -107,8 +113,12 @@ judgement we want: the reasoning moves out of the model.
 
 Two existing issues carry the rest of this and are not restated here: #163
 (the same admission measurement, taken 2026-09-10), #194 (the gate instruction
-has no non-degeneracy floor), #216 (**n=5, not re-taken** — when the turn *does* run it false-speaks on
-4 of 5 silence twins — the strongest reason to fix measurement before doctrine).
+has no non-degeneracy floor), #216 (**n=5, never re-taken; CLOSED 2026-09-16 by
+PR #262** — when the turn *did* run it false-spoke on 4 of 5 silence twins, and
+R-97 now refuses the reply when every three-state lookup came back non-ok. The
+reason it is still cited is the reason it was cited: a fault this size went
+unseen because the measurement did not exist, which is the argument for fixing
+measurement before doctrine — not the count itself, which was n=5).
 
 ## 3. Chronicle is not culture
 
@@ -153,8 +163,8 @@ two.
 The honest reading, which the earlier draft did not state: **the number sets
 this tier's bar rather than supporting it.** A one-line flat fact delivered in
 ~0.2s already reaches 0.60 on the flagship capability. Culture proposes a
-17–30s dialectic call, a store, a revision chain and a daily adaptor against
-that baseline. The arm that would settle it — chronicle-only versus
+daily model fold over a room's batch, a store, a revision chain and an adaptor
+against that baseline. The arm that would settle it — chronicle-only versus
 chronicle-plus-culture — does not exist in any suite, and `02-measurement`
 should propose it.
 
@@ -204,18 +214,24 @@ Three consequences, all simplifications:
   adaptor now reads its batch, so `batch_limit` must be sized for it rather
   than pinned at 1.
 
-## 4.1 What the dialectic measurement still supports
+## 4.1 What the dialectic probe still supports, and what it no longer does
 
 Measured 2026-09-12, live, against the deployed instance. `chat` — the
 dialectic endpoint, an LLM inside Honcho — answers a culture question with
 prose carrying causation, self-naming with its origin, register, how decisions
-get made, and Nora's own standing in the room. Session-scoped, three real
-rooms each returned a *different* account, each leading with a different thing
-(register / identity / practice).
+get made, and Nora's own standing in the room. Three real rooms each returned a
+*different* account, each leading with a different thing (register / identity /
+practice).
 
-**So this tier does not need to derive anything.** It needs to ask.
+**What that measurement supports is an existence claim about the SHAPE**, and
+that is all: an account — causation, continuity, a room naming itself — is a
+thing a model will write when asked for prose. It does NOT support routing this
+tier through that endpoint, because §4 falsified the scoping the routing rested
+on, and the "different per room" reading above is the same unsound inference as
+the speaker-count one: different sessions, different answers, with nothing
+proving the difference came from a room boundary rather than from the prompt.
 
-The reason it cannot simply be called inline:
+The latency table, which the earlier draft used to argue the tier is a cache:
 
 | | shape | latency |
 |---|---|---|
@@ -223,8 +239,12 @@ The reason it cannot simply be called inline:
 | `chat` (dialectic) | **account** | **17–30s** |
 | gate timeout | | 20s |
 
-Per-window is impossible. Per-day is nothing. **That gap is the entire reason
-a tier exists**, and it makes the tier a cache rather than a model.
+**The conclusion drawn from it — "the tier is a cache rather than a model" — is
+withdrawn.** The tier writes its own prose now, so it IS a model, and the
+argument for a slow clock is not a cache miss but a production one: one fold a
+day over a room's batch instead of a model call per window (`01-the-adaptor §5`).
+The per-window/per-day gap still holds for any inline derivation of an account,
+which is why this remains a stored tier rather than something the gate computes.
 
 ## 5. What that settles
 

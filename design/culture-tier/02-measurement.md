@@ -79,10 +79,13 @@ that override stays approximate until someone does.
   hours, a route — are not held by her. The one measured `go` in four days was
   exactly this kind, so the blind spot is not hypothetical.
 - **Nothing measures harm.** All four score refusal and uptake; none asks
-  whether what she said was wrong, unwelcome, or duplicated. #216 is a live
-  example the four would score backwards — **though #216 is itself an n=5
-  reading and has not been re-taken at n=20; see §6**, and the raw material for a harm
-  measure exists unused (`nora_guard_vetoes_total`, `nora_replies_total{status}`,
+  whether what she said was wrong, unwelcome, or duplicated. #216 was a live
+  example the four would score backwards — **#216 CLOSED 2026-09-16 (PR #262,
+  R-97): on the participation occasion `send_reply` is now refused when every
+  three-state lookup answered non-ok, so that particular backwards case cannot
+  recur. The ceiling stated here is untouched** — nothing still measures harm,
+  R-97 bounds one shape of it, and #216's own numbers were n=5 and were never
+  re-taken at n=20 (§6). The raw material for a harm measure exists unused (`nora_guard_vetoes_total`, `nora_replies_total{status}`,
   `messages.is_nora`).
 - **Correct silence is unmeasurable and has never happened.**
   `nora_participation_silence_total` has no series at all: she has never been
@@ -93,7 +96,22 @@ that override stays approximate until someone does.
 
 ## 5. Sequence
 
-1. `conversation_id` on the gate metric (#221). Unblocks the rest.
+0. **Re-take the baseline.** Added 2026-09-16 and it is not a formality: every
+   number in this bundle was read 2026-09-12/13, and three changes have landed
+   against this exact path since — #215 (memory reaches the participation
+   turn), #262 (R-97: the turn stays silent when every three-state lookup came
+   back non-ok), #261 (a timeout is its own verdict kind and the gate takes its
+   own ceiling). The admission rate, the error split and the once-ever turn
+   count are all pre-change readings. Re-take them under §`00-overview 1.1`'s
+   three clauses — raw samples not a grid, reset-aware summation, and prove
+   `up{job=...}` was continuous across every absence. **Building on the old
+   numbers would be measuring the tier against a system that no longer
+   exists.**
+1. `conversation_id` on the gate metric (#221). Unblocks the rest. **Not built
+   as of 2026-09-16**: `nora/obs/metric_specs.py` still declares
+   `nora_relevance_gate_total` with `("verdict", "platform")`. #221 is closed
+   as folded into this bundle, which is a tracking decision and not an
+   implementation.
 2. The four measures as derivations. No behaviour change.
 3. **Let it run.** Get a baseline of what the gate actually does, on a store
    that survives a restart.
@@ -103,7 +121,7 @@ that override stays approximate until someone does.
    gate getting worse with more context, and #194, which says a gutted gate
    instruction currently passes everything.
 
-Steps 1–4 change no behaviour. Step 5 onward is where the evidence has to
+Steps 0–4 change no behaviour. Step 5 onward is where the evidence has to
 carry the argument.
 
 **A note on the eval labels.** If plan-recap is ever to be admitted, the

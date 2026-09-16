@@ -97,10 +97,10 @@ sits *around* the text. Here the runtime supplies that provenance itself.
 
 ---
 
-## DEC-185 — the watermark gates the fold; it is not a cursor
+## DEC-185 — the watermark is BOTH the gate and the cursor, and the two are sized together
 
-`uses_watermark = True`, `min_interval_seconds = 86400`, `batch_limit = 1`,
-watermark seeded at the record head on first run.
+`uses_watermark = True`, `min_interval_seconds = 86400`, **`batch_limit` sized
+for a real read**, watermark seeded at the record head on first run.
 
 Culture fires when the room has produced new human messages and a day has
 passed. A silent room does not fire, which is correct: nothing retires here, so
@@ -114,10 +114,24 @@ date passing is itself the event; culture has no clock event. The precedent
 does not transfer, and DEC-183 ("a quiet room's culture is accurate, not
 stale") already contradicted it.
 
-`batch_limit = 1` and head-seeding because the watermark here is a GATE, not a
-cursor: `batch_limit` caps how far one run advances it, and a new adaptor starts
-at 0, so the default shape would spend ~17 days on the busiest live room walking
-a backlog it never reads at one batch per day.
+**`batch_limit = 1` is withdrawn**, and it is the one clause of this decision
+that did not survive DEC-182. It was set on the assumption that the adaptor
+asks Honcho and never reads its batch — under that assumption the watermark is
+purely a GATE and one row is enough to open it. The adaptor now folds the batch
+itself, so **the batch IS the corpus** and a limit of 1 starves the fold:
+one message a day is not a room's culture. So the watermark is a gate on
+`lag > 0` AND the delimiter of what the fold reads, and the two must be sized
+together rather than one being chosen to serve the other.
+
+Head-seeding survives unchanged, and for its original reason: `batch_limit`
+caps how far one run advances the watermark, a new adaptor starts at 0, and at
+one batch per day the default shape would spend ~17 days on the busiest live
+room (1,362 messages) walking a backlog to catch up to a present the room has
+long since moved past. Culture wants what a room has been saying lately, not
+its origin story replayed a batch a day.
+
+`01-the-adaptor §4` carries the sizing argument in full and is the authority if
+these two ever disagree again.
 
 ---
 
@@ -177,9 +191,15 @@ which claims were tested rather than argued.
    0.14–0.18 for a 0.20 difference; 80% needs ~86. And the price was quoted for
    5 cases when the check is specified over a suite — 12h for two arms on the
    40-case suite, ~36h at k=3.
-9. **"Everything the adaptor needs exists."** False. `ask_memory` is
-   person-scoped and returns `unavailable` forever for a scope-keyed adaptor.
-   The tier ships a new room-scoped verb; see `01-the-adaptor §1.1`.
+9. **"Everything the adaptor needs exists."** Called false, then TRUE again —
+   and the round trip cost a built-and-closed PR. The objection was real:
+   `ask_memory` is person-scoped and returns `unavailable` forever for a
+   scope-keyed adaptor, so the tier specified two new verbs
+   (`ask_room_memory` / `ask_workspace_memory`) and they were built. #237 was
+   then **closed unmerged**: the path they served does not scope (correction
+   12), and with the Honcho route gone the adaptor needs no verb at all — it
+   reads the batch the Dreamer already hands it. **No tool registry change.**
+   `01-the-adaptor §1.1`.
 10. **"She has never been admitted and chosen silence."** A `shadow = true`
     artifact — no turn ran for the first ~10 hours of the window.
 11. **"`go` = 1."** At least 2. Step-60 grid aliasing stepped over a sample
@@ -191,3 +211,15 @@ which claims were tested rather than argued.
     seemed to prove it — correct per-room speaker counts — landed on the one
     question that happens to fall on the scoped side. Falsified by asking a
     two-message probe session about people it has never seen.
+13. **The DEC-182 rewrite was applied to three files and not to the other
+    three**, 2026-09-13 → corrected 2026-09-16. `_index.yaml`'s title and
+    description, `00-overview §0` and `§4.1`, this file's DEC-185
+    (`batch_limit = 1`) and correction 9 all still described the withdrawn
+    Honcho route — so the bundle's own front door said "asks the memory
+    system" while `01-the-adaptor §1.1` said the opposite. **A decision
+    reversed late in a session is not landed when the deciding file changes;
+    it is landed when every file that quoted the old answer does**, and a
+    reader entering through the index would have built the wrong tier. Two of
+    the six were not cosmetic: `batch_limit = 1` starves a fold that now reads
+    its batch, and correction 9 told an implementer to ship a tool registry
+    change that #237 closed unmerged.
