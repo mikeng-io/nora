@@ -790,12 +790,19 @@ async def test_record_create_candidate_stages_a_pending_row(
     assert row.last_seen_at == NOW
 
 
-async def test_record_create_candidate_dedupes_on_the_anchor_key_not_title(
+async def test_record_create_candidate_separates_two_titles_on_one_anchor(
     notes: _Harness,
 ) -> None:
-    """M10: two proposals sharing `(workspace, anchor_date,
-    anchor_entity_ids)` are ONE candidate, whatever their titles say — the
-    dedupe is the note tier's own anchor key, never `title`."""
+    """#235 — M10 UPHELD for a note's identity, REVERSED for the staging key.
+    Two arrangements the model described on one day, naming the same people,
+    are two occasions: the second must reach the gate rather than be handed
+    the first's settled row. Measured 2026-09-16: a two-entity collision in
+    workspace `ridgeline` destroyed 'Voice audio controller architecture'
+    before the gate ever saw it.
+
+    This test REPLACES `..._dedupes_on_the_anchor_key_not_title`, which
+    pinned the pre-#235 behaviour deliberately. The inversion is the change.
+    """
     first = await notes.store.record_create_candidate(
         **_candidate_kwargs(title="Wedding venue", message_ids=(1,)),
     )
@@ -805,10 +812,38 @@ async def test_record_create_candidate_dedupes_on_the_anchor_key_not_title(
         ),
     )
 
-    assert second.id == first.id, (
-        "same anchor key, different title — one candidate row, not two"
+    assert second.id != first.id, (
+        "same anchor, different title — two occasions, not one row"
     )
-    assert second.title == "Ada's wedding", "the later text refreshes the row"
+    assert second.attempts == 0, "a fresh staging row, not a refresh"
+    assert second.status == "pending", "it must still be able to reach the gate"
+    assert second.title == "Ada's wedding"
+    assert second.message_ids == (2,), (
+        "the second occasion carries its own sighting, not the first's"
+    )
+
+
+async def test_record_create_candidate_still_refreshes_one_title_twice_seen(
+    notes: _Harness,
+) -> None:
+    """The staging table's other job, unchanged by #235: one occasion seen
+    again across ticks refreshes its row rather than piling up. Case and
+    surrounding whitespace are not identity — the key normalises the title,
+    Postgres-side with `lower(btrim(...))` and in the fake with `casefold`.
+    The fixture deliberately avoids any case those two normalise differently
+    (`ß`), because neither store promises they are the same function."""
+    first = await notes.store.record_create_candidate(
+        **_candidate_kwargs(title="Wedding venue", message_ids=(1,)),
+    )
+    second = await notes.store.record_create_candidate(
+        **_candidate_kwargs(
+            title="  wedding VENUE  ", message_ids=(2,), now_ms=NOW + 1000,
+        ),
+    )
+
+    assert second.id == first.id, (
+        "one occasion re-observed — one row, whatever its case"
+    )
     assert second.attempts == 1
     assert second.last_seen_at == NOW + 1000
     assert set(second.message_ids) >= {1, 2}
@@ -899,14 +934,27 @@ async def test_record_create_candidate_does_not_reopen_a_settled_row(
 ) -> None:
     """A re-observation of a SETTLED occasion must not relitigate it — the
     upsert's own `WHERE status = 'pending'` guard, checked from the write
-    side rather than only from `set_create_candidate_status`'s."""
+    side rather than only from `set_create_candidate_status`'s.
+
+    **This is also the read-back SELECT's own test (#235).** When the guard
+    blocks the update the store re-finds the settled row by hand, and that
+    predicate list has to be the FULL staging key: the re-sighting below wears
+    a different CASE and different surrounding whitespace, so a read-back that
+    compared the title literally would find nothing and raise instead of
+    returning the row. Before #235 this test re-observed under a wholly
+    different title, which the wide key absorbed; under the narrow key that is
+    a different occasion, not a re-observation, so the fixture now varies the
+    thing the key normalises away."""
     row = await notes.store.record_create_candidate(**_candidate_kwargs())
     await notes.store.set_create_candidate_status(
         workspace=WS, candidate_id=row.id, status="refused", now_ms=NOW + 1,
     )
 
     reobserved = await notes.store.record_create_candidate(
-        **_candidate_kwargs(title="a different title entirely", now_ms=NOW + 2),
+        **_candidate_kwargs(
+            title="  wedding VENUE  ", body="a wholly different body",
+            now_ms=NOW + 2,
+        ),
     )
 
     assert reobserved.id == row.id
@@ -914,6 +962,50 @@ async def test_record_create_candidate_does_not_reopen_a_settled_row(
     assert reobserved.title == "Wedding venue", (
         "a settled row's text is not overwritten by a later re-sighting"
     )
+    assert reobserved.body == (
+        "Two venues on the shortlist. Nobody has called either."
+    ), "nor its body"
+
+
+async def test_a_settled_row_is_read_back_past_a_sibling_on_the_same_anchor(
+    notes: _Harness,
+) -> None:
+    """**The sharpest edge in #235, and the one the DDL does not cover.**
+    Narrowing the key made it legal for two rows to share `(workspace,
+    anchor_date, anchor_entity_ids)`. The SQL store's settled-row read-back —
+    the hand-written SELECT that runs when the upsert's `where status =
+    'pending'` guard blocks the update — has to carry the title too, or it
+    matches BOTH siblings: either it hands this candidate the other
+    arrangement's settled row (the #235 bug wearing a new mask) or `.one()`
+    raises `MultipleResultsFound` out of a background tick.
+
+    The other tests in this file never build that state — they have one row
+    per anchor, so a read-back that dropped the title predicate still found
+    exactly one row and looked correct. This one builds the sibling first."""
+    first = await notes.store.record_create_candidate(
+        **_candidate_kwargs(title="Wedding venue", message_ids=(1,)),
+    )
+    sibling = await notes.store.record_create_candidate(
+        **_candidate_kwargs(
+            title="Ada's wedding", message_ids=(2,), now_ms=NOW + 1,
+        ),
+    )
+    assert sibling.id != first.id, "the premise: two rows on one anchor"
+    await notes.store.set_create_candidate_status(
+        workspace=WS, candidate_id=first.id, status="created", now_ms=NOW + 2,
+    )
+
+    reobserved = await notes.store.record_create_candidate(
+        **_candidate_kwargs(
+            title="Wedding venue", message_ids=(3,), now_ms=NOW + 3,
+        ),
+    )
+
+    assert reobserved.id == first.id, (
+        "the settled row this title belongs to — not its sibling's"
+    )
+    assert reobserved.status == "created"
+    assert reobserved.title == "Wedding venue"
 
 
 async def test_set_create_candidate_status_refuses_a_non_terminal_status(

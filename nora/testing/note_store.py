@@ -129,7 +129,8 @@ class InMemoryNoteStore:
     #: #98), sharing NOTHING with `candidates` above beyond the table they
     #: both stand in for: that dict is the miss cache, keyed on
     #: `(workspace, probe)`; this one has no probe at all and is looked up by
-    #: its OWN anchor key, `(workspace, anchor_date, anchor_entity_ids)`, in
+    #: its OWN staging key, `(workspace, anchor_date, anchor_entity_ids,
+    #: normalised title)` (#235), in
     #: `record_create_candidate` below — a linear scan rather than a second
     #: index, which is fine at this store's scale and keeps one dict from
     #: drifting out of step with the other.
@@ -620,12 +621,21 @@ class InMemoryNoteStore:
         now_ms: int,
     ) -> NoteCreateCandidate:
         """`SqlNoteStore.record_create_candidate`'s behaviour: upserts on the
-        anchor key `(workspace, anchor_date, anchor_entity_ids)` — sorted and
-        de-duplicated HERE, exactly as the SQL store normalises it before the
-        row reaches its own unique index — and the update is a no-op once the
-        row has left `pending`, matching the SQL upsert's `WHERE status =
-        'pending'` guard: a settled candidate is never relitigated by a later
-        re-observation.
+        staging key `(workspace, anchor_date, anchor_entity_ids,
+        normalised title)` (#235) — the entity list sorted and de-duplicated
+        HERE, exactly as the SQL store normalises it before the row reaches its
+        own unique index — and the update is a no-op once the row has left
+        `pending`, matching the SQL upsert's `WHERE status = 'pending'` guard:
+        a settled candidate is never relitigated by a later re-observation.
+
+        **The title normalisation DIVERGES from the SQL store's, and the
+        divergence is stated rather than papered over.** This scan uses
+        `casefold()` (matching `note_handle`, the tier's own normal form); the
+        index uses Postgres `lower(btrim(...))`, which does not fold `ß`→`ss`.
+        The two agree on every case this corpus produces (English and
+        Cantonese), so the contract suite must not fixture a title where they
+        differ — a test that did would be asserting an equivalence neither
+        store promises.
 
         `message_ids` is APPENDED to the existing row's own list, deduplicated
         only WITHIN this call's own argument — not merged with the existing
@@ -642,7 +652,8 @@ class InMemoryNoteStore:
         existing = next(
             (c for c in self.create_candidates.values()
              if c.workspace == workspace and c.anchor_date == anchor_date
-             and c.anchor_entity_ids == entities),
+             and c.anchor_entity_ids == entities
+             and c.title.strip().casefold() == title.strip().casefold()),
             None,
         )
         if existing is None:

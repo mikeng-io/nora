@@ -205,17 +205,30 @@ a code-side guess at which note the model meant.
 
 **A re-observation that lands on a SETTLED staging row is counted too, and
 which kind it is matters (#235).** `note_candidate`'s uniqueness is
-`(workspace, anchor_date, anchor_entity_ids)`, so a candidate can be handed
-back a row an earlier candidate already settled and returns before the gate
-ever sees it. Two very different things reach that branch — the same
-occasion observed again (a benign no-op) and a DIFFERENT arrangement
-destroyed by the key (a real loss) — and until 2026-09-13 they had an
-identical counter signature, which is the `unavailable`-reported-as-
-`nothing_found` shape R-27 exists to prevent. `_settle` now separates them on
-the one axis #228 made identity — the title, through the same `note_handle`
-— and reports them as `nora_note_candidate_staging_total{outcome}`
-(`STAGING_OUTCOMES`). The collision itself is NOT fixed here; #235 carries
-it. What is fixed is that it can no longer happen silently.
+`(workspace, anchor_date, anchor_entity_ids, lower(btrim(title)))`, so a
+candidate can be handed back a row an earlier candidate already settled and
+returns before the gate ever sees it. Two very different things reached that
+branch — the same occasion observed again (a benign no-op) and a DIFFERENT
+arrangement destroyed by the key (a real loss) — and until 2026-09-13 they
+had an identical counter signature, which is the `unavailable`-reported-as-
+`nothing_found` shape R-27 exists to prevent. `_settle` separates them on the
+one axis #228 made identity — the title, through the same `note_handle` — and
+reports them as `nora_note_candidate_staging_total{outcome}`
+(`STAGING_OUTCOMES`).
+
+**The collision itself is fixed as of 2026-09-16: the title is in the key.**
+The entity list was supposed to separate two arrangements on one day, and was
+measured not to — a candidate naming two people was destroyed by a same-day
+row naming the same two, because in a fixed-membership room the cast is a
+constant and the key degenerated to `(workspace, anchor_date)`. M10 is upheld
+for the NOTE (a note stays findable by one name across revisions) and
+reversed for the staging row, which is a one-shot dedupe slot for one
+sighting rather than an identity. What that buys is a silent, subtractive
+failure traded for a visible, additive one: a re-described occasion now
+stages twice and the gate may write a duplicate, which nothing merges
+(#236). `displaced` survives in the vocabulary because a loss counter that
+cannot fire is the right state for a loss that no longer happens — deleting
+it would let a re-widening of the key land silent.
 """
 
 from __future__ import annotations
@@ -351,15 +364,25 @@ GATE_ACTIONS: frozenset[str] = frozenset({
 #: cover: nothing is decided there, because the decision already happened.
 #:
 #: **Both values exist so that neither is silence.** `note_candidate`'s
-#: uniqueness is `(workspace, anchor_date, anchor_entity_ids)` (#235), so a
-#: candidate that shares a day with an already-settled one — and names no
-#: people, which is the default — is handed back that settled row and returns
-#: before the gate. Two different events reach that branch and they had an
-#: IDENTICAL counter signature until 2026-09-13: `nora_note_candidates_total`
-#: minus `nora_note_candidate_gate_total` could not tell a destroyed proposal
-#: from a benign no-op, which is R-27's `unavailable`-as-`nothing_found` one
-#: layer down. Splitting them is what makes the drop readable; the collision
-#: itself is #235's, not this module's.
+#: uniqueness was `(workspace, anchor_date, anchor_entity_ids)` until
+#: 2026-09-16, so a candidate that shared a day with an already-settled one —
+#: and named no people, which was the default — was handed back that settled
+#: row and returned before the gate. Two different events reach that branch and
+#: they had an IDENTICAL counter signature until 2026-09-13:
+#: `nora_note_candidates_total` minus `nora_note_candidate_gate_total` could
+#: not tell a destroyed proposal from a benign no-op, which is R-27's
+#: `unavailable`-as-`nothing_found` one layer down. Splitting them is what made
+#: the drop readable.
+#:
+#: **#235 then removed the drop**: the key is now `(workspace, anchor_date,
+#: anchor_entity_ids, lower(btrim(title)))`, so two arrangements on one day are
+#: two staged rows and the second reaches the gate. `displaced` is KEPT, with
+#: its branch, and is expected to read zero — the key normalises with Postgres
+#: `lower()` while the branch judges with `note_handle`'s `casefold()`, and a
+#: residue exists only where those disagree. A loss counter that no longer
+#: fires is the right state for a loss that no longer happens; removing it
+#: would let a re-widening of the key land silent, which is the exact defect
+#: this series was declared to close.
 STAGING_OUTCOMES: frozenset[str] = frozenset({
     "reobserved",       # the SAME arrangement seen again after the gate
                         # settled it — the benign case, and the one the
@@ -367,14 +390,16 @@ STAGING_OUTCOMES: frozenset[str] = frozenset({
     "displaced",        # a DIFFERENT arrangement landed on a settled row and
                         # was dropped before the gate saw it. A real loss: no
                         # note, no gate action, and no second chance, because
-                        # the row is terminal. Judged on the TITLE, through
-                        # `note_handle` — the axis #228 made identity — so two
-                        # arrangements sharing a day, a (possibly empty)
-                        # entity list AND a title still read as one. That
-                        # residue is stated, not hidden: the title is the only
-                        # signal this branch has, and `displaced` errs toward
-                        # «something may have been lost», which is the
-                        # direction a loss counter has to fail in.
+                        # the row is terminal. EXPECTED TO READ ZERO since
+                        # 2026-09-16 (#235) — the title joined the staging key,
+                        # so two arrangements on one day are two rows. Judged
+                        # on the TITLE through `note_handle`, while the key
+                        # normalises with Postgres `lower()`; the residue is
+                        # exactly where those two disagree. Kept rather than
+                        # deleted: `displaced` errs toward «something may have
+                        # been lost», which is the direction a loss counter has
+                        # to fail in, and a re-widening of the key must not
+                        # land silent.
 })
 
 #: **What this series does NOT see, stated because a loss counter that reads
@@ -441,7 +466,8 @@ class _CreateCandidate:
     #:
     #: **Not staged.** `record_create_candidate` never sees it, and that is
     #: deliberate rather than an omission: `note_candidate` records the
-    #: OCCASION (its key is `(workspace, anchor_date, anchor_entity_ids)`),
+    #: OCCASION (its key is `(workspace, anchor_date, anchor_entity_ids,
+    #: lower(btrim(title)))`),
     #: while this is a routing decision about THIS sighting of it. Staging it
     #: would need a migration to store a value the gate reads once and never
     #: reads again.

@@ -292,11 +292,14 @@
 # otherwise read as a pass on the count alone.
 #
 # Note what it also measures, deliberately: `note_candidate`'s STAGING key is
-# still `(workspace, anchor_date, anchor_entity_ids)`, so the two proposals
-# reach two rows only if the model names different people for them. The
-# objective asks for exactly that when two same-day entries are in one batch.
-# A run that produces one note here is telling you which of the two layers
-# conflated them, and the staged rows in the result say which.
+# `(workspace, anchor_date, anchor_entity_ids, lower(btrim(title)))` since
+# 2026-09-16 (#235), so the two proposals reach two rows as long as the model
+# gives them different titles — which is the same judgement the gate above
+# already turns on. It did NOT hold before that date: the key was the entity
+# list, and the objective's "name the people" instruction was the only thing
+# routing around it, measured not to work in a room with a fixed cast. A run
+# that produces one note here is telling you which of the two layers conflated
+# them, and the staged rows in the result say which.
 - name: p8_two_unrelated_arrangements_on_one_date
   expect: create
   creates: 2

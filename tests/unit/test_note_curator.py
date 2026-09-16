@@ -2000,6 +2000,108 @@ async def test_discharge_off_never_parses_or_writes_anything():
         "nora_note_curator_dropped_total", reason="discharge_malformed") == 0
 
 
+async def test_a_cancelled_discharge_counts_the_loss_on_the_retired_note():
+    """**Issue #195 — the loss is accepted, so it has to be COUNTED.**
+
+    The note retires first and discharges after, deliberately: a discharge
+    write is never a reason to hold up or reopen a retirement. That argument
+    was made about exceptions, and since 2026-09-11 there is a second way out
+    of that line — `DreamerRuntime` runs `commit` under a wall clock (#60), so
+    a sink that stops answering CANCELS the call. The note is already retired
+    by then, `anchored_before` filters `retired_at is null`, and neither the
+    classified items nor the closing citation's sender is persisted anywhere,
+    so the content is gone with nothing to re-derive it from. Reordering was
+    refused because the duplicate it trades for is not benign (it wedges
+    `create_event` for the conversation), and the durable version needs a
+    payload rather than a flag. What ships instead is `result="lost"`.
+
+    **Driven with a REAL cancel, not a raised exception**, for the reason the
+    proactive sibling `test_a_cancelled_commit_leaves_the_pass_slot_open`
+    states: `_discharge_commitment` catches exceptions, so a raising sink
+    would be absorbed into `outcome="unavailable"` and never reach the
+    unwinding path this counts from. `CancelledError` is a `BaseException`,
+    which is exactly why the count lives in a `finally` — and why that
+    `finally` may only increment an in-memory counter and must never await.
+
+    The positive control is `result="items"`: it fires before the sink call,
+    so it proves discharge STARTED. A test asserting `lost` alone would pass
+    against a build where discharge never ran at all, which is the state this
+    metric's absence-of-a-sample already means."""
+    import asyncio
+
+    class _WedgedEventSink(_FakeEventSink):
+        async def create_event(self, **kw):
+            await asyncio.Event().wait()
+
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Dinner", anchor=20260909)
+    metrics = Metrics()
+    record = FakeRecordStore()
+    record.rows.append(_row(1, "Ada booked Sai Kung"))
+    curator = _curator(
+        store, metrics, record=record, discharge_enabled=True,
+        events=_WedgedEventSink(),
+    )
+    await curator.inputs(key=WS, batch=())
+
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(
+            _close_with_discharge(
+                curator, note,
+                discharge_item={"kind": "commitment", "title": "Dinner"},
+            ),
+            timeout=0.05,
+        )
+
+    assert await store.standing(workspace=WS) == (), (
+        "the premise: the note is already retired when discharge is cut off"
+    )
+    assert metrics.get(
+        "nora_note_discharge_notes_total", result="items") == 1, (
+        "the positive control — discharge STARTED; without it this test would "
+        "pass against a build where it never ran"
+    )
+    assert metrics.get(
+        "nora_note_discharge_notes_total", result="lost") == 1, (
+        "a retired note whose discharge was cut off must not be silent — "
+        "its content is gone with nothing to re-derive it from"
+    )
+    assert metrics.get(
+        "nora_note_discharge_notes_total", result="empty") == 0, (
+        "«ran and found nothing» is a different reading from «did not finish»"
+    )
+
+
+async def test_a_completed_discharge_counts_no_loss():
+    """The other half of the pair, and it is not decorative: a `finally` that
+    counted unconditionally would report every successful discharge as a
+    destroyed one, and `test_a_cancelled_discharge_...` above would stay
+    green. This is what makes `lost` mean something."""
+    store = InMemoryNoteStore()
+    note = await _seed(store, title="Dinner", anchor=20260909)
+    metrics = Metrics()
+    record = FakeRecordStore()
+    record.rows.append(_row(1, "Ada booked Sai Kung"))
+    events = _FakeEventSink()
+    curator = _curator(
+        store, metrics, record=record, discharge_enabled=True, events=events,
+    )
+    await curator.inputs(key=WS, batch=())
+
+    written = await _close_with_discharge(
+        curator, note, discharge_item={"kind": "commitment", "title": "Dinner"},
+    )
+
+    assert written == 1
+    assert len(events.calls) == 1
+    assert metrics.get(
+        "nora_note_discharge_notes_total", result="items") == 1
+    assert metrics.get(
+        "nora_note_discharge_notes_total", result="lost") == 0, (
+        "a discharge that finished is not a loss"
+    )
+
+
 async def test_discharge_with_no_resolvable_person_is_refused_not_guessed():
     """The closing citation's sender maps to nobody — `person_id=None` — so a
     commitment cannot be attributed to anyone. Refused, not guessed."""

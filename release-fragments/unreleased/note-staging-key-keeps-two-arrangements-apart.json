@@ -1,0 +1,13 @@
+{
+  "type": "fix",
+  "summary": "Two things the group arranges on the same day are now kept apart even when the same people are involved. Until this, the second one could be thrown away before it was ever considered.",
+  "details": [
+    "Proposals from the background pass wait in a staging queue, and that queue treated \"same day, same people\" as \"same thing\". Measured on 2026-09-16: in a two-person room, an entry about the audio-controller architecture was dropped before it was ever considered because an entry about a voice fix — same day, same two people — was already queued and decided. Naming the people was supposed to keep them apart, and in a room whose membership does not change it cannot: every arrangement names the same cast. Over the window we can still read, half of everything that landed on an already-decided queue slot was a lost proposal rather than a harmless repeat.",
+    "The queue now also considers what the entry is called, ignoring case and surrounding spaces. Two arrangements on one day are two queued proposals and both are considered; the same arrangement seen again across passes still refreshes its one slot rather than piling up.",
+    "The queue's own counter keeps its \"a proposal was dropped\" value, which should now stay at zero. It is kept rather than removed so that if this ever regresses it shows up as a number instead of as silence."
+  ],
+  "limitations": [
+    "Nothing merges two entries that turn out to describe the same thing. Keeping more proposals means more of them can reach the notebook, so an occasion the pass describes twice in different words now produces two entries the group can see, where before one of them silently disappeared. That is the intended direction — a visible duplicate can be read and fixed, a dropped proposal cannot — but it is not free. Tracked as issue #236.",
+    "Two proposals on one day whose titles differ only in a way the database and the rest of the tier normalise differently are still treated as one. This affects no language the group actually uses."
+  ]
+}
