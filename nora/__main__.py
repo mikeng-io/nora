@@ -196,6 +196,11 @@ class App:
             # would leave which one won up to the scheduler.
             await runtime.seed_watermarks(
                 deps.language_store, deps.dream_adaptors,
+                # The schedules, so an adaptor can ask to seed at the RECORD
+                # HEAD when there is nothing to inherit — see
+                # `AdaptorSchedule.seed_at_head`. Without them the fallback is
+                # unreachable and a scope the source never covered stays at 0.
+                schedules=deps.dream_schedules,
                 keys=lambda a: (
                     deps.workspace_scopes() if a.key_kind == "workspace"
                     else deps.language_scopes()

@@ -132,6 +132,30 @@ class SqlLanguageStore:
         async with self._engine.connect() as conn:
             return int((await conn.execute(stmt)).scalar_one())
 
+    async def head_message_id(self, *, scope_id: str) -> int:
+        """The NEWEST message id in this scope, or 0 if it holds none.
+
+        For `seed_watermarks`' head fallback: an adaptor whose scope the
+        inherit-source never covered would otherwise start at 0 and walk the
+        room's whole history `batch_limit` rows at a time, a model call per
+        batch. Measured live 2026-09-17, a day after the culture tier shipped:
+        one room held 1,916 messages with 1,616 still unread behind a cursor
+        seeded at 0, which at one fold a day is six days of accounts written
+        from slices of that room's PAST while the head claimed to say what the
+        room is now.
+
+        `is_nora` is NOT filtered here, unlike `lag`. The value is a CURSOR
+        POSITION, not a count of work: the watermark is compared against
+        `messages.id` whatever wrote each row, so excluding her own sends would
+        seed behind messages that are already read and re-read them.
+        """
+        stmt = sa.select(sa.func.max(MESSAGES.c.id)).where(
+            MESSAGES.c.conversation_id == scope_id
+        )
+        async with self._engine.connect() as conn:
+            head = (await conn.execute(stmt)).scalar_one_or_none()
+        return int(head or 0)
+
     async def seconds_since_last_message(self, *, scope_id: str) -> float:
         """`inf` when the scope has no messages at all — mirrors
         `watermark_age_seconds`'s empty case. Harmless either way at the one

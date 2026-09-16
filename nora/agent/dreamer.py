@@ -309,6 +309,30 @@ class AdaptorSchedule:
     #: piling up behind itself.
     samples: int = 1
 
+    #: On first run for a scope the inherit-source never covered, start at the
+    #: RECORD HEAD rather than at 0.
+    #:
+    #: `seed_watermarks` inherits a new adaptor's cursor from another's, which
+    #: covers a rename and covers a new adaptor over scopes the source knows.
+    #: It does NOT cover a scope the source never saw — there the adaptor still
+    #: starts at 0 and re-reads the room from the beginning, `batch_limit` rows
+    #: at a time, one model call per batch.
+    #:
+    #: Measured 2026-09-17, the night the culture tier shipped: two Discord
+    #: scopes had no row under the (deleted) `language` cursor, so both seeded
+    #: at 0, and one of them held 1,916 messages with 1,616 still unread. At
+    #: that adaptor's one fold a day that is six days of accounts written from
+    #: slices of the room's PAST, each installed as the head that claims to say
+    #: what the room is NOW — which corrupts the one signal its revision chain
+    #: carries rather than merely costing calls.
+    #:
+    #: **Default `False`, because the right answer is per adaptor.** An
+    #: extractor that appends idempotently (`note-candidates`) may legitimately
+    #: want the whole backlog; an adaptor whose output is a single evolving
+    #: HEAD wants only what the room has been saying lately. Only the second
+    #: kind sets this.
+    seed_at_head: bool = False
+
     def __post_init__(self) -> None:
         if self.samples < 1:
             raise ValueError(f"samples must be >= 1, got {self.samples}")

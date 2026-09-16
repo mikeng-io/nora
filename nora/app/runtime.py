@@ -304,6 +304,8 @@ class _ConsolidationCursor(Protocol):
 
     async def seconds_since_last_message(self, *, scope_id: str) -> float: ...
 
+    async def head_message_id(self, *, scope_id: str) -> int: ...
+
     async def watermark_age_seconds(
         self, *, consolidator_name: str, scope_id: str
     ) -> float: ...
@@ -498,6 +500,7 @@ async def seed_watermarks(
     adaptors: Sequence[DreamAdaptor],
     *,
     keys: Callable[[DreamAdaptor], Sequence[str]],
+    schedules: Mapping[str, AdaptorSchedule] | None = None,
     source: str = "language",
 ) -> int:
     """Give every watermarked adaptor that has none a cursor, BEFORE the new
@@ -539,8 +542,29 @@ async def seed_watermarks(
             inherited = await language.watermark_for(
                 consolidator_name=source, scope_id=key
             )
+            origin = source
             if not inherited:
-                continue
+                # NOTHING TO INHERIT — the source cursor never covered this
+                # scope. Historically that meant «leave it at 0», and at 0 the
+                # adaptor re-reads the room from the beginning, `batch_limit`
+                # rows at a time. For an append-idempotent extractor that is
+                # merely slow; for an adaptor whose output is a single evolving
+                # HEAD it is worse than slow, because every one of those
+                # catch-up runs installs an answer derived from the room's PAST
+                # as the current one.
+                #
+                # Measured 2026-09-17: two Discord scopes had no `language` row
+                # (that tier is deleted), and one held 1,916 messages with
+                # 1,616 unread behind a zero cursor.
+                sched = (schedules or {}).get(adaptor.name)
+                if sched is None or not sched.seed_at_head:
+                    continue
+                inherited = await language.head_message_id(scope_id=key)
+                origin = "the record head"
+                if not inherited:
+                    # A scope with no messages at all. Nothing to seed past,
+                    # and 0 is already the right cursor for it.
+                    continue
             await language.advance_watermark(
                 consolidator_name=adaptor.name, scope_id=key,
                 last_message_id=inherited,
@@ -548,7 +572,7 @@ async def seed_watermarks(
             seeded += 1
             log.info(
                 "seeded dream watermark: adaptor=%s scope=%s from %s at %d",
-                adaptor.name, key, source, inherited,
+                adaptor.name, key, origin, inherited,
             )
     return seeded
 
