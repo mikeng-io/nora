@@ -76,7 +76,7 @@ class MiniMaxTtsSpeaker:
         timeout_seconds: float = 30.0,
         transport: httpx.AsyncBaseTransport | None = None,
         speed: float = 1.0,
-        pitch: float = 0.0,
+        pitch: int = 0,
         vol: float = 1.0,
         emotion: str | None = None,
     ) -> None:

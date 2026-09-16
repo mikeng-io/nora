@@ -218,7 +218,12 @@ class DiscordMusicToolBridge:
         if result is None:
             return _NOTHING_PLAYING
         if not result:
+            # `False` = out of range or the N-4 teardown race — never a
+            # "nothing playing" claim. The agent tool body gates 0-200
+            # before reaching here, so this branch is defense-in-depth;
+            # unavailable (couldn't apply) beats nothing_found (there's
+            # no session), which would contradict the note.
             return MusicToolOutcome(
-                status="nothing_found", note=m.volume_out_of_range_line(),
+                status="unavailable", note=m.volume_out_of_range_line(),
             )
         return MusicToolOutcome(status="ok", note=m.volume_line(percent))

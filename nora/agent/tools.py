@@ -816,7 +816,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # never guessing a channel on a platform with no voice concept at all.
     # Budget 2, matching `weather`'s reasoning: one call is the ordinary shape,
     # a second covers "no, the other one" after a bad match. `terminal=False`
-    # on all four — playing/skipping/stopping a track is the middle of a turn,
+    # on all six — playing/skipping/stopping/volume is the middle of a turn,
     # she still has to say what happened.
     "play_music": NativeTool(2,
                              side_effect_state="unknown", idempotency="non_idempotent",
@@ -6743,7 +6743,18 @@ when somebody asks what song is on.
 
         `status`: `ok` (volume applied), `nothing_found` (nothing is
         playing — say so, don't guess a session), or `unavailable`
-        (music isn't available here)."""
+        (music isn't available here).
+
+        `percent` is bounded HERE (0-200, same as the slash command's
+        app_commands.Range) because the model is the only gate otherwise
+        — a hallucinated `percent=500` would fall through to the manager's
+        out-of-range `False`, which must not be labelled `nothing_found`."""
+        if not 0 <= percent <= 200:
+            _record(metrics, "set_music_volume", "unavailable")
+            return {
+                "status": "unavailable",
+                "note": "Volume must be between 0 and 200.",
+            }
         if room.platform != "discord":
             _record(metrics, "set_music_volume", "unavailable")
             return dict(_MUSIC_NOT_DISCORD)
@@ -8675,9 +8686,12 @@ Args:
     # that can only ever answer "unavailable" there. 2026-09-16 operator
     # decision (set_music_volume add): filter at CATALOG level, so a Signal
     # (or any non-Discord) turn never sees the six music verbs at all.
-    # `room is None` keeps the REGISTRY-table shape (ToolRegistry.specs(),
-    # the web catalog, terminal-budget checks) — a caller asking "what is
-    # declared" wants the full table, not one room's catalog.
+    # `room is None` appears on the REGISTRY-table path — ToolRegistry.specs()
+    # is called by tests/test_guards_terminal.py with room=None to compare
+    # specs against terminal_tools() — and keeps that caller's full table
+    # (a caller asking "what is declared" wants everything, not one room's
+    # catalog). The web catalog's full table comes from _catalog_room()
+    # returning platform="discord", not from None.
     music_specs: tuple[ToolSpec, ...] = ()
     if room is not None and room.platform == "discord":
         music_specs = (

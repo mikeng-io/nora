@@ -43,13 +43,17 @@ class _DisconnectedAdapter:
 class _StubManager:
     def __init__(
         self, *, skip_result=None, stop_status=None, status_result=None, top_result=None,
+        set_volume_result=None, set_volume_error=None,
     ) -> None:
         self._skip_result = skip_result
         self._stop_status = stop_status
         self._status_result = status_result
         self._top_result = top_result
+        self._set_volume_result = set_volume_result
+        self._set_volume_error = set_volume_error
         self.stopped_guilds: list[str] = []
         self.top_calls: list[tuple[str, int]] = []
+        self.set_volume_calls: list[tuple[str, float]] = []
 
     async def skip(self, guild_id: str):
         return self._skip_result
@@ -60,6 +64,12 @@ class _StubManager:
 
     async def status(self, guild_id: str):
         return self._status_result if self._stop_status is None else self._stop_status
+
+    async def set_volume(self, guild_id: str, volume: float):
+        self.set_volume_calls.append((guild_id, volume))
+        if self._set_volume_error is not None:
+            raise self._set_volume_error
+        return self._set_volume_result
 
     async def stop(self, guild_id: str) -> None:
         self.stopped_guilds.append(guild_id)
@@ -158,3 +168,46 @@ async def test_status_with_nothing_playing_is_nothing_found() -> None:
     outcome = await bridge.status(conversation_id="1234/5678")
 
     assert outcome.status == "nothing_found"
+
+
+async def test_set_volume_converts_percent_to_float_and_reports_ok() -> None:
+    manager = _StubManager(set_volume_result=True)
+    bridge = _bridge(manager)
+
+    outcome = await bridge.set_volume(conversation_id="1234/5678", percent=130)
+
+    assert outcome.status == "ok"
+    assert manager.set_volume_calls == [("1234", 1.3)]
+
+
+async def test_set_volume_with_nothing_playing_is_nothing_found() -> None:
+    manager = _StubManager(set_volume_result=None)
+    bridge = _bridge(manager)
+
+    outcome = await bridge.set_volume(conversation_id="1234/5678", percent=50)
+
+    assert outcome.status == "nothing_found"
+    assert manager.set_volume_calls == [("1234", 0.5)]
+
+
+async def test_set_volume_out_of_range_or_race_is_unavailable_not_nothing_found() -> None:
+    """F1 (PR #270 audit): `False` from the manager is out-of-range or the
+    N-4 teardown race — never a 'nothing playing' claim. `unavailable`
+    (couldn't apply) beats `nothing_found` (there's no session), which
+    would contradict the note."""
+    manager = _StubManager(set_volume_result=False)
+    bridge = _bridge(manager)
+
+    outcome = await bridge.set_volume(conversation_id="1234/5678", percent=50)
+
+    assert outcome.status == "unavailable"
+    assert "between 0 and 200" in outcome.note
+
+
+async def test_set_volume_manager_error_is_unavailable() -> None:
+    manager = _StubManager(set_volume_error=RuntimeError("boom"))
+    bridge = _bridge(manager)
+
+    outcome = await bridge.set_volume(conversation_id="1234/5678", percent=50)
+
+    assert outcome.status == "unavailable"

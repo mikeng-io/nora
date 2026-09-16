@@ -1600,9 +1600,18 @@ class SpeechTtsConfig(BaseModel):
     # string keeps the field off the wire so the vendor's own default
     # applies.
     speed: float = Field(default=1.0, ge=0.5, le=2.0)
-    pitch: float = Field(default=0.0, ge=-12.0, le=12.0)
+    # `pitch` is the one INTEGER knob in voice_setting (MiniMax schema:
+    # `type: integer` in [-12, 12]) — a float default silently changed the
+    # wire from `0` to `0.0` when these fields landed (PR #270 audit F2).
+    pitch: int = Field(default=0, ge=-12, le=12)
     vol: float = Field(default=1.0, ge=0.1, le=10.0)
-    emotion: str = ""
+    # `emotion` one of the model's spoken-emotion styles (t2a_v2 enum:
+    # happy/sad/angry/fearful/disgusted/surprised/calm/fluent/whisper; the
+    # operator's "fluent" is实测-successful on speech-2.8-turbo, see
+    # /tmp/tts-3_emotion_fluent.mp3). Literal guards the wire against a
+    # silent-voice outage from a typo the vendor would reject.
+    emotion: Literal["", "happy", "sad", "angry", "fearful", "disgusted",
+                     "surprised", "calm", "fluent", "whisper"] = ""
     duck_gain: float = Field(default=0.25, gt=0, lt=1)
     duck_ramp_ms: int = Field(default=150, gt=0)
     # The audio-controller's HTTP base (design/voice-channel/07 — the
