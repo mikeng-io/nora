@@ -7,7 +7,11 @@ timestamp: '2026-09-14'
 edges:
   - {dst: 00-overview, rel: realizes, provenance: asserted}
   - {dst: 01-tts-playback-and-ducking, rel: extends, provenance: asserted}
+  - {dst: 07-audio-owner-controller, rel: superseded-by, provenance: asserted}
 ---
+
+> **PARTLY DEPRECATED 2026-09-16 — the `platform/discord/` module list names machinery that phase 1 of the audio-owner controller (`design/voice-channel/07-audio-owner-controller.md`, DEC-187) removed.**
+> `duck_source.py`, `voice_session.py` and `crossfade.py` are deleted: the controller owns the one voice connection and speech hard-cuts music (no in-process mixer in phase 1). The five-layer mapping itself (domain ports / infra adapter / app / platform) still stands — the HTTP controller adapter now sits where `DiscordVoiceSession` sat.
 
 # Voice Channel — DDD Module Layout
 
