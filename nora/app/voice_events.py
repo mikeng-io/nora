@@ -1,5 +1,5 @@
 """`VoiceEventConsumer` — the nora half of the controller → nora callback
-contract (design/voice-channel/07 §5, B5/B9/B10).
+contract (design/voice-channel/07 §5, B5/B7/B8/B9/B10).
 
 The audio-controller POSTs lifecycle events to `/app/v1/voice/event`
 (registered in `nora/web/voice.py`): music advancement (`track-finished`,
@@ -8,15 +8,22 @@ observation (`channel-emptied`), and the speech acknowledgement
 (`speech-finished`). Every decision stays here — the controller never
 advances nora's queue itself.
 
-Two guards make a replayed or stale event harmless (§3.3):
+The guards that make a replayed, failed or stale event harmless (§3.3):
 
-- `event_id` dedupe via the hub (exactly-once, bounded window);
+- `event_id` dedupe via the hub (exactly-once, bounded window) — committed
+  ONLY after the event's transition succeeded (B7): a failed delivery
+  answers 500 and stays retryable, so the controller's retry is PROCESSED,
+  never acknowledged as a duplicate while the work is still undone;
 - `playback_id` must match the guild's CURRENT expected playback before a
   music event may advance the queue — a `track-finished` for a track that
   was already skipped/superseded is answered `stale` and never advances.
   The match is evaluated by the manager UNDER its per-guild lock (B5):
   checked anywhere earlier, an event arriving while a skip holds the lock
-  would pass against the old id and advance twice.
+  would pass against the old id and advance twice;
+- `voice-death` / `channel-emptied` carry the controller's `generation`
+  (and `channel_id`), validated against the live session UNDER the same
+  lock as the teardown (B8): an outbox event delayed across an exit/rejoin
+  must not tear down the NEW session. Both checks live in the manager.
 
 Serialization: the `MusicPlayerManager` methods called here each take the
 per-guild lock themselves, so consuming two events for one guild
@@ -39,6 +46,11 @@ _KNOWN_TYPES = frozenset({
 })
 
 
+def _str_field(body: dict[str, Any], key: str) -> str | None:
+    value = body.get(key)
+    return value if isinstance(value, str) and value else None
+
+
 class VoiceEventConsumer:
     def __init__(self, manager: MusicPlayerManager, hub: VoiceControllerHub) -> None:
         self._manager = manager
@@ -46,9 +58,11 @@ class VoiceEventConsumer:
 
     async def consume(self, body: object) -> tuple[int, dict[str, Any]]:
         """One callback → (http_status, payload). NEVER raises: the
-        controller retries on non-2xx, so every well-formed-but-inapplicable
-        event is answered 200 with a `status` naming why nothing happened,
-        and only a malformed body earns a 400."""
+        controller retries on non-2xx, so a well-formed event whose work
+        FAILED answers 500 WITHOUT consuming the `event_id` (the retry
+        will be processed, B7), a well-formed-but-inapplicable one answers
+        200 with a `status` naming why nothing happened, and only a
+        malformed body earns a 400."""
         if not isinstance(body, dict):
             return 400, {"error": "body must be an object"}
         event_type = body.get("type")
@@ -58,25 +72,63 @@ class VoiceEventConsumer:
             or not isinstance(event_id, str) or not event_id
         ):
             return 400, {"error": "type and event_id are required"}
-        if not self._hub.consume_event_id(event_id):
-            return 200, {"status": "duplicate"}
         if event_type not in _KNOWN_TYPES:
             return 400, {"error": f"unknown event type: {event_type}"}
         guild_id = body.get("guild_id")
         if not isinstance(guild_id, str) or not guild_id:
             return 400, {"error": "guild_id is required"}
+        if self._hub.seen_event(event_id):
+            return 200, {"status": "duplicate"}
+        event_seq = body.get("event_seq")
+        if isinstance(event_seq, int) and not isinstance(event_seq, bool):
+            last = self._hub.last_event_seq
+            if last is not None and event_seq > last + 1:
+                log.warning(
+                    "voice event seq gap for guild %s: last consumed %d, arrived "
+                    "%d — %d event(s) may have been lost while nora was down",
+                    guild_id, last, event_seq, event_seq - last - 1,
+                )
 
+        try:
+            status, payload = await self._process(event_type, guild_id, body)
+        except Exception:
+            # B7: the transition RAISED (a dead-generation play climbing
+            # out of the advance, a store failure) — nothing was consumed,
+            # so the controller's outbox retry gets a genuine second
+            # attempt instead of a `duplicate` acknowledgement of work
+            # that never happened.
+            log.exception(
+                "voice event %s (%s) for guild %s failed — left unconsumed for retry",
+                event_id, event_type, guild_id,
+            )
+            return 500, {"error": "event processing failed; left unconsumed for retry"}
+        # Commit the dedupe ONLY on success — and only now bookmark the
+        # seq, so a failed delivery never moves the gap baseline forward.
+        self._hub.consume_event_id(event_id)
+        if isinstance(event_seq, int) and not isinstance(event_seq, bool):
+            self._hub.note_event_seq(event_seq)
+        return status, payload
+
+    async def _process(
+        self, event_type: str, guild_id: str, body: dict[str, Any],
+    ) -> tuple[int, dict[str, Any]]:
         if event_type == "speech-finished":
             return 200, {"status": "ok"}
         if event_type == "voice-death":
-            # The connection is already gone controller-side — forget the
-            # session WITHOUT an exit call, then run the leave-voice
-            # teardown (which announces, as it always has).
-            self._hub.drop(guild_id)
-            await self._manager.on_voice_death(guild_id)
+            # B8: the generation check AND the hub drop happen inside the
+            # manager, under the guild lock, before any teardown — a
+            # delayed death from an old generation must not touch the NEW
+            # session.
+            await self._manager.on_voice_death(
+                guild_id, generation=_str_field(body, "generation"),
+            )
             return 200, {"status": "ok"}
         if event_type == "channel-emptied":
-            await self._manager.on_voice_channel_emptied(guild_id)
+            await self._manager.on_voice_channel_emptied(
+                guild_id,
+                generation=_str_field(body, "generation"),
+                channel_id=_str_field(body, "channel_id"),
+            )
             return 200, {"status": "ok"}
 
         # `track-finished` / `stream-failed`: advance ONLY for the playback

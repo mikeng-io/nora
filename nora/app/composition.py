@@ -1105,8 +1105,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # every `/music` or `/discord join` failing CLOSED (the join-failed
     # reply), never a local connection attempt. Non-empty builds the client
     # + hub every voice path shares. Built BEFORE the music manager: the
-    # manager's B5 staleness probe (`playback_probe`) reads the hub's
-    # expected playback id from construction.
+    # manager's B5/B8 staleness probes (`playback_probe`,
+    # `generation_probe`) and its hub-session drop/exit seams read and
+    # mutate the hub from construction.
     voice_hub: VoiceControllerHub | None = None
     if cfg.speech.tts.sidecar_endpoint:
         voice_hub = VoiceControllerHub(
@@ -1125,6 +1126,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             spawn=asyncio.ensure_future, autoplay_enabled=cfg.music.autoplay_enabled,
             autoplay_prewarm_seconds=cfg.music.autoplay_prewarm_seconds,
             playback_probe=voice_hub.expected_playback_id if voice_hub is not None else None,
+            generation_probe=voice_hub.generation_for if voice_hub is not None else None,
+            drop_voice_session=voice_hub.drop if voice_hub is not None else None,
+            exit_voice_session=voice_hub.exit if voice_hub is not None else None,
         )
         if cfg.music.enabled
         else None

@@ -43,6 +43,10 @@ class VoiceControllerHub:
         self._sessions: dict[str, HttpVoiceSession] = {}
         self._seen_event_ids: deque[str] = deque()
         self._seen_event_id_set: set[str] = set()
+        # The highest `event_seq` the consumer has successfully processed
+        # (§3.3). Read against `/voice/status`'s `last_event_seq` on
+        # adoption: a controller AHEAD of it holds events nora never saw.
+        self._last_event_seq: int | None = None
 
     async def join(self, guild_id: str, channel_id: str) -> HttpVoiceSession:
         """The cached session if this guild already has one; otherwise
@@ -72,10 +76,35 @@ class VoiceControllerHub:
                 "voice join for guild %s: adopting the controller's existing "
                 "connection (channel %s)", guild_id, channel_id,
             )
+            self._warn_on_event_seq_gap(guild_id, status)
             return status
         raise GenerationConflict(
             f"controller is connected elsewhere "
             f"(voice={status.get('voice')!r}, channel_id={status.get('channel_id')!r})"
+        )
+
+    def _warn_on_event_seq_gap(self, guild_id: str, status: dict[str, Any]) -> None:
+        """§3.3 reconciliation guard: the controller's `last_event_seq`
+        ahead of the last seq nora consumed means events were emitted
+        while nora was down (or outbox deliveries were lost) — nora's
+        queue/session state may be behind the controller's playback, and
+        only the outbox's own re-delivery closes that. A WARNING, never an
+        exception: adoption itself is still the right move. Skipped
+        silently when either side carries no seq (an older controller's
+        status, or no event consumed yet — nothing to compare)."""
+        controller_seq = status.get("last_event_seq")
+        if (
+            not isinstance(controller_seq, int) or isinstance(controller_seq, bool)
+            or self._last_event_seq is None
+            or controller_seq <= self._last_event_seq
+        ):
+            return
+        log.warning(
+            "voice event gap for guild %s: controller last_event_seq=%d but nora "
+            "last consumed %d — %d event(s) were emitted while nora was not "
+            "consuming; music state may be stale until the outbox re-delivers",
+            guild_id, controller_seq, self._last_event_seq,
+            controller_seq - self._last_event_seq,
         )
 
     def _build_session(self, guild_id: str, state: dict[str, Any]) -> HttpVoiceSession:
@@ -144,9 +173,39 @@ class VoiceControllerHub:
         session = self._sessions.get(guild_id)
         return session.playback_id if session is not None else None
 
+    def generation_for(self, guild_id: str) -> str | None:
+        """The generation nora currently believes is live for the guild —
+        the manager's B8 staleness probe (`generation_probe`) reads this
+        UNDER its per-guild lock before letting a lifecycle event tear
+        anything down."""
+        session = self._sessions.get(guild_id)
+        return session.generation if session is not None else None
+
+    def seen_event(self, event_id: str) -> bool:
+        """Pure check half of the exactly-once dedupe — the consumer asks
+        this FIRST and only commits via `consume_event_id` once the event
+        was actually processed (B7: a failed delivery stays retryable, so
+        nothing may be marked consumed before its transition succeeded)."""
+        return event_id in self._seen_event_id_set
+
+    @property
+    def last_event_seq(self) -> int | None:
+        return self._last_event_seq
+
+    def note_event_seq(self, event_seq: int) -> None:
+        """Record a successfully processed event's `event_seq` (§3.3) —
+        the consumption-side bookmark `_warn_on_event_seq_gap` and the
+        consumer's own per-event gap warning read. Monotonic: a replayed
+        or out-of-order delivery never moves it backwards."""
+        if self._last_event_seq is None or event_seq > self._last_event_seq:
+            self._last_event_seq = event_seq
+
     def consume_event_id(self, event_id: str) -> bool:
-        """Exactly-once dedupe for controller callbacks (§3.3, B5): `True`
-        the first time an `event_id` is seen, `False` on any replay within
+        """The COMMIT half of the exactly-once dedupe for controller
+        callbacks (§3.3, B5/B7): called only AFTER an event's transition
+        succeeded — a failure leaves the id unconsumed so the controller's
+        retry is processed, never acknowledged as a duplicate. `True` the
+        first time an `event_id` is committed, `False` on any replay within
         the bounded FIFO window."""
         if event_id in self._seen_event_id_set:
             return False

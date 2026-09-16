@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import base64
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any
 from uuid import uuid4
 
@@ -44,7 +45,14 @@ class VoiceControllerUnavailable(VoiceControllerError):  # noqa: N818 — pinned
 class GenerationConflict(VoiceControllerError):  # noqa: N818 — pinned contract name
     """HTTP 409 — the command's `generation` is not the controller's current
     one (the connection was exited, replaced, or never joined), or an
-    arbiter-state rejection such as `pause_during_speech`."""
+    arbiter-state rejection such as `pause_during_speech`. Carries the
+    controller's own `error` reason string: `generation_conflict` is
+    recoverable (reconcile via `/voice/status` and retry), an arbiter
+    rejection is NOT — the two must never be conflated."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
 
 
 class VoiceControllerRejected(VoiceControllerError):  # noqa: N818 — pinned contract name
@@ -102,10 +110,14 @@ class VoiceControllerClient:
         *,
         title: str | None = None,
         duration_seconds: float | None = None,
+        resumable: bool | None = None,
         request_id: str,
     ) -> dict[str, Any]:
         """`POST /music/play` — REPLACE semantics: the controller has no
-        upcoming queue; this supersedes whatever the music slot holds."""
+        upcoming queue; this supersedes whatever the music slot holds.
+        `resumable=False` marks a live/non-seekable source (§5 position
+        policy: speech preemption ENDS it instead of reviving from 0);
+        `None` (every caller today) leaves the controller's default."""
         body: dict[str, Any] = {
             "generation": generation, "stream_url": stream_url, "request_id": request_id,
         }
@@ -113,6 +125,8 @@ class VoiceControllerClient:
             body["title"] = title
         if duration_seconds is not None:
             body["duration_seconds"] = duration_seconds
+        if resumable is not None:
+            body["resumable"] = resumable
         return await self._control("/music/play", body)
 
     async def stop_music(self, generation: str, *, request_id: str) -> dict[str, Any]:
@@ -244,7 +258,13 @@ class HttpVoiceSession:
     Every call mints a fresh `request_id` (§3.3 — the controller dedupes
     retries on it); `playback_id` is recorded from each play's state
     snapshot so the hub can recognise the controller's `track-finished` /
-    `stream-failed` callbacks as current or stale (§3.3, B5)."""
+    `stream-failed` callbacks as current or stale (§3.3, B5).
+
+    The generation can go STALE under a cached session (a controller
+    restart re-joins under a new one — §12.1). The hub and the manager's
+    player hold THIS SAME object, so adopting the live generation here
+    reconciles both at once: a verb that 409s `generation_conflict` reads
+    `/voice/status`, adopts, and retries ONCE (2026-09-16 audit)."""
 
     def __init__(
         self, client: VoiceControllerClient, *, guild_id: str, generation: str,
@@ -262,30 +282,95 @@ class HttpVoiceSession:
     def guild_id(self) -> str:
         return self._guild_id
 
+    async def _reconcile_generation(self) -> bool:
+        """Adopt the controller's CURRENT generation after a 409
+        `generation_conflict` (a restart or a replaced connection).
+        `False` — and the original conflict climbs — when the controller
+        has no live connection to adopt: an exited connection is not a
+        stale generation, it is a gone one, and retrying against it would
+        resurrect audio nora already tore down."""
+        try:
+            status = await self._client.status()
+        except VoiceControllerError:
+            return False
+        if status.get("voice") != "connected":
+            return False
+        generation = status.get("generation")
+        if not isinstance(generation, str) or not generation:
+            return False
+        log.info(
+            "voice session for guild %s: adopting generation %s after a "
+            "generation conflict (controller restarted or re-joined)",
+            self._guild_id, generation,
+        )
+        self._generation = generation
+        playback_id = status.get("playback_id")
+        self.playback_id = playback_id if isinstance(playback_id, str) else None
+        return True
+
+    async def _with_reconcile(
+        self, verb: Callable[[str], Awaitable[dict[str, Any]]],
+    ) -> dict[str, Any]:
+        """Run a generation-scoped verb; on a `generation_conflict` 409
+        reconcile and retry ONCE (a fresh `request_id` — the controller
+        memoized the rejection under the first one). Arbiter rejections
+        (`pause_during_speech`) are not staleness and propagate as-is."""
+        try:
+            return await verb(self._request_id())
+        except GenerationConflict as exc:
+            if exc.reason != "generation_conflict":
+                raise
+            if not await self._reconcile_generation():
+                raise
+            return await verb(self._request_id())
+
     async def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
-        state = await self._client.play(
-            self._generation, stream_url,
-            duration_seconds=duration_seconds, request_id=self._request_id(),
+        state = await self._with_reconcile(
+            lambda request_id: self._client.play(
+                self._generation, stream_url,
+                duration_seconds=duration_seconds, request_id=request_id,
+            )
         )
         playback_id = state.get("playback_id")
         self.playback_id = playback_id if isinstance(playback_id, str) else None
 
     async def pause(self) -> None:
-        await self._client.pause(self._generation, request_id=self._request_id())
+        await self._with_reconcile(
+            lambda request_id: self._client.pause(self._generation, request_id=request_id)
+        )
 
     async def resume(self) -> None:
-        await self._client.resume(self._generation, request_id=self._request_id())
+        await self._with_reconcile(
+            lambda request_id: self._client.resume(self._generation, request_id=request_id)
+        )
 
     async def stop(self) -> None:
-        await self._client.stop_music(self._generation, request_id=self._request_id())
+        """`/music/stop`. TOLERATES a 409 `generation_conflict` WITHOUT a
+        reconcile-retry: a generation the controller no longer recognises
+        has no music slot to stop — the end state this call asks for
+        already holds. That tolerance is what lets a dead-connection
+        teardown (B7, design/voice-channel/07) complete locally instead of
+        dying on a controller that is already gone."""
+        try:
+            await self._client.stop_music(self._generation, request_id=self._request_id())
+        except GenerationConflict as exc:
+            if exc.reason != "generation_conflict":
+                raise
+            log.info(
+                "music stop for guild %s: generation already invalid — "
+                "the music slot is definitionally stopped",
+                self._guild_id,
+            )
         self.playback_id = None
 
     async def set_volume(self, volume: float) -> None:
         """`MusicPlayer`'s 0.0-2.0 linear multiplier → the controller's
         0-200 percent."""
         percent = max(0, min(200, round(volume * 100)))
-        await self._client.set_volume(
-            self._generation, percent, request_id=self._request_id(),
+        await self._with_reconcile(
+            lambda request_id: self._client.set_volume(
+                self._generation, percent, request_id=request_id,
+            )
         )
 
     async def disconnect(self) -> None:

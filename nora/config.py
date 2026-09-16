@@ -1613,6 +1613,52 @@ class SpeechTtsConfig(BaseModel):
     # keeps the adapter's text-only behaviour everywhere.
     voice_channel_ids: list[str] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def _phase1_single_immutable_voice_channel(self) -> SpeechTtsConfig:
+        """Phase 1 is ONE guild and ONE immutable voice channel
+        (design/voice-channel/07 §12.2/§12.5): the audio-controller is
+        hard-bound to its configured channel and answers a join for any
+        other with 400 `not_in_allowed_channel`. A `voice_channel_ids`
+        list naming more than one channel (or channels in more than one
+        guild) would let `/music play` / `/discord join` pass the LOCAL
+        gate for a channel the controller then refuses — the worst of
+        both: the gate says yes, the join says no.
+
+        Refused at load rather than warned about, and NOT gated on
+        `enabled`: `_lead_clears_the_tick`'s argument applies unchanged —
+        a config that only becomes wrong when someone flips the switch
+        becomes wrong at the worst moment, so it fails here, while the
+        operator is still holding the file.
+
+        **This holds unless** phase 2 lifts the single-channel posture
+        controller-side (§13); the controller's own 400 is the reading
+        that would reopen it."""
+        if not self.voice_channel_ids:
+            return self
+        parsed: list[tuple[str, str]] = []
+        for entry in self.voice_channel_ids:
+            guild, sep, channel = entry.partition("/")
+            if not sep or not guild or not channel or "/" in channel:
+                raise ValueError(
+                    f"[speech.tts] voice_channel_ids entry {entry!r} must be "
+                    "\"<guild_id>/<channel_id>\" (the same shape policy.toml "
+                    "uses for a Discord room)"
+                )
+            parsed.append((guild, channel))
+        guilds = {guild for guild, _ in parsed}
+        channels = {channel for _, channel in parsed}
+        if len(guilds) > 1 or len(channels) > 1:
+            raise ValueError(
+                f"[speech.tts] voice_channel_ids names "
+                f"{len(channels)} channel(s) across {len(guilds)} guild(s) — "
+                "phase 1 of the audio-controller is exactly ONE immutable "
+                "channel in ONE guild (design/voice-channel/07 §12.2/§12.5): "
+                "every entry past the first is a channel the join gate would "
+                "admit and the controller would reject with 400 "
+                "not_in_allowed_channel"
+            )
+        return self
+
 
 class SpeechWakeConfig(BaseModel):
     """`[speech.wake]` — the operator-facing record of the wake gate's knobs

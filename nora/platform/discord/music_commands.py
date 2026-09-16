@@ -140,8 +140,14 @@ class _NowPlayingControls(discord.ui.View):
     @discord.ui.button(label="⏭ Skip", style=discord.ButtonStyle.secondary)
     async def skip(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         log.info("music control: skip clicked guild=%s user=%s", self._guild_id, _who(interaction))
+        # Defer FIRST (the slash skip at `MusicCommands.skip` already does):
+        # the manager's skip makes an outbound POST to the audio-controller,
+        # which routinely outlasts Discord's ~3s acknowledgement window —
+        # `response.edit_message` after that would be an unknown-interaction
+        # 404 and the click would read as dead.
+        await interaction.response.defer()
         await self._manager.skip(self._guild_id)
-        await interaction.response.edit_message(content=await self.render(), view=self)
+        await interaction.edit_original_response(content=await self.render(), view=self)
 
     @discord.ui.button(label="⏸ Pause", style=discord.ButtonStyle.secondary)
     async def pause_resume(
