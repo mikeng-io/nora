@@ -734,12 +734,33 @@ class ReplyGuard(HookProvider):
         self, *, conversation_id: str, budgets: Mapping[str, int],
         terminal: Collection[str], deliverer=None, metrics: Metrics,
         forced_first_tool: str | None = None,
+        lookups: Collection[str] | None = None,
     ) -> None:
         self._conversation_id = conversation_id
         self._budgets = dict(budgets)
         self._terminal = frozenset(terminal)
         self._deliverer = deliverer
         self._metrics = metrics
+        # R-97's set, or None. `None` is the rule OFF and is the default,
+        # because the rule is false of the tag path: there she was called, and
+        # «I looked and there is nothing» is an answer she owes the person who
+        # asked. A collection turns it on and names the lookups it watches —
+        # `ToolRegistry.lookup_tools()`, threaded from `deliver.build`, so the
+        # set is derived from the tool table rather than restated here.
+        #
+        # Off/on is a distinct state from on-and-empty, which is a wiring
+        # fault: a caller that meant to arm the rule and passed nothing would
+        # get a rule that can never fire, which is DEC-42's inert feature.
+        # `tests/unit/test_participation_false_speak.py` pins the live path's
+        # set as non-empty for that reason.
+        self._lookups = frozenset(lookups) if lookups is not None else None
+        # R-97's two counters. Lookups that RAN this turn, and how many of
+        # them answered `ok`. Two numbers and not one flag, because the rule
+        # turns on the difference between «she never looked» (speak from what
+        # is already in front of her — design 35 §3.6) and «she looked and
+        # everything came back empty» (nothing to say).
+        self._lookups_made = 0
+        self._lookups_found = 0
         # Completed calls AND admitted-but-unfinished ones, in one object
         # (`nora.agent.call_ledger`) — the whole of DEC-33's reservation, held
         # rather than re-derived so `DreamGuard` enforces the identical ceiling
@@ -1039,6 +1060,58 @@ class ReplyGuard(HookProvider):
                     "R-2", "You already sent your reply. Do not call send_reply "
                            "again. If you still need something, use one of the "
                            "other tools; otherwise finish your turn.",
+                )
+            # R-97 — a turn nobody asked for does not take the floor to report
+            # an absence (design/dreamer-agent-loop/35 §3②/§10.5, issue #216).
+            #
+            # WHAT WENT WRONG. §3② says a relevant question with nothing
+            # matching behind it is a SILENCE, not an "I don't know" — in
+            # tagged mode "I don't know" is an obligation, because she was
+            # called; here nobody called her, and announcing the absence is
+            # the "participation speech without grounding" the design names as
+            # the identity violation it exists to prevent. Once #213 made the
+            # eval's ages honest the turn was measured doing exactly that on 4
+            # of the 5 silence twins — «查咗但搵唔到實質嘢», «no booking on
+            # record», «the forecast is unreliable». Every one of them is a
+            # lookup's `nothing_found`/`unavailable` relayed as a contribution.
+            #
+            # WHY IT IS A VETO AND NOT A SENTENCE IN THE HEADER. The #144/#147
+            # precedent, and the one this repo states as a Never: her
+            # instruction already said it (silence.md — "silence is a complete
+            # answer here, not a failure"; `_participation_header` — "stay
+            # silent anyway if you hold nothing"), and she spoke anyway. The
+            # thing that changed between the prompt and the send is a tool
+            # result she read as news; what has to change is the emission
+            # decision, not another paragraph telling her the same thing.
+            #
+            # THE PREDICATE IS «WENT LOOKING AND CAME BACK EMPTY», not «holds
+            # nothing». Zero lookups does NOT fire: design 35 §3.6's fast path
+            # is a turn that answers from the transcript, standing, notes and
+            # memory already in front of her without opening a tool at all, and
+            # refusing that would silence the grounded half along with the
+            # empty one. One lookup answering `ok` does not fire either — she
+            # found something, and what she does with it is hers.
+            #
+            # Costs no budget (DEC-33: `_after_tool` never `record`s a
+            # cancelled call), and is NOT one-shot, for R-55's reason: the
+            # remedy is a different call. She may go and look again, and a
+            # lookup that finds something lifts the refusal for the rest of the
+            # turn. A model that re-fires `send_reply` against an unchanged
+            # state is refused again, which is the whole point.
+            if (
+                self._lookups is not None
+                and self._lookups_made > 0
+                and self._lookups_found == 0
+            ):
+                return self._veto(
+                    "R-97",
+                    f"You looked {self._lookups_made} time(s) this turn and "
+                    "every one came back empty, so you hold nothing this room "
+                    "does not. Nobody called you here — taking the floor to "
+                    "report that you found nothing is not something the room "
+                    "can use. Either look somewhere that would actually have "
+                    "it, or say nothing and end your turn: silence is the "
+                    "complete answer here.",
                 )
 
         # R-55 — the read-before-write latch (note-tier spec §6.2). A refusal,
@@ -1355,6 +1428,20 @@ class ReplyGuard(HookProvider):
                 self._recall_found_something = (
                     _unwrap_tool_status(getattr(event, "result", None)) == "ok"
                 )
+            # R-97's two counters, below both early returns for R-55's reason
+            # and the identical one: they mean «this lookup RAN», which is true
+            # on one path only. A call that raised, or that this guard
+            # cancelled, went looking nowhere.
+            #
+            # ACCUMULATED, unlike `_recall_found_something` above — that one is
+            # about the most recent call's answer being available to reuse;
+            # this is about everything this turn went and got. A turn whose
+            # first lookup found the answer and whose second came back empty
+            # still holds the answer.
+            if self._lookups is not None and name in self._lookups:
+                self._lookups_made += 1
+                if _unwrap_tool_status(getattr(event, "result", None)) == "ok":
+                    self._lookups_found += 1
             # R-55's latch (note-tier spec §6.2). **This is below BOTH early
             # returns on purpose, and that placement is the whole rule.**
             # `release()` above belongs where it is because it means «this call
