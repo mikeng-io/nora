@@ -2718,6 +2718,14 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # it see one room and not two.
             standing=standing_store if cfg.standing.enabled else None,
             transcript_limit=cfg.relevance_gate.transcript_rows,
+            # The SAME number the client above is built with, handed to the
+            # gate as well (issue #163). Not belt-and-braces: the client's
+            # `wait_for` is a property of THIS wiring, and the gate's own
+            # `decide` promise — never raise, never hang — has to hold against
+            # whatever satisfies `ModelClient`. Whichever fires first produces
+            # the same `timeout` verdict, so a single configured ceiling still
+            # describes the deployment.
+            call_timeout_seconds=cfg.relevance_gate.timeout_seconds,
             # The SAME join the turn behind it runs. Without it the gate reads
             # an image-only message as an EMPTY BODY, `render_context` drops
             # the row, and the window a photo prompted is the one the gate is

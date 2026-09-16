@@ -257,6 +257,38 @@ gate's cost at all — it is the **admission rate**, `go / (go + no_go)` off
 why the `no_go` verdicts stay counted even though they are never delivered
 (§4).
 
+### 2.5 The ceiling is a verdict, and it is its own one (issue #163)
+
+That admission rate has a denominator problem the first soak found. In the
+20.3 hours after the shadow flip, **8 of 41 gate calls — 19.5% — produced no
+verdict at all**, every one a `TimeoutError` at `[relevance_gate]
+timeout_seconds = 20`. Fail-closed is correct and §2.2 already says so; the
+defect is that nothing counted it as what it was.
+
+- **A timeout is its own `GATE_ERROR_KINDS` member**, split out of
+  `call_failed`. Pooled, «the ceiling is too low for this arm» and «the
+  provider refused» are one series with two different fixes, and the only
+  thing that told them apart was a stack trace in the log.
+- **`nora_relevance_gate_seconds`** records the call on every exit, failures
+  included. A counter says how often the ceiling fired; only a distribution
+  says whether 20s is the wrong number, which is the question this soak could
+  not answer. Samples are **right-censored at the ceiling** — a call cut at
+  20s may have wanted 45 — so the series measures how long the gate WAITS,
+  and the top bucket is the population `{kind="timeout"}` counts.
+- **The bound is the gate's own**, not only the wired client's. `decide`
+  promised never to raise; it did not promise to RETURN, and `ModelClient` is
+  a structural type with no timeout in its contract. The trigger holds the
+  room's slot across `decide` and judges its due windows serially (§3), so an
+  unbounded call is that room refusing tags and every other room going
+  unjudged.
+
+**No retry.** A second attempt at the same ceiling doubles a slot hold that
+nothing has budgeted — `[standing] max_slot_hold_seconds` bounds the debrief's
+and does not see this call — and the 33 calls that succeeded say the failure
+is a tail rather than a floor, which is a statement about a distribution
+nobody had yet measured. The histogram is what makes that decision readable;
+it is not made here on the strength of the argument alone.
+
 ## 3. Trigger
 
 Unchanged from the participation design and REUSED, not rebuilt: a candidate
@@ -460,8 +492,9 @@ under-scoped it in one direction and over-scoped it in another. Corrected:
   `[participation]` — they belong to the trigger and the turn.
 - `relevance_gate = true` per-room in policy.toml; `EngageDecision.relevance_gate`.
 - `nora_relevance_gate_total{verdict}`, `nora_relevance_gate_errors_total`,
-  `nora_errors_total{stage="relevance_gate_shadow"}`. **Never** counted in any
-  tag, heartbeat or participation series.
+  `nora_relevance_gate_seconds` (§2.5), `nora_errors_total{stage=
+  "relevance_gate_shadow"}`. **Never** counted in any tag, heartbeat or
+  participation series.
 - A leaner shadow mirror inside `fire.py` (§4.1).
 - A score carrier on `participation_occasion()` (§5).
 - Gate-level eval cases; the existing 15-case participation suite is retained

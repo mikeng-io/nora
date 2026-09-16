@@ -2,14 +2,18 @@
 fail-closed (design/dreamer-agent-loop/36).
 
 Every test here drives the real `RelevanceGate` against a scripted model
-client; nothing sleeps and nothing reaches a provider. The fake answers
+client and nothing reaches a provider. One fake (`_Hangs`) sleeps, because
+«the gate cuts a call that never returns» cannot be asserted against a client
+that returns; it is cut at ~10ms and the wall clock is checked. The fake answers
 DIFFERENTLY per scenario rather than one canned reply — a fake that says the
 same thing to every prompt cannot fail the tests that matter here.
 """
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
+import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -23,6 +27,7 @@ from nora.ingest.relevance_gate import (
     GATE_AUDIENCE,
     GATE_ERROR_KINDS,
     Completion,
+    ModelClient,
     RelevanceGate,
     build_system_prompt,
     build_user_message,
@@ -55,6 +60,24 @@ class _Client:
         if isinstance(self.answer, Exception):
             raise self.answer
         return Completion(content=str(self.answer), finish_reason=self.finish_reason)
+
+
+class _Hangs:
+    """A model that never answers — the shape `ModelClient`'s contract permits
+    and issue #163's 8-in-41 arrived as.
+
+    An hour rather than a few seconds on purpose: the gate's ceiling is what
+    the test measures, so the sleep has to be long enough that a bound taken
+    anywhere else could not be mistaken for it.
+    """
+
+    @property
+    def model(self) -> str:
+        return "nora-gate"
+
+    async def complete(self, *, system: str, prompt: str) -> Completion:
+        await asyncio.sleep(3600)
+        raise AssertionError("the gate waited out a call it should have cut")
 
 
 class _Doctrine:
@@ -173,7 +196,7 @@ def _row(
     )
 
 
-def _gate(client: _Client, **kw) -> RelevanceGate:
+def _gate(client: ModelClient, **kw) -> RelevanceGate:
     return RelevanceGate(
         client=client,
         prompts=kw.pop("prompts", _Doctrine()),
@@ -400,11 +423,11 @@ def test_every_declared_error_kind_is_reachable():
         parse_verdict("not json").error_kind,
         parse_verdict('{"verdict": "maybe"}').error_kind,
     }
-    # `call_failed`, `truncated` and `no_context` are `decide`'s, each covered
-    # by its own test below; named here so the constant cannot grow a member
-    # that nothing produces.
+    # `call_failed`, `timeout`, `truncated` and `no_context` are `decide`'s,
+    # each covered by its own test below; named here so the constant cannot
+    # grow a member that nothing produces.
     assert reached | {
-        "call_failed", "truncated", "no_context", "no_instruction",
+        "call_failed", "timeout", "truncated", "no_context", "no_instruction",
     } == set(GATE_ERROR_KINDS)
 
 
@@ -424,6 +447,111 @@ async def test_a_failed_call_is_a_counted_no_go_never_an_exception():
     assert metrics.get(
         "nora_relevance_gate_total", verdict="no_go", platform="discord",
     ) == 0
+
+
+async def test_a_call_that_never_returns_is_cut_at_the_gates_own_ceiling():
+    """Issue #163's arm 2, as a property of THIS class rather than of the
+    wiring.
+
+    `ModelClient` is a structural type with no timeout in its contract, so
+    «the gate never hangs» used to be true only because the composition root
+    happened to wrap its client in a `wait_for`. A client that never returns
+    is exactly what that leaves unguarded, and it is not a slow window: the
+    trigger holds the room's slot across `decide` and walks its due windows
+    serially, so one hanging call takes the room's tags and every other room's
+    window with it.
+
+    The outer `wait_for` is the ASSERTION and not a convenience — without it
+    a regression here does not fail this test, it hangs the suite, and a test
+    that hangs is a test nobody reads the output of. It is 200x the gate's own
+    ceiling so it can only fire if the ceiling did not.
+
+    This is the one fake in the file that sleeps. It sleeps for an hour and is
+    cut after ~10ms, which is the measurement: the wall clock below is checked
+    against the ceiling, not against the sleep.
+    """
+    metrics = Metrics()
+    gate = _gate(_Hangs(), metrics=metrics, call_timeout_seconds=0.01)
+    started = time.perf_counter()
+    got = await asyncio.wait_for(
+        gate.decide(platform="discord", conversation_id="g/1"), timeout=2.0,
+    )
+    elapsed = time.perf_counter() - started
+    assert (got.admits, got.verdict, got.source) == (False, "no_go", "fail_closed")
+    assert got.error_kind == "timeout"
+    # BOUNDED. Generous against scheduler jitter and still three orders of
+    # magnitude under the hour the fake would sleep.
+    assert elapsed < 1.0
+    assert metrics.get(
+        "nora_relevance_gate_errors_total", kind="timeout", platform="discord",
+    ) == 1
+    # Counted APART from a transport failure — the whole point of the split.
+    # Pooled into `call_failed`, «the ceiling is too low for this arm» and
+    # «the provider refused» are one number with two different fixes.
+    assert metrics.get(
+        "nora_relevance_gate_errors_total", kind="call_failed", platform="discord",
+    ) == 0
+    # And never on the verdict series: a gate that could not ask has not
+    # measured a quiet room.
+    assert metrics.get(
+        "nora_relevance_gate_total", verdict="no_go", platform="discord",
+    ) == 0
+
+
+async def test_a_timeout_raised_beneath_the_gate_keeps_its_own_label():
+    """The deployed client takes its own `wait_for` (the architecture suite
+    requires it), so in production the `TimeoutError` is raised BELOW the
+    gate's bound rather than by it. Both arms have to land on `timeout` or the
+    label describes a code path the deployment does not take — which is how
+    the 8-in-41 were readable only from a stack trace in the first place."""
+    metrics = Metrics()
+    gate = _gate(_Client(TimeoutError()), metrics=metrics)
+    got = await gate.decide(platform="discord", conversation_id="g/1")
+    assert got.error_kind == "timeout"
+    assert metrics.get(
+        "nora_relevance_gate_errors_total", kind="timeout", platform="discord",
+    ) == 1
+
+
+async def test_the_call_is_timed_on_every_exit_including_the_ones_that_fail():
+    """`nora_debrief_seconds`'s rule, one stage over: a latency series that
+    records only successes describes the path that already works.
+
+    It is the half `{kind="timeout"}` cannot supply — a counter says how often
+    the ceiling fired, and only a distribution says whether 20s is the wrong
+    number. Samples are right-censored at the ceiling, which is why the
+    timeout's sample is asserted to be AT it rather than above it.
+    """
+    for answer in ('{"verdict": "go"}', RuntimeError("provider down")):
+        metrics = Metrics()
+        await _gate(_Client(answer), metrics=metrics).decide(
+            platform="discord", conversation_id="g/1",
+        )
+        assert len(metrics.observations("nora_relevance_gate_seconds")) == 1
+
+    metrics = Metrics()
+    # Bounded for the sibling test's reason, and it is not belt-and-braces:
+    # mutating the gate's `wait_for` away hung THIS test for two minutes
+    # before it hung the other one, which is how a mutation run reports
+    # "inconclusive" instead of "killed".
+    await asyncio.wait_for(
+        _gate(_Hangs(), metrics=metrics, call_timeout_seconds=0.01).decide(
+            platform="discord", conversation_id="g/1",
+        ),
+        timeout=2.0,
+    )
+    samples = metrics.observations("nora_relevance_gate_seconds")
+    assert len(samples) == 1 and 0.01 <= samples[0] < 1.0
+
+    # The two exits that never reach the model record NOTHING — an absent
+    # sample and a 0.0 one are different facts, and a `no_context` refusal
+    # timed at zero would drag the distribution toward a latency nobody
+    # observed.
+    metrics = Metrics()
+    await _gate(
+        _Client('{"verdict": "go"}'), metrics=metrics, records=_Records(fail=True),
+    ).decide(platform="discord", conversation_id="g/1")
+    assert metrics.observations("nora_relevance_gate_seconds") == []
 
 
 async def test_a_truncated_answer_is_not_parsed_even_when_it_would_parse():
