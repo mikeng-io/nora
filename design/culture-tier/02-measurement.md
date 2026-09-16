@@ -195,6 +195,18 @@ that override stays approximate until someone does.
    `FOR UPDATE`; and the no-dates property turned out to be held DOUBLY, so
    every single mutation of it survived.
 5. The participation turn reads culture. Measured.
+
+   **The chronicle-vs-account arm cannot be built BEFORE this step, and an
+   earlier reading of §6 implied it could.** `evals/cases/participation/
+   participation.yaml`'s own header states the rule: a twin whose seed the turn
+   does not read «could not have flipped on master however it was written» —
+   that is exactly what #210 cost, where `person_id=None` meant no Honcho block
+   reached the turn at all and every memory twin was inert. Seeding a `culture:`
+   key while nothing renders it reproduces that defect precisely, and it
+   produces GREEN-LOOKING cases that measure nothing.
+
+   So the arm ships WITH the block, in one change, and the block's own decision
+   check (§6) is what says whether either should stay.
 6. **Only then** the gate, if at all — against #144/#147, which measured the
    gate getting worse with more context, and #194, which says a gutted gate
    instruction currently passes everything.
