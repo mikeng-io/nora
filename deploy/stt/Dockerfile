@@ -58,4 +58,9 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
 # --no-sync: the venv is already built at image build time; never reach out
 # to PyPI at container runtime.
 ENTRYPOINT ["uv", "run", "--no-sync", "python", "server.py"]
-CMD ["--model", "noise-detection", "--device", "cpu", "--host", "0.0.0.0", "--port", "8000"]
+# Default engine switched to sensevoice (2026-09-16): warm CPU latency
+# measured 0.3s vs 5.1s for the whisper transformer on a 2s clip — the
+# wake→reply path's 30-40s delay was dominated by whisper fp32 CPU
+# inference. The whisper entry stays available (`--model
+# noise-detection` / form param) for A/B and the INT8 experiment.
+CMD ["--model", "sensevoice", "--device", "cpu", "--host", "0.0.0.0", "--port", "8000"]
