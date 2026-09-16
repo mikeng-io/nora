@@ -387,6 +387,11 @@ services:
       - AUTH_DISCORD_SECRET=${DISCORD_CLIENT_SECRET:?set DISCORD_CLIENT_SECRET in the host environment first}
       - AUTH_SECRET=${AUTH_SECRET:?set AUTH_SECRET in the host environment first}
       - AUTH_URL=${AUTH_URL:?set AUTH_URL (the public origin, e.g. https://nora.67.zone) in the host environment first}
+      # Voice reply closure (design/voice-channel/07 §5): the TTS provider key
+      # must reach the container — compose does NOT pass through unlisted vars,
+      # and without it composition.py logs "no speaker is wired; voice answers
+      # stay text-only" (found live 2026-09-16 while verifying B-2).
+      - MINIMAX_CN_API_KEY=${MINIMAX_CN_API_KEY:-}
     volumes:
       # Same file, same read-only mount as `nora`/`presence` below — the web
       # portal's whitelist can never drift from Nora's own roster because it
