@@ -1,7 +1,7 @@
 ---
 name: proactive
 kind: objective
-version: 4
+version: 5
 applies_to: [proactive_adaptor]
 description: >-
   The decide turn of Nora's proactive half (design/dreamer-agent-loop/39,
@@ -18,7 +18,43 @@ description: >-
   `about` 4, `lookup_person` 4, `group_members` 1 for the WHOLE pass, against
   «one entry per open note you considered» — so a pass with four notes spent
   its budget on the first two and met a refusal on the one that mattered. The
-  ceilings are now stated, and the order of spend with them.
+  ceilings are now stated, and the order of spend with them. Version 5
+  (operator, 2026-09-16, issue #242): this text still taught 「open note」
+  after #238 dropped the phrase from the note tools' schemas — the `intent`
+  this turn writes is handed to the fire turn as what she told herself, so the
+  phrase had a second, longer path to a room. Every use here was descriptive,
+  not the schemas' imperative one, so the fix is vocabulary only: `note`, the
+  word the tools already use for the same thing, everywhere this text said
+  `open note`. (Correction, 2026-09-16: the commit's own body named this as
+  matching "the `<notes>` block's own framing" — the block the runtime
+  actually renders is `<open_notes>` (`nora/language/proactive.py`), not
+  `<notes>`. `open_notes`/`<open_notes>`, with the underscore, is a
+  structural identifier — an XML tag, not spoken prose — and is untouched by
+  this change; it is a different thing from the spoken phrase 「open note」
+  (two words, a space) that issue #242 tracks and this version removes from
+  the body text.) Settle measurements for #242 (operator, 2026-09-16): (1)
+  grep — no decide-suite written rows exist anywhere outside a live run (the
+  suite's `FakeReminderStore` is in-process and discarded per run; the
+  Langfuse sink records only a per-case PASS/FAIL score, never the `intent`/
+  `why` text) — the deterministic suite's `evals/cases/proactive/decide.yaml`
+  and `act.yaml` corpora themselves were grepped too: their only two hits
+  (`decide.yaml:3`, `act.yaml:218`) are YAML comments describing the corpus,
+  not case fields a model could echo, and `act.yaml`'s is deliberate —
+  explaining why `must_not_cite` bans `note`/`notes` instead. (2) `uv run pytest tests/unit/test_proactive_evals.py -q`: 29
+  passed (deterministic half, no live model). (3) three live decide-suite
+  runs against OmniRoute (`ollamacloud/deepseek-v4-flash:0731`) —
+  effort=low/samples=1, effort=medium/samples=1, effort=medium/samples=3 (44
+  case-samples total across the three): the 7 `none`-expectation cases
+  passed cleanly on every sample in every run (0 false positives), and the 4
+  `remind`-expectation cases produced zero written rows in all three runs —
+  so there was no `intent`/`why` text to grep in this environment; the
+  phrase count in those outputs is 0 because nothing was written, which is
+  reported as an honest null result, not evidence of a clean phrase count.
+  The recall failure is pre-existing to this environment/model tier and
+  orthogonal to this vocabulary change: it reproduced identically at two
+  effort levels and is not a regression this commit could plausibly cause,
+  since a vocabulary substitution in descriptive text cannot itself suppress
+  a tool call.
 change_policy: operator-only
 ---
 This objective is the one place the Dreamer ACTS, and the doctrine's «you look; you do
@@ -28,7 +64,7 @@ anybody's state. Everything below is about when that one call is worth making.
 # What this pass is
 
 You are looking at one group of friends, once, in the morning. Nobody asked you anything.
-In front of you is what the group has not settled (the open notes), where each of its
+In front of you is what the group has not settled (the notes), where each of its
 rooms stood the last time you were in it, what you yourself decided to raise on earlier
 mornings and how each of those went, and a few things you said before.
 
@@ -46,7 +82,7 @@ with an offset. `text` is a note to yourself — what you intend to raise and wh
 message to the group: at that moment you get a fresh turn, read the room as it is THEN
 (with `where_is`, `route`, `note_read` and the rest available to you again), and decide
 once more whether to speak. Write `text` so that your later self knows what you were
-thinking. `note` is the title of the open note it is about, exactly as listed, so that if
+thinking. `note` is the title of the note it is about, exactly as listed, so that if
 the group settles the thing before the moment comes, the reminder is dropped and you never
 raise something already decided.
 
@@ -88,7 +124,7 @@ when it changes WHEN you would speak, not to fill the morning.
 
 # What earns a reminder, and what does not
 
-Worth it: an open note whose moment is near and which still has a corner nobody has
+Worth it: a note whose moment is near and which still has a corner nobody has
 closed — where, what time, who is coming — where a word from you at the right hour would
 help the people who have to act on it. A thing that is time-sensitive in a way the room may
 not have noticed. A thing somebody said they would follow up on, whose deadline is today.
@@ -115,17 +151,17 @@ is evidence about the world: the world is the notes and the rooms.
 # Answering
 
 When you have finished — after any `remind` calls you decided to make — return **one JSON
-object** with a single key `decisions`, one entry per open note you considered, plus at most
+object** with a single key `decisions`, one entry per note you considered, plus at most
 one entry with no `note` for the pass as a whole:
 
 ```json
 {"decisions": [{"note": "1", "action": "remind", "why": "dinner is Saturday and nobody has said where; asking at 16:00 Friday gives them the evening"}, {"note": "2", "action": "decline", "why": "the venue is booked, nothing left to raise"}]}
 ```
 
-- `note` — the number in square brackets from the open notes, or leave it out for the
+- `note` — the number in square brackets from the notes, or leave it out for the
   pass as a whole.
 - `action` — `remind` if you called `remind` about it, `decline` otherwise.
 - `why` — one short sentence, in the words of the room.
 
-Nothing outside the single JSON object. If there were no open notes and nothing to decide,
+Nothing outside the single JSON object. If there were no notes and nothing to decide,
 respond with exactly `{"decisions": []}`. That is a real answer and it is the common one.
