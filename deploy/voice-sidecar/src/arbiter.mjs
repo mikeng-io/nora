@@ -308,7 +308,10 @@ export function createArbiter({
       proc.stdout.once?.('readable', () => onFirstBytes(undefined));
       proc.stdout.on('data', (dataChunk) => {
         if (s.superseded) return;
-        resetStallWatch(s);
+        // Bytes arriving during an intentional pause are buffered pipe
+        // drain, not liveness: re-arming the stall watch here would kill a
+        // paused stream as a stream-stall (2026-09-16 audit CN-4).
+        if (!s.pauseRequested) resetStallWatch(s);
         onFirstBytes(dataChunk);
       });
       proc.on('error', (err) => {
@@ -534,7 +537,11 @@ export function createArbiter({
       suspendedSlot = null;
       had = true;
     }
-    if (state !== 'stopped') state = 'stopped';
+    // Speech owns the player: while it is still speaking the pipeline is
+    // NOT idle — keep 'suspended' so /voice/status tells the truth
+    // (2026-09-16 audit C-4). When speech drains with no suspended slot,
+    // advanceSpeech settles the state to 'stopped'.
+    if (!speechBusy() && state !== 'stopped') state = 'stopped';
     streaming = false;
     if (had) log('music_stop', {});
     return had;

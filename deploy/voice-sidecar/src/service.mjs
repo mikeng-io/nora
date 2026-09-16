@@ -23,6 +23,7 @@
 
 import { spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
+import { pathToFileURL } from 'node:url';
 import {
   createAudioPlayer,
   createAudioResource,
@@ -58,120 +59,170 @@ function log(event, fields = {}) {
   }
 }
 
-const perUser = new Map(); // userId -> {frames, bytes} since process start
-let currentPump = null;
-
 // The real joinVoice seam: pump + discord.js join + AudioPlayer, one per
 // connection. The wake TCP framing is unchanged from the receive sidecar.
-async function joinVoice(channelId) {
-  const pump = createPump({ host: PUMP_HOST, port: PUMP_PORT });
-  currentPump = pump;
-  const joined = await join(GUILD_ID, channelId, TOKEN);
-  const player = createAudioPlayer({
-    behaviors: { noSubscriber: NoSubscriberBehavior.Pause },
-  });
-  joined.connection.subscribe(player);
+//
+// Pump ownership (2026-09-16 audit N-5/CN-2): every failed construction
+// path closes what it built — the fresh pump's TCP socket and whatever the
+// join already assembled — and the PREVIOUS pump is closed only once its
+// replacement is fully joined, so a failed replacement never kills a
+// working pump. Exported with injected seams so these rules are testable;
+// main() passes the real implementations.
+export function createJoinVoice({ joinImpl, createPumpImpl, createPlayerImpl, log: logFn }) {
+  const perUser = new Map(); // userId -> {frames, bytes} since process start
+  let currentPump = null;
 
-  joined.bus.on('listening', (userId) => {
-    log('listening', { user_id: userId, channel_id: channelId });
-  });
-  joined.bus.on('pcm', (userId, pcm) => {
-    const s = perUser.get(userId) ?? { frames: 0, bytes: 0 };
-    s.frames += 1;
-    s.bytes += pcm.length;
-    perUser.set(userId, s);
-    pump(pcm, userId);
-  });
-  joined.bus.on('streamError', (userId, err) => {
-    log('error', { event: 'receive_stream_error', user_id: userId, error: String(err?.message ?? err) });
-  });
+  async function joinVoice(channelId) {
+    const pump = createPumpImpl();
+    let joined = null;
+    try {
+      joined = await joinImpl(channelId);
+      const player = createPlayerImpl();
+      joined.connection.subscribe(player);
 
-  return { ...joined, pump, player };
-}
-
-const stateStore = createStateStore({ path: STATE_FILE });
-
-const core = createCore({
-  guildId: GUILD_ID,
-  channelId: CHANNEL_ID,
-  joinVoice,
-  entersStateFn: (connection, status, timeoutMs) => entersState(connection, status, timeoutMs),
-  stateStore,
-  spawn: (args) => spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] }),
-  createMusicResource: (stream) =>
-    createAudioResource(stream, { inputType: StreamType.Raw, inlineVolume: true }),
-  createSpeechResource: (audio) =>
-    // Arbitrary: the demuxer probes mp3/wav itself (ffmpeg is in the image).
-    createAudioResource(Readable.from([audio]), { inputType: StreamType.Arbitrary }),
-  fetchImpl: (...args) => fetch(...args),
-  eventUrl: NORA_EVENT_URL,
-  clock: realClock,
-  getWakeStats: () => {
-    const users = {};
-    for (const [userId, s] of perUser) users[userId] = s;
-    return users;
-  },
-  pumpInfo: () => ({
-    host: PUMP_HOST,
-    port: PUMP_PORT,
-    ...(currentPump ? { drops: currentPump.stats() } : {}),
-  }),
-  log,
-});
-
-core.server.on('error', (err) => {
-  // The health endpoint IS the liveness contract (HEALTHCHECK curls it); if
-  // it cannot bind, liveness is genuinely unavailable — die with a clear
-  // log line and let the container's restart policy retry.
-  console.error(`[voc] ${JSON.stringify({ event: 'error', error: `health endpoint failed on ${HOST}:${PORT}: ${err.message}` })}`);
-  process.exit(1);
-});
-core.server.listen(PORT, HOST, () => {
-  log('listening_http', { host: HOST, port: PORT });
-});
-
-// Boot decision (§12.1): join ONLY if the desired-state file says
-// connected, OR the file is absent AND env CHANNEL_ID is set (first boot).
-// A file saying `idle` wins over CHANNEL_ID. A file we cannot read (corrupt
-// or unreadable) is NOT a first boot: fail closed, log loudly, and stay
-// idle — silently first-booting could rejoin a channel the user just left.
-if (TOKEN && GUILD_ID) {
-  const stored = await stateStore.read();
-  if (stored.status === 'corrupt' || stored.status === 'error') {
-    log('error', {
-      event: 'state_store_read_failed',
-      status: stored.status,
-      path: STATE_FILE,
-      error: stored.error ?? null,
-    });
-  } else {
-    const channel = bootChannel(stored.state, CHANNEL_ID);
-    if (channel) {
-      core.lifecycle.join(channel).catch(() => {
-        // Join failed: state is `error`, /health stays live, compose's
-        // restart policy gives the retry. Already logged by the lifecycle.
+      joined.bus.on('listening', (userId) => {
+        logFn('listening', { user_id: userId, channel_id: channelId });
       });
-    } else {
-      log('boot_idle', { reason: stored.state?.desired === 'idle' ? 'desired_state_idle' : 'no_channel' });
+      joined.bus.on('pcm', (userId, pcm) => {
+        const s = perUser.get(userId) ?? { frames: 0, bytes: 0 };
+        s.frames += 1;
+        s.bytes += pcm.length;
+        perUser.set(userId, s);
+        pump(pcm, userId);
+      });
+      joined.bus.on('streamError', (userId, err) => {
+        logFn('error', { event: 'receive_stream_error', user_id: userId, error: String(err?.message ?? err) });
+      });
+
+      // The replacement is fully joined: NOW the old pump is superseded.
+      if (currentPump) {
+        try {
+          currentPump.close();
+        } catch {
+          /* already closed */
+        }
+      }
+      currentPump = pump;
+      return { ...joined, pump, player };
+    } catch (err) {
+      try {
+        pump.close();
+      } catch {
+        /* never connected */
+      }
+      if (joined?.leave) {
+        try {
+          await joined.leave();
+        } catch {
+          /* half-open socket */
+        }
+      }
+      throw err;
     }
   }
-} else {
-  const missing = [
-    ['DISCORD_BOT_TOKEN', TOKEN],
-    ['GUILD_ID', GUILD_ID],
-  ]
-    .filter(([, v]) => !v)
-    .map(([k]) => k)
-    .join(', ');
-  log('boot_idle', { reason: 'healthy-but-idle', missing });
+
+  return { joinVoice, perUser, currentPump: () => currentPump };
 }
 
-async function shutdown(signal) {
-  log('shutdown', { signal });
-  await core.lifecycle.shutdown();
-  core.server.close(() => process.exit(0));
-  // Don't hang on a half-open voice socket.
-  setTimeout(() => process.exit(0), 3000).unref();
+async function main() {
+  const { joinVoice, perUser, currentPump } = createJoinVoice({
+    joinImpl: (channelId) => join(GUILD_ID, channelId, TOKEN),
+    createPumpImpl: () => createPump({ host: PUMP_HOST, port: PUMP_PORT }),
+    createPlayerImpl: () =>
+      createAudioPlayer({
+        behaviors: { noSubscriber: NoSubscriberBehavior.Pause },
+      }),
+    log,
+  });
+
+  const stateStore = createStateStore({ path: STATE_FILE });
+
+  const core = createCore({
+    guildId: GUILD_ID,
+    channelId: CHANNEL_ID,
+    joinVoice,
+    entersStateFn: (connection, status, timeoutMs) => entersState(connection, status, timeoutMs),
+    stateStore,
+    spawn: (args) => spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] }),
+    createMusicResource: (stream) =>
+      createAudioResource(stream, { inputType: StreamType.Raw, inlineVolume: true }),
+    createSpeechResource: (audio) =>
+      // Arbitrary: the demuxer probes mp3/wav itself (ffmpeg is in the image).
+      createAudioResource(Readable.from([audio]), { inputType: StreamType.Arbitrary }),
+    fetchImpl: (...args) => fetch(...args),
+    eventUrl: NORA_EVENT_URL,
+    clock: realClock,
+    getWakeStats: () => {
+      const users = {};
+      for (const [userId, s] of perUser) users[userId] = s;
+      return users;
+    },
+    pumpInfo: () => ({
+      host: PUMP_HOST,
+      port: PUMP_PORT,
+      ...(currentPump() ? { drops: currentPump().stats() } : {}),
+    }),
+    log,
+  });
+
+  core.server.on('error', (err) => {
+    // The health endpoint IS the liveness contract (HEALTHCHECK curls it); if
+    // it cannot bind, liveness is genuinely unavailable — die with a clear
+    // log line and let the container's restart policy retry.
+    console.error(`[voc] ${JSON.stringify({ event: 'error', error: `health endpoint failed on ${HOST}:${PORT}: ${err.message}` })}`);
+    process.exit(1);
+  });
+  core.server.listen(PORT, HOST, () => {
+    log('listening_http', { host: HOST, port: PORT });
+  });
+
+  // Boot decision (§12.1): join ONLY if the desired-state file says
+  // connected, OR the file is absent AND env CHANNEL_ID is set (first boot).
+  // A file saying `idle` wins over CHANNEL_ID. A file we cannot read (corrupt
+  // or unreadable) is NOT a first boot: fail closed, log loudly, and stay
+  // idle — silently first-booting could rejoin a channel the user just left.
+  if (TOKEN && GUILD_ID) {
+    const stored = await stateStore.read();
+    if (stored.status === 'corrupt' || stored.status === 'error') {
+      log('error', {
+        event: 'state_store_read_failed',
+        status: stored.status,
+        path: STATE_FILE,
+        error: stored.error ?? null,
+      });
+    } else {
+      const channel = bootChannel(stored.state, CHANNEL_ID, log);
+      if (channel) {
+        core.lifecycle.join(channel).catch(() => {
+          // Join failed: state is `error`, /health stays live, compose's
+          // restart policy gives the retry. Already logged by the lifecycle.
+        });
+      } else {
+        log('boot_idle', { reason: stored.state?.desired === 'idle' ? 'desired_state_idle' : 'no_channel' });
+      }
+    }
+  } else {
+    const missing = [
+      ['DISCORD_BOT_TOKEN', TOKEN],
+      ['GUILD_ID', GUILD_ID],
+    ]
+      .filter(([, v]) => !v)
+      .map(([k]) => k)
+      .join(', ');
+    log('boot_idle', { reason: 'healthy-but-idle', missing });
+  }
+
+  async function shutdown(signal) {
+    log('shutdown', { signal });
+    await core.lifecycle.shutdown();
+    core.server.close(() => process.exit(0));
+    // Don't hang on a half-open voice socket.
+    setTimeout(() => process.exit(0), 3000).unref();
+  }
+  process.on('SIGINT', () => void shutdown('SIGINT'));
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
 }
-process.on('SIGINT', () => void shutdown('SIGINT'));
-process.on('SIGTERM', () => void shutdown('SIGTERM'));
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
+}

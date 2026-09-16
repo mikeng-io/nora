@@ -82,7 +82,9 @@ test('bootChannel: absent file + env CHANNEL_ID joins (first boot)', () => {
 });
 
 test('bootChannel: connected file joins its channel', () => {
-  assert.equal(bootChannel({ desired: 'connected', channel_id: 'c-file' }, 'c-env'), 'c-file');
+  // The env channel matching the persisted one; the mismatch case is
+  // covered in lifecycle.test.mjs (2026-09-16 audit C-2).
+  assert.equal(bootChannel({ desired: 'connected', channel_id: 'c-file' }, 'c-file'), 'c-file');
 });
 
 test('bootChannel: absent file + no env does not join', () => {

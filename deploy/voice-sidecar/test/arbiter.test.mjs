@@ -140,16 +140,34 @@ test('music/stop during speech invalidates the suspended slot and never resurrec
   assert.equal(arbiter.state(), 'suspended');
 
   assert.equal(arbiter.stopMusic(), true);
-  assert.equal(arbiter.state(), 'stopped');
-  // Speech is untouched.
-  assert.equal(player.state.status, 'playing');
+  // Speech still owns the player: the pipeline is NOT idle (audit C-4) —
+  // the state settles to 'stopped' only when speech drains.
+  assert.equal(arbiter.state(), 'suspended');
+  assert.equal(player.state.status, 'playing'); // speech is untouched
 
   player.finish(); // speech drains
   await tick();
+  assert.equal(arbiter.state(), 'stopped');
   assert.equal(procs.length, 1); // no revive spawn
   clock.advance(60_000);
   assert.equal(procs.length, 1); // nothing resurrects later either
   assert.equal(arbiter.state(), 'stopped');
+});
+
+test('music/stop during speech never reports the player as idle mid-speech', async () => {
+  const { arbiter, player, playToPlaying } = makeArbiter();
+  playToPlaying();
+  arbiter.enqueueSpeech({ audio: Buffer.from('tts'), mediaType: 'audio/mpeg', requestId: 'r1' });
+  assert.equal(arbiter.stopMusic(), true);
+
+  // The snapshot /voice/status serves: speech is audibly playing, so the
+  // player status must not read idle (2026-09-16 audit C-4).
+  assert.equal(arbiter.statusSnapshot().player.status, 'suspended');
+  assert.equal(arbiter.statusSnapshot().playback_id, null); // the music slot is gone
+
+  player.finish();
+  await tick();
+  assert.equal(arbiter.statusSnapshot().player.status, 'idle'); // truthful once speech drained
 });
 
 test('pause during speech is rejected; pause/resume cycle works while playing', () => {
@@ -315,6 +333,12 @@ test('the no-progress watchdog does not kill an intentionally paused stream', ()
   const a = playToPlaying();
   assert.deepEqual(arbiter.pauseMusic(), { status: 200 });
 
+  // Buffered PCM drains into the paused pipe (ffmpeg is still alive and
+  // producing): those bytes are NOT liveness and must not re-arm the watch
+  // (2026-09-16 audit CN-4/CN-5 — without the pause guard this chunk
+  // restarts the watchdog and the advance below kills the paused stream).
+  a.proc.data();
+
   clock.advance(120_000); // far past the stall window: nothing happens
   assert.deepEqual(a.proc.signals, []);
   assert.equal(arbiter.state(), 'paused');
@@ -383,6 +407,34 @@ test('playback conserves the first PCM chunk (real PassThrough, byte-exact)', as
 
   assert.equal(player.played.length, 1);
   assert.equal(Buffer.concat(received).toString(), 'FIRSTSECOND');
+});
+
+test("the readable-first path attaches the resource without consuming or unshifting bytes (production ordering)", async () => {
+  // 2026-09-16 audit FG-3: a real child stdout has the arbiter's 'readable'
+  // listener registered, which pins flowing=false — so 'readable' fires
+  // FIRST in production and the data-path unshift is dead code there. The
+  // fake proc now mirrors that ordering; this pins what the readable path
+  // must do: attach the resource, consume nothing, unshift nothing (every
+  // byte stays in the stream for the resource to read).
+  const { arbiter, player, procs } = makeArbiter();
+  arbiter.playMusic({ streamUrl: 'https://cdn.test/a' });
+  const proc = procs[0];
+  let unshiftCalls = 0;
+  const originalUnshift = proc.stdout.unshift;
+  proc.stdout.unshift = (chunk) => {
+    unshiftCalls += 1;
+    originalUnshift(chunk);
+  };
+
+  proc.data();
+  assert.equal(player.played.length, 1);
+  assert.equal(player.played[0].stream, proc.stdout);
+  assert.equal(arbiter.state(), 'playing');
+  assert.equal(unshiftCalls, 0); // 'readable' consumed nothing — nothing to replay
+
+  proc.data(); // steady state: 'data' only, watch re-arms, no double-attach
+  assert.equal(player.played.length, 1);
+  assert.equal(unshiftCalls, 0);
 });
 
 test('/voice/status position reporting is coherent with the resume policy', () => {

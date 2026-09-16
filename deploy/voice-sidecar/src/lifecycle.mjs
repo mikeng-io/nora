@@ -35,8 +35,22 @@ import { realClock } from './outbox.mjs';
 
 // Boot decision (§12.1): join ONLY if the file says connected, OR the file
 // is absent AND env CHANNEL_ID is set (first boot). `idle` wins over env.
-export function bootChannel(desired, envChannelId) {
-  if (desired?.desired === 'connected') return desired.channel_id ?? envChannelId ?? null;
+// The persisted channel is honored only while it IS the configured one: if
+// the operator changed CHANNEL_ID, boot-joining the OLD channel would park
+// the controller in a channel /voice/join then refuses (2026-09-16 audit
+// C-2) — a mismatch logs an ERROR and the persisted state reads as absent.
+export function bootChannel(desired, envChannelId, log = () => {}) {
+  if (desired?.desired === 'connected') {
+    if (envChannelId && desired.channel_id && desired.channel_id !== envChannelId) {
+      log('error', {
+        event: 'desired_state_channel_mismatch',
+        persisted_channel_id: desired.channel_id,
+        env_channel_id: envChannelId,
+      });
+      return envChannelId;
+    }
+    return desired.channel_id ?? envChannelId ?? null;
+  }
   if (desired?.desired === 'idle') return null;
   if (!desired && envChannelId) return envChannelId;
   return null;
@@ -194,6 +208,13 @@ export function createLifecycle({
     await teardown('death');
   }
 
+  function humanCount(s, cid) {
+    const channel = s.client?.channels?.cache?.get?.(cid);
+    const members = channel?.members;
+    if (!members) return null;
+    return [...members.values()].filter((m) => !m.user?.bot).length;
+  }
+
   function watchConnection(s, gen, cid) {
     s.connection?.on?.('stateChange', (_oldState, newState) => {
       if (generation !== gen) return; // stale watcher from a dead connection
@@ -207,15 +228,17 @@ export function createLifecycle({
         );
       }
     });
+    // Seed membership BEFORE watching changes: a human already present when
+    // Nora joins whose departure is the FIRST voice-state update must still
+    // read as a >0 -> 0 transition (2026-09-16 audit CN-3).
+    lastHumanCount = humanCount(s, cid);
     s.client?.on?.('voiceStateUpdate', () => checkChannelEmptied(s, gen, cid));
   }
 
   function checkChannelEmptied(s, gen, cid) {
     if (generation !== gen) return;
-    const channel = s.client?.channels?.cache?.get?.(cid);
-    const members = channel?.members;
-    if (!members) return;
-    const humans = [...members.values()].filter((m) => !m.user?.bot).length;
+    const humans = humanCount(s, cid);
+    if (humans === null) return;
     // "dropped to zero": only fire on a >0 -> 0 transition, never for the
     // first observation (the bot sitting alone since join is not a drop).
     if (lastHumanCount !== null && lastHumanCount > 0 && humans === 0) {

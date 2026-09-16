@@ -5,6 +5,7 @@
 
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
+import net from 'node:net';
 
 import { makeHarness, playTrack, tick, until, GUILD, CHANNEL } from './helpers.mjs';
 
@@ -374,6 +375,45 @@ test('channel-emptied fires when the human count drops to zero', async () => {
   await h.close();
 });
 
+test('channel-emptied fires when the FIRST update after join is the last human leaving', async () => {
+  // 2026-09-16 audit CN-3: membership is seeded from the joined channel, so
+  // a human present at join whose departure is the first voice-state update
+  // is still a >0 -> 0 transition (previously unknown -> 0 fired nothing).
+  const h = await makeHarness();
+  const channel = { members: new Map() };
+  channel.members.set('bot', { user: { bot: true } });
+  channel.members.set('human', { user: { bot: false } });
+  h.client.channels.cache.set(CHANNEL, channel); // populated BEFORE the join
+
+  const { generation } = await h.join();
+  await tick();
+  assert.equal(h.delivered.filter((e) => e.type === 'channel-emptied').length, 0); // seeding fires nothing
+
+  channel.members.delete('human'); // the first observed update IS the departure
+  h.client.emit('voiceStateUpdate');
+  await tick();
+  await tick();
+  const emptied = h.delivered.filter((e) => e.type === 'channel-emptied');
+  assert.equal(emptied.length, 1);
+  assert.equal(emptied[0].generation, generation);
+  assert.equal(emptied[0].channel_id, CHANNEL);
+  await h.close();
+});
+
+test('channel-emptied does NOT fire when Nora joins an already empty channel', async () => {
+  const h = await makeHarness();
+  const channel = { members: new Map() };
+  channel.members.set('bot', { user: { bot: true } }); // the bot alone
+  h.client.channels.cache.set(CHANNEL, channel);
+
+  await h.join();
+  h.client.emit('voiceStateUpdate');
+  await tick();
+  await tick();
+  assert.equal(h.delivered.filter((e) => e.type === 'channel-emptied').length, 0); // 0 at seed is not a drop
+  await h.close();
+});
+
 test('error responses carry error, request_id and state', async () => {
   const h = await makeHarness();
   const res = await h.post('/music/stop', { guild_id: GUILD, generation: 'nope', request_id: 'r-err' });
@@ -381,6 +421,46 @@ test('error responses carry error, request_id and state', async () => {
   assert.deepEqual(Object.keys(res.body).sort(), ['error', 'request_id', 'state']);
   assert.equal(res.body.request_id, 'r-err');
   assert.equal(res.body.state.voice, 'idle');
+  await h.close();
+});
+
+test('an over-limit body is 413 body_too_large, distinct from a transport read failure', async () => {
+  // 2026-09-16 audit C-5: over-limit and transport-error used to share one
+  // 400 body_too_large. The design contract is silent on the status; the
+  // split chosen is 413 for over-limit (400 stays for genuine bad requests)
+  // — nora's client maps only 400/409 explicitly, so 413 takes its generic
+  // fail-closed unavailable path and no Python-side mapping needs to change.
+  const h = await makeHarness();
+  const big = await h.post('/music/stop', { guild_id: GUILD, generation: 'x', pad: 'x'.repeat(70 * 1024) });
+  assert.equal(big.status, 413);
+  assert.equal(big.body.error, 'body_too_large');
+  assert.equal(big.body.request_id, null);
+  await h.close();
+});
+
+test('a body that fails mid-read is 400 body_read_failed, not body_too_large', async () => {
+  const h = await makeHarness();
+  const port = h.core.server.address().port;
+  const raw = await new Promise((resolve, reject) => {
+    const socket = net.connect({ host: '127.0.0.1', port }, () => {
+      // Promise 100 bytes, send 7, then FIN: the upload dies mid-body but
+      // the half-open socket can still carry the answer.
+      socket.write('POST /music/stop HTTP/1.1\r\nhost: x\r\ncontent-length: 100\r\nconnection: close\r\n\r\npartial');
+      socket.end();
+    });
+    let data = '';
+    socket.on('data', (chunk) => {
+      data += chunk.toString();
+    });
+    socket.on('close', () => resolve(data));
+    socket.on('error', reject);
+  });
+  assert.match(raw, /^HTTP\/1\.1 400 /);
+  assert.match(raw, /body_read_failed/);
+
+  // The server survived: a normal request still works.
+  const { res } = await h.join();
+  assert.equal(res.status, 200);
   await h.close();
 });
 
@@ -438,21 +518,54 @@ test('an intentional exit emits NO voice-death and invalidates the generation at
 });
 
 test('two concurrent POSTs with the same request_id execute the handler exactly once', async () => {
-  let releaseJoin;
-  const joinGate = new Promise((resolve) => {
-    releaseJoin = resolve;
-  });
-  const h = await makeHarness({ joinGate: () => joinGate });
-  const body = { guild_id: GUILD, channel_id: CHANNEL, request_id: 'req-concurrent' };
-  const p1 = h.post('/voice/join', body);
-  const p2 = h.post('/voice/join', body);
-  await tick();
-  releaseJoin();
+  // 2026-09-16 audit CN-6: this pins the CONTROLLER's request_id dedupe, so
+  // the op must be one the lifecycle does NOT already coalesce — join/exit
+  // ride joinPromise/destroyPromise and prove nothing about this layer.
+  // Music replacement is non-idempotent: without dedupe, two plays would
+  // mean two ffmpeg spawns and two different playback_ids.
+  const h = await makeHarness();
+  const { generation } = await h.join();
+  const body = { guild_id: GUILD, generation, stream_url: 'https://cdn.test/a', request_id: 'req-concurrent' };
+  const p1 = h.post('/music/play', body);
+  const p2 = h.post('/music/play', body); // fired inside the first request's window
   const [r1, r2] = await Promise.all([p1, p2]);
   assert.equal(r1.status, 200);
   assert.equal(r2.status, 200);
-  assert.equal(h.joinCalls.length, 1); // the duplicate awaited the in-flight execution
-  assert.deepEqual(r2.body, r1.body);
+  assert.equal(h.procs.length, 1); // the handler executed ONCE
+  assert.deepEqual(r2.body, r1.body); // same playback_id, same snapshot
+  await h.close();
+});
+
+test('/music/play accepts an optional boolean resumable; a non-boolean is 400 invalid_body', async () => {
+  // 2026-09-16 audit CN-8: nora forwards the source's resumable capability
+  // (seekable vs live) in the play POST; absent keeps the arbiter default.
+  const h = await makeHarness();
+  const { generation } = await h.join();
+
+  for (const resumable of ['yes', 1, null]) {
+    const bad = await h.post('/music/play', {
+      guild_id: GUILD,
+      generation,
+      stream_url: 'https://cdn.test/x',
+      resumable,
+    });
+    assert.equal(bad.status, 400, `resumable=${resumable}`);
+    assert.equal(bad.body.error, 'invalid_body');
+  }
+  assert.equal(h.procs.length, 0); // nothing acted
+
+  const live = await h.post('/music/play', {
+    guild_id: GUILD,
+    generation,
+    stream_url: 'https://cdn.test/radio',
+    resumable: false,
+  });
+  assert.equal(live.status, 200);
+  assert.equal(live.body.state.player.position_policy, 'none'); // live source: no resume
+
+  const regular = await h.post('/music/play', { guild_id: GUILD, generation, stream_url: 'https://cdn.test/a' });
+  assert.equal(regular.status, 200);
+  assert.equal(regular.body.state.player.position_policy, 'approximate_restart'); // default unchanged
   await h.close();
 });
 

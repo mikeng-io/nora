@@ -47,7 +47,11 @@ export function createFakeClock(start = 1_000_000) {
 
 // AudioPlayer stand-in: play/pause/unpause/stop + manual finish() for the
 // natural end of the current resource. Emits 'playing' on a microtask like
-// the real player transitioning states.
+// the real player transitioning states. pause()/unpause() model the real
+// AudioPlayer's transition rules (pause only from playing, unpause only
+// from paused, both returning whether they acted) and never discard the
+// current resource — a paused player keeps its buffered audio (2026-09-16
+// audit CN-5).
 export function createFakePlayer() {
   const player = new EventEmitter();
   player.state = { status: 'idle' };
@@ -60,14 +64,17 @@ export function createFakePlayer() {
     player.current = resource;
     player.state = { status: 'playing', resource };
     queueMicrotask(() => player.emit('playing'));
+    return true;
   };
   player.pause = () => {
     player.paused += 1;
+    if (player.state.status !== 'playing') return false;
     player.state = { status: 'paused', resource: player.current };
     return true;
   };
   player.unpause = () => {
     player.unpaused += 1;
+    if (player.state.status !== 'paused') return false;
     player.state = { status: 'playing', resource: player.current };
     return true;
   };
@@ -90,9 +97,22 @@ export function createFakePlayer() {
 // ffmpeg child-process stand-in. Like a real child, a killed process dies
 // and emits 'close' (on a microtask, so synchronous assertions on signals
 // still run first); 'close' is emitted at most once.
+//
+// The stdout fake models the Readable surface the arbiter actually drives
+// (2026-09-16 audit FG-3): a REAL child stdout has a 'readable' listener
+// registered by the arbiter, which pins flowing=false so the first arrival
+// announces 'readable' (consuming nothing) BEFORE any 'data' event fires;
+// unshift() pushes consumed bytes back to the front, and they replay ahead
+// of the next data.
 export function createFakeProc() {
   const proc = new EventEmitter();
-  proc.stdout = new EventEmitter();
+  const stdout = new EventEmitter();
+  const held = []; // bytes pushed back via unshift, replayed before new data
+  let announced = false;
+  stdout.unshift = (chunk) => {
+    held.unshift(chunk);
+  };
+  proc.stdout = stdout;
   proc.signals = [];
   proc.exitCode = null;
   let closed = false;
@@ -106,7 +126,14 @@ export function createFakeProc() {
     queueMicrotask(() => emitClose(null, signal));
     return true;
   };
-  proc.data = (chunk = Buffer.from('pcm')) => proc.stdout.emit('data', chunk);
+  proc.data = (chunk = Buffer.from('pcm')) => {
+    if (!announced) {
+      announced = true;
+      stdout.emit('readable'); // the first arrival is announced, not consumed
+    }
+    for (const c of held.splice(0)) stdout.emit('data', c);
+    if (chunk != null) stdout.emit('data', chunk);
+  };
   proc.close = (code, signal = null) => emitClose(code, signal);
   proc.fail = (err) => proc.emit('error', err);
   return proc;

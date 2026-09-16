@@ -3,7 +3,9 @@
 // delivery (non-2xx or transport error) parks the event in a bounded queue
 // (<=256; on overflow the OLDEST is dropped and counted) and the queue is
 // retried oldest-first with exponential backoff (1s -> 2s -> ... cap 60s)
-// until 2xx. This retry loop is also the redelivery-on-reconnect mechanism:
+// until 2xx. Every attempt carries a per-attempt abort timeout (10s) so a
+// receiver that accepts and never answers is a retryable delivery failure,
+// not a stalled pipeline. This retry loop is also the redelivery-on-reconnect mechanism:
 // if nora is down when a track ends, the event lands once nora is back.
 //
 // event_seq is assigned at push time and is strictly increasing for the
@@ -24,6 +26,7 @@ export function createOutbox({
   maxEvents = 256,
   baseDelayMs = 1000,
   maxDelayMs = 60_000,
+  fetchTimeoutMs = 10_000,
   log = () => {},
 }) {
   let seq = 0;
@@ -51,11 +54,22 @@ export function createOutbox({
   }
 
   async function deliver(event) {
-    const res = await fetchImpl(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(event),
-    });
+    // Per-attempt timeout: a server that accepts the POST and never answers
+    // must not stall the whole pipeline — the abort rejects like any
+    // transport error and the backoff retry owns the redelivery.
+    const aborter = new AbortController();
+    const timeout = clock.setTimeout(() => aborter.abort(), fetchTimeoutMs);
+    let res;
+    try {
+      res = await fetchImpl(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(event),
+        signal: aborter.signal,
+      });
+    } finally {
+      clock.clearTimeout(timeout);
+    }
     if (!res || res.status < 200 || res.status >= 300) {
       throw new Error(`event endpoint answered ${res?.status ?? 'nothing'}`);
     }
