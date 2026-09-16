@@ -10,6 +10,15 @@ edges:
 
 # Layer 2 — canonical assets (self + operator)
 
+## Source of the canonical image
+
+The canonical `self` asset source material lives IN this bundle:
+`assets/nora-character-reference-sheet.png` (1536×1024, operator-provided
+2026-09-16). At build time the ingest one-shot (`scripts/ingest_self_asset.py`)
+ingests this image (or the simplified single-image produced from it — see
+04 §5.1) into Nora's media library, marks `role: self`, and the doctrine's
+`<SELF_HANDLE>` is pinned to the ingested row's full sha256 as normal.
+
 ## Storage
 
 Two images are ingested into Nora's own media library (RustFS bytes +

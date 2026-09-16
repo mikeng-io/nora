@@ -47,15 +47,13 @@ config.toml                                    # (none expected — asset handle
 
 ## Open questions (operator decision needed)
 
-1. **Which image is canonical for `self`?** Two candidates:
-   - The Codex character-design image sent to Norty this session (in Hermes
-     cache as `img_b8b045cca7dc.jpeg`, described by vision analysis — Tron
-     data-centre setting, neon grid).
-   - The `1fce23` image Nora holds (the one Miles sent her on Signal, used as
-     reference in the failing cow run).
-   These may be the same character or different; the canonical asset must be
-   the *design reference* — the one that defines the look, not an example
-   render. **Decision needed: confirm which image becomes the self asset.**
+1. **Which image is canonical for `self`?** **DECIDED 2026-09-16 — the character
+   reference sheet sent this session** (`assets/nora-character-reference-sheet.png`,
+   1536×1024, in the bundle). It is a proper design reference: front/
+   profile/3-4 angles, eight expressions, eye directions, detail closeups,
+   full-body turnaround, sitting poses and colour-reference swatches for the
+   same character. The earlier Codex setting image (neon Tron grid) is NOT
+   the canon — the operator's 2026-09-16 message («呢一張會唔會太過複雜?…你哋可能要 update 翻個 markdown document 嚟 fit 翻呢張圖入面啲設定,因為有少少唔同咗同改變咗») makes the sheet the source; the sheet's own panels define the look, and the doctrine text in 01 is written from it. **Open sub-question: whether the sheet is too complex for a canonical reference image (operator asked 2026-09-16) — an image-generation pass to produce a simplified front full-body single image may follow; if it does, THAT image becomes the canonical asset and this sheet stays the descriptive source.**
 2. **Which image is canonical for `operator`?** The avatar Miles asked Nora to
    merge in the failing run is `1fce23` — unless Miles has a different
    canonical avatar in mind. **Decision needed: confirm the operator asset.**

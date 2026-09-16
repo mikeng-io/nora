@@ -109,3 +109,13 @@ Supersedes the single-file draft at `design/proposed/31-self-reference.md`
 (removed — this bundle is the source of truth going forward). Nothing built
 yet; pending operator decision on the two canonical images (§5 questions in
 `04-tests-and-files.md`).
+
+_2026-09-16_ — **self-canon material changed**. The operator sent a proper
+character reference sheet (1536×1024, `assets/nora-character-reference-sheet.png`,
+in this bundle) and asked the design docs be updated to it: appearance is now
+casual minimal Korean style (white tank, grey hoodie, jeans, wired earpiece),
+not the earlier neon-grid Tron setting; 01 and 03's description and 04's
+open-question 1 are updated accordingly. The sheet is the design reference;
+whether it also becomes the canonical asset directly, or a simplified single
+front full-body image is generated first, stays an open question (04 §5.1).
+The bundle now carries the asset so it transfers with the branch.
