@@ -7,11 +7,16 @@
 // deviate. Every state-changing command except /voice/join is
 // generation-scoped: a stale generation gets 409 generation_conflict and
 // nothing happens. Any body guild_id != the configured guild gets 400
-// wrong_guild (single-guild hard-bound, §12.5).
+// wrong_guild (single-guild hard-bound, §12.5), and /voice/join with a
+// channel_id != the ONE configured channel gets 400 not_in_allowed_channel
+// (phase-1 immutable channel, §12.2 / B15).
 //
-// Request dedupe (§3.3): control POSTs may carry request_id; responses are
-// memoized for 5 minutes and a retry returns the memo without re-acting.
-// 5xx responses are NOT memoized (nothing acted, a retry may re-try).
+// Request dedupe (§3.3): control POSTs may carry request_id; the FIRST
+// occurrence reserves an in-flight promise BEFORE the handler runs, so
+// concurrent duplicates await the same execution and get the same response;
+// once completed, the response is memoized for 5 minutes and a retry
+// returns the memo without re-acting. 5xx responses are NOT memoized
+// (nothing acted, a retry may re-try).
 
 import http from 'node:http';
 import { isHttpError, httpError } from './errors.mjs';
@@ -26,6 +31,7 @@ const DEDUPE_TTL_MS = 5 * 60 * 1000;
 
 export function createController({
   guildId,
+  channelId, // the ONE configured voice channel (phase 1, immutable)
   lifecycle,
   arbiter,
   outbox,
@@ -35,7 +41,8 @@ export function createController({
   dedupeTtlMs = DEDUPE_TTL_MS,
   log = () => {},
 }) {
-  const dedupe = new Map(); // request_id -> { status, body, expiresAt }
+  // request_id -> in-flight { promise } | completed { status, body, expiresAt }
+  const dedupe = new Map();
 
   function snapshot() {
     const a = arbiter.statusSnapshot();
@@ -63,7 +70,7 @@ export function createController({
   function pruneDedupe() {
     const now = clock.now();
     for (const [id, entry] of dedupe) {
-      if (entry.expiresAt <= now) dedupe.delete(id);
+      if (entry.expiresAt !== undefined && entry.expiresAt <= now) dedupe.delete(id);
     }
   }
 
@@ -104,6 +111,10 @@ export function createController({
       if (typeof body.channel_id !== 'string' || !body.channel_id) {
         throw httpError(400, 'invalid_body', 'channel_id is required');
       }
+      // Phase 1: ONE immutable configured channel (§12.2, B15).
+      if (!channelId || body.channel_id !== channelId) {
+        throw httpError(400, 'not_in_allowed_channel');
+      }
       await lifecycle.join(body.channel_id);
     },
     'POST /voice/exit': async (body) => {
@@ -122,6 +133,7 @@ export function createController({
         title: typeof body.title === 'string' ? body.title : null,
         durationSeconds: typeof body.duration_seconds === 'number' ? body.duration_seconds : null,
         requestId: body.request_id ?? null,
+        resumable: typeof body.resumable === 'boolean' ? body.resumable : true,
       });
     },
     'POST /music/stop': async (body) => {
@@ -168,6 +180,20 @@ export function createController({
     },
   };
 
+  // Runs a handler and shapes its outcome; never rejects.
+  async function execute(route, body, requestId) {
+    try {
+      await handlers[route](body);
+      return { status: 200, body: { ok: true, request_id: requestId, state: snapshot() } };
+    } catch (err) {
+      if (isHttpError(err)) {
+        return { status: err.status, body: { error: err.error, request_id: requestId, state: snapshot() } };
+      }
+      log('error', { event: 'handler_error', route, error: String(err?.message ?? err) });
+      return { status: 500, body: { error: 'internal_error', request_id: requestId, state: snapshot() } };
+    }
+  }
+
   async function handlePost(req, res, route) {
     const raw = await readBody(req, route === 'POST /stream' ? MAX_BODY_BYTES : MAX_CONTROL_BYTES);
     if (raw === null) {
@@ -181,34 +207,36 @@ export function createController({
       respondError(res, 400, 'invalid_json', null);
       return;
     }
+    // `null` (and arrays/scalars) parse fine but are not command bodies —
+    // reject before any field access.
+    if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+      respondError(res, 400, 'invalid_body', null);
+      return;
+    }
     const requestId = typeof body.request_id === 'string' ? body.request_id : null;
-    if (requestId) {
-      pruneDedupe();
-      const hit = dedupe.get(requestId);
-      if (hit) {
-        respond(res, hit.status, hit.body);
-        return;
-      }
+    if (!requestId) {
+      const result = await execute(route, body, null);
+      respond(res, result.status, result.body);
+      return;
     }
-    let status = 200;
-    let payload;
-    try {
-      await handlers[route](body);
-      payload = { ok: true, request_id: requestId, state: snapshot() };
-    } catch (err) {
-      if (isHttpError(err)) {
-        status = err.status;
-        payload = { error: err.error, request_id: requestId, state: snapshot() };
-      } else {
-        status = 500;
-        payload = { error: 'internal_error', request_id: requestId, state: snapshot() };
-        log('error', { event: 'handler_error', route, error: String(err?.message ?? err) });
-      }
+    pruneDedupe();
+    const existing = dedupe.get(requestId);
+    if (existing) {
+      // Completed memo OR an in-flight duplicate: same response, no
+      // re-execution.
+      const result = existing.promise ? await existing.promise : existing;
+      respond(res, result.status, result.body);
+      return;
     }
-    if (requestId && status < 500) {
-      dedupe.set(requestId, { status, body: payload, expiresAt: clock.now() + dedupeTtlMs });
+    const entry = { promise: execute(route, body, requestId) };
+    dedupe.set(requestId, entry); // reserved BEFORE the handler settles
+    const result = await entry.promise;
+    if (result.status < 500) {
+      dedupe.set(requestId, { status: result.status, body: result.body, expiresAt: clock.now() + dedupeTtlMs });
+    } else {
+      dedupe.delete(requestId);
     }
-    respond(res, status, payload);
+    respond(res, result.status, result.body);
   }
 
   function handleStatus(res) {
@@ -218,6 +246,7 @@ export function createController({
       outbox_dropped: outbox.dropped(),
       streaming: arbiter.streaming(),
       last_error: arbiter.lastError(),
+      state_write_ok: lifecycle.stateWriteOk ? lifecycle.stateWriteOk() : true,
       wake: getWakeStats(),
       pump: pumpInfo(),
     });
@@ -241,7 +270,19 @@ export function createController({
     const route = `${req.method} ${req.url}`;
     if (route === 'GET /health') return handleHealth(res);
     if (route === 'GET /voice/status') return handleStatus(res);
-    if (handlers[route]) return void handlePost(req, res, route);
+    if (handlers[route]) {
+      // The whole request-handling promise is caught: no rejection can
+      // escape into the event loop as unhandled.
+      handlePost(req, res, route).catch((err) => {
+        log('error', { event: 'request_error', route, error: String(err?.message ?? err) });
+        try {
+          respondError(res, 500, 'internal_error', null);
+        } catch {
+          /* response already gone */
+        }
+      });
+      return;
+    }
     respond(res, 404, { error: 'not_found', request_id: null, state: null });
   });
 
@@ -253,6 +294,7 @@ export function createController({
 // real ffmpeg.
 export function createCore({
   guildId,
+  channelId,
   joinVoice,
   entersStateFn,
   stateStore,
@@ -294,6 +336,7 @@ export function createCore({
   });
   const controller = createController({
     guildId,
+    channelId,
     lifecycle,
     arbiter,
     outbox,

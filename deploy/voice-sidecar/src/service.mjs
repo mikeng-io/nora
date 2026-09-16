@@ -93,10 +93,11 @@ const stateStore = createStateStore({ path: STATE_FILE });
 
 const core = createCore({
   guildId: GUILD_ID,
+  channelId: CHANNEL_ID,
   joinVoice,
   entersStateFn: (connection, status, timeoutMs) => entersState(connection, status, timeoutMs),
   stateStore,
-  spawn: (args) => spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'inherit'] }),
+  spawn: (args) => spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] }),
   createMusicResource: (stream) =>
     createAudioResource(stream, { inputType: StreamType.Raw, inlineVolume: true }),
   createSpeechResource: (audio) =>
@@ -131,17 +132,28 @@ core.server.listen(PORT, HOST, () => {
 
 // Boot decision (§12.1): join ONLY if the desired-state file says
 // connected, OR the file is absent AND env CHANNEL_ID is set (first boot).
-// A file saying `idle` wins over CHANNEL_ID.
+// A file saying `idle` wins over CHANNEL_ID. A file we cannot read (corrupt
+// or unreadable) is NOT a first boot: fail closed, log loudly, and stay
+// idle — silently first-booting could rejoin a channel the user just left.
 if (TOKEN && GUILD_ID) {
-  const desired = await stateStore.read();
-  const channel = bootChannel(desired, CHANNEL_ID);
-  if (channel) {
-    core.lifecycle.join(channel).catch(() => {
-      // Join failed: state is `error`, /health stays live, compose's
-      // restart policy gives the retry. Already logged by the lifecycle.
+  const stored = await stateStore.read();
+  if (stored.status === 'corrupt' || stored.status === 'error') {
+    log('error', {
+      event: 'state_store_read_failed',
+      status: stored.status,
+      path: STATE_FILE,
+      error: stored.error ?? null,
     });
   } else {
-    log('boot_idle', { reason: desired?.desired === 'idle' ? 'desired_state_idle' : 'no_channel' });
+    const channel = bootChannel(stored.state, CHANNEL_ID);
+    if (channel) {
+      core.lifecycle.join(channel).catch(() => {
+        // Join failed: state is `error`, /health stays live, compose's
+        // restart policy gives the retry. Already logged by the lifecycle.
+      });
+    } else {
+      log('boot_idle', { reason: stored.state?.desired === 'idle' ? 'desired_state_idle' : 'no_channel' });
+    }
   }
 } else {
   const missing = [

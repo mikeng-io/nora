@@ -5,17 +5,29 @@
 //   idle --join--> connecting --ready--> connected --exit--> destroying --> idle
 //   connecting/connected --voice-death--> idle (same teardown, event pushed)
 //
-// A generation token (uuid) is minted on successful join and invalidated on
-// destroy; the controller rejects every state-changing command whose
-// generation is stale, which closes the exit-vs-pending-join and
-// delayed-play-crosses-exit races. Boot join and HTTP join serialize
-// through the same in-flight promise — a join while connecting is not a
-// second join. Cutover ordering: the old owner is fully destroyed before
-// any new join (the `destroying` state).
+// A generation token (uuid) is minted on successful join and invalidated the
+// MOMENT teardown begins; the controller rejects every state-changing
+// command whose generation is stale, which closes the exit-vs-pending-join,
+// delayed-play-crosses-exit and command-during-teardown races.
 //
-// Durable desired-state (§12.1): exit writes {desired:idle}, a successful
-// join writes {desired:connected, channel_id}. Writes are best-effort — a
-// state-file failure must never fail the join itself.
+// Serialization: join and teardown are mutually exclusive through
+// joinPromise/destroyPromise, and EVERY wait re-checks the world after it
+// resolves — a join that waited for a destroy (or two joins that waited for
+// the same destroy) re-runs its entry checks instead of blindly proceeding,
+// so exactly one subsequent joinVoice happens.
+//
+// Intentional teardown suppresses the death watcher: the generation is
+// invalidated before the socket is destroyed, so the 'destroyed' stateChange
+// a deliberate destroy provokes reads as stale and no voice-death event is
+// emitted for an explicit exit.
+//
+// Durable desired-state (§12.1): exit/death write {desired:idle}, a
+// successful join writes {desired:connected, channel_id}. The exit/death
+// write happens BEFORE the socket is torn down — a crash anywhere in
+// teardown then boots to idle instead of rejoining a channel the user just
+// left. Writes are best-effort for the command itself but LOUD: a failure is
+// an ERROR log and flips stateWriteOk, surfaced as state_write_ok:false in
+// /voice/status.
 
 import { randomUUID } from 'node:crypto';
 import { httpError } from './errors.mjs';
@@ -50,29 +62,40 @@ export function createLifecycle({
   let destroyPromise = null;
   let deathInitiated = false;
   let lastHumanCount = null;
+  let stateWriteOk = true;
 
   async function persist(state) {
     try {
       await stateStore.write(state);
+      stateWriteOk = true;
     } catch (err) {
+      stateWriteOk = false;
       log('error', { event: 'state_store_write_failed', error: String(err?.message ?? err) });
     }
   }
 
   async function join(targetChannelId) {
-    if (voice === 'connected') {
-      if (channelId === targetChannelId) return { generation, channelId, already: true };
-      throw httpError(409, 'connected_elsewhere');
+    for (;;) {
+      if (voice === 'connected') {
+        if (channelId === targetChannelId) return { generation, channelId, already: true };
+        throw httpError(409, 'connected_elsewhere');
+      }
+      if (joinPromise) {
+        // A join while connecting is not a second join: ride the in-flight
+        // one; its failure is every waiter's failure.
+        const err = await joinPromise.then(
+          () => null,
+          (e) => e,
+        );
+        if (err) throw err;
+        continue; // landed somewhere — re-run the entry checks
+      }
+      if (destroyPromise) {
+        await destroyPromise; // old owner fully down first
+        continue; // another join may have won the race meanwhile — re-check
+      }
+      break;
     }
-    if (joinPromise) {
-      // A join while connecting is not a second join: ride the in-flight
-      // one, then re-check where we landed.
-      const landed = await joinPromise;
-      if (voice === 'connected' && channelId === targetChannelId) return landed;
-      if (voice === 'connected') throw httpError(409, 'connected_elsewhere');
-      return landed;
-    }
-    if (destroyPromise) await destroyPromise; // old owner fully down first
 
     voice = 'connecting';
     deathInitiated = false;
@@ -106,12 +129,25 @@ export function createLifecycle({
   async function teardown(kind) {
     if (destroyPromise) return destroyPromise;
     if (voice === 'idle' || (voice === 'error' && !session)) return;
-    if (joinPromise) await joinPromise.catch(() => {});
+    if (joinPromise) {
+      await joinPromise.catch(() => {});
+      // Re-check after the wait: another teardown may have started (or
+      // finished) while the join settled.
+      if (destroyPromise) return destroyPromise;
+      if (voice === 'idle' || (voice === 'error' && !session)) return;
+    }
     const gen = generation;
     const cid = channelId;
     voice = 'destroying';
+    // Invalidate FIRST: no command passes the generation guard from here on,
+    // and the death watcher reads as stale for the destroy we are about to
+    // perform (no voice-death for an intentional exit).
+    generation = null;
     destroyPromise = (async () => {
       try {
+        // Persist exit intent BEFORE the socket dies: a crash anywhere below
+        // boots to idle, never back into a channel the user just left.
+        if (kind !== 'shutdown') await persist({ desired: 'idle' });
         onTeardown(); // arbiter.detach(): music + speech stop, no events
         const s = session;
         session = null;
@@ -141,11 +177,9 @@ export function createLifecycle({
           }
         }
       } finally {
-        generation = null;
         channelId = null;
         voice = 'idle';
         destroyPromise = null;
-        if (kind !== 'shutdown') await persist({ desired: 'idle' });
         log(kind === 'death' ? 'voice-death' : 'exit', { channel_id: cid, generation: gen });
       }
     })();
@@ -200,5 +234,6 @@ export function createLifecycle({
     channelId: () => channelId,
     session: () => session,
     guildId: () => guildId,
+    stateWriteOk: () => stateWriteOk,
   };
 }

@@ -792,13 +792,27 @@ services:
       # an explicit VOICE_PUMP_HOST override for the consume.mjs stand-in.
       - PUMP_HOST=${VOICE_PUMP_HOST:-voice-wake}
       - PUMP_PORT=${VOICE_PUMP_PORT:-4599}
-      # Stage 3 closure: Nora POSTs synthesized replies to /play on this
-      # service. The Node server's own default HOST is 127.0.0.1 (a host-run
-      # sidecar should stay loopback-only); inside compose it must listen on
-      # the private nora network so the nora container can reach
-      # http://voice-sidecar:4600/play. 0.0.0.0 here is still private: the
-      # service publishes NO host port (no `ports:` at all, above).
+      # Nora drives the audio-controller HTTP contract (join/exit, /music/*,
+      # /stream for TTS — the old /play route is gone). The Node server's own
+      # default HOST is 127.0.0.1 (a host-run sidecar should stay
+      # loopback-only); inside compose it must listen on the private nora
+      # network so the nora container can reach
+      # http://voice-sidecar:4600/voice/status. 0.0.0.0 here is still
+      # private: the service publishes NO host port (no `ports:` at all,
+      # above).
       - HOST=0.0.0.0
+      # Audio-controller durable desired-state + event callback
+      # (design/voice-channel/07 §12.1, §3.3). Both match the defaults in
+      # src/service.mjs; pinned here so the posture is explicit. The state
+      # file lives on the bind-mounted ./state/audio-controller volume below
+      # (gitignored runtime state, same convention as ./state/signal-cli).
+      - STATE_FILE=/var/lib/audio-controller/desired_state.json
+      - NORA_EVENT_URL=http://nora:9100/app/v1/voice/event
+    volumes:
+      # Desired-state durability (§12.1): /discord exit writes idle, a join
+      # writes connected, and the boot decision reads this file — it must
+      # survive container restarts/recreates.
+      - ./state/audio-controller:/var/lib/audio-controller
     healthcheck:
       # /health is process liveness served by src/service.mjs; it answers
       # while the service idles without a token (healthy-but-idle).

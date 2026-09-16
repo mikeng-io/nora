@@ -34,6 +34,11 @@ COPY spike.mjs consume.mjs smoke_test.mjs ./
 
 RUN chown -R node:node /app
 
+# Durable desired-state dir (design/voice-channel/07 §12.1): the compose
+# volume mounts /var/lib/audio-controller and the runtime user is `node` —
+# create + chown it here or every desired-state write fails with EACCES.
+RUN mkdir -p /var/lib/audio-controller && chown node:node /var/lib/audio-controller
+
 USER node
 
 # 4600 is the health endpoint, internal only — docker-compose.yml has NO

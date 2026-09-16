@@ -8,23 +8,43 @@
 //
 // Hard-cut arbitration, no ducking, no overlap ever:
 //   - speech preempts music: the music ffmpeg is KILLED (not paused), its
-//     slot {stream_url, title, duration_seconds, playback_id, generation}
-//     remembered as suspended; when the speech queue drains the track is
-//     revived from 0 (phase-1 position policy §5: position_ms is reported
-//     from the resource's playbackDuration; resume is approximate_restart,
-//     no seek).
+//     slot {stream_url, title, duration_seconds, playback_id, generation,
+//     resumable, pauseRequested} remembered as suspended; when the speech
+//     queue drains a RESUMABLE track is revived from 0 (phase-1 position
+//     policy §5: position_ms is reported from the resource's
+//     playbackDuration; resume is approximate_restart, no seek). A
+//     NON-resumable (live) source gets NO resume: speech preempts and the
+//     stream ENDS — emitted as track-finished so nora treats it as a
+//     natural end (§5 "Live/non-seekable streams (radio) get NO resume").
 //   - a late ffmpeg start whose slot/generation is no longer current is
 //     ignored and the process killed (speech can never be cut by music).
 //   - /music/stop during speech invalidates the suspended slot and does NOT
 //     touch speech; nothing can resurrect music after stop.
+//   - pause intent survives startup and suspension: a pause issued while
+//     'starting'/'resuming' is recorded on the slot and applied the moment
+//     playback begins; the no-progress stall watch is SUSPENDED while a
+//     stream is intentionally paused (a paused pipe produces no bytes, so
+//     the watchdog must not read that as a stall).
 //
-// ffmpeg ownership (§7 B13): at most one music process; replacement kills
-// with a SIGTERM -> (grace) -> SIGKILL escalation, reaped via 'close'.
-// A 30s no-bytes watch on stdout terminates the stream with stream-failed
-// (reason stream-stall) — the stall KILLS, it does not just report.
+// ffmpeg ownership (§7 B13): at most one LIVE music process. Replacement
+// kills with a SIGTERM -> (grace) -> SIGKILL escalation, reaped via 'close';
+// a new spawn WAITS for every killed process's close before it starts, so
+// the TERM grace never overlaps two live ffmpegs. A 30s no-bytes watch on
+// stdout terminates the stream with stream-failed (reason stream-stall) —
+// the stall KILLS, it does not just report.
+//
+// Byte conservation: the resource is connected to stdout at the first bytes
+// and the chunk that triggered the transition is REPLAYED into the stream
+// (readable-event path consumes nothing; data-event path unshifts) — the
+// first PCM chunk is never dropped.
+//
+// Privacy: stream_urls are signed CDN locators; logs carry them redacted
+// (query string + userinfo stripped), and captured ffmpeg stderr is
+// URL-scrubbed before it may appear in a log line.
 
 import { randomUUID } from 'node:crypto';
 import { realClock } from './outbox.mjs';
+import { redactUrl, redactText } from './redact.mjs';
 
 export const FFMPEG_ARGS = (url) => [
   '-reconnect', '1',
@@ -36,6 +56,8 @@ export const FFMPEG_ARGS = (url) => [
   '-ac', '2',
   'pipe:1',
 ];
+
+const STDERR_TAIL_BYTES = 2048;
 
 export function createArbiter({
   spawn,
@@ -59,6 +81,9 @@ export function createArbiter({
   let volumePercent = 100;
   let streaming = false;
   let lastError = null;
+  // Close-promises of killed-but-not-yet-reaped ffmpegs; a new spawn waits
+  // for these so the TERM grace never overlaps two live processes.
+  const pendingReaps = new Set();
 
   const speechBusy = () => speechActive !== null || speechQueue.length > 0;
 
@@ -66,15 +91,20 @@ export function createArbiter({
     return s?.resource ? Math.round(s.resource.playbackDuration ?? 0) : 0;
   }
 
-  function newSlot({ streamUrl, title, durationSeconds, requestId, playbackId }) {
+  function newSlot({ streamUrl, title, durationSeconds, requestId, playbackId, resumable, pauseRequested }) {
     return {
       playbackId: playbackId ?? randomUUID(),
       streamUrl,
       title: title ?? null,
       durationSeconds: durationSeconds ?? null,
       requestId: requestId ?? null,
+      resumable: resumable !== false, // live/non-seekable sources pass false
+      pauseRequested: pauseRequested === true,
       generation: getGeneration(),
+      requestedAt: clock.now(), // request arrival — play_latency_ms baseline
       proc: null,
+      closed: null,
+      stderrTail: '',
       resource: null,
       playingSince: null,
       stallTimer: null,
@@ -85,14 +115,22 @@ export function createArbiter({
     };
   }
 
-  function killProc(s) {
+  function suspendStallWatch(s) {
     if (s.stallTimer) {
       clock.clearTimeout(s.stallTimer);
       s.stallTimer = null;
     }
+  }
+
+  function killProc(s) {
+    suspendStallWatch(s);
     const proc = s.proc;
     if (!proc || s.killed) return;
     s.killed = true;
+    if (s.closed) {
+      pendingReaps.add(s.closed);
+      s.closed.then(() => pendingReaps.delete(s.closed));
+    }
     try {
       proc.kill('SIGTERM');
     } catch {
@@ -158,6 +196,7 @@ export function createArbiter({
       request_id: s.requestId,
       reason,
       duration_ms: positionMs(s),
+      ...(s.stderrTail ? { stderr: redactText(s.stderrTail, s.streamUrl) } : {}),
     });
     slot = null;
     if (state === 'starting' || state === 'playing' || state === 'resuming' || state === 'paused') {
@@ -173,87 +212,134 @@ export function createArbiter({
     }, stallMs);
   }
 
+  function captureStderr(s) {
+    const stderr = s.proc?.stderr;
+    if (!stderr || typeof stderr.on !== 'function') return;
+    stderr.on('data', (chunk) => {
+      // Bounded tail only — diagnostics are captured, never inherited
+      // verbatim into the process's own log stream.
+      s.stderrTail = (s.stderrTail + chunk.toString('utf8')).slice(-STDERR_TAIL_BYTES);
+    });
+  }
+
   function startFfmpeg(s, phase) {
     state = phase; // 'starting' | 'resuming'
-    let proc;
-    try {
-      proc = spawn(FFMPEG_ARGS(s.streamUrl));
-    } catch (err) {
-      log('error', { event: 'ffmpeg_spawn_failed', error: String(err?.message ?? err) });
-      failStream(s, 'ffmpeg-spawn');
-      return;
-    }
-    s.proc = proc;
-    resetStallWatch(s);
-
-    let firstBytes = false;
-    proc.stdout.on('data', (chunk) => {
-      if (s.superseded) return;
-      resetStallWatch(s);
-      if (firstBytes) return;
-      firstBytes = true;
-      // Late music-start guard: the slot, the connection generation, and
-      // speech priority are all re-checked at the moment sound would begin.
-      if (slot !== s || s.generation !== getGeneration() || !player || speechBusy()) {
-        s.superseded = true;
-        killProc(s);
-        return;
-      }
-      let resource;
+    const begin = () => {
+      if (s.superseded || slot !== s || !player) return;
+      let proc;
       try {
-        resource = createMusicResource(proc.stdout);
+        proc = spawn(FFMPEG_ARGS(s.streamUrl));
       } catch (err) {
-        log('error', { event: 'music_resource_failed', error: String(err?.message ?? err) });
-        failStream(s, 'ffmpeg-resource');
+        log('error', { event: 'ffmpeg_spawn_failed', error: String(err?.message ?? err) });
+        failStream(s, 'ffmpeg-spawn');
         return;
       }
-      resource.volume?.setVolume?.(volumePercent / 100);
-      s.resource = resource;
-      s.playingSince = clock.now();
-      activeKind = 'music';
-      player.play(resource);
-      state = 'playing';
-      streaming = true;
-      lastError = null;
-      player.once('playing', () => {
-        if (slot === s && !s.superseded) {
-          log('play', {
+      s.proc = proc;
+      s.closed = new Promise((resolve) => proc.once('close', resolve));
+      resetStallWatch(s);
+      captureStderr(s);
+
+      let firstBytes = false;
+      const onFirstBytes = (chunk) => {
+        if (firstBytes) return;
+        firstBytes = true;
+        // Late music-start guard: the slot, the connection generation, and
+        // speech priority are all re-checked at the moment sound would begin.
+        if (slot !== s || s.generation !== getGeneration() || !player || speechBusy()) {
+          s.superseded = true;
+          killProc(s);
+          return;
+        }
+        // Byte conservation: the chunk that triggered this transition (when
+        // it arrived via a consuming 'data' event) is replayed into the
+        // stream before the resource attaches, so no PCM is ever dropped.
+        if (chunk != null && typeof proc.stdout.unshift === 'function') {
+          proc.stdout.unshift(chunk);
+        }
+        let resource;
+        try {
+          resource = createMusicResource(proc.stdout);
+        } catch (err) {
+          log('error', { event: 'music_resource_failed', error: String(err?.message ?? err) });
+          failStream(s, 'ffmpeg-resource');
+          return;
+        }
+        resource.volume?.setVolume?.(volumePercent / 100);
+        s.resource = resource;
+        s.playingSince = clock.now();
+        activeKind = 'music';
+        player.play(resource);
+        state = 'playing';
+        streaming = true;
+        lastError = null;
+        if (s.pauseRequested) {
+          // Pause intent issued during startup (or carried through a
+          // suspension) applies the moment playback begins; the stall watch
+          // is suspended while the pause is intentional.
+          try {
+            player.pause();
+          } catch {
+            /* player gone */
+          }
+          state = 'paused';
+          suspendStallWatch(s);
+        }
+        player.once('playing', () => {
+          if (slot === s && !s.superseded) {
+            log('play', {
+              playback_id: s.playbackId,
+              request_id: s.requestId,
+              play_latency_ms: clock.now() - s.requestedAt,
+              resumed: phase === 'resuming',
+            });
+          }
+        });
+        if (phase === 'resuming') {
+          log('music_resumed', {
             playback_id: s.playbackId,
             request_id: s.requestId,
-            play_latency_ms: clock.now() - s.playingSince,
-            resumed: phase === 'resuming',
+            position_policy: 'approximate_restart',
+            position_ms: 0,
           });
         }
+      };
+      // 'readable' fires without consuming; 'data' hands us the chunk (which
+      // onFirstBytes replays). Whichever the stream emits first wins.
+      proc.stdout.once?.('readable', () => onFirstBytes(undefined));
+      proc.stdout.on('data', (dataChunk) => {
+        if (s.superseded) return;
+        resetStallWatch(s);
+        onFirstBytes(dataChunk);
       });
-      if (phase === 'resuming') {
-        log('music_resumed', {
+      proc.on('error', (err) => {
+        log('error', { event: 'ffmpeg_error', error: String(err?.message ?? err) });
+        failStream(s, 'ffmpeg-error');
+      });
+      proc.on('close', (code, signal) => {
+        if (s.killTimer) {
+          clock.clearTimeout(s.killTimer);
+          s.killTimer = null;
+        }
+        log('ffmpeg_exit', {
           playback_id: s.playbackId,
           request_id: s.requestId,
-          position_policy: 'approximate_restart',
-          position_ms: 0,
+          code,
+          signal: signal ?? null,
+          ...(code && s.stderrTail ? { stderr: redactText(s.stderrTail, s.streamUrl) } : {}),
         });
-      }
-    });
-    proc.on('error', (err) => {
-      log('error', { event: 'ffmpeg_error', error: String(err?.message ?? err) });
-      failStream(s, 'ffmpeg-error');
-    });
-    proc.on('close', (code, signal) => {
-      if (s.killTimer) {
-        clock.clearTimeout(s.killTimer);
-        s.killTimer = null;
-      }
-      log('ffmpeg_exit', {
-        playback_id: s.playbackId,
-        request_id: s.requestId,
-        code,
-        signal: signal ?? null,
+        if (s.superseded || slot !== s) return;
+        if (code !== 0) failStream(s, `ffmpeg-exit-${code ?? 'null'}`);
+        // code 0: natural EOF — the player drains its buffer and idles;
+        // onPlayerIdle emits track-finished.
       });
-      if (s.superseded || slot !== s) return;
-      if (code !== 0) failStream(s, `ffmpeg-exit-${code ?? 'null'}`);
-      // code 0: natural EOF — the player drains its buffer and idles;
-      // onPlayerIdle emits track-finished.
-    });
+    };
+    // Never overlap two live ffmpegs: wait for killed processes to reap
+    // before spawning the replacement.
+    if (pendingReaps.size) {
+      void Promise.all([...pendingReaps]).then(begin, begin);
+    } else {
+      begin();
+    }
   }
 
   function suspendMusic() {
@@ -280,6 +366,21 @@ export function createArbiter({
     suspendedSlot = null;
     if (!s || s.invalidated) {
       state = 'stopped';
+      return;
+    }
+    if (!s.resumable) {
+      // Live/non-seekable source: NO resume — the stream ends here and nora
+      // treats it as a natural end (§5 position policy).
+      state = 'stopped';
+      streaming = false;
+      emitMusicEvent('track-finished', s, { duration_ms: positionMs(s) });
+      log('track-finished', {
+        playback_id: s.playbackId,
+        request_id: s.requestId,
+        duration_ms: positionMs(s),
+        position_policy: 'none',
+        reason: 'speech_preempted_live_source',
+      });
       return;
     }
     // Phase-1 position policy: restart from 0, same playback_id.
@@ -391,7 +492,7 @@ export function createArbiter({
 
   // --- commands (generation already validated by the controller) ---------
 
-  function playMusic({ streamUrl, title, durationSeconds, requestId }) {
+  function playMusic({ streamUrl, title, durationSeconds, requestId, resumable }) {
     if (slot) supersedeSlot(slot);
     slot = null;
     if (suspendedSlot) {
@@ -399,7 +500,7 @@ export function createArbiter({
       killProc(suspendedSlot);
       suspendedSlot = null;
     }
-    const s = newSlot({ streamUrl, title, durationSeconds, requestId });
+    const s = newSlot({ streamUrl, title, durationSeconds, requestId, resumable });
     if (speechBusy()) {
       // Speech owns the channel; the new track waits as the suspended slot.
       suspendedSlot = s;
@@ -411,7 +512,7 @@ export function createArbiter({
     log('play', {
       playback_id: s.playbackId,
       request_id: s.requestId,
-      url: s.streamUrl,
+      url: redactUrl(s.streamUrl),
       deferred: speechBusy(),
     });
     return s.playbackId;
@@ -444,9 +545,19 @@ export function createArbiter({
     if (state === 'playing' && player) {
       player.pause();
       state = 'paused';
+      if (slot) {
+        slot.pauseRequested = true;
+        suspendStallWatch(slot); // an intentional pause is not a stall
+      }
       return { status: 200 };
     }
     if (state === 'paused') return { status: 200 };
+    if ((state === 'starting' || state === 'resuming') && slot) {
+      // ffmpeg has produced no sound yet: record the intent on the slot, it
+      // applies the moment playback begins.
+      slot.pauseRequested = true;
+      return { status: 200 };
+    }
     return { status: 409, error: 'no_music_playing' };
   }
 
@@ -455,9 +566,17 @@ export function createArbiter({
     if (state === 'paused' && player) {
       player.unpause();
       state = 'playing';
+      if (slot) {
+        slot.pauseRequested = false;
+        if (slot.proc && !slot.killed) resetStallWatch(slot);
+      }
       return { status: 200 };
     }
     if (state === 'playing') return { status: 200 };
+    if ((state === 'starting' || state === 'resuming') && slot) {
+      slot.pauseRequested = false;
+      return { status: 200 };
+    }
     return { status: 409, error: 'no_music_playing' };
   }
 
@@ -485,7 +604,11 @@ export function createArbiter({
       playback_id: current?.playbackId ?? null,
       player: {
         status: state === 'stopped' ? 'idle' : state,
-        position_ms: positionMs(slot),
+        // Coherent with the resume policy: while suspended this is the
+        // position the track was cut at (the revive restarts from 0 and the
+        // policy says so); a live source reports policy 'none'.
+        position_ms: positionMs(current),
+        position_policy: current ? (current.resumable ? 'approximate_restart' : 'none') : null,
         current: current ? { title: current.title, url: current.streamUrl } : null,
       },
       speech_queue: speechQueue.length + (speechActive ? 1 : 0),

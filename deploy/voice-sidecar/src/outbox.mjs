@@ -30,18 +30,23 @@ export function createOutbox({
   let dropped = 0;
   const pending = [];
   let draining = false;
+  let inFlight = 0; // events popped for delivery but not yet settled
   let timer = null;
   let delay = baseDelayMs;
 
   function push(type, fields = {}) {
     const event = { type, event_id: randomUUID(), event_seq: ++seq, ...fields };
-    if (pending.length >= maxEvents) {
+    // In-flight events count toward the bound: a delivery that fails and is
+    // reinserted must never push the queue past maxEvents.
+    while (pending.length + inFlight >= maxEvents && pending.length) {
       pending.shift();
       dropped += 1;
       log('outbox_overflow', { outbox_dropped: dropped });
     }
     pending.push(event);
-    void drain();
+    // A scheduled backoff timer must not be bypassed by a new push — the
+    // retry fires when the timer says, not when the next event arrives.
+    if (!timer) void drain();
     return event;
   }
 
@@ -68,6 +73,7 @@ export function createOutbox({
         // Pop the in-flight event out of the queue so an overflow drop can
         // never remove (or reorder around) an event mid-delivery.
         const event = pending.shift();
+        inFlight += 1;
         try {
           await deliver(event);
           delay = baseDelayMs;
@@ -85,6 +91,8 @@ export function createOutbox({
           }, delay);
           delay = Math.min(delay * 2, maxDelayMs);
           break;
+        } finally {
+          inFlight -= 1;
         }
       }
     } finally {
