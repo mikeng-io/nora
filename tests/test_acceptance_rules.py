@@ -381,7 +381,7 @@ RULE_TESTS = {
     # voice channel to start a session" rejection is reused unchanged
     # underneath (`DiscordMusicToolBridge` calls the identical
     # `MusicPlayerManager.play`), never re-implemented or bypassed here.
-    "R-61": "test_play_music_is_unavailable_off_discord",
+    "R-61": "test_music_verbs_are_absent_off_discord",
     # R-62 (design/discord-music/08-autoplay.md): when a Discord music
     # queue empties with nothing next, MusicPlayer._advance may seed ONE
     # autoplay pick from TrackSource.related() before falling back to the

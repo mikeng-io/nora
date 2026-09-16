@@ -26,12 +26,13 @@ class _FakePersons:
 
 class _FakeBridge:
     def __init__(self, *, play_outcome=None, skip_outcome=None, top_outcome=None,
-                 stop_outcome=None, status_outcome=None) -> None:
+                 stop_outcome=None, status_outcome=None, volume_outcome=None) -> None:
         self.play_outcome = play_outcome
         self.skip_outcome = skip_outcome
         self.top_outcome = top_outcome
         self.stop_outcome = stop_outcome
         self.status_outcome = status_outcome
+        self.volume_outcome = volume_outcome
         self.play_calls: list[dict] = []
         self.top_calls: list[dict] = []
 
@@ -55,6 +56,9 @@ class _FakeBridge:
     async def status(self, *, conversation_id):
         return self.status_outcome
 
+    async def set_volume(self, *, conversation_id, percent):
+        return self.volume_outcome
+
 
 _MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
 
@@ -73,16 +77,15 @@ def _specs(*, platform: str, persons=None, music=None, tagger=None) -> dict:
     return {s.name: s.call for s in specs}
 
 
-async def test_play_music_is_unavailable_off_discord():
+async def test_music_verbs_are_absent_off_discord():
+    """2026-09-16 catalog-level platform filter: music verbs are not even
+    shipped on a non-Discord catalog — the body gate (`unavailable`) was
+    the old shape; a Signal room never sees them now (token saving, decided
+    with `set_music_volume`)."""
     tools = _specs(platform="signal", music=_FakeBridge())
-    out = await tools["play_music"](query="apt")
-    assert out["status"] == "unavailable"
-
-
-async def test_skip_music_is_unavailable_off_discord():
-    tools = _specs(platform="signal", music=_FakeBridge())
-    out = await tools["skip_music"]()
-    assert out["status"] == "unavailable"
+    for verb in ("play_music", "skip_music", "top_music", "stop_music",
+                 "music_status", "set_music_volume"):
+        assert verb not in tools
 
 
 async def test_play_music_is_unavailable_with_no_bridge_wired():
@@ -150,10 +153,9 @@ async def test_skip_music_reports_nothing_found():
     assert out == {"status": "nothing_found"}
 
 
-async def test_top_music_is_unavailable_off_discord():
+async def test_top_music_is_absent_off_discord():
     tools = _specs(platform="signal")
-    out = await tools["top_music"](position=2)
-    assert out["status"] == "unavailable"
+    assert "top_music" not in tools
 
 
 async def test_top_music_reports_nothing_found():
@@ -188,3 +190,25 @@ async def test_music_status_reports_now_playing():
     tools = _specs(platform="discord", music=bridge)
     out = await tools["music_status"]()
     assert out == {"status": "ok", "title": "APT.", "url": "https://y/1"}
+
+
+async def test_set_music_volume_reports_applied():
+    bridge = _FakeBridge(
+        volume_outcome=MusicToolOutcome(status="ok", note="Volume set to 50%."),
+    )
+    tools = _specs(platform="discord", music=bridge)
+    out = await tools["set_music_volume"](percent=50)
+    assert out == {"status": "ok", "note": "Volume set to 50%."}
+
+
+async def test_set_music_volume_nothing_playing():
+    bridge = _FakeBridge(volume_outcome=MusicToolOutcome(status="nothing_found"))
+    tools = _specs(platform="discord", music=bridge)
+    out = await tools["set_music_volume"](percent=200)
+    assert out["status"] == "nothing_found"
+
+
+async def test_set_music_volume_unavailable_with_no_bridge():
+    tools = _specs(platform="discord", music=None)
+    out = await tools["set_music_volume"](percent=80)
+    assert out["status"] == "unavailable"

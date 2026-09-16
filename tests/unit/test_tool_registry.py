@@ -48,7 +48,12 @@ def _deliverer() -> Deliverer:
 
 def _room() -> Room:
     return Room(
-        platform="signal", conversation_id="g1", roster_source=None,
+        # Discord — the music verbs ride on this platform's catalog, so the
+        # full-table registry contracts below see all six of them. A
+        # non-Discord room's catalog deliberately omits them (2026-09-16,
+        # catalog-level platform filter); that cut is pinned by
+        # `test_non_discord_catalog_omits_music_tools`.
+        platform="discord", conversation_id="g1", roster_source=None,
         persons=_FakePersons(),
     )
 
@@ -94,6 +99,7 @@ def test_the_registry_exposes_every_declared_tool():
         "parking_status", "find_parking",
         # Discord-only music (design/discord-music/07-agent-tool.md).
         "play_music", "skip_music", "top_music", "stop_music", "music_status",
+        "set_music_volume",
         "remind", "list_reminders", "cancel_reminder",
         # The Event module (gatherings/RSVP/venue suggestions).
         "create_event", "update_event", "rsvp_event", "cancel_event",
@@ -110,6 +116,38 @@ def test_the_registry_exposes_every_declared_tool():
         # workspace key.
         "search_memory_workspace",
     }
+
+
+def test_non_discord_catalog_omits_music_tools():
+    """2026-09-16 catalog-level platform filter: music verbs are Discord-only,
+    so a non-Discord room's catalog never ships them (they would only ever
+    answer unavailable). The bodies still gate independently — the platform
+    check stays as the second line of defence — but this test pins the
+    TOKEN-SAVING cut at build time."""
+    from nora.agent.registry import ToolRegistry
+    from nora.agent.tools import build_tool_specs
+    registry = ToolRegistry()
+    room = Room(
+        platform="signal", conversation_id="g1", roster_source=None,
+        persons=_FakePersons(),
+    )
+    specs = build_tool_specs(
+        store=_FakeStore(), conversation_id="g1", conversation_type="group",
+        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        metrics=Metrics(), room=room, transit_source=None,
+    )
+    names = {s.name for s in specs}
+    assert not names & {"play_music", "skip_music", "top_music", "stop_music",
+                        "music_status", "set_music_volume"}
+    # And the Discord catalog still carries all six (the `_room()` above pins
+    # that for the full table; this is the explicit signal-half).
+    discord = registry.build(
+        store=_FakeStore(), conversation_id="g1", conversation_type="group",
+        persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
+        metrics=Metrics(), room=_room(),
+    )
+    assert {"play_music", "skip_music", "top_music", "stop_music",
+            "music_status", "set_music_volume"} <= {t.tool_name for t in discord}
 
 
 def test_budgets_match_todays_table():
@@ -228,6 +266,7 @@ def test_budgets_match_todays_table():
         # like `weather`: one call is the ordinary shape for each verb, a
         # second covers "no, the other one" after a bad match.
         "play_music": 2, "skip_music": 2, "top_music": 2, "stop_music": 2, "music_status": 2,
+        "set_music_volume": 2,
         # The three reminder verbs (DEC-70), all 2 and sized by the
         # CONVERSATION rather than by cost: none leaves the host or the
         # database, so a call is one model round trip, and one message can
@@ -602,6 +641,7 @@ ACT_VERBS = frozenset({
     # Discord-only music (design/discord-music/07-agent-tool.md) — every verb
     # but `music_status` mutates the voice session or its queue.
     "play_music", "skip_music", "top_music", "stop_music",
+    "set_music_volume",
 })
 
 # The full read-only set as declared today. Pinned so that ADDING a tool is a
