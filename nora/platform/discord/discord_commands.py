@@ -122,9 +122,16 @@ class DiscordCommands(app_commands.Group):
             return
         log.info("discord command: /discord exit guild=%s", guild_id)
         await interaction.response.defer(ephemeral=True)
-        if self._manager is not None:
-            await self._manager.leave_voice(guild_id)
-        left = await self._hub.exit(guild_id) if self._hub is not None else False
+        try:
+            if self._manager is not None:
+                await self._manager.leave_voice(guild_id)
+            left = await self._hub.exit(guild_id) if self._hub is not None else False
+        except VoiceControllerError:
+            # B-3 (2026-09-16 audit): a controller outage mid-exit used to
+            # leave this deferred interaction unresolved.
+            log.exception("discord exit failed for guild %s", guild_id)
+            await interaction.followup.send(m.controller_unavailable_line(), ephemeral=True)
+            return
         await interaction.followup.send(
             m.left_voice_line() if left else m.not_in_voice_channel_line(),
             ephemeral=True,

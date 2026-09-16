@@ -83,7 +83,10 @@ class _FakeVoiceSession:
         self._playing = False
         self._fail_on_play = fail_on_play
 
-    async def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
+    async def play(
+        self, stream_url: str, *,
+        duration_seconds: float | None = None, resumable: bool | None = None,
+    ) -> None:
         if self._fail_on_play:
             # Stands in for the controller reporting the connection dead
             # (HTTP 409/unavailable) -- the live failure of 2026-08-26,

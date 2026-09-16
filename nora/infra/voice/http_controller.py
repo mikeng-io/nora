@@ -324,11 +324,15 @@ class HttpVoiceSession:
                 raise
             return await verb(self._request_id())
 
-    async def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
+    async def play(
+        self, stream_url: str, *,
+        duration_seconds: float | None = None, resumable: bool | None = None,
+    ) -> None:
         state = await self._with_reconcile(
             lambda request_id: self._client.play(
                 self._generation, stream_url,
-                duration_seconds=duration_seconds, request_id=request_id,
+                duration_seconds=duration_seconds, resumable=resumable,
+                request_id=request_id,
             )
         )
         playback_id = state.get("playback_id")

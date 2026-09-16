@@ -63,11 +63,14 @@ superseded here.
 The live deployment runs from the repo-root `docker-compose.yml`; several of
 its services are built from subtrees here (`stt/`, `drop/`, …). The newest:
 
-* **`voice-sidecar/`** — Node receive-only voice sidecar (stage 2 of the
-  voice-channel design): joins a Discord voice channel, DAVE-decrypts
-  per-user audio, and forwards PCM over a local TCP seam toward the future
-  Python wake gate. Dumb pipe; audio is never stored. See
-  `design/voice-channel/05-sidecar-receive.md` and
+* **`voice-sidecar/`** — the Node audio-controller (design/voice-channel/07):
+  the SOLE holder of the Discord voice connection. Joins a channel,
+  DAVE-decrypts per-user audio and forwards PCM over a local TCP seam
+  toward the Python wake gate, AND drives outbound music/speech playback
+  itself over an HTTP control plane (`nora/infra/voice/http_controller.py`)
+  — no longer receive-only, the stage-2 name from before nora stopped
+  holding its own voice connection. See
+  `design/voice-channel/07-audio-owner-controller.md` and
   `deploy/voice-sidecar/README.md`.
 * **`voice-wake/`** — Python wake gate (stage 3), the seam's only consumer:
   openWakeWord 「喂 Nora」 detection per user, utterance collection,

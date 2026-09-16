@@ -51,7 +51,10 @@ class VoiceSession(Protocol):
     controller's `/stream` endpoint through `VoiceControllerHub`, which owns
     the per-guild generation — never through the music session."""
 
-    async def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None: ...
+    async def play(
+        self, stream_url: str, *,
+        duration_seconds: float | None = None, resumable: bool | None = None,
+    ) -> None: ...
     async def pause(self) -> None: ...
     async def resume(self) -> None: ...
     async def stop(self) -> None: ...
@@ -173,6 +176,13 @@ class MusicPlayer:
         # arrival win. This lock is per-player and held only around the
         # POST, so stop/skip never wait on it.
         self._commit_lock = asyncio.Lock()
+        # N-4 (2026-09-16 audit): bumped by `stop()` (and therefore
+        # `leave()`, which calls it) -- `set_volume`'s post-await re-check
+        # below. Unlike `pause`/`resume`, volume has no track to compare
+        # identity against (nothing needs to be playing for it to apply,
+        # so `self._now_playing` can be `None` before AND after a
+        # concurrent stop), so a plain counter is the signal instead.
+        self._teardown_count = 0
 
     async def _persist_session(self) -> None:
         now_playing = self._now_playing
@@ -207,8 +217,10 @@ class MusicPlayer:
             query_or_url=query_or_url, requested_by=requested_by, added_at=added_at,
         )
         if pending is not None:
-            ok = await self.commit_pending(pending)
-            await self.finish_pending(pending, ok=ok)
+            ok, playback_id, teardown_count = await self.commit_pending(pending)
+            await self.finish_pending(
+                pending, ok=ok, playback_id=playback_id, teardown_count_before=teardown_count,
+            )
         return self.play_outcome(queued=queued, was_idle=was_idle)
 
     async def play_prepare(
@@ -277,8 +289,10 @@ class MusicPlayer:
         `skip_prepare`/`commit_pending`/`finish_pending` itself."""
         skipped, pending, stop_audio = await self.skip_prepare()
         if pending is not None:
-            ok = await self.commit_pending(pending)
-            await self.finish_pending(pending, ok=ok)
+            ok, playback_id, teardown_count = await self.commit_pending(pending)
+            await self.finish_pending(
+                pending, ok=ok, playback_id=playback_id, teardown_count_before=teardown_count,
+            )
         elif stop_audio:
             await self._voice.stop()
         return skipped
@@ -308,8 +322,10 @@ class MusicPlayer:
         pending = await self._advance_prepare()
         if pending is None:
             return
-        ok = await self.commit_pending(pending)
-        await self.finish_pending(pending, ok=ok)
+        ok, playback_id, teardown_count = await self.commit_pending(pending)
+        await self.finish_pending(
+            pending, ok=ok, playback_id=playback_id, teardown_count_before=teardown_count,
+        )
 
     async def prepare_advance(self) -> _PendingPlay | None:
         """`on_track_finished`'s prepare phase, public for the manager's
@@ -355,7 +371,16 @@ class MusicPlayer:
         to whatever plays next either way."""
         if not 0.0 <= volume <= 2.0:
             return False
+        teardown_count = self._teardown_count
         await self._voice.set_volume(volume)
+        if self._teardown_count != teardown_count:
+            # N-4 (2026-09-16 audit): a stop/leave landed while this
+            # awaited — persisting now would RECREATE the session row the
+            # teardown deleted. Same B6 shape as `pause`/`resume`'s
+            # post-await re-check, but volume has no track to compare
+            # identity against (`self._now_playing` can be `None` before
+            # AND after a concurrent stop), hence the counter instead.
+            return False
         self._volume = volume
         await self._persist_session()
         return True
@@ -395,6 +420,8 @@ class MusicPlayer:
         try:
             await self._voice.play(
                 resolved[0].stream_url, duration_seconds=resolved[0].duration_seconds,
+                # CN-8: same seekable-vs-live forwarding as `commit_pending`.
+                resumable=resolved[0].duration_seconds is not None,
             )
         except Exception:
             # External audit Codex MAJOR-3 (2026-08-26): the same dead-voice
@@ -467,7 +494,15 @@ class MusicPlayer:
         does NOT leave the voice channel (`/music stop` ≠ `/discord exit`;
         the controller keeps the connection, e.g. for the wake path). This
         is the one transition that actually ENDS the session, as opposed to
-        every other one just changing what's in it."""
+        every other one just changing what's in it.
+
+        B-3 (2026-09-16 audit): `self._session.delete` runs in a `finally`
+        around `self._voice.stop()` — a controller outage
+        (`VoiceControllerUnavailable`) must not leave the persisted row
+        behind for the next boot to wrongly resume. The original exception
+        still propagates to the caller (`MusicPlayerManager`/the command
+        layer decide how to report it); this only guarantees the row is
+        gone either way."""
         self._cancel_prewarm()
         await self._queue.clear(self._guild_id)
         self._now_playing = None
@@ -476,8 +511,11 @@ class MusicPlayer:
         # is the correct "nothing to autoplay from" case.
         self._last_played = None
         self._paused = False
-        await self._voice.stop()
-        await self._session.delete(self._guild_id)
+        self._teardown_count += 1
+        try:
+            await self._voice.stop()
+        finally:
+            await self._session.delete(self._guild_id)
 
     async def leave(self) -> None:
         """LEAVE-VOICE (design/voice-channel/07 §10, B3): end-music AND
@@ -510,8 +548,10 @@ class MusicPlayer:
         pending = await self._advance_prepare()
         if pending is None:
             return
-        ok = await self.commit_pending(pending)
-        await self.finish_pending(pending, ok=ok)
+        ok, playback_id, teardown_count = await self.commit_pending(pending)
+        await self.finish_pending(
+            pending, ok=ok, playback_id=playback_id, teardown_count_before=teardown_count,
+        )
 
     async def _advance_prepare(self) -> _PendingPlay | None:
         """The advance's DECISION phase — everything except the outbound
@@ -607,7 +647,7 @@ class MusicPlayer:
                 self._now_playing.title, self._now_playing.url,
             )
 
-    async def commit_pending(self, pending: _PendingPlay) -> bool:
+    async def commit_pending(self, pending: _PendingPlay) -> tuple[bool, str | None, int]:
         """The advance's OUTBOUND phase — the `voice.play` POST, the one
         call in this path that can hang on a real network. The manager
         runs it with the guild lock RELEASED (B14: a hanging audio-
@@ -618,12 +658,25 @@ class MusicPlayer:
         Serialized per player (`_commit_lock`) so two advances whose
         prepares overlapped still reach the controller in the order nora
         decided them (replace semantics make the LAST arrival win).
-        Returns `False` (and logs) when the connection is dead — the
-        teardown itself is `finish_pending`'s, back under the lock."""
+        Returns `(False, None, teardown_count)` (and logs) when the
+        connection is dead — the teardown itself is `finish_pending`'s,
+        back under the lock. The second element of a `(True, ...)` return
+        is the `playback_id` THIS play landed as (CN-7, 2026-09-16 audit);
+        the third is `self._teardown_count` as measured BEFORE the play
+        was even attempted — `finish_pending`'s own re-check needs both,
+        see there."""
+        teardown_count = self._teardown_count
         async with self._commit_lock:
             try:
                 await self._voice.play(
                     pending.stream_url, duration_seconds=pending.duration_seconds,
+                    # CN-8 (2026-09-16 audit): forward the resolve step's own
+                    # seekable-vs-live signal — a `ResolvedTrack` with no
+                    # known duration is a live/non-seekable source (yt-dlp
+                    # reports no `duration` for a live stream), the §5
+                    # position-policy case that gets no resume after speech
+                    # preemption instead of restarting from 0.
+                    resumable=pending.duration_seconds is not None,
                 )
             except Exception:
                 # The voice connection is dead (a drop the controller
@@ -636,10 +689,13 @@ class MusicPlayer:
                     "voice connection dead for guild %s; tearing down the session",
                     self._guild_id,
                 )
-                return False
-        return True
+                return False, None, teardown_count
+        return True, getattr(self._voice, "playback_id", None), teardown_count
 
-    async def finish_pending(self, pending: _PendingPlay, *, ok: bool) -> None:
+    async def finish_pending(
+        self, pending: _PendingPlay, *, ok: bool,
+        playback_id: str | None = None, teardown_count_before: int | None = None,
+    ) -> None:
         """The advance's COMMIT phase, back under the guild lock.
 
         `ok=False` is the dead-connection teardown R-65 has always run.
@@ -649,8 +705,47 @@ class MusicPlayer:
         pending play supersedes this one controller-side (replace
         semantics, §3.2) — nothing to do; but a stop leaves NOTHING to
         supersede this track's just-started audio, so it is stopped
-        explicitly or it plays on as a zombie nora no longer tracks."""
+        explicitly or it plays on as a zombie nora no longer tracks.
+
+        CN-7 (2026-09-16 audit): `self._now_playing is None` alone is NOT
+        enough to conclude "nothing supersedes it" — `stop()`/`leave()`
+        never disconnect the underlying voice connection, so a `/music
+        stop` immediately followed by a fresh `/music play` for the SAME
+        guild reuses the very same `VoiceSession` (`VoiceControllerHub`
+        caches it per guild). THIS player is orphaned at that point
+        (popped from the manager's `_players`), but its own `self._voice`
+        is the SAME object the new player is now driving — an unconditional
+        `self._voice.stop()` here would silence the NEW session's own
+        just-started track, not a zombie of this one's. `playback_id` (the
+        id THIS pending's play landed as, from `commit_pending`) is
+        compared against the connection's CURRENT one: unchanged means
+        nothing newer has played on it since, so the stop is genuinely this
+        pending's own leftover audio; changed means someone else's play —
+        old or new player alike — already superseded it, and stopping now
+        would be the CN-7 bug.
+
+        Same finding, the `ok=False` side: `self._queue`/`self._session`
+        are keyed by `guild_id`, not by connection — a belated failure's
+        `queue.clear()`/`session.delete()` would erase a BRAND NEW
+        session's rows, not just this one's stale leftovers, if a fresh
+        `/music play` already wrote them. `teardown_count_before` (from
+        `commit_pending`) answers "did an EXPLICIT stop/leave already run
+        on THIS player while the play was in flight" — if so, that call
+        already did this player's real cleanup, and this belated failure
+        has nothing legitimate left to clean up (the row, if any, belongs
+        to whoever came after); skip entirely rather than guess."""
         if not ok:
+            if (
+                teardown_count_before is not None
+                and self._teardown_count != teardown_count_before
+            ):
+                log.info(
+                    "guild %s: a stale play failure landed after an explicit "
+                    "stop/leave already ran — skipping its redundant (and "
+                    "possibly guild-row-destroying) cleanup",
+                    self._guild_id,
+                )
+                return
             self._cancel_prewarm()
             self._now_playing = None
             try:
@@ -679,7 +774,10 @@ class MusicPlayer:
             self._session_dead = True
             return
         if self._session_dead or self._now_playing is not pending.track:
-            if self._now_playing is None:
+            current_playback_id = getattr(self._voice, "playback_id", None)
+            if self._now_playing is None and (
+                playback_id is None or current_playback_id == playback_id
+            ):
                 try:
                     await self._voice.stop()
                 except Exception:

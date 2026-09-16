@@ -23,7 +23,11 @@ import math
 import discord
 from discord import app_commands
 
-from nora.infra.voice.http_controller import GenerationConflict, VoiceControllerUnavailable
+from nora.infra.voice.http_controller import (
+    GenerationConflict,
+    VoiceControllerError,
+    VoiceControllerUnavailable,
+)
 from nora.infra.voice.hub import VoiceControllerHub
 from nora.platform.discord import music_messages as m
 from nora.platform.discord.discord_commands import DiscordCommands
@@ -153,6 +157,11 @@ class _NowPlayingControls(discord.ui.View):
     async def pause_resume(
         self, interaction: discord.Interaction, _button: discord.ui.Button,
     ) -> None:
+        # N-1 (2026-09-16 audit): defer FIRST, same reason as `skip` above —
+        # `status()` + `pause()`/`resume()` are both round-trips to the
+        # audio-controller that routinely outlast Discord's ~3s window, and
+        # this button used to do them before ever acknowledging the click.
+        await interaction.response.defer()
         status = await self._manager.status(self._guild_id)
         try:
             if status is not None and status.paused:
@@ -170,18 +179,29 @@ class _NowPlayingControls(discord.ui.View):
         except GenerationConflict:
             # Speech holds the connection (`pause_during_speech`) — refuse
             # with a note instead of dying on the click.
-            await interaction.response.send_message(m.cannot_pause_now_line(), ephemeral=True)
+            await interaction.followup.send(m.cannot_pause_now_line(), ephemeral=True)
             return
-        await interaction.response.edit_message(content=await self.render(), view=self)
+        except VoiceControllerError:
+            log.exception("music control pause/resume failed for guild %s", self._guild_id)
+            await interaction.followup.send(m.controller_unavailable_line(), ephemeral=True)
+            return
+        await interaction.edit_original_response(content=await self.render(), view=self)
 
     @discord.ui.button(label="⏹ Stop", style=discord.ButtonStyle.danger)
     async def stop_playback(
         self, interaction: discord.Interaction, _button: discord.ui.Button,
     ) -> None:
         log.info("music control: stop clicked guild=%s user=%s", self._guild_id, _who(interaction))
-        await self._manager.stop(self._guild_id)
+        # N-1: same defer-first fix as `pause_resume`/`skip` above.
+        await interaction.response.defer()
+        try:
+            await self._manager.stop(self._guild_id)
+        except VoiceControllerError:
+            log.exception("music control stop failed for guild %s", self._guild_id)
+            await interaction.followup.send(m.controller_unavailable_line(), ephemeral=True)
+            return
         self._disable_all()
-        await interaction.response.edit_message(content=m.stopped_line(), view=self)
+        await interaction.edit_original_response(content=m.stopped_line(), view=self)
         self.stop()
 
     def _disable_all(self) -> None:
@@ -371,7 +391,16 @@ class MusicCommands(app_commands.Group):
         guild_id = str(interaction.guild_id)
         log.info("music command: /music skip guild=%s user=%s", guild_id, _who(interaction))
         await interaction.response.defer()
-        skipped = await self._manager.skip(guild_id)
+        try:
+            skipped = await self._manager.skip(guild_id)
+        except VoiceControllerError:
+            # B-3 (2026-09-16 audit): a controller outage mid-skip used to
+            # leave this deferred interaction unresolved ("The application
+            # did not respond") — the manager's own `commit_pending` errors
+            # are already logged there, so this is just the reply.
+            log.exception("music skip failed for guild %s", guild_id)
+            await interaction.followup.send(m.controller_unavailable_line(), silent=True)
+            return
         if skipped is None:
             await interaction.followup.send(m.nothing_playing_line(), silent=True)
             return
@@ -432,6 +461,10 @@ class MusicCommands(app_commands.Group):
             # design/voice-channel/07 §5) — a refusal, not a crash.
             await interaction.followup.send(m.cannot_pause_now_line(), silent=True)
             return
+        except VoiceControllerError:
+            log.exception("music pause failed for guild %s", guild_id)
+            await interaction.followup.send(m.controller_unavailable_line(), silent=True)
+            return
         await interaction.followup.send(
             m.paused_line() if ok else m.nothing_playing_line(), silent=True,
         )
@@ -448,6 +481,10 @@ class MusicCommands(app_commands.Group):
         except GenerationConflict:
             await interaction.followup.send(m.cannot_pause_now_line(), silent=True)
             return
+        except VoiceControllerError:
+            log.exception("music resume failed for guild %s", guild_id)
+            await interaction.followup.send(m.controller_unavailable_line(), silent=True)
+            return
         await interaction.followup.send(
             m.resumed_line() if ok else m.not_paused_line(), silent=True,
         )
@@ -459,7 +496,15 @@ class MusicCommands(app_commands.Group):
         guild_id = str(interaction.guild_id)
         log.info("music command: /music stop guild=%s user=%s", guild_id, _who(interaction))
         await interaction.response.defer()
-        await self._manager.stop(guild_id)
+        try:
+            await self._manager.stop(guild_id)
+        except VoiceControllerError:
+            # B-3: `MusicPlayer.stop` now deletes the persisted row before
+            # this can be raised (a controller outage), so the session is
+            # already gone even though the reply below reports the outage.
+            log.exception("music stop failed for guild %s", guild_id)
+            await interaction.followup.send(m.controller_unavailable_line(), silent=True)
+            return
         await interaction.followup.send(m.stopped_line(), silent=True)
 
     @app_commands.command(name="volume", description="Set playback volume (0-200%).")
@@ -479,7 +524,12 @@ class MusicCommands(app_commands.Group):
         # manager's own [0.0, 2.0] check is defense-in-depth, not the
         # primary guard -- kept because this class must not be the only
         # thing standing between a malformed value and MusicPlayer.
-        result = await self._manager.set_volume(guild_id, percent / 100.0)
+        try:
+            result = await self._manager.set_volume(guild_id, percent / 100.0)
+        except VoiceControllerError:
+            log.exception("music volume failed for guild %s", guild_id)
+            await interaction.followup.send(m.controller_unavailable_line(), silent=True)
+            return
         if result is None:
             await interaction.followup.send(m.nothing_playing_line(), silent=True)
             return

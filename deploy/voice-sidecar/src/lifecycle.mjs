@@ -28,6 +28,16 @@
 // left. Writes are best-effort for the command itself but LOUD: a failure is
 // an ERROR log and flips stateWriteOk, surfaced as state_write_ok:false in
 // /voice/status.
+//
+// Empty-channel auto-leave (§12.6): the last human leaving (or Nora joining
+// an already-empty channel) arms a 1-minute grace timer instead of exiting
+// immediately; any human observed before it fires cancels it. On fire, the
+// controller itself emits channel-emptied and tears the connection down
+// (teardown('exit'), so desired=idle persists same as any other exit) — this
+// is the one case where the controller initiates its OWN teardown rather
+// than waiting on an HTTP command. Every other teardown path (explicit exit,
+// voice-death) cancels the pending timer first so it can never fire twice or
+// touch a connection it was not armed for.
 
 import { randomUUID } from 'node:crypto';
 import { httpError } from './errors.mjs';
@@ -67,6 +77,7 @@ export function createLifecycle({
   onTeardown = () => {}, // stop music + speech before the socket dies
   log = () => {},
   deathRecoveryMs = 15_000,
+  emptyChannelGraceMs = 60_000, // §12.6: grace before an empty channel auto-leaves
 }) {
   let voice = 'idle'; // idle | connecting | connected | destroying | error
   let generation = null;
@@ -76,6 +87,7 @@ export function createLifecycle({
   let destroyPromise = null;
   let deathInitiated = false;
   let lastHumanCount = null;
+  let emptyChannelTimer = null; // clock.setTimeout handle for §12.6's grace period, or null when unarmed
   let stateWriteOk = true;
 
   async function persist(state) {
@@ -114,6 +126,10 @@ export function createLifecycle({
     voice = 'connecting';
     deathInitiated = false;
     lastHumanCount = null;
+    // A fresh join starts with no grace timer of its own; any timer from the
+    // connection being replaced should already be gone via teardown()'s own
+    // clear, but a new generation must never inherit a stale one regardless.
+    clearEmptyChannelTimer();
     joinPromise = (async () => {
       try {
         const s = await joinVoice(targetChannelId);
@@ -141,6 +157,13 @@ export function createLifecycle({
   // already pushed) | 'shutdown' (process going down — do NOT change the
   // desired state; a restart should come back to what was desired).
   async function teardown(kind) {
+    // Every teardown path — explicit exit, death, or the empty-channel timer
+    // firing itself — makes any pending §12.6 grace timer moot: once the
+    // connection is going down there is nothing left for it to time out.
+    // Clearing unconditionally (even on the early returns below) means an
+    // already-idle or already-different-generation connection can never be
+    // re-tumbled by a timer that outlived the session it was armed for.
+    clearEmptyChannelTimer();
     if (destroyPromise) return destroyPromise;
     if (voice === 'idle' || (voice === 'error' && !session)) return;
     if (joinPromise) {
@@ -215,6 +238,41 @@ export function createLifecycle({
     return [...members.values()].filter((m) => !m.user?.bot).length;
   }
 
+  // §12.6: an empty channel does not exit immediately — it starts a 1-minute
+  // grace timer, cancelled the moment a human is next observed. clearing is
+  // idempotent (clock.clearTimeout on an already-fired/absent handle is a
+  // no-op) so every call site can clear defensively without checking first.
+  function clearEmptyChannelTimer() {
+    if (emptyChannelTimer !== null) {
+      clock.clearTimeout(emptyChannelTimer);
+      emptyChannelTimer = null;
+    }
+  }
+
+  // gen/cid are captured at arm time, the same pattern handleDeath/teardown
+  // use for their own async callbacks: a timer armed for one generation must
+  // never act on whatever connection happens to be live when it fires.
+  function armEmptyChannelTimer(gen, cid) {
+    clearEmptyChannelTimer(); // never let two timers race for the same drop
+    emptyChannelTimer = clock.setTimeout(() => {
+      emptyChannelTimer = null;
+      void fireEmptyChannelTimeout(gen, cid);
+    }, emptyChannelGraceMs);
+  }
+
+  // The grace period elapsed with nobody returning: emit channel-emptied for
+  // nora (mirroring handleDeath's explicit emitEvent-then-teardown shape —
+  // teardown()'s own `log()` call is diagnostic only, not the nora-facing
+  // event) and then actually tear the connection down ourselves. Unlike the
+  // old immediate-fire behavior, nothing else calls exit() on our behalf here
+  // — the controller now owns both the "when" and the "who tears it down".
+  async function fireEmptyChannelTimeout(gen, cid) {
+    if (generation !== gen) return; // stale timer from a dead/replaced connection
+    log('channel-emptied', { channel_id: cid, generation: gen });
+    emitEvent('channel-emptied', { generation: gen, channel_id: cid });
+    await teardown('exit');
+  }
+
   function watchConnection(s, gen, cid) {
     s.connection?.on?.('stateChange', (_oldState, newState) => {
       if (generation !== gen) return; // stale watcher from a dead connection
@@ -232,6 +290,10 @@ export function createLifecycle({
     // Nora joins whose departure is the FIRST voice-state update must still
     // read as a >0 -> 0 transition (2026-09-16 audit CN-3).
     lastHumanCount = humanCount(s, cid);
+    // §12.6: "alone from join" now carries the SAME policy as a later drop —
+    // joining an already-empty channel arms the grace timer right here
+    // instead of the old behavior of silently never firing for this case.
+    if (lastHumanCount === 0) armEmptyChannelTimer(gen, cid);
     s.client?.on?.('voiceStateUpdate', () => checkChannelEmptied(s, gen, cid));
   }
 
@@ -239,11 +301,18 @@ export function createLifecycle({
     if (generation !== gen) return;
     const humans = humanCount(s, cid);
     if (humans === null) return;
-    // "dropped to zero": only fire on a >0 -> 0 transition, never for the
-    // first observation (the bot sitting alone since join is not a drop).
+    // "dropped to zero": only ARM the grace timer on a >0 -> 0 transition,
+    // never for the first observation (that's the seed, handled above) and
+    // never redundantly for a 0 -> 0 update (the timer already armed by the
+    // original transition keeps running unmolested).
     if (lastHumanCount !== null && lastHumanCount > 0 && humans === 0) {
-      emitEvent('channel-emptied', { generation: gen, channel_id: cid });
-      log('channel-emptied', { channel_id: cid, generation: gen });
+      armEmptyChannelTimer(gen, cid);
+    } else if (humans > 0) {
+      // A human is present again — the room is no longer empty, so any
+      // grace timer counting down toward auto-leave is now moot. Cancel it
+      // rather than letting it re-arm redundantly on the next drop; the next
+      // >0 -> 0 transition arms a fresh one.
+      clearEmptyChannelTimer();
     }
     lastHumanCount = humans;
   }

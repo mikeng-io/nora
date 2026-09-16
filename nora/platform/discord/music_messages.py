@@ -95,6 +95,15 @@ def stopped_line() -> str:
     return "Stopped."
 
 
+def controller_unavailable_line() -> str:
+    """B-3 (2026-09-16 audit): a deferred command whose `MusicPlayerManager`
+    call raised `VoiceControllerError` — the audio-controller is down or
+    unreachable mid-command. Distinct from `join_failed_line` (a failed
+    JOIN specifically); this covers stop/skip/pause/resume/volume/exit
+    hitting the same outage after a session already exists."""
+    return "Lost contact with the voice controller — try again in a moment."
+
+
 def connection_lost_line() -> str:
     """Announced when the voice connection died and the session was torn
     down — the one transition that used to end playback with ZERO

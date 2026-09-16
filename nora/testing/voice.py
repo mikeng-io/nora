@@ -69,6 +69,13 @@ class FakeVoiceController:
         self.playing = False
         self.paused = False
         self.speech_active = False
+        #: Requests QUEUED behind the currently-active one — i.e. this
+        #: never counts the active stream itself (`_state()`'s
+        #: `speech_queue` adds `+1` for that). A `/stream` call while
+        #: `speech_active` increments this; it 503s `speech_queue_full`
+        #: once it reaches `_speech_queue_max`. `finish_speech()` resets it
+        #: to 0 as the "queue fully drained" simplification — per-item
+        #: draining is deliberately NOT emulated (see module docstring).
         self.speech_queue = 0
         self.last_event_seq = 0
         self.state_write_ok = True
@@ -301,8 +308,14 @@ class FakeVoiceController:
             return self._error(400, "invalid_body", body)
         if len(audio) > _MAX_SPEECH_BYTES:
             return self._error(400, "audio_too_large", body)
-        if self.speech_active and self.speech_queue >= self._speech_queue_max:
-            return self._error(503, "speech_queue_full", body)
+        if self.speech_active:
+            # Another stream is already playing: this one QUEUES behind it
+            # — bounded by `_speech_queue_max` — rather than becoming
+            # active itself.
+            if self.speech_queue >= self._speech_queue_max:
+                return self._error(503, "speech_queue_full", body)
+            self.speech_queue += 1
+            return self._ok(body)
         # Speech hard-cuts music (§5 rule 1): the music slot is remembered
         # as suspended; `finish_speech()` is the drain.
         self.speech_active = True
