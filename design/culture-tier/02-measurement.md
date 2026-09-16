@@ -186,7 +186,14 @@ that override stays approximate until someone does.
    was caught by running it on real rows, not by the tests — §2.2.
 3. **Let it run.** Get a baseline of what the gate actually does, on a store
    that survives a restart.
-4. The culture adaptor, consumed by nobody. Writing only.
+4. **DONE 2026-09-17 (PR #277).** The culture adaptor, consumed by nobody.
+   Writing only, and INERT until `[culture] enabled` is turned on. Two tables,
+   a store whose append moves the head in one transaction, a tool-free adaptor,
+   and an objective. Three things the suite caught that review had not: the
+   foreign key ran the wrong way and failed on the FIRST FOLD OF EVERY ROOM;
+   concurrent folds of one key forked the chain until the head read took
+   `FOR UPDATE`; and the no-dates property turned out to be held DOUBLY, so
+   every single mutation of it survived.
 5. The participation turn reads culture. Measured.
 6. **Only then** the gate, if at all — against #144/#147, which measured the
    gate getting worse with more context, and #194, which says a gutted gate
