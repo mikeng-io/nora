@@ -16,7 +16,6 @@ no other way to verify it.
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import logging
 import math
@@ -24,10 +23,13 @@ import math
 import discord
 from discord import app_commands
 
+from nora.infra.voice.http_controller import GenerationConflict, VoiceControllerUnavailable
+from nora.infra.voice.hub import VoiceControllerHub
 from nora.platform.discord import music_messages as m
-from nora.platform.discord.music_manager import MusicPlayerManager
-from nora.platform.discord.music_player import PlayerStatus, PlayOutcome
-from nora.platform.discord.voice_session import DiscordVoiceSession
+from nora.platform.discord.discord_commands import DiscordCommands
+from nora.platform.discord.music_manager import Connect, MusicPlayerManager
+from nora.platform.discord.music_player import PlayerStatus, PlayOutcome, VoiceSession
+from nora.platform.discord.voice_gate import voice_join_decision
 
 log = logging.getLogger("nora.music")
 
@@ -69,35 +71,24 @@ def _notify_factory(interaction: discord.Interaction):
     return notify
 
 
-def _connect_factory(
-    manager: MusicPlayerManager, guild_id: str, channel: discord.VoiceChannel,
-    *, crossfade_seconds: float,
-):
+def _connect_factory(hub: VoiceControllerHub | None, guild_id: str, channel_id: str) -> Connect:
     """Built only when the invoker IS in a voice channel — `None` reaching
     `MusicPlayerManager.play` is what triggers the design's join-rejection,
-    so this function is never called at all in the rejection case."""
+    so this function is never called at all in the rejection case.
 
-    async def connect() -> DiscordVoiceSession:
-        voice_client: discord.VoiceClient = await channel.connect()
+    The join goes through the hub (the audio-controller owns the connection,
+    design/voice-channel/07): first join for a guild POSTs `/voice/join`,
+    later ones reuse the cached session. A `None` hub means music is enabled
+    without an audio-controller configured — the join then fails CLOSED as
+    `VoiceControllerUnavailable`, which the command layer already renders as
+    the join-failed reply."""
 
-        async def _on_finished() -> None:
-            await manager.on_track_finished(guild_id)
-
-        async def _on_voice_death() -> None:
-            # The voice connection died while a track was supposedly
-            # audible (a silent voice-websocket drop Discord never surfaces
-            # as a state change — R-66, found live 2026-08-26: "now its NOT
-            # even playing" after a `discord gateway resumed`). The player
-            # still believes it is playing; end the session like a stop so
-            # a fresh `/music play` joins a clean connection instead of
-            # streaming into a dead socket.
-            await manager.on_voice_death(guild_id)
-
-        return DiscordVoiceSession(
-            voice_client, loop=asyncio.get_running_loop(), on_finished=_on_finished,
-            on_voice_death=_on_voice_death, crossfade_seconds=crossfade_seconds,
-            reconnect_channel=channel,
-        )
+    async def connect() -> VoiceSession:
+        if hub is None:
+            raise VoiceControllerUnavailable(
+                "no audio-controller configured ([speech.tts] sidecar_endpoint is empty)"
+            )
+        return await hub.join(guild_id, channel_id)
 
     return connect
 
@@ -149,24 +140,38 @@ class _NowPlayingControls(discord.ui.View):
     @discord.ui.button(label="⏭ Skip", style=discord.ButtonStyle.secondary)
     async def skip(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
         log.info("music control: skip clicked guild=%s user=%s", self._guild_id, _who(interaction))
+        # Defer FIRST (the slash skip at `MusicCommands.skip` already does):
+        # the manager's skip makes an outbound POST to the audio-controller,
+        # which routinely outlasts Discord's ~3s acknowledgement window —
+        # `response.edit_message` after that would be an unknown-interaction
+        # 404 and the click would read as dead.
+        await interaction.response.defer()
         await self._manager.skip(self._guild_id)
-        await interaction.response.edit_message(content=await self.render(), view=self)
+        await interaction.edit_original_response(content=await self.render(), view=self)
 
     @discord.ui.button(label="⏸ Pause", style=discord.ButtonStyle.secondary)
     async def pause_resume(
         self, interaction: discord.Interaction, _button: discord.ui.Button,
     ) -> None:
         status = await self._manager.status(self._guild_id)
-        if status is not None and status.paused:
-            log.info(
-                "music control: resume clicked guild=%s user=%s", self._guild_id, _who(interaction),
-            )
-            await self._manager.resume(self._guild_id)
-        else:
-            log.info(
-                "music control: pause clicked guild=%s user=%s", self._guild_id, _who(interaction),
-            )
-            await self._manager.pause(self._guild_id)
+        try:
+            if status is not None and status.paused:
+                log.info(
+                    "music control: resume clicked guild=%s user=%s",
+                    self._guild_id, _who(interaction),
+                )
+                await self._manager.resume(self._guild_id)
+            else:
+                log.info(
+                    "music control: pause clicked guild=%s user=%s",
+                    self._guild_id, _who(interaction),
+                )
+                await self._manager.pause(self._guild_id)
+        except GenerationConflict:
+            # Speech holds the connection (`pause_during_speech`) — refuse
+            # with a note instead of dying on the click.
+            await interaction.response.send_message(m.cannot_pause_now_line(), ephemeral=True)
+            return
         await interaction.response.edit_message(content=await self.render(), view=self)
 
     @discord.ui.button(label="⏹ Stop", style=discord.ButtonStyle.danger)
@@ -262,10 +267,17 @@ class MusicCommands(app_commands.Group):
     (`02-control-surface.md`'s "the command tree lives where the client
     lives" note)."""
 
-    def __init__(self, manager: MusicPlayerManager, *, crossfade_seconds: float = 0.0) -> None:
+    def __init__(
+        self,
+        manager: MusicPlayerManager,
+        *,
+        hub: VoiceControllerHub | None = None,
+        voice_channel_ids: frozenset[str] = frozenset(),
+    ) -> None:
         super().__init__(name="music", description="Play music in a voice channel.")
         self._manager = manager
-        self._crossfade_seconds = crossfade_seconds
+        self._hub = hub
+        self._voice_channel_ids = voice_channel_ids
 
     @app_commands.command(
         name="play", description="Play a track, or queue it if one's already playing.",
@@ -283,29 +295,53 @@ class MusicCommands(app_commands.Group):
             guild_id, _who(interaction), query,
         )
         channel = _requester_voice_channel(interaction)
-        connect = (
-            _connect_factory(
-                self._manager, guild_id, channel, crossfade_seconds=self._crossfade_seconds,
+        # The auto-join gate (design/voice-channel/07 §12.2): a FRESH session
+        # may only join the caller's current channel, and only when that
+        # channel is on the configured allow-list. An EXISTING session is
+        # reused regardless (no join happens), so the gate binds only when
+        # starting one — `manager.status` is how "fresh" is known before
+        # `play` runs.
+        decision = voice_join_decision(
+            is_member=isinstance(interaction.user, discord.Member),
+            guild_id=guild_id,
+            caller_channel_id=str(channel.id) if channel is not None else None,
+            allowed=self._voice_channel_ids,
+        )
+        if decision != "ok" and await self._manager.status(guild_id) is None:
+            line = (
+                m.join_voice_channel_line()
+                if decision == "not_in_voice"
+                else m.not_in_allowed_channel_line()
             )
-            if channel is not None else None
+            log.info(
+                "music command: /music play guild=%s -> rejected (%s)", guild_id, decision,
+            )
+            await interaction.response.send_message(line, ephemeral=True)
+            return
+        connect = (
+            _connect_factory(self._hub, guild_id, str(channel.id))
+            if channel is not None and decision == "ok" else None
         )
 
         notify_channel_id = str(interaction.channel_id) if interaction.channel_id else None
+        voice_channel_id = (
+            str(channel.id) if connect is not None and channel is not None else None
+        )
         await interaction.response.defer()
         try:
             outcome = await self._manager.play(
                 guild_id=guild_id, query_or_url=query, requested_by=str(interaction.user.id),
                 added_at=discord.utils.utcnow(), connect=connect,
                 notify=_notify_factory(interaction),
-                voice_channel_id=str(channel.id) if channel is not None else None,
+                voice_channel_id=voice_channel_id,
                 notify_channel_id=notify_channel_id,
             )
         except Exception:
-            # `connect()` (inside `connect`, above) can raise -- a rate
-            # limit, a permission error, a Gateway timeout. Without this,
-            # the already-deferred interaction is left unresolved and
-            # Discord shows "The application did not respond" with nothing
-            # in the logs to explain why.
+            # `connect()` (inside `connect`, above) can raise -- the
+            # controller unreachable, a 409 it could not adopt, a timeout.
+            # Without this, the already-deferred interaction is left
+            # unresolved and Discord shows "The application did not respond"
+            # with nothing in the logs to explain why.
             log.exception("music play failed for guild %s", guild_id)
             await interaction.followup.send(
                 m.join_failed_line(), ephemeral=True, silent=True,
@@ -389,7 +425,13 @@ class MusicCommands(app_commands.Group):
         guild_id = str(interaction.guild_id)
         log.info("music command: /music pause guild=%s user=%s", guild_id, _who(interaction))
         await interaction.response.defer()
-        ok = await self._manager.pause(guild_id)
+        try:
+            ok = await self._manager.pause(guild_id)
+        except GenerationConflict:
+            # Speech holds the connection (controller's `pause_during_speech`,
+            # design/voice-channel/07 §5) — a refusal, not a crash.
+            await interaction.followup.send(m.cannot_pause_now_line(), silent=True)
+            return
         await interaction.followup.send(
             m.paused_line() if ok else m.nothing_playing_line(), silent=True,
         )
@@ -401,12 +443,16 @@ class MusicCommands(app_commands.Group):
         guild_id = str(interaction.guild_id)
         log.info("music command: /music resume guild=%s user=%s", guild_id, _who(interaction))
         await interaction.response.defer()
-        ok = await self._manager.resume(guild_id)
+        try:
+            ok = await self._manager.resume(guild_id)
+        except GenerationConflict:
+            await interaction.followup.send(m.cannot_pause_now_line(), silent=True)
+            return
         await interaction.followup.send(
             m.resumed_line() if ok else m.not_paused_line(), silent=True,
         )
 
-    @app_commands.command(name="stop", description="Stop playback, clear the queue, and leave.")
+    @app_commands.command(name="stop", description="Stop playback and clear the queue.")
     async def stop(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None:
             return
@@ -444,7 +490,11 @@ class MusicCommands(app_commands.Group):
 
 
 async def register(
-    client: discord.Client, manager: MusicPlayerManager, *, crossfade_seconds: float = 0.0,
+    client: discord.Client,
+    manager: MusicPlayerManager,
+    *,
+    hub: VoiceControllerHub | None = None,
+    voice_channel_ids: frozenset[str] = frozenset(),
 ) -> None:
     """Built and synced fresh inside `DiscordAdapter.listen()`, same
     lifecycle as `client` itself — a fresh `discord.Client` per connection
@@ -453,46 +503,39 @@ async def register(
     slightly wasteful but always correct; tracking "already synced" to skip
     it is a real optimization left for if reconnects turn out frequent
     enough to matter (design/discord-music/04-deferred.md's evidence-bar
-    pattern, applied here rather than pre-optimized)."""
+    pattern, applied here rather than pre-optimized).
+
+    Registers `/music` AND the `/discord` voice-control group. There is NO
+    `on_voice_state_update` empty-channel handler here anymore: the
+    audio-controller observes the channel itself and POSTs `channel-emptied`
+    to `/app/v1/voice/event` (design/voice-channel/07 §10, B10) — nora no
+    longer holds a voice client to watch."""
     tree = app_commands.CommandTree(client)
-    tree.add_command(MusicCommands(manager, crossfade_seconds=crossfade_seconds))
+    tree.add_command(MusicCommands(manager, hub=hub, voice_channel_ids=voice_channel_ids))
+    tree.add_command(
+        DiscordCommands(hub=hub, voice_channel_ids=voice_channel_ids, manager=manager)
+    )
     await tree.sync()
-
-    async def on_voice_state_update(
-        _member: discord.Member, before: discord.VoiceState, after: discord.VoiceState,
-    ) -> None:
-        # A different event name than `DiscordListener` registers
-        # (`on_ready`/`on_resumed`/`on_message`/`on_disconnect`), so this
-        # coexists with it rather than clobbering — `Client.event()` binds
-        # per NAME.
-        left_channel = before.channel
-        if left_channel is None or after.channel == left_channel:
-            return  # not "left a channel" (e.g. a mute/deafen toggle)
-        bot_voice_client = left_channel.guild.voice_client
-        if bot_voice_client is None or bot_voice_client.channel != left_channel:
-            # The bot isn't connected to THIS channel — an unrelated voice
-            # channel in the same guild emptying must not tear down a
-            # session that's actively playing somewhere else.
-            return
-        if any(not m.bot for m in left_channel.members):
-            return  # still has humans
-        guild_id = str(left_channel.guild.id)
-        log.info("music control: voice channel emptied, leaving guild=%s", guild_id)
-        await manager.on_voice_channel_emptied(guild_id)
-
-    client.event(on_voice_state_update)
 
 
 async def resume_persisted_sessions(
-    client: discord.Client, manager: MusicPlayerManager, *, crossfade_seconds: float,
+    client: discord.Client,
+    manager: MusicPlayerManager,
+    *,
+    hub: VoiceControllerHub | None,
 ) -> None:
     """Boot-time resume (design/discord-music/06-session-persistence.md
     stage 2): reconnects a guild's session ONLY if its voice channel still
-    has a human in it right now -- symmetric with the existing "leave when
-    a channel empties of humans" rule (`on_voice_state_update`, above): a
-    deploy must not make Nora silently rejoin and play into an empty room.
-    A channel that's gone entirely, or emptied while Nora was down, gets
-    its stale row discarded instead of a reconnect attempt.
+    has a human in it right now -- symmetric with the "leave when a channel
+    empties of humans" rule: a deploy must not make Nora silently rejoin and
+    play into an empty room. A channel that's gone entirely, or emptied
+    while Nora was down, gets its stale row discarded instead of a reconnect
+    attempt.
+
+    The connect closure goes through `hub.join`, which ADOPTS the
+    controller's existing connection + generation when the controller
+    outlived a nora restart — that adoption IS the design/voice-channel/07
+    §12.1 boot reconciliation.
 
     Safe to run on every `on_ready`, not just a genuine process boot --
     `MusicPlayerManager.resume_persisted_session` already refuses to
@@ -523,9 +566,7 @@ async def resume_persisted_sessions(
         try:
             await manager.resume_persisted_session(
                 session,
-                connect=_connect_factory(
-                    manager, session.guild_id, channel, crossfade_seconds=crossfade_seconds,
-                ),
+                connect=_connect_factory(hub, session.guild_id, session.voice_channel_id),
                 notify=notify,
             )
         except Exception:

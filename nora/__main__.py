@@ -27,6 +27,7 @@ from .obs.health import build_health_app, serve
 from .obs.logging import heartbeat, setup_logging
 from .obs.tracing import setup_tracing
 from .web.api import register_web_routes
+from .web.voice import register_voice
 
 PRUNE_INTERVAL_SECONDS = 300.0
 DEBOUNCE_SWEEP_INTERVAL_SECONDS = 300.0
@@ -137,6 +138,19 @@ class App:
             mobility=deps.mobility,
             skills_dir=deps.skills_dir, events=deps.events,
             doctrine_store=deps.doctrine_store,
+        )
+        # The voice channel's text entry point (design/voice-channel/, stage
+        # 3): the wake service POSTs transcripts here, and they enter through
+        # the dispatcher exactly like a typed Discord message — same adapter
+        # callback, same ingest, same reactive path. `on_voice_event` is the
+        # audio-controller's callback channel (design/voice-channel/07 §5) —
+        # present only when the consumer was built (hub + music manager).
+        register_voice(
+            health_app, ingest=deps.dispatcher.on_message,
+            on_voice_event=(
+                deps.voice_event_consumer.consume
+                if deps.voice_event_consumer is not None else None
+            ),
         )
         self._health_runner = await serve(health_app, self.cfg.obs.metrics.port)
 

@@ -1,10 +1,14 @@
-"""`MusicPlayerManager` — per-guild lookup, join-or-reject, and idle/empty
--channel disconnect (design/discord-music/03-state-and-persistence.md).
+"""`MusicPlayerManager` — per-guild lookup, join-or-reject, and the
+idle/empty-channel teardown policies (design/discord-music/
+03-state-and-persistence.md), including the design/voice-channel/07 §10
+lifecycle split: end-music (`/music stop`, idle expiry — the connection
+STAYS) vs leave-voice (emptied channel, voice-death, `/discord exit` — the
+connection is destroyed).
 
 `connect` is a zero-arg async factory the CALLER (the not-independently-
-testable slash-command layer) is responsible for building from a real
-`discord.VoiceChannel.connect()` + `DiscordVoiceSession(...)` — `None` means
-"the requester is not in any voice channel", the rejection trigger.
+testable slash-command layer) is responsible for building over the
+`VoiceControllerHub` — `None` means "the requester is not in any voice
+channel", the rejection trigger.
 
 The idle timer uses an injected `spawn`/`clock_sleep` pair rather than real
 `asyncio.sleep`, so a test proves the SCHEDULING logic (cancel-and-replace,
@@ -19,7 +23,7 @@ from datetime import UTC, datetime
 
 from nora.domain.music import MusicSession
 from nora.domain.ports import ResolvedTrack
-from nora.platform.discord.music_manager import MusicPlayerManager
+from nora.platform.discord.music_manager import MusicPlayerManager, PlaybackProbe
 from nora.testing.music import FakeMusicQueueStore, FakeMusicSessionStore
 
 T0 = datetime(2026, 8, 23, 12, 0, tzinfo=UTC)
@@ -92,28 +96,27 @@ class _GatedSource:
 
 
 class _FakeVoiceSession:
+    """The awaitable `VoiceSession` port (design/voice-channel/07 B4)."""
+
     def __init__(self) -> None:
         self.played: list[str] = []
         self.stopped = 0
         self.disconnected = 0
         self.volume_calls: list[float] = []
 
-    def is_playing(self) -> bool:
-        return bool(self.played) and self.stopped == 0
-
-    def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
+    async def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
         self.played.append(stream_url)
 
-    def pause(self) -> None:
+    async def pause(self) -> None:
         pass
 
-    def resume(self) -> None:
+    async def resume(self) -> None:
         pass
 
-    def stop(self) -> None:
+    async def stop(self) -> None:
         self.stopped += 1
 
-    def set_volume(self, volume: float) -> None:
+    async def set_volume(self, volume: float) -> None:
         self.volume_calls.append(volume)
 
     async def disconnect(self) -> None:
@@ -122,19 +125,19 @@ class _FakeVoiceSession:
 
 class _FailingVoiceSession(_FakeVoiceSession):
     """Plays `fail_after` tracks, then every later `play()` raises -- the
-    live 2026-08-26 shape (a voice websocket that drops mid-session while
-    `is_connected()` keeps reporting True)."""
+    live 2026-08-26 shape (a voice connection that dies mid-session while
+    nothing surfaces the drop)."""
 
     def __init__(self, *, fail_after: int = 1) -> None:
         super().__init__()
         self._fail_after = fail_after
         self._play_count = 0
 
-    def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
+    async def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
         self._play_count += 1
         if self._play_count > self._fail_after:
             raise RuntimeError("Not connected to voice.")
-        super().play(stream_url, duration_seconds=duration_seconds)
+        await super().play(stream_url, duration_seconds=duration_seconds)
 
 
 _TRACK_A = ResolvedTrack(
@@ -170,13 +173,19 @@ def _manager(
     tracks: dict[str, _StubEntry], *,
     related: dict[str, Sequence[ResolvedTrack]] | None = None,
     autoplay_enabled: bool = False,
+    playback_probe: PlaybackProbe | None = None,
+    generation_probe=None,
+    drop_voice_session=None,
+    exit_voice_session=None,
 ) -> MusicPlayerManager:
     scheduler = _FakeScheduler()
     return MusicPlayerManager(
         queue_store=FakeMusicQueueStore(), session_store=FakeMusicSessionStore(),
         track_source=_StubSource(tracks, related=related), idle_timeout_seconds=300.0,
         spawn=asyncio.ensure_future, clock_sleep=scheduler.clock_sleep,
-        autoplay_enabled=autoplay_enabled,
+        autoplay_enabled=autoplay_enabled, playback_probe=playback_probe,
+        generation_probe=generation_probe, drop_voice_session=drop_voice_session,
+        exit_voice_session=exit_voice_session,
     )
 
 
@@ -232,7 +241,10 @@ async def test_an_existing_player_is_reused_even_when_connect_is_none() -> None:
     assert outcome.status == "queued"
 
 
-async def test_queue_emptying_schedules_an_idle_disconnect() -> None:
+async def test_queue_emptying_schedules_an_idle_end_of_music_that_stays_connected() -> None:
+    """Idle expiry is END-MUSIC (design/voice-channel/07 §10, B3): the
+    session is torn down — but the voice connection STAYS (the
+    audio-controller keeps it, e.g. for the wake path)."""
     manager = _manager({"track a": _TRACK_A})
     session = _FakeVoiceSession()
 
@@ -249,7 +261,8 @@ async def test_queue_emptying_schedules_an_idle_disconnect() -> None:
     await asyncio.sleep(0)
     await asyncio.sleep(0)
 
-    assert session.disconnected == 1
+    assert session.stopped == 1
+    assert session.disconnected == 0, "idle expiry must NOT leave the voice channel"
     assert await manager.status("guild-1") is None
 
 
@@ -274,6 +287,7 @@ async def test_a_new_track_before_the_idle_timeout_cancels_the_pending_disconnec
     await asyncio.sleep(0)
     await asyncio.sleep(0)
 
+    assert session.stopped == 0
     assert session.disconnected == 0
     assert (await manager.status("guild-1")) is not None
 
@@ -293,6 +307,72 @@ async def test_r60_a_voice_channel_emptied_of_humans_disconnects_immediately() -
 
     await manager.on_voice_channel_emptied("guild-1")
 
+    assert session.disconnected == 1
+    assert await manager.status("guild-1") is None
+
+
+async def test_music_stop_is_end_music_and_stays_connected() -> None:
+    """`/music stop` ≠ leaving (design/voice-channel/07 §10, B3): the
+    session ends, the voice connection STAYS."""
+    manager = _manager({"track a": _TRACK_A})
+    session = _FakeVoiceSession()
+
+    async def connect() -> _FakeVoiceSession:
+        return session
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+
+    await manager.stop("guild-1")
+
+    assert session.stopped == 1
+    assert session.disconnected == 0, "/music stop must NOT leave the voice channel"
+    assert await manager.status("guild-1") is None
+
+
+async def test_leave_voice_ends_the_music_and_disconnects() -> None:
+    """`/discord exit` (design/voice-channel/07 §10, B3): end-music AND
+    destroy the connection."""
+    manager = _manager({"track a": _TRACK_A})
+    session = _FakeVoiceSession()
+
+    async def connect() -> _FakeVoiceSession:
+        return session
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+
+    await manager.leave_voice("guild-1")
+
+    assert session.stopped == 1
+    assert session.disconnected == 1
+    assert await manager.status("guild-1") is None
+
+
+async def test_on_voice_death_ends_the_music_and_disconnects() -> None:
+    """The controller's voice-death event is leave-voice (and keeps its
+    announce=True behaviour, covered by the `_leave` tests below)."""
+    manager = _manager({"track a": _TRACK_A})
+    session = _FakeVoiceSession()
+
+    async def connect() -> _FakeVoiceSession:
+        return session
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+
+    await manager.on_voice_death("guild-1")
+
+    assert session.stopped == 1
     assert session.disconnected == 1
     assert await manager.status("guild-1") is None
 
@@ -373,7 +453,8 @@ async def test_reusing_an_idle_player_cancels_its_timer_before_the_slow_resolve(
     for _ in range(5):
         await asyncio.sleep(0)
 
-    assert session.disconnected == 0, "the idle timer fired despite reuse cancelling it"
+    assert session.stopped == 0, "the idle timer fired end-music despite reuse cancelling it"
+    assert session.disconnected == 0
 
     gate.set()
     outcome = await play_task
@@ -910,3 +991,381 @@ async def test_resume_persisted_session_without_last_played_stays_idle() -> None
     assert status is not None
     assert status.now_playing is None
     assert notify.messages == []
+
+
+async def test_a_track_end_for_a_superseded_playback_does_not_advance() -> None:
+    """B5 (design/voice-channel/07 §3.3): a `track-finished` naming a
+    playback the controller has since superseded is the OLD track's tail
+    arriving late — the queue must not advance a second time, and the
+    check happens UNDER the guild lock against the probe, never outside
+    it."""
+    manager = _manager(
+        {"track a": _TRACK_A, "track b": _TRACK_B},
+        playback_probe=lambda _guild_id: "pb-new",
+    )
+    notify = _RecordingNotify()
+
+    async def connect() -> _FakeVoiceSession:
+        return _FakeVoiceSession()
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1", notify=notify,
+    )
+    await manager.play(
+        guild_id="guild-1", query_or_url="track b", requested_by="miles",
+        added_at=T0, connect=None,
+    )
+
+    advanced = await manager.on_track_finished("guild-1", playback_id="pb-old")
+
+    assert advanced is False
+    status = await manager.status("guild-1")
+    assert status is not None
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track A"  # the current track survived
+    assert [t.title for t in status.queue] == ["Track B"]  # nothing popped
+    assert notify.messages == []
+
+
+async def test_a_track_end_for_the_current_playback_advances() -> None:
+    """The same event naming the playback the hub currently expects IS the
+    real track end — the queue advances exactly once."""
+    manager = _manager(
+        {"track a": _TRACK_A, "track b": _TRACK_B},
+        playback_probe=lambda _guild_id: "pb-new",
+    )
+    notify = _RecordingNotify()
+
+    async def connect() -> _FakeVoiceSession:
+        return _FakeVoiceSession()
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1", notify=notify,
+    )
+    await manager.play(
+        guild_id="guild-1", query_or_url="track b", requested_by="miles",
+        added_at=T0, connect=None,
+    )
+
+    advanced = await manager.on_track_finished("guild-1", playback_id="pb-new")
+
+    assert advanced is True
+    assert notify.messages == ["Now playing: Track B — locator-b"]
+
+
+async def test_a_track_end_without_a_probe_skips_the_staleness_check() -> None:
+    """A wiring that cannot answer the probe (tests, a partial composition)
+    must never GUESS at staleness — no probe means the check is skipped and
+    the event advances as it always did."""
+    manager = _manager({"track a": _TRACK_A, "track b": _TRACK_B})
+
+    async def connect() -> _FakeVoiceSession:
+        return _FakeVoiceSession()
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+    await manager.play(
+        guild_id="guild-1", query_or_url="track b", requested_by="miles",
+        added_at=T0, connect=None,
+    )
+
+    advanced = await manager.on_track_finished("guild-1", playback_id="pb-anything")
+
+    assert advanced is True
+    status = await manager.status("guild-1")
+    assert status is not None
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track B"
+
+
+class _AdoptedVoiceSession(_FakeVoiceSession):
+    """A voice session as the hub hands it over after adopting the
+    controller's live connection (§12.1): it carries the `playback_id` the
+    controller is ACTUALLY playing, and each `play()` mints a fresh one —
+    the same shape `HttpVoiceSession` has."""
+
+    def __init__(self, *, playback_id: str | None = None) -> None:
+        super().__init__()
+        self.playback_id = playback_id
+        self._play_count = 0
+
+    async def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
+        await super().play(stream_url, duration_seconds=duration_seconds)
+        self._play_count += 1
+        self.playback_id = f"pb-new-{self._play_count}"
+
+
+class _GatedPauseVoiceSession(_FakeVoiceSession):
+    """`pause()`/`set_volume()` block on a gate — the slow HTTP response of
+    the B6 probe (pause's answer landing after a concurrent stop)."""
+
+    def __init__(self, gate: asyncio.Event) -> None:
+        super().__init__()
+        self._gate = gate
+
+    async def pause(self) -> None:
+        await self._gate.wait()
+
+    async def set_volume(self, volume: float) -> None:
+        await self._gate.wait()
+        await super().set_volume(volume)
+
+
+class _GatedPlayVoiceSession(_FakeVoiceSession):
+    """`play()` blocks on a gate — the hung audio-controller of the B14
+    probe (a track-finish advance whose POST never answers)."""
+
+    def __init__(self, gate: asyncio.Event) -> None:
+        super().__init__()
+        self._gate = gate
+
+    async def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
+        await self._gate.wait()
+        await super().play(stream_url, duration_seconds=duration_seconds)
+
+
+async def test_a_track_finish_landing_during_boot_resume_does_not_lose_the_advanced_track() -> None:
+    """B5 (2026-09-16 audit, Codex probe): boot is resuming persisted track
+    A when the controller's `track-finished` for the PRE-RESTART playback
+    lands. The resume must (a) run entirely under the guild lock, so the
+    event waits for it, and (b) reconcile the LIVE playback first — the
+    controller is already playing A on the adopted connection, so A is
+    adopted WITHOUT a replay and the event advances the real queue to B.
+    The pre-fix interleave replayed A OVER the already-advanced B, and B
+    was popped from the queue — lost outright."""
+    manager = _manager(
+        {"track a": _TRACK_A, "track b": _TRACK_B},
+    )
+    voice = _AdoptedVoiceSession(playback_id="pb-live")
+    manager._playback_probe = lambda _guild_id: voice.playback_id  # type: ignore[attr-defined]
+    notify = _RecordingNotify()
+
+    async def connect() -> _AdoptedVoiceSession:
+        return voice
+
+    await manager._queue_store.enqueue(  # type: ignore[attr-defined]
+        guild_id="guild-1", source="youtube", url="locator-b", title="Track B",
+        added_by_person_id="miles", added_at=T0,
+    )
+    persisted = _persisted_session(
+        guild_id="guild-1", now_playing_source="youtube",
+        now_playing_locator="locator-a", now_playing_title="Track A",
+    )
+
+    resume_task = asyncio.ensure_future(
+        manager.resume_persisted_session(persisted, connect=connect, notify=notify)
+    )
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    # The controller's track-finished for the pre-restart playback of A.
+    finish_task = asyncio.ensure_future(
+        manager.on_track_finished("guild-1", playback_id="pb-live")
+    )
+    await asyncio.gather(resume_task, finish_task)
+
+    assert voice.played == ["https://cdn.example/b"], (
+        "A must be ADOPTED, not replayed over the live connection — and the "
+        "finish event must advance the real queue to B, exactly once"
+    )
+    status = await manager.status("guild-1")
+    assert status is not None
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track B"
+    assert [t.title for t in status.queue] == []
+
+
+async def test_a_pause_response_landing_after_stop_does_not_recreate_the_session() -> None:
+    """B6 (2026-09-16 audit): pause waited for its HTTP response, stop
+    deleted the session, and pause's `_persist_session()` then RECREATED
+    it. Pause now runs under the same guild lock as stop, so the persist
+    lands before the delete (arrival order), never after."""
+    gate = asyncio.Event()
+    manager = _manager({"track a": _TRACK_A})
+    voice = _GatedPauseVoiceSession(gate)
+
+    async def connect() -> _FakeVoiceSession:
+        return voice
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+    session_store = manager._session_store  # type: ignore[attr-defined]
+    assert await session_store.get("guild-1") is not None
+
+    pause_task = asyncio.ensure_future(manager.pause("guild-1"))
+    for _ in range(3):
+        await asyncio.sleep(0)  # let pause reach its gated HTTP response
+    stop_task = asyncio.ensure_future(manager.stop("guild-1"))
+    for _ in range(3):
+        await asyncio.sleep(0)  # pre-fix: stop completes underneath the pause
+    gate.set()
+    paused, _ = await asyncio.gather(pause_task, stop_task)
+
+    assert paused is True
+    assert await session_store.get("guild-1") is None, (
+        "the stop's delete must be the LAST write — a pause persist landing "
+        "after it resurrects the session row"
+    )
+    assert await manager.status("guild-1") is None
+
+
+async def test_a_volume_response_landing_after_stop_does_not_recreate_the_session() -> None:
+    """B6, the volume verb: same resurrection shape as pause."""
+    gate = asyncio.Event()
+    manager = _manager({"track a": _TRACK_A})
+    voice = _GatedPauseVoiceSession(gate)
+
+    async def connect() -> _FakeVoiceSession:
+        return voice
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+    session_store = manager._session_store  # type: ignore[attr-defined]
+
+    volume_task = asyncio.ensure_future(manager.set_volume("guild-1", 0.5))
+    for _ in range(3):
+        await asyncio.sleep(0)
+    stop_task = asyncio.ensure_future(manager.stop("guild-1"))
+    for _ in range(3):
+        await asyncio.sleep(0)
+    gate.set()
+    await asyncio.gather(volume_task, stop_task)
+
+    assert await session_store.get("guild-1") is None
+
+
+async def test_a_delayed_voice_death_from_an_old_generation_touches_nothing() -> None:
+    """B8 (2026-09-16 audit): an outbox `voice-death` delayed across an
+    exit/rejoin names the OLD generation. Compared against the live one
+    UNDER the guild lock, it is ignored — the NEW session keeps playing,
+    and the hub's cached session is not dropped."""
+    dropped: list[str] = []
+    manager = _manager(
+        {"track a": _TRACK_A},
+        generation_probe=lambda _guild_id: "gen-2",
+        drop_voice_session=dropped.append,
+    )
+    voice = _FakeVoiceSession()
+
+    async def connect() -> _FakeVoiceSession:
+        return voice
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+
+    await manager.on_voice_death("guild-1", generation="gen-1")
+
+    assert dropped == []
+    assert voice.disconnected == 0
+    status = await manager.status("guild-1")
+    assert status is not None and status.now_playing is not None
+
+    # Positive control: the CURRENT generation's death DOES tear down
+    # (and drops the hub session inside the lock).
+    await manager.on_voice_death("guild-1", generation="gen-2")
+
+    assert dropped == ["guild-1"]
+    assert voice.disconnected == 1
+    assert await manager.status("guild-1") is None
+
+
+async def test_a_delayed_channel_emptied_for_an_old_generation_or_channel_is_ignored() -> None:
+    """B8: `channel-emptied` validates BOTH the generation and the channel
+    under the lock before the leave-voice teardown."""
+    dropped: list[str] = []
+    manager = _manager(
+        {"track a": _TRACK_A},
+        generation_probe=lambda _guild_id: "gen-2",
+        drop_voice_session=dropped.append,
+    )
+    voice = _FakeVoiceSession()
+
+    async def connect() -> _FakeVoiceSession:
+        return voice
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+
+    await manager.on_voice_channel_emptied(
+        "guild-1", generation="gen-1", channel_id="voice-channel-1",
+    )
+    await manager.on_voice_channel_emptied(
+        "guild-1", generation="gen-2", channel_id="cortez-elsewhere",
+    )
+
+    assert dropped == []
+    assert voice.disconnected == 0
+    assert (await manager.status("guild-1")) is not None
+
+    # Positive control: the live generation AND channel DO tear down.
+    await manager.on_voice_channel_emptied(
+        "guild-1", generation="gen-2", channel_id="voice-channel-1",
+    )
+
+    assert dropped == ["guild-1"]
+    assert voice.disconnected == 1
+    assert await manager.status("guild-1") is None
+
+
+async def test_a_hung_play_does_not_block_stop_for_the_guild() -> None:
+    """B14 (2026-09-16 audit): the track-finish advance used to hold the
+    guild lock across the whole play POST — a hanging audio-controller
+    blocked `/music stop`, `/music skip` and `/discord exit` behind its
+    30s timeout. The POST now runs with the lock RELEASED: stop completes
+    promptly, and when the hung play finally lands the finish step's
+    zombie guard kills the audio nora already stopped tracking."""
+    gate = asyncio.Event()
+    gate.set()  # the FIRST play (track A) goes through
+    manager = _manager({"track a": _TRACK_A, "track b": _TRACK_B})
+    voice = _GatedPlayVoiceSession(gate)
+
+    async def connect() -> _FakeVoiceSession:
+        return voice
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+    await manager.play(
+        guild_id="guild-1", query_or_url="track b", requested_by="miles",
+        added_at=T0, connect=None,
+    )
+    gate.clear()  # the controller now hangs on play
+
+    finish_task = asyncio.ensure_future(manager.on_track_finished("guild-1"))
+    for _ in range(5):
+        await asyncio.sleep(0)  # prepare (pop B) done, the play POST in flight
+
+    stop_task = asyncio.ensure_future(manager.stop("guild-1"))
+    # Times out (and fails the test) if stop waits on the hung play POST.
+    await asyncio.wait_for(stop_task, timeout=1.0)
+    assert await manager.status("guild-1") is None
+    assert voice.stopped == 1
+
+    gate.set()
+    await asyncio.wait_for(finish_task, timeout=1.0)
+
+    assert voice.stopped == 2, (
+        "the play landed AFTER the stop — the finish step must kill the "
+        "just-started audio (nothing supersedes it: replace semantics only "
+        "cover a NEWER play)"
+    )

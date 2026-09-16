@@ -29,9 +29,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 
 from nora.domain.ports import MediaSource, PlatformAdapter, PlatformIdentity
+from nora.infra.voice.hub import VoiceControllerHub
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.platform.signal.account import AccountError, derive_account
@@ -122,7 +123,9 @@ class AdapterRegistry:
         metrics: MetricsSink,
         discord_token: str = "",
         music_manager: MusicPlayerManager | None = None,
-        music_crossfade_seconds: float = 0.0,
+        discord_speaker: Any = None,
+        voice_hub: VoiceControllerHub | None = None,
+        voice_channel_ids: frozenset[str] = frozenset(),
     ) -> AdapterRegistry:
         """Build+resolve every enabled platform — Signal, Discord, WhatsApp;
         each one more `if platforms.<x>.enabled:` block, not a rewrite of this
@@ -144,7 +147,12 @@ class AdapterRegistry:
 
         `music_manager` (design/discord-music/00-overview.md) is `None` unless
         `[music] enabled` — composition builds it, this module only threads it
-        through to `DiscordAdapter`, same shape as `discord_token`."""
+        through to `DiscordAdapter`, same shape as `discord_token`.
+
+        `voice_hub` (design/voice-channel/07) is the audio-controller's
+        per-guild session registry — `None` when `[speech.tts]
+        sidecar_endpoint` is empty, which leaves every voice join and speech
+        stream failing closed."""
         adapters: dict[str, PlatformAdapter] = {}
         identities: dict[str, PlatformIdentity] = {}
 
@@ -178,7 +186,9 @@ class AdapterRegistry:
                 )
             discord_adapter = DiscordAdapter(
                 discord_token, music_manager=music_manager,
-                crossfade_seconds=music_crossfade_seconds,
+                speaker=discord_speaker,
+                voice_hub=voice_hub,
+                voice_channel_ids=voice_channel_ids,
             )
             try:
                 discord_identity = await discord_adapter.resolve_identity()

@@ -567,7 +567,7 @@ sticker_descriptions = true
 # identity ladder keeps turning a repeat sighting into zero platform RPC.
 # `sticker_descriptions` above is the sticker sub-gate on the READ only.
 comprehension = true
-# The CHEAP TEXT pass: a voice note's title/description over the SenseVoice
+# The CHEAP TEXT pass: a voice note's title/description over the STT
 # transcript that [speech.stt] already produced, and a video's over its
 # timecoded chunk run. NEVER a second listen or a second watch — the expensive
 # read has already happened.
@@ -986,18 +986,62 @@ provider = "hko"           # the WeatherProvider adapter; "hko" is the only one 
 # timeout_seconds = 8.0
 
 [speech]
-# Voice capability (spec 2026-08-21). STT = Cantonese voice-note transcription
-# at ingest via the LOCAL deploy/stt endpoint — audio never leaves the box.
-# Ships INERT like [weather]/[heartbeat]: turning it on is an operator
-# decision, never something a missing section decides. TTS is deferred
-# (present-but-inert; nothing reads it yet).
+# Voice capability (spec 2026-08-21, design/voice-channel). STT = Cantonese
+# voice-note transcription at ingest via the LOCAL deploy/stt endpoint — audio
+# never leaves the box. TTS = voice-channel speech via MiniMax's CN cloud
+# endpoint — text Nora already decided is fit to say aloud leaves the box; the
+# asymmetry is deliberate (design/voice-channel/00). Both ship INERT like
+# [weather]/[heartbeat]: turning either on is an operator decision, never
+# something a missing section decides.
 [speech.stt]
 enabled = false
 endpoint = "http://stt:8000"   # the deploy/stt service on the private nora network
-language = "yue"               # FunASR/SenseVoice's own LID code, not BCP-47
+model = "noise-detection"      # STT engine: the JackyHoCL Cantonese whisper
+                               # (default since 2026-09-15, design/voice-channel/06);
+                               # "sensevoice" selects the FunASR backup
+language = "yue"               # the engines' own LID code, not BCP-47
 [speech.tts]
 enabled = false
-# provider = ""
+# GUARD (stage 3): `enabled = true` is what lets a 「喂 Nora」 wake answer
+# ALOUD in the voice channel (the wake path below ends in this speaker).
+# Leave it false until the operator has decided voice answers are wanted —
+# a copied config must never start speaking in a voice channel on its own.
+provider = ""                  # empty provider = no speaker; a real deployment
+                               # sets "minimax_cn" (MiniMax CN, speech-2.8-turbo,
+                               # design/voice-channel/04 §3b). The key is read
+                               # from the env var api_key_env NAMES (default
+                               # MINIMAX_CN_API_KEY), never from this file.
+sidecar_endpoint = ""          # the AUDIO-CONTROLLER's HTTP base
+                               # (design/voice-channel/07): speech plays via
+                               # /stream, music via /music/*, joins via
+                               # /voice/join — all on the one voice connection
+                               # the controller owns. Empty = the voice seam
+                               # is unwired; joins and speech fail closed.
+voice_channel_ids = []         # "guild_id/channel_id" pairs Nora may answer
+                               # aloud in (and the ONLY channels /music play
+                               # and /discord join may auto-join); empty =
+                               # nowhere (fail-closed)
+# voice = "Cantonese_CuteGirl" # a NATIVE Cantonese voice — the lever is the
+#                              # voice, not the model tier; language_boost is
+#                              # hard-set in the adapter ("auto" mis-renders 係/唔該)
+# duck_gain = 0.25             # music scales to this while she speaks (0<x<1).
+#                              # PHASE 1: accepted but UNREAD — the controller
+#                              # hard-cuts speech over music; phase 2 restores
+#                              # ducking controller-side.
+# duck_ramp_ms = 150           # ramp down and back up over this many ms — a
+#                              # hard step is audible as a click. Phase 2 only,
+#                              # same note as duck_gain.
+[speech.wake]
+# The wake gate (「喂 Nora」 in a Discord voice channel, stage 3). NOTHING in
+# the nora process reads this section — the wake service is its own container
+# (deploy/voice-wake/) configured by ENV VARS (VOICE_GUILD_ID /
+# VOICE_CHANNEL_ID / VOICE_WAKE_THRESHOLD in .env, mapped by compose); this
+# section is the committed record of its knobs beside its STT/TTS stage
+# siblings, matching the container's own defaults. Ships INERT: without the
+# VOICE_* env vars the service is healthy-but-idle and hears nothing.
+enabled = false
+threshold = 0.5                    # wake score that starts utterance collection
+model_path = "/app/models/喂Nora.onnx"  # baked into the voice-wake image
 
 [heartbeat]
 # The background tick that fires due reminders — Nora's first unprompted-speech
@@ -1350,14 +1394,19 @@ reasoning_effort = "none"
 # is built and the commands never get registered.
 enabled = false
 # Disconnect timer 2 (design/discord-music/03-state-and-persistence.md):
-# queue empty and nothing playing -> leave after this many seconds. Timer 1
-# (voice channel emptied of humans) has no setting — that one means leave
-# immediately, no grace period to size.
+# queue empty and nothing playing -> end the music session after this many
+# seconds. END-MUSIC, not leave-voice (design/voice-channel/07 §10): the
+# audio-controller keeps the voice connection (e.g. for wake). Timer 1
+# (voice channel emptied of humans) has no setting — the controller observes
+# it and POSTs channel-emptied, which means leave immediately, no grace
+# period to size.
 idle_timeout_seconds = 300.0
-# 0 (default) = hard cut between tracks, today's behaviour. Above 0, blends
-# the outgoing/incoming tracks' audio for this many seconds before a
-# track's natural end (spike, 2026-08-24) — /music skip stays an instant
-# cut regardless.
+# Accepted but treated as EFFECTIVE ZERO in phase 1 of the audio-owner
+# controller (design/voice-channel/07 §10, B17): there is no local playback
+# to blend — advancement happens on ACTUAL track completion (the
+# controller's track-finished event). The controller surfaces it in
+# /voice/status as crossfade_seconds: 0; phase 2 restores crossfading
+# controller-side.
 crossfade_seconds = 0.0
 # False (default) = today's behaviour: queue empties, nothing next, leave
 # after idle_timeout_seconds. True (design/discord-music/08-autoplay.md)
@@ -1370,8 +1419,7 @@ autoplay_enabled = false
 # next pick while the current track is still playing, so the next track
 # starts instantly at track-end. Only meaningful when autoplay_enabled is
 # also true. 12.0 is a reasonable starting point: enough lead to cover
-# both lookups on a slow network, small enough to never collide with a
-# 3-second crossfade.
+# both lookups on a slow network.
 autoplay_prewarm_seconds = 0.0
 
 [version]

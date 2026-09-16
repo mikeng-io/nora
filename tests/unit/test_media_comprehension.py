@@ -256,8 +256,8 @@ async def test_two_sightings_in_flight_collapse_to_one_read():
 
 
 async def test_a_voice_note_summarizes_its_transcript_and_never_listens_again():
-    """Issue #116's audio decision. The words are already in hand — SenseVoice
-    transcribed them inline at ingest — so the title and description come from
+    """Issue #116's audio decision. The words are already in hand — the STT
+    service transcribed them inline at ingest — so the title and description come from
     a cheap TEXT pass, and `content` is the transcript itself, stored whole."""
     store = FakeMediaObjectStore()
     interpreter = FakeMediaInterpreter("asking about tonight", title="a voice note")

@@ -1,6 +1,13 @@
 """`SenseVoiceTranscriber` — voice notes to Traditional-Chinese text, via the
 local `stt` service (`deploy/stt/`, spec 2026-08-21).
 
+The class name is historical: the service's DEFAULT model since 2026-09-15 is
+the JackyHoCL `whisper-large-v3-turbo-cantonese-noise-detection` whisper
+(decision: design/voice-channel/06), with SenseVoice as the config-selectable
+backup — `model` picks which, and defaults to the new primary. The client
+itself is engine-agnostic: it speaks the OpenAI `/v1/audio/transcriptions`
+contract either way.
+
 One POST against Nora's OWN local service (private `nora` network, no host
 port — audio never leaves the box). NEVER load-bearing and NEVER raises into
 the ingest loop, the same posture as `LinkShortener`: every failure —
@@ -10,10 +17,10 @@ as it did before speech existed. A voice note that fails to transcribe is
 still a voice note; a message is never dropped over STT.
 
 The endpoint already applies OpenCC s2t (Simplified → Traditional), so the
-text this returns is yue-Hant-HK-ready. `language` is one of FunASR/
-SenseVoice's own short LID codes (`auto`/`zh`/`en`/`yue`/`ja`/`ko`/
-`nospeech`) — NOT a BCP-47 tag; the model silently treats anything it does
-not recognize as `auto`, so a tag like `yue-HK` would pin nothing.
+text this returns is yue-Hant-HK-ready. `language` is one of the engines'
+own short LID codes (`auto`/`zh`/`en`/`yue`/`ja`/`ko`/`nospeech`) — NOT a
+BCP-47 tag; the model silently treats anything it does not recognize as
+`auto`, so a tag like `yue-HK` would pin nothing.
 """
 
 from __future__ import annotations
@@ -37,15 +44,18 @@ class SenseVoiceTranscriber:
     The multipart body is built by hand (not `aiohttp.FormData`) for two
     reasons: the OpenAI contract wants the audio under a `file` part with the
     filename, and the STT service reads the uploaded bytes as-is — a boundary
-    string is just framing. `model` is fixed to `sensevoice`; the service
-    pre-loads that model at boot.
+    string is just framing. `model` names which engine the service runs the
+    audio through (see `deploy/stt/server.py`'s `MODEL_CONFIGS`) and defaults
+    to `noise-detection`, the primary the service itself pre-loads at boot.
     """
 
     def __init__(
         self, *, endpoint: str, language: str = "yue", timeout_seconds: float = 30.0,
+        model: str = "noise-detection",
     ) -> None:
         self._url = endpoint.rstrip("/") + "/v1/audio/transcriptions"
         self._language = language
+        self._model = model
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
 
     async def transcribe(
@@ -69,7 +79,7 @@ class SenseVoiceTranscriber:
         body = (
             f"--{boundary}\r\n"
             f'Content-Disposition: form-data; name="model"\r\n\r\n'
-            f"sensevoice\r\n"
+            f"{self._model}\r\n"
             f"--{boundary}\r\n"
             f'Content-Disposition: form-data; name="language"\r\n\r\n'
             f"{lang}\r\n"

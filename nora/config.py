@@ -896,7 +896,7 @@ class MediaConfig(BaseModel):
     # identity ladder (custody, and what makes a repeat sighting free) alone.
     #
     # `comprehension_text_model` is the CHEAP TEXT pass — a voice note's
-    # title/description over the SenseVoice transcript already in hand, and a
+    # title/description over the STT transcript already in hand, and a
     # video's over its chunk run. Empty means no text pass: a voice note keeps
     # its words with no title (the words are the evidence, the title is a
     # convenience) and a video keeps its timecoded chunk run. Never a vision
@@ -1529,7 +1529,8 @@ class WeatherConfig(BaseModel):
 
 
 class SpeechSttConfig(BaseModel):
-    """Local speech-to-text: which endpoint, which language, and a timeout.
+    """Local speech-to-text: which endpoint, which model, which language, and
+    a timeout.
 
     `[speech.stt]` is a first-class `[speech]` child (not a reuse of
     `[media.describe.audio]` — a voice note is conversation content, not an
@@ -1539,30 +1540,50 @@ class SpeechSttConfig(BaseModel):
     shape: `enabled = false` means Nora never calls out, and a config.toml
     written before this existed keeps loading (`extra="forbid"` makes that a
     real constraint). When enabled, the voice-note ingest path calls
-    `endpoint` with the OpenAI-compatible `/v1/audio/transcriptions` contract;
-    `language` hints the model's LID — NOT a BCP-47 tag, but one of
-    FunASR/SenseVoice's own short codes (`auto`/`zh`/`en`/`yue`/`ja`/`ko`/
-    `nospeech`, per `deploy/stt/server.py`'s `lid_dict`) — any other string is
-    silently treated as `auto` by the model itself; `timeout_seconds` bounds
-    ONE call (the whole ingest path waits for it — see the stage docstring).
+    `endpoint` with the OpenAI-compatible `/v1/audio/transcriptions` contract.
+
+    `model` is one of the ids the STT service advertises on `/v1/models`
+    (`deploy/stt/server.py`'s `MODEL_CONFIGS`): `noise-detection` — the
+    default since 2026-09-15 (design/voice-channel/06), the JackyHoCL
+    Cantonese whisper that won the A/B on real voice audio — or `sensevoice`,
+    the FunASR backup. A config.toml written before `model` existed keeps
+    loading: the default applies, which is exactly the engine the service
+    itself defaults to. `language` hints the model's LID — NOT a BCP-47 tag,
+    but one of the engines' own short codes (`auto`/`zh`/`en`/`yue`/`ja`/`ko`/
+    `nospeech`) — any other string is silently treated as `auto` by the model
+    itself; `timeout_seconds` bounds ONE call (the whole ingest path waits
+    for it — see the stage docstring).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
     endpoint: str = "http://stt:8000"
+    model: str = "noise-detection"
     language: str = "yue"
     timeout_seconds: float = Field(default=30.0, gt=0)
 
 
 class SpeechTtsConfig(BaseModel):
-    """`[speech.tts]` — outbound speech, deliberately deferred.
+    """`[speech.tts]` — outbound speech: voice-channel TTS (design/voice-
+    channel/01 §5).
 
-    Present so the `[speech]` shape is stable and a later part lands without a
-    schema migration. Inert (`enabled = false`) — nothing reads this yet, and
-    the deploy/stt service does not do TTS. No provider is chosen or
-    committed here (MiniMax / edge-tts / xAI undecided; operator deferred the
-    TTS part as more complex).
+    Optional, defaulted, and INERT by default — the same `[search]`/`[weather]`
+    shape as its STT sibling: `enabled = false` (or an empty `provider`) leaves
+    the composition root with no speaker, and nothing about Nora's behaviour
+    changes. The provider decided 2026-09-14 (design/voice-channel/04 §3b) is
+    MiniMax CN (`provider = "minimax_cn"`): `speech-2.8-turbo` with a native
+    Cantonese `voice` and `language_boost` hard-set in the adapter. The key is
+    read from the env var `api_key_env` NAMES (DEC-8) — never from this file.
+
+    `duck_gain`/`duck_ramp_ms` are the ducking law for speech-over-music:
+    while speech plays, the music is scaled to `duck_gain` and back along a
+    `duck_ramp_ms` linear ramp (a hard step is audible as a click). They are
+    the mix's own transient gain — the listener's persisted `/music volume`
+    is never touched by a duck cycle. NOTE (design/voice-channel/07, phase
+    1): the audio-controller currently HARD-CUTS speech over music instead
+    of ducking — these values are accepted and validated, but nothing reads
+    them until phase 2 restores ducking controller-side.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -1570,10 +1591,106 @@ class SpeechTtsConfig(BaseModel):
     enabled: bool = False
     provider: str = ""
     voice: str = ""
+    api_key_env: str = "MINIMAX_CN_API_KEY"
+    duck_gain: float = Field(default=0.25, gt=0, lt=1)
+    duck_ramp_ms: int = Field(default=150, gt=0)
+    # The audio-controller's HTTP base (design/voice-channel/07 — the
+    # sidecar IS the audio-controller, the sole owner of the Discord voice
+    # connection). Empty (the default) leaves the whole voice seam UNWIRED:
+    # a reply to a Discord voice channel is still delivered as an audit row,
+    # but no audio reaches the channel, and every `/music`/`/discord join`
+    # fails closed. Non-empty wires both planes — `send` to a GUILD_VOICE
+    # channel synthesizes the reply via the speaker and POSTs it to
+    # `{sidecar_endpoint}/stream`, and the music verbs drive
+    # `{sidecar_endpoint}/music/*` on the same connection that hears the
+    # wake word.
+    sidecar_endpoint: str = ""
+    # Discord conversation ids ("<guild_id>/<channel_id>") that are VOICE
+    # channels — the wake-answer room (design/voice-channel/, stage 3). A
+    # text POST to a voice channel is refused by Discord with 400, so Nora
+    # must know which reply targets are voice BEFORE trying to send; those
+    # targets route through the speaker + sidecar instead. Empty (default)
+    # keeps the adapter's text-only behaviour everywhere.
+    voice_channel_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _phase1_single_immutable_voice_channel(self) -> SpeechTtsConfig:
+        """Phase 1 is ONE guild and ONE immutable voice channel
+        (design/voice-channel/07 §12.2/§12.5): the audio-controller is
+        hard-bound to its configured channel and answers a join for any
+        other with 400 `not_in_allowed_channel`. A `voice_channel_ids`
+        list naming more than one channel (or channels in more than one
+        guild) would let `/music play` / `/discord join` pass the LOCAL
+        gate for a channel the controller then refuses — the worst of
+        both: the gate says yes, the join says no.
+
+        Refused at load rather than warned about, and NOT gated on
+        `enabled`: `_lead_clears_the_tick`'s argument applies unchanged —
+        a config that only becomes wrong when someone flips the switch
+        becomes wrong at the worst moment, so it fails here, while the
+        operator is still holding the file.
+
+        **This holds unless** phase 2 lifts the single-channel posture
+        controller-side (§13); the controller's own 400 is the reading
+        that would reopen it."""
+        if not self.voice_channel_ids:
+            return self
+        parsed: list[tuple[str, str]] = []
+        for entry in self.voice_channel_ids:
+            guild, sep, channel = entry.partition("/")
+            if not sep or not guild or not channel or "/" in channel:
+                raise ValueError(
+                    f"[speech.tts] voice_channel_ids entry {entry!r} must be "
+                    "\"<guild_id>/<channel_id>\" (the same shape policy.toml "
+                    "uses for a Discord room)"
+                )
+            parsed.append((guild, channel))
+        guilds = {guild for guild, _ in parsed}
+        channels = {channel for _, channel in parsed}
+        if len(guilds) > 1 or len(channels) > 1:
+            raise ValueError(
+                f"[speech.tts] voice_channel_ids names "
+                f"{len(channels)} channel(s) across {len(guilds)} guild(s) — "
+                "phase 1 of the audio-controller is exactly ONE immutable "
+                "channel in ONE guild (design/voice-channel/07 §12.2/§12.5): "
+                "every entry past the first is a channel the join gate would "
+                "admit and the controller would reject with 400 "
+                "not_in_allowed_channel"
+            )
+        return self
+
+
+class SpeechWakeConfig(BaseModel):
+    """`[speech.wake]` — the operator-facing record of the wake gate's knobs
+    (design/voice-channel/, stage 3).
+
+    UNUSUAL for this file, and the docstring carries the why: **nothing in
+    the nora process reads these values.** The wake gate is its own container
+    (`deploy/voice-wake/`) with its own dependency set; it is configured by
+    ENV VARS (compose maps the operator's `VOICE_*` .env names onto them),
+    not by bind-mounting Nora's config.toml into a second app. This section
+    exists because the three-config convention makes `config.example.toml`
+    the committed record of every operator knob — the wake gate's knobs are
+    operator knobs, so they are documented here beside their STT/TTS stage
+    siblings, with the values the container's env falls back to. Keep them
+    in step with `deploy/voice-wake/wakegate/service.py`'s `Config`.
+
+    Ships INERT like its siblings: the wake service starts healthy-but-idle
+    without `VOICE_GUILD_ID`/`VOICE_CHANNEL_ID`, and `enabled` here is the
+    documented default for that posture, not a switch anything reads.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    threshold: float = Field(default=0.5, ge=0, le=1)
+    model_path: str = "/app/models/喂Nora.onnx"
 
 
 class SpeechConfig(BaseModel):
-    """`[speech]` — Nora's voice capability, STT now and TTS later.
+    """`[speech]` — Nora's voice capability: STT (inbound, local) and TTS
+    (outbound, cloud — the deliberate asymmetry design/voice-channel/00
+    records).
 
     Optional, defaulted, and INERT by default — the same convention as
     `[presence]`/`[search]`/`[weather]`/`[compute]`: a config.toml written
@@ -1585,6 +1702,7 @@ class SpeechConfig(BaseModel):
 
     stt: SpeechSttConfig = SpeechSttConfig()
     tts: SpeechTtsConfig = SpeechTtsConfig()
+    wake: SpeechWakeConfig = SpeechWakeConfig()
 
 
 class HeartbeatConfig(BaseModel):
@@ -2189,13 +2307,12 @@ class MusicConfig(BaseModel):
     channel emptied of humans) has no config, since there is no grace period
     to size for an event that already means "leave now".
 
-    `crossfade_seconds` — 0 (the default) disables crossfading entirely: a
-    track ends and the next starts with a hard cut, today's behaviour.
-    Above 0, `DiscordVoiceSession` blends the outgoing and incoming tracks'
-    audio for that many seconds before a track's own natural end. Spike
-    (2026-08-24): only a natural track-end crossfades; `/music skip` stays
-    an instant cut on purpose (skipping is "get me out of this NOW", not a
-    DJ transition).
+    `crossfade_seconds` — accepted but treated as EFFECTIVE ZERO in phase 1
+    of the audio-owner controller (design/voice-channel/07 §10, B17): there
+    is no local playback to blend, and advancement happens on ACTUAL track
+    completion (the controller's `track-finished` event). The controller
+    surfaces the value in its `/voice/status` as `crossfade_seconds: 0`;
+    phase 2 restores crossfading controller-side.
 
     `autoplay_enabled` — False (default) means the bundle's ordinary
     idle-timeout behaviour: the queue empties, nothing next, leave after
@@ -2726,8 +2843,8 @@ class Config(BaseModel):
     weather: WeatherConfig = WeatherConfig()
     # Optional and defaulted — see `SpeechConfig`. Ships INERT (`enabled =
     # false`); off, Nora neither transcribes voice notes at ingest nor speaks
-    # outbound (TTS deferred). On, `[speech.stt]` calls the local SenseVoice
-    # endpoint (`stt:8000`) during the voice-note custody stage.
+    # outbound (TTS deferred). On, `[speech.stt]` calls the local STT endpoint
+    # (`stt:8000`) during the voice-note custody stage.
     speech: SpeechConfig = SpeechConfig()
     # Optional and defaulted — see `HeartbeatConfig`/`RemindersConfig`. The tick
     # ships INERT (`enabled = false`); the caps apply the moment a reminder can

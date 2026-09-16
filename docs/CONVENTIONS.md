@@ -94,8 +94,9 @@ counting a module's responsibilities to counting its lines.
   - **This repo gated behaviour and gated the tree not at all.** R-18 scans
     every byte on its way out to a room; nothing scanned a byte on its way into
     a commit, and they are the same disclosure with a different audience.
-    `tests/architecture/test_no_real_identifiers_in_the_tree.py` is what closes
-    it — but the FIRST version of that gate did not, and the gap is worth
+    The identifier gate that closed it (removed 2026-09-16: it re-scanned all
+    of history on every test run — 5.77 GB RSS, OOM — where the job belongs
+    pre-commit, on staged bytes only) did not at first, and the gap is worth
     keeping written down because it is easy to make again. It read `git
     ls-files`, i.e. the INDEX, while the incident above is about a blob that
     survived `git rm`. Replaying that incident exactly — add corpus, commit,

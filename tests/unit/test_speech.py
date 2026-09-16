@@ -61,9 +61,30 @@ async def test_a_transcription_returns_the_hant_text(monkeypatch):
     url, kwargs = session.posted[0]
     assert url == "http://stt:8000/v1/audio/transcriptions"
     body = kwargs["data"]
-    assert b"sensevoice" in body
+    # The default model is the noise-detection whisper (design/voice-channel/06,
+    # 2026-09-15) — the multipart body must carry it, not the old hardcoded
+    # sensevoice.
+    assert b"noise-detection" in body
+    assert b"sensevoice" not in body
     assert b"yue-HK" in body
     assert b"audio/aac" in body
+
+
+async def test_a_configured_model_is_the_one_the_multipart_carries(monkeypatch):
+    """`model` is the operator's lever for the SenseVoice backup
+    (`[speech.stt] model = "sensevoice"`) — the form field must carry the
+    CONFIGURED id, whatever the default is."""
+    import aiohttp
+    session = _FakeSession()
+    monkeypatch.setattr(aiohttp, "ClientSession", lambda *a, **k: session)
+    t = SenseVoiceTranscriber(endpoint="http://stt:8000", model="sensevoice")
+
+    result = await t.transcribe(data=b"\x00\xff", media_type="audio/aac")
+
+    assert result.available is True
+    _, kwargs = session.posted[0]
+    assert b"sensevoice" in kwargs["data"]
+    assert b"noise-detection" not in kwargs["data"]
 
 
 async def test_an_http_error_is_an_unavailable_result(monkeypatch):

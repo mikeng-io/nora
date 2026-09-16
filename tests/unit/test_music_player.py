@@ -69,6 +69,10 @@ class _StubSource:
 
 
 class _FakeVoiceSession:
+    """The awaitable `VoiceSession` port (design/voice-channel/07 B4) —
+    every verb is a coroutine, matching the real `HttpVoiceSession` over
+    the audio-controller's HTTP control plane."""
+
     def __init__(self, *, fail_on_play: bool = False) -> None:
         self.played: list[str] = []
         self.stopped = 0
@@ -79,29 +83,27 @@ class _FakeVoiceSession:
         self._playing = False
         self._fail_on_play = fail_on_play
 
-    def is_playing(self) -> bool:
-        return self._playing
-
-    def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
+    async def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
         if self._fail_on_play:
-            # Stands in for `discord.errors.ClientException: Not connected
-            # to voice.` -- the live failure of 2026-08-26, when a dropped
-            # voice websocket made every subsequent advance raise.
+            # Stands in for the controller reporting the connection dead
+            # (HTTP 409/unavailable) -- the live failure of 2026-08-26,
+            # when a dropped voice connection made every subsequent advance
+            # raise.
             raise RuntimeError("Not connected to voice.")
         self.played.append(stream_url)
         self._playing = True
 
-    def pause(self) -> None:
+    async def pause(self) -> None:
         self.paused += 1
 
-    def resume(self) -> None:
+    async def resume(self) -> None:
         self.resumed += 1
 
-    def stop(self) -> None:
+    async def stop(self) -> None:
         self.stopped += 1
         self._playing = False
 
-    def set_volume(self, volume: float) -> None:
+    async def set_volume(self, volume: float) -> None:
         self.volume_calls.append(volume)
 
     async def disconnect(self) -> None:
@@ -217,8 +219,8 @@ async def test_play_returns_nothing_found_when_the_source_cannot_resolve() -> No
 
 async def test_skip_advances_to_the_next_queued_track_without_an_explicit_stop() -> None:
     """`voice.play()` for the next track (inside `_advance()`) is what
-    replaces the skipped one -- a crossfade if configured, otherwise
-    `DiscordVoiceSession`'s own instant live-swap. No separate `voice.
+    replaces the skipped one — the controller's `/music/play` is
+    replace-not-enqueue (design/voice-channel/07 §3.2). No separate `voice.
     stop()` call is needed (or made) when there IS a next track."""
     player, voice, _session = _player({"track a": _TRACK_A, "track b": _TRACK_B})
     await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
@@ -508,12 +510,32 @@ async def test_pause_then_resume_round_trip_and_call_voice_once_each() -> None:
     assert (await player.status()).paused is False
 
 
-async def test_stop_clears_the_queue_stops_playback_and_disconnects() -> None:
+async def test_stop_clears_the_queue_stops_playback_and_stays_connected() -> None:
+    """END-MUSIC (design/voice-channel/07 §10, B3): `/music stop` ends the
+    session but must NOT disconnect — the audio-controller keeps the voice
+    connection (e.g. for the wake path)."""
     player, voice, _session = _player({"track a": _TRACK_A, "track b": _TRACK_B})
     await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
     await player.play(query_or_url="track b", requested_by="miles", added_at=T0)
 
     await player.stop()
+
+    assert voice.stopped == 1
+    assert voice.disconnected == 0
+    status = await player.status()
+    assert status.now_playing is None
+    assert status.queue == []
+
+
+async def test_leave_ends_the_music_and_disconnects() -> None:
+    """LEAVE-VOICE (design/voice-channel/07 §10, B3): stop AND destroy the
+    connection — what `/discord exit`, an emptied channel, and voice-death
+    get."""
+    player, voice, _session = _player({"track a": _TRACK_A, "track b": _TRACK_B})
+    await player.play(query_or_url="track a", requested_by="miles", added_at=T0)
+    await player.play(query_or_url="track b", requested_by="miles", added_at=T0)
+
+    await player.leave()
 
     assert voice.stopped == 1
     assert voice.disconnected == 1

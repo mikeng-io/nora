@@ -1,0 +1,279 @@
+// Shared fakes for the audio-controller tests. Every Discord/network/process
+// touch in src/ is behind an injected seam; these fakes drive those seams
+// synchronously so no test needs a token, a network, or a real ffmpeg.
+
+import { EventEmitter } from 'node:events';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+import { createCore } from '../src/controller.mjs';
+import { createStateStore } from '../src/state_store.mjs';
+
+export const GUILD = 'g1';
+export const CHANNEL = 'c1';
+
+export function createFakeClock(start = 1_000_000) {
+  let now = start;
+  let nextId = 1;
+  const timers = new Map();
+  return {
+    now: () => now,
+    setTimeout: (fn, ms) => {
+      const id = nextId++;
+      timers.set(id, { fn, at: now + ms });
+      return id;
+    },
+    clearTimeout: (id) => {
+      timers.delete(id);
+    },
+    advance: (ms) => {
+      const target = now + ms;
+      for (;;) {
+        let best = null;
+        for (const [id, t] of timers) {
+          if (t.at <= target && (!best || t.at < best.t.at)) best = { id, t };
+        }
+        if (!best) break;
+        timers.delete(best.id);
+        now = best.t.at;
+        best.t.fn();
+      }
+      now = target;
+    },
+    pending: () => timers.size,
+  };
+}
+
+// AudioPlayer stand-in: play/pause/unpause/stop + manual finish() for the
+// natural end of the current resource. Emits 'playing' on a microtask like
+// the real player transitioning states.
+export function createFakePlayer() {
+  const player = new EventEmitter();
+  player.state = { status: 'idle' };
+  player.played = [];
+  player.stopped = 0;
+  player.paused = 0;
+  player.unpaused = 0;
+  player.play = (resource) => {
+    player.played.push(resource);
+    player.current = resource;
+    player.state = { status: 'playing', resource };
+    queueMicrotask(() => player.emit('playing'));
+  };
+  player.pause = () => {
+    player.paused += 1;
+    player.state = { status: 'paused', resource: player.current };
+    return true;
+  };
+  player.unpause = () => {
+    player.unpaused += 1;
+    player.state = { status: 'playing', resource: player.current };
+    return true;
+  };
+  player.stop = () => {
+    player.stopped += 1;
+    if (player.state.status !== 'idle') {
+      player.state = { status: 'idle' };
+      player.emit('idle');
+    }
+    return true;
+  };
+  // Natural EOF of the current resource.
+  player.finish = () => {
+    player.state = { status: 'idle' };
+    player.emit('idle');
+  };
+  return player;
+}
+
+// ffmpeg child-process stand-in. Like a real child, a killed process dies
+// and emits 'close' (on a microtask, so synchronous assertions on signals
+// still run first); 'close' is emitted at most once.
+export function createFakeProc() {
+  const proc = new EventEmitter();
+  proc.stdout = new EventEmitter();
+  proc.signals = [];
+  proc.exitCode = null;
+  let closed = false;
+  const emitClose = (code, signal) => {
+    if (closed) return;
+    closed = true;
+    proc.emit('close', code, signal);
+  };
+  proc.kill = (signal) => {
+    proc.signals.push(signal);
+    queueMicrotask(() => emitClose(null, signal));
+    return true;
+  };
+  proc.data = (chunk = Buffer.from('pcm')) => proc.stdout.emit('data', chunk);
+  proc.close = (code, signal = null) => emitClose(code, signal);
+  proc.fail = (err) => proc.emit('error', err);
+  return proc;
+}
+
+export function createFakeResource(stream) {
+  return {
+    stream,
+    playbackDuration: 0,
+    volume: {
+      value: 1,
+      setVolume(v) {
+        this.value = v;
+      },
+    },
+  };
+}
+
+export const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+// Poll a condition across ticks (loopback HTTP + real fs need more than one).
+export async function until(cond, tries = 200) {
+  for (let i = 0; i < tries; i += 1) {
+    if (cond()) return true;
+    await tick();
+  }
+  return cond();
+}
+
+// Full harness: createCore wired with fakes, served on a loopback ephemeral
+// port. Tests drive it over real HTTP plus the fake seams.
+export async function makeHarness(options = {}) {
+  const clock = options.clock ?? createFakeClock();
+  const dir = mkdtempSync(path.join(tmpdir(), 'voc-test-'));
+  const statePath = options.statePath ?? path.join(dir, 'desired_state.json');
+
+  const procs = [];
+  const spawn = (args) => {
+    const p = createFakeProc();
+    p.args = args;
+    procs.push(p);
+    return p;
+  };
+
+  const delivered = []; // events the outbox successfully POSTed
+  const eventAttempts = []; // every delivery attempt body
+  let fetchBehavior = options.fetchBehavior ?? (async () => ({ status: 200 }));
+  const fetchImpl = async (url, opts) => {
+    const body = JSON.parse(opts.body);
+    eventAttempts.push(body);
+    const res = await fetchBehavior(url, opts);
+    if (res && res.status >= 200 && res.status < 300) delivered.push(body);
+    return res;
+  };
+
+  const player = createFakePlayer();
+  const connection = new EventEmitter();
+  const client = new EventEmitter();
+  client.channels = { cache: new Map() };
+  const bus = new EventEmitter();
+  let leaveCount = 0;
+  let pumpCloseCount = 0;
+  const pump = () => {};
+  pump.close = () => {
+    pumpCloseCount += 1;
+  };
+  pump.stats = () => ({ backlog_dropped: 0, no_listener_dropped: 0 });
+
+  const joinCalls = [];
+  const joinVoice = async (channelId) => {
+    joinCalls.push(channelId);
+    if (options.joinGate) await options.joinGate();
+    if (options.joinError) throw options.joinError;
+    return {
+      connection,
+      client,
+      player,
+      bus,
+      pump,
+      leave: async () => {
+        leaveCount += 1;
+        if (options.leaveGate) await options.leaveGate();
+      },
+    };
+  };
+  const entersStateCalls = [];
+  const entersStateFn = async (conn, status, ms) => {
+    entersStateCalls.push({ status, ms });
+    if (options.recoveryFails) throw new Error('recovery failed');
+  };
+
+  const core = createCore({
+    guildId: GUILD,
+    channelId: options.channelId ?? CHANNEL,
+    joinVoice,
+    entersStateFn,
+    stateStore: options.stateStore ?? createStateStore({ path: statePath }),
+    spawn,
+    createMusicResource: (stream) => createFakeResource(stream),
+    createSpeechResource: (audio, mediaType) => ({ audio, mediaType, playbackDuration: 0 }),
+    fetchImpl,
+    eventUrl: 'http://nora.test/app/v1/voice/event',
+    clock,
+    getWakeStats: () => ({ u1: { frames: 1, bytes: 3840 } }),
+    pumpInfo: () => ({ host: '127.0.0.1', port: 4599, drops: pump.stats() }),
+    log: () => {},
+    arbiterOptions: options.arbiterOptions ?? {},
+    outboxOptions: options.outboxOptions ?? {},
+  });
+
+  await new Promise((resolve) => core.server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${core.server.address().port}`;
+  const post = async (p, body) => {
+    const res = await fetch(base + p, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+    });
+    return { status: res.status, body: await res.json() };
+  };
+  const get = async (p) => {
+    const res = await fetch(base + p);
+    return { status: res.status, body: await res.json() };
+  };
+
+  // Join the default channel and return the minted generation.
+  const join = async (channelId = CHANNEL) => {
+    const res = await post('/voice/join', { guild_id: GUILD, channel_id: channelId });
+    return { res, generation: res.body.state.generation };
+  };
+
+  return {
+    clock,
+    core,
+    player,
+    connection,
+    client,
+    bus,
+    procs,
+    delivered,
+    eventAttempts,
+    post,
+    get,
+    join,
+    joinCalls,
+    entersStateCalls,
+    statePath,
+    setFetchBehavior: (fn) => {
+      fetchBehavior = fn;
+    },
+    leaves: () => leaveCount,
+    pumpCloses: () => pumpCloseCount,
+    close: () => new Promise((resolve) => core.server.close(resolve)),
+  };
+}
+
+// Drive a /music/play all the way to PLAYING: POST, then first ffmpeg bytes.
+export async function playTrack(h, { generation, url = 'https://cdn.test/a', title = 'A', requestId } = {}) {
+  const res = await h.post('/music/play', {
+    guild_id: GUILD,
+    generation,
+    stream_url: url,
+    title,
+    ...(requestId ? { request_id: requestId } : {}),
+  });
+  const proc = h.procs[h.procs.length - 1];
+  proc.data();
+  await tick();
+  return { res, proc, playbackId: res.body.state.playback_id };
+}

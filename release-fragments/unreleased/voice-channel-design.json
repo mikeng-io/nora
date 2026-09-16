@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "Design bundle for voice-channel TTS, ducking, and wake word (design/voice-channel/).",
+  "details": [],
+  "limitations": [],
+  "reason": "Design-only: no runtime change. Specifies the Speaker port, DuckSource mixer, and the staged wake word; nothing is implemented and [speech.tts] stays disabled."
+}

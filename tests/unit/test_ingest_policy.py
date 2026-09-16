@@ -9,7 +9,12 @@ from __future__ import annotations
 
 from nora.domain.models import NormalizedMessage
 from nora.domain.ports import EngageDecision, EngagePolicy
-from nora.ingest.policy import CompositePolicy, RelevanceGatePolicy, TriggerTextPolicy
+from nora.ingest.policy import (
+    CompositePolicy,
+    RelevanceGatePolicy,
+    TriggerTextPolicy,
+    VoiceWakePolicy,
+)
 from nora.policy import Conversation, Policy
 
 
@@ -117,3 +122,36 @@ async def test_the_composite_passes_a_relevance_gate_verdict_through():
     plain = CompositePolicy((TriggerTextPolicy("nora.000"),))
     skipped = await plain.should_engage(message=_msg("just chatting"))
     assert skipped.engage is False and skipped.relevance_gate is False
+
+
+async def test_voice_wake_transcript_engages() -> None:
+    """A transcript that arrived via the voice-wake channel engages her.
+
+    Measured 2026-09-16: without this policy the transcript lands in the
+    audit row and the engage gate says ``no_trigger`` — DB row inserted,
+    reply count 0. The wake service only POSTs after the operator said
+    「喂 Nora」, the voice channel's closest thing to an explicit tag.
+    """
+    policy = VoiceWakePolicy()
+    decision = await policy.should_engage(
+        message=_msg("喂Nora你好").__class__(
+            platform="discord",
+            conversation_id="100000000000000203/1710045761601186165",
+            conversation_type="group",
+            sender_id="100000000000000001",
+            sender_name=None,
+            timestamp=1,
+            body="喂Nora你好，喂Nora你好",
+            raw={"voice": True, "user_id": "100000000000000001"},
+        )
+    )
+    assert decision.engage is True
+    assert decision.reason == "voice_wake"
+
+
+async def test_typed_message_with_same_body_does_not_engage() -> None:
+    """Typed traffic is untouched — only the raw["voice"] marker routes."""
+    policy = VoiceWakePolicy()
+    decision = await policy.should_engage(message=_msg("喂Nora你好"))
+    assert decision.engage is False
+    assert decision.reason == "no_trigger"

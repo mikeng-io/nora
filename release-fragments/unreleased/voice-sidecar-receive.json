@@ -1,0 +1,14 @@
+{
+  "type": "feature",
+  "summary": "Voice channel, stage 2: a Node sidecar (`deploy/voice-sidecar/`) can join a Discord voice channel and hear it — DAVE-decrypted per-user audio is decoded to PCM and forwarded over a local TCP seam toward the future wake gate. Ships as a compose service, inert until configured.",
+  "details": [
+    "The receive path is Discord's own stack (`@discordjs/voice@0.19.2` + libdave via `@snazzah/davey@0.1.12`, exactly pinned), the route chosen in design/voice-channel/05-sidecar-receive.md after the live DAVE spike passed with real decrypted audio. Identity is protocol-native: the Speaking opcode's SSRC→user_id mapping makes every forwarded frame attributable to the user Discord says owns it — no speaker recognition anywhere.",
+    "The sidecar is a dumb pipe: receive, decrypt, decode, forward. No wake word, no STT, no AI — all intelligence stays in the Python stack. PCM goes out over a length-prefixed TCP frame stream (default port 4599) that the stage-3 Python wake gate will consume; a `consume.mjs` stand-in verifies the seam today.",
+    "Audio is transient by design: PCM is forwarded, never stored. WAV recording exists only in the spike/verification harness (`spike.mjs`), never in the production service.",
+    "Ships as the `voice-sidecar` compose service (own image from `deploy/voice-sidecar/`, no published ports, private `nora` network only), with a loopback `/health` liveness endpoint, a Dockerfile mirroring `deploy/stt/`, and a self-contained smoke test (`node smoke_test.mjs`) that drives synthetic PCM through the real pump→TCP→frame-parser path and asserts the spike's measured numbers."
+  ],
+  "limitations": [
+    "Inert as shipped: without `DISCORD_BOT_TOKEN` + `VOICE_GUILD_ID` + `VOICE_CHANNEL_ID` in the operator's `.env` the service is healthy-but-idle (joins nothing), and nothing consumes the forwarded stream yet — the wake gate is stage 3, separately gated on a real-audio probe.",
+    "Verified by smoke test and `docker compose config`; the container image itself was not built in this stage."
+  ]
+}

@@ -84,6 +84,13 @@ def resumed_line() -> str:
     return "Resumed."
 
 
+def cannot_pause_now_line() -> str:
+    """The controller's `pause_during_speech` refusal (design/voice-channel/07
+    §5): speech holds the connection, so neither pause nor resume can act —
+    the one arbiter-state refusal a music command can surface."""
+    return "Can't pause or resume right now — a reply is playing."
+
+
 def stopped_line() -> str:
     return "Stopped."
 
@@ -125,6 +132,36 @@ def not_in_voice_note() -> str:
     """Model-facing note for the agent tools: the requester isn't in a voice
     channel, so a FIRST track can't start."""
     return "You need to be in a voice channel first."
+
+
+def not_in_allowed_channel_line() -> str:
+    """The join gate's refusal (design/voice-channel/07 §12.2): the caller
+    IS in a voice channel, but not one on the configured allow-list."""
+    return "I can't join that voice channel — it's not one I'm allowed in."
+
+
+def not_in_allowed_channel_note() -> str:
+    """Model-facing note for the agent tools: same refusal as the line
+    above."""
+    return "That voice channel isn't one I'm allowed to join."
+
+
+def joined_voice_line() -> str:
+    return "Joined the voice channel."
+
+
+def already_in_voice_line() -> str:
+    return "I'm already in the voice channel."
+
+
+def left_voice_line() -> str:
+    return "Left the voice channel."
+
+
+def not_in_voice_channel_line() -> str:
+    """`/discord exit` when there is no connection to leave — distinct from
+    `join_voice_channel_line`, which tells the CALLER to join one."""
+    return "I'm not in a voice channel."
 
 
 def disconnected_note() -> str:

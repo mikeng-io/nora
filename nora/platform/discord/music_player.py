@@ -10,14 +10,14 @@ attempted, only "what track, paused-or-not, what volume, which channels").
 Every transition that changes what a restart would need to know writes
 through to `self._session` before returning.
 
-`VoiceSession` deliberately does NOT take an `after` callback the way
-`discord.py`'s real `VoiceClient.play(source, after=...)` does — that
-callback fires off the event loop thread in production, and scheduling it
-back onto the loop is the Discord integration layer's job
-(`02-control-surface.md`'s own boundary), not this class's. This class
-exposes `on_track_finished()` for that layer to call once it has done its
-own thread-safe scheduling; `skip()` is the same advance, driven directly
-by a command instead."""
+`VoiceSession` is an AWAITABLE port (design/voice-channel/07 B4): the one
+real implementation, `nora/infra/voice/http_controller.py`'s
+`HttpVoiceSession`, drives the audio-controller over HTTP rather than
+holding a local voice connection. Track completion arrives as the
+controller's `track-finished` event (`POST /app/v1/voice/event`), which the
+voice-event consumer routes to `MusicPlayerManager.on_track_finished` —
+advancement happens on ACTUAL completion only, never on a local timer.
+`skip()` is the same advance, driven directly by a command instead."""
 
 from __future__ import annotations
 
@@ -42,12 +42,20 @@ log = logging.getLogger("nora.music")
 
 
 class VoiceSession(Protocol):
-    def is_playing(self) -> bool: ...
-    def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None: ...
-    def pause(self) -> None: ...
-    def resume(self) -> None: ...
-    def stop(self) -> None: ...
-    def set_volume(self, volume: float) -> None: ...
+    """The player's handle on the voice connection — awaitable because the
+    real implementation POSTs to the audio-controller's HTTP control plane
+    (`play` is REPLACE semantics there, so a `play()` while audible
+    supersedes the current track, matching what skip/advance rely on).
+
+    Speech (TTS) deliberately has NO verb here: spoken replies ride the
+    controller's `/stream` endpoint through `VoiceControllerHub`, which owns
+    the per-guild generation — never through the music session."""
+
+    async def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None: ...
+    async def pause(self) -> None: ...
+    async def resume(self) -> None: ...
+    async def stop(self) -> None: ...
+    async def set_volume(self, volume: float) -> None: ...
     async def disconnect(self) -> None: ...
 
 
@@ -67,6 +75,21 @@ class PlayerStatus:
     now_playing: QueuedTrack | None
     paused: bool
     queue: Sequence[QueuedTrack]
+
+
+@dataclass(frozen=True, slots=True)
+class _PendingPlay:
+    """A track `_advance_prepare` decided to START whose outbound
+    `voice.play` POST has not landed yet (B14, design/voice-channel/07:
+    the manager deliberately RELEASES its per-guild lock around that POST
+    so a hung audio-controller cannot block skip/stop/exit).
+    `schedule_prewarm` carries the lookahead decision made under the lock
+    so the finish step needs no queue re-read."""
+
+    track: QueuedTrack
+    stream_url: str
+    duration_seconds: float | None
+    schedule_prewarm: bool
 
 
 class MusicPlayer:
@@ -143,6 +166,13 @@ class MusicPlayer:
         # reused the dead player). The manager reads this after every
         # transition and calls `_leave` to drop the player entirely.
         self._session_dead = False
+        # Serializes the outbound play POSTs THEMSELVES (B14): the manager
+        # runs `commit_pending` with its guild lock RELEASED, so two
+        # advances whose prepares overlapped could otherwise reach the
+        # controller out of order — and replace semantics make the LAST
+        # arrival win. This lock is per-player and held only around the
+        # POST, so stop/skip never wait on it.
+        self._commit_lock = asyncio.Lock()
 
     async def _persist_session(self) -> None:
         now_playing = self._now_playing
@@ -167,10 +197,32 @@ class MusicPlayer:
         whether to start playback (matching the single-track path: only the
         FIRST call for an idle guild advances; the rest of a playlist just
         joins the queue behind it, same as if they'd been added one at a
-        time)."""
+        time).
+
+        Composed convenience over the B14 phases (`play_prepare` →
+        `commit_pending` → `finish_pending`) for callers holding no guild
+        lock; `MusicPlayerManager` drives the phases itself so the outbound
+        POST runs with the lock released."""
+        queued, pending, was_idle = await self.play_prepare(
+            query_or_url=query_or_url, requested_by=requested_by, added_at=added_at,
+        )
+        if pending is not None:
+            ok = await self.commit_pending(pending)
+            await self.finish_pending(pending, ok=ok)
+        return self.play_outcome(queued=queued, was_idle=was_idle)
+
+    async def play_prepare(
+        self, *, query_or_url: str, requested_by: str, added_at: datetime,
+    ) -> tuple[list[QueuedTrack], _PendingPlay | None, bool]:
+        """Resolve + enqueue + the advance DECISION, with NO outbound play
+        POST — the prepare phase of the B14 split. Returns the enqueued
+        tracks (empty when the query resolved to nothing), the pending
+        play (`None` when nothing needs to start), and whether the session
+        was idle beforehand (the playing-vs-queued distinction
+        `play_outcome` needs once the commit has run)."""
         resolved = await self._source.resolve(query_or_url=query_or_url)
         if not resolved:
-            return PlayOutcome(status="nothing_found", track=None)
+            return [], None, self._now_playing is None
         # Sequential `await`s, deliberately not `asyncio.gather` — firing a
         # playlist's enqueues concurrently would race on position assignment
         # the same way two concurrent `/music play` calls did before the
@@ -184,17 +236,27 @@ class MusicPlayer:
             )
             for track in resolved
         ]
-        if self._now_playing is None:
-            await self._advance()
-            # NOT `queued[0]`: `_advance()` pops from the FRONT of the
-            # persisted queue, which is `queued[0]` only when the queue was
-            # empty before this call. A guild carrying leftover tracks from
-            # an earlier session (e.g. a boot-time-discarded session whose
-            # queue wasn't drained) would otherwise have this claim the
-            # just-resolved track is playing while a stale one actually
-            # started (found live 2026-08-24: "play apt" reported APT
-            # while an orphaned K-pop queue entry played instead).
-            # `self._now_playing` is what `_advance()` actually started.
+        was_idle = self._now_playing is None
+        pending = await self._advance_prepare() if was_idle else None
+        return queued, pending, was_idle
+
+    def play_outcome(
+        self, *, queued: Sequence[QueuedTrack], was_idle: bool,
+    ) -> PlayOutcome:
+        """Computed AFTER `finish_pending` — a commit that found the voice
+        connection dead tore the session down, so `self._now_playing` (not
+        the prepare-time expectation) is what the reply must describe.
+        NOT `queued[0]` for the playing case: `_advance_prepare()` pops
+        from the FRONT of the persisted queue, which is `queued[0]` only
+        when the queue was empty before this call. A guild carrying
+        leftover tracks from an earlier session (e.g. a boot-time-
+        discarded session whose queue wasn't drained) would otherwise have
+        this claim the just-resolved track is playing while a stale one
+        actually started (found live 2026-08-24: "play apt" reported APT
+        while an orphaned K-pop queue entry played instead)."""
+        if not queued:
+            return PlayOutcome(status="nothing_found", track=None)
+        if was_idle:
             return PlayOutcome(status="playing", track=self._now_playing, queued_count=len(queued))
         return PlayOutcome(status="queued", track=queued[0], queued_count=len(queued))
 
@@ -203,31 +265,70 @@ class MusicPlayer:
         `None` if nothing was.
 
         Deliberately does NOT call `voice.stop()` up front when there IS a
-        next track: `_advance()`'s own `voice.play()` call for it replaces
-        whatever's currently audible (a crossfade if `[music]
-        crossfade_seconds` is set, otherwise `DiscordVoiceSession`'s own
-        live-swap does an instant cut) — the same mechanism a natural
-        track-end crossfade already relies on, just triggered by a command
-        instead of the early-fire timer. Only when the queue is EMPTY is
-        there nothing to supersede the skipped track's still-live audio,
-        so `stop()` is the explicit fallback for that case."""
-        skipped = self._now_playing
-        await self._advance()
-        if self._now_playing is None:
-            self._voice.stop()
+        next track: the advance's own `voice.play()` call for it REPLACES
+        whatever's currently audible (the controller's `/music/play` is
+        replace-not-enqueue, design/voice-channel/07 §3.2) — the same
+        mechanism a natural track-end relies on, just triggered by a command
+        instead of the controller's `track-finished` event. Only when the
+        queue is EMPTY is there nothing to supersede the skipped track's
+        still-live audio, so `stop()` is the explicit fallback for that case.
+
+        Composed over the B14 phases like `play()`; the manager drives
+        `skip_prepare`/`commit_pending`/`finish_pending` itself."""
+        skipped, pending, stop_audio = await self.skip_prepare()
+        if pending is not None:
+            ok = await self.commit_pending(pending)
+            await self.finish_pending(pending, ok=ok)
+        elif stop_audio:
+            await self._voice.stop()
         return skipped
 
+    async def skip_prepare(self) -> tuple[QueuedTrack | None, _PendingPlay | None, bool]:
+        """Skip's under-lock phase: (the skipped track, the pending play,
+        stop-audio). `stop-audio` marks the queue-ran-out case — NOTHING
+        supersedes the skipped track's still-live audio, so the controller
+        must be told to go silent (replace semantics cover every other
+        case)."""
+        skipped = self._now_playing
+        pending = await self._advance_prepare()
+        stop_audio = pending is None and self._now_playing is None
+        return skipped, pending, stop_audio
+
+    async def stop_audio(self) -> None:
+        """Just the controller stop — NO queue/session mutation. The
+        manager's skip path calls it with the guild lock released (B14)
+        when a skip leaves nothing to supersede the skipped track's audio."""
+        await self._voice.stop()
+
     async def on_track_finished(self) -> None:
-        """The Discord integration layer's `after` callback lands here once
-        it has scheduled itself back onto the event loop — the real voice
-        client already stopped on its own, so this does NOT call
-        `voice.stop()` again."""
-        await self._advance()
+        """The controller's `track-finished` event lands here via the
+        voice-event consumer — the controller already stopped the track on
+        its own, so this does NOT call `voice.stop()` again. Composed over
+        the B14 phases; the manager drives them itself."""
+        pending = await self._advance_prepare()
+        if pending is None:
+            return
+        ok = await self.commit_pending(pending)
+        await self.finish_pending(pending, ok=ok)
+
+    async def prepare_advance(self) -> _PendingPlay | None:
+        """`on_track_finished`'s prepare phase, public for the manager's
+        B14 lock scoping (staleness check and decision under the guild
+        lock, the POST outside it)."""
+        return await self._advance_prepare()
 
     async def pause(self) -> bool:
         if self._now_playing is None or self._paused:
             return False
-        self._voice.pause()
+        track = self._now_playing
+        await self._voice.pause()
+        if self._now_playing is not track:
+            # B6: the pause response outlived the track it was for — a
+            # stop/teardown landed while the POST was in flight (reachable
+            # only by a caller that bypasses the manager's guild lock; the
+            # manager serializes this properly). Persisting now would
+            # RECREATE the session row the teardown deleted.
+            return False
         self._paused = True
         await self._persist_session()
         return True
@@ -235,7 +336,11 @@ class MusicPlayer:
     async def resume(self) -> bool:
         if self._now_playing is None or not self._paused:
             return False
-        self._voice.resume()
+        track = self._now_playing
+        await self._voice.resume()
+        if self._now_playing is not track:
+            # B6, same as `pause`: the response landed after a teardown.
+            return False
         self._paused = False
         await self._persist_session()
         return True
@@ -250,7 +355,7 @@ class MusicPlayer:
         to whatever plays next either way."""
         if not 0.0 <= volume <= 2.0:
             return False
-        self._voice.set_volume(volume)
+        await self._voice.set_volume(volume)
         self._volume = volume
         await self._persist_session()
         return True
@@ -266,7 +371,7 @@ class MusicPlayer:
         `on_track_finished()` to pick up wherever the ACTUAL queue
         continues, exactly like a stale queued track already does."""
         self._volume = volume
-        self._voice.set_volume(volume)
+        await self._voice.set_volume(volume)
         resolved = await self._source.resolve(query_or_url=locator)
         if not resolved:
             return False
@@ -288,7 +393,9 @@ class MusicPlayer:
         self._last_played = self._now_playing
         self._paused = False
         try:
-            self._voice.play(resolved[0].stream_url, duration_seconds=resolved[0].duration_seconds)
+            await self._voice.play(
+                resolved[0].stream_url, duration_seconds=resolved[0].duration_seconds,
+            )
         except Exception:
             # External audit Codex MAJOR-3 (2026-08-26): the same dead-voice
             # teardown as `_advance` — a boot-time resume into a voice
@@ -306,10 +413,14 @@ class MusicPlayer:
             self._session_dead = True
             return False
         if paused:
-            self._voice.pause()
+            await self._voice.pause()
             self._paused = True
         await self._persist_session()
         return True
+
+    @property
+    def voice_channel_id(self) -> str:
+        return self._voice_channel_id
 
     def seed_last_played(self, *, source: str, locator: str, title: str) -> None:
         """Boot-time only (R-88): restores the persisted `last_played_*`
@@ -331,11 +442,32 @@ class MusicPlayer:
             url=locator, title=title, added_by_person_id="", added_at=self._clock(),
         )
 
+    def adopt_persisted_now_playing(self, *, source: str, locator: str, title: str) -> None:
+        """Boot-time reconcile ONLY (design/voice-channel/07 §12.1, B5): the
+        controller outlived nora's restart and is STILL PLAYING on the
+        connection the hub just adopted. Record the persisted track as
+        now-playing WITHOUT a `voice.play` — replaying it would cut the
+        live audio, and the `track-finished` the controller owes for it is
+        what advances the queue (the hub's expected playback id already
+        matches it, so the event passes the staleness probe). The
+        played-history and last-played slots are set exactly as a real
+        start would set them, so autoplay dedups this track and can
+        re-seed from it."""
+        self._now_playing = QueuedTrack(
+            id=uuid4(), guild_id=self._guild_id, position=-1, source=source,
+            url=locator, title=title, added_by_person_id="", added_at=self._clock(),
+        )
+        self._played_locators.add(locator)
+        self._last_played = self._now_playing
+        self._paused = False
+
     async def stop(self) -> None:
-        """Clears the whole queue, stops playback, and leaves the voice
-        channel — `/music stop`. Deletes the persisted session row too:
-        this is the one transition that actually ENDS the session, as
-        opposed to every other one just changing what's in it."""
+        """END-MUSIC (design/voice-channel/07 §10, B3): clears the whole
+        queue, stops playback, and deletes the persisted session row — but
+        does NOT leave the voice channel (`/music stop` ≠ `/discord exit`;
+        the controller keeps the connection, e.g. for the wake path). This
+        is the one transition that actually ENDS the session, as opposed to
+        every other one just changing what's in it."""
         self._cancel_prewarm()
         await self._queue.clear(self._guild_id)
         self._now_playing = None
@@ -344,9 +476,17 @@ class MusicPlayer:
         # is the correct "nothing to autoplay from" case.
         self._last_played = None
         self._paused = False
-        self._voice.stop()
-        await self._voice.disconnect()
+        await self._voice.stop()
         await self._session.delete(self._guild_id)
+
+    async def leave(self) -> None:
+        """LEAVE-VOICE (design/voice-channel/07 §10, B3): end-music AND
+        destroy the voice connection — `/discord exit`, an emptied channel,
+        a voice-death event. `disconnect` tolerates a connection that is
+        already gone controller-side (the controller saw the death first),
+        so this is safe on a half-torn session."""
+        await self.stop()
+        await self._voice.disconnect()
 
     async def top(self, position: int) -> QueuedTrack | None:
         """`/music top` / the `top_music` agent tool: moves the `position`-th
@@ -365,7 +505,21 @@ class MusicPlayer:
         return PlayerStatus(now_playing=self._now_playing, paused=self._paused, queue=queue)
 
     async def _advance(self) -> None:
-        """`QueuedTrack.url` is always a `locator` (`ResolvedTrack`'s own
+        """The composed advance for callers holding no guild lock; the
+        manager drives the three phases itself (B14)."""
+        pending = await self._advance_prepare()
+        if pending is None:
+            return
+        ok = await self.commit_pending(pending)
+        await self.finish_pending(pending, ok=ok)
+
+    async def _advance_prepare(self) -> _PendingPlay | None:
+        """The advance's DECISION phase — everything except the outbound
+        play POST (B14, design/voice-channel/07: the manager holds its
+        guild lock through this, releases it for `commit_pending`'s HTTP
+        round-trip, and re-acquires for `finish_pending`).
+
+        `QueuedTrack.url` is always a `locator` (`ResolvedTrack`'s own
         contract, `nora/domain/ports.py`) — a resolve INPUT, never a cached
         stream URL — so the actual, playable stream is resolved fresh here,
         right before it's needed. A track that's gone stale by play time (a
@@ -377,16 +531,8 @@ class MusicPlayer:
         When the queue empties and autoplay is on, a PREWARMED pick is
         consumed before any fresh `related()` call is made (R-64): the
         pick was already resolved during the track that just ended, so the
-        only work here is the same `voice.play()` any queued track gets.
-
-        A voice connection that dies mid-session (a gateway/voice websocket
-        drop Discord doesn't surface as a state change — found live
-        2026-08-26: \"now its NOT even playing\", after a `discord gateway
-        resumed`) makes `voice.play()` raise `ClientException: Not
-        connected to voice.` The session is torn down like a stop instead
-        of letting that exception climb into the `on_finished` handler and
-        strand `_now_playing` claiming a track is audible when nothing
-        is."""
+        only work left for it is the same `voice.play()` any queued track
+        gets."""
         while True:
             # Captured before `pop_next` overwrites it -- the SEED autoplay
             # recommends from, once the queue turns out empty below
@@ -424,7 +570,7 @@ class MusicPlayer:
                 ):
                     continue  # `pop_next` above picks it right back up
                 await self._persist_session()
-                return
+                return None
             resolved: Sequence[ResolvedTrack]
             cached = self._prewarm_streams.pop(self._now_playing.url, None)
             if cached is not None:
@@ -445,57 +591,106 @@ class MusicPlayer:
                 # queue emptying (unlike `_now_playing`, which is cleared
                 # by the next `_advance`).
                 self._last_played = self._now_playing
-                try:
-                    self._voice.play(
-                        resolved[0].stream_url, duration_seconds=resolved[0].duration_seconds,
-                    )
-                except Exception:
-                    # The voice connection is dead (see method docstring) --
-                    # nothing to resume without a fresh connection, so end
-                    # the session the way a stop does and let a human
-                    # `/music play` a fresh join.
-                    log.exception(
-                        "voice connection dead for guild %s; tearing down the session",
-                        self._guild_id,
-                    )
-                    self._cancel_prewarm()
-                    self._now_playing = None
-                    try:
-                        await self._queue.clear(self._guild_id)
-                    except Exception:
-                        log.warning("could not clear queue after dead voice", exc_info=True)
-                    try:
-                        await self._voice.disconnect()
-                    except Exception:
-                        log.warning("voice disconnect after dead voice failed", exc_info=True)
-                    try:
-                        await self._session.delete(self._guild_id)
-                    except Exception:
-                        # External audit Codex MAJOR-4 (2026-08-26): a
-                        # transient DB failure here must not prevent the
-                        # `_session_dead` flag below — the manager's
-                        # `_after_transition` evicts the player on it, and a
-                        # stranded session row is recovered by the next
-                        # boot-time resume scan instead of leaving a zombie.
-                        log.warning("session delete after dead voice failed", exc_info=True)
-                    # External audit MAJOR-2 (2026-08-26): mark the player
-                    # dead so the manager drops it from `_players` on this
-                    # transition — otherwise a `/music play` before the idle
-                    # timeout reuses this dead player and fails again, and
-                    # the voice-death monitor can double-teardown.
-                    self._session_dead = True
-                    return
-                await self._persist_session()
-                # Prewarm only when this track is the LAST one in the
-                # queue: if more remain, autoplay will never fire at its
-                # end and the network calls would be pure waste.
-                if lookahead and upcoming_count is not None and upcoming_count <= 1:
-                    self._schedule_prewarm(resolved[0].duration_seconds)
-                return
+                return _PendingPlay(
+                    track=self._now_playing,
+                    stream_url=resolved[0].stream_url,
+                    duration_seconds=resolved[0].duration_seconds,
+                    # Prewarm only when this track is the LAST one in the
+                    # queue: if more remain, autoplay will never fire at
+                    # its end and the network calls would be pure waste.
+                    schedule_prewarm=bool(
+                        lookahead and upcoming_count is not None and upcoming_count <= 1
+                    ),
+                )
             log.warning(
                 "queued track no longer resolves, skipping: %s (%s)",
                 self._now_playing.title, self._now_playing.url,
             )
+
+    async def commit_pending(self, pending: _PendingPlay) -> bool:
+        """The advance's OUTBOUND phase — the `voice.play` POST, the one
+        call in this path that can hang on a real network. The manager
+        runs it with the guild lock RELEASED (B14: a hanging audio-
+        controller must not block `/music skip`, `/music stop` or
+        `/discord exit` for the guild — the track-finish advance used to
+        hold the lock across the whole 30s-timeout round-trip).
+
+        Serialized per player (`_commit_lock`) so two advances whose
+        prepares overlapped still reach the controller in the order nora
+        decided them (replace semantics make the LAST arrival win).
+        Returns `False` (and logs) when the connection is dead — the
+        teardown itself is `finish_pending`'s, back under the lock."""
+        async with self._commit_lock:
+            try:
+                await self._voice.play(
+                    pending.stream_url, duration_seconds=pending.duration_seconds,
+                )
+            except Exception:
+                # The voice connection is dead (a drop the controller
+                # reports as `voice-death`, or one it hasn't noticed yet —
+                # found live 2026-08-26: "now its NOT even playing", after
+                # a `discord gateway resumed`). Nothing to resume without a
+                # fresh connection; `finish_pending` ends the session the
+                # way a stop does and a human `/music play` joins anew.
+                log.exception(
+                    "voice connection dead for guild %s; tearing down the session",
+                    self._guild_id,
+                )
+                return False
+        return True
+
+    async def finish_pending(self, pending: _PendingPlay, *, ok: bool) -> None:
+        """The advance's COMMIT phase, back under the guild lock.
+
+        `ok=False` is the dead-connection teardown R-65 has always run.
+        The `ok=True` re-check is the race B14 opens: while the POST was
+        in flight with the lock released, a skip may have advanced PAST
+        `pending.track` or a stop/teardown ended the session. A NEWER
+        pending play supersedes this one controller-side (replace
+        semantics, §3.2) — nothing to do; but a stop leaves NOTHING to
+        supersede this track's just-started audio, so it is stopped
+        explicitly or it plays on as a zombie nora no longer tracks."""
+        if not ok:
+            self._cancel_prewarm()
+            self._now_playing = None
+            try:
+                await self._queue.clear(self._guild_id)
+            except Exception:
+                log.warning("could not clear queue after dead voice", exc_info=True)
+            try:
+                await self._voice.disconnect()
+            except Exception:
+                log.warning("voice disconnect after dead voice failed", exc_info=True)
+            try:
+                await self._session.delete(self._guild_id)
+            except Exception:
+                # External audit Codex MAJOR-4 (2026-08-26): a
+                # transient DB failure here must not prevent the
+                # `_session_dead` flag below — the manager's
+                # `_after_transition` evicts the player on it, and a
+                # stranded session row is recovered by the next
+                # boot-time resume scan instead of leaving a zombie.
+                log.warning("session delete after dead voice failed", exc_info=True)
+            # External audit MAJOR-2 (2026-08-26): mark the player
+            # dead so the manager drops it from `_players` on this
+            # transition — otherwise a `/music play` before the idle
+            # timeout reuses this dead player and fails again, and
+            # the voice-death monitor can double-teardown.
+            self._session_dead = True
+            return
+        if self._session_dead or self._now_playing is not pending.track:
+            if self._now_playing is None:
+                try:
+                    await self._voice.stop()
+                except Exception:
+                    log.warning(
+                        "could not kill superseded playback for guild %s",
+                        self._guild_id, exc_info=True,
+                    )
+            return
+        await self._persist_session()
+        if pending.schedule_prewarm:
+            self._schedule_prewarm(pending.duration_seconds)
 
     def _schedule_prewarm(self, duration_seconds: float | None) -> None:
         """Arms a timer that picks the next autoplay track `prewarm_seconds`

@@ -22,22 +22,22 @@ RUN groupadd --gid 1000 stt \
 WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
+# torch/torchaudio are real project dependencies now, pinned to the CPU wheel
+# index in pyproject.toml's [tool.uv.sources] — `uv sync` installs the ~200MB
+# CPU build directly (this host has no CUDA; the GPU index would pull a
+# multi-GB build for nothing). Matches the voice-lab venv that measured both
+# engines on this exact host.
 RUN uv sync --frozen --no-dev
-# funasr declares torch as a soft requirement (not in its metadata deps), so
-# `uv sync` skips it — but AutoModel refuses to import without it. Install the
-# CPU wheel explicitly (this host has no CUDA; the GPU index would pull a
-# multi-GB build for nothing). Matches the voice-lab venv that measured
-# SenseVoice on this exact host.
-RUN uv pip install --python .venv/bin/python torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 
 COPY server.py ./
 
 RUN chown -R stt:stt /app \
-    # /home/stt/.cache/modelscope is the bind target for the modelscope volume;
-    # pre-create + chown so the non-root stt user can write the model download
+    # ~/.cache/modelscope is the bind target for the SenseVoice weights volume
+    # and ~/.cache/huggingface for the whisper (default model) weights volume;
+    # pre-create + chown so the non-root stt user can write the model downloads
     # on first boot (an empty named volume mounts with the IMAGE's ownership —
-    # without this, uv/FunASR fail to write the cache with EACCES).
-    && mkdir -p /home/stt/.cache/modelscope \
+    # without this, the download fails with EACCES).
+    && mkdir -p /home/stt/.cache/modelscope /home/stt/.cache/huggingface \
     && chown -R stt:stt /home/stt/.cache
 
 USER stt
@@ -47,14 +47,15 @@ USER stt
 # only on the private `nora` network, never published to the host).
 EXPOSE 8000
 
-# The model weights are downloaded at first boot from ModelScope
-# (~/.cache/modelscope inside the container). The first healthcheck may take
-# longer than the default start_period while the model downloads -- compose
-# overrides start_period for this reason.
+# The DEFAULT model weights (~3.2GB fp32) download at first boot from Hugging
+# Face into ~/.cache/huggingface; the SenseVoice backup (~936MB) downloads from
+# ModelScope into ~/.cache/modelscope on first use. The first healthcheck may
+# take longer than the default start_period while the model downloads --
+# compose overrides start_period for this reason.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8000/health || exit 1
 
 # --no-sync: the venv is already built at image build time; never reach out
 # to PyPI at container runtime.
 ENTRYPOINT ["uv", "run", "--no-sync", "python", "server.py"]
-CMD ["--model", "sensevoice", "--device", "cpu", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["--model", "noise-detection", "--device", "cpu", "--host", "0.0.0.0", "--port", "8000"]
