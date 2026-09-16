@@ -291,7 +291,7 @@ Shadow is the shipped default and the review surface.
 has exactly two caller MODULES. **A gate module calling `deliver.build` would be
 a third, and R-1b goes red.**
 
-So the shadow post goes through `nora/app/fire.py`, reusing the seam DEC-155
+So the shadow post goes through `nora/app/fire.py`, reusing the seam DEC-188
 already established for the participation mirror (a second `deliver.build` call
 site inside fire.py is blessed; a second caller MODULE is not).
 
@@ -449,7 +449,7 @@ under-scoped it in one direction and over-scoped it in another. Corrected:
 - R-14's `constraints.md` revision and the participation doctrine audience.
   (`participation-conduct.md` itself is GONE — see §7. The audience survives on
   the five remaining files, and now resolves to the same assembly as `tag`.)
-- DEC-155, the participation metrics family, the slot/cooldown policy.
+- DEC-188, the participation metrics family, the slot/cooldown policy.
 
 **What is added**:
 - `nora/doctrine/participation.md`, the gate's instruction, on its own

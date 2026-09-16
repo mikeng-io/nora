@@ -2289,7 +2289,7 @@ class FirePath:
         **Why this lives in fire.py and is not its own module.** R-1b pins
         `deliver.build`'s callers to two MODULES (`pipeline.py`, `fire.py`);
         a gate module calling it would be a third and the rule goes red.
-        DEC-155 already settled that a second call site INSIDE this module is
+        DEC-188 already settled that a second call site INSIDE this module is
         fine — "two caller modules" never implied "two send call sites" — so
         the gate's review post is a sibling of `_mirror`, here, by the same
         argument.
