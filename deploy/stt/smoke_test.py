@@ -4,10 +4,10 @@
 
 Verifies the three independent checks funasr.com's production guidance names:
 1. health — the process is serving
-2. model identity — /v1/models lists BOTH engines (noise-detection default,
-   sensevoice backup — design/voice-channel/06, 2026-09-15)
+2. model identity — /v1/models lists BOTH engines (sensevoice default,
+   noise-detection backup — design/voice-channel/06, 2026-09-16)
 3. a REAL transcription round-trip — an actual audio file comes back as Hant
-   text (against the DEFAULT model; pass --model sensevoice to smoke the
+   text (against the DEFAULT model; pass --model noise-detection to smoke the
    backup)
 
 Usage:
@@ -24,7 +24,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base-url", default="http://127.0.0.1:8000")
     ap.add_argument("--audio", default=None, help="path to a Cantonese audio file (mp3/wav)")
-    ap.add_argument("--model", default="noise-detection",
+    ap.add_argument("--model", default="sensevoice",
                     help="model the transcription round-trip exercises")
     args = ap.parse_args()
 

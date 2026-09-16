@@ -868,6 +868,9 @@ services:
       - VOICE_GUILD_ID=${VOICE_GUILD_ID:-}
       - VOICE_CHANNEL_ID=${VOICE_CHANNEL_ID:-}
       - WAKE_THRESHOLD=${VOICE_WAKE_THRESHOLD:-0.5}
+      # STT engine: sensevoice default (warm 0.3s CPU vs whisper 5.1s on a
+      # measured 2s clip; this engine drives the live wake→reply path).
+      - STT_MODEL=${STT_MODEL:-sensevoice}
       # The two hop targets, by SERVICE NAME on this network. `nora` is the
       # nora container's aiohttp app (health + web routes on 9100 — the
       # container publishes 9100 to host loopback, but service-name reach is
