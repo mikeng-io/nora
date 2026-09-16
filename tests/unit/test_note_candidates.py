@@ -813,33 +813,26 @@ async def test_two_same_day_candidates_are_kept_apart_by_their_entity_lists():
     ]
 
 
-async def test_two_same_day_candidates_with_no_entities_still_collide_at_staging():
-    """**A STATED BOUND on what #228 delivers, pinned so nobody discovers it
-    by surprise and nobody closes it by accident.**
+async def test_two_same_day_candidates_with_no_entities_are_kept_apart_by_title():
+    """**THE INVERSION #235 IS.** This test previously pinned the opposite —
+    that two same-day candidates naming nobody collided at the staging key and
+    the second was destroyed before the gate saw it — as a stated bound, with
+    its own docstring saying that when the bound was lifted this was the test
+    to invert deliberately. It is lifted, and this is that inversion.
 
-    The GATE no longer conflates two arrangements on one date — that is this
-    branch. The STAGING key still does: `note_candidate`'s uniqueness is
-    `(workspace, anchor_date, anchor_entity_ids)` and a candidate with no
-    entities named collides with any other same-day candidate that also named
-    none. The second is returned the first's row, already settled, and is
-    dropped before the gate ever sees it — one note, exactly the conflation
-    the gate stopped making, one layer earlier and with a different cause.
+    `note_candidate`'s uniqueness is now `(workspace, anchor_date,
+    anchor_entity_ids, lower(btrim(title)))`. The entity list was measured on
+    2026-09-16 to be a constant in a fixed-membership room — a candidate
+    naming two people was destroyed by a same-day row naming the same two — so
+    it never separated the two arrangements it was supposed to. The title
+    does, and the title is what the model actually varies.
 
-    It is NOT fixed here: the staging key reverses its own recorded review
-    finding (M10 applied to staging), and changing it takes a migration, a
-    contract-suite reversal and both store implementations — a second
-    decision, with its own evidence to gather (#235). What this test does is
-    make it a measured fact rather than a surprise, and the objective tells
-    the model to name the people whenever two same-day entries are in ONE
-    batch, which routes around it in that case and only that case. Tracked
-    separately; when it IS fixed, this test is the one that must be
-    deliberately inverted.
-
-    **The bound is on the COUNT; the silence is not part of it.** Asserting
-    `written == 1` and stopping would leave the drop invisible, which is the
-    separate defect — so the destroyed proposal's own signal is asserted
-    here, and `test_a_destroyed_proposal_is_not_counted_as_a_re_observation`
-    is what proves it says something a benign re-observation does not."""
+    **The silence assertion inverts with it, and that is the point.** The
+    settled-row branch must not be reached AT ALL here: no proposal was
+    displaced and none was re-observed, so neither `nora_note_candidate_
+    staging_total` value may carry a sample. Asserting `written == 2` alone
+    would stay green against a build that wrote two notes and still reported a
+    loss."""
     metrics = Metrics()
     adaptor, store = _adaptor(metrics=metrics)
 
@@ -860,20 +853,19 @@ async def test_two_same_day_candidates_with_no_entities_still_collide_at_staging
         now_ms=NOW,
     )
 
-    assert written == 1, "the bound, not the goal"
-    assert [n.title for n in await store.standing(workspace=WS)] == [
-        "Sign-up deadline",
+    assert written == 2, "two arrangements on one day are two notes"
+    assert sorted(n.title for n in await store.standing(workspace=WS)) == [
+        "Sign-up deadline", "Which night the game session is",
     ]
-    assert len(store.create_candidates) == 1, (
-        "one staged row for two proposals — the collision is at the staging "
-        "key, not at the gate"
+    assert len(store.create_candidates) == 2, (
+        "two staged rows for two proposals — the title is part of the key"
     )
     assert metrics.get(
         "nora_note_candidate_staging_total", outcome="displaced",
-    ) == 1, "a destroyed proposal must not be silent, even while it stands"
+    ) == 0, "nothing was destroyed; the second proposal reached the gate"
     assert metrics.get(
         "nora_note_candidate_staging_total", outcome="reobserved",
-    ) == 0, "nothing here was re-observed; one occasion was lost"
+    ) == 0, "and nothing was re-observed either — the branch is not reached"
 
 
 async def test_an_ambiguous_title_creates_rather_than_guessing():
@@ -991,20 +983,34 @@ async def test_a_title_that_answers_to_nothing_is_counted_apart_from_a_create():
     ) == 1, "an unnamed candidate is not an unresolved one"
 
 
-async def test_a_destroyed_proposal_is_not_counted_as_a_re_observation():
-    """**R-27 at the staging layer (#235).** Two things reach the settled-row
-    branch and they are opposites: the SAME occasion observed again across
-    ticks (benign — the staging table exists to absorb it) and a DIFFERENT
-    arrangement that collided on the staging key and was destroyed before the
-    gate ever saw it. Measured against this adaptor before 2026-09-13 the two
-    produced an identical counter signature — same arrivals, same gate total,
-    and `candidates_total - gate_total` could not separate «a proposal was
-    destroyed» from «nothing happened». That is the
-    `unavailable`-reported-as-`nothing_found` shape R-27 exists to prevent.
+async def test_a_re_observation_is_not_counted_as_a_destroyed_proposal():
+    """**R-27 at the staging layer, after #235 removed one of its two
+    subjects.** Two things used to reach the settled-row branch and they were
+    opposites: the SAME occasion observed again across ticks (benign — the
+    staging table exists to absorb it) and a DIFFERENT arrangement that
+    collided on the staging key and was destroyed before the gate saw it.
+    Until 2026-09-13 they had an identical counter signature, which is the
+    `unavailable`-reported-as-`nothing_found` shape R-27 exists to prevent;
+    splitting the series made the loss readable, and #235 then removed the
+    loss itself by putting the title in the key.
 
-    Both halves run here, against one adaptor each, and the assertion is that
-    their signatures DIFFER. A test that only checked the destroyed half
-    would stay green if the benign half started reporting a loss too."""
+    **What changed in this test, stated rather than left to fall out of a
+    rename.** The first arm no longer produces a destroyed proposal at all —
+    two arrangements on one day are two staged rows, two gate actions and two
+    notes, and the settled-row branch is never entered. So the assertion it
+    can still carry is the stronger half of the original pair: the benign
+    re-observation must report as benign and NEVER as a loss, and the
+    two-arrangement case must report nothing at all. A test asserting only the
+    second would stay green against a build that had stopped writing notes,
+    which is why both arms keep their positive control.
+
+    **`displaced` is kept in the vocabulary and its branch is kept in the
+    code**, with no test able to reach it on this path: the staging key
+    normalises with Postgres `lower()` and the branch judges with
+    `note_handle`'s `casefold()`, and `lower` is the finer of the two, so a
+    residue exists only where they disagree. A loss counter that can no longer
+    fire is the right state for a loss that no longer happens; deleting it
+    would mean a re-widening of the key landed silent."""
     lost_metrics = Metrics()
     lost, lost_store = _adaptor(metrics=lost_metrics)
     two_arrangements = (
@@ -1035,24 +1041,29 @@ async def test_a_destroyed_proposal_is_not_counted_as_a_re_observation():
         key=SCOPE, proposals=(_proposal(same_occasion),), now_ms=NOW + 60_000,
     )
 
-    # The two runs are the shape the review measured: one note each, one gate
-    # action each. That is the positive control — without it this test could
-    # pass against a build that had simply stopped writing notes.
-    assert len(await lost_store.standing(workspace=WS)) == 1
+    # The positive control, and the two arms no longer share it — which is
+    # itself the change. Two arrangements are two notes and two gate actions
+    # now; one occasion re-observed is still one of each. Without this a build
+    # that had simply stopped writing notes would pass the counter assertions
+    # below.
+    assert len(await lost_store.standing(workspace=WS)) == 2
+    assert sum(
+        lost_metrics.get("nora_note_candidate_gate_total", action=a)
+        for a in GATE_ACTIONS
+    ) == 2
     assert len(await benign_store.standing(workspace=WS)) == 1
-    for m in (lost_metrics, benign_metrics):
-        assert sum(
-            m.get("nora_note_candidate_gate_total", action=a)
-            for a in GATE_ACTIONS
-        ) == 1
+    assert sum(
+        benign_metrics.get("nora_note_candidate_gate_total", action=a)
+        for a in GATE_ACTIONS
+    ) == 1
 
     # And here is what used to be identical and now is not.
     assert lost_metrics.get(
         "nora_note_candidate_staging_total", outcome="displaced",
-    ) == 1
+    ) == 0, "#235: two arrangements on one day no longer destroy each other"
     assert lost_metrics.get(
         "nora_note_candidate_staging_total", outcome="reobserved",
-    ) == 0
+    ) == 0, "and neither of them is a re-observation of the other"
     assert benign_metrics.get(
         "nora_note_candidate_staging_total", outcome="reobserved",
     ) == 1

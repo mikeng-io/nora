@@ -359,7 +359,7 @@ CREATE TABLE public.tag_trace (
 CREATE TABLE public.tool_call_log (
 CREATE TABLE public.turn_verdict (
 CREATE TABLE public.version_announcements (
-CREATE UNIQUE INDEX note_candidate_create_anchor_key ON public.note_candidate USING btree (workspace, anchor_date, anchor_entity_ids) WHERE (kind = 'create'::text);
+CREATE UNIQUE INDEX note_candidate_create_anchor_key ON public.note_candidate USING btree (workspace, anchor_date, anchor_entity_ids, lower(btrim(title))) WHERE (kind = 'create'::text);
 INCREMENT BY 1
 INCREMENT BY 1
 INCREMENT BY 1

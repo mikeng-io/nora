@@ -1119,14 +1119,29 @@ class SqlNoteStore:
         `kind='miss'` row — that is `record_miss`, above, on ITS OWN
         uniqueness domain.
 
-        **Upserts on THIS TIER'S OWN anchor key** —
+        **Upserts on THIS TIER'S OWN staging key** —
         `note_candidate_create_anchor_key`, `(workspace, anchor_date,
-        anchor_entity_ids)` — never on `title` (design 33 §4/M10): a
-        re-observation of the same occasion refreshes the staged proposal
-        rather than duplicating it. `anchor_entity_ids` is sorted and
-        de-duplicated HERE, not trusted from the caller, because it is half of
-        that key and an unsorted array would let one occasion, listed in two
-        orders, stage under two different keys.
+        anchor_entity_ids, lower(btrim(title)))` — so a re-observation of the
+        same occasion refreshes the staged proposal rather than duplicating
+        it, while a DIFFERENT arrangement the model wrote about on the same
+        day reaches the gate instead of being handed this row (#235).
+        `anchor_entity_ids` is sorted and de-duplicated HERE, not trusted from
+        the caller, because it is part of that key and an unsorted array would
+        let one occasion, listed in two orders, stage under two different keys;
+        the title is normalised by the INDEX (`lower(btrim(...))`) rather than
+        at write time, so the stored text stays exactly what the model wrote.
+
+        **M10 — "a title is not an identity" — is upheld for the NOTE and
+        reversed here, deliberately.** A note must be findable by one name
+        across revisions, so its identity cannot be its title. A staging row is
+        a one-shot dedupe slot for one sighting, and the title is the only
+        field that separates two arrangements on one day: measured 2026-09-16
+        in workspace `ridgeline`, a two-entity candidate was destroyed by a
+        same-day collision, because in a fixed-membership room every
+        arrangement names the same people and the entity list is a constant.
+        `lower()` here diverges from `note_handle`'s `casefold()` on the cases
+        `casefold` folds further (`ß`→`ss`); irrelevant for this corpus, but it
+        is a divergence, not an equivalence.
 
         **The upsert is guarded by `WHERE status = 'pending'`, and that guard
         is the whole point.** A candidate the gate has already decided —
@@ -1154,6 +1169,11 @@ class SqlNoteStore:
             index_elements=[
                 NOTE_CANDIDATE.c.workspace, NOTE_CANDIDATE.c.anchor_date,
                 NOTE_CANDIDATE.c.anchor_entity_ids,
+                # A raw expression, not a column: `index_elements` renders it
+                # verbatim into the inferred conflict target, and it must match
+                # `note_candidate_create_anchor_key`'s fourth column TEXTUALLY
+                # or Postgres raises 42P10 rather than silently upserting wide.
+                sa.text("lower(btrim(title))"),
             ],
             index_where=sa.text("kind = 'create'"),
             set_={
@@ -1181,12 +1201,24 @@ class SqlNoteStore:
                 # The guard blocked the update: this occasion's candidate was
                 # already settled. Read it back rather than trusting the
                 # caller's own values, which the settled decision supersedes.
+                #
+                # **The predicate list is the FULL staging key, title
+                # included** (#235). Without the title clause this SELECT is
+                # wider than the index it re-finds a row through, so once two
+                # arrangements legitimately share `(workspace, anchor_date,
+                # anchor_entity_ids)` it either hands the caller the other
+                # arrangement's settled row — the #235 bug wearing a different
+                # mask — or raises `MultipleResultsFound` out of a background
+                # tick. The normalisation is `lower(btrim(...))` on BOTH sides
+                # so the comparison is the index's own.
                 row = (await conn.execute(
                     sa.select(NOTE_CANDIDATE).where(
                         NOTE_CANDIDATE.c.workspace == workspace,
                         NOTE_CANDIDATE.c.kind == "create",
                         NOTE_CANDIDATE.c.anchor_date == anchor_date,
                         NOTE_CANDIDATE.c.anchor_entity_ids == entities,
+                        sa.func.lower(sa.func.btrim(NOTE_CANDIDATE.c.title))
+                        == title.strip().lower(),
                     )
                 )).one()
         return _row_to_create_candidate(row)

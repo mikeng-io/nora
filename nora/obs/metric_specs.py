@@ -1515,9 +1515,18 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # total and the same note count. `nora_note_candidates_total` minus
     # `nora_note_candidate_gate_total` therefore could not say whether a
     # proposal had been destroyed — R-27's `unavailable`-reported-as-
-    # `nothing_found` one layer down, and the reason this is declared before
-    # the collision itself is fixed (issue #235). The drop must not be silent
-    # even while it stands.
+    # `nothing_found` one layer down, and the reason this was declared before
+    # the collision itself was fixed (issue #235).
+    #
+    # THE COLLISION IS FIXED as of 2026-09-16: the staging key gained
+    # `lower(btrim(title))`, so two arrangements on one day are two staged rows
+    # and the second reaches the gate. `displaced` is therefore expected to
+    # read ZERO from here on, and that expectation is the reading — a non-zero
+    # sample now means the key widened again, or that the index's `lower()`
+    # and the branch's `casefold()` disagreed on a title. The series is kept
+    # for exactly that: a loss counter that cannot fire is the right state for
+    # a loss that no longer happens, and deleting it would let a regression
+    # land as silence, which is what it was declared to prevent.
     _CounterSpec(
         "nora_note_candidate_staging_total",
         "A note candidate handed back a staging row the gate had ALREADY "
@@ -1525,12 +1534,12 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "again across ticks — the benign case the staging table exists to "
         "absorb, and nothing is lost. displaced: a DIFFERENT arrangement "
         "that collided on the staging key (workspace, anchor date, named "
-        "people) and was dropped before the gate ever saw it — one proposal "
-        "destroyed, no note written, no gate action counted, issue #235. The "
-        "two are told apart by the title, so two arrangements sharing the "
-        "key AND a title read as reobserved; everywhere else the counter "
-        "errs toward displaced, which is the direction a loss counter has to "
-        "fail in.",
+        "people, normalised title) and was dropped before the gate ever saw "
+        "it — one proposal destroyed, no note written, no gate action "
+        "counted, issue #235. Since 2026-09-16 the title is part of that key, "
+        "so displaced is expected to read zero and a sample on it means the "
+        "key no longer separates two arrangements on one day; reobserved is "
+        "the ordinary steady-state value here.",
         ("outcome",),
     ),
     # A DELIBERATE second series over calls already counted, on

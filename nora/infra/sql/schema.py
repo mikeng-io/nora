@@ -1991,22 +1991,43 @@ NOTE_CANDIDATE = sa.Table(
 )
 
 #: `kind='create'` rows dedupe on the note tier's OWN staging key —
-#: `(workspace, anchor_date, anchor_entity_ids)` — NEVER on `title` (design
-#: 33 §4, Kimi review finding M10). This is the STAGING key, not the create
-#: gate's match key, and the two have been fully independent since 2026-09-13
-#: (#228): the gate (`nora.language.note_candidates`) resolves the title the
-#: MODEL names for an update and never reads this key at all, while the entity
-#: strings here keep two differently worded sightings of one day as two staged
-#: rows. The key is unchanged by that change. A PARTIAL unique index
-#: rather than a table-wide one because `kind='miss'` rows share this table
-#: and have no anchor at all; scoping to `kind='create'` is what makes the
-#: expression a plain column list rather than a generated/computed one. See
+#: `(workspace, anchor_date, anchor_entity_ids, lower(btrim(title)))` (#235).
+#: This is the STAGING key, not the create gate's match key, and the two have
+#: been fully independent since 2026-09-13 (#228): the gate
+#: (`nora.language.note_candidates`) resolves the title the MODEL names for an
+#: update and never reads this key at all, while this key decides only whether
+#: a sighting is a re-observation of one already staged.
+#:
+#: **M10 — "a title is not an identity" — is UPHELD for the note and REVERSED
+#: here, and the two are not in tension.** A note must stay findable by one
+#: name across revisions, so `note`'s own uniqueness is still the title alone
+#: per workspace and its gate still matches on what the model names. A staging
+#: row is not an identity: it is a one-shot dedupe slot for one sighting, and
+#: the title is the only field that separates two arrangements the model wrote
+#: about on the same day. The entity list was the discriminator until
+#: 2026-09-16, when a two-entity candidate was destroyed by a same-day
+#: collision in workspace `ridgeline` — in a fixed-membership room every
+#: arrangement names the same people, so the list is a constant and the key
+#: degenerated to `(workspace, anchor_date)`. What narrowing costs is a
+#: re-described occasion staging twice, which is a visible duplicate (#236);
+#: what it removes is a silent destruction, and this tier fails toward the
+#: visible, additive side.
+#:
+#: `lower(btrim(title))` rather than raw `title` so the key normalises the way
+#: every other title comparison in the tier does — Postgres `lower`, which is
+#: NOT identical to `note_handle`'s `casefold` (no `ß`→`ss`); a divergence,
+#: stated, not an equivalence. A PARTIAL unique index rather than a table-wide
+#: one because `kind='miss'` rows share this table and have no anchor at all.
+#: `alembic check` is blind to BOTH the partial predicate and the expression
+#: column, so `tests/infra/test_schema_parity.py` is what holds this
+#: declaration and the migration chain in step. See
 #: `note_candidate.anchor_entity_ids`'s own comment for why normalising the
 #: array at write time is what makes an ordinary equality index correct here.
 IDX_NOTE_CANDIDATE_CREATE_ANCHOR_KEY = sa.Index(
     "note_candidate_create_anchor_key",
     NOTE_CANDIDATE.c.workspace, NOTE_CANDIDATE.c.anchor_date,
     NOTE_CANDIDATE.c.anchor_entity_ids,
+    sa.text("lower(btrim(title))"),
     unique=True, postgresql_where=sa.text("kind = 'create'"),
 )
 
