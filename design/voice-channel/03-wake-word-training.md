@@ -377,3 +377,22 @@ time-stretch 1.1–1.5× on positives.
 gate (0.97 frame-FP/hr) and the trap bar, but it loses 3 of 7 real wakes; seeds 1/2
 keep all real wakes and the trap bar at 1.5–1.7 debounced FP/hr. Recall @0.5 on
 fast utterances is the open item. Not deployed; nothing changed in production.
+
+**Weighting probes on V6 (same data, seed 2):** `max_negative_weight` 1000 → bare recall
+0.84, frame-FP 5.7/hr, real wakes 4/7; positives 150/batch → recall 0.83, frame-FP
+2.8/hr, trap 0.7 %, AUC 0.974 / 0.984, real wakes 7/7 (min 0.62). Neither moves recall
+past ~0.84: the ceiling is the short-utterance gap in the data, not the loss weighting.
+
+**V7 (time-stretch 1.1–1.5× on positives, p=0.6) — negative result, do not repeat.**
+Two seeds: bare recall 0.72 / 0.77, real wakes 4/7 with minima ≈ 0.001, frame-FP
+2.2–4.2/hr. The phase-vocoder stretch changes the spectral detail the frozen embedding
+keys on, so the head learns the artefact rather than "fast 喂 Nora". Fast utterances
+have to come from the TTS itself (CosyVoice `speed` 1.3–1.5, ~0.5 T4-hour, not run:
+the approved Modal budget is spent) or from real speakers.
+
+**Status at hand-off (2026-09-17 morning).** Best artefacts, all in `wake-v5-lab/models/`:
+`v6_s2` (AUC 0.972, trap 1.3 %, 7/7 real wakes, 1.7 debounced FP/hr), `v6_s1` (trap 0 %,
+7/7, 1.5/hr), `v6_s0` (clears the FP gate at 0.97 frame-FP/hr but 4/7 real wakes),
+`v6_p150` (AUC 0.984 bare, trap 0.7 %, 7/7, 1.6/hr). Open acceptance items: recall @0.5
+> 95 % (at 0.80–0.84, limited by sub-second utterances) and FP/hr < 1.0 (at 1.5–1.7
+debounced for the seeds that keep all real wakes). Nothing deployed.
