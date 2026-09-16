@@ -333,3 +333,53 @@ def render_pending(
             "see further back."
         )
     return lines
+
+
+def render_measures(
+    measures: Sequence[object],
+    *,
+    source: str,
+    window: str,
+    refusals: int,
+    refusal_source: str,
+) -> list[str]:
+    """`nora measure participation` — the four measures, each above its own
+    ceiling (design/culture-tier/02-measurement §2).
+
+    **The ceiling is printed under every measure, not once at the bottom**, and
+    that is the whole formatting decision here. These four differ in what they
+    are blind to — one cannot see lookupable facts, one is a lower bound by
+    construction, one over-reports, one is missing the arm that matters — so a
+    footnote shared between them would be read as applying to none. A number
+    that travels without its ceiling gets read as a rate.
+
+    `refusals` and its source are in the header rather than beside the two
+    measures that use them, because zero refusals is not the same reading as
+    zero hits and an operator must see which one they are looking at before
+    they read a single row.
+    """
+    lines = [
+        f"participation measures — {window}",
+        f"  rows: {source}",
+        f"  refusals: {refusals} ({refusal_source})",
+        "",
+    ]
+    for m in measures:
+        name = getattr(m, "name", "?")
+        hits = getattr(m, "hits", ())
+        considered = getattr(m, "considered", 0)
+        rate = getattr(m, "rate", None)
+        # "n/a" and not "0.0%": nothing considered means the measure did not
+        # run, and printing a zero there is the absent-series-read-as-zero
+        # error this bundle exists to not repeat.
+        shown = "n/a (nothing considered)" if rate is None else f"{rate:.1%}"
+        lines.append(f"{name}: {len(hits)} / {considered} = {shown}")
+        for o in hits[:10]:
+            lines.append(
+                f"    {_when(o.at)}  {o.conversation_id}  {o.subject}"
+            )
+        if len(hits) > 10:
+            lines.append(f"    ... {len(hits) - 10} more")
+        lines.append(f"    ceiling: {getattr(m, 'ceiling', '')}")
+        lines.append("")
+    return lines

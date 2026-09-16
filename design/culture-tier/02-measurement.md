@@ -35,6 +35,63 @@ gate and the transcript recorded it.
 Two pairs, failing differently on purpose — one from her own state, one from
 human behaviour — so neither is self-attesting.
 
+### 2.1 Built and first run, 2026-09-16
+
+`nora.domain.participation_measures` decides, `nora.app.participation_measures`
+reads, `nora measure participation` prints, `scripts/gate_refusals.py` supplies
+the weak half. Read-only throughout, no model anywhere, no behaviour changed.
+
+First run against the live database, 7 days:
+
+| measure | | |
+|---|---|---|
+| `expiry_without_action` | **3 / 7 = 42.9%** | three anchored notes passed their day while open and unraised |
+| `holding_refusals` | 0 / 0 | no refusals to join — see below |
+| `overrides` | 0 / 0 | same |
+| `ignored` | 0 / 0 | no input at all — see below |
+
+**The first number this line of work has produced that is not the gate's
+opinion of itself.** It is also the one that needed no new instrument: the rows
+were already there.
+
+**Two zeros that are not readings.**
+
+`holding_refusals` and `overrides` have no refusals because the
+`conversation_id` label landed at 07c42644 and the running image was built
+before it. The refusal script says so on stderr rather than emitting an empty
+list quietly, and the CLI REFUSES a refusal file that does not span the window
+asked for — a short list makes both measures look clean, and clean is also what
+they would say if the gate had refused nothing. Those two readings must never
+be confusable, which is the whole reason these measures exist.
+
+`ignored` has no input because `decision_log` has **no `writer="participation"`
+row, ever**. That is not a gap: the log's first row is 2026-09-11 13:50 and the
+one participation turn ran at 11:54 the same day, about two hours earlier. The
+honest statement is narrower and worse than "it works" — **the participation
+writer has never been exercised**, so nothing here is evidence that it works.
+
+### 2.2 The unit error this caught, which is the reason to run it on real rows
+
+The first live run reported **"5 of 10 notes expired unremarked"**. That number
+was an artifact and every part of it was wrong.
+
+`note.anchor_date` is a **`YYYYMMDD` calendar day**. Every other instant in the
+system — `messages.ts`, `decision_log.ts`, `note.created_at`, `note.retired_at`
+— is **epoch milliseconds**. Compared raw, `20260914 > 1_789_...` is false for
+every note, so **every anchored note classified as expired**. The same run
+passed `since` in epoch SECONDS to a `ts` column in milliseconds, so the bound
+was smaller than every row and "last 7 days" was silently ALL TIME.
+
+Both produced a plausible, tidy, quotable number. Neither was detectable from
+the tests, which agreed with the code because they used the same wrong unit.
+**What caught it was running the instrument against rows it did not invent** —
+and that is the argument for doing step 2 before step 4 rather than after.
+
+The module now states one unit once, at the top, and four tests pin it:
+an anchor is a calendar day, a note anchored TODAY has not passed until the day
+is over, an unreadable anchor is counted in the ceiling rather than skipped,
+and the nearness window is milliseconds.
+
 ### `HOLDING`'s second arm does not compute, and this is not a detail
 
 The intended definition included *"or the room's `standing` records an unmet
@@ -122,7 +179,11 @@ that override stays approximate until someone does.
    instead of raising, so a forgotten call site would emit a series that
    *looks* attributable. Eight paths assert the label back per path; 4/4
    mutations caught.
-2. The four measures as derivations. No behaviour change.
+2. **DONE 2026-09-16 — see §2.1.** The four measures as derivations. No
+   behaviour change, no model. First live run: `expiry_without_action` **3/7 =
+   42.9%**; the other three have no input yet and say `n/a (nothing
+   considered)` rather than 0%. A unit error that produced a tidy wrong number
+   was caught by running it on real rows, not by the tests — §2.2.
 3. **Let it run.** Get a baseline of what the gate actually does, on a store
    that survives a restart.
 4. The culture adaptor, consumed by nobody. Writing only.
