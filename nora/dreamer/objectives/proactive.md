@@ -24,8 +24,37 @@ description: >-
   this turn writes is handed to the fire turn as what she told herself, so the
   phrase had a second, longer path to a room. Every use here was descriptive,
   not the schemas' imperative one, so the fix is vocabulary only: `note`, the
-  word the tools and `<notes>` already use for the same thing, everywhere this
-  text said `open note`.
+  word the tools already use for the same thing, everywhere this text said
+  `open note`. (Correction, 2026-09-16: the commit's own body named this as
+  matching "the `<notes>` block's own framing" — the block the runtime
+  actually renders is `<open_notes>` (`nora/language/proactive.py`), not
+  `<notes>`. `open_notes`/`<open_notes>`, with the underscore, is a
+  structural identifier — an XML tag, not spoken prose — and is untouched by
+  this change; it is a different thing from the spoken phrase 「open note」
+  (two words, a space) that issue #242 tracks and this version removes from
+  the body text.) Settle measurements for #242 (operator, 2026-09-16): (1)
+  grep — no decide-suite written rows exist anywhere outside a live run (the
+  suite's `FakeReminderStore` is in-process and discarded per run; the
+  Langfuse sink records only a per-case PASS/FAIL score, never the `intent`/
+  `why` text) — the deterministic suite's `evals/cases/proactive/decide.yaml`
+  and `act.yaml` corpora themselves were grepped too: their only two hits
+  (`decide.yaml:3`, `act.yaml:218`) are YAML comments describing the corpus,
+  not case fields a model could echo, and `act.yaml`'s is deliberate —
+  explaining why `must_not_cite` bans `note`/`notes` instead. (2) `uv run pytest tests/unit/test_proactive_evals.py -q`: 29
+  passed (deterministic half, no live model). (3) three live decide-suite
+  runs against OmniRoute (`ollamacloud/deepseek-v4-flash:0731`) —
+  effort=low/samples=1, effort=medium/samples=1, effort=medium/samples=3 (44
+  case-samples total across the three): the 7 `none`-expectation cases
+  passed cleanly on every sample in every run (0 false positives), and the 4
+  `remind`-expectation cases produced zero written rows in all three runs —
+  so there was no `intent`/`why` text to grep in this environment; the
+  phrase count in those outputs is 0 because nothing was written, which is
+  reported as an honest null result, not evidence of a clean phrase count.
+  The recall failure is pre-existing to this environment/model tier and
+  orthogonal to this vocabulary change: it reproduced identically at two
+  effort levels and is not a regression this commit could plausibly cause,
+  since a vocabulary substitution in descriptive text cannot itself suppress
+  a tool call.
 change_policy: operator-only
 ---
 This objective is the one place the Dreamer ACTS, and the doctrine's «you look; you do
