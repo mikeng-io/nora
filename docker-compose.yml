@@ -265,6 +265,13 @@ services:
       #   crash-loop, not a degraded feature. Left `:-` so a deployment with
       #   Discord DISABLED still starts without it.
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+      # Voice reply closure (design/voice-channel/07 §5): the TTS provider key
+      # must reach the nora DAEMON container — Compose does not pass through
+      # unlisted vars, and without it composition.py logs "no speaker is
+      # wired; voice answers stay text-only" (found live 2026-09-16 while
+      # verifying B-2; first fix landed on the web portal by mistake and the
+      # daemon still lacked it, caught by `docker compose config`).
+      - MINIMAX_CN_API_KEY=${MINIMAX_CN_API_KEY:-}
       #   NORA_DATA_HOST_ROOT   — the HOST-side path of the `./data` mount in
       #   `volumes:` below, and the one value in this file that exists because
       #   a path inside this container is NOT a path the Docker daemon can
@@ -387,11 +394,6 @@ services:
       - AUTH_DISCORD_SECRET=${DISCORD_CLIENT_SECRET:?set DISCORD_CLIENT_SECRET in the host environment first}
       - AUTH_SECRET=${AUTH_SECRET:?set AUTH_SECRET in the host environment first}
       - AUTH_URL=${AUTH_URL:?set AUTH_URL (the public origin, e.g. https://nora.67.zone) in the host environment first}
-      # Voice reply closure (design/voice-channel/07 §5): the TTS provider key
-      # must reach the container — compose does NOT pass through unlisted vars,
-      # and without it composition.py logs "no speaker is wired; voice answers
-      # stay text-only" (found live 2026-09-16 while verifying B-2).
-      - MINIMAX_CN_API_KEY=${MINIMAX_CN_API_KEY:-}
     volumes:
       # Same file, same read-only mount as `nora`/`presence` below — the web
       # portal's whitelist can never drift from Nora's own roster because it
