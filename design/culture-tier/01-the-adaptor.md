@@ -53,9 +53,11 @@ a short account — how they talk, how decisions get made, what they call
 themselves, my own standing here, and **why** it is like that; not dated
 observations.*
 
-The "not dated observations" clause is load-bearing. Without it the dialectic
-drifts back toward `representation`'s shape, which is the chronicle this tier
-exists to not be (`00-overview §3`).
+The "not dated observations" clause is load-bearing. Without it a model handed
+a batch of timestamped rows drifts back toward `representation`'s shape, which
+is the chronicle this tier exists to not be (`00-overview §3`). The batch is
+literally dated rows, so the pull toward restating them is the default, not an
+edge case.
 
 `web_search` earns its place only because the pass is daily: when the room
 leans on a reference nobody explains — a game, a meme, a place — the loop can
@@ -97,9 +99,9 @@ fires = lag > 0 and age >= min_interval
 New human messages in this room, and a day since the last fold. A silent room
 does not fire, **and that is correct rather than a defect**: nothing here
 retires, so a quiet room's culture is accurate, not stale, and there is nothing
-to refresh it against. Re-running the dialectic with no new material yields
-either the same account (a wasted 25s call) or a different one — and the second
-is pure model variance polluting the one signal the revision chain carries.
+to refresh it against. Re-running the fold with no new material yields either
+the same account (a wasted model call) or a different one — and the second is
+pure model variance polluting the one signal the revision chain carries.
 
 An earlier draft had `uses_watermark = False`, borrowed from `note_curator.py:526`.
 That was wrong. The curator needs it because **an anchor date passing IS the
@@ -120,8 +122,8 @@ model call per batch… slow, expensive, and looks exactly like a bug."*
 
 At `min_interval = 86400` that is one batch per DAY. The busiest live room holds
 1,362 messages; at `batch_limit = 80` culture would spend **17 days** walking a
-backlog it never reads, burning a dialectic call a day to catch up to a present
-Honcho already knows.
+backlog it never reads, burning a model call a day to catch up to a present the
+room has long since moved past.
 
 So:
 
@@ -156,8 +158,8 @@ A culture block fills `ContextBlock`: `name`, `placement`, `order`, `note`,
   granularity, and the rule `BlockKey` now encodes is that **anything keyed
   narrower than `global` belongs in `turn`, whatever its cadence.**
 
-  So **culture's daily cadence is a production win — one dialectic call a day
-  instead of per turn — not a cache win.** That is the honest argument for the
+  So **culture's daily cadence is a production win — one fold a day instead of
+  a model call per turn — not a cache win.** That is the honest argument for the
   design, and it is the one this bundle originally got backwards.
 
 - **`note`** and **`header`** are this tier's to write, because nothing else
@@ -188,9 +190,12 @@ exist, and the refactor changes neither. Putting culture in front of the gate
 is a decision owned by the gate, and #220 neither helps nor blocks it.
 
 It is also the decision with the most evidence against it: #144/#147 measured
-the gate getting **worse** when given more context, and #216 — an n=5 reading, not re-taken — reports the turn
-behind the gate false-speaking on 4 of 5 silence twins. Adding a block
-to the gate is therefore sequenced last and measured, not assumed — see
+the gate getting **worse** when given more context, and #216 — an n=5 reading,
+never re-taken, closed 2026-09-16 by PR #262 — reported the turn behind the gate
+false-speaking on 4 of 5 silence twins. That one shape is now refused by R-97;
+the evidence it stands for is that this path has a history of getting worse with
+more context. Adding a block to the gate is therefore sequenced last and
+measured, not assumed — see
 `02-measurement.md §5`.
 
 That the gate is a new-tier's normal cost, rather than a constitutional bar,

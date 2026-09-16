@@ -1,15 +1,16 @@
 kind: design_index
-title: "The Culture Tier — a Dreamer adaptor that asks the memory system what a room is like"
+title: "The Culture Tier — a Dreamer adaptor that folds a room's own messages into an account"
 description: >
   The Relevance Gate admitted one window in 149 over four days. It is not
   mistuned: it is a reasoning-less classifier holding a taxonomy where the room
   needed a baseline. The layer that would supply one is an account of how a
-  room works and why — and the memory system can already produce exactly that,
-  through the dialectic endpoint, in 17-30s against a 20s gate timeout. So this
-  tier derives nothing. It is a Dreamer adaptor that asks once a day, keeps
-  every answer, and lets the chain of answers be the evolution a single call
-  cannot express. The bundle also states a measurement for "act" that is not a
-  model agreeing with its own instruction.
+  room works and why — which is what you get by asking a model to write prose
+  over a room's own messages, and NOT a property of any memory endpoint: Honcho
+  does not scope at the layer this needs (00-overview §4, DEC-182). So the tier
+  is a Dreamer adaptor that folds the batch the runtime already hands it, once
+  a day, keeps every answer, and lets the chain of answers be the evolution a
+  single call cannot express. The bundle also states a measurement for "act"
+  that is not a model agreeing with its own instruction.
 status: proposed
 origin: >
   Working session with miles, 2026-09-12/13, opened by a finding written against
@@ -52,7 +53,10 @@ governance:
   measured: >
     00-overview sections 1 and 4 are measurement, read off the live deploy and the
     live Honcho instance 2026-09-12/13. Everything else is design and is NOT
-    measured.
+    measured. **Those readings are now historical**: #215, #261 and #262 all
+    landed against the participation path after them, so nothing here is a
+    current reading of production and re-taking the baseline is step 0 of
+    implementation.
   synced_with: >
     The #219/#220 block-abstraction session, 2026-09-13 - it owns the block
     vocabulary, corrected this bundle's cache reasoning, and confirmed the row
@@ -60,10 +64,12 @@ governance:
     in response to this bundle's cache question.
 open_questions:
   - "WITHDRAWN 2026-09-13 - DEC-181 was not a choice. The key follows from which scheduler hands it: Dreamer-written stores key primary_id, ingest/tag-written stores key (platform, conversation_id). GLOSSARY carries the rule (PR #230); the latent divergence is #229"
-  - "OPERATOR - whether `standing` is repaired (#222) or superseded. HOLDING's second arm depends on it and does not compute today"
+  - "OPERATOR - whether `standing` is repaired (#222) or superseded. HOLDING's second arm depends on it and does not compute today. STILL OPEN 2026-09-16"
+  - "OPERATOR - which consumer the decision check is spent on, and at what scope. It is affordable ONCE; the price is in 02-measurement section 6 and ranges 1.5h to ~36h of live calls depending on the suite"
   - "UNMEASURED - whether the gate should ever read culture. Owned by the gate, sequenced last, with #144/#147 and #216 as evidence against assuming it"
-  - "UNMEASURED - every threshold in 02-measurement. None can be measured until the gate metric carries a conversation_id, which is this bundle's own step 1 (was #221, folded in)"
-  - "MEASURED 2026-09-13 - the decision check works but needs n=20 per case per arm, ~100 live calls and ~45min per arm. Affordable as a ship gate, not for iteration. Cost recorded in 02-measurement section 6"
-  - "STALE - #216 is an n=5 reading cited four times here; marked in place, owed a re-take at n=20"
+  - "UNMEASURED - every threshold in 02-measurement. None can be measured until the gate metric carries a conversation_id, which is this bundle's own step 1 (was #221, folded in). NOT BUILT as of 2026-09-16: metric_specs.py still declares nora_relevance_gate_total with labels (verdict, platform)"
+  - "CORRECTED 2026-09-16 - an earlier version of this line said the decision check needs n=20 per arm and is affordable as a ship gate. Both halves are wrong; see 02-measurement section 6 and correction 8. Power at n=20/arm is 0.14-0.18 for a 0.20 difference, 80% needs ~86, and the price was quoted for 5 cases when the check is specified over a suite"
+  - "STALE - EVERY live number in this bundle predates three changes that landed against this exact path: #215 (memory reaches the participation turn, 2026-09-15), #262 (R-97, 2026-09-16), #261 (the gate's own timeout ceiling, 2026-09-16). The admission rate, the 4-of-5 false-speak reading and the once-ever turn count must all be re-taken before any of them is quoted as current"
+  - "CLOSED 2026-09-16 - #216 (PR #262, R-97) and #210 (PR #215). Both were cited here as open; both are marked in place. Neither was re-measured"
   - "SETTLED 2026-09-13 - the block is `placement=turn`, `key=room`. #219/#220 added `key` after this bundle asked the question; the rule it encodes is that anything keyed narrower than `global` belongs in `turn`, whatever its cadence"
-  - "PHASE 2 - 04-phase-two-note is not executable and waits on Phase 1's instruments plus #210"
+  - "PHASE 2 - 04-phase-two-note is not executable and waits on Phase 1's instruments. Its #210 dependency landed 2026-09-15 and is unobserved in production"

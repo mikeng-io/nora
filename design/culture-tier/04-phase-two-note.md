@@ -78,22 +78,29 @@ An earlier draft of this document said the material was "already wired" and
 only admission was missing. **Both halves were false**, and the correction is
 the useful content here.
 
-**#210, verified against the tree:** `fire.py:339` sets `person_id=None` for
-the participation occasion; `fire.py:817` documents *"`ctx.tagger is None`, so
-`peer_card` is `()` — she remembers nothing"*; and `self_card=` appears at
-exactly one site, `nora/engagement/context.py:208`, the **tag path**. The
-participation turn renders no Honcho block at all — no card, no history, no
-self card. It knows the people in the window by display name.
+**#210, verified against the tree 2026-09-13 — and CLOSED 2026-09-15 by PR
+#215.** As written: `fire.py:339` set `person_id=None` for the participation
+occasion; `fire.py:817` documented *"`ctx.tagger is None`, so `peer_card` is
+`()` — she remembers nothing"*; and `self_card=` appeared at exactly one site,
+`nora/engagement/context.py:208`, the **tag path**. The participation turn
+rendered no Honcho block at all. **That is no longer true**, and this paragraph
+is kept as the record of what was measured rather than as a current claim —
+re-read the tree before quoting it.
 
 So Phase 2 needs three things, not one:
 
 1. admission at a non-zero rate (Phase 1),
-2. **memory reaching the participation turn at all** (#210),
+2. ~~memory reaching the participation turn at all (#210)~~ — **LANDED**
+   2026-09-15 (#215/#210); what is now owed is not the wiring but a live
+   reading of what the turn actually sees, which has never been taken,
 3. culture accumulated long enough to have a history.
 
-And the participation turn has run **once, ever**, so none of its context has
-been observed in production. Every claim about what it sees is a claim about
-code, not about behaviour.
+And as of 2026-09-13 the participation turn had run **once, ever**, so none of
+its context had been observed in production: every claim about what it sees was
+a claim about code, not about behaviour. **That count is stale and was never
+re-taken.** Three changes have landed against this path since — #215 (memory),
+#262 (R-97 silence on all-non-ok lookups), #261 (the gate's own timeout ceiling)
+— so the count must be re-measured before anything here is read as current.
 
 ## 4. Why it cannot be specified
 
@@ -103,9 +110,11 @@ friend riffing about a secretary is not asking for anything, and there is no
 correct answer to score against.
 
 The only grounded signal left is **uptake**: she said something; did anyone
-engage. Slow, noisy, confounded by everything — and #216 — n=5, not re-taken — reports the current
-turn false-speaking on 4 of 5 silence twins, which uptake would score as
-failure only after the room had already been interrupted.
+engage. Slow, noisy, confounded by everything — and #216 — n=5, never re-taken,
+closed 2026-09-16 by PR #262 — reported the turn false-speaking on 4 of 5
+silence twins, which uptake would score as failure only after the room had
+already been interrupted. R-97 now refuses that one shape; the ceiling on uptake
+as an instrument is unchanged by it.
 
 This is written down before anyone builds, because the alternative is to
 invent a precise-looking measurement for something unmeasurable and find out in
@@ -119,8 +128,10 @@ it at all.
 
 ## 5. What Phase 1 must produce first
 
-1. Refusals attributable per room (#221), and a non-zero admission rate.
-2. Memory reaching the participation turn (#210).
+1. Refusals attributable per room (#221, still unbuilt), and a non-zero
+   admission rate.
+2. ~~Memory reaching the participation turn (#210)~~ — **landed 2026-09-15**,
+   unobserved in production.
 3. Culture with real revisions behind it — the chain, not one snapshot, is
    what carries 演變.
 4. An uptake measure with a base rate taken on the **tag** path, where she
