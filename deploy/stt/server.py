@@ -50,7 +50,7 @@ from opencc import OpenCC
 
 app = FastAPI(title="Nora STT", version="0.2.0")
 
-DEFAULT_MODEL = "noise-detection"
+DEFAULT_MODEL = os.environ.get("STT_MODEL", "sensevoice")
 
 DEVICE = "cpu"
 MODEL_CONFIGS: dict[str, dict[str, Any]] = {
