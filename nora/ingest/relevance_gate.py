@@ -45,6 +45,23 @@ A truncated body is treated as an error and not parsed, for
 `nora.engagement.stages.debrief`'s already-paid-for reason: a cut-off JSON
 document can still parse into something shorter and wrong, which is an ERROR
 wearing a PASS's face.
+
+THE CEILING IS THE GATE'S OWN, AND IT IS ITS OWN ERROR KIND (issue #163)
+-----------------------------------------------------------------------
+`decide` promises never to raise. It did not promise to RETURN, and that is a
+different property: `ModelClient.complete` is a structural type with no
+timeout in its contract, so «the gate never hangs» was a property of whichever
+client the composition root happened to wire rather than of this class. It
+matters here more than it would elsewhere, because the trigger holds the
+conversation's SLOT across `decide` and walks its due windows serially — one
+hanging call is not a slow background job, it is that room refusing tags and
+every other room's window never being judged.
+
+So the bound is taken here, in `_ask`, on top of whatever the client carries.
+And it is COUNTED APART from `call_failed`: 8 of 41 calls in the 20.3h after
+the shadow flip produced no verdict, all of them timeouts, and nothing in the
+metric said so. `nora_relevance_gate_seconds` is the other half — the ceiling
+can only be argued against a latency distribution, and there was none.
 """
 
 from __future__ import annotations
@@ -53,6 +70,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
@@ -86,7 +104,15 @@ VerdictSource = Literal["model", "fail_closed"]
 #: here rather than restating it, because a hand-copied vocabulary is what
 #: drifts (the `nora_ingest_outcomes_total` precedent).
 GATE_ERROR_KINDS: tuple[str, ...] = (
-    "call_failed",     # transport, timeout, provider refusal — never reached a body
+    "call_failed",     # transport error, provider refusal — never reached a body
+    # SPLIT OUT OF `call_failed` (issue #163). Measured over the 20.3h after
+    # the shadow flip, 8 of 41 gate calls — 19.5% — produced no verdict, and
+    # every one was a `TimeoutError`: the model did not finish inside
+    # `[relevance_gate] timeout_seconds`. Pooled with `call_failed` that fact
+    # was readable only from a stack trace in the log, so the one series an
+    # operator watches could not tell «the provider refused» from «the ceiling
+    # is too low for this arm» — two different fixes wearing one label.
+    "timeout",         # the ceiling fired: no body, and the call was still running
     "truncated",       # finish_reason="length": a body exists and must not be trusted
     "unparseable",     # not JSON, or not an object
     "bad_verdict",     # parsed, but `verdict` was absent or neither value
@@ -480,6 +506,7 @@ class RelevanceGate:
         standing: StandingReader | None = None,
         transcript_limit: int = 40,
         standing_timeout_seconds: float = 2.0,
+        call_timeout_seconds: float = 20.0,
         media_join: MediaJoin | None = None,
         capabilities: str = "",
     ) -> None:
@@ -510,6 +537,16 @@ class RelevanceGate:
         self._standing = standing
         self._transcript_limit = transcript_limit
         self._standing_timeout_seconds = standing_timeout_seconds
+        # The gate's OWN ceiling on the model call, mirroring
+        # `[relevance_gate] timeout_seconds` the way `transcript_limit` and
+        # `standing_timeout_seconds` above mirror their keys. A client that
+        # already bounds itself (the composition root's does, and the
+        # architecture suite requires it to) makes this a backstop rather than
+        # a second policy — both fire as `timeout`, so which one wins is not
+        # an observable difference. What it buys is that «never hangs» is a
+        # property of THIS class, provable against a client that never
+        # returns, instead of a property of the wiring.
+        self._call_timeout_seconds = call_timeout_seconds
 
     def _emit(self, verdict: GateVerdict, platform: str) -> None:
         """Write ONE verdict to the wire on every path — model and
@@ -545,6 +582,13 @@ class RelevanceGate:
         """Judge one closed window. NEVER raises — every failure is a
         counted `no_go`, because a gate that propagates an exception to the
         trigger is a gate that stops the whole ambient path on one bad call.
+
+        And never HANGS, which is the other half and was missing: the model
+        call is bounded by `call_timeout_seconds` here rather than only in
+        whichever client is wired, so the worst case is a `timeout` verdict at
+        the ceiling. The trigger holds the room's slot across this and judges
+        its due windows serially, so an unbounded call is not one slow window,
+        it is that room refusing tags and every other room going unjudged.
         """
         with generation(
             "relevance_gate",
@@ -602,11 +646,40 @@ class RelevanceGate:
             return verdict
 
     async def _ask(self, system: str, prompt: str) -> GateVerdict:
+        started = time.perf_counter()
         try:
-            completion = await self._client.complete(system=system, prompt=prompt)
+            completion = await asyncio.wait_for(
+                self._client.complete(system=system, prompt=prompt),
+                timeout=self._call_timeout_seconds,
+            )
+        except TimeoutError:
+            # Its OWN kind, not `call_failed`. See the module docstring: every
+            # one of the 8-in-41 no-verdict calls behind #163 arrived here, and
+            # pooled with a transport error the series could not say so.
+            #
+            # `TimeoutError` and not `asyncio.TimeoutError` — the same object
+            # since 3.11, and the builtin is what a client's own `wait_for`
+            # raises too, so a bound taken below this one is caught here rather
+            # than falling through to the generic arm and losing its label.
+            log.warning(
+                "relevance gate call exceeded %.1fs; failing closed",
+                self._call_timeout_seconds,
+            )
+            return _fail_closed("timeout")
         except Exception:
             log.exception("relevance gate call failed; failing closed")
             return _fail_closed("call_failed")
+        finally:
+            # EVERY exit, including the two failures — `nora_debrief_seconds`'s
+            # rule one stage over: a latency series that records only successes
+            # describes the path that already works. The timeout samples are
+            # CENSORED at the ceiling (a call cut at 20s may have wanted 45),
+            # so this reads as «how long the gate is willing to wait», and the
+            # top bucket paired with `{kind="timeout"}` is what says the
+            # ceiling is the binding constraint rather than the provider.
+            self._metrics.observe(
+                "nora_relevance_gate_seconds", time.perf_counter() - started,
+            )
         if completion.finish_reason == "length":
             # NOT parsed. See the module docstring: a truncated JSON body can
             # parse into something shorter and wrong. The REAL stop reason

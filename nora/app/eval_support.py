@@ -982,6 +982,11 @@ class GateProbe:
             records=await _gate_records(transcript), metrics=Metrics(),
             standing=_GateStanding(standing),
             transcript_limit=self._cfg.transcript_rows,
+            # The deployment's own ceiling, so a suite run cannot report a
+            # verdict production would have cut short (issue #163). Both probe
+            # clients bound themselves too; this is the gate holding the same
+            # number, as the composition root does.
+            call_timeout_seconds=self._cfg.timeout_seconds,
             capabilities=self.capabilities,
         )
         got = await gate.decide(

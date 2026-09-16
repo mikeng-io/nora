@@ -2247,6 +2247,31 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
         "image, the whole chunk run for a video. Excludes cache hits.",
         (1, 2, 5, 10, 20, 40, 80, 160, 300),
     ),
+    # Issue #163's missing half. `nora_relevance_gate_errors_total{kind=
+    # "timeout"}` says HOW OFTEN the ceiling fired; only a distribution says
+    # whether the ceiling is the wrong number. The question that stalled — «is
+    # nora-gate genuinely taking >20s on a 40-row transcript, or is the route
+    # falling through a slow arm?» — is unanswerable from a counter, and 19.5%
+    # of calls were arriving at it.
+    #
+    # The samples are **right-censored at `[relevance_gate] timeout_seconds`**:
+    # a call cut at 20s may have wanted 45, and is recorded as 20. So this
+    # measures how long the gate WAITS, not how long the model takes, and the
+    # top bucket is the population `{kind="timeout"}` counts. Buckets are the
+    # default set (to 30) because the ceiling is 20 and nothing above it can be
+    # observed; widening them would draw buckets that can never fill.
+    #
+    # Observed on every exit including the failures, `nora_debrief_seconds`'s
+    # rule: a latency series that records only successes describes the path
+    # that already works.
+    _HistogramSpec(
+        "nora_relevance_gate_seconds",
+        "One Relevance Gate model call's latency, on every exit including the "
+        "fail-closed ones (design/dreamer-agent-loop/36, issue #163). "
+        "RIGHT-CENSORED at [relevance_gate] timeout_seconds — a timed-out call "
+        "is recorded at the ceiling, so read the top bucket against "
+        "nora_relevance_gate_errors_total{kind=\"timeout\"}.",
+    ),
 )
 
 # The full set of declared metric names, independent of kind — what the
