@@ -608,6 +608,13 @@ class _KeyedLanguage:
         self.watermarks: dict[tuple[str, str], int] = {}
         self.advance_calls: list[tuple[str, str, int]] = []
         self._advanced: set[tuple[str, str]] = set()
+        #: Per-scope newest message id, for `seed_watermarks`' head fallback.
+        #: Absent means a scope with no messages at all, which is a real state
+        #: and must not be seeded past.
+        self.heads: dict[str, int] = {}
+
+    async def head_message_id(self, *, scope_id: str) -> int:
+        return self.heads.get(scope_id, 0)
 
     async def watermark_for(self, *, consolidator_name: str, scope_id: str) -> int:
         return self.watermarks.get((consolidator_name, scope_id), 0)
@@ -1273,6 +1280,74 @@ async def test_seeding_never_overwrites_a_cursor_that_already_exists():
 
     assert seeded == 0
     assert language.watermarks[("lexemes", "g1")] == 900
+
+
+async def test_a_scope_the_SOURCE_NEVER_COVERED_stays_at_zero_by_default():
+    """The historical behaviour, kept as the default and pinned so the new
+    fallback cannot widen silently. An append-idempotent extractor may
+    legitimately want the whole backlog."""
+    language = _KeyedLanguage()
+    language.heads["g1"] = 5000
+
+    seeded = await seed_watermarks(
+        language, [_StubAdaptor("lexemes")], keys=lambda a: ["g1"],
+    )
+
+    assert seeded == 0
+    assert ("lexemes", "g1") not in language.watermarks
+
+
+async def test_seed_at_head_starts_a_scope_the_source_never_covered_AT_THE_HEAD():
+    """The defect this closes, measured live 2026-09-17: two Discord scopes had
+    no row under the deleted `language` cursor, so both seeded at 0, and one
+    held 1,916 messages with 1,616 unread. For an adaptor whose output is a
+    single evolving HEAD that is worse than slow — every catch-up run installs
+    an account derived from the room's PAST as the answer to what it is NOW."""
+    language = _KeyedLanguage()
+    language.heads["g1"] = 5000
+
+    seeded = await seed_watermarks(
+        language, [_StubAdaptor("culture")], keys=lambda a: ["g1"],
+        schedules={"culture": AdaptorSchedule(
+            min_interval_seconds=86400, batch_limit=300, seed_at_head=True,
+        )},
+    )
+
+    assert seeded == 1
+    assert language.watermarks[("culture", "g1")] == 5000
+
+
+async def test_INHERITING_still_wins_over_the_head_when_there_is_something_to_inherit():
+    """The head is a FALLBACK. A renamed adaptor must still inherit its
+    predecessor's position, or it re-reads whatever happened in between."""
+    language = _KeyedLanguage()
+    language.watermarks[("language", "g1")] = 412
+    language.heads["g1"] = 5000
+
+    await seed_watermarks(
+        language, [_StubAdaptor("culture")], keys=lambda a: ["g1"],
+        schedules={"culture": AdaptorSchedule(
+            min_interval_seconds=86400, batch_limit=300, seed_at_head=True,
+        )},
+    )
+
+    assert language.watermarks[("culture", "g1")] == 412
+
+
+async def test_a_scope_with_NO_MESSAGES_is_left_alone_even_with_seed_at_head():
+    """0 is already the right cursor for an empty room, and writing a row for
+    it would claim something was read."""
+    language = _KeyedLanguage()
+
+    seeded = await seed_watermarks(
+        language, [_StubAdaptor("culture")], keys=lambda a: ["g1"],
+        schedules={"culture": AdaptorSchedule(
+            min_interval_seconds=86400, batch_limit=300, seed_at_head=True,
+        )},
+    )
+
+    assert seeded == 0
+    assert ("culture", "g1") not in language.watermarks
 
 
 async def test_seeding_is_idempotent():

@@ -3068,6 +3068,15 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     # throttle, and an earlier draft of the design pinned it at
                     # 1 on an assumption that has since been falsified.
                     batch_limit=cfg.culture.batch_limit,
+                    # START FROM WHAT THE ROOM HAS BEEN SAYING LATELY, not from
+                    # its origin story. `seed_watermarks` inherits from the
+                    # `language` cursor, and that tier is DELETED — so a room it
+                    # never covered would seed at 0 and spend days walking a
+                    # backlog, installing an account derived from the room's
+                    # past as the current head each time. Measured the night
+                    # this shipped: one room held 1,916 messages with 1,616
+                    # unread behind a zero cursor.
+                    seed_at_head=True,
                 ),
             }
             dream_adaptors = (
