@@ -408,3 +408,57 @@ test('a suspended live source reports position_policy none', () => {
   const snap = arbiter.statusSnapshot();
   assert.equal(snap.player.position_policy, 'none');
 });
+
+test('music/stop during MUSIC-STARTING cancels the pending start: no late playback, no resurrection, no track-finished', async () => {
+  const { arbiter, player, procs, events, clock } = makeArbiter();
+  arbiter.playMusic({ streamUrl: 'https://cdn.test/a' });
+  const startingProc = procs[0];
+  assert.equal(arbiter.state(), 'starting');
+
+  assert.equal(arbiter.stopMusic(), true);
+  assert.equal(arbiter.state(), 'stopped');
+  assert.deepEqual(startingProc.signals, ['SIGTERM']); // pending ffmpeg killed
+
+  startingProc.data(); // the late start arrives anyway: ignored
+  assert.equal(player.played.length, 0);
+  assert.equal(arbiter.state(), 'stopped');
+
+  clock.advance(60_000);
+  assert.equal(procs.length, 1); // nothing resurrects later either
+  assert.equal(events.filter((e) => e.type === 'track-finished').length, 0);
+});
+
+test('a second speech while MUSIC-RESUMING preempts again: the in-flight revive cannot kill it', async () => {
+  const { arbiter, player, procs, events, playToPlaying } = makeArbiter();
+  playToPlaying('https://cdn.test/a');
+  arbiter.enqueueSpeech({ audio: Buffer.from('one'), mediaType: 'audio/mpeg', requestId: 'r1' });
+  assert.equal(arbiter.state(), 'suspended');
+
+  player.finish(); // first speech ends -> the revive begins (ffmpeg respawns)
+  await tick();
+  assert.equal(arbiter.state(), 'resuming');
+  const reviveProc = procs[procs.length - 1];
+
+  arbiter.enqueueSpeech({ audio: Buffer.from('two'), mediaType: 'audio/mpeg', requestId: 'r2' });
+  assert.equal(arbiter.state(), 'suspended');
+  assert.deepEqual(reviveProc.signals, ['SIGTERM']); // the in-flight revive is killed
+  assert.equal(player.played.length, 3); // music, speech one, speech two
+
+  reviveProc.data(); // late revive bytes arrive: must not touch the second speech
+  assert.equal(player.played.length, 3);
+  assert.equal(arbiter.state(), 'suspended');
+
+  player.finish(); // second speech drains
+  await tick();
+  assert.deepEqual(
+    events.filter((e) => e.type === 'speech-finished').map((e) => e.request_id),
+    ['r1', 'r2'],
+  );
+  // Music revives once more, from 0, on a fresh ffmpeg.
+  assert.equal(arbiter.state(), 'resuming');
+  const secondRevive = procs[procs.length - 1];
+  assert.notEqual(secondRevive, reviveProc);
+  secondRevive.data();
+  assert.equal(arbiter.state(), 'playing');
+  assert.equal(player.played.length, 4);
+});
