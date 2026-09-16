@@ -1906,18 +1906,41 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "mode only the go verdicts are delivered anywhere; this series is the "
         "only place the no_go rate is observable at all, which is what keeps "
         "an undelivered verdict from being an unmeasured one.",
-        ("verdict", "platform"),
+        # `conversation_id` is what makes a REFUSAL JOINABLE TO A ROOM
+        # (design/culture-tier/02-measurement section 3, was issue #221).
+        # Without it a `no_go` says only «somewhere on Signal», and the two
+        # measures that would grade the gate against something other than its
+        # own opinion — HOLDING refusal (it refused room R while she
+        # demonstrably held something for R) and override (a human tagged her
+        # in R within minutes of a `no_go`) — are uncomputable even though
+        # BOTH SIDES OF THE JOIN ARE ALREADY IN POSTGRES. The gate has the id
+        # in hand at every emit site; it was simply never written down.
+        #
+        # Cardinality is bounded by `Policy.conversations`, which is a
+        # configured roster and not user input — the same population every
+        # per-room store keys on. It does NOT touch DEC-179: the gate still
+        # neither reads nor writes `decision_log`, and a counter still cannot
+        # give per-verdict timing, so `override` stays approximate until
+        # something durable carries it.
+        ("verdict", "platform", "conversation_id"),
     ),
     _CounterSpec(
         "nora_relevance_gate_errors_total",
         "Gate calls that produced no usable verdict and therefore FAILED "
-        "CLOSED to no_go, by kind and platform. The vocabulary is "
-        "`nora.ingest.relevance_gate.GATE_ERROR_KINDS` and is deliberately "
+        "CLOSED to no_go, by kind, platform and conversation. The vocabulary "
+        "is `nora.ingest.relevance_gate.GATE_ERROR_KINDS` and is deliberately "
         "not restated here — a hand-copied vocabulary is what drifts. A "
         "SUSTAINED count here is the gate being down while looking exactly "
         "like a quiet room, which is the one failure this series exists to "
         "make visible.",
-        ("kind", "platform"),
+        # Labelled for the same reason as the verdict series above, and the
+        # reason it is not left out: a fail-closed no_go REFUSES THE ROOM just
+        # as a chosen one does, so a HOLDING measure blind to this series
+        # under-counts refusals by whatever the outage rate happens to be
+        # (14 of 290 over the 7 days to 2026-09-16). The two series stay
+        # SEPARATE — that is R-23 and is not weakened by giving both the same
+        # join key.
+        ("kind", "platform", "conversation_id"),
     ),
 )
 

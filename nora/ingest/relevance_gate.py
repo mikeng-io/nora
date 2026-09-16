@@ -37,7 +37,12 @@ But it is never counted as a clean `no_go`. `GateVerdict.source` keeps
 «the model said no» apart from «I could not ask», because those are the same
 observable outcome and completely different operational facts: the first is
 the gate working, the second is the gate DOWN while looking exactly like a
-quiet room. The counters follow that split — `nora_relevance_gate_total`
+quiet room. Both counters carry `conversation_id`, so a refusal can be joined
+to what she was holding for that room (design/culture-tier/02-measurement
+section 3, was issue #221); before that label they said only «somewhere on
+Signal» and neither HOLDING refusal nor override was computable.
+
+The counters follow that split — `nora_relevance_gate_total`
 moves only on a real verdict, `nora_relevance_gate_errors_total` carries the
 reason a fail-closed one happened.
 
@@ -548,9 +553,18 @@ class RelevanceGate:
         # returns, instead of a property of the wiring.
         self._call_timeout_seconds = call_timeout_seconds
 
-    def _emit(self, verdict: GateVerdict, platform: str) -> None:
+    def _emit(self, verdict: GateVerdict, platform: str, conversation_id: str) -> None:
         """Write ONE verdict to the wire on every path — model and
         fail-closed alike.
+
+        `conversation_id` is carried here only to reach `_count`: the span
+        already has it as `nora.conversation_id`, set at span start. It is a
+        REQUIRED positional rather than a defaulted keyword because
+        `Metrics.inc` fills a missing declared label with `""` instead of
+        raising (`_full_labels`), so a forgotten call site would emit a series
+        that looks attributable and is not — the exact failure the label
+        exists to remove. A signature that cannot be called without it is the
+        only part of this that a test cannot be written around.
 
         The verdict JSON is the gate's OWN output, safe for the wire (no room
         content), and WITHOUT it the span renders in Langfuse as a bare
@@ -576,7 +590,7 @@ class RelevanceGate:
             "nora.relevance_gate.source": verdict.source,
             "nora.relevance_gate.error_kind": verdict.error_kind or "",
         })
-        self._count(verdict, platform)
+        self._count(verdict, platform, conversation_id)
 
     async def decide(self, *, platform: str, conversation_id: str) -> GateVerdict:
         """Judge one closed window. NEVER raises — every failure is a
@@ -614,11 +628,11 @@ class RelevanceGate:
         ):
             transcript = await self._read_transcript(platform, conversation_id)
             if transcript is None:
-                self._emit(_fail_closed("no_context"), platform)
+                self._emit(_fail_closed("no_context"), platform, conversation_id)
                 return _fail_closed("no_context")
             instruction = self._instruction()
             if instruction is None:
-                self._emit(_fail_closed("no_instruction"), platform)
+                self._emit(_fail_closed("no_instruction"), platform, conversation_id)
                 return _fail_closed("no_instruction")
             standing = await self._read_standing(platform, conversation_id)
             system = build_system_prompt(instruction.text, self._capabilities)
@@ -642,7 +656,7 @@ class RelevanceGate:
                 "nora.relevance_gate.standing": standing is not None,
             })
             verdict = await self._ask(system, prompt)
-            self._emit(verdict, platform)
+            self._emit(verdict, platform, conversation_id)
             return verdict
 
     async def _ask(self, system: str, prompt: str) -> GateVerdict:
@@ -818,7 +832,7 @@ class RelevanceGate:
         # is the same block, one call site over.
         return (row.body, row.updated_at) if row is not None else None
 
-    def _count(self, verdict: GateVerdict, platform: str) -> None:
+    def _count(self, verdict: GateVerdict, platform: str, conversation_id: str) -> None:
         if verdict.source == "fail_closed":
             # NOT counted on `nora_relevance_gate_total`. A fail-closed no_go
             # in the same series as a chosen one is R-23's bug: the healthy
@@ -827,10 +841,12 @@ class RelevanceGate:
             self._metrics.inc(
                 "nora_relevance_gate_errors_total",
                 kind=verdict.error_kind or "call_failed", platform=platform,
+                conversation_id=conversation_id,
             )
             return
         self._metrics.inc(
             "nora_relevance_gate_total", verdict=verdict.verdict, platform=platform,
+            conversation_id=conversation_id,
         )
 
 
