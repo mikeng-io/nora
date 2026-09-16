@@ -95,16 +95,31 @@ class DiscordCommands(app_commands.Group):
 
     @app_commands.command(name="exit", description="Leave the voice channel.")
     async def exit(self, interaction: discord.Interaction) -> None:
-        # The exit gate is the join gate MINUS the in-voice requirement: a
-        # member may end Nora's connection without standing in the channel
-        # themselves (decision 2026-09-16 — kicking the bot out of a room
-        # you just left must not require re-entering it).
-        if interaction.guild_id is None or not isinstance(interaction.user, discord.Member):
+        # The exit gate IS the join gate (§12.3: guild member + caller
+        # physically in a voice channel + that channel on the
+        # `voice_channel_ids` allow-list — "NO extra carve-out"). Without
+        # it any guild member can tear down the shared connection (music +
+        # TTS + wake) from anywhere.
+        if interaction.guild_id is None:
             await interaction.response.send_message(
                 m.music_not_in_server_line(), ephemeral=True,
             )
             return
         guild_id = str(interaction.guild_id)
+        decision = voice_join_decision(
+            is_member=isinstance(interaction.user, discord.Member),
+            guild_id=guild_id,
+            caller_channel_id=_member_voice_channel_id(interaction),
+            allowed=self._voice_channel_ids,
+        )
+        if decision != "ok":
+            line = (
+                m.join_voice_channel_line()
+                if decision == "not_in_voice"
+                else m.not_in_allowed_channel_line()
+            )
+            await interaction.response.send_message(line, ephemeral=True)
+            return
         log.info("discord command: /discord exit guild=%s", guild_id)
         await interaction.response.defer(ephemeral=True)
         if self._manager is not None:
