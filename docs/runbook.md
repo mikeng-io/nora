@@ -360,10 +360,16 @@ becomes a muted one."* A new alert would have joined the noise; a check that
 fails the deploy does not compete for attention that is already spent.
 
 **Open, and an operator call:** whether `PlatformSilent`'s 900s threshold
-should be raised or scoped. A quiet group at 3am is healthy, and an alert that
-fires on health is the same defect one layer over. Also open: the metric
-carries `discord` and `whatsapp` but **no `signal` series at all**, so the
-primary platform is not covered by the rule at all.
+should be raised or scoped. Discord reached a 1487s age in the 7 days to
+2026-09-16 and Signal 42954s, so the rule fires on ordinary quiet as well as on
+a wedged listener.
+
+(An earlier version of this paragraph said the metric carries **no `signal`
+series at all**. That was wrong: Signal emitted continuously 09-09 to 09-16
+10:36. It is absent only after a restart until the first SSE envelope arrives,
+because `__main__` skips a `None` age and Prometheus creates a labelled series
+on first observation — the same lazy-series effect that hides the gate's `go`
+counter. Absence here means «no event yet», never «not instrumented».)
 
 ## 4. "An alert arrived in the Discord review channel"
 
