@@ -111,7 +111,7 @@ a property and not a subtype.
 | | **dated lane** (anchor present) | **dateless lane** (topic anchor only) |
 |---|---|---|
 | identity at staging | `(workspace, anchor_date, entity ids, title)` | `(workspace, title)` + a topic anchor — §3.1 |
-| create-vs-update | title resolution (#228), unchanged | title resolution, and a **judgement** where the title does not resolve (37 §101) |
+| create-vs-update | title resolution (#228), unchanged | title resolution, and a **judgement** where the title does not resolve (37 §3) |
 | first wake | anchor day start − 3 days | `now + 7 days` |
 | clock-driven retirement | `anchored_before` → `expired`/`moot`, `_covers`-grounded | **strikes ceiling** → a retirement ACTION that does not exist yet (§4) |
 | conversation-driven close | 37's close verb (not built) | 37's close verb — the *primary* close for this lane |
@@ -329,7 +329,7 @@ See §6.
 | dateless line renders at all | **exists** (`note_render.py:198-199`) |
 | staging key survives a NULL anchor | **MUST BUILD** — §3.1, and it is a silent failure if skipped |
 | `note_candidate` CHECK + parser accept a dateless create | **MUST BUILD** — §3.1 |
-| judgement gate for a dateless candidate | **MUST BUILD** — 37 §101 |
+| judgement gate for a dateless candidate | **MUST BUILD** — 37 §3 |
 | `revisit_at` seeded at dateless creation | **MUST BUILD** — §3.2, highest consequence |
 | retirement ACTION at the strike ceiling | **MUST BUILD** — §3.2 / 37 §4 |
 | close verb in `note-candidates` | **MUST BUILD** — §3.5 |
@@ -371,7 +371,7 @@ close and §2's table loses a column.**
   Filed as a follow-on, sequenced after the dateless lane ships.
 - **#236 — partly absorbed.** The duplicate bound it tracks is, for the
   dateless lane, exactly two things this node specifies: the judgement gate
-  (37 §101) at the front, and the strikes retirement at the back. What it is
+  (37 §3) at the front, and the strikes retirement at the back. What it is
   **not** is a merge verb — merge was deleted 2026-09-08 and nothing here
   revives it. The dated lane's duplicate bound is unchanged and stays #236's.
   The one thing this node *adds* to #236's surface is §3.1's NULL-key defect,
