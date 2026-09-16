@@ -322,6 +322,49 @@ docker compose exec db psql -U nora -d nora -c 'DROP TABLE alembic_version'
 > still on disk, untouched by the cutover, but everything recorded AFTER the cutover
 > lives only in Postgres.
 
+## 3b. After every deploy: `scripts/verify-deploy.py`
+
+```bash
+scripts/build-image.sh
+docker compose up -d --force-recreate nora
+python3 scripts/verify-deploy.py        # LAST, and it must exit 0
+```
+
+**Three containers run `nora:latest`** — `nora`, `presence` and `analytics`,
+same image, different commands. `--force-recreate nora` recreates ONE of them.
+The other two keep running whatever image they were created from, and
+`docker ps` shows `nora:latest` for all three because that is the reference
+they asked for, not the one they are on.
+
+**What that cost, 2026-09-16.** `config.toml` gained the voice work's
+`[speech.tts]` keys. The two stale containers' Pydantic schema predates those
+keys and rejects them (`extra_forbidden`), so both entered a restart loop:
+**279 restarts, `analytics` down four days, `presence` a day.** The fix was one
+`--force-recreate presence analytics` onto the image that was already built.
+
+`verify-deploy.py` asks the two questions the deploy itself cannot: is every
+container that asked for this image actually ON the image just built, and is it
+up a grace period later. It exits non-zero on either, so it can be the last
+line of a deploy and mean something. Falsified against both constructed
+failures, 2026-09-16 — a retagged-underneath container reports `STALE`, a
+container that exits on startup reports `DOWN`, each exit 1.
+
+**Why a check and not another alert.** Detection was never missing.
+`TargetDown` fired the entire four days, Alertmanager routed it, and the bridge
+delivered it to Discord — the chain worked perfectly. It was not ACTED on,
+because `PlatformSilent` trips on 900 seconds of ordinary quiet and flaps all
+day, so the channel delivers every ~25 minutes and a four-day outage is
+invisible inside it. `deploy/alertmanager/alertmanager.yml` predicts exactly
+this in its own comment: *"a repeat every few minutes is how an alert channel
+becomes a muted one."* A new alert would have joined the noise; a check that
+fails the deploy does not compete for attention that is already spent.
+
+**Open, and an operator call:** whether `PlatformSilent`'s 900s threshold
+should be raised or scoped. A quiet group at 3am is healthy, and an alert that
+fires on health is the same defect one layer over. Also open: the metric
+carries `discord` and `whatsapp` but **no `signal` series at all**, so the
+primary platform is not covered by the rule at all.
+
 ## 4. "An alert arrived in the Discord review channel"
 
 Prometheus evaluates the rules in `deploy/prometheus/rules/`, Alertmanager groups and
