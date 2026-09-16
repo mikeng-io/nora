@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import contextlib
 import os
 import sys
@@ -47,6 +48,9 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
 from nora.app import config_cli, report
+from nora.app.participation_measures import gather as gather_measures
+from nora.app.participation_measures import measure as compute_measures
+from nora.domain.participation_measures import Refusal
 from nora.app.pending import correlate
 from nora.config import Config, ConfigError, load
 from nora.domain.models import UnattributedRow
@@ -68,6 +72,13 @@ DEFAULT_SCAN_LIMIT = 5000
 # 500 is a whole household's worth of backlog several times over — a listing
 # longer than this is the runaway itself, and the truncation notice says so.
 DEFAULT_REMINDER_LIMIT = 500
+
+#: How far back `nora measure participation` reads by default. Seven days
+#: because that is what Prometheus retains, and the refusal-side measures
+#: cannot be joined past the shorter of the two horizons — a default that
+#: outran the weaker instrument would silently report the note-side measures
+#: over one window and the refusal-side ones over another.
+DEFAULT_MEASURE_DAYS = 7
 
 
 class CliError(Exception):
@@ -128,6 +139,39 @@ def add_subcommands(
         help=f"pending rows to list (default {DEFAULT_REMINDER_LIMIT})",
     )
     reminders_list.set_defaults(func=cmd_reminders_list)
+
+    # `measure` — the four measures that grade the ambient path against
+    # something other than its own opinion (design/culture-tier
+    # 02-measurement §2). READ ONLY like everything else in this module, and
+    # it changes no behaviour: it computes over rows that already exist.
+    #
+    # `--refusals` is a FILE and not a Prometheus URL on purpose. Gate
+    # refusals come from a counter that resets with the process, and keeping
+    # the fetch outside this command keeps the weak instrument visibly
+    # separate from the durable rows — `scripts/gate_refusals.py` produces the
+    # file, and the day a durable per-verdict row exists only that script is
+    # replaced. Without the flag the two measures that need refusals report
+    # `considered = 0`, which reads as «did not run» and not as «never
+    # happens».
+    measure = subparsers.add_parser(
+        "measure", parents=[parent],
+        help="measures the rooms produce for free — no model, no behaviour change",
+    )
+    measure_sub = measure.add_subparsers(dest="measure_command", required=True)
+    measure_participation = measure_sub.add_parser(
+        "participation", parents=[parent],
+        help="expiry-without-action, HOLDING refusal, override, ignored",
+    )
+    measure_participation.add_argument(
+        "--days", type=int, default=DEFAULT_MEASURE_DAYS,
+        help=f"how far back to read rows (default {DEFAULT_MEASURE_DAYS})",
+    )
+    measure_participation.add_argument(
+        "--refusals", type=Path, default=None,
+        help="JSON from scripts/gate_refusals.py; without it the two "
+             "refusal-side measures report nothing considered",
+    )
+    measure_participation.set_defaults(func=cmd_measure_participation)
 
     presence = subparsers.add_parser(
         "presence", parents=[parent], help="Life360 presence helpers",
@@ -370,6 +414,93 @@ async def cmd_reminders_list(args: argparse.Namespace) -> int:
     ):
         print(line)
     return 0
+
+
+async def cmd_measure_participation(args: argparse.Namespace) -> int:
+    """`nora measure participation` — the four, READ ONLY.
+
+    Nothing here is a verdict and nothing calls a model. Every number is
+    arithmetic over rows the rooms produced anyway, which is the point: a model
+    agreeing with the instruction someone wrote it is not evidence about the
+    room, and a `no_go` is unfalsifiable by construction.
+    """
+    cfg = _config(args)
+    days = int(args.days)
+    if days <= 0:
+        raise CliError(f"--days must be positive; got {days}")
+    now = datetime.now(UTC)
+    # EPOCH MILLISECONDS — `decision_log.ts`, `messages.ts` and the measures
+    # themselves are all ms. A seconds-valued bound is smaller than every row
+    # in the table, so the window silently becomes ALL TIME while still
+    # printing "last 7d" (caught against live data 2026-09-16).
+    now_ms = int(now.timestamp() * 1000)
+    since = now_ms - days * 86_400_000
+
+    refusals: tuple[Refusal, ...] = ()
+    refusal_source = "not supplied — the two refusal-side measures did not run"
+    if args.refusals is not None:
+        refusals, refusal_source = _load_refusals(args.refusals, since=since)
+
+    url = _database_url(cfg)
+    try:
+        rows = await gather_measures(url, since=since)
+    except Exception as exc:  # one readable line, never a traceback
+        raise CliError(
+            f"could not read the rows in {_redacted(url)}: "
+            f"{type(exc).__name__}: {exc}. Is nora-db up, and has Nora run "
+            "against this config yet?"
+        ) from exc
+
+    for line in report.render_measures(
+        compute_measures(rows, refusals, now=now_ms),
+        source=_redacted(url),
+        window=f"last {days}d",
+        refusals=len(refusals),
+        refusal_source=refusal_source,
+    ):
+        print(line)
+    return 0
+
+
+def _load_refusals(path: Path, *, since: int) -> tuple[tuple[Refusal, ...], str]:
+    """Read `scripts/gate_refusals.py`'s output.
+
+    `at` and `covers_from` are EPOCH MILLISECONDS, matching every other instant
+    these measures handle. `scripts/gate_refusals.py` converts from
+    Prometheus's float seconds; nothing downstream does a second conversion.
+
+    Refused rather than silently dropped when the file predates the window:
+    a refusal list that stops short makes both measures that read it look
+    clean, and «clean» is the answer they would give if the gate had refused
+    nothing at all. The two must never be confusable — that confusion is the
+    whole reason these measures exist.
+    """
+    try:
+        payload = json.loads(path.read_text())
+        rows = tuple(
+            Refusal(
+                conversation_id=str(r["conversation_id"]),
+                at=int(r["at"]),
+                provenance=r.get("provenance", "counter"),
+            )
+            for r in payload["refusals"]
+        )
+        covers_from = int(payload["covers_from"])
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise CliError(
+            f"could not read refusals from {path}: {type(exc).__name__}: {exc}. "
+            "Produce it with scripts/gate_refusals.py."
+        ) from exc
+    if covers_from > since:
+        raise CliError(
+            f"{path} only covers from {datetime.fromtimestamp(covers_from / 1000, UTC)}, "
+            f"but --days asks for {datetime.fromtimestamp(since / 1000, UTC)}. A short "
+            "refusal list makes both refusal-side measures look clean, which is "
+            "what they would also say if nothing had been refused. Re-run "
+            "scripts/gate_refusals.py with a wider range, or lower --days."
+        )
+    provenance = {r.provenance for r in rows} or {"counter"}
+    return rows, "/".join(sorted(provenance))
 
 
 async def cmd_pending(args: argparse.Namespace) -> int:
