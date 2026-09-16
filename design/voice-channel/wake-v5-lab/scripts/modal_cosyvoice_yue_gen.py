@@ -63,7 +63,8 @@ vol = modal.Volume.from_name(VOL_NAME, create_if_missing=True)
 
 @app.function(gpu="T4", timeout=3 * 3600, volumes={VOL_DIR: vol})
 def generate(seeds_tar: str, max_speakers: int = 0, model: str = "yue", mode: str = "zero_shot",
-             pos_texts: list | None = None, probe_texts: list | None = None, tag: str = "") -> str:
+             pos_texts: list | None = None, probe_texts: list | None = None, tag: str = "",
+             start: int = 0, end: int = 0, speeds: list | None = None) -> str:
     import json, sys, torch, torchaudio, numpy as np, soundfile as sf
     sys.path.insert(0, "/opt/CosyVoice"); sys.path.insert(0, "/opt/CosyVoice/third_party/Matcha-TTS")
     from cosyvoice.cli.cosyvoice import CosyVoice2
@@ -78,6 +79,8 @@ def generate(seeds_tar: str, max_speakers: int = 0, model: str = "yue", mode: st
         tf.extractall(work, filter="data")
     seeds = json.load(open(next(work.rglob("seeds.json"))))
     if max_speakers: seeds = seeds[:max_speakers]
+    if end: seeds = seeds[start:end]
+    SP = speeds or SPEEDS
     print(f"speakers={len(seeds)} cuda={torch.cuda.is_available()} {torch.cuda.get_device_name(0)}", flush=True)
 
     # ASLP-lab/Cosyvoice2-Yue ships training-format checkpoints (extra "epoch"/"step" keys);
@@ -99,7 +102,7 @@ def generate(seeds_tar: str, max_speakers: int = 0, model: str = "yue", mode: st
         pdir = next(work.rglob(sd["sid"])); prompt = str(pdir / "prompt.wav")  # upstream API now takes a path and loads it itself
         jobs = [("pos", t) for t in POS] + [("nokla", t) for t in PROBE] + [(k, t) for k, ts in NEG_TEXTS.items() for t in ts]
         for kind, text in jobs:
-            for speed in (SPEEDS if kind == "pos" else [1.0]):
+            for speed in (SP if kind == "pos" else [1.0]):
                 name = f"{tag}{sd['sid']}_{kind}_{abs(hash(text)) % 10**6}_{int(speed*100)}.wav"
                 try:
                     t1 = time.time(); wavs = []
@@ -119,17 +122,18 @@ def generate(seeds_tar: str, max_speakers: int = 0, model: str = "yue", mode: st
             print(f"[{si+1}/{len(seeds)}] clips={len([m for m in manifest if m.get('file')])} errors={n_err} "
                   f"mean_gen={np.mean(times):.2f}s/utt", flush=True)
     json.dump(manifest, open(out / "manifest.json", "w"), ensure_ascii=False, indent=1)
-    out_tar = Path(VOL_DIR) / f"v6-gen-out{tag}.tar.gz"
+    out_tar = Path(VOL_DIR) / f"v6-gen-out{tag}{start}-{end}.tar.gz"
     with tarfile.open(out_tar, "w:gz") as tf:
         tf.add(out, arcname="gen")
     vol.commit()
-    print(f"DONE clips={len([m for m in manifest if m.get('file')])} errors={n_err} total={time.time()-t0:.0f}s "
+    print(f"DONE shard={start}-{end} clips={len([m for m in manifest if m.get('file')])} errors={n_err} total={time.time()-t0:.0f}s "
           f"mean_gen={np.mean(times) if times else float('nan'):.2f}s/utt", flush=True)
     return str(out_tar)
 
 
 @app.local_entrypoint()
-def main(seeds: str, out: str, speakers: int = 0, arms: str = "yue:zero_shot") -> None:
+def main(seeds: str, out: str, speakers: int = 0, arms: str = "yue:zero_shot", shards: int = 1,
+         pos: str = "", speeds: str = "") -> None:
     """arms = comma list of model:mode[:spelling]; spelling 'nola' swaps Nora→挪拉 in the positive texts."""
     seeds_dir = Path(seeds); tar_path = Path(out).with_suffix(".seeds.tar")
     with tarfile.open(tar_path, "w") as tf:
@@ -137,12 +141,19 @@ def main(seeds: str, out: str, speakers: int = 0, arms: str = "yue:zero_shot") -
     print(f"seeds tar {tar_path.stat().st_size/1e6:.0f} MB", flush=True)
     with vol.batch_upload(force=True) as b:
         b.put_file(tar_path, "/seeds.tar")
+    import json
+    n_seeds = len(json.load(open(seeds_dir / "seeds.json"))); n = speakers or n_seeds
+    pos_list = [x for x in pos.split("|") if x] or None
+    speed_list = [float(x) for x in speeds.split(",") if x] or None
     for arm in arms.split(","):
         parts = arm.split(":"); model, mode = parts[0], parts[1]; spelling = parts[2] if len(parts) > 2 else ""
-        pos = [x.replace("Nora", "挪拉") for x in POS_TEXTS] if spelling == "nola" else None
+        pl = [x.replace("Nora", "挪拉") for x in (pos_list or POS_TEXTS)] if spelling == "nola" else pos_list
+        probe = [] if (spelling or pos_list) else None
         tag = f"{model}-{mode}{('-' + spelling) if spelling else ''}-"
-        remote = generate.remote("seeds.tar", speakers, model, mode, pos, [] if spelling else None, tag)
-        dst = Path(out).with_name(Path(out).stem.replace(".tar", "") + f"-{tag.rstrip('-')}.tar.gz")
-        with open(dst, "wb") as f:
-            vol.read_file_into_fileobj(f"v6-gen-out{tag}.tar.gz", f)
-        print(f"downloaded {dst} ({dst.stat().st_size/1e6:.0f} MB) from {remote}", flush=True)
+        bounds = [(i * n // shards, (i + 1) * n // shards) for i in range(shards)]
+        args = [("seeds.tar", 0, model, mode, pl, probe, tag, a, b, speed_list) for a, b in bounds]
+        for (a, b), remote in zip(bounds, generate.starmap(args)):
+            dst = Path(out).with_name(Path(out).stem.replace(".tar", "") + f"-{tag.rstrip('-')}-{a}-{b}.tar.gz")
+            with open(dst, "wb") as f:
+                vol.read_file_into_fileobj(f"v6-gen-out{tag}{a}-{b}.tar.gz", f)
+            print(f"downloaded {dst} ({dst.stat().st_size/1e6:.0f} MB) from {remote}", flush=True)

@@ -94,3 +94,16 @@ Everything else stays local under `systemd-run … MemoryMax`, one job at a time
 - Next (running): 4-arm mini-pilot, 5 speakers each — `base:zero_shot`, `base:cross_lingual`,
   `yue:cross_lingual`, `yue:zero_shot` with 「挪拉」(no4 laai1). Go = any arm ≥ 70 % positives
   through the gate; otherwise fall back to GPT-SoVITS (`text_lang=yue`) or MiniMax cloning.
+
+## 4-arm mini-pilot (5 speakers each, 2026-09-17 00:xx) → GO with stock CosyVoice2 cross-lingual
+| arm | positives through gate | notes |
+|---|---|---|
+| **base : cross_lingual** | **10/30** — 「喂，Nora。」5/10, 「喂Nora。」5/10, 「喂，Nora呀。」0/10 | STT hears 「喂 nora」; mentions render "nora" too |
+| base : zero_shot | 3/30 | worse prosody for the Latin token |
+| yue : cross_lingual | 0/30 | 喂唔嬲啊 / 喂嗱 / 喂撈 |
+| yue : zero_shot, 「挪拉」 | 0/30 | 喂羅拉 / 餵我啦 (= the trap, not the name) |
+Decisions: drop the 呀 text; 諾拉 clips from the base model are clean trap negatives (STT never
+hears "nora"); gate rule fixed so 「唔該Nora」-class mentions must CONTAIN "nora".
+Yield 50 % on 2 texts × 3 speeds × 278 speakers ≈ 550–800 gated positives over ~250 speakers,
+which is the diversity target. Phase 1 launched: 278 speakers, base cross-lingual, 4 T4 containers,
+≈ 2.3 T4-hours total (above the 1.5 h estimate; ≈ $1.4).
