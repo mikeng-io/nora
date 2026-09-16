@@ -229,6 +229,50 @@ this tier needs**, and there is one Honcho workspace behind all of Nora's rooms
 
 So there is no room boundary in Honcho, and no workspace boundary either.
 
+### 4.2 Re-measured 2026-09-16 — the workspace boundary DOES hold
+
+**Narrow the claim above.** "Honcho does not scope" is too strong and this
+section's own falsification only ever tested the SESSION boundary. Honcho
+3.1.2 (the deployed instance) exposes a workspace-level dialectic path,
+`POST /v3/workspaces/{workspace_id}/chat`, and it was probed with a positive
+control:
+
+| arm | result |
+|---|---|
+| `nora` (holds every room) | **2,586 chars** — an account: room self-naming, its origin year, register, how decisions get made |
+| `ridgeline` (holds nothing) | **`NOTHING-KNOWN`**, 13 chars, as instructed |
+
+The positive control passes and the empty workspace declines, so the boundary
+is **enforced, not hoped for**. The correct statement is therefore:
+
+> **Honcho does not scope BELOW the workspace.** Session scoping leaks
+> (§4, unchanged); workspace scoping holds.
+
+Latency re-measured on the same path: **16.6 / 17.9 / 17.4 s**. Still far over
+the gate's 20s ceiling once a real prompt and a cold path are added, so
+§4.1's per-window-is-impossible conclusion is untouched and this stays a
+stored tier either way.
+
+**What it opens, and what it costs.** One Honcho workspace per room would make
+`/chat` hard-scoped by construction, which would restore the route DEC-182
+withdrew — and that route was BETTER on §5's axis, because storing Honcho's
+answer means there is no second interpreter, while DEC-182's fold creates
+exactly one. Against that: `_workspace_for` returns the single default and no
+router is wired; `design/24 §4` says workspace-wide recall is deliberate
+(*"recall is workspace-wide ON PURPOSE"*), so splitting per room fragments the
+person model across rooms — a real loss, not a migration detail; and the
+existing conclusions would have to be moved.
+
+**And one thing is free today, with no routing change at all.** At the current
+single-workspace binding this endpoint already yields a WORKSPACE culture
+account. `01-the-adaptor §7` deleted the workspace half on the grounds that
+re-deriving workspace-wide recall is duplication — this path means it need not
+be re-derived at all.
+
+**OPERATOR DECISION, not taken here.** Whether to route a Honcho workspace per
+room and reopen DEC-182, or keep the fold. DEC-182 stands until it is decided;
+what changes today is only that its stated reason is now too broad.
+
 ### What that changes: the tier stops asking Honcho
 
 Nora already holds every room's messages in Postgres keyed by
