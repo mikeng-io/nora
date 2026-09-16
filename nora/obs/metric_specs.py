@@ -1942,6 +1942,30 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         # join key.
         ("kind", "platform", "conversation_id"),
     ),
+    # The culture tier's only counter (design/culture-tier). The vocabulary is
+    # `nora.language.culture.CULTURE_OUTCOMES` and is deliberately not restated
+    # here — a hand-copied vocabulary is what drifts.
+    #
+    # `unchanged` is the one worth reading and the one that looks like a
+    # failure: the adaptor declines to append an account byte-identical to the
+    # head, because the chain's whole content is that each link differs from the
+    # one before, and a link carrying no information makes the history longer
+    # without making it richer. A sustained run of it is a room that has stopped
+    # changing, which is a real reading and not an error.
+    #
+    # `too_many` should be flat forever: it counts a reply proposing more than
+    # one account for one room, which is a misread of the task, and the whole
+    # reply is discarded rather than one of them picked silently. `oversize` is
+    # the account drifting back into chronicle — restating what happened instead
+    # of saying what the room is — caught at the operating cap, well under the
+    # database ceiling that exists to catch corruption.
+    _CounterSpec(
+        "nora_culture_fold_total",
+        "Culture folds by what the pass did with the model's answer. A tier "
+        "consumed by nobody yet (02-measurement step 4 is writing-only), so "
+        "this series is the ONLY place its behaviour is observable at all.",
+        ("outcome",),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (

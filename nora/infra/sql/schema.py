@@ -2360,3 +2360,128 @@ IDX_DECISION_LOG_WORKSPACE_TS = sa.Index(
     "idx_decision_log_workspace_ts",
     DECISION_LOG.c.workspace, sa.text("ts DESC"), sa.text("id DESC"),
 )
+
+
+# --- the culture tier (design/culture-tier) --------------------------------
+
+#: The DATABASE ceiling on a culture body, in CHARACTERS, mirroring
+#: `NOTE_BODY_CEILING_CHARS`'s reasoning: a cap this high says "this row is
+#: corrupt", not "no writer should produce that". `length()` and never
+#: `octet_length()` — a culture account is routinely Cantonese, where the two
+#: differ threefold.
+CULTURE_BODY_CEILING_CHARS = 32_000
+
+#: The head of one scope's culture. One row per key, ever.
+#:
+#: **Keyed on `key` alone, and that key is a `primary_id`** — not
+#: `(platform, conversation_id)` like `standing` and `decision_log`. The rule
+#: is `GLOSSARY.md`'s and it follows from which scheduler hands the key: the
+#: ingest and tag paths get the message that arrived, so they key the thread;
+#: a Dreamer adaptor is handed `scopes()`, so it keys the conversation. A store
+#: keyed differently from its loop matches ZERO rows on the watermark query, so
+#: the adaptor is scheduled, raises nothing, logs nothing and never fires
+#: (design/culture-tier/03-decisions DEC-181). All six live conversations hold
+#: exactly one id today, so the two are equal BY ACCIDENT OF DATA — issue #229
+#: carries what a second id should mean.
+CULTURE = sa.Table(
+    "culture",
+    METADATA,
+    sa.Column("key", sa.Text, primary_key=True),
+    # The current account. NOT NULL: a `culture` row exists because a revision
+    # was written, so a head-less row is a broken write rather than a state.
+    #
+    # **THE FOREIGN KEY POINTS THIS WAY, and the first draft had it reversed.**
+    # `culture_revision.culture_key -> culture.key` was tried and fails on the
+    # first fold of every room: the revision must exist before the head can
+    # point at it, and the FK demanded the opposite. Reversing it also names the
+    # integrity that actually matters — a head pointing at a revision that is
+    # not there is corruption a reader hits immediately, while an unreferenced
+    # revision is merely history nothing links to yet.
+    sa.Column("head_revision_id", pg.UUID(as_uuid=False),
+              sa.ForeignKey("culture_revision.id",
+                            name="culture_head_revision_id_fkey"),
+              nullable=False),
+    sa.Column("updated_at", sa.BigInteger, nullable=False),
+    sa.CheckConstraint("length(btrim(key)) > 0", name="culture_has_a_key_check"),
+)
+
+#: One account, and its link to the account before it.
+#:
+#: **`body` is PROSE. There is no section schema, and that is DEC-184.** A
+#: three-section JSONB body under a CHECK was drafted and rejected: it is the
+#: same enumeration error as `participation.md`'s five `go` shapes one layer
+#: down, and it could not have held 「秘書」 — a role a room invented that no
+#: column could have anticipated. `note_revision` is the precedent: free text,
+#: CMS-clean, because the provenance sits AROUND the prose rather than
+#: decomposing it.
+#:
+#: **Nothing here retires, and that is DEC-183.** No `retired_at`, no
+#: `closing_condition`, no TTL, no staleness column of any kind.
+#: `parent_revision_id` reads «the same thing, earlier» and NEVER
+#: «superseded»: a quiet room's culture is not stale, it is accurate, and the
+#: old account does not become false — it becomes history, which is part of
+#: what the new one means. The operator's test: 「漢人」 did not retire when the
+#: Han dynasty did.
+#:
+#: **The chain is the tier's one genuine contribution.** A model asked to write
+#: this reasons from scratch and has no memory of its last answer, so any single
+#: account is a snapshot. Keeping them in order is what makes the sequence an
+#: evolution rather than a series of unrelated guesses.
+CULTURE_REVISION = sa.Table(
+    "culture_revision",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
+              server_default=sa.text("gen_random_uuid()")),
+    # NO foreign key to `culture.key`, deliberately: the revision is written
+    # FIRST and the head is moved to it, so a constraint in that direction
+    # fails on every room's first fold. See `CULTURE.head_revision_id`.
+    sa.Column("culture_key", sa.Text, nullable=False),
+    sa.Column("body", sa.Text, nullable=False),
+    # NULL is the FIRST revision of a key and nothing else — the same meaning
+    # `note_revision.parent_revision_id` carries, and the same CAS it makes
+    # possible.
+    sa.Column("parent_revision_id", pg.UUID(as_uuid=False)),
+    sa.Column("written_at", sa.BigInteger, nullable=False),
+    # Provenance the RUNTIME stamps, never the adaptor: `DreamerRuntime` read
+    # the instructions, built the model provider and named the run, so `accept`
+    # returns payloads and the runtime wraps them in a `Proposal` carrying
+    # these three. An adaptor filling them in would be provenance travelling
+    # one layer further than it needs to, and one more place to be wrong.
+    sa.Column("established_by", sa.Text, nullable=False),
+    sa.Column("instruction_sha256", sa.Text),
+    sa.Column("model", sa.Text),
+    sa.CheckConstraint(
+        "instruction_sha256 is null or instruction_sha256 ~ '^[0-9a-f]{64}$'",
+        name="culture_revision_instruction_sha256_check",
+    ),
+    sa.CheckConstraint(
+        "model is null or length(btrim(model)) > 0",
+        name="culture_revision_model_is_named_check",
+    ),
+    sa.CheckConstraint(
+        f"length(body) <= {CULTURE_BODY_CEILING_CHARS}",
+        name="culture_revision_body_fits_the_ceiling_check",
+    ),
+    sa.CheckConstraint(
+        "length(btrim(body)) > 0", name="culture_revision_has_a_body_check",
+    ),
+    sa.CheckConstraint(
+        "length(btrim(established_by)) > 0",
+        name="culture_revision_names_its_writer_check",
+    ),
+    # A revision may not be its own parent. Cheap, and it makes the one cycle
+    # a single bad write can create unrepresentable rather than unlikely.
+    sa.CheckConstraint(
+        "parent_revision_id is null or parent_revision_id <> id",
+        name="culture_revision_parent_is_not_self_check",
+    ),
+)
+
+#: The chain read: one key's revisions, newest first. The head is
+#: `culture.head_revision_id`; this index serves walking BACK from it, which is
+#: the only other read this tier has — 演變 is the sequence, so reading it in
+#: order is not an optional extra.
+IDX_CULTURE_REVISION_KEY_WRITTEN = sa.Index(
+    "idx_culture_revision_key_written",
+    CULTURE_REVISION.c.culture_key, sa.text("written_at DESC"), sa.text("id DESC"),
+)

@@ -55,12 +55,17 @@
 );
 );
 );
+);
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
 ADD CONSTRAINT artifacts_slug_key UNIQUE (slug);
 ADD CONSTRAINT compute_jobs_pkey PRIMARY KEY (id);
 ADD CONSTRAINT consolidation_watermark_pkey PRIMARY KEY (consolidator_name, scope_id);
+ADD CONSTRAINT culture_head_revision_id_fkey FOREIGN KEY (head_revision_id) REFERENCES public.culture_revision(id);
+ADD CONSTRAINT culture_pkey PRIMARY KEY (key);
+ADD CONSTRAINT culture_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT decision_log_pkey PRIMARY KEY (id);
 ADD CONSTRAINT dream_schedule_state_pkey PRIMARY KEY (adaptor_name, scope_id);
 ADD CONSTRAINT embedding_pkey PRIMARY KEY (kind, row_key);
@@ -125,6 +130,9 @@ ALTER TABLE ONLY public.artifacts
 ALTER TABLE ONLY public.artifacts
 ALTER TABLE ONLY public.compute_jobs
 ALTER TABLE ONLY public.consolidation_watermark
+ALTER TABLE ONLY public.culture
+ALTER TABLE ONLY public.culture
+ALTER TABLE ONLY public.culture_revision
 ALTER TABLE ONLY public.decision_log
 ALTER TABLE ONLY public.dream_schedule_state
 ALTER TABLE ONLY public.embedding
@@ -216,6 +224,13 @@ CONSTRAINT ck_reminders_recurrence_interval CHECK ((recurrence_interval >= 1)),
 CONSTRAINT ck_reminders_recurrence_kind CHECK ((recurrence = ANY (ARRAY['none'::text, 'minutely'::text, 'hourly'::text, 'daily'::text, 'weekly'::text, 'monthly'::text, 'yearly'::text]))),
 CONSTRAINT ck_reminders_state CHECK ((state = ANY (ARRAY['pending'::text, 'firing'::text, 'done'::text, 'cancelled'::text, 'failed'::text])))
 CONSTRAINT ck_version_announcements_state CHECK ((state = ANY (ARRAY['announcing'::text, 'done'::text, 'failed'::text])))
+CONSTRAINT culture_has_a_key_check CHECK ((length(btrim(key)) > 0))
+CONSTRAINT culture_revision_body_fits_the_ceiling_check CHECK ((length(body) <= 32000)),
+CONSTRAINT culture_revision_has_a_body_check CHECK ((length(btrim(body)) > 0)),
+CONSTRAINT culture_revision_instruction_sha256_check CHECK (((instruction_sha256 IS NULL) OR (instruction_sha256 ~ '^[0-9a-f]{64}$'::text))),
+CONSTRAINT culture_revision_model_is_named_check CHECK (((model IS NULL) OR (length(btrim(model)) > 0))),
+CONSTRAINT culture_revision_names_its_writer_check CHECK ((length(btrim(established_by)) > 0)),
+CONSTRAINT culture_revision_parent_is_not_self_check CHECK (((parent_revision_id IS NULL) OR (parent_revision_id <> id)))
 CONSTRAINT decision_log_reason_fits_the_block_check CHECK ((length(reason) <= 80)),
 CONSTRAINT decision_log_verdict_is_known_check CHECK ((verdict = ANY (ARRAY['spoke'::text, 'silent'::text, 'remind'::text, 'decline'::text, 'replied'::text, 'failed'::text]))),
 CONSTRAINT decision_log_writer_is_known_check CHECK ((writer = ANY (ARRAY['participation'::text, 'proactive_decide'::text, 'proactive_act'::text, 'tag'::text])))
@@ -286,6 +301,7 @@ CONSTRAINT turn_verdict_unsupported_fits_the_list_check CHECK ((cardinality(unsu
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 CREATE INDEX idx_compute_jobs_state ON public.compute_jobs USING btree (state);
+CREATE INDEX idx_culture_revision_key_written ON public.culture_revision USING btree (culture_key, written_at DESC, id DESC);
 CREATE INDEX idx_decision_log_conv_ts ON public.decision_log USING btree (conversation_id, ts DESC, id DESC);
 CREATE INDEX idx_decision_log_workspace_ts ON public.decision_log USING btree (workspace, ts DESC, id DESC);
 CREATE INDEX idx_embedding_scope ON public.embedding USING btree (kind, scope);
@@ -318,6 +334,8 @@ CREATE TABLE public.analytics_watermark (
 CREATE TABLE public.artifacts (
 CREATE TABLE public.compute_jobs (
 CREATE TABLE public.consolidation_watermark (
+CREATE TABLE public.culture (
+CREATE TABLE public.culture_revision (
 CREATE TABLE public.decision_log (
 CREATE TABLE public.dream_schedule_state (
 CREATE TABLE public.embedding (
@@ -433,6 +451,7 @@ backend_job_id text NOT NULL,
 battery double precision,
 body text NOT NULL,
 body text NOT NULL,
+body text NOT NULL,
 body text,
 body text,
 canonical_form text NOT NULL,
@@ -484,6 +503,7 @@ created_at timestamp with time zone NOT NULL,
 created_at timestamp with time zone NOT NULL,
 created_at_ms bigint NOT NULL,
 created_by text NOT NULL,
+culture_key text NOT NULL,
 delivery_status text DEFAULT 'pending'::text NOT NULL,
 deriver_name text NOT NULL,
 describe_model text,
@@ -509,6 +529,7 @@ ended_ts bigint NOT NULL,
 ended_ts bigint NOT NULL,
 entity_id uuid NOT NULL
 error text,
+established_by text NOT NULL,
 established_by text NOT NULL,
 established_by text NOT NULL,
 established_by text NOT NULL,
@@ -541,6 +562,7 @@ grounded boolean NOT NULL,
 guild_id text NOT NULL,
 guild_id text NOT NULL,
 head_revision_id uuid NOT NULL,
+head_revision_id uuid NOT NULL,
 hits integer DEFAULT 0 NOT NULL
 hour_of_week integer NOT NULL,
 hour_of_week integer NOT NULL,
@@ -562,6 +584,7 @@ id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
+id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
@@ -569,6 +592,7 @@ id uuid NOT NULL,
 id uuid NOT NULL,
 instruction_sha256 text NOT NULL,
 instruction_sha256 text NOT NULL,
+instruction_sha256 text,
 instruction_sha256 text,
 instruction_sha256 text,
 instruction_sha256 text,
@@ -576,6 +600,7 @@ instruction_sha256 text,
 instruction_sha256 text,
 is_driving integer,
 is_nora integer DEFAULT 0 NOT NULL,
+key text NOT NULL,
 kind text DEFAULT 'miss'::text NOT NULL,
 kind text DEFAULT 'reminder'::text NOT NULL,
 kind text NOT NULL,
@@ -631,6 +656,7 @@ model text,
 model text,
 model text,
 model text,
+model text,
 name text NOT NULL,
 narrative text NOT NULL,
 note_id text,
@@ -657,6 +683,7 @@ outcome text,
 outcome text,
 p50_kmh double precision NOT NULL,
 p90_kmh double precision NOT NULL,
+parent_revision_id uuid,
 parent_revision_id uuid,
 part_of_speech text,
 participants text[] NOT NULL,
@@ -797,6 +824,7 @@ ts bigint NOT NULL,
 uncertainty text NOT NULL,
 unsupported text[] DEFAULT '{}'::text[] NOT NULL,
 updated_at bigint NOT NULL,
+updated_at bigint NOT NULL,
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
@@ -832,4 +860,5 @@ workspace text NOT NULL,
 workspace text NOT NULL,
 workspace text,
 writer text NOT NULL,
+written_at bigint NOT NULL,
 written_at bigint NOT NULL,

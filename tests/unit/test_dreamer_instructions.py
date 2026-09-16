@@ -357,6 +357,11 @@ NATIVELY_AUTHORED = {
     # DEC-162). Written for it; version 1 is the starting text the two
     # proactive eval suites tune (39 §5), and nothing was lifted.
     "proactive",
+    # The culture tier's only pass (design/culture-tier, DEC-182). Written for
+    # it; there was no prior prompt, and the earlier plan to route this through
+    # the memory system's dialectic endpoint never shipped a prompt at all —
+    # it was falsified and closed unmerged (#237) before one existed.
+    "culture",
 }
 
 # `standing-debrief` is the odd one in that set and it is worth saying why

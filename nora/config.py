@@ -2093,6 +2093,56 @@ class StandingConfig(BaseModel):
         return self
 
 
+class CultureConfig(BaseModel):
+    """The culture tier's gate (design/culture-tier).
+
+    `NotesConfig`'s shape below, for the same reasons: the whole section is
+    optional and every field defaults, so a `config.toml` written before this
+    section existed keeps loading under `extra="forbid"`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Whether the culture adaptor runs at all.
+    #:
+    #: Default **False**, unconditionally: this is a NEW capability and landing
+    #: its code must not change what any deployed `config.toml` does on the next
+    #: restart. Turning it on is a deliberate later change — the same rule
+    #: `[notes] candidates_enabled` states.
+    #:
+    #: **What turning it on buys, and what it does not.** On, a background pass
+    #: writes one short account of each room per day into its own store, and
+    #: NOTHING READS IT (design/culture-tier 02-measurement §5, step 4). That is
+    #: the sequence the design argues for rather than an unfinished state: the
+    #: tier's one genuine contribution is the CHAIN of accounts, so a tier
+    #: judged on its first snapshot is judged on the one thing it does not
+    #: contribute. The prompt-facing step is separate and measured.
+    enabled: bool = False
+
+    #: Seconds between folds of one room. **86400** — design/culture-tier
+    #: DEC-185, and the number is the design's rather than a cost preference:
+    #: a model asked this question twice in a day answers from nearly the same
+    #: material, so the second answer differs by model variance rather than by
+    #: anything the room did, and variance is the one thing the revision chain
+    #: must not accumulate.
+    fold_interval_seconds: int = Field(default=86_400, ge=3600)
+
+    #: Messages read per fold. **THE BATCH IS THE CORPUS** — the account is
+    #: written from it — so this is not a throttle, it is how much of the room
+    #: the model gets to see. An earlier draft of the design pinned it at 1, on
+    #: the assumption that the adaptor asks the memory system and never reads
+    #: its batch; that assumption was falsified (DEC-182) and 1 would starve the
+    #: fold: one message a day is not a room's culture.
+    #:
+    #: 300 is a day of a busy room with headroom, against an input budget that
+    #: comfortably holds it. The trap on the other side is real and named in
+    #: `runtime.py`: `batch_limit` also caps how far one run advances the
+    #: watermark, and a NEW adaptor starts at 0 — so at one batch per day a
+    #: limit this size still takes days to walk a long backlog. That is why the
+    #: watermark is seeded at the record head on first run rather than at 0.
+    batch_limit: int = Field(default=300, ge=1)
+
+
 class NotesConfig(BaseModel):
     """The note tier's gate (the `2026-08-21-note-tier-design` spec under
     `docs/superpowers/specs/`).
@@ -2877,6 +2927,10 @@ class Config(BaseModel):
     # index is read from `SqlNoteStore` on every tag — nothing writes a note
     # yet, so it is empty until a curator lands.
     notes: NotesConfig = NotesConfig()
+    # Optional and defaulted — see `CultureConfig`. Ships INERT
+    # (`enabled = false`): off, composition builds no adaptor, no schedule
+    # entry and no store, so the tier is absent rather than idle.
+    culture: CultureConfig = CultureConfig()
     # Optional and defaulted — see `StandingConfig`. Ships INERT
     # (`enabled = false`); off, composition builds no `debrief.Wiring`, the
     # debrief stage returns without awaiting anything, and `<standing>` never

@@ -66,6 +66,9 @@ def _render(style: RowStyle, **extra) -> str:
 #: after — that is in the commits, and it is the only non-circular check
 #: available. What this table does is document the grammars and pin that a
 #: `RowStyle` can still express each one.
+#: `nora.language.culture._BATCH_STYLE`.
+_CULTURE_STYLE = RowStyle(handle="none", time="none")
+
 PARITY = [
     ("relevance gate", "(60m ago) [Grant]: 去邊食", _GATE_STYLE, {}),
     ("debrief + rollup fold", "[11:00] Grant: 去邊食", _FOLD_STYLE, {"tz": UTC}),
@@ -77,6 +80,13 @@ PARITY = [
     ("proactive room listing", "- Grant: 去邊食", _ROOM_STYLE, {}),
     ("shadow mirror window", "- Grant: 去邊食", _MIRROR_STYLE, {}),
     ("gate verdict line", "Grant: 去邊食", _VERDICT_STYLE, {}),
+    # The culture batch. The BAREST grammar in the table and the only one with
+    # neither a handle nor a time, which is the point rather than a default:
+    # the objective's load-bearing clause is «not dated observations», and a
+    # model handed `[482] 2026-09-12 14:03` writes about the 12th while one
+    # handed a name and a line writes about the room. The chronicle this tier
+    # exists to not be IS `[when] what happened`.
+    ("culture batch", "Grant: 去邊食", _CULTURE_STYLE, {}),
 ]
 
 
@@ -119,14 +129,35 @@ def test_every_live_rowstyle_is_in_this_table():
 
 
 def _normalise(expr: str) -> frozenset[str]:
-    """A `RowStyle(...)` call as the set of keywords it sets, order-free.
+    """A `RowStyle(...)` call as the set of keywords it sets to a NON-DEFAULT
+    value, order-free.
 
     Compared this way rather than by string so that reordering the arguments or
     spelling a default explicitly is not a false failure — what makes two
     styles the same grammar is which fields they set, not how they were typed.
+
+    **Dropping the explicitly-spelled defaults is what the docstring above
+    always promised and the code did not do**, and the culture batch is the
+    style that found it: `RowStyle(handle="none", time="none")` IS the default
+    grammar, so `covered` (which compares field-by-field against `RowStyle()`)
+    reduced it to the empty set while this function kept both keywords, and the
+    two could never match. Any style spelling a default explicitly would have
+    failed the same way; this one is merely the first that did.
+
+    The explicit spelling stays in `nora/`, deliberately: it documents the
+    grammar at the call site, and it is what keeps that renderer correct if the
+    dataclass's defaults ever move.
     """
     inner = expr[len("RowStyle("):-1].strip()
-    return frozenset(part.strip().replace('"', "'") for part in inner.split(",") if part.strip())
+    written = {
+        part.strip().replace('"', "'") for part in inner.split(",") if part.strip()
+    }
+    default = RowStyle()
+    defaults = {
+        f"{field}='{value}'" if isinstance(value, str) else f"{field}={value}"
+        for field, value in default.__dict__.items()
+    }
+    return frozenset(written - defaults)
 
 
 @pytest.mark.parametrize("what,want,style,extra", PARITY, ids=[c[0] for c in PARITY])

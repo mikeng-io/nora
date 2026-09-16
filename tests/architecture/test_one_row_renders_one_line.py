@@ -88,6 +88,17 @@ _COLLAPSERS = _DIRECT_COLLAPSERS | {"render_rows"}
 #: becomes a formality.
 _NOT_A_LINE = {
     (
+        "nora/language/culture.py", "inputs", "escape(previous.body)",
+    ): (
+        "`<previous_account>`: the account written last time, WHOLE, between "
+        "its own tags and alone in the block. It is prose of a paragraph or "
+        "two by construction (`nora.domain.culture.CultureRevision.body` has "
+        "no section schema), nothing joins it to a sibling row, and collapsing "
+        "it would run those paragraphs together — destroying the shape of the "
+        "one input that tells the model it is CONTINUING an account rather "
+        "than writing a fresh one."
+    ),
+    (
         "nora/agent/prefill.py", "_replying_to_block", "escape(parent.body or '')",
     ): (
         "`<replying_to>`: the parent's message, WHOLE, between its own tags and "
