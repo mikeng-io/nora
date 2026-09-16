@@ -523,6 +523,63 @@ non-fatal — so the symptom is silence, not an error.
 **Rollback:** set `exporter = "file"` in `config.toml` and restart. No data migration,
 no schema change.
 
+## 6b. "Is the ambient path actually working?" — `nora measure participation`
+
+Four measures the rooms produce for free (`design/culture-tier/02-measurement`).
+No model, no behaviour change, read-only.
+
+```bash
+docker compose exec -T nora uv run --no-sync nora measure participation --days 7
+```
+
+Why it exists: **today the verdict IS the measurement.** A model agreeing with
+the instruction someone wrote it is not evidence about the room, and a `no_go`
+is unfalsifiable by construction — she stays silent, nothing happens, and
+silence is also what success looks like. A refusal is indistinguishable from
+health in every other log the system keeps, which is how a 1% admission rate
+went unremarked for days.
+
+| measure | fires when |
+|---|---|
+| `expiry_without_action` | a note passed its anchor day while open and she never raised it |
+| `holding_refusals` | the gate refused room R while she held an open note born in R |
+| `overrides` | a human tagged her in R shortly after a `no_go` |
+| `ignored` | she spoke unprompted and the next human line did not engage |
+
+**Read the ceiling printed under each number, every time.** They are blind to
+different things — one is a lower bound by construction, one over-reports, one
+is missing the arm that carries what she owes a room (#222) — so the ceilings
+are per measure rather than a shared footnote. `n/a (nothing considered)` is
+NOT zero: it means the measure did not run.
+
+### The two refusal-side measures need a file
+
+`holding_refusals` and `overrides` need refusal TIMES, and those live only in a
+Prometheus counter. Produce the file on the host, where Prometheus is
+reachable, then hand it in:
+
+```bash
+python3 scripts/gate_refusals.py --range 7d > /tmp/refusals.json
+docker cp /tmp/refusals.json nora:/tmp/refusals.json
+docker compose exec -T nora uv run --no-sync \
+    nora measure participation --days 7 --refusals /tmp/refusals.json
+```
+
+Without it those two report `0 / 0`, which reads as «did not run» and not as
+«never happens» — that distinction is the point.
+
+**The command REFUSES a refusal file that does not span the window asked for.**
+A short list makes both measures look clean, and clean is also what they would
+say if the gate had refused nothing; those two readings must never be
+confusable. If it refuses, widen `--range` or lower `--days`.
+
+**The counter is the weak half and the script says so.** Prometheus labels
+lazily and the process restarts a few times a day, so a refusal never scraped
+before a restart leaves no trace, and times are accurate only to the scrape
+interval. `02-measurement §3` names the fix — a durable per-verdict row, which
+DEC-179 excluded from `decision_log` on purpose. Until that exists, `overrides`
+is approximate and is a lower bound.
+
 ## 7. "Where do eval results live?"
 
 **Langfuse, as of 2026-08-05 — verified end-to-end.** DEC-6: `strands-agents-evals`
