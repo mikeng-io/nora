@@ -11,8 +11,6 @@ import {
   CalendarDays,
   CircleHelp,
   Compass,
-  MessageCircle,
-  Network,
   Users,
   Eye,
   Volume2,
@@ -39,18 +37,18 @@ const LANDING_CAPABILITIES = [
   { id: "events", icon: CalendarDays },
 ] as const;
 
-// The architecture section's five storage tiers, in the canonical order of
+// The architecture section's storage tiers, in the canonical order of
 // design/dreamer-agent-loop/19-between-tiers.md's tier table — one row per
 // kind of knowing. Same id -> messages / icon convention as the capability
 // tiles above; the badge names what the tier is ABOUT (people / her position
-// / open questions / the world / words) rather than a status. Static copy
-// only, like the rest of the public route.
+// / open questions) rather than a status. Static copy only, like the rest
+// of the public route. The knowledge and language tiers were deleted
+// 2026-09-07 (#115); their locale blocks are gone, so they must NOT be
+// listed here or the tile renders a raw message key.
 const LANDING_TIERS = [
   { id: "memory", icon: Brain },
   { id: "standing", icon: Compass },
   { id: "notes", icon: CircleHelp },
-  { id: "knowledge", icon: Network },
-  { id: "language", icon: MessageCircle },
 ] as const;
 
 // The positioning section — why Nora isn't another workspace agent. Three

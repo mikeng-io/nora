@@ -80,7 +80,7 @@
     "howHeading": "點樣記嘢",
     "howBody": "每條 message 都 ambient ingest（記低 + 餵 Honcho），但唔會應 — 除非有人 tag 佢。Tag 咗先入 agent loop：讀 context → 諗 → 答。",
     "techHeading": "技術架構",
-    "techIntro": "Nora 唔係一個 prompt 加一個 model — 佢有五個 tier，儲緊五種唔同嘅 knowing。",
+    "techIntro": "Nora 唔係一個 prompt 加一個 model — 佢有三個 tier，儲緊三種唔同嘅 knowing。",
     "tier": {
       "memory": {
         "title": "Memory",
@@ -96,16 +96,6 @@
         "title": "Notes",
         "domain": "未解決嘅問題",
         "description": "未解決嘅問題，專登 track 住。每條 note 有 closing condition — 咩會 settle 佢。背景 curator 會 retire 佢哋，settle 咗嘅就 promote。"
-      },
-      "knowledge": {
-        "title": "Knowledge",
-        "domain": "世界",
-        "description": "關於世界嘅 fact，擺喺一個 bitemporal knowledge graph。每個 fact 有 warrant（source / observation / stated / premises）加 fidelity（tentative / proven / deprecated）。"
-      },
-      "language": {
-        "title": "Language",
-        "domain": "字",
-        "description": "房入面嘅字。Lexeme 有 gloss + counts，scored + decaying，stale 咗就唔再 render。仲有 exchange observation — 邊個同邊個講咗啲乜。"
       }
     },
     "afterHeading": "登入之後",

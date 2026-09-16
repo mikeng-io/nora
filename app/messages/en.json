@@ -80,7 +80,7 @@
     "howHeading": "How she remembers",
     "howBody": "Every message gets ingested in the background — recorded and fed to Honcho, her store for memory about people. She never answers on her own; a tag is what starts the agent loop: read context → think → reply.",
     "techHeading": "How she's built",
-    "techIntro": "Nora isn't one prompt plus one model — she has five tiers, each storing a different kind of knowing.",
+    "techIntro": "Nora isn't one prompt plus one model — she has three tiers, each storing a different kind of knowing.",
     "tier": {
       "memory": {
         "title": "Memory",
@@ -96,16 +96,6 @@
         "title": "Notes",
         "domain": "Open questions",
         "description": "Unresolved questions, tracked on purpose. Each one carries a closing condition — what would settle it — and a background curator retires them, and promotes what has settled."
-      },
-      "knowledge": {
-        "title": "Knowledge",
-        "domain": "The world",
-        "description": "Facts about the world, held in a bitemporal knowledge graph. Every fact carries a warrant (source, observation, stated, premises) and a fidelity — tentative, proven, or deprecated."
-      },
-      "language": {
-        "title": "Language",
-        "domain": "Words",
-        "description": "The room's words. Lexemes carry a gloss and counts, scored and decaying — a stale term stops rendering. Exchange observations record who said what to whom."
       }
     },
     "afterHeading": "After you sign in",
