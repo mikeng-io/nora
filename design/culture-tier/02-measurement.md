@@ -96,7 +96,13 @@ that override stays approximate until someone does.
 
 ## 5. Sequence
 
-0. **Re-take the baseline.** Added 2026-09-16 and it is not a formality: every
+0. **DONE 2026-09-16 — see `00-overview §1.0`.** Admission is **1.09%**
+   (go 3, no_go 273) over the 6.9 days before the current image, re-confirming
+   the floor on a second independent window; the participation turn has still
+   run once ever; `participation_silence` still has no series. And the
+   instrument is failing: 19 counter resets in 7 days, so the lazily-labelled
+   `go` series is destroyed at every restart and `go = 3` is a lower bound
+   this instrument cannot bound. **Re-take the baseline.** It was not a formality: every
    number in this bundle was read 2026-09-12/13, and three changes have landed
    against this exact path since — #215 (memory reaches the participation
    turn), #262 (R-97: the turn stays silent when every three-state lookup came
@@ -107,11 +113,15 @@ that override stays approximate until someone does.
    `up{job=...}` was continuous across every absence. **Building on the old
    numbers would be measuring the tier against a system that no longer
    exists.**
-1. `conversation_id` on the gate metric (#221). Unblocks the rest. **Not built
-   as of 2026-09-16**: `nora/obs/metric_specs.py` still declares
-   `nora_relevance_gate_total` with `("verdict", "platform")`. #221 is closed
-   as folded into this bundle, which is a tracking decision and not an
-   implementation.
+1. **DONE 2026-09-16.** `conversation_id` on the gate metric (#221) — on
+   **both** counters, because a fail-closed no_go refuses the room exactly as
+   a chosen one does and a HOLDING measure blind to the error series
+   under-counts refusals by the outage rate (14 of 290 in the window above).
+   The label is a required positional on `_emit`/`_count` rather than a
+   defaulted kwarg: `Metrics.inc` fills a missing declared label with `""`
+   instead of raising, so a forgotten call site would emit a series that
+   *looks* attributable. Eight paths assert the label back per path; 4/4
+   mutations caught.
 2. The four measures as derivations. No behaviour change.
 3. **Let it run.** Get a baseline of what the gate actually does, on a store
    that survives a restart.

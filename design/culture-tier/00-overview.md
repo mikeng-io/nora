@@ -37,6 +37,46 @@ it (§1.1).
 should not be read as though it were — see §1.1, which is now about two
 errors rather than one.
 
+### 1.0 Re-taken 2026-09-16 — step 0
+
+Retention is **7 days**, not the ~4 the table above assumed. Raw samples
+(`query?query=metric[7d]`), reset-aware, and `up{job="nora"}` checked: 39 failed
+scrapes in 20,160, no gap wider than the scrape interval, so clause 3 holds.
+
+The window is split at the image build (`nora:latest`, 2026-09-16 07:24 UTC),
+because #215, #261 and #262 all reached production there. A sample straddling
+the boundary is charged to PRE, so POST is a lower bound.
+
+| | pre-deploy (6.9d) | post-deploy (3.1h) |
+|---|---|---|
+| `go` | 3 (all signal) | 0 |
+| `no_go` | 273 (discord 153, signal 120) | 12 |
+| **admission** | **1.09%** | n=12, says nothing |
+| `errors{kind="call_failed"}` | 14 | 0 |
+| `participation_spoke` | 1 | 0 |
+| `participation_silence` | no series | no series |
+
+**The floor is confirmed and is not an artifact of the first window.** 3 in 276
+over seven days against "1 in 149" over four: the same rate, measured twice,
+across a doctrine unchanged between them.
+
+**The participation turn has still run exactly once, ever** — 2026-09-11 11:54
+UTC, the route question. Five days of nothing since.
+
+**And the instrument itself is failing, which is new.** The `no_go` counters
+reset **19 times** in 7 days (discord 12, signal 7) — the process restarts
+2-3x a day — and `process_start_time_seconds{job="nora"}` does not exist, so
+restarts are visible only as those resets. Prometheus labels lazily, so the
+`go` series is **destroyed at every restart and only re-created by the next
+`go`**: its last sample is 2026-09-11 11:54 and it has been absent for five
+days. So `go = 3` is a lower bound whose error this instrument cannot bound,
+and §1.1's three clauses do not rescue it — they make the loss visible, not
+recoverable.
+
+That is a second, independent argument for the per-verdict durable row §`02-
+measurement 3` says `override` needs and DEC-179 excluded: **at this restart
+rate a counter cannot hold a rate at all**, let alone a timing.
+
 **The gate was in `shadow = true` for the first ~10 hours of this window**
 (`config.toml` flipped 2026-09-09 17:10 UTC). While shadow is on, a `go`
 short-circuits and **no turn runs at all**. So the admissions before that

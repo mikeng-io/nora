@@ -431,6 +431,89 @@ def test_every_declared_error_kind_is_reachable():
     } == set(GATE_ERROR_KINDS)
 
 
+# --- the refusal is attributable to a room ---------------------------------
+
+
+@pytest.mark.parametrize(
+    ("client", "records", "series", "labels"),
+    [
+        pytest.param(
+            _Client('{"verdict": "go", "relevance_score": 0.9}'), None,
+            "nora_relevance_gate_total", {"verdict": "go"}, id="go",
+        ),
+        pytest.param(
+            _Client('{"verdict": "no_go", "relevance_score": 0.0}'), None,
+            "nora_relevance_gate_total", {"verdict": "no_go"}, id="no_go",
+        ),
+        pytest.param(
+            _Client(RuntimeError("provider down")), None,
+            "nora_relevance_gate_errors_total", {"kind": "call_failed"}, id="call_failed",
+        ),
+        pytest.param(
+            _Client(TimeoutError()), None,
+            "nora_relevance_gate_errors_total", {"kind": "timeout"}, id="timeout",
+        ),
+        pytest.param(
+            _Client("not json"), None,
+            "nora_relevance_gate_errors_total", {"kind": "unparseable"}, id="unparseable",
+        ),
+        pytest.param(
+            _Client('{"verdict": "maybe"}'), None,
+            "nora_relevance_gate_errors_total", {"kind": "bad_verdict"}, id="bad_verdict",
+        ),
+        pytest.param(
+            _Client('{"verdict": "go"}', finish_reason="length"), None,
+            "nora_relevance_gate_errors_total", {"kind": "truncated"}, id="truncated",
+        ),
+        pytest.param(
+            _Client('{"verdict": "go"}'), _Records(fail=True),
+            "nora_relevance_gate_errors_total", {"kind": "no_context"}, id="no_context",
+        ),
+    ],
+)
+async def test_every_counted_path_names_the_room_it_refused(
+    client, records, series, labels,
+):
+    """Issue #221 / design/culture-tier 02-measurement section 3: a verdict
+    that cannot be joined to a room is a refusal nothing can grade.
+
+    EVERY path, not the happy one, and that is the point — `Metrics.inc`
+    fills a declared label the caller omitted with `""` rather than raising
+    (`nora.obs.metrics._full_labels`), so a missed emit site produces a series
+    that LOOKS attributable and is not. Reading the label back per path is the
+    only thing that fails when someone adds a ninth path and forgets.
+
+    Asserted as `== 1` against the exact id — `Metrics.get` sums over
+    unspecified dimensions, so an assertion that omitted `conversation_id`
+    would pass against a series labelled `""` and prove nothing.
+    """
+    metrics = Metrics()
+    kw = {"metrics": metrics}
+    if records is not None:
+        kw["records"] = records
+    gate = _gate(client, **kw)
+    await gate.decide(platform="discord", conversation_id="g/42")
+    assert metrics.get(series, platform="discord", conversation_id="g/42", **labels) == 1
+    # And nothing landed on the unattributable series.
+    assert metrics.get(series, conversation_id="") == 0
+
+
+async def test_the_gate_cannot_count_without_naming_the_room():
+    """The label is a REQUIRED positional on `_count`, not a defaulted kwarg.
+
+    `_full_labels` degrading to `""` is fail-OPEN, so the type signature is
+    what holds the property: this fails loudly if someone re-adds a default
+    to make a call site compile."""
+    import inspect
+
+    sig = inspect.signature(RelevanceGate._count)
+    param = sig.parameters["conversation_id"]
+    assert param.default is inspect.Parameter.empty
+    assert inspect.signature(RelevanceGate._emit).parameters[
+        "conversation_id"
+    ].default is inspect.Parameter.empty
+
+
 # --- the call itself -------------------------------------------------------
 
 
