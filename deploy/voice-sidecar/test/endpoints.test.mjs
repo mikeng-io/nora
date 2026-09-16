@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 
-import { makeHarness, playTrack, tick, GUILD, CHANNEL } from './helpers.mjs';
+import { makeHarness, playTrack, tick, until, GUILD, CHANNEL } from './helpers.mjs';
 
 const PINNED_SNAPSHOT_KEYS = [
   'voice',
@@ -30,7 +30,7 @@ test('join returns the pinned state snapshot shape with a minted generation', as
   assert.equal(typeof s.generation, 'string');
   assert.equal(s.channel_id, CHANNEL);
   assert.equal(s.playback_id, null);
-  assert.deepEqual(s.player, { status: 'idle', position_ms: 0, current: null });
+  assert.deepEqual(s.player, { status: 'idle', position_ms: 0, position_policy: null, current: null });
   assert.equal(s.speech_queue, 0);
   assert.equal(s.crossfade_seconds, 0);
   await h.close();
@@ -44,7 +44,7 @@ test('request_id echoes null when absent', async () => {
   await h.close();
 });
 
-test('join is idempotent on the same channel and 409 connected_elsewhere on a different one', async () => {
+test('join is idempotent on the configured channel and 400 not_in_allowed_channel on any other', async () => {
   const h = await makeHarness();
   const first = await h.join();
   const again = await h.post('/voice/join', { guild_id: GUILD, channel_id: CHANNEL });
@@ -52,9 +52,11 @@ test('join is idempotent on the same channel and 409 connected_elsewhere on a di
   assert.equal(again.body.state.generation, first.generation);
   assert.equal(h.joinCalls.length, 1); // no second join happened
 
+  // Phase 1: ONE immutable configured channel (§12.2, B15) — any other
+  // channel is rejected before the lifecycle is consulted.
   const elsewhere = await h.post('/voice/join', { guild_id: GUILD, channel_id: 'c2' });
-  assert.equal(elsewhere.status, 409);
-  assert.equal(elsewhere.body.error, 'connected_elsewhere');
+  assert.equal(elsewhere.status, 400);
+  assert.equal(elsewhere.body.error, 'not_in_allowed_channel');
   assert.equal(h.joinCalls.length, 1);
   await h.close();
 });
@@ -100,6 +102,7 @@ test('replace-play over HTTP: old playback emits no track-finished, new playback
   assert.notEqual(bId, a.playbackId);
   assert.deepEqual(a.proc.signals, ['SIGTERM']);
 
+  await tick(); // the replacement spawn waits for the old process to reap
   h.procs[1].data();
   await tick();
   h.player.current.playbackDuration = 5_000;
@@ -321,6 +324,7 @@ test('voice-death: destroyed connection tears down to idle and pushes the event'
   const status = await h.get('/voice/status');
   assert.equal(status.body.voice, 'idle');
   assert.equal(status.body.generation, null);
+  for (let i = 0; i < 50 && h.leaves() === 0; i += 1) await tick(); // teardown persists idle BEFORE leave()
   assert.equal(h.leaves(), 1);
 
   const deaths = h.delivered.filter((e) => e.type === 'voice-death');
@@ -377,5 +381,118 @@ test('error responses carry error, request_id and state', async () => {
   assert.deepEqual(Object.keys(res.body).sort(), ['error', 'request_id', 'state']);
   assert.equal(res.body.request_id, 'r-err');
   assert.equal(res.body.state.voice, 'idle');
+  await h.close();
+});
+
+test('two joins waiting on one exit produce exactly ONE subsequent joinVoice', async () => {
+  let releaseLeave;
+  const leaveGate = new Promise((resolve) => {
+    releaseLeave = resolve;
+  });
+  const h = await makeHarness({ leaveGate: () => leaveGate });
+  const { generation } = await h.join();
+  assert.equal(h.joinCalls.length, 1);
+
+  const exitP = h.post('/voice/exit', { guild_id: GUILD, generation });
+  assert.equal(await until(() => h.leaves() === 1), true); // teardown parked inside leave()
+  const j1 = h.post('/voice/join', { guild_id: GUILD, channel_id: CHANNEL });
+  const j2 = h.post('/voice/join', { guild_id: GUILD, channel_id: CHANNEL });
+  assert.equal(await until(() => h.core.lifecycle.voice() === 'destroying'), true);
+  await tick();
+  await tick();
+  releaseLeave();
+
+  const [exitRes, r1, r2] = await Promise.all([exitP, j1, j2]);
+  assert.equal(exitRes.status, 200);
+  assert.equal(r1.status, 200);
+  assert.equal(r2.status, 200);
+  assert.equal(h.joinCalls.length, 2); // exactly one re-join, not two
+  assert.equal(r1.body.state.generation, r2.body.state.generation);
+  assert.notEqual(r1.body.state.generation, generation);
+  await h.close();
+});
+
+test('an intentional exit emits NO voice-death and invalidates the generation at teardown start', async () => {
+  let releaseLeave;
+  const leaveGate = new Promise((resolve) => {
+    releaseLeave = resolve;
+  });
+  const h = await makeHarness({ leaveGate: () => leaveGate });
+  const { generation } = await h.join();
+
+  const exitP = h.post('/voice/exit', { guild_id: GUILD, generation });
+  assert.equal(await until(() => h.leaves() === 1), true); // teardown parked inside leave(); generation already dead
+  const late = await h.post('/music/play', { guild_id: GUILD, generation, stream_url: 'https://cdn.test/x' });
+  assert.equal(late.status, 409);
+  assert.equal(late.body.error, 'generation_conflict');
+
+  // The deliberate destroy provokes the connection's own 'destroyed'
+  // notification — it must read as stale, not as a voice-death.
+  h.connection.emit('stateChange', { status: 'ready' }, { status: 'destroyed' });
+  releaseLeave();
+  await exitP;
+  await tick();
+  await tick();
+  assert.equal(h.delivered.filter((e) => e.type === 'voice-death').length, 0);
+  await h.close();
+});
+
+test('two concurrent POSTs with the same request_id execute the handler exactly once', async () => {
+  let releaseJoin;
+  const joinGate = new Promise((resolve) => {
+    releaseJoin = resolve;
+  });
+  const h = await makeHarness({ joinGate: () => joinGate });
+  const body = { guild_id: GUILD, channel_id: CHANNEL, request_id: 'req-concurrent' };
+  const p1 = h.post('/voice/join', body);
+  const p2 = h.post('/voice/join', body);
+  await tick();
+  releaseJoin();
+  const [r1, r2] = await Promise.all([p1, p2]);
+  assert.equal(r1.status, 200);
+  assert.equal(r2.status, 200);
+  assert.equal(h.joinCalls.length, 1); // the duplicate awaited the in-flight execution
+  assert.deepEqual(r2.body, r1.body);
+  await h.close();
+});
+
+test('a retried /voice/exit with the same request_id returns the memo without re-acting', async () => {
+  const h = await makeHarness();
+  const { generation } = await h.join();
+  const body = { guild_id: GUILD, generation, request_id: 'req-exit-1' };
+  const first = await h.post('/voice/exit', body);
+  assert.equal(first.status, 200);
+  assert.equal(h.leaves(), 1);
+
+  // The generation is dead now; without dedupe this retry would be a 409
+  // (or worse, a second teardown). The memo answers instead.
+  const second = await h.post('/voice/exit', body);
+  assert.equal(second.status, 200);
+  assert.deepEqual(second.body, first.body);
+  assert.equal(h.leaves(), 1);
+  await h.close();
+});
+
+test('a JSON null body is 400 invalid_body and the server keeps serving', async () => {
+  const h = await makeHarness();
+  const raw = await fetch(`${h.core.server.address().address === '127.0.0.1' ? 'http://127.0.0.1' : ''}:${h.core.server.address().port}/music/stop`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: 'null',
+  });
+  assert.equal(raw.status, 400);
+  const parsed = await raw.json();
+  assert.equal(parsed.error, 'invalid_body');
+
+  const list = await fetch(`http://127.0.0.1:${h.core.server.address().port}/music/stop`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '[1,2]',
+  });
+  assert.equal(list.status, 400);
+
+  // The server survived: a normal request still works.
+  const { res } = await h.join();
+  assert.equal(res.status, 200);
   await h.close();
 });

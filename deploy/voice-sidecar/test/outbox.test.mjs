@@ -85,7 +85,7 @@ test('backoff is capped at the max delay', async () => {
   assert.deepEqual(gaps, [1000, 2000, 4000, 4000]);
 });
 
-test('outbox is bounded: oldest event is dropped and counted on overflow', async () => {
+test('outbox is bounded: in-flight events count toward capacity, oldest queued is dropped', async () => {
   // A hanging fetch keeps e1 in flight and every later event queued.
   const { outbox } = makeOutbox({
     maxEvents: 3,
@@ -93,13 +93,66 @@ test('outbox is bounded: oldest event is dropped and counted on overflow', async
   });
   outbox.push('e1', { n: 1 }); // popped for delivery, hangs in flight
   outbox.push('e2', { n: 2 });
-  outbox.push('e3', { n: 3 });
-  outbox.push('e4', { n: 4 }); // queue is now full at 3
+  outbox.push('e3', { n: 3 }); // e1 (in flight) + e2 + e3 = at the bound of 3
   await tick();
   assert.equal(outbox.dropped(), 0);
-  outbox.push('e5', { n: 5 }); // overflows: e2 (oldest queued) is dropped
+  outbox.push('e4', { n: 4 }); // overflows: e2 (oldest queued) is dropped
   assert.equal(outbox.dropped(), 1);
-  assert.equal(outbox.pendingCount(), 3);
+  assert.equal(outbox.pendingCount(), 2);
+  outbox.push('e5', { n: 5 }); // overflows again: e3 is dropped
+  assert.equal(outbox.dropped(), 2);
+  assert.equal(outbox.pendingCount(), 2);
+});
+
+test('a failed delivery reinserted into a full queue never exceeds the bound', async () => {
+  const clock = createFakeClock();
+  let fail = true;
+  const { outbox } = makeOutbox({
+    clock,
+    maxEvents: 3,
+    baseDelayMs: 1000,
+    fetchBehavior: async () => (fail ? { status: 503 } : { status: 200 }),
+  });
+  outbox.push('e1', { n: 1 }); // attempted, fails, reinserted
+  await tick();
+  assert.equal(outbox.pendingCount(), 1);
+  outbox.push('e2', { n: 2 });
+  outbox.push('e3', { n: 3 }); // e1..e3 = 3, at the bound
+  outbox.push('e4', { n: 4 }); // overflow drops the OLDEST (e1), queue stays at 3
+  assert.equal(outbox.dropped(), 1);
+  assert.equal(outbox.pendingCount(), 3); // never 4 with a bound of 3
+  fail = false;
+  clock.advance(1000);
+  await tick();
+  await tick();
+  assert.equal(outbox.pendingCount(), 0);
+});
+
+test('a new push does not bypass a scheduled backoff retry', async () => {
+  const clock = createFakeClock();
+  let failures = 1;
+  const { outbox, attempts, delivered } = makeOutbox({
+    clock,
+    baseDelayMs: 1000,
+    fetchBehavior: async () => (failures-- > 0 ? { status: 503 } : { status: 200 }),
+  });
+  outbox.push('e1', { n: 1 });
+  await tick();
+  assert.equal(attempts.length, 1); // failed; backoff of 1s is scheduled
+
+  outbox.push('e2', { n: 2 }); // must NOT trigger an immediate retry
+  await tick();
+  await tick();
+  assert.equal(attempts.length, 1);
+
+  clock.advance(1000); // the scheduled retry fires and drains both, in order
+  await tick();
+  await tick();
+  assert.equal(attempts.length, 3);
+  assert.deepEqual(
+    delivered.map((e) => e.type),
+    ['e1', 'e2'],
+  );
 });
 
 test('event_ids are unique and event_seq is strictly increasing', async () => {

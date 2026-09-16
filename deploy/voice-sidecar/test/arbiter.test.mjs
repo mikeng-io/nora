@@ -5,6 +5,7 @@
 
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
+import { EventEmitter } from 'node:events';
 
 import { createArbiter } from '../src/arbiter.mjs';
 import {
@@ -55,11 +56,11 @@ test('replace-play: second play supersedes the first, new playback_id, no track-
   const bId = arbiter.playMusic({ streamUrl: 'https://cdn.test/b', title: 'B' });
   assert.notEqual(bId, a.playbackId);
   assert.deepEqual(a.proc.signals, ['SIGTERM']); // superseded ffmpeg is terminated
+  await tick(); // the new spawn waits for the old process to reap (no overlap)
   const bProc = procs[1];
   bProc.data();
   assert.equal(player.current.stream, bProc.stdout);
 
-  a.proc.close(143, 'SIGTERM'); // reaped superseded process: no event
   player.current.playbackDuration = 12_000;
   player.finish(); // B ends naturally
   await tick();
@@ -69,6 +70,17 @@ test('replace-play: second play supersedes the first, new playback_id, no track-
   assert.equal(finished[0].playback_id, bId);
   assert.equal(finished[0].duration_ms, 12_000);
   assert.equal(finished[0].generation, 'gen1');
+});
+
+test('replacement never overlaps two live ffmpegs: the new spawn waits for the previous close', async () => {
+  const { arbiter, procs, playToPlaying } = makeArbiter();
+  playToPlaying('https://cdn.test/a');
+  arbiter.playMusic({ streamUrl: 'https://cdn.test/b' });
+  // The TERM grace is still open; the replacement must NOT be spawned yet.
+  assert.equal(procs.length, 1);
+  await tick(); // the killed process closes (fake mirrors SIGTERM death) ...
+  await tick(); // ... and only then does the replacement spawn
+  assert.equal(procs.length, 2);
 });
 
 test('kill escalation: SIGTERM, then SIGKILL after the grace period', () => {
@@ -241,11 +253,13 @@ test('volume applies to the current resource and is remembered for the next', ()
   assert.equal(player.current.volume.value, 1.5);
 });
 
-test('volume remembered across replace-play', () => {
+test('volume remembered across replace-play', async () => {
   const { arbiter, player, procs, playToPlaying } = makeArbiter();
   playToPlaying();
   arbiter.setVolume(150);
   arbiter.playMusic({ streamUrl: 'https://cdn.test/b' });
+  await tick(); // replacement spawn waits for the superseded process to reap
+  await tick();
   procs[1].data();
   assert.equal(player.current.volume.value, 1.5);
 });
@@ -260,4 +274,137 @@ test('detach stops everything and emits nothing', () => {
   assert.equal(arbiter.statusSnapshot().speech_queue, 0);
   assert.equal(events.length, 0);
   assert.equal(player.listenerCount('idle'), 0);
+});
+
+test('pause during MUSIC-STARTING is preserved and applies the moment playback begins', () => {
+  const { arbiter, player, procs } = makeArbiter();
+  arbiter.playMusic({ streamUrl: 'https://cdn.test/a' });
+  assert.equal(arbiter.state(), 'starting');
+
+  assert.deepEqual(arbiter.pauseMusic(), { status: 200 }); // no longer lost as 409
+  assert.equal(arbiter.state(), 'starting');
+
+  procs[0].data(); // first bytes arrive -> playback begins paused
+  assert.equal(player.played.length, 1);
+  assert.equal(player.paused, 1);
+  assert.equal(arbiter.state(), 'paused');
+
+  assert.deepEqual(arbiter.resumeMusic(), { status: 200 });
+  assert.equal(player.unpaused, 1);
+  assert.equal(arbiter.state(), 'playing');
+});
+
+test('pause intent survives a speech suspension: the revive comes back paused', async () => {
+  const { arbiter, player, procs, playToPlaying } = makeArbiter();
+  playToPlaying();
+  assert.deepEqual(arbiter.pauseMusic(), { status: 200 });
+  assert.equal(arbiter.state(), 'paused');
+
+  arbiter.enqueueSpeech({ audio: Buffer.from('tts'), mediaType: 'audio/mpeg' });
+  assert.equal(arbiter.state(), 'suspended');
+  player.finish(); // speech ends -> revive
+  await tick();
+  await tick();
+  assert.equal(procs.length, 2);
+  procs[1].data();
+  assert.equal(arbiter.state(), 'paused'); // still intentionally paused, not playing
+});
+
+test('the no-progress watchdog does not kill an intentionally paused stream', () => {
+  const { arbiter, clock, events, playToPlaying } = makeArbiter({ stallMs: 30_000 });
+  const a = playToPlaying();
+  assert.deepEqual(arbiter.pauseMusic(), { status: 200 });
+
+  clock.advance(120_000); // far past the stall window: nothing happens
+  assert.deepEqual(a.proc.signals, []);
+  assert.equal(arbiter.state(), 'paused');
+  assert.equal(arbiter.streaming(), true);
+  assert.equal(events.filter((e) => e.type === 'stream-failed').length, 0);
+
+  assert.deepEqual(arbiter.resumeMusic(), { status: 200 }); // watch re-arms on resume
+  clock.advance(30_000);
+  assert.deepEqual(a.proc.signals, ['SIGTERM']);
+  const failed = events.filter((e) => e.type === 'stream-failed');
+  assert.equal(failed.length, 1);
+  assert.equal(failed[0].reason, 'stream-stall');
+});
+
+test('a non-resumable (live) source ends on speech preemption instead of restarting from zero', async () => {
+  const { arbiter, player, procs, events, playToPlaying } = makeArbiter();
+  const a = playToPlaying('https://cdn.test/live');
+  assert.equal(arbiter.state(), 'playing');
+  void a;
+
+  // Replace with a live, non-seekable source.
+  const liveId = arbiter.playMusic({ streamUrl: 'https://cdn.test/radio', title: 'Radio', resumable: false });
+  await tick();
+  await tick();
+  procs[1].data();
+  assert.equal(arbiter.state(), 'playing');
+
+  arbiter.enqueueSpeech({ audio: Buffer.from('tts'), mediaType: 'audio/mpeg' });
+  assert.equal(arbiter.state(), 'suspended');
+  player.finish(); // speech ends
+  await tick();
+  await tick();
+
+  assert.equal(procs.length, 2); // NO revive spawn
+  assert.equal(arbiter.state(), 'stopped');
+  const finished = events.filter((e) => e.type === 'track-finished');
+  assert.equal(finished.length, 1); // nora treats it as a natural end
+  assert.equal(finished[0].playback_id, liveId);
+});
+
+test('playback conserves the first PCM chunk (real PassThrough, byte-exact)', async () => {
+  const { PassThrough } = await import('node:stream');
+  const clock = createFakeClock();
+  const player = createFakePlayer();
+  const received = [];
+  const proc = new EventEmitter();
+  proc.stdout = new PassThrough();
+  proc.kill = () => true;
+  const arbiter = createArbiter({
+    spawn: () => proc,
+    createMusicResource: (stream) => {
+      stream.on('data', (chunk) => received.push(Buffer.from(chunk)));
+      return createFakeResource(stream);
+    },
+    createSpeechResource: (audio, mediaType) => ({ audio, mediaType, playbackDuration: 0 }),
+    clock,
+    getGeneration: () => 'gen1',
+  });
+  arbiter.attach(player);
+  arbiter.playMusic({ streamUrl: 'https://cdn.test/a' });
+
+  proc.stdout.write(Buffer.from('FIRST'));
+  proc.stdout.write(Buffer.from('SECOND'));
+  await tick();
+  await tick();
+
+  assert.equal(player.played.length, 1);
+  assert.equal(Buffer.concat(received).toString(), 'FIRSTSECOND');
+});
+
+test('/voice/status position reporting is coherent with the resume policy', () => {
+  const { arbiter, player, playToPlaying } = makeArbiter();
+  playToPlaying();
+  player.current.playbackDuration = 7_500;
+  let snap = arbiter.statusSnapshot();
+  assert.equal(snap.player.position_ms, 7_500);
+  assert.equal(snap.player.position_policy, 'approximate_restart');
+
+  arbiter.enqueueSpeech({ audio: Buffer.from('tts'), mediaType: 'audio/mpeg' });
+  snap = arbiter.statusSnapshot();
+  assert.equal(snap.player.status, 'suspended');
+  assert.equal(snap.player.position_ms, 7_500); // the cut position, not 0
+  assert.equal(snap.player.current.title, 'A'); // still names the suspended track
+});
+
+test('a suspended live source reports position_policy none', () => {
+  const { arbiter, procs } = makeArbiter();
+  arbiter.playMusic({ streamUrl: 'https://cdn.test/radio', resumable: false });
+  procs[0].data();
+  arbiter.enqueueSpeech({ audio: Buffer.from('tts'), mediaType: 'audio/mpeg' });
+  const snap = arbiter.statusSnapshot();
+  assert.equal(snap.player.position_policy, 'none');
 });

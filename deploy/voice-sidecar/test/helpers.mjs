@@ -87,17 +87,27 @@ export function createFakePlayer() {
   return player;
 }
 
-// ffmpeg child-process stand-in.
+// ffmpeg child-process stand-in. Like a real child, a killed process dies
+// and emits 'close' (on a microtask, so synchronous assertions on signals
+// still run first); 'close' is emitted at most once.
 export function createFakeProc() {
   const proc = new EventEmitter();
   proc.stdout = new EventEmitter();
   proc.signals = [];
+  proc.exitCode = null;
+  let closed = false;
+  const emitClose = (code, signal) => {
+    if (closed) return;
+    closed = true;
+    proc.emit('close', code, signal);
+  };
   proc.kill = (signal) => {
     proc.signals.push(signal);
+    queueMicrotask(() => emitClose(null, signal));
     return true;
   };
   proc.data = (chunk = Buffer.from('pcm')) => proc.stdout.emit('data', chunk);
-  proc.close = (code, signal = null) => proc.emit('close', code, signal);
+  proc.close = (code, signal = null) => emitClose(code, signal);
   proc.fail = (err) => proc.emit('error', err);
   return proc;
 }
@@ -116,6 +126,15 @@ export function createFakeResource(stream) {
 }
 
 export const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+// Poll a condition across ticks (loopback HTTP + real fs need more than one).
+export async function until(cond, tries = 200) {
+  for (let i = 0; i < tries; i += 1) {
+    if (cond()) return true;
+    await tick();
+  }
+  return cond();
+}
 
 // Full harness: createCore wired with fakes, served on a loopback ephemeral
 // port. Tests drive it over real HTTP plus the fake seams.
@@ -159,6 +178,7 @@ export async function makeHarness(options = {}) {
   const joinCalls = [];
   const joinVoice = async (channelId) => {
     joinCalls.push(channelId);
+    if (options.joinGate) await options.joinGate();
     if (options.joinError) throw options.joinError;
     return {
       connection,
@@ -168,6 +188,7 @@ export async function makeHarness(options = {}) {
       pump,
       leave: async () => {
         leaveCount += 1;
+        if (options.leaveGate) await options.leaveGate();
       },
     };
   };
@@ -179,9 +200,10 @@ export async function makeHarness(options = {}) {
 
   const core = createCore({
     guildId: GUILD,
+    channelId: options.channelId ?? CHANNEL,
     joinVoice,
     entersStateFn,
-    stateStore: createStateStore({ path: statePath }),
+    stateStore: options.stateStore ?? createStateStore({ path: statePath }),
     spawn,
     createMusicResource: (stream) => createFakeResource(stream),
     createSpeechResource: (audio, mediaType) => ({ audio, mediaType, playbackDuration: 0 }),
