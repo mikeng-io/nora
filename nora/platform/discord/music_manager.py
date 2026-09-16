@@ -262,22 +262,38 @@ class MusicPlayerManager:
         track the POST started — a stop or skip may have landed meanwhile
         — before persisting; `MusicPlayer.finish_pending` owns that
         re-check, including killing the just-started audio when a stop
-        left nothing to supersede it."""
+        left nothing to supersede it.
+
+        N-2 (2026-09-16 audit): when the transition leaves the session
+        DEAD (R-65), `_after_transition` only DETACHES the player here —
+        its `leave()` (another controller HTTP round-trip, `/voice/exit`)
+        runs below with the lock already released, same reason as the
+        play POST above."""
         ok = True
+        playback_id: str | None = None
+        teardown_count: int | None = None
         if pending is not None:
-            ok = await player.commit_pending(pending)
+            ok, playback_id, teardown_count = await player.commit_pending(pending)
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
+        to_leave: MusicPlayer | None = None
         async with lock:
             if pending is not None:
                 # Runs even when the player was popped mid-flight (a stop
                 # landed while the POST was out): the zombie-audio guard
                 # inside must still fire.
-                await player.finish_pending(pending, ok=ok)
+                await player.finish_pending(
+                    pending, ok=ok, playback_id=playback_id,
+                    teardown_count_before=teardown_count,
+                )
             if self._players.get(guild_id) is player:
-                return await self._after_transition(guild_id, player)
-            # Torn down while the POST was in flight — nothing left to
-            # schedule or evict.
-            return await player.status()
+                status, to_leave = await self._after_transition(guild_id, player)
+            else:
+                # Torn down while the POST was in flight — nothing left to
+                # schedule or evict.
+                return await player.status()
+        if to_leave is not None:
+            await to_leave.leave()
+        return status
 
     async def pause(self, guild_id: str) -> bool:
         # Same per-guild lock as `play()`/`stop()` (B6, 2026-09-16 audit):
@@ -332,17 +348,30 @@ class MusicPlayerManager:
         # track-end's `_advance` or the monitor's `on_voice_death`; without
         # serialization a post-stop advance could resurrect persisted state
         # or double-teardown (external audit Codex MAJOR-2, 2026-08-26).
+        #
+        # N-2 (2026-09-16 audit): `player.stop()` itself (below, lock
+        # released) makes a controller HTTP round-trip (`/music/stop`) —
+        # holding the lock across it used to block this guild's OWN next
+        # `/music play`/`/discord exit` on a hung controller. Only the
+        # dict/timer detach needs the lock; once popped, no other lock
+        # holder can reach this player through `self._players` anymore.
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
         async with lock:
-            await self._end_music(guild_id)
+            player = self._detach_for_end_music(guild_id)
+        if player is not None:
+            await player.stop()
 
     async def leave_voice(self, guild_id: str) -> None:
         """`/discord exit` — LEAVE-VOICE (end-music AND destroy the
         connection), with no announcement: the command replies itself."""
-        # Same per-guild lock as `play()`/`stop()`.
+        # Same per-guild lock as `play()`/`stop()`; same N-2 lock-release
+        # reasoning as `stop()` above — `player.leave()` is TWO controller
+        # HTTP round-trips (`/music/stop` then `/voice/exit`).
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
         async with lock:
-            await self._leave(guild_id)
+            player, _ = self._detach_for_leave(guild_id)
+        if player is not None:
+            await player.leave()
 
     async def on_voice_channel_emptied(
         self, guild_id: str, *,
@@ -360,6 +389,8 @@ class MusicPlayerManager:
         hub exits the connection directly, since there is no player whose
         `leave` would do it."""
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
+        exit_only: ExitVoiceSession | None = None
+        leaving: MusicPlayer | None = None
         async with lock:
             if not self._generation_matches(guild_id, generation):
                 log.info(
@@ -381,14 +412,20 @@ class MusicPlayerManager:
                 return
             if player is None and self._exit_voice_session is not None:
                 # Voice-only session: leaving IS exiting the connection.
-                await self._exit_voice_session(guild_id)
-                return
-            if self._drop_voice_session is not None:
-                # The player's `leave` below exits the connection itself;
-                # the hub just forgets the cached session so nothing reuses
-                # a dead generation.
-                self._drop_voice_session(guild_id)
-            await self._leave(guild_id)
+                exit_only = self._exit_voice_session
+            else:
+                if self._drop_voice_session is not None:
+                    # The player's `leave` below exits the connection
+                    # itself; the hub just forgets the cached session so
+                    # nothing reuses a dead generation.
+                    self._drop_voice_session(guild_id)
+                leaving, _ = self._detach_for_leave(guild_id)
+        # N-2 (2026-09-16 audit): the exit/leave HTTP call runs with the
+        # lock released, same reason as `stop()`/`leave_voice()` above.
+        if exit_only is not None:
+            await exit_only(guild_id)
+        elif leaving is not None:
+            await leaving.leave()
 
     async def on_voice_death(self, guild_id: str, *, generation: str | None = None) -> None:
         """The voice connection died while a track was supposedly audible —
@@ -425,7 +462,12 @@ class MusicPlayerManager:
                 # the teardown (B8: outside the lock, a delayed event could
                 # drop the NEW session).
                 self._drop_voice_session(guild_id)
-            await self._leave(guild_id, announce=True)
+            player, notify = self._detach_for_leave(guild_id)
+        # N-2 (2026-09-16 audit): `leave()` runs with the lock released,
+        # same reason as `stop()`/`leave_voice()` above.
+        if player is not None:
+            await player.leave()
+        await self._announce_teardown(guild_id, notify, player)
 
     def _generation_matches(self, guild_id: str, generation: str | None) -> bool:
         """The B8 staleness probe, with the B5 probe's fail-open-if-
@@ -551,7 +593,11 @@ class MusicPlayerManager:
                             title=session.last_played_title or "",
                         )
                     await player.on_track_finished()
-            status = await self._after_transition(session.guild_id, player)
+            status, to_leave = await self._after_transition(session.guild_id, player)
+        # N-2 (2026-09-16 audit): same lock-released `leave()` as
+        # `_commit_and_finish` — see its docstring.
+        if to_leave is not None:
+            await to_leave.leave()
         await self._notify_now_playing(session.guild_id, status)
 
     async def _get_or_create(
@@ -578,7 +624,15 @@ class MusicPlayerManager:
         self._players[guild_id] = player
         return player
 
-    async def _after_transition(self, guild_id: str, player: MusicPlayer) -> PlayerStatus:
+    async def _after_transition(
+        self, guild_id: str, player: MusicPlayer,
+    ) -> tuple[PlayerStatus, MusicPlayer | None]:
+        """Returns the status and, when the session died mid-transition
+        (R-65), the DETACHED player the caller must `.leave()` with the
+        guild lock RELEASED (N-2, 2026-09-16 audit) — `leave()`'s
+        `disconnect()` is a controller HTTP round-trip, and this always
+        runs from inside a caller's `async with lock:` block, so doing it
+        here would hold the lock across it."""
         status = await player.status()
         if getattr(player, "_session_dead", False):
             # R-65: `_advance` already tore the session down (queue cleared,
@@ -586,16 +640,17 @@ class MusicPlayerManager:
             # itself from `_players` — drop the dead player entirely so the
             # next `/music play` joins a clean connection and the idle timer
             # is not armed for a zombie (external audit MAJOR-2, 2026-08-26).
-            # `_leave` re-runs the leave-voice path, which is safe on the
-            # torn state (`HttpVoiceSession.disconnect` tolerates an
-            # already-invalid generation; clear/stop on empty are no-ops).
-            await self._leave(guild_id)
-            return status
+            # `leave()` (the caller's job) re-runs the leave-voice path,
+            # which is safe on the torn state (`HttpVoiceSession.disconnect`
+            # tolerates an already-invalid generation; clear/stop on empty
+            # are no-ops).
+            player = self._detach_for_end_music(guild_id) or player
+            return status, player
         if status.now_playing is None:
             self._schedule_idle_disconnect(guild_id)
         else:
             self._cancel_idle_disconnect(guild_id)
-        return status
+        return status, None
 
     async def _notify_now_playing(self, guild_id: str, status: PlayerStatus) -> None:
         now_playing = status.now_playing
@@ -647,46 +702,75 @@ class MusicPlayerManager:
         await self._clock_sleep(self._idle_timeout_seconds)
         # Same per-guild lock (Codex MAJOR-2, 2026-08-26): the idle timer can
         # fire while a track-end `_advance` or a `/music play` is mid-flight.
+        #
+        # N-2 (2026-09-16 audit): only the dict/timer detach needs the
+        # lock; `player.stop()` below (a controller HTTP round-trip) runs
+        # with it released, same reason as `stop()`.
         lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
         async with lock:
             # Idle expiry is END-MUSIC (design/voice-channel/07 §10, B3) —
             # the session ends but the connection STAYS; the controller
             # keeps it, e.g. for the wake path.
-            await self._end_music(guild_id)
+            player = self._detach_for_end_music(guild_id)
+        if player is not None:
+            await player.stop()
 
-    async def _end_music(self, guild_id: str) -> None:
-        """END-MUSIC: tear the session down (queue, persistence, playback)
-        and STAY connected — `/music stop` and the idle-expiry timer."""
+    def _detach_for_end_music(self, guild_id: str) -> MusicPlayer | None:
+        """The synchronous half of END-MUSIC (N-2, 2026-09-16 audit): pops
+        this guild's player and cancels its idle timer. Always run INSIDE
+        the caller's guild lock — `player.stop()`, the other half (an
+        HTTP round-trip to the controller), is the caller's job to run
+        with the lock RELEASED: once popped here, no other lock holder can
+        reach this player through `self._players` anymore, so there is
+        nothing left for the lock to protect."""
         self._cancel_idle_disconnect(guild_id)
         self._notify.pop(guild_id, None)
-        player = self._players.pop(guild_id, None)
+        return self._players.pop(guild_id, None)
+
+    def _detach_for_leave(self, guild_id: str) -> tuple[MusicPlayer | None, Notify | None]:
+        """The synchronous half of LEAVE-VOICE — same split as
+        `_detach_for_end_music`, plus the notify closure for the
+        `on_voice_death` announcement (posted after the lock releases
+        too, in `_announce_teardown`)."""
+        self._cancel_idle_disconnect(guild_id)
+        notify = self._notify.pop(guild_id, None)
+        return self._players.pop(guild_id, None), notify
+
+    async def _announce_teardown(
+        self, guild_id: str, notify: Notify | None, player: MusicPlayer | None,
+    ) -> None:
+        """Announce a `_leave` teardown — ONLY the one transition with no
+        command reply of its own, `on_voice_death`. `/music stop` already
+        replies `Stopped.`, an idle timeout is expected, and an emptied
+        channel has nobody left to read it (found live 2026-09-15: voice
+        death tore the session down with zero notification — listeners
+        only noticed the silence). `notify`/`player` are both `None` on an
+        already-torn-down guild (idempotent re-run), which must not
+        double-post."""
+        if notify is None or player is None:
+            return
+        try:
+            await notify(m.connection_lost_line())
+        except Exception:
+            log.warning(
+                "could not announce music teardown for guild %s", guild_id, exc_info=True,
+            )
+
+    async def _end_music(self, guild_id: str) -> None:
+        """END-MUSIC composed for callers holding no guild lock (e.g.
+        direct test calls) — every LOCKED call site drives the split
+        phases itself (`_detach_for_end_music` under the lock,
+        `player.stop()` released, N-2 above)."""
+        player = self._detach_for_end_music(guild_id)
         if player is not None:
             await player.stop()
 
     async def _leave(self, guild_id: str, *, announce: bool = False) -> None:
-        """LEAVE-VOICE: end-music AND destroy the voice connection — an
-        emptied channel, a voice-death event, `/discord exit`, the
-        dead-session eviction. `MusicPlayer.leave` tolerates a connection
-        that is already gone controller-side."""
-        self._cancel_idle_disconnect(guild_id)
-        notify = self._notify.pop(guild_id, None)
-        player = self._players.pop(guild_id, None)
+        """LEAVE-VOICE composed, same no-lock-held posture as `_end_music`
+        above. `MusicPlayer.leave` tolerates a connection that is already
+        gone controller-side."""
+        player, notify = self._detach_for_leave(guild_id)
         if player is not None:
             await player.leave()
-        if announce and notify is not None and player is not None:
-            # Announce the teardown ONLY on the one transition with no
-            # command reply of its own — `on_voice_death`. `/music stop`
-            # already replies `Stopped.`, an idle timeout is expected, and
-            # an emptied channel has nobody left to read it (found live
-            # 2026-09-15: voice death tore the session down with zero
-            # notification — listeners only noticed the silence).
-            # `_leave` is idempotent and can be re-run on an already-torn
-            # guild; a second call has no player and must not double-post.
-            # `silent=True` matches every other music notify.
-            try:
-                await notify(m.connection_lost_line())
-            except Exception:
-                log.warning(
-                    "could not announce music teardown for guild %s", guild_id,
-                    exc_info=True,
-                )
+        if announce:
+            await self._announce_teardown(guild_id, notify, player)

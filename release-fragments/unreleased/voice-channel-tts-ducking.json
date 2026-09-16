@@ -1,15 +1,6 @@
 {
-  "type": "feature",
-  "summary": "Voice channel, stage 1: Nora can speak in a Discord voice channel — the music ducks under her Cantonese answer and comes back up after. Ships disabled.",
-  "details": [
-    "A new `Speaker` port beside the voice-note transcriber: one synthesis call returns either real audio or an honest «couldn't» (timeout / error / empty stay distinct), and a reply that fails to sound is still a reply — the turn is never dropped over TTS.",
-    "The provider is MiniMax CN (`speech-2.8-turbo`, native Cantonese voice `Cantonese_CuteGirl`, Cantonese language boost hard-set), decided 2026-09-14 after live measurements (design/voice-channel/04 §3b). The key is read from the environment (`MINIMAX_CN_API_KEY`), never from config.",
-    "Ducking is a new mixer (`DuckSource`) generalising the crossfade mechanic: while she speaks, the music is scaled to `[speech.tts] duck_gain` (default 0.25) and restored over `duck_ramp_ms` (default 150). The listener's own `/music volume` is never touched by a duck cycle — the duck gain is applied to the music frames inside the mix, not through the volume control.",
-    "A `speakable()` content gate decides what may be read aloud: URLs, hostnames, @handles, hashes, UUIDs and long tokens never are — speech says what the thing IS and points at the text channel, it never reads out a machine token. Library-only in this stage; nothing in the reply path calls it yet."
-  ],
-  "limitations": [
-    "Inert as shipped: `[speech.tts] enabled = false` by default, and even enabled nothing speaks yet — this stage lands the port, the provider adapter, the mixer and `VoiceSession.speak()`, but no caller in the reply path invokes them. That wiring (and the wake word) is a later stage.",
-    "TTS is an outbound cloud call: reply text leaves the box to MiniMax (STT, by contrast, stays local). Accepted by the operator for v1; a local provider stays open as future work (design/voice-channel/04 §4).",
-    "The live acceptance criterion — music audibly lowered, Cantonese intelligible over it, music restored — is by-ear in a real voice channel and cannot be automated; the unit gates (mixer arithmetic, volume independence, fail-closed adapter) are what landed."
-  ]
+  "type": "none",
+  "reason": "Superseded by audio-controller-phase1.json (CN-9, 2026-09-16 audit): this fragment described the stage-1 in-process VoiceSession/DuckSource mixer, which no longer exists — the audio-controller (deploy/voice-sidecar, design/voice-channel/07) now owns the Discord voice connection and performs music ducking under speech itself, over the HTTP control plane. No user-visible claim survives from this fragment separately from the phase-1 one.",
+  "details": [],
+  "limitations": []
 }

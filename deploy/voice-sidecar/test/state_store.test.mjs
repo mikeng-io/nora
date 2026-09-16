@@ -57,9 +57,11 @@ test('state writes succeed as a non-root runtime user when the state dir exists'
     t.skip('running as root: permission bits are not enforced');
     return;
   }
-  // The Dockerfile creates + chowns /var/lib/audio-controller, so at runtime
-  // the parent is NOT writable by the node user but the state dir IS. The
-  // store must not need to create the directory itself.
+  // The image's Dockerfile creates + chowns /var/lib/audio-controller, and
+  // the compose service mounts a NAMED volume there (B-1: a bind mount would
+  // mask that chown on a fresh host) — so at runtime the parent is NOT
+  // writable by the node user but the state dir IS. The store must not need
+  // to create the directory itself.
   const dir = tmp();
   const stateDir = path.join(dir, 'audio-controller');
   mkdirSync(stateDir);
@@ -82,7 +84,9 @@ test('bootChannel: absent file + env CHANNEL_ID joins (first boot)', () => {
 });
 
 test('bootChannel: connected file joins its channel', () => {
-  assert.equal(bootChannel({ desired: 'connected', channel_id: 'c-file' }, 'c-env'), 'c-file');
+  // The env channel matching the persisted one; the mismatch case is
+  // covered in lifecycle.test.mjs (2026-09-16 audit C-2).
+  assert.equal(bootChannel({ desired: 'connected', channel_id: 'c-file' }, 'c-file'), 'c-file');
 });
 
 test('bootChannel: absent file + no env does not join', () => {

@@ -209,6 +209,47 @@ test('a transport error (fetch rejects) is retained and retried, not lost', asyn
   assert.equal(delivered.length, 1);
 });
 
+test('a fetch that never answers is aborted after the attempt timeout and retried, never hung', async () => {
+  // 2026-09-16 audit N-6: backoff only covered rejections/non-2xx; a server
+  // that accepts and holds the socket stalled the whole event pipeline.
+  const clock = createFakeClock();
+  let calls = 0;
+  const { outbox, attempts, delivered } = makeOutbox({
+    clock,
+    fetchTimeoutMs: 5_000,
+    baseDelayMs: 1000,
+    fetchBehavior: (url, opts) => {
+      calls += 1;
+      if (calls === 1) {
+        // Accepts and never answers; rejects only when the attempt is aborted.
+        return new Promise((_, reject) => {
+          opts.signal.addEventListener('abort', () => reject(new Error('The operation was aborted')));
+        });
+      }
+      return Promise.resolve({ status: 200 });
+    },
+  });
+  outbox.push('track-finished', { playback_id: 'p1' });
+  await tick();
+  assert.equal(attempts.length, 1);
+  assert.equal(delivered.length, 0);
+
+  clock.advance(5_000); // the per-attempt timeout fires the abort
+  await tick();
+  await tick();
+  assert.equal(delivered.length, 0);
+  assert.equal(outbox.pendingCount(), 1); // parked for the backoff retry
+
+  clock.advance(1000); // backoff elapses; the retry succeeds
+  await tick();
+  await tick();
+  assert.equal(attempts.length, 2);
+  assert.deepEqual(
+    delivered.map((e) => e.type),
+    ['track-finished'],
+  );
+});
+
 test('a voice-death pushed while a delivery is in flight is serialized behind it — never concurrent, never lost, never reordered', async () => {
   // Teardown under contention (2026-09-16 audit coverage): the connection
   // dies while the outbox is mid-POST. The death event must wait for the

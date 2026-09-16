@@ -17,6 +17,11 @@ prose — this gate is that enforcement. It forbids, anywhere under `nora/`:
 1. `channel.connect(` — the discord.py call that opens a voice connection.
 2. `VoiceClient` — the type every local voice-session implementation is
    built on (annotation, isinstance, or construction are all ownership).
+3. `change_voice_state(` — discord.py's OTHER join path (C-1, 2026-09-16
+   audit): `Guild.change_voice_state(channel=...)` moves the bot into a
+   voice channel via the raw gateway op, bypassing `channel.connect()` and
+   `VoiceClient` entirely while still acquiring the same ownership this
+   gate exists to forbid.
 
 The design's carve-out ("outside `discord/infra`") names where a local
 implementation WOULD live if one ever returned; no such package exists
@@ -51,6 +56,11 @@ ROOT = Path(__file__).resolve().parents[2]
 #: were scrubbed with the code).
 _CHANNEL_CONNECT = re.compile(r"channel\.connect\s*\(")
 _VOICE_CLIENT = re.compile(r"\bVoiceClient\b")
+#: C-1 (2026-09-16 audit): `change_voice_state` is not a substring of any
+#: legitimate identifier left in the tree (same reasoning as `VoiceClient`
+#: above), so a bare, unanchored match is enough — no false-positive risk
+#: to trade away for a narrower pattern.
+_CHANGE_VOICE_STATE = re.compile(r"change_voice_state\s*\(")
 
 #: Empty by design — see the module docstring. A future local voice
 #: implementation lives in a new package and is pinned HERE, with the
@@ -83,9 +93,11 @@ def test_the_detector_matches_both_ownership_shapes() -> None:
     assert _CHANNEL_CONNECT.search("await self._channel.connect()")
     assert _CHANNEL_CONNECT.search("await self._reconnect_channel.connect()")
     assert _VOICE_CLIENT.search("client: discord.VoiceClient")
+    assert _CHANGE_VOICE_STATE.search("await guild.change_voice_state(channel=channel)")
     assert not _CHANNEL_CONNECT.search("await client.connect_to_database()")
     assert not _CHANNEL_CONNECT.search("await client.connect()")
     assert not _VOICE_CLIENT.search("the voice client registry")
+    assert not _CHANGE_VOICE_STATE.search("# do not change voice state directly")
 
 
 def test_nora_never_opens_a_discord_voice_connection() -> None:
@@ -102,5 +114,17 @@ def test_nora_never_holds_a_voice_client() -> None:
     assert not offenders, (
         "VoiceClient has no place in nora's tree — the audio-controller is the "
         "sole voice-connection owner (design/voice-channel/07, B1):\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_nora_never_calls_change_voice_state() -> None:
+    """C-1 (2026-09-16 audit): the ownership gate's other blind spot —
+    `Guild.change_voice_state(channel=...)` joins a voice channel without
+    ever touching `channel.connect()` or `VoiceClient`."""
+    offenders = _offenders(_CHANGE_VOICE_STATE)
+    assert not offenders, (
+        "change_voice_state has no place in nora's tree — the audio-controller "
+        "is the sole voice-connection owner (design/voice-channel/07, B1):\n"
         + "\n".join(offenders)
     )

@@ -312,3 +312,49 @@ async def test_generation_for_reads_the_cached_sessions_generation(aiohttp_clien
     await hub.join("guild-1", "cortez-1")
 
     assert hub.generation_for("guild-1") == "gen-1"
+
+
+async def test_adopt_boot_voice_sessions_adopts_without_a_persisted_music_row(aiohttp_client):
+    """B-2 (2026-09-16 audit): a wake-only guild with no persisted music
+    session never calls `hub.join` any other way — boot adoption must reach
+    it directly from `voice_channel_ids`, and speech must stream afterwards."""
+    record: list = []
+    hub = await _hub(aiohttp_client, _app(join_status=409, record=record))
+
+    await hub.adopt_boot_voice_sessions(["guild-1/cortez-1"])
+
+    assert hub.session_for("guild-1") is not None
+    assert await hub.stream_speech("guild-1", b"mp3", "audio/mpeg") is True
+    assert [kind for kind, _ in record if kind in ("join", "status")] == ["join", "status"]
+
+
+async def test_adopt_boot_voice_sessions_is_idempotent_with_an_existing_session(aiohttp_client):
+    record: list = []
+    hub = await _hub(aiohttp_client, _app(record=record))
+    await hub.join("guild-1", "cortez-1")
+
+    await hub.adopt_boot_voice_sessions(["guild-1/cortez-1"])
+
+    assert [kind for kind, _ in record if kind == "join"] == ["join"], (
+        "an already-cached session must not re-join"
+    )
+
+
+async def test_adopt_boot_voice_sessions_skips_malformed_entries(aiohttp_client):
+    record: list = []
+    hub = await _hub(aiohttp_client, _app(record=record))
+
+    await hub.adopt_boot_voice_sessions(["not-a-pair", "", "guild-1/"])
+
+    assert record == []
+    assert hub.session_for("guild-1") is None
+
+
+async def test_adopt_boot_voice_sessions_does_not_raise_when_the_controller_is_down(
+    aiohttp_client,
+):
+    hub = await _hub(aiohttp_client, _app(join_status=503))
+
+    await hub.adopt_boot_voice_sessions(["guild-1/cortez-1"])  # must not raise
+
+    assert hub.session_for("guild-1") is None

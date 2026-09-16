@@ -74,21 +74,37 @@ export function createController({
     }
   }
 
+  // Resolves { ok: true, raw } | { ok: false, reason: 'too_large' | 'read_error' }.
+  // An over-limit body keeps draining (discarded) so the client gets a real
+  // 413 answer; destroying the request would kill the socket before the
+  // response could be written. A transport failure mid-body ('error', or
+  // 'close' before 'end') is a read error, NOT an over-limit body — the two
+  // used to share one 400 body_too_large (2026-09-16 audit C-5).
   function readBody(req, limit) {
     return new Promise((resolve) => {
       let size = 0;
+      let tooLarge = false;
+      let settled = false;
+      const done = (result) => {
+        if (!settled) {
+          settled = true;
+          resolve(result);
+        }
+      };
       const chunks = [];
       req.on('data', (chunk) => {
         size += chunk.length;
         if (size > limit) {
-          req.destroy();
-          resolve(null);
-          return;
+          tooLarge = true;
+          return; // drain and discard; the answer comes at 'end'
         }
-        chunks.push(chunk);
+        if (!tooLarge) chunks.push(chunk);
       });
-      req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-      req.on('error', () => resolve(null));
+      req.on('end', () =>
+        done(tooLarge ? { ok: false, reason: 'too_large' } : { ok: true, raw: Buffer.concat(chunks).toString('utf8') }),
+      );
+      req.on('error', () => done({ ok: false, reason: 'read_error' }));
+      req.on('close', () => done({ ok: false, reason: 'read_error' }));
     });
   }
 
@@ -128,12 +144,17 @@ export function createController({
       if (typeof body.stream_url !== 'string' || !body.stream_url) {
         throw httpError(400, 'invalid_body', 'stream_url is required');
       }
+      // Optional source capability (§5 position policy): false marks a
+      // live/non-seekable stream; absent leaves the arbiter's default.
+      if (body.resumable !== undefined && typeof body.resumable !== 'boolean') {
+        throw httpError(400, 'invalid_body', 'resumable must be a boolean when present');
+      }
       arbiter.playMusic({
         streamUrl: body.stream_url,
         title: typeof body.title === 'string' ? body.title : null,
         durationSeconds: typeof body.duration_seconds === 'number' ? body.duration_seconds : null,
         requestId: body.request_id ?? null,
-        resumable: typeof body.resumable === 'boolean' ? body.resumable : true,
+        resumable: body.resumable,
       });
     },
     'POST /music/stop': async (body) => {
@@ -195,14 +216,23 @@ export function createController({
   }
 
   async function handlePost(req, res, route) {
-    const raw = await readBody(req, route === 'POST /stream' ? MAX_BODY_BYTES : MAX_CONTROL_BYTES);
-    if (raw === null) {
-      respondError(res, 400, 'body_too_large', null);
+    const read = await readBody(req, route === 'POST /stream' ? MAX_BODY_BYTES : MAX_CONTROL_BYTES);
+    if (!read.ok) {
+      // The design contract is silent on the status for these; the split is
+      // 413 for a body that exceeds the limit, 400 for a transport-level
+      // read failure (2026-09-16 audit C-5). nora's client maps only 400/409
+      // explicitly, so 413 lands on its generic fail-closed unavailable
+      // path — no Python-side change needed.
+      if (read.reason === 'too_large') {
+        respondError(res, 413, 'body_too_large', null);
+      } else {
+        respondError(res, 400, 'body_read_failed', null);
+      }
       return;
     }
     let body;
     try {
-      body = JSON.parse(raw || '{}');
+      body = JSON.parse(read.raw || '{}');
     } catch {
       respondError(res, 400, 'invalid_json', null);
       return;
@@ -284,6 +314,21 @@ export function createController({
       return;
     }
     respond(res, 404, { error: 'not_found', request_id: null, state: null });
+  });
+
+  // A request that dies at the transport level (FIN/reset mid-body, garbage
+  // bytes) is a parser failure: it never reaches the router above, and
+  // Node's default answer is a bare 400 with no body. Answer with the
+  // contract's error shape instead (2026-09-16 audit C-5 — distinct from
+  // 413 body_too_large, which only the router can see).
+  server.on('clientError', (err, socket) => {
+    log('error', { event: 'client_error', error: String(err?.code ?? err?.message ?? err) });
+    const body = JSON.stringify({ error: 'body_read_failed', request_id: null, state: null });
+    if (socket.writable) {
+      socket.end(`HTTP/1.1 400 Bad Request\r\ncontent-type: application/json\r\nconnection: close\r\ncontent-length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
+    } else {
+      socket.destroy();
+    }
   });
 
   return { server, snapshot };

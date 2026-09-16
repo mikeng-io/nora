@@ -143,6 +143,15 @@ class DiscordAdapter:
                 await resume_persisted_music_sessions(
                     client, self._music_manager, hub=self._voice_hub,
                 )
+            # B-2 (2026-09-16 audit): a guild with no persisted MUSIC row
+            # never calls `hub.join` above, so a wake-reply-only boot would
+            # leave the controller's boot-joined connection un-adopted and
+            # every speech reply silently dropped until a human ran
+            # `/discord join`. Independent of `_music_manager` and safe to
+            # run every `on_ready` — `hub.join`/`adopt_boot_voice_sessions`
+            # are both idempotent against an already-cached session.
+            if self._voice_hub is not None:
+                await self._voice_hub.adopt_boot_voice_sessions(self._voice_channel_ids)
 
         self._listener = DiscordListener(
             client, self._token, on_ready_extra=_register_music_commands,

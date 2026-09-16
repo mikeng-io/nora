@@ -13,12 +13,15 @@ controller and this fake ever disagree, one of them is off-contract.
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import pytest
 
 from nora.infra.voice.http_controller import (
     GenerationConflict,
     VoiceControllerClient,
     VoiceControllerRejected,
+    VoiceControllerUnavailable,
 )
 from nora.testing.voice import FakeVoiceController
 
@@ -35,7 +38,17 @@ async def controller(aiohttp_client):
 
 
 async def _join(client: VoiceControllerClient) -> str:
-    state = await client.join(GUILD, CHANNEL, request_id="req-join")
+    """CN-1 (2026-09-16 audit): a FRESH `request_id` every call, never a
+    fixed constant. `FakeVoiceController` deliberately does not emulate
+    the real controller's 5-minute `request_id` retry memo (its own
+    docstring says so) — reusing one request_id across two `_join()` calls
+    used to pass here (a second call for the same id runs as an ordinary
+    fresh join against the fake) while it would fail against
+    `controller.mjs`, which returns the FIRST call's memoized response
+    (the SAME generation) for a repeated id, not a new join. Any test that
+    joins more than once — e.g. `test_exit_invalidates_the_generation`'s
+    rejoin — needs the second call to actually reach the handler."""
+    state = await client.join(GUILD, CHANNEL, request_id=str(uuid4()))
     return state["generation"]
 
 
@@ -256,3 +269,36 @@ async def test_stream_speech_encodes_the_audio(controller):
     )
 
     assert fake.speech_active is True
+
+
+async def test_stream_rejects_with_unavailable_once_the_speech_queue_is_full(aiohttp_client):
+    """FG-2 (2026-09-16 audit): the bounded speech queue's 503
+    `speech_queue_full` must actually be reachable through the fake, and
+    the client must surface it as `VoiceControllerUnavailable` — not just
+    documented in `VoiceControllerClient.stream()`'s docstring while dead
+    in the fake. A small `speech_queue_max` keeps the test fast."""
+    speech_queue_max = 2
+    fake = FakeVoiceController(GUILD, CHANNEL, speech_queue_max=speech_queue_max)
+    test_client = await aiohttp_client(fake.app())
+    client = VoiceControllerClient(str(test_client.make_url("")).rstrip("/"))
+    generation = await _join(client)
+
+    # First call becomes the active stream.
+    await client.stream(generation, b"active", media_type="audio/mpeg", request_id="r0")
+    # The next `speech_queue_max` calls queue behind it.
+    for i in range(speech_queue_max):
+        await client.stream(
+            generation, b"queued", media_type="audio/mpeg", request_id=f"r{i + 1}",
+        )
+    assert fake.speech_queue == speech_queue_max
+
+    # The queue is now full: one more is rejected 503, surfaced as
+    # `VoiceControllerUnavailable`.
+    with pytest.raises(VoiceControllerUnavailable):
+        await client.stream(
+            generation, b"overflow", media_type="audio/mpeg", request_id="r-overflow",
+        )
+
+    # Once the active speech (and its queue) drains, streaming works again.
+    fake.finish_speech()
+    await client.stream(generation, b"after-drain", media_type="audio/mpeg", request_id="r-after")

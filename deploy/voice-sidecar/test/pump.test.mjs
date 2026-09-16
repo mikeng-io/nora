@@ -74,3 +74,22 @@ test('handshake overflow drops the oldest pending frame and counts it', () => {
   assert.equal(pump.stats().no_listener_dropped, 1);
   assert.equal(pump.stats().backlog_dropped, 0);
 });
+
+test('close during the TCP handshake destroys the connecting socket (2026-09-16 audit N-5)', () => {
+  const socket = fakeSocket();
+  const pump = createPump({ connectImpl: () => socket });
+  pump(Buffer.alloc(3840), 'u1'); // starts the handshake; frame held in pending
+
+  let destroyed = 0;
+  const originalDestroy = socket.destroy;
+  socket.destroy = () => {
+    destroyed += 1;
+    originalDestroy();
+  };
+  pump.close(); // connection teardown while the handshake is still open
+  assert.equal(destroyed, 1);
+
+  socket.emit('connect'); // a late connect must not resurrect the closed pump
+  assert.equal(socket.writes.length, 0);
+});
+

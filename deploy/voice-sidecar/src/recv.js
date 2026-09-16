@@ -27,38 +27,65 @@ export const PCM_FRAME_BYTES = 3840; // 20 ms @ 48 kHz stereo s16le
  * @param {string} guildId
  * @param {string} channelId
  * @param {string} token - bot token; used for login only, never logged
+ * @param {object} [seams] - injected Discord touches (tests only; the
+ *   production caller passes none)
  * @returns {Promise<{bus: EventEmitter, leave: () => Promise<void>}>}
  *   bus events:
  *     'listening'  (userId)              - a per-user stream attached
  *     'pcm'        (userId, Buffer)      - decoded PCM chunk (s16le 48k stereo)
  *     'streamError'(userId, Error)       - a per-user stream died; it will
  *                                          resubscribe on next speaking start
+ *
+ * A join that fails at ANY construction step destroys what it already built
+ * (connection + client): a retry must never share the process with a zombie
+ * from the failed attempt (2026-09-16 audit CN-2).
  */
-export async function join(guildId, channelId, token) {
+export async function join(guildId, channelId, token, {
+  createClient = () =>
+    new Client({
+      intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
+    }),
+  joinVoiceChannelImpl = joinVoiceChannel,
+  entersStateImpl = entersState,
+  readyTimeoutMs = 30_000,
+} = {}) {
   const bus = new EventEmitter();
-  const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
-  });
-  await client.login(token);
-  await new Promise((resolve, reject) => {
-    if (client.isReady()) return resolve();
-    client.once('clientReady', resolve);
-    client.once('error', reject);
-  });
+  const client = createClient();
+  let connection = null;
+  try {
+    await client.login(token);
+    await new Promise((resolve, reject) => {
+      if (client.isReady()) return resolve();
+      client.once('clientReady', resolve);
+      client.once('error', reject);
+    });
 
-  const guild = client.guilds.cache.get(guildId) ?? (await client.guilds.fetch(guildId));
-  const connection = joinVoiceChannel({
-    channelId,
-    guildId,
-    adapterCreator: guild.voiceAdapterCreator,
-    selfDeaf: false,
-    // Must be audible to PLAY TTS (stage 3+ playback). Discord.js never
-    // receives the bot's own audio (it speaks via its own socket, and the
-    // receiver's speaking map excludes self), so un-muting does not feed
-    // Nora's replies back into the wake gate.
-    selfMute: false,
-  });
-  await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
+    const guild = client.guilds.cache.get(guildId) ?? (await client.guilds.fetch(guildId));
+    connection = joinVoiceChannelImpl({
+      channelId,
+      guildId,
+      adapterCreator: guild.voiceAdapterCreator,
+      selfDeaf: false,
+      // Must be audible to PLAY TTS (stage 3+ playback). Discord.js never
+      // receives the bot's own audio (it speaks via its own socket, and the
+      // receiver's speaking map excludes self), so un-muting does not feed
+      // Nora's replies back into the wake gate.
+      selfMute: false,
+    });
+    await entersStateImpl(connection, VoiceConnectionStatus.Ready, readyTimeoutMs);
+  } catch (err) {
+    try {
+      connection?.destroy();
+    } catch {
+      /* already destroyed */
+    }
+    try {
+      client.destroy();
+    } catch {
+      /* already destroyed */
+    }
+    throw err;
+  }
 
   const subscribed = new Set();
   connection.receiver.speaking.on('start', (userId) => {
@@ -148,6 +175,7 @@ export function createFrameParser(onFrame) {
 export function createPump({ host = '127.0.0.1', port = 4599, maxPending = 200, maxUserBacklog = 16, connectImpl = net.connect } = {}) {
   let socket = null;
   let connecting = false;
+  let connectingSocket = null; // mid-handshake socket — close() must reach it too
   let pending = [];
   const userBacklog = new Map(); // userId -> frames written but not yet flushed
   let backlogDropped = 0;
@@ -170,8 +198,10 @@ export function createPump({ host = '127.0.0.1', port = 4599, maxPending = 200, 
     if (socket || connecting) return;
     connecting = true;
     const s = connectImpl({ host, port });
+    connectingSocket = s;
     s.once('connect', () => {
       connecting = false;
+      connectingSocket = null;
       socket = s;
       const held = pending;
       pending = [];
@@ -179,6 +209,7 @@ export function createPump({ host = '127.0.0.1', port = 4599, maxPending = 200, 
     });
     const drop = () => {
       connecting = false;
+      connectingSocket = null;
       socket = null;
       pending = [];
     };
@@ -203,7 +234,10 @@ export function createPump({ host = '127.0.0.1', port = 4599, maxPending = 200, 
       }
     }
   }
-  pump.close = () => socket?.destroy();
+  pump.close = () => {
+    socket?.destroy();
+    connectingSocket?.destroy(); // a close mid-handshake must not leak the socket
+  };
   pump.stats = () => ({
     backlog_dropped: backlogDropped,
     no_listener_dropped: noListenerDropped,

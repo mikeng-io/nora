@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 from collections import deque
+from collections.abc import Iterable
 from typing import Any
 from uuid import uuid4
 
@@ -199,6 +200,38 @@ class VoiceControllerHub:
         or out-of-order delivery never moves it backwards."""
         if self._last_event_seq is None or event_seq > self._last_event_seq:
             self._last_event_seq = event_seq
+
+    async def adopt_boot_voice_sessions(self, voice_channel_ids: Iterable[str]) -> None:
+        """Boot-time §12.1 reconciliation for guilds with NO persisted music
+        session (design/voice-channel/07 §12.1, B-2 2026-09-16 audit).
+
+        `resume_persisted_sessions` (music_commands.py) only calls
+        `hub.join` for a guild that has a persisted MUSIC row — a
+        wake-only/speech-only guild never calls it at all, so the
+        controller's boot-joined connection (its own durable desired-state,
+        §12.1) sits un-adopted in this process: `stream_speech` then
+        silently returns `False` for every wake reply until a human
+        happens to run `/discord join` or `/music play`. This closes that
+        gap directly from config (`voice_channel_ids`, already validated to
+        "guild_id/channel_id" pairs), independent of any music session.
+
+        Idempotent with an already-cached session — `hub.join` short-
+        circuits on the cache — and safe to call after
+        `resume_persisted_sessions`, which may have already populated it.
+        Best-effort: a controller unreachable at this exact boot instant
+        must not fail nora's boot; the next `/discord join`, `/music play`,
+        or voice-channel send retries the same `hub.join` path."""
+        for entry in voice_channel_ids:
+            guild_id, sep, channel_id = entry.partition("/")
+            if not sep or not guild_id or not channel_id:
+                continue
+            try:
+                await self.join(guild_id, channel_id)
+            except VoiceControllerError as exc:
+                log.warning(
+                    "boot voice adoption for guild %s failed: %s — will retry "
+                    "on the next join/send", guild_id, exc,
+                )
 
     def consume_event_id(self, event_id: str) -> bool:
         """The COMMIT half of the exactly-once dedupe for controller

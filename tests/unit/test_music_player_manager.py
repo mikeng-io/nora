@@ -96,16 +96,30 @@ class _GatedSource:
 
 
 class _FakeVoiceSession:
-    """The awaitable `VoiceSession` port (design/voice-channel/07 B4)."""
+    """The awaitable `VoiceSession` port (design/voice-channel/07 B4).
+
+    `playback_id` mirrors the real `HttpVoiceSession`'s own field (a fresh
+    id per successful `play()`, CN-7, 2026-09-16 audit) — needed so a test
+    can simulate TWO `MusicPlayer`s sharing the SAME voice session object
+    (`stop()`/`leave()` never disconnect; `VoiceControllerHub.join` caches
+    per guild) and check that a stale `finish_pending` from the orphaned
+    one does not stop a newer session's play by comparing it."""
 
     def __init__(self) -> None:
         self.played: list[str] = []
         self.stopped = 0
         self.disconnected = 0
         self.volume_calls: list[float] = []
+        self.playback_id: str | None = None
+        self._play_seq = 0
 
-    async def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
+    async def play(
+        self, stream_url: str, *,
+        duration_seconds: float | None = None, resumable: bool | None = None,
+    ) -> None:
         self.played.append(stream_url)
+        self._play_seq += 1
+        self.playback_id = f"pb-{self._play_seq}"
 
     async def pause(self) -> None:
         pass
@@ -133,7 +147,10 @@ class _FailingVoiceSession(_FakeVoiceSession):
         self._fail_after = fail_after
         self._play_count = 0
 
-    async def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
+    async def play(
+        self, stream_url: str, *,
+        duration_seconds: float | None = None, resumable: bool | None = None,
+    ) -> None:
         self._play_count += 1
         if self._play_count > self._fail_after:
             raise RuntimeError("Not connected to voice.")
@@ -147,6 +164,10 @@ _TRACK_A = ResolvedTrack(
 _TRACK_B = ResolvedTrack(
     title="Track B", stream_url="https://cdn.example/b", duration_seconds=180,
     source="youtube", source_id="b", locator="locator-b",
+)
+_TRACK_C = ResolvedTrack(
+    title="Track C", stream_url="https://cdn.example/c", duration_seconds=150,
+    source="youtube", source_id="c", locator="locator-c",
 )
 
 
@@ -1096,7 +1117,10 @@ class _AdoptedVoiceSession(_FakeVoiceSession):
         self.playback_id = playback_id
         self._play_count = 0
 
-    async def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
+    async def play(
+        self, stream_url: str, *,
+        duration_seconds: float | None = None, resumable: bool | None = None,
+    ) -> None:
         await super().play(stream_url, duration_seconds=duration_seconds)
         self._play_count += 1
         self.playback_id = f"pb-new-{self._play_count}"
@@ -1126,8 +1150,44 @@ class _GatedPlayVoiceSession(_FakeVoiceSession):
         super().__init__()
         self._gate = gate
 
-    async def play(self, stream_url: str, *, duration_seconds: float | None = None) -> None:
+    async def play(
+        self, stream_url: str, *,
+        duration_seconds: float | None = None, resumable: bool | None = None,
+    ) -> None:
         await self._gate.wait()
+        await super().play(stream_url, duration_seconds=duration_seconds)
+
+
+class _SelectivelyGatedVoiceSession(_FakeVoiceSession):
+    """`play()` blocks ONLY for `gated_stream_url` — every other play
+    proceeds immediately. CN-7 (2026-09-16 audit): unlike
+    `_GatedPlayVoiceSession`, this lets a test hold ONE specific advance's
+    play POST in flight while a DIFFERENT play (a fresh session reusing
+    the SAME shared connection object — `stop()`/`leave()` never
+    disconnect, `VoiceControllerHub.join` caches per guild) lands on it in
+    the meantime, reproducing the stop→new-play→old-completion ordering
+    the finding is about."""
+
+    def __init__(
+        self, gate: asyncio.Event, *, gated_stream_url: str, fail_when_unblocked: bool = False,
+    ) -> None:
+        super().__init__()
+        self._gate = gate
+        self._gated_stream_url = gated_stream_url
+        self._fail_when_unblocked = fail_when_unblocked
+
+    async def play(
+        self, stream_url: str, *,
+        duration_seconds: float | None = None, resumable: bool | None = None,
+    ) -> None:
+        if stream_url == self._gated_stream_url:
+            await self._gate.wait()
+            if self._fail_when_unblocked:
+                # The controller went dead WHILE this specific request sat
+                # in flight (R-65's ordinary case), simulated here rather
+                # than at construction time so the gate still controls WHEN
+                # it fails relative to the rest of the test.
+                raise RuntimeError("Not connected to voice.")
         await super().play(stream_url, duration_seconds=duration_seconds)
 
 
@@ -1369,3 +1429,117 @@ async def test_a_hung_play_does_not_block_stop_for_the_guild() -> None:
         "just-started audio (nothing supersedes it: replace semantics only "
         "cover a NEWER play)"
     )
+
+
+async def test_a_stale_play_failure_after_stop_and_new_play_does_not_disconnect_the_new_session() -> None:
+    """CN-7 (2026-09-16 audit): `stop()`/`leave()` never disconnect the
+    underlying voice connection, so a `/music stop` immediately followed
+    by a fresh `/music play` for the SAME guild reuses the very same
+    `VoiceSession` (`VoiceControllerHub.join` caches per guild). If the
+    OLD, already-orphaned player's hung play POST for track B finally
+    FAILS (the controller genuinely went dead sometime during that
+    request), its belated dead-connection teardown must not disconnect
+    the connection or wipe the guild's queue/session rows out from under
+    the BRAND NEW session (playing track C) that has since claimed them.
+    Pre-fix, `finish_pending`'s `ok=False` branch ran unconditionally."""
+    gate = asyncio.Event()
+    manager = _manager({"track a": _TRACK_A, "track b": _TRACK_B, "track c": _TRACK_C})
+    voice = _SelectivelyGatedVoiceSession(
+        gate, gated_stream_url=_TRACK_B.stream_url, fail_when_unblocked=True,
+    )
+
+    async def connect() -> _FakeVoiceSession:
+        return voice  # the SAME connection object every time — hub reuse
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+    await manager.play(
+        guild_id="guild-1", query_or_url="track b", requested_by="miles",
+        added_at=T0, connect=None,
+    )
+
+    finish_task = asyncio.ensure_future(manager.on_track_finished("guild-1"))
+    for _ in range(5):
+        await asyncio.sleep(0)  # B's play POST is now in flight, gated
+
+    await asyncio.wait_for(asyncio.ensure_future(manager.stop("guild-1")), timeout=1.0)
+    assert await manager.status("guild-1") is None
+
+    outcome = await manager.play(
+        guild_id="guild-1", query_or_url="track c", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+    assert outcome is not None and outcome.status == "playing"
+
+    gate.set()  # B's play finally runs — and raises (fail_when_unblocked)
+    await asyncio.wait_for(finish_task, timeout=1.0)
+
+    assert voice.disconnected == 0, (
+        "B's stale failure must not disconnect the connection C is now using"
+    )
+    status = await manager.status("guild-1")
+    assert status is not None, "C's session must survive B's belated failure"
+    assert status.now_playing is not None and status.now_playing.title == "Track C"
+
+
+async def test_a_stale_play_success_after_stop_and_new_play_does_not_corrupt_the_new_session() -> None:
+    """CN-7, companion to the failure case above: when the stale hung play
+    for track B instead SUCCEEDS after a stop→new-play reuse of the
+    shared connection, `finish_pending`'s zombie guard may still
+    legitimately stop the CONNECTION — the late POST, once it lands, IS
+    (unavoidably, given REPLACE semantics and no connection-level request
+    ordering) the connection's new "current" occupant, so stopping it is
+    not wrong from `finish_pending`'s local view; fully preventing this
+    would need serializing plays PER CONNECTION rather than per player, a
+    larger change out of this finding's scope (same "whichever arrives
+    last wins, the next command resolves it" posture `skip()` already
+    documents for a play racing a stop). What CN-7 DOES guarantee: this
+    stale completion, belonging to an ORPHANED player, never touches the
+    NEW session's own bookkeeping — `manager.status(guild_id)` keeps
+    reporting the new player's state untouched, never evicted or
+    resurrected under the old one."""
+    gate = asyncio.Event()
+    manager = _manager({"track a": _TRACK_A, "track b": _TRACK_B, "track c": _TRACK_C})
+    voice = _SelectivelyGatedVoiceSession(gate, gated_stream_url=_TRACK_B.stream_url)
+
+    async def connect() -> _FakeVoiceSession:
+        return voice
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+    await manager.play(
+        guild_id="guild-1", query_or_url="track b", requested_by="miles",
+        added_at=T0, connect=None,
+    )
+
+    finish_task = asyncio.ensure_future(manager.on_track_finished("guild-1"))
+    for _ in range(5):
+        await asyncio.sleep(0)
+
+    await asyncio.wait_for(asyncio.ensure_future(manager.stop("guild-1")), timeout=1.0)
+    assert await manager.status("guild-1") is None
+
+    outcome = await manager.play(
+        guild_id="guild-1", query_or_url="track c", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+    assert outcome is not None and outcome.status == "playing"
+
+    gate.set()  # B's play finally succeeds, on the connection C now owns
+    await asyncio.wait_for(finish_task, timeout=1.0)
+
+    status = await manager.status("guild-1")
+    assert status is not None, (
+        "the new session's row must survive B's belated success — only the "
+        "shared connection's audio state is contended, never nora's own "
+        "bookkeeping for the NEW player"
+    )
+    assert status.now_playing is not None and status.now_playing.title == "Track C"
