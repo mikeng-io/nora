@@ -137,6 +137,100 @@ those fixtures are deleted. See
 
 The two fact objectives are **not** fixture-pinned and can move first.
 
+## 7. D9 was not taken, and the change that landed instead went the other way
+
+**2026-09-17.** D9 above says the fix is to make the doctrine **shape-aware** —
+"the minimum change that fixes the class rather than one instance". That was
+never built. What landed instead, on 2026-09-08 (`97f301a4`), was the opposite
+move: the doctrine stopped being a research doctrine and became a **judge**
+doctrine. One shape, chosen, rather than a doctrine that knows there is more
+than one.
+
+The frontmatter states it plainly, and it is the clearest description of the
+current state anywhere in the tree:
+
+> Version 2 (2026-09-08) rewrites it for what the Dreamer now is — **a
+> tool-free judge over text it is handed** — after version 1's research
+> register (sources, pages, when to stop looking) was measured to push a judge
+> toward an empty answer.
+
+**The measurement behind it is real, and it is narrow.** From the commit, on
+the note-candidates scenario suite at `reasoning_effort = "none"`:
+
+| variant | |
+|---|---|
+| as-deployed (v1, the research register) | 1.00 / 0.60 |
+| objective v2 alone | 1.00 / 0.87 |
+| **judge doctrine alone** | 1.00 / **0.67** |
+| both | 1.00 / 0.93 |
+
+One adaptor. One suite. And `note-candidates` **is** a judge — it is handed a
+batch and returns a verdict per message over a fixed vocabulary. For that shape
+the result is exactly right, and nothing here proposes undoing it.
+
+What the table cannot say is anything about an adaptor whose job is not
+judging, because on 2026-09-08 there was no such adaptor to measure. The
+doctrine is served to **every** adaptor on **every** run, so a result measured
+on the one shape that existed became the contract for shapes that did not exist
+yet.
+
+### 7.1 What the doctrine now forbids, in its own words
+
+> You are handed text — a stretch of one room's conversation, sometimes the
+> notebook the room already keeps — and a question about it. **You answer the
+> question from that text.**
+>
+> **reading properly is the entire job**
+
+Read as a judge's instruction that is correct. Read as the preamble to every
+adaptor it is a standing prohibition on looking anywhere else — and it is
+prepended to adaptors that hold tools. `ToolRegistry.read_only_tools()` returns
+**35** verbs; `AdaptorGrant` exists to hand an adaptor a real room so that the
+room-scoped ones resolve. The doctrine's "tool-free" and that machinery are
+describing different systems.
+
+### 7.2 One shipped adaptor is already overriding it
+
+`proactive.md` instructs *"before every `remind`, ask memory first"*, with the
+acceptance test *"A `why` that could have been written from the note alone is a
+sign you skipped this."* That objective is arguing **against** the doctrine
+above it, and it was written that way because a live failure of exactly this
+class was measured (objective version 2's own changelog).
+
+An objective that has to argue against its own preamble is the §2 mismatch this
+node opened with, still present, one doctrine rewrite later.
+
+### 7.3 Why this is a class defect and not a culture-tier complaint
+
+The culture tier is where it was noticed — it ships `tools = frozenset()` and
+an objective that says *"if the room gives you any way to know"*, i.e. settle
+for the prompt — but the tier is downstream of the doctrine, not the cause.
+`17-failure-classes` class 11 records the failure it produces; `03-no-agent-loop`
+§7 records what the loop was for. This node holds the mechanism: **one preamble
+for jobs that are not the same shape**, which is the title it has carried since
+2026-08-22.
+
+D9 remains the stated fix and remains untaken. Nothing here proposes a
+replacement text — a doctrine rewrite that is not shape-aware would be the
+2026-09-08 move again with a different winner, and the cost of guessing is on
+the record in the table above.
+
+### 7.4 What must be true before anything is rewritten
+
+- **A synthesis-shaped adaptor must be measurable.** The 0.60/0.67/0.87/0.93
+  table exists because a scenario suite existed. There is no equivalent for an
+  adaptor whose output is an account rather than a verdict, and a doctrine
+  changed without one is changed on argument.
+- **The judge result must be protected.** Whatever lands, `note-candidates` and
+  `note-curation` must be re-measured against that same suite. A change that
+  recovers synthesis and gives back 0.93 has not been evaluated, it has been
+  traded.
+- **The audience field is the lever D9 named**, and it already exists on every
+  doctrine file. That it was not used is the thing to explain before reaching
+  for a different mechanism.
+
 ## Status / Checkpoint
 
 2026-08-24 — D8. [27](27-note-dreamer.md) §5 extends it with the three-corpora distinction and why an adaptor's objective is not a skill.
+
+2026-09-17 — §7. D9 is still untaken. The 2026-09-08 doctrine rewrite (`97f301a4`) committed the single preamble to the judge shape rather than making it shape-aware, on a measurement taken over one adaptor and one suite. The defect this node named on 2026-08-22 is unchanged; only which shape the single doctrine favours has moved.
