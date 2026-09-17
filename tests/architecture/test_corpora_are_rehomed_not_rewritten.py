@@ -394,7 +394,15 @@ def test_the_proactive_corpora_survived_their_move(old: str, new: str) -> None:
 
     for name, b in before.items():
         a = after[name]
-        assert a["entry"] == "dreamer" and a["category"] == "proactive", name
+        # `act` has its OWN entry point: the decide pass writes a reminder row
+        # and the act turn is what happens when it comes due — a FIRE turn, not
+        # a dream pass. That is why the old driver's `FirePath(21)` lived in
+        # `run_proactive_act_case`.
+        # `endswith`, not `in`: "proACTive_decide" contains "act".
+        if new.endswith("proactive_act.yaml"):
+            assert a["entry"] == "proactive_act", name
+        else:
+            assert a["entry"] == "dreamer" and a["category"] == "proactive", name
         meta = a.get("metadata") or {}
         # `now:` is a FIRST-CLASS field now, not metadata. It sat in metadata
         # for as long as the graph had no clock seam and these cases were
@@ -412,10 +420,34 @@ def test_the_proactive_corpora_survived_their_move(old: str, new: str) -> None:
         # and a mapping that dropped it would silently harden a deliberately
         # permissive label.
         assert meta["expect_original"] == b["expect"], name
-        for key in ("rooms", "rows", "row", "standing", "log", "max_memory_calls",
+        # `rooms` and `standing` MOVED to `knows` when multi-room seeding
+        # landed (GOAL step 1) — they are inputs, and parking an input in
+        # metadata is what kept 22 cases refused. What stays in metadata is
+        # what is NOT an input: `rows` is an expectation about what the pass
+        # writes, `row` is the decision she already took.
+        for key in ("rows", "row", "log", "max_memory_calls",
                     "must_cite", "must_not_cite", "note_moved"):
             if b.get(key) is not None:
                 assert meta.get(key) == b[key], f"{name}: {key}"
+
+        knows = a.get("knows") or {}
+        if b.get("rooms"):
+            seeded = {a["room"][1]} | {
+                r["conversation_id"] for r in (knows.get("rooms") or ())
+            }
+            assert seeded == {r["conversation_id"] for r in b["rooms"]}, (
+                f"{name}: rooms lost on the move: {seeded}"
+            )
+        if b.get("standing"):
+            old_standing = b["standing"]
+            if isinstance(old_standing, str):
+                assert knows.get("standing") == old_standing, name
+            else:
+                bodies = {s["body"] for s in old_standing}
+                seeded = {knows.get("standing")} | {
+                    r.get("standing") for r in (knows.get("rooms") or ())
+                }
+                assert bodies <= seeded, f"{name}: standing lost: {bodies - seeded}"
         knows = a.get("knows") or {}
         assert [n["title"] for n in knows.get("notes") or []] == \
             [n["title"] for n in b.get("notes") or []], name

@@ -45,7 +45,7 @@ Expectation = Literal[
 #: in the runner (`01-boundaries` §3.1). Adding a suite that uses one of these
 #: adds no code; adding a new entry point adds one adapter, which is the line
 #: this design draws rather than hides.
-Entry = Literal["gate", "participation", "tag", "dreamer"]
+Entry = Literal["gate", "participation", "tag", "dreamer", "proactive_act"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +100,15 @@ class Case:
     #: `metadata` for exactly as long as the graph had no clock seam, and the
     #: entry point refused every case that set it.
     now: str = ""
+
+    #: The room this case runs in, as `[platform, id]`. Empty means one derived
+    #: from the case name (`nora.subject.room_for`), which is what isolates
+    #: cases sharing a database.
+    #:
+    #: Stated only by a suite whose rooms MEAN something — the proactive
+    #: corpora name a workspace's rooms and mark its home room, and the pass
+    #: picks between them.
+    room: list[str] = field(default_factory=list)
 
     #: `policy.toml`, when this suite needs a room set the default does not
     #: give. Corpus-level in practice, like `config:`.

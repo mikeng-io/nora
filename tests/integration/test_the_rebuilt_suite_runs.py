@@ -20,7 +20,7 @@ import pathlib
 import pytest
 
 from evals.rebuilt.report import render
-from evals.rebuilt.runner import load, run
+from evals.rebuilt.runner import load, run, run_once
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CORPORA = ROOT / "evals" / "corpora"
@@ -76,3 +76,111 @@ async def test_a_run_with_no_model_reports_incomplete_and_fails(
     v = by_entry["tag"]
     assert v.gradable and not v.errors, v.errors
     assert v.hits == 1, f"a genuine near-miss engaged her: {v.outcomes}"
+
+
+@pytest.mark.asyncio
+async def test_a_room_without_proactive_trust_is_an_error_not_silence(
+    pg_url, monkeypatch,
+) -> None:
+    """INDUCED, not hoped for. `failed_policy` cannot occur once the corpora are
+    configured correctly, so removing the guard that catches it leaves every
+    test green — which is a pin that cannot fire.
+
+    Here the case's own policy drops `proactive = true`, which is exactly the
+    misconfiguration an operator makes. The screen then refuses the row and the
+    turn never happens, producing an empty `said` byte-identical to a correct
+    silence — and this case expects silence.
+    """
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    case = next(
+        c for c in load(CORPORA / "proactive_act.yaml") if c.expect == "silence"
+    )
+    untrusted = case.policy.replace("proactive = true\n", "")
+    assert untrusted != case.policy, "the fixture no longer states the flag"
+
+    outcome = await run_once(
+        dataclasses.replace(case, sample=1, policy=untrusted),
+        database_url=pg_url, overrides=_NO_PROVIDER,
+    )
+    assert "failed_policy" in (outcome.outcome_token or ""), outcome
+    assert outcome.meets("silence") is None, (
+        f"a room without proactive trust graded as silence: {outcome}. The "
+        "screen refused the row, so nothing was measured."
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_workspace_with_no_home_room_is_an_error_not_none(
+    pg_url, monkeypatch,
+) -> None:
+    """INDUCED, for the same reason. `no_home_room` makes the proactive adaptor
+    return BEFORE it renders anything, answering `nothing_found` with an empty
+    diff — which is what a workspace that had not moved answers too, and `none`
+    is what several decide cases expect."""
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    case = next(
+        c for c in load(CORPORA / "proactive_decide.yaml") if c.expect == "none"
+    )
+    # TWO workspaces, and the home room is in the OTHER one. Simply deleting
+    # the flag does not induce this: with no home room anywhere the adaptor is
+    # not BUILT, and a different guard catches that. `no_home_room` is the
+    # adaptor existing and this workspace having none — which is what a policy
+    # with more than one workspace produces, and it is the shape that ships.
+    homeless = case.policy.replace("home_room = true\n", "") + (
+        '[[conversations]]\nplatform = "signal"\nid = "elsewhere"\n'
+        'persons = "*"\nworkspace = "somewhere-else"\n'
+        "proactive = true\nhome_room = true\n"
+    )
+    assert "home_room = true" in homeless, "the adaptor must still be built"
+
+    outcome = await run_once(
+        dataclasses.replace(case, sample=1, policy=homeless),
+        database_url=pg_url, overrides=_NO_PROVIDER,
+    )
+    assert outcome.meets("none") is None, (
+        f"a workspace with no home room graded as none: {outcome}. The pass "
+        "returned before rendering anything."
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("corpus", ["proactive_decide.yaml", "proactive_act.yaml"])
+async def test_a_proactive_case_never_grades_on_a_wiring_refusal(
+    corpus, pg_url, monkeypatch,
+) -> None:
+    """The two proactive paths, driven, with no provider reachable.
+
+    Every way these can end WITHOUT running produces an empty result that is
+    byte-identical to a correct "nothing to do" — and `none`/`silence` is what
+    most of these cases expect:
+
+      `no_home_room`   the adaptor returned before rendering anything
+      `failed_policy`  the room is not proactive-trusted
+      `failed_error`   no note store, or a workspace the note cannot be reached
+                       from
+      `unavailable`    the model was asked for and could not be reached
+
+    A unit test over `Outcome.meets` cannot catch a regression here, and did
+    not: both guards were removed from `entry.py` and the unit suite stayed
+    green. This drives the entry point, which is where the rule is applied.
+    """
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    graded = []
+    for case in load(CORPORA / corpus)[:3]:
+        outcome = await run_once(
+            dataclasses.replace(case, sample=1),
+            database_url=pg_url, overrides=_NO_PROVIDER,
+        )
+        if outcome.meets(case.expect) is not None:
+            graded.append(
+                f"{case.name}: graded {outcome.meets(case.expect)} on "
+                f"token={outcome.outcome_token!r} error={outcome.error!r}"
+            )
+    # `cancelled_*` IS a verdict and may legitimately grade — a note the tag
+    # path overtook is the system working. Anything else must not.
+    for line in graded:
+        assert "cancelled_" in line, (
+            f"a proactive case graded without running: {line}. Every path that "
+            "ends without a turn produces an empty result, so an ungraded "
+            "ERROR is the only reading that cannot lie."
+        )

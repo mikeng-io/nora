@@ -133,6 +133,33 @@ class Written:
 
 
 @dataclass(frozen=True, slots=True)
+class RoomSeed:
+    """One OTHER room of the same workspace, with what it knows.
+
+    The proactive decide pass judges a WORKSPACE and picks which of its rooms to
+    stand in, so a case about it names more than one room and keys its standing
+    per room. A single-room `Knowledge` cannot state that, and a pass given an
+    empty workspace finds nothing due, writes nothing, and answers
+    `nothing_found` — which grades as a PASS for every case expecting none.
+
+    `home` is the workspace's home room (`policy.toml`'s `home_room = true`,
+    design/dreamer-agent-loop/39 D2): the operator's opt-in, and the room a
+    workspace-keyed row fires into. Exactly one per workspace; two is a startup
+    error rather than a guess.
+    """
+
+    conversation_id: str
+    platform: str = "signal"
+    label: str = ""
+    home: bool = False
+    transcript: tuple[Message, ...] = ()
+    standing: str | None = None
+    #: How long ago the standing was written. It renders as an AGE, and how
+    #: stale a position is is part of what the decide pass is judging.
+    standing_age_hours: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Knowledge:
     """Everything a case says she knows. Empty is legal and is the knowledge
     cut — the `-unknown` twin of a pair is this class with one field dropped,
@@ -140,6 +167,13 @@ class Knowledge:
 
     transcript: tuple[Message, ...] = ()
     standing: str | None = None
+
+    #: How long ago the standing was written; it renders as an AGE.
+    standing_age_hours: float | None = None
+
+    #: OTHER rooms of the same workspace, each with its own transcript and
+    #: standing. Empty for every single-room case, which is most of them.
+    rooms: tuple[RoomSeed, ...] = ()
 
     #: Seconds between consecutive messages, oldest first, ending one step
     #: before `now_ms`.
@@ -325,6 +359,21 @@ async def last_row_id(
     return rows[-1].id if rows else 0
 
 
+async def _write_standing(
+    subject: Subject, room: tuple[str, str], body: str, *, at_ms: int,
+) -> None:
+    engine = create_sql_engine(subject.database_url)
+    try:
+        await SqlStandingStore(engine).write(
+            standing=Standing(
+                platform=room[0], conversation_id=room[1], body=body,
+                fold_count=1, updated_at=at_ms,
+            )
+        )
+    finally:
+        await engine.dispose()
+
+
 async def know(
     subject: Subject,
     knowledge: Knowledge,
@@ -402,6 +451,26 @@ async def know(
         if msg.label is not None:
             rows[msg.label] = row_id
 
+    # The OTHER rooms of this workspace, each written into its own room.
+    for extra in knowledge.rooms:
+        extra_room = (extra.platform, extra.conversation_id)
+        if extra.transcript:
+            await know(
+                subject,
+                Knowledge(
+                    transcript=extra.transcript,
+                    spacing_seconds=knowledge.spacing_seconds,
+                ),
+                room=extra_room,
+                now_ms=now_ms,
+                leave_room_for_arrival=leave_room_for_arrival,
+            )
+        if extra.standing is not None:
+            await _write_standing(
+                subject, extra_room, extra.standing,
+                at_ms=now_ms - int((extra.standing_age_hours or 0) * 3_600_000),
+            )
+
     # A second engine over the SAME database, not a second database: the
     # composition root keeps its engine private and `Dependencies` does not
     # name it. Reaching for a private to avoid a connection pool would be the
@@ -415,7 +484,9 @@ async def know(
                     conversation_id=conversation_id,
                     body=knowledge.standing,
                     fold_count=1,
-                    updated_at=now_ms,
+                    updated_at=now_ms - int(
+                        (knowledge.standing_age_hours or 0) * 3_600_000
+                    ),
                 )
             )
         if knowledge.notes:

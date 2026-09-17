@@ -33,7 +33,7 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
     """Same type, same builder, same field count as `nora/__main__.py` gets."""
     subject = await obtain(spec)
     assert isinstance(subject.deps, Dependencies)
-    assert len(dataclasses.fields(Dependencies)) == 42, (
+    assert len(dataclasses.fields(Dependencies)) == 43, (
         "Dependencies changed shape; the subject follows it automatically, but "
         "this number is here so a change is noticed rather than absorbed. "
         "38 -> 40 on 2026-09-17: `relevance_gate` and `fire_path`, the two "
@@ -44,6 +44,9 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
         "40 -> 41 on rebasing onto #332: `resolve_voice_room`, master's own "
         "work — which is the case this number is really for. The subject "
         "follows the graph automatically and would have absorbed it silently. "
+        "42 -> 43: `proactive_screen`, the fire-time screen a "
+        "`kind=\"proactive\"` row passes before it speaks — reachable only as an "
+        "argument inside the heartbeat's constructor call. "
         "41 -> 42: `clock`. The composition root wrote "
         "`lambda: datetime.now(UTC)` at NINE sites while nine components "
         "already took an injectable one, so the graph had the dependency and "

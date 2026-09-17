@@ -853,6 +853,12 @@ class Dependencies:
     #: The clock this graph runs on. Named for the same reason the two entry
     #: points above are: it was a fact the graph had and could not be asked for.
     clock: Callable[[], datetime]
+
+    #: The fire-time screen a `kind="proactive"` row passes before it speaks.
+    #: Named for the same reason the entry points above are — it decides whether
+    #: an act turn happens at all, and it was reachable only as an argument
+    #: inside the heartbeat's constructor call.
+    proactive_screen: ProactiveScreen
     adapter: SignalAdapter
     # EVERY built adapter, keyed by platform. `adapter` above stays the concrete
     # Signal one because a handful of call sites are still Signal-specific by
@@ -2688,6 +2694,17 @@ async def build_dependencies(
             "compute all off)", len(lost_jobs),
         )
 
+    # THE FIRE-TIME SCREEN for a `kind="proactive"` row, hoisted out of the
+    # heartbeat's argument list and built unconditionally.
+    #
+    # Same object, same arguments, same one consumer. It is a pure value with no
+    # side effects, so constructing it a few lines earlier changes nothing — the
+    # same reasoning as `gate` above. Hoisted for the reason the comment on its
+    # own parameter already gives: the screen belongs to the ROW, not to the
+    # loop, so asking "would this row be refused" should not require turning the
+    # loop on.
+    proactive_screen = ProactiveScreen(policy=allowlist, notes=note_store)
+
     if cfg.heartbeat.enabled and fire_path is not None:
         heartbeat = HeartbeatLoop(
             store=reminders,
@@ -2711,7 +2728,7 @@ async def build_dependencies(
             # written yesterday must be screened today even if the adaptor
             # was switched off in between — and with no screen the loop
             # fails such a row rather than firing it unscreened.
-            proactive=ProactiveScreen(policy=allowlist, notes=note_store),
+            proactive=proactive_screen,
         )
         background.spawn(heartbeat.run())
     if announcing and fire_path is not None:
@@ -3576,6 +3593,7 @@ async def build_dependencies(
         relevance_gate=gate,
         fire_path=fire_path,
         clock=clock,
+        proactive_screen=proactive_screen,
         account=account, doctrine=doctrine,
         doctrine_store=doctrine_store, debounce=debounce, background=background,
         llm_state=llm_state, client=client, reminders=reminders,

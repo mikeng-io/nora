@@ -34,11 +34,13 @@ from typing import Any
 from nora.app.fire import SENT, SILENT, participation_occasion
 from nora.subject import (
     Subject,
+    act,
     arrive,
     deliver,
     dream,
     heard,
     last_row_id,
+    owe,
     settle,
     silent_failures,
 )
@@ -244,7 +246,11 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     # expecting `none` PASSES, having measured an empty workspace. That is the
     # shape this whole layer exists to refuse, and it survived one round of
     # fixing here because the clock was the louder problem.
-    unseeded = [k for k in ("rooms", "standing", "rows", "row") if case.metadata.get(k)]
+    # `rooms` and `standing` are SEEDABLE now (GOAL step 1) and have moved to
+    # `knows`. What is still not is `rows` — the reminder rows a decide pass is
+    # asserted to WRITE, which is an expectation rather than an input, and is
+    # checked against `Outcome.written` instead.
+    unseeded = [k for k in ("row",) if case.metadata.get(k)]
     if unseeded:
         return Outcome(
             admitted=None,
@@ -277,6 +283,16 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     # thing that separates "asked the model and could not reach it" from "never
     # needed to ask, because nothing was due". The second is a real verdict a
     # corpus expects; the first is not a verdict at all.
+    # WIRING, not a verdict. `no_home_room` means the workspace named no home
+    # room, so the pass returned before rendering anything — indistinguishable
+    # from "the workspace had not moved" in `status`, and every case expecting
+    # `none` would pass on a misconfigured policy.
+    if result.declined == "no_home_room":
+        return Outcome(
+            admitted=None, source="fail_closed",
+            error="the workspace names no home room, so the pass never ran",
+            outcome_token=result.status,
+        )
     if result.status == "unavailable" or result.samples_failed:
         return Outcome(
             admitted=None,
@@ -292,7 +308,85 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
         admitted=None,
         changed=result.changed,
         written=result.written,
-        outcome_token=result.status,
+        # `declined` rides into the token so a `none` verdict says WHY it was
+        # none — `unchanged` and `held_quiet` are different facts about the
+        # workspace and a report that showed neither would be unreadable.
+        outcome_token=(
+            f"{result.status}:{result.declined}" if result.declined
+            else result.status
+        ),
+    )
+
+
+async def proactive_act(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
+    """The ACT turn — `FirePath.run` on a due `kind="proactive"` row.
+
+    NOT a dream pass, and that distinction is the corpus's own: the DECIDE pass
+    writes a reminder row, and this is what happens when that row comes due. It
+    is a fire turn, which is why the old driver's `FirePath(21)` lived in
+    `run_proactive_act_case` — the seventh assembly, and the one no parity test
+    covered.
+
+    The screen runs first, as the heartbeat runs it. A row it refuses is NOT a
+    failure: the room lost its `proactive` trust, the note was retired, or the
+    note moved on the tag path since the decision was linked. That is the
+    system working, and it is reported as its own fact so a corpus can tell it
+    from "she got the floor and declined it".
+    """
+    row = case.metadata.get("row") or {}
+    if not row.get("note"):
+        return Outcome(
+            admitted=None, source="fail_closed",
+            error="an act case must state the row it fires on (`row.note`)",
+        )
+    watermark = await last_row_id(subject)
+    try:
+        await owe(
+            subject,
+            note_title=str(row["note"]),
+            intent=str(row.get("intent", "")),
+            decided_hours_ago=float(row.get("decided_hours_ago", 6)),
+            note_moved=bool(case.metadata.get("note_moved")),
+        )
+        result = await act(subject, after_id=watermark)
+    except LookupError as exc:
+        return Outcome(admitted=None, source="fail_closed", error=str(exc))
+
+    if result.screened is not None:
+        # A REFUSAL — and the two kinds must not collapse.
+        #
+        # `cancelled_*` is the system working: the note was retired, or the tag
+        # path overtook the decision since the row was linked. That is a real
+        # verdict and `a02_note_moved_on_the_tag_path` is a case about exactly
+        # it, so it grades as silence.
+        #
+        # `failed_*` is WIRING: the room is not proactive-trusted, no note
+        # store, a workspace the note cannot be reached from. Those are ERROR.
+        # They produce an identical empty `said`, so without this split every
+        # `silence` case passes on a misconfigured policy — which is how this
+        # was found: three cases in one database, two of them screening an
+        # earlier case's row.
+        if result.screened.startswith("failed_"):
+            return Outcome(
+                admitted=None, source="fail_closed",
+                error=f"the row was refused for a wiring reason: {result.screened}",
+                outcome_token=f"screened:{result.screened}",
+            )
+        return Outcome(
+            admitted=False, said=(), outcome_token=f"screened:{result.screened}",
+        )
+    # THE SAME FAIL-CLOSED RULE the participation turn has, and for the same
+    # reason: `failed_*` is a turn that never happened and leaves no row, which
+    # reads as silence.
+    if result.token not in (SENT, SILENT):
+        return Outcome(
+            admitted=None, source="fail_closed",
+            error=f"the act turn did not run: {result.token}",
+            outcome_token=result.token,
+        )
+    return Outcome(
+        admitted=True, said=result.said,
+        outcome_token=result.token, delivery=result.delivery,
     )
 
 
@@ -379,4 +473,18 @@ ENTRY_POINTS = {
     # a home room. Putting either here would make one corpus's requirement look
     # like the entry point's.
     "dreamer": EntryPoint(drive=dreamer, config={"dreamer.enabled": True}),
+    # The act turn needs the FIRE PATH, which `[participation]` also builds,
+    # and the note tier its row points at. NOT `[heartbeat]`: composition
+    # spawns `heartbeat.run()` as an endless task, so a subject with it on
+    # would tick underneath the case and `settle()` would never return.
+    "proactive_act": EntryPoint(
+        drive=proactive_act,
+        config={
+            "participation.enabled": True,
+            "relevance_gate.enabled": True,
+            "notes.enabled": True,
+            "standing.enabled": True,
+            "dreamer.enabled": True,
+        },
+    ),
 }

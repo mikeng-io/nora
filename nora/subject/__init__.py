@@ -36,6 +36,7 @@ from .knowledge import (
     Knowledge,
     Message,
     NoteSeed,
+    RoomSeed,
     Written,
     arrive,
     deliver,
@@ -46,16 +47,20 @@ from .knowledge import (
     silent_failures,
 )
 from .obtain import DEFAULT_ROOM, Subject, SubjectSpec, obtain, room_for
+from .proactive import ActPass, act, owe
 
 __all__ = [
     "DEFAULT_ROOM",
+    "ActPass",
     "Knowledge",
     "Message",
     "NoteSeed",
     "Pass",
+    "RoomSeed",
     "Subject",
     "SubjectSpec",
     "Written",
+    "act",
     "adaptor_names",
     "arrive",
     "deliver",
@@ -64,6 +69,7 @@ __all__ = [
     "know",
     "last_row_id",
     "obtain",
+    "owe",
     "room_for",
     "settle",
     "silent_failures",

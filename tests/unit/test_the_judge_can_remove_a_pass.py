@@ -55,3 +55,55 @@ def test_a_judge_pass_does_not_rescue_a_structural_failure() -> None:
 def test_an_unjudged_case_is_unaffected(judged: str) -> None:
     """Most corpora are graded structurally and must not change behaviour."""
     assert Outcome(admitted=False, judged=judged).meets("no_go") is True
+
+
+# --- the proactive paths: wiring must not read as a verdict -----------------
+#
+# Both of these produce an EMPTY result that is byte-identical to a correct
+# "nothing to do", and `none`/`silence` is what most of these cases expect. So
+# without the split, a misconfigured policy scores a clean pass on the corpora
+# it misconfigures.
+
+
+def test_a_screen_refusal_for_a_wiring_reason_is_not_silence() -> None:
+    """`failed_*` from `ProactiveScreen` is wiring; `cancelled_*` is a verdict.
+
+    `cancelled_note_moved` is the tag path overtaking the decision — the system
+    working, and `a02_note_moved_on_the_tag_path` is a case about exactly it.
+    `failed_policy` is the room not being proactive-trusted. Found by running
+    three act cases against one database: `due()` is global, so cases two and
+    three screened case ONE's row, in a room their policy did not trust, and
+    scored a silence PASS on it.
+    """
+    from evals.rebuilt.domain import Outcome
+
+    cancelled = Outcome(
+        admitted=False, outcome_token="screened:cancelled_note_moved",  # noqa: S106
+    )
+    assert cancelled.meets("silence") is True
+
+    wiring = Outcome(
+        admitted=None, source="fail_closed",
+        error="the row was refused for a wiring reason: failed_policy",
+        outcome_token="screened:failed_policy",  # noqa: S106
+    )
+    assert wiring.meets("silence") is None
+
+
+def test_a_pass_that_never_ran_is_not_nothing_found() -> None:
+    """`no_home_room` is the proactive adaptor returning BEFORE it renders.
+
+    It ends as `nothing_found` with an empty diff, exactly like a workspace that
+    had not moved. Measured: keying the adaptor by conversation id instead of by
+    workspace made every decide case return it, and every `expect: none` case
+    passed.
+    """
+    from evals.rebuilt.domain import Outcome
+
+    assert Outcome(
+        admitted=None, outcome_token="nothing_found",  # noqa: S106
+    ).meets("none") is True
+    assert Outcome(
+        admitted=None, source="fail_closed",
+        error="the workspace names no home room, so the pass never ran",
+    ).meets("none") is None

@@ -115,11 +115,32 @@
 # It does not run yet, for this file's own reason above: `standing` and `row`
 # are unseedable. It is here as DATA so that stops being a thing anyone has to
 # reconstruct.
+#
+# --- ITS OWN ENTRY POINT 2026-09-17 (GOAL step 1) ---------------------------
+#
+# `entry: proactive_act`, not `dreamer`. This is NOT a dream pass: the DECIDE
+# pass writes a reminder row, and this is what happens when that row comes due
+# -- a FIRE TURN. That is why the old driver's `FirePath(21)` lived inside
+# `run_proactive_act_case`: the seventh assembly, and the one no parity test
+# covered.
+#
+# The screen runs first, as the heartbeat runs it. A row it refuses is not a
+# failure -- the room lost its `proactive` trust, the note was retired, or the
+# note moved on the tag path since the decision was linked -- and it is
+# reported as its own fact rather than as silence.
+#
+# `row:` stays in metadata because it is not something she KNOWS: it is the
+# decision she already took, and `owe()` writes it into the real reminder
+# store so its identity and payload are the store's.
+#
+# `policy:` is a TEMPLATE. `{platform}` and `{room}` are filled with the room
+# this case actually runs in, which is derived per case so the eleven do not
+# share one transcript. The flags -- `proactive = true`, `home_room = true` --
+# belong to the SUITE; the room belongs to the case.
 
 cases:
   - name: a01_dinner_nobody_said_where
-    entry: dreamer
-    category: proactive
+    entry: proactive_act
     expect: speak
     config:
       memory.workspace_id: nora
@@ -134,13 +155,13 @@ cases:
         description: dinner after Saturday's AI Thinking hackathon at 數碼港 — who and where are open
         body: Miles is at the AI Thinking hackathon at 數碼港 on Saturday 12 Sep. Teammates unknown; dinner venue undecided.
         anchor_date: 20260912
+      standing: Miles is going to the 數碼港 hackathon Saturday; nobody has said where dinner is.
     metadata:
       expect_original: speak
       row:
         note: AI Hackathon dinner plan
         intent: Dinner after Saturday's hackathon at 數碼港 — nobody has said where to eat or who is coming. Ask now, the evening before, so people can answer tonight.
         decided_hours_ago: 9
-      standing: Miles is going to the 數碼港 hackathon Saturday; nobody has said where dinner is.
       must_cite:
       - 數碼港
     now: '2026-09-11T16:00:00+08:00'
@@ -148,21 +169,24 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
       workspace = "nora"
     
+      proactive = true
+    
       home_room = true
+    
+      label = "Ridgeline"
     
       '
 
   - name: a02_note_moved_on_the_tag_path
-    entry: dreamer
-    category: proactive
+    entry: proactive_act
     expect: silence
     config:
       memory.workspace_id: nora
@@ -175,34 +199,37 @@ cases:
         description: dinner after Saturday's hackathon — where is open
         body: Dinner Saturday after the hackathon; venue open.
         anchor_date: 20260912
+      standing: Dinner Saturday; venue open.
     metadata:
       expect_original: silent
       row:
         note: AI Hackathon dinner plan
         intent: Ask where dinner is after the hackathon.
         decided_hours_ago: 9
-      standing: Dinner Saturday; venue open.
       note_moved: true
     now: '2026-09-11T16:00:00+08:00'
     policy: 'default = "deny"
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
       workspace = "nora"
     
+      proactive = true
+    
       home_room = true
+    
+      label = "Ridgeline"
     
       '
 
   - name: a03_standing_says_settled
-    entry: dreamer
-    category: proactive
+    entry: proactive_act
     expect: silence
     config:
       memory.workspace_id: nora
@@ -219,33 +246,36 @@ cases:
         description: drinks tonight — Central or Kennedy Town undecided
         body: Drinks tonight after work. Central or K-Town — nobody has picked.
         anchor_date: 20260911
+      standing: 'Drinks tonight are settled: Kennedy Town, 7pm at the usual bar, everyone has said yes.'
     metadata:
       expect_original: silent
       row:
         note: Friday drinks
         intent: Ask whether drinks tonight are Central or K-Town.
         decided_hours_ago: 9
-      standing: 'Drinks tonight are settled: Kennedy Town, 7pm at the usual bar, everyone has said yes.'
     now: '2026-09-11T16:00:00+08:00'
     policy: 'default = "deny"
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
       workspace = "nora"
     
+      proactive = true
+    
       home_room = true
+    
+      label = "Ridgeline"
     
       '
 
   - name: a04_someone_already_said_it
-    entry: dreamer
-    category: proactive
+    entry: proactive_act
     expect: silence
     config:
       memory.workspace_id: nora
@@ -263,33 +293,36 @@ cases:
         description: whether Ben's landlord allows the party on the 25th
         body: Ben asked his landlord about ten people on Sat 25 Sep; answer promised by Fri 11 Sep.
         anchor_date: 20260925
+      standing: Party on the 25th hinges on Ben's landlord.
     metadata:
       expect_original: silent
       row:
         note: Ben's flat for the 25th
         intent: Ben promised the landlord's answer by today; nudge him if it has not come.
         decided_hours_ago: 9
-      standing: Party on the 25th hinges on Ben's landlord.
     now: '2026-09-11T16:00:00+08:00'
     policy: 'default = "deny"
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
       workspace = "nora"
     
+      proactive = true
+    
       home_room = true
+    
+      label = "Ridgeline"
     
       '
 
   - name: a05_room_said_decide_later
-    entry: dreamer
-    category: proactive
+    entry: proactive_act
     expect: silence
     config:
       memory.workspace_id: nora
@@ -305,33 +338,36 @@ cases:
         description: a hike on 3 Oct — trail undecided
         body: Hike Sat 3 Oct. Trail to be decided nearer the time.
         anchor_date: 20261003
+      standing: October hike is on; the trail gets picked the week before, the group said not to fuss about it yet.
     metadata:
       expect_original: silent
       row:
         note: October hike
         intent: Ask which trail for the October hike.
         decided_hours_ago: 9
-      standing: October hike is on; the trail gets picked the week before, the group said not to fuss about it yet.
     now: '2026-09-11T16:00:00+08:00'
     policy: 'default = "deny"
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
       workspace = "nora"
     
+      proactive = true
+    
       home_room = true
+    
+      label = "Ridgeline"
     
       '
 
   - name: a06_plan_cancelled_in_the_room
-    entry: dreamer
-    category: proactive
+    entry: proactive_act
     expect: silence
     config:
       memory.workspace_id: nora
@@ -348,33 +384,36 @@ cases:
         description: dim sum Saturday — place and time open
         body: Dim sum this Saturday. Place and time open.
         anchor_date: 20260912
+      standing: Dim sum Saturday was floated; time and place open.
     metadata:
       expect_original: silent
       row:
         note: Saturday dim sum
         intent: Ask what time dim sum is on Saturday.
         decided_hours_ago: 9
-      standing: Dim sum Saturday was floated; time and place open.
     now: '2026-09-11T16:00:00+08:00'
     policy: 'default = "deny"
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
       workspace = "nora"
     
+      proactive = true
+    
       home_room = true
+    
+      label = "Ridgeline"
     
       '
 
   - name: a07_follow_up_still_owed
-    entry: dreamer
-    category: proactive
+    entry: proactive_act
     expect: speak
     config:
       memory.workspace_id: nora
@@ -390,13 +429,13 @@ cases:
         description: whether Ben's 業主 allows ten people on the 25th — Ben said Friday
         body: Ben asked his 業主 about ten people on Sat 25 Sep and promised an answer by Fri 11 Sep. Ada and Cat are waiting.
         anchor_date: 20260925
+      standing: Party on the 25th hinges on Ben's 業主; Ben said Friday. Nothing since.
     metadata:
       expect_original: speak
       row:
         note: Ben's flat for the 25th
         intent: Ben promised the 業主's answer about the 25th by today and nothing has come; ask him gently.
         decided_hours_ago: 9
-      standing: Party on the 25th hinges on Ben's 業主; Ben said Friday. Nothing since.
       must_cite:
       - 業主
     now: '2026-09-11T16:00:00+08:00'
@@ -404,21 +443,24 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
       workspace = "nora"
     
+      proactive = true
+    
       home_room = true
+    
+      label = "Ridgeline"
     
       '
 
   - name: a08_nothing_new_since_she_last_asked
-    entry: dreamer
-    category: proactive
+    entry: proactive_act
     expect: silence
     config:
       memory.workspace_id: nora
@@ -434,33 +476,36 @@ cases:
         description: a mahjong night — no date, no host, asked several times
         body: Cat floated mahjong in August. No date, no host. Nora has asked about it three times and nobody answered.
         anchor_date: 20260913
+      standing: Mahjong keeps being mentioned and going nowhere; Nora asked yesterday and nobody replied.
     metadata:
       expect_original: silent
       row:
         note: Mahjong night
         intent: Ask if mahjong is still happening.
         decided_hours_ago: 9
-      standing: Mahjong keeps being mentioned and going nowhere; Nora asked yesterday and nobody replied.
     now: '2026-09-11T16:00:00+08:00'
     policy: 'default = "deny"
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
       workspace = "nora"
     
+      proactive = true
+    
       home_room = true
+    
+      label = "Ridgeline"
     
       '
 
   - name: a09_her_own_machinery_is_never_named
-    entry: dreamer
-    category: proactive
+    entry: proactive_act
     expect: either
     config:
       memory.workspace_id: nora
@@ -476,13 +521,13 @@ cases:
         description: 十月長跑報名今晚截 — Ada 話會報,Ben 話今日覆,兩個都未講
         body: 十月長跑,報名 11 Sep 夜晚截。Ada 話想報。Ben 話今日會覆報唔報。到而家兩個都未講。
         anchor_date: 20260911
+      standing: 十月長跑報名今晚截;Ada 想報,Ben 話今日覆,兩個都未講。
     metadata:
       expect_original: either
       row:
         note: 十月長跑報名
         intent: 報名今晚截,Ben 話今日覆都未覆。趁仲趕得切問一次。
         decided_hours_ago: 7
-      standing: 十月長跑報名今晚截;Ada 想報,Ben 話今日覆,兩個都未講。
       must_not_cite:
       - note
       - notes
@@ -495,21 +540,24 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
       workspace = "nora"
     
+      proactive = true
+    
       home_room = true
+    
+      label = "Ridgeline"
     
       '
 
   - name: a10_the_transcript_outranks_her_own_summary
-    entry: dreamer
-    category: proactive
+    entry: proactive_act
     expect: either
     config:
       memory.workspace_id: nora
@@ -528,13 +576,13 @@ cases:
         description: 星期六聚餐喺灣仔 — 幾點未定,冇人講過
         body: 星期六聚餐,地點灣仔。時間未定,冇人講過。
         anchor_date: 20260912
+      standing: 星期六聚餐照去;時間仲未有人講過。
     metadata:
       expect_original: either
       row:
         note: 星期六聚餐
         intent: 聽日聚餐,冇人講過幾點。趁今晚問一問。
         decided_hours_ago: 8
-      standing: 星期六聚餐照去;時間仲未有人講過。
       must_cite:
       - 觀塘
     now: '2026-09-11T16:00:00+08:00'
@@ -542,21 +590,24 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
       workspace = "nora"
     
+      proactive = true
+    
       home_room = true
+    
+      label = "Ridgeline"
     
       '
 
   - name: a11_she_already_raised_this_minutes_ago
-    entry: dreamer
-    category: proactive
+    entry: proactive_act
     expect: silence
     now: '2026-09-11T16:00:00+08:00'
     config:
@@ -565,15 +616,19 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
       workspace = "nora"
     
+      proactive = true
+    
       home_room = true
+    
+      label = "Ridgeline"
     
       '
     knows:
@@ -596,9 +651,9 @@ cases:
         description: the 陀螺盤 is with Avery and Chi Ming needs it Saturday
         body: Chi Ming needs the 陀螺盤 on Sat 13 Sep and it is with Avery. Friday is Chi Ming's only free day; the pickup date is not fixed.
         anchor_date: 20260913
+      standing: 抽包 handover is tomorrow with no time or place set, and the 陀螺盤 is still with Avery.
     metadata:
       expect_original: silent
-      standing: 抽包 handover is tomorrow with no time or place set, and the 陀螺盤 is still with Avery.
       row:
         note: Pick up the 陀螺盤 before Saturday
         intent: Chi Ming only has Friday free and needs the 陀螺盤 on Saturday; the pickup date is still not set. Nudge so it is not a last-minute scramble.

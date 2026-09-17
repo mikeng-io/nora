@@ -60,6 +60,26 @@ class Pass:
     samples_ok: int = 0
     samples_failed: int = 0
 
+    #: Why the pass declined BEFORE any model call, from
+    #: `nora_proactive_pass_total{reason}` — production's own counter.
+    #:
+    #: The proactive pass has a deterministic screen ahead of the model
+    #: (`nora/language/proactive.py:548`, issue #136), and its reasons are not
+    #: the same kind of thing: `unchanged` and `held_quiet` are VERDICTS — the
+    #: workspace has not moved, or it is quiet and nothing is owed — while
+    #: `no_home_room` is WIRING. All three end as `nothing_found` with an empty
+    #: diff, so without this a misconfigured policy scores as "correctly found
+    #: nothing" on every case expecting none.
+    declined: str = ""
+
+
+def _declined(subject: Subject) -> str:
+    """The reason label `nora_proactive_pass_total` moved to, if it moved."""
+    for key, value in subject.deps.metrics.snapshot().items():
+        if key and key[0] == "nora_proactive_pass_total" and value:
+            return dict(key[1] or ()).get("reason", "")
+    return ""
+
 
 def _samples(subject: Subject, status: str) -> int:
     """`nora_dream_sample_total{status=...}`, summed over adaptors."""
@@ -107,15 +127,34 @@ async def dream(
             f"no adaptor {adaptor!r} on the graph; built: {adaptor_names(subject)}"
         )
 
-    _, key = room or subject.room
+    # THE KEY DEPENDS ON THE ADAPTOR, and the loop resolves it the same way
+    # (`nora/app/runtime.py:965`, `_keys_for`): a `key_kind == "scope"` adaptor
+    # is keyed by the ROOM, a `key_kind == "workspace"` one by the WORKSPACE.
+    #
+    # Keying everything by the room was silently wrong for the proactive
+    # adaptor: it reads `notes.standing(workspace=key)` and its home-room check
+    # walks that workspace's rooms, so a conversation id found no home room and
+    # the pass returned before rendering anything. It answered `nothing_found`
+    # with an empty diff — which every case expecting `none` scored as a PASS
+    # until the decline reason was carried out.
     workspace = subject.cfg.memory.workspace_id
+    _, conversation_id = room or subject.room
+    key = workspace if chosen.key_kind == "workspace" else conversation_id
     before = await _notebook(subject, workspace)
     ok_before = _samples(subject, "ok")
     failed_before = _samples(subject, "unavailable")
 
     # The production order, verbatim: read the batch, join media, run.
-    batch = await subject.deps.audit.since(
-        conversation_id=key, after_id=0, limit=limit,
+    # The BATCH is always the room's, whatever the key is: a workspace-keyed
+    # adaptor's real input is a TABLE, and the loop hands it an empty batch
+    # (`_dream_adaptor_once`: "an adaptor with `uses_watermark = False` gets NO
+    # watermark ... and runs on every tick with an empty batch").
+    batch = (
+        []
+        if not chosen.uses_watermark
+        else await subject.deps.audit.since(
+            conversation_id=conversation_id, after_id=0, limit=limit,
+        )
     )
     # Joined ONCE here rather than inside the adaptor, which is where
     # `_run_adaptor` does it and for the reason issue #116 gives: every
@@ -130,7 +169,7 @@ async def dream(
     # per case and scraped by nobody — and the distinct label says something
     # true: this read was made by the eval seam.
     join: MediaJoin = subject.deps.media_join
-    batch = list(await join.enrich(batch, path="dreamer_eval"))
+    batch = list(await join.enrich(batch, path="dreamer_eval")) if batch else []
 
     outcome = await runtime.run(adaptor=chosen, key=key, batch=batch)
 
@@ -147,4 +186,5 @@ async def dream(
         written=outcome.written,
         samples_ok=_samples(subject, "ok") - ok_before,
         samples_failed=_samples(subject, "unavailable") - failed_before,
+        declined=_declined(subject),
     )

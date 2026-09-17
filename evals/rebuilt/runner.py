@@ -30,6 +30,7 @@ from nora.subject import (
     Knowledge,
     Message,
     NoteSeed,
+    RoomSeed,
     SubjectSpec,
     know,
     obtain,
@@ -118,6 +119,7 @@ def _case(
         # can differ without a second file.
         config=merged,
         policy=str(raw.get("policy") or policy),
+        room=list(raw.get("room") or ()),
         now=str(raw.get("now") or ""),
     )
 
@@ -136,7 +138,10 @@ def _case(
 #: `-unknown` twin, so the pair reports "the knowledge cut works" having cut
 #: nothing. That is `seed_from_dict`'s own documented footgun, arriving by a
 #: different road.
-_KNOWABLE = {"transcript", "standing", "notes", "spacing_seconds"}
+_KNOWABLE = {
+    "transcript", "standing", "standing_age_hours", "notes",
+    "spacing_seconds", "rooms",
+}
 
 #: What one transcript ROW may state. Same fail-closed rule, one level in.
 _MESSAGE_KEYS = {"body", "name", "person", "id", "ts", "is_nora", "media"}
@@ -206,10 +211,28 @@ def _knowledge(raw: Mapping[str, Any]) -> Knowledge:
         )
         for n in (raw.get("notes") or [])
     )
+    rooms = tuple(
+        RoomSeed(
+            conversation_id=str(r["conversation_id"]),
+            platform=str(r.get("platform", "signal")),
+            label=str(r.get("label", "")),
+            home=bool(r.get("home", False)),
+            transcript=tuple(
+                Message(body=m["body"], name=m.get("name", "Miles"))
+                if isinstance(m, dict) else Message(body=m)
+                for m in (r.get("transcript") or ())
+            ),
+            standing=r.get("standing"),
+            standing_age_hours=r.get("standing_age_hours"),
+        )
+        for r in (raw.get("rooms") or ())
+    )
     return Knowledge(
         transcript=tuple(transcript),
         standing=raw.get("standing"),
+        standing_age_hours=raw.get("standing_age_hours"),
         notes=notes,
+        rooms=rooms,
         spacing_seconds=int(raw.get("spacing_seconds", 60)),
     )
 
@@ -229,6 +252,10 @@ async def run_once(
     wearing the same face.
     """
     port = ENTRY_POINTS[case.entry]
+    room = (
+        (case.room[0], case.room[1]) if len(case.room) == 2
+        else room_for(case.name)
+    )
     workdir = Path(tempfile.mkdtemp(prefix="nora-case-"))
     started = time.monotonic()
     try:
@@ -242,10 +269,28 @@ async def run_once(
                 # other cases' messages — or, past 64 rows, on a batch its own
                 # input never reached. Measured at three cases: the third's own
                 # window was one row and the gate was shown five.
-                room=room_for(case.name),
+                # A suite that NAMES its room means it — the proactive corpora
+                # mark a workspace's home room and the pass picks between
+                # rooms. Everything else gets one derived from the case name,
+                # which is what isolates cases sharing a database.
+                room=room,
                 # A suite's room set, when it has one. `SubjectSpec` supplies a
                 # valid closed default otherwise.
-                **({"policy": case.policy} if case.policy else {}),
+                # A suite's policy is a TEMPLATE: `{platform}` and `{room}`
+                # are filled with the room this case actually runs in.
+                #
+                # Without that a corpus stating trust flags — the proactive
+                # rooms need `proactive = true` and `home_room = true` — would
+                # have to hardcode a room id, and every case in the file would
+                # share it, which is the cross-case contamination this layer
+                # just fixed. The flags belong to the suite; the room belongs
+                # to the case.
+                **(
+                    {"policy": case.policy.format(
+                        platform=room[0], room=room[1],
+                    )}
+                    if case.policy else {}
+                ),
                 # WHAT TIME IT IS, when the case says. Parsed here rather than
                 # in the domain, which imports nothing from `nora` and knows
                 # nothing about datetimes.
