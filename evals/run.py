@@ -1522,6 +1522,7 @@ async def _run_proactive_act_live(
                     cfg, runner=runner, now=case.now, row=case.row,
                     transcript=case.transcript, standing=case.standing,
                     notes=case.notes, note_moved=case.note_moved,
+                    decisions=case.decisions,
                 )
                 g = grade_act(case, ActResult(
                     outcome=drive.outcome, sent=drive.sent,

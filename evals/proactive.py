@@ -290,6 +290,13 @@ class ActCase:
     #: «notebook» and «denote» with it.
     must_not_cite: tuple[str, ...] = ()
     note_moved: bool = False
+    #: Rows already in the shared decision log when this turn runs — what the
+    #: loop itself DID in this workspace, which `<loop_decisions>` renders with
+    #: an age (issue #199; reachable from the act suite since 2026-09-17).
+    #: `{writer, verdict, minutes_ago, reason?}`. No note id and no model text:
+    #: a row carries neither, and a case that seeded either would be measuring
+    #: a block this repo does not ship.
+    decisions: tuple[dict[str, Any], ...] = ()
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> ActCase:
@@ -302,6 +309,7 @@ class ActCase:
             must_cite=tuple(str(c) for c in raw.get("must_cite", ())),
             must_not_cite=tuple(str(c) for c in raw.get("must_not_cite", ())),
             note_moved=bool(raw.get("note_moved", False)),
+            decisions=tuple(dict(d) for d in raw.get("decisions", ())),
         )
         case.validate()
         return case
@@ -328,6 +336,14 @@ class ActCase:
             )
         if self.expect == "speak" and self.note_moved:
             raise ValueError(f"{self.name}: a `speak` case cannot have note_moved (screened)")
+        for d in self.decisions:
+            missing = {"writer", "verdict", "minutes_ago"} - set(d)
+            if missing:
+                raise ValueError(
+                    f"{self.name}: a decision row needs {sorted(missing)} — a row "
+                    "with no age renders no age, which is the undated-input "
+                    "failure this block exists to avoid"
+                )
 
 
 def load_act_cases(path: Path | str) -> list[ActCase]:

@@ -46,6 +46,7 @@ from nora.app.composition import _adaptor_budget
 from nora.config import Config, ConfigError
 from nora.config import load as load_config
 from nora.doctrine.loader import Doctrine, DoctrineStore
+from nora.domain.decision_log import DecisionLogRecorder, DecisionRow
 from nora.domain.models import DeliveryStatus, NormalizedMessage, PersonRef, TranscriptRow
 from nora.domain.notes import Note, NoteRevision
 from nora.domain.reminders import Reminder, ReminderCaps, ReminderState
@@ -82,6 +83,7 @@ from nora.testing import (
     InMemoryStandingStore,
     transcript_rows,
 )
+from nora.testing.decision_log import InMemoryDecisionLogStore
 from nora.testing.fakes import FakeMemoryStore, FakeRecordStore
 from nora.testing.reminders import FakeReminderStore
 
@@ -633,6 +635,7 @@ def seed_from_dict(raw: dict[str, Any], *, now_ms: int | None = None) -> Product
           transcript:             # prior room messages, oldest first
             - "plain body"                       # the eval member speaks
             - {name: "Grant", body: "..."}     # another (unmapped) member
+            - {nora: "..."}                      # NORA'S OWN earlier speech
           standing: "where the conversation had got to"
           notes:
             - {title, description, body, uncertainty?, closing_condition?}
@@ -683,6 +686,18 @@ def seed_from_dict(raw: dict[str, Any], *, now_ms: int | None = None) -> Product
     # read against.
     ts_base = now_ms - len(transcript_entries) * 60_000
     for i, entry in enumerate(transcript_entries):
+        # `{nora: "..."}` is HER OWN line, and it is a separate branch rather
+        # than a `name: Nora` row because `is_nora` is what the prefill reads
+        # to attribute it (`nora.agent.prefill._speaker`): a row that merely
+        # SAYS "Nora" renders as a member with that display name, which is the
+        # opposite of the thing a case about her own earlier speech is testing.
+        if isinstance(entry, dict) and "nora" in entry:
+            recents.extend(transcript_rows(
+                [str(entry["nora"])], sender_id="", sender_name="",
+                person_id=None, ts_base=ts_base + i * 60_000,
+                id_start=1000 + i, is_nora=True,
+            ))
+            continue
         if isinstance(entry, str):
             name, body = "Miles", entry
         else:
@@ -1632,6 +1647,7 @@ async def run_proactive_act_case(
     cfg: Config, *, runner: Any, now: datetime, row: Mapping[str, Any],
     transcript: Sequence[Any], standing: str | None, notes: Sequence[Mapping[str, Any]],
     note_moved: bool = False,
+    decisions: Sequence[Mapping[str, Any]] = (),
 ) -> ProactiveActDrive:
     """One act case: seed the eval room, build the row the decide turn would
     have written, put it through the REAL `ProactiveScreen` and — if admitted
@@ -1642,11 +1658,32 @@ async def run_proactive_act_case(
     `standing` and `notes` take `seed_from_dict`'s shapes; `note_moved`
     appends a TAG-PATH revision after the row was linked, which is exactly
     what the screen cancels on (39 D11) — no model is called for it.
+
+    **`decisions` seeds the shared decision log, and until 2026-09-17 there
+    was no way to.** The tier was simply not wired here, so `ctx.decisions`
+    was `()` on every case and `<loop_decisions>` was absent from every act
+    prompt this suite has ever measured. That is not a neutral gap: it is the
+    block that says «the loop already took this floor N minutes ago», and the
+    duplicate of 2026-09-17 turned on its absence. A suite blind to a block
+    cannot grade a judgement that block is supposed to inform, and running it
+    on such a change measures nothing while reading as evidence.
+
+    Each entry is `{writer, verdict, minutes_ago, reason?, room?}` — no note
+    id and no model text, because a row carries neither (`decision_log`).
     """
+    # `now_ms` FROM THE CASE, and it was missing until 2026-09-17. Without it
+    # `seed_from_dict` stamps the window against WALL-CLOCK now while the turn
+    # runs on the case's own `now` — six days apart for this corpus — so
+    # `nora.domain.prompt.age` clamped every row's negative age to zero and
+    # EVERY line of EVERY act case rendered `age="just now"`, whatever the case
+    # meant. That is the undated-input failure this repo has now measured
+    # twice, sitting inside the instrument that is supposed to catch it. The
+    # participation harness has always passed it (`evals.harness.run_case`);
+    # this path simply never did.
     seed = seed_from_dict({
         "transcript": list(transcript), "standing": standing or "",
         "notes": [dict(n) for n in notes],
-    })
+    }, now_ms=int(now.timestamp() * 1000))
     note_store = InMemoryNoteStore()
     for note, revision in seed.notes:
         note_store.notes[note.id] = note
@@ -1693,6 +1730,29 @@ async def run_proactive_act_case(
             platform="signal", conversation_id="g1", body=seed.standing.body,
             fold_count=1, updated_at=int(now.timestamp() * 1000) - 3_600_000,
         ))
+    # The shared decision log (issue #199), seeded from the case. Wired
+    # unconditionally, not only when the case seeds rows: an empty log renders
+    # no block (`_decisions_block` emits nothing rather than "(empty)"), so a
+    # case with no `decisions` gets exactly the prompt it got before this, and
+    # the difference between the two arms stays the one thing the case names.
+    decision_store = InMemoryDecisionLogStore()
+    for n, entry in enumerate(decisions):
+        await decision_store.append(row=DecisionRow(
+            id=_seed_id(0x3000 + n, "decision"),
+            writer=str(entry["writer"]),                 # type: ignore[arg-type]
+            platform="signal", conversation_id="g1", workspace=_EVAL_WORKSPACE,
+            note_id=None,
+            verdict=str(entry["verdict"]),               # type: ignore[arg-type]
+            reason=str(entry.get("reason", "")),
+            ts=int(now.timestamp() * 1000) - int(entry["minutes_ago"]) * 60_000,
+        ))
+    decision_log = DecisionLogRecorder(
+        store=decision_store, metrics=metrics, clock=lambda: now,
+        # The eval room IS the workspace `permissive_policy()` resolves every
+        # room to, so the recorder's own join agrees with `_workspace_for`'s.
+        workspace_of=lambda _platform, _conversation_id: _EVAL_WORKSPACE,
+    )
+
     doctrine = DoctrineStore(
         cfg.doctrine.dir, strict=cfg.doctrine.strict, reload="never",
         canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
@@ -1715,7 +1775,7 @@ async def run_proactive_act_case(
         rosters={"signal": FakeRosterSource(groups={"g1": (frozenset({_EVAL_MEMBER}),)})},
         event_registry={"proactive": proactive_occasion},
         standing=standing_store, notes=note_store, policy=permissive_policy(),
-        proactive_runner=runner,
+        proactive_runner=runner, decisions=decision_log,
     )
     outcome = await path.run([reminder])
     counts: dict[str, float] = {}

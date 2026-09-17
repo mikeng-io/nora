@@ -275,3 +275,58 @@
     - {name: Ben, body: "好"}
     - {name: Cat, body: "今日好攰"}
     - "係"
+
+- name: a11_she_already_raised_this_minutes_ago
+  expect: silent
+  now: "2026-09-11T16:00:00+08:00"
+  # THE 2026-09-17 DUPLICATE, as its inputs actually were (msgs 5450/5455).
+  #
+  # Two proactive rows about two DIFFERENT notes came due 30 minutes apart in
+  # one room. `heartbeat._by_turn` coalesces only rows due in the same tick, so
+  # they were two act turns. The first turn read `<notes>`, saw both, and
+  # raised both in one message. The second turn then raised the second one
+  # again, to the same person, about the same errand.
+  #
+  # Every ground for declining is already in this prompt, and was on the day:
+  # her own line sits in the transcript saying the thing, and nobody has
+  # answered it. What was MISSING is the one row under `decisions` — the mark
+  # that the unattributed line above was HER, unprompted, 31 minutes ago. The
+  # act turn could not read the decision log at all until 2026-09-17.
+  #
+  # `expect: silent`, not `either`: minutes after saying it, with no reply,
+  # there is no defensible second raise. The asymmetric rule then binds it at
+  # zero — one speak in `samples` fails the case, because one is what the room
+  # heard.
+  #
+  # THE GAP IS MINUTES HERE, NOT THE INCIDENT'S 31, and the difference is the
+  # harness's and not a softening. A seeded window walks one row per minute
+  # (`seed_from_dict`), so 31 minutes of distance would cost 31 filler rows
+  # against a 40-row window — the case would be measuring dilution. What the
+  # prompt has to carry is what it carried on the day: her raise is IN the
+  # window, nobody has answered it, and the decision row marks it as hers. The
+  # decision row's age therefore matches where her line actually falls, because
+  # two inputs disagreeing about one event is an undecidable input and not a
+  # harder test.
+  row:
+    note: Pick up the 陀螺盤 before Saturday
+    intent: "Chi Ming only has Friday free and needs the 陀螺盤 on Saturday; the pickup date is still not set. Nudge so it is not a last-minute scramble."
+    decided_hours_ago: 43
+  notes:
+    - title: 抽包 handover tomorrow
+      description: Yat Ho collects the 抽包 tomorrow — where and when are open
+      body: "Yat Ho said he would collect the 抽包 on Fri 12 Sep. Chi Ming replied with a sticker only; time and place undecided."
+      anchor_date: 20260912
+    - title: Pick up the 陀螺盤 before Saturday
+      description: the 陀螺盤 is with Avery and Chi Ming needs it Saturday
+      body: "Chi Ming needs the 陀螺盤 on Sat 13 Sep and it is with Avery. Friday is Chi Ming's only free day; the pickup date is not fixed."
+      anchor_date: 20260913
+  standing: "抽包 handover is tomorrow with no time or place set, and the 陀螺盤 is still with Avery."
+  transcript:
+    - {name: Yat Ho, body: "藍色鳳凰嗰隻過咗"}
+    - {name: Chi Ming, body: "仲諗住抽到就賣"}
+    - {nora: "@Avery 聽日拎抽包，同 Chi Ming 傾咗邊度幾點未？佢禮拜六要用嗰個陀螺盤都喺你手，一次過搞埋好過聽日撲。"}
+    - {name: Yat Ho, body: "你聽日收幾點"}
+  decisions:
+    # HER OWN raise — the line two rows up, at the age the window renders it.
+    # `reason` is the determination's disposition, all a row ever carries.
+    - {writer: proactive_act, verdict: spoke, reason: spoke, minutes_ago: 2}

@@ -61,6 +61,7 @@ def transcript_rows(
     ts_base: int,
     ts_step: int = 60_000,
     id_start: int = 1000,
+    is_nora: bool = False,
 ) -> tuple[TranscriptRow, ...]:
     """Build transcript rows from plain message bodies.
 
@@ -70,11 +71,17 @@ def transcript_rows(
     `RecordStore.recent` read returns (see `_transcript_row` below): oldest
     first as written, `ts` ticking forward by `ts_step`, every row SENT — a
     row the sender's own message produced, not a pending outbound one.
+
+    `is_nora` was hardcoded `False` until 2026-09-17, which made her own
+    earlier speech unseedable — and «what did she already say in this room»
+    is exactly the input the act suite needed to reproduce that day's
+    duplicate. A harness that cannot seed a speaker cannot measure a
+    judgement about that speaker.
     """
     return tuple(
         TranscriptRow(
             id=id_start + i, sender_id=sender_id, sender_name=sender_name,
-            ts=ts_base + i * ts_step, body=body, is_nora=False,
+            ts=ts_base + i * ts_step, body=body, is_nora=is_nora,
             delivery_status=DeliveryStatus.SENT,
             raw_json=None, quoted_ts=None, media_json=None,
             person_id=person_id,
