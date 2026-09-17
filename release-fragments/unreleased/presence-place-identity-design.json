@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Design only, no runtime change. design/27 gains three amendments — a record that every stay the substrate wrote was an artefact of how often the phone reports its position until that was fixed; a place-identity section (DEC-190) making a place somebody has named and saved outrank one the system guessed at, which lifts a one-home-one-work ceiling that was silently corrupting data; and a rewrite of the forecasting tier, which had been asking the wrong question. The decision index carries DEC-190 and an amendment to DEC-115, and design/23 gains a pointer to the inverse direction of the ordering it already defined. Nothing in nora/ changes; the place model is designed, not built."
+}
