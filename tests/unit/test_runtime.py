@@ -22,6 +22,8 @@ from nora.app.runtime import (
     BackgroundTasks,
     SupervisedAdapter,
     _backoff_elapsed,
+    _dream_adaptor_once,
+    _shrunk_batch_limit,
     _slot,
     debounce_sweep_loop,
     dream_loop,
@@ -1262,6 +1264,75 @@ async def test_the_watermark_is_held_when_the_run_reports_unavailable():
 
     assert runner.calls                      # it DID run
     assert [c for c in language.advance_calls if c[0] == "lexemes"] == []
+
+
+def test_a_unit_with_no_failures_reads_its_whole_batch():
+    """The control. Shrinking a healthy unit would quietly halve every
+    adaptor's throughput for a problem it does not have."""
+    assert _shrunk_batch_limit(80, 0) == 80
+
+
+def test_each_consecutive_failure_halves_the_batch():
+    """Issue #291: `unavailable` holds the watermark, so without this the
+    retry re-reads the IDENTICAL range and a range-caused failure repeats
+    forever. Measured: 80 messages emitted 2,124 completion tokens against a
+    2,000 ceiling — 6% over, and 40 of them fit on the first retry."""
+    assert _shrunk_batch_limit(80, 1) == 40
+    assert _shrunk_batch_limit(80, 2) == 20
+    assert _shrunk_batch_limit(80, 3) == 10
+
+
+def test_the_shrink_stops_at_a_floor_rather_than_reaching_one_message():
+    """A one-message batch is not a cheaper version of the same work — the
+    objective reads a CONVERSATION, so a single message in isolation is a
+    different question with a worse answer. The floor is also what stops a
+    long outage (which also reports `unavailable`) from grinding every unit
+    down to nothing while the provider is away."""
+    assert _shrunk_batch_limit(80, 40) == 5
+    assert _shrunk_batch_limit(80, 4) == 5
+    # Never ABOVE the base: a small configured batch is not enlarged.
+    assert _shrunk_batch_limit(3, 9) == 3
+
+
+async def test_a_retry_reads_fewer_rows_than_the_attempt_that_failed():
+    """The wiring, asserted on what the RUNNER was handed rather than on the
+    helper — a pure function nothing calls is a phantom, and this is the call
+    that was missing for 24 hours."""
+    metrics = Metrics()
+    runner = _RecordingRunner()
+    rows = [_row(i) for i in range(1, 81)]
+
+    await _dream_adaptor_once(
+        adaptor=_StubAdaptor("note-candidates"), runtime=runner,
+        record=_FakeRecord({"g1": rows}), language=_KeyedLanguage(lag=99),
+        metrics=metrics, key="g1", safety_lag=0, quiet_seconds=0.0,
+        max_age_seconds=1e9, batch_limit=80, failure_count=1,
+    )
+
+    assert runner.calls == [("note-candidates", "g1", 40)]
+    assert metrics.get(
+        "nora_dream_batch_shrunk_total", adaptor="note-candidates") == 1
+
+
+async def test_a_first_attempt_reads_the_whole_batch_and_counts_no_shrink():
+    """The positive control for the test above. A wiring that shrank
+    unconditionally would pass it and halve every healthy unit's throughput,
+    and `nora_dream_batch_shrunk_total` would fire on units that are fine —
+    making the one series that says «something here does not fit» useless."""
+    metrics = Metrics()
+    runner = _RecordingRunner()
+    rows = [_row(i) for i in range(1, 81)]
+
+    await _dream_adaptor_once(
+        adaptor=_StubAdaptor("note-candidates"), runtime=runner,
+        record=_FakeRecord({"g1": rows}), language=_KeyedLanguage(lag=99),
+        metrics=metrics, key="g1", safety_lag=0, quiet_seconds=0.0,
+        max_age_seconds=1e9, batch_limit=80, failure_count=0,
+    )
+
+    assert runner.calls == [("note-candidates", "g1", 80)]
+    assert metrics.get(
+        "nora_dream_batch_shrunk_total", adaptor="note-candidates") == 0
 
 
 async def test_the_watermark_advances_after_a_successful_run():

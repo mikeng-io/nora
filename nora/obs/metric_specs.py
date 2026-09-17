@@ -1019,6 +1019,25 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # watermark and append the same evidence twice, and the rendered
     # "12x, 3 people" would be a fabricated number. reason="in_flight" is
     # the only value today.
+    # Issue #291. `unavailable` holds the watermark on purpose, so the next
+    # fire re-reads the IDENTICAL range — and for a failure caused BY that
+    # range the retry fails the same way, forever, paced only by the backoff
+    # cap. Measured 2026-09-16/17: one scope re-read the same 80 messages for
+    # ~24 hours, each run truncated at exactly 2,000 completion tokens against
+    # a real need of 2,124. `nora_dream_run_total{status="unavailable"}` could
+    # not separate that from a provider outage, which is why it went a day
+    # unnoticed. This series is the one that says «something about THIS range
+    # does not fit», and a unit healing itself still shows up on it.
+    _CounterSpec(
+        "nora_dream_batch_shrunk_total",
+        "Dream cycles that read FEWER rows than their configured batch "
+        "because the previous attempt on this (adaptor, key) reported "
+        "unavailable. Rising means a unit is retrying with a smaller batch "
+        "rather than re-sending the range that just failed; sustained rising "
+        "on one adaptor means its batch or its per-call ceiling is mis-sized, "
+        "not that the provider is down.",
+        ("adaptor",),
+    ),
     _CounterSpec(
         "nora_dream_skipped_total",
         "Dream-loop ticks skipped, by reason. reason=\"in_flight\": the "
