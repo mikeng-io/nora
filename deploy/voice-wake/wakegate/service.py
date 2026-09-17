@@ -55,7 +55,7 @@ class Config:
     vad_enabled: bool = True         # Silero VAD decides "finished speaking"; noise is not speech
     vad_threshold: float = 0.5       # speech probability at/above this = speech
     stt_url: str = "http://stt:8000"
-    stt_model: str = "noise-detection"
+    stt_model: str = "sensevoice"    # the wake path's engine; MUST equal config.example.toml [speech.wake].stt_model
     stt_language: str = "yue"
     stt_timeout_s: float = 30.0
     nora_url: str = "http://nora:9100"
