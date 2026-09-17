@@ -15,7 +15,9 @@ budget, its own doctrine, and R-18/R-28 screening.
 | piece | where it already is |
 |---|---|
 | the room's own messages, hard-scoped | **the batch the Dreamer already hands it (§1.1)** |
-| `search_memory`, `web_search`, `web_fetch` | tool registry |
+| the room's `standing` — what Nora's position in it actually is | the `standing` tier (design 26), **read by nobody here today (§1.2)** |
+| what the room has open — plans, commitments, follow-ups | the note tier's index, **read by nobody here today (§1.2)** |
+| `search_memory`, `ask_memory`, `where_been`, `web_search`, `web_fetch` | tool registry — 35 read verbs, and this adaptor declares **none** of them (`culture.py:166`); ungranted, not unreachable (`03-decisions` correction 14) |
 | agent loop, tool ceiling, budget | Dreamer runtime |
 | watermark / volume / timeout trigger | `AdaptorSchedule` |
 | `instruction_sha256`, `model`, `established_by` | **the runtime stamps these onto every `Proposal`** |
@@ -46,12 +48,75 @@ boundary being DEC-105's own rather than an assumption about someone else's API.
 No tool registry change, no roster question, no 25s dialectic call, and no
 `session_id` anywhere.
 
+## 1.2 `standing` and `notes` are inputs, and this bundle never said so
+
+Added 2026-09-17. It is the plainest instance of the general finding in
+`design/dreamer-agent-loop/03-no-agent-loop §7`, and it was sitting inside this
+file's own §2 the whole time.
+
+§2 asks the model for **"my own standing here"**. `standing` is a tier
+(`design/dreamer-agent-loop/26-standing.md`) that holds exactly that — Nora's
+position in one room, per room, written by the debrief. The relevance gate
+already treats it as authoritative: `relevance_gate.py:266-272` makes it *"the
+ONLY place that can establish what she owes this room"*. The culture adaptor
+reads it not at all and infers it from raw transcript instead.
+
+The same holds one seam over. An account of how a room works that cannot see
+what the room currently has open — the plan with an undecided corner, the thing
+somebody owes — is inferring from the transcript a thing another store already
+states. Note the vocabulary trap, because this bundle has fallen into it
+before: the note tier's index is reached through `NoteStore.standing()`, and
+that is **the index of open notes**, a different thing from the per-room
+`standing` tier above. Two inputs, two stores, similar spelling.
+
+**There is a precedent in this exact seam and it is one file over.**
+`NoteCandidateAdaptor.inputs` renders three things, not one: a `<room>` block,
+the batch, and `await self._notes.standing(workspace=workspace)`
+(`nora/language/note_candidates.py:989`). Its reason for the third is written
+beside it — *"THE INDEX IS THE BALLOT"*: without it the model cannot name what
+already exists and writes a duplicate instead. Culture's version of that
+sentence is that without `standing` it cannot say where she stands and will
+write a guess instead, and a guess in this tier is prose that reads exactly
+like an observation.
+
+**Why this is not covered by §1.1's "no new tool".** It is not: §1.1 is about
+the two HONCHO verbs #237 built, and nothing here proposes a new verb. Two
+routes exist and they are not the same shape, so name which one before
+building:
+
+- **As `inputs`** — code reads both stores and renders them into the prompt,
+  the way `note_candidates` does. Cheapest, no grant, no loop, and it is what
+  the design should assume unless something argues otherwise. The cost is that
+  what is read is fixed in advance by code.
+- **As tools** — the adaptor declares read verbs and the loop asks. This is
+  what correction 14 unblocks, it is what makes a cross-store derivation
+  possible rather than a fixed join (`03-no-agent-loop §7.2`), and it is the
+  more expensive of the two.
+
+**Sequence, not preference:** inputs first, because it changes no grant and is
+measurable against the same block; tools only when there is a question the
+prompt cannot be pre-rendered to answer. `02-measurement §5` owns the ordering
+and neither route is a step that ships without its arm.
+
+One key detail, because getting it wrong is the silent failure DEC-181 names:
+`standing` is keyed `(platform, conversation_id)` and culture is keyed
+`primary_id`. They are equal for every live conversation today and that is an
+accident of data (#229). The read must resolve through the policy, not assume
+the two are one, or it matches zero rows and renders as «this room has no
+standing» — a real state that nothing reports as a miss.
+
 ## 2. What the model is asked
 
 One question, per room, on the Dreamer clock, over the batch: *describe this room's culture as
 a short account — how they talk, how decisions get made, what they call
 themselves, my own standing here, and **why** it is like that; not dated
 observations.*
+
+**Over the batch, the account written last time, the room's `standing`, and
+what the room has open.** The last two were added 2026-09-17 (§1.2) and they
+are not decoration: the clause *"my own standing here"* asks for something a
+store already holds, and a question whose input cannot ground it does not fail
+loudly — the model answers anyway, in prose, at a rate nothing reports.
 
 The "not dated observations" clause is load-bearing. Without it a model handed
 a batch of timestamped rows drifts back toward `representation`'s shape, which
@@ -204,10 +269,27 @@ bundle mistook a pin for a prohibition.
 
 ## 7. Scope and keys
 
-`key_kind = "scope"`, one adaptor. The first draft had two (room and
-workspace); the workspace half is deleted, because workspace-wide recall is
-what Honcho does by default and re-deriving it is the duplication the operator
-flagged.
+`key_kind = "scope"`, one adaptor — and that is still what ships
+(`nora/language/culture.py:145`).
+
+> **THE REASON THIS SECTION GAVE IS DEAD TEXT, swept 2026-09-17.** It read:
+> *"the workspace half is deleted, because workspace-wide recall is what Honcho
+> does by default and re-deriving it is the duplication the operator flagged."*
+> That sentence was authored in `db71b8a6` (2026-09-13 02:13, the Honcho-cache
+> draft) and survived `f856cccf` 19 hours later, which reversed the premise
+> under it, and `6691daa1`, the sweep that was supposed to catch exactly this
+> (`03-decisions` correction 13). **DEC-182 restores the workspace half** — it
+> says so in its own body, *"fold one workspace's rooms together and the
+> boundary is DEC-105's own"* — and `00-overview §4.2` adds that at today's
+> single-workspace binding a workspace account is available with no routing
+> change at all. So the old reason argues against a decision this bundle has
+> already taken.
+>
+> **What survives is the fact, not the argument.** One adaptor ships, and it is
+> scope-keyed. The workspace variant is not deleted-because-duplicative; it is
+> **not built yet**, and the thing that would decide it is `02-measurement`,
+> not this paragraph. A reader who acts on the old sentence will delete a half
+> the decisions restored.
 
 **Honcho workspace: `nora`, for every conversation.** `_workspace_for` returns
 the router's answer *"or the single default when no router is wired (today,

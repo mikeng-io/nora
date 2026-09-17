@@ -43,6 +43,19 @@ the adaptor is scheduled, raises nothing, logs nothing and never runs.
 
 ## DEC-182 — the tier folds its own room's messages into an account
 
+> **NARROWED 2026-09-17, by the operator.** As written below this decision
+> reads as *"the tier asks the memory system nothing"*, and that is broader
+> than what was decided and broader than what the evidence supports. **What
+> DEC-182 killed is the CACHE SHAPE** — ask Honcho once, store the answer, do
+> nothing else — **not the use of memory at all.** The tier is a Dreamer
+> adaptor, and what a Dreamer adaptor does is **synthesise across the stores
+> Nora already has**. The room's batch is ONE input among several, not the
+> corpus. Asking memory is back in, through the read verbs the ceiling already
+> admits (correction 14), and the surviving clause is the one about
+> attribution: an account is produced by asking a model to write prose, so
+> Honcho's dialectic endpoint is not the author and its 17–30s latency is not
+> on this path. `01-the-adaptor §1` and `§2` carry the input list.
+
 The adaptor reads the batch the Dreamer hands it —
 `record.since(conversation_id=key, after_id=watermark)`, `WHERE
 conversation_id = :key` in our own Postgres — and its model writes one short
@@ -200,6 +213,14 @@ which claims were tested rather than argued.
    12), and with the Honcho route gone the adaptor needs no verb at all — it
    reads the batch the Dreamer already hands it. **No tool registry change.**
    `01-the-adaptor §1.1`.
+
+   > **THE CONCLUSION IN THIS ENTRY IS WITHDRAWN, 2026-09-17 — see correction
+   > 14.** «`ask_memory` is person-scoped and returns `unavailable` forever for
+   > a scope-keyed adaptor» is false as a statement about the verb. It reported
+   > a DEFAULT CONFIGURATION as a property of the tool, and it was the stated
+   > reason a built PR was closed. The rest of the entry — that #237's Honcho
+   > path does not scope, and that those two new VERBS are not needed — stands
+   > untouched; what does not stand is «so the adaptor can hold no tools».
 10. **"She has never been admitted and chosen silence."** A `shadow = true`
     artifact — no turn ran for the first ~10 hours of the window.
 11. **"`go` = 1."** At least 2. Step-60 grid aliasing stepped over a sample
@@ -223,3 +244,87 @@ which claims were tested rather than argued.
     the six were not cosmetic: `batch_limit = 1` starves a fold that now reads
     its batch, and correction 9 told an implementer to ship a tool registry
     change that #237 closed unmerged.
+
+    **That rule is the WRITER's half, it is true, and on its own it did not
+    work.** Three more sites were missed by the same sweep — `00-overview §5`
+    and `§6`, and `01-the-adaptor §7`, all authored in `db71b8a6` (2026-09-13
+    02:13, the Honcho-cache draft), untouched by `f856cccf` 19 hours later and
+    untouched by this correction's own sweep in `6691daa1`. They are the
+    seventh, eighth and ninth, corrected 2026-09-17.
+
+    A rule addressed only to the writer cannot help a reader, and the reader is
+    who pays. On 2026-09-17 a careful one read those three un-swept sections,
+    believed them, and told the operator the implementation had gone the wrong
+    way. It had not; the sections had. So this correction needs its
+    **detection** half, and it is one command:
+
+    > **`git blame` a design section before acting on it. If it predates the
+    > decision it appears to contradict, it is dead text, not a finding.**
+
+    Cheap, available to anyone, and needing no cooperation from whoever wrote
+    the section. It is the same move `00-overview §1.1` makes for Prometheus —
+    never infer from an absence without checking the instrument was alive —
+    applied to prose instead of to a counter.
+
+14. **"`ask_memory` is person-scoped and returns `unavailable` forever for a
+    scope-keyed adaptor."** False, and it is the reason PR #237 was closed. Read
+    off the code at `a8cd40db`:
+
+    - `ask_memory` **is** in `ToolRegistry.read_only_tools()` — one of 35
+      (`nora/agent/registry.py:533`; the set is derived from
+      `NativeTool.read_only`, which `ask_memory` declares at
+      `nora/agent/tools.py:680`). It was never outside the Dreamer's ceiling.
+    - `nora/agent/tools.py:3228` does `view = await room.scope()` and returns
+      `unavailable` only `if not view.available`. **The dependency is a
+      resolvable room roster, not personhood.** A verb that answers ABOUT a
+      person is not thereby a verb that needs a person as its KEY.
+    - `RegistryToolSource` (`nora/agent/dreamer.py:761`) documents both modes,
+      and correction 9 observed one of them and generalised it to the verb. By
+      default the `Room` handed to `ToolRegistry.build` is EMPTY — no roster
+      source, so `available=False` and every room-scoped verb answers
+      `unavailable`, deliberately, as a data-level fail-closed guard behind the
+      name-level one. That is the state correction 9 saw. **But the same
+      docstring carries the other mode**: *"An adaptor whose `AdaptorGrant`
+      names a home room is built FROM that room — the real roster source for
+      its platform, Nora's own `self_ids` … and `location_trusted` from the
+      room's `location` flag — so `where_is` and its siblings run the
+      disclosure guard exactly as on a tag."*
+    - `AdaptorGrant` (`nora/agent/dreamer.py:387`) is that mechanism. It is not
+      hypothetical and it is not new: the proactive adaptor has held one since
+      DEC-162. Its docstring also answers the disclosure objection in advance —
+      `WORKSPACE_SAFE_TOOLS`'s refusal, *"binding one to an arbitrary room of
+      that workspace would be a disclosure decision nobody has made"*, *"is
+      answered by the operator naming the room in `policy.toml`."*
+
+    **So `ask_memory` is ungranted, not unreachable**, and those two words are
+    a built PR apart. #237 was therefore closed on a false premise. That is a
+    claim about the REASON and not about the code: the two Honcho verbs it built
+    may well be the wrong shape — correction 12 stands, and the path they served
+    genuinely does not scope — but «the adaptor can hold no tools at all» was
+    never the finding it was recorded as, and a reader of correction 9 would
+    have carried it into the next design unchallenged.
+
+    **Culture's case is simpler than proactive's, and that is the part worth
+    stating.** Proactive is workspace-keyed, so a workspace has no room and one
+    must be CHOSEN — hence `home_rooms` in `policy.toml`, and hence a
+    disclosure decision for the operator to take. Culture is `key_kind =
+    "scope"` (`nora/language/culture.py:145`), so its key already IS the
+    conversation and `RegistryToolSource.build` already passes it as
+    `conversation_id=key`. **The grant is an identity.** There is nothing to
+    choose, and no disclosure beyond the one the tier already has by reading
+    that room's messages.
+
+    One thing that is not yet wired, said plainly so that «the mechanism
+    exists» is not read as «the wiring exists»: `home_room` resolves through a
+    workspace — `build` does `home = self._home_rooms.get(workspace or "")` —
+    and the runtime supplies `workspace=key if adaptor.key_kind == "workspace"
+    else None` (`nora/agent/dreamer.py:1249-1256`). A scope-keyed adaptor
+    granted a home room TODAY looks up `home_rooms[""]`, finds none, and takes
+    the loud closed branch with room and acts both withheld. What is missing is
+    the platform and the roster source for a room the runtime already names: a
+    small resolution nobody has written, not a decision nobody has taken.
+
+    The general form of this — that tool access is the precondition for any
+    Dreamer adaptor to do more than restate its batch — is not culture's, and
+    is recorded where it belongs, in
+    `design/dreamer-agent-loop/03-no-agent-loop §7`.

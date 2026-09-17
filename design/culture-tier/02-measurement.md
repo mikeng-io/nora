@@ -208,8 +208,8 @@ that override stays approximate until someone does.
    So the arm ships WITH the block, in one change, and the block's own decision
    check (§6) is what says whether either should stay.
 6. **Only then** the gate, if at all — against #144/#147, which measured the
-   gate getting worse with more context, and #194, which says a gutted gate
-   instruction currently passes everything.
+   gate getting worse with more context, and #187 (consolidated from #194),
+   which says a gutted gate instruction currently passes everything.
 
 Steps 0–4 change no behaviour. Step 5 onward is where the evidence has to
 carry the argument.

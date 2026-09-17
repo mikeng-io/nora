@@ -10,6 +10,13 @@ description: >
   over the three 2026-08-20 specs and the four transfer documents: it records
   what is live, what was designed and never shipped, and the decisions that
   close the gap.
+  REVISED 2026-09-17 (03 section 7, 17 section 11): the loop now RUNS for one
+  of four adaptors and the finding moves up a level. The agent loop is an
+  implementation detail; what it implements is a RESEARCH loop, and the
+  Dreamer's value is derivation ACROSS stores rather than restatement of the
+  one batch it was handed. An objective whose answer could have been written
+  from its own prompt has wasted the loop, and the tautology it produces passes
+  every gate the runtime owns.
 status: checkpoint
 deprecation: >
   DEPRECATED IN PART, 2026-09-07. The knowledge tier (the "fact tier") and the
@@ -68,6 +75,14 @@ members:
   - 34-note-dreamer-consolidation.md
   - 35-ambient-participation.md
   - 36-relevance-gate.md
+  # ADDED 2026-09-17: these five files have been in this directory since
+  # 2026-09-03..09-15 and were never listed, so the index's own membership
+  # was a stale answer to «what is in this bundle».
+  - 36-note-tier-review-draft-2026-09-03.md
+  - 37-note-candidates-v2.md
+  - 38-proactive-adapter-handoff.md
+  - 39-proactive-ooda-loop.md
+  - 40-proactive-origin-delivery.md
 edges:
   - {src: 00-overview, dst: 01-live-state, rel: motivated_by, provenance: asserted}
   - {src: 00-overview, dst: 02-instrument-blindness, rel: motivated_by, provenance: asserted}
@@ -154,6 +169,12 @@ edges:
   - {src: 32-fact-dreamer-schedule, dst: 07-loop, rel: corrects, provenance: asserted}
   - {src: 32-fact-dreamer-schedule, dst: 08-state, rel: extends, provenance: asserted}
   - {src: 32-fact-dreamer-schedule, dst: 16-open-items, rel: closes, provenance: asserted}
+  - {src: 39-proactive-ooda-loop, dst: 03-no-agent-loop, rel: motivated_by, provenance: asserted}
+  - {src: 39-proactive-ooda-loop, dst: 38-proactive-adapter-handoff, rel: supersedes, provenance: asserted}
+  - {src: 40-proactive-origin-delivery, dst: 39-proactive-ooda-loop, rel: extends, provenance: asserted}
+  - {src: 37-note-candidates-v2, dst: 27-note-dreamer, rel: revises, provenance: asserted}
+  - {src: 03-no-agent-loop, dst: 17-failure-classes, rel: relates_to, provenance: asserted}
+  - {src: 03-no-agent-loop, dst: 39-proactive-ooda-loop, rel: relates_to, provenance: asserted}
 scope:
   v1:
     - "This is the KNOWLEDGE tier: write canonical entity ids, the one column four problems bottom out in"
