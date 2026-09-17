@@ -425,6 +425,56 @@ _DREAM_BACKOFF_BASE_SECONDS = 60.0
 _DREAM_BACKOFF_MAX_SECONDS = 3_600.0
 
 
+#: How far a repeatedly-failing unit's batch is allowed to shrink. A floor
+#: rather than 1 because a one-message batch is not a cheaper version of the
+#: same work — the note-candidates objective reads a CONVERSATION, and a
+#: single message in isolation is a different question with a worse answer.
+_DREAM_MIN_SHRUNK_BATCH = 5
+
+
+def _shrunk_batch_limit(base: int, failure_count: int) -> int:
+    """How many rows this cycle may read, given `failure_count` consecutive
+    failures on this same `(adaptor, key)`.
+
+    **Why a retry reads LESS rather than the same thing again.** `unavailable`
+    holds the watermark on purpose — nobody read that batch, so advancing would
+    consume it with nothing left to retry. The cost of that guarantee is that
+    the next fire re-reads the IDENTICAL range, and for a failure caused BY the
+    range (an output that will not fit the model's per-call ceiling) the retry
+    is guaranteed to fail the same way. Measured 2026-09-16/17, issue #291: one
+    scope re-read the same 80 messages every fire for ~24 hours, each run
+    truncated at exactly 2,000 completion tokens against a real need of 2,124,
+    watermark frozen, lag 1,250 — and the only brake was
+    `_DREAM_BACKOFF_MAX_SECONDS`, which slowed it to once an hour and made it
+    look like a schedule rather than a fault.
+
+    Halving per consecutive failure turns that into a search: 80 -> 40 -> 20,
+    and 40 of those messages emit roughly half the verdicts, so a batch whose
+    output overflowed by 6% fits on the FIRST retry. The unit heals itself
+    inside two fires instead of waiting for someone to notice a cadence.
+
+    **Why this is safe for the failure it is NOT for.** A provider outage or a
+    429 also lands as `unavailable`, and shrinking that batch fixes nothing —
+    but it costs nothing either: the smaller batch succeeds when the provider
+    returns, the watermark advances, `failures` clears, and the very next fire
+    is back at full size. Shrinking is a cheap wrong answer for a transient
+    failure and the only right answer for a poisoned one, so it is applied to
+    both rather than guessed between.
+
+    `failure_count` is `dream_loop`'s own consecutive-failure count, cleared on
+    any non-`unavailable` outcome. Consecutive failures therefore imply an
+    UNMOVED watermark, which is what makes this a statement about the same
+    RANGE rather than about the adaptor's general health.
+
+    Never returns more than `base`: an adaptor whose configured batch is
+    already below the floor is not ENLARGED by failing.
+    """
+    if failure_count <= 0:
+        return base
+    shrunk = base >> min(failure_count, 16)
+    return min(base, max(_DREAM_MIN_SHRUNK_BATCH, shrunk))
+
+
 def _backoff_elapsed(
     key: str,
     failure_count: int,
@@ -587,6 +637,7 @@ async def _dream_adaptor_once(
     schedules: Mapping[str, AdaptorSchedule] | None = None,
     clock: _ScheduleClock | None = None,
     now_ms: int | None = None,
+    failure_count: int = 0,
 ) -> str | None:
     """One adaptor, one key, one cycle — the room consolidators' cycle
     generalised off their hardcoded `"language"` cursor and off the
@@ -735,9 +786,22 @@ async def _dream_adaptor_once(
     if not fires:
         return None
 
+    base_limit = sched.batch_limit if sched is not None else batch_limit
+    limit = _shrunk_batch_limit(base_limit, failure_count)
+    if limit != base_limit:
+        # COUNTED, for `nora_dream_skipped_total{reason="schedule"}`'s reason:
+        # a unit quietly healing itself and a unit that never had a problem
+        # look identical in `nora_dream_run_total`. This is the series that
+        # says «something about THIS range does not fit», which is the reading
+        # #291's 24-hour loop had no way to produce.
+        metrics.inc("nora_dream_batch_shrunk_total", adaptor=adaptor.name)
+        log.warning(
+            "dream batch shrunk after %d consecutive failures: adaptor=%s "
+            "scope=%s limit=%d (from %d)",
+            failure_count, adaptor.name, key, limit, base_limit,
+        )
     batch = await record.since(
-        conversation_id=key, after_id=watermark,
-        limit=sched.batch_limit if sched is not None else batch_limit)
+        conversation_id=key, after_id=watermark, limit=limit)
     if media_join is not None:
         # HERE rather than inside each adaptor (issue #116): every scope-keyed
         # dream adaptor reads this one batch, so joining once covers all of
@@ -942,6 +1006,10 @@ async def dream_loop(
                 max_age_seconds=max_age_seconds, batch_limit=batch_limit,
                 media_join=media_join,
                 schedules=schedules, clock=schedule_clock,
+                # Consecutive failures on THIS unit, so a retry reads less
+                # than the attempt that failed (issue #291). Cleared on any
+                # non-`unavailable` outcome, so this is 0 in steady state.
+                failure_count=failures.get(unit, 0),
             )
             if status == "unavailable":
                 # **A FAILURE, even though nothing raised.**
