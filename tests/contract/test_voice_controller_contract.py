@@ -246,7 +246,7 @@ async def test_status_carries_the_reconciliation_fields(controller):
     """The snapshot nora's hub reconciles from (§3.3/§9): `generation`,
     `playback_id`, `last_event_seq` (the outbox bookmark the gap guard
     compares against), `state_write_ok`, and the player's
-    `position_policy` (phase-1 approximate-restart posture)."""
+    `position_policy` (approximate-seek posture: a revive seeks to the cut)."""
     _fake, client, _ = controller
     generation = await _join(client)
     await client.play(generation, "https://cdn.example/a", request_id="r1")
@@ -257,7 +257,7 @@ async def test_status_carries_the_reconciliation_fields(controller):
     assert status["playback_id"] is not None
     assert isinstance(status["last_event_seq"], int)
     assert status["state_write_ok"] is True
-    assert status["player"]["position_policy"] == "approximate_restart"
+    assert status["player"]["position_policy"] == "approximate_seek"
 
 
 async def test_stream_speech_encodes_the_audio(controller):

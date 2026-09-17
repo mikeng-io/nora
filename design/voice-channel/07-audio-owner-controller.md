@@ -244,23 +244,26 @@ Rules (fail-closed, no overlap ever):
 6. `POST /stream` (speech) validates `generation` — speech for an exited or
    replaced connection is dropped 409 (B15).
 
-### Position policy (Codex-audit B7 — no seek capability today)
+### Position policy (Codex-audit B7 — seek to the cut, since 2026-09-17)
 
-Today's code cannot seek a destroyed resource (`music_player.py:46` carries
-no seek; restart deliberately starts from 0). Phase 1 therefore does **NOT
-attempt position-perfect resume**:
+Phase 1 restarted a suspended track from 0 (`approximate_restart`) because
+the resource could not be seeked. Measured 2026-09-17 in the live channel:
+every TTS reply replayed the song from the top. Phase 2 (B7) now lands in
+the controller, where the stream is an ffmpeg process that CAN be started
+anywhere:
 
-- `position_ms` is accumulated from **consumed playback frames** (excluding
-  speech suspension and buffering), and retained as an offset.
-- On speech-suspend → revive, phase 1 **restarts the stream from 0** (hard
-  cut) UNLESS the controller has a fresh `stream_url` and the source is
-  seekable — seekable check per source type; fallback = restart from 0 with
-  `position_ms` reported as `approximate_restart`.
-- Repeated interruptions compound position error in the fallback; document
-  this explicitly in phase 1. Position-perfect resume + seekable policy is
-  phase 2 (B7).
-- Live/non-seekable streams (radio) get NO resume — speech preempts and the
-  stream ends; nora treats that as natural end.
+- `position_ms` = the slot's **start offset** + the player's **consumed
+  playback frames** (`playbackDuration`, excluding suspension and
+  buffering). A fresh play has offset 0.
+- On speech-suspend the cut position is read BEFORE the ffmpeg is killed;
+  on revive the same `playback_id` is restarted with an input-side seek
+  (`-ss <cut>` before `-i`), and the revived slot carries the cut as its
+  offset, so a second interruption compounds correctly. Reported as
+  `position_policy: approximate_seek` — approximate because the cut is the
+  consumed-frames count, not a sample-exact cursor (the player's buffer,
+  ≤ a few hundred ms, replays).
+- Live/non-seekable streams (radio, `resumable: false`) get NO resume —
+  speech preempts and the stream ends; nora treats that as natural end.
 
 ### Events (controller → nora, replacing track-finished)
 
@@ -394,8 +397,9 @@ traceable end-to-end with zero extra moving parts.
   completion only (B17). Inter-track gap = callback + resolve + startup,
   documented.
 - Drop ducking's gain ramp: speech preemption is hard-cut; position resume
-  is **not attempted** (B7) — suspended music restarts from 0 with
-  `position_ms` as `approximate_restart`, except seekable sources.
+  was **not attempted** in phase 1 (suspended music restarted from 0,
+  `approximate_restart`); since 2026-09-17 the revive seeks to the cut
+  (`approximate_seek`, §5), except live sources.
 - Gate: `/discord join` requires (a) guild member, (b) caller in a voice
   channel, (c) channel id in `voice_channel_ids` config (existing
   fail-closed list). Auto-join per Miles's spec (play joins if

@@ -125,7 +125,7 @@ class FakeVoiceController:
             "position_ms": 0,
             # §5 position policy: phase 1 restarts a preempted track from 0;
             # a live source gets none.
-            "position_policy": "approximate_restart" if self.playing else None,
+            "position_policy": "approximate_seek" if self.playing else None,
             "current": None,
         }
 
