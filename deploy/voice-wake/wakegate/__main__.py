@@ -46,6 +46,8 @@ def build_config(config_path: Path = DEFAULT_PATH, env: dict[str, str] | None = 
         silence_tail_ms=int(wake.get("silence_tail_ms", d.silence_tail_ms)),
         max_utterance_s=float(wake.get("max_utterance_s", d.max_utterance_s)),
         silence_rms=float(wake.get("silence_rms", d.silence_rms)),
+        vad_enabled=bool(wake.get("vad_enabled", d.vad_enabled)),
+        vad_threshold=float(wake.get("vad_threshold", d.vad_threshold)),
         stt_url=str(stt.get("endpoint", d.stt_url)),
         stt_model=str(wake.get("stt_model", d.stt_model)),
         stt_language=str(stt.get("language", d.stt_language)),
@@ -62,9 +64,10 @@ def main() -> None:
     )
     cfg = build_config()
     log.info(
-        "effective config: model=%s threshold=%.2f stt=%s/%s lang=%s silence_tail_ms=%d "
-        "max_utterance_s=%.1f silence_rms=%.0f",
+        "effective config: model=%s threshold=%.2f stt=%s/%s lang=%s end-of-speech=%s "
+        "silence_tail_ms=%d max_utterance_s=%.1f silence_rms=%.0f",
         cfg.model_path, cfg.threshold, cfg.stt_url, cfg.stt_model, cfg.stt_language,
+        f"vad@{cfg.vad_threshold:.2f}" if cfg.vad_enabled else "rms",
         cfg.silence_tail_ms, cfg.max_utterance_s, cfg.silence_rms,
     )
     asyncio.run(WakeService(cfg).run())

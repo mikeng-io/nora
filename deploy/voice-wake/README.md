@@ -47,9 +47,10 @@ voice-wake`. Set values with `nora config set …` on the host.
 | `[speech.wake].threshold` | `0.5` | wake score that starts collection |
 | `[speech.wake].model_path` | `/app/models/喂Nora.onnx` | baked into the image from `models/` (tracked; provenance, sha and metrics in `models/MODEL.md`; candidates and training code in `voice-lab/`) |
 | `[speech.wake].stt_model` | `sensevoice` | the wake path's STT engine (latency-bound); voice notes keep `[speech.stt].model` |
-| `[speech.wake].silence_tail_ms` | `1000` | trailing silence that ends an utterance |
+| `[speech.wake].vad_enabled` / `.vad_threshold` | `true` / `0.5` | "finished speaking" = Silero VAD hears no speech for the tail; music, TV, fans and mic noise are loud-but-not-speech and no longer hold the gate open (RMS floor under ducked music measured ~1000 vs 400). `false` = RMS fallback |
+| `[speech.wake].silence_tail_ms` | `800` | no-speech tail that ends an utterance |
 | `[speech.wake].max_utterance_s` | `10` | utterance ceiling |
-| `[speech.wake].silence_rms` | `400` | int16 RMS under this reads as silence |
+| `[speech.wake].silence_rms` | `400` | int16 RMS under this reads as silence (RMS fallback only) |
 | `[speech.stt].endpoint` / `.language` / `.timeout_seconds` | `http://stt:8000` / `yue` / `30` | the local STT service (shared with Nora's voice-note path) |
 
 **env** — deployment identity and binds only:

@@ -7,7 +7,6 @@ accounting turns a NAMED test red.
 """
 
 import numpy as np
-
 from wakegate.audio import OWW_CHUNK
 from wakegate.gate import WakeGate
 
@@ -84,3 +83,55 @@ def test_a_non_oww_sized_chunk_is_refused():
     except ValueError:
         return
     raise AssertionError("a mis-sized chunk must not be scored as audio")
+
+
+# --- end-of-speech by an injected speech detector (VAD) -------------------
+# The 2026-09-17 defect: under ducked music the RMS floor (~1000) never
+# dropped under 400 for a second, so a 2 s phrase collected for 4.7-7.4 s and
+# a second 「喂 Nora」 inside that window was swallowed. With a speech detector
+# injected, LOUD-but-not-speech chunks are quiet and end the utterance.
+
+
+def _gate_with_speech(scores, speech_script, **kwargs):
+    speech = list(speech_script)
+    return _gate(scores, speech=lambda _chunk: speech.pop(0) if speech else False, **kwargs)
+
+
+def test_loud_non_speech_ends_the_utterance_when_a_speech_detector_is_injected():
+    # RMS 10000 on every chunk — the old gate would never end this (ceiling only).
+    gate = _gate_with_speech([0.9], speech_script=[True, False, False, False])
+    gate.feed(LOUD)  # fire (pre-roll)
+    results = [gate.feed(LOUD) for _ in range(4)]  # speech, then 3 x loud-but-no-speech
+    assert results[:3] == [None] * 3
+    assert results[3] is not None, "loud music after the last word must not hold the gate open"
+    assert not gate.collecting
+
+
+def test_speech_keeps_collecting_even_when_the_chunk_is_quiet_by_rms():
+    # A soft-spoken user (RMS under the 400 fallback) must not be cut off
+    # while the detector still hears speech.
+    soft = np.full(OWW_CHUNK, 100, dtype=np.int16)
+    gate = _gate_with_speech([0.9], speech_script=[True] * 6 + [False] * 3)
+    gate.feed(LOUD)
+    results = [gate.feed(soft) for _ in range(9)]
+    assert results[:8] == [None] * 8
+    assert results[8] is not None
+
+
+def test_a_pause_shorter_than_the_tail_does_not_end_the_utterance():
+    # 喂 Nora, breath, 而家幾點: a 2-chunk no-speech gap with tail 3 must not split it.
+    script = [True, False, False, True, True, False, False, False]
+    gate = _gate_with_speech([0.9], speech_script=script)
+    gate.feed(LOUD)
+    results = [gate.feed(LOUD) for _ in range(8)]
+    assert results[:7] == [None] * 7
+    assert results[7] is not None
+    assert results[7].audio.size == (1 + 8) * OWW_CHUNK  # pre-roll (1 chunk) + 8: one utterance
+
+
+def test_without_a_speech_detector_the_gate_still_falls_back_to_rms():
+    gate = _gate([0.9])  # speech=None
+    gate.feed(LOUD)
+    assert all(gate.feed(LOUD) is None for _ in range(5))  # loud = never quiet by RMS
+    results = [gate.feed(SILENT) for _ in range(3)]
+    assert results[2] is not None
