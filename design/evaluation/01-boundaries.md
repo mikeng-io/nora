@@ -57,8 +57,10 @@ cleanest instrument in the repo and a shape that cannot hold it is wrong.
 ## 4. Where the current boundary went — measured
 
 **`nora/app/eval_support.py` is 1,739 lines, and it lives inside the
-application.** It holds three of the six composition sites (`:980`, `:1109`,
-`:1303`, `:1359`). `evals/` imports it **five times**.
+application.** It holds **five** of the seven composition sites — `:980`
+(`RelevanceGate`), `:1109` and `:1359` (`DreamerRuntime`), `:1303`
+(`RegistryToolSource`), `:1703` (`FirePath`) — plus two `LiveAgentRunner` mirrors
+at `:281` and `:322`. `evals/` imports it **five times**.
 
 So today the eval layer's subject-assembly is inside `nora/app/`, and the eval
 layer reaches in to use it. Both directions are wrong at once:

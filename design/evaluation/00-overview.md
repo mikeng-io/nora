@@ -4,140 +4,139 @@
 
 > **Different evaluation suites. Different input. One Nora.**
 
-Operator, 2026-09-17. Everything below is that sentence with its consequences
-written out. It is not a goal or a direction; it is the property that decides
-whether any number out of this layer means anything.
+## 1. The finding
 
-## 1. Why this is a DELETE, not a refactor
+**Every component the eval layer builds is built smaller than production builds
+it.** Measured by AST over the call sites, 2026-09-17:
 
-`evals/` is rebuilt from zero. The directory is removed, not modified.
+| component | production | eval | missing |
+|---|---|---|---|
+| `FirePath` | `composition.py:2458` **36** | `eval_support.py:1703` **21** | **15** |
+| `DreamerRuntime` | `composition.py:3322` **12** | `eval_support.py:1109` **9** | 3 |
+| `DreamerRuntime` | same | `eval_support.py:1359` **11** | 1 |
+| `RelevanceGate` | `composition.py:2692` **9** | `eval_support.py:980` **8** | 2 (+1 eval-only) |
+| `RegistryToolSource` | `composition.py:3252` **11** | `eval_support.py:1303` **9** | 2 |
+| `LiveAgentRunner` | `composition.py:1414` **5** | `eval_support.py:281` **4** | 1 |
 
-**Because modifying is what produced the current state.** Every driver in there
-was a reasonable local change — somebody needed to measure a thing, the existing
-shape did not fit, so they added a path beside it. Eight times. The result is not
-a messy implementation of one idea; it is eight ideas, and no amount of editing
-converges them, because each edit is again a local change that has to fit what is
-already there.
+Plus `evals/harness.py:612` `build_offline_pipeline(14)` and `evals/run.py:665`
+`Agent(5)`, which assemble subjects of their own.
 
-The operator's version:
+**Seven places build a Nora. None of them is `build_dependencies`, which is what
+the deployment runs** (`Dockerfile` → `nora/__main__.py:84`).
+
+## 2. What is missing, and why it is not cosmetic
+
+### `FirePath` — 15 collaborators, driving `proactive_act`
+
+```
+decisions                        media_join
+self_card_conclusions            people_in_window_conclusions
+people_in_window_speakers        tool_call_log_store
+llm_state                        preview_source
+participation_runner             memory_read_timeout_seconds
+standing_store_timeout_seconds   shadow_channel / shadow_platform
+gate_shadow_channel / gate_shadow_platform
+```
+
+`decisions`, `self_card_conclusions`, `people_in_window_*` and `media_join` are
+**prompt inputs**. A suite graded on *"what the room heard"* is grading a turn
+assembled from a materially smaller prompt than the deployment sends.
+
+### `RelevanceGate` — `persons` and `media_join`, and production says what breaks
+
+`composition.py` documents both, on the lines that pass them: without `persons`,
+`person_name` is `None` on every row; without `media_join`, an image-only message
+reads as an **empty body** and `render_context` drops the row — *a systematic
+under-admission*.
+
+The gate suite omits both **and adds `capabilities`**, which production
+deliberately does not pass (reversed 2026-09-10 on measured numbers). So the eval
+gate reads a different prompt than the deployed gate in three ways at once.
+
+### `DreamerRuntime` — `store_timeout_seconds`, absent from BOTH eval sites
+
+Production passes `cfg.dreamer.store_timeout_seconds`; neither eval site does, so
+both silently run on the module default.
+
+### Nothing guards any of this
+
+`tests/architecture/test_assembler_parity.py` compares `composition.py` against
+`offline.py` — both pass `FirePath(36)`, so it is green and always will be. **It
+does not look at `eval_support.py`**, which is where all six divergences live.
+
+## 3. Why DELETE and not refactor
+
+A refactor needs a target shape the current code is an imperfect version of.
+There are seven shapes and the target is in production. Each was a reasonable
+local change — somebody needed to measure a thing, the existing shape did not
+fit, so they added a path beside it. Editing again is another local change
+fitting what is already there.
 
 > 因為你改，你最終只會越改越錯。
 
-The measurement that makes this concrete is §2: there is no single subject to
-refactor **toward**. A refactor needs a target shape that the current code is an
-imperfect version of. Here the current code is six different shapes, and the
-target is in production.
+## 4. What this bundle does NOT rest on
 
-## 2. What is actually there — six Noras
+An earlier draft supported the argument with counts from
+`design/09-decision-index.md` — how many rules have an eval, how many have only a
+unit test. **Those counts are withdrawn.** They were measured three times and
+produced three answers; two independent reviews produced two more, disagreeing
+with each other. The index is harder to count than it looks, and the counts were
+decoration on a finding that does not need them.
 
-Every place an eval composes a subject, and what it wires:
+**§1's table is the whole argument.** It is AST-measured, reproducible in one
+command, and every row is a `file:line` anyone can open.
 
-```
-evals/harness.py:612        build_offline_pipeline(14 kwargs)   participation, journeys
-nora/app/eval_support.py:1109   DreamerRuntime(9 kwargs)        note_candidates
-nora/app/eval_support.py:1359   DreamerRuntime(11 kwargs)       proactive        <- DIFFERENT
-nora/app/eval_support.py:980    RelevanceGate(8 kwargs)         relevance_gate
-nora/app/eval_support.py:1303   RegistryToolSource(9 kwargs)    proactive's tools
-evals/run.py:665            Agent(5 kwargs)                     adversarial
-```
+The underlying concern remains real and belongs on **#311**, not here: most
+behavioural rules are guarded by tests that establish the code is wired, which is
+a different claim from "she behaves". That is a separate finding and it will be
+stated with numbers somebody can reproduce, or not stated.
 
-**The two `DreamerRuntime`s are not the same object** — one takes `grants` and
-`tool_budget_overrides`, the other does not. So `note_candidates` and
-`proactive_decide` measure two different Dreamers, and nothing says so.
-
-**None of the six is `build_dependencies`**, which is what the deployment runs.
-
-### 2.1 What that means for every number this layer has produced
-
-| reading | subject |
-|---|---|
-| `being_contradicted` 67% / 53%, `identity_grounding` 42% (#227) | `Agent(doctrine.text, tools=[])` |
-| `proactive_decide` recall 0.20–0.50 (#158) | `DreamerRuntime(11 kwargs)` |
-| `note_candidates` 1 − 0.7^N sampling | `DreamerRuntime(9 kwargs)` |
-| the gate's 35/35 `no_go` (#221) | `RelevanceGate(8 kwargs)` |
-
-Four numbers, four different objects, none of them the deployed one — and all
-four have been quoted in the same breath as statements about Nora, by this
-session among others. **No two of them are comparable, and none is about her.**
-
-## 3. The chain this exists to serve
-
-```
-a design decision            DEC-n / R-n in design/09-decision-index.md
-  → the behaviour it claims   what she must or must not DO
-    → an evaluation that can refute it
-      → driven against the one Nora
-```
-
-Measured on `design/09-decision-index.md`: **250 decision and rule rows — 10 cite
-an `evals/` instrument (five of them the bare-model corpora), 196 cite a unit
-test only, 44 cite nothing.** Of the 92 `R-*` rules, which are behavioural by
-construction: 4 have an eval, 52 are guarded by a test that measures wiring, 36
-have nothing.
-
-**Corrected 2026-09-17, and the correction matters**: of those 52, **8 are
-DEPRECATED/RETIRED/REVERSED** (mechanically counted) and roughly 30 are genuinely
-settled by a mechanism — a lock, a `PRIMARY KEY`, a registry, a startup gate. The
-population that needs a behavioural instrument is closer to **13** than 52. That
-is a judgement from reading them, not a measurement, and it is flagged as such.
-
-Thirteen is a list, not a substrate problem — **but the list cannot be worked
-while the thirteen would be measured against six different objects.** That is why
-this comes first and the list comes after.
-
-## 4. Out of scope, said first because it bounds everything
+## 5. Out of scope
 
 **The test suite.** Unit, integration and e2e are solved outside this repo:
 
 > 你 search 返到底人哋 unit test 點做、integration test 點做、e2e test 點做，就已經
-> 完咗件事。嗰度其實冇乜嘢好傾。
+> 完咗件事。
 
-Correct, and it bounds this bundle. The test layer's blast radius is *"do we
-catch a mistake before it ships"* — it does not reach runtime behaviour. Look up
-standard practice and follow it; do not invent a convention for it here.
+Its blast radius is *"do we catch a mistake before it ships"*, not runtime
+behaviour. **What has no industry answer is whether an LLM agent behaves as
+designed**, and that is the only thing here.
 
-**What has no industry answer is whether an LLM agent behaves as designed.** That
-is the only thing in this bundle.
+## 6. What survives the delete
 
-## 5. What survives the delete
+- **13 corpora** (`evals/**/*.yaml`) — cases and expectations are data.
+- **The graders** — judge, rubric, structural. What a verdict means does not
+  depend on how the subject was built.
+- **Measured readings in corpus headers**, which are provenance.
+- **`subject=` in the provenance line** (#310) — the qualifier travels with the
+  number into logs, where prose does not. **Caveat:** it exists at exactly one
+  print site today and covers none of the other drivers.
 
-Not the drivers. The things that took real work and are independent of how the
-subject is assembled:
+## 7. What this does NOT claim
 
-- **The corpora** — `evals/**/*.yaml`, 13 files. Cases and expectations are data
-  and were never the problem. They are re-homed, not rewritten.
-- **The grading** — the judge, the rubric, the structural graders. What a verdict
-  means does not depend on how Nora was built.
-- **The findings recorded inside them.** Corpus headers carry measured readings
-  and their caveats; those are provenance and travel with the cases.
-- **The `subject=` provenance token** (#310), which is the one idea from tonight
-  worth keeping: the qualifier travels with the number into logs and pastes,
-  where prose in a document does not.
+- **That each divergence is a defect.** Several are deliberate and documented —
+  `participation_gate=None` is right for its stated reason (*"a suite that had to
+  get past a live gate call first would be measuring the gate's verdict and the
+  turn's behaviour in one number"*). The defect is that seven assemblies exist,
+  nothing relates them, and **nothing detects when one drifts.**
+- **That the rebuild is cheap.** ~7,700 lines. `02-the-rebuild` sizes it.
+- **A convention.** Written last, describing what exists. Attempted first on
+  2026-09-17 (PR #307) and withdrawn the same day.
 
-## 6. What this bundle does NOT claim
+## 8. What would refute this bundle
 
-- **That the six subjects are each wrong.** Several are locally reasonable —
-  `participation_gate=None` is deliberate, documented, and right (*"a suite that
-  had to get past a live gate call first would be measuring the gate's verdict
-  and the turn's behaviour in one number"*). The defect is that six exist and
-  nothing relates them, not that any one is badly built.
-- **That the rebuild is cheap.** `evals/` is 5,629 lines of Python and 13
-  corpora; `nora/app/eval_support.py` is another 1,739. §`02` sizes it.
-- **A convention for writing suites.** That is written LAST, describing what
-  exists. Writing it first describes the six variations and legitimises them,
-  which was attempted on 2026-09-17 (PR #307) and withdrawn the same day.
+**Diff each eval-built component against the production construction of the same
+component** — gate against gate, `FirePath` against `FirePath`, Dreamer against
+Dreamer — and show the divergences do not reach the model.
 
-## 7. The reading that would refute this bundle
+§1 is the kwarg diff. What it does not establish is **impact**: whether a missing
+`media_join` or `decisions` changes the bytes that reach the model for the cases
+these suites actually run. If it does not, the seven are one Nora wearing seven
+coats and this bundle is withdrawn.
 
-If the six subjects turn out to produce **the same prompt** for the same input,
-then they are one Nora wearing six coats and the delete is unjustified.
-
-Nobody has checked. `test_assembler_parity.py` compares two call sites' kwarg
-NAMES; `test_offline_pipeline_assembler.py` checks that `notes`/`standing` reach
-the prompt in the offline path alone. **Nothing compares what two subjects
-actually send to the model.**
-
-That check is cheap and decisive — same input, each path, diff the assembled
-prompt — and it should be run before the delete, not because the delete is in
-doubt but because the diff is the specification for what the one subject has to
-carry.
+*(An earlier draft proposed diffing the six subjects' prompts against **each
+other**. That check cannot fire: the gate reads `applies_to="relevance_gate"`,
+the adversarial path reads `"tag"`, the Dreamer reads `cfg.dreamer.dir`, and
+`RegistryToolSource` sends nothing to a model — `composition.py:2708` states the
+gate/Nora split as a decision this bundle endorses. Same-component-against-
+production is the comparison that can come back empty.)*

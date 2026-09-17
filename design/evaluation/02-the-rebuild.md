@@ -6,7 +6,7 @@
 |---|---|
 | `evals/**/*.py` | **5,629** |
 | `evals/**/*.yaml` (13 corpora) | data — **survives** |
-| `nora/app/eval_support.py` | **1,739** — three of the six composition sites |
+| `nora/app/eval_support.py` | **1,739** — five of the seven composition sites |
 | `nora/app/offline.py` | **335** |
 | **deleted or re-homed** | **~7,700** |
 
@@ -16,19 +16,26 @@ shapes and the target is in production.
 
 ## 2. Order, and the first step is not code
 
-**Step 0 — diff the six subjects.** Same input, each path, compare the assembled
-prompt. Nobody has ever done this.
+**Step 0 — diff each eval-built component against PRODUCTION's construction of
+the same component.** Gate against gate, `FirePath` against `FirePath`, Dreamer
+against Dreamer. Not the subjects against each other — that comparison cannot
+come back empty, because they read different doctrine audiences by an existing
+decision (`00-overview` §8).
+
+`00-overview` §1 is the kwarg half of this, already done. What remains is
+**impact**: does a missing `media_join`, `persons` or `decisions` change the
+bytes that reach the model for the cases these suites actually run?
 
 Two outcomes, both useful:
 
-- **They differ** → the diff IS the specification for what the one subject must
-  carry, and it names every place a suite has been measuring something the
-  deployment does not send.
-- **They agree** → `00-overview` §7's refutation fires, the delete is
-  unjustified, and this bundle is withdrawn.
+- **The bytes differ** → the diff IS the specification for what the one subject
+  must carry, and it names every place a suite measures something the deployment
+  does not send.
+- **The bytes are identical** → the seven are one Nora wearing seven coats, and
+  this bundle is withdrawn.
 
-Do this before deleting anything. It costs one script and it is the only step
-that can stop the rest.
+Do this before deleting anything. It is the only step that can stop the rest, and
+unlike the earlier draft's version it **can** return empty.
 
 **Step 1 — the one subject.** One function returning Nora, its home settled
 (`01-boundaries` §6 — the layer contract refuses `nora.testing`, measured). No

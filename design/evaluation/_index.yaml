@@ -1,20 +1,20 @@
 kind: design_index
 title: "Evaluation — one Nora, many inputs (a delete and rebuild, not a refactor)"
 description: >
-  One invariant: different evaluation suites, different input, ONE Nora. Measured
-  2026-09-17, there are SIX — evals/harness.py:612 build_offline_pipeline(14),
-  eval_support.py:1109 DreamerRuntime(9), eval_support.py:1359
-  DreamerRuntime(11, and not the same object), eval_support.py:980
-  RelevanceGate(8), eval_support.py:1303 RegistryToolSource(9), run.py:665
-  Agent(5) — and none of them is build_dependencies, which is what the
-  deployment runs. So four numbers this layer has produced (#227's 67/53/42,
-  #158's proactive recall, note_candidates' sampling, #221's 35/35) are about
-  four different objects and none is about her. This is therefore a DELETE and
-  rebuild, not a refactor: there is no target shape the current code is an
-  imperfect version of. The boundary is clean-code/DDD — the eval layer depends
-  on Nora, Nora depends on nothing in it, and the eval layer assembles nothing;
-  a suite is cases, and if adding one needs code the boundary has leaked. Step 0
-  is a check that can withdraw the whole bundle.
+  Every component the eval layer builds is built SMALLER than production builds
+  it, measured by AST over the call sites: FirePath 36 -> 21 (missing media_join,
+  decisions, self_card_conclusions, people_in_window_*, tool_call_log_store and
+  nine more), DreamerRuntime 12 -> 9 and 12 -> 11, RelevanceGate 9 -> 8 while
+  ADDING capabilities that production deliberately dropped, RegistryToolSource
+  11 -> 9, LiveAgentRunner 5 -> 4. Seven places build a Nora and none is
+  build_dependencies, which is what the deployment runs. Nothing guards it:
+  test_assembler_parity compares composition.py against offline.py, which both
+  pass FirePath(36), so it is green while eval_support.py's FirePath(21) goes
+  unwatched. Hence a DELETE and rebuild rather than a refactor — there is no
+  target shape the current code is an imperfect version of. The boundary is
+  clean-code/DDD: the eval layer depends on Nora, Nora depends on nothing in it,
+  the eval layer assembles nothing, and a suite is cases. Step 0 can withdraw the
+  whole bundle.
 status: proposed
 origin: >
   Operator session 2026-09-17, opened by one question — "your measurement, what
@@ -37,7 +37,7 @@ external_edges:
   - {dst: "dreamer-agent-loop/35-ambient-participation", rel: relates_to, provenance: asserted}
   - {dst: "dreamer-agent-loop/36-relevance-gate", rel: relates_to, provenance: asserted}
 decisions:
-  reserved: "NONE CLAIMED. No decision is taken by this bundle; 01-the-runner section 3 is the first one to make, and it is the operator's"
+  reserved: "NONE CLAIMED. No decision is taken by this bundle; 01-boundaries section 6 is the first one to make, and it is the operator's"
   index: null
 governance:
   reviewed_by: >
@@ -45,23 +45,24 @@ governance:
     author's gate and was then refuted on two independent adversarial reviews,
     so an unreviewed state is worth naming loudly here rather than assumed.
   measured: >
-    00-overview section 2 and 01-the-runner sections 1-2 are measurement, read
+    00-overview section 2 and 00-overview section 1 and 01-boundaries section 4 are measurement, read
     off the tree at b3c21686 — the eight driver functions and their line
-    numbers, the five composition sites, the ~90 build_dependencies calls in
+    numbers, the seven composition sites, the ~90 build_dependencies calls in
     tests/test_composition.py, and the import boundary in
     tests/test_boundaries.py. Everything else is design and is NOT measured.
     In particular the claim that every driver difference is expressible as an
-    entry point plus input (00-overview section 3) is ASSERTED and is the thing
+    entry point plus input (01-boundaries sections 2 and 3.1) is ASSERTED and is the thing
     to attack.
   synced_with: >
     #292 (the prompt-assembly session) — its injector work is validated by a
     corpus that strips the framing it is about, which is this bundle's problem
     seen from the other side. #311 carries the findings.
 open_questions:
-  - "STEP 0, AND IT CAN WITHDRAW THIS BUNDLE — nobody has ever compared what two eval subjects send to the model. Same input, each of the six paths, diff the assembled prompt. If they agree, the six are one Nora wearing six coats and the delete is unjustified. If they differ, the diff IS the specification. One script, before anything is deleted"
-  - "OPERATOR, AND IT IS THE FIRST REAL ONE — where the single subject function lives. The layer contract refuses nora.testing, probed 2026-09-17: -> nora.app breaks 2 contracts (a REVERSE import, which is what layers exist to prevent), -> nora.infra 1, -> nora.config 2. nora/app/offline.py sits in the application package only because evals/ may import nora.app and may not import tests/. If no location is legal, the contract is the thing to change and that is a larger decision than this bundle"
-  - "REFUTES 01-boundaries IF FALSE — that the entry point can be a PORT rather than a taxonomy. Try relevance_gate (a real component, no turn) and participation (a full turn) through one runner before building the rest; they are deliberately the least alike. A previous attempt had a binary that could not hold relevance_gate and graded it with a third answer its own rule did not contain (PR #307, withdrawn)"
-  - "CORRECTED 2026-09-17 AND FLAGGED AS JUDGEMENT — 00-overview section 3 first said 52 behavioural rules are guarded by wiring tests. Reading them: 8 are DEPRECATED/RETIRED/REVERSED (mechanically counted) and ~30 are genuinely settled by a mechanism (a lock, a PRIMARY KEY, a registry, a startup gate). The population needing a behavioural instrument is closer to 13. That is a judgement from reading, not a measurement"
-  - "NOT DECIDED — what replaces the reconstruction suites. A bare model on doctrine text is a cheap and useful probe of WORDING; under this boundary it is not an evaluation of Nora and cannot use the runner. Whether it survives as a separately named tool is open"
-  - "DISCIPLINE WHILE THIS RUNS, not a question — until step 5, no number from the old layer may be quoted as behaviour without naming its subject. That is what #310's subject= provenance token was added for"
-  - "NOT IN THIS BUNDLE — the convention. Step 6, describing what exists. Written first it describes the six variations and legitimises them, which was attempted on 2026-09-17 (PR #307) and withdrawn the same day after two adversarial reviews"
+  - "STEP 0, AND IT CAN WITHDRAW THIS BUNDLE — 00-overview section 1 is the KWARG diff and is done. What remains is IMPACT: does a missing media_join / persons / decisions change the bytes that reach the model for the cases these suites run? Diff each eval-built component against PRODUCTION's construction of the same component. NOT the subjects against each other, which cannot come back empty because they read different doctrine audiences by an existing decision (composition.py:2708)"
+  - "OPERATOR, AND IT IS THE FIRST REAL ONE — where the single subject function lives. Re-probed 2026-09-17 by injecting each import and running lint-imports: nora.testing -> nora.app breaks 1 contract (the layered architecture, a reverse import), -> nora.infra 1, -> nora.config 2. A new top-level package outside both root packages is the option neither the node nor the contract has considered, and taking it would force 'the eval layer' in 01-boundaries section 5 to be DEFINED rather than assumed"
+  - "REFUTES 01-boundaries IF FALSE — that the entry point can be a PORT rather than a taxonomy. Try relevance_gate (a real component, no turn) and participation (a full turn) through one runner first; they are deliberately the least alike. Unresolved against it: four things that need code and fit none of the three ports named — note_candidates' samples_per_fire, the gate's capabilities experiment, adversarial judge_samples/judge_model, and proactive_act's room fixtures. Also unconstructed: ONE Outcome shape over four disjoint frozen dataclasses (GateProbeResult, NoteCandidatesDrive, ProactiveDecideDrive, ProactiveActDrive)"
+  - "WITHDRAWN 2026-09-17 — this bundle no longer rests on any count from design/09-decision-index.md. Those counts were measured three times by the author and produced three answers, and two independent reviews produced two more that disagreed with each other. The underlying concern (behavioural rules guarded by tests that establish the code is wired) is real and belongs on #311, stated with numbers somebody can reproduce or not stated"
+  - "UNPRICED AND IT COULD KILL THE REBUILD — driving build_dependencies per case needs a fresh Postgres plus migrations (tests/test_composition.py's fixture); the gate suite today runs ~40 windows with no database. This is NOT in 02-the-rebuild section 5's stopper list and should be, priced before Step 2"
+  - "UNADDRESSED — what happens to #227's and #158's open findings during the rebuild. Section 2.1's retraction de-evidences a live safety reading (being_contradicted.yaml records 0/5 on the never-grounded control, 'R-83's own carve-out failing in the direction it was written to prevent') and the bundle names no owner, replacement or date for it"
+  - "SUPERSESSION UNSTATED — design/05-evaluation.md is the repo's existing evaluation node, live and cited by design/00-overview.md and by decision-index rows A8, A11, A12. This bundle proposes deleting the layer that implements it and never mentions it"
+  - "NOT IN THIS BUNDLE — the convention. Step 6, describing what exists. Written first it describes the variations and legitimises them, attempted 2026-09-17 (PR #307) and withdrawn the same day"
