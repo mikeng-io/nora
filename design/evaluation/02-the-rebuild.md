@@ -97,7 +97,22 @@ measured readings and caveats; those travel.
 
 **Step 4 — the remaining entry points**, one at a time.
 
-**Step 5 — delete `evals/`, `eval_support.py`, `offline.py`.** Last, not first.
+**Step 5 — delete `evals/*.py` and `eval_support.py`. NOT `offline.py`.**
+Last, not first.
+
+**`nora/app/offline.py` IS NOT AN EVAL MODULE, and this bundle said it was.**
+Measured 2026-09-18 by an adversarial reviewer who ran the delete:
+`build_offline_pipeline` is the offline composition root for
+`tests/integration/harness.py`, so deleting it stops **106 integration tests**
+and takes **ten acceptance rules** with it — R-1, R-3, R-5, R-8, R-9, R-10,
+R-10b, R-10c, R-12, R-23. §1's line item "`nora/app/offline.py` (335 lines)"
+was wrong about what that file is for, and `01-boundaries` §4's reading of it
+as "a pipeline assembly that exists only for evals and tests" collapsed two
+very different things: evals, and the integration suite.
+
+It stays. If it should eventually go, that is its own piece of work with its
+own argument, and it is about the integration suite rather than about
+evaluation.
 Deleting before the replacement drives one real case means a period with no
 instrument at all, and the instrument being wrong is better than absent while
 something is being built against it.

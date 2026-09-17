@@ -129,10 +129,40 @@ deleting either — that is what found the speaker-rotation defect.
 
 ## Step 8 — audit, then Step 5 of `02-the-rebuild`: the delete
 
-Spawn adversarial Opus reviewers first (see discipline 6). Then delete
-`evals/*.py`, `nora/app/eval_support.py`, `nora/app/offline.py` (~7,700 lines),
-plus the shims in `evals/rubric.py` and `evals/judge.py` that re-export the
-moved graders.
+Spawn adversarial Opus reviewers first (see discipline 6). **DONE 2026-09-18,
+and the answer was NO** — see `02-the-rebuild` Step 5 and the blocking list
+below.
+
+Delete `evals/*.py` and `nora/app/eval_support.py`, plus the shims in
+`evals/rubric.py` and `evals/judge.py`. **NOT `nora/app/offline.py`** — it is
+the offline composition root for 106 integration tests and ten acceptance
+rules, and this bundle was wrong to list it.
+
+**Blocking, measured by running the delete:**
+
+1. Port `tests/integration/harness.py` off `build_offline_pipeline`, or keep
+   `offline.py`. 106 tests, 10 rules.
+2. Re-home R-15 and R-97, whose only named tests live in `evals/`.
+3. Give `test_the_barred_call_is_a_name_this_gate_can_see` a positive example
+   outside `eval_support.py`. It is the control for a bar protecting a MEASURED
+   safety property (ADR 0011, 1/6 vs 6/6), its one example is
+   `_StrandsGateClient`, and the obvious "fix" — dropping the assertion — makes
+   its sibling vacuous. Disarming a forgery probe by renaming its payload.
+4. Extend `tests/integration/test_live_parity_gate.py` to the other four entry
+   points. **This is the one-way door**: after the delete, `tag`,
+   `participation`, `dreamer` and `proactive_act` can never again be compared
+   against the layer that produced every number the repo currently quotes.
+5. Fix the 30 dangling doc references, `nora/dreamer/objectives/proactive.md`
+   LAST and carefully — it is a live, bind-mounted prompt.
+6. Update the four `make eval-*` targets, or they name commands that do not
+   exist.
+
+**Consciously accept or replace** — each is a real capability with no
+counterpart today: the journeys/routing tier (`evals/journeys.py`, DEC-76's
+whole subject), Langfuse export, token-cost accounting, `--repeat`'s k/N and
+spread, `--seed-production`, `--effort`, `--skills`, `--via-sdk`,
+`--capabilities`, leak/reveal detection, precision/recall and the
+false-positive rate design 39 §5 calls the primary number.
 
 Check before deleting: `tests/test_evals_rubric.py` and anything else importing
 the shims; `tests/architecture/test_corpora_are_rehomed_not_rewritten.py` dies
