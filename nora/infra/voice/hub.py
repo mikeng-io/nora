@@ -144,7 +144,7 @@ class VoiceControllerHub:
         is already connected. Adopt its generation ONLY when the live
         connection is to the very channel requested — anything else is a
         real conflict and climbs back out as one."""
-        status = await self._client_for(guild_id).status()
+        status = await self._client_for(guild_id).status(guild_id)
         if status.get("voice") == "connected" and status.get("channel_id") == channel_id:
             log.info(
                 "voice join for guild %s: adopting the controller's existing "
@@ -321,7 +321,7 @@ class VoiceControllerHub:
             if not guild_id:
                 continue
             try:
-                status = await self._client_for(guild_id).status()
+                status = await self._client_for(guild_id).status(guild_id)
                 if status.get("voice") != "connected":
                     continue
                 channel_id = status.get("channel_id")

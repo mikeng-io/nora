@@ -157,19 +157,19 @@ test('a state write failure is loud: state_write_ok flips false in /voice/status
     path: statePath,
   };
   const h = await makeHarness({ stateStore });
-  const before = await h.get('/voice/status');
+  const before = await h.get(`/voice/status?guild_id=${GUILD}`);
   assert.equal(before.body.state_write_ok, true);
 
   failWrites = true;
   await h.join(); // join persists desired connected -> write fails
-  const after = await h.get('/voice/status');
+  const after = await h.get(`/voice/status?guild_id=${GUILD}`);
   assert.equal(after.body.state_write_ok, false);
   assert.equal(after.body.voice, 'connected'); // the join itself still succeeded
 
   failWrites = false;
   const { generation } = after.body;
   await h.post('/voice/exit', { guild_id: GUILD, generation }); // persist recovers
-  const recovered = await h.get('/voice/status');
+  const recovered = await h.get(`/voice/status?guild_id=${GUILD}`);
   assert.equal(recovered.body.state_write_ok, true);
   await h.close();
 });

@@ -2,6 +2,23 @@
 
 Choice: **plain TCP, length-prefixed binary frames**
 (`[u32be len][u8 user_id_len][user_id utf8][pcm bytes]`), default port 4599.
+
+**A connection announces its GUILD once, on connect** (multi-guild,
+2026-09-17), in a frame whose `user_id_len` is ZERO:
+
+    hello  [u32be len][u8 0][guild_id utf8]
+
+A real frame can never have a zero-length user id — Discord issues no empty
+snowflake — so the existing length byte discriminates and the audio layout is
+byte-identical. Once rather than per frame because a pump is created per join,
+so a connection is one guild for its lifetime; 20 ms of audio keeps its 2-byte
+header. The hello is written before any buffered audio, so a gate never has to
+guess which guild the first utterance came from.
+
+Without it a gate could not tell which server a speaker was in, which is why
+every server used to need its own gate container. The codec lives in
+`src/codec.mjs` (JS) and `deploy/voice-wake/wakegate/codec.py` (Python) — two
+implementations of one format, with twin test suites.
 The sidecar is the TCP CLIENT: it connects out to `PUMP_HOST:PUMP_PORT`,
 where the future Python wake gate (stage 3) listens. `consume.mjs` is the
 stand-in listener for verification. In the container the default

@@ -342,32 +342,21 @@ keys and rejects them (`extra_forbidden`), so both entered a restart loop:
 **279 restarts, `analytics` down four days, `presence` a day.** The fix was one
 `--force-recreate presence analytics` onto the image that was already built.
 
-**A PROFILED container is invisible to every command above.** The second
-guild's voice pair (`voice-sidecar-b`, `voice-wake-b`, added 2026-09-17) sits
-behind compose's `multi-guild` profile, and compose SKIPS a profiled service
-unless the profile is enabled or the service is named. So a bare
-`docker compose up -d` rebuilds and recreates `voice-sidecar` while leaving
-`voice-sidecar-b` on the image it was created from — the same shape as the
-279-restart incident above, with the same `docker ps` lie (both show
-`voice-sidecar:latest`, because that is the reference they asked for).
-
-It bites `config.toml` edits too: `voice-wake-b` bind-mounts that file, and a
-single-file bind mount needs a RECREATE, which `--force-recreate nora` and a
-bare `up -d` will not give a profiled container.
-
-**On a multi-guild deployment, put the profile in the environment** so every
-command in this runbook covers both pairs:
+**The two voice containers are NOT on `nora:latest`** — `voice-sidecar` and
+`voice-wake` build their own images, so `--force-recreate nora` does not touch
+them and `verify-deploy.py` cannot see them (it only inspects containers on
+`nora:latest`). After a change to either, recreate them by name and read the
+image back per container:
 
 ```bash
-export COMPOSE_PROFILES=multi-guild     # or set it in the shell profile
-docker compose up -d --force-recreate voice-sidecar voice-sidecar-b \
-                                      voice-wake voice-wake-b
+docker compose up -d --force-recreate voice-sidecar voice-wake
+docker inspect --format '{{.Image}}' voice-sidecar
+docker image inspect voice-sidecar:latest --format '{{.Id}}'    # must match
 ```
 
-`verify-deploy.py` does NOT cover either voice pair — it only inspects
-containers running `nora:latest` — so the read-back for these is
-`docker inspect --format '{{.Image}}'` against `docker image inspect
-voice-sidecar:latest --format '{{.Id}}'`, per container.
+There is no per-guild container: one sidecar serves every server Nora holds
+voice on, and one wake gate serves every sidecar connection
+(design/voice-channel/07 §12.5).
 
 `verify-deploy.py` asks the two questions the deploy itself cannot: is every
 container that asked for this image actually ON the image just built, and is it

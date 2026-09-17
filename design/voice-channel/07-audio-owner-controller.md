@@ -503,43 +503,54 @@ audio-controller's one allowed decision, documented here and nowhere in nora's d
    multi-guild (generation is a single counter, the outbox is a single queue,
    the state file is single-connection).
 
-   **This decision STANDS, and multi-guild landed 2026-09-17 without touching
-   it.** "Phase 2+" turned out to name the wrong axis. Discord's limit is one
-   voice connection per bot token PER GUILD, so a guild is the natural unit of
-   ownership — which makes multi-guild a deployment TOPOLOGY (one controller
-   container per guild) rather than a controller that juggles several. The
-   single-connection state machine above is reused verbatim, N times, and each
-   controller keeps answering 400 to any guild but its own. That 400 is a
-   safety property; keying the generation counter, the outbox and the
-   desired-state file by guild would have traded it for two containers, in
-   exactly the concurrency code the September audit went through.
+   **This decision STANDS. Multi-guild landed 2026-09-17 without reversing a
+   word of it — and NOT the way this section first recorded.**
 
-   nora holds one `VoiceControllerClient` per guild, mapped in
-   `[speech.tts.sidecars]`, and that map IS the join allow-list — a guild with
-   no controller has no voice. `VoiceControllerHub` was already per-guild
-   everywhere except its `event_seq` bookmark, which had to become per-guild
-   too: each controller mints its own sequence from 1, so one counter read the
-   second guild's first event as a jump backwards and the first guild's next
-   as a gap. Each guild needs its OWN wake gate as well — the pump seam
-   carries `(user_id, pcm)` and nothing else, so a shared gate could not say
-   which guild a speaker was in.
+   "Phase 2+" named the wrong axis. Discord's limit is one voice connection
+   per bot token PER GUILD, so a guild is the unit of ownership: what a
+   controller must not do is hold two connections for ONE guild. Holding one
+   each for several guilds is not the same claim.
 
-   Cost, measured 2026-09-17: ~261 MiB per extra guild (voice-sidecar 60 MiB +
-   voice-wake 201 MiB). `stt` is shared, not duplicated. The second pair sits
-   behind compose's `multi-guild` profile so a single-guild deployment starts
-   unchanged.
-6. **Empty-channel auto-leave (Miles, 2026-09-16 11:2x HKT): when the last
-   human leaves the voice channel, start a 1-minute timer; if no human
-   returns before it fires, the controller tears the connection down
-   (exit) AND writes `desired=idle` to the state file, so a restart does
-   NOT rejoin an empty room. Music keeps playing through the timeout (a
-   human returning before the timer fires simply resets it); the teardown
-   fires `channel-emptied`/`voice-death` to nora as today, so nora's
-   session/queue teardown is unchanged. Timer is observed by the
-   controller (it owns membership observation); anyone present (including
-   Nora itself does NOT count — only human listeners) resets it. If Nora
-   is alone in the channel from the start (joined with no humans), the
-   timer arms on join and applies the same policy.
+   The first attempt shipped that as a DEPLOYMENT topology — a second
+   container per guild, behind a compose profile, with `VOICE_GUILD_ID_B` in
+   `.env`. The operator rejected it, and the reason was better than the
+   design: the guild ids were already in `policy.toml` and `config.toml`, and
+   `.env` was a THIRD copy. A second copy is a drift source; a third is an
+   admission that nobody knows which is authoritative.
+
+   What made the containers necessary was not the state machine. Every module
+   here — lifecycle, arbiter, outbox, controller — is a factory with ZERO
+   module-level mutable state, and `createCore({guildId, …})` already built a
+   whole per-guild stack. Instantiating it twice was always possible. What
+   actually blocked it:
+
+   - `createController` owned the HTTP server, so N cores meant N ports. The
+     socket moved out to a **front door** (`createFrontDoor`) that owns
+     everything happening before a guild is known — reading the body is how
+     the guild becomes known — and dispatches on `body.guild_id`. Body limits,
+     the 413/400 split and the `clientError` shape moved with it verbatim;
+     `endpoints.test.mjs` pins each and is what made the move safe.
+   - `GET /voice/status` carries no body, so the guild rides `?guild_id=`.
+     Absent is 400, unknown is 404 — never a default, which would report one
+     guild's playback as another's.
+   - The wake seam carried `(user_id, pcm)` and no guild, so a gate could not
+     attribute audio. A connection now announces its guild in a **hello
+     frame** (§TRANSPORT.md), and ONE gate serves every guild.
+
+   So the shape is: ONE sidecar container, ONE wake gate, N connections. The
+   sidecar has NO guild configuration at all — a core is minted on
+   `/voice/join` and restored at boot from `<guild>.json` in its state
+   directory. Which guilds exist is `[speech.tts] sidecars` in nora's
+   config.toml, and one place only; Discord enforces the rest, because a join
+   for a guild the bot is not in fails at the API.
+
+   What §12.5's 400 bought is preserved differently: a core is created ONLY on
+   a join, so a POST naming an unknown guild is `wrong_guild` and mints
+   nothing — the same fail-closed answer, without an unbounded map keyed by
+   request input.
+
+   Cost of a second guild is now one line of config. The 261 MiB the
+   container topology would have spent per guild is not spent at all.
 
 ## 13. What this does NOT do (anti-scope, pre-locked)
 

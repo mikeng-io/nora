@@ -7,7 +7,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { createCore } from '../src/controller.mjs';
+import { createCore, createFrontDoor } from '../src/controller.mjs';
 import { createStateStore } from '../src/state_store.mjs';
 
 export const GUILD = 'g1';
@@ -227,7 +227,6 @@ export async function makeHarness(options = {}) {
 
   const core = createCore({
     guildId: GUILD,
-    channelId: options.channelId ?? CHANNEL,
     joinVoice,
     entersStateFn,
     stateStore: options.stateStore ?? createStateStore({ path: statePath }),
@@ -244,8 +243,19 @@ export async function makeHarness(options = {}) {
     outboxOptions: options.outboxOptions ?? {},
   });
 
-  await new Promise((resolve) => core.server.listen(0, '127.0.0.1', resolve));
-  const base = `http://127.0.0.1:${core.server.address().port}`;
+  // The socket belongs to the FRONT DOOR since 2026-09-17, not to a core: one
+  // process serves N guilds behind one port. The harness wires a single-guild
+  // front door, so every test below still drives the real request path —
+  // body limits, the 413/400 split, dedupe — through the code production
+  // uses.
+  const server = createFrontDoor({
+    controllerFor: (guildId, { any = false } = {}) =>
+      (any || guildId === GUILD ? core.controller : null),
+    health: () => ({ status: 'ok', guilds: [GUILD] }),
+    log: () => {},
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
   const post = async (p, body) => {
     const res = await fetch(base + p, {
       method: 'POST',
@@ -268,6 +278,9 @@ export async function makeHarness(options = {}) {
   return {
     clock,
     core,
+    // The socket is the front door's since 2026-09-17; `core.server` is gone.
+    server,
+    port: server.address().port,
     player,
     connection,
     client,
@@ -286,7 +299,7 @@ export async function makeHarness(options = {}) {
     },
     leaves: () => leaveCount,
     pumpCloses: () => pumpCloseCount,
-    close: () => new Promise((resolve) => core.server.close(resolve)),
+    close: () => new Promise((resolve) => server.close(resolve)),
   };
 }
 

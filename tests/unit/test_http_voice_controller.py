@@ -86,7 +86,10 @@ async def test_join_returns_the_state_snapshot(aiohttp_client):
 async def test_status_returns_the_full_get_body(aiohttp_client):
     vc = await _client(aiohttp_client, _app())
 
-    snapshot = await vc.status()
+    # The guild rides the query string on this GET since 2026-09-17: one
+    # controller process serves several, so an unqualified status could only
+    # answer for whichever it picked.
+    snapshot = await vc.status("guild-1")
 
     assert snapshot["generation"] == "gen-1"
     assert snapshot["player"]["status"] == "playing"
@@ -128,7 +131,7 @@ async def test_a_transport_error_maps_to_unavailable():
     vc = VoiceControllerClient("http://127.0.0.1:1", timeout_seconds=2.0)
 
     with pytest.raises(VoiceControllerUnavailable):
-        await vc.status()
+        await vc.status("guild-1")
 
 
 async def test_an_unparseable_success_body_maps_to_unavailable(aiohttp_client):
@@ -141,7 +144,7 @@ async def test_an_unparseable_success_body_maps_to_unavailable(aiohttp_client):
     vc = await _client(aiohttp_client, app)
 
     with pytest.raises(VoiceControllerUnavailable):
-        await vc.status()
+        await vc.status("guild-1")
 
 
 async def test_a_success_body_without_a_state_snapshot_is_unavailable(aiohttp_client):
