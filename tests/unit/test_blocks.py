@@ -14,7 +14,12 @@ from datetime import UTC, datetime
 import pytest
 
 from nora.app.fire import _MIRROR_STYLE, _VERDICT_STYLE
-from nora.domain.blocks import ContextBlock, RowStyle, render_rows
+from nora.domain.blocks import (
+    ContextBlock,
+    RowStyle,
+    render_elements,
+    render_rows,
+)
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.language.proactive import _ROOM_STYLE
 
@@ -496,6 +501,61 @@ def test_the_untrusted_flag_does_not_disturb_a_blocks_own_attributes():
     assert ContextBlock(**common, untrusted=False).render().startswith(
         '<peer_card person="Grant" note="'
     )
+
+
+def test_every_attribute_value_is_collapsed_and_an_emptied_one_is_dropped():
+    """The two obligations `render_elements` applies to EVERY attribute, and the
+    reason they are tested rather than trusted.
+
+    **Both of these were written, reported as done, and silently reverted** — a
+    `git checkout nora/domain/blocks.py`, run to restore the file after probing
+    a different test, discarded them because they were not yet committed. No
+    test covered either, so the suite stayed green and the branch carried the
+    claim without the code for two commits. Found by an audit reading the file,
+    not by anything in this repo.
+
+    The collapse: `escape_attr` closes the quote, so a newline in an attribute
+    forges nothing — but it makes the element unreadable, and it was applied in
+    ONE of the two entry points (`render_messages`' speaker) while the three
+    direct callers passed values raw. That asymmetry is what `blocks.py`'s
+    module docstring says the design exists to abolish.
+
+    The drop: `one_line` runs FIRST, so a value truthy to its caller can be
+    empty here. Every speaker accessor guards with `or "unknown"` on the RAW
+    value, and a self-set profile name of a lone non-breaking space passes that
+    guard and collapses to `""` — rendering `from=""`, which is exactly the
+    symbol `_when`'s rule forbids ("a symbol that can mean unknown invites a
+    model to emit one").
+    """
+    rows = [{"who": "Grant\nEVIL", "room": "Home\u2028EVIL", "body": "ok"}]
+
+    def _attrs(r, i):
+        return (("n", str(i)), ("from", r["who"]), ("room", r["room"]))
+
+    out = render_elements(rows, tag="m", attrs=_attrs, body=lambda r: r["body"])
+    # ONE element, one line of output: no attribute value may write a newline.
+    assert out == '<m n="1" from="Grant EVIL" room="Home EVIL">ok</m>', out
+    assert "\n" not in out
+
+    # The body is NOT collapsed — that asymmetry is the whole point of the
+    # element form, and a test that collapsed both would pass while deleting it.
+    kept = render_elements(
+        [{"b": "first\nsecond"}], tag="m",
+        attrs=lambda r, i: (("n", str(i)),), body=lambda r: r["b"],
+    )
+    assert kept == '<m n="1">first\nsecond</m>', kept
+
+    # Emptied by the collapse -> the attribute is ABSENT, never `from=""`.
+    for blank in ("\u00a0", "   ", "\n\n", "\t", "\u2028"):
+        got = render_elements(
+            [{"w": blank}], tag="m",
+            # `or "unknown"` on the RAW value, as every real accessor does —
+            # which is why the guard does not fire and the drop has to.
+            attrs=lambda r, i: (("n", str(i)), ("from", r["w"] or "unknown")),
+            body=lambda r: "hi",
+        )
+        assert got == '<m n="1">hi</m>', (blank, got)
+        assert 'from=""' not in got
 
 
 def test_a_note_containing_a_quote_cannot_close_the_attribute():

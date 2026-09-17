@@ -239,7 +239,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import ClassVar, Protocol
 
-from nora.domain.blocks import ContextBlock, render_elements
+from nora.domain.blocks import ContextBlock, render_elements, speaker_name
 from nora.domain.models import TranscriptRow
 from nora.domain.notes import (
     BODY_MAX_CHARS,
@@ -735,7 +735,7 @@ def _render_line(row: TranscriptRow, *, room: str, tz: _dt.tzinfo) -> str:
                 r.ts / 1000, tz=tz).strftime(_LINE_TIME_FORMAT) if r.ts else None),
             # `or "unknown"`, NOT `or row.sender_id` — the raw id is an E.164
             # or an ACI, and this block is a prompt (R-18, DEC-80).
-            ("from", r.person_name or r.sender_name or "unknown"),
+            ("from", speaker_name(r.person_name, r.sender_name)),
             ("room", room),
             ("reply_to", None if r.quoted_ts is None else _when(r.quoted_ts)),
         )

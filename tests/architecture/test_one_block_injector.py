@@ -62,11 +62,21 @@ HAND_WRITTEN: dict[str, tuple[str, ...]] = {}
 #: borrows for the block and its catalogue line.
 _OWN_INJECTOR = {
     "nora/doctrine/loader.py": "`render_section` — doctrine's own injector",
-    # STRIPS the wrapper, does not build one: `<nora_doctrine>` is
-    # `doctrine/loader.py`'s, and this module removes it from text it received.
-    # The discriminator ("opens AND closes in emitted text") cannot tell a strip
-    # from a build, because a strip names both tags too.
-    "nora/ingest/relevance_gate.py": "strips `<nora_doctrine>`, doctrine builds it",
+}
+
+#: Tags a module NAMES without BUILDING, with the reason. The discriminator
+#: ("opens AND closes in emitted text") cannot tell a strip from a build,
+#: because a strip names both tags too.
+#:
+#: **Scoped per TAG, not per module, and that is the fix for a hole this file
+#: had for one commit.** `relevance_gate` was exempted wholesale for its
+#: `<nora_doctrine>` strip, which also excused every other block in it — a
+#: module on `_OWN_INJECTOR` gets no per-module check at all, so the file that
+#: exists to stop hand-written blocks was giving one module a free pass to grow
+#: them. Now the module is checked and only the tag is allowed.
+_NOT_BUILT_HERE = {
+    ("nora/ingest/relevance_gate.py", "nora_doctrine"):
+        "strips the wrapper doctrine/loader.py builds",
 }
 
 #: Not a prompt. Smith renders an HTML PAGE for a person to open in a browser;
@@ -150,7 +160,11 @@ def test_every_module_that_writes_a_tag_is_classified():
     argued for — it cannot merely go unnoticed, which is the only failure mode
     that has actually happened."""
     discovered = _discovered()
-    unclassified = set(discovered) - _CLASSIFIED
+    # `CONVERTED` counts as classified: those modules ARE checked, per module,
+    # by `test_no_block_is_written_by_hand`. Leaving them out of `_CLASSIFIED`
+    # made this test demand a second classification for a module the stricter
+    # test already covers.
+    unclassified = set(discovered) - _CLASSIFIED - set(CONVERTED)
     assert not unclassified, (
         f"{sorted(unclassified)} open and close an element by hand and are "
         "classified nowhere. Route it through ContextBlock (see #292), or "
@@ -181,15 +195,70 @@ def test_the_census_can_only_shrink():
         )
 
 
-@pytest.mark.parametrize("rel", sorted(HAND_WRITTEN))
-@pytest.mark.xfail(
-    strict=True,
-    reason="issue #292: #220's injector reached one prompt builder of six",
+#: **The nine modules #292 converted**, named so the guard below has something
+#: to iterate. `HAND_WRITTEN` is empty, and a test parametrised over an empty
+#: dict COLLECTS NOTHING — pytest emits a single skipped `[NOTSET]` case and the
+#: file reads as though a per-module gate is running when none is.
+#:
+#: That is this file's own subject arriving in this file: a declaration that
+#: reads as a guarantee and enforces nothing (#187). Caught by a peer asking
+#: whether anything that is not the real declaration could satisfy the check,
+#: and by collecting the tests to look rather than trusting the green.
+#: Found by `test_the_converted_list_is_not_quietly_shrinking` on its first run:
+#: the four `*_render.py` modules and `decision_log` build `ContextBlock`s and
+#: were never on `HAND_WRITTEN` — they never hand-wrote a tag — so nothing was
+#: checking that they never start.
+CONVERTED = (
+    "nora/agent/prefill.py",
+    "nora/domain/decision_log.py",
+    "nora/ingest/relevance_gate.py",
+    "nora/language/culture_render.py",
+    "nora/language/note_render.py",
+    "nora/language/standing_render.py",
+    "nora/engagement/debrief_render.py",
+    "nora/infra/transit/arrivals.py",
+    "nora/language/culture.py",
+    "nora/language/note_candidates.py",
+    "nora/language/note_curator.py",
+    "nora/language/proactive.py",
+    "nora/skills/loader.py",
 )
+
+
+@pytest.mark.parametrize("rel", CONVERTED)
 def test_no_block_is_written_by_hand(rel: str):
-    """THE GATE. One injector, so `untrusted`, the framing clause, the order
-    and the catalogue line stop being per-site decisions."""
-    assert not _built_tags(rel), (
-        f"{rel} opens {list(_built_tags(rel))} by hand instead of through "
+    """THE GATE, per module. One injector, so `untrusted`, the framing clause,
+    the order and the catalogue line stop being per-site decisions.
+
+    Named modules rather than `HAND_WRITTEN`'s keys, so this keeps asserting
+    after the census empties — which is the moment it would otherwise go quiet.
+    `test_every_module_that_writes_a_tag_is_classified` is the half that catches
+    a module NOT on this list; this is the half that catches one on it
+    regressing, and it names which.
+    """
+    hand_written = tuple(
+        tag for tag in _built_tags(rel)
+        if (rel, tag) not in _NOT_BUILT_HERE
+    )
+    assert not hand_written, (
+        f"{rel} opens {list(hand_written)} by hand instead of through "
         "ContextBlock.render()"
+    )
+
+
+def test_the_converted_list_is_not_quietly_shrinking():
+    """`CONVERTED` is a hand-written list, which this repo's history says goes
+    stale — so it is checked against the source rather than trusted. Every
+    module that builds a prompt block through `ContextBlock` must be on it, or
+    dropping a module's line here would silently stop guarding it."""
+    builds = set(CONVERTED) | set(_OWN_INJECTOR) | set(_NOT_A_PROMPT)
+    uses_injector = set()
+    for path in sorted((ROOT / "nora").rglob("*.py")):
+        rel = path.relative_to(ROOT).as_posix()
+        if "ContextBlock(" in path.read_text(encoding="utf-8"):
+            uses_injector.add(rel)
+    missing = uses_injector - builds - {"nora/domain/blocks.py"}
+    assert not missing, (
+        f"{sorted(missing)} build blocks through ContextBlock and are not in "
+        "CONVERTED, so nothing checks that they stay hand-written-tag-free."
     )

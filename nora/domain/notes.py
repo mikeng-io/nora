@@ -40,6 +40,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from xml.sax.saxutils import unescape
 
+from nora.domain.prompt import one_line
+
 #: The injected index carries one line per note on EVERY tag (§5.1), so these
 #: are prompt-budget decisions, not cosmetic ones. They are enforced in
 #: `__post_init__` rather than in `nora.language.note_render` because a renderer
@@ -270,7 +272,17 @@ def note_handle(title: str) -> str:
     the paragraph above makes about `casefold` — the readers must agree
     exactly.
     """
-    return unescape(title.strip(), _ATTR_ENTITIES).casefold()
+    # COLLAPSED, because the index collapses it. `render_note_rows` puts the
+    # title in an attribute and `render_elements` runs `one_line` on every
+    # attribute value, so a title holding a newline reaches the model as one
+    # line — and the model types back what it was SHOWN. Without this, a note
+    # titled «Dinner\nplan» stored as two lines never matches the one-line form
+    # it was displayed as: `_resolve_updates` finds nothing, the pass writes a
+    # DUPLICATE instead of an update, and a proactive `remind` written without
+    # its `note_id` falls through `ProactiveScreen`. Exactly the consequence the
+    # paragraph above records for `&` — same defect, reached through the fix
+    # for a different one.
+    return one_line(unescape(title.strip(), _ATTR_ENTITIES)).casefold()
 
 
 #: What `escape_attr` writes and `escape` does not, so `note_handle` decodes the

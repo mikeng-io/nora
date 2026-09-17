@@ -83,7 +83,12 @@ from xml.sax.saxutils import escape
 
 from pydantic import BaseModel, Field
 
-from nora.domain.blocks import ContextBlock, assemble, render_messages
+from nora.domain.blocks import (
+    ContextBlock,
+    assemble,
+    render_messages,
+    speaker_name,
+)
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
 from nora.domain.ports import RecordStore
@@ -456,7 +461,7 @@ def render_context(
         rows,
         speaker=lambda r: (
             _GATE_SELF_NAME if r.is_nora
-            else (r.person_name or r.sender_name or "unknown")
+            else speaker_name(r.person_name, r.sender_name)
         ),
         body=lambda r: r.body,
         # `or None` preserves the pre-existing reading of a FALSY ts — a row

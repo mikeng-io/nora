@@ -143,7 +143,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from typing import Any, ClassVar, Literal, Protocol, get_args
 
-from nora.domain.blocks import ContextBlock, render_elements
+from nora.domain.blocks import ContextBlock, render_elements, speaker_name
 from nora.domain.bounds import over_fetch
 from nora.domain.gatherings import AmbiguousOpenGatheringsError
 from nora.domain.media_join import MediaJoin
@@ -1710,7 +1710,7 @@ def _render_evidence(
         evidence, tag="m",
         attrs=lambda r, i: _curator_attrs(
             r, i, now=now,
-            who=r.person_name or r.sender_name or "unknown",
+            who=speaker_name(r.person_name, r.sender_name),
         ),
         body=lambda r: r.body,
     )

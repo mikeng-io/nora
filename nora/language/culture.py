@@ -64,7 +64,7 @@ import logging
 from collections.abc import Callable, Mapping, Sequence
 from typing import Protocol
 
-from nora.domain.blocks import ContextBlock, render_messages
+from nora.domain.blocks import ContextBlock, render_messages, speaker_name
 from nora.domain.culture import BODY_MAX_CHARS, CultureProposal, CultureRevision
 from nora.domain.errors import NoraError
 from nora.domain.models import TranscriptRow
@@ -335,7 +335,7 @@ def _render_batch(batch: Sequence[TranscriptRow]) -> str:
         batch,
         # `or "unknown"`, NEVER `or row.sender_id` — the raw id is an E.164 or
         # an ACI and this block is a prompt (R-18, DEC-80).
-        speaker=lambda r: r.person_name or r.sender_name or "unknown",
+        speaker=lambda r: speaker_name(r.person_name, r.sender_name),
         body=lambda r: r.body or "",
         timestamp=lambda _r: None,
     )

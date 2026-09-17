@@ -18,6 +18,7 @@ from ..domain.blocks import (
     catalogue,
     render_bullets,
     render_messages,
+    speaker_name,
 )
 from ..domain.decision_log import (
     LOOP_DECISIONS_HEADER,
@@ -399,7 +400,13 @@ def _label(row: TranscriptRow, display_name: str) -> str:
     """
     if row.is_nora:
         return display_name
-    return row.person_name or row.sender_name or "unknown"
+    # THROUGH THE HELPER, because the guard has to run AFTER the collapse.
+    # `person_name or sender_name or "unknown"` tests the RAW string, so a
+    # self-set profile name of a lone non-breaking space is truthy, the
+    # fallback never fires, and `ContextBlock.render()`'s collapse then empties
+    # it — rendering `<replying_to>` with no author at all beside siblings that
+    # have one.
+    return speaker_name(row.person_name, row.sender_name)
 
 
 def _by_ts(rows: Iterable[TranscriptRow]) -> dict[int, TranscriptRow]:
