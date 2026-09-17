@@ -194,7 +194,9 @@ that override stays approximate until someone does.
    concurrent folds of one key forked the chain until the head read took
    `FOR UPDATE`; and the no-dates property turned out to be held DOUBLY, so
    every single mutation of it survived.
-5. The participation turn reads culture. Measured.
+5. The participation turn reads culture. Measured. **SHIPPED 2026-09-17 as
+   PR #284 and REVERTED the same day — still to do, and the four reasons it
+   came back out are the acceptance criteria for the next attempt.**
 
    **The chronicle-vs-account arm cannot be built BEFORE this step, and an
    earlier reading of §6 implied it could.** `evals/cases/participation/
@@ -207,6 +209,41 @@ that override stays approximate until someone does.
 
    So the arm ships WITH the block, in one change, and the block's own decision
    check (§6) is what says whether either should stay.
+
+   **WHY #284 WAS REVERTED.** The constraint immediately above was written into
+   this bundle by PR #279 the day before, precisely to govern this step, and
+   #284 shipped against all of it:
+
+   - **No arm.** The block shipped with zero eval coverage — `grep -rn culture
+     evals/` returned nothing. "WITH the block, in one change" is the whole
+     sentence, and half of it shipped.
+   - **No decision check.** §6 says it "is not optional for this block", and
+     that "if it cannot move a labelled metric, the honest conclusion is that
+     it does not ship into that prompt". None was run, so the honest
+     conclusion was the only one available.
+   - **Step 3 was skipped.** The block landed eight hours after the store, and
+     `[culture] enabled` defaults to false, so the store it reads is empty by
+     construction in every default deployment. There was nothing to baseline
+     and nothing to read.
+   - **An unauthorised consumer.** `01-the-adaptor §6` names exactly one —
+     "the participation turn is a straightforward consumer". #284 also wired
+     the TAG PATH, the highest-traffic prompt in the system, which no design
+     decision in this bundle authorises.
+
+   **This was not a rejection of the code.** The key resolution in it was
+   careful and right: culture is written by a Dreamer adaptor handed
+   `scopes()`, so it keys `primary_id` and NOT the arriving thread's
+   `conversation_id` like `standing` beside it — read with the wrong one it
+   matches zero rows and renders as «this room has no account yet», a REAL
+   state that nothing anywhere reports as a miss. Both read paths resolved
+   through the policy and a test asserted the key actually used. Reinstate that
+   verbatim from `6111c1b5` when the block re-ships beside its measurement arm.
+
+   `nora/language/culture_render.py` was deliberately LEFT IN PLACE by the
+   revert — it is corpus-agnostic and renders whatever it is handed, so it
+   costs nothing to keep and is the half that does not have to be rewritten.
+   What was removed is the wiring: `prefill`, `engagement/context`, `app/fire`,
+   `domain/models`, and the assembler/offline/eval-support passthrough.
 6. **Only then** the gate, if at all — against #144/#147, which measured the
    gate getting worse with more context, and #194, which says a gutted gate
    instruction currently passes everything.

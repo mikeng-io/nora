@@ -233,7 +233,7 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
 _AMBIGUOUS: frozenset[str] = frozenset(
     {
         "aclose", "append", "claim", "create", "delete",
-        "describe", "enqueue", "get", "head", "lookup", "mark", "put", "read",
+        "describe", "enqueue", "get", "lookup", "mark", "put", "read",
         "recent", "resolve", "rsvps_for", "save", "search",
         "sweep_firing", "update", "watermark",
     }
