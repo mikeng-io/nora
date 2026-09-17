@@ -14,6 +14,7 @@ from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
 from nora.obs.metrics import Metrics
 from tests.objectives import SHIPPED_DREAMER as SHIPPED
+from tests.objectives import shipped_objectives
 
 DOCTRINE_FM = """\
 ---
@@ -94,6 +95,42 @@ def test_the_assembly_is_the_doctrine_then_the_objective(tree):
     text = _store(tree).for_objective("room-language").text
     assert text.index("Doctrine body.") < text.index("Objective body.")
     assert "Second objective." not in text
+
+
+def test_each_half_is_named_by_its_own_tag(tree):
+    """The seam D9's second bullet asked for. Before this the two documents were
+    joined by a bare newline — no separator, no heading, no marker that a second
+    document with different authority had begun — while the adaptor's rendered
+    INPUT, arriving as the first user message, was XML-framed throughout."""
+    text = _store(tree).for_objective("room-language").text
+    assert text.startswith('<dreamer_doctrine name="dreamer">\n')
+    assert text.endswith("\n</dreamer_objective>")
+    assert text.index("</dreamer_doctrine>") < text.index('<dreamer_objective name=')
+    assert text.count("<dreamer_doctrine") == text.count("<dreamer_objective") == 1
+
+
+def test_the_digest_covers_the_envelope_and_not_only_the_bodies(tree):
+    """#175, one corpus over. A digest taken over the bodies would name LESS
+    than the prompt does, so an operator who renamed an objective would move the
+    served text and leave every row's `instruction_sha256` unchanged."""
+    import hashlib
+
+    instructions = _store(tree).for_objective("room-language")
+    bodies_only = hashlib.sha256(
+        b"Doctrine body.\n\nObjective body.\n"
+    ).hexdigest()
+    assert instructions.sha256 != bodies_only
+
+
+def test_renaming_an_objective_changes_the_digest_with_both_bodies_untouched(tree):
+    """The direct consequence of the line above, and the one an operator can
+    actually trip: `name` is rendered into the served tag, so it is part of the
+    instruction set's identity even though no body moved."""
+    before = _store(tree).for_objective("room-language").sha256
+    (tree / "objectives" / "room-language.md").unlink()
+    write_objective(tree, name="room-idiom", body="Objective body.\n")
+    after = _store(tree).for_objective("room-idiom").sha256
+    assert after != before
 
 
 def test_the_digest_is_over_the_text_that_is_actually_assembled(tree):
@@ -322,6 +359,45 @@ def test_there_is_exactly_one_shipped_dreamer_doctrine_and_it_is_operator_only()
     assert doc.meta["kind"] == "dreamer-doctrine"
     assert doc.meta["change_policy"] == "operator-only"
     assert doc.body.strip()
+
+
+def test_every_shipped_objective_assembles_inside_the_two_tags():
+    """Over the real tree rather than a fixture: an objective whose body happens
+    to open a tag it never closes would leave the seam unreadable for that one
+    adaptor only, and nothing in the tmp_path half would see it."""
+    store = shipped_objectives()
+    for name in store.objective_names():
+        text = store.for_objective(name).text
+        assert text.startswith('<dreamer_doctrine name="dreamer">\n'), name
+        assert text.endswith("\n</dreamer_objective>"), name
+        assert text.count("<dreamer_doctrine") == 1, name
+        assert text.count("</dreamer_doctrine>") == 1, name
+        assert text.count(f'<dreamer_objective name="{name}">') == 1, name
+        assert text.count("</dreamer_objective>") == 1, name
+
+
+def test_no_shipped_description_reaches_the_model():
+    """`render_part` promotes `name` and stops. These descriptions were authored
+    as repo metadata, not prompt text — the doctrine's ends with a note about
+    which startup gates the repo does not run — so promoting the field would
+    change seven `operator-only` documents' audience without their author's say.
+    Pinned from the other end: the descriptions are checked ABSENT from what is
+    served."""
+    from nora.instructions.frontmatter import parse_document
+
+    store = shipped_objectives()
+    doctrine_file = next(iter(sorted((SHIPPED / "doctrine").glob("*.md"))))
+    doctrine_desc = str(parse_document(
+        doctrine_file, required=("name", "description")
+    ).meta["description"])
+    assert len(doctrine_desc) > 100          # the field really is prose, not a label
+    for name in store.objective_names():
+        text = store.for_objective(name).text
+        assert doctrine_desc not in text
+        desc = str(parse_document(
+            SHIPPED / "objectives" / f"{name}.md", required=("name", "description")
+        ).meta["description"])
+        assert desc not in text, name
 
 
 # --- every shipped objective is accounted for ------------------------------

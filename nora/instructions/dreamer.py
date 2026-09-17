@@ -20,6 +20,14 @@ that one job is retuned. Folding the doctrine into each objective would copy the
 read/act line once per adaptor, which is the hand-maintained-catalogue shape
 DEC-29 already showed goes stale with nothing to catch it.
 
+**The assembled text names its two halves** (`render_part`). This is D9's
+second bullet — *"give the assembled text a structural boundary between
+doctrine and objective, as Nora's own doctrine has"* — the one bullet of that
+decision D10 strengthens rather than retires, since a doctrine that has stopped
+making claims about the job still has to be legible as a different document
+from the one that does. It is a rendering, not a gate: nothing here validates
+either half, and the tags carry `name` and `description` only.
+
 **No gates.** The doctrine's `check_kind_boundaries`,
 `check_normative_register` and `check_authority_graph` encode design/17's rules
 about Nora's own prompt — kinds, RFC 2119 register, an authority ordering — and
@@ -34,6 +42,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..domain.prompt import escape_attr
 from ..domain.provenance import instruction_sha256
 from ..obs.metrics import Metrics
 from .frontmatter import InstructionError, ParsedDocument, parse_document
@@ -59,6 +68,53 @@ REQUIRED = ("name", "kind", "version", "applies_to", "description", "change_poli
 
 _DOCTRINE_SUBDIR = "doctrine"
 _OBJECTIVES_SUBDIR = "objectives"
+
+# The two tags the assembled system prompt is made of. They are DIFFERENT tags
+# rather than one `<section kind="…">` — which is what `nora.doctrine.loader`
+# renders — because that corpus is N sections of one document under one root and
+# this one is exactly two documents with different authority and different
+# lifetimes. A shared root element would say they are parts of one thing, which
+# is the reading the seam exists to prevent.
+DOCTRINE_TAG = "dreamer_doctrine"
+OBJECTIVE_TAG = "dreamer_objective"
+
+
+def render_part(*, tag: str, name: str, body: str) -> str:
+    """Exactly the bytes one half of the assembled prompt contributes.
+
+    `nora.doctrine.loader.render_section`'s shape, and it exists for the same
+    reason: ONE function, so `for_objective` cannot build the text one way and
+    hash it another. That is not a hypothetical — #175 was a served
+    `<section …>` attribute that no digest named, and the fix there was this
+    function's ancestor.
+
+    **`name` and nothing else, where the doctrine's tag also carries
+    `description` — and the difference is measured, not stylistic.** Nora's
+    doctrine descriptions were authored as prompt text. These were authored as
+    repo metadata, and it shows the moment they are rendered: `dreamer.md`'s is
+    five hundred characters that end *"NOTE: none of the doctrine loader's gates
+    run on this file … (instruction-substrate spec §5)"*. Rendering it would put
+    a note about which startup checks the repo does not run into the system
+    prompt of every Dreamer run. Every one of these files is
+    `change_policy: operator-only`, so promoting the field would also change
+    seven documents' audience without their author's say.
+
+    `name` is safe to promote because it is the one field already constrained to
+    `NAME_RE` — `nora.instructions.frontmatter` keeps it to a charset that
+    "needs no escaping anywhere" precisely because it is used as an attribute
+    value. It is escaped here regardless, for the reason `nora.domain.prompt`
+    gives: the cost of doing it is nothing and the cost of the habit is R-13.
+
+    **An attribute says what a part IS, never what it contains.** A `tools="…"`
+    or an `applies_to="…"` here would be the hand-maintained catalogue
+    reinvented in a new location, which is the rule the doctrine loader already
+    writes down for its own tag.
+    """
+    return "\n".join((
+        f'<{tag} name="{escape_attr(name)}">',
+        body.strip("\n"),
+        f"</{tag}>",
+    ))
 
 
 @dataclass(frozen=True)
@@ -124,7 +180,16 @@ class DreamerInstructions:
         return self._watcher.failures
 
     def for_objective(self, name: str) -> InstructionSet:
-        """The doctrine plus one objective, assembled, hashed and versioned."""
+        """The doctrine plus one objective, assembled, hashed and versioned.
+
+        Each half arrives inside its own tag (`render_part`). Before this the
+        two were joined by a bare newline — no separator, no heading, no marker
+        that a second document with different authority had begun — while the
+        adaptor's rendered INPUT, which follows as the first user message, has
+        been XML-framed the whole time (`<transcript>`, `<notes>`,
+        `<standing_prior>`, and every `ContextBlock`). The model was reading a
+        structured lower half under an unstructured upper one.
+        """
         corpus = self._current()
         cached = self._cache.get(name)
         if cached is not None:
@@ -134,7 +199,15 @@ class DreamerInstructions:
         # `nora.doctrine.loader._assemble`'s, which is "\n". Assembling the text
         # one way and hashing it another is how a digest stops naming what was
         # sent, so the text below IS the hashed string.
-        parts = (corpus.doctrine.body, objective.body)
+        parts = (
+            render_part(
+                tag=DOCTRINE_TAG, name=corpus.doctrine.name,
+                body=corpus.doctrine.body,
+            ),
+            render_part(
+                tag=OBJECTIVE_TAG, name=objective.name, body=objective.body,
+            ),
+        )
         instructions = InstructionSet(
             text="\n".join(parts),
             sha256=instruction_sha256(*parts),
