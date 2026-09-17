@@ -39,7 +39,7 @@
     "file": "nora/agent/dreamer.py",
     "old": "    return AdaptorGrant(home_room=True)",
     "new": "    return AdaptorGrant()",
-    "target": "tests/unit/test_culture_adaptor.py tests/test_composition.py -k \"grant_names_NO_act or culture\""
+    "target": "tests/test_composition.py::test_the_granted_verbs_are_actually_BUILT_for_a_culture_key"
   },
   {
     "name": "part 2a: the grant quietly picks up an act verb",
@@ -130,7 +130,7 @@
     "file": "nora/domain/culture.py",
     "old": "BODY_MAX_CHARS = 1_600",
     "new": "BODY_MAX_CHARS = 8_000",
-    "target": "tests/unit/test_culture_adaptor.py -k \"fits_inside or SHORT_account\""
+    "target": "tests/unit/test_culture_adaptor.py::test_an_account_at_the_cap_fits_inside_the_budget_that_must_emit_it tests/unit/test_culture_adaptor.py::test_the_cap_is_a_SHORT_account_measured_against_the_objectives_example"
   },
   {
     "name": "part 2d: the character-to-token bridge stops covering the cap",
@@ -149,8 +149,8 @@
   {
     "name": "part 2d: the provider's per-completion ceiling drops under the cap",
     "file": "config.example.toml",
-    "old": "max_tokens = 2000",
-    "new": "max_tokens = 1000",
+    "old": "so 2000 is 5.4x headroom.\nmax_tokens = 2000",
+    "new": "so 2000 is 5.4x headroom.\nmax_tokens = 1000",
     "target": "tests/unit/test_culture_adaptor.py -k ONE_shipped_completion"
   },
   {

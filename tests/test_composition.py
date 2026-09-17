@@ -1578,15 +1578,39 @@ async def test_the_granted_verbs_are_actually_BUILT_for_a_culture_key(cfg, tmp_p
     assert deps.dreamer_runtime is not None
     source = deps.dreamer_runtime._tools
     culture = next(a for a in deps.dream_adaptors if a.name == "culture")
-    built = source.build(
-        key="g1", names=frozenset(culture.tools), workspace=None,
-        adaptor="culture", grant=deps.dreamer_runtime.grant_for("culture"),
-    )
+    # THE ROOM, captured off the one call that receives it. Asserting the
+    # returned NAMES alone does not measure this property and a mutation
+    # proved it: with the grant reverted to `AdaptorGrant()` all nine verbs
+    # still build — they are read-only, so the ceiling admits them — over
+    # `Room(platform="", roster_source=None)`, where every one of them answers
+    # `unavailable` forever. A green name list IS the defect.
+    captured: dict[str, object] = {}
+    real_build = source._registry.build
+
+    def _spy(**kw: object) -> object:
+        captured.update(kw)
+        return real_build(**kw)
+
+    source._registry.build = _spy
+    try:
+        built = source.build(
+            key="g1", names=frozenset(culture.tools), workspace=None,
+            adaptor="culture", grant=deps.dreamer_runtime.grant_for("culture"),
+        )
+    finally:
+        del source._registry.build
+
     names = {
         getattr(t, "tool_name", None) or getattr(t, "__name__", "") for t in built
     }
     assert names == set(culture.tools), sorted(set(culture.tools) - names)
     assert "where_been" in names and "ask_memory" in names
+    room = captured["room"]
+    assert room.platform == "signal", "the verbs were built over the EMPTY room"
+    assert room._roster_source is not None, "no roster: every verb is unavailable"
+    assert captured["conversation_id"] == "g1"
+    assert captured["location_trusted"] is True
+    assert captured["supplied_workspace"] is None
 
 
 async def test_no_home_room_wires_no_proactive_adaptor(cfg):
