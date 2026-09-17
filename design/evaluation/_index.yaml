@@ -1,0 +1,63 @@
+kind: design_index
+title: "Evaluation — one Nora, one runner, a suite is input"
+description: >
+  Eight bespoke drivers each compose their own subject, and one of them drifted
+  into a bare model on doctrine text with no prefill, no framing, no tools and
+  no guards — reported as her behaviour for as long as it existed. The drift is
+  the symptom: nothing contradicted it because there was no shared subject to
+  contradict it with. This bundle proposes the inverse of the requirement
+  document withdrawn on 2026-09-17 (PR #307): not a list of seams a suite may
+  substitute, but a shape in which a suite substitutes nothing. Build Nora once;
+  a suite is input, an expectation, and which entry point the input enters at.
+  01-the-runner answers the first open question with a measurement — the
+  production composition root IS drivable (`tests/test_composition.py` calls it
+  ~90 times) and the second builder exists because of an import rule, not a
+  technical limit.
+status: proposed
+origin: >
+  Operator session 2026-09-17, opened by one question — "your measurement, what
+  is it actually measuring?" — after four sessions of measurement discipline had
+  been applied to an instrument that did not bind to its subject. A first
+  attempt at the requirement (PR #307) was written and withdrawn the same day
+  after two adversarial Opus reviews; its failure is recorded in 00-overview §1
+  because the shape of the failure is why this bundle is shaped differently. The
+  operator's correction is the design: take Nora as she is, add the thing under
+  test, and there is nothing left to assemble. Findings and the six properties
+  any convention must satisfy are on #311. Tree at b3c21686.
+members:
+  - 00-overview.md
+  - 01-the-runner.md
+edges:
+  - {src: 01-the-runner, dst: 00-overview, rel: depends_on, provenance: asserted}
+external_edges:
+  - {dst: "dreamer-agent-loop/35-ambient-participation", rel: relates_to, provenance: asserted}
+  - {dst: "dreamer-agent-loop/36-relevance-gate", rel: relates_to, provenance: asserted}
+decisions:
+  reserved: "NONE CLAIMED. No decision is taken by this bundle; 01-the-runner section 3 is the first one to make, and it is the operator's"
+  index: null
+governance:
+  reviewed_by: >
+    NOT REVIEWED. The prior attempt at this subject (PR #307) passed its own
+    author's gate and was then refuted on two independent adversarial reviews,
+    so an unreviewed state is worth naming loudly here rather than assumed.
+  measured: >
+    00-overview section 2 and 01-the-runner sections 1-2 are measurement, read
+    off the tree at b3c21686 — the eight driver functions and their line
+    numbers, the five composition sites, the ~90 build_dependencies calls in
+    tests/test_composition.py, and the import boundary in
+    tests/test_boundaries.py. Everything else is design and is NOT measured.
+    In particular the claim that every driver difference is expressible as an
+    entry point plus input (00-overview section 3) is ASSERTED and is the thing
+    to attack.
+  synced_with: >
+    #292 (the prompt-assembly session) — its injector work is validated by a
+    corpus that strips the framing it is about, which is this bundle's problem
+    seen from the other side. #311 carries the findings.
+open_questions:
+  - "OPERATOR — 01-the-runner section 3: move the integration harness into nora.testing (A), widen the evals import boundary (B), or keep two builders behind a full parity gate (C). A matches the bundle's sentence; its cost is unsized"
+  - "UNSIZED and it gates everything — how much of tests/integration/harness.py can move into nora.testing without dragging pytest-only machinery with it. 01-the-runner section 6 says size this before building anything"
+  - "ASSERTED, NOT DECIDED — that relevance_gate fits as an entry point rather than a special case (00-overview section 4.1). If it does not, the shape is refuted; it is the cleanest instrument in the repo and a taxonomy that cannot hold it is wrong"
+  - "OPEN — what happens to the four reconstruction suites. Rebuilt on the runner, kept under an honest name as doctrine-wording probes, or deleted. A cheap probe has a use; a probe whose number reads like production does not"
+  - "OPEN — where the model sits. It is substituted routinely (--model, --effort, _ALWAYS_SENDS) and appeared on neither list in the withdrawn attempt. Presumably part of the subject with the override as declared input, but that is asserted"
+  - "OPEN — absorption order. relevance_gate is closest to the shape, adversarial is furthest. The test that the bundle is working is that every absorbed driver DELETES a _run_* function; if the count does not fall, the runner became a ninth builder"
+  - "NOT IN THIS BUNDLE — the convention itself. 00-overview section 7: build the runner, absorb the drivers, write the convention LAST describing what exists. A convention written first describes eight variations and legitimises them, which is the mistake already made once"
