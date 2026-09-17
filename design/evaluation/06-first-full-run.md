@@ -63,6 +63,73 @@
 > three judge samples over thirteen corpora is a day of wall time. One corpus
 > at a time, or fewer samples with that written on the provenance line.
 
+---
+
+# §8. The run after the fixes — 2026-09-18, structural only
+
+`sample: 1`, **no judge**, against the deployed aliases. **10 minutes**, down
+from 24, because per-case rooms and workspaces stopped the accumulation.
+
+```
+                        graded  err            before the fixes
+being_contradicted        6/6     0             6/6
+identity_grounding        8/8     0             8/8      <- still vacuous
+injections                5/5     0             5/5      <- still vacuous
+near_miss                 4/4     0             4/4
+no_trigger               12/12    0            12/12
+note_candidates          20/21    0            18/21     <- moved
+participation             9/13    2             7/13     <- moved
+proactive_act             7/11    0             7/11
+proactive_decide          9/11    0             8/11     <- moved
+relevance_gate           33/40    0            33/40
+source_scope              4/4     0             4/4      <- still vacuous
+transcript_injection      1/1     0             1/1
+trigger                  12/12    0            12/12
+                       -------  ----
+                        130/148    2
+```
+
+## 8.1 What moved, and it is the isolation
+
+`note_candidates` 18 → 20, `proactive_decide` 8 → 9, `participation` 7 → 9.
+Those three are exactly the corpora whose tables are WORKSPACE-keyed, and the
+fix was `workspace_for`. A case is no longer graded against the previous case's
+notes.
+
+## 8.2 What did NOT move, and why that is honest
+
+`identity_grounding 8/8`, `source_scope 4/4`, `injections 5/5`,
+`being_contradicted 6/6` are **still vacuous, and still withdrawn**. Nothing
+about them changed because nothing could: they are graded on `bool(said)`, and
+the thing they are about is what the reply SAYS. §1 of this page stands.
+
+## 8.3 The gate ran in 7 seconds, and that is the cache
+
+Forty gate calls in **7 seconds** — 0.175s each, against 78s on the previous
+run. That is not a faster gate; it is the gateway serving cached completions.
+
+Isolation is what made it possible: with a room per case the prompt is now
+byte-stable across runs, so a re-run hits the cache every time. The number
+(33/40) is identical to the previous run's, which is what a replay looks like.
+
+**This is the effective-n problem, arriving by a new road.** The per-draw
+timing line (§4.1) exists for exactly this and is the first thing to read on
+any future run. `NO_CACHE_HEADERS` is applied by the OLD gate probe and by
+nothing in the new layer — which was correct while the goal was to match
+production, and is now the thing that makes a re-run unreadable.
+
+## 8.4 The judge is too slow to grade this suite
+
+MEASURED: `nora-judge` takes **~211s** for one sample and frequently exceeds
+300s. A judged `being_contradicted` — six cases — took **1,780 seconds and
+returned five errors**, all of them the timeout.
+
+So judged grading is not available today at corpus scale, and that is an
+operational fact about the deployment rather than a defect in this layer. The
+three corpora that NEED a judge are the three that remain vacuous. Until a
+faster judge alias exists, their numbers cannot be made to mean anything, and
+this page says so rather than printing them.
+
 
 GOAL steps 6 and 7. Run 2026-09-18 against the DEPLOYED aliases (`nora`,
 `nora-gate`, `nora-dreamer`, read off norty's `config.toml`) over an `ssh -L`
