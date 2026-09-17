@@ -34,24 +34,36 @@ melspectrogram/embedding windows), so each speaking user gets their own
 float [-1, 1] input silently truncates to 0 and the gate would never fire
 (measured in the training lab, `voice-lab/scripts/gate_int16.py`).
 
-## Configuration (env)
+## Configuration
+
+Two sources, each owning what it should (AGENTS.md, the three config files).
+
+**config.toml** — bind-mounted read-only at `/app/config.toml` by compose, read
+once at boot by `wakegate/config_toml.py`; a change needs `docker compose restart
+voice-wake`. Set values with `nora config set …` on the host.
+
+| key | default | meaning |
+|---|---|---|
+| `[speech.wake].threshold` | `0.5` | wake score that starts collection |
+| `[speech.wake].model_path` | `/app/models/喂Nora.onnx` | baked into the image from `models/` (tracked; provenance, sha and metrics in `models/MODEL.md`; candidates and training code in `voice-lab/`) |
+| `[speech.wake].stt_model` | `sensevoice` | the wake path's STT engine (latency-bound); voice notes keep `[speech.stt].model` |
+| `[speech.wake].silence_tail_ms` | `1000` | trailing silence that ends an utterance |
+| `[speech.wake].max_utterance_s` | `10` | utterance ceiling |
+| `[speech.wake].silence_rms` | `400` | int16 RMS under this reads as silence |
+| `[speech.stt].endpoint` / `.language` / `.timeout_seconds` | `http://stt:8000` / `yue` / `30` | the local STT service (shared with Nora's voice-note path) |
+
+**env** — deployment identity and binds only:
 
 | var | default | meaning |
 |---|---|---|
+| `VOICE_GUILD_ID` / `VOICE_CHANNEL_ID` | — | become `conversation_id` = `"<guild>/<channel>"`, the same flattened shape the Discord parser produces for typed messages; empty = healthy-but-idle |
 | `WAKE_LISTEN_HOST` / `WAKE_LISTEN_PORT` | `0.0.0.0` / `4599` | seam bind (the sidecar connects OUT to here) |
 | `WAKE_HEALTH_HOST` / `WAKE_HEALTH_PORT` | `127.0.0.1` / `4601` | /health bind (loopback only) |
-| `WAKE_MODEL_PATH` | `/app/models/喂Nora.onnx` | baked into the image from `models/` (tracked in git; provenance, sha and metrics in `models/MODEL.md`; candidates and training code in `voice-lab/`) |
-| `WAKE_THRESHOLD` | `0.5` | wake score that starts collection |
-| `WAKE_SILENCE_TAIL_MS` | `1000` | trailing silence that ends an utterance |
-| `WAKE_MAX_UTTERANCE_S` | `10` | utterance ceiling |
-| `WAKE_SILENCE_RMS` | `400` | int16 RMS under this reads as silence |
-| `STT_URL` / `STT_MODEL` / `STT_LANGUAGE` | `http://stt:8000` / `noise-detection` / `yue` | the local STT service |
 | `NORA_INGEST_URL` | `http://nora:9100` | Nora's aiohttp app on the `nora` network |
-| `VOICE_GUILD_ID` / `VOICE_CHANNEL_ID` | — | become `conversation_id` = `"<guild>/<channel>"`, the same flattened shape the Discord parser produces for typed messages |
 
-Compose maps the operator's `VOICE_*` .env names onto these (see the
-`voice-wake` block in `docker-compose.yml`); `WAKE_THRESHOLD` comes from
-`VOICE_WAKE_THRESHOLD`.
+Until 2026-09-17 the model knobs were `WAKE_*` / `STT_*` env vars; they are
+ignored now (`deploy/voice-wake/tests/test_config_toml.py` pins that), so there is one answer to
+"what threshold / which STT model is running".
 
 ## Health semantics
 

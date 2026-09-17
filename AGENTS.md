@@ -215,7 +215,10 @@ there and are referenced by name. Hand-editing a 75KB TOML remains possible
 (`extra = "forbid"` still catches a broken file at boot) but is the last
 resort, because it bypasses the validation and the audit trail the CLI gives.
 
-The last two are bind-mounted read-only and **loaded once at
+`config.toml` is ALSO bind-mounted read-only into the two voice sidecars
+(`stt`, `voice-wake`): they read `[speech.stt]` / `[speech.wake]` with stdlib
+tomllib at boot (2026-09-17 — before that, the same knobs were env vars in
+compose and disagreed with this file). The last two are bind-mounted read-only and **loaded once at
 startup** — editing either without a restart changes nothing and warns you about
 nothing (`nora_unmapped_senders_total` is the tell). `identity.toml` takes one
 `[[persons.<id>.<platform>]]` block **per account**, all resolving to one

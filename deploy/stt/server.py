@@ -31,7 +31,12 @@ Also returns the raw text + detected language + duration for the caller.
 
 Env knobs (all optional):
   STT_DEVICE — default cpu (this host has no CUDA; Radeon 680M iGPU not used).
-  STT_MODEL — which model to pre-load at startup; default noise-detection.
+
+Which model is PRE-LOADED at startup (and answers a request that names none)
+comes from Nora's config.toml — `[speech.wake].stt_model`, the latency-bound
+wake path's engine — bind-mounted read-only at /app/config.toml by compose
+(`config_toml.py`; falls back to sensevoice without the file). The former
+`STT_MODEL` env var is gone: it and the config file used to disagree.
 """
 import argparse
 import asyncio
@@ -50,7 +55,9 @@ from opencc import OpenCC
 
 app = FastAPI(title="Nora STT", version="0.2.0")
 
-DEFAULT_MODEL = os.environ.get("STT_MODEL", "sensevoice")
+from config_toml import preload_model  # noqa: E402  (sibling module, stdlib only)
+
+DEFAULT_MODEL = preload_model()
 
 DEVICE = "cpu"
 MODEL_CONFIGS: dict[str, dict[str, Any]] = {
@@ -282,7 +289,7 @@ if __name__ == "__main__":
         "--device", default=os.environ.get("STT_DEVICE", "cpu"), help="cuda / cpu / mps",
     )
     parser.add_argument(
-        "--model", default=os.environ.get("STT_MODEL", DEFAULT_MODEL),
+        "--model", default=DEFAULT_MODEL,
         help="pre-load model at startup",
     )
     args = parser.parse_args()

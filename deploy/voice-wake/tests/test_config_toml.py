@@ -1,0 +1,67 @@
+"""config.toml is the one source for the wake gate's model knobs.
+
+Pins: (1) `[speech.wake]` + `[speech.stt]` values reach `Config`; (2) a missing
+file or section falls back to the code defaults (fresh clone boots); (3) env
+does NOT override a config.toml knob any more — the pre-2026-09-17 drift
+(compose `STT_MODEL=sensevoice` vs example `noise-detection`) must stay fixed;
+(4) a malformed file raises instead of silently defaulting.
+"""
+
+from pathlib import Path
+
+import pytest
+from wakegate.__main__ import build_config
+from wakegate.service import Config
+
+
+def test_toml_values_reach_config(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text(
+        "[speech.stt]\nendpoint = 'http://stt-b:8000'\nlanguage = 'auto'\ntimeout_seconds = 12.5\n"
+        "[speech.wake]\nthreshold = 0.42\nmodel_path = '/app/models/x.onnx'\n"
+        "stt_model = 'noise-detection'\n"
+        "silence_tail_ms = 800\nmax_utterance_s = 6.0\nsilence_rms = 250\n",
+        encoding="utf-8",
+    )
+    cfg = build_config(cfg_file, env={"VOICE_GUILD_ID": "1", "VOICE_CHANNEL_ID": "2"})
+    assert (cfg.threshold, cfg.model_path) == (0.42, "/app/models/x.onnx")
+    assert cfg.stt_model == "noise-detection"
+    assert (cfg.stt_url, cfg.stt_language, cfg.stt_timeout_s) == ("http://stt-b:8000", "auto", 12.5)
+    assert (cfg.silence_tail_ms, cfg.max_utterance_s, cfg.silence_rms) == (800, 6.0, 250.0)
+    assert cfg.conversation_id == "1/2"
+
+
+def test_missing_file_and_missing_section_fall_back_to_code_defaults(tmp_path: Path) -> None:
+    d = Config()
+    absent = build_config(tmp_path / "nope.toml", env={})
+    assert (absent.threshold, absent.stt_model) == (d.threshold, d.stt_model)
+    assert absent.stt_url == d.stt_url
+    partial = tmp_path / "config.toml"
+    partial.write_text("[speech.stt]\nendpoint = 'http://stt:8000'\n", encoding="utf-8")
+    cfg = build_config(partial, env={})
+    assert (cfg.threshold, cfg.model_path) == (d.threshold, d.model_path)
+    assert cfg.silence_tail_ms == d.silence_tail_ms
+
+
+def test_env_no_longer_overrides_model_knobs(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text(
+        "[speech.wake]\nthreshold = 0.6\nstt_model = 'sensevoice'\n", encoding="utf-8"
+    )
+    stale_env = {"WAKE_THRESHOLD": "0.1", "STT_MODEL": "noise-detection"}
+    cfg = build_config(cfg_file, env=stale_env)
+    assert cfg.threshold == 0.6
+    assert cfg.stt_model == "sensevoice"
+
+
+def test_env_still_owns_identity_and_binds(tmp_path: Path) -> None:
+    env = {"WAKE_LISTEN_PORT": "4700", "NORA_INGEST_URL": "http://n:1"}
+    cfg = build_config(tmp_path / "nope.toml", env=env)
+    assert (cfg.listen_port, cfg.nora_url) == (4700, "http://n:1")
+
+
+def test_malformed_config_raises(tmp_path: Path) -> None:
+    bad = tmp_path / "config.toml"
+    bad.write_text("[speech.wake\nthreshold = ", encoding="utf-8")
+    with pytest.raises(Exception):  # noqa: B017 — any parse error must surface, never default
+        build_config(bad, env={})

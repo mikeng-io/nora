@@ -1681,23 +1681,27 @@ class SpeechTtsConfig(BaseModel):
 
 
 class SpeechWakeConfig(BaseModel):
-    """`[speech.wake]` — the operator-facing record of the wake gate's knobs
-    (design/voice-channel/, stage 3).
+    """`[speech.wake]` — the wake gate's knobs (design/voice-channel/, stage 3).
 
-    UNUSUAL for this file, and the docstring carries the why: **nothing in
-    the nora process reads these values.** The wake gate is its own container
-    (`deploy/voice-wake/`) with its own dependency set; it is configured by
-    ENV VARS (compose maps the operator's `VOICE_*` .env names onto them),
-    not by bind-mounting Nora's config.toml into a second app. This section
-    exists because the three-config convention makes `config.example.toml`
-    the committed record of every operator knob — the wake gate's knobs are
-    operator knobs, so they are documented here beside their STT/TTS stage
-    siblings, with the values the container's env falls back to. Keep them
-    in step with `deploy/voice-wake/wakegate/service.py`'s `Config`.
+    Since 2026-09-17 the wake container (`deploy/voice-wake/`) READS this
+    section: compose bind-mounts config.toml read-only into it (as into nora)
+    and `wakegate/config_toml.py` loads `[speech.wake]` plus `[speech.stt]`'s
+    `endpoint`/`language`/`timeout_seconds` at startup — the same
+    load-once-at-boot lifetime identity.toml and policy.toml have, so a change
+    here needs a `voice-wake` restart. Before that date these knobs were env
+    vars (`WAKE_THRESHOLD`, `STT_MODEL`, ...) duplicated across compose and
+    this file, and the two disagreed; there is now one answer.
 
-    Ships INERT like its siblings: the wake service starts healthy-but-idle
-    without `VOICE_GUILD_ID`/`VOICE_CHANNEL_ID`, and `enabled` here is the
-    documented default for that posture, not a switch anything reads.
+    `stt_model` is the wake path's OWN engine choice, deliberately separate
+    from `[speech.stt].model`: a voice note is transcribed off-line and takes
+    the accurate `noise-detection` whisper, while a live 「喂 Nora」 utterance is
+    latency-bound and takes `sensevoice` (the 2026-09-16 fix that removed a
+    30-40 s wait). The STT service pre-loads THIS model at boot.
+
+    Ships INERT like its siblings: the container starts healthy-but-idle
+    without `VOICE_GUILD_ID`/`VOICE_CHANNEL_ID` (which stay in .env — they are
+    deployment identity, not a model knob), and `enabled` is the documented
+    default for that posture. Nothing in the nora process reads this section.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -1705,6 +1709,10 @@ class SpeechWakeConfig(BaseModel):
     enabled: bool = False
     threshold: float = Field(default=0.5, ge=0, le=1)
     model_path: str = "/app/models/喂Nora.onnx"
+    stt_model: str = "sensevoice"
+    silence_tail_ms: int = Field(default=1000, gt=0)
+    max_utterance_s: float = Field(default=10.0, gt=0)
+    silence_rms: float = Field(default=400.0, ge=0)
 
 
 class SpeechConfig(BaseModel):

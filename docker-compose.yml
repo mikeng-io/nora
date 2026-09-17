@@ -745,6 +745,10 @@ services:
     volumes:
       - stt-modelscope-cache:/home/stt/.cache/modelscope
       - stt-huggingface-cache:/home/stt/.cache/huggingface
+      # config.toml [speech.wake].stt_model = the engine pre-loaded at boot
+      # (2026-09-17: replaced the STT_MODEL env var, which had drifted from
+      # this file). Read-only, like nora's own mount of the same file.
+      - ./config.toml:/app/config.toml:ro
     healthcheck:
       # /health is served by the server process itself (deploy/stt/server.py)
       # — proves the HTTP layer is up; the model may still be downloading on
@@ -867,17 +871,15 @@ services:
       # conversation namespace as the channel's typed chat.
       - VOICE_GUILD_ID=${VOICE_GUILD_ID:-}
       - VOICE_CHANNEL_ID=${VOICE_CHANNEL_ID:-}
-      - WAKE_THRESHOLD=${VOICE_WAKE_THRESHOLD:-0.5}
-      # STT engine: sensevoice default (warm 0.3s CPU vs whisper 5.1s on a
-      # measured 2s clip; this engine drives the live wake→reply path).
-      - STT_MODEL=${STT_MODEL:-sensevoice}
-      # The two hop targets, by SERVICE NAME on this network. `nora` is the
-      # nora container's aiohttp app (health + web routes on 9100 — the
-      # container publishes 9100 to host loopback, but service-name reach is
-      # the network path, not the publish); `stt` is the local transcription
-      # service stage 3 reuses.
+      # Model knobs — threshold, model path, STT engine (sensevoice: warm 0.3s
+      # CPU vs whisper 5.1s), STT endpoint/language/timeout, silence tail —
+      # come from config.toml [speech.wake] + [speech.stt], mounted below.
+      # NOT env since 2026-09-17: compose and the config file used to disagree.
+      # `nora` is the nora container's aiohttp app (health + web routes on
+      # 9100), reached by SERVICE NAME on this network.
       - NORA_INGEST_URL=http://nora:9100
-      - STT_URL=http://stt:8000
+    volumes:
+      - ./config.toml:/app/config.toml:ro
     healthcheck:
       # /health is process liveness served by the wake service itself; it
       # answers while the service idles without a channel configured
