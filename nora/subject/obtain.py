@@ -15,6 +15,7 @@ it.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 from collections.abc import Callable
@@ -29,9 +30,48 @@ from nora.config import load as _load_config
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
+#: The room a subject uses when its caller names none.
+DEFAULT_ROOM = ("signal", "g1")
+
+
+def room_for(case_name: str) -> tuple[str, str]:
+    """A room of this case's own, derived from its name.
+
+    **Cases are not isolated by the database.** `run_once` composes a fresh
+    graph per case but hands every one the SAME `database_url`, so without this
+    every case writes into one room and reads the others' rows back:
+
+    - the gate reads `recent(limit=40)` — the NEWEST 40 — so from case ~8 its
+      window is mostly other cases' transcripts;
+    - the Dreamer reads `since(after_id=0, limit=64)` — the OLDEST 64
+      (`nora/infra/sql/audit.py:176`, ascending) — so in a 21-case corpus the
+      later cases' rows never reach the adaptor AT ALL, and they are graded
+      anyway.
+
+    Measured on three gate cases in one database: the third case's own window
+    is one row and the gate was shown five. Found by review, not by the tests —
+    `pg_url` is per-TEST and every existing test runs at most three cases, so
+    the contamination stays under the 40-row window and is invisible there.
+
+    A room rather than a database because the room is already a parameter on
+    every function here, it costs nothing, and it isolates two concurrent runs
+    against one database as well — which a truncate would not.
+    """
+    return ("signal", f"g-{hashlib.sha256(case_name.encode()).hexdigest()[:16]}")
+
+
 #: The committed template. ONE place knows its name, the same rule
 #: `tests/builders.copy_example_config` holds for the test suite (R-B, #113).
 _TEMPLATE = _REPO_ROOT / "config.example.toml"
+
+#: A SYNTHETIC account, and deliberately not the real one.
+#:
+#: Any E.164-shaped string short-circuits the startup resolution; the value is
+#: never dialled and never reaches a network. The first version hardcoded Nora's
+#: real Signal number — which `scrub/README.md` names as a scrub-map target, and
+#: which `Dockerfile`'s `COPY nora/ ./nora/` and `pyproject.toml`'s
+#: `include = ["nora*"]` put in the image and the wheel. Found by audit.
+_PLACEHOLDER_ACCOUNT = "+85200000000"
 
 #: One person, one room, `default = "deny"`. A caller that does not care about
 #: identity gets something VALID and CLOSED rather than an accident — the same
@@ -40,10 +80,21 @@ _DEFAULT_IDENTITY = (
     '[persons.miles]\nname = "Miles"\n'
     '[[persons.miles.signal]]\nphone = "+852111"\n'
 )
-_DEFAULT_POLICY = (
-    'default = "deny"\n'
-    '[[conversations]]\nplatform = "signal"\nid = "g1"\npersons = "*"\n'
-)
+def default_policy(room: tuple[str, str]) -> str:
+    """One allowed room, `default = "deny"`, built FROM the room.
+
+    Generated rather than a constant because the room is now per-case
+    (`room_for`), and a policy naming a different room than the subject writes
+    into is the quietest failure in this layer: ingest refuses admission, no
+    turn runs, nothing raises, and every tag case scores a `no_reply` PASS with
+    the report reading OK.
+    """
+    platform, conversation_id = room
+    return (
+        'default = "deny"\n'
+        f'[[conversations]]\nplatform = "{platform}"\n'
+        f'id = "{conversation_id}"\npersons = "*"\n'
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,10 +130,21 @@ class SubjectSpec:
     #: produces.
     identity: str = _DEFAULT_IDENTITY
 
-    #: WHICH ROOMS she is in, as `policy.toml` content. Same reasoning. The
-    #: default is one allowed group and `default = "deny"`, so a caller that
-    #: does not care gets a valid, closed policy rather than an accident.
-    policy: str = _DEFAULT_POLICY
+    #: WHICH ROOMS she is in, as `policy.toml` content. Same reasoning. Empty
+    #: means `default_policy(room)`, so a caller that does not care gets a
+    #: valid, closed policy naming the room it is actually using.
+    #:
+    #: A policy that does NOT name `room` is REFUSED at `build_config`, because
+    #: it is the quietest failure available: ingest refuses admission, no turn
+    #: runs, nothing raises, and every tag case scores a `no_reply` PASS while
+    #: the report reads OK.
+    policy: str = ""
+
+    #: WHICH ROOM she is in. Per-case by default (`room_for`), because cases
+    #: share one database and one room means one transcript: the gate would
+    #: read the newest 40 rows of EVERYBODY'S cases and the Dreamer the oldest
+    #: 64, so late cases' own input would never reach it at all.
+    room: tuple[str, str] = DEFAULT_ROOM
 
     #: WHAT TIME IT IS. `None` means the wall clock, which is production.
     #:
@@ -111,6 +173,10 @@ class Subject:
 
     deps: Dependencies
     cfg: Config
+
+    #: The room this subject reads and writes. Carried so an entry point does
+    #: not have to be told twice.
+    room: tuple[str, str]
 
     #: The database this graph was composed against. Carried because
     #: `Config` does not hold it — production's seam for the store is the
@@ -144,7 +210,7 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # answers. An override returns immediately with no network. Composing Nora
     # reaches the world unless told otherwise; that was measured here, by this
     # call failing.
-    cfg = _with(cfg, "platforms.signal.account", "+85290000100")
+    cfg = _with(cfg, "platforms.signal.account", _PLACEHOLDER_ACCOUNT)
     # `doctrine.dir` and `dreamer.dir` resolve RELATIVE TO THE CONFIG FILE, and
     # the copy lives in the caller's workdir, which has no such subdirectories.
     # The Dreamer's corpus is validated at startup — deliberately, so a
@@ -170,7 +236,13 @@ def build_config(spec: SubjectSpec) -> Config:
     # startup, so an absent `identity.toml` is a `StartupError` rather than an
     # empty roster.
     (spec.workdir / "identity.toml").write_text(spec.identity, encoding="utf-8")
-    (spec.workdir / "policy.toml").write_text(spec.policy, encoding="utf-8")
+    policy = spec.policy or default_policy(spec.room)
+    if f'id = "{spec.room[1]}"' not in policy:
+        raise ValueError(
+            f"policy does not name the subject's room {spec.room!r}; ingest "
+            "would refuse every message and nothing would raise"
+        )
+    (spec.workdir / "policy.toml").write_text(policy, encoding="utf-8")
     cfg_path = spec.workdir / "config.toml"
     shutil.copy(_TEMPLATE, cfg_path)
     cfg = _baseline(_load_config(cfg_path), spec.workdir)
@@ -188,7 +260,7 @@ async def obtain(spec: SubjectSpec) -> Subject:
     reset between two of them.
 
     **The database is handed over through the ENVIRONMENT**, because that is
-    production's own seam: `composition.py:958` reads
+    production's own seam: `composition.py:1026` reads
     `os.environ[cfg.store.database_url_env]` and there is no parameter to pass
     it by. So `spec.database_url` sets that variable for the duration of the
     call and restores it after.
@@ -224,4 +296,6 @@ async def obtain(spec: SubjectSpec) -> Subject:
             os.environ.pop(var, None)
         else:
             os.environ[var] = before
-    return Subject(deps=deps, cfg=cfg, database_url=spec.database_url)
+    return Subject(
+        deps=deps, cfg=cfg, database_url=spec.database_url, room=spec.room,
+    )

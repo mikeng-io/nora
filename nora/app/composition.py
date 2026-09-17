@@ -979,8 +979,9 @@ async def build_dependencies(
     `ComputePoller`, `VersionAnnouncer`, `ProactiveAdaptor` and the rest — each
     for the reason `FirePath`'s own docstring gives: *"a module that read the
     wall clock itself could not be tested at a fixed instant."* Every one of
-    them was then handed a separately-written `lambda: datetime.now(UTC)` from
-    here. NINE literals for one fact.
+    them was then handed a separately-written wall-clock read from here: SEVEN
+    `clock=lambda: datetime.now(UTC)` plus TWO `now=datetime.now(UTC)` values.
+    Nine reads of one fact, written nine times.
 
     So this is not a new seam bolted on: it is the composition root stating
     once what it was already saying nine times, and the default is the same

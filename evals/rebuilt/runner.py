@@ -26,7 +26,15 @@ from typing import Any
 
 import yaml
 
-from nora.subject import Knowledge, Message, NoteSeed, SubjectSpec, know, obtain
+from nora.subject import (
+    Knowledge,
+    Message,
+    NoteSeed,
+    SubjectSpec,
+    know,
+    obtain,
+    room_for,
+)
 
 from .domain import Case, Outcome, Verdict
 from .entry import ENTRY_POINTS
@@ -53,6 +61,35 @@ def load(path: Path) -> list[Case]:
     return [_case(r, config, policy) for r in rows]
 
 
+#: The trigger a corpus's `{trigger}` placeholders render against. A corpus
+#: states it in `config:` like any other setting; this is the fallback for one
+#: that does not.
+_DEFAULT_TRIGGER = "nora"
+
+
+def substitute_trigger(text: str, trigger: str) -> str:
+    """Render `{trigger}` / `{trigger_split}` against the CONFIGURED trigger.
+
+    Carried across from `evals/run.py:510` because dropping it broke ten cases
+    silently and in both directions: `near_miss.yaml`'s four cases assert that
+    trigger-SHAPED text does not fire, and a literal `{trigger}` does not fire
+    either — so they PASSED while asserting nothing. `being_contradicted.yaml`'s
+    six were never admitted at all and FAILED 6/6, saying nothing about R-83.
+
+    The corpus holds RULES about `nora.tag.is_tagged`'s boundaries, not
+    literals. Hardcoding one trigger couples them to a value the operator owns:
+    when the plain `nora` trigger was re-enabled on 2026-08-26, two hardcoded
+    `nora.000` cases became real tags and the gate failed pointing at the model
+    instead of at the stale corpus.
+
+    `{trigger_split}` is the same trigger with a space after its first
+    character — how "broken by whitespace" is expressed for an arbitrary
+    trigger.
+    """
+    split = f"{trigger[:1]} {trigger[1:]}" if len(trigger) > 1 else trigger
+    return text.replace("{trigger_split}", split).replace("{trigger}", trigger)
+
+
 def _case(
     raw: Mapping[str, Any], config: Mapping[str, Any], policy: str = "",
 ) -> Case:
@@ -64,12 +101,14 @@ def _case(
             f"{raw['name']}: unknown entry point {raw['entry']!r}; "
             f"known: {sorted(ENTRY_POINTS)}"
         )
+    merged = {**config, **(raw.get("config") or {})}
+    trigger = str(merged.get("engagement.trigger.text") or _DEFAULT_TRIGGER)
     return Case(
         name=str(raw["name"]),
         entry=raw["entry"],
         expect=raw["expect"],
         knows=dict(raw.get("knows") or {}),
-        input=str(raw.get("input", "")),
+        input=substitute_trigger(str(raw.get("input", "")), trigger),
         sample=int(raw.get("sample", 1)),
         category=str(raw.get("category", "")),
         safety=bool(raw.get("safety", False)),
@@ -77,7 +116,7 @@ def _case(
         metadata=dict(raw.get("metadata") or {}),
         # The case's own `config:` wins over the corpus's, so one awkward case
         # can differ without a second file.
-        config={**config, **(raw.get("config") or {})},
+        config=merged,
         policy=str(raw.get("policy") or policy),
         now=str(raw.get("now") or ""),
     )
@@ -98,6 +137,9 @@ def _case(
 #: nothing. That is `seed_from_dict`'s own documented footgun, arriving by a
 #: different road.
 _KNOWABLE = {"transcript", "standing", "notes", "spacing_seconds"}
+
+#: What one transcript ROW may state. Same fail-closed rule, one level in.
+_MESSAGE_KEYS = {"body", "name", "person", "id", "ts", "is_nora", "media"}
 
 
 def _ms(ts: Any) -> int | None:
@@ -133,6 +175,17 @@ def _knowledge(raw: Mapping[str, Any]) -> Knowledge:
         if isinstance(entry, str):
             transcript.append(Message(body=entry))
             continue
+        unknown = set(entry) - _MESSAGE_KEYS
+        if unknown:
+            # FAIL-CLOSED ON A TRANSCRIPT ROW TOO. Top-level `knows` keys were
+            # already checked; row keys were not, and that asymmetry is how
+            # `media: true` was dropped from five rows with nothing reporting
+            # it. A corpus stating something the runner ignores is a corpus
+            # asserting more than is measured.
+            raise ValueError(
+                f"cannot seed transcript keys {sorted(unknown)}; "
+                f"knowable: {sorted(_MESSAGE_KEYS)}"
+            )
         transcript.append(Message(
             body=entry["body"],
             name=entry.get("name", "Miles"),
@@ -140,6 +193,7 @@ def _knowledge(raw: Mapping[str, Any]) -> Knowledge:
             label=entry.get("id"),
             at_ms=_ms(entry.get("ts")),
             is_nora=bool(entry.get("is_nora", False)),
+            media=bool(entry.get("media", False)),
         ))
     notes = tuple(
         NoteSeed(
@@ -182,6 +236,13 @@ async def run_once(
             SubjectSpec(
                 database_url=database_url,
                 workdir=workdir,
+                # A ROOM OF ITS OWN. Cases share one database, so one room is
+                # one transcript: the gate reads the newest 40 rows and the
+                # Dreamer the oldest 64, so without this a case is graded on
+                # other cases' messages — or, past 64 rows, on a batch its own
+                # input never reached. Measured at three cases: the third's own
+                # window was one row and the gate was shown five.
+                room=room_for(case.name),
                 # A suite's room set, when it has one. `SubjectSpec` supplies a
                 # valid closed default otherwise.
                 **({"policy": case.policy} if case.policy else {}),

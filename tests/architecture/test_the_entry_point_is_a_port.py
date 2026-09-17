@@ -40,16 +40,45 @@ def _sources() -> list[tuple[Path, ast.Module]]:
 
 
 def test_the_eval_layer_composes_nothing() -> None:
-    """§5(1). The property, not the spelling: a CALL to any assembler."""
+    """§5(1). The property, and ALIASES RESOLVE BACK TO IT.
+
+    The first version matched the call's own name against a denylist. MEASURED
+    by review 2026-09-17: two lines defeated it completely —
+
+        from nora.app.composition import RelevanceGate as _RG
+        _PROBE = _RG(model=None)
+
+    — because `_RG` is not on the list and `nora.app.composition` is on the
+    IMPORT allowlist. So the rule the bundle names as one of "the two that decay
+    first" was one alias from being void, in the test written to hold it.
+
+    Every local name bound to a forbidden symbol is now resolved back through
+    `import ... as` and `from ... import ... as`, so the alias is the thing
+    that reddens.
+    """
     offenders = []
     for path, tree in _sources():
+        # Local name -> the forbidden symbol it was bound to.
+        aliases: dict[str, str] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                for a in node.names:
+                    if a.name in FORBIDDEN_CALLS:
+                        aliases[a.asname or a.name] = a.name
+            elif isinstance(node, ast.Import):
+                for a in node.names:
+                    tail = a.name.rsplit(".", 1)[-1]
+                    if tail in FORBIDDEN_CALLS:
+                        aliases[a.asname or tail] = tail
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
             fn = node.func
             name = fn.id if isinstance(fn, ast.Name) else getattr(fn, "attr", "")
-            if name in FORBIDDEN_CALLS:
-                offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}: {name}(")
+            resolved = aliases.get(name, name)
+            if resolved in FORBIDDEN_CALLS:
+                shown = name if resolved == name else f"{name} (= {resolved})"
+                offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}: {shown}(")
     assert not offenders, (
         f"the eval layer composes a subject: {offenders}. There is one way to "
         "get Nora and it is `nora.subject.obtain`; a second is a second Nora, "

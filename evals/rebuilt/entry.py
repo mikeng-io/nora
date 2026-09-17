@@ -33,7 +33,6 @@ from typing import Any
 
 from nora.app.fire import SENT, SILENT, participation_occasion
 from nora.subject import (
-    DEFAULT_ROOM,
     Subject,
     arrive,
     deliver,
@@ -61,7 +60,7 @@ async def gate(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
             admitted=None,
             error="no gate on the graph — [relevance_gate] enabled is false",
         )
-    platform, conversation_id = DEFAULT_ROOM
+    platform, conversation_id = subject.room
     verdict = await g.decide(platform=platform, conversation_id=conversation_id)
     # `source` decides whether this is a READING or an ERROR. The gate never
     # raises: a timeout, a provider refusal and an unparseable body all come
@@ -94,7 +93,7 @@ async def participation(subject: Subject, case: Case, *, now_ms: int) -> Outcome
     path = subject.deps.fire_path
     if path is None:
         return Outcome(admitted=None, error="no fire path on the graph")
-    platform, conversation_id = DEFAULT_ROOM
+    platform, conversation_id = subject.room
 
     # The judged line: UNTAGGED by construction, which is what makes it a
     # participation candidate rather than a tag. Stamped at `now_ms`, which
@@ -337,6 +336,26 @@ class EntryPoint:
 _PARTICIPATION_SUBSYSTEM = {
     "participation.enabled": True,
     "relevance_gate.enabled": True,
+    # THE TIERS THE TURN READS, and they ship OFF.
+    #
+    # `config.example.toml` has `[standing] enabled = false` and `[notes]
+    # enabled = false`, and composition gates the readers on them: no note
+    # store, no standing reader, on the fire path AND on the gate.
+    #
+    # The old harness forced both on for a participation case regardless of
+    # config — `evals/harness.py:553`, literally `or participation` — and no
+    # corpus ever said so. Without it every `-known` case in
+    # `participation.yaml` is byte-identical to its `-unknown` twin: `know()`
+    # writes the note and the standing, and the turn cannot read either. The
+    # pair would report "the knowledge cut works" having cut nothing, which is
+    # the footgun `seed_from_dict`'s own docstring names, arriving through
+    # config instead of through a dropped key.
+    #
+    # It also decides one gate case: `real-commitment-in-standing` is the
+    # positive half of a pair whose negative is a forged commitment claimed in
+    # chat. With no standing reader the `go` case IS the `no_go` shape.
+    "standing.enabled": True,
+    "notes.enabled": True,
 }
 
 #: The port's implementations, by the name a case selects. A new suite over an

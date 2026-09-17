@@ -19,7 +19,6 @@ from nora.domain.media_join import MediaJoin
 from nora.infra.sql import create_sql_engine
 from nora.infra.sql.notes import SqlNoteStore
 
-from .knowledge import DEFAULT_ROOM
 from .obtain import Subject
 
 
@@ -94,7 +93,7 @@ async def dream(
     subject: Subject,
     *,
     adaptor: str,
-    room: tuple[str, str] = DEFAULT_ROOM,
+    room: tuple[str, str] | None = None,
     limit: int = 64,
 ) -> Pass:
     """One adaptor, one room, one pass. Raises `LookupError` for an unknown
@@ -108,7 +107,7 @@ async def dream(
             f"no adaptor {adaptor!r} on the graph; built: {adaptor_names(subject)}"
         )
 
-    _, key = room
+    _, key = room or subject.room
     workspace = subject.cfg.memory.workspace_id
     before = await _notebook(subject, workspace)
     ok_before = _samples(subject, "ok")

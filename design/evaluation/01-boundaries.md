@@ -43,8 +43,9 @@ model, no `nora.app`. This is where "what a suite IS" lives, and it is small.
   gone stale, whether now is the moment. A case that cannot state it can only
   watch that adaptor answer about today.
 
-  **It was not addable before.** `build_dependencies` wrote
-  `lambda: datetime.now(UTC)` at NINE separate sites while nine components
+  **It was not addable before.** `build_dependencies` wrote a wall-clock read at NINE separate sites — seven
+  `clock=lambda: datetime.now(UTC)` and two `now=datetime.now(UTC)` values —
+  while nine components
   already accepted an injectable `clock`, each for the reason `FirePath`'s own
   docstring gives. So the composition root had the dependency and had no name
   for it, and the only way to ask the adaptor a dated question was to build a

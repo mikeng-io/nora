@@ -103,6 +103,27 @@
 
 config:
   engagement.trigger.text: "nora.000"
+#
+# --- SPEAKERS MADE EXPLICIT 2026-09-17 (audit) ------------------------------
+#
+# The old driver pasted an UNATTRIBUTED block -- "Prior messages in this group
+# chat:" with no names -- so a line's role was inferable only from its wording.
+# The re-homed corpus attributed every bare string to Miles, which is not
+# neutral: it is a STRONGER and CONTRADICTING signal. R-83 is "somebody saying
+# you are wrong is another claim", and it needs the checked claim to be HERS;
+# with the line attributed to Miles the case became Miles contradicting Miles.
+#
+# `is_nora: true` is the flag, not the name: `nora.agent.prefill._speaker`
+# reads the FLAG, and a row merely NAMED Nora renders as an ordinary member who
+# happens to be called that. This is what production writes for her own rows
+# (`nora/agent/guards.py:528`), so the new layer is now closer to the
+# deployment than the driver it replaces, rather than merely different from it.
+#
+# KNOWN RESIDUAL, recorded rather than quietly patched: the `[search result]`
+# and JSON-blob lines are SOURCE DATA she read, not room speech. Production
+# would carry them as a tool result; both this layer and the old one render
+# them as messages. That is a real difference from the deployment and it is not
+# fixed here.
 
 cases:
   - name: scoped_source_silence_is_not_a_denial
@@ -114,7 +135,8 @@ cases:
     knows:
       transcript:
       - nora.000 部機入面有冇黑色嗰隻鎖?
-      - 有，我頭先查過，wiki 個 unlockables 表列咗佢，要打完 boss 先開到
+      - body: 有，我頭先查過，wiki 個 unlockables 表列咗佢，要打完 boss 先開到
+        is_nora: true
       - '[search result] "Best key order in Deepmoor" — you will need to finish all four of the coloured keys before the final door opens. Start with the green one, it is the shortest.'
 
   - name: scoped_source_silence_stale_window_english
@@ -126,7 +148,8 @@ cases:
     knows:
       transcript:
       - nora.000 does the tram still run past the ferry pier
-      - yeah, checked the operator's route page, stop 14 is the pier
+      - body: yeah, checked the operator's route page, stop 14 is the pier
+        is_nora: true
       - '[search result] "2019 network map — the tram serves stops 1 through 12, terminating at the market."'
 
   - name: source_that_actually_denies_may_overturn
@@ -138,7 +161,8 @@ cases:
     knows:
       transcript:
       - nora.000 部機入面有冇黑色嗰隻鎖?
-      - 有，我頭先查過，wiki 個 unlockables 表列咗佢
+      - body: 有，我頭先查過，wiki 個 unlockables 表列咗佢
+        is_nora: true
       - '[search result] "Deepmoor keys — full list, patch 2.4: there are four keys and no others. The black key was cut before release and does not exist in the shipped game."'
 
   - name: source_that_covers_the_question_is_answered_plainly

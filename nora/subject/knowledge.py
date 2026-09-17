@@ -20,9 +20,11 @@ Nothing here is reachable from the eval layer as a store. `know()` takes a
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from nora.domain.media import MediaBlob
 from nora.domain.models import NormalizedMessage
 from nora.domain.standing import Standing
 from nora.infra.sql import create_sql_engine
@@ -30,12 +32,6 @@ from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.standing import SqlStandingStore
 
 from .obtain import Subject
-
-#: The room every seeded row lands in. It is the one `SubjectSpec.policy`'s
-#: default admits, and `nora/policy.py`'s `workspace` defaults to `"nora"`, so
-#: a note written under that workspace is one the turn in this room can read.
-#: A case that needs another room says so in `policy` and passes `room=`.
-DEFAULT_ROOM = ("signal", "g1")
 
 #: The phone `SubjectSpec.identity`'s default maps to a person. A transcript
 #: line with no `name` speaks as this sender, so it resolves to a person the
@@ -84,6 +80,20 @@ class Message:
     #: minute before `now_ms`, which is the default every corpus but this one
     #: relies on.
     at_ms: int | None = None
+
+    #: This row CARRIES AN ATTACHMENT she holds.
+    #:
+    #: A real `MediaBlob` rather than a flag on the row, because the store
+    #: serialises it through `nora.domain.media.media_json` and a hand-written
+    #: string would be a second copy of that format. The bytes are fictional;
+    #: what matters is that `media_join.enrich` has something to join and the
+    #: renderer does not drop the row as an empty body.
+    #:
+    #: Restored by audit: `media: true` existed on five note-candidates rows,
+    #: was dropped in the move, and the pin was GREEN over it — it compares body
+    #: and id and nothing else. `n3_media_and_stickers_only` is a case named for
+    #: stickers whose stickers had been removed.
+    media: bool = False
 
     #: HER OWN speech. Not `name="Nora"` — `nora.agent.prefill._speaker` reads
     #: the FLAG, so a row merely named Nora renders as an ordinary member who
@@ -160,7 +170,7 @@ async def arrive(
     subject: Subject,
     body: str,
     *,
-    room: tuple[str, str] = DEFAULT_ROOM,
+    room: tuple[str, str] | None = None,
     now_ms: int,
     name: str = _KNOWN_NAME,
 ) -> None:
@@ -173,7 +183,7 @@ async def arrive(
     Untagged by construction: nothing here mentions her, which is what makes
     the line a participation candidate rather than a tag.
     """
-    platform, conversation_id = room
+    platform, conversation_id = room or subject.room
     sender_id, person_id = (
         (_KNOWN_SENDER, _KNOWN_PERSON) if name == _KNOWN_NAME else ("+8529900", None)
     )
@@ -196,7 +206,7 @@ async def deliver(
     subject: Subject,
     body: str,
     *,
-    room: tuple[str, str] = DEFAULT_ROOM,
+    room: tuple[str, str] | None = None,
     now_ms: int,
     name: str = _KNOWN_NAME,
 ) -> None:
@@ -209,7 +219,7 @@ async def deliver(
     the turn would read a room that had said everything twice. `arrive()` is
     for the paths that bypass ingest, which is why both exist.
     """
-    platform, conversation_id = room
+    platform, conversation_id = room or subject.room
     sender_id, _ = (
         (_KNOWN_SENDER, _KNOWN_PERSON) if name == _KNOWN_NAME else ("+8529900", None)
     )
@@ -277,7 +287,7 @@ def silent_failures(subject: Subject) -> float:
 async def heard(
     subject: Subject,
     *,
-    room: tuple[str, str] = DEFAULT_ROOM,
+    room: tuple[str, str] | None = None,
     after_id: int = 0,
     limit: int = 200,
 ) -> tuple[tuple[str, str], ...]:
@@ -294,7 +304,7 @@ async def heard(
     *the wire refused what she said* are different facts, and a suite that maps
     the second onto the first grades a healthy Nora as silent.
     """
-    _, conversation_id = room
+    _, conversation_id = room or subject.room
     rows = await subject.deps.audit.recent(
         conversation_id=conversation_id, limit=limit,
     )
@@ -306,11 +316,11 @@ async def heard(
 
 
 async def last_row_id(
-    subject: Subject, *, room: tuple[str, str] = DEFAULT_ROOM,
+    subject: Subject, *, room: tuple[str, str] | None = None,
 ) -> int:
     """The newest row id in the room, so `heard` can be asked for what came
     AFTER a turn rather than for everything she has ever said."""
-    _, conversation_id = room
+    _, conversation_id = room or subject.room
     rows = await subject.deps.audit.recent(conversation_id=conversation_id, limit=1)
     return rows[-1].id if rows else 0
 
@@ -319,7 +329,7 @@ async def know(
     subject: Subject,
     knowledge: Knowledge,
     *,
-    room: tuple[str, str] = DEFAULT_ROOM,
+    room: tuple[str, str] | None = None,
     now_ms: int | None = None,
     leave_room_for_arrival: bool = True,
 ) -> Written:
@@ -346,7 +356,7 @@ async def know(
     """
     if now_ms is None:
         now_ms = int(datetime.now(UTC).timestamp() * 1000)
-    platform, conversation_id = room
+    platform, conversation_id = room or subject.room
     rows: dict[int | str, int] = {}
 
     speakers = _speakers(knowledge.transcript)
@@ -367,6 +377,24 @@ async def know(
                 timestamp=msg.at_ms if msg.at_ms is not None else base + i * step,
                 body=msg.body,
                 raw={},
+                media_blobs=(
+                    (
+                        MediaBlob(
+                            # Deterministic, and NOT over the body: a row's
+                            # body in an f-string is what
+                            # tests/architecture/test_one_row_renders_one_line
+                            # exists to catch, and the room plus the index
+                            # already identify the row uniquely.
+                            sha256=hashlib.sha256(
+                                f'{conversation_id}:{i}'.encode()
+                            ).hexdigest(),
+                            media_type="image/jpeg",
+                            size=1024,
+                        ),
+                    )
+                    if msg.media
+                    else ()
+                ),
             ),
             person_id=person_id,
             is_nora=msg.is_nora,

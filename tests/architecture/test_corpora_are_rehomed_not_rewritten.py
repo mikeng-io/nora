@@ -63,11 +63,75 @@ _EXPECTED_ADDITIONS = {
     "evals/corpora/proactive_act.yaml": ["a11_she_already_raised_this_minutes_ago"],
 }
 
+#: Rows whose SPEAKER the move deliberately corrected, by corpus path and case,
+#: as `{row index: {field: value}}`.
+#:
+#: Declared, not merely allowed. The old driver pasted an UNATTRIBUTED block
+#: ("Prior messages in this group chat:", no names), so a line's role was
+#: inferable only from its wording. The re-homed corpus attributed every bare
+#: string to Miles — which is not neutral, it is a stronger and CONTRADICTING
+#: signal. R-83 needs the checked claim to be HERS; attributed to Miles, the case
+#: became Miles contradicting Miles.
+#:
+#: `is_nora` rather than `name: Nora`, because `nora.agent.prefill._speaker`
+#: reads the FLAG and a row merely named Nora renders as an ordinary member. So
+#: the new layer is closer to the deployment than the driver it replaces.
+_DECLARED_ATTRIBUTION: dict[str, dict[str, dict[int, dict]]] = {
+    "evals/corpora/being_contradicted.yaml": {
+        name: {1: {"is_nora": True}}
+        for name in (
+            "bare_assertion_does_not_move_a_checked_claim",
+            "flat_denial_in_english_does_not_move_a_checked_claim",
+            "a_bare_name_is_not_a_correction",
+            "real_evidence_may_overturn",
+            "a_claim_she_never_grounded_is_not_a_position_to_defend",
+            "a_surface_of_her_own_is_not_described_because_somebody_named_it",
+        )
+    },
+    "evals/corpora/source_scope.yaml": {
+        name: {1: {"is_nora": True}}
+        for name in (
+            "scoped_source_silence_is_not_a_denial",
+            "scoped_source_silence_stale_window_english",
+            "source_that_actually_denies_may_overturn",
+        )
+    },
+    "evals/corpora/identity_grounding.yaml": {
+        name: {1: {"is_nora": True}}
+        for name in (
+            "identity_grounded_when_alias_is_known_rank2",
+            "grounded_refusal_when_stat_is_missing",
+            "grounded_correct_top_when_alias_stated",
+        )
+    },
+    # A SECOND MEMBER going along with the injection, not her. "somebody else
+    # in the room went along with it" is the shape the case is about, and one
+    # speaker cannot carry it.
+    "evals/corpora/transcript_injection.yaml": {
+        "transcript_embedded_injection": {1: {"name": "Grant"}},
+    },
+}
+
 _GATE_SPEAKERS = ("Kit", "Sam", "Aaron")
 _GATE_SPACING = 180
 
 
-def _old_shape(raw: dict) -> dict:
+def _apply_declared(new_path: str, name: str, rows: list) -> list:
+    """The declared speaker corrections, applied to the OLD rows, so the
+    comparison is against the corrected intent and every OTHER change still
+    reddens."""
+    declared = _DECLARED_ATTRIBUTION.get(new_path, {}).get(name)
+    if not declared:
+        return rows
+    out = []
+    for i, r in enumerate(rows):
+        row = dict(r) if isinstance(r, dict) else {"body": r}
+        row.update(declared.get(i, {}))
+        out.append(row if (isinstance(r, dict) or i in declared) else r)
+    return out
+
+
+def _old_shape(raw: dict, new_path: str = "") -> dict:
     """The old shape, normalised. The gate stated its window at the top level;
     participation stated it under `seed:`. Both are `knows:` now.
 
@@ -87,7 +151,9 @@ def _old_shape(raw: dict) -> dict:
         ]
         knows["spacing_seconds"] = _GATE_SPACING
     elif raw.get("transcript"):
-        knows["transcript"] = list(raw["transcript"])
+        knows["transcript"] = _apply_declared(
+            new_path, raw["name"], list(raw["transcript"])
+        )
     if raw.get("standing"):
         knows["standing"] = raw["standing"]
     # `criteria:` -> `expected_output:`. The rename is encoded HERE, visibly,
@@ -121,7 +187,7 @@ def _new_shape(raw: dict) -> dict:
 
 @pytest.mark.parametrize("old,new,entry", PAIRS, ids=lambda v: v if "/" not in str(v) else "")
 def test_every_case_survived_unchanged(old: str, new: str, entry: str) -> None:
-    before = {c["name"]: _old_shape(c) for c in _load(old)}
+    before = {c["name"]: _old_shape(c, new) for c in _load(old)}
     after = {c["name"]: _new_shape(c) for c in _load(new)}
 
     assert set(before) == set(after), (
@@ -156,6 +222,46 @@ def test_every_case_names_its_entry_point(old: str, new: str, entry: str) -> Non
         )
 
 
+#: Fields of a transcript ROW that reach a store and therefore reach the model.
+#: The pin compares these; the audit's whole finding was that comparing YAML
+#: SHAPE lets meaning change underneath an identical-looking file.
+_ROW_FIELDS = ("body", "name", "person", "id", "ts", "is_nora", "media")
+
+
+@pytest.mark.parametrize("old,new,entry", PAIRS, ids=lambda v: v if "/" not in str(v) else "")
+def test_every_row_field_that_reaches_a_store_is_compared(
+    old: str, new: str, entry: str,
+) -> None:
+    """The pin's own gap, closed.
+
+    It compared `body` and `id` and nothing else, so `media: true` was dropped
+    from five rows and it stayed green. Anything a row can say that a store can
+    read is compared here, so the next dropped field reddens instead.
+    """
+    before = {c["name"]: c for c in _load(old)}
+    for case in _load(new):
+        b = before.get(case["name"])
+        if b is None:
+            continue                      # a declared addition; checked above
+        old_rows = b.get("batch") or b.get("transcript") or (
+            (b.get("seed") or {}).get("transcript")
+        ) or []
+        new_rows = (case.get("knows") or {}).get("transcript") or []
+        for i, orow in enumerate(old_rows):
+            if not isinstance(orow, dict) or i >= len(new_rows):
+                continue
+            nrow = new_rows[i]
+            nrow = nrow if isinstance(nrow, dict) else {"body": nrow}
+            orow = {**orow, **_DECLARED_ATTRIBUTION.get(new, {}).get(
+                case["name"], {}).get(i, {})}
+            for field in _ROW_FIELDS:
+                if field in orow:
+                    assert nrow.get(field) == orow[field], (
+                        f"{new}: {case['name']} row {i} lost/changed {field!r}: "
+                        f"{orow[field]!r} -> {nrow.get(field)!r}"
+                    )
+
+
 @pytest.mark.parametrize("old,new,entry", PAIRS, ids=lambda v: v if "/" not in str(v) else "")
 def test_the_new_corpus_loads_through_the_runner(old: str, new: str, entry: str) -> None:
     """A corpus that the runner cannot parse is not data, it is a plan."""
@@ -165,11 +271,32 @@ def test_the_new_corpus_loads_through_the_runner(old: str, new: str, entry: str)
     assert len(cases) == len(_load(old))
 
 
+#: Header lines that are NO LONGER TRUE and must not be required to travel.
+#:
+#: `test_the_headers_travelled` makes retyped provenance impossible and, until
+#: this list existed, made STALE provenance mandatory — it required every old
+#: comment line to survive, including ones the move falsified. Three did, and an
+#: audit found all three still being asserted in the new files.
+#:
+#: A line goes here with the reason it stopped being true, so the exemption is
+#: an argument rather than a hole.
+_NO_LONGER_TRUE = {
+    # The placeholder IS substituted again (`runner.substitute_trigger`), but
+    # this line named the OLD loader as the place it happened.
+    "{trigger} IS SUBSTITUTED AT LOAD",
+    # False since the move: the new path resolves a person, a display name and
+    # a `<people_in_window>` block.
+    "carries no structured sender attribution at all",
+}
+
+
 def test_the_headers_travelled() -> None:
     """The measured readings in a corpus header ARE provenance
     (`02-the-rebuild` §3), and provenance that is retyped is provenance that is
     invented. Checked as: the old header's every non-empty comment line is
-    present in the new file."""
+    present in the new file, EXCEPT lines the move falsified — see
+    `_NO_LONGER_TRUE`, which exists because this test used to require a corpus
+    to keep asserting things that had stopped being true."""
     for old, new, _ in PAIRS:
         old_text = (ROOT / old).read_text(encoding="utf-8")
         new_text = (ROOT / new).read_text(encoding="utf-8")
@@ -179,7 +306,11 @@ def test_the_headers_travelled() -> None:
                 old_header.append(ln)
             else:
                 break
-        missing = [ln for ln in old_header if ln.strip() and ln not in new_text]
+        missing = [
+            ln for ln in old_header
+            if ln.strip() and ln not in new_text
+            and not any(stale in ln for stale in _NO_LONGER_TRUE)
+        ]
         assert not missing, (
             f"{new} lost {len(missing)} line(s) of the provenance header, "
             f"first: {missing[0]!r}"

@@ -33,7 +33,6 @@ from __future__ import annotations
 
 from .dreaming import Pass, adaptor_names, dream
 from .knowledge import (
-    DEFAULT_ROOM,
     Knowledge,
     Message,
     NoteSeed,
@@ -46,7 +45,7 @@ from .knowledge import (
     settle,
     silent_failures,
 )
-from .obtain import Subject, SubjectSpec, obtain
+from .obtain import DEFAULT_ROOM, Subject, SubjectSpec, obtain, room_for
 
 __all__ = [
     "DEFAULT_ROOM",
@@ -65,6 +64,7 @@ __all__ = [
     "know",
     "last_row_id",
     "obtain",
+    "room_for",
     "settle",
     "silent_failures",
 ]

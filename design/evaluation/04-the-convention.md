@@ -158,7 +158,7 @@ not be asked for something it does**, so each driver built its own:
 |---|---|---|
 | `RelevanceGate` not on `Dependencies` | trying to reach the gate | **yes** — a field |
 | `FirePath` not on `Dependencies` | trying to reach the turn | **yes** — a field |
-| no clock seam | the proactive corpora | **yes** — one `clock` parameter replacing nine literals |
+| no clock seam | the proactive corpora | **yes** — one `clock` parameter replacing nine wall-clock reads (7 lambdas, 2 values) |
 | no multi-room seeding | the proactive corpora, one layer in | **no** — found by the clock fix unblocking them |
 | no Honcho write seam | two participation cases | **no** — may not be fixable |
 

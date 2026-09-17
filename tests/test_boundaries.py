@@ -251,3 +251,41 @@ def test_composition_never_uses_the_permissive_policy():
         "composition.py must build the allowlist from policy.toml, never the "
         "permissive one — that would disable deny-by-default in production"
     )
+
+
+def test_nora_never_imports_evals():
+    """THE DIRECTION THE WHOLE BUNDLE IS ABOUT, and nothing looked at it.
+
+    `design/evaluation/01-boundaries.md` §1: *"the eval layer depends on Nora.
+    Nora depends on nothing in the eval layer."* Both existing gates check only
+    the first half:
+
+    - the import-linter `layers` contract orders `nora.*` rows, and `evals` is a
+      second root package appearing in no layer;
+    - the `evals may only reach ...` contract has `source_modules = ["evals"]`,
+      so it constrains `evals -> nora` and not the reverse;
+    - `test_evals_only_imports_nora_app_and_nora_testing` scans `evals/` only.
+
+    MEASURED by review 2026-09-17: `import evals.rebuilt.domain` inserted into
+    `nora/subject/dreaming.py` left `lint-imports` at *6 kept, 0 broken* and the
+    whole architecture suite green. That is §6's documented hole — "import-linter
+    knows two root packages, the boundary test scans one directory" — reproduced
+    for the direction that matters, inside the step written to close it.
+    """
+    offenders = []
+    for path in PKG.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            mods = []
+            if isinstance(node, ast.Import):
+                mods = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                mods = [node.module]
+            for m in mods:
+                if m == "evals" or m.startswith("evals."):
+                    offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}: {m}")
+    assert not offenders, (
+        f"nora imports the eval layer: {offenders}. The direction IS the "
+        "property — a Nora that knows it is being measured is not the Nora the "
+        "deployment runs."
+    )

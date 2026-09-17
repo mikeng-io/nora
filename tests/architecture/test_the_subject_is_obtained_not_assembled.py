@@ -40,8 +40,14 @@ ROOT = Path(__file__).resolve().parents[2]
 #: `build_dependencies` grew the parameter for the same reason and it is not an
 #: eval-only seam: nine components already took an injectable `clock` and the
 #: composition root was writing the same literal nine times.
+#: `room` added 2026-09-17, found by review rather than by a test: cases share
+#: one database, so one room is one transcript. The gate reads the newest 40
+#: rows and the Dreamer the OLDEST 64, so without a room per case a case is
+#: graded on other cases' messages — and past 64 rows its own input never
+#: reaches the adaptor at all, while it is graded anyway. WHICH ROOM is plainly
+#: not part of Nora; it is where the world reaches her.
 _SEAMS = frozenset({
-    "database_url", "workdir", "overrides", "identity", "policy", "now",
+    "database_url", "workdir", "overrides", "identity", "policy", "now", "room",
 })
 
 
