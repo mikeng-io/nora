@@ -125,7 +125,7 @@
     "name": "the Dreamer's rows name the ADAPTOR",
     "comment": "One run a day per adaptor, so «dreamer» alone is the wrong grain for the question «which path».",
     "file": "nora/agent/dreamer.py",
-    "old": "            path=f\"dreamer:{adaptor.name}\",",
+    "old": "            path=dreamer_path(adaptor.name),",
     "new": "            path=\"dreamer\",",
     "target": "tests/unit/test_dreamer_reasoning_strip.py -k test_a_tool_using_dreamer_run_that_reasons_is_recorded_by_adaptor"
   },
@@ -195,18 +195,19 @@
   },
   {
     "name": "`path`'s vocabulary is DERIVED, so heartbeat and proactive are in it",
-    "comment": "The help text, the migration, the runbook and the ADR all documented three of the five shapes `path` was already storing, because the set was hand-written beside a derived one.",
+    "comment": "First sweep found this GREEN against a test parametrized over SPEAKING_AUDIENCES itself -- shrinking the set shrank the test with it, which is a target that can only agree with whatever the code says. The target is now the call-site walk: narrow the Literal and `fire.py` is passing values the declaration no longer contains.",
     "file": "nora/domain/audience.py",
     "new": "SpeakingAudience = Literal[\"tag\", \"participation\"]",
     "old": "SpeakingAudience = Literal[\"tag\", \"heartbeat\", \"participation\", \"proactive\"]",
-    "target": "tests/unit/test_reasoning_strip_watch.py -k test_every_speaking_audience_is_a_path_this_watch_accepts"
+    "target": "tests/architecture/test_the_path_vocabulary_matches_the_call_sites.py -k test_every_audience_a_call_site_can_pass_is_declared"
   },
   {
     "name": "the tag path passes the NAMED audience, not a literal",
     "file": "nora/engagement/pipeline.py",
     "old": "                terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,\n                audience=audience_names.TAG,",
     "new": "                terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,\n                audience=\"tagg\",",
-    "target": "tests/unit/test_reasoning_strip_probe.py -k test_every_audience_deliver_build_can_be_given_reaches_the_row"
+    "target": "tests/architecture/test_the_path_vocabulary_matches_the_call_sites.py -k test_every_audience_a_call_site_can_pass_is_declared",
+    "comment": "Also GREEN first time round, against a test that called `deliver.build` with its own audiences and so could not see what the pipeline passes. The call-site walk resolves the real expression and refuses a value the declaration does not carry."
   },
   {
     "name": "the budget-exhaustion draft is counted into the same row",
