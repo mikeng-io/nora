@@ -18,6 +18,21 @@ import pytest
 from wakegate.codec import FrameParser, encode_frame, encode_hello
 
 FIXTURE = Path(__file__).parent / "fixtures" / "seam_frames.bin"
+
+#: The fixture is a RECORDING of frames a real sidecar wrote, and it was never
+#: committed — the three tests below have raised FileNotFoundError for as long
+#: as this file has existed. Skipped rather than left red: three permanent
+#: failures train a reader to stop looking at this suite, which is how the
+#: `conversation_id` assertion two files over survived a rename.
+#:
+#: NOT regenerated from `encode_frame`. The recording's whole value is that it
+#: came from the other implementation; synthesizing it would check the codec
+#: against itself and pin nothing.
+_needs_fixture = pytest.mark.skipif(
+    not FIXTURE.is_file(),
+    reason="tests/fixtures/seam_frames.bin is not committed — re-record it from "
+           "a live sidecar (deploy/voice-sidecar/consume.mjs) to re-enable",
+)
 USER_A = "111222333444555666"
 USER_B = "297528967164586076"
 FRAME_BYTES = 3840
@@ -36,6 +51,7 @@ def _parse_in_chunks(data: bytes, chunk_size: int) -> list[tuple[str, bytes]]:
     return frames
 
 
+@_needs_fixture
 def test_fixture_parses_into_the_exact_frames_the_sidecar_wrote():
     frames = _parse_in_chunks(FIXTURE.read_bytes(), chunk_size=1 << 20)
     assert [user_id for user_id, _ in frames] == [USER_A] * 7 + [USER_B] * 3
@@ -44,6 +60,7 @@ def test_fixture_parses_into_the_exact_frames_the_sidecar_wrote():
         assert pcm == _expected_pcm(seed)
 
 
+@_needs_fixture
 def test_per_user_counters_match_the_fixture():
     frames = _parse_in_chunks(FIXTURE.read_bytes(), chunk_size=1 << 20)
     per_user: dict[str, list[int]] = {}
@@ -54,6 +71,7 @@ def test_per_user_counters_match_the_fixture():
     assert per_user == {USER_A: [7, 7 * FRAME_BYTES], USER_B: [3, 3 * FRAME_BYTES]}
 
 
+@_needs_fixture
 def test_partial_chunks_reassemble_the_same_frames():
     """TCP delivers arbitrary chunkings; 97 bytes is deliberately coprime
     with the frame size so headers and payloads both straddle reads."""

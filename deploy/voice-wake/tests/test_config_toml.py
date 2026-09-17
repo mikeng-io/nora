@@ -24,13 +24,20 @@ def test_toml_values_reach_config(tmp_path: Path) -> None:
         "vad_enabled = false\nvad_threshold = 0.7\n",
         encoding="utf-8",
     )
-    cfg = build_config(cfg_file, env={"VOICE_GUILD_ID": "1", "VOICE_CHANNEL_ID": "2"})
+    cfg = build_config(cfg_file, env={})
     assert (cfg.threshold, cfg.model_path) == (0.42, "/app/models/x.onnx")
     assert cfg.stt_model == "noise-detection"
     assert (cfg.stt_url, cfg.stt_language, cfg.stt_timeout_s) == ("http://stt-b:8000", "auto", 12.5)
     assert (cfg.silence_tail_ms, cfg.max_utterance_s, cfg.silence_rms) == (900, 6.0, 250.0)
     assert (cfg.vad_enabled, cfg.vad_threshold) == (False, 0.7)
-    assert cfg.conversation_id == "1/2"
+    # NO deployment identity on Config since 2026-09-17: the guild arrives per
+    # connection in the sidecar's hello, so one gate serves every guild and
+    # there is nothing per-guild left to configure. This line asserted
+    # `conversation_id == "1/2"` until then — a field that stopped existing at
+    # the §12.2 reversal and went unnoticed, because `testpaths = ["tests"]`
+    # keeps this suite out of `make gate`.
+    assert not hasattr(cfg, "guild_id")
+    assert not hasattr(cfg, "conversation_id")
 
 
 def test_missing_file_and_missing_section_fall_back_to_code_defaults(tmp_path: Path) -> None:

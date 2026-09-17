@@ -67,17 +67,14 @@ class Config:
     stt_language: str = "yue"
     stt_timeout_s: float = 30.0
     nora_url: str = "http://nora:9100"
-    # The GUILD, not a conversation id (design/voice-channel/07 §12.2,
-    # reversed 2026-09-17). Nora resolves it to the room the operator marked
-    # `voice = true`, so this service stays correct when a server's voice
-    # channels change — which was the whole reason the channel binding went.
+    # NO guild here since 2026-09-17. The guild arrives per CONNECTION, in the
+    # sidecar's hello frame, which is what lets one gate serve every guild —
+    # and it means this service has no deployment identity to configure at
+    # all. Where a guild's speech is RECORDED stays policy.toml's business.
     #
-    # The channel the words were spoken in is NOT sent: only the controller
-    # knows which one it is currently connected to, the pump seam carries
-    # `(user_id, pcm)` and nothing else, and the field is optional provenance
-    # on nora's side. Sending the configured first-boot channel instead would
-    # put a value in a trace that is right only until someone moves rooms.
-    guild_id: str = ""
+    # The channel the words were spoken in is still not sent: only the
+    # controller knows which one it is connected to, and the field is optional
+    # provenance on nora's side.
     idle_timeout_s: float = 600.0
 
 
@@ -112,7 +109,12 @@ class WakeService:
     def __init__(self, config: Config) -> None:
         self._cfg = config
         self._started_at = time.time()
-        self._users: dict[str, _UserState] = {}
+        # KEYED BY (guild, user), not user (multi-guild 2026-09-17). The wake
+        # model is per-speaker stateful — openWakeWord owns rolling
+        # melspectrogram/embedding windows — so two guilds sharing a key would
+        # feed one model two interleaved audio streams. The same person in two
+        # servers is two gates, which is correct: they are two conversations.
+        self._users: dict[tuple[str, str], _UserState] = {}
         self._clients = 0
         self._server: asyncio.AbstractServer | None = None
         self._model_available = Path(config.model_path).is_file()
@@ -122,8 +124,8 @@ class WakeService:
 
     # --- frame path ---------------------------------------------------------
 
-    async def _user_state(self, user_id: str) -> _UserState | None:
-        state = self._users.get(user_id)
+    async def _user_state(self, key: tuple[str, str]) -> _UserState | None:
+        state = self._users.get(key)
         if state is not None:
             return state
         if not self._model_available:
@@ -152,12 +154,12 @@ class WakeService:
             vad=vad,
             pending48=np.empty(0, dtype=np.int16),
         )
-        self._users[user_id] = state
-        log.info("wake gate armed for user %s", user_id)
+        self._users[key] = state
+        log.info("wake gate armed for user %s in guild %s", key[1], key[0])
         return state
 
-    async def _on_frame(self, user_id: str, pcm: bytes) -> None:
-        state = await self._user_state(user_id)
+    async def _on_frame(self, key: tuple[str, str], pcm: bytes) -> None:
+        state = await self._user_state(key)
         if state is None:
             return  # no model — counted nowhere, dropped (healthy-but-idle)
         state.frames += 1
@@ -171,17 +173,17 @@ class WakeService:
             assert chunk.size == OWW_CHUNK
             utterance = state.gate.feed(chunk)
             if utterance is not None:
-                self._fire(user_id, utterance, state)
-        self._arm_inactivity(user_id, state)
+                self._fire(key, utterance, state)
+        self._arm_inactivity(key, state)
 
-    def _fire(self, user_id: str, utterance: Utterance, state: _UserState) -> None:
+    def _fire(self, key: tuple[str, str], utterance: Utterance, state: _UserState) -> None:
         state.wakes += 1
         state.model.reset()
         if state.vad is not None:
             state.vad.reset()  # type: ignore[attr-defined]
-        asyncio.create_task(self._handle_utterance(user_id, utterance, state))
+        asyncio.create_task(self._handle_utterance(key, utterance, state))
 
-    def _arm_inactivity(self, user_id: str, state: _UserState) -> None:
+    def _arm_inactivity(self, key: tuple[str, str], state: _UserState) -> None:
         """Re-arm the wall-clock end-pointer on every frame while COLLECTING;
         disarm the moment the gate is back in LISTENING."""
         if state.inactivity is not None:
@@ -189,30 +191,29 @@ class WakeService:
             state.inactivity = None
         if state.gate.collecting:
             state.inactivity = asyncio.get_running_loop().call_later(
-                self._cfg.silence_tail_ms / 1000, self._on_inactivity, user_id, state,
+                self._cfg.silence_tail_ms / 1000, self._on_inactivity, key, state,
             )
 
-    def _on_inactivity(self, user_id: str, state: _UserState) -> None:
+    def _on_inactivity(self, key: tuple[str, str], state: _UserState) -> None:
         state.inactivity = None
-        if self._users.get(user_id) is not state:
+        if self._users.get(key) is not state:
             return  # reaped or replaced since the timer was armed
         utterance = state.gate.flush()
         if utterance is None:
             return
         log.info("utterance ended by inactivity for user %s (no frame for %d ms)",
-                 user_id, self._cfg.silence_tail_ms)
-        self._fire(user_id, utterance, state)
+                 key[1], self._cfg.silence_tail_ms)
+        self._fire(key, utterance, state)
 
     async def _handle_utterance(
-        self, user_id: str, utterance: Utterance, state: _UserState
+        self, key: tuple[str, str], utterance: Utterance, state: _UserState
     ) -> None:
         """Off the frame path: STT seconds must never stall the next user's
         20 ms frames. Text crosses to Nora; the audio dies here."""
-        log.info("wake fired for user %s (peak %.3f, %.1fs)",
-                 user_id, utterance.peak_score, utterance.audio.size / 16000)
-        if not self._cfg.guild_id:
-            log.warning("no VOICE_GUILD_ID configured — utterance dropped")
-            return
+        guild_id, user_id = key
+        log.info("wake fired for user %s in guild %s (peak %.3f, %.1fs)",
+                 user_id, guild_id, utterance.peak_score,
+                 utterance.audio.size / 16000)
         wav = pcm16_to_wav(utterance.audio)
         timeout = aiohttp.ClientTimeout(total=self._cfg.stt_timeout_s)
         async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -224,7 +225,7 @@ class WakeService:
                 return  # no wake -> no cost; dropped silently by design
             ok = await forward_utterance(
                 session, nora_url=self._cfg.nora_url, user_id=user_id,
-                text=text, guild_id=self._cfg.guild_id,
+                text=text, guild_id=guild_id,
             )
         if ok:
             state.utterances += 1
@@ -237,14 +238,28 @@ class WakeService:
         self._clients += 1
         peer = writer.get_extra_info("peername")
         log.info("seam client connected: %s", peer)
+        # ONE PARSER PER CONNECTION, which is what carries the guild: the
+        # sidecar announces it in a hello on connect, and a pump is created per
+        # join, so a connection is one guild for its lifetime. That is how a
+        # single gate serves every guild at once.
         parser = FrameParser()
         try:
             while True:
                 chunk = await reader.read(65536)
                 if not chunk:
                     break
-                for user_id, pcm in parser.feed(chunk):
-                    await self._on_frame(user_id, pcm)
+                frames = parser.feed(chunk)
+                if frames and parser.guild_id is None:
+                    # Audio before the hello. Dropped, not guessed: attributing
+                    # it to some other connection's guild would put one
+                    # server's words in another server's room.
+                    log.warning(
+                        "seam client %s sent %d audio frame(s) before its hello "
+                        "— dropped", peer, len(frames),
+                    )
+                    continue
+                for user_id, pcm in frames:
+                    await self._on_frame((parser.guild_id or "", user_id), pcm)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -258,9 +273,10 @@ class WakeService:
         while True:
             await asyncio.sleep(60)
             cutoff = time.time() - self._cfg.idle_timeout_s
-            for user_id in [u for u, s in self._users.items() if s.last_seen < cutoff]:
-                log.info("reaping idle wake gate for user %s", user_id)
-                state = self._users.pop(user_id)
+            for key in [k for k, s in self._users.items() if s.last_seen < cutoff]:
+                log.info("reaping idle wake gate for user %s in guild %s",
+                         key[1], key[0])
+                state = self._users.pop(key)
                 if state.inactivity is not None:
                     state.inactivity.cancel()
 
@@ -271,16 +287,20 @@ class WakeService:
             "status": "ok",
             "wake": "listening" if self._model_available else "disabled",
             "clients": self._clients,
-            "guild_id": self._cfg.guild_id or None,
+            # The guilds this gate is CURRENTLY serving, learned from the
+            # connections' hellos rather than configured. One gate serves them
+            # all since 2026-09-17, so a single `guild_id` could no longer say
+            # what it was doing.
+            "guilds": sorted({g for g, _ in self._users}),
             "uptime_seconds": round(time.time() - self._started_at, 1),
             "users": {
-                user_id: {
+                f"{guild_id}/{user_id}": {
                     "frames": s.frames,
                     "bytes": s.bytes_in,
                     "wakes": s.wakes,
                     "utterances": s.utterances,
                 }
-                for user_id, s in self._users.items()
+                for (guild_id, user_id), s in self._users.items()
             },
         }
 
