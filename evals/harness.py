@@ -12,7 +12,13 @@ Two drive modes, mutually exclusive on `run_case`:
   (`nora.app.eval_support.build_live_runner` + `nora.app.agent_runner.
   LiveAgentRunner`, which wraps `nora.agent.factory.create_agent`/`invoke` — the
   same code path production runs), reaching the network. This is what
-  `evals/run.py --suite journeys` and the adversarial live path drive. The
+  `evals/run.py --suite journeys` and `--suite participation` drive.
+
+  **The adversarial suites do NOT drive this.** This sentence used to say they
+  did; they call `evals.run._invoke_agent`, which builds a bare `Agent` on
+  `doctrine.text` with no prefill and no tools, and never enters `run_case`.
+  The claim was read and believed on 2026-09-17 and a doctrine change merged on
+  it. The
   graph around the model stays fakes (db/memory/adapter) so a live run measures
   the MODEL's behaviour without touching a real platform or store; `--skills`
   and `--seed-production` (see `run_case`) close specific production-shape gaps

@@ -632,10 +632,32 @@ def _build_adversarial_message(case: dict) -> str:
 
 async def _invoke_agent(model, system_prompt: str, message: str, *,
                         role: Literal["reply", "judge"]) -> str:
-    """The one seam that reaches the network — a bare Strands `Agent` call against
-    OmniRoute, no tools, no Handler (spec E.7's live path is deliberately separate
-    from `evals.harness.run_case`; see that module's docstring on why the real-network
-    branch there stays unreachable). `role` distinguishes "producing Nora's candidate
+    """**NOT NORA.** The one seam that reaches the network for the adversarial
+    suites, and it drives a RECONSTRUCTION, not her.
+
+    What this builds: a bare Strands `Agent` whose system prompt is
+    `doctrine.text` and whose user message is a plain-text transcript.
+    What it therefore does NOT have — every one of these is part of Nora:
+    `build_prefill` and every `ContextBlock`, the context-header catalogue,
+    `untrusted="true"` and the `note=` framing on the message being judged,
+    `<standing>` / `<notes>` / `<culture>` / `<self_card>` / `<peer_card>`,
+    the real tool registry, `ReplyGuard` / `LeakGuard` / `Deliverer`.
+
+    So a number from here answers "does this doctrine WORDING move this model",
+    and never "what does Nora do in a room". Reporting it as the second is the
+    2026-09-17 failure this docstring exists to stop repeating.
+
+    NOTHING MECHANICAL HOLDS THIS. A holding test was written and withdrawn the
+    same day: three of four adversarial attacks against it passed, including
+    replacing this opening line with prose that NAMES the marker while asserting
+    the opposite. `substring in text` cannot tell a declaration from a sentence
+    about one — #182's finding, at any window size. So this docstring is a
+    courtesy to the next reader and not a guarantee, which is exactly what the
+    false claim it replaces also was. See the eval-subject issue.
+
+    A bare `Agent` against OmniRoute, no tools, no Handler (spec E.7's live
+    path is deliberately separate from `evals.harness.run_case`).
+    `role` distinguishes "producing Nora's candidate
     reply" from "judging that reply" only for callers/tests — the call itself is the same.
     """
     from strands import Agent
@@ -724,7 +746,8 @@ async def _run_adversarial_live(
         # models, how many judge samples, which doctrine and which endpoint.
         # A pass rate quoted without these is not re-derivable — and the ids
         # are exactly what an override silently changes.
-        print(f"[adversarial] corpora={','.join(p.name for p in paths)} "
+        print("[adversarial] subject=doctrine-text-only-NOT-NORA "
+              f"corpora={','.join(p.name for p in paths)} "
               f"reply_model={reply_model_id} judge_model={judge_model_id} "
               f"judge_samples={judge_sample_count} "
               f"doctrine_sha256={doctrine.sha256[:12]} "
