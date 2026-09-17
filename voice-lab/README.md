@@ -12,11 +12,11 @@ paths keep working. Nothing under the data root is ever committed (43 GB; see
 
 | data dir | what | how to rebuild |
 |---|---|---|
-| `oww-data/output/喂Nora/*` | MiniMax + edge-tts wake/negative clips | `scripts/gen_wake_minimax*.py`, `scripts/gen_negatives_*.py` |
-| `oww-data/features/*.npy` | ACAV100M / zh-HK / validation features | HF `davidscripka/openwakeword_features`; `scripts/extract_zhhk_features.py` |
-| `oww-data/rir/`, `oww-data/background/` | BIRD RIRs, FMA/FSD50k backgrounds | `scripts/downmix_rir_mono.sh`, see `docs/RESULTS.md` |
+| `oww-data/output/喂Nora/*` | MiniMax + edge-tts wake/negative clips | `voice-lab/scripts/gen_wake_minimax*.py`, `voice-lab/scripts/gen_negatives_*.py` |
+| `oww-data/features/*.npy` | ACAV100M / zh-HK / validation features | HF `davidscripka/openwakeword_features`; `voice-lab/scripts/extract_zhhk_features.py` |
+| `oww-data/rir/`, `oww-data/background/` | BIRD RIRs, FMA/FSD50k backgrounds | `voice-lab/scripts/downmix_rir_mono.sh`, see `voice-lab/docs/RESULTS.md` |
 | `oww-src/` | openWakeWord clone @ 368c037 + `oww-src-working-tree.patch` | `git clone https://github.com/dscripka/openWakeWord && git apply ../oww-src-working-tree.patch` |
-| `scratch/` | feature arrays, seeds, cloned audio from the V5/V6 runs | `experiments/wake-v5/` (reaug*, make_seeds, modal_cosyvoice_yue_gen) |
+| `scratch/` | feature arrays, seeds, cloned audio from the V5/V6 runs | `voice-lab/experiments/wake-v5/` (reaug*, make_seeds, modal_cosyvoice_yue_gen) |
 | `sidecar/recordings/` | Miles's real Discord recordings | not regenerable — back up |
 
 ## Layout

@@ -5,7 +5,7 @@
 **Repos:**
 - `nora` (design docs): branch `feat/wake-v4-postmortem` → https://github.com/mikeng-io/nora/tree/feat/wake-v4-postmortem (design doc: `design/voice-channel/03-wake-word-training.md` — has full post-mortem)
 - `voice-lab` (lab): **NEW private repo** `opsuser-dev/voice-lab` → clone + 6 commits:
-  - `scripts/modal_train_wakeword.py` — publish gate implemented
+  - `voice-lab/scripts/modal_train_wakeword.py` — publish gate implemented
   - `wake-council-experiments/exp1-8 + lib_score.py` — Opus eval suite
   - `oww-src-working-tree.patch` — 194-line diff of openwakeword fixes
 
@@ -32,7 +32,7 @@ requires **int16** — all pre-council real-audio scores were invalid.
 
 ## 2. WHAT WAS DONE
 
-**A. Publish gate** — `scripts/modal_train_wakeword.py`:
+**A. Publish gate** — `voice-lab/scripts/modal_train_wakeword.py`:
 - train.py output captured to `train-run.log` (was lost on stdout)
 - `_parse_final_metrics` extracts Final Model block → `_publish_gate` blocks
   publish unless recall ≥ 0.85 AND fp/hr ≤ 1.0 (env overridable)

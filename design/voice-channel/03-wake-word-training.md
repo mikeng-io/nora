@@ -145,7 +145,7 @@ artifact/training is broken.
 
 ### Fixes implemented
 
-**A. Publish gate (Sep-16, `scripts/modal_train_wakeword.py`).** Train output
+**A. Publish gate (Sep-16, `voice-lab/scripts/modal_train_wakeword.py`).** Train output
 is now captured to `train-run.log`; after training, `_parse_final_metrics`
 extracts the Final Model block and `_publish_gate` blocks publish unless
 `recall >= 0.85` AND `fp_per_hour <= 1.0` (env overridable:
