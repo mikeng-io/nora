@@ -353,10 +353,14 @@ class TagContext:
     # and in the measured incident those were different rooms on different
     # platforms. A room-scoped block would have seen nothing.
     #
-    # Populated only for the participation occasion today
-    # (`FirePath.build_context`): that is the turn deciding whether to speak
-    # into a room nobody addressed her in, and so the one turn for which «she
-    # already raised this two hours ago» changes the answer.
+    # Populated for the two occasions that weigh a floor nobody offered them —
+    # participation and the proactive act turn (`FirePath.build_context`,
+    # `_DECISION_WRITERS_BY_KIND`) — because «she already raised this two hours
+    # ago» is what changes the answer for both. The act turn was left out until
+    # 2026-09-17 on the argument that it already holds the decide pass's index;
+    # that index is what she MEANT to raise, and two rows due 30 minutes apart
+    # duplicated a raise because nothing said what the loop had since DONE.
+    # Each occasion reads with its own writer set (`decision_log`).
     #
     # It is NOT a sixth context block on the same axis as its neighbours. Every
     # block above is a distillation of the WORLD — what people said, what they

@@ -755,7 +755,9 @@ def _standing_block(ctx: TagContext) -> ContextBlock | None:
 def _decisions_block(ctx: TagContext, *, now: datetime) -> ContextBlock | None:
     """What NORA'S OWN LOOP already did across this WORKSPACE, as
     `<loop_decisions>` (issue #199). `""` when there is nothing — which is
-    every turn but the participation occasion's today.
+    every turn but the two that weigh a floor nobody offered them: the
+    participation occasion, and the proactive act turn (added 2026-09-17,
+    after two act turns 30 minutes apart duplicated one raise).
 
     **This is the only block here that is not about the world.** Its five
     neighbours distil what people said, what they are like, what the workspace

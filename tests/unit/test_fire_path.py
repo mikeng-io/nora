@@ -2544,6 +2544,47 @@ async def test_a_participation_turn_sees_what_she_already_raised_in_this_room(
     assert "home-1" not in block
 
 
+async def test_a_proactive_act_turn_sees_the_raise_its_sibling_row_just_made(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """**The 2026-09-17 duplicate, end to end** (msgs 5450/5455).
+
+    The shape, exactly: a row about note A fired at 20:00 and took the floor;
+    31 minutes later a row about note B came due in the same room. Before this,
+    the second turn's only trace of the first was an unlabelled line of her own
+    speech in the transcript, and it raised again. The block is what says «that
+    was you, unprompted, 31 minutes ago» — with an AGE, because every question
+    it is read to answer is a question about when.
+
+    Falsification: drop `"proactive"` from `_DECISION_WRITERS_BY_KIND`.
+    """
+    store = InMemoryDecisionLogStore()
+    await store.append(row=DecisionRow(
+        id="r1", writer="proactive_act", platform="signal",
+        conversation_id="conv-1", workspace="friends", note_id=None,
+        verdict="spoke", reason="spoke",
+        ts=int(T0.timestamp() * 1000) - 31 * 60_000,
+    ))
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        runner=FakeAgentRunner([]), participation_runner=FakeAgentRunner([]),
+        decisions=_decision_recorder(store), policy=_decision_policy(),
+    )
+
+    ctx = await path.build_context(
+        fire_module.proactive_occasion([_proactive_row()]),
+    )
+    rendered = "\n".join(str(m) for m in build_prefill(
+        ctx, display_name="Nora", context_window=40, now=T0,
+    ))
+
+    # `spoke` once, not twice: `decision_line` suppresses a reason that merely
+    # repeats the verdict. The AGE is the half this test is about.
+    assert "(31m ago) Friends proactive_act spoke" in rendered
+    block = rendered.split("<loop_decisions")[1].split("</loop_decisions>")[0]
+    assert "conv-1" not in block
+
+
 async def test_a_participation_turn_never_reads_back_its_own_rows(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
@@ -2581,12 +2622,22 @@ async def test_a_participation_turn_never_reads_back_its_own_rows(
     ]
 
 
-async def test_only_the_participation_occasion_reads_the_decision_log(
+async def test_only_the_floor_weighing_occasions_read_the_decision_log(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
-    """A reminder or a gathering firing was decided when its row was written,
-    so the block would cost a read and change nothing. Asserted as the pair, so
-    deleting the `kind` check cannot pass by making both sides empty."""
+    """Participation and the proactive act turn read it; a reminder does not.
+
+    A reminder or a gathering firing was decided when its row was written and
+    is not weighing whether to take a floor, so the block would cost a read and
+    change nothing. Asserted as the triple, so deleting
+    `_DECISION_WRITERS_BY_KIND` cannot pass by making every side empty.
+
+    Falsification: drop `"proactive"` from `_DECISION_WRITERS_BY_KIND` and the
+    second assertion reddens; drop the whole mapping lookup and the third does.
+    """
+    # `proactive_act` is the ONE writer both readers carry, so a single row
+    # serves all three assertions and neither side can pass by being empty for
+    # a reason unrelated to the `kind` check.
     store = InMemoryDecisionLogStore()
     await store.append(row=DecisionRow(
         id="r1", writer="proactive_act", platform="signal",
@@ -2600,7 +2651,59 @@ async def test_only_the_participation_occasion_reads_the_decision_log(
     )
 
     assert (await path.build_context(_participation())).decisions != ()
+    assert (await path.build_context(
+        fire_module.proactive_occasion([_proactive_row()]),
+    )).decisions != ()
     assert (await path.build_context(reminder_occasion([_reminder()]))).decisions == ()
+
+
+async def test_the_proactive_act_turn_reads_its_siblings_and_not_its_own_decide_row(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """The 2026-09-17 duplicate, pinned (msgs 5450/5455).
+
+    Two proactive rows about two notes came due 30 minutes apart in one room;
+    `heartbeat._by_turn` coalesces only rows due in the SAME tick, so they were
+    two turns, and the second raised what the first had already said. The
+    second turn's window DID carry the first message — as an unlabelled line of
+    her own speech. `proactive_act` in this set is what labels it.
+
+    `proactive_decide` is excluded for the rule's own reason: it is the
+    deliberation that produced THIS turn, `_proactive_header` already puts it
+    in front of her, and reading it back leans toward speaking. `tag` is
+    excluded because what a tag answered is in the transcript underneath, and
+    because it is the highest-volume writer — 20 rows of it would evict the one
+    `proactive_act` row this set exists to carry.
+
+    Falsification: add `proactive_decide` to `PROACTIVE_ACT_DECISION_WRITERS`,
+    or drop `proactive_act` from it.
+    """
+    store = InMemoryDecisionLogStore()
+    ts = int(T0.timestamp() * 1000)
+    for row_id, writer, verdict, reason in (
+        ("a", "participation", "silent", "declined"),
+        ("b", "tag", "replied", "send_reply"),
+        ("c", "proactive_decide", "remind", ""),
+        ("d", "proactive_act", "spoke", "spoke"),
+    ):
+        await store.append(row=DecisionRow(
+            id=row_id, writer=writer, platform="signal",
+            conversation_id="conv-1", workspace="friends", note_id=None,
+            verdict=verdict, reason=reason, ts=ts,
+        ))
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        runner=FakeAgentRunner([]), participation_runner=FakeAgentRunner([]),
+        decisions=_decision_recorder(store), policy=_decision_policy(),
+    )
+
+    ctx = await path.build_context(
+        fire_module.proactive_occasion([_proactive_row()]),
+    )
+
+    assert [row.writer for _, rows in ctx.decisions for row in rows] == [
+        "participation", "proactive_act",
+    ]
 
 
 def _decision_policy() -> Policy:
