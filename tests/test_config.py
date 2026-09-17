@@ -765,6 +765,11 @@ def test_a_config_written_before_the_dreamer_section_existed_still_loads(toml_pa
     # wired even though config.toml now states the model outright.
     assert cfg.dreamer.model == ""
     assert cfg.dreamer_model() == cfg.llm.model
+    # `0` is the inherit sentinel (issue #291), so a config predating
+    # this field still gets the tier's per-call ceiling rather than a
+    # model asked to emit nothing.
+    assert cfg.dreamer.max_tokens == 0
+    assert cfg.dreamer_max_tokens() == cfg.llm.max_tokens
     assert cfg.dreamer.budgets == {}
     assert cfg.dreamer.budget_for("note-curation") == DreamBudgetConfig()
     # The clock's own five numbers, which moved here from the deleted
