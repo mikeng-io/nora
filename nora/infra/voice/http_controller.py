@@ -67,7 +67,7 @@ class VoiceControllerRejected(VoiceControllerError):  # noqa: N818 — pinned co
 
 class VoiceControllerClient:
     """One HTTP client for the whole control plane. `base_url` is the
-    `[speech.tts] sidecar_endpoint` config value — that endpoint IS the
+    `[speech.tts] sidecars` config value — that endpoint IS the
     audio-controller's base.
 
     With no injected `session`, each call opens its own

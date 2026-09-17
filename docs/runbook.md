@@ -342,6 +342,33 @@ keys and rejects them (`extra_forbidden`), so both entered a restart loop:
 **279 restarts, `analytics` down four days, `presence` a day.** The fix was one
 `--force-recreate presence analytics` onto the image that was already built.
 
+**A PROFILED container is invisible to every command above.** The second
+guild's voice pair (`voice-sidecar-b`, `voice-wake-b`, added 2026-09-17) sits
+behind compose's `multi-guild` profile, and compose SKIPS a profiled service
+unless the profile is enabled or the service is named. So a bare
+`docker compose up -d` rebuilds and recreates `voice-sidecar` while leaving
+`voice-sidecar-b` on the image it was created from — the same shape as the
+279-restart incident above, with the same `docker ps` lie (both show
+`voice-sidecar:latest`, because that is the reference they asked for).
+
+It bites `config.toml` edits too: `voice-wake-b` bind-mounts that file, and a
+single-file bind mount needs a RECREATE, which `--force-recreate nora` and a
+bare `up -d` will not give a profiled container.
+
+**On a multi-guild deployment, put the profile in the environment** so every
+command in this runbook covers both pairs:
+
+```bash
+export COMPOSE_PROFILES=multi-guild     # or set it in the shell profile
+docker compose up -d --force-recreate voice-sidecar voice-sidecar-b \
+                                      voice-wake voice-wake-b
+```
+
+`verify-deploy.py` does NOT cover either voice pair — it only inspects
+containers running `nora:latest` — so the read-back for these is
+`docker inspect --format '{{.Image}}'` against `docker image inspect
+voice-sidecar:latest --format '{{.Id}}'`, per container.
+
 `verify-deploy.py` asks the two questions the deploy itself cannot: is every
 container that asked for this image actually ON the image just built, and is it
 up a grace period later. It exits non-zero on either, so it can be the last
@@ -579,6 +606,99 @@ before a restart leaves no trace, and times are accurate only to the scrape
 interval. `02-measurement §3` names the fix — a durable per-verdict row, which
 DEC-179 excluded from `decision_log` on purpose. Until that exists, `overrides`
 is approximate and is a lower bound.
+
+## 6d. "Did the transport throw away her reasoning?" — `reasoning_strip_log`
+
+**The defect.** OmniRoute's Chat Completions transport cannot carry
+`reasoningContent` in a multi-turn position. When a loop goes multi-turn — on
+the agent path that means it reached for a tool — Strands drops the reasoning
+out of the request, logs one WARNING, and **continues**. In production it does
+not raise: the turn runs on and she speaks with her reasoning gone (#325, read
+back 2026-09-17). ADR 0011 measured the same transport limitation on the
+relevance gate as a **safety breach**, not merely as degradation.
+
+**Read the table, not the counter.** `nora_reasoning_strip_total` exists and is
+useful inside one uptime window, but it resets on every deploy, and an absent
+series there means "nothing since the last restart" — never "never happened".
+The durable answer is in Postgres.
+
+```bash
+docker exec nora-db psql -U nora -d nora -c "
+  SELECT path, model, reasoning_effort,
+         count(*)                   AS turns,
+         sum(continuation_calls)    AS chances,
+         sum(strip_calls)           AS strips,
+         sum(stripped_blocks)       AS blocks,
+         round(100.0 * sum(strip_calls) / nullif(sum(continuation_calls),0), 1)
+                                    AS pct
+  FROM reasoning_strip_log
+  WHERE created_at > now() - interval '7 days'
+  GROUP BY 1,2,3
+  ORDER BY 1,2,3;"
+```
+
+`path` is one of `tag`, `heartbeat`, `participation`, `proactive` or
+`dreamer:<adaptor>` — every loop that speaks, plus one value per Dreamer
+adaptor. **`proactive` and `dreamer:proactive` are different loops sharing a
+word**: the first is a self-written reminder coming due and may speak into a
+room; the second is a background research pass that holds no act verb.
+
+**How to read it, and the four traps.**
+
+- **`chances` is the denominator and it is the point.** `strips = 2` is a
+  catastrophe at `chances = 2` and a rounding error at `chances = 200`. The
+  production reading that opened #325 had no denominator at all, which is why
+  it settled nothing.
+- **`pct = 0` at `reasoning_effort = 'none'` means IMPOSSIBLE, not healthy.**
+  A path emitting no reasoning cannot have any stripped. As of 2026-09-17 the
+  tag and participation paths are at `none` and every Dreamer adaptor is at
+  `low`, so a clean tag row is expected and a clean `dreamer:*` row at `low` is
+  the reading that would be news.
+- **No rows for a path is not a zero.** A row is written only for a turn that
+  went MULTI-TURN, so a path with no rows had no tool-using turns in the
+  window — check `nora_tool_call_log_writes_total` or the tool log before
+  concluding anything.
+- **`model` is the OmniRoute ALIAS and cannot see a combo repoint.** It is
+  `[llm] model`, copied into the provider at startup, so when the combo behind
+  `nora` is repointed upstream this column reads `nora` on both sides. The
+  served model id does not reach the seam that writes these rows at all. Use
+  OmniRoute's own logs for that question; use this column only for a change of
+  ALIAS (a second tier, an eval run against `nora-gate`).
+
+**`strips` is how OFTEN, `blocks` is how MUCH.** They are different questions
+and the second has no other source: `strips` counts requests the transport
+stripped, `blocks` counts the DISTINCT reasoning blocks lost. Two strips of one
+block is a short loop re-sending the same reasoning; two strips of two blocks
+is a loop that reasoned twice and lost both. `blocks < strips` is ordinary and
+means re-drops; `blocks` climbing faster than `strips` means longer loops.
+
+**After an effort or config change**, the same query with
+`date_trunc('hour', created_at)` in the GROUP BY is the before/after —
+`reasoning_effort` records what the request actually carried rather than what
+config said, which is the half of 2026-09-17 that cost two hours to
+reconstruct. For an upstream combo repoint (the other half, and the one this
+table cannot see) the before/after is the timestamp alone, read against
+OmniRoute's routing log.
+
+**Is the table growing faster than you want?** A row lands for every turn with
+at least one continuation call, on every speaking path — not one per adaptor per
+day, which is the Dreamer's rate alone. The volume is unmeasured until this
+ships; check it and decide retention against a number:
+
+```bash
+docker exec nora-db psql -U nora -d nora -c "
+  SELECT path, count(*) FROM reasoning_strip_log
+  WHERE created_at > now() - interval '1 day' GROUP BY 1 ORDER BY 2 DESC;"
+```
+
+The row is ten small columns and one index entry: on the order of 100 MB a year
+at 1,000 qualifying turns a day, 10 MB at 100. There is no sweep, deliberately —
+pruning is a retention judgement, and the window this table answers over is
+longer than one deploy.
+
+Nothing acts on this signal, deliberately: the drop is deterministic, and a
+retry would turn a request-shape incompatibility into an apparently
+intermittent one. See `docs/adr/0013-the-reasoning-strip-is-counted-in-postgres.md`.
 
 ## 7. "Where do eval results live?"
 

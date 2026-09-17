@@ -239,6 +239,13 @@ def build_offline_pipeline(
             preview_source=None,
             llm_state=None,
             tool_call_log_store=None,
+            # Issue #325. `None` is the honest inert default — the offline
+            # harness has no database — but the NAME has to be here:
+            # `tests/architecture/test_assembler_parity.py` requires both
+            # `FirePath` call sites to pass the same collaborators, because
+            # a name on only one side means an eval measures a turn
+            # production never builds.
+            reasoning_strip_store=None,
             event_registry={
                 "reminder": reminder_occasion,
                 "gathering": gathering_occasion,

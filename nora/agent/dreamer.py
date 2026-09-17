@@ -91,11 +91,13 @@ from ..domain.ports import (
     Proposal,
     RosterSource,
 )
+from ..domain.reasoning_strip import dreamer_path
 from ..obs.metrics import Metrics
 from ..obs.tracing import TRACE_KIND, annotate, span
 from . import factory
 from .dream_guard import DreamGuard
 from .dream_screen import screen
+from .reasoning_strip import ReasoningStripWatch
 from .registry import ToolRegistry
 from .tools import OriginRoom
 
@@ -1170,6 +1172,7 @@ class DreamerRuntime:
         tool_budget_overrides: Mapping[str, int] | None = None,
         grants: Mapping[str, AdaptorGrant] | None = None,
         store_timeout_seconds: float = DEFAULT_DREAM_STORE_TIMEOUT_SECONDS,
+        reasoning_strip_store: Any = None,
     ) -> None:
         self._models = models
         self._instructions = instructions
@@ -1215,6 +1218,14 @@ class DreamerRuntime:
         # `tool_budget_overrides` is one: `nora.agent` may not import
         # `nora.config`.
         self._store_timeout_seconds = store_timeout_seconds
+        # Issue #325. `None` is the inert default every existing construction
+        # keeps (the eval harness builds two runtimes without one), and it is
+        # the path the 2026-09-17 config change moved the exposure ONTO: the
+        # Dreamer went `reasoning_effort = "none" -> "low"` in the same session
+        # `CultureAdaptor.tools` went `frozenset()` -> nine read verbs, and a
+        # tool-using run at `low` is exactly the multi-turn shape the transport
+        # strips. It could not hit this before; it can now.
+        self._reasoning_strip_store = reasoning_strip_store
 
     def budget_for(self, adaptor_name: str) -> AdaptorBudget:
         return self._budgets.get(adaptor_name, self._default_budget)
@@ -1651,12 +1662,25 @@ class DreamerRuntime:
             memory_tools=MEMORY_TOOLS,
             memory_budget=budget.max_memory_calls,
         )
+        # One per SAMPLE, beside the guard and for the same reason: it holds
+        # this sample's own call counts, and a shared one would fold N samples
+        # into a single row whose denominator no longer describes any loop that
+        # ran. `path` carries the adaptor by name because "which Dreamer
+        # adaptor" is one of the three questions the instrument exists to
+        # answer; `tag_id` stays None because a Dreamer run has no tag, and the
+        # column is nullable so the absence can be recorded as an absence.
+        watch = ReasoningStripWatch(
+            path=dreamer_path(adaptor.name),
+            store=self._reasoning_strip_store,
+            metrics=self._metrics,
+        )
         try:
             agent = factory.create_dream_agent(
                 model=self._models.create(),
                 system_prompt=instructions_text,
                 tools=tools,
                 guard=guard,
+                reasoning_watch=watch,
                 trace_attributes={
                     "dreamer.adaptor": adaptor.name,
                     "dreamer.key": key,
@@ -1682,12 +1706,29 @@ class DreamerRuntime:
                 "dream run timed out after %.0fs (adaptor=%s key=%s)",
                 budget.timeout_seconds, adaptor.name, key,
             )
+            await watch.flush()
             return None, "timeout"
         except Exception:
             log.exception(
                 "dream run failed (adaptor=%s key=%s)", adaptor.name, key,
             )
+            await watch.flush()
             return None, None
+        # On every exit, including the two above -- a sample that timed out is
+        # still a sample whose loop made model calls, and those are the calls
+        # least visible from anywhere else. Written out three times rather than
+        # hidden in a `finally`, because awaiting in a `finally` on a cancelled
+        # task re-raises out of the cleanup path, and a record of something that
+        # has already happened must never change how a run ends. `flush` is
+        # idempotent.
+        #
+        # BOUNDED INSIDE `flush`, for `_bounded_store_call`'s reason one method
+        # over: a dream run holds its unit and a wedged store does not raise.
+        # This one is NOT inside `store_bound_for`'s arithmetic -- it is not an
+        # adaptor store phase and carries its own, smaller, bound
+        # (`ReasoningStripWatch.DEFAULT_WRITE_TIMEOUT_SECONDS`), because one
+        # INSERT is not a render's worth of reads.
+        await watch.flush()
         stop_reason = getattr(result, "stop_reason", None)
         if stop_reason is not None:
             self._metrics.inc(

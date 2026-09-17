@@ -66,7 +66,7 @@ class _StubManager:
 
 async def _consumer() -> tuple[VoiceEventConsumer, _StubManager, VoiceControllerHub]:
     manager = _StubManager()
-    hub = VoiceControllerHub(_StubClient())
+    hub = VoiceControllerHub({GUILD: _StubClient()})
     await hub.join(GUILD, "cortez-1")
     return VoiceEventConsumer(manager, hub), manager, hub
 
@@ -260,7 +260,7 @@ async def test_an_event_seq_gap_is_warned_about(caplog):
         "seq gap" in record.message and "guild-1" in record.message
         for record in caplog.records
     )
-    assert hub.last_event_seq == 5, (
+    assert hub.last_event_seq(GUILD) == 5, (
         "a SUCCESSFUL delivery moves the bookmark; the gap warning compared "
         "against the previous one"
     )
@@ -272,6 +272,30 @@ async def test_a_failed_delivery_does_not_move_the_seq_bookmark():
 
     await consumer.consume(_event("track-finished", playback_id=PLAYBACK, event_seq=3))
 
-    assert hub.last_event_seq is None, (
+    assert hub.last_event_seq(GUILD) is None, (
         "a failed delivery stays retryable — its seq is not consumed either"
+    )
+
+
+async def test_an_event_for_a_guild_with_no_controller_is_refused():
+    """THE HOLE THIS CLOSES (found by review, 2026-09-17). This route has no
+    auth by design — its only caller is a controller on the private compose
+    network. The hub's seq bookmark became a per-guild DICT with multi-guild,
+    where a scalar used to be, and nothing checked the `guild_id` against the
+    configured controllers: every distinct value a caller invented added a
+    permanent entry to a map keyed by request input.
+
+    It was also fail-OPEN — an event for a guild nora can do nothing about was
+    answered `200 ok`."""
+    consumer, manager, hub = await _consumer()
+
+    status, payload = await consumer.consume(
+        _event("speech-finished", guild_id="a-guild-nobody-configured", event_seq=1),
+    )
+
+    assert status == 400
+    assert payload == {"error": "unknown guild"}
+    assert manager.calls == [], "nothing was acted on"
+    assert hub.last_event_seq("a-guild-nobody-configured") is None, (
+        "no bookmark was created for an unknown guild"
     )

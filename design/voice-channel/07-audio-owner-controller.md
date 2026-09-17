@@ -401,7 +401,7 @@ traceable end-to-end with zero extra moving parts.
   `approximate_restart`); since 2026-09-17 the revive seeks to the cut
   (`approximate_seek`, §5), except live sources.
 - Gate: `/discord join` requires (a) guild member, (b) caller in a voice
-  channel, (c) that channel's GUILD in `voice_guild_ids` config (existing
+  channel, (c) that channel's GUILD listed in `[speech.tts] sidecars` (existing
   fail-closed list; per-CHANNEL until 2026-09-17, see §12.2). Auto-join per
   Miles's spec (play joins if connected-idle, stays on stop).
 - Deploy: build audio-controller image (has ffmpeg already), nora image;
@@ -476,7 +476,7 @@ audio-controller's one allowed decision, documented here and nowhere in nora's d
    messages, 11 fabricated notes, and the entire `culture` table.
 
    The gate is now **guild member + caller physically in a voice channel +
-   that channel's GUILD on `[speech.tts] voice_guild_ids`**, and the
+   that channel's GUILD listed in `[speech.tts] sidecars`**, and the
    controller admits any channel in its (still single, §12.5) guild. A
    second channel is still refused — as 409 `connected_elsewhere`, which is
    Discord's one-connection-per-bot-per-guild limit rather than a policy.
@@ -492,16 +492,42 @@ audio-controller's one allowed decision, documented here and nowhere in nora's d
    takes both. An unmarked guild is refused 400 and never reaches ingest.
 3. **Permission ruleset (`/discord` group): guild member + caller
    physically in a voice channel + that channel's GUILD in
-   `voice_guild_ids`** (the three-condition gate from the original design,
+   `[speech.tts] sidecars`** (the three-condition gate from the original design,
    with the third condition widened to the guild — see decision 2). NO extra
    `DISCORD_ALLOWED_USERS`-style allowlist for voice — the existing
    chat-admission list stays for chat ONLY.
 4. **`/music stop` when `state=idle` → no-op** (200 with unchanged state).
    Routine contract choice.
 5. **Controller scope: SINGLE GUILD, hard-bound.** Any request with a
-   `guild_id` ≠ configured guild → 400. Multi-guild is phase 2+; nothing in
-   the data model assumes multi-guild (generation is a single counter, the
-   outbox is a single queue, the state file is single-connection).
+   `guild_id` ≠ configured guild → 400. Nothing in the data model assumes
+   multi-guild (generation is a single counter, the outbox is a single queue,
+   the state file is single-connection).
+
+   **This decision STANDS, and multi-guild landed 2026-09-17 without touching
+   it.** "Phase 2+" turned out to name the wrong axis. Discord's limit is one
+   voice connection per bot token PER GUILD, so a guild is the natural unit of
+   ownership — which makes multi-guild a deployment TOPOLOGY (one controller
+   container per guild) rather than a controller that juggles several. The
+   single-connection state machine above is reused verbatim, N times, and each
+   controller keeps answering 400 to any guild but its own. That 400 is a
+   safety property; keying the generation counter, the outbox and the
+   desired-state file by guild would have traded it for two containers, in
+   exactly the concurrency code the September audit went through.
+
+   nora holds one `VoiceControllerClient` per guild, mapped in
+   `[speech.tts.sidecars]`, and that map IS the join allow-list — a guild with
+   no controller has no voice. `VoiceControllerHub` was already per-guild
+   everywhere except its `event_seq` bookmark, which had to become per-guild
+   too: each controller mints its own sequence from 1, so one counter read the
+   second guild's first event as a jump backwards and the first guild's next
+   as a gap. Each guild needs its OWN wake gate as well — the pump seam
+   carries `(user_id, pcm)` and nothing else, so a shared gate could not say
+   which guild a speaker was in.
+
+   Cost, measured 2026-09-17: ~261 MiB per extra guild (voice-sidecar 60 MiB +
+   voice-wake 201 MiB). `stt` is shared, not duplicated. The second pair sits
+   behind compose's `multi-guild` profile so a single-guild deployment starts
+   unchanged.
 6. **Empty-channel auto-leave (Miles, 2026-09-16 11:2x HKT): when the last
    human leaves the voice channel, start a 1-minute timer; if no human
    returns before it fires, the controller tears the connection down

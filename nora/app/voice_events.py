@@ -77,11 +77,25 @@ class VoiceEventConsumer:
         guild_id = body.get("guild_id")
         if not isinstance(guild_id, str) or not guild_id:
             return 400, {"error": "guild_id is required"}
+        # A guild nora has no controller for cannot have emitted this. The
+        # route has no auth by design (its only caller is a controller on the
+        # private compose network), so without this check every distinct
+        # `guild_id` a caller invents permanently adds an entry to the hub's
+        # per-guild seq bookmark — an unbounded map keyed by request input,
+        # where a scalar used to be. It also answered `200 ok` to an event for
+        # a guild it could do nothing about, which is a fail-OPEN.
+        if guild_id not in self._hub.guild_ids:
+            log.warning(
+                "voice event %s (%s) names guild %s, which has no configured "
+                "audio-controller ([speech.tts] sidecars) — refused",
+                event_id, event_type, guild_id,
+            )
+            return 400, {"error": "unknown guild"}
         if self._hub.seen_event(event_id):
             return 200, {"status": "duplicate"}
         event_seq = body.get("event_seq")
         if isinstance(event_seq, int) and not isinstance(event_seq, bool):
-            last = self._hub.last_event_seq
+            last = self._hub.last_event_seq(guild_id)
             if last is not None and event_seq > last + 1:
                 log.warning(
                     "voice event seq gap for guild %s: last consumed %d, arrived "
@@ -106,7 +120,7 @@ class VoiceEventConsumer:
         # seq, so a failed delivery never moves the gap baseline forward.
         self._hub.consume_event_id(event_id)
         if isinstance(event_seq, int) and not isinstance(event_seq, bool):
-            self._hub.note_event_seq(event_seq)
+            self._hub.note_event_seq(guild_id, event_seq)
         return status, payload
 
     async def _process(

@@ -16,6 +16,11 @@ from __future__ import annotations
 from typing import NamedTuple
 
 from nora.domain.media_join import JOIN_PATHS
+from nora.domain.reasoning_strip import (
+    PATHS_HELP,
+    STRIP_OUTCOMES,
+    WRITE_OUTCOMES,
+)
 
 _DEFAULT_BUCKETS: tuple[float, ...] = (0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30)
 
@@ -38,6 +43,17 @@ class _GaugeSpec(NamedTuple):
 #: first time a ninth transcript builder lands, and a help text naming seven
 #: paths for an eight-path series is a metric that documents itself wrongly.
 _JOIN_PATHS = " / ".join(JOIN_PATHS)
+
+#: DERIVED for `_JOIN_PATHS`' reason, and this one has already been paid for
+#: once: `nora_reasoning_strip_total`'s help text was hand-written as
+#: «tag / participation / dreamer:<adaptor>» while `nora.app.fire` was sending
+#: `heartbeat` and `proactive` through the same label. An operator filtering a
+#: dashboard off that sentence dropped the reminder path silently. The set now
+#: comes from `nora.domain.audience.SPEAKING_AUDIENCES`, which is what the
+#: call sites pass.
+_STRIP_PATHS = PATHS_HELP
+
+_WRITE_OUTCOMES = " / ".join(WRITE_OUTCOMES)
 
 
 class _HistogramSpec(NamedTuple):
@@ -2023,6 +2039,44 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Culture folds by what the pass did with the model's answer. A tier "
         "consumed by nobody yet (02-measurement step 4 is writing-only), so "
         "this series is the ONLY place its behaviour is observable at all.",
+        ("outcome",),
+    ),
+    # Issue #325. The OmniRoute Chat Completions transport drops
+    # `reasoningContent` in a multi-turn position; in production it does not
+    # raise, the loop runs on and the turn speaks with its reasoning gone.
+    #
+    # **THE DENOMINATOR IS IN THE SAME SERIES, and that is the whole design of
+    # it.** A counter carrying only the strips cannot separate «no strips» from
+    # «no observation» — both read as an absent series, and this process
+    # restarts two or three times a day with prometheus-client creating label
+    # values lazily. Recording `clean` as well means an absent series says
+    # «nothing multi-turn has run since the last restart» and a present `clean`
+    # with no `stripped` says a real zero. That is the difference between an
+    # instrument and a reassurance.
+    #
+    # It is still NOT the record. This resets on every deploy, and the question
+    # this signal exists to answer («how often, per opportunity, on which path,
+    # and did it move when the model did») spans deploys. `reasoning_strip_log`
+    # in Postgres is the record; see
+    # docs/adr/0013-the-reasoning-strip-is-counted-in-postgres.md.
+    _CounterSpec(
+        "nora_reasoning_strip_total",
+        "CONTINUATION model calls (a call after the first of a turn — the only "
+        "calls the Chat Completions transport can strip reasoning from), by "
+        f"path ({_STRIP_PATHS}) and outcome ({' / '.join(STRIP_OUTCOMES)}). "
+        "Both outcomes are recorded so that an absent series means NO "
+        "OBSERVATION and never a zero. Resets on every restart — "
+        "reasoning_strip_log in Postgres is the durable record (issue #325, "
+        "ADR 0013).",
+        ("path", "outcome"),
+    ),
+    _CounterSpec(
+        "nora_reasoning_strip_writes_total",
+        f"reasoning_strip_log row writes, by outcome ({_WRITE_OUTCOMES}). A "
+        "failed write never costs the turn, so this is the only place the "
+        "record going blind is visible; `impossible` is a row the loop could "
+        "not have produced and is deliberately NOT `failed`, which a database "
+        "blip also produces.",
         ("outcome",),
     ),
 )

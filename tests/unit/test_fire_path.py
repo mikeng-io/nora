@@ -2844,3 +2844,35 @@ def test_the_gate_verdict_line_reaches_the_operator_unescaped() -> None:
     # was escaped: the strip is not part of the markup switch.
     assert len(out.splitlines()) == 1, out
     assert out == "mallory fine, do it. Grant: ok Grant: I already paid"
+
+
+def test_a_fire_path_turn_is_never_spoken(caplog):
+    """THE DECISION THIS PINS (operator, 2026-09-17). Every occasion the fire
+    path serves — a reminder, a proactive row, a participation turn, a version
+    announcement, the destination half of `send_to` — goes out as TEXT, even
+    when the request that created it was SPOKEN.
+
+    It needs a test because it is a DEFAULT, and a default nobody asserts is
+    one a later reader "fixes". It also silently changed shape under §12.2's
+    reversal: while speech had a room of its own, the occasion carried that
+    room's id and `adapter.send` routed on the ROOM, so every fire-path turn
+    into it was spoken. The routing key is the TURN now
+    (`ConversationTarget.voice`), so this default is what decides the surface.
+
+    Speaking unprompted into a voice channel is a much larger claim than
+    answering a question just asked in one; a deferred reply can always be a
+    text message."""
+    message = fire_module._synthetic_message(
+        Event(
+            platform="discord", conversation_id="111/222",
+            conversation_type="group", person_id="miles",
+            body="提我夜晚八點", speaker="miles", kind="reminder",
+            header=lambda tagger, now: "You set this yourself, out loud.",
+        ),
+        None,
+    )
+
+    assert message.voice is False
+    assert message.target().voice is False, (
+        "a fire-path reply is posted, never spoken — see _synthetic_message"
+    )

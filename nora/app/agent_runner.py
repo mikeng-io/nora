@@ -134,6 +134,7 @@ class LiveAgentRunner:
         pre_fill: list[dict[str, Any]],
         guard: ReplyGuard,
         tool_call_log: Any = None,
+        reasoning_watch: Any = None,
         tag_message: str,
         limits: dict[str, Any],
         ctx: TagContext,
@@ -178,6 +179,11 @@ class LiveAgentRunner:
             pre_fill=pre_fill,
             guard=guard,
             tool_call_log=tool_call_log,
+            # Issue #325. Typed `Any` and threaded rather than built here for
+            # `tool_call_log`'s reason: this module may not import `strands`,
+            # and the watch is a `HookProvider`. `None` is the inert default
+            # every offline/eval composition keeps.
+            reasoning_watch=reasoning_watch,
             trace_attributes=trace_attributes,
             retry=self._retry,
             skills_dir=self._skills_dir,

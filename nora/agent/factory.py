@@ -338,6 +338,7 @@ def create_agent(
     pre_fill: list[dict],
     guard: ReplyGuard,
     tool_call_log: ToolCallLog | None = None,
+    reasoning_watch: HookProvider | None = None,
     trace_attributes: dict,
     retry: RetryPolicy,
     skills_dir: str | Path | None = None,
@@ -386,6 +387,18 @@ def create_agent(
     hooks: list[HookProvider | HookCallback[Any]] = [guard]
     if tool_call_log is not None:
         hooks.append(tool_call_log)
+    # LAST, and the position is load-bearing rather than tidy.
+    # `BeforeModelCallEvent` dispatches in REGISTRATION order (only the After
+    # events reverse), so a watch registered after `ReplyGuard` reads an
+    # `event.cancel` the guard has already set — and the guard cancels the pass
+    # that follows a terminal verb, which on the tag path is most turns. At that
+    # moment `agent.messages` holds exactly the reasoning-carrying assistant
+    # message a naive watch would count as a strip, on a request that is never
+    # formatted and therefore strips nothing. `nora.agent.reasoning_strip.
+    # ReasoningStripWatch`'s own docstring carries this and
+    # `tests/unit/test_reasoning_strip_probe.py` is what holds it.
+    if reasoning_watch is not None:
+        hooks.append(reasoning_watch)
     return Agent(
         model=model,
         plugins=plugins,
@@ -428,6 +441,7 @@ def create_dream_agent(
     system_prompt: str,
     tools: list,
     guard: HookProvider,
+    reasoning_watch: HookProvider | None = None,
     trace_attributes: dict,
     retry: RetryPolicy,
     agent_name: str = DEFAULT_DREAM_AGENT_NAME,
@@ -492,7 +506,11 @@ def create_dream_agent(
         ),
         system_prompt=system_prompt,
         tools=tools,
-        hooks=[guard],
+        # After the guard, for `create_agent`'s reason — see the comment on its
+        # `hooks` list. `None` is the inert default every existing caller took
+        # before issue #325, and the Dreamer is the path the 2026-09-17
+        # `reasoning_effort` change moved the exposure ONTO.
+        hooks=[guard] if reasoning_watch is None else [guard, reasoning_watch],
         conversation_manager=NullConversationManager(),
         session_manager=None,
         callback_handler=None,

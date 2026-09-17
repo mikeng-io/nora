@@ -29,6 +29,7 @@ from typing import Any
 from nora.agent.guards import Deliverer, ReplyGuard, ToolCallLog
 from nora.agent.links import LinkCarry
 from nora.agent.outbound import OutboundComposer
+from nora.agent.reasoning_strip import ReasoningStripWatch
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget
 from nora.obs.tracing import annotate, span
@@ -54,6 +55,13 @@ class DeliveryHandle:
     guard: ReplyGuard
     links: LinkCarry
     tool_call_log: ToolCallLog
+    # Issue #325. Built HERE for `tool_call_log`'s reason — this is the one
+    # seam both production senders pass through
+    # (`tests/architecture/test_only_two_paths_can_send.py` proves there are
+    # exactly two), so building it here is what makes BOTH paths carry it
+    # rather than one. It is also the only place that holds `audience`, which
+    # is what the row's `path` column records.
+    reasoning_watch: ReasoningStripWatch
 
 
 def build(
@@ -75,6 +83,7 @@ def build(
     on_delivered: Any = None,
     cacheable_tools: frozenset[str] = frozenset(),
     tool_call_log_store: Any = None,
+    reasoning_strip_store: Any = None,
     send_permitted: bool = True,
     lookups: Collection[str] | None = None,
 ) -> DeliveryHandle:
@@ -158,8 +167,19 @@ def build(
         tag_id=tag_id, cacheable=cacheable_tools, store=tool_call_log_store,
         metrics=metrics,
     )
+    # `path=audience` rather than a literal or a second keyword: the two
+    # production callers already declare which loop they are
+    # (`"tag"` / `"participation"`), it is already required with no default for
+    # the reason a second spelling of the same fact would undo, and a row
+    # labelled with a different vocabulary than `nora_silent_failures_total`
+    # could not be read beside it. `store=None` leaves the watch counting in
+    # Prometheus and writing no row.
+    reasoning_watch = ReasoningStripWatch(
+        path=audience, tag_id=tag_id, store=reasoning_strip_store, metrics=metrics,
+    )
     return DeliveryHandle(
         deliverer=deliverer, guard=guard, links=links, tool_call_log=tool_call_log,
+        reasoning_watch=reasoning_watch,
     )
 
 

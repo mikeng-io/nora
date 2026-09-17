@@ -102,6 +102,7 @@ from nora.infra.sql.music_session import SqlMusicSessionStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.participation_state import SqlParticipationStateStore
 from nora.infra.sql.presence import PresenceStore
+from nora.infra.sql.reasoning_strip import SqlReasoningStripStore
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.tag_debounce import SqlTagDebounceStore
@@ -903,9 +904,9 @@ class Dependencies:
     # The audio-controller seam (design/voice-channel/07): the per-guild
     # voice-session registry every voice path shares, and the consumer for
     # the controller's `/app/v1/voice/event` callbacks. Both `None` when
-    # `[speech.tts] sidecar_endpoint` is empty (the consumer additionally
-    # needs `[music] enabled`) — a deployment without the controller boots
-    # unchanged and every voice verb fails closed.
+    # `[speech.tts] sidecars` is empty (the consumer additionally needs
+    # `[music] enabled`) — a deployment without a controller boots unchanged
+    # and every voice verb fails closed.
     voice_hub: VoiceControllerHub | None
     voice_event_consumer: VoiceEventConsumer | None
 
@@ -997,6 +998,16 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # deliver.build); the THIRD — ToolRegistry(...) below, for
     # recall_lookups — is Task 7's own wiring.
     tool_call_log_store: ToolCallLogStore = SqlToolCallLogStore(engine)
+    # Issue #325's durable half (`reasoning_strip_log`, migration 0057, ADR
+    # 0013), REUSING `engine` for the same reason the three stores above do.
+    # UNCONDITIONAL and behind no flag: an instrument that is off by default
+    # answers nothing, and the question it exists to answer -- how often the
+    # transport throws a turn's reasoning away, per unit of OPPORTUNITY, and
+    # whether that moved when the model or the effort did -- spans deploys,
+    # which is exactly what a Prometheus counter in this process cannot hold.
+    # All three consumers take it: the tag path and the participation occasion
+    # through `deliver.build`, and the Dreamer through `DreamerRuntime`.
+    reasoning_strip_store = SqlReasoningStripStore(engine)
     # The reasoning-continuity retention store (Task 6, spec §6/§7.4),
     # REUSING `engine` for the same reason `reminders`/`compute_jobs`/
     # `tool_call_log_store` do above. UNCONDITIONAL, unlike the Dreamer's own
@@ -1114,21 +1125,24 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # reads the environment once and hands the already-resolved value to
     # whatever constructs the client that needs it (design/discord-integration/).
     discord_token = os.environ.get(cfg.platforms.discord.token_env, "")
-    # The audio-controller base (design/voice-channel/07): the value of
-    # `[speech.tts] sidecar_endpoint` IS the audio-controller's HTTP base —
-    # the sole owner of the Discord voice connection. Empty (the default)
-    # leaves the whole voice seam unwired: no hub, no speech playout, and
-    # every `/music` or `/discord join` failing CLOSED (the join-failed
-    # reply), never a local connection attempt. Non-empty builds the client
-    # + hub every voice path shares. Built BEFORE the music manager: the
-    # manager's B5/B8 staleness probes (`playback_probe`,
-    # `generation_probe`) and its hub-session drop/exit seams read and
-    # mutate the hub from construction.
+    # The audio-controllers (design/voice-channel/07): ONE PER GUILD, because
+    # Discord's limit is one voice connection per bot token per guild and each
+    # controller stays hard-bound to one (§12.5). `[speech.tts] sidecars` lists
+    # a controller per guild, and IS the join allow-list — a guild with no
+    # entry has no voice at all. Empty (the default) leaves the
+    # whole seam unwired: no hub, no speech playout, and every `/music` or
+    # `/discord join` failing CLOSED (the join-failed reply), never a local
+    # connection attempt.
+    #
+    # Built BEFORE the music manager: the manager's B5/B8 staleness probes
+    # (`playback_probe`, `generation_probe`) and its hub-session drop/exit
+    # seams read and mutate the hub from construction.
     voice_hub: VoiceControllerHub | None = None
-    if cfg.speech.tts.sidecar_endpoint:
-        voice_hub = VoiceControllerHub(
-            VoiceControllerClient(cfg.speech.tts.sidecar_endpoint)
-        )
+    if cfg.speech.tts.sidecars:
+        voice_hub = VoiceControllerHub({
+            guild_id: VoiceControllerClient(endpoint)
+            for guild_id, endpoint in cfg.speech.tts.sidecars_by_guild.items()
+        })
     # design/discord-music/00-overview.md. `spawn=asyncio.ensure_future`
     # rather than the `BackgroundTasks` instance built further down this
     # function (out of scope here) — safe because `MusicPlayerManager`
@@ -1151,10 +1165,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     )
     if music_manager is not None and voice_hub is None:
         log.warning(
-            "[music] enabled but [speech.tts] sidecar_endpoint is empty — no "
-            "audio-controller is wired, so every /music join will fail closed "
-            "(the join-failed reply); music stays silent until the endpoint "
-            "is configured"
+            "[music] enabled but [speech.tts] sidecars is empty — no "
+            "audio-controller is wired for any guild, so every /music join "
+            "will fail closed (the join-failed reply); music stays silent "
+            "until a guild is mapped to its controller"
         )
     # `[speech.tts]`'s speaker (design/voice-channel/01 §5): wired ONLY when
     # enabled AND a provider is named AND that provider's key is present —
@@ -1184,7 +1198,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 "is wired; voice answers stay text-only",
                 cfg.speech.tts.provider, cfg.speech.tts.api_key_env,
             )
-    voice_guild_ids = frozenset(cfg.speech.tts.voice_guild_ids)
+    # The join allow-list IS the set of guilds a controller exists for — one
+    # source of truth, so the gate and the client map can never disagree.
+    voice_guild_ids = voice_hub.guild_ids if voice_hub is not None else frozenset()
     # The controller → nora callback consumer (`POST /app/v1/voice/event`,
     # design/voice-channel/07 §5) — only when BOTH halves it glues exist:
     # the hub (whose event-id dedupe and expected-playback bookkeeping it
@@ -2410,6 +2426,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         preview_source=preview_source,
         slots=slots,
         tool_call_log_store=tool_call_log_store,
+        reasoning_strip_store=reasoning_strip_store,
         tag_trace_store=tag_trace_store,
         debrief_wiring=debrief_wiring,
         # The shared decision log (issue #199). The tag path only
@@ -2504,6 +2521,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             preview_source=preview_source,
             llm_state=llm_state,
             tool_call_log_store=tool_call_log_store,
+            reasoning_strip_store=reasoning_strip_store,
             # The reminder-derived Event registry (DEC-139,
             # design/event-abstraction/04): kind -> factory, wired here at
             # the composition root so the domain type stays free of app
@@ -3470,6 +3488,15 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # The per-CALL-SITE allowance for `inputs`/`commit` (issue #60),
             # multiplied by each adaptor's own declared `store_calls_per_tick`.
             store_timeout_seconds=cfg.dreamer.store_timeout_seconds,
+            # Issue #325. The Dreamer is where the 2026-09-17 config change
+            # moved the exposure: `[dreamer] reasoning_effort` went
+            # `none -> low` in the same session `CultureAdaptor.tools` went
+            # from empty to nine read verbs, and a tool-using run at `low` is
+            # the multi-turn shape the transport strips. Low-traffic and
+            # judgement-forming, so a discarded reasoning there is both closer
+            # to being the verdict and harder to notice than on a reply
+            # somebody reads.
+            reasoning_strip_store=reasoning_strip_store,
         )
         # R-5's refuse-to-start shape, and the one check that must run at
         # STARTUP rather than at the first tick: an adaptor holding an act verb
