@@ -31,6 +31,7 @@ from nora.agent.links import LinkCarry
 from nora.agent.outbound import OutboundComposer
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget
+from nora.obs.tracing import annotate, span
 
 log = logging.getLogger("nora.engagement.deliver")
 
@@ -241,23 +242,47 @@ def check_outcome(
     defaulted "tag" would land its failures inside the very budget A8 filters
     to `audience="tag"` (`docs/runbook.md`).
     """
-    if not deliverer.delivered:
-        # `called`, not `attempted` (external review 2026-08-10). `attempted`
-        # asks whether a message reached the platform, so a turn whose every
-        # reply was refused by R-4/R-6/R-18 answered False and got
-        # `no_send_call` ON TOP of the block already counted for it — two
-        # silent-failure increments for one turn, the second of them false. She
-        # did call the tool; a guard stopped her, and that is a different
-        # failure with a different fix. This also makes `no_send_call` mean what
-        # ADR-0006's open investigation reads it as meaning.
-        if not deliverer.called:
-            reason = stop_reason if stop_reason in BUDGET_STOP_REASONS else "no_send_call"
-            log.warning("%s (tag=%s); dropping the model's text", reason, tag_id)
-            metrics.inc(
-                "nora_silent_failures_total", reason=reason, platform=platform,
-                audience=audience,
-            )
-        return False
-    if llm_state is not None:   # a delivered reply implies a successful invocation
-        llm_state.last_success_at = time.time()
-    return True
+    # THE STRICT-SILENCE BOUNDARY (issue #55, Layer 7's other unlit half).
+    # Before this span existed, "she chose not to speak" (R-4/R-5: an empty
+    # reply, the participation cooldown holding it, or a model that never
+    # called `send_reply` at all) and "the send failed" (bytes that passed
+    # every guard and the platform rejected) were the SAME shape in the trace
+    # — no span, so no way to tell a deliberate silence from an infra fault
+    # without going back to the logs. `deliverer.last_outcome`
+    # (`nora.agent.guards.Deliverer`) already carries the distinction — it is
+    # the one field `Deliverer.deliver` writes on every exit — so this reuses
+    # it rather than re-deriving a second reading of the same turn: `""`
+    # (never called) / `empty_reply` / `cooldown_held` read as HER choice;
+    # `cap_spent` / `doctrine_leak` / `egress_block` / `audit_write_failed`
+    # read as THIS PROCESS refusing to try; `send_failed` reads as the
+    # PLATFORM; `sent` reads as delivered.
+    with span(
+        "engagement.deliver",
+        **{"nora.tag_id": tag_id, "nora.platform": platform, "nora.audience": audience},
+    ):
+        delivered = deliverer.delivered
+        if not delivered:
+            # `called`, not `attempted` (external review 2026-08-10). `attempted`
+            # asks whether a message reached the platform, so a turn whose every
+            # reply was refused by R-4/R-6/R-18 answered False and got
+            # `no_send_call` ON TOP of the block already counted for it — two
+            # silent-failure increments for one turn, the second of them false. She
+            # did call the tool; a guard stopped her, and that is a different
+            # failure with a different fix. This also makes `no_send_call` mean what
+            # ADR-0006's open investigation reads it as meaning.
+            if not deliverer.called:
+                reason = stop_reason if stop_reason in BUDGET_STOP_REASONS else "no_send_call"
+                log.warning("%s (tag=%s); dropping the model's text", reason, tag_id)
+                metrics.inc(
+                    "nora_silent_failures_total", reason=reason, platform=platform,
+                    audience=audience,
+                )
+        elif llm_state is not None:  # a delivered reply implies a successful invocation
+            llm_state.last_success_at = time.time()
+        annotate(**{
+            "nora.delivered": delivered,
+            "nora.outcome": deliverer.last_outcome or "no_send_call",
+            "nora.called": deliverer.called,
+            "nora.attempted": deliverer.attempted,
+        })
+        return delivered

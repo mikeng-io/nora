@@ -705,6 +705,92 @@ async def _tick(loop_coro, *, ticks: float = 0.06):
         await task
 
 
+class _SpanningRunner:
+    """Opens the SAME shape `DreamerRuntime.run` does (`nora/agent/dreamer.py`)
+    around each call — a root-declaring `dream:{adaptor.name}` span — without
+    dragging that whole collaborator graph (models/instructions/tools/store
+    timeouts) into a test of `dream_loop`'s OWN dispatch shape. `gate` holds
+    every call open until the test releases it, which is what makes the
+    per-tick lock (`unit in running`) deterministic here: every tick before
+    `gate.set()` sees each (adaptor, key) unit still in flight and skips it,
+    so exactly one task — and one child span — is ever created per unit,
+    regardless of how many ticks fire in the meantime.
+    """
+
+    def __init__(self, gate: asyncio.Event) -> None:
+        self._gate = gate
+        self.calls: list[tuple[str, str]] = []
+
+    async def run(self, *, adaptor, key, batch):
+        from nora.obs.tracing import TRACE_KIND, span
+
+        with span(
+            f"dream:{adaptor.name}",
+            **{TRACE_KIND: "generation", "nora.dreamer.adaptor": adaptor.name,
+               "nora.dreamer.key": key},
+        ):
+            self.calls.append((adaptor.name, key))
+            await self._gate.wait()
+            return _StubOutcome(status="ok")
+
+
+async def test_dream_pass_opens_one_root_with_children_per_adaptor(exported_spans):
+    """Issue #55's third unlit boundary: THE LOOP. `DreamerRuntime.run`'s own
+    span declares itself a root (R-76) for the standalone callers that reach
+    it with no pass around them at all — so before `dream_loop` opened
+    anything, every (adaptor, key) pair in one tick rendered as its own
+    unrelated trace. One tick over two adaptors must now be ONE trace: one
+    `dream.pass` root, two `dream:*` children.
+
+    PROBE: delete the `with span("dream.pass", ...)` wrapper around the
+    dispatch loop in `dream_loop` and the two `dream:*` spans below become
+    roots of two SEPARATE traces instead of children of one.
+    """
+    language = _KeyedLanguage(lag=99)
+    gate = asyncio.Event()
+    runner = _SpanningRunner(gate)
+
+    task = asyncio.create_task(dream_loop(
+        _FakeRecord({"g1": [_row(1)]}), language, Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+        adaptors=[_StubAdaptor("lexemes"), _StubAdaptor("notes")], runtime=runner,
+    ))
+    await asyncio.sleep(0.05)      # several ticks, held open by the gate
+    gate.set()
+    await asyncio.sleep(0.02)      # let the gated runs finish and close their spans
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+    assert sorted(runner.calls) == [("lexemes", "g1"), ("notes", "g1")]
+
+    finished = exported_spans.get_finished_spans()
+    by_name: dict[str, list] = {}
+    for recorded in finished:
+        by_name.setdefault(recorded.name, []).append(recorded)
+
+    # EVERY tick opens its own `dream.pass` (several fire inside the gated
+    # window above — see the in-flight lock discussion), and every one of
+    # them is a genuine root: an empty pass is exactly the "ends visibly, at
+    # a named stage, even with nothing dispatched" property, not noise to
+    # filter out. Only the FIRST one actually dispatched work, so that is the
+    # one both children must point at.
+    assert by_name["dream.pass"], "no pass was ever opened"
+    assert all(p.parent is None for p in by_name["dream.pass"])
+    assert len(by_name["dream:lexemes"]) == 1
+    assert len(by_name["dream:notes"]) == 1
+    lexemes = by_name["dream:lexemes"][0]
+    notes = by_name["dream:notes"][0]
+    pass_roots = {p.context.span_id: p for p in by_name["dream.pass"]}
+    assert lexemes.parent.span_id in pass_roots
+    assert lexemes.parent.span_id == notes.parent.span_id, \
+        "both adaptors of ONE tick must share ONE pass root"
+    pass_root = pass_roots[lexemes.parent.span_id]
+    assert lexemes.context.trace_id == pass_root.context.trace_id
+    assert notes.context.trace_id == pass_root.context.trace_id
+
+
 async def test_an_adaptor_is_ticked_over_the_scopes_when_it_is_scope_keyed():
     language = _KeyedLanguage(lag=99)
     runner = _RecordingRunner()

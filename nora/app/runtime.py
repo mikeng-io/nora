@@ -48,6 +48,7 @@ from ..domain.media_join import MediaJoin
 from ..domain.models import TranscriptRow
 from ..domain.ports import DreamAdaptor
 from ..obs.metrics import Metrics
+from ..obs.tracing import TRACE_KIND, span
 
 log = logging.getLogger("nora.app.runtime")
 
@@ -988,29 +989,52 @@ async def dream_loop(
             _log_instruction_versions(instructions)
             if runtime is None:
                 continue
-            for adaptor in adaptors:
-                for key in _keys_for(adaptor):
-                    # `unit`, not `key`: the lock, the failure count and the
-                    # backoff are all per (adaptor, key) — see the SIXTH note.
-                    unit = f"{adaptor.name}:{key}"
-                    if unit in running:
-                        # A DISTINCT reason value rather than a new label:
-                        # `nora_dream_skipped_total` carries `("reason",)` and
-                        # nothing else, and adding a label to a live series
-                        # breaks whatever is summing it.
-                        metrics.inc(
-                            "nora_dream_skipped_total",
-                            reason="in_flight_adaptor")
-                        continue
-                    if failures.get(unit) and not _backoff_elapsed(
-                        unit, failures[unit], last_failure_at,
-                    ):
-                        continue
-                    running.add(unit)
-                    task = asyncio.create_task(
-                        _run_adaptor(adaptor, key, runtime))
-                    tasks.add(task)
-                    task.add_done_callback(tasks.discard)
+            # ONE ROOT PER PASS, CHILDREN PER ADAPTOR (issue #55, the loop
+            # Layer 7 exists to fix). Before this, `DreamerRuntime.run`'s own
+            # `dream:{adaptor.name}` span (`nora/agent/dreamer.py`) was the
+            # only thing this loop ever traced, and it declares its own root
+            # (R-76) for the standalone callers that reach it with no pass
+            # around them at all (`nora.app.eval_support`, a manual one-shot
+            # trigger) — so every (adaptor, key) pair in one tick rendered as
+            # its OWN separate trace, and a tick over N adaptors x M scopes
+            # was N*M unrelated traces with nothing in the collector saying
+            # they were the same pass. `asyncio.create_task` copies contextvars
+            # (`nora.obs.tracing.capture_context`'s own docstring measured
+            # this, 2026-08-28), so every task spawned inside this `with`
+            # inherits it as its parent — no explicit capture/attach needed,
+            # unlike the tag queue, because nothing here crosses a `finally`
+            # boundary onto a LATER tick's context. `ParentBased` then gives
+            # each child this root's sampling decision, so the per-adaptor
+            # span's own `nora.trace_kind` becomes inert once nested (harmless
+            # — see that module's `generation` docstring) rather than
+            # re-deciding anything.
+            with span(
+                "dream.pass",
+                **{TRACE_KIND: "generation", "nora.dreamer.adaptor_count": len(adaptors)},
+            ):
+                for adaptor in adaptors:
+                    for key in _keys_for(adaptor):
+                        # `unit`, not `key`: the lock, the failure count and the
+                        # backoff are all per (adaptor, key) — see the SIXTH note.
+                        unit = f"{adaptor.name}:{key}"
+                        if unit in running:
+                            # A DISTINCT reason value rather than a new label:
+                            # `nora_dream_skipped_total` carries `("reason",)` and
+                            # nothing else, and adding a label to a live series
+                            # breaks whatever is summing it.
+                            metrics.inc(
+                                "nora_dream_skipped_total",
+                                reason="in_flight_adaptor")
+                            continue
+                        if failures.get(unit) and not _backoff_elapsed(
+                            unit, failures[unit], last_failure_at,
+                        ):
+                            continue
+                        running.add(unit)
+                        task = asyncio.create_task(
+                            _run_adaptor(adaptor, key, runtime))
+                        tasks.add(task)
+                        task.add_done_callback(tasks.discard)
     finally:
         # `BackgroundTasks.cancel_all`'s own shape, not just its `.cancel()`
         # half: that method's docstring records the exact gap a cancel-only

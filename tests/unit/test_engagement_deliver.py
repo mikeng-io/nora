@@ -331,3 +331,95 @@ async def test_a_turn_that_never_called_send_reply_still_counts_no_send_call():
         tag_id="t1", stop_reason="end_turn", audience="tag",
     )
     assert metrics.get("nora_silent_failures_total", reason="no_send_call") == 1
+
+
+# ---------------------------------------------------------------------------
+# THE STRICT-SILENCE SPAN (issue #55, Layer 7's second unlit boundary).
+# Before this, "she chose not to speak" and "the send failed" were the same
+# shape in the trace — a turn with no span at `check_outcome` at all. These
+# assert on EXPORTED spans (`exported_spans`, `tests/conftest.py`), the same
+# discipline `test_engagement_pipeline.py`'s #64 tests use.
+# ---------------------------------------------------------------------------
+
+
+async def test_check_outcome_emits_its_own_span(exported_spans):
+    """PROBE: delete the `with span("engagement.deliver", ...)` in
+    `check_outcome` and this reddens."""
+    metrics = Metrics()
+    handle = build(
+        store=FakeRecordStore(), adapter=_FakeAdapter(succeed=True), target=TARGET,
+        doctrine=_doctrine(), canary="C", tag_id="t1", nora_sender_id="nora",
+        conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL,
+        metrics=metrics, audience="tag", composer=None,
+    )
+    check_outcome(
+        deliverer=handle.deliverer, metrics=metrics, platform="signal",
+        tag_id="t1", stop_reason="end_turn", audience="tag",
+    )
+    names = [s.name for s in exported_spans.get_finished_spans()]
+    assert names == ["engagement.deliver"]
+
+
+async def test_a_deliberate_silence_and_a_send_failure_are_different_shapes(
+    exported_spans,
+):
+    """The issue's own test case, stated directly: a model that never called
+    `send_reply` (she chose not to speak) and a model whose reply the
+    PLATFORM rejected (the send failed) must not read the same in the span.
+
+    PROBE: replace `deliverer.last_outcome` with the coarse `delivered` bool
+    in the `annotate(...)` call and both turns below collapse to
+    `nora.outcome=False` with nothing to tell them apart.
+    """
+    metrics = Metrics()
+
+    silent = build(
+        store=FakeRecordStore(), adapter=_FakeAdapter(succeed=True), target=TARGET,
+        doctrine=_doctrine(), canary="C", tag_id="t1", nora_sender_id="nora",
+        conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL,
+        metrics=metrics, audience="tag", composer=None,
+    )
+    check_outcome(
+        deliverer=silent.deliverer, metrics=metrics, platform="signal",
+        tag_id="t1", stop_reason="end_turn", audience="tag",
+    )
+
+    failed = build(
+        store=FakeRecordStore(), adapter=_FakeAdapter(succeed=False), target=TARGET,
+        doctrine=_doctrine(), canary="C", tag_id="t2", nora_sender_id="nora",
+        conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL,
+        metrics=metrics, audience="tag", composer=None,
+    )
+    await failed.deliverer.deliver("hello")
+    check_outcome(
+        deliverer=failed.deliverer, metrics=metrics, platform="signal",
+        tag_id="t2", stop_reason="end_turn", audience="tag",
+    )
+
+    spans = exported_spans.get_finished_spans()
+    by_tag = {s.attributes["nora.tag_id"]: s for s in spans}
+    assert by_tag["t1"].attributes["nora.outcome"] == "no_send_call"
+    assert by_tag["t1"].attributes["nora.called"] is False
+    assert by_tag["t2"].attributes["nora.outcome"] == "send_failed"
+    assert by_tag["t2"].attributes["nora.called"] is True
+    assert by_tag["t2"].attributes["nora.attempted"] is True
+    for recorded in by_tag.values():
+        assert recorded.attributes["nora.delivered"] is False
+
+
+async def test_a_delivered_reply_records_the_sent_outcome(exported_spans):
+    metrics = Metrics()
+    handle = build(
+        store=FakeRecordStore(), adapter=_FakeAdapter(succeed=True), target=TARGET,
+        doctrine=_doctrine(), canary="C", tag_id="t1", nora_sender_id="nora",
+        conversation_id="g1", budgets=BUDGETS, terminal=TERMINAL,
+        metrics=metrics, audience="tag", composer=None,
+    )
+    await handle.deliverer.deliver("hello")
+    check_outcome(
+        deliverer=handle.deliverer, metrics=metrics, platform="signal",
+        tag_id="t1", stop_reason="end_turn", audience="tag",
+    )
+    (recorded,) = exported_spans.get_finished_spans()
+    assert recorded.attributes["nora.outcome"] == "sent"
+    assert recorded.attributes["nora.delivered"] is True
