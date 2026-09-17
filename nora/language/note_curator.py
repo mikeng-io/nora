@@ -156,7 +156,7 @@ from nora.domain.notes import (
     default_revisit_at,
 )
 from nora.domain.ports import Proposal
-from nora.domain.prompt import age, escape, escape_attr
+from nora.domain.prompt import age, escape
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.notes.curator")
@@ -1729,10 +1729,14 @@ def _now_block(today: int) -> str:
     asks it whether an anchor has passed."""
     day = _as_date(today)
     when = f"{day:%Y-%m-%d %a}" if day is not None else str(today)
-    return (
-        f'<now note="today, in the room\'s own day. Every `anchor` below is '
-        f'read against this.">{escape(when)}</now>'
-    )
+    return ContextBlock(
+        name="now",
+        # A CLOCK THIS PROCESS OWNS, not anything the room said.
+        untrusted=False,
+        note="today, in the room's own day. Every `anchor` below is read "
+             "against this.",
+        body=escape(when),
+    ).render()
 
 
 def _as_date(yyyymmdd: int) -> date | None:
@@ -1772,11 +1776,6 @@ def _note_block(
     parameter stays optional so the renderer does not lie about a note it
     was handed nothing for.
     """
-    anchor_attr = (
-        f' anchor="{note.anchor_date}"'
-        f' anchor_is="{escape_attr(_days_from(today, note.anchor_date))}"'
-        if note.anchor_date is not None else ""
-    )
     evidence_line = f"\n  {evidence_text}" if evidence_text is not None else ""
     # ESCAPED, per R-13, and added 2026-09-10 after a CMS audit found this
     # renderer was the one place in the tier that skipped it. Every value here
@@ -1792,14 +1791,27 @@ def _note_block(
     # end a note block early; one typing an opening tag could add a note that
     # nothing wrote. `_ground` catches a forged citation id, and catches
     # nothing about a forged block boundary.
-    return (
-        f'<note id="{escape_attr(handle)}" title="{escape_attr(note.title)}"'
-        f'{anchor_attr}>\n'
-        f"  uncertainty: {escape(note.uncertainty)}\n"
-        f"  closing condition: {escape(note.closing_condition)}\n"
-        f"  body: {escape(body)}{evidence_line}\n"
-        f"</note>"
-    )
+    attrs: tuple[tuple[str, str], ...] = (("id", handle), ("title", note.title))
+    if note.anchor_date is not None:
+        attrs += (
+            ("anchor", str(note.anchor_date)),
+            ("anchor_is", _days_from(today, note.anchor_date)),
+        )
+    return ContextBlock(
+        name="note", attrs=attrs,
+        # HER OWN note, and the field values are hers too — model-authored from
+        # a transcript, but written by her for herself. The member-authored text
+        # in this block is the EVIDENCE, which carries its own marker.
+        untrusted=False,
+        note="one question you are still holding open, with what you wrote "
+             "about it and what the room has said since. `anchor` is the day "
+             "it turns on and `anchor_is` reads it against today.",
+        body=(
+            f"  uncertainty: {escape(note.uncertainty)}\n"
+            f"  closing condition: {escape(note.closing_condition)}\n"
+            f"  body: {escape(body)}{evidence_line}"
+        ),
+    ).render()
 
 
 def _covers(

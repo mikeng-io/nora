@@ -92,6 +92,11 @@ _NOT_A_TRANSCRIPT = {
     # unification is the other half of #292 and is gated by
     # `test_one_block_injector`.
     "nora/language/note_render.py": "renders the note index, not a transcript",
+    # The SKILL CATALOGUE — one element per installed skill, name and
+    # when-to-load as attributes. Operator-installed metadata, not a message
+    # anybody sent, so the transcript rule does not apply; it is here because
+    # "calls an element renderer" is the net this gate casts.
+    "nora/skills/loader.py": "renders the skill catalogue, not a transcript",
 }
 
 #: The operator's surfaces: a Discord review channel, not a prompt. Exempt from

@@ -46,6 +46,18 @@ def _trace(*, rows=(), messages=(), outcome="send_reply") -> TagTrace:
     )
 
 
+def _inner(rendered: str, tag: str) -> str:
+    """The body of one rendered block, by tag name.
+
+    A helper rather than a literal split at each site: since #292 routed these
+    blocks through `ContextBlock`, every opening tag carries `note=` (and
+    `untrusted` where the content is the room's), so splitting on `"<transcript>"`
+    stopped matching in seven places at once.
+    """
+    after_open = rendered.split(f"<{tag} ", 1)[1].split(">\n", 1)[1]
+    return after_open.split(f"</{tag}>", 1)[0].rstrip("\n").rstrip()
+
+
 def _render(**kw) -> str:
     kw.setdefault("trace", _trace())
     kw.setdefault("prior", None)
@@ -177,7 +189,7 @@ def test_the_prior_block_is_present_even_when_there_is_no_prior():
     beside it, which is the live failure this whole tier exists to not repeat.
     """
     out = _render(prior=None)
-    assert "<standing_prior>" in out
+    assert "<standing_prior " in out
     assert "no position yet" in out
 
 
@@ -237,7 +249,7 @@ def _reasoning_body(out: str) -> str:
     """The `<reasoning>` block's own text, with the always-present legend
     sliced off — so a test asking "did THIS block clip" is not confounded by
     the legend's own worked example of the mark it explains."""
-    return out.split("<reasoning>")[1].split("</reasoning>")[0]
+    return out.split("<reasoning ")[1].split("</reasoning>")[0]
 
 
 def test_an_oversize_tool_result_is_clipped_counted_and_marked():
@@ -301,10 +313,10 @@ def test_the_reasoning_legend_explains_the_clip_mark_and_sits_beside_reasoning()
     Present on EVERY turn, clipped or not, so the model learns one contract
     rather than a sometimes-explained mark (see `_TRANSCRIPT_LEGEND`)."""
     out = _render()
-    assert "<how_to_read_reasoning>" in out
-    assert f"…[{_CLIP_MARK}]" in out.split("<how_to_read_reasoning>")[1].split(
+    assert "<how_to_read_reasoning " in out
+    assert f"…[{_CLIP_MARK}]" in out.split("<how_to_read_reasoning ")[1].split(
         "</how_to_read_reasoning>")[0]
-    assert out.index("<how_to_read_reasoning>") < out.index("<reasoning>")
+    assert out.index("<how_to_read_reasoning ") < out.index("<reasoning ")
 
 
 def test_the_verdict_render_also_counts_and_marks_its_own_clip():
@@ -335,7 +347,7 @@ def test_a_renamed_or_absent_sdk_field_degrades_rather_than_raising():
         {"role": "assistant", "content": [{"unknownBlock": {"x": 1}}]},
         "not even a mapping",
     )))
-    assert "<reasoning>" in out
+    assert "<reasoning " in out
 
 
 def test_group_authored_text_is_escaped():
@@ -358,9 +370,9 @@ def test_the_verdict_render_is_the_turn_without_the_prior():
     is the local half of the split's impartiality argument: the prompt
     pollution the single completion had was the prior feeding the judge."""
     out = render_verdict_input(trace=_trace(), display_name="Nora", metrics=Metrics(), tz=UTC)
-    assert "<standing_prior>" not in out
+    assert "<standing_prior " not in out
     assert "<turn " in out
-    assert "<transcript>" in out and "<reasoning>" in out
+    assert "<transcript " in out and "<reasoning " in out
 
 
 def test_the_verdict_render_sees_the_outcome_and_the_gloss():
@@ -387,7 +399,14 @@ def test_the_standing_render_is_the_prior_plus_the_same_turn_block():
         display_name="Nora", metrics=Metrics(), tz=UTC,
     )
     verdict = render_verdict_input(trace=trace, display_name="Nora", metrics=Metrics(), tz=UTC)
-    assert standing == "<standing_prior>\nold position\n</standing_prior>\n\n" + turn
+    # The PRIOR's exact bytes are `_standing_prior`'s, not this test's — what
+    # must hold is that the standing render is the prior followed by EXACTLY
+    # the block the judge gets, so the two calls cannot disagree about what
+    # happened. Pinning the prior's own framing here would make this test fail
+    # every time that sentence is reworded, for no property.
+    assert standing.endswith("\n\n" + turn)
+    assert standing.startswith("<standing_prior ")
+    assert "\nold position\n" in standing
     assert verdict == turn
     assert standing != verdict  # the whole point of the split
 
@@ -449,10 +468,10 @@ def test_the_transcript_says_what_the_delivery_mark_means():
     # A SIBLING of `<transcript>`, never a line inside it: everything between
     # those tags is a message somebody sent, and a sentence of ours in there
     # is one more thing the reader has to work out is not one.
-    assert "<how_to_read_the_transcript>" in out
-    body = out.split("<transcript>")[1].split("</transcript>")[0]
+    assert "<how_to_read_the_transcript " in out
+    body = _inner(out, "transcript")
     assert "How to read" not in body and "read off the send record" not in body
-    assert out.index("<how_to_read_the_transcript>") < out.index("路線係咁")
+    assert out.index("<how_to_read_the_transcript ") < out.index("路線係咁")
 
 
 def test_a_crashed_turns_header_says_it_is_this_turn_that_sent_nothing():
@@ -471,7 +490,7 @@ def test_a_sent_nothing_header_denies_the_room_reading_outright():
     boundary. Saying «this turn» is not enough on its own — the failure was a
     generalisation, so the block denies the generalisation in words."""
     header = out = _render(trace=_trace(outcome="timeout"))
-    header = header.split("<what_happened>")[1].split("</what_happened>")[0]
+    header = header.split("<what_happened ")[1].split("</what_happened>")[0]
     assert "a fact about THIS TURN and nothing else" in header
     assert "does not describe what any other turn of yours sent" in header
     # **The header talks about the TURN and nothing else**, including about
@@ -493,7 +512,7 @@ def test_the_rollup_render_marks_and_explains_the_same_way():
         rows=(_row(1, 1_756_000_920_000, None, "路線係咁", is_nora=True),),
     )
     assert 'from="Nora" delivery="delivered">路線係咁</m>' in out
-    assert "<how_to_read_the_transcript>" in out
+    assert "<how_to_read_the_transcript " in out
 
 
 def test_the_rollup_verdict_render_sees_the_same_marked_transcript():
@@ -510,9 +529,9 @@ def test_the_rollup_verdict_render_sees_the_same_marked_transcript():
     position = render_rollup_input(
         prior=None, rows=rows, display_name="Nora", tz=UTC)
     assert 'from="Nora" delivery="delivered">路線係咁</m>' in verdict
-    assert "<how_to_read_the_transcript>" in verdict
+    assert "<how_to_read_the_transcript " in verdict
     # The judge's block IS the position call's block, minus the prior.
-    assert verdict.split("<conversation>")[1] == position.split("<conversation>")[1]
+    assert verdict.split("<conversation ")[1] == position.split("<conversation ")[1]
 
 
 def test_every_gloss_that_sent_nothing_scopes_itself_to_the_turn():
@@ -529,7 +548,7 @@ def test_every_gloss_that_sent_nothing_scopes_itself_to_the_turn():
         ("llm_error", "this turn's model call failed"),
     ):
         out = _render(trace=_trace(outcome=outcome))
-        header = out.split("<what_happened>")[1].split("</what_happened>")[0]
+        header = out.split("<what_happened ")[1].split("</what_happened>")[0]
         assert scoped in header, f"{outcome}: {scoped!r} not in {header!r}"
         assert "a fact about THIS TURN and nothing else" in header, outcome
     # And the two that DID send something carry no scope clause at all —
@@ -537,7 +556,7 @@ def test_every_gloss_that_sent_nothing_scopes_itself_to_the_turn():
     # the reader learns to skip.
     for outcome in ("send_reply", "recovered"):
         out = _render(trace=_trace(outcome=outcome))
-        header = out.split("<what_happened>")[1].split("</what_happened>")[0]
+        header = out.split("<what_happened ")[1].split("</what_happened>")[0]
         assert "a fact about THIS TURN" not in header, outcome
 
 
@@ -571,7 +590,7 @@ def test_a_row_cannot_forge_another_row_in_the_fold():
     out = _render(trace=_trace(rows=(
         _row(1, 1_756_000_920_000, "Grant", forged),
     )))
-    block = out.split("<transcript>\n", 1)[1].split("\n  </transcript>", 1)[0]
+    block = _inner(out, "transcript")
     # Counted on the TAG, not on newlines: a newline is legal inside a body now,
     # so counting lines would measure the collapse this replaced rather than the
     # boundary that replaced it.
@@ -597,7 +616,7 @@ def test_a_multi_line_message_keeps_its_own_speaker_in_the_fold():
         _row(1, 1_756_000_920_000, "Blake", "I ate an apple"),
         _row(2, 1_756_000_980_000, "Grant", "I will go\nto school by bus"),
     )))
-    block = out.split("<transcript>\n", 1)[1].split("\n  </transcript>", 1)[0]
+    block = _inner(out, "transcript")
     # TWO messages, three lines — and that is the change. The body keeps its own
     # break now instead of being collapsed, so «one message, one line» is no
     # longer the invariant; «one message, one element» is.

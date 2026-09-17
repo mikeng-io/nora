@@ -258,7 +258,7 @@ from nora.domain.notes import (
     note_handle,
 )
 from nora.domain.ports import DreamSink, Proposal
-from nora.domain.prompt import escape, escape_attr
+from nora.domain.prompt import escape
 from nora.language.note_render import render_notes
 from nora.obs.metrics import Metrics
 
@@ -656,14 +656,24 @@ def _room_block(*, room: str, description: str | None) -> str:
     name is the half that always exists, and a room with no prose about it
     must still be a different room from its neighbour.
     """
-    opening = f'<room label="{escape_attr(room)}" note="{ROOM_BLOCK_NOTE}"'
+    block = ContextBlock(
+        name="room", attrs=(("label", room),),
+        # The OPERATOR's sentence and the room's own name. Neither is
+        # member-authored, so the marker would be false — and this block is
+        # what tells the model how to read the ones that are.
+        untrusted=False, note=ROOM_BLOCK_NOTE, body=escape(description or ""),
+    )
     if not description:
-        return opening + "/>"
+        # Self-closing when the operator wrote nothing: `ContextBlock.render`
+        # always emits a body, and an empty one would read as «the operator
+        # said this room is nothing» rather than «nobody has said».
+        return block.render().split(">", 1)[0] + "/>"
     # ESCAPED for the same reason a member's line is (R-13): this is
     # file-authored text landing above blocks with real tags in them, and
     # "the operator wrote it" is a reason to trust the CONTENT, never a
-    # reason to let it close a tag it did not open.
-    return f"{opening}>\n{escape(description)}\n</room>"
+    # reason to let it close a tag it did not open — `ContextBlock` escapes the
+    # body and `escape_attr` closes the label's quote.
+    return block.render()
 
 
 #: How a message's moment is rendered: the ROOM's local date, its weekday and

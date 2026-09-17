@@ -88,36 +88,6 @@ _COLLAPSERS = _DIRECT_COLLAPSERS | {"render_rows"}
 #: becomes a formality.
 _NOT_A_LINE = {
     (
-        "nora/ingest/relevance_gate.py", "render_context", "transcript_block",
-    ): (
-        "`<group_transcript>`: no longer LINES at all. Since #292 the gate "
-        "renders one `<m>` element per message through `render_elements`, so "
-        "each body already sits between its own tags and the collapse it used "
-        "to need is what the element boundary now does. Interpolating the "
-        "whole rendered block into the surrounding f-string is joining "
-        "elements, not building a line — and collapsing HERE would flatten "
-        "every message in the window into one."
-    ),
-    (
-        "nora/language/culture.py", "inputs", "escape(previous.body)",
-    ): (
-        "`<previous_account>`: the account written last time, WHOLE, between "
-        "its own tags and alone in the block. It is prose of a paragraph or "
-        "two by construction (`nora.domain.culture.CultureRevision.body` has "
-        "no section schema), nothing joins it to a sibling row, and collapsing "
-        "it would run those paragraphs together — destroying the shape of the "
-        "one input that tells the model it is CONTINUING an account rather "
-        "than writing a fresh one."
-    ),
-    (
-        "nora/agent/prefill.py", "_replying_to_block", "escape(parent.body or '')",
-    ): (
-        "`<replying_to>`: the parent's message, WHOLE, between its own tags and "
-        "alone in the block. Nothing joins it to a sibling, so a newline in it "
-        "forges nothing — and a member who writes two paragraphs and is then "
-        "quoted should be quoted as they wrote it."
-    ),
-    (
         "nora/agent/prefill.py", "build_tag_message", 'escape(ctx.message.body)',
     ): (
         "`<tag_message>`: the message she is answering, whole, between its own "
@@ -130,22 +100,6 @@ _NOT_A_LINE = {
         "Not a render at all: the eval seed composes a new NOTE REVISION body "
         "out of the previous one. The newline is deliberate content in a stored "
         "document, and nothing puts this string on a line beside another row."
-    ),
-    (
-        "nora/engagement/debrief_render.py", "render_debrief_input", "escape(body)",
-    ): (
-        "`<standing_prior>` on the TAG fold's path — the same block, the same "
-        "shape and the same reason as the rollup's below. Two entries rather "
-        "than one because they are two renderers: the expression is identical, "
-        "which is exactly why the key carries the function."
-    ),
-    (
-        "nora/engagement/debrief_render.py", "render_rollup_input", "escape(body)",
-    ): (
-        "`<standing_prior>`: the position this fold is about to correct, whole, "
-        "between its own tags and one per prompt. Same shape and same reason as "
-        "`<standing>` in `standing_render`; the transcript block in this very "
-        "module, one line per row, does collapse."
     ),
     (
         "nora/domain/blocks.py", "render", "self.body",

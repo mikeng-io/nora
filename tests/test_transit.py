@@ -536,7 +536,7 @@ async def test_a_free_text_operator_remark_is_wrapped_untrusted(operators):
     inside one is. KMB's `rmk_en` is an operator-authored sentence."""
     out = await operators.client.arrivals("N48")
     assert out["status"] == "nothing_found"
-    assert out["operator_note"].startswith('<untrusted source="KMB">')
+    assert out["operator_note"].startswith('<untrusted source="KMB" untrusted="true" ')
     assert "Sundays and Public Holidays" in out["operator_note"]
 
 

@@ -4,10 +4,11 @@
 it — `render()` owns the tag, the `untrusted` marker, the `note=` clause and the
 attribute order; `assemble` owns placement and empty-vs-omit; `catalogue` derives
 the header's «What you can see:» list from the same declaration so it cannot go
-stale a fifth time. `build_prefill` uses all three. Five other prompt builders
-write their opening tags by hand, which is how `<open_notes>` still ships with no
-`untrusted="true"` and the note curator's `<note>` elements ship with no
-container at all.
+stale a fifth time. `build_prefill` used all three and nine other modules wrote
+their opening tags by hand — which is how `<open_notes>` shipped with no
+`untrusted="true"` and the note curator's `<note>` elements shipped with no
+container at all. #292 converted all nine; this file is what keeps them
+converted.
 
 **Why a static gate, and why it is not the whole story.** The question is «was a
 block FORGOTTEN», and a grep-shaped question gets a grep-shaped gate — the same
@@ -18,11 +19,12 @@ than merely not noticed.
 The static half cannot see whether a block that DOES go through `ContextBlock`
 carries anything, because `_declared` will happily emit one with `note=""` and
 `body=""` purely so the catalogue names it — which is what `replying_to` and
-`tag_message` are today. That is #187's pattern, a declaration standing in for
-the thing declared, and the runtime half of this gate lives in
-`tests/test_prefill.py::test_every_block_in_the_whole_turn_is_framed`, which
-computes over every message the turn emits rather than the one
-`_served_blocks` happens to read.
+`tag_message` WERE until #292 gave them real ones. That is #187's pattern, a
+declaration standing in for the thing declared, and the runtime half of this
+gate lives in
+`tests/test_prefill.py::test_the_whole_turn_renders_no_unframed_block`, which
+computes over every message the turn emits rather than the one `_served_blocks`
+happens to read.
 
 Issue #292. `HAND_WRITTEN` empty is the finish line.
 """
@@ -40,74 +42,19 @@ ROOT = Path(__file__).resolve().parents[2]
 _OPEN = re.compile(r"<([a-z_][a-z0-9_]*)[\s>]")
 _CLOSE = re.compile(r"</([a-z_][a-z0-9_]*)>")
 
-#: **The census, at `08d369b1`, amended once at `821693a1`.** Module -> the
-#: elements it opens by hand.
+#: **EMPTY — the finish line #292 was opened for.** Module -> the elements it
+#: opens by hand. Nine modules were on it; all nine now build every model-facing
+#: block through `ContextBlock`, so `untrusted`, the framing clause and the
+#: attribute order are properties of the type rather than things each site
+#: remembered to type.
 #:
-#: The amendment is the mechanism working rather than a hole in it, and it is
-#: recorded here because a silently-edited baseline is the thing this file is
-#: against. PR #293 (#189) landed `<how_to_read_reasoning>` into
-#: `debrief_render.py` hours after the census was taken;
-#: `test_the_census_can_only_shrink` reddened on the rebase and named it. It is
-#: added deliberately: the module's own row is already an expected failure, so
-#: recording one more hand-written element there does not widen what the gate
-#: asserts — and the legend it renders is a correct fix (#189's clip mark needs
-#: an always-present explanation) that simply has no injector to go through yet.
-#: A second such amendment without a reason beside it would be the budget this
-#: construction exists to refuse.
+#: The tests below still run: `test_every_module_that_writes_a_tag_is_classified`
+#: fails on a NEW hand-written block, and `test_the_census_can_only_shrink`
+#: cannot be widened by adding one here without a reason beside it. Re-populating
+#: this dict is how the tree gets back to where it was, so an entry needs an
+#: argument, not just a line.
 #:
-#: **CONVERTING A ROW IS NOT THE SAME AS MARKING IT `untrusted`**, and reading
-#: this census as a list of blocks missing a marker would fix one class and
-#: break the other. Two populations are on it:
-#:
-#:   1. blocks carrying what somebody TYPED — `<tag_message>`, `<replying_to>`,
-#:      `<group_transcript>`, `<transcript>`, `<room>`, `<open_notes>` — which
-#:      need the marker and the framing clause; and
-#:   2. blocks carrying OUR OWN framing — `<context_header>`,
-#:      `<how_to_read_reasoning>`, `<how_to_read_the_transcript>` — which are
-#:      legends about how to read a sibling, and for which the marker would
-#:      tell a model its own operating instructions are suspect. That is the
-#:      doctrine/untrusted distinction inverted, not a harmless attribute.
-#:
-#: Both classes belong in the injector; only class 1 gets `untrusted="true"`.
-#: `ContextBlock.untrusted` is the declaration and it defaults to True, so a
-#: converter who does not think about it lands on the safe side. **No caller
-#: passes False today**, so the first class-2 conversion exercises that seam
-#: for the first time — worth a test on the day, not a discovery.
-#: One `xfail` per module below, so converting a builder turns a NAMED row green
-#: and `strict=True` turns it red if the line is left behind. The recorded tags
-#: are pinned in both directions by `test_the_census_can_only_shrink`: a module
-#: that grows a NEW hand-written tag fails even while its row is still expected
-#: to fail, so the gate cannot be widened by the thing it is measuring.
-HAND_WRITTEN = {
-    "nora/agent/prefill.py": (
-        # `context_header` is the static head's own wrapper rather than a data
-        # block. `person` is a ROW inside `people_in_window`, which does carry
-        # framing. `replying_to` and `tag_message` are the two that matter —
-        # they were #239, they are declared to the catalogue with `note=""` and
-        # `body=""`, and no framing test can currently see them.
-        "context_header", "person", "replying_to", "tag_message",
-    ),
-    "nora/language/proactive.py": (
-        "decisions", "home_room", "now", "open_notes", "people", "rooms",
-        "self_card",
-    ),
-    "nora/engagement/debrief_render.py": (
-        "conversation", "how_to_read_reasoning", "how_to_read_the_transcript",
-        "reasoning", "standing_prior", "transcript", "turn", "what_happened",
-    ),
-    "nora/ingest/relevance_gate.py": (
-        # `nora_doctrine` is the doctrine wrapper this module re-emits rather
-        # than a data block; it goes when the rest do.
-        "group_transcript", "nora_doctrine", "standing",
-    ),
-    "nora/language/note_curator.py": ("note", "now"),
-    "nora/language/note_candidates.py": ("room",),
-    "nora/language/culture.py": ("previous_account",),
-    "nora/skills/loader.py": (
-        "available_skills", "description", "name", "skill",
-    ),
-    "nora/infra/transit/arrivals.py": ("untrusted",),
-}
+HAND_WRITTEN: dict[str, tuple[str, ...]] = {}
 
 #: Has its own injector, and it is the one #220 took the pattern FROM.
 #: `render_section` produces the exact bytes a section contributes and has two
@@ -115,6 +62,11 @@ HAND_WRITTEN = {
 #: borrows for the block and its catalogue line.
 _OWN_INJECTOR = {
     "nora/doctrine/loader.py": "`render_section` — doctrine's own injector",
+    # STRIPS the wrapper, does not build one: `<nora_doctrine>` is
+    # `doctrine/loader.py`'s, and this module removes it from text it received.
+    # The discriminator ("opens AND closes in emitted text") cannot tell a strip
+    # from a build, because a strip names both tags too.
+    "nora/ingest/relevance_gate.py": "strips `<nora_doctrine>`, doctrine builds it",
 }
 
 #: Not a prompt. Smith renders an HTML PAGE for a person to open in a browser;

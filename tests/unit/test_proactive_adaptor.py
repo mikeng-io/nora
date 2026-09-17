@@ -211,7 +211,7 @@ async def test_inputs_renders_the_index_the_rooms_the_log_and_the_self_card():
 
     text = await adaptor.inputs(key=WS, batch=())
 
-    assert "<now>2026-09-09 Wed 07:00 (Asia/Hong_Kong)</now>" in text
+    assert "2026-09-09 Wed 07:00 (Asia/Hong_Kong)" in text.split("</now>")[0]
     assert '<home_room platform="signal" label="Friends"' in text
     assert (
         '<note n="1" title="AI Hackathon dinner plan" '

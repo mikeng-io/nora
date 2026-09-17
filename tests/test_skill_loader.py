@@ -115,9 +115,8 @@ def test_lenient_mode_skips_a_broken_skill_rather_than_raising(skills_dir):
 
 def test_render_available_lists_name_and_when_but_no_body(skills_dir):
     block = _store(skills_dir).render_available()
-    assert "<available_skills>" in block
-    assert "<name>navigation</name>" in block
-    assert "Load to plan a journey." in block
+    assert "<available_skills " in block
+    assert '<skill name="navigation" when_to_load="Load to plan a journey.">' in block
     # The BODY never enters the metadata block — that is progressive disclosure.
     assert "Wayfinding" not in block
 

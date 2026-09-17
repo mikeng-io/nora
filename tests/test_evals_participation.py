@@ -493,7 +493,7 @@ async def test_the_seeded_conclusions_reach_the_participation_prompt(tmp_path):
     assert "<self_card" in rendered
     assert "the room jokingly calls nora the channel's 管理員" in rendered
     assert "<people_in_window" in rendered
-    assert '<person name="Miles">' in rendered
+    assert '<person name="Miles" ' in rendered
     assert "miles_novak calls nora 管理員 as a running joke" in rendered
     # The hedge travels with the content, or the content is a directive (A2).
     assert "Every line is undated and none of it is current" in rendered

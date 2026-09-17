@@ -725,7 +725,12 @@ def test_0_every_stage_of_the_journey_actually_ran(journey: _Journey) -> None:
     # inside an xfail (where it would never execute): the fold's own window
     # carries her sent row, at the clock the incident recorded, ABOVE the tag.
     # Without it every stage-3 assertion is about a prompt the fold never saw.
-    window = journey.fold_input.split("<transcript>")[1].split("</transcript>")[0]
+    # PAST the opening tag, not just past the tag NAME: since #292 routed this
+    # block through `ContextBlock` the opening tag carries `untrusted` and a
+    # `note=`, so splitting on `"<transcript "` alone left the rest of that tag
+    # as a fourth "line" and this control counted it as a message.
+    window = journey.fold_input.split("<transcript ", 1)[1].split(">\n", 1)[1]
+    window = window.split("</transcript>", 1)[0]
     lines = [line for line in window.splitlines() if line.strip()]
     assert len(lines) == 3, f"expected question, answer, tag; got {lines}"
     # The clock and the speaker, as ATTRIBUTES — and deliberately NOT pinning
@@ -853,10 +858,10 @@ def test_3a_the_fold_is_told_the_header_is_about_this_turn(
     leaves a fold that cannot tell a dead turn from a silent one, which is what
     `_OUTCOME_GLOSS`'s own docstring says the gloss exists to prevent.
     """
-    header = journey.fold_input.split("<what_happened>")[1].split(
+    header = journey.fold_input.split("<what_happened ")[1].split(
         "</what_happened>",
     )[0].lower()
-    window = journey.fold_input.split("<transcript>")[1].split("</transcript>")[0]
+    window = journey.fold_input.split("<transcript ")[1].split("</transcript>")[0]
     assert any(token in header for token in _TURN_SCOPE_TOKENS), (
         "an llm_error <what_happened> must scope its claim to the turn; got "
         f"{header!r} — rendered beside a window that reads:\n{window}"
@@ -889,7 +894,7 @@ def test_3a2_the_fold_is_told_her_row_in_the_window_was_delivered(
     contains the word «sent» («nothing was sent»), and a search that counted it
     would read the defect as the fix.
     """
-    header_block = journey.fold_input.split("<what_happened>")[1].split(
+    header_block = journey.fold_input.split("<what_happened ")[1].split(
         "</what_happened>",
     )[0]
     rendered = journey.fold_input.replace(header_block, "").lower()
@@ -898,7 +903,7 @@ def test_3a2_the_fold_is_told_her_row_in_the_window_was_delivered(
     ), (
         "the fold must be told a Nora: row in its window was DELIVERED, not "
         "just that it exists — it reads:\n"
-        + journey.fold_input.split("<transcript>")[1].split("</transcript>")[0]
+        + journey.fold_input.split("<transcript ")[1].split("</transcript>")[0]
     )
     # AND THE ROW ITSELF CARRIES IT. Measured 2026-09-11: with the per-row
     # marker stripped and only the legend left standing, every assertion in
@@ -907,7 +912,7 @@ def test_3a2_the_fold_is_told_her_row_in_the_window_was_delivered(
     # that is not there. A legend explaining a marker nobody rendered is
     # precisely the block-that-does-not-say-what-it-is defect this case
     # exists to catch, one level up.
-    window = journey.fold_input.split("<transcript>")[1].split("</transcript>")[0]
+    window = journey.fold_input.split("<transcript ")[1].split("</transcript>")[0]
     her_row = next(
         line for line in window.splitlines()
         if 'at="16:43"' in line and 'from="Nora"' in line

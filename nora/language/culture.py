@@ -503,9 +503,17 @@ class CultureAdaptor:
         previous = await self._culture.head(key=key)
         if previous is not None:
             parts.append(
-                "<previous_account>\n"
-                f"{escape(previous.body)}\n"
-                "</previous_account>"
+                ContextBlock(
+                    name="previous_account",
+                    # HERS, not the room's — the account she wrote last time.
+                    # See #314: the marker names the wrong axis, and this block
+                    # is one of the two the culture chain drops it across.
+                    untrusted=False,
+                    note="the account of this room you wrote last time. Yours, "
+                         "to continue rather than to replace — a fresh snapshot "
+                         "every day is the thing this chain exists not to be.",
+                    body=escape(previous.body),
+                ).render()
             )
         # HER POSITION IN THIS ROOM, through the shared renderer — which
         # carries the block's own `note`, its not-an-instruction clause and,
