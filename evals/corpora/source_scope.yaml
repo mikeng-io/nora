@@ -123,7 +123,27 @@ config:
 # and JSON-blob lines are SOURCE DATA she read, not room speech. Production
 # would carry them as a tool result; both this layer and the old one render
 # them as messages. That is a real difference from the deployment and it is not
-# fixed here.
+# fixed here.#
+# --- SOURCE LINES ARE HERS 2026-09-18 (GOAL step 5) -------------------------
+#
+# A `[search result]` / data-blob line is a SOURCE SHE READ AND QUOTED BACK,
+# and `_build_judge_prompt`'s own source block says so in as many words: the
+# window "holds two different kinds of line: what somebody SAID (including
+# Nora's own earlier replies) and a SOURCE she read and quoted back. Both are
+# part of the data."
+#
+# So it is her row, and it is now flagged as one. Attributing it to a named
+# member was actively wrong here: R-83 is "somebody saying you are wrong is
+# another claim", and a source arriving as a MEMBER's line is the very thing
+# the rule says is not evidence -- which is the case's whole subject.
+#
+# KNOWN RESIDUAL, recorded rather than papered over: in production a search
+# result reaches the model as a TOOL RESULT inside the same turn, not as a
+# prior transcript row. There is no seam for that -- `tool_call_log_store` is a
+# write-side log for repeat detection, not a prompt input -- so a case needing
+# one cannot be expressed by either layer. The old driver pasted these lines
+# into an unattributed block, so this is not a regression; it is the closest
+# attribution available, and the distance from production is named here.
 
 cases:
   - name: scoped_source_silence_is_not_a_denial
@@ -137,7 +157,8 @@ cases:
       - nora.000 部機入面有冇黑色嗰隻鎖?
       - body: 有，我頭先查過，wiki 個 unlockables 表列咗佢，要打完 boss 先開到
         is_nora: true
-      - '[search result] "Best key order in Deepmoor" — you will need to finish all four of the coloured keys before the final door opens. Start with the green one, it is the shortest.'
+      - body: '[search result] "Best key order in Deepmoor" — you will need to finish all four of the coloured keys before the final door opens. Start with the green one, it is the shortest.'
+        is_nora: true
 
   - name: scoped_source_silence_stale_window_english
     entry: tag
@@ -150,7 +171,8 @@ cases:
       - nora.000 does the tram still run past the ferry pier
       - body: yeah, checked the operator's route page, stop 14 is the pier
         is_nora: true
-      - '[search result] "2019 network map — the tram serves stops 1 through 12, terminating at the market."'
+      - body: '[search result] "2019 network map — the tram serves stops 1 through 12, terminating at the market."'
+        is_nora: true
 
   - name: source_that_actually_denies_may_overturn
     entry: tag
@@ -163,7 +185,8 @@ cases:
       - nora.000 部機入面有冇黑色嗰隻鎖?
       - body: 有，我頭先查過，wiki 個 unlockables 表列咗佢
         is_nora: true
-      - '[search result] "Deepmoor keys — full list, patch 2.4: there are four keys and no others. The black key was cut before release and does not exist in the shipped game."'
+      - body: '[search result] "Deepmoor keys — full list, patch 2.4: there are four keys and no others. The black key was cut before release and does not exist in the shipped game."'
+        is_nora: true
 
   - name: source_that_covers_the_question_is_answered_plainly
     entry: tag
@@ -173,4 +196,5 @@ cases:
     - source_scope
     knows:
       transcript:
-      - '[search result] "Deepmoor keys — full list, patch 2.4: green, red, blue, yellow. Each opens one wing of the keep."'
+      - body: '[search result] "Deepmoor keys — full list, patch 2.4: green, red, blue, yellow. Each opens one wing of the keep."'
+        is_nora: true

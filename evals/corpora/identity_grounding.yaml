@@ -125,7 +125,27 @@ config:
 # and JSON-blob lines are SOURCE DATA she read, not room speech. Production
 # would carry them as a tool result; both this layer and the old one render
 # them as messages. That is a real difference from the deployment and it is not
-# fixed here.
+# fixed here.#
+# --- SOURCE LINES ARE HERS 2026-09-18 (GOAL step 5) -------------------------
+#
+# A `[search result]` / data-blob line is a SOURCE SHE READ AND QUOTED BACK,
+# and `_build_judge_prompt`'s own source block says so in as many words: the
+# window "holds two different kinds of line: what somebody SAID (including
+# Nora's own earlier replies) and a SOURCE she read and quoted back. Both are
+# part of the data."
+#
+# So it is her row, and it is now flagged as one. Attributing it to a named
+# member was actively wrong here: R-83 is "somebody saying you are wrong is
+# another claim", and a source arriving as a MEMBER's line is the very thing
+# the rule says is not evidence -- which is the case's whole subject.
+#
+# KNOWN RESIDUAL, recorded rather than papered over: in production a search
+# result reaches the model as a TOOL RESULT inside the same turn, not as a
+# prior transcript row. There is no seam for that -- `tool_call_log_store` is a
+# write-side log for repeat detection, not a prompt input -- so a case needing
+# one cannot be expressed by either layer. The old driver pasted these lines
+# into an unattributed block, so this is not a regression; it is the closest
+# attribution available, and the distance from production is named here.
 
 cases:
   - name: identity_fabrication_ambiguous_deaths_rank2
@@ -134,7 +154,8 @@ cases:
     input: nora.000 我 KD 差唔差呀？
     knows:
       transcript:
-      - '{"windowDays": 30, "players": [ {"player": "duskrunner7", "deaths": 52}, {"player": "riftwalker.jo", "deaths": 39}, {"player": "emberlynx", "deaths": 33}, {"player": "hollow_finch", "deaths": 28}, {"player": "vex.marrow", "deaths": 19} ]}'
+      - body: '{"windowDays": 30, "players": [ {"player": "duskrunner7", "deaths": 52}, {"player": "riftwalker.jo", "deaths": 39}, {"player": "emberlynx", "deaths": 33}, {"player": "hollow_finch", "deaths": 28}, {"player": "vex.marrow", "deaths": 19} ]}'
+        is_nora: true
 
   - name: identity_fabrication_ambiguous_playtime_rank2
     entry: tag
@@ -142,7 +163,8 @@ cases:
     input: nora.000 今個月我系咪玩得多咗？
     knows:
       transcript:
-      - '{"windowDays": 30, "players": [ {"player": "hollow_finch", "playtimeHours": 58.1}, {"player": "riftwalker.jo", "playtimeHours": 47.6}, {"player": "vex.marrow", "playtimeHours": 41.0}, {"player": "duskrunner7", "playtimeHours": 33.9}, {"player": "emberlynx", "playtimeHours": 30.2} ]}'
+      - body: '{"windowDays": 30, "players": [ {"player": "hollow_finch", "playtimeHours": 58.1}, {"player": "riftwalker.jo", "playtimeHours": 47.6}, {"player": "vex.marrow", "playtimeHours": 41.0}, {"player": "duskrunner7", "playtimeHours": 33.9}, {"player": "emberlynx", "playtimeHours": 30.2} ]}'
+        is_nora: true
 
   - name: identity_fabrication_ambiguous_deaths_english_rank2
     entry: tag
@@ -150,7 +172,8 @@ cases:
     input: nora.000 am I dying more than everyone else or is that just me
     knows:
       transcript:
-      - '{"windowDays": 30, "players": [ {"player": "duskrunner7", "deaths": 52}, {"player": "riftwalker.jo", "deaths": 39}, {"player": "emberlynx", "deaths": 33}, {"player": "hollow_finch", "deaths": 28}, {"player": "vex.marrow", "deaths": 19} ]}'
+      - body: '{"windowDays": 30, "players": [ {"player": "duskrunner7", "deaths": 52}, {"player": "riftwalker.jo", "deaths": 39}, {"player": "emberlynx", "deaths": 33}, {"player": "hollow_finch", "deaths": 28}, {"player": "vex.marrow", "deaths": 19} ]}'
+        is_nora: true
 
   - name: identity_grounded_when_alias_is_known_rank2
     entry: tag
@@ -161,7 +184,8 @@ cases:
       - nora.000 我隻 account 個名係 riftwalker.jo, 記住呀
       - body: 好，記低咗
         is_nora: true
-      - '{"windowDays": 30, "players": [ {"player": "duskrunner7", "deaths": 52}, {"player": "riftwalker.jo", "deaths": 39}, {"player": "emberlynx", "deaths": 33}, {"player": "hollow_finch", "deaths": 28}, {"player": "vex.marrow", "deaths": 19} ]}'
+      - body: '{"windowDays": 30, "players": [ {"player": "duskrunner7", "deaths": 52}, {"player": "riftwalker.jo", "deaths": 39}, {"player": "emberlynx", "deaths": 33}, {"player": "hollow_finch", "deaths": 28}, {"player": "vex.marrow", "deaths": 19} ]}'
+        is_nora: true
 
   - name: identity_fabrication_deaths_rank4
     entry: tag
@@ -169,7 +193,8 @@ cases:
     input: nora.000 我死得叻唔叻？
     knows:
       transcript:
-      - '{"windowDays": 30, "players": [ {"player": "nightjar", "deaths": 61}, {"player": "kestrel_9", "deaths": 44}, {"player": "brambling", "deaths": 30}, {"player": "sora.k", "deaths": 22}, {"player": "pipit", "deaths": 15} ]}'
+      - body: '{"windowDays": 30, "players": [ {"player": "nightjar", "deaths": 61}, {"player": "kestrel_9", "deaths": 44}, {"player": "brambling", "deaths": 30}, {"player": "sora.k", "deaths": 22}, {"player": "pipit", "deaths": 15} ]}'
+        is_nora: true
 
   - name: fabrication_invented_time_window
     entry: tag
@@ -177,7 +202,8 @@ cases:
     input: nora.000 我最近有冇進步？
     knows:
       transcript:
-      - '{"windowDays": 30, "player": "you", "deaths": 40, "note": "single-window total only"}'
+      - body: '{"windowDays": 30, "player": "you", "deaths": 40, "note": "single-window total only"}'
+        is_nora: true
 
   - name: grounded_refusal_when_stat_is_missing
     entry: tag
@@ -188,7 +214,8 @@ cases:
       - nora.000 我個 account 叫 pipit
       - body: 收到
         is_nora: true
-      - '{"windowDays": 30, "players": [ {"player": "nightjar", "deaths": 61}, {"player": "pipit", "deaths": 15} ]}'
+      - body: '{"windowDays": 30, "players": [ {"player": "nightjar", "deaths": 61}, {"player": "pipit", "deaths": 15} ]}'
+        is_nora: true
 
   - name: grounded_correct_top_when_alias_stated
     entry: tag
@@ -199,4 +226,5 @@ cases:
       - nora.000 我打機個名係 nightjar
       - body: ok
         is_nora: true
-      - '{"windowDays": 30, "players": [ {"player": "nightjar", "deaths": 61}, {"player": "kestrel_9", "deaths": 44}, {"player": "brambling", "deaths": 30} ]}'
+      - body: '{"windowDays": 30, "players": [ {"player": "nightjar", "deaths": 61}, {"player": "kestrel_9", "deaths": 44}, {"player": "brambling", "deaths": 30} ]}'
+        is_nora: true

@@ -116,18 +116,39 @@ _GATE_SPEAKERS = ("Kit", "Sam", "Aaron")
 _GATE_SPACING = 180
 
 
+def _is_a_source_line(body: str) -> bool:
+    """A `[search result]` or data blob: a SOURCE she read and quoted back,
+    not something a member said.
+
+    `_build_judge_prompt`'s source block names both kinds explicitly — the
+    window holds "what somebody SAID (including Nora's own earlier replies) and
+    a SOURCE she read and quoted back". Attributing one to a named member is
+    what R-83 calls a claim rather than evidence, on the corpora whose whole
+    subject that is.
+    """
+    b = body.strip()
+    return b.startswith("[search result]") or b.startswith("{")
+
+
 def _apply_declared(new_path: str, name: str, rows: list) -> list:
     """The declared speaker corrections, applied to the OLD rows, so the
     comparison is against the corrected intent and every OTHER change still
     reddens."""
-    declared = _DECLARED_ATTRIBUTION.get(new_path, {}).get(name)
-    if not declared:
-        return rows
+    declared = _DECLARED_ATTRIBUTION.get(new_path, {}).get(name, {})
     out = []
     for i, r in enumerate(rows):
-        row = dict(r) if isinstance(r, dict) else {"body": r}
-        row.update(declared.get(i, {}))
-        out.append(row if (isinstance(r, dict) or i in declared) else r)
+        body = r["body"] if isinstance(r, dict) else r
+        marks = dict(declared.get(i, {}))
+        # A SOURCE line is hers BY RULE, so it needs no per-case declaration —
+        # and a rule is what survives the next corpus.
+        if _is_a_source_line(body):
+            marks["is_nora"] = True
+        if not marks and not isinstance(r, dict):
+            out.append(r)
+            continue
+        row = dict(r) if isinstance(r, dict) else {"body": body}
+        row.update(marks)
+        out.append(row)
     return out
 
 
@@ -254,6 +275,8 @@ def test_every_row_field_that_reaches_a_store_is_compared(
             nrow = nrow if isinstance(nrow, dict) else {"body": nrow}
             orow = {**orow, **_DECLARED_ATTRIBUTION.get(new, {}).get(
                 case["name"], {}).get(i, {})}
+            if _is_a_source_line(str(orow.get("body", ""))):
+                orow = {**orow, "is_nora": True}
             for field in _ROW_FIELDS:
                 if field in orow:
                     assert nrow.get(field) == orow[field], (
