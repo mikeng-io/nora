@@ -396,3 +396,15 @@ the approved Modal budget is spent) or from real speakers.
 `v6_p150` (AUC 0.984 bare, trap 0.7 %, 7/7, 1.6/hr). Open acceptance items: recall @0.5
 > 95 % (at 0.80–0.84, limited by sub-second utterances) and FP/hr < 1.0 (at 1.5–1.7
 debounced for the seeds that keep all real wakes). Nothing deployed.
+
+**Deployed as trial — 2026-09-17 00:03 HKT (Miles: "yes let deploy it").** `deploy/voice-wake/models/喂Nora.onnx`
+= V6 seed 2 (sha256 efb5c585…), threshold unchanged at 0.5. Image built from this worktree
+(`docker build deploy/voice-wake`), container recreated under the live compose project with the
+production `.env`; 18/18 voice-wake tests pass against the new model. In-container check on Miles's
+two recordings: 5/5 and 4/4 wakes fire once each, no fires in any non-wake segment. Known trial
+limits: ~1.5 debounced FP/hr on the English validation set, and fast (< 1 s) 「喂 Nora」 missed at
+0.5 about a quarter of the time. **master still carries the Sep-16 model**: a rebuild from master
+reverts this until feat/wake-v4-postmortem is merged.
+Note: `deploy/voice-wake/models/` is gitignored, so the shipped file is NOT in git; the
+canonical copy is `design/voice-channel/wake-v5-lab/models/v6_s2-喂Nora.onnx` — copy it into
+`deploy/voice-wake/models/喂Nora.onnx` before building on any other checkout.
