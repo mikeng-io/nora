@@ -1,0 +1,15 @@
+{
+  "type": "change",
+  "summary": "The evaluation suite now measures the Nora that is deployed, through one function, rather than seven hand-built approximations of her.",
+  "details": [
+    "nora/subject/obtain() composes the same dependency graph nora/__main__.py runs — same builder, same 40 fields — and there is no way for a caller to pass it a collaborator.",
+    "Three entry points are driven as the deployment drives them: the Relevance Gate's own decide, the fire path's speak, and Dispatcher.on_message, which is the call a platform adapter's listen loop makes.",
+    "Ten corpora (107 cases) moved across as data, checked field by field against the originals rather than retyped.",
+    "Eight of those ten were previously graded against a bare agent that had none of her context blocks, none of her tools and none of her output guards — so a number from them described a wording, never a room."
+  ],
+  "limitations": [
+    "The old evaluation layer still runs and is still what a live number comes from; it is removed only once the replacement has driven a live run.",
+    "Three corpora — the two proactive suites and note candidates — have no entry point yet, and the judge and rubric graders have not moved across.",
+    "Two participation cases cannot run at all: they seed Honcho conclusions, which Honcho derives from messages rather than accepting, so there is no way to state one for a case without substituting the client. They report as errors rather than quietly grading as their own knowledge-cut twins."
+  ]
+}
