@@ -468,11 +468,18 @@ def test_the_skills_veto_does_not_claim_she_holds_a_skill_she_never_loaded():
     table whose repeat call returns the identical answer. `skills` is not one of
     them: the argument picks which body loads.
 
-    It was true here only while the budget equalled the directory size. Three
-    skills now ship against a budget of 2 (2026-09-13, #227), so two mis-routed
-    activations leave the third unreachable, and telling her she has its context
-    is telling her to describe a body she was never given — the same move that
-    produced the issue this skill was added for.
+    The defect does not depend on the directory being larger than the budget.
+    **A repeat call is not vetoed here** — the two `skills("navigation")` calls
+    below both return None — so the budget can always be spent without loading
+    everything, whatever the counts are. Telling her she has a body she never
+    loaded is telling her to describe something she was never given, which is
+    the move that produced #227.
+
+    2026-09-17: the `self-description` skill was retired into
+    `nora/doctrine/identity.md` (operator, #227), so two skills now ship against
+    a budget of 2. That does NOT restore R-7's generic sentence, for the reason
+    above, and this test is unchanged by it — only the skill named in the veto
+    below moved, because the retired one no longer exists to name.
 
     Reverting the `skills` branch in `ReplyGuard.evaluate` turns this red.
     """
@@ -481,7 +488,7 @@ def test_the_skills_veto_does_not_claim_she_holds_a_skill_she_never_loaded():
         assert g.evaluate("skills", {"skill_name": "navigation"}) is None
         g.record("skills")
 
-    message = g.evaluate("skills", {"skill_name": "self-description"})
+    message = g.evaluate("skills", {"skill_name": "personalization"})
 
     assert message is not None
     assert f"{BUDGETS['skills']} skill(s)" in message
@@ -500,13 +507,36 @@ def test_the_skills_veto_does_not_claim_she_holds_a_skill_she_never_loaded():
     assert "activated" not in message
 
 
-def test_the_skills_budget_is_smaller_than_the_directory_it_rations():
+def test_the_skills_budget_can_be_spent_with_a_skill_still_unloaded():
     """The positive control for the test above: it is only measuring something
-    while the budget CAN be exhausted with a skill still unloaded. If a fourth
-    skill ships, or the budget is raised, this is the line that says the premise
-    moved — not silence."""
-    shipped = [p for p in (Path(__file__).resolve().parents[1] / "nora" / "skills")
-               .iterdir() if (p / "SKILL.md").is_file()]
-    assert len(shipped) > BUDGETS["skills"], (
-        "the R-7 sentence's defect only exists while the budget is the smaller "
-        "number; re-read nora/agent/guards.py's skills branch if this fires")
+    while the budget CAN be exhausted with a skill still unloaded.
+
+    **Rewritten 2026-09-17, because it was measuring the wrong property.** It
+    asserted `directory size > budget`, and fired when `self-description` was
+    retired and the two numbers met (#227). Its own docstring had the condition
+    right all along — "the budget CAN be exhausted with a skill still unloaded"
+    — and that is NOT the same claim: a repeat call is not vetoed, so spending
+    the whole budget on ONE skill leaves every other one unloaded at any
+    directory size. The old form would also have gone green on a fourth skill
+    while the defect was untouched, which is the direction that matters.
+
+    So this now asserts the defect is REACHABLE, by the same route the test
+    above takes: spend the budget on one skill, and name a different one that
+    ships and was never loaded."""
+    skills_dir = Path(__file__).resolve().parents[1] / "nora" / "skills"
+    shipped = sorted(p.name for p in skills_dir.iterdir()
+                     if (p / "SKILL.md").is_file())
+    assert len(shipped) >= 2, (
+        "fewer than two skills ship, so no call can name an unloaded one and "
+        "the veto's false half cannot occur; re-read nora/agent/guards.py")
+
+    g = _guard()
+    for _ in range(BUDGETS["skills"]):
+        assert g.evaluate("skills", {"skill_name": shipped[0]}) is None, (
+            "a repeat `skills` call is vetoed now; the whole budget can no "
+            "longer be spent on one skill and the test above measures nothing")
+        g.record("skills")
+    assert g.evaluate("skills", {"skill_name": shipped[1]}) is not None, (
+        "the budget no longer vetoes a call naming an unloaded skill; the "
+        "test above measures nothing — re-read nora/agent/guards.py's skills "
+        "branch if this fires")

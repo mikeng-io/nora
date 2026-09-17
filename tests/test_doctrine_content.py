@@ -253,10 +253,40 @@ def test_identity_makes_no_claim_about_what_she_can_find_out():
     assert "Two things, and only these" not in body
     assert "What you actually know" not in body
     assert "who is in this conversation" not in body
-    # The heading list is now exactly who she is, why she is here, and where she
-    # comes from — §4's three, and nothing that could go stale.
+    # §4's three, plus «What you are» — the self-account, moved in from the
+    # retired `self-description` SKILL on 2026-09-17 (operator, #227). The
+    # fourth heading is a deliberate widening of this file and is pinned here so
+    # a fifth cannot arrive quietly.
     assert [line for line in body.splitlines() if line.startswith("# ")] == \
-        ["# Who you are", "# Where you come from", "# Why you're here"]
+        ["# Who you are", "# Where you come from", "# Why you're here",
+         "# What you are"]
+
+    # The widening's cost, guarded DERIVED rather than by a word list. This
+    # file's whole scar is a capability claim that went stale in silence for
+    # eight weeks, and «What you are» is the section that could plausibly grow
+    # one. So: no registered tool name may appear in the body. Read off the live
+    # registry, so a tool renamed or added is covered without anyone updating a
+    # list here — a hand-written list is the same stale-copy shape the section
+    # is forbidden from carrying.
+    # Scope, stated because it is narrower than it looks: this catches a tool
+    # named AS a tool. It cannot catch a capability described in prose ("you can
+    # look things up"), and no regex can — that is the eval suites' job, not a
+    # unit test's. Narrowed on a principle rather than a word list after the
+    # first version fired on `about`, which is a real tool AND an ordinary
+    # English word: an over-matching gate is the R-29 scar this repo already
+    # paid for once. An identifier carrying `_` cannot be ordinary prose; a
+    # single-word tool name counts only inside backticks, which is how this repo
+    # writes identifiers in prose everywhere.
+    from nora.agent.registry import ToolRegistry
+    named = sorted(
+        t for t in ToolRegistry().tool_names()
+        if (re.search(rf"\b{re.escape(t)}\b", body) if "_" in t
+            else f"`{t}`" in body)
+    )
+    assert not named, (
+        f"identity.md names tools: {named}. What she can find out is the tool "
+        f"schemas' job (DEC-150); a copy here is what went stale for eight weeks."
+    )
 
 
 

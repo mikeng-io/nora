@@ -28,13 +28,20 @@ SKILLS_DIR = Path(__file__).resolve().parents[1] / "nora" / "skills"
 _SCENARIOS: dict[str, tuple[str, ...]] = {
     "navigation": ("dinner", "airport", "shopping", "晚飯", "機場", "食飯", "買嘢"),
     "personalization": ("game", "restaurant", "film", "game night", "食飯", "睇戲"),
-    # The scenarios that produced #227: a bare hostname and a question about a
-    # website. A self-account that answers by naming pages, a version number or
-    # a repository is the same failure one layer in — it describes an instance
-    # instead of the shape, and the instance is what goes stale in silence.
-    "self-description": ("website", "網站", "homepage", "version number",
-                         "release notes", "github"),
 }
+
+#: The scenarios that produced #227: a bare hostname and a question about a
+#: website. A self-account that answers by naming pages, a version number or a
+#: repository is the same failure one layer in — it describes an instance
+#: instead of the shape, and the instance is what goes stale in silence.
+#:
+#: 2026-09-17: this list used to key `_SCENARIOS` under `self-description`. The
+#: self-account MOVED into `nora/doctrine/identity.md` (operator), so the list
+#: now guards a doctrine section and is asserted by
+#: `test_the_self_account_names_no_instance_of_anything` below.
+_SELF_ACCOUNT_SCENARIOS: tuple[str, ...] = (
+    "website", "網站", "homepage", "version number", "release notes", "github",
+)
 
 
 @pytest.fixture(scope="module")
@@ -116,11 +123,38 @@ def _flat(text: str) -> str:
 
 
 @pytest.fixture(scope="module")
-def self_account(store: SkillStore) -> str:
-    for skill in store.available():
-        if skill.name == "self-description":
-            return skill.instructions
-    raise AssertionError("the self-description skill must ship")
+def self_account() -> str:
+    """Her account of what she IS — `nora/doctrine/identity.md`.
+
+    **It was a skill until 2026-09-17 and is doctrine now** (operator, #227).
+    Three properties came with the move and each is why the tests below still
+    mean something:
+
+    * a skill loads only if the model spends one of `skills`' budget-2 calls;
+      `identity.md` is `applies_to: [tag, heartbeat, participation, proactive]`
+      and is simply there. #227's incident is a question asked in a room, which
+      is the moment a model is least able to decide it needs to go and read
+      about itself.
+    * `authority_above` on a SKILL reaches nothing — `nora/skills/loader.py`
+      leaves it in `metadata` and only `nora/doctrine/loader.py` reads it (#241).
+      The self-account now sits in the authority graph rather than beside it.
+    * `LeakGuard`'s haystack is `doctrine.doctrine_text`, so this body is now
+      covered by it; as a skill it was recitable, and `nora/web/skills.py`
+      serves skill bodies.
+
+    The body is byte-identical to the skill's, deliberately: every claim pinned
+    below was reviewed in PR #233 round 3 and the move is a move, not a rewrite.
+    """
+    from nora.doctrine.loader import DoctrineStore
+    from nora.obs.metrics import Metrics
+
+    doctrine = DoctrineStore(
+        ROOT / "nora" / "doctrine", canary="C", metrics=Metrics(),
+    ).get(applies_to="tag")
+    for section in doctrine.sections:
+        if section.name == "identity":
+            return section.body
+    raise AssertionError("identity.md must ship and must apply to the tag path")
 
 
 def _portal_routes() -> tuple[str, ...]:
@@ -313,6 +347,20 @@ def _live_inputs() -> tuple[tuple[str, str], ...]:
     )
 
 
+def test_the_self_account_names_no_instance_of_anything(self_account):
+    """#227's own failure, guarded where the account now lives.
+
+    She was asked for a website and answered by naming pages. The account must
+    describe the SHAPE of what she is and never an instance of it — an instance
+    is the thing that goes stale in silence, which is the same argument
+    `identity.md`'s `not_here` makes about a capability list it once carried for
+    eight weeks."""
+    body = self_account.lower()
+    for scenario in _SELF_ACCOUNT_SCENARIOS:
+        assert scenario not in body, (
+            f"the self-account names an instance: {scenario!r}")
+
+
 def test_the_self_account_names_no_portal_route_as_a_page(self_account):
     """#227's failure was a LIST of pages improvised into existence, so the fix
     must not ship a list of pages either — a route list in a file that is baked
@@ -335,9 +383,30 @@ def test_the_self_account_carries_no_address(self_account):
     first time anything moves, and unfalsifiable from inside a room."""
     assert not re.search(r"https?://", self_account)
     assert "/app/v1/" not in self_account
-    assert not re.search(
+
+    # 2026-09-17: this assertion used to read "no host-shaped token at all",
+    # which was true of the SKILL body and is not true of `identity.md` — it has
+    # carried the operator's own site in «Where you come from» since long before
+    # the self-account moved in, deliberately and under `change_policy:
+    # operator-only`.
+    #
+    # Pinned in BOTH directions rather than exempted. An exemption list is a
+    # thing an author can add a line to (#182's shape); this says instead: the
+    # operator's site is the ONE address in this file, and it is where it says
+    # it is. A second address anywhere fails. His line going missing also fails,
+    # so the carve-out cannot be widened by deleting the thing it carves out.
+    hosts = set(re.findall(
         r"\b[a-z0-9][a-z0-9-]*\.(?:com|net|org|io|dev|app|test|xyz|hk)\b",
         self_account.lower(),
+    ))
+    assert hosts == {"mikeng.io"}, (
+        f"the self-account carries an address that is not the operator's: "
+        f"{sorted(hosts - {'mikeng.io'})}"
+    )
+    where_from = self_account.split("# Where you come from", 1)[-1].split("#", 1)[0]
+    assert "mikeng.io" in where_from, (
+        "the operator's site left «Where you come from»; the single-address pin "
+        "above now guards nothing"
     )
 
 
@@ -473,8 +542,12 @@ def test_the_view_is_named_as_material_she_may_not_recite_not_as_a_sanction(
 
     assert {t["name"] for t in build_tools_payload()} == set(ToolRegistry().tool_names())
 
+    # The self-account is DOCTRINE since 2026-09-17, so it is in the doctrine
+    # payload — and must NOT be in the skills payload, which is what would
+    # silently happen if the retired skill were ever restored beside it.
+    assert self_account.strip() in in_her_prompt
     skills = asyncio.run(build_skills_payload(skills_dir=SKILLS_DIR))
-    assert self_account in {s["instructions"] for s in skills}
+    assert self_account not in {s["instructions"] for s in skills}
 
 
 def test_the_self_account_says_who_can_reach_the_web_view_and_who_cannot(
