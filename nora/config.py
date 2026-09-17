@@ -1710,7 +1710,16 @@ class SpeechWakeConfig(BaseModel):
     threshold: float = Field(default=0.5, ge=0, le=1)
     model_path: str = "/app/models/喂Nora.onnx"
     stt_model: str = "sensevoice"
-    silence_tail_ms: int = Field(default=1000, gt=0)
+    # End-of-speech. `vad_enabled` (default) asks Silero VAD "is there speech
+    # in this 80 ms chunk?" and ends the utterance after `silence_tail_ms` of
+    # no-speech; music, TV, fans and mic noise are loud-but-not-speech and do
+    # not hold the gate open. `vad_enabled = false` falls back to loudness
+    # (`silence_rms`), which ducked music defeats — measured 2026-09-17: the
+    # music floor was ~1,000 RMS against 400, utterances ran 4.7-7.4 s for
+    # 2 s phrases and a second 「喂 Nora」 inside the window was swallowed.
+    vad_enabled: bool = True
+    vad_threshold: float = Field(default=0.5, ge=0, le=1)
+    silence_tail_ms: int = Field(default=800, gt=0)
     max_utterance_s: float = Field(default=10.0, gt=0)
     silence_rms: float = Field(default=400.0, ge=0)
 

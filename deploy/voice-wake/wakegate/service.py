@@ -49,9 +49,11 @@ class Config:
     health_port: int = 4601
     model_path: str = "/app/models/喂Nora.onnx"
     threshold: float = 0.5
-    silence_tail_ms: int = 1000
+    silence_tail_ms: int = 800       # no-speech tail that ends an utterance (1000 in the RMS era)
     max_utterance_s: float = 10.0
-    silence_rms: float = 400.0
+    silence_rms: float = 400.0       # RMS fallback when vad_enabled is false
+    vad_enabled: bool = True         # Silero VAD decides "finished speaking"; noise is not speech
+    vad_threshold: float = 0.5       # speech probability at/above this = speech
     stt_url: str = "http://stt:8000"
     stt_model: str = "noise-detection"
     stt_language: str = "yue"
@@ -67,6 +69,7 @@ class _UserState:
 
     gate: WakeGate
     model: object  # openwakeword Model — typed as object: the import is lazy
+    vad: object | None  # SileroSpeech (stateful) or None when RMS fallback is configured
     pending48: np.ndarray  # 48 kHz mono int16 not yet downsampled (< one block)
     frames: int = 0
     bytes_in: int = 0
@@ -111,6 +114,12 @@ class WakeService:
         def score(chunk: np.ndarray, _model=model) -> float:
             return float(list(_model.predict(chunk).values())[0])
 
+        vad = None
+        if self._cfg.vad_enabled:
+            from .vad import SileroSpeech  # onnxruntime-backed; loaded per user, stateful
+
+            vad = await asyncio.to_thread(SileroSpeech, self._cfg.vad_threshold)
+
         state = _UserState(
             gate=WakeGate(
                 score=score,
@@ -118,8 +127,10 @@ class WakeService:
                 silence_tail_chunks=max(1, round(self._cfg.silence_tail_ms / _CHUNK_MS)),
                 max_chunks=max(1, round(self._cfg.max_utterance_s * 1000 / _CHUNK_MS)),
                 silence_rms=self._cfg.silence_rms,
+                speech=vad,
             ),
             model=model,
+            vad=vad,
             pending48=np.empty(0, dtype=np.int16),
         )
         self._users[user_id] = state
@@ -143,6 +154,8 @@ class WakeService:
             if utterance is not None:
                 state.wakes += 1
                 state.model.reset()
+                if state.vad is not None:
+                    state.vad.reset()  # type: ignore[attr-defined]
                 asyncio.create_task(self._handle_utterance(user_id, utterance, state))
 
     async def _handle_utterance(

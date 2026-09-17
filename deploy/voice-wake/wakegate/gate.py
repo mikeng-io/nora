@@ -6,11 +6,19 @@ at or above `threshold` switches to COLLECTING with the pre-roll as the
 utterance's head, so the STT transcript carries the 「喂 Nora」 itself and
 the reactive path sees the same words a typed message would have carried.
 
-COLLECTING — chunks accumulate until 1.0 s of silence (per-chunk RMS below
-`silence_rms`) or `max_chunks`, whichever first; the utterance is then
-returned and the gate resets to LISTENING. The silence tail is what lets
-the user keep speaking past the wake word — the utterance is 「喂 Nora
-<command>」, not just the wake word.
+COLLECTING — chunks accumulate until `silence_tail_chunks` consecutive quiet
+chunks or `max_chunks`, whichever first; the utterance is then returned and
+the gate resets to LISTENING. The silence tail is what lets the user keep
+speaking past the wake word — the utterance is 「喂 Nora <command>」, not just
+the wake word.
+
+"Quiet" is decided by the injected `speech(chunk) -> bool` detector when one
+is given (Silero VAD in production, `vad.py`): a chunk with no speech in it is
+quiet however loud the music, TV or mic noise behind it. Without a detector
+the gate falls back to loudness — per-chunk RMS below `silence_rms` — which
+is what shipped first and which ducked music defeats (measured 2026-09-17:
+music floor ~1,000 RMS against a 400 threshold, utterances ran 4.7–7.4 s
+for 2 s phrases and swallowed the next 「喂 Nora」).
 
 The scorer is injected (`__init__` only — no test hooks on the instance)
 so the state machine is unit-testable without the ONNX model, and the
@@ -19,9 +27,9 @@ model is scored without the state machine.
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
-from collections import deque
 
 import numpy as np
 
@@ -46,9 +54,11 @@ class WakeGate:
         silence_tail_chunks: int = 12,   # 12 × 80 ms = 0.96 s of trailing silence
         max_chunks: int = 125,           # 125 × 80 ms = 10 s utterance ceiling
         preroll_chunks: int = 19,        # ~1.5 s kept so the wake word itself transcribes
-        silence_rms: float = 400.0,      # int16 RMS under this reads as silence
+        silence_rms: float = 400.0,      # int16 RMS under this reads as silence (fallback)
+        speech: Callable[[np.ndarray], bool] | None = None,  # VAD; None = RMS fallback
     ) -> None:
         self._score = score
+        self._speech = speech
         self._threshold = threshold
         self._tail = silence_tail_chunks
         self._max = max_chunks
@@ -88,8 +98,12 @@ class WakeGate:
                 self._peak = score
             return None
         self._buffer.append(chunk)
-        rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
-        self._silent_run = self._silent_run + 1 if rms < self._silence_rms else 0
+        if self._speech is not None:
+            quiet = not self._speech(chunk)
+        else:
+            rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
+            quiet = rms < self._silence_rms
+        self._silent_run = self._silent_run + 1 if quiet else 0
         if self._silent_run >= self._tail or len(self._buffer) >= self._max:
             utterance = Utterance(audio=np.concatenate(self._buffer), peak_score=self._peak)
             self._collecting = False
