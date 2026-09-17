@@ -1,9 +1,23 @@
-# Step 0 — run, 2026-09-17. The divergences reach the model.
+# Step 0 — complete, 2026-09-17. Four of seven reach the model.
 
 `00-overview` §8 set the refutation: *if the divergences do not reach the model,
 the seven are one Nora wearing seven coats and this bundle is withdrawn.*
 
-**Two components checked. Both reach the model. The refutation does not fire.**
+**All seven checked. Four reach the model, two come back empty, one has no
+prompt. The refutation does not fire.**
+
+| subject | reaches the model? |
+|---|---|
+| `RelevanceGate` | **YES** — the sender's name and the media description (§1) |
+| `FirePath` | **YES** — three prompt blocks empty or absent (§2) |
+| `RegistryToolSource` | **YES** — changes what the tools answer (§2.5) |
+| `build_offline_pipeline(14)` | **YES** — seven collaborators unpassed (§2.5) |
+| `DreamerRuntime(9)` | **no** — inert (§2.6) |
+| `DreamerRuntime(11)` | **no** — inert (§2.6) |
+| `LiveAgentRunner(4)` | **no** — a metric sink (§2.6) |
+
+**The two that come back empty are the most useful part of this result**, and §4
+says why.
 
 Also settled here, because it was the reviewers' loudest worry: **the cost
 objection is false.** §3.
@@ -77,6 +91,44 @@ its own prior decisions, and cannot see photographs.**
 `offline.py`. **Both pass `FirePath(36)`.** It is green, it has always been green,
 and it never looks at `eval_support.py`.
 
+## 2.5 `RegistryToolSource` and `build_offline_pipeline` — also reach it
+
+**`RegistryToolSource(9)`** omits `online_scope_for` and `origin_rooms`. Neither
+is a prompt input directly; both change **what a tool answers**, which is what
+the model reads next:
+
+- `online_scope_for` resolves who is online for a workspace. Without it
+  `online_now` cannot answer. `dreamer.py:1055-1070` carries a paragraph on why
+  this resolver must not be handed the wrong scope — *"the widened decide-turn
+  domain reaching a background pass it was never meant to"*.
+- `origin_rooms` resolves a note's `established_in` (`tools.py:7060`), i.e. which
+  room a note belongs to.
+
+**`build_offline_pipeline`** takes 21 parameters; `evals/harness.py:612` passes
+14. Unpassed: `media_join`, `debrief_wiring`, `standing_event_wiring`,
+`participation_gate`, `participation`, `tag_trace_store`,
+`extra_engage_policies`.
+
+`participation_gate` is the documented, deliberate one and stays right. The rest
+are not argued anywhere.
+
+**`media_join` now appears in three of the four**: the gate, `FirePath`, and here.
+One missing collaborator, three different subjects, no relation between them —
+which is the bundle's thesis stated as a fact rather than an argument.
+
+## 2.6 Three come back EMPTY, and this is the important half
+
+| | missing | why it is inert |
+|---|---|---|
+| `DreamerRuntime(9)` | `grants`, `tool_budget_overrides` | the note-candidates adaptor declares `tools = frozenset()` (`note_candidates.py:872`). No tools, so a grant and a per-tool budget override are both no-ops. **And production gives note-candidates no grant either** — `dream_grants` holds only proactive and culture. |
+| both `DreamerRuntime`s | `store_timeout_seconds` | `DEFAULT_DREAM_STORE_TIMEOUT_SECONDS` **is 15.0**, and `config.example.toml`'s `[dreamer] store_timeout_seconds` **is 15.0**. Not passing it yields the same number. |
+| `LiveAgentRunner(4)` | `metrics` | a sink for `nora_tagtrace_truncations_total`. Changes where a counter lands, not what the model reads. |
+
+An earlier draft of `00-overview` headlined the `DreamerRuntime` difference —
+*"the two are not the same object … and nothing says so"* — and both reviews
+found that **true and empty**. It is recorded here as measured rather than
+quietly dropped.
+
 ## 3. The cost objection is false — and the repo already solved it
 
 Both reviews flagged "driving `build_dependencies` per case needs a fresh Postgres
@@ -103,24 +155,34 @@ Postgres per call". That description was wrong and was repeated without being
 checked. The operator asked why it would not be one container with many
 databases; it already is.)*
 
-## 4. What this settles, and what it does not
+## 4. What this settles
 
 **Settled:**
-- The divergences reach the model, in two of two components checked.
-- `FirePath`'s divergence is block-level, not content-level.
-- The cost objection is false.
+- **Four of seven** subjects diverge in bytes or tool answers that reach the
+  model. `FirePath`'s divergence is block-level, not content-level.
+- **Three come back empty.** They are not defects.
+- The cost objection is false; "one Nora per case" costs 64ms.
 - `00-overview` §8's refutation does not fire.
 
-**NOT settled — five components unchecked**: the two `DreamerRuntime`s,
-`RegistryToolSource`, `LiveAgentRunner`, and `build_offline_pipeline(14)`. Each
-should be checked the same way before its suite is rebuilt, and each could still
-come back empty.
+**And the two empty results are the sharpest evidence in this bundle.**
+
+Nobody could tell in advance which four mattered. The `DreamerRuntime`
+difference *looks* like the most alarming — two runtimes, different signatures,
+one suite each — and it is inert. `store_timeout_seconds` *looks* inert and had
+to be checked against a constant to know. `media_join` appears in three subjects
+and is load-bearing in all three.
+
+**That is the finding.** Not "the eval layer is broken", but: **seven assemblies
+exist, four of them measure something the deployment does not send, three do not,
+and nothing in the tree distinguishes them.** Every one of these seven answers
+had to be derived by hand today. A rebuild is justified not because all seven are
+wrong, but because **which ones are wrong is unknowable without this exercise,
+and nothing prevents the answer changing tomorrow.**
 
 **Still true** (`00-overview` §7): not every divergence is a defect.
-`participation_gate=None` is deliberate and right. The finding is that seven
-assemblies exist, nothing relates them, and **nothing detects when one drifts** —
-which §2 demonstrates with a parity test that is structurally unable to see the
-largest divergence in the tree.
+`participation_gate=None` is deliberate and right, and now so are the three in
+§2.6. The finding is that nothing detects when one drifts — demonstrated by a
+parity test structurally unable to see the largest divergence in the tree (§2).
 
 ## 5. Method, so this is re-derivable
 

@@ -36,9 +36,17 @@ does not fire and this bundle stands:
 a container per case. So "one Nora, obtained per case" is affordable and a case
 can be plain data.
 
-**Five components remain unchecked** — the two `DreamerRuntime`s,
-`RegistryToolSource`, `LiveAgentRunner`, `build_offline_pipeline(14)` — and each
-could still come back empty.
+**All seven now checked.** Four reach the model (`RelevanceGate`, `FirePath`,
+`RegistryToolSource`, `build_offline_pipeline`); three come back empty (both
+`DreamerRuntime`s — the note-candidates adaptor declares no tools and
+`store_timeout_seconds`' default equals the configured value — and
+`LiveAgentRunner`, whose missing argument is a metric sink).
+
+**The three empty results are the sharpest evidence here.** Nobody could tell in
+advance which four mattered: the `DreamerRuntime` difference looks alarming and
+is inert, `store_timeout_seconds` looks inert and had to be checked against a
+constant, and `media_join` turns up in three of the four. Every answer was
+derived by hand today, and nothing stops them changing tomorrow.
 
 **Step 1 — the one subject.** One function returning Nora, its home settled
 (`01-boundaries` §6 — the layer contract refuses `nora.testing`, measured). No
