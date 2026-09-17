@@ -65,6 +65,21 @@ class VoiceControllerRejected(VoiceControllerError):  # noqa: N818 — pinned co
         self.reason = reason
 
 
+class VoiceControllerNoConnection(VoiceControllerUnavailable):
+    """HTTP 404 `unknown_guild` — the controller holds NO connection for this
+    guild. Since one process serves several (multi-guild, 2026-09-17) this is
+    an ordinary answer, not an outage: on a cold boot every guild answers it.
+
+    Subclasses `VoiceControllerUnavailable` ON PURPOSE, so every existing
+    handler keeps its fail-closed behaviour unchanged and only the callers
+    that care — boot adoption, which must not log a WARNING on every start —
+    need to know the difference."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 class VoiceControllerClient:
     """One HTTP client for the whole control plane. `base_url` is the
     `[speech.tts] sidecars` config value — that endpoint IS the
@@ -239,6 +254,8 @@ class VoiceControllerClient:
                     raise GenerationConflict(reason)
                 if resp.status == 400:
                     raise VoiceControllerRejected(reason)
+                if resp.status == 404 and reason == "unknown_guild":
+                    raise VoiceControllerNoConnection(reason)
                 raise VoiceControllerUnavailable(
                     f"{path} answered HTTP {resp.status} ({reason})"
                 )

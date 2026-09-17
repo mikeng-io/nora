@@ -521,3 +521,45 @@ async def test_an_adoption_for_another_channel_never_caches_anything(aiohttp_cli
         await hub.join("guild-1", "cortez-1")
 
     assert hub.session_for("guild-1") is None
+
+
+async def test_boot_adoption_is_quiet_when_a_guild_has_no_connection(aiohttp_client, caplog):
+    """THE NOISE THIS REMOVES. A controller holding no connection for a guild
+    answers 404 `unknown_guild`, and since one process serves N guilds that is
+    the ordinary COLD-BOOT state — not a fault. It was logged as
+    "adoption failed" at WARNING, so it fired on every boot.
+
+    A warning that always fires is one people scroll past, and then the boot
+    where adoption really did fail looks like the twenty before it."""
+    app = web.Application()
+
+    async def status(request: web.Request) -> web.Response:
+        return web.json_response({"error": "unknown_guild"}, status=404)
+
+    app.router.add_get("/voice/status", status)
+    hub = await _hub(aiohttp_client, app)
+
+    with caplog.at_level(logging.INFO, logger="nora.infra.voice"):
+        await hub.adopt_boot_voice_sessions(["guild-1"])
+
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING], (
+        "a guild with no connection is not a failure"
+    )
+    assert any("nothing to adopt" in r.message for r in caplog.records)
+    assert hub.session_for("guild-1") is None
+
+
+async def test_boot_adoption_still_warns_on_a_real_refusal(aiohttp_client, caplog):
+    """The other side of it: a 4xx that is NOT `unknown_guild` still warns."""
+    app = web.Application()
+
+    async def status(request: web.Request) -> web.Response:
+        return web.json_response({"error": "wrong_guild"}, status=400)
+
+    app.router.add_get("/voice/status", status)
+    hub = await _hub(aiohttp_client, app)
+
+    with caplog.at_level(logging.INFO, logger="nora.infra.voice"):
+        await hub.adopt_boot_voice_sessions(["guild-1"])
+
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING]

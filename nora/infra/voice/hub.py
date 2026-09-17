@@ -28,6 +28,7 @@ from nora.infra.voice.http_controller import (
     HttpVoiceSession,
     VoiceControllerClient,
     VoiceControllerError,
+    VoiceControllerNoConnection,
     VoiceControllerUnavailable,
 )
 
@@ -333,6 +334,19 @@ class VoiceControllerHub:
                     )
                     continue
                 await self.join(guild_id, channel_id)
+            except VoiceControllerNoConnection:
+                # The controller holds no connection for this guild, which
+                # since one process serves several (2026-09-17) is the ordinary
+                # COLD-BOOT state, not a fault: there is nothing to adopt.
+                #
+                # INFO for exactly the reason the rest of this file logs
+                # loudly: a WARNING that fires on EVERY boot is one people
+                # learn to scroll past, and then the boot where adoption really
+                # did fail looks like the twenty before it.
+                log.info(
+                    "boot voice adoption for guild %s: the controller holds no "
+                    "connection for it — nothing to adopt", guild_id,
+                )
             except VoiceControllerError as exc:
                 log.warning(
                     "boot voice adoption for guild %s failed: %s — will retry "
