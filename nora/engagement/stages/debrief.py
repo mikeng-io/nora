@@ -1247,7 +1247,7 @@ async def run(
         # which is the one thing that counter exists to tell apart.
         rendered = render_debrief_input(
             trace=trace, prior=None if rebuild is not None else prior,
-            display_name=display_name, since_rows=batch, tz=tz,
+            display_name=display_name, metrics=metrics, since_rows=batch, tz=tz,
         )
         # The judge reads the SAME turn WITHOUT the prior (issue #78 Phase 2).
         # Rendered, not sliced off `rendered`: the two calls must never
@@ -1256,7 +1256,7 @@ async def run(
         # the SAME watermark batch (D4): the two calls must not disagree about
         # what the conversation contained.
         rendered_verdict = render_verdict_input(
-            trace=trace, display_name=display_name, since_rows=batch, tz=tz,
+            trace=trace, display_name=display_name, metrics=metrics, since_rows=batch, tz=tz,
         )
 
         # ONE `wait_for` around the WHOLE gathered pair, not one around each:

@@ -1334,6 +1334,35 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "before it reaches the sink, so "
         "the two paths cannot argue over the same note every turn.",
     ),
+    # Issue #189 step 1. `nora.engagement.debrief_render._clip` cuts one block
+    # at that module's `_BLOCK_CHARS` before it reaches EITHER of the two
+    # model calls the debrief makes (the standing call and the verdict call,
+    # each rendering its own copy of the turn) — and until this counter,
+    # nothing said how often, or which kind of block. It exists because the
+    # module could not answer its own question: `grep -c "metrics"
+    # nora/engagement/debrief_render.py` returned 0 before this, which made
+    # the clip rate UNREPORTABLE rather than merely unreported.
+    #
+    # `block` is `ClipKind` (`nora.engagement.debrief_render`):
+    #   reasoning   — the model's own text or thinking output was cut
+    #   tool_call   — the model's own request to a tool was cut (what she
+    #                 asked, not what she was told)
+    #   tool_result — what a tool RETURNED was cut — the evidence half, and
+    #                 the one the issue's title names directly: a claim
+    #                 supported by the tail of a long tool result reads as
+    #                 unsupported to a grader shown only the head
+    #
+    # This is COUNT ONLY (issue #189 step 1); step 2 is the render carrying an
+    # explicit mark so the model reading a clipped block knows it is one
+    # (`_REASONING_LEGEND`), and step 3 — sizing `_BLOCK_CHARS` against what
+    # this series says — is explicitly OUT of scope for the issue that added
+    # this counter: sizing follows the count, never the other way round.
+    _CounterSpec(
+        "nora_debrief_clips_total",
+        "Blocks the debrief render cut at _BLOCK_CHARS before a model saw "
+        "them, by which kind of block (reasoning / tool_call / tool_result).",
+        ("block",),
+    ),
     _CounterSpec(
         "nora_standing_rederivations_total",
         "Re-derivations TRIGGERED, by trigger: ungrounded (an unconsumed "

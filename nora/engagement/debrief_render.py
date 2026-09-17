@@ -57,13 +57,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import datetime, tzinfo
-from typing import Any
+from typing import Any, Literal, get_args
 
 from nora.domain.blocks import RowStyle, render_rows
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.prompt import escape, escape_attr
 from nora.domain.standing import Standing
 from nora.domain.tag_trace import TagTrace
+from nora.obs.metrics import Metrics
 
 #: The scope clause every «sent nothing» gloss carries. ONE constant, spliced
 #: into all four of them, so the four cannot drift into saying four different
@@ -128,6 +129,41 @@ _OUTCOME_GLOSS: Mapping[str, str] = {
 #: tool result stays readable, tight enough that one runaway result cannot
 #: crowd out the exchange it belongs to.
 _BLOCK_CHARS = 600
+
+#: WHICH block `_clip` cut — issue #189 step 1. Grounded on `_block`'s own four
+#: branches rather than copied from the issue's prose: `text` and
+#: `reasoningContent` are both the MODEL'S OWN output (what it said, what it
+#: thought) and share the `reasoning` label; `toolUse` is the model's own
+#: request to a tool and gets its own label because a clipped CALL and a
+#: clipped RESULT are different failures for a grounding judge — one hides
+#: what she asked, the other hides what she was told. `transcript` — the third
+#: word in the issue's own list — is deliberately NOT a value here: nothing in
+#: this module clips a `TranscriptRow.body` (`_transcript` renders it whole),
+#: so a `transcript` label would be a declared value with no call site ever
+#: incrementing it — the CMS rule this whole issue is about, one level down.
+ClipKind = Literal["reasoning", "tool_call", "tool_result"]
+CLIP_KINDS: tuple[str, ...] = get_args(ClipKind)
+
+#: The metric issue #189 step 1 asks for: one clip, one increment, labelled by
+#: `ClipKind`. Declared in `nora.obs.metric_specs` (append-only names); this is
+#: the name the two modules must agree on.
+_CLIPS_METRIC = "nora_debrief_clips_total"
+
+#: The mark a clipped block carries, and the legend that explains it — issue
+#: #189 step 2. `_TRANSCRIPT_LEGEND` below is the precedent this follows:
+#: **telling the model what it is READING beat telling it what it can do**,
+#: measured on the Relevance Gate (#78's closing comment). A block cut at
+#: `_BLOCK_CHARS` and handed to the grounding verdict with no mark reads as a
+#: complete account that simply doesn't support the claim; the grader cannot
+#: tell "the support isn't there" from "I was shown a fragment" unless the
+#: fragment says so itself.
+_CLIP_MARK = "clipped"
+_REASONING_LEGEND = (
+    f"A block ending «…[{_CLIP_MARK}]» was cut before it reached you. There is "
+    "more content after the cut, not less relevance — if a claim's support is "
+    "not visible in a block carrying that mark, that means you were shown a "
+    "fragment of it, not that the support does not exist."
+)
 
 
 #: The mark on one of Nora's OWN rows, and the LEGEND that says what it means.
@@ -259,12 +295,26 @@ def _transcript_block(
     )
 
 
-def _clip(text: str) -> str:
+def _clip(text: str, *, kind: ClipKind, metrics: Metrics) -> str:
+    """Cut at `_BLOCK_CHARS`, COUNTED and MARKED — issue #189 steps 1 and 2.
+
+    The increment fires only on an actual cut, never on every call: a series
+    that moved on every block, clipped or not, would say nothing about how
+    often the ceiling is hit, which is the number step 3 needs. The mark is
+    appended to the TEXT itself, ahead of `escape()` at every call site, so it
+    travels with the block through whichever prefix wraps it
+    (`(thinking) …`, `(tool result: …)`) and reaches the model as part of what
+    it is reading, not as a side channel it has no reason to trust more than
+    the content.
+    """
     text = text.strip()
-    return text if len(text) <= _BLOCK_CHARS else text[:_BLOCK_CHARS] + " …"
+    if len(text) <= _BLOCK_CHARS:
+        return text
+    metrics.inc(_CLIPS_METRIC, block=kind)
+    return f"{text[:_BLOCK_CHARS]} …[{_CLIP_MARK}]"
 
 
-def _reasoning(messages: Sequence[Mapping[str, Any]]) -> str:
+def _reasoning(messages: Sequence[Mapping[str, Any]], *, metrics: Metrics) -> str:
     """The model exchange, flattened to lines the fold can read.
 
     **Defensive throughout, for `tag_trace_extract`'s reason**: the blocks are
@@ -288,29 +338,31 @@ def _reasoning(messages: Sequence[Mapping[str, Any]]) -> str:
         for block in content:
             if not isinstance(block, Mapping):
                 continue
-            rendered = _block(block)
+            rendered = _block(block, metrics=metrics)
             if rendered:
                 lines.append(f"{role}: {rendered}")
     return "\n".join(lines)
 
 
-def _block(block: Mapping[str, Any]) -> str:
+def _block(block: Mapping[str, Any], *, metrics: Metrics) -> str:
     text = block.get("text")
     if isinstance(text, str) and text.strip():
-        return escape(_clip(text))
+        return escape(_clip(text, kind="reasoning", metrics=metrics))
     reasoning = block.get("reasoningContent")
     if isinstance(reasoning, Mapping):
         inner = reasoning.get("reasoningText")
         raw = inner.get("text") if isinstance(inner, Mapping) else None
         if isinstance(raw, str) and raw.strip():
-            return f"(thinking) {escape(_clip(raw))}"
+            return f"(thinking) {escape(_clip(raw, kind='reasoning', metrics=metrics))}"
     use = block.get("toolUse")
     if isinstance(use, Mapping):
         name = escape(str(use.get("name") or "?"))
-        return f"(called {name} with {escape(_clip(str(use.get('input'))))})"
+        clipped = _clip(str(use.get("input")), kind="tool_call", metrics=metrics)
+        return f"(called {name} with {escape(clipped)})"
     result = block.get("toolResult")
     if isinstance(result, Mapping):
-        return f"(tool result: {escape(_clip(str(result.get('content'))))})"
+        clipped = _clip(str(result.get("content")), kind="tool_result", metrics=metrics)
+        return f"(tool result: {escape(clipped)})"
     return ""
 
 
@@ -333,8 +385,8 @@ def _fold_rows(
 
 
 def render_debrief_turn(
-    *, trace: TagTrace, display_name: str, since_rows: Sequence[TranscriptRow] = (),
-    tz: tzinfo | None = None,
+    *, trace: TagTrace, display_name: str, metrics: Metrics,
+    since_rows: Sequence[TranscriptRow] = (), tz: tzinfo | None = None,
 ) -> str:
     """The whole turn — outcome, transcript, reasoning — as one block.
 
@@ -351,6 +403,19 @@ def render_debrief_turn(
     `<standing_prior>` to it (`render_debrief_input`). Giving the judge the
     prior would be prompt pollution in the other direction: a judge shown the
     position it is about to write judges the position, not the turn.
+
+    `metrics` is required, not defaulted — issue #189: a render this module
+    cannot count is exactly the defect the issue is about, one level up from
+    the model it feeds. Both `render_debrief_input` and `render_verdict_input`
+    call through here, so a clip in the SAME turn is counted once per call
+    that actually renders it — two separate model inputs, each independently
+    truncated, not one event double-counted.
+
+    The `<how_to_read_reasoning>` legend is a SIBLING of `<reasoning>`, the
+    same placement `_transcript_block` uses for the delivery legend and for
+    the same reason: it is always present, whether or not this turn clipped
+    anything, so the model reads the same contract on every turn rather than
+    learning a mark whose explanation appears only sometimes.
     """
     rows = _fold_rows(trace, since_rows)
     gloss = _OUTCOME_GLOSS.get(trace.outcome, trace.outcome)
@@ -361,14 +426,16 @@ def render_debrief_turn(
         f'<turn outcome="{escape_attr(trace.outcome)}" at="{escape_attr(at)}">\n'
         f"  <what_happened>{escape(gloss)}</what_happened>\n"
         f"{_transcript_block(rows, display_name=display_name, tz=tz)}\n"
-        f"  <reasoning>\n{_reasoning(trace.messages)}\n  </reasoning>\n"
+        f"  <how_to_read_reasoning>{escape(_REASONING_LEGEND)}"
+        "</how_to_read_reasoning>\n"
+        f"  <reasoning>\n{_reasoning(trace.messages, metrics=metrics)}\n  </reasoning>\n"
         f"</turn>"
     )
 
 
 def render_verdict_input(
-    *, trace: TagTrace, display_name: str, since_rows: Sequence[TranscriptRow] = (),
-    tz: tzinfo | None = None,
+    *, trace: TagTrace, display_name: str, metrics: Metrics,
+    since_rows: Sequence[TranscriptRow] = (), tz: tzinfo | None = None,
 ) -> str:
     """What the VERDICT call sees: the whole turn, WITHOUT the prior.
 
@@ -379,9 +446,14 @@ def render_verdict_input(
     read the position it is about to write. `since_rows` is the SAME watermark
     batch the standing call reads (D4: the two calls must not disagree about
     what happened).
+
+    This is the render issue #189 is actually about: the grounding verdict is
+    the consumer that judges "was the reply supported by what she saw", and a
+    clip here is a clip in exactly the input that call grades.
     """
     return render_debrief_turn(
-        trace=trace, display_name=display_name, since_rows=since_rows, tz=tz,
+        trace=trace, display_name=display_name, metrics=metrics,
+        since_rows=since_rows, tz=tz,
     )
 
 
@@ -390,6 +462,7 @@ def render_debrief_input(
     trace: TagTrace,
     prior: Standing | None,
     display_name: str,
+    metrics: Metrics,
     since_rows: Sequence[TranscriptRow] = (),
     tz: tzinfo | None = None,
 ) -> str:
@@ -409,7 +482,8 @@ def render_debrief_input(
              "this conversation)\n</standing_prior>"
     )
     turn = render_debrief_turn(
-        trace=trace, display_name=display_name, since_rows=since_rows, tz=tz,
+        trace=trace, display_name=display_name, metrics=metrics,
+        since_rows=since_rows, tz=tz,
     )
     return f"{prior_block}\n\n{turn}"
 
