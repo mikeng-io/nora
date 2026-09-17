@@ -71,12 +71,16 @@ class ParsedDocument:
     verbatim with every doctrine test green.
 
     So the rule is a CALLER's, not this module's: **a caller whose rendering
-    includes any frontmatter field hashes its own rendered form.** The doctrine
-    loader does (`nora.doctrine.loader.render_section`, and
-    `DoctrineSection.sha256` is over that). `nora.instructions.dreamer` does not
-    need to — it assembles `body` alone (`for_objective` joins
-    `corpus.doctrine.body` and `objective.body`), so for that path the body-only
-    digest genuinely does name what was sent.
+    includes any frontmatter field hashes its own rendered form.** Both callers
+    now do. The doctrine loader always did (`nora.doctrine.loader.render_section`,
+    and `DoctrineSection.sha256` is over that).
+    `nora.instructions.dreamer` did not have to while it assembled `body` alone;
+    since it wraps each half in a tag carrying `name` (`render_part`), it hashes
+    the rendered parts rather than the bodies, and `InstructionSet.sha256` is
+    over the served string. A reader reaching for the body-only digest below to
+    answer "what was this run told" would now be naming less than the prompt
+    does, for either corpus. `render_part`'s own docstring records why it
+    promotes `name` and stops there.
     """
 
     name: str
