@@ -158,7 +158,14 @@ def _imported_dotted_modules(path: Path) -> set[str]:
 
 
 EVALS_DIR = ROOT / "evals"
-EVALS_ALLOWED_NORA_PACKAGES = {"app", "testing"}
+#: `subject` joined 2026-09-17 (design/evaluation/, operator): it is the ONE way
+#: `evals/` obtains the composed graph, and the point of it is that no caller
+#: assembles one. THIS TEST IS THE GATE THAT BINDS — the import-linter contract
+#: "evals may only reach nora.app and nora.testing" reports KEPT while `evals/`
+#: imports a package its own name forbids, because `allow_indirect_imports` is
+#: load-bearing there (pyproject.toml, that contract's own comment). Measured
+#: 2026-09-17 while choosing the layer.
+EVALS_ALLOWED_NORA_PACKAGES = {"app", "testing", "subject"}
 
 
 def _evals_files():

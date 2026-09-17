@@ -1,0 +1,170 @@
+"""`obtain(spec)` — the only way to get Nora outside production.
+
+One function. No optional collaborators, deliberately: `build_offline_pipeline`
+takes 21 parameters of which 13 default to `None`, and that is precisely what let
+two callers each forget a different thing — the incident
+`tests/architecture/test_assembler_parity.py` records (*"composition.py passed 18
+keyword arguments and offline.py passed 7, so every eval measured an agent
+missing `<standing>`/`<notes>`/`<facts>` with nothing to notice"*).
+
+`SubjectSpec` therefore names only what is NOT Nora. Adding a field to it is a
+decision that something has stopped being part of her, and it should be argued in
+`design/evaluation/01-boundaries.md` §2 rather than added because a caller needed
+it.
+"""
+
+from __future__ import annotations
+
+import shutil
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from nora.app.composition import Dependencies, build_dependencies
+from nora.config import Config
+from nora.config import load as _load_config
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+#: The committed template. ONE place knows its name, the same rule
+#: `tests/builders.copy_example_config` holds for the test suite (R-B, #113).
+_TEMPLATE = _REPO_ROOT / "config.example.toml"
+
+#: One person, one room, `default = "deny"`. A caller that does not care about
+#: identity gets something VALID and CLOSED rather than an accident — the same
+#: fail-closed default the real `policy.toml` opens with.
+_DEFAULT_IDENTITY = (
+    '[persons.miles]\nname = "Miles"\n'
+    '[[persons.miles.signal]]\nphone = "+852111"\n'
+)
+_DEFAULT_POLICY = (
+    'default = "deny"\n'
+    '[[conversations]]\nplatform = "signal"\nid = "g1"\npersons = "*"\n'
+)
+
+
+@dataclass(frozen=True, slots=True)
+class SubjectSpec:
+    """What is NOT Nora, and therefore what a caller states.
+
+    Every field here is on `design/evaluation/01-boundaries.md` §2's list of
+    seams — the places the world reaches her. Nothing else is settable, because
+    everything else IS her.
+    """
+
+    #: Where her store is. A caller supplies a database it owns; the graph reads
+    #: and writes it exactly as production does.
+    database_url: str
+
+    #: A directory the composition may write into — media custody, anything
+    #: file-backed. Never a shared location.
+    workdir: Path
+
+    #: Overrides onto the committed template, as dotted paths. This is the seam
+    #: for "which doctrine", "which model", "how many samples" — configuration,
+    #: which is what a deployment differs from another deployment by.
+    #:
+    #: NOT a seam for collaborators. `{"llm.model": "nora"}` is legitimate;
+    #: there is no way to express `{"media_join": None}` and that is the point.
+    overrides: dict[str, Any] | None = None
+
+    #: WHO she knows, as `identity.toml` content. A seam because a case saying
+    #: who is in the room is stating INPUT, in the same sense as what somebody
+    #: typed — and because `nora.config` resolves `identity_file` relative to the
+    #: config file, so every caller would otherwise write this into its own
+    #: workdir by hand. Seven assemblies is what "every caller does it by hand"
+    #: produces.
+    identity: str = _DEFAULT_IDENTITY
+
+    #: WHICH ROOMS she is in, as `policy.toml` content. Same reasoning. The
+    #: default is one allowed group and `default = "deny"`, so a caller that
+    #: does not care gets a valid, closed policy rather than an accident.
+    policy: str = _DEFAULT_POLICY
+
+
+@dataclass(frozen=True, slots=True)
+class Subject:
+    """Nora, composed, plus the config she was composed from.
+
+    `deps` is exactly what `nora/__main__.py` runs on — same type, same builder,
+    same 38 fields. An entry point is an attribute of it (`deps.dispatcher`,
+    `deps.engagement`, `deps.participation_trigger`, `deps.dreamer_runtime`),
+    which is why `design/evaluation/01-boundaries.md` §3 can call the entry point
+    a selection on a case rather than a branch in a runner.
+    """
+
+    deps: Dependencies
+    cfg: Config
+
+
+def _with(obj: Any, path: str, value: Any) -> Any:
+    head, _, rest = path.partition(".")
+    if rest:
+        value = _with(getattr(obj, head), rest, value)
+    return obj.model_copy(update={head: value})
+
+
+#: What EVERY non-production caller needs, applied before the caller's own
+#: overrides so a caller can still change any of them.
+#:
+#: These are here rather than in each caller because a caller reinventing them
+#: is exactly how seven different assemblies happened. Each was discovered by
+#: running `obtain()` and watching it fail — not by reading the code, which is
+#: how this list stayed implicit in `tests/test_composition.py`'s fixture for as
+#: long as it did.
+def _baseline(cfg: Config, workdir: Path) -> Config:
+    # `store.data_dir` — media custody lands in the caller's directory, never a
+    # shared one.
+    cfg = _with(cfg, "store.data_dir", workdir)
+    # `platforms.signal.account` — the template's default is empty, meaning
+    # "derive from the daemon", and `build_dependencies` then makes a REAL HTTP
+    # call to signal-cli at startup and raises `StartupError` when nothing
+    # answers. An override returns immediately with no network. Composing Nora
+    # reaches the world unless told otherwise; that was measured here, by this
+    # call failing.
+    cfg = _with(cfg, "platforms.signal.account", "+85290000100")
+    # `doctrine.dir` and `dreamer.dir` resolve RELATIVE TO THE CONFIG FILE, and
+    # the copy lives in the caller's workdir, which has no such subdirectories.
+    # The Dreamer's corpus is validated at startup — deliberately, so a
+    # malformed objective is not a silent Dreamer three hours later — so an
+    # unpointed `[dreamer]` fails composition rather than the thing under test.
+    cfg = _with(cfg, "doctrine.dir", _REPO_ROOT / "nora" / "doctrine")
+    cfg = _with(cfg, "dreamer.dir", _REPO_ROOT / "nora" / "dreamer")
+    return cfg
+
+
+def build_config(spec: SubjectSpec) -> Config:
+    """The template, copied into `spec.workdir`, baselined, then overridden.
+
+    Copied rather than read in place because `nora.config` resolves
+    `identity_file`, `policy.toml`, `doctrine.dir` and `dreamer.dir` relative to
+    the config file's own directory — so the copy's location decides where those
+    are looked for, which is what lets a caller own them without touching the
+    repo's.
+    """
+    spec.workdir.mkdir(parents=True, exist_ok=True)
+    # Written before the config loads: `nora.config` resolves both relative to
+    # the config file's own directory, and `build_dependencies` reads persons at
+    # startup, so an absent `identity.toml` is a `StartupError` rather than an
+    # empty roster.
+    (spec.workdir / "identity.toml").write_text(spec.identity, encoding="utf-8")
+    (spec.workdir / "policy.toml").write_text(spec.policy, encoding="utf-8")
+    cfg_path = spec.workdir / "config.toml"
+    shutil.copy(_TEMPLATE, cfg_path)
+    cfg = _baseline(_load_config(cfg_path), spec.workdir)
+    for path, value in (spec.overrides or {}).items():
+        cfg = _with(cfg, path, value)
+    return cfg
+
+
+async def obtain(spec: SubjectSpec) -> Subject:
+    """Compose Nora. One call, one graph, no collaborators passed.
+
+    Costs ~64ms against a template-cloned database
+    (`design/evaluation/03-step0-results.md` §3), which is why this is per-case
+    rather than session-scoped: a case can be plain data and nothing has to be
+    reset between two of them.
+    """
+    cfg = build_config(spec)
+    deps = await build_dependencies(cfg)
+    return Subject(deps=deps, cfg=cfg)
