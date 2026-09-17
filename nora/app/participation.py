@@ -29,6 +29,37 @@ THE LOCKED DECISIONS THIS ENFORCES (design §10)
   end evaluated, the last send. This is the same treatment the tag path's
   `Debounce` gets — bounded by `sweep` from the runtime loop, and retained
   state is per-ROOM cursors, not per-message session state.
+
+WHAT SURVIVES A RESTART, AND WHAT DOES NOT (migration 0056)
+-----------------------------------------------------------
+Every dict below used to be process-local, and `nora` is force-recreated
+routinely — the identical defect `0050_dream_schedule_state` records for the
+Dreamer, where a `time.monotonic()` dict in `dream_loop`'s own frame turned
+"once a day" into "once per deploy". Here it meant the send cooldown was lost
+(she could speak again immediately after a restart however recently she had
+spoken) and a judged window could be judged twice.
+
+TWO cursors are STORED, and both are cold path — `_last_window_end` is written
+once per window close and `_last_send_at` once per send.
+
+TWO are RE-DERIVED at hydration from `messages`, which already holds them:
+`_last_message_at` (the newest inbound row's `ts`) and `_conversation_type`
+(that same row's column). They move on `note_message`, which is synchronous on
+the dispatcher's path and must not await, so they could not be stored even if
+that were the simpler answer.
+
+ONE is NEITHER, and that is a decision: **`_unjudged` still starts at zero
+after a restart.** A `messages`-derived count does NOT reproduce it. A tagged
+message, a voice note and a voice-wake utterance are all rows in that table
+that never reach `note_message` (the engage policy short-circuits before the
+`relevance_gate` verdict), and Nora's own replies are rows too. A count that
+included them would close windows EARLIER than the trigger does today — more
+evaluations, more model calls, possibly more speech — which is a change to
+what this class DECIDES wearing a persistence change's clothes. Storing it
+instead would put a database write on `note_message`, which its own docstring
+forbids. So the volume arm resumes from zero, exactly as it does today, and the
+quiet arm — which is the one that was going to fire anyway — resumes from the
+record.
 """
 
 from __future__ import annotations
@@ -36,8 +67,10 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from typing import Protocol
 
 from nora.domain.models import NormalizedMessage
+from nora.domain.participation import ParticipationCursor
 from nora.engagement.slots import ConversationSlots
 from nora.ingest.relevance_gate import RelevanceGate
 
@@ -46,6 +79,23 @@ from .fire import SENT, participation_occasion
 log = logging.getLogger("nora.app.participation")
 
 Key = tuple[str, str]
+
+
+class ParticipationStateStore(Protocol):
+    """The three verbs this module needs from
+    `nora.infra.sql.participation_state.SqlParticipationStateStore` — a narrow
+    local shape, like `nora.app.runtime`'s Protocols, so this class cannot
+    reach for anything else the concrete store grows later."""
+
+    async def read_cursors(self) -> list[ParticipationCursor]: ...
+
+    async def record_window_end(
+        self, *, platform: str, conversation_id: str, at_ms: int
+    ) -> None: ...
+
+    async def record_send(
+        self, *, platform: str, conversation_id: str, at_ms: int
+    ) -> None: ...
 
 
 class ParticipationTrigger:
@@ -60,6 +110,21 @@ class ParticipationTrigger:
     `clock` is injected for the reason `Debounce`'s is: the settle window and
     the cooldown are durations, and a module that read the clock itself could
     not be tested without sleeping.
+
+    **The clock is `time.time`, not `time.monotonic`.** Every comparison here
+    is a DIFFERENCE of two readings of the same clock, so the substitution
+    changes no answer — but a monotonic epoch is arbitrary per process, so the
+    two cursors that are now written down would have been written as numbers
+    that mean nothing to the process reading them back. (It also removes a
+    latent one: `monotonic()` on Linux is uptime, so `now - 0.0` right after a
+    container start was SMALLER than the cooldown, and the pre-0056 default of
+    `0.0` for "never sent" therefore refused the first send of every deploy for
+    `cooldown_seconds`. Absence is now `None` and never an instant.)
+
+    `store` is OPTIONAL and `None` is the dormant default — every offline and
+    eval wiring builds this class without one, and with it absent the behaviour
+    is exactly what shipped before migration 0056: cursors live in memory and a
+    restart empties them. A missing store is never an error.
     """
 
     def __init__(
@@ -72,7 +137,8 @@ class ParticipationTrigger:
         max_window_messages: int = 10,
         gate: RelevanceGate | None = None,
         gate_shadow: Callable[..., Awaitable[None]] | None = None,
-        clock: Callable[[], float] = time.monotonic,
+        clock: Callable[[], float] = time.time,
+        store: ParticipationStateStore | None = None,
     ) -> None:
         self._speak = speak
         self._slots = slots
@@ -96,6 +162,14 @@ class ParticipationTrigger:
         # exist. Ten is dense enough to fire inside a real conversation.
         self._max_window_messages = max_window_messages
         self._clock = clock
+        self._store = store
+        # Hydration is ONCE per process and happens on the first
+        # `close_due_windows`, not in `__init__`: this constructor is
+        # synchronous and the read is not, and the runtime loop's own
+        # try/except is already the right place for a read that can fail —
+        # a failed hydration leaves this False, so the next tick retries
+        # rather than evaluating against a cursor set it knows is incomplete.
+        self._hydrated = False
         self._last_message_at: dict[Key, float] = {}
         # Messages seen since this room's last evaluation — the volume arm's
         # counter. Reset when a window closes, for the same reason
@@ -144,11 +218,24 @@ class ParticipationTrigger:
         window would make one quiet burst cost a turn every tick until it
         succeeds. `_unjudged` is cleared with it, for the same reason: a
         window that has been judged is spent, however it closed.
+
+        The FIRST call of a process hydrates the per-room cursors from the
+        store (see the module docstring). It runs before `due` is computed, and
+        it is the reason the watermark is worth storing at all: with
+        `_last_message_at` restored from the record, a burst that was already
+        judged before the restart reads as `last <= last_window_end` and is
+        skipped — where an unhydrated watermark and an unhydrated message
+        cursor simply cancel out and prove nothing.
         """
+        await self._hydrate()
         now = self._clock()
         due = [
             key for key, last in self._last_message_at.items()
-            if last > self._last_window_end.get(key, 0.0)
+            # ABSENT, not zero (`nora.domain.participation`): a room that has
+            # never had a window judged has unjudged traffic by definition, and
+            # `0.0` would say the same thing only by being a 1970 instant that
+            # every real message happens to beat.
+            if self._is_unjudged(key, last)
             and (
                 now - last >= self._settle_seconds                    # quiet
                 or self._unjudged.get(key, 0) >= self._max_window_messages
@@ -157,6 +244,7 @@ class ParticipationTrigger:
         for key in due:
             self._last_window_end[key] = now
             self._unjudged[key] = 0
+            await self._record_window_end(key, now)
             platform, conversation_id = key
             # §10.2: take the slot only if free. A tag holding it skips the
             # window ENTIRELY (the watermark above already closed it) — never
@@ -187,8 +275,14 @@ class ParticipationTrigger:
                         score=score,
                     )
                     continue
+                # ABSENT means «she has never spoken here», which permits the
+                # send — not «she spoke in 1970», which permits it too and is
+                # indistinguishable until the day the value comes from a store
+                # rather than from a `.get` default.
+                last_send = self._last_send_at.get(key)
                 send_permitted = (
-                    now - self._last_send_at.get(key, 0.0) >= self._cooldown_seconds
+                    last_send is None
+                    or now - last_send >= self._cooldown_seconds
                 )
                 outcome = await self._speak(
                     participation_occasion(
@@ -205,9 +299,77 @@ class ParticipationTrigger:
                 # §10.3's cadence caps what the room HEARS.
                 if outcome == SENT:
                     self._last_send_at[key] = now
+                    await self._record_send(key, now)
             finally:
                 self._slots.release_and_dispatch(key)
         return len(due)
+
+    def _is_unjudged(self, key: Key, last_message_at: float) -> bool:
+        """Has anything arrived in this room since its last judged window?"""
+        end = self._last_window_end.get(key)
+        return end is None or last_message_at > end
+
+    async def _hydrate(self) -> None:
+        """Restore the per-room cursors from the store, once per process.
+
+        `setdefault` on every dict, never assignment: the dispatcher can note a
+        message before the first tick, and a live note is NEWER than anything
+        the record can say. Restoring over it would move the room's message
+        cursor BACKWARDS and re-open a window that is already accumulating.
+
+        `_unjudged` is deliberately not seeded — see the module docstring.
+        `_hydrated` is set only after the read returns, so a store that is
+        briefly unreachable costs one tick and is retried on the next; it never
+        leaves this class evaluating against half a cursor set, which is the
+        state the whole table exists to make unreachable.
+        """
+        if self._hydrated or self._store is None:
+            return
+        for cursor in await self._store.read_cursors():
+            key = (cursor.platform, cursor.conversation_id)
+            self._last_window_end.setdefault(key, cursor.last_window_end_at / 1000.0)
+            if cursor.last_send_at is not None:
+                self._last_send_at.setdefault(key, cursor.last_send_at / 1000.0)
+            if cursor.last_message_at is not None:
+                self._last_message_at.setdefault(key, cursor.last_message_at / 1000.0)
+            if cursor.conversation_type is not None:
+                self._conversation_type.setdefault(key, cursor.conversation_type)
+        self._hydrated = True
+
+    async def _record_window_end(self, key: Key, at: float) -> None:
+        """Mirror the watermark this tick just set. See `_record_send` for why
+        a failure is logged rather than raised."""
+        if self._store is None:
+            return
+        try:
+            await self._store.record_window_end(
+                platform=key[0], conversation_id=key[1], at_ms=int(at * 1000),
+            )
+        except Exception:
+            log.exception(
+                "participation window-end cursor not persisted (%s/%s)", *key,
+            )
+
+    async def _record_send(self, key: Key, at: float) -> None:
+        """Mirror a DELIVERED message's cooldown, and never let the write
+        change what this class does.
+
+        The in-memory dict is already authoritative for THIS process — it was
+        assigned on the line before — so the store is a mirror, and a mirror
+        that raised here would turn a database blip into a swallowed turn or a
+        skipped evaluation. What a failure costs is the NEXT restart's
+        accuracy, so it is logged at ERROR: this class holds no metrics
+        collaborator, and an operator reading "cursor not persisted" learns
+        exactly which room to distrust.
+        """
+        if self._store is None:
+            return
+        try:
+            await self._store.record_send(
+                platform=key[0], conversation_id=key[1], at_ms=int(at * 1000),
+            )
+        except Exception:
+            log.exception("participation send cursor not persisted (%s/%s)", *key)
 
     async def _admitted(
         self, platform: str, conversation_id: str,

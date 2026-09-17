@@ -100,9 +100,11 @@ from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.music_queue import SqlMusicQueueStore
 from nora.infra.sql.music_session import SqlMusicSessionStore
 from nora.infra.sql.notes import SqlNoteStore
+from nora.infra.sql.participation_state import SqlParticipationStateStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.standing import SqlStandingStore
+from nora.infra.sql.tag_debounce import SqlTagDebounceStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.sql.turn_verdicts import SqlTurnVerdictStore
@@ -1284,7 +1286,22 @@ async def build_dependencies(cfg: Config) -> Dependencies:
 
     llm_state = LLMState()
     background = BackgroundTasks()
-    debounce = Debounce(cfg.engagement.trigger.min_interval_seconds)
+    # R-9's rate limiter, with its window written down (migration 0056). Before
+    # it, `_last` was a dict a force-recreate emptied, so a duplicate tag that
+    # arrived seconds after a restart ran a second turn — and `nora` is
+    # force-recreated routinely. `spawn` is REQUIRED alongside the store, not
+    # optional: `Debounce.allow` is synchronous by design (an await between
+    # admission's QUEUED verdict and the enqueue would break FIFO order), so
+    # the row is written fire-and-forget on the loop.
+    debounce = Debounce(
+        cfg.engagement.trigger.min_interval_seconds,
+        store=SqlTagDebounceStore(engine),
+        spawn=background.spawn,
+    )
+    # ONCE, here, before any adapter is listening — `allow` cannot do it for
+    # itself. It also prunes the rows whose window has already elapsed, which
+    # is what bounds the table without a sweep loop of its own.
+    await debounce.hydrate()
 
     # First match wins, deterministic text first. The mention policy uses the
     # same alias set R-12 uses to refuse self-tags — an @-mention arrives as
@@ -2773,6 +2790,11 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             gate_shadow=(
                 fire_path.post_gate_verdict if cfg.relevance_gate.shadow else None
             ),
+            # The per-room watermarks, written down (migration 0056). Without
+            # it the SEND cooldown died with the process, so a force-recreate
+            # let her speak again at once however recently she had spoken —
+            # and §10.3's whole job is to cap what a room HEARS.
+            store=SqlParticipationStateStore(engine),
         )
     elif cfg.participation.enabled:
         # The CONVERSE of `_the_gate_needs_something_behind_it` (nora/config.py),

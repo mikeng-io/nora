@@ -326,7 +326,11 @@ def build_offline_pipeline(
             # above: built by nobody here, `None` unless a caller wants the
             # stage, so no existing eval run changes.
             gate=participation_gate,
-            clock=participation_clock or time.monotonic,
+            # `time.time`, matching the production default: the trigger's
+            # cursors are wall-clock instants since migration 0056, and an
+            # offline wiring on a different clock would measure a different
+            # thing from the one it exists to mirror.
+            clock=participation_clock or time.time,
         )
     dispatcher = Dispatcher(
         ingest=ingest, engagement=engagement, background=background,
