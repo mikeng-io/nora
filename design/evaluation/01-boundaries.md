@@ -144,23 +144,64 @@ and why `eval_support.py` is 1,739 lines of test scaffolding inside the
 application. **None of those were mistakes given the available slots.** They are
 what you get when the shape you need has no place to live.
 
-### The decision Step 1 actually asks for
+### DECIDED 2026-09-17 — option 1: name the slot
 
-Not a directory. **A layer.** Either:
+**A new layer above `nora.app`, inside the `nora` root package so the contracts
+can see it.** Probed before recording, and the probe is why the edit list below
+has three items rather than one.
 
-- **name the slot** — a package above `nora.app` in the layers contract whose
-  whole job is composing the real graph for a caller that is not production, with
-  `evals/` permitted to import it and nothing permitted to import `evals/`; or
-- **decide the eval layer may reach the top directly**, and widen `evals/`'s
-  allowlist from `{app, testing}` — cheaper, and it makes `evals/` a peer of the
-  application rather than a consumer of a seam; or
-- **keep it in `nora/app/`** and accept that the application ships eval
-  scaffolding, with a parity gate over every assembly rather than the two
-  construction sites covered today.
+Working name `nora.harness`; **the name is open** and collides with two things it
+replaces (`evals/harness.py`, `tests/integration/harness.py`), so pick it
+deliberately when the package lands.
 
-All three are legal. None is free, and the third is the status quo with
-enforcement. **This is the operator's, and it is the first decision in the
-bundle.**
+**What the probe established** — a package at that layer importing
+`nora.app.composition` and `nora.config`:
+
+| | |
+|---|---|
+| `lint-imports`, with `"nora.harness"` added above `nora.app` | **0 — 6 kept, 0 broken** |
+| the reverse, `nora.app` → `nora.harness` | **1 broken.** The property holds in the direction that matters |
+
+So the slot exists and is enforceable. **Three edits are needed, not one**, and
+two are visible only because the probe ran:
+
+**1. `pyproject.toml` layers** — a new top entry above
+`"nora.app | nora.presence | nora.analytics"`.
+
+**2. `pyproject.toml`'s "only app and `__main__` read config" contract.** Its
+`source_modules` list is explicit, so a new package is **not covered by
+default** — the probe imported `nora.config` and nothing objected. That is §6's
+own hole one level in: unconstrained because nothing looks, not because anything
+decided. Either the package joins that list or it is exempted **with the reason
+written down**, and the exemption is arguable — composing the real graph means
+reading the real config.
+
+**3. `tests/test_boundaries.py`** — `EVALS_ALLOWED_NORA_PACKAGES` is
+`{"app", "testing"}` and must gain the new name.
+
+### The probe also found which of the two `evals/` gates actually binds
+
+With `evals/` importing the new package:
+
+```
+lint-imports              "evals may only reach nora.app and nora.testing"   KEPT
+tests/test_boundaries.py  FAILED — evals/_zz_probe.py: nora.harness
+```
+
+**The import-linter contract passed while `evals/` imported a package its own
+name forbids.** Not a defect — `pyproject.toml:268` documents it:
+`allow_indirect_imports = "True"` is load-bearing, because `nora.app`
+legitimately imports half the tree and the default whole-chain check would flag
+`evals -> nora.app.eval_support -> nora.doctrine.loader` as evals' own import.
+
+The same comment names the consequence: *"A new nora subpackage added later needs
+a line here too; `tests/test_boundaries.py`'s AST-based sibling check is the
+allowlist-style backstop."*
+
+**So the boundary TEST is the binding gate and the contract is the looser
+sibling.** Worth knowing before anyone reads a green `lint-imports` as proof the
+boundary held — which is the shape this whole bundle is about, appearing inside
+the bundle's own first step.
 
 ## 7. The reading that would refute this node
 
