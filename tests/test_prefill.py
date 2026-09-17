@@ -9,6 +9,7 @@ from nora.agent.prefill import (
     build_tag_message,
     escape,
 )
+from nora.domain.culture import CultureRevision
 from nora.domain.decision_log import DecisionRow
 from nora.domain.models import (
     DeliveryStatus,
@@ -19,7 +20,6 @@ from nora.domain.models import (
     TranscriptRow,
 )
 from nora.domain.notes import Note
-from nora.domain.culture import CultureRevision
 from nora.domain.standing import Standing
 
 

@@ -27,8 +27,8 @@ from ..domain.decision_log import (
 from ..domain.models import TagContext, TranscriptRow
 from ..domain.prompt import escape
 from ..domain.prompt import escape_attr as _escape_attr
-from ..language.note_render import NOTES_HEADER, render_notes
 from ..language.culture_render import CULTURE_HEADER, render_culture
+from ..language.note_render import NOTES_HEADER, render_notes
 from ..language.standing_render import STANDING_HEADER, render_standing
 from ..obs.tracing import annotate, span
 
