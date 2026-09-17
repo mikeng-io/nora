@@ -49,6 +49,7 @@ from nora.doctrine.loader import Doctrine, DoctrineStore
 from nora.domain.models import DeliveryStatus, NormalizedMessage, PersonRef, TranscriptRow
 from nora.domain.notes import Note, NoteRevision
 from nora.domain.reminders import Reminder, ReminderCaps, ReminderState
+from nora.domain.culture import CultureRevision
 from nora.domain.standing import Standing
 from nora.engagement.stages.deliver import BUDGET_STOP_REASONS as _BUDGET_STOP_REASONS
 from nora.infra.honcho import HonchoClient
@@ -431,6 +432,10 @@ class ProductionSeed:
     cards: dict[str, list[str]] = field(default_factory=dict)
     conclusions: dict[str, list[str]] = field(default_factory=dict)
     standing: Standing | None = None
+    #: The room's culture head (design/culture-tier). A case seeds it with a
+    #: `culture:` string; `None` renders no block, which is what a case with no
+    #: account should see and is the common shape.
+    culture: CultureRevision | None = None
     notes: tuple[tuple[Note, NoteRevision], ...] = ()
 
 
@@ -606,6 +611,22 @@ async def build_production_seed(
                           notes=tuple(notes))
 
 
+class _SeededCulture:
+    """A `CultureReader` over one seeded account.
+
+    Key-blind on purpose: an eval room is one room, and the production keying
+    (`primary_id`, resolved through the policy) is exercised by
+    `tests/unit/test_fire_path.py` and the assembler's own tests rather than by
+    every case that happens to seed an account.
+    """
+
+    def __init__(self, head: CultureRevision) -> None:
+        self._head = head
+
+    async def head(self, *, key: str) -> CultureRevision | None:
+        return self._head
+
+
 def _seed_id(n: int, kind: str) -> str:
     """UUID-SHAPED, like the real stores' ids — the same rule
     `InMemoryNoteStore._shaped_id` states: the shape is what R-18's
@@ -711,6 +732,16 @@ def seed_from_dict(raw: dict[str, Any], *, now_ms: int | None = None) -> Product
             fold_count=1, updated_at=now_ms,
         )
 
+    culture = None
+    if raw.get("culture"):
+        # `culture_key` blank for `standing`'s reason directly above: the case
+        # does not know the eval room's scope id, and the harness supplies the
+        # head directly rather than through a keyed store.
+        culture = CultureRevision(
+            id="eval-culture", culture_key="", body=raw["culture"],
+            written_at=now_ms, established_by="eval",
+        )
+
     notes: list[tuple[Note, NoteRevision]] = []
     for n, entry in enumerate(raw.get("notes") or []):
         note_id = _seed_id(0x1000 + n, "note")
@@ -743,7 +774,7 @@ def seed_from_dict(raw: dict[str, Any], *, now_ms: int | None = None) -> Product
 
     return ProductionSeed(
         recents=tuple(recents), standing=standing, notes=tuple(notes),
-        conclusions=conclusions,
+        conclusions=conclusions, culture=culture,
     )
 
 
@@ -1687,6 +1718,10 @@ async def run_proactive_act_case(
             "delivery_status": r.delivery_status, "quoted_ts": r.quoted_ts,
             "raw_json": r.raw_json, "media_json": r.media_json,
         })
+    # The culture head, as a reader with ONE method — the same narrowing the
+    # production path gets. It answers whatever the case seeded for every key,
+    # because an eval room is one room and the harness never keys it.
+    culture = _SeededCulture(seed.culture) if seed.culture is not None else None
     standing_store = InMemoryStandingStore()
     if seed.standing is not None:
         await standing_store.write(standing=Standing(
@@ -1715,6 +1750,14 @@ async def run_proactive_act_case(
         rosters={"signal": FakeRosterSource(groups={"g1": (frozenset({_EVAL_MEMBER}),)})},
         event_registry={"proactive": proactive_occasion},
         standing=standing_store, notes=note_store, policy=permissive_policy(),
+        # The culture head (design/culture-tier). `None` until a case seeds an
+        # account: `render_culture(None)` emits no block, which is what a case
+        # with no culture should see. Passed at all because
+        # `tests/architecture/test_assembler_parity.py` requires it — a
+        # collaborator production passes and the harness does not means every
+        # participation eval measures a prompt production never builds, which
+        # is the exact regression that test exists to catch.
+        culture=culture,
         proactive_runner=runner,
     )
     outcome = await path.run([reminder])

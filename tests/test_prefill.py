@@ -19,16 +19,17 @@ from nora.domain.models import (
     TranscriptRow,
 )
 from nora.domain.notes import Note
+from nora.domain.culture import CultureRevision
 from nora.domain.standing import Standing
 
 
 def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None, self_card=(),
          quote=None, platform="signal", tagger_card=(), notes=(),
-         standing=None, decisions=(), people_in_window=()) -> TagContext:
+         standing=None, decisions=(), people_in_window=(), culture=None) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
                             quote=quote)
     kwargs = {"tagger_card": tuple(tagger_card),
-              "notes": tuple(notes), "standing": standing,
+              "notes": tuple(notes), "standing": standing, "culture": culture,
               "decisions": tuple(decisions),
               "people_in_window": tuple(people_in_window)}
     return TagContext("tag-1", msg, tagger, tuple(transcript), tuple(peer_card), 0.0,
@@ -53,6 +54,23 @@ def _decisions() -> tuple[tuple[str, tuple[DecisionRow, ...]], ...]:
 def _standing(body="They are deciding where to eat; nobody has picked yet.") -> Standing:
     return Standing(platform="signal", conversation_id="g1", body=body,
                     fold_count=3, updated_at=1)
+
+
+def _culture(body=(
+    "They talk in dense Cantonese shorthand and decide by attrition: somebody "
+    "floats a plan and the rest poke at it until it survives or everyone stops "
+    "replying."
+)) -> CultureRevision:
+    """One culture head, so `_full_prefill_body` renders `<culture>`.
+
+    A fixture that omits a block makes every «all of them» assertion silently
+    narrower than its name — `_decisions`' own finding, one block over, and the
+    reason this exists rather than the block being left to default `None`.
+    """
+    return CultureRevision(
+        id="0191f2c4-0000-7000-8000-0000000000cc", culture_key="g1", body=body,
+        written_at=1, established_by="culture",
+    )
 
 
 def _note(title="9 Sept dinner") -> Note:
@@ -185,7 +203,7 @@ def _full_prefill_body() -> str:
     ctx = _ctx(
         _rows("hello"), peer_card=("likes espresso",), self_card=("nora said a thing",),
         tagger_card=("asked about dinner",), tagger=PersonRef("miles", "Miles", "miles"),
-        notes=(_note(),), standing=_standing(), decisions=_decisions(),
+        notes=(_note(),), standing=_standing(), culture=_culture(), decisions=_decisions(),
         people_in_window=(("Grant", ("asked about dinner",)),),
     )
     return build_prefill(ctx, display_name="Nora", context_window=40)[1]["content"][0]["text"]
@@ -250,7 +268,7 @@ def test_every_block_she_is_served_is_named_in_the_header():
         _ctx(_rows("hello"), peer_card=("likes espresso",),
              self_card=("nora said a thing",), tagger_card=("asked",),
              tagger=PersonRef("miles", "Miles", "miles"), notes=(_note(),),
-             standing=_standing(), decisions=_decisions(),
+             standing=_standing(), culture=_culture(), decisions=_decisions(),
              people_in_window=(("Grant", ("asked about dinner",)),)),
         display_name="Nora", context_window=40,
     )
@@ -270,7 +288,7 @@ def test_the_header_names_no_block_she_is_never_served():
         _ctx(_rows("hello"), peer_card=("likes espresso",),
              self_card=("nora said a thing",), tagger_card=("asked",),
              tagger=PersonRef("miles", "Miles", "miles"), notes=(_note(),),
-             standing=_standing(), decisions=_decisions(),
+             standing=_standing(), culture=_culture(), decisions=_decisions(),
              people_in_window=(("Grant", ("asked about dinner",)),)),
         display_name="Nora", context_window=40,
     )
@@ -1150,7 +1168,7 @@ def test_the_order_she_meets_the_blocks_is_the_order_the_catalogue_lists_them():
     msgs = build_prefill(
         _ctx(_rows("hi"), peer_card=("c",), self_card=("s",),
              tagger=PersonRef("miles", "Miles", "miles"), notes=(_note(),),
-             standing=_standing(), decisions=_decisions(),
+             standing=_standing(), culture=_culture(), decisions=_decisions(),
              people_in_window=(("Grant", ("asked about dinner",)),)),
         display_name="Nora", context_window=40,
     )

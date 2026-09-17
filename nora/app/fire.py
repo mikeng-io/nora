@@ -114,12 +114,13 @@ from nora.domain.ports import (
 )
 from nora.domain.prompt import one_line
 from nora.domain.reminders import Recurrence, Reminder, remaining_occurrences
+from nora.domain.culture import CultureRevision
 from nora.domain.standing import (
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
     Standing,
 )
 from nora.domain.tool_call_log import ToolCallLogStore
-from nora.engagement.context import StandingNotesReader
+from nora.engagement.context import CultureReader, StandingNotesReader
 from nora.engagement.mentions import MentionRenderer
 from nora.engagement.stages import deliver, feedback
 from nora.engagement.stages.invoke import AgentRunner
@@ -734,6 +735,7 @@ class FirePath:
         tool_call_log_store: ToolCallLogStore | None = None,
         event_registry: Mapping[str, EventFactory] | None = None,
         standing: StandingStore | None = None,
+        culture: CultureReader | None = None,
         standing_store_timeout_seconds: float = DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
         # The participation turn's memory reads (issue #210). All four default
         # to the inert shape — `0` renders no block, so a construction site
@@ -782,6 +784,14 @@ class FirePath:
         # `AgentRunner.invoke` hands back, a Phase 1 deferral flagged in that
         # method — and there is nothing to fold without it.
         self._standing = standing
+        # The culture head (design/culture-tier). `None` while `[culture]
+        # enabled = false`, the shipped default. Read-only by TYPE — a
+        # `CultureReader` has `head` and nothing else — so no fire-path turn
+        # can write a culture row, which matters more here than on the tag
+        # path: this is where the participation occasion runs, and the tier's
+        # whole claim is that the account is written by a background pass
+        # reading a whole batch, never by a turn reacting to one window.
+        self._culture = culture
         # BOUNDED, for the reason the debrief stage's own store calls are:
         # the heartbeat holds this conversation's slot around the whole fire
         # turn (`heartbeat.py` try_acquire -> release_and_dispatch), and
@@ -1039,6 +1049,7 @@ class FirePath:
             self_card=self_card,
             people_in_window=people,
             standing=await self._read_standing(occasion),
+            culture=await self._read_culture(occasion),
             notes=await self._read_notes(occasion, workspace),
             decisions=await self._read_decisions(occasion, workspace),
         )
@@ -1369,6 +1380,49 @@ class FirePath:
                 platform=occasion.platform,
             )
             return ()
+
+    async def _read_culture(self, occasion: Event) -> CultureRevision | None:
+        """This room's current account, or `None` (design/culture-tier).
+
+        **Resolved through the policy to a `primary_id`**, not read with the
+        occasion's `conversation_id`. A Dreamer adaptor is handed `scopes()`,
+        so that is the key it wrote under; reading with the arriving thread's
+        id matches zero rows on any conversation carrying more than one, and
+        renders as «this room has no account yet» — a REAL state, so nothing
+        anywhere would report the miss. Today every live conversation holds
+        exactly one id, which is why this has to be written down: the two keys
+        are equal by accident of data (issue #229), not by construction.
+
+        `None` covers four situations and collapsing them is right for
+        `_read_standing`'s reason — the prompt cannot express the difference:
+        no store (the dormant default), no policy conversation, no account yet
+        (the ORDINARY state for a while after the tier is enabled, since a fold
+        needs new messages and a day), and a failed read. Only the last is
+        counted, because a head that exists and could not be fetched reported
+        as «there is none» is `unavailable` substituted for `nothing_found`,
+        which is what R-27 exists to prevent.
+
+        Bounded by the same timeout as the standing read: a background tier's
+        store must never be able to hold the turn open.
+        """
+        if self._culture is None or self._policy is None:
+            return None
+        convo = self._policy.conversation(
+            occasion.platform, occasion.conversation_id)
+        if convo is None or not convo.primary_id:
+            return None
+        try:
+            return await asyncio.wait_for(
+                self._culture.head(key=convo.primary_id),
+                timeout=self._standing_store_timeout_seconds,
+            )
+        except Exception:
+            log.exception("fire culture read failed; continuing without it")
+            self._metrics.inc(
+                "nora_errors_total", stage="fire_culture",
+                platform=occasion.platform,
+            )
+            return None
 
     async def _read_standing(self, occasion: Event) -> Standing | None:
         """This conversation's position, or `None` (S5).
