@@ -516,15 +516,61 @@ def render_messages(
     Speaker names are still collapsed: a newline inside an attribute cannot
     break out, but it makes the tag unreadable for no gain.
     """
+    clock = now or datetime.now().astimezone()
+
+    def _attrs(row: Row, i: int) -> tuple[tuple[str, str | None], ...]:
+        ts = timestamp(row)
+        parent = replying_to(row)
+        return (
+            ("n", str(i)),
+            ("age", age(ts, clock) if ts is not None else None),
+            ("from", one_line(speaker(row))),
+            ("replying_to", None if parent is None else str(parent)),
+        )
+
+    return render_elements(rows, tag=tag, attrs=_attrs, body=body)
+
+
+def render_elements(
+    rows: Sequence[Row],
+    *,
+    tag: str,
+    attrs: Callable[[Row, int], Sequence[tuple[str, str | None]]],
+    body: Callable[[Row], str | None],
+) -> str:
+    """One record, one ELEMENT — the shape `render_messages` proved, generalised
+    so the note index is not a second copy of it.
+
+    **The whole argument is `render_messages`', and it is not about messages.**
+    The separator has to be something a row's content cannot contain; a newline
+    is not one; so the fields that identify a record become ATTRIBUTES, where
+    `escape_attr` closes the quote, and the record's own prose becomes CONTENT,
+    where it may keep its shape. Everything that follows from that — the body
+    needing no `one_line`, the handle being unforgeable, a field boundary that a
+    title full of em dashes cannot blur — follows for any record, and the note
+    index is the one that has been paying for the flat form (#292).
+
+    `attrs` is handed the row AND its 1-based position, because `n` is a
+    per-render handle rather than a field: a closed set of 1..N, so an
+    out-of-range reference is refusable rather than a lookup that might hit some
+    other record. A caller that needs the row's own id instead returns it here —
+    `note_candidates` must, because `accept()` joins the model's `message_ids`
+    back onto real ids and a positional index would silently fail that join.
+
+    **A `None` value DROPS its attribute** rather than rendering empty. Same
+    rule as `_when`'s: a symbol that can mean "unknown" invites a model to emit
+    one, and `age=""` is exactly that symbol.
+
+    Values are escaped here, unconditionally, so a caller passes raw text. There
+    is no `markup=False`: an element is XML by construction, and the operator
+    surfaces that need unescaped text are line-oriented and use `render_rows`.
+    """
     out = []
     for i, row in enumerate(rows, 1):
-        attrs = [f'n="{i}"']
-        ts = timestamp(row)
-        if ts is not None:
-            attrs.append(f'age="{escape_attr(age(ts, now or datetime.now().astimezone()))}"')
-        attrs.append(f'from="{escape_attr(one_line(speaker(row)))}"')
-        parent = replying_to(row)
-        if parent is not None:
-            attrs.append(f'replying_to="{parent}"')
-        out.append(f"<{tag} {' '.join(attrs)}>{escape(body(row) or '')}</{tag}>")
+        rendered = " ".join(
+            f'{key}="{escape_attr(value)}"'
+            for key, value in attrs(row, i)
+            if value is not None
+        )
+        out.append(f"<{tag} {rendered}>{escape(body(row) or '')}</{tag}>")
     return "\n".join(out)
