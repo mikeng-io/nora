@@ -32,22 +32,74 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 __all__ = [
+    "ACCOUNT_OUTPUT_TOKENS",
     "BODY_MAX_CHARS",
     "Culture",
     "CultureProposal",
     "CultureRevision",
 ]
 
-#: The OPERATING cap on an account, in characters. The database ceiling is four
-#: times this (`CULTURE_BODY_CEILING_CHARS`) and the gap is deliberate, the same
-#: split `notes` makes: this number says "no writer should produce that", the
-#: ceiling says "this row is corrupt".
+#: The OPERATING cap on an account, in characters. The database ceiling
+#: (`CULTURE_BODY_CEILING_CHARS`, 32,000) is far above it and the gap is
+#: deliberate, the same split `notes` makes: this number says "no writer should
+#: produce that", the ceiling says "this row is corrupt".
 #:
-#: 8000 because an account is a SHORT account — how they talk, how decisions get
-#: made, what they call themselves, her own standing, and why. A body that runs
-#: past this has almost certainly drifted back into chronicle, restating what
-#: happened instead of saying what the room is.
-BODY_MAX_CHARS = 8_000
+#: **1,600, DOWN FROM 8,000 on 2026-09-17, and the two reasons are
+#: independent.**
+#:
+#: *What the objective asks for.* `nora/dreamer/objectives/culture.md` says
+#: "one paragraph or two" and prints a worked example body of ~890 characters.
+#: 1,600 is 1.8x that example: room for the second paragraph the objective
+#: allows, and nothing left for a third. 8,000 invited the essay — it was nine
+#: times the operator's own example, so the cap said "short account" while
+#: admitting something no reader would call one.
+#:
+#: *What can physically be emitted.* This is a cap in CHARACTERS on prose a
+#: model must produce under two ceilings measured in TOKENS, and nobody had
+#: written down the bridge between the units. It is: **one output token per
+#: character**, the CJK worst case — this room's prose is mostly Cantonese, and
+#: a cap that assumed English would be wrong by a factor of two in the
+#: direction that truncates. `ACCOUNT_OUTPUT_TOKENS` below is that conversion,
+#: and it is what the two ceilings are checked against
+#: (`tests/unit/test_culture_adaptor.py`). At 8,000 characters the conversion
+#: gives ~8,000 tokens against a default loop budget of 4,000 and a shipped
+#: provider ceiling of 2,000, so an account written to the cap could not be
+#: emitted at all — **and the failure is silent and self-perpetuating**: the
+#: completion truncates, `parse_envelope` reads no envelope, the run is
+#: `unavailable`, the watermark is HELD, and the same batch is re-read and
+#: re-truncated on the next fire, forever. That is `note-candidates`'
+#: `AdaptorSchedule` trap (`nora/app/composition.py`) reached from the other
+#: end: there the batch was too big for the output, here the output cap was.
+BODY_MAX_CHARS = 1_600
+
+#: What emitting an account at `BODY_MAX_CHARS` costs in OUTPUT TOKENS, worst
+#: case — the one place the character cap and the token budgets are related, so
+#: that they are not two independently chosen numbers again.
+#:
+#: `BODY_MAX_CHARS` at one token per character (above), plus the JSON envelope
+#: the objective requires around it (`{"account": [{"body": "…"}]}`, its
+#: escaping, and the newline the provider usually adds).
+#:
+#: **Two ceilings must clear this, and they are different things** (see
+#: `config.example.toml`'s `[dreamer] max_tokens`, which spells the confusion
+#: out):
+#:
+#: - `DreamBudgetConfig.output_tokens` — the Strands LOOP budget, 4,000 by
+#:   default, spent across every turn of the fold. The rule is that the loop
+#:   must be able to emit a full account TWICE: once for the tool-call
+#:   arguments and any preamble the pass spends before it writes, once for the
+#:   account itself. 2 x 1,664 = 3,328, inside the 4,000 an adaptor with no
+#:   `[dreamer.budgets.culture]` block gets.
+#: - `[dreamer] max_tokens` (0 -> `[llm] max_tokens`) — the PROVIDER's ceiling
+#:   on ONE completion, which binds as `MaxTokensReachedException` ->
+#:   `PartialReplyError` rather than as a `stop_reason`. `config.example.toml`
+#:   ships 2,000, so an account at the cap uses ~83% of one completion. That is
+#:   the tighter of the two and the one to raise if a fold is ever seen
+#:   truncating — the example file says so in those words.
+#:
+#: Both inequalities are asserted rather than argued
+#: (`tests/unit/test_culture_adaptor.py::test_an_account_at_the_cap_fits_...`).
+ACCOUNT_OUTPUT_TOKENS = BODY_MAX_CHARS + 64
 
 
 @dataclass(frozen=True, slots=True)

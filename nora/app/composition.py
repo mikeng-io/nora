@@ -39,6 +39,7 @@ from nora.agent.dreamer import (
     DreamerRuntime,
     HomeRoom,
     RegistryToolSource,
+    culture_grant,
     proactive_grant,
     verify_tool_subsets,
 )
@@ -127,7 +128,7 @@ from nora.ingest.stages import standing_event
 from nora.ingest.stickers import StickerReader
 from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
-from nora.language.culture import CultureAdaptor
+from nora.language.culture import CULTURE_ADAPTOR_NAME, CultureAdaptor
 from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.language.note_curator import NoteCuratorAdaptor
 from nora.language.proactive import (
@@ -3083,6 +3084,59 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 *dream_adaptors,
                 CultureAdaptor(
                     culture=SqlCultureStore(engine),
+                    # THE OTHER TWO STORES (design/culture-tier
+                    # `01-the-adaptor §1.2`). The objective asks the model
+                    # where she stands with this room while the `standing`
+                    # tier holds exactly that, per room; and an account of how
+                    # a room works that cannot see what the room has OPEN is
+                    # inferring a thing the note index already states. `None`
+                    # for either tier being off is a real configuration and
+                    # renders no block — not an empty one.
+                    standing=standing_store if cfg.standing.enabled else None,
+                    notes=note_store if cfg.notes.enabled else None,
+                    # The FOUR policy resolutions, every one of them the same
+                    # `.get` over the allowlist keyed on `conv.primary_id` —
+                    # which is this adaptor's own key, because a Dreamer
+                    # adaptor is handed `scopes()` (GLOSSARY.md, DEC-181
+                    # withdrawn). Built here, in one place, so they cannot
+                    # disagree about which room a key names (issue #161's
+                    # arrangement one tier over).
+                    workspace_for={
+                        conv.primary_id: conv.workspace
+                        for conv in allowlist.conversations
+                        if conv.primary_id and conv.workspace
+                    }.get,
+                    # THE TRANSLATION, not an identity. `standing` is keyed
+                    # `(platform, conversation_id)` because the debrief that
+                    # writes it is handed the message that arrived; this
+                    # adaptor keys `primary_id`. They are equal for every live
+                    # conversation and that is an ACCIDENT OF DATA (#229) — a
+                    # conversation with a second id form may hold its standing
+                    # row under the other one, which #229 owns and this map
+                    # cannot decide. Resolving through the policy is what makes
+                    # the pairing a statement rather than an assumption; the
+                    # failure it avoids is a read that matches zero rows and
+                    # renders as «this room has no standing», a real state
+                    # nothing reports as a miss.
+                    standing_key_for={
+                        conv.primary_id: (conv.platform, conv.primary_id)
+                        for conv in allowlist.conversations
+                        if conv.primary_id
+                    }.get,
+                    # What the room is CALLED and what the operator says it IS
+                    # (`Conversation.label` / `.description`), for the `<room>`
+                    # block. A room with neither is simply absent from the map
+                    # and the block falls back without ever rendering an id.
+                    label_for={
+                        conv.primary_id: conv.label
+                        for conv in allowlist.conversations
+                        if conv.primary_id and conv.label
+                    }.get,
+                    description_for={
+                        conv.primary_id: conv.description
+                        for conv in allowlist.conversations
+                        if conv.primary_id and conv.description
+                    }.get,
                     metrics=metrics,
                 ),
             )
@@ -3266,6 +3320,26 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 )
                 for ws, conv in proactive_homes.items()
             },
+            # EVERY policy conversation, keyed by every id form it answers to
+            # — the SCOPE-keyed half of a home-room grant
+            # (`AdaptorGrant.home_room`). A scope-keyed adaptor's key already
+            # IS a conversation, so there is no room to choose and no
+            # `home_room = true` to read: the grant resolves the adaptor's own
+            # room, and this map is what carries the platform (the roster
+            # source), the id to bind and the `location` flag DEC-74 threads.
+            # Read off the SAME allowlist as `home_rooms` and `origin_rooms`
+            # above so the three cannot disagree about which room an id names.
+            # Inert for an adaptor with no home-room grant, exactly as
+            # `home_rooms` is.
+            scope_rooms={
+                cid: HomeRoom(
+                    workspace=conv.workspace, platform=conv.platform,
+                    conversation_id=conv.primary_id, conversation_type="group",
+                    location_trusted=conv.location,
+                )
+                for conv in allowlist.conversations
+                for cid in conv.ids
+            },
             # Proactive destination map (design/dreamer-agent-loop/40, #248):
             # every policy conversation id -> its `OriginRoom`, so a
             # note-linked proactive row can be stamped into the room the note
@@ -3306,6 +3380,15 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # whole pre-DEC-162 ceiling by omission.
         dream_grants: dict[str, AdaptorGrant] = {
             PROACTIVE_ADAPTOR_NAME: proactive_grant(),
+            # The culture adaptor's own room, and no act verb
+            # (`culture_grant`). SCOPE-keyed, so this resolves through
+            # `scope_rooms` above rather than through `home_rooms`: its key
+            # already names the conversation, so the grant is an identity and
+            # there is nothing for the operator to choose. Passed
+            # unconditionally, the same way `home_rooms` is: a grant for an
+            # adaptor that is not wired is never read, and `[culture] enabled
+            # = false` is what keeps the adaptor out of `dream_adaptors`.
+            CULTURE_ADAPTOR_NAME: culture_grant(),
         }
         # `DreamBudgetConfig` -> `AdaptorBudget`, through the ONE named
         # converter (`_adaptor_budget` above): the same five numbers across the

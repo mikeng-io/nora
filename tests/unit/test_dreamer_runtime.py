@@ -22,6 +22,7 @@ written for:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -846,6 +847,144 @@ def test_a_home_room_grant_with_no_home_room_falls_back_closed():
     assert call["location_trusted"] is False
     assert call["room"].platform == ""
     assert call["room"]._roster_source is None
+
+
+def test_a_SCOPE_keyed_grant_resolves_the_adaptors_OWN_room():
+    """**The wiring defect this closes** (design/culture-tier `03-decisions`
+    correction 14, `03-no-agent-loop §7.4`). `build` resolved every home room
+    through `home_rooms[workspace or ""]`, and `DreamerRuntime.run` supplies
+    `workspace=None` for a scope-keyed adaptor — so a scope-keyed grant looked
+    up `home_rooms[""]`, found nothing, and took the loud CLOSED branch. Every
+    room-scoped verb then answered `unavailable` forever while the grant read
+    as honoured, which is the state that closed PR #237 on a false premise.
+
+    A scope-keyed adaptor's key IS a conversation, so the room is an identity
+    rather than a choice: no `home_rooms` lookup, no `policy.toml`
+    `home_room = true`, and no disclosure decision — the adaptor is already
+    running FOR that room and was already handed its whole message batch."""
+    registry = _RecordingRegistry()
+    roster = object()
+    source = RegistryToolSource(
+        registry=registry, store=None, persons=None, honcho=None,
+        metrics=Metrics(),
+        home_rooms={},
+        scope_rooms={"g1": HomeRoom(
+            workspace="friends", platform="discord", conversation_id="g1",
+            location_trusted=True,
+        )},
+        rosters={"discord": roster},
+        self_ids=frozenset({"+85200000000"}),
+    )
+
+    source.build(
+        key="g1", names=frozenset({"where_is"}), workspace=None,
+        adaptor="culture", grant=AdaptorGrant(home_room=True),
+    )
+
+    (call,) = registry.calls
+    assert call["conversation_id"] == "g1"
+    assert call["location_trusted"] is True
+    # STILL `None`: the key is a conversation, not a workspace, and the
+    # workspace-scoped verbs must keep resolving through the room (32 §3.4).
+    assert call["supplied_workspace"] is None
+    room = call["room"]
+    assert room.platform == "discord"
+    assert room._roster_source is roster
+    assert room._self_ids == frozenset({"+85200000000"})
+
+
+def test_a_scope_keyed_build_never_gets_the_widened_online_domain():
+    """`online_now`'s input domain is the decide turn's own (design/online-
+    status/03): the home roster UNIONED with the note subjects, which is the
+    one occasion Nora may answer about people outside the room she stands in.
+    A background scope-keyed pass keeps the TAG-PATH domain — its own room's
+    roster — so the union can never leak into one. The resolver is keyed by
+    workspace and a scope-keyed build has none, so passing `""` would have
+    resolved a domain for no workspace at all."""
+    registry = _RecordingRegistry()
+    source = RegistryToolSource(
+        registry=registry, store=None, persons=None, honcho=None,
+        metrics=Metrics(),
+        scope_rooms={"g1": HomeRoom(
+            workspace="friends", platform="discord", conversation_id="g1",
+        )},
+        online_scope_for=lambda _ws: None,  # type: ignore[arg-type,return-value]
+    )
+
+    source.build(
+        key="g1", names=frozenset({"where_is"}), workspace=None,
+        adaptor="culture", grant=AdaptorGrant(home_room=True),
+    )
+
+    assert registry.calls[0]["online_scope"] is None
+
+
+def test_a_scope_keyed_grant_for_an_unknown_room_falls_back_closed_and_says_so(
+    caplog,
+):
+    """The grant said «stand in a real room» and the key names no policy
+    conversation: the empty room, no acts, and a LOUD line naming the SCOPE —
+    not the workspace, which is `None` here and would have read as the config
+    fault the workspace branch describes."""
+    metrics = Metrics()
+    source = RegistryToolSource(
+        registry=_RecordingRegistry(), store=None, persons=None, honcho=None,
+        metrics=metrics, scope_rooms={},
+    )
+
+    with caplog.at_level(logging.ERROR, logger="nora.dreamer"):
+        source.build(
+            key="g-unknown", names=frozenset({"where_is"}), workspace=None,
+            adaptor="culture", grant=AdaptorGrant(home_room=True),
+        )
+
+    assert metrics.get(
+        "nora_dream_home_room_missing_total", adaptor="culture", workspace="",
+    ) == 1
+    said = [r.getMessage() for r in caplog.records]
+    assert any("'g-unknown'" in m and "scope" in m for m in said), said
+
+
+def test_two_broken_scopes_are_logged_SEPARATELY_not_collapsed_onto_one():
+    """The dedupe key was `(adaptor, workspace or "")`, and every scope-keyed
+    miss carries `workspace=None` — so all of them would collapse onto one
+    entry and the first broken room would be reported as though it were the
+    only one."""
+    source = RegistryToolSource(
+        registry=_RecordingRegistry(), store=None, persons=None, honcho=None,
+        metrics=Metrics(), scope_rooms={},
+    )
+
+    with caplog_at_error() as records:
+        for key in ("g1", "g2", "g1"):
+            source.build(
+                key=key, names=frozenset({"where_is"}), workspace=None,
+                adaptor="culture", grant=AdaptorGrant(home_room=True),
+            )
+
+    said = [r.getMessage() for r in records]
+    assert len(said) == 2, said
+    assert any("'g1'" in m for m in said) and any("'g2'" in m for m in said)
+
+
+@contextlib.contextmanager
+def caplog_at_error():
+    """A local capture rather than the `caplog` fixture: this test asserts on
+    the DEDUPE, so it needs every record the one `RegistryToolSource` emitted
+    across three builds and nothing else."""
+    records: list[logging.LogRecord] = []
+
+    class _Sink(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    logger = logging.getLogger("nora.dreamer")
+    handler = _Sink(level=logging.ERROR)
+    logger.addHandler(handler)
+    try:
+        yield records
+    finally:
+        logger.removeHandler(handler)
 
 
 def test_the_missing_home_room_is_counted_every_pass_and_logged_once(caplog):
