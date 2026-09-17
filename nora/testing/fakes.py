@@ -72,11 +72,18 @@ def transcript_rows(
     first as written, `ts` ticking forward by `ts_step`, every row SENT — a
     row the sender's own message produced, not a pending outbound one.
 
-    `is_nora` was hardcoded `False` until 2026-09-17, which made her own
-    earlier speech unseedable — and «what did she already say in this room»
-    is exactly the input the act suite needed to reproduce that day's
-    duplicate. A harness that cannot seed a speaker cannot measure a
-    judgement about that speaker.
+    **`is_nora` was hardcoded `False` until 2026-09-17**, and that made HER OWN
+    earlier speech unseedable by any corpus built on this helper. It is the
+    input a whole class of judgement turns on — «have I already said this?» —
+    and the proactive duplicate of that day (msgs 5450/5455) is exactly that
+    question answered wrong. A harness that cannot seed a speaker cannot
+    measure a judgement about that speaker. `nora.agent.prefill._speaker` reads
+    THIS flag to attribute a row, so a row that merely carries the name "Nora"
+    renders as a member with that display name instead — which is why the flag
+    and not a `sender_name` convention.
+
+    Its corpus-side caller lands with the evaluation rebuild (PR #334); the
+    test below is what keeps it honest until then.
     """
     return tuple(
         TranscriptRow(
