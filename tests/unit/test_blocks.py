@@ -439,14 +439,18 @@ def test_a_block_of_an_UNDECLARED_type_raises_instead_of_rendering():
     that cannot happen: a name no type declares raises, and the message says
     where to declare it rather than what went wrong.
 
-    Asserted on `render()` as well as on the property, because a `@property`
-    that raises is easy to leave unreachable — nothing else in this file proves
-    `render()` actually reads it.
+    **At CONSTRUCTION, and that is the fix rather than the phrasing.** The
+    check lived in `render()` for one commit, where `assemble`'s drop-empty-
+    bodies filter made it data-dependent: a mistyped name was SILENT on turns
+    where the block came back empty and fatal on turns where it did not —
+    measured, `assemble([ContextBlock(name="typo", body="")])` returned `''`.
+    A failure that depends on the day's data is not one you can act on.
     """
-    orphan = ContextBlock(name="a_type_nobody_declared", order=1, body="x")
-    for call in (lambda: orphan.description, orphan.render):
-        with pytest.raises(KeyError, match="block_types"):
-            call()
+    with pytest.raises(KeyError, match="block_types"):
+        ContextBlock(name="a_type_nobody_declared", order=1, body="x")
+    # And with an EMPTY body, which is the case `render()` alone could not see.
+    with pytest.raises(KeyError, match="block_types"):
+        ContextBlock(name="a_type_nobody_declared", order=1, body="")
 
 
 def test_the_blocks_own_attributes_come_first_and_its_framing_last():

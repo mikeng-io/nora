@@ -222,9 +222,7 @@ def _restamp(block: ContextBlock | None) -> ContextBlock | None:
     return replace(block, order=order, key=key)
 
 
-def _declared(
-    context_window: int, rendered: Sequence[ContextBlock | None],
-) -> list[ContextBlock]:
+def _declared(rendered: Sequence[ContextBlock | None]) -> list[ContextBlock]:
     """The block table, with each block's rendered text attached.
 
     **Every block is declared whether or not it rendered, and the REASON
@@ -262,7 +260,7 @@ def _declared(
     return out
 
 
-def _context_header(context_window: int, header: str = TAG_HEADER) -> str:
+def _context_header(header: str = TAG_HEADER) -> str:
     """How this turn works, told to the model in its own terms.
 
     `header` is the SITUATION paragraph — why this turn is happening at all —
@@ -850,7 +848,7 @@ def build_prefill(
         # reach her, and the catalogue that introduces them, both come from
         # `_BLOCKS` — so a block cannot be served without an entry, and an
         # entry cannot survive a block that stopped rendering.
-        declared = _declared(context_window, [
+        declared = _declared([
             _self_card_block(ctx),
             _peer_card_block(ctx),
             _peer_history_block(ctx),
@@ -878,7 +876,7 @@ def build_prefill(
             "nora.prefill.size_chars": sum(len(b.body) for b in rendered),
         })
         return [
-            _message("user", _context_header(context_window, header)),
+            _message("user", _context_header(header)),
             _message(
                 "user",
                 # The clock leads the VOLATILE block, not the header: see

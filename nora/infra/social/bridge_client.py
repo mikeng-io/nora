@@ -29,8 +29,8 @@ from typing import Any
 
 import aiohttp
 
+from ...domain.blocks import wrap_outside_text
 from ...domain.ports import SocialProvider
-from ..transit.arrivals import _wrap
 
 log = logging.getLogger("nora.social")
 
@@ -120,7 +120,9 @@ class OpenCliBridgeClient(SocialProvider):
         # plain dict with no `content` key.
         out: dict[str, Any] = {
             "status": "ok",
-            "text": _wrap(url or f"{platform} {what}", clamped, name="social_post"),
+            "text": wrap_outside_text(
+                "social_post", url or f"{platform} {what}", clamped,
+            ),
             "truncated": truncated,
         }
         if url is not None:

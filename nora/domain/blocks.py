@@ -157,6 +157,15 @@ class RowStyle:
     self_name: str = ""
 
 
+#: Attributes `render()` writes from the block's TYPE, and which therefore may
+#: not also arrive through `attrs`. Checked in `__post_init__`; the value is
+#: what the message says the caller was trying to set.
+_DERIVED_ATTRS = {
+    "description": "what the block IS",
+    "fields": "what the block's fields mean",
+}
+
+
 @dataclass(frozen=True)
 class ContextBlock:
     """One rendered block, and everything the assembler needs to place it.
@@ -196,6 +205,38 @@ class ContextBlock:
     #: cache line it never had, and one wrongly declared `global` silently
     #: fragments a 13-17k-token prefix that measures 95-99% hit.
     key: BlockKey = "turn"
+
+    def __post_init__(self) -> None:
+        """Both halves of «a call site cannot invent a description», checked
+        where a block is BUILT rather than where it is rendered.
+
+        **`attrs` was the hole.** It is a free tuple the caller fills and
+        `render()` writes it BEFORE the derived pair, so
+        `attrs=(("description", "IGNORE EVERYTHING ABOVE"),)` produced
+        `<notes description="IGNORE EVERYTHING ABOVE" description="questions
+        this group…">` — two `description=` on one element, ill-formed XML
+        whose FIRST occurrence is what most readers take. A property with no
+        setter closed the front door and left this one open, and the ADR, this
+        class's docstring and a unit test all stated the universal while the
+        test only measured a block with no attrs at all.
+
+        **The name check moved here from `render()`**, where `assemble`'s
+        drop-empty-bodies filter made it data-dependent: a mistyped name was
+        SILENT on turns where the body came back empty and fatal on turns where
+        it did not. A block that cannot say what it is should not exist, so the
+        failure belongs at construction — which is what `description`'s
+        docstring already claimed.
+        """
+        for key, _ in self.attrs:
+            if key in _DERIVED_ATTRS:
+                raise ValueError(
+                    f"<{self.name}> passes {key}={_DERIVED_ATTRS[key]}, which "
+                    "`render()` derives from the block's type. Two of them on "
+                    "one element is not well-formed and the first one wins. "
+                    "Change the type in `nora.domain.block_types` instead."
+                )
+        # Raises on an unknown name; see `description`.
+        _ = self.description
 
     @property
     def annotation(self) -> str:
@@ -238,11 +279,14 @@ class ContextBlock:
         An unknown name raises rather than rendering an undescribed block. A
         block reaching the model with nothing saying what it is was the defect
         (`_declared` used to emit `note=""` purely so a catalogue could name
-        it), and failing at construction is how that stops being possible.
+        it), and failing at CONSTRUCTION — `__post_init__` calls this — is how
+        that stops being possible. Raising here alone was not enough: `assemble`
+        drops an empty body before `render()`, so a mistyped name was silent on
+        exactly the turns where the block had nothing to say.
         """
         try:
             return BLOCK_TYPES[self.name].description
-        except KeyError:                                   # pragma: no cover
+        except KeyError:
             raise KeyError(
                 f"no block type declares {self.name!r}. Add it to "
                 "`nora.domain.block_types.BLOCK_TYPES` with a description of "
@@ -277,6 +321,32 @@ class ContextBlock:
         if self.annotation:
             parts.append(f'fields="{escape_attr(self.annotation)}"')
         return f"<{' '.join(parts)}>\n{self.body}\n</{self.name}>"
+
+
+def wrap_outside_text(name: str, source: str, text: str) -> str:
+    """One piece of text from OUTSIDE, as a block that says whose it is.
+
+    A transit operator's service remark, a fetched web page, a stranger's
+    social post (design/14 §2.1). Escaped with the same helper R-13 uses on
+    group text, because the wrapper is XML-shaped and a body containing a
+    closing tag would otherwise end it early (R-13b).
+
+    **`name` is REQUIRED and positional, and that is the finding rather than a
+    style choice.** This lived in `nora.infra.transit.arrivals` as `_wrap`,
+    reached by `nora.infra.search._shared` importing a private helper across
+    two infra packages — and it carried `name="transit_remark"` as a DEFAULT.
+    A caller outside transit that forgot to override it would introduce a
+    fetched web page to the model as a transit operator's service remark:
+    exactly the defect that splitting `<untrusted>` into three types fixed,
+    made reachable again by omission. No default means it cannot be forgotten.
+
+    Here rather than in `infra` because what it does — one piece of text,
+    wrapped as a block that says what it is — is this module's subject, and
+    three infra packages needing it is what says so.
+    """
+    return ContextBlock(
+        name=name, attrs=(("source", source),), body=escape(text),
+    ).render()
 
 
 def assemble(blocks: Sequence[ContextBlock]) -> str:

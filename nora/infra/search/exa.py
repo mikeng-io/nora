@@ -156,7 +156,7 @@ class ExaSearchProvider:
             # beside it so the model can cite it in the reply.
             wrapped.append({
                 "url": url,
-                "content": wrap(url, clamped, name="fetched_page"),
+                "content": wrap("fetched_page", url, clamped),
                 "truncated": truncated,
             })
         if not wrapped:
@@ -224,7 +224,7 @@ class ExaSearchProvider:
         return {
             "status": "ok",
             "url": url,
-            "text": wrap(url, clamped, name="fetched_page"),
+            "text": wrap("fetched_page", url, clamped),
             "truncated": truncated,
         }
 

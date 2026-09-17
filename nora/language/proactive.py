@@ -971,6 +971,13 @@ class ProactiveAdaptor:
         return (
             ContextBlock(
                 name="decisions",
+                # HOW FAR BACK, as data. The description used to say «over the
+                # last {days} days» with the number interpolated at inject
+                # time; a description belongs to the type, so the number is an
+                # attribute and the type annotates it. Dropping it outright
+                # would leave «recently», which is the undated-input failure
+                # the 2026-09-09/10 gate measurement is about.
+                attrs=(("days", str(self._history.days)),),
                 body=(
                     "\n".join(lines) if lines
                     else "(nothing decided in this window)"

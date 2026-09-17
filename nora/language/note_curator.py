@@ -1627,11 +1627,15 @@ def _render_own_sends(
     in the room. Whether that closes a given note is the judgement, and the
     judgement is the model's.
     """
-    lines = [
-        "your own messages since this note, newest last. Each was DELIVERED "
-        "to that room — that is the send record's own answer, not mine. "
-        "Nobody else in the room wrote any of them."
-    ]
+    # NO PROSE ABOVE THE BLOCK. This line used to carry «your own messages
+    # since this note, newest last … nobody else in the room wrote any of
+    # them» — a second description of one block, in one prompt, disagreeing
+    # with the type's and stronger than it. That is the `NOTES_HEADER` /
+    # `NOTES_BLOCK_NOTE` shape #314 deleted, surviving one commit longer
+    # because neither gate can see prose: `test_one_block_injector` keys on a
+    # tag that opens AND closes, and prose does neither. Every clause it
+    # carried is in `BLOCK_TYPES["own_sends"]` now.
+    lines: list[str] = []
     # ONE ROW, ONE ELEMENT (#292). The forged-row concern the flat version
     # carried is closed by construction rather than by a collapse: the block
     # one line up asserts «nobody else in the room wrote any of them», and a
@@ -1722,11 +1726,17 @@ def _render_evidence(
 def _now_block(today: int) -> str:
     """Today, named. The curator had no clock in its prompt at all — not a
     date, not a weekday, not a time on any evidence row — while its objective
-    asks it whether an anchor has passed."""
+    asks it whether an anchor has passed.
+
+    `<today>`, NOT `<now>`. This body is a DAY — `2026-10-01 Thu`, no time and
+    no zone — and the proactive pass's `<now>` is a MOMENT with both. One tag
+    for the two meant one description, which promised a time this block does
+    not carry (#314).
+    """
     day = _as_date(today)
     when = f"{day:%Y-%m-%d %a}" if day is not None else str(today)
     return ContextBlock(
-        name="now",
+        name="today",
         # A CLOCK THIS PROCESS OWNS, not anything the room said.
         body=escape(when),
     ).render()

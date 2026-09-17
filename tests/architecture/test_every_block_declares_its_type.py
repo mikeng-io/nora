@@ -57,37 +57,37 @@ def _table_names() -> set[str]:
 
 
 def _wrapper_names() -> set[str]:
-    """The block names `infra.transit.arrivals._wrap` renders.
+    """The block names `domain.blocks.wrap_outside_text` renders.
 
     It builds its `ContextBlock` from a `name` PARAMETER — three callers wrap
     three different kinds of outside text through one helper — so the literal
-    is at the call site and at the default, never at the constructor. The AST
-    walk below looks only at `ContextBlock(name="…")` and would report all
-    three as declared-and-unrendered, which is an argument for deleting three
+    is at the CALL SITE, never at the constructor. The AST walk below looks
+    only at `ContextBlock(name="…")` and would report all three as
+    declared-and-unrendered, which is an argument for deleting three
     descriptions of blocks that ship on every web search.
+
+    First POSITIONAL argument, and there is no default to read: a default would
+    let a caller outside transit introduce a fetched web page as a transit
+    operator's remark by forgetting to override it. So every name this returns
+    is one somebody wrote at a call site, which is also the honest census.
 
     The same shape as `_table_names`, and the second time this file has needed
     it: a census that reads only constructors is a census of one calling
     convention.
     """
-    import inspect
-
-    from nora.infra.transit import arrivals
-
-    names = {inspect.signature(arrivals._wrap).parameters["name"].default}
+    names: set[str] = set()
     for path in (ROOT / "nora").rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if (
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Name)
-                and node.func.id in {"wrap", "_wrap"}
+                and node.func.id in {"wrap", "wrap_outside_text"}
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
             ):
-                names |= {
-                    kw.value.value for kw in node.keywords
-                    if kw.arg == "name" and isinstance(kw.value, ast.Constant)
-                    and isinstance(kw.value.value, str)
-                }
+                names.add(node.args[0].value)
     return names
 
 
@@ -193,6 +193,15 @@ def test_no_description_leans_on_a_word_only_we_know():
     )
 
 
+#: What counts as talking about absence. **Measured, 2026-09-17: the first cut
+#: of this was `"bsent" or "No block"` and it inspected FOUR of 35 descriptions.
+#: `"absence"` does not contain `"bsent"`, so `<loop_decisions>`'s «its absence
+#: says nothing about it» was never read at all** — and the ADR claimed this
+#: rule now applied to every type. A trigger narrower than its claim is the
+#: shape this whole file exists to catch, arriving in the file itself.
+_ABSENCE_WORDS = ("absent", "absence", "no block", "nothing is in front of you")
+
+
 def test_a_description_that_talks_about_ABSENCE_says_the_read_may_have_failed():
     """R-27, moved here from the catalogue and widened to every type.
 
@@ -216,9 +225,13 @@ def test_a_description_that_talks_about_ABSENCE_says_the_read_may_have_failed():
     registry testing something the hand-written list could only test a subset
     of; the first was `test_every_rendered_block_has_a_declared_type`.
     """
+    # «says nothing about it» is `<loop_decisions>`' phrasing and it is the
+    # strongest of these — it refuses every conclusion rather than naming the
+    # one wrong one. Added when widening the trigger above surfaced it, which
+    # is the widening working: the sentence had been correct and unread.
     hedges = (
         "the read failed", "did not come back", "never that", "never look",
-        "it can also mean",
+        "it can also mean", "says nothing about it",
     )
     for name, block_type in BLOCK_TYPES.items():
         # PER SENTENCE, not per description. Matching anywhere let a hedge
@@ -228,7 +241,7 @@ def test_a_description_that_talks_about_ABSENCE_says_the_read_may_have_failed():
         # The claim and its qualifier have to be the same sentence because that
         # is the unit she reads them in.
         for sentence in re.split(r"(?<=\.)\s+", block_type.description):
-            if "bsent" not in sentence and "No block" not in sentence:
+            if not any(w in sentence.lower() for w in _ABSENCE_WORDS):
                 continue
             assert any(h in sentence for h in hedges), (
                 f"<{name}> tells her what an ABSENT block means without "

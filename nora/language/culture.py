@@ -578,8 +578,15 @@ class CultureAdaptor:
         # beside `<previous_account>` and the note index rather than inside
         # anything.
         parts.append(
+            # `room_messages`, NOT `batch`. They looked like one block and are
+            # two: note-candidates' `<batch>` renders `n` as the stored row id
+            # so the pass can cite it in `message_ids`; this one renders a 1..N
+            # position and suppresses ids by construction, because an account
+            # that can cite rows becomes the chronicle this tier exists not to
+            # be. Merging them shipped «`n` is the real row» into this prompt,
+            # where it is false (#314).
             ContextBlock(
-                name="batch",
+                name="room_messages",
                 body=_render_batch(batch),
             ).render()
         )

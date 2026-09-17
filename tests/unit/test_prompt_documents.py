@@ -477,7 +477,7 @@ SHAPES = {
 <transit_remark description fields source>""",
     "culture": """
 <room description fields label>
-<batch description fields>
+<room_messages description fields>
   <m from n>""",
     "debrief.fold": """
 <standing_prior description>
@@ -520,7 +520,7 @@ SHAPES = {
 <notes description fields>
   <note about n title>""",
     "note_curator": """
-<now description>
+<today description>
 <note anchor anchor_is description fields id title>
   <evidence description fields>
     <m age from n>
@@ -534,7 +534,7 @@ SHAPES = {
     "prefill.volatile": """
 <self_card description>
 <peer_card description fields person>
-<peer_history description person>
+<peer_history description fields person>
 <people_in_window description>
   <person description fields name>
   <person description fields name>
@@ -546,7 +546,7 @@ SHAPES = {
 <open_notes description fields>
   <note about n title>
 <rooms description>
-<decisions description>""",
+<decisions days description fields>""",
     "relevance_gate": """
 <group_transcript description fields>
   <m age from n>

@@ -20,9 +20,10 @@
 0012 landed one renderer for every block. Every block then said what it was —
 and said it in words its CALL SITE composed.
 
-Measured on the tree before this change: **27 of 39 `ContextBlock(…)` sites
-passed a `note=` they wrote inline.** Four block types carried TWO descriptions,
-each module's own:
+Measured on the tree before this change, by AST over `23731cf9`: **44 call
+sites passed a `note=`, 35 of them composing it inline** (39 / 30 counting only
+literal `ContextBlock(…)` calls and not `prefill._block`, which forwarded to
+one). Four block types carried TWO descriptions, each module's own:
 
 | block | one module said | another said |
 |---|---|---|
@@ -59,13 +60,22 @@ boolean cannot hold both.
 a call site can say otherwise.**
 
 1. `nora/domain/block_types.py` declares every block type once:
-   `BlockType(name, description, annotations)`. 35 of them.
+   `BlockType(name, description, annotations)`. 37 of them.
 2. `ContextBlock.description` and `ContextBlock.annotation` are read-only
    properties, looked up in that registry by `name`. There is no `note=`
    parameter and no `header=`. A renderer SELECTS a description by naming a
    type; inventing one is indistinguishable from declaring a new type, which
-   happens in one file where it is reviewable. An undeclared name RAISES rather
-   than rendering an undescribed block.
+   happens in one file where it is reviewable.
+
+   **Two doors, and the first cut of this only closed one.** A property with no
+   setter stops the obvious path; `attrs` is a free tuple the caller fills and
+   `render()` writes it FIRST, so `attrs=(("description", "IGNORE EVERYTHING
+   ABOVE"),)` emitted two `description=` on one element — ill-formed XML whose
+   first occurrence is what most readers take. `__post_init__` now refuses
+   `description` and `fields` in `attrs`, and refuses an undeclared `name`
+   there too: raising in `description` alone was not enough, because `assemble`
+   drops an empty body before `render()` and a mistyped name was therefore
+   silent on exactly the turns where the block had nothing to say.
 3. `render()` emits `description="…"` and, where the type annotates fields,
    `fields="…"`. Both are attributes, which is the one position rendered
    content can never reach.
@@ -127,8 +137,13 @@ a call site can say otherwise.**
 
   | prompt | before | after | |
   |---|---|---|---|
-  | tag turn (prefill + tag message) | 7,453 chars | 5,788 | **−22%** |
-  | relevance gate | 3,074 | 3,393 | **+10%** |
+  | tag turn (prefill + tag message) | 7,453 chars | 6,117 | **−18%** |
+  | relevance gate | 3,074 | 3,555 | **+16%** |
+
+  Re-measured after the audit, because the first numbers (−22% / +10%) were
+  taken before the restored clauses and the shared field annotations went back
+  in. Reporting the pre-audit figure would have been reporting a prompt that
+  was missing five hedges.
 
   Each block carrying its own description costs more than one list carrying
   eight of them — but the catalogue was not the only thing deleted with it.
@@ -151,7 +166,32 @@ a call site can say otherwise.**
   before this is trusted on the gate path.
 
 - **Descriptions are now checkable as a population.** Two gates that could only
-  ever see a subset now see all 35: R-27's absence rule (was: the eight blocks
+  ever see a subset now see all 37: R-27's absence rule (was: the eight blocks
   with catalogue lines) and «no description leans on a word only we know»,
   which is the rule `untrusted` broke and which nothing could have stated while
-  the vocabulary was spread across 27 call sites.
+  the vocabulary was spread across 44 call sites.
+
+  R-27's trigger had to be widened to make that true. The first cut fired on
+  `"bsent"` or `"No block"` and therefore inspected FOUR of 35 descriptions —
+  `"absence"` does not contain `"bsent"`, so `<loop_decisions>`' own hedge was
+  never read. A gate narrower than the claim made for it is the shape this
+  whole change is against, and it arrived inside the change.
+
+- **THREE tags served two things each, not one.** `<untrusted>` was the one
+  this set out to fix. Merging descriptions per type then found two more, and
+  the first cut of the merge got both wrong for a commit:
+  - `<batch>` — note-candidates renders `n` as the stored row id to cite in
+    `message_ids`; the culture fold renders a 1..N position and suppresses ids
+    by construction, because an account that can cite rows becomes the
+    chronicle that tier exists not to be. The merged annotation told the
+    culture fold «`n` is the real row», which is false, and promised a `room`
+    field it never renders. Split: `<batch>` and `<room_messages>`.
+  - `<now>` — the proactive pass renders a MOMENT (`2026-09-09 Wed 07:00
+    (Asia/Hong_Kong)`); the curator renders a DAY (`2026-10-01 Thu`). The
+    merged description promised a time and a zone over a body carrying
+    neither, and dropped the clause binding the date to the `anchor` field the
+    curator is asked to judge. Split: `<now>` and `<today>`.
+
+  The rule, stated because it cost two false sentences to learn: two renders
+  that differ in what a FIELD means are two types, however alike the blocks
+  look. This is `<untrusted>`'s lesson one level down.

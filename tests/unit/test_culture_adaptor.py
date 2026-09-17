@@ -162,7 +162,7 @@ async def test_the_previous_account_comes_FIRST_when_there_is_one():
     out = await _adaptor(_Store(_revision("they decide by attrition"))).inputs(
         key=KEY, batch=[_row("hi")],
     )
-    assert out.index("previous_account") < out.index("<batch ")
+    assert out.index("previous_account") < out.index("<room_messages ")
     assert "they decide by attrition" in out
 
 
@@ -181,7 +181,7 @@ async def test_the_batch_carries_NO_row_ids_and_NO_timestamps():
     out = await _adaptor(_Store()).inputs(
         key=KEY, batch=[_row("開車喇", ts=T0, rid=482)],
     )
-    batch = out.split("<batch ")[1].split("</batch>")[0]
+    batch = out.split("<room_messages ")[1].split("</room_messages>")[0]
     body = batch.split(">", 1)[1]
     # THE ROW ID, still absent. `n` is a per-render position (1..N), never
     # `row.id` — the culture fold cites nothing back, so a real id here would be
@@ -292,7 +292,7 @@ async def test_the_previous_account_precedes_standing_notes_AND_the_batch():
         out.index("previous_account")
         < out.index("<standing")
         < out.index("<notes")
-        < out.index("<batch ")
+        < out.index("<room_messages ")
     ), out
 
 

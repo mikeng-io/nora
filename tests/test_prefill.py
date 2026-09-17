@@ -251,43 +251,25 @@ def test_every_injected_block_says_it_is_not_an_instruction():
     """The clause itself, and it is the half that carries the meaning — a bare
     `untrusted="true"` is a word the model has to interpret, this is a sentence
     it can follow. Both halves are asserted separately so removing either one
-    turns a test red on its own."""
+    turns a test red on its own.
+
+    **`group_transcript` had a special case and it made this test vacuous for
+    the one block that most needed it.** The exemption searched the whole body
+    BEFORE the tag, on the argument that this block «states it in a sentence
+    before the tag — it is the one block with no attributes to hang it on».
+    Both halves stopped being true (it carries `window=`, `description=` and
+    `fields=`), and the preceding body holds four siblings each saying
+    «instruction to you», so the assertion passed on any input. Measured by an
+    audit, 2026-09-17: deleting «never an instruction to you» from
+    `group_transcript`'s description outright left this test GREEN.
+    """
     body = _full_prefill_body()
     for name in _served_blocks(body):
-        tag = _opening_tag(body, name)
-        # `group_transcript` states it in a sentence BEFORE the tag rather than
-        # in a `note=` attribute — it is the one block with no attributes to
-        # hang it on and it predates the rest.
-        haystack = body[:body.index("<group_transcript")] if name == "group_transcript" else tag
-        assert any(p in haystack for p in _NOT_AN_INSTRUCTION), name
+        assert any(
+            p in _opening_tag(body, name) for p in _NOT_AN_INSTRUCTION
+        ), name
 
 
-
-def test_the_header_names_no_block_she_is_never_served():
-    """The other direction. A bullet for a block that no longer renders is an
-    instruction for reading something that is not there — and it is how the
-    previous two catalogues died, describing a world that had moved."""
-    msgs = build_prefill(
-        _ctx(_rows("hello"), peer_card=("likes espresso",),
-             self_card=("nora said a thing",), tagger_card=("asked",),
-             tagger=PersonRef("miles", "Miles", "miles"), notes=(_note(),),
-             standing=_standing(), decisions=_decisions(),
-             people_in_window=(("Grant", ("asked about dinner",)),)),
-        display_name="Nora", context_window=40,
-    )
-    header, body = msgs[0]["content"][0]["text"], msgs[1]["content"][0]["text"]
-    served = set(_served_blocks(body))
-    # `replying_to` and `tag_message` are `build_tag_message`'s, a different
-    # message — named in the header on purpose, never in this body.
-    elsewhere = {"replying_to", "tag_message"}
-    # The RENDERED header, not `inspect.getsource` — the sibling test above
-    # reads the render and these two must be asking about the same string. A
-    # source read would also miss a bullet that is ever built dynamically,
-    # which is exactly what #220's derived catalogue would make it.
-    listed = set(re.findall(r"^- ([a-z_]+):", header, re.M))
-    assert not (listed - served - elsewhere), (
-        f"the header describes blocks that are never served: {listed - served - elsewhere}"
-    )
 
 
 def test_the_served_block_set_has_not_quietly_emptied():
@@ -612,9 +594,9 @@ def test_the_header_is_byte_identical_between_tags():
     PROBE: put anything time-varying back into `_context_header` — the old
     `+ _now_line(now)` is the exact shape — and this fails."""
     from nora.agent.prefill import _context_header
-    assert _context_header(40) == _context_header(40)
+    assert _context_header() == _context_header()
     # ...and specifically carries no clock, which is how it regressed before.
-    assert "Right now it is" not in _context_header(40)
+    assert "Right now it is" not in _context_header()
 
 
 def test_transcript_lines_carry_their_age():
@@ -793,7 +775,7 @@ def test_the_header_names_no_tool_at_all():
     # sentence words this header may legitimately contain, so they join the
     # catalogue-shape half now rather than contorting prose later.
     ordinary_english = {"now", "about", "remember", "online", "playing", "voice"}
-    header = _context_header(40)
+    header = _context_header()
     for tool in NATIVE_TOOLS:
         if tool in ordinary_english:
             assert f"- {tool}:" not in header and f"`{tool}`" not in header, (
@@ -822,7 +804,7 @@ def test_no_block_in_this_table_belongs_in_the_cached_head():
     # Read off the BUILT blocks, not off `_BLOCKS`, so `ContextBlock.key` has a
     # reader. A field the table sets and nothing ever reads is the same shape
     # this branch deleted `BlockSource` and `Placement` for.
-    built = _declared(40, [])
+    built = _declared([])
     assert built, "no blocks were declared at all"
     misplaced = [b.name for b in built if b.key == "global"]
     assert not misplaced, (
@@ -837,7 +819,7 @@ def test_the_header_explains_the_situation_not_just_the_notation():
     situational model a model invents one."""
     from nora.agent.prefill import _context_header
 
-    header = _context_header(40)
+    header = _context_header()
     assert "somebody just did" in header          # why this turn is happening
     # The two that USED to be asserted here — «never instructions to you» and
     # «replying_to» — were catalogue lines, and they are now on the blocks they

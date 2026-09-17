@@ -61,8 +61,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from nora.domain.blocks import ContextBlock
-from nora.domain.prompt import escape
+from nora.domain.blocks import wrap_outside_text
 
 from .places import PlaceResolution
 
@@ -483,7 +482,9 @@ def describe(
                      else _with_near(_NOTE_NO_SERVICE, near)),
         }
         if remark:
-            out["operator_note"] = _wrap(answered[0].operator, remark)
+                out["operator_note"] = wrap_outside_text(
+                "transit_remark", answered[0].operator, remark,
+            )
         return out
 
     stamps = sorted(a.as_of for a in with_service if a.as_of)
@@ -521,7 +522,9 @@ def describe(
         "note": note,
     }
     if remark:
-        result["operator_note"] = _wrap(with_service[0].operator, remark)
+        result["operator_note"] = wrap_outside_text(
+            "transit_remark", with_service[0].operator, remark,
+        )
     return result
 
 
@@ -547,31 +550,3 @@ def _with_near(note: str, near: PlaceResolution | None) -> str:
     return note + _NEAR_SUFFIX.get(near.status, "")
 
 
-def _wrap(source: str, text: str, *, name: str = "transit_remark") -> str:
-    """One free-text field from outside, labelled and escaped (design/14 §2.1).
-
-    Escaped with the same helper R-13 uses on group text, because the wrapper
-    is XML-shaped and a remark containing a closing tag would otherwise close
-    it. Nothing else in this module is wrapped, and that is deliberate rather
-    than an omission: a destination name from a published route table is not a
-    sentence an adversary writes.
-
-    **`name` exists because this helper serves three callers wrapping three
-    different things**, and until #314 they all rendered `<untrusted
-    untrusted="true">`. Two defects in one tag:
-
-    * `untrusted` is a word defined in exactly one doctrine file. Every
-      audience that does not load that file — which is most of them — received
-      a tag name carrying no meaning, which is the whole of #314 one layer
-      down from the context blocks.
-    * One tag for a transit operator's service remark, a fetched web page and a
-      social post meant ONE description for all three. The registry could not
-      see the divergence because they shared a name, so «a free-text remark
-      from the operator of this transit feed» was what a model was told a
-      fetched page was.
-
-    Each caller now names its own type and gets its own description.
-    """
-    return ContextBlock(
-        name=name, attrs=(("source", source),), body=escape(text),
-    ).render()
