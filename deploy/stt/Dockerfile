@@ -29,7 +29,7 @@ COPY pyproject.toml uv.lock ./
 # engines on this exact host.
 RUN uv sync --frozen --no-dev
 
-COPY server.py ./
+COPY server.py config_toml.py ./
 
 RUN chown -R stt:stt /app \
     # ~/.cache/modelscope is the bind target for the SenseVoice weights volume

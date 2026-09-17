@@ -1038,16 +1038,21 @@ emotion = ""                   # voice_setting.emotion when set (e.g. "fluent"
 #                              # hard step is audible as a click. Phase 2 only,
 #                              # same note as duck_gain.
 [speech.wake]
-# The wake gate (「喂 Nora」 in a Discord voice channel, stage 3). NOTHING in
-# the nora process reads this section — the wake service is its own container
-# (deploy/voice-wake/) configured by ENV VARS (VOICE_GUILD_ID /
-# VOICE_CHANNEL_ID / VOICE_WAKE_THRESHOLD in .env, mapped by compose); this
-# section is the committed record of its knobs beside its STT/TTS stage
-# siblings, matching the container's own defaults. Ships INERT: without the
-# VOICE_* env vars the service is healthy-but-idle and hears nothing.
+# The wake gate (「喂 Nora」 in a Discord voice channel, stage 3). Read by the
+# voice-wake CONTAINER at startup (compose bind-mounts this file read-only into
+# it, as into nora) — one place for its knobs; a change needs `docker compose
+# restart voice-wake`. Endpoint, language and timeout for its STT calls come
+# from [speech.stt] above. Discord identity (VOICE_GUILD_ID / VOICE_CHANNEL_ID)
+# stays in .env: without it the service is healthy-but-idle and hears nothing.
 enabled = false
 threshold = 0.5                    # wake score that starts utterance collection
-model_path = "/app/models/喂Nora.onnx"  # baked into the voice-wake image
+model_path = "/app/models/喂Nora.onnx"  # baked into the voice-wake image (deploy/voice-wake/models/MODEL.md)
+stt_model = "sensevoice"           # the WAKE path's engine — latency-bound, so the fast
+                                   # FunASR model; voice notes keep [speech.stt].model.
+                                   # The stt service pre-loads this one at boot.
+silence_tail_ms = 1000             # trailing silence that ends an utterance
+max_utterance_s = 10.0             # utterance ceiling
+silence_rms = 400.0                # int16 RMS under this reads as silence
 
 [heartbeat]
 # The background tick that fires due reminders — Nora's first unprompted-speech
