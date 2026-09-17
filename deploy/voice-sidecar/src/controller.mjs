@@ -39,6 +39,40 @@ const MAX_BODY_BYTES = 4 * 1024 * 1024; // raw /stream body (b64 ~4/3 of decoded
 const MAX_CONTROL_BYTES = 64 * 1024;
 const DEDUPE_TTL_MS = 5 * 60 * 1000;
 
+// Resolves { ok: true, raw } | { ok: false, reason: 'too_large' | 'read_error' }.
+// An over-limit body keeps draining (discarded) so the client gets a real
+// 413 answer; destroying the request would kill the socket before the
+// response could be written. A transport failure mid-body ('error', or
+// 'close' before 'end') is a read error, NOT an over-limit body — the two
+// used to share one 400 body_too_large (2026-09-16 audit C-5).
+function readBody(req, limit) {
+  return new Promise((resolve) => {
+    let size = 0;
+    let tooLarge = false;
+    let settled = false;
+    const done = (result) => {
+      if (!settled) {
+        settled = true;
+        resolve(result);
+      }
+    };
+    const chunks = [];
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > limit) {
+        tooLarge = true;
+        return; // drain and discard; the answer comes at 'end'
+      }
+      if (!tooLarge) chunks.push(chunk);
+    });
+    req.on('end', () =>
+      done(tooLarge ? { ok: false, reason: 'too_large' } : { ok: true, raw: Buffer.concat(chunks).toString('utf8') }),
+    );
+    req.on('error', () => done({ ok: false, reason: 'read_error' }));
+    req.on('close', () => done({ ok: false, reason: 'read_error' }));
+  });
+}
+
 export function createController({
   guildId,
   lifecycle,
@@ -81,40 +115,6 @@ export function createController({
     for (const [id, entry] of dedupe) {
       if (entry.expiresAt !== undefined && entry.expiresAt <= now) dedupe.delete(id);
     }
-  }
-
-  // Resolves { ok: true, raw } | { ok: false, reason: 'too_large' | 'read_error' }.
-  // An over-limit body keeps draining (discarded) so the client gets a real
-  // 413 answer; destroying the request would kill the socket before the
-  // response could be written. A transport failure mid-body ('error', or
-  // 'close' before 'end') is a read error, NOT an over-limit body — the two
-  // used to share one 400 body_too_large (2026-09-16 audit C-5).
-  function readBody(req, limit) {
-    return new Promise((resolve) => {
-      let size = 0;
-      let tooLarge = false;
-      let settled = false;
-      const done = (result) => {
-        if (!settled) {
-          settled = true;
-          resolve(result);
-        }
-      };
-      const chunks = [];
-      req.on('data', (chunk) => {
-        size += chunk.length;
-        if (size > limit) {
-          tooLarge = true;
-          return; // drain and discard; the answer comes at 'end'
-        }
-        if (!tooLarge) chunks.push(chunk);
-      });
-      req.on('end', () =>
-        done(tooLarge ? { ok: false, reason: 'too_large' } : { ok: true, raw: Buffer.concat(chunks).toString('utf8') }),
-      );
-      req.on('error', () => done({ ok: false, reason: 'read_error' }));
-      req.on('close', () => done({ ok: false, reason: 'read_error' }));
-    });
   }
 
   function checkGuild(body) {
@@ -224,34 +224,12 @@ export function createController({
     }
   }
 
-  async function handlePost(req, res, route) {
-    const read = await readBody(req, route === 'POST /stream' ? MAX_BODY_BYTES : MAX_CONTROL_BYTES);
-    if (!read.ok) {
-      // The design contract is silent on the status for these; the split is
-      // 413 for a body that exceeds the limit, 400 for a transport-level
-      // read failure (2026-09-16 audit C-5). nora's client maps only 400/409
-      // explicitly, so 413 lands on its generic fail-closed unavailable
-      // path — no Python-side change needed.
-      if (read.reason === 'too_large') {
-        respondError(res, 413, 'body_too_large', null);
-      } else {
-        respondError(res, 400, 'body_read_failed', null);
-      }
-      return;
-    }
-    let body;
-    try {
-      body = JSON.parse(read.raw || '{}');
-    } catch {
-      respondError(res, 400, 'invalid_json', null);
-      return;
-    }
-    // `null` (and arrays/scalars) parse fine but are not command bodies —
-    // reject before any field access.
-    if (body === null || typeof body !== 'object' || Array.isArray(body)) {
-      respondError(res, 400, 'invalid_body', null);
-      return;
-    }
+  // The body arrives ALREADY read, parsed and shape-checked: reading it is
+  // what tells the front door which guild's controller to hand it to, so it
+  // cannot happen in here any more (multi-guild, 2026-09-17). Everything from
+  // the dedupe down is unchanged and still per-guild — the dedupe map, the
+  // 5-minute memo and `snapshot()` all belong to ONE connection.
+  async function handleParsedPost(res, route, body) {
     const requestId = typeof body.request_id === 'string' ? body.request_id : null;
     if (!requestId) {
       const result = await execute(route, body, null);
@@ -305,31 +283,98 @@ export function createController({
     });
   }
 
+  // NO SERVER HERE any more. One process owns several controllers (one per
+  // guild) behind ONE port, so the socket belongs to the front door below.
+  // What a controller exposes is the handling of an already-parsed request
+  // for ITS guild.
+  return {
+    snapshot,
+    handleParsedPost,
+    handleStatus,
+    handleHealth,
+    knowsRoute: (route) => Boolean(handlers[route]),
+  };
+}
+
+// The ONE socket, in front of N per-guild controllers (multi-guild,
+// 2026-09-17). It owns everything that must happen BEFORE a guild is known —
+// reading the body is how the guild becomes known at all — and nothing else.
+//
+// Body limits, the 413/400 split and the clientError shape are moved here
+// VERBATIM from the controller that used to own the socket; every one of them
+// is pinned by `endpoints.test.mjs`, which is what made the move safe.
+export function createFrontDoor({ controllerFor, health, log = () => {} }) {
+  function respond(res, status, body) {
+    res.writeHead(status, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(body));
+  }
+
+  // No controller resolved, so there is no `state` to attach — the shape
+  // stays the contract's three keys with `state: null`. nora's client reads
+  // all three unconditionally.
+  function bareError(res, status, error) {
+    respond(res, status, { error, request_id: null, state: null });
+  }
+
   const server = http.createServer((req, res) => {
-    const route = `${req.method} ${req.url}`;
-    if (route === 'GET /health') return handleHealth(res);
-    if (route === 'GET /voice/status') return handleStatus(res);
-    if (handlers[route]) {
-      // The whole request-handling promise is caught: no rejection can
-      // escape into the event loop as unhandled.
-      handlePost(req, res, route).catch((err) => {
-        log('error', { event: 'request_error', route, error: String(err?.message ?? err) });
-        try {
-          respondError(res, 500, 'internal_error', null);
-        } catch {
-          /* response already gone */
-        }
-      });
-      return;
+    const [path, query] = String(req.url).split('?');
+    const route = `${req.method} ${path}`;
+    if (route === 'GET /health') return respond(res, 200, health());
+    if (route === 'GET /voice/status') {
+      // A GET carries no body, so the guild rides the query string. Absent is
+      // an error rather than a default: defaulting would report one guild's
+      // playback as another's the moment a second one connected.
+      const guildId = new URLSearchParams(query ?? '').get('guild_id');
+      if (!guildId) return bareError(res, 400, 'guild_id is required');
+      const c = controllerFor(guildId, { create: false });
+      if (!c) return bareError(res, 404, 'unknown_guild');
+      return c.handleStatus(res);
     }
-    respond(res, 404, { error: 'not_found', request_id: null, state: null });
+    (async () => {
+      const probe = controllerFor(null, { create: false, any: true });
+      if (!probe || !probe.knowsRoute(route)) {
+        return respond(res, 404, { error: 'not_found', request_id: null, state: null });
+      }
+      const read = await readBody(req, route === 'POST /stream' ? MAX_BODY_BYTES : MAX_CONTROL_BYTES);
+      if (!read.ok) {
+        // 413 for over-limit, 400 for a transport-level read failure
+        // (2026-09-16 audit C-5). nora's client maps only 400/409 explicitly,
+        // so 413 lands on its generic fail-closed unavailable path.
+        return bareError(res, read.reason === 'too_large' ? 413 : 400,
+          read.reason === 'too_large' ? 'body_too_large' : 'body_read_failed');
+      }
+      let body;
+      try {
+        body = JSON.parse(read.raw || '{}');
+      } catch {
+        return bareError(res, 400, 'invalid_json');
+      }
+      // `null` (and arrays/scalars) parse fine but are not command bodies —
+      // reject before any field access.
+      if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+        return bareError(res, 400, 'invalid_body');
+      }
+      const guildId = typeof body.guild_id === 'string' ? body.guild_id : null;
+      if (!guildId) return bareError(res, 400, 'wrong_guild');
+      // `create` ONLY on a join: every other verb addresses a connection that
+      // must already exist, so minting for them would build an unbounded map
+      // keyed by request input, on a control plane with no auth by design.
+      const controller = controllerFor(guildId, { create: route === 'POST /voice/join' });
+      if (!controller) return bareError(res, 400, 'wrong_guild');
+      return controller.handleParsedPost(res, route, body);
+    })().catch((err) => {
+      log('error', { event: 'request_error', route, error: String(err?.message ?? err) });
+      try {
+        bareError(res, 500, 'internal_error');
+      } catch {
+        /* response already gone */
+      }
+    });
   });
 
   // A request that dies at the transport level (FIN/reset mid-body, garbage
-  // bytes) is a parser failure: it never reaches the router above, and
-  // Node's default answer is a bare 400 with no body. Answer with the
-  // contract's error shape instead (2026-09-16 audit C-5 — distinct from
-  // 413 body_too_large, which only the router can see).
+  // bytes) never reaches the router above, and Node's default answer is a
+  // bare 400 with no body. Answer with the contract's error shape instead.
   server.on('clientError', (err, socket) => {
     log('error', { event: 'client_error', error: String(err?.code ?? err?.message ?? err) });
     const body = JSON.stringify({ error: 'body_read_failed', request_id: null, state: null });
@@ -340,18 +385,21 @@ export function createController({
     }
   });
 
-  return { server, snapshot };
+  return server;
 }
 
 // Wire the whole control plane with its seams. Every Discord/network/process
 // touch is an injected dependency so tests never need a token, network, or
 // real ffmpeg.
+// ONE GUILD's whole audio stack: its connection lifecycle, its playback
+// arbiter, its event outbox, its control-plane handlers. Called once per guild
+// the process serves (multi-guild, 2026-09-17) — nothing in here is shared or
+// keyed by guild, because a core IS a guild.
 export function createCore({
   guildId,
-  // No CHANNEL_ID here any more (§12.2, reversed 2026-09-17): the control
-  // plane admits any channel in the guild, and the FIRST-BOOT channel is
-  // service.mjs's own `bootChannel(stored.state, CHANNEL_ID)` call, which is
-  // the only place it was ever a default rather than a gate.
+  // No CHANNEL_ID here (§12.2, reversed 2026-09-17): the control plane admits
+  // any channel in the guild, and a restart's channel comes from this guild's
+  // own desired-state file.
   joinVoice,
   entersStateFn,
   stateStore,
@@ -401,5 +449,7 @@ export function createCore({
     clock,
     log,
   });
-  return { lifecycle, arbiter, outbox, controller, server: controller.server };
+  // No `server`: one process owns several cores behind ONE front door
+  // (multi-guild, 2026-09-17), and the socket is `createFrontDoor`'s.
+  return { lifecycle, arbiter, outbox, controller };
 }

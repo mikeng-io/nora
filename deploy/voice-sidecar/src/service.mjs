@@ -32,7 +32,10 @@ import {
   StreamType,
 } from '@discordjs/voice';
 
-import { createCore } from './controller.mjs';
+import { readdir } from 'node:fs/promises';
+import path from 'node:path';
+
+import { createCore, createFrontDoor } from './controller.mjs';
 import { bootChannel } from './lifecycle.mjs';
 import { realClock } from './outbox.mjs';
 import { join, createPump } from './recv.js';
@@ -43,14 +46,21 @@ const PORT = Number(process.env.PORT ?? 4600);
 const PUMP_HOST = process.env.PUMP_HOST ?? '127.0.0.1';
 const PUMP_PORT = Number(process.env.PUMP_PORT ?? 4599);
 const NORA_EVENT_URL = process.env.NORA_EVENT_URL ?? 'http://nora:9100/app/v1/voice/event';
-const STATE_FILE = process.env.STATE_FILE ?? '/var/lib/audio-controller/desired_state.json';
+// A DIRECTORY now, one `<guild_id>.json` inside it (multi-guild 2026-09-17).
+// It is also the only record of which guilds this process serves: there is no
+// guild list in env and none in config here, because the list already exists
+// in nora's `[speech.tts] sidecars` and a second copy is a second answer.
+const STATE_DIR = process.env.STATE_DIR ?? '/var/lib/audio-controller';
 
+// The ONLY env this service reads besides its binds. A guild id is not a
+// secret — it is in every Discord URL — so it does not belong here; the bot
+// token does. Which guilds exist is nora's to know and Discord's to enforce:
+// a join for a guild the bot is not a member of fails at discord.js, which is
+// a stronger authority than any list this process could hold.
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
-const GUILD_ID = process.env.GUILD_ID;
-const CHANNEL_ID = process.env.CHANNEL_ID;
 
 function log(event, fields = {}) {
-  const line = { event, ts: new Date().toISOString(), guild_id: GUILD_ID ?? null, ...fields };
+  const line = { event, ts: new Date().toISOString(), ...fields };
   const out = `[voc] ${JSON.stringify(line)}`;
   if (event === 'error' || event === 'stream-failed' || event === 'event_delivery_failed') {
     console.error(out);
@@ -125,96 +135,157 @@ export function createJoinVoice({ joinImpl, createPumpImpl, createPlayerImpl, lo
 }
 
 async function main() {
-  const { joinVoice, perUser, currentPump } = createJoinVoice({
-    joinImpl: (channelId) => join(GUILD_ID, channelId, TOKEN),
-    createPumpImpl: () => createPump({ host: PUMP_HOST, port: PUMP_PORT }),
-    createPlayerImpl: () =>
-      createAudioPlayer({
-        behaviors: { noSubscriber: NoSubscriberBehavior.Pause },
+  // ONE CORE PER GUILD, in one process (multi-guild, 2026-09-17). Each is the
+  // same single-connection state machine §12.5 describes — a generation
+  // counter, an outbox, a desired-state file — instantiated per guild rather
+  // than keyed by one. Nothing is shared between them but the bot token and
+  // the socket out front.
+  const cores = new Map();
+
+  function makeCore(guildId) {
+    // Each guild gets its OWN pump, so its own wake-seam connection: the
+    // hello frame on that connection is what tells the gate which guild the
+    // audio is from, and one pump serving two guilds could not say.
+    const { joinVoice, perUser, currentPump } = createJoinVoice({
+      joinImpl: (channelId) => join(guildId, channelId, TOKEN),
+      createPumpImpl: () => createPump({ guildId, host: PUMP_HOST, port: PUMP_PORT }),
+      createPlayerImpl: () =>
+        createAudioPlayer({
+          behaviors: { noSubscriber: NoSubscriberBehavior.Pause },
+        }),
+      log: (event, fields = {}) => log(event, { guild_id: guildId, ...fields }),
+    });
+
+    const core = createCore({
+      guildId,
+      joinVoice,
+      entersStateFn: (connection, status, timeoutMs) => entersState(connection, status, timeoutMs),
+      stateStore: createStateStore({ path: path.join(STATE_DIR, `${guildId}.json`) }),
+      spawn: (args) => spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] }),
+      createMusicResource: (stream) =>
+        createAudioResource(stream, { inputType: StreamType.Raw, inlineVolume: true }),
+      createSpeechResource: (audio) =>
+        // Arbitrary: the demuxer probes mp3/wav itself (ffmpeg is in the image).
+        createAudioResource(Readable.from([audio]), { inputType: StreamType.Arbitrary }),
+      fetchImpl: (...args) => fetch(...args),
+      eventUrl: NORA_EVENT_URL,
+      clock: realClock,
+      getWakeStats: () => {
+        const users = {};
+        for (const [userId, st] of perUser) users[userId] = st;
+        return users;
+      },
+      pumpInfo: () => ({
+        host: PUMP_HOST,
+        port: PUMP_PORT,
+        ...(currentPump() ? { drops: currentPump().stats() } : {}),
       }),
-    log,
-  });
+      log: (event, fields = {}) => log(event, { guild_id: guildId, ...fields }),
+    });
+    cores.set(guildId, core);
+    log('core_created', { guild_id: guildId });
+    return core;
+  }
 
-  const stateStore = createStateStore({ path: STATE_FILE });
+  function controllerFor(guildId, { create = false, any = false } = {}) {
+    // `any` answers "is this even a route we serve", before a guild is known.
+    // Route knowledge is identical across cores, so any core answers it; when
+    // there are none yet, a throwaway is not built — the front door falls
+    // through to 404, which is the right answer for an unknown route anyway.
+    if (any) {
+      const first = cores.values().next();
+      return first.done ? null : first.value.controller;
+    }
+    const existing = cores.get(guildId);
+    if (existing) return existing.controller;
+    // Minted ONLY on a join. Every other verb addresses a connection that
+    // must already exist, so creating one for them would make an unbounded
+    // map keyed by whatever a caller put in `guild_id`. Without a token there
+    // is nothing to join with, so nothing is created either.
+    if (!create || !TOKEN) return null;
+    return makeCore(guildId).controller;
+  }
 
-  const core = createCore({
-    guildId: GUILD_ID,
-    joinVoice,
-    entersStateFn: (connection, status, timeoutMs) => entersState(connection, status, timeoutMs),
-    stateStore,
-    spawn: (args) => spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] }),
-    createMusicResource: (stream) =>
-      createAudioResource(stream, { inputType: StreamType.Raw, inlineVolume: true }),
-    createSpeechResource: (audio) =>
-      // Arbitrary: the demuxer probes mp3/wav itself (ffmpeg is in the image).
-      createAudioResource(Readable.from([audio]), { inputType: StreamType.Arbitrary }),
-    fetchImpl: (...args) => fetch(...args),
-    eventUrl: NORA_EVENT_URL,
-    clock: realClock,
-    getWakeStats: () => {
-      const users = {};
-      for (const [userId, s] of perUser) users[userId] = s;
-      return users;
-    },
-    pumpInfo: () => ({
-      host: PUMP_HOST,
-      port: PUMP_PORT,
-      ...(currentPump() ? { drops: currentPump().stats() } : {}),
+  const server = createFrontDoor({
+    controllerFor,
+    // Process-level liveness, not a guild's. The compose HEALTHCHECK curls
+    // this and it must answer 200 while idle with no guild at all.
+    health: () => ({
+      status: 'ok',
+      guilds: [...cores.keys()],
+      connections: [...cores.entries()].map(([guildId, c]) => ({
+        guild_id: guildId,
+        voice: c.lifecycle.voice(),
+        channel_id: c.lifecycle.channelId(),
+      })),
     }),
     log,
   });
 
-  core.server.on('error', (err) => {
+  server.on('error', (err) => {
     // The health endpoint IS the liveness contract (HEALTHCHECK curls it); if
     // it cannot bind, liveness is genuinely unavailable — die with a clear
     // log line and let the container's restart policy retry.
     console.error(`[voc] ${JSON.stringify({ event: 'error', error: `health endpoint failed on ${HOST}:${PORT}: ${err.message}` })}`);
     process.exit(1);
   });
-  core.server.listen(PORT, HOST, () => {
+  server.listen(PORT, HOST, () => {
     log('listening_http', { host: HOST, port: PORT });
   });
 
-  // Boot decision (§12.1): join ONLY if the desired-state file says
-  // connected, OR the file is absent AND env CHANNEL_ID is set (first boot).
-  // A file saying `idle` wins over CHANNEL_ID. A file we cannot read (corrupt
-  // or unreadable) is NOT a first boot: fail closed, log loudly, and stay
-  // idle — silently first-booting could rejoin a channel the user just left.
-  if (TOKEN && GUILD_ID) {
-    const stored = await stateStore.read();
-    if (stored.status === 'corrupt' || stored.status === 'error') {
-      log('error', {
-        event: 'state_store_read_failed',
-        status: stored.status,
-        path: STATE_FILE,
-        error: stored.error ?? null,
-      });
-    } else {
-      const channel = bootChannel(stored.state, CHANNEL_ID, log);
-      if (channel) {
-        core.lifecycle.join(channel).catch(() => {
-          // Join failed: state is `error`, /health stays live, compose's
-          // restart policy gives the retry. Already logged by the lifecycle.
-        });
-      } else {
-        log('boot_idle', { reason: stored.state?.desired === 'idle' ? 'desired_state_idle' : 'no_channel' });
+  // Boot (§12.1): restore whatever the STATE DIRECTORY says was connected.
+  // That directory is this process's only memory of which guilds it serves —
+  // there is no guild list in env or config here, because nora already holds
+  // one in `[speech.tts] sidecars` and a second copy is a second answer.
+  //
+  // A guild whose file says `idle` is NOT restored and NOT created: a restart
+  // must not rejoin a channel someone just left. A file that cannot be read
+  // is not a first boot either — fail closed, log loudly, stay out.
+  if (TOKEN) {
+    let files = [];
+    try {
+      files = (await readdir(STATE_DIR)).filter((f) => f.endsWith('.json'));
+    } catch (err) {
+      if (err?.code !== 'ENOENT') {
+        log('error', { event: 'state_dir_read_failed', path: STATE_DIR, error: String(err?.message ?? err) });
       }
     }
+    for (const file of files) {
+      const guildId = file.slice(0, -'.json'.length);
+      const store = createStateStore({ path: path.join(STATE_DIR, file) });
+      const stored = await store.read();
+      if (stored.status === 'corrupt' || stored.status === 'error') {
+        log('error', {
+          event: 'state_store_read_failed',
+          guild_id: guildId,
+          status: stored.status,
+          path: store.path,
+          error: stored.error ?? null,
+        });
+        continue;
+      }
+      // No env fallback channel any more: `bootChannel`'s second argument was
+      // CHANNEL_ID, and the only honest first-boot posture for a process that
+      // serves N guilds is idle until someone joins.
+      const channel = bootChannel(stored.state, null, log);
+      if (!channel) {
+        log('boot_idle', { guild_id: guildId, reason: stored.state?.desired === 'idle' ? 'desired_state_idle' : 'no_channel' });
+        continue;
+      }
+      makeCore(guildId).lifecycle.join(channel).catch(() => {
+        // Join failed: state is `error`, /health stays live, compose's
+        // restart policy gives the retry. Already logged by the lifecycle.
+      });
+    }
+    if (!files.length) log('boot_idle', { reason: 'no_persisted_guilds' });
   } else {
-    const missing = [
-      ['DISCORD_BOT_TOKEN', TOKEN],
-      ['GUILD_ID', GUILD_ID],
-    ]
-      .filter(([, v]) => !v)
-      .map(([k]) => k)
-      .join(', ');
-    log('boot_idle', { reason: 'healthy-but-idle', missing });
+    log('boot_idle', { reason: 'healthy-but-idle', missing: 'DISCORD_BOT_TOKEN' });
   }
 
   async function shutdown(signal) {
     log('shutdown', { signal });
-    await core.lifecycle.shutdown();
-    core.server.close(() => process.exit(0));
+    await Promise.allSettled([...cores.values()].map((c) => c.lifecycle.shutdown()));
+    server.close(() => process.exit(0));
     // Don't hang on a half-open voice socket.
     setTimeout(() => process.exit(0), 3000).unref();
   }

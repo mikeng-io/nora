@@ -332,6 +332,16 @@ class FakeVoiceController:
         return self._ok(body)
 
     async def status(self, request: web.Request) -> web.Response:
+        # The guild rides the QUERY STRING on this GET (multi-guild,
+        # 2026-09-17): one controller process serves several, so an
+        # unqualified status could only answer for whichever it picked.
+        # Mirrored here because a fake that accepts a shape the real
+        # controller refuses teaches nora's client a lie.
+        guild_id = request.query.get("guild_id")
+        if not guild_id:
+            return self._error(400, "guild_id is required", {})
+        if guild_id != self._guild_id:
+            return self._error(404, "unknown_guild", {})
         return web.json_response({
             **self._state(),
             "last_event_seq": self.last_event_seq,

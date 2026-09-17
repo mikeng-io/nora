@@ -1026,13 +1026,17 @@ sidecars = []                  # one AUDIO-CONTROLLER per GUILD — the sole
                                # default) = the voice seam is unwired; joins
                                # and speech fail closed.
                                #
-                               # ONE PER GUILD because Discord allows one voice
-                               # connection per bot token PER GUILD, so each
-                               # controller stays hard-bound to one and
-                               # multi-guild is a deployment topology, not a
-                               # controller that juggles several. A second
-                               # guild means a second controller container:
-                               # COMPOSE_PROFILES=multi-guild.
+                               # ONE ENTRY PER GUILD, but ONE CONTAINER for all
+                               # of them: Discord allows one voice connection
+                               # per bot token PER GUILD, so the sidecar holds
+                               # one connection per listed guild inside a
+                               # single process. Adding a server is a line
+                               # here — no new container, no new env var.
+                               #
+                               # The endpoint is therefore usually the SAME
+                               # for every entry. It is per-entry anyway so a
+                               # guild can be moved to its own process later
+                               # without a config shape change.
                                #
                                # A LIST, not a table keyed by guild: the
                                # config/example parity gate flattens tables to
@@ -1063,8 +1067,9 @@ emotion = ""                   # voice_setting.emotion when set (e.g. "fluent"
 # voice-wake CONTAINER at startup (compose bind-mounts this file read-only into
 # it, as into nora) — one place for its knobs; a change needs `docker compose
 # restart voice-wake`. Endpoint, language and timeout for its STT calls come
-# from [speech.stt] above. Discord identity (VOICE_GUILD_ID / VOICE_CHANNEL_ID)
-# stays in .env: without it the service is healthy-but-idle and hears nothing.
+# from [speech.stt] above. It has NO Discord identity of its own: the guild
+# arrives on each audio connection, so one gate serves every server and the
+# container is identical everywhere (multi-guild, 2026-09-17).
 enabled = false
 threshold = 0.5                    # wake score that starts utterance collection
 model_path = "/app/models/喂Nora.onnx"  # baked into the voice-wake image (deploy/voice-wake/models/MODEL.md)

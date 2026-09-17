@@ -265,7 +265,7 @@ async def test_status_carries_the_reconciliation_fields(controller):
     generation = await _join(client)
     await client.play(generation, "https://cdn.example/a", request_id="r1")
 
-    status = await client.status()
+    status = await client.status(GUILD)
 
     assert status["generation"] == generation
     assert status["playback_id"] is not None

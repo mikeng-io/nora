@@ -5,7 +5,8 @@ import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { EventEmitter } from 'node:events';
 
-import { encodeFrame, createFrameParser, createPump } from '../src/recv.js';
+import { encodeFrame, encodeHello, createFrameParser } from '../src/codec.mjs';
+import { createPump } from '../src/pump.mjs';
 
 test('frame codec round-trips arbitrary user ids and PCM, even split mid-frame', () => {
   const pcm = Buffer.alloc(3840, 7);
@@ -93,3 +94,58 @@ test('close during the TCP handshake destroys the connecting socket (2026-09-16 
   assert.equal(socket.writes.length, 0);
 });
 
+
+// --- the guild HELLO (multi-guild, 2026-09-17) -------------------------------
+// THE GAP THESE CLOSE: suppressing the hello reddened NOTHING when the
+// falsification probe tried it, because `createPump` lived in recv.js behind
+// the discord.js import and no test could reach it. Splitting it out is what
+// made these possible.
+
+test('the hello is written on connect, BEFORE any held audio', () => {
+  // Order is the point. A gate that received audio before knowing the guild
+  // would have to buffer it or drop it, and dropping an utterance's onset is
+  // exactly what the pending buffer exists to prevent.
+  const socket = fakeSocket();
+  const pump = createPump({ guildId: 'g-1', connectImpl: () => socket });
+
+  pump(Buffer.alloc(3840), 'u1'); // held: no socket yet
+  socket.emit('connect');
+
+  assert.equal(socket.writes.length, 2);
+  assert.deepEqual(socket.writes[0], encodeHello('g-1'));
+  assert.deepEqual(socket.writes[1], encodeFrame('u1', Buffer.alloc(3840)));
+});
+
+test('the hello is re-sent on every reconnect', () => {
+  // A gate restart drops the connection; the next one is a NEW connection and
+  // carries no memory of which guild the old one was for.
+  let socket = fakeSocket();
+  const pump = createPump({ guildId: 'g-1', connectImpl: () => socket });
+
+  pump(Buffer.alloc(3840), 'u1');
+  socket.emit('connect');
+  assert.deepEqual(socket.writes[0], encodeHello('g-1'));
+
+  socket.emit('close');            // the gate went away
+  const reconnected = fakeSocket();
+  socket = reconnected;
+  pump(Buffer.alloc(3840), 'u1');  // re-opens
+  reconnected.emit('connect');
+
+  assert.deepEqual(reconnected.writes[0], encodeHello('g-1'));
+});
+
+test('the hello does not enter a user backlog', () => {
+  // It is not a user's audio. Counting it against `u1` would let one frame of
+  // real speech past the per-user bound go missing instead.
+  const socket = fakeSocket();
+  const pump = createPump({ guildId: 'g-1', connectImpl: () => socket });
+
+  pump(Buffer.alloc(3840), 'u1');
+  socket.emit('connect');
+  for (let i = 0; i < 15; i += 1) pump(Buffer.alloc(3840), 'u1');
+
+  // 1 hello + 16 audio frames, none dropped: the bound counted audio only.
+  assert.equal(socket.writes.length, 17);
+  assert.deepEqual(pump.stats(), { backlog_dropped: 0, no_listener_dropped: 0 });
+});

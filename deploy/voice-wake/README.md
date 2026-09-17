@@ -24,6 +24,7 @@ sidecar frames (TCP :4599)        [u32be len][u8 id_len][user_id][pcm]
                                   -1s silence tail / 10s ceiling-> Utterance
   -> stt.transcribe               16kHz mono WAV -> stt:8000 (model=$STT_MODEL, default sensevoice, language=yue)
   -> stt.forward_utterance        JSON {user_id, text, guild_id} -> nora:9100
+     (guild_id from the connection's hello frame, not from config)
 ```
 
 The wake model is per-user stateful (openWakeWord owns the rolling
@@ -53,11 +54,13 @@ voice-wake`. Set values with `nora config set …` on the host.
 | `[speech.wake].silence_rms` | `400` | int16 RMS under this reads as silence (RMS fallback only) |
 | `[speech.stt].endpoint` / `.language` / `.timeout_seconds` | `http://stt:8000` / `yue` / `30` | the local STT service (shared with Nora's voice-note path) |
 
-**env** — deployment identity and binds only:
+**env** — binds only. NO Discord identity: the server arrives on each audio
+connection, in the sidecar's hello frame, so ONE gate serves every server and
+this container is identical on every deployment (multi-guild, 2026-09-17).
+nora resolves that server to the room marked `voice = true` in policy.toml.
 
 | var | default | meaning |
 |---|---|---|
-| `VOICE_GUILD_ID` | — | the Discord server whose speech this gate forwards; nora resolves it to the room marked `voice = true` in policy.toml (design/voice-channel/07 §12.2, reversed 2026-09-17). Empty = healthy-but-idle. `VOICE_CHANNEL_ID` is NOT read here — the audio-controller owns it as a first-boot default |
 | `WAKE_LISTEN_HOST` / `WAKE_LISTEN_PORT` | `0.0.0.0` / `4599` | seam bind (the sidecar connects OUT to here) |
 | `WAKE_HEALTH_HOST` / `WAKE_HEALTH_PORT` | `127.0.0.1` / `4601` | /health bind (loopback only) |
 | `NORA_INGEST_URL` | `http://nora:9100` | Nora's aiohttp app on the `nora` network |

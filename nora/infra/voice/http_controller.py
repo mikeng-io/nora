@@ -181,11 +181,15 @@ class VoiceControllerClient:
             body["guild_id"] = guild_id
         return await self._control("/stream", body)
 
-    async def status(self) -> dict[str, Any]:
+    async def status(self, guild_id: str) -> dict[str, Any]:
         """`GET /voice/status` — the full snapshot (voice state, generation,
         channel, playback id, player, speech queue depth, `last_event_seq`,
-        `streaming`, `last_error`, `wake`, `pump`)."""
-        return await self._request("GET", "/voice/status", None)
+        `streaming`, `last_error`, `wake`, `pump`) for ONE guild.
+
+        The guild rides the query string because a GET carries no body
+        (multi-guild, 2026-09-17): one controller process serves several, so
+        an unqualified status could only answer for whichever it picked."""
+        return await self._request("GET", f"/voice/status?guild_id={guild_id}", None)
 
     async def _control(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         """A control POST's return is the `state` snapshot out of the
@@ -290,7 +294,7 @@ class HttpVoiceSession:
         stale generation, it is a gone one, and retrying against it would
         resurrect audio nora already tore down."""
         try:
-            status = await self._client.status()
+            status = await self._client.status(self._guild_id)
         except VoiceControllerError:
             return False
         if status.get("voice") != "connected":
