@@ -292,12 +292,12 @@ class MusicCommands(app_commands.Group):
         manager: MusicPlayerManager,
         *,
         hub: VoiceControllerHub | None = None,
-        voice_channel_ids: frozenset[str] = frozenset(),
+        voice_guild_ids: frozenset[str] = frozenset(),
     ) -> None:
         super().__init__(name="music", description="Play music in a voice channel.")
         self._manager = manager
         self._hub = hub
-        self._voice_channel_ids = voice_channel_ids
+        self._voice_guild_ids = voice_guild_ids
 
     @app_commands.command(
         name="play", description="Play a track, or queue it if one's already playing.",
@@ -325,13 +325,13 @@ class MusicCommands(app_commands.Group):
             is_member=isinstance(interaction.user, discord.Member),
             guild_id=guild_id,
             caller_channel_id=str(channel.id) if channel is not None else None,
-            allowed=self._voice_channel_ids,
+            allowed_guilds=self._voice_guild_ids,
         )
         if decision != "ok" and await self._manager.status(guild_id) is None:
             line = (
                 m.join_voice_channel_line()
                 if decision == "not_in_voice"
-                else m.not_in_allowed_channel_line()
+                else m.not_in_allowed_guild_line()
             )
             log.info(
                 "music command: /music play guild=%s -> rejected (%s)", guild_id, decision,
@@ -544,7 +544,7 @@ async def register(
     manager: MusicPlayerManager,
     *,
     hub: VoiceControllerHub | None = None,
-    voice_channel_ids: frozenset[str] = frozenset(),
+    voice_guild_ids: frozenset[str] = frozenset(),
 ) -> None:
     """Built and synced fresh inside `DiscordAdapter.listen()`, same
     lifecycle as `client` itself — a fresh `discord.Client` per connection
@@ -561,9 +561,9 @@ async def register(
     to `/app/v1/voice/event` (design/voice-channel/07 §10, B10) — nora no
     longer holds a voice client to watch."""
     tree = app_commands.CommandTree(client)
-    tree.add_command(MusicCommands(manager, hub=hub, voice_channel_ids=voice_channel_ids))
+    tree.add_command(MusicCommands(manager, hub=hub, voice_guild_ids=voice_guild_ids))
     tree.add_command(
-        DiscordCommands(hub=hub, voice_channel_ids=voice_channel_ids, manager=manager)
+        DiscordCommands(hub=hub, voice_guild_ids=voice_guild_ids, manager=manager)
     )
     await tree.sync()
 

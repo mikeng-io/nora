@@ -8,12 +8,14 @@ Two sources, each owning what it should (AGENTS.md, the three config files):
   `/app/config.toml` by compose, read once at boot (`config_toml.py`); a
   change needs a restart, like identity.toml and policy.toml. No env override
   for these — one place, one answer.
-- **env** — deployment identity and bind addresses only: `VOICE_GUILD_ID` /
-  `VOICE_CHANNEL_ID` (secrets-adjacent .env values), the listen/health
-  binds, `NORA_INGEST_URL`. `conversation_id` is Discord's flattened
-  `"<guild_id>/<channel_id>"` — the shape `nora/platform/discord/parser.py`
-  produces for typed messages — so a voice utterance lands in the same
-  conversation namespace as the channel's typed chat.
+- **env** — deployment identity and bind addresses only: `VOICE_GUILD_ID`
+  (a secrets-adjacent .env value), the listen/health binds,
+  `NORA_INGEST_URL`. The GUILD is the whole identity this service needs
+  (design/voice-channel/07 §12.2, reversed 2026-09-17): nora resolves it to
+  the room the operator marked `voice = true`, so a spoken utterance lands in
+  the same room as that server's typed chat, and adding a voice channel to
+  the server changes nothing here. `VOICE_CHANNEL_ID` is still read by the
+  audio-controller as its first-boot channel; this service ignores it.
 """
 
 from __future__ import annotations
@@ -32,9 +34,11 @@ log = logging.getLogger(__name__)
 def build_config(config_path: Path = DEFAULT_PATH, env: dict[str, str] | None = None) -> Config:
     e = os.environ if env is None else env
     wake, stt = load_sections(config_path)
+    # VOICE_CHANNEL_ID is no longer read here (design/voice-channel/07 §12.2,
+    # reversed 2026-09-17): the guild is what nora resolves a room from, and
+    # the controller owns which channel it is in. The env var still exists —
+    # the audio-controller reads it as its FIRST-BOOT channel.
     guild_id = e.get("VOICE_GUILD_ID", "")
-    channel_id = e.get("VOICE_CHANNEL_ID", "")
-    conversation_id = f"{guild_id}/{channel_id}" if guild_id and channel_id else channel_id
     d = Config()  # code defaults; config.toml keys override them
     return Config(
         listen_host=e.get("WAKE_LISTEN_HOST", d.listen_host),
@@ -53,7 +57,7 @@ def build_config(config_path: Path = DEFAULT_PATH, env: dict[str, str] | None = 
         stt_language=str(stt.get("language", d.stt_language)),
         stt_timeout_s=float(stt.get("timeout_seconds", d.stt_timeout_s)),
         nora_url=e.get("NORA_INGEST_URL", d.nora_url),
-        conversation_id=conversation_id,
+        guild_id=guild_id,
     )
 
 

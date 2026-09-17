@@ -147,6 +147,11 @@ class App:
         # present only when the consumer was built (hub + music manager).
         register_voice(
             health_app, ingest=deps.dispatcher.on_message,
+            # A guild's speech is recorded in the room the operator marked
+            # `voice = true` (design/voice-channel/07 §12.2, reversed
+            # 2026-09-17). Passed as the resolved id, or None to refuse —
+            # `nora.web` never sees a `Policy`.
+            resolve_voice_room=deps.resolve_voice_room,
             on_voice_event=(
                 deps.voice_event_consumer.consume
                 if deps.voice_event_consumer is not None else None

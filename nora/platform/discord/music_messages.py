@@ -143,16 +143,18 @@ def not_in_voice_note() -> str:
     return "You need to be in a voice channel first."
 
 
-def not_in_allowed_channel_line() -> str:
-    """The join gate's refusal (design/voice-channel/07 §12.2): the caller
-    IS in a voice channel, but not one on the configured allow-list."""
-    return "I can't join that voice channel — it's not one I'm allowed in."
+def not_in_allowed_guild_line() -> str:
+    """The join gate's refusal (design/voice-channel/07 §12.2, reversed
+    2026-09-17): the caller IS in a voice channel, but this SERVER is not on
+    the configured allow-list. The user-facing wording stays about the
+    channel they are standing in, because that is the thing they can see."""
+    return "I can't join that voice channel — this isn't a server I'm allowed in."
 
 
-def not_in_allowed_channel_note() -> str:
+def not_in_allowed_guild_note() -> str:
     """Model-facing note for the agent tools: same refusal as the line
     above."""
-    return "That voice channel isn't one I'm allowed to join."
+    return "This server isn't one I'm allowed to join voice in."
 
 
 def joined_voice_line() -> str:

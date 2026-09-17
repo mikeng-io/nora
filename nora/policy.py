@@ -127,6 +127,26 @@ class Conversation:
     # It is rendered as DATA the model reads about the batch, never as an
     # instruction to it — see `nora.language.note_candidates.ROOM_BLOCK_NOTE`.
     description: str | None = None
+    # WHERE THIS GUILD'S SPOKEN UTTERANCES LAND (design/voice-channel/07
+    # §12.2, reversed 2026-09-17 by the operator). Default False.
+    #
+    # Phase 1 allowlisted ONE voice channel and gave its utterances their own
+    # `conversation_id`. That does not survive contact with a real server: Zone
+    # 67 has 10+ voice channels and gains more, so per-channel allowlisting is
+    # both unmaintainable AND would put N Discord rooms in one workspace —
+    # DEC-105 says a workspace holds at most one room per platform, and the
+    # 2026-09-17 cleanup (1953 messages, 11 notes, the whole culture table)
+    # measured what breaching it costs.
+    #
+    # So voice is not a room. It is a SURFACE of a room: `voice = true` on a
+    # guild's text room means "every voice channel in this guild speaks into
+    # HERE". One notebook, one culture, one workspace, one `persons` list —
+    # a plan spoken aloud and the same plan typed land in the same place.
+    # The GUILD is what is checked; the channel is provenance only.
+    #
+    # At most one per guild; a second is a startup error, not a guess — the
+    # same shape as `home_room`.
+    voice: bool = False
 
 
 @dataclass(frozen=True)
@@ -136,9 +156,27 @@ class Policy:
     conversations: tuple[Conversation, ...]
     dm_persons: frozenset[str] = frozenset()
     _by_id: dict[tuple[str, str], Conversation] = field(repr=False, default_factory=dict)
+    _voice_by_guild: dict[tuple[str, str], Conversation] = field(
+        repr=False, default_factory=dict,
+    )
 
     def conversation(self, platform: str, conversation_id: str) -> Conversation | None:
         return self._by_id.get((platform, conversation_id))
+
+    def voice_room(self, platform: str, guild_id: str) -> Conversation | None:
+        """The room a spoken utterance from `guild_id` belongs to, or `None`.
+
+        `None` is a REFUSAL, not a fallback: a guild with no room marked
+        `voice = true` has no place to put speech, and the wake path answers
+        400 rather than inventing one. Deny-by-default, exactly as the room
+        gate is — and the reason the guild id is the thing checked at all
+        (see `Conversation.voice`).
+
+        The resolution is explicit rather than inferred from "the only room in
+        that guild". Today every guild happens to hold exactly one allowlisted
+        room, so inference would work and would keep working right up until it
+        silently picked the wrong one."""
+        return self._voice_by_guild.get((platform, guild_id))
 
     def home_rooms(self) -> dict[str, Conversation]:
         """Workspace -> its home room (39 D2), for every workspace that named
@@ -220,6 +258,14 @@ class _PermissivePolicy(Policy):
     def is_allowed(self, *, platform: str, conversation_id: str, person_id: str | None) -> bool:
         return True
 
+    def voice_room(self, platform: str, guild_id: str) -> Conversation:
+        """Any guild resolves, to a room named for that guild — the harnesses'
+        reason again. A synthetic `"<guild>/voice"` rather than a real channel
+        id: this policy invents rooms by construction, and a fabricated
+        channel snowflake would read like one a deployment might actually
+        have."""
+        return self.conversation(platform, f"{guild_id}/voice")
+
     def proactive_allowed(self, *, platform: str, conversation_id: str) -> bool:
         """Every room, for the harnesses' reason: the act suite drives
         proactive rows through a heartbeat over synthetic ids. `home_rooms`
@@ -258,6 +304,10 @@ class _ConversationEntry(BaseModel):
     # See `Conversation.proactive` (39 D5): may a proactive row fire HERE.
     # Default False — unprompted speech is granted per room, never inherited.
     proactive: bool = False
+    # See `Conversation.voice` (design/voice-channel/07 §12.2, reversed
+    # 2026-09-17): every voice channel in THIS room's guild speaks into this
+    # room. Default False — a room takes no speech until the operator says so.
+    voice: bool = False
     # See `Conversation.description` (issue #161): what kind of room this is,
     # in the operator's own words. Absent is the default and the shipped
     # state — `extra = "forbid"` is in force here, so this entry is what makes
@@ -335,7 +385,7 @@ def load_policy(path: Path) -> Policy:
             primary_id=entry.id, workspace=entry.workspace,
             relevance_gate=entry.relevance_gate,
             home_room=entry.home_room, proactive=entry.proactive,
-            description=entry.description,
+            description=entry.description, voice=entry.voice,
         )
         conversations.append(convo)
         for cid in ids:
@@ -367,6 +417,41 @@ def load_policy(path: Path) -> Policy:
             )
         homes[convo.workspace] = convo
 
+    # ONE voice room per guild (design/voice-channel/07 §12.2, reversed
+    # 2026-09-17). `voice = true` claims every voice channel in a guild, so two
+    # rooms claiming the same guild is not a preference to resolve — it is the
+    # operator having written two different answers to "where does speech go",
+    # and picking one would put a spoken plan in a room nobody chose.
+    voice_by_guild: dict[tuple[str, str], Conversation] = {}
+    for convo in conversations:
+        if not convo.voice:
+            continue
+        if convo.platform != "discord":
+            raise PolicyError(
+                f"{convo.label or convo.primary_id!r} sets voice = true on "
+                f"platform {convo.platform!r}. Voice is resolved by GUILD, and "
+                "only Discord rooms have one — no other platform reaches this "
+                "path at all."
+            )
+        guild_id, sep, channel_id = convo.primary_id.partition("/")
+        if not sep or not guild_id or not channel_id:
+            raise PolicyError(
+                f"{convo.label or convo.primary_id!r} sets voice = true but its "
+                f"id {convo.primary_id!r} is not \"<guild_id>/<channel_id>\". "
+                "The guild half is what a spoken utterance is matched on, so "
+                "an id without one can never be reached."
+            )
+        key = (convo.platform, guild_id)
+        other = voice_by_guild.get(key)
+        if other is not None:
+            raise PolicyError(
+                f"guild {guild_id} names two voice rooms "
+                f"({other.label or other.primary_id!r} and "
+                f"{convo.label or convo.primary_id!r}). Every voice channel in "
+                "a guild speaks into exactly one room; mark one."
+            )
+        voice_by_guild[key] = convo
+
     if not conversations:
         raise PolicyError(
             f"{path} allows no conversations, so Nora would ingest and answer "
@@ -379,4 +464,5 @@ def load_policy(path: Path) -> Policy:
         conversations=tuple(conversations),
         dm_persons=frozenset(parsed.dm.get("persons", [])),
         _by_id=by_id,
+        _voice_by_guild=voice_by_guild,
     )

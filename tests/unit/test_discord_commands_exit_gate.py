@@ -1,8 +1,9 @@
 """`/discord exit` applies the SAME three-condition admission gate as
 `/discord join` (design/voice-channel/07 §12.3: guild member + caller in a
-voice channel + that channel on `voice_channel_ids` — no carve-out for
-exit). Shipped phase 1 checked guild membership only, so any guild member
-could tear down the shared connection (music + TTS + wake) from anywhere;
+voice channel + that channel's GUILD on `voice_guild_ids` — no carve-out for
+exit; guild-scoped since 2026-09-17, §12.2 reversed). Shipped phase 1 checked
+guild membership only, so any guild member could tear down the shared
+connection (music + TTS + wake) from anywhere;
 both 2026-09-16 audits flagged it and no test pinned the gate. This file
 is that pin: every rejection path must leave the hub and the music manager
 untouched.
@@ -23,7 +24,7 @@ from nora.platform.discord.discord_commands import DiscordCommands
 
 GUILD = 111
 CHANNEL = 222
-ALLOWED = frozenset({f"{GUILD}/{CHANNEL}"})
+ALLOWED = frozenset({str(GUILD)})
 
 
 class _FakeResponse:
@@ -66,13 +67,15 @@ def _member(*, channel_id: int | None) -> MagicMock:
     return member
 
 
-def _commands() -> tuple[DiscordCommands, MagicMock, MagicMock]:
+def _commands(
+    allowed: frozenset[str] = ALLOWED,
+) -> tuple[DiscordCommands, MagicMock, MagicMock]:
     hub = MagicMock()
     hub.exit = AsyncMock(return_value=True)
     manager = MagicMock()
     manager.leave_voice = AsyncMock()
     return (
-        DiscordCommands(hub=hub, voice_channel_ids=ALLOWED, manager=manager),
+        DiscordCommands(hub=hub, voice_guild_ids=allowed, manager=manager),
         hub,
         manager,
     )
@@ -92,13 +95,25 @@ async def test_exit_rejects_a_member_in_no_voice_channel() -> None:
     assert not interaction.response.deferred
 
 
-async def test_exit_rejects_a_member_in_a_non_allowlisted_channel() -> None:
-    commands, hub, manager = _commands()
-    interaction = _FakeInteraction(guild_id=GUILD, user=_member(channel_id=999))
+async def test_exit_rejects_a_member_in_an_unallowed_guild() -> None:
+    """The guild half of the gate. `voice_guild_ids` holds a DIFFERENT guild,
+    so even a member sitting in a voice channel is refused."""
+    commands, hub, manager = _commands(allowed=frozenset({"999"}))
+    interaction = _FakeInteraction(guild_id=GUILD, user=_member(channel_id=CHANNEL))
     await _run_exit(commands, interaction)
     hub.exit.assert_not_called()
     manager.leave_voice.assert_not_called()
     assert len(interaction.response.messages) == 1
+
+
+async def test_exit_admits_a_member_in_any_channel_of_an_allowed_guild() -> None:
+    """§12.2 reversed 2026-09-17: a channel that is not the configured one is
+    no longer a refusal. Before this, a member who had moved rooms could not
+    tear down the connection they were sitting in."""
+    commands, hub, _manager = _commands()
+    interaction = _FakeInteraction(guild_id=GUILD, user=_member(channel_id=999))
+    await _run_exit(commands, interaction)
+    hub.exit.assert_awaited_once_with(str(GUILD))
 
 
 async def test_exit_rejects_a_non_member_caller() -> None:
@@ -134,7 +149,7 @@ async def test_exit_admits_a_member_in_the_allowlisted_channel() -> None:
 async def test_exit_with_voice_disabled_still_gates_first() -> None:
     """Music-disabled / no-hub deployments reject at the gate, not with an
     AttributeError — the gate decision never touches hub or manager."""
-    commands = DiscordCommands(hub=None, voice_channel_ids=ALLOWED, manager=None)
+    commands = DiscordCommands(hub=None, voice_guild_ids=ALLOWED, manager=None)
     interaction = _FakeInteraction(guild_id=GUILD, user=_member(channel_id=None))
     await _run_exit(commands, interaction)
     assert len(interaction.response.messages) == 1

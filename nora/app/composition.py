@@ -787,6 +787,13 @@ class Dependencies:
     media_join: MediaJoin
     metrics: Metrics
     policy: EngagePolicy
+    # A Discord guild id → where its SPOKEN utterances are recorded, or `None`
+    # (design/voice-channel/07 §12.2, reversed 2026-09-17). `__main__` hands
+    # this to `register_voice`; it is a callable rather than the room `Policy`
+    # because `nora.web` must not learn about policy loading, and because
+    # `policy` above is already taken by the ENGAGE policy, which is a
+    # different object answering a different question.
+    resolve_voice_room: Callable[[str], str | None]
     assembler: ContextAssembler
     ingest: IngestPipeline
     engagement: EngagementPipeline
@@ -1177,7 +1184,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                 "is wired; voice answers stay text-only",
                 cfg.speech.tts.provider, cfg.speech.tts.api_key_env,
             )
-    voice_channel_ids = frozenset(cfg.speech.tts.voice_channel_ids)
+    voice_guild_ids = frozenset(cfg.speech.tts.voice_guild_ids)
     # The controller → nora callback consumer (`POST /app/v1/voice/event`,
     # design/voice-channel/07 §5) — only when BOTH halves it glues exist:
     # the hub (whose event-id dedupe and expected-playback bookkeeping it
@@ -1195,7 +1202,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             music_manager=music_manager,
             discord_speaker=speaker,
             voice_hub=voice_hub,
-            voice_channel_ids=voice_channel_ids,
+            voice_guild_ids=voice_guild_ids,
         )
     except AdapterRegistryError as exc:
         raise StartupError(str(exc)) from exc
@@ -2140,7 +2147,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         if isinstance(discord_adapter, DiscordAdapter):
             music_bridge = DiscordMusicToolBridge(
                 adapter=discord_adapter, manager=music_manager,
-                hub=voice_hub, voice_channel_ids=voice_channel_ids,
+                hub=voice_hub, voice_guild_ids=voice_guild_ids,
             )
         else:
             log.error(
@@ -3483,6 +3490,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         audit=audit, memory=memory, persons=persons, metrics=metrics,
         media_join=media_join,
         policy=policy, assembler=assembler, ingest=ingest, engagement=engagement,
+        resolve_voice_room=_voice_room_of(allowlist),
         dispatcher=dispatcher, adapter=adapter, registry=registry,
         participation_trigger=participation_trigger,
         account=account, doctrine=doctrine,
@@ -3780,5 +3788,25 @@ def _note_workspace_of(policy: Policy) -> Callable[[str, str], str | None]:
     def _resolve(platform: str, conversation_id: str) -> str | None:
         convo = policy.conversation(platform, conversation_id)
         return convo.workspace if convo is not None else None
+
+    return _resolve
+
+
+def _voice_room_of(policy: Policy) -> Callable[[str], str | None]:
+    """A Discord `guild_id` → the `conversation_id` its speech is recorded in,
+    or `None` (design/voice-channel/07 §12.2, reversed 2026-09-17).
+
+    A free function for the same reason as `_note_workspace_of`: the `None`
+    branch has to be nameable. A guild with no room marked `voice = true` has
+    nowhere its speech belongs, and `nora.web.voice` answers 400 — falling
+    back to the voice channel's own id would create the per-channel rooms this
+    reversal exists to stop, one spoken sentence at a time.
+
+    Returns the id rather than the `Conversation` so `nora.web` stays unaware
+    that `nora.policy` exists at all."""
+
+    def _resolve(guild_id: str) -> str | None:
+        convo = policy.voice_room("discord", guild_id)
+        return convo.primary_id if convo is not None else None
 
     return _resolve

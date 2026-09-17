@@ -125,7 +125,7 @@ class AdapterRegistry:
         music_manager: MusicPlayerManager | None = None,
         discord_speaker: Any = None,
         voice_hub: VoiceControllerHub | None = None,
-        voice_channel_ids: frozenset[str] = frozenset(),
+        voice_guild_ids: frozenset[str] = frozenset(),
     ) -> AdapterRegistry:
         """Build+resolve every enabled platform — Signal, Discord, WhatsApp;
         each one more `if platforms.<x>.enabled:` block, not a rewrite of this
@@ -188,7 +188,7 @@ class AdapterRegistry:
                 discord_token, music_manager=music_manager,
                 speaker=discord_speaker,
                 voice_hub=voice_hub,
-                voice_channel_ids=voice_channel_ids,
+                voice_guild_ids=voice_guild_ids,
             )
             try:
                 discord_identity = await discord_adapter.resolve_identity()

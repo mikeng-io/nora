@@ -139,7 +139,6 @@ async function main() {
 
   const core = createCore({
     guildId: GUILD_ID,
-    channelId: CHANNEL_ID,
     joinVoice,
     entersStateFn: (connection, status, timeoutMs) => entersState(connection, status, timeoutMs),
     stateStore,

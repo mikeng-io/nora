@@ -2,17 +2,29 @@
 
 Pure and shared: `/music play`'s auto-join, `/discord join`, and the agent
 tool bridge all apply the SAME rule — the caller must be a guild member
-physically sitting in a voice channel, and that channel must be on the
-configured `voice_channel_ids` allow-list (entries are
-`"guild_id/channel_id"`, matching `NormalizedMessage.conversation_id`).
-Fail-closed: anything else is a rejection, never a best-effort join.
+physically sitting in a voice channel, and that channel's GUILD must be on the
+configured `voice_guild_ids` allow-list. Fail-closed: anything else is a
+rejection, never a best-effort join.
+
+**The guild, not the channel** (§12.2, reversed 2026-09-17 by the operator).
+Phase 1 admitted exactly one configured channel. A real server does not hold
+still: Zone 42 has 10+ voice channels and gains more, and every one of them
+would have had to be listed by hand — an allow-list nobody can keep true is an
+allow-list that is quietly wrong. The guild binding the controller already
+enforces (§12.5: any `guild_id` ≠ configured → 400) is the one that was doing
+the work; this drops the channel half and keeps it.
+
+What that widens, stated plainly: any member of an allowed guild, sitting in
+any of its voice channels, can make Nora join them. That is the same posture
+the guild's text room already has — who may TRIGGER her is still the room's
+`persons` list, checked downstream at the engage gate, and unchanged here.
 """
 
 from __future__ import annotations
 
 from typing import Literal
 
-VoiceJoinDecision = Literal["ok", "not_in_voice", "not_in_allowed_channel"]
+VoiceJoinDecision = Literal["ok", "not_in_voice", "not_in_allowed_guild"]
 
 
 def voice_join_decision(
@@ -20,15 +32,18 @@ def voice_join_decision(
     is_member: bool,
     guild_id: str,
     caller_channel_id: str | None,
-    allowed: frozenset[str],
+    allowed_guilds: frozenset[str],
 ) -> VoiceJoinDecision:
-    """`ok` only when the caller is a guild member IN a voice channel that
-    is on the allow-list. `not_in_voice` covers both "not a member" (a DM
-    shape that slipped past the guild check) and "member in no channel" —
-    the same rejection either surface already renders as "join a voice
-    channel first"."""
+    """`ok` only when the caller is a guild member IN a voice channel of an
+    allowed guild. `not_in_voice` covers both "not a member" (a DM shape that
+    slipped past the guild check) and "member in no channel" — the same
+    rejection either surface already renders as "join a voice channel first".
+
+    `caller_channel_id` is still required and still unused for the decision:
+    it is what says the caller is IN a channel at all, and the caller's channel
+    is where the controller is then asked to go."""
     if not is_member or caller_channel_id is None:
         return "not_in_voice"
-    if f"{guild_id}/{caller_channel_id}" not in allowed:
-        return "not_in_allowed_channel"
+    if guild_id not in allowed_guilds:
+        return "not_in_allowed_guild"
     return "ok"

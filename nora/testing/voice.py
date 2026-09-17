@@ -15,9 +15,10 @@ is off-contract the moment they disagree):
 - single guild, hard-bound (§12.5): a body `guild_id` present and ≠ the
   configured one is 400 `wrong_guild`; `/voice/join` REQUIRES `guild_id`
   (absent is `wrong_guild` too, matching `body.guild_id !== guildId`);
-- phase-1 immutable channel (§12.2): `/voice/join` for any channel ≠ the
-  configured one is 400 `not_in_allowed_channel`; a missing/empty
-  `channel_id` is 400 `invalid_body`;
+- ANY channel in the guild (§12.2, reversed 2026-09-17): `/voice/join` no
+  longer checks `channel_id` against a configured one — a missing/empty
+  `channel_id` is still 400 `invalid_body`, and joining a SECOND channel
+  while connected is still 409 `connected_elsewhere`;
 - a body that is not a JSON OBJECT is 400 `invalid_body` (the real
   controller rejects `null`/arrays/scalars before any field access);
 - one serialized connection: `idle` ↔ `connected` under a generation minted
@@ -57,9 +58,14 @@ _MAX_SPEECH_BYTES = 2 * 1024 * 1024
 
 class FakeVoiceController:
     def __init__(
-        self, guild_id: str, channel_id: str, *, speech_queue_max: int = 4,
+        self, guild_id: str, channel_id: str = "", *, speech_queue_max: int = 4,
     ) -> None:
         self._guild_id = guild_id
+        # The FIRST-BOOT channel, mirroring the real controller's CHANNEL_ID
+        # (§12.2, reversed 2026-09-17): a default for where a restart
+        # reconnects, never a gate on what `/voice/join` will accept. Kept so
+        # a test can construct the fake already-connected the way a rebooted
+        # controller is; defaulted to "" because nothing checks it any more.
         self._channel_id = channel_id
         self._speech_queue_max = speech_queue_max
         self.voice = "idle"
@@ -207,10 +213,14 @@ class FakeVoiceController:
         channel = body.get("channel_id")
         if not isinstance(channel, str) or not channel:
             return self._error(400, "invalid_body", body)
-        if channel != self._channel_id:
-            return self._error(400, "not_in_allowed_channel", body)
         if self.voice == "connected":
-            return self._ok(body)  # idempotent re-join, same channel
+            if channel == self.channel_id:
+                return self._ok(body)  # idempotent re-join, same channel
+            # Discord allows ONE voice connection per bot per guild, so a join
+            # to a second channel is a real conflict, not a move. Unreachable
+            # until 2026-09-17 — the immutable-channel 400 fired first and hid
+            # it — and `lifecycle.mjs:107` has always answered this way.
+            return self._error(409, "connected_elsewhere", body)
         self._seq += 1
         self.voice = "connected"
         self.generation = f"gen-{self._seq}"

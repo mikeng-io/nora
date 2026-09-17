@@ -1017,10 +1017,21 @@ sidecar_endpoint = ""          # the AUDIO-CONTROLLER's HTTP base
                                # /voice/join — all on the one voice connection
                                # the controller owns. Empty = the voice seam
                                # is unwired; joins and speech fail closed.
-voice_channel_ids = []         # "guild_id/channel_id" pairs Nora may answer
-                               # aloud in (and the ONLY channels /music play
-                               # and /discord join may auto-join); empty =
-                               # nowhere (fail-closed)
+voice_guild_ids = []           # Discord GUILD ids whose voice channels
+                               # /music play and /discord join may auto-join.
+                               # ANY channel in a listed guild; empty =
+                               # nowhere (fail-closed). Exactly one guild —
+                               # the audio-controller is hard-bound to one
+                               # (design/voice-channel/07 §12.5).
+                               #
+                               # GUILDS since 2026-09-17 (§12.2 reversed): a
+                               # server's voice channels are not a fixed list,
+                               # so a per-channel allow-list could not be kept
+                               # true. WHERE a guild's speech is RECORDED is
+                               # policy.toml's `voice = true`, not here, and
+                               # whether a reply is SPOKEN is a fact about the
+                               # turn — three questions one list used to
+                               # answer only because speech had its own room.
 # voice = "Cantonese_CuteGirl" # a NATIVE Cantonese voice — the lever is the
 #                              # voice, not the model tier; language_boost is
 #                              # hard-set in the adapter ("auto" mis-renders 係/唔該)

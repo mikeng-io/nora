@@ -401,9 +401,9 @@ traceable end-to-end with zero extra moving parts.
   `approximate_restart`); since 2026-09-17 the revive seeks to the cut
   (`approximate_seek`, §5), except live sources.
 - Gate: `/discord join` requires (a) guild member, (b) caller in a voice
-  channel, (c) channel id in `voice_channel_ids` config (existing
-  fail-closed list). Auto-join per Miles's spec (play joins if
-  connected-idle, stays on stop).
+  channel, (c) that channel's GUILD in `voice_guild_ids` config (existing
+  fail-closed list; per-CHANNEL until 2026-09-17, see §12.2). Auto-join per
+  Miles's spec (play joins if connected-idle, stays on stop).
 - Deploy: build audio-controller image (has ffmpeg already), nora image;
   compose env unchanged (HOST=0.0.0.0, GUILD/CHANNEL for boot join).
 
@@ -460,14 +460,40 @@ audio-controller's one allowed decision, documented here and nowhere in nora's d
    playback BEFORE re-persisting its session (B11 reconciliation).
    Implementation: `/var/lib/audio-controller/desired_state.json` mounted
    via compose volume (NOT in git, NOT in the image).
-2. **Auto-join channel: CALLER'S CURRENT CHANNEL, must match the
-   configured `voice_channel_ids` list.** If the caller is in a channel NOT
-   on the list → reject (`not_in_allowed_channel`). Phase 1 = effectively
-   ONE immutable configured channel (B15): single guild + single allowed
-   channel; wake seam stays unchanged.
+2. **Auto-join channel: CALLER'S CURRENT CHANNEL, in an allowed GUILD.**
+   ~~Must match the configured `voice_channel_ids` list; phase 1 =
+   effectively ONE immutable configured channel (B15).~~
+
+   **REVERSED 2026-09-17 (operator).** The condition §13 named as the one
+   that would reopen this — lifting the single-channel posture
+   controller-side — was met by measurement, not by the controller's 400:
+   Zone 42 has 10+ voice channels and gains more, so a per-channel
+   allow-list is one nobody can keep true, and an allow-list that drifts is
+   quietly wrong rather than loudly wrong. Worse, per-channel identity would
+   have given each voice channel its own `conversation_id` and therefore its
+   own room — N Discord rooms in one workspace, breaching DEC-105 N times
+   over. The 2026-09-17 cleanup measured what ONE such breach costs: 1953
+   messages, 11 fabricated notes, and the entire `culture` table.
+
+   The gate is now **guild member + caller physically in a voice channel +
+   that channel's GUILD on `[speech.tts] voice_guild_ids`**, and the
+   controller admits any channel in its (still single, §12.5) guild. A
+   second channel is still refused — as 409 `connected_elsewhere`, which is
+   Discord's one-connection-per-bot-per-guild limit rather than a policy.
+
+   **The wake seam CHANGED, and this is the load-bearing half.** A spoken
+   utterance no longer carries a voice channel's id. The wake service sends
+   `guild_id`, and nora resolves it to the ONE room whose `policy.toml`
+   entry says `voice = true` — the guild's own TEXT room. Voice is a SURFACE
+   of a room, not a room of its own: one notebook, one culture, one
+   `persons` list, and a plan spoken aloud lands beside the same plan typed.
+   Whether a reply is SPOKEN is then a fact about the turn
+   (`ConversationTarget.voice`), not about the room, because one room now
+   takes both. An unmarked guild is refused 400 and never reaches ingest.
 3. **Permission ruleset (`/discord` group): guild member + caller
-   physically in a voice channel + that channel in `voice_channel_ids`**
-   (the three-condition gate from the original design). NO extra
+   physically in a voice channel + that channel's GUILD in
+   `voice_guild_ids`** (the three-condition gate from the original design,
+   with the third condition widened to the guild — see decision 2). NO extra
    `DISCORD_ALLOWED_USERS`-style allowlist for voice — the existing
    chat-admission list stays for chat ONLY.
 4. **`/music stop` when `state=idle` → no-op** (200 with unchanged state).
@@ -496,9 +522,13 @@ audio-controller's one allowed decision, documented here and nowhere in nora's d
 - audio-controller does not hold a second connection for music ("separate music token")
   — rejected.
 - No new audio format negotiation beyond ffmpeg's existing sniffing.
-- The wake/STT path keeps receiving on the same connection, BUT its
+- The wake/STT path keeps receiving on the same connection. ~~Its
   channel/session identity is explicit once dynamic joins are allowed
-  (B15); with the single-immutable-channel option it is literally unchanged.
+  (B15).~~ **Settled 2026-09-17 the other way** (see decision 2): the wake
+  path does not carry a channel identity at all. It sends the GUILD, nora
+  resolves the room from `policy.toml`, and the channel survives only as
+  optional provenance on `raw` — so adding a voice channel to a server
+  reconfigures nothing.
 
 ## 14. Codex audit record (2026-09-16)
 

@@ -201,7 +201,7 @@ class VoiceControllerHub:
         if self._last_event_seq is None or event_seq > self._last_event_seq:
             self._last_event_seq = event_seq
 
-    async def adopt_boot_voice_sessions(self, voice_channel_ids: Iterable[str]) -> None:
+    async def adopt_boot_voice_sessions(self, voice_guild_ids: Iterable[str]) -> None:
         """Boot-time §12.1 reconciliation for guilds with NO persisted music
         session (design/voice-channel/07 §12.1, B-2 2026-09-16 audit).
 
@@ -211,9 +211,20 @@ class VoiceControllerHub:
         controller's boot-joined connection (its own durable desired-state,
         §12.1) sits un-adopted in this process: `stream_speech` then
         silently returns `False` for every wake reply until a human
-        happens to run `/discord join` or `/music play`. This closes that
-        gap directly from config (`voice_channel_ids`, already validated to
-        "guild_id/channel_id" pairs), independent of any music session.
+        happens to run `/discord join` or `/music play`.
+
+        **The CONTROLLER says which channel, not config** (§12.2, reversed
+        2026-09-17). Config names guilds now, and a guild does not name a
+        channel — but it never had to: the controller owns `desired_state`
+        and is the only thing that knows where it actually reconnected. Asking
+        it is also strictly more correct than the config read this replaces,
+        which would have re-joined the CONFIGURED channel even when the
+        controller had come back up somewhere else.
+
+        A guild whose controller reports anything but `connected` is skipped,
+        not joined: boot adoption exists to pick up a connection that already
+        exists, and dragging Nora into a voice channel nobody asked for is the
+        opposite of that.
 
         Idempotent with an already-cached session — `hub.join` short-
         circuits on the cache — and safe to call after
@@ -221,11 +232,21 @@ class VoiceControllerHub:
         Best-effort: a controller unreachable at this exact boot instant
         must not fail nora's boot; the next `/discord join`, `/music play`,
         or voice-channel send retries the same `hub.join` path."""
-        for entry in voice_channel_ids:
-            guild_id, sep, channel_id = entry.partition("/")
-            if not sep or not guild_id or not channel_id:
+        for guild_id in voice_guild_ids:
+            if not guild_id:
                 continue
             try:
+                status = await self._client.status()
+                if status.get("voice") != "connected":
+                    continue
+                channel_id = status.get("channel_id")
+                if not isinstance(channel_id, str) or not channel_id:
+                    log.warning(
+                        "boot voice adoption for guild %s: controller reports "
+                        "connected with no channel_id — nothing to adopt",
+                        guild_id,
+                    )
+                    continue
                 await self.join(guild_id, channel_id)
             except VoiceControllerError as exc:
                 log.warning(

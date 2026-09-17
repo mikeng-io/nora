@@ -1626,57 +1626,68 @@ class SpeechTtsConfig(BaseModel):
     # `{sidecar_endpoint}/music/*` on the same connection that hears the
     # wake word.
     sidecar_endpoint: str = ""
-    # Discord conversation ids ("<guild_id>/<channel_id>") that are VOICE
-    # channels — the wake-answer room (design/voice-channel/, stage 3). A
-    # text POST to a voice channel is refused by Discord with 400, so Nora
-    # must know which reply targets are voice BEFORE trying to send; those
-    # targets route through the speaker + sidecar instead. Empty (default)
-    # keeps the adapter's text-only behaviour everywhere.
-    voice_channel_ids: list[str] = Field(default_factory=list)
+    # Discord GUILD ids whose voice channels Nora may be asked to join
+    # (design/voice-channel/07 §12.2, reversed 2026-09-17 by the operator).
+    # Any voice channel in a listed guild is admissible; none in an unlisted
+    # one is. Empty (default) leaves every `/music` and `/discord join`
+    # failing closed, which is the unwired posture.
+    #
+    # GUILDS, not channels, and the reason is that a channel list cannot be
+    # kept true: Zone 42 has 10+ voice channels and gains more, so phase 1's
+    # single immutable channel was an allow-list that would drift into being
+    # quietly wrong. The controller is already hard-bound to ONE guild (§12.5,
+    # any other `guild_id` → 400), so this is the binding that was carrying
+    # the weight all along.
+    #
+    # NOT a reply-routing input any more. Whether a reply is spoken is a fact
+    # about the TURN (`ConversationTarget.voice`), and where speech is
+    # RECORDED is `policy.toml`'s `voice = true` — three questions that phase
+    # 1 could answer with one list because speech had a room of its own.
+    voice_guild_ids: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def _phase1_single_immutable_voice_channel(self) -> SpeechTtsConfig:
-        """Phase 1 is ONE guild and ONE immutable voice channel
-        (design/voice-channel/07 §12.2/§12.5): the audio-controller is
-        hard-bound to its configured channel and answers a join for any
-        other with 400 `not_in_allowed_channel`. A `voice_channel_ids`
-        list naming more than one channel (or channels in more than one
-        guild) would let `/music play` / `/discord join` pass the LOCAL
-        gate for a channel the controller then refuses — the worst of
-        both: the gate says yes, the join says no.
+    def _one_guild_the_controller_can_serve(self) -> SpeechTtsConfig:
+        """The audio-controller is hard-bound to ONE guild (§12.5): any
+        request carrying a different `guild_id` is answered 400. A second
+        guild here would let `/music play` / `/discord join` pass the LOCAL
+        gate for a guild the controller then refuses — the worst of both: the
+        gate says yes, the join says no. Multi-guild is a controller change
+        first, and this is where its absence is stated.
+
+        What this NO LONGER refuses is a second CHANNEL: §12.2's single
+        immutable channel was reversed 2026-09-17, because a server's voice
+        channels are not a fixed list and per-channel allowlisting could not
+        be kept true. A bare guild id is the whole entry now, and a
+        `"guild/channel"` pair is refused outright rather than silently
+        truncated — an operator upgrading from phase 1 must SEE that the key
+        changed meaning, not discover it from a join that goes somewhere
+        unexpected.
 
         Refused at load rather than warned about, and NOT gated on
         `enabled`: `_lead_clears_the_tick`'s argument applies unchanged —
         a config that only becomes wrong when someone flips the switch
         becomes wrong at the worst moment, so it fails here, while the
-        operator is still holding the file.
-
-        **This holds unless** phase 2 lifts the single-channel posture
-        controller-side (§13); the controller's own 400 is the reading
-        that would reopen it."""
-        if not self.voice_channel_ids:
+        operator is still holding the file."""
+        if not self.voice_guild_ids:
             return self
-        parsed: list[tuple[str, str]] = []
-        for entry in self.voice_channel_ids:
-            guild, sep, channel = entry.partition("/")
-            if not sep or not guild or not channel or "/" in channel:
+        for entry in self.voice_guild_ids:
+            if not entry or "/" in entry:
                 raise ValueError(
-                    f"[speech.tts] voice_channel_ids entry {entry!r} must be "
-                    "\"<guild_id>/<channel_id>\" (the same shape policy.toml "
-                    "uses for a Discord room)"
+                    f"[speech.tts] voice_guild_ids entry {entry!r} must be a "
+                    "bare Discord guild id, not \"<guild_id>/<channel_id>\" — "
+                    "this key names GUILDS since 2026-09-17 "
+                    "(design/voice-channel/07 §12.2), and every voice channel "
+                    "in a listed guild is admissible. Where a guild's SPEECH "
+                    "is recorded is policy.toml's `voice = true`, not here."
                 )
-            parsed.append((guild, channel))
-        guilds = {guild for guild, _ in parsed}
-        channels = {channel for _, channel in parsed}
-        if len(guilds) > 1 or len(channels) > 1:
+        guilds = set(self.voice_guild_ids)
+        if len(guilds) > 1:
             raise ValueError(
-                f"[speech.tts] voice_channel_ids names "
-                f"{len(channels)} channel(s) across {len(guilds)} guild(s) — "
-                "phase 1 of the audio-controller is exactly ONE immutable "
-                "channel in ONE guild (design/voice-channel/07 §12.2/§12.5): "
-                "every entry past the first is a channel the join gate would "
-                "admit and the controller would reject with 400 "
-                "not_in_allowed_channel"
+                f"[speech.tts] voice_guild_ids names {len(guilds)} guilds — "
+                "the audio-controller is hard-bound to exactly ONE "
+                "(design/voice-channel/07 §12.5), and every guild past the "
+                "first is one the join gate would admit and the controller "
+                "would reject with 400"
             )
         return self
 

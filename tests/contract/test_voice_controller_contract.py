@@ -99,12 +99,26 @@ async def test_join_elsewhere_is_a_conflict(controller):
     _fake, client, _ = controller
     await _join(client)
 
-    with pytest.raises(VoiceControllerRejected) as excinfo:
+    with pytest.raises(GenerationConflict) as excinfo:
         await client.join(GUILD, "cortez-elsewhere", request_id="r")
-    assert excinfo.value.reason == "not_in_allowed_channel", (
-        "phase 1's immutable channel (§12.2, B15): the controller rejects "
-        "ANY channel ≠ the configured one with 400, connected or not"
+    assert excinfo.value.reason == "connected_elsewhere", (
+        "§12.2 reversed 2026-09-17: a second channel is refused because "
+        "Discord allows ONE voice connection per bot per guild (409), NOT "
+        "because it is off an allow-list (the old 400 not_in_allowed_channel)"
     )
+
+
+async def test_join_while_idle_admits_any_channel_in_the_guild(controller):
+    """The reversal, at the contract boundary. `hub.join` is called with the
+    CALLER'S channel, which after 2026-09-17 can be any of the guild's — the
+    old fake answered 400 for every one but the configured channel, which
+    would have made this whole path untestable and unusable."""
+    fake, client, _ = controller
+
+    state = await client.join(GUILD, "a-channel-nobody-configured", request_id="r")
+
+    assert state["channel_id"] == "a-channel-nobody-configured"
+    assert fake.voice == "connected"
 
 
 async def test_a_join_without_a_guild_id_is_rejected(controller):

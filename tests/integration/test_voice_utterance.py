@@ -69,6 +69,10 @@ async def client(tmp_path, monkeypatch, pg_url, aiohttp_client):
         'platform = "discord"\n'
         f'id = "{CONV}"\n'
         'persons = "*"\n'
+        # The guild's speech is recorded HERE (design/voice-channel/07 §12.2,
+        # reversed 2026-09-17) — this room is a TEXT channel, and that is the
+        # point: voice is a surface of it, not a room of its own.
+        "voice = true\n"
     )
     cfg = override_config(
         load_example_config(tmp_path),
@@ -95,7 +99,15 @@ async def client(tmp_path, monkeypatch, pg_url, aiohttp_client):
         metrics=Metrics(),
     )
     app = web.Application()
-    register_voice(app, ingest=dispatcher.on_message)
+    allowlist = load_policy(policy_path)
+    register_voice(
+        app, ingest=dispatcher.on_message,
+        resolve_voice_room=lambda guild_id: (
+            room.primary_id
+            if (room := allowlist.voice_room("discord", guild_id)) is not None
+            else None
+        ),
+    )
     client = await aiohttp_client(app)
     client.store = store
     client.memory = memory
@@ -108,7 +120,8 @@ async def client(tmp_path, monkeypatch, pg_url, aiohttp_client):
 async def test_a_posted_utterance_lands_as_an_ingest_row_and_a_memory_feed(client):
     resp = await client.post(
         "/app/v1/voice/utterance",
-        json={"user_id": USER, "text": TEXT, "conversation_id": CONV},
+        json={"user_id": USER, "text": TEXT, "guild_id": GUILD,
+              "voice_channel_id": "499999999999999999"},
     )
     assert resp.status == 202
     await _drain(client.background)
@@ -129,14 +142,20 @@ async def test_a_posted_utterance_lands_as_an_ingest_row_and_a_memory_feed(clien
     assert client.memory.fed == [("miles", TEXT, CONV)]
 
 
-async def test_an_utterance_outside_an_admitted_conversation_records_nothing(
+async def test_an_utterance_from_an_unmarked_guild_records_nothing(
     tmp_path, monkeypatch, pg_url, aiohttp_client
 ):
-    """The scope gate's own behaviour, through the endpoint: `build_offline_
-    pipeline` hardcodes a PERMISSIVE allowlist (every offline/eval room is
-    admitted by construction), so this test wires a bare `IngestPipeline`
-    against the REAL policy file — the refusal path the composition root
-    gets from `load_policy`."""
+    """The refusal path, through the endpoint, against the REAL policy file —
+    `build_offline_pipeline` hardcodes a PERMISSIVE allowlist, so this test
+    wires a bare `IngestPipeline` the way the composition root does.
+
+    The refusal MOVED on 2026-09-17 (§12.2 reversed). It used to be the scope
+    stage dropping an unlisted conversation AFTER a 202; the guild now has to
+    resolve to a room before a message exists at all, so it is a 400 and
+    ingest is never entered. 400 rather than the old 202 on purpose: the only
+    caller is our own wake container, and answering "accepted" for something
+    that was definitely not accepted is the silent failure R-5 exists to
+    forbid — a misconfigured guild would look exactly like a quiet room."""
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     persons_path = tmp_path / "identity.toml"
     persons_path.write_text(
@@ -151,6 +170,10 @@ async def test_an_utterance_outside_an_admitted_conversation_records_nothing(
         'platform = "discord"\n'
         f'id = "{CONV}"\n'
         'persons = "*"\n'
+        # The guild's speech is recorded HERE (design/voice-channel/07 §12.2,
+        # reversed 2026-09-17) — this room is a TEXT channel, and that is the
+        # point: voice is a surface of it, not a room of its own.
+        "voice = true\n"
     )
     cfg = override_config(
         load_example_config(tmp_path),
@@ -175,18 +198,23 @@ async def test_an_utterance_outside_an_admitted_conversation_records_nothing(
         await ingest.run(message=message)
 
     app = web.Application()
-    register_voice(app, ingest=sink)
+    allowlist = load_policy(policy_path)
+    register_voice(
+        app, ingest=sink,
+        resolve_voice_room=lambda guild_id: (
+            room.primary_id
+            if (room := allowlist.voice_room("discord", guild_id)) is not None
+            else None
+        ),
+    )
     client = await aiohttp_client(app)
     try:
         resp = await client.post(
             "/app/v1/voice/utterance",
             json={"user_id": USER, "text": TEXT,
-                  "conversation_id": f"{GUILD}/499999999999999999"},
+                  "guild_id": "499999999999999999"},
         )
-        # Policy refuses the room, ingest drops the message — and the route
-        # still answers 202: the wake service must never see Nora's policy
-        # internals, and a refused room is not a wake-service failure.
-        assert resp.status == 202
+        assert resp.status == 400
         await _drain(background)
         assert await store.recent(conversation_id=CONV, limit=10) == []
         assert memory.fed == []

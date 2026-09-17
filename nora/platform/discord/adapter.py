@@ -54,7 +54,7 @@ class DiscordAdapter:
         music_manager: MusicPlayerManager | None = None,
         speaker: Any = None,
         voice_hub: VoiceControllerHub | None = None,
-        voice_channel_ids: frozenset[str] = frozenset(),
+        voice_guild_ids: frozenset[str] = frozenset(),
     ) -> None:
         self._token = token
         self._base_url = base_url
@@ -70,12 +70,14 @@ class DiscordAdapter:
         # The voice path (design/voice-channel/07): the MiniMax speaker and
         # the audio-controller hub. BOTH None on every deployment that hasn't
         # wired the voice path — the text-only posture stays byte-identical.
-        # A target on `voice_channel_ids` routes through speak → the
-        # controller's `/stream` endpoint instead of REST text, because
-        # Discord refuses text POSTs into a voice channel (400).
+        # A SPOKEN turn routes through speak → the controller's `/stream`
+        # endpoint instead of REST text (see `send`). `voice_guild_ids` is
+        # not part of that decision: it is the join allow-list, naming the
+        # guilds whose voice channels Nora may be pulled into at all
+        # (design/voice-channel/07 §12.2, reversed 2026-09-17).
         self._speaker = speaker
         self._voice_hub = voice_hub
-        self._voice_channel_ids = set(voice_channel_ids)
+        self._voice_guild_ids = set(voice_guild_ids)
         # Built fresh in `listen()`, NOT here. A `discord.Client` is single-use:
         # once it closes, `is_closed()` stays True for that instance forever
         # (`_closing_task` is never cleared except by `Client.clear()`), so
@@ -134,7 +136,7 @@ class DiscordAdapter:
                 await register_music_commands(
                     client, self._music_manager,
                     hub=self._voice_hub,
-                    voice_channel_ids=frozenset(self._voice_channel_ids),
+                    voice_guild_ids=frozenset(self._voice_guild_ids),
                 )
                 # design/discord-music/06-session-persistence.md stage 2 --
                 # safe to run on every on_ready, not just a genuine boot
@@ -151,7 +153,7 @@ class DiscordAdapter:
             # run every `on_ready` — `hub.join`/`adopt_boot_voice_sessions`
             # are both idempotent against an already-cached session.
             if self._voice_hub is not None:
-                await self._voice_hub.adopt_boot_voice_sessions(self._voice_channel_ids)
+                await self._voice_hub.adopt_boot_voice_sessions(self._voice_guild_ids)
 
         self._listener = DiscordListener(
             client, self._token, on_ready_extra=_register_music_commands,
@@ -198,13 +200,19 @@ class DiscordAdapter:
         attachments: tuple[OutboundAttachment, ...] = (),
         quote: OutboundQuote | None = None,
     ) -> SendResult:
-        # Voice playout: a target that IS a voice channel cannot take a text
-        # POST (Discord answers 400). Route it through the speaker → the
-        # audio-controller's `/stream` seam instead. Fail-closed: without a
+        # Voice playout: answer a SPOKEN turn aloud, through the speaker →
+        # the audio-controller's `/stream` seam. Fail-closed: without a
         # speaker or a hub the reply is SILENT (ok=False, text-only fallback
-        # is the caller's business) — never a text POST, which would be a
-        # 400 anyway and would look like a delivery.
-        if target.conversation_id in self._voice_channel_ids:
+        # is the caller's business).
+        #
+        # Routed on the TURN, not on the room (design/voice-channel/07 §12.2,
+        # reversed 2026-09-17). While speech had a room of its own, "this
+        # conversation_id is a voice channel" and "this question was spoken"
+        # were the same fact. Now a guild's speech lands in its text room, so
+        # one room takes both — and the honest rule is the one that was always
+        # meant: answer the way you were asked. A typed question in a room
+        # Nora also listens to by voice still gets a text reply.
+        if target.voice:
             return await self._send_voice(target=target, text=text)
         return await self._sender.send(
             target, text, mentions=mentions, styles=styles, preview=preview,

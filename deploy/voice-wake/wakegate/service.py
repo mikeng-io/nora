@@ -67,7 +67,17 @@ class Config:
     stt_language: str = "yue"
     stt_timeout_s: float = 30.0
     nora_url: str = "http://nora:9100"
-    conversation_id: str = ""
+    # The GUILD, not a conversation id (design/voice-channel/07 §12.2,
+    # reversed 2026-09-17). Nora resolves it to the room the operator marked
+    # `voice = true`, so this service stays correct when a server's voice
+    # channels change — which was the whole reason the channel binding went.
+    #
+    # The channel the words were spoken in is NOT sent: only the controller
+    # knows which one it is currently connected to, the pump seam carries
+    # `(user_id, pcm)` and nothing else, and the field is optional provenance
+    # on nora's side. Sending the configured first-boot channel instead would
+    # put a value in a trace that is right only until someone moves rooms.
+    guild_id: str = ""
     idle_timeout_s: float = 600.0
 
 
@@ -200,8 +210,8 @@ class WakeService:
         20 ms frames. Text crosses to Nora; the audio dies here."""
         log.info("wake fired for user %s (peak %.3f, %.1fs)",
                  user_id, utterance.peak_score, utterance.audio.size / 16000)
-        if not self._cfg.conversation_id:
-            log.warning("no VOICE_CHANNEL_ID conversation — utterance dropped")
+        if not self._cfg.guild_id:
+            log.warning("no VOICE_GUILD_ID configured — utterance dropped")
             return
         wav = pcm16_to_wav(utterance.audio)
         timeout = aiohttp.ClientTimeout(total=self._cfg.stt_timeout_s)
@@ -214,7 +224,7 @@ class WakeService:
                 return  # no wake -> no cost; dropped silently by design
             ok = await forward_utterance(
                 session, nora_url=self._cfg.nora_url, user_id=user_id,
-                text=text, conversation_id=self._cfg.conversation_id,
+                text=text, guild_id=self._cfg.guild_id,
             )
         if ok:
             state.utterances += 1
@@ -261,7 +271,7 @@ class WakeService:
             "status": "ok",
             "wake": "listening" if self._model_available else "disabled",
             "clients": self._clients,
-            "conversation_id": self._cfg.conversation_id or None,
+            "guild_id": self._cfg.guild_id or None,
             "uptime_seconds": round(time.time() - self._started_at, 1),
             "users": {
                 user_id: {
