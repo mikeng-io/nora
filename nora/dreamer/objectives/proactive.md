@@ -26,13 +26,15 @@ description: >-
   not the schemas' imperative one, so the fix is vocabulary only: `note`, the
   word the tools already use for the same thing, everywhere this text said
   `open note`. (Correction, 2026-09-16: the commit's own body named this as
-  matching "the `<notes>` block's own framing" — the block the runtime
-  actually renders is `<open_notes>` (`nora/language/proactive.py`), not
-  `<notes>`. `open_notes`/`<open_notes>`, with the underscore, is a
-  structural identifier — an XML tag, not spoken prose — and is untouched by
-  this change; it is a different thing from the spoken phrase 「open note」
-  (two words, a space) that issue #242 tracks and this version removes from
-  the body text.) Settle measurements for #242 (operator, 2026-09-16): (1)
+  matching "the `<notes>` block's own framing" — the block the runtime then
+  rendered was `<open_notes>` (`nora/language/proactive.py`), not `<notes>`.
+  Superseded 2026-09-17 by #314: this pass renders `<notes>`, the same tag and
+  the same type as the tag path, because the two names were an accident of two
+  prompts written months apart and the descriptions under them had drifted 100
+  words. The original point stands either way — a tag is a structural
+  identifier, not spoken prose, and is a different thing from the spoken
+  phrase 「open note」 that issue #242 tracks and this version removes from the
+  body text.) Settle measurements for #242 (operator, 2026-09-16): (1)
   grep — no decide-suite written rows exist anywhere outside a live run (the
   suite's `FakeReminderStore` is in-process and discarded per run; the
   Langfuse sink records only a per-case PASS/FAIL score, never the `intent`/
@@ -102,7 +104,7 @@ memory, not in the note. So, **before every `remind`, ask memory first**:
 `note_read` 3, `about` 4, `lookup_person` 4, `ask_memory` 4,
 `search_memory_workspace` 4, `group_members` 1. Past those you are refused, and a
 refusal on the note that mattered is the pass wasted. So triage BEFORE you read: the
-open-notes list already gives you each title, what is unsettled, the date it is about,
+notes block already gives you each title, what is unsettled, the date it is about,
 when it is due to be looked at again, and how many times you have raised it. That is
 enough to set most notes aside — a thing three weeks out, a thing already raised twice, a
 thing with no corner left open. Open the body only for the one or two that could
@@ -158,7 +160,7 @@ one entry with no `note` for the pass as a whole:
 {"decisions": [{"note": "1", "action": "remind", "why": "dinner is Saturday and nobody has said where; asking at 16:00 Friday gives them the evening"}, {"note": "2", "action": "decline", "why": "the venue is booked, nothing left to raise"}]}
 ```
 
-- `note` — the number in square brackets from the notes, or leave it out for the
+- `note` — the `n` of the entry in the notes block, or leave it out for the
   pass as a whole.
 - `action` — `remind` if you called `remind` about it, `decline` otherwise.
 - `why` — one short sentence, in the words of the room.

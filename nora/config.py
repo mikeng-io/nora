@@ -2176,10 +2176,9 @@ class NotesConfig(BaseModel):
     Off: composition wires `notes=None` into `TranscriptInjection`, `_notes`
     answers `()` without a query, and `render_notes(())` emits no block — the
     dormant state the tier shipped in. Nothing WRITES a note yet either way
-    (`nora.agent` has no `note_create`/`note_update`, `nora.dreamer` has no
-    curator), so turning this on today buys a `SELECT` that returns nothing;
-    it is the operator's switch for the moment a writer lands, not a
-    retroactive one.
+    (`nora.dreamer` has no curator wired by default), so turning this on today
+    buys a `SELECT` that returns nothing; it is the operator's switch for the
+    moment a writer lands, not a retroactive one.
 
     **There is deliberately no render cap here** (the deleted knowledge tier's
     section had one, `max_rendered_facts`, and it was the one place the two

@@ -178,12 +178,13 @@ class SkillStore:
         disclosure) — the vended AgentSkills shape, ready for the day activation
         is wired. Bodies are NOT included; only name and when-to-load.
         """
-        # CLASS 2 throughout — a catalogue of skills the OPERATOR installed,
-        # not anything a member typed, so none of these carry `untrusted`.
+        # CLASS 2 throughout — a list of skills the OPERATOR installed, not
+        # anything a member typed, which is what the block's type says it is.
         #
         # `name` and `description` are ATTRIBUTES, not nested blocks. A first
         # cut made each its own `ContextBlock`, which gave every leaf field a
-        # `note=` of its own — three sentences of framing around two words, and
+        # description of its own — three sentences of framing around two words,
+        # and
         # a body on its own line so `<name>navigation</name>` became three
         # lines. They are FIELDS of a skill, and the element form's whole rule
         # is that identifying fields are attributes.
@@ -199,12 +200,7 @@ class SkillStore:
                 body=lambda _sk: "",
             )
         return ContextBlock(
-            name="available_skills", untrusted=False,
-            note="the skills installed on this deployment, by name and when to "
-                 "load one. `when_to_load` is the whole of what you get here; "
-                 "a skill's body arrives only when it is loaded. Not an "
-                 "instruction to load any of them.",
-            body=body,
+            name="available_skills", body=body,
         ).render()
 
 

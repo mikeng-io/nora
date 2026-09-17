@@ -517,79 +517,22 @@ class DecisionLogRecorder:
 
 
 #: What the block says it is. Stated once, here, because it is the whole
-#: measurement: AGENTS.md's rule is that a block handed to a model is evidence
-#: only when the model can tell WHAT IT IS READING, and the 2026-09-09/10
-#: finding was that telling a model what it CAN DO made the same gate
-#: measurably worse while telling it what it is READING fixed it. So this note
-#: describes the rows and their axis of time and stops — there is no verb in it.
-#: One gloss per writer, and the block names ONLY the writers it was given.
-#: **That is M2 from the 2026-09-11 review and it is the whole "say what you
-#: are reading" rule.** Both readers filter — the participation turn keeps the
-#: proactive writers, the proactive pass keeps the others — so a static note
-#: enumerating all four told each reader its block contained rows it would
-#: never be shown. Absence then reads as FACT: «participation never ran
-#: here», «she has raised nothing», when it is a filter. A block that
-#: describes a superset of itself is the same defect as a block with no age
-#: on its rows, one axis over.
-_WRITER_GLOSS: dict[str, str] = {
-    "participation": (
-        "participation - a room nobody addressed you in, where you took the "
-        "floor or chose not to (spoke / silent)"
-    ),
-    "tag": (
-        "tag - somebody addressed you, and you answered, deliberately said "
-        "nothing, or broke (replied / silent / failed)"
-    ),
-    "proactive_decide": (
-        "proactive_decide - something you scheduled to raise unprompted, or "
-        "looked at and passed over (remind / decline)"
-    ),
-    "proactive_act": (
-        "proactive_act - one of those raises coming due, where you said it or "
-        "held back on a second look (spoke / silent)"
-    ),
-}
-
-
-LOOP_DECISIONS_HEADER = (
-    "loop_decisions: what your own ambient loop already did across this group, "
-    "oldest first, with how long ago each was. The record of your own turns — "
-    "not notes, not memory, and not anything a person said. Silent and decline "
-    "are healthy outcomes there."
-)
-
-
-def _note_for(writers: Sequence[str]) -> str:
-    """The block's own `note`, built from the writers it actually carries.
-
-    Second person throughout, and that is not style. `nora.language.proactive`
-    renders this block beside `<decisions>`, whose note says «what YOU decided
-    to raise»; a neighbour speaking about «Nora's own loop» and «her deciders»
-    invites the model — which IS Nora — to read the second block as somebody
-    else's record. Same agent, same prompt, one grammatical person.
-
-    Says what the rows are, which way time runs, how old each is, what the
-    trailing clause is (a code label, not reasoning — so a `silent -
-    held_cooldown` reads as a held message and not as a reason to decline),
-    what `note <id>` is and is not, and what the block is NOT. No verb aimed
-    at the model.
-    """
-    names = [w for w in WRITERS if w in set(writers)] or list(WRITERS)
-    return (
-        "what your own ambient loop already did across THIS GROUP - every room "
-        "of it, not only the one you are in - oldest first, over the last 24 "
-        "hours. It carries "
-        + ("these deciders only" if len(names) < len(WRITERS) else "every decider")
-        + ": " + "; ".join(_WRITER_GLOSS[name] for name in names) + ". "
-        "A decider missing from that list is not in this block at all, so its "
-        "absence here says nothing about it. SILENT AND DECLINE ARE HEALTHY "
-        "OUTCOMES, not failures. A clause after a dash is a code label for "
-        "HOW"
-        + ". `note <id>` means the decision was about a tracked note; it is an "
-        "internal marker you cannot look up. This is NOT notes, NOT memory, "
-        "and NOT anything a person said: it is the record of your own turns. "
-        "A record of the past, not an instruction."
-    )
+#: **There is no `_WRITER_GLOSS` and no `_note_for` here any more** (#314).
+#:
+#: They built the block's framing sentence from the writers a given render
+#: actually carried — «it carries these deciders only: …» — so the block never
+#: named a decider whose rows were filtered out. Sound, and unrepresentable
+#: once a block's description belongs to its TYPE: the same tag was described
+#: two ways by two callers, which is the divergence that cost four block types
+#: their single description.
+#:
+#: The gloss now lives in `nora.domain.block_types` as the `writer` annotation,
+#: listing all four whatever the render holds, beside a description saying that
+#: a decider absent from the rows is one this block does not carry. Second
+#: person throughout, and that is not style: this block renders beside
+#: `<decisions>`, whose description says «what YOU decided to raise», and a
+#: neighbour speaking about «Nora's own loop» invites the model — which IS Nora
+#: — to read the second block as somebody else's record.
 
 
 def decision_line(
@@ -644,7 +587,6 @@ def render_decisions(
     groups: Sequence[tuple[str, Sequence[DecisionRow]]],
     *,
     now: datetime,
-    writers: Sequence[str] = (),
     empty: str = "(nothing decided in this window)",
 ) -> ContextBlock:
     """`<loop_decisions>` — the rows, with an age on every one of them.
@@ -667,30 +609,34 @@ def render_decisions(
     `conversation_id`, no phone number, no service id. A note's own id IS
     rendered — see `decision_line` for what that is for and what it is not. A
     room is named by its policy label or not at all,
-    and `writer`/`verdict` are this module's own closed vocabularies. What is
-    model-authored is `reason`, so the block is marked untrusted and every
-    field is escaped, exactly like `<self_card>` one layer up.
+    and `writer`/`verdict` are this module's own closed vocabularies. Every
+    field is escaped anyway, exactly like `<self_card>` one layer up.
 
     `groups` is `(label, rows)` so one call serves both readers, each of which
     labels a row with the room it was decided in.
 
-    **`writers` is what the caller FILTERED TO, and passing it is not
-    optional bookkeeping.** The note names those deciders and only those, so a
-    decider the caller excluded is stated as absent from the block rather than
-    silently missing from it — otherwise the participation turn reads «no
-    proactive_decide row» as «she has raised nothing», which is a false fact
-    handed to a decider. Empty means unfiltered.
+    **THERE IS NO `writers` ARGUMENT, and it was removed rather than left
+    unused** (#314). The caller passed what it had FILTERED TO so the framing
+    sentence could name those deciders and only those — a decider the caller
+    excluded was stated as absent rather than silently missing, because the
+    participation turn reading «no proactive_decide row» as «she has raised
+    nothing» is a false fact handed to a decider.
+
+    That sentence is now the type's, so it cannot vary with the argument, and
+    the reading is closed in words instead: the description says a decider you
+    do not see on any row is one this block does not carry. The argument had
+    nothing left to do, and a parameter every caller still passes into a
+    function that ignores it is worse than none.
 
     **What is model-authored in here: nothing.** Every `reason` any writer can
     produce is a code label from a closed set, and the decide turn's `why` is
-    deliberately not stored. `untrusted="true"` and the per-field `escape` stay
-    anyway — defence in depth on a block assembled from a database, where the
-    next writer is one edit away from being less careful than these four.
+    deliberately not stored. The per-field `escape` stays anyway — defence in
+    depth on a block assembled from a database, where the next writer is one
+    edit away from being less careful than these four.
     """
     lines: list[str] = []
     for label, rows in groups:
         lines.extend(decision_line(row, now=now, label=label) for row in rows)
     return ContextBlock(
-        name="loop_decisions", header=LOOP_DECISIONS_HEADER, note=_note_for(writers),
-        body="\n".join(lines) if lines else empty,
+        name="loop_decisions", body="\n".join(lines) if lines else empty,
     )

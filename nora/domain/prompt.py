@@ -108,8 +108,8 @@ def one_line(body: object) -> str:
     CONTAINS a newline writes a SECOND line byte-identical to a real row —
     a name, an age, a handle, and words that are not theirs. `escape` handles
     `&`, `<` and `>`; a newline is none of the three, and the forged row sits
-    inside the same `untrusted="true"` block as the real ones with nothing to
-    tell them apart. It needs no attacker to do damage: an ordinary member
+    inside the same block as the real ones with nothing to tell them
+    apart. It needs no attacker to do damage: an ordinary member
     pressing enter mid-message writes a continuation line with no `[who]:` on
     it at all, and whose words the model then reads as somebody else's.
 

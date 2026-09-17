@@ -247,7 +247,7 @@ def note_handle(title: str) -> str:
 
     **And UNESCAPED, for the same reason one step further on.** The handle is
     the title as the model SAW it, and every index escapes what it renders
-    (R-13): `note_render` and the proactive `<open_notes>` both put the title
+    (R-13): `note_render` renders `<notes>` for both paths and puts the title
     through `escape`. So a note called «Dinner & drinks» reaches the model as
     «Dinner &amp;amp; drinks», and the tool docstrings tell it to type that back
     «exactly as `<notes>` shows it» — which then failed to match the stored

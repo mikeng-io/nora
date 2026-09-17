@@ -36,7 +36,7 @@ and carries no marker at all. `test_one_block_injector`'s census asserts that
 distinction exists in the SOURCE of nine modules. These outlines assert which
 side each element actually lands on in the bytes a model receives — including
 the three containers that carry no marker while wrapping one that does
-(`<turn>`, `<conversation>`, `<note>`), which is a shape no source-level census
+(`<turn>`, `<conversation>`, `<description>`), which is a shape no source-level census
 can tell apart from a forgotten marker.
 """
 
@@ -53,6 +53,7 @@ import pytest
 import yaml
 
 from nora.agent.prefill import build_prefill, build_tag_message
+from nora.domain.block_types import BLOCK_TYPES
 from nora.domain.models import (
     DeliveryStatus,
     NormalizedMessage,
@@ -61,6 +62,7 @@ from nora.domain.models import (
     TagContext,
     TranscriptRow,
 )
+from nora.domain.prompt import one_line
 from nora.domain.standing import Standing
 from nora.domain.tag_trace import TagTrace
 from nora.engagement.debrief_render import (
@@ -121,24 +123,19 @@ def parse(text: str) -> ET.Element:
 
 
 def outline(text: str) -> str:
-    """Element names, nesting, marker, framing and attribute NAMES — no values.
+    """Element names, nesting and attribute NAMES — no values.
 
-    `note` and `untrusted` are collapsed into flags rather than listed among the
-    attributes, because they are the two properties `ContextBlock.render` owns
-    and the two this file is about; everything else is listed by name so a
-    dropped or renamed attribute is visible without pinning what it says.
+    Names only, so a dropped or renamed attribute is visible without pinning
+    what it says. `description` and `fields` appear in the list like any other:
+    they are what `ContextBlock.render` writes, and a block that stopped
+    writing one has to show up here as a changed line.
     """
     lines: list[str] = []
 
     def walk(element: ET.Element, depth: int) -> None:
-        attrs = sorted(set(element.attrib) - {"note", "untrusted"})
-        flags = ""
-        if element.get("untrusted") is not None:
-            flags += f" untrusted={element.get('untrusted')}"
-        if element.get("note"):
-            flags += " note"
+        attrs = sorted(element.attrib)
         rest = (" " + " ".join(attrs)) if attrs else ""
-        lines.append(f"{'  ' * depth}<{element.tag}{flags}{rest}>")
+        lines.append(f"{'  ' * depth}<{element.tag}{rest}>")
         for child in element:
             walk(child, depth + 1)
 
@@ -148,16 +145,16 @@ def outline(text: str) -> str:
 
 
 def blocks(text: str) -> list[ET.Element]:
-    """Every element the injector rendered — the ones carrying a `note=`.
+    """Every element the injector rendered — the ones carrying a `description=`.
 
     That attribute is the discriminator rather than a list of names, and it is
-    the right one: `ContextBlock.render` writes `note=` unconditionally and
-    `render_elements` writes only what its caller's `attrs` returns, so an
-    element with a framing clause IS a block and an element without one is a
-    row. A new block therefore cannot slip past the assertions below by not
-    being named anywhere.
+    the right one: `ContextBlock.render` writes `description=` unconditionally,
+    from the block's declared type, and `render_elements` writes only what its
+    caller's `attrs` returns. So an element that says what it is IS a block,
+    and an element that does not is a row. A new block therefore cannot slip
+    past the assertions below by not being named anywhere.
     """
-    return [e for e in parse(text).iter() if e.get("note") is not None]
+    return [e for e in parse(text).iter() if e.get("description") is not None]
 
 
 # ---- the fixtures each builder needs ---------------------------------------
@@ -223,7 +220,7 @@ class _CultureStore:
 
 
 async def proactive(body: str = "去邊食", *, name: str = "Grant") -> str:
-    """The decide pass, with a note open and a room position written.
+    """The decide pass, with a description open and a room position written.
 
     `name` and `body` reach this prompt through the note's own fields rather
     than a transcript: `inputs` ignores its batch, so what a member typed
@@ -276,7 +273,7 @@ def _record(body: str, name: str) -> FakeRecordStore:
 
 
 async def curator(body: str = "去邊食", *, name: str = "Grant") -> str:
-    """One note due for revisit, with evidence AND one of her own sends.
+    """One description due for revisit, with evidence AND one of her own sends.
 
     Both halves matter: `<evidence>` and `<own_sends>` are the pair whose
     markers differ, and a fixture with only one of them cannot see a swap.
@@ -471,119 +468,92 @@ async def render(name: str, body: str = "去邊食", *, who: str = "Grant") -> s
 #: clause is present.
 #:
 #: Three entries carry an element with NO marker wrapping one that has it —
-#: `<turn>`, `<conversation>` and the curator's `<note>`. That is deliberate in
-#: all three and each note says so («The messages inside carry their own
+#: `<turn>`, `<conversation>` and the curator's `<description>`. That is deliberate in
+#: all three and each description says so («The messages inside carry their own
 #: marker»). It is also the shape no source-level census can distinguish from a
 #: marker somebody forgot, which is why it is written down here.
 SHAPES = {
-    "prefill.header": """
-<context_header note>
-""",
-    "prefill.volatile": """
-<self_card untrusted=true note>
-<peer_card untrusted=true note person>
-<peer_history untrusted=true note person>
-<people_in_window untrusted=true note>
-  <person note name>
-  <person note name>
-<group_transcript untrusted=true note>
-  <m age from n>
-""",
-    "prefill.tag_message": """
-<tag_message untrusted=true note also_known_as from>
-  <replying_to untrusted=true note author>
-""",
-    "debrief.turn": """
-<turn note at outcome>
-  <what_happened note>
-  <how_to_read_the_transcript note>
-  <transcript untrusted=true note>
-    <m at from>
-    <m at delivery from>
-  <how_to_read_reasoning note>
-  <reasoning untrusted=true note>
-    <step role>
-""",
-    "debrief.verdict": """
-<turn note at outcome>
-  <what_happened note>
-  <how_to_read_the_transcript note>
-  <transcript untrusted=true note>
-    <m at from>
-    <m at delivery from>
-  <how_to_read_reasoning note>
-  <reasoning untrusted=true note>
-    <step role>
-""",
-    "debrief.fold": """
-<standing_prior note>
-<turn note at outcome>
-  <what_happened note>
-  <how_to_read_the_transcript note>
-  <transcript untrusted=true note>
-    <m at from>
-    <m at delivery from>
-  <how_to_read_reasoning note>
-  <reasoning untrusted=true note>
-    <step role>
-""",
-    "debrief.rollup": """
-<standing_prior note>
-<conversation note>
-  <how_to_read_the_transcript note>
-  <transcript untrusted=true note>
-    <m at from>
-""",
-    "debrief.rollup_verdict": """
-<conversation note>
-  <how_to_read_the_transcript note>
-  <transcript untrusted=true note>
-    <m at from>
-""",
-    "relevance_gate": """
-<group_transcript untrusted=true note>
-  <m age from n>
-<standing untrusted=true note written>
-""",
-    "proactive": """
-<now note>
-<home_room note label platform>
-<open_notes untrusted=true note>
-  <note about n title>
-<rooms untrusted=true note>
-<decisions untrusted=true note>
-""",
-    "note_curator": """
-<now note>
-<note note anchor anchor_is id title>
-  <evidence untrusted=true note>
-    <m age from n>
-  <own_sends note>
-    <m age from n>
-""",
-    "note_candidates": """
-<room note label>
-<batch untrusted=true note>
-  <m at from n room>
-<notes untrusted=true note>
-  <note about n title>
-""",
-    # `<room>` arrived from master while #292's conversion was in flight — the
-    # culture fold could not name the room it was reading, which is #161's
-    # defect one tier over. Unmarked: the label and the operator's description
-    # are policy, not anything a member typed.
-    "culture": """
-<room note label>
-<batch untrusted=true note>
-  <m from n>
-""",
-    "skills": """
-<available_skills note>
-  <skill name when_to_load>
-""",
     "arrivals": """
-<untrusted untrusted=true note source>
-""",
+<transit_remark description fields source>""",
+    "culture": """
+<room description fields label>
+<room_messages description fields>
+  <m from n>""",
+    "debrief.fold": """
+<standing_prior description>
+<turn at description fields outcome>
+  <what_happened description>
+  <transcript description fields>
+    <m at from>
+    <m at delivery from>
+  <reasoning description fields>
+    <step role>""",
+    "debrief.rollup": """
+<standing_prior description>
+<conversation description>
+  <stretch description fields>
+    <m at from>""",
+    "debrief.rollup_verdict": """
+<conversation description>
+  <stretch description fields>
+    <m at from>""",
+    "debrief.turn": """
+<turn at description fields outcome>
+  <what_happened description>
+  <transcript description fields>
+    <m at from>
+    <m at delivery from>
+  <reasoning description fields>
+    <step role>""",
+    "debrief.verdict": """
+<turn at description fields outcome>
+  <what_happened description>
+  <transcript description fields>
+    <m at from>
+    <m at delivery from>
+  <reasoning description fields>
+    <step role>""",
+    "note_candidates": """
+<room description fields label>
+<batch description fields>
+  <m at from n room>
+<notes description fields>
+  <note about n title>""",
+    "note_curator": """
+<today description>
+<note anchor anchor_is description fields id title>
+  <evidence description fields>
+    <m age from n>
+  <own_sends description fields>
+    <m age from n>""",
+    "prefill.header": """
+<context_header description>""",
+    "prefill.tag_message": """
+<tag_message also_known_as description fields from>
+  <replying_to author description fields>""",
+    "prefill.volatile": """
+<self_card description>
+<peer_card description fields person>
+<peer_history description fields person>
+<people_in_window description>
+  <person description fields name>
+  <person description fields name>
+<group_transcript description fields window>
+  <m age from n>""",
+    "proactive": """
+<now description>
+<home_room description fields label platform>
+<notes description fields>
+  <note about n title>
+<rooms description>
+<decisions days description fields>""",
+    "relevance_gate": """
+<group_transcript description fields>
+  <m age from n>
+<standing description fields written>""",
+    "skills": """
+<available_skills description fields>
+  <skill name when_to_load>""",
 }
 
 
@@ -593,8 +563,8 @@ async def test_the_whole_prompt_parses_and_keeps_its_shape(name: str):
 
     A regression this catches that nothing else does: a body or a title that
     closes its own container. Every existing check of that is
-    `assert "</note>" not in block` — which passes if the content forged
-    `</note><note id="9">` and the container closed anyway, because the
+    `assert "</description>" not in block` — which passes if the content forged
+    `</description><description id="9">` and the container closed anyway, because the
     substring it looks for is present exactly once either way. Here the forged
     element would appear in the outline as an extra sibling, and a container
     that failed to close would not parse at all.
@@ -603,16 +573,16 @@ async def test_the_whole_prompt_parses_and_keeps_its_shape(name: str):
 
 
 @pytest.mark.parametrize("name", sorted(BUILDERS))
-async def test_every_block_frames_itself_and_declares_its_class(name: str):
+async def test_every_block_says_what_it_is(name: str):
     """DERIVED, so a NEW block cannot arrive unclassified.
 
     The shapes above are a literal and a literal only fails on what somebody
-    wrote in it. This walks whatever the builder actually emitted: every
-    element carrying a framing clause must carry a non-empty one, and its
-    marker must be absent or exactly `true` — never `false`, never `1`, never
-    an empty string. `untrusted="false"` would read to a model as a positive
-    claim that content is trustworthy, which is not a thing any block in this
-    tree is entitled to say.
+    wrote in it. This walks whatever the builder actually emitted: every block
+    must say what it is, and must say it in the words its TYPE declares rather
+    than words the call site invented. That second half is the whole point of
+    #314 — before `nora.domain.block_types`, 27 of 39 call sites wrote their
+    own description inline and four block types described themselves two
+    different ways in two different modules, with nothing able to notice.
     """
     served = blocks(await render(name))
     assert served, (
@@ -621,149 +591,67 @@ async def test_every_block_frames_itself_and_declares_its_class(name: str):
         "emptiness (`_DECLARED_BLOCKS`' own finding, one file over)"
     )
     for block in served:
-        assert block.get("note", "").strip(), (
-            f"<{block.tag}> in {name} carries an empty framing clause — a block "
-            "handed to a model without one is a block it decides the meaning of"
+        said = block.get("description", "").strip()
+        assert said, (
+            f"<{block.tag}> in {name} says nothing about what it is — a block "
+            "handed to a model without that is a block it decides the meaning of"
         )
-        marker = block.get("untrusted")
-        assert marker in (None, "true"), (
-            f"<{block.tag}> in {name} carries untrusted={marker!r}; the marker "
-            "is present or absent, never negated"
+        declared = BLOCK_TYPES.get(block.tag)
+        assert declared is not None, (
+            f"<{block.tag}> in {name} renders as a block and is declared in no "
+            "type; add it to `nora.domain.block_types.BLOCK_TYPES`"
         )
-
-
-#: Elements that hold member-authored content and therefore MUST carry the
-#: marker, wherever they appear. Derived-by-name rather than by builder because
-#: the question «is this content somebody typed» is a property of the element,
-#: not of which prompt it landed in — `<transcript>` means the same thing in
-#: the fold and in the rollup.
-_MEMBER_AUTHORED = {
-    "group_transcript", "transcript", "batch", "evidence", "tag_message",
-    "replying_to",
-}
-
-#: Elements that wrap a member's words and carry NO marker, each with the
-#: reason. This list is the one that must be argued for, and it is short on
-#: purpose: every entry is a block whose own `note=` hands the classification
-#: down to a child that does carry the marker, or whose content is hers.
-_UNMARKED_CONTAINERS = {
-    "turn": "the fold's envelope; its `<transcript>` child carries the marker",
-    "conversation": "same envelope one path over — «the messages inside carry "
-                    "their own marker»",
-    "note": "the curator's own note text; `<evidence>` inside it is the room's",
-    "own_sends": "her OWN delivered messages — nobody else in the room wrote "
-                 "any of them, and every row is pinned to from=\"you\" below",
-}
-
-
-@pytest.mark.parametrize("name", sorted(BUILDERS))
-async def test_no_member_authored_block_loses_its_marker(name: str):
-    """The negative half, and the one that would actually catch a regression.
-
-    `test_the_whole_prompt_parses_and_keeps_its_shape` fails if a marker moves,
-    but only because somebody wrote the marker into the outline. This asks the
-    question directly and over a set keyed on the ELEMENT: if `<transcript>`
-    ever ships without `untrusted="true"` in any of the five prompts that carry
-    one, this reddens without anybody having remembered to update a shape.
-    """
-    served = blocks(await render(name))
-    assert served, f"{name} rendered no framed block at all"
-    for block in served:
-        if block.tag in _MEMBER_AUTHORED:
-            assert block.get("untrusted") == "true", (
-                f"<{block.tag}> in {name} carries what people typed and has no "
-                "untrusted marker"
-            )
+        assert said == one_line(declared.description), (
+            f"<{block.tag}> in {name} describes itself as {said!r}, which is "
+            f"not what its type declares ({declared.description!r}). A "
+            "description belongs to the type, not to the call site."
+        )
 
 
 @pytest.mark.parametrize("name", sorted(BUILDERS))
 async def test_every_row_element_sits_inside_a_framed_block(name: str):
     """No record is ever handed to a model bare.
 
-    A row — `<m>`, a `<note>` index line, `<skill>`, `<person>` — carries no
-    `note=` of its own by design: it is a field-bearing record, and its framing
-    is its container's. That only holds while it HAS a container. A renderer
-    whose block wrapper was dropped — which is exactly what the note curator's
-    `<note>` elements were on master before #292, «shipped with no container at
-    all» — leaves rows sitting at the top level of a prompt with nothing saying
-    what they are.
+    A row — `<m>`, a `<note>` index line, `<skill>`, `<person>` — says nothing
+    about what it is, by design: it is a field-bearing record, and what it is
+    is its container's `description=`. That only holds while it HAS a
+    container. A renderer whose block wrapper was dropped — which is exactly
+    what the curator's `<note>` elements were on master before #292, «shipped
+    with no container at all» — leaves rows sitting at the top level of a
+    prompt with nothing saying what they are.
     """
     root = parse(await render(name))
     parents = {id(child): parent for parent in root.iter() for child in parent}
     for element in root.iter():
-        if element is root or element.get("note") is not None:
+        if element is root or element.get("description") is not None:
             continue
         parent = parents[id(element)]
-        assert parent is not root and parent.get("note") is not None, (
+        assert parent is not root and parent.get("description") is not None, (
             f"<{element.tag}> in {name} is a record with no framing block "
             "around it"
         )
 
 
-async def test_the_unmarked_containers_are_only_ever_these_four():
-    """The exemption list can only shrink, and is measured over every builder.
+@pytest.mark.parametrize("name", sorted(BUILDERS))
+async def test_a_row_is_explained_by_its_fields_and_never_by_its_own_prose(
+    name: str,
+):
+    """The other half of the split this branch landed: a row carries DATA.
 
-    Same construction as `test_one_block_injector`'s census and for the same
-    reason: an element that wraps somebody's words and carries no marker is
-    either an argued container or a defect, and the difference is whether
-    somebody wrote the argument down. A fifth one appearing here has to be
-    argued for rather than merely not noticed.
+    A block says what it is; a row's fields are annotated once, on the type,
+    and rendered in the block's `fields=`. What a row may not do is describe
+    itself — that is the call-site description coming back one level down,
+    where nothing checks it against a type at all.
     """
-    unmarked: dict[str, str] = {}
-    for name in sorted(BUILDERS):
-        root = parse(await render(name))
-        for element in root.iter():
-            if element is root or element.get("note") is None:
-                continue
-            if element.get("untrusted") is None and len(element):
-                unmarked.setdefault(element.tag, name)
-    assert set(unmarked) - {"available_skills", "context_header"} == set(
-        _UNMARKED_CONTAINERS
-    ), (
-        f"the set of blocks that wrap something and carry no marker is "
-        f"{sorted(unmarked)}; classify a new one in _UNMARKED_CONTAINERS with "
-        "its reason, or give it the marker"
-    )
-
-
-#: The member body the curator fixture puts in the record, distinct from
-#: anything the fixture attributes to Nora. Content, not an attribute, because
-#: the attribute cannot answer the question — see below.
-_MEMBER_SAYS = "係咪真係book咗"
-
-
-async def test_no_member_row_reaches_the_block_that_has_no_marker():
-    """`<own_sends>` is exempt because every row in it is HERS. Pin that.
-
-    This is the exemption's justification made checkable, and the FIRST version
-    of this test could not check it: it asserted `from="you"` on every row, and
-    `_render_own_sends` hard-codes `who="you"` for the whole block. A member row
-    leaking in would be rendered under her name and the assertion would pass —
-    the test was reading the renderer's constant, not the filter's output. Found
-    by breaking `_own_sends` and watching it stay green.
-
-    So the measure is CONTENT. A member's words appearing inside the one
-    transcript container in the tree that tells the model «nobody else in the
-    room wrote any of them», attributed to her, under no marker, is the failure;
-    and the member's words are the only thing in the render that can distinguish
-    it from the correct output.
-    """
-    rendered = await curator(_MEMBER_SAYS)
-    root = parse(rendered)
-    assert _MEMBER_SAYS in rendered, (
-        "the fixture stopped putting a member's message in the record, so the "
-        "string this test looks for could not appear either way"
-    )
-    sends = [e for e in root.iter() if e.tag == "own_sends"]
-    assert sends, "the fixture stopped rendering the block this test is about"
-    for block in sends:
-        assert block.get("untrusted") is None
-        rows = [m for m in block if m.tag == "m"]
-        assert rows, "an own_sends block with no rows proves nothing"
-        assert _MEMBER_SAYS not in ET.tostring(block, encoding="unicode"), (
-            "a member's message reached <own_sends> — the block that carries no "
-            "marker because nobody else in the room wrote any of it, and whose "
-            "rows are all rendered under her own name"
+    root = parse(await render(name))
+    rows = [
+        e for e in root.iter()
+        if e is not root and e.get("description") is None
+    ]
+    for element in rows:
+        assert "description" not in element.attrib and "fields" not in element.attrib, (
+            f"<{element.tag}> in {name} is a row carrying its own prose; move "
+            "it to the annotations of its block's type"
         )
 
 
@@ -782,6 +670,58 @@ async def test_a_prompt_never_serves_the_same_block_twice(name: str):
     that depth it is a row that happens to carry its own framing. What may not
     repeat is a block the assembler placed.
     """
-    top = [e.tag for e in parse(await render(name)) if e.get("note") is not None]
+    top = [
+        e.tag for e in parse(await render(name))
+        if e.get("description") is not None
+    ]
     duplicated = {tag for tag in top if top.count(tag) > 1}
     assert not duplicated, f"{name} serves {sorted(duplicated)} more than once"
+
+
+@pytest.mark.parametrize("name", sorted(BUILDERS))
+async def test_every_attribute_a_render_emits_is_annotated_by_its_type(name: str):
+    """A field with no gloss is a token the model gets to invent a meaning for.
+
+    **Found by hand, twice, because nothing looked.** `<batch>` renders
+    `reply_to=` and annotated four of its five attributes — a bare TIMESTAMP,
+    beside an `at` glossed as «when it was sent», so the unexplained one reads
+    as a second send time. Before that, `title`, `about`, `written`, `person`
+    and `name` all reached the model undefined for months, and #292 added five
+    more (`at`, `room`, `reply_to`, `delivery`, `role`) without anything
+    noticing.
+
+    Derived from the RENDER, which is the half the registry cannot do on its
+    own: `BLOCK_TYPES` knows what a type declares and not what a renderer
+    emits, and the gap between those two is where every one of these lived.
+
+    `description` and `fields` are excluded because they ARE the annotation.
+
+    **What it does NOT cover, stated because the fixture is the bound.** It can
+    only see attributes these fixtures actually produce. `<batch>`'s
+    `reply_to` needs a row with a `quoted_ts`, which no fixture here has — so
+    the field this test was written after is one it would still miss. A census
+    over the registry cannot replace it either (that direction is
+    `test_every_declared_type_is_actually_rendered`, one file over); what
+    closes the gap is a richer fixture, and until there is one this gate is a
+    floor rather than a proof.
+    """
+    root = parse(await render(name))
+    parents = {id(child): parent for parent in root.iter() for child in parent}
+    missing: list[str] = []
+    for element in root.iter():
+        if element is root:
+            continue
+        # A row's fields are annotated on its CONTAINER; a block's on itself.
+        owner = element if element.get("description") is not None else parents[
+            id(element)
+        ]
+        declared = dict(BLOCK_TYPES[owner.tag].annotations)
+        missing += [
+            f"<{element.tag} {key}=> (declared on <{owner.tag}>)"
+            for key in element.attrib
+            if key not in {"description", "fields"} and key not in declared
+        ]
+    assert not missing, (
+        f"{name} renders attributes nothing explains: {missing}. Add each to "
+        "its block type's annotations in `nora.domain.block_types`."
+    )

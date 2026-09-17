@@ -1933,9 +1933,9 @@ def _miss(name: str, view: RoomView) -> dict:
 
 # ---- the memory channel's demotion (audit F9 / A10) -------------------------
 #
-# `prefill._transcript_block` puts a framing SENTENCE above the block and an
-# `untrusted="true"` attribute on the tag, and `_self_card_block` /
-# `_peer_history_block` carry the same demotion in a `note=`. Four tools —
+# `prefill._transcript_block` puts a framing sentence in the block's own
+# opening tag, and `_self_card_block` / `_peer_history_block` carry the same
+# demotion the same way — one sentence per block type (#314). Four tools —
 # `about`, `ask_memory`, `search_memory`, `load_transcript` — hand the model
 # the SAME classes of text through a channel that carried none of it: the last
 # two return verbatim group-authored bodies, which is exactly what
@@ -6853,8 +6853,7 @@ when somebody asks what song is on.
             times: how many times in total, including the first. Repeats only.
             until: the last date/moment it may go off, ISO-8601. Repeats only.
             note: the TITLE of the note this is about, exactly as listed in
-                <notes> (or in <open_notes> on your own morning pass), when the
-                reminder is about one of them. Optional. It
+                <notes>, when the reminder is about one of them. Optional. It
                 records the link; a reminder you set for yourself on your own
                 pass is dropped if the note is settled before it fires.
         """

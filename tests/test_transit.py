@@ -531,12 +531,18 @@ async def test_a_scheduled_time_is_not_presented_as_a_live_one(operators):
     assert all(any(f) for f in flags.values())
 
 
-async def test_a_free_text_operator_remark_is_wrapped_untrusted(operators):
+async def test_a_free_text_operator_remark_is_wrapped_and_says_what_it_is(operators):
     """design/14 §2.1: a typed envelope is not wrapped, but a free-text field
     inside one is. KMB's `rmk_en` is an operator-authored sentence."""
     out = await operators.client.arrivals("N48")
     assert out["status"] == "nothing_found"
-    assert out["operator_note"].startswith('<untrusted source="KMB" untrusted="true" ')
+    # NAMED for what it is, not `<untrusted>` (#314). One tag served this,
+    # a fetched web page and a social post, so all three carried one
+    # description — a model reading a page was told it was a transit remark —
+    # and the tag's own NAME was a word defined in a doctrine file most
+    # audiences never load.
+    assert out["operator_note"].startswith('<transit_remark source="KMB" ')
+    assert "service remark from the operator" in out["operator_note"]
     assert "Sundays and Public Holidays" in out["operator_note"]
 
 

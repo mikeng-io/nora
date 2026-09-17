@@ -929,7 +929,7 @@ async def test_a_reply_she_actually_delivered_can_close_a_note():
 
     rendered = await curator.inputs(key=WS, batch=())
     assert "969P from Tin Shui Chi" in rendered
-    assert "Each was DELIVERED" in rendered
+    assert "Every one was delivered" in rendered
 
     assert await _close_on(curator, note, cited=7) == 1
     assert store.notes[note.id].retire_reason == NoteSupersedeReason.RETIRED_CLOSED
@@ -1003,7 +1003,7 @@ async def test_a_stretch_of_only_her_rows_is_still_not_the_group_speaking():
     assert metrics.get(
         "nora_note_curator_candidates_total", evidence="self_only") == 1
     assert "nothing the group has said" in rendered
-    assert "your own messages since this note" in rendered
+    assert "messages you sent to that room since this note" in rendered
 
 
 async def test_a_note_closed_on_her_own_row_discharges_nothing():
@@ -2356,7 +2356,7 @@ async def test_her_delivered_row_is_shown_beside_the_group_and_not_instead_of_it
     # Both blocks, and the group's one still reads as the group's.
     assert '<evidence ' in rendered
     assert "thanks" in rendered
-    assert "your own messages since this note" in rendered
+    assert "messages you sent to that room since this note" in rendered
     assert "969P from Tin Shui Chi" in rendered
 
     assert await _close_on(curator, note, cited=7) == 1

@@ -14,7 +14,7 @@ The discipline every grounding client holds, unchanged from Tavily's:
   does not match the documented shape is a wiring gap — `unavailable`, NOT
   `nothing_found`, exactly as `TavilySearchProvider.fetch` treats a malformed
   `/extract` envelope.
-* Retrieved text is `untrusted`-wrapped (R-13) with the source URL as
+* Retrieved text is `social_post`-wrapped (R-13) with the source URL as
   provenance and CLAMPED (`content_max_chars`), because a tool result is
   re-sent on every subsequent model call.
 * `target` was already identifier/coordinate-screened at the tool layer
@@ -29,8 +29,8 @@ from typing import Any
 
 import aiohttp
 
+from ...domain.blocks import wrap_outside_text
 from ...domain.ports import SocialProvider
-from ..transit.arrivals import _wrap
 
 log = logging.getLogger("nora.social")
 
@@ -105,7 +105,7 @@ class OpenCliBridgeClient(SocialProvider):
         clamped, truncated = _clamp_chars(content, self._content_max_chars)
         url = payload.get("source_url")
         url = str(url) if url else None
-        # The content is stranger-written (R-13): wrapped `untrusted` with the
+        # The content is stranger-written (R-13): wrapped `social_post` with the
         # source as provenance. The URL rides PLAIN beside it so the model can
         # cite it in the reply — the same split as a Tavily result.
         #
@@ -120,7 +120,9 @@ class OpenCliBridgeClient(SocialProvider):
         # plain dict with no `content` key.
         out: dict[str, Any] = {
             "status": "ok",
-            "text": _wrap(url or f"{platform} {what}", clamped),
+            "text": wrap_outside_text(
+                "social_post", url or f"{platform} {what}", clamped,
+            ),
             "truncated": truncated,
         }
         if url is not None:

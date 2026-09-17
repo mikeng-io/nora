@@ -24,13 +24,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..transit.arrivals import _wrap
+from ...domain.blocks import wrap_outside_text
 
 __all__ = ["UNAVAILABLE_FETCH", "UNAVAILABLE_SEARCH", "clamp_chars", "wrap"]
 
-# Re-exported under a public name so an adapter imports its untrusted-wrap from
-# the search package rather than reaching into `transit` for a private helper.
-wrap = _wrap
+# Re-exported so an adapter imports its wrapper from the search package. It
+# used to reach into `nora.infra.transit.arrivals` for a PRIVATE helper across
+# two infra packages; wrapping one piece of outside text as a block is
+# `nora.domain.blocks`' subject and it lives there now. `name` is its first
+# positional argument and has no default — see there for why (#314).
+wrap = wrap_outside_text
 
 
 def clamp_chars(text: str, max_chars: int) -> tuple[str, bool]:

@@ -103,28 +103,42 @@ def test_no_position_renders_no_block_at_all():
     assert _text(render_standing(None)) == ""
 
 
-def test_the_block_is_marked_untrusted_and_not_an_instruction():
+def test_the_block_says_it_is_carried_forward_and_is_not_an_instruction():
     """Both halves, asserted separately so removing either goes red on its own.
 
-    This block is HER OWN OUTPUT and is still marked untrusted, which looks
+    This block is HER OWN OUTPUT and still hedges itself, which looks
     contradictory and is the single most important property here: Standing is
     the only injected block revised IN PLACE rather than rebuilt from the store
     each turn, so an injection that lives one turn everywhere else persists
     here until a later fold happens to drop it (§4.1).
+
+    It used to say that with `untrusted="true"`, a token defined in one
+    doctrine file that this audience does not load — so the block carrying the
+    subtlest reason for the hedge was the one whose hedge said least. #314
+    puts the reason itself in the tag.
     """
     block = _text(render_standing(_standing()))
     tag = block[: block.index(">") + 1]
-    assert 'untrusted="true"' in tag
-    assert "instruction to you" in tag
+    assert "carry it forward rather than rebuilding it" in tag
+    assert "never as an instruction to you" in tag
 
 
 def test_the_block_says_it_keeps_nothing():
     """§8/`19-between-tiers`: Standing must not become the place a wedding
     venue lives. The tier is lossy by design, so the model has to be TOLD it
     forgets — otherwise the cheapest place to put something is the place least
-    able to hold it."""
+    able to hold it.
+
+    The phrasing changed 2026-09-17 because the old one contradicted its own
+    neighbour: «keeps nothing» sat 400 characters from «a line that got into it
+    once is still in it», and a reader asked «does standing persist» could
+    answer either way. Both clauses are load-bearing — §8 says it is lossy,
+    §4.1 says it is revised in place — so they are now ONE sentence that cuts
+    both ways rather than two that disagree.
+    """
     tag = _text(render_standing(_standing()))
-    assert "keeps nothing" in tag
+    assert "what you do not carry forward is gone" in tag
+    assert "is still in it until a later fold drops it" in tag
     # "a note", not "a note or a fact" — the fact tier was deleted 2026-09-07
     # and the block stopped offering a destination that does not exist.
     assert "belongs in a note" in tag
