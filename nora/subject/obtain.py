@@ -35,6 +35,31 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ROOM = ("signal", "g1")
 
 
+def workspace_for(case_name: str, stated: str = "nora") -> str:
+    """A workspace of this case's own, keeping the name the corpus stated.
+
+    `room_for` isolated the TRANSCRIPT and nothing isolated the workspace — and
+    every accumulating table the Dreamer reads is workspace-keyed, not
+    room-keyed: notes, note candidates, the notes index. So one case's output
+    was the next case's input:
+
+    - eight `proactive_decide` cases shared workspace `friends`, so a case
+      asserting a reminder for its OWN note passed on a reminder about the
+      previous case's note, which was still standing;
+    - three `note_candidates` cases seed a note titled "Dinner 19 Sept" into
+      `friends`, so by the third there are three;
+    - two `proactive_act` pairs share a title, and `owe()` took the first match
+      by `created_at`, linking the EARLIER case's note.
+
+    The stated name is KEPT as a prefix because the corpus means it: two cases
+    in different workspaces must stay in different workspaces, and a reader
+    grepping for `friends` should still find them. The suffix is what makes
+    them per-case.
+    """
+    digest = hashlib.sha256(case_name.encode()).hexdigest()[:12]
+    return f"{stated}-{digest}"
+
+
 def room_for(case_name: str) -> tuple[str, str]:
     """A room of this case's own, derived from its name.
 
@@ -176,7 +201,9 @@ class Subject:
     """Nora, composed, plus the config she was composed from.
 
     `deps` is exactly what `nora/__main__.py` runs on — same type, same builder,
-    same 38 fields. An entry point is an attribute of it (`deps.dispatcher`,
+    same fields — 43 today, and
+    `tests/integration/test_the_subject_is_the_deployed_graph.py` is what
+    notices when that count moves. An entry point is an attribute of it (`deps.dispatcher`,
     `deps.engagement`, `deps.participation_trigger`, `deps.dreamer_runtime`),
     which is why `design/evaluation/01-boundaries.md` §3 can call the entry point
     a selection on a case rather than a branch in a runner.
@@ -322,6 +349,12 @@ async def obtain(spec: SubjectSpec) -> Subject:
         deps = await build_dependencies(cfg, clock=clock)
     finally:
         os.environ.pop(var, None)
+    # The variable is GONE, so the config must not go on naming it: anything
+    # that re-read `os.environ[cfg.store.database_url_env]` would get a
+    # KeyError. `Subject.database_url` is the field to read, and this makes the
+    # dead name unreadable rather than merely unused. Found by audit — it was a
+    # live trap, not a tidiness point.
+    cfg = _with(cfg, "store.database_url_env", "")
     return Subject(
         deps=deps, cfg=cfg, database_url=spec.database_url, room=spec.room,
     )

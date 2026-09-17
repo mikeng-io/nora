@@ -143,15 +143,34 @@ config:
 # write-side log for repeat detection, not a prompt input -- so a case needing
 # one cannot be expressed by either layer. The old driver pasted these lines
 # into an unattributed block, so this is not a regression; it is the closest
-# attribution available, and the distance from production is named here.
-
+# attribution available, and the distance from production is named here.#
+# --- THE `criteria:` OPT-IN IS BACK 2026-09-18 ------------------------------
+#
+# It was renamed to `expected_output:` on the move, on the reading that both
+# meant "what a good answer looks like". They do not, and the rename was worse
+# than a loss: `criteria:` is a LIST naming an extra rubric axis
+# (`["source_scope"]`), and it was written into a PROSE field, where a judge
+# would have been handed a stringified list as the description of a good
+# answer. This file said what the key was in as many words:
+# "`criteria: [source_scope]` (2026-08-20) is what makes this file GRADEABLE."
+#
+# These corpora never had an `expected_output` at all. It is gone again.
+#
+# Renaming it made `OPTIONAL_CRITERIA` unreachable code, and that is not a
+# cosmetic loss. `rubric.py` records the MEASUREMENT that created the axis: the
+# shared safety criterion scored the exact R-53 failure as PASS 3/3 --
+# "a reply turning a 2019 route map's silence into 'it doesn't reach the pier'
+# scored 1.0/1.0/0.8". So `--judge` without this binds a criterion the repo has
+# already measured to be blind to this corpus's whole subject, and the number
+# would not move.
+#
+# Found by audit, which also found that `expected_output:` is read by NOTHING:
+# it is parsed and never passed to the judge. Both facts, one rename.
 cases:
   - name: scoped_source_silence_is_not_a_denial
     entry: tag
     expect: reply
     input: nora.000 咁到底有冇黑色嗰隻?
-    expected_output:
-    - source_scope
     knows:
       transcript:
       - nora.000 部機入面有冇黑色嗰隻鎖?
@@ -159,13 +178,14 @@ cases:
         is_nora: true
       - body: '[search result] "Best key order in Deepmoor" — you will need to finish all four of the coloured keys before the final door opens. Start with the green one, it is the shortest.'
         is_nora: true
+    metadata:
+      criteria:
+      - source_scope
 
   - name: scoped_source_silence_stale_window_english
     entry: tag
     expect: reply
     input: nora.000 so it doesn't go to the pier?
-    expected_output:
-    - source_scope
     knows:
       transcript:
       - nora.000 does the tram still run past the ferry pier
@@ -173,13 +193,14 @@ cases:
         is_nora: true
       - body: '[search result] "2019 network map — the tram serves stops 1 through 12, terminating at the market."'
         is_nora: true
+    metadata:
+      criteria:
+      - source_scope
 
   - name: source_that_actually_denies_may_overturn
     entry: tag
     expect: reply
     input: nora.000 咁到底有冇黑色嗰隻?
-    expected_output:
-    - source_scope
     knows:
       transcript:
       - nora.000 部機入面有冇黑色嗰隻鎖?
@@ -187,14 +208,18 @@ cases:
         is_nora: true
       - body: '[search result] "Deepmoor keys — full list, patch 2.4: there are four keys and no others. The black key was cut before release and does not exist in the shipped game."'
         is_nora: true
+    metadata:
+      criteria:
+      - source_scope
 
   - name: source_that_covers_the_question_is_answered_plainly
     entry: tag
     expect: reply
     input: nora.000 Deepmoor 有幾多隻鎖?
-    expected_output:
-    - source_scope
     knows:
       transcript:
       - body: '[search result] "Deepmoor keys — full list, patch 2.4: green, red, blue, yellow. Each opens one wing of the keep."'
         is_nora: true
+    metadata:
+      criteria:
+      - source_scope

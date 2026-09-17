@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import dataclasses
 import os
 import sys
 from pathlib import Path
@@ -19,7 +20,7 @@ from .runner import load, run
 
 async def _main(
     paths: list[Path], *, database_url: str, model: str | None,
-    judge: Judge | None,
+    judge: Judge | None, sample: int | None,
 ) -> int:
     overrides: dict[str, object] = {}
     if model:
@@ -27,6 +28,8 @@ async def _main(
     verdicts = []
     for path in paths:
         for case in load(path):
+            if sample is not None:
+                case = dataclasses.replace(case, sample=sample)
             verdicts.append(await run(case, database_url=database_url,
                                       overrides=overrides or None, judge=judge))
             print(".", end="", flush=True, file=sys.stderr)
@@ -38,6 +41,7 @@ async def _main(
     passed, text = render(
         verdicts, subject="nora.subject.obtain",
         judge=None if judge is None else judge.model,
+        sample=sample,
     )
     print(text)
     return 0 if passed else 1
@@ -60,6 +64,16 @@ def main() -> int:
         ),
     )
     ap.add_argument("--judge-base-url", default="http://127.0.0.1:20128/v1")
+    ap.add_argument(
+        "--sample", type=int, default=None,
+        help=(
+            "override every case's `sample:`. The corpora ask for five and are "
+            "right to — one draw of a stochastic process is not a reading of "
+            "it. This exists so a cheap smoke run is POSSIBLE AND SAYS SO: "
+            "without it a run at one draw could not be reproduced from the "
+            "tree, because the tree says five"
+        ),
+    )
     args = ap.parse_args()
     if not args.database_url:
         print("--database-url or DATABASE_URL is required", file=sys.stderr)
@@ -74,7 +88,7 @@ def main() -> int:
         base_url=args.judge_base_url, model=args.judge,
     )
     return asyncio.run(_main(args.corpora, database_url=args.database_url,
-                             model=args.model, judge=judge))
+                             model=args.model, judge=judge, sample=args.sample))
 
 
 if __name__ == "__main__":

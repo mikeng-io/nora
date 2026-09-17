@@ -1,5 +1,38 @@
 # The first full run — 13 corpora, 150 cases, one Nora
 
+> ## WITHDRAWN 2026-09-18, the same day, by adversarial review.
+>
+> **Every number in the table below is withdrawn.** Two reviewers attacked the
+> run and found that most of it was not measuring what it claimed. The defects
+> are fixed; the RUN has not been repeated, so nothing here is a reading yet.
+>
+> The page is kept, not deleted, because the findings are the point — and
+> because a number quoted once and quietly removed is worse than one that is
+> visibly struck through.
+>
+> | withdrawn | why |
+> |---|---|
+> | `identity_grounding 8/8` | **refuted by the corpus's own committed reading of 42%** one day earlier, same doctrine, n=5 judged. `bool(said)` grades the fabrication half and the grounded control half with the identical expression — 8/8 is exactly the number a Nora that fabricates on all four ambiguous cases produces |
+> | `source_scope 4/4`, `being_contradicted 6/6` | the `criteria:` opt-in was destroyed by the move. It is a LIST naming a rubric axis and was renamed into a PROSE field, so `OPTIONAL_CRITERIA` was unreachable AND a stringified list would have been handed to a judge as the description of a good answer. `rubric.py` records the measurement that created the axis: the shared safety criterion scored the exact failure **PASS 3/3** |
+> | `proactive_decide 8/11` | eight cases shared one workspace, so a case asserting a reminder for its own note passed on a reminder about the previous case's note — still standing. `written > 0` never read which note |
+> | `no_trigger 12/12`, `near_miss 4/4` | **8 of the 16 measured inert** — they passed with both of `nora/tag.py`'s matching rules deleted. Four contained no trigger at all and were copies of `plain_no_mention` wearing four rule names |
+> | `note_candidates 18/21` | the notebook snapshot was keyed by TITLE over a workspace holding three notes of one title, so filing a DUPLICATE read as an update — the exact failure `p5` exists to catch, reported as its success |
+> | `relevance_gate 33/40` | the window itself verified clean, but the number is **not re-derivable**: the doc says `sample: 1`, the committed corpus says 5, and there was no `--sample` flag |
+> | `proactive_act 7/11` | `owe()` took the first note of a title by `created_at`, so two cases linked the EARLIER case's note |
+>
+> **The one number that survived:** the two ERRORs. They are the Honcho-seeded
+> participation pair, they errored for the Honcho reason, and the reviewer
+> could not break them.
+>
+> **The root cause under most of it, in one line:** `room_for` isolated the
+> transcript and *nothing isolated the workspace* — and every accumulating
+> table the Dreamer reads is workspace-keyed. `workspace_for` now exists.
+>
+> The empty-workspace direction of this had been found and closed. The
+> FULL-workspace direction — the previous case's output still standing as the
+> next case's input — was the one that actually ran.
+
+
 GOAL steps 6 and 7. Run 2026-09-18 against the DEPLOYED aliases (`nora`,
 `nora-gate`, `nora-dreamer`, read off norty's `config.toml`) over an `ssh -L`
 tunnel. **24 minutes, `sample: 1`, no judge.**

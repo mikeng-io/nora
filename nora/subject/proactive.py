@@ -73,12 +73,27 @@ async def owe(
     try:
         notes = SqlNoteStore(engine)
         standing = await notes.standing(workspace=subject.cfg.memory.workspace_id)
-        linked = next((n for n in standing if n.title == note_title), None)
-        if linked is None:
+        matches = [n for n in standing if n.title == note_title]
+        if not matches:
             raise LookupError(
                 f"act case names note {note_title!r}; seeded notes are "
                 f"{[n.title for n in standing]}"
             )
+        if len(matches) > 1:
+            # LOUD. `standing()` orders by `created_at ASC`, so a silent
+            # first-match linked the EARLIER note of that title — and two act
+            # pairs share a title, so `a02`'s `note_moved` revision landed on
+            # `a01`'s note and `a07`'s screen read `a04`'s. Neither case was
+            # ever tested against the note its own transcript is about.
+            #
+            # With per-case workspaces this cannot happen; it raises anyway,
+            # because the isolation is the thing that could regress.
+            raise LookupError(
+                f"{len(matches)} notes titled {note_title!r} in workspace "
+                f"{subject.cfg.memory.workspace_id!r}; the case would link one "
+                "of them and there is no way to say which"
+            )
+        linked = matches[0]
         row = Reminder(
             id=uuid.uuid4(),
             requester_person_id="nora",

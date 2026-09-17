@@ -46,7 +46,14 @@ from .knowledge import (
     settle,
     silent_failures,
 )
-from .obtain import DEFAULT_ROOM, Subject, SubjectSpec, obtain, room_for
+from .obtain import (
+    DEFAULT_ROOM,
+    Subject,
+    SubjectSpec,
+    obtain,
+    room_for,
+    workspace_for,
+)
 from .proactive import ActPass, act, owe
 
 __all__ = [
@@ -73,4 +80,5 @@ __all__ = [
     "room_for",
     "settle",
     "silent_failures",
+    "workspace_for",
 ]

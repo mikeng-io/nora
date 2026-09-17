@@ -120,8 +120,12 @@ async def test_two_subjects_do_not_share_an_environment_variable(
     b = await obtain(SubjectSpec(
         database_url=pg_url, workdir=tmp_path / "b", room=room_for("b"),
     ))
-    assert a.cfg.store.database_url_env != b.cfg.store.database_url_env
     assert os.environ["DATABASE_URL"] == "postgresql+asyncpg://untouched/db"
-    # And neither left its own variable behind.
-    assert a.cfg.store.database_url_env not in os.environ
-    assert b.cfg.store.database_url_env not in os.environ
+    # The returned config NAMES NO VARIABLE. Each call used one of its own and
+    # deleted it, so a config still pointing at that name would be a live trap:
+    # anything re-reading `os.environ[database_url_env]` gets a KeyError.
+    # `Subject.database_url` is the field to read.
+    assert a.cfg.store.database_url_env == ""
+    assert b.cfg.store.database_url_env == ""
+    assert a.database_url == b.database_url == pg_url
+    assert not [k for k in os.environ if k.startswith("NORA_SUBJECT_DATABASE_URL_")]

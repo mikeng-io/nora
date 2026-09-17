@@ -133,17 +133,25 @@ async def _staged(
         await engine.dispose()
 
 
-async def _notebook(subject: Subject, workspace: str) -> dict[str, str]:
-    """`title -> head_revision_id` for the standing notes of one workspace.
+async def _notebook(subject: Subject, workspace: str) -> dict[str, tuple[str, str]]:
+    """`note id -> (title, head_revision_id)` for one workspace's standing notes.
 
     Head revision and not just presence: an UPDATE creates no note, it moves a
-    note's head, so a snapshot that recorded only titles could not tell an
-    update from nothing happening at all.
+    note's head, so a snapshot recording only presence could not tell an update
+    from nothing happening at all.
+
+    Keyed by ID and not by TITLE, which is how it was and was wrong: `NOTE` has
+    no unique constraint on `(workspace, title)`, three note-candidates cases
+    seed a note called "Dinner 19 Sept" into one workspace, and a title-keyed
+    dict collapses them. A pass that FILED A DUPLICATE instead of revising the
+    tracked note then showed up as `("update", "Dinner 19 Sept")` — reported as
+    the success, when filing a duplicate is precisely the failure
+    `p5_already_tracked_gains_a_decision` exists to catch.
     """
     engine = create_sql_engine(subject.database_url)
     try:
         notes = await SqlNoteStore(engine).standing(workspace=workspace)
-        return {n.title: n.head_revision_id for n in notes}
+        return {n.id: (n.title, n.head_revision_id) for n in notes}
     finally:
         await engine.dispose()
 
@@ -214,10 +222,11 @@ async def dream(
 
     after = await _notebook(subject, workspace)
     staged = await _staged(subject, workspace)
-    changed = [("create", t) for t in after if t not in before]
+    changed = [("create", title) for nid, (title, _h) in after.items()
+               if nid not in before]
     changed += [
-        ("update", t) for t, head in after.items()
-        if t in before and before[t] != head
+        ("update", title) for nid, (title, head) in after.items()
+        if nid in before and before[nid][1] != head
     ]
     return Pass(
         status=outcome.status,

@@ -262,7 +262,17 @@ class Outcome:
         if expect == "remind":
             return self.written > 0
         if expect == "either":
-            return True
+            # NOT `True`. `either` says both ANSWERS are acceptable; it does not
+            # say that not answering is. The old suite had `UNMEASURED` as a
+            # third state for exactly this and its rule was "what a run cannot
+            # do is read healthy while it measured nothing".
+            #
+            # So: something must have happened. A turn that spoke or a pass
+            # that wrote satisfies it; a case where nothing ran does not, and
+            # falls to `None` — ungradable — rather than to a pass.
+            if self.said or self.written or self.changed:
+                return True
+            return None
         if expect == "none":
             # BOTH, because `none` is the negative of two different positives:
             # the note pass writing a note and the proactive pass writing a row.

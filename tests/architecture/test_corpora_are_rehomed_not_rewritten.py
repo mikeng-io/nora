@@ -15,6 +15,8 @@ import pathlib
 import pytest
 import yaml
 
+from evals.rebuilt.runner import substitute_trigger
+
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 #: `(old, new, entry)`. Only the entry points that EXIST are re-homed; the
@@ -112,8 +114,42 @@ _DECLARED_ATTRIBUTION: dict[str, dict[str, dict[int, dict]]] = {
     },
 }
 
+#: Corpora whose `input:` was TEMPLATED with `{trigger}` after the move, with
+#: the reason. The substitution is applied by `runner.substitute_trigger`, so
+#: the loaded case is byte-identical to the old literal — what changed is that
+#: the corpus no longer hardcodes a trigger the operator owns.
+#:
+#: `near_miss.yaml` was already templated and `no_trigger.yaml` was not, so the
+#: fix stopped at a file boundary. MEASURED: eight of those sixteen cases
+#: passed with both of `nora/tag.py`'s matching rules deleted, four of them
+#: because their input contained no trigger at all.
+_TEMPLATED = {"evals/corpora/no_trigger.yaml"}
+
+#: Cases whose INPUT was deliberately retargeted from the PLAIN trigger to the
+#: corpus's configured one, by corpus and case name.
+#:
+#: These four contained `nora` while the corpus is configured with `nora.000`,
+#: so `is_tagged` found nothing and the rule each is NAMED for was never
+#: reached — four copies of `plain_no_mention` wearing four rule names.
+#: MEASURED: they passed with both of `nora/tag.py`'s matching rules deleted.
+#:
+#: This is the one field the move may change on these cases, and only here.
+_RETARGETED = {
+    "evals/corpora/no_trigger.yaml": {
+        "trailing_word_char_glued",       # norax   -> nora.000x
+        "trailing_digit_glued",           # nora1   -> nora.0001
+        "inside_a_code_span",             # `nora`  -> `nora.000`
+        "name_inside_a_longer_word",      # Sonora  -> Sonora.000
+    },
+}
+
 _GATE_SPEAKERS = ("Kit", "Sam", "Aaron")
 _GATE_SPACING = 180
+
+
+#: The trigger those corpora are configured with, so the pin compares the
+#: SUBSTITUTED input — the thing the runner actually sends.
+_TRIGGER = "nora.000"
 
 
 def _is_a_source_line(body: str) -> bool:
@@ -177,10 +213,15 @@ def _old_shape(raw: dict, new_path: str = "") -> dict:
         )
     if raw.get("standing"):
         knows["standing"] = raw["standing"]
-    # `criteria:` -> `expected_output:`. The rename is encoded HERE, visibly,
-    # rather than being waved through: two files said "what a good answer looks
-    # like" under two names, and a judge should have one field to read.
-    rubric = raw.get("expected_output") or raw.get("criteria") or ""
+    # `criteria:` is the OPT-IN LIST, and it lives in `metadata.criteria` now.
+    #
+    # It was briefly renamed to `expected_output:` on the reading that both
+    # meant "what a good answer looks like". They do not: `criteria` is
+    # `["source_scope"]`, a rubric AXIS to grade on, and the rename both made
+    # `OPTIONAL_CRITERIA` unreachable and wrote a list into a prose field.
+    # Aliasing them here is what let that pass — the pin encoded the rename
+    # instead of questioning it.
+    rubric = raw.get("expected_output") or ""
     return {
         "expect": raw.get("expect", ""),
         "sample": int(raw.get("sample", 1)),
@@ -189,17 +230,26 @@ def _old_shape(raw: dict, new_path: str = "") -> dict:
         "input": raw.get("input", ""),
         "knows": knows,
         "expected_output": rubric,
-        "metadata": dict(raw.get("metadata") or {}),
+        "metadata": {
+            **dict(raw.get("metadata") or {}),
+            **({"criteria": raw["criteria"]} if raw.get("criteria") else {}),
+        },
     }
 
 
-def _new_shape(raw: dict) -> dict:
+def _new_shape(raw: dict, new_path: str = "") -> dict:
     return {
         "expect": raw["expect"],
         "sample": int(raw.get("sample", 1)),
         "category": raw.get("category", ""),
         "safety": bool(raw.get("safety", False)),
-        "input": raw.get("input", ""),
+        # SUBSTITUTED, because that is what the runner sends. A corpus holding
+        # `{trigger}` and an old one holding the literal are the same case; a
+        # comparison of the raw strings would report a change that is not one.
+        "input": (
+            substitute_trigger(raw.get("input", ""), _TRIGGER)
+            if new_path in _TEMPLATED else raw.get("input", "")
+        ),
         "knows": dict(raw.get("knows") or {}),
         "expected_output": raw.get("expected_output", ""),
         "metadata": dict(raw.get("metadata") or {}),
@@ -209,7 +259,7 @@ def _new_shape(raw: dict) -> dict:
 @pytest.mark.parametrize("old,new,entry", PAIRS, ids=lambda v: v if "/" not in str(v) else "")
 def test_every_case_survived_unchanged(old: str, new: str, entry: str) -> None:
     before = {c["name"]: _old_shape(c, new) for c in _load(old)}
-    after = {c["name"]: _new_shape(c) for c in _load(new)}
+    after = {c["name"]: _new_shape(c, new) for c in _load(new)}
 
     assert set(before) == set(after), (
         f"{new}: case NAMES changed. added={sorted(set(after) - set(before))} "
@@ -224,6 +274,12 @@ def test_every_case_survived_unchanged(old: str, new: str, entry: str) -> None:
         # could not have been graded, which is why those two had no runner.
         if not shape["expect"]:
             shape["expect"] = after[name]["expect"]
+
+    retargeted = _RETARGETED.get(new, set())
+    for name in retargeted:
+        # The input is the ONE field allowed to differ on these, and only
+        # because the old one did not contain the configured trigger at all.
+        before[name] = {**before[name], "input": after[name]["input"]}
 
     differing = {n: (before[n], after[n]) for n in before if before[n] != after[n]}
     assert not differing, (

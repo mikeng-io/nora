@@ -36,6 +36,7 @@ from nora.subject import (
     know,
     obtain,
     room_for,
+    workspace_for,
 )
 
 from .domain import Case, Outcome, Verdict
@@ -260,6 +261,17 @@ async def run_once(
         (case.room[0], case.room[1]) if len(case.room) == 2
         else room_for(case.name)
     )
+    # A WORKSPACE OF ITS OWN, for the reason the room needed one: every
+    # accumulating table the Dreamer reads is workspace-keyed, so without this
+    # a case's notes are still standing when the next case runs. Both the
+    # config and the policy are rewritten, because the two must agree or the
+    # pass writes where nothing reads.
+    stated = str((case.config or {}).get("memory.workspace_id") or "nora")
+    workspace = workspace_for(case.name, stated)
+    case_config = {**case.config, "memory.workspace_id": workspace}
+    case_policy = case.policy.replace(
+        f'workspace = "{stated}"', f'workspace = "{workspace}"',
+    )
     workdir = Path(tempfile.mkdtemp(prefix="nora-case-"))
     started = time.monotonic()
     try:
@@ -290,10 +302,10 @@ async def run_once(
                 # just fixed. The flags belong to the suite; the room belongs
                 # to the case.
                 **(
-                    {"policy": case.policy.format(
+                    {"policy": case_policy.format(
                         platform=room[0], room=room[1],
                     )}
-                    if case.policy else {}
+                    if case_policy else {}
                 ),
                 # WHAT TIME IT IS, when the case says. Parsed here rather than
                 # in the domain, which imports nothing from `nora` and knows
@@ -302,7 +314,7 @@ async def run_once(
                 # The entry point's own requirements UNDER the case's, so a
                 # case can still override anything and nothing has to remember
                 # which switch its suite needs.
-                overrides={**port.config, **case.config, **(overrides or {})},
+                overrides={**port.config, **case_config, **(overrides or {})},
             )
         )
     except Exception as exc:                        # noqa: BLE001 — see docstring
@@ -413,7 +425,11 @@ def _check_the_corpus_assertions(
     if case.expect == "create" and updates:
         failed.append(f"create case also revised {updates}")
 
-    if meta.get("anchor_date") is not None and outcome.staged:
+    if meta.get("anchor_date") is not None and case.expect in ("create", "update"):
+        # NOT `and outcome.staged`: that made it fail OPEN — a pass that staged
+        # nothing skipped the assertion instead of missing it. Guarded on the
+        # EXPECTATION instead, so only a case that should have staged something
+        # is held to it.
         want = int(meta["anchor_date"])
         got = [a for _t, a, _m, _s in outcome.staged]
         if want not in got:
@@ -458,8 +474,11 @@ def _check_the_corpus_assertions(
             elif not negate and missing:
                 failed.append(f"{key}: {sorted(missing)} not among {sorted(cited)}")
         else:
-            present = [w for w in wanted if str(w) in said]
-            absent = [w for w in wanted if str(w) not in said]
+            # CASE-FOLDED, as the driver this replaces did deliberately:
+            # «Note» must not pass where «note» fails. Lost on the move.
+            folded = said.casefold()
+            present = [w for w in wanted if str(w).casefold() in folded]
+            absent = [w for w in wanted if str(w).casefold() not in folded]
             if negate and present:
                 failed.append(f"{key}: the reply contains {present}")
             elif not negate and absent:
