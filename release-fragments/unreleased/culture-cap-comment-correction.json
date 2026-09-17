@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Comment and docstring correction only, no behaviour change. #344's prose claimed the 1,400-char cap left a room with no account 'at all' and that the fold 're-folded forever'; both were written from a four-fire window while the fifth fire was pending, and it landed and was recorded on the old code. The restored reading is that the refusal self-heals on any compliant draw, at a measured 55% refusal rate and one model call per losing fire. The user-facing bullet for the cap change itself lives in culture-cap-and-lookup-person-budget.json, whose first detail is corrected in the same commit.",
+  "details": [],
+  "limitations": []
+}

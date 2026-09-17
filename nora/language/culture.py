@@ -115,24 +115,27 @@ class AccountNotRecordableError(NoraError):
     never `nothing_found`, *because the loop must not advance a watermark past
     a batch nobody read*. A batch whose one account was refused is that batch.
 
-    **The cost, OBSERVED rather than named.** If EVERY draw for a room
-    overruns the cap, that room's fold wedges: the watermark never moves and
-    `lag` grows. This paragraph used to call that an accepted trade that
+    **The cost, OBSERVED rather than named.** If a draw for a room overruns
+    the cap, that fire is spent and the watermark does not move; while it keeps
+    overrunning, `lag` grows. This paragraph called that an accepted trade that
     "self-heals on any compliant draw, because the next fire is a fresh sample
-    at non-zero temperature". It does not self-heal, and 2026-09-17 is the
-    reading. With the cap at 1,400 the deployment's busiest room drew 1,876,
-    1,725, 1,677 and 1,583 on four consecutive fires and never once came under
-    — temperature moves the draw, it does not move the LENGTH the instruction
-    implies. The room took four model calls, recorded nothing, and would have
-    gone on doing it for as long as anyone left it.
+    at non-zero temperature". **That sentence is CORRECT and a rewrite of this
+    docstring briefly claimed it was not** — the claim was made on 2026-09-17
+    from a four-fire window, while the fifth fire was still pending. It landed:
+    the deployment's busiest room drew 1,876, 1,725, 1,677 and 1,583 against a
+    1,400 cap, then 1,323, which was recorded. A Signal room did the same two
+    fires earlier. Both self-healed exactly as the original sentence said.
 
-    Loud, it was: `nora_dream_run_total{status="unavailable"}`, a growing lag
-    and a WARNING naming the scope. Loud is not the same as recoverable. What
-    makes a wedge survivable is `BODY_MAX_CHARS` being set where an account
-    written to the objective's own instruction cannot reach it — and that is a
-    claim about what the model EMITS, which is why the cap is now sized on
-    `ACCOUNT_CHARS_OBSERVED_MAX` rather than on a ratio against the worked
-    example.
+    What the window DID show is the price of the healing. At the refusal rate
+    measured that evening — 6 of 11 draws over the cap — a room re-draws for a
+    geometrically distributed number of ticks and pays a model call each time;
+    zone 42 paid four. Loud, it was: `nora_dream_run_total{status=
+    "unavailable"}`, a growing lag and a WARNING naming the scope. Loud and
+    self-healing still is not free. What makes the trade cheap is
+    `BODY_MAX_CHARS` being set where an account written to the objective's own
+    instruction rarely reaches it — a claim about what the model EMITS, which
+    is why the cap is now sized against `ACCOUNT_CHARS_OBSERVED_MAX` rather
+    than against a ratio to the worked example.
 
     **What would make the cap a quality instrument again is in the OBJECTIVE,
     and the objective is `change_policy: operator-only`.** The model is never
@@ -675,9 +678,10 @@ class CultureAdaptor:
         **Which is why the raise is now nearly unreachable, and that is the
         point** (operator, 2026-09-18). `BODY_MAX_CHARS` is 20,000 against a
         measured emission maximum of 1,876, so `oversize` has gone from a
-        refusal that fired on 6 of 10 live accounts to one that should never
-        fire at all. `nora_culture_fold_total{outcome="oversize"}` reading zero
-        is the EXPECTED state now, not evidence the branch is dead — and if it
+        refusal that fired on 6 of 11 live draws — 55%, each one costing a
+        model call and a re-fold — to one that should never fire at all.
+        `nora_culture_fold_total{outcome="oversize"}` reading zero is the
+        EXPECTED state now, not evidence the branch is dead — and if it
         ever fires it means a body 10x anything observed, which is the
         corruption the ceiling is for.
 

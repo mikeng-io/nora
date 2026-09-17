@@ -101,18 +101,29 @@ OUTPUT_TOKENS_PER_CHAR = 1.15
 #:
 #: | outcome | characters |
 #: |---|---|
-#: | written | 563, 811, 1,095, 1,316 |
+#: | written | 563, 811, 1,095, 1,316, 1,323 |
 #: | REFUSED | 1,583, 1,677, 1,725, 1,812, 1,826, 1,876 |
 #:
-#: The cap ran straight through the middle of that distribution. 1,316 — the
-#: largest account that landed — is 94% of it. And the busiest room in the
-#: deployment (a Discord games room, `100000000000000201/…`) never got an
-#: account at all: four folds, four refusals, its watermark still at the seed,
-#: a model call burned per tick. `accept` RAISES on oversize and the Dreamer
-#: holds the watermark for a raise, so the room re-folded forever against an
-#: instruction that never told it a length — the retry had nothing that could
-#: make it converge. The batch shrink (300 -> 37 messages, an 8x cut of the
-#: INPUT) moved the output 1,876 -> 1,583 and stopped there.
+#: **6 of 11 draws were refused — 55%.** The cap sits above every account that
+#: landed and below every one that did not, and 1,316 is 94% of it, so it is
+#: not a bar the writer clears with room to spare; it is a coin the fold
+#: tosses every fire.
+#:
+#: **CORRECTED 2026-09-18, and the correction matters.** The first version of
+#: this comment said the busiest room (a Discord games room,
+#: `100000000000000201/…`) "never got an account at all" and "re-folded
+#: forever". Both were wrong, and they were written while the room was still
+#: mid-sequence. It was refused four times — 1,876, 1,725, 1,677, 1,583 — and
+#: then its FIFTH draw came in at 1,323 and was recorded. The Signal room
+#: `MP4ODQ…` did the same thing two fires earlier: refused at 1,812 and 1,826,
+#: written at 1,316.
+#:
+#: So the wedge is a LOTTERY, not a deadlock: `accept` raises, the Dreamer
+#: holds the watermark, and the fold re-draws until one lands under the cap —
+#: one model call per tick, for a geometrically distributed number of ticks at
+#: a 55% refusal rate. Zone 42 paid four calls and 26 minutes. That is a real
+#: cost and it is why this number moved, but "forever" was an overclaim made
+#: from a four-point window, and the fifth point was already on its way.
 #:
 #: *What 20,000 is.* Not a quality refusal — it is a CORRUPTION ceiling one
 #: notch under the database's, and it is stated plainly that this tier now has

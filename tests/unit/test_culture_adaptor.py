@@ -624,22 +624,22 @@ def test_the_cap_cannot_wedge_a_room_the_way_1400_did():
     The old test pinned `BODY_MAX_CHARS` as a band (1.75x-2.05x) around the
     objective's 739-character worked example, on the theory that the cap was a
     QUALITY instrument: admit the second paragraph, refuse the essay. It was
-    green on 1,400 — and 1,400 ran through the middle of what the model
-    actually emits. Measured live the same evening, n=10 across five rooms:
-    563, 811, 1,095 and 1,316 characters written; 1,583, 1,677, 1,725, 1,812,
-    1,826 and 1,876 REFUSED. The deployment's busiest room folded four times,
-    was refused four times, recorded nothing, and held its watermark — one
-    model call per tick against an instruction that never named a length. The
-    band certified all of that as correct, because a ratio against a worked
-    example is not a measurement of a model.
+    green on 1,400 — and 1,400 sat inside what the model actually emits.
+    Measured live the same evening, n=11 across five rooms: 563, 811, 1,095,
+    1,316 and 1,323 characters written; 1,583, 1,677, 1,725, 1,812, 1,826 and
+    1,876 REFUSED. **6 of 11 — 55% — refused**, each refusal spending a model
+    call and re-folding the same batch. The deployment's busiest room paid
+    four before its fifth draw came under. The band certified all of that as
+    correct, because a ratio against a worked example is not a measurement of
+    a model.
 
     So the property worth pinning is not the cap's ratio to the example. It is
-    that **a normal draw cannot reach the cap**: `accept` RAISES on oversize
+    that **a normal draw does not reach the cap**: `accept` RAISES on oversize
     and the Dreamer holds the watermark for a raise, so a cap inside the
-    emission distribution is not a refusal, it is a wedge. 4x the observed
-    maximum is the margin — wide enough that the 29%-higher next sample this
-    repo has already been bitten by (`[dreamer] max_tokens`, n=1 -> 4,000)
-    cannot reach it either.
+    emission distribution turns every fire into a coin toss paid for in model
+    calls. 4x the observed maximum is the margin — wide enough that the
+    29%-higher next sample this repo has already been bitten by (`[dreamer]
+    max_tokens`, n=1 -> 4,000) cannot reach it either.
 
     The quality guard the old test thought it was enforcing belongs to the
     objective, which is `change_policy: operator-only`; `CultureAdaptor.accept`
