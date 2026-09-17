@@ -1,0 +1,67 @@
+kind: design_index
+title: "Evaluation — the chain from a design decision to a thing that can refute it"
+description: >
+  250 decision and rule rows in design/09-decision-index.md; 10 cite an evals/
+  instrument, 196 cite a unit test only, 44 cite nothing. Five of the ten point
+  at a corpus that drives a bare model on doctrine text rather than Nora. Cut to
+  the R-* rules, which are behavioural by construction: 92 of them, 4 with an
+  eval, 52 guarded by a test that measures WIRING, 36 with nothing. So the
+  decision index's test column answers "is the code wired" while AGENTS.md
+  presents it as the answer to "does she behave as designed". This bundle is
+  about that chain — decision, the behaviour it claims, an evaluation that can
+  refute it, driven against the real Nora — and about nothing else. The test
+  layer is explicitly out of scope: unit, integration and e2e are solved outside
+  this repo and want standard practice rather than a bespoke convention. What
+  has no industry answer is whether an LLM agent behaves as designed, and that
+  is the only thing here.
+status: proposed
+origin: >
+  Operator session 2026-09-17, opened by one question — "your measurement, what
+  is it actually measuring?" — after four sessions of measurement discipline had
+  been applied to an instrument that did not bind to its subject. A first
+  attempt at the requirement (PR #307) was written and withdrawn the same day
+  after two adversarial Opus reviews; its failure is recorded in 00-overview §1
+  because the shape of the failure is why this bundle is shaped differently. The
+  operator's correction is the design: take Nora as she is, add the thing under
+  test, and there is nothing left to assemble. Findings and the six properties
+  any convention must satisfy are on #311. Tree at b3c21686.
+members:
+  - 00-overview.md
+  - 01-the-runner.md
+edges:
+  - {src: 01-the-runner, dst: 00-overview, rel: depends_on, provenance: asserted}
+external_edges:
+  - {dst: "dreamer-agent-loop/35-ambient-participation", rel: relates_to, provenance: asserted}
+  - {dst: "dreamer-agent-loop/36-relevance-gate", rel: relates_to, provenance: asserted}
+decisions:
+  reserved: "NONE CLAIMED. No decision is taken by this bundle; 01-the-runner section 3 is the first one to make, and it is the operator's"
+  index: null
+governance:
+  reviewed_by: >
+    NOT REVIEWED. The prior attempt at this subject (PR #307) passed its own
+    author's gate and was then refuted on two independent adversarial reviews,
+    so an unreviewed state is worth naming loudly here rather than assumed.
+  measured: >
+    00-overview section 2 and 01-the-runner sections 1-2 are measurement, read
+    off the tree at b3c21686 — the eight driver functions and their line
+    numbers, the five composition sites, the ~90 build_dependencies calls in
+    tests/test_composition.py, and the import boundary in
+    tests/test_boundaries.py. Everything else is design and is NOT measured.
+    In particular the claim that every driver difference is expressible as an
+    entry point plus input (00-overview section 3) is ASSERTED and is the thing
+    to attack.
+  synced_with: >
+    #292 (the prompt-assembly session) — its injector work is validated by a
+    corpus that strips the framing it is about, which is this bundle's problem
+    seen from the other side. #311 carries the findings.
+open_questions:
+  - "OPERATOR — 01-the-runner section 3: move the integration harness into nora.testing (A), widen the evals import boundary (B), or keep two builders behind a full parity gate (C). A matches the bundle's sentence; its cost is unsized"
+  - "UNSIZED and it gates everything — how much of tests/integration/harness.py can move into nora.testing without dragging pytest-only machinery with it. 01-the-runner section 6 says size this before building anything"
+  - "ASSERTED, NOT DECIDED — that relevance_gate fits as an entry point rather than a special case (00-overview section 4.1). If it does not, the shape is refuted; it is the cleanest instrument in the repo and a taxonomy that cannot hold it is wrong"
+  - "OPEN — what happens to the four reconstruction suites. Rebuilt on the runner, kept under an honest name as doctrine-wording probes, or deleted. A cheap probe has a use; a probe whose number reads like production does not"
+  - "OPEN — where the model sits. It is substituted routinely (--model, --effort, _ALWAYS_SENDS) and appeared on neither list in the withdrawn attempt. Presumably part of the subject with the override as declared input, but that is asserted"
+  - "OPEN — absorption order. relevance_gate is closest to the shape, adversarial is furthest. The test that the bundle is working is that every absorbed driver DELETES a _run_* function; if the count does not fall, the runner became a ninth builder"
+  - "NOT IN THIS BUNDLE — the convention itself. 00-overview section 7: build the runner, absorb the drivers, write the convention LAST describing what exists. A convention written first describes eight variations and legitimises them, which is the mistake already made once"
+  - "MEASURED, AND THE BUNDLE'S OWN WEAKEST CLAIM — 00-overview section 7: the 52 R-* rules guarded by a wiring test have NOT been read one by one. Some may be genuinely settled by wiring. Classify them before building anything; a bundle about not trusting unmeasured claims should not ship one"
+  - "BLOCKED, MEASURED 2026-09-17 — 01-the-runner's shape A (move tests/integration/harness.py into nora.testing) is REFUTED by the layer contract. Three probes, each an injected import run through lint-imports: nora.testing -> nora.app breaks 2 contracts (a reverse import, which is what layers exist to prevent), -> nora.infra breaks 1, -> nora.config breaks 2. The test-only dependency is trivial (3 names, no pytest import); the blocker is architectural"
+  - "REFRAMED 2026-09-17 — 'there are two builders' is not accurate. BOTH harnesses already call nora.app.offline.build_offline_pipeline (tests/integration/harness.py:484, evals/harness.py:612). What diverges is the SETUP around it: real Postgres + run_migrations versus FakeRecordStore/FakeMemoryStore. The 13 None-defaulting parameters are what let two callers forget different things"
