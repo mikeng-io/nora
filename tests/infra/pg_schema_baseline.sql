@@ -57,6 +57,8 @@
 );
 );
 );
+);
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -102,6 +104,7 @@ ADD CONSTRAINT note_pkey PRIMARY KEY (id);
 ADD CONSTRAINT note_replaced_by_fkey FOREIGN KEY (replaced_by) REFERENCES public.note(id);
 ADD CONSTRAINT note_revision_note_id_fkey FOREIGN KEY (note_id) REFERENCES public.note(id);
 ADD CONSTRAINT note_revision_pkey PRIMARY KEY (id);
+ADD CONSTRAINT participation_window_state_pkey PRIMARY KEY (platform, conversation_id);
 ADD CONSTRAINT presence_corridor_speed_pkey PRIMARY KEY (subject_id, corridor_id, hour_of_week);
 ADD CONSTRAINT presence_corridors_pkey PRIMARY KEY (id);
 ADD CONSTRAINT presence_derived_places_pkey PRIMARY KEY (id);
@@ -118,6 +121,7 @@ ADD CONSTRAINT room_lexeme_pkey PRIMARY KEY (scope_id, canonical_form, sense);
 ADD CONSTRAINT room_portrait_pkey PRIMARY KEY (scope_id);
 ADD CONSTRAINT standing_pkey PRIMARY KEY (platform, conversation_id);
 ADD CONSTRAINT sticker_index_pkey PRIMARY KEY (platform, fetch_token);
+ADD CONSTRAINT tag_debounce_state_pkey PRIMARY KEY (platform, conversation_id);
 ADD CONSTRAINT tag_trace_pkey PRIMARY KEY (id);
 ADD CONSTRAINT tool_call_log_pkey PRIMARY KEY (id);
 ADD CONSTRAINT turn_verdict_pkey PRIMARY KEY (tag_id);
@@ -170,6 +174,7 @@ ALTER TABLE ONLY public.note_entity
 ALTER TABLE ONLY public.note_entity
 ALTER TABLE ONLY public.note_revision
 ALTER TABLE ONLY public.note_revision
+ALTER TABLE ONLY public.participation_window_state
 ALTER TABLE ONLY public.presence_corridor_speed
 ALTER TABLE ONLY public.presence_corridors
 ALTER TABLE ONLY public.presence_derived_places
@@ -187,6 +192,7 @@ ALTER TABLE ONLY public.room_lexeme
 ALTER TABLE ONLY public.room_portrait
 ALTER TABLE ONLY public.standing
 ALTER TABLE ONLY public.sticker_index
+ALTER TABLE ONLY public.tag_debounce_state
 ALTER TABLE ONLY public.tag_trace
 ALTER TABLE ONLY public.tool_call_log
 ALTER TABLE ONLY public.turn_verdict
@@ -357,6 +363,7 @@ CREATE TABLE public.note (
 CREATE TABLE public.note_candidate (
 CREATE TABLE public.note_entity (
 CREATE TABLE public.note_revision (
+CREATE TABLE public.participation_window_state (
 CREATE TABLE public.presence_corridor_speed (
 CREATE TABLE public.presence_corridors (
 CREATE TABLE public.presence_derived_places (
@@ -373,6 +380,7 @@ CREATE TABLE public.room_lexeme (
 CREATE TABLE public.room_portrait (
 CREATE TABLE public.standing (
 CREATE TABLE public.sticker_index (
+CREATE TABLE public.tag_debounce_state (
 CREATE TABLE public.tag_trace (
 CREATE TABLE public.tool_call_log (
 CREATE TABLE public.turn_verdict (
@@ -471,6 +479,8 @@ consumed_verdict_tag text,
 content text DEFAULT ''::text NOT NULL
 context text NOT NULL,
 context_sha256 text DEFAULT ''::text NOT NULL,
+conversation_id text NOT NULL,
+conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
@@ -608,6 +618,7 @@ kind text NOT NULL,
 kind text NOT NULL,
 label text,
 last_adjudicated_at bigint,
+last_allowed_at bigint NOT NULL,
 last_cluster_id integer DEFAULT 0 NOT NULL,
 last_fired_at bigint NOT NULL,
 last_fix_id integer DEFAULT 0 NOT NULL,
@@ -624,8 +635,10 @@ last_seen_at bigint NOT NULL,
 last_seen_at bigint,
 last_seen_ts bigint NOT NULL
 last_seen_ts bigint NOT NULL,
+last_send_at bigint,
 last_tag_id text NOT NULL,
 last_wake_revision_id uuid,
+last_window_end_at bigint NOT NULL,
 lat double precision NOT NULL,
 lat double precision NOT NULL,
 lat double precision NOT NULL,
@@ -701,6 +714,8 @@ place_id integer
 place_id integer NOT NULL,
 place_id integer NOT NULL,
 place_id text NOT NULL,
+platform text NOT NULL,
+platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
@@ -825,6 +840,8 @@ uncertainty text NOT NULL,
 unsupported text[] DEFAULT '{}'::text[] NOT NULL,
 updated_at bigint NOT NULL,
 updated_at bigint NOT NULL,
+updated_at timestamp with time zone DEFAULT now() NOT NULL
+updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 updated_at timestamp with time zone DEFAULT now() NOT NULL

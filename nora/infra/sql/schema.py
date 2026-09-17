@@ -2485,3 +2485,61 @@ IDX_CULTURE_REVISION_KEY_WRITTEN = sa.Index(
     "idx_culture_revision_key_written",
     CULTURE_REVISION.c.culture_key, sa.text("written_at DESC"), sa.text("id DESC"),
 )
+
+
+# `participation_window_state` — where the participation trigger's per-room
+# watermarks live between processes (`nora.app.participation`). Two columns,
+# both epoch ms on the WALL clock, because a `time.monotonic()` value has an
+# arbitrary per-process epoch and means nothing to the process that reads it
+# back.
+#
+# ONE ROW PER ROOM, not one per (room, cursor): both columns are read together
+# on every `close_due_windows` tick and written inside the same iteration of
+# the same loop, so splitting them would buy two round trips and a way for the
+# pair to disagree.
+#
+# `last_window_end_at` is NOT NULL and `last_send_at` IS nullable, and the
+# asymmetry is the trigger's own control flow rather than a preference: a row
+# exists because a window closed, and a send can only happen inside a window
+# that closed. So there is no state in which the window end is unknown, and
+# NULL on `last_send_at` means «she has never spoken here» — which must not
+# collapse to 0, a real 1970 instant the cooldown would compute against and
+# permit either way (`dream_schedule_state`'s lesson, one table over).
+#
+# BOUNDED BY THE ALLOWLIST, so it needs no sweep. A row is only ever written
+# for a room whose `[[conversations]]` entry carries `relevance_gate = true` —
+# a handful, operator-authored — unlike the in-memory dicts it mirrors, which
+# `ParticipationTrigger.sweep` bounds because they grow with every conversation
+# seen.
+PARTICIPATION_WINDOW_STATE = sa.Table(
+    "participation_window_state",
+    METADATA,
+    sa.Column("platform", sa.Text, primary_key=True),
+    sa.Column("conversation_id", sa.Text, primary_key=True),
+    sa.Column("last_window_end_at", sa.BigInteger, nullable=False),
+    sa.Column("last_send_at", sa.BigInteger),
+    sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.text("now()")),
+)
+
+# `tag_debounce_state` — R-9's rate limiter (`nora.tag.Debounce`), in the
+# database instead of in a dict that a force-recreate empties. Same shape and
+# same reasoning as the table above; separate because it is a separate
+# subsystem with a separate write cadence (once per ADMITTED TAG, not once per
+# closed window) and `nora/tag.py` is a leaf module that imports nothing of
+# this package.
+#
+# BOUNDED BY ITS OWN INTERVAL, which is the one bound that needs no policy:
+# a row older than `[engagement.trigger] min_interval_seconds` can never change
+# `allow()`'s answer again, so `Debounce.hydrate` deletes those rather than
+# loading them. The table therefore holds at most the rooms tagged inside one
+# debounce window.
+TAG_DEBOUNCE_STATE = sa.Table(
+    "tag_debounce_state",
+    METADATA,
+    sa.Column("platform", sa.Text, primary_key=True),
+    sa.Column("conversation_id", sa.Text, primary_key=True),
+    sa.Column("last_allowed_at", sa.BigInteger, nullable=False),
+    sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.text("now()")),
+)

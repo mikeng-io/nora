@@ -12,10 +12,14 @@ from __future__ import annotations
 
 import contextlib
 import inspect
+import time
+
+import pytest
 
 from nora.app.fire import SENT, SILENT
 from nora.app.participation import ParticipationTrigger
 from nora.domain.models import NormalizedMessage
+from nora.domain.participation import ParticipationCursor
 from nora.engagement.slots import ConversationSlots
 
 SETTLE = 10.0
@@ -562,3 +566,262 @@ def test_the_trigger_records_nothing_to_a_decision_log():
     """
     params = inspect.signature(ParticipationTrigger.__init__).parameters
     assert not any("decision" in name for name in params)
+
+
+# --- surviving a restart (migration 0056) ----------------------------------
+
+
+class _FakeStore:
+    """In-memory `ParticipationStateStore`, with `SqlParticipationStateStore`'s
+    semantics: an upsert per verb, an ABSENT send rather than a zero one, and a
+    `messages` half the test sets directly — that column is re-derived from the
+    record at hydration precisely because the dispatcher may not await a write
+    for it.
+    """
+
+    def __init__(self) -> None:
+        self.rows: dict[tuple[str, str], list] = {}      # [window_end, send]
+        self.messages: dict[tuple[str, str], tuple[int, str]] = {}
+        self.reads = 0
+        self.fail_reads = 0
+
+    async def read_cursors(self) -> list[ParticipationCursor]:
+        self.reads += 1
+        if self.fail_reads:
+            self.fail_reads -= 1
+            raise RuntimeError("database down")
+        out = []
+        for (platform, conversation_id), (end, send) in self.rows.items():
+            newest = self.messages.get((platform, conversation_id))
+            out.append(ParticipationCursor(
+                platform=platform, conversation_id=conversation_id,
+                last_window_end_at=end, last_send_at=send,
+                last_message_at=None if newest is None else newest[0],
+                conversation_type=None if newest is None else newest[1],
+            ))
+        return out
+
+    async def record_window_end(
+        self, *, platform: str, conversation_id: str, at_ms: int
+    ) -> None:
+        row = self.rows.setdefault((platform, conversation_id), [at_ms, None])
+        row[0] = at_ms
+
+    async def record_send(
+        self, *, platform: str, conversation_id: str, at_ms: int
+    ) -> None:
+        row = self.rows.setdefault((platform, conversation_id), [at_ms, None])
+        row[1] = at_ms
+
+
+def _stored(speak: _Speak, clock: _Clock, store) -> ParticipationTrigger:
+    """A trigger over a store — the production shape. `_trigger` (no store) is
+    the dormant default every other test in this file uses."""
+    return ParticipationTrigger(
+        speak=speak,
+        slots=ConversationSlots(maxlen=1, spawn=lambda coro: None),
+        settle_seconds=SETTLE, cooldown_seconds=COOLDOWN, clock=clock,
+        store=store,
+    )
+
+
+async def test_the_send_cooldown_survives_a_restart() -> None:
+    """The defect 0056 closes. `nora` is force-recreated routinely, and before
+    this the cooldown died with the process — so she could speak again at once
+    however recently she had spoken, and §10.3's whole job is to cap what a
+    room HEARS."""
+    store, clock = _FakeStore(), _Clock()
+    first = _stored(_Speak(outcome=SENT), clock, store)
+    first.note_message(_msg())
+    clock.now += SETTLE + 1
+    assert await first.close_due_windows() == 1
+
+    # THE RESTART: a brand-new trigger with empty dicts, same store.
+    speak = _Speak(outcome=SENT)
+    second = _stored(speak, clock, store)
+    clock.now += 1
+    second.note_message(_msg(body="right after the recreate"))
+    clock.now += SETTLE
+    assert await second.close_due_windows() == 1, "the window is still evaluated"
+    assert speak.calls[-1][1] is False, "but the send is held by the restored cooldown"
+
+
+async def test_the_cooldown_expires_normally_across_a_restart() -> None:
+    """Restored, not frozen: the cooldown still runs out on the wall clock."""
+    store, clock = _FakeStore(), _Clock()
+    first = _stored(_Speak(outcome=SENT), clock, store)
+    first.note_message(_msg())
+    clock.now += SETTLE + 1
+    assert await first.close_due_windows() == 1
+
+    speak = _Speak(outcome=SENT)
+    second = _stored(speak, clock, store)
+    clock.now += COOLDOWN
+    second.note_message(_msg(body="much later"))
+    clock.now += SETTLE
+    assert await second.close_due_windows() == 1
+    assert speak.calls[-1][1] is True
+
+
+async def test_a_judged_window_is_not_re_judged_after_a_restart() -> None:
+    """The watermark and the record together. `_last_message_at` is re-derived
+    from `messages` at hydration, so a burst that was already answered reads as
+    `last <= last_window_end` and is skipped — where two empty dicts cancel out
+    and a second turn runs on a conversation that has already had one."""
+    store, clock = _FakeStore(), _Clock()
+    noted_at = clock.now
+    first = _stored(_Speak(), clock, store)
+    first.note_message(_msg())
+    clock.now += SETTLE + 1
+    assert await first.close_due_windows() == 1
+    # What the record holds: that same burst, nothing since.
+    store.messages[("signal", "g1")] = (int(noted_at * 1000), "group")
+
+    speak = _Speak()
+    second = _stored(speak, clock, store)
+    clock.now += 600                                  # long past any settle
+    assert await second.close_due_windows() == 0
+    assert speak.calls == []
+
+
+async def test_a_burst_that_arrived_after_the_last_window_still_closes() -> None:
+    """The other half of the same read: traffic the old process never judged is
+    not lost to the restart, it is picked up from the record."""
+    store, clock = _FakeStore(), _Clock()
+    first = _stored(_Speak(), clock, store)
+    first.note_message(_msg())
+    clock.now += SETTLE + 1
+    assert await first.close_due_windows() == 1
+    # A message arrived AFTER that window closed and before the recreate.
+    store.messages[("signal", "g1")] = (int((clock.now + 1) * 1000), "dm")
+
+    speak = _Speak()
+    second = _stored(speak, clock, store)
+    clock.now += SETTLE + 2
+    assert await second.close_due_windows() == 1
+    assert speak.calls[0][0].conversation_type == "dm", "and the room's type with it"
+
+
+async def test_hydration_never_rewinds_a_message_noted_since_boot() -> None:
+    """The dispatcher can note a message before the first tick, and a live note
+    is NEWER than anything the record can say. Restoring over it would move the
+    cursor backwards and re-open a window that is already accumulating."""
+    store, clock = _FakeStore(), _Clock()
+    store.rows[("signal", "g1")] = [int(clock.now * 1000), None]
+    store.messages[("signal", "g1")] = (int(clock.now * 1000), "group")
+
+    speak = _Speak()
+    trigger = _stored(speak, clock, store)
+    clock.now += 100
+    trigger.note_message(_msg(body="live"))            # newer than the record
+    clock.now += SETTLE - 1
+    assert await trigger.close_due_windows() == 0, "the live note holds the window open"
+    clock.now += 2
+    assert await trigger.close_due_windows() == 1
+
+
+async def test_the_store_is_read_once_per_process() -> None:
+    """Hydration is a restart concern, not a tick concern: a read on every tick
+    would be a query every `tick_seconds` against a table that changes when a
+    window closes."""
+    store, clock = _FakeStore(), _Clock()
+    trigger = _stored(_Speak(), clock, store)
+    for _ in range(3):
+        clock.now += 1
+        await trigger.close_due_windows()
+    assert store.reads == 1
+
+
+async def test_a_failed_hydration_is_retried_rather_than_assumed() -> None:
+    """`_hydrated` is set only after the read returns. A trigger that carried
+    on with half a cursor set would re-judge exactly the windows this table
+    exists to protect — so the tick fails (the runtime loop logs and counts it)
+    and the next one tries again."""
+    store, clock = _FakeStore(), _Clock()
+    # A window judged, and a send spent, one second before this process began.
+    then = int((clock.now - 1) * 1000)
+    store.rows[("signal", "g1")] = [then, then]
+    store.messages[("signal", "g1")] = (then, "group")
+    store.fail_reads = 1
+    speak = _Speak(outcome=SENT)
+    trigger = _stored(speak, clock, store)
+
+    with pytest.raises(RuntimeError):
+        await trigger.close_due_windows()
+
+    trigger.note_message(_msg(body="after the blip"))
+    clock.now += SETTLE + 1
+    assert await trigger.close_due_windows() == 1
+    assert speak.calls[-1][1] is False, "the restored cooldown still held the send"
+
+
+async def test_a_never_sent_room_hydrates_as_absent_not_as_1970() -> None:
+    """A row with no send must not read as «she last spoke in 1970»: that
+    permits the send too, so the bug would survive its own test."""
+    store, clock = _FakeStore(), _Clock()
+    store.rows[("signal", "g1")] = [int((clock.now - 1) * 1000), None]
+    speak = _Speak(outcome=SENT)
+    trigger = _stored(speak, clock, store)
+    trigger.note_message(_msg())
+    clock.now += SETTLE + 1
+    assert await trigger.close_due_windows() == 1
+    assert speak.calls[-1][1] is True
+
+
+async def test_a_write_failure_never_changes_what_the_trigger_decides() -> None:
+    """The in-memory cursor is authoritative for THIS process; the store is a
+    mirror. A mirror that raised would turn a database blip into a swallowed
+    turn."""
+
+    class _Refusing(_FakeStore):
+        async def record_window_end(self, **kwargs) -> None:
+            raise RuntimeError("write failed")
+
+        async def record_send(self, **kwargs) -> None:
+            raise RuntimeError("write failed")
+
+    speak, clock = _Speak(outcome=SENT), _Clock()
+    trigger = _stored(speak, clock, _Refusing())
+    trigger.note_message(_msg())
+    clock.now += SETTLE + 1
+    assert await trigger.close_due_windows() == 1
+    assert len(speak.calls) == 1
+
+
+async def test_without_a_store_nothing_survives_a_restart() -> None:
+    """The dormant default, pinned rather than assumed: with `store=None` this
+    class is exactly what shipped before 0056 — every offline and eval wiring
+    gets that, and a change to it would be a change to what they measure."""
+    clock = _Clock()
+    first = _trigger(_Speak(outcome=SENT), clock)
+    first.note_message(_msg())
+    clock.now += SETTLE + 1
+    assert await first.close_due_windows() == 1
+
+    speak = _Speak(outcome=SENT)
+    second = _trigger(speak, clock)
+    clock.now += 1
+    second.note_message(_msg(body="right after the recreate"))
+    clock.now += SETTLE
+    assert await second.close_due_windows() == 1
+    assert speak.calls[-1][1] is True, "no store, no memory — today's behaviour"
+
+
+async def test_the_default_clock_reads_an_absolute_instant() -> None:
+    """Not `time.monotonic`. Both clocks are `Callable[[], float]` and every
+    comparison in this class is a difference, so nothing else in the suite
+    would notice the substitution — but the two cursors are written down as
+    epoch milliseconds (0056), and a monotonic epoch is arbitrary per process,
+    so a stored monotonic value is not a time to whatever reads it back.
+
+    Asserted against `time.time()` rather than against the function object: the
+    property that matters is «this reading names an instant the next process
+    will agree with», and a monotonic clock is a process uptime, which on any
+    machine that has been up for more than a few seconds is nowhere near it.
+    """
+    trigger = ParticipationTrigger(
+        speak=_Speak(),
+        slots=ConversationSlots(maxlen=1, spawn=lambda coro: None),
+        settle_seconds=SETTLE, cooldown_seconds=COOLDOWN,
+    )
+    assert abs(trigger._clock() - time.time()) < 5.0
