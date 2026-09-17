@@ -135,3 +135,23 @@ def test_without_a_speech_detector_the_gate_still_falls_back_to_rms():
     assert all(gate.feed(LOUD) is None for _ in range(5))  # loud = never quiet by RMS
     results = [gate.feed(SILENT) for _ in range(3)]
     assert results[2] is not None
+
+
+def test_flush_ends_a_collecting_utterance_on_the_owners_clock():
+    gate = _gate([0.0, 0.0, 0.9])
+    gate.feed(LOUD)
+    gate.feed(LOUD)
+    gate.feed(LOUD)  # the fire; the source then goes quiet WITHOUT sending chunks
+    assert gate.collecting
+    utterance = gate.flush()
+    assert utterance is not None
+    assert utterance.audio.size == 3 * OWW_CHUNK  # the pre-roll, nothing padded
+    assert utterance.peak_score == 0.9
+    assert not gate.collecting
+
+
+def test_flush_while_listening_is_a_no_op():
+    gate = _gate([0.1])
+    gate.feed(LOUD)
+    assert gate.flush() is None
+    assert not gate.collecting

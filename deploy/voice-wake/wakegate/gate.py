@@ -20,6 +20,14 @@ is what shipped first and which ducked music defeats (measured 2026-09-17:
 music floor ~1,000 RMS against a 400 threshold, utterances ran 4.7–7.4 s
 for 2 s phrases and swallowed the next 「喂 Nora」).
 
+The gate counts CHUNKS, so it can only end an utterance while chunks keep
+arriving. The Discord client sends packets only while its own mic gate is
+open — after the phrase there is nothing to count, and a COLLECTING gate
+would wait for the user's NEXT sound (measured 2026-09-17: a 0.99 wake
+sat collecting for 10 minutes and swallowed two later wakes). `flush()`
+is the owner's wall-clock end-pointer: the service calls it when no frame
+has arrived for the silence tail, and the utterance ends on real time.
+
 The scorer is injected (`__init__` only — no test hooks on the instance)
 so the state machine is unit-testable without the ONNX model, and the
 model is scored without the state machine.
@@ -105,10 +113,21 @@ class WakeGate:
             quiet = rms < self._silence_rms
         self._silent_run = self._silent_run + 1 if quiet else 0
         if self._silent_run >= self._tail or len(self._buffer) >= self._max:
-            utterance = Utterance(audio=np.concatenate(self._buffer), peak_score=self._peak)
-            self._collecting = False
-            self._buffer = []
-            self._silent_run = 0
-            self._peak = 0.0
-            return utterance
+            return self._complete()
         return None
+
+    def flush(self) -> Utterance | None:
+        """End the utterance NOW — the owner's wall-clock end-pointer for a
+        source that stops sending chunks (a burst-gated client). None when
+        the gate is LISTENING: there is nothing to end."""
+        if not self._collecting:
+            return None
+        return self._complete()
+
+    def _complete(self) -> Utterance:
+        utterance = Utterance(audio=np.concatenate(self._buffer), peak_score=self._peak)
+        self._collecting = False
+        self._buffer = []
+        self._silent_run = 0
+        self._peak = 0.0
+        return utterance

@@ -17,6 +17,14 @@ embedding windows the brief calls the per-user 16-frame window), so each
 user gets their OWN instance, created lazily on their first frame and
 reaped after `idle_timeout_s` of silence. `model.reset()` after every
 completed utterance keeps one utterance's features out of the next.
+
+End of speech has TWO end-pointers. In-burst: the gate's own tail (VAD-quiet
+chunks). Wall-clock: the sidecar's source is the Discord client, which sends
+packets only while its mic gate is open, so after a phrase NO chunks arrive
+and the gate cannot count anything. A per-user timer armed on every frame
+while COLLECTING flushes the utterance once `silence_tail_ms` of real time
+passes with no frame (measured 2026-09-17: without it a 0.99 wake sat
+collecting for 10 minutes, and every later 「喂 Nora」 was swallowed).
 """
 
 from __future__ import annotations
@@ -76,6 +84,7 @@ class _UserState:
     wakes: int = 0
     utterances: int = 0
     last_seen: float = field(default_factory=time.time)
+    inactivity: asyncio.TimerHandle | None = None  # armed while COLLECTING
 
 
 def _load_model(model_path: str):
@@ -152,11 +161,37 @@ class WakeService:
             assert chunk.size == OWW_CHUNK
             utterance = state.gate.feed(chunk)
             if utterance is not None:
-                state.wakes += 1
-                state.model.reset()
-                if state.vad is not None:
-                    state.vad.reset()  # type: ignore[attr-defined]
-                asyncio.create_task(self._handle_utterance(user_id, utterance, state))
+                self._fire(user_id, utterance, state)
+        self._arm_inactivity(user_id, state)
+
+    def _fire(self, user_id: str, utterance: Utterance, state: _UserState) -> None:
+        state.wakes += 1
+        state.model.reset()
+        if state.vad is not None:
+            state.vad.reset()  # type: ignore[attr-defined]
+        asyncio.create_task(self._handle_utterance(user_id, utterance, state))
+
+    def _arm_inactivity(self, user_id: str, state: _UserState) -> None:
+        """Re-arm the wall-clock end-pointer on every frame while COLLECTING;
+        disarm the moment the gate is back in LISTENING."""
+        if state.inactivity is not None:
+            state.inactivity.cancel()
+            state.inactivity = None
+        if state.gate.collecting:
+            state.inactivity = asyncio.get_running_loop().call_later(
+                self._cfg.silence_tail_ms / 1000, self._on_inactivity, user_id, state,
+            )
+
+    def _on_inactivity(self, user_id: str, state: _UserState) -> None:
+        state.inactivity = None
+        if self._users.get(user_id) is not state:
+            return  # reaped or replaced since the timer was armed
+        utterance = state.gate.flush()
+        if utterance is None:
+            return
+        log.info("utterance ended by inactivity for user %s (no frame for %d ms)",
+                 user_id, self._cfg.silence_tail_ms)
+        self._fire(user_id, utterance, state)
 
     async def _handle_utterance(
         self, user_id: str, utterance: Utterance, state: _UserState
@@ -215,7 +250,9 @@ class WakeService:
             cutoff = time.time() - self._cfg.idle_timeout_s
             for user_id in [u for u, s in self._users.items() if s.last_seen < cutoff]:
                 log.info("reaping idle wake gate for user %s", user_id)
-                del self._users[user_id]
+                state = self._users.pop(user_id)
+                if state.inactivity is not None:
+                    state.inactivity.cancel()
 
     # --- /health ------------------------------------------------------------
 
