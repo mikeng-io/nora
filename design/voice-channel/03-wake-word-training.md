@@ -408,3 +408,21 @@ reverts this until feat/wake-v4-postmortem is merged.
 Note: `deploy/voice-wake/models/` is gitignored, so the shipped file is NOT in git; the
 canonical copy is `voice-lab/models/v6_s2-喂Nora.onnx` — copy it into
 `deploy/voice-wake/models/喂Nora.onnx` before building on any other checkout.
+
+## Status: closed for now — 2026-09-17 11:40 HKT (Miles)
+
+The wake-word lab is a closed file. What is live and what is parked:
+
+- **Live**: V6 seed 2 (`deploy/voice-wake/models/MODEL.md`), threshold 0.5, Silero VAD
+  end-pointing (#301), knobs in config.toml `[speech.wake]`/`[speech.stt]` (#289, #303).
+  Measured on Miles's recordings: 9/9 wakes fire once each, 0 false fires; utterance now
+  ends ~0.7–1.2 s after speech under music instead of at the 10 s ceiling.
+- **The remaining latency is not in the voice lab.** A turn spends ~3.7 s + 4.3 s in two LLM
+  calls of ~32k input tokens each (19k-char doctrine + context + prefill) for < 100 output
+  tokens, then ~3 s in non-streaming TTS. Tracked as **#305**; the doctrine revision is
+  Miles's. Voice-side follow-ups that stay independent of #305: streaming/sentence TTS, an
+  acknowledgement earcon at wake, a spanned measurement of the STT→Nora hand-off.
+- **Parked wake-model items** (each has its recipe in `voice-lab/`): fast (< 1 s) 「喂 Nora」
+  positives via CosyVoice `speed` 1.3–1.5 or a real recording session; the `sensevoice-yue`
+  STT engine A/B (`[speech.wake].stt_model` is the switch once it exists); the two oww-src
+  edits (revert `end_jitter`, fix the rounds `n_total` bug). Acceptance bar unchanged.
