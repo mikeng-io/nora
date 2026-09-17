@@ -482,7 +482,7 @@ def describe(
                      else _with_near(_NOTE_NO_SERVICE, near)),
         }
         if remark:
-                out["operator_note"] = wrap_outside_text(
+            out["operator_note"] = wrap_outside_text(
                 "transit_remark", answered[0].operator, remark,
             )
         return out

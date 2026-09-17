@@ -267,9 +267,29 @@ def _transcript(
 
 def _transcript_block(
     rows: Sequence[TranscriptRow], *, display_name: str, tz: tzinfo | None,
+    name: str = "transcript",
 ) -> str:
-    """`<transcript>` with its LEGEND — one function, so the mark and the
-    sentence that explains it can never ship apart.
+    """The turn's or the stretch's messages — one function, so the delivery
+    mark and the sentence explaining it can never ship apart.
+
+    **`name` exists because ONE description was false in two of five callers**
+    (audit, 2026-09-17). `<transcript>` says «the messages of THIS TURN», which
+    is right for the fold, the verdict and the turn render — and wrong for the
+    two rollup renders, whose own docstring says «there IS no turn: the event
+    fold runs after an untagged stretch». Their wrapper called the same
+    messages «the batch» one line above. Two names for one thing, in one
+    document, adjacent.
+
+    Worse, `delivery`'s clause reconciles the mark against «a turn's outcome»,
+    and 362 characters of that landed in an 890-character rollup-verdict
+    document that has no turn and no outcome — 41% of the prompt explaining a
+    reconciliation it cannot contain.
+
+    So `<stretch>` is its own type. Same rows, same renderer, same mark; a
+    description that is true of what it wraps. This is the `<batch>`/`<now>`
+    split a third time, and the third time it was found by reading the RENDER
+    rather than the registry — the registry sees names, and one name is exactly
+    what hid it.
 
     Every renderer in this module goes through here. A delivery mark in the
     tag fold's transcript and a bare one in the rollup's would be the same
@@ -295,7 +315,7 @@ def _transcript_block(
     # There are no markers now, and the explanation is an attribute of the block
     # it explains rather than a sibling of it.
     return ContextBlock(
-        name="transcript",
+        name=name,
         body=_transcript(rows, display_name=display_name, tz=tz),
     ).render()
 
@@ -571,7 +591,9 @@ def render_rollup_input(
     prior_block = (
         _standing_prior(body)
     )
-    block = _transcript_block(rows, display_name=display_name, tz=tz)
+    block = _transcript_block(
+        rows, display_name=display_name, tz=tz, name="stretch",
+    )
     return (
         f"{prior_block}\n\n" + _conversation(block)
     )
@@ -584,5 +606,7 @@ def render_rollup_verdict_input(
     prior (D4 — the verdict must not read the position it is about to write,
     and the two calls must not disagree about what happened).
     """
-    block = _transcript_block(rows, display_name=display_name, tz=tz)
+    block = _transcript_block(
+        rows, display_name=display_name, tz=tz, name="stretch",
+    )
     return _conversation(block)

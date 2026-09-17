@@ -86,7 +86,15 @@ def test_the_note_says_whose_words_the_index_is_in():
 
       - authorship — hers, for herself;
       - not the room's — neither something said here nor a record of what was;
-      - where a claim about the room comes from instead — the transcript.
+      - where a claim about the room comes from instead — the room's own
+        messages.
+
+    That last clause used to name «the transcript», and it stopped being true
+    of every reader when this block became one type across four passes (#314):
+    the proactive decide turn renders no message block at all, so it was told
+    to prefer a thing its prompt does not contain. It now says «where you can
+    ALSO see the room's own messages» — vacuous where there are none, true
+    where there are, and never pointing at an absent block.
     """
     note = NOTES_BLOCK_NOTE.lower()
     assert "your own notes" in note and "written by you for yourself" in note
@@ -95,8 +103,9 @@ def test_the_note_says_whose_words_the_index_is_in():
     assert "from what the room actually did" in note
     # And the tie-break said outright, because a summary is the thing that
     # reads as settled: on `a10` the stale line is what she reached for.
-    assert "where an entry here and the transcript disagree, the transcript is "\
-           "what happened" in note
+    assert "an entry is what you wrote, not what happened" in note
+    assert "where you can also see the room's own messages and they "\
+           "disagree with an entry, the messages are what happened" in note
 
 
 def test_the_note_forbids_reading_a_line_out_as_well_as_acting_on_one():

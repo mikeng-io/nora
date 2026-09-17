@@ -491,11 +491,11 @@ SHAPES = {
     "debrief.rollup": """
 <standing_prior description>
 <conversation description>
-  <transcript description fields>
+  <stretch description fields>
     <m at from>""",
     "debrief.rollup_verdict": """
 <conversation description>
-  <transcript description fields>
+  <stretch description fields>
     <m at from>""",
     "debrief.turn": """
 <turn at description fields outcome>
@@ -676,3 +676,52 @@ async def test_a_prompt_never_serves_the_same_block_twice(name: str):
     ]
     duplicated = {tag for tag in top if top.count(tag) > 1}
     assert not duplicated, f"{name} serves {sorted(duplicated)} more than once"
+
+
+@pytest.mark.parametrize("name", sorted(BUILDERS))
+async def test_every_attribute_a_render_emits_is_annotated_by_its_type(name: str):
+    """A field with no gloss is a token the model gets to invent a meaning for.
+
+    **Found by hand, twice, because nothing looked.** `<batch>` renders
+    `reply_to=` and annotated four of its five attributes — a bare TIMESTAMP,
+    beside an `at` glossed as «when it was sent», so the unexplained one reads
+    as a second send time. Before that, `title`, `about`, `written`, `person`
+    and `name` all reached the model undefined for months, and #292 added five
+    more (`at`, `room`, `reply_to`, `delivery`, `role`) without anything
+    noticing.
+
+    Derived from the RENDER, which is the half the registry cannot do on its
+    own: `BLOCK_TYPES` knows what a type declares and not what a renderer
+    emits, and the gap between those two is where every one of these lived.
+
+    `description` and `fields` are excluded because they ARE the annotation.
+
+    **What it does NOT cover, stated because the fixture is the bound.** It can
+    only see attributes these fixtures actually produce. `<batch>`'s
+    `reply_to` needs a row with a `quoted_ts`, which no fixture here has — so
+    the field this test was written after is one it would still miss. A census
+    over the registry cannot replace it either (that direction is
+    `test_every_declared_type_is_actually_rendered`, one file over); what
+    closes the gap is a richer fixture, and until there is one this gate is a
+    floor rather than a proof.
+    """
+    root = parse(await render(name))
+    parents = {id(child): parent for parent in root.iter() for child in parent}
+    missing: list[str] = []
+    for element in root.iter():
+        if element is root:
+            continue
+        # A row's fields are annotated on its CONTAINER; a block's on itself.
+        owner = element if element.get("description") is not None else parents[
+            id(element)
+        ]
+        declared = dict(BLOCK_TYPES[owner.tag].annotations)
+        missing += [
+            f"<{element.tag} {key}=> (declared on <{owner.tag}>)"
+            for key in element.attrib
+            if key not in {"description", "fields"} and key not in declared
+        ]
+    assert not missing, (
+        f"{name} renders attributes nothing explains: {missing}. Add each to "
+        "its block type's annotations in `nora.domain.block_types`."
+    )

@@ -26,6 +26,7 @@ impossible and what this file keeps impossible.
 from __future__ import annotations
 
 import ast
+import inspect
 import re
 from pathlib import Path
 
@@ -79,15 +80,32 @@ def _wrapper_names() -> set[str]:
     for path in (ROOT / "nora").rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Name)
-                and node.func.id in {"wrap", "wrap_outside_text"}
-                and node.args
-                and isinstance(node.args[0], ast.Constant)
-                and isinstance(node.args[0].value, str)
-            ):
-                names.add(node.args[0].value)
+            if not isinstance(node, ast.Call):
+                continue
+            fn = node.func.id if isinstance(node.func, ast.Name) else ""
+            # `wrap_outside_text(name, …)` takes it FIRST and positionally;
+            # `_transcript_block(…, name=…)` takes it as a keyword with a
+            # default. Both build their `ContextBlock` from a parameter, so
+            # the literal is at the call site either way.
+            found = [
+                a.value for a in node.args[:1]
+                if fn in {"wrap", "wrap_outside_text"}
+                and isinstance(a, ast.Constant) and isinstance(a.value, str)
+            ] + [
+                kw.value.value for kw in node.keywords
+                if fn.endswith("_block") and kw.arg == "name"
+                and isinstance(kw.value, ast.Constant)
+                and isinstance(kw.value.value, str)
+            ]
+            names.update(found)
+    # `_transcript_block`'s DEFAULT is a literal in its signature, not at any
+    # call site, so the callers that take it name nothing and it has to be read
+    # from the function. Missing this reported `transcript` as unrendered.
+    from nora.engagement.debrief_render import _transcript_block
+
+    names.add(
+        inspect.signature(_transcript_block).parameters["name"].default,
+    )
     return names
 
 
@@ -232,6 +250,10 @@ def test_a_description_that_talks_about_ABSENCE_says_the_read_may_have_failed():
     hedges = (
         "the read failed", "did not come back", "never that", "never look",
         "it can also mean", "says nothing about it",
+        # `<loop_decisions>`' wording after the audit found the previous one
+        # asserted a fact the type cannot know. This is the strongest form in
+        # the list: it refuses BOTH readings rather than naming one as wrong.
+        "not read an absence as a fact",
     )
     for name, block_type in BLOCK_TYPES.items():
         # PER SENTENCE, not per description. Matching anywhere let a hedge

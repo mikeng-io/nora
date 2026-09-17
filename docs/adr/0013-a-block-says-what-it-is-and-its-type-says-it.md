@@ -137,13 +137,25 @@ a call site can say otherwise.**
 
   | prompt | before | after | |
   |---|---|---|---|
-  | tag turn (prefill + tag message) | 7,453 chars | 6,117 | **−18%** |
-  | relevance gate | 3,074 | 3,555 | **+16%** |
+  | tag turn (prefill + tag message) | 7,453 chars | 6,132 | **−18%** |
+  | relevance gate | 3,074 | 3,740 | **+22%** |
 
-  Re-measured after the audit, because the first numbers (−22% / +10%) were
-  taken before the restored clauses and the shared field annotations went back
-  in. Reporting the pre-audit figure would have been reporting a prompt that
-  was missing five hedges.
+  Re-measured twice, because the first figures (−22% / +10%) were taken before
+  the restored clauses went back in and the second (−18% / +16%) before the
+  second audit's. Reporting either would have described a prompt missing
+  hedges it now carries.
+
+- **WHERE the text sits changed, and that is a cost the character count hides.**
+  The deleted «What you can see:» catalogue was ~2,472 characters living in
+  `_context_header` — the static head, measured at 95-99% prefix-cache hit. The
+  per-block descriptions that replace it live in the PER-TURN message, which is
+  uncached by construction. So the tag prompt is 18% shorter and a larger share
+  of what remains is paid on every turn rather than cached across them. The old
+  per-block `note=` strings were in that same uncached tier and were smaller
+  (`STANDING_BLOCK_NOTE` was 280 characters against `standing`'s 746 today), so
+  the delta is not clean — but the direction is not in doubt and the earlier
+  −18% was reported without it. Not priced in tokens or in money; the character
+  counts and the tier are what is measured.
 
   Each block carrying its own description costs more than one list carrying
   eight of them — but the catalogue was not the only thing deleted with it.

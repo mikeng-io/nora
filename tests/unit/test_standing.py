@@ -127,9 +127,18 @@ def test_the_block_says_it_keeps_nothing():
     """§8/`19-between-tiers`: Standing must not become the place a wedding
     venue lives. The tier is lossy by design, so the model has to be TOLD it
     forgets — otherwise the cheapest place to put something is the place least
-    able to hold it."""
+    able to hold it.
+
+    The phrasing changed 2026-09-17 because the old one contradicted its own
+    neighbour: «keeps nothing» sat 400 characters from «a line that got into it
+    once is still in it», and a reader asked «does standing persist» could
+    answer either way. Both clauses are load-bearing — §8 says it is lossy,
+    §4.1 says it is revised in place — so they are now ONE sentence that cuts
+    both ways rather than two that disagree.
+    """
     tag = _text(render_standing(_standing()))
-    assert "keeps nothing" in tag
+    assert "what you do not carry forward is gone" in tag
+    assert "is still in it until a later fold drops it" in tag
     # "a note", not "a note or a fact" — the fact tier was deleted 2026-09-07
     # and the block stopped offering a destination that does not exist.
     assert "belongs in a note" in tag

@@ -412,18 +412,28 @@ def test_the_note_names_only_the_writers_it_carries():
     is closed in words: a decider you do not see ON A ROW is one this block
     does not carry.
 
-    What is asserted is that replacement, and it is strictly weaker: the model
-    must now read the rows to know what is in the block, where before the
-    sentence told it. If a measurement ever shows it reading absence as fact
-    anyway, the answer is a per-render ANNOTATION — the field-level twin of a
-    description, which may vary — and not a second description.
+    **The first replacement was FALSE and this is the second.** It said «a
+    decider you do not see on any row here is one this block does not carry» —
+    an assertion the TYPE cannot make, because both readers carry two of the
+    four and the type does not know which two. Measured by an audit on the
+    participation path: `proactive_decide` IS carried there, so a turn with no
+    `proactive_decide` row means she raised nothing in 24 hours — real
+    information — and that sentence told her to conclude nothing from it. With
+    an empty body it claimed the block carried no deciders at all.
+
+    What a type CAN say is that it does not know, and that is what is asserted
+    here. Strictly weaker than the per-render `_note_for` it replaced, and the
+    honest trade. If a measurement ever shows this read as fact anyway, the
+    answer is a per-render ANNOTATION — the field-level twin of a description,
+    which may vary — and not a second description.
     """
     block = _text(render_decisions([("", ())], now=NOW))
     for decider in ("participation -", "tag -", "proactive_decide -",
                     "proactive_act -"):
         assert decider in block, decider
-    assert "do not see on any row here" in block
-    assert "absence says nothing about it" in block
+    assert "SOME of your deciders and not all of them" in block
+    assert "it does not say which" in block
+    assert "not read an absence as a fact either way" in block
 
 
 def test_the_note_speaks_to_the_model_in_the_second_person():

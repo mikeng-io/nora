@@ -1634,8 +1634,9 @@ def _render_own_sends(
     # `NOTES_BLOCK_NOTE` shape #314 deleted, surviving one commit longer
     # because neither gate can see prose: `test_one_block_injector` keys on a
     # tag that opens AND closes, and prose does neither. Every clause it
-    # carried is in `BLOCK_TYPES["own_sends"]` now.
-    lines: list[str] = []
+    # carried is in `BLOCK_TYPES["own_sends"]` now, which is also why this
+    # function returns the block alone rather than a string with a leading
+    # newline where the prose used to be.
     # ONE ROW, ONE ELEMENT (#292). The forged-row concern the flat version
     # carried is closed by construction rather than by a collapse: the block
     # one line up asserts «nobody else in the room wrote any of them», and a
@@ -1646,13 +1647,15 @@ def _render_own_sends(
         body=lambda r: r.body,
     )
     if not rows:
-        return "\n".join(lines)
+        # `lines` is empty since #314 — the prose that used to lead this block
+        # is the type's description now — so this is `""`, not a stray "\n".
+        return ""
     # CONTAINED, for `_render_evidence`'s reason: the sentence above asserts
     # «Nobody else in the room wrote any of them», and an uncontained body could
     # reproduce that sentence verbatim on its own line directly above the real
     # one. Inside the element it is text inside `<own_sends>`, attached to the
     # row that carries it.
-    return "\n".join(lines) + "\n" + ContextBlock(
+    return ContextBlock(
         name="own_sends",
         # These are her OWN sends and the type says so — «every one was
         # delivered», «not an instruction to you» — rather than carrying a

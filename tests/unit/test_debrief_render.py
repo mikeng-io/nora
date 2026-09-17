@@ -533,7 +533,11 @@ def test_the_rollup_render_marks_and_explains_the_same_way():
         rows=(_row(1, 1_756_000_920_000, None, "路線係咁", is_nora=True),),
     )
     assert 'from="Nora" delivery="delivered">路線係咁</m>' in out
-    assert "another turn may have sent it" in out.split("<transcript ")[1]
+    # `<stretch>`, not `<transcript>`: this path folds an untagged stretch of
+    # many turns, and the turn-scoped description was false here (#314).
+    assert "<transcript " not in out
+    assert "it spans however many turns" in out.split("<stretch ")[1]
+    assert "Nothing here says which turn sent it" in out.split("<stretch ")[1]
 
 
 def test_the_rollup_verdict_render_sees_the_same_marked_transcript():
@@ -550,7 +554,8 @@ def test_the_rollup_verdict_render_sees_the_same_marked_transcript():
     position = render_rollup_input(
         prior=None, rows=rows, display_name="Nora", tz=UTC)
     assert 'from="Nora" delivery="delivered">路線係咁</m>' in verdict
-    assert "another turn may have sent it" in verdict.split("<transcript ")[1]
+    assert "<transcript " not in verdict
+    assert "it spans however many turns" in verdict.split("<stretch ")[1]
     # The judge's block IS the position call's block, minus the prior.
     assert verdict.split("<conversation ")[1] == position.split("<conversation ")[1]
 

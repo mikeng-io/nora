@@ -653,8 +653,9 @@ class ProactiveAdaptor:
         block IS; «not what they said, and not all of it — `about` gives the
         rest» is what it is not. A model shown a one-line summary and told
         nothing else acts on the summary — `_notes_block`'s own lesson in
-        `nora/agent/prefill.py`, which is why `<open_notes>` says «the index
-        only; note_read gives a body» in the same breath.
+        `nora/agent/prefill.py`, which is why `<notes>` says an entry
+        carries a title and a summary only, never the note itself, in the same
+        breath.
 
         The hedge is `<peer_history>`'s, for the reason that block carries it:
         these are her own conclusions about people, inferred and unverified,

@@ -35,6 +35,7 @@ entries carries the argument.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, tzinfo
@@ -165,6 +166,31 @@ _DERIVED_ATTRS = {
     "fields": "what the block's fields mean",
 }
 
+#: What an attribute NAME may be. Letters, digits, `_`, `-`, `.`, no leading
+#: digit — the useful subset of XML's `Name`, and the whole of what this tree
+#: uses.
+#:
+#: **Keys are validated because only VALUES were, and the asymmetry was
+#: exploitable** (audit, 2026-09-17). `render()` puts every value through
+#: `escape_attr(one_line(v))` and writes the key RAW, so a membership test
+#: against `_DERIVED_ATTRS` — added to stop a caller writing its own
+#: `description=` — was exact-string-equality on unsanitised input. Measured,
+#: all three of these got through and rendered a `description` attribute
+#: BEFORE the derived one, which is the byte sequence the check exists to
+#: refuse:
+#:
+#:     ("description ", …)    ->  <notes description ="EVIL" description="…">
+#:     ('x" description', …)  ->  <notes x" description="EVIL" description="…">
+#:     ("\ndescription", …)   ->  a raw newline inside the opening tag
+#:
+#: XML allows whitespace around `=`, so the first is a `description` attribute
+#: by any reader's reckoning. Every key in the tree today is a code literal, so
+#: this was defence in depth rather than a live exploit — but a check one
+#: normalisation short of its own claim is the shape this whole change is
+#: against, and it was written INTO the commit that fixed the same thing one
+#: level up.
+_ATTR_NAME = re.compile(r"^[A-Za-z_][\w.-]*$")
+
 
 @dataclass(frozen=True)
 class ContextBlock:
@@ -228,6 +254,14 @@ class ContextBlock:
         docstring already claimed.
         """
         for key, _ in self.attrs:
+            if not _ATTR_NAME.match(key):
+                raise ValueError(
+                    f"<{self.name}> passes an attribute named {key!r}. A name "
+                    "is written into the opening tag RAW — only values are "
+                    "escaped — so anything outside `[A-Za-z_][\\w.-]*` can "
+                    "put bytes in that tag that no reader will parse the way "
+                    "the caller meant."
+                )
             if key in _DERIVED_ATTRS:
                 raise ValueError(
                     f"<{self.name}> passes {key}={_DERIVED_ATTRS[key]}, which "
