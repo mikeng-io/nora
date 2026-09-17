@@ -247,3 +247,33 @@ def test_a_counted_failure_only_means_the_turn_failed_if_she_was_silent(
     from evals.rebuilt.entry import silently_failed
 
     assert silently_failed(counted, said=said) is failed
+
+
+@pytest.mark.parametrize(
+    "meta,said,should_fail",
+    [
+        # proactive_act: STRINGS, checked against what the room heard.
+        ({"must_cite": ["數碼港"]}, ("今晚數碼港食咩？",), False),
+        ({"must_cite": ["數碼港"]}, ("今晚食咩？",), True),
+        ({"must_not_cite": ["note", "筆記"]}, ("我記得你哋未講埋邊度",), False),
+        ({"must_not_cite": ["note", "筆記"]}, ("my note says Saturday",), True),
+        # and a silent turn cannot satisfy a positive citation.
+        ({"must_cite": ["數碼港"]}, (), True),
+    ],
+)
+def test_must_cite_is_substrings_for_an_act_case(meta, said, should_fail) -> None:
+    """`must_cite` means two different things by corpus, and a live run caught
+    the note-candidates rule being applied to an act case: the act corpus
+    states SUBSTRINGS of the reply, the note corpus states message ids.
+
+    Dispatched on the TYPE, so a corpus cannot get the wrong rule by being
+    renamed.
+    """
+    from evals.rebuilt.runner import _check_the_corpus_assertions
+
+    out = _check_the_corpus_assertions(
+        Case(name="a", entry="proactive_act", expect="speak", metadata=meta),
+        Outcome(admitted=True, said=said),
+        {},
+    )
+    assert bool(out.checks_failed) is should_fail, out.checks_failed

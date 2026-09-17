@@ -418,27 +418,52 @@ def _check_the_corpus_assertions(
         got = [a for _t, a, _m, _s in outcome.staged]
         if want not in got:
             failed.append(f"anchor_date: expected {want}, staged {got}")
-    if meta.get("must_cite"):
-        want_ids = {rows.get(label) for label in meta["must_cite"]}
-        cited: set[int] = set()
-        for _t, _a, message_ids, _s in outcome.staged:
-            cited |= set(message_ids)
-        missing = {i for i in want_ids if i is not None} - cited
-        if None in want_ids:
-            failed.append(
-                f"must_cite names a message the case did not seed: "
-                f"{meta['must_cite']}"
-            )
-        elif missing:
-            failed.append(f"must_cite: {sorted(missing)} not among {sorted(cited)}")
-    if meta.get("must_not_cite"):
-        forbidden = {rows.get(label) for label in meta["must_not_cite"]}
-        cited = set()
-        for _t, _a, message_ids, _s in outcome.staged:
-            cited |= set(message_ids)
-        hit = {i for i in forbidden if i is not None} & cited
-        if hit:
-            failed.append(f"must_not_cite: cited {sorted(hit)}")
+    # `must_cite` MEANS TWO DIFFERENT THINGS, by corpus, and applying one
+    # rule to both is a defect a live run found:
+    #
+    #   note-candidates  INTEGERS — message labels the staged candidate must
+    #                    have cited, translated through `rows` into the ids the
+    #                    store assigned.
+    #   proactive_act    STRINGS — substrings the reply must contain, "a reply
+    #                    reached the subject" (`evals/proactive.py:281`), with
+    #                    `must_not_cite` the negative half (issue #226): a reply
+    #                    carrying her own bookkeeping's vocabulary.
+    #
+    # Dispatch on the TYPE rather than on the corpus name, so a corpus cannot
+    # get the wrong rule by being renamed.
+    #
+    # The string form is `substring in text`, which is what the corpus means
+    # and what the old driver did. It cannot tell a mention from a use — #182's
+    # finding — so it says a reply REACHED the subject and never that it
+    # reached it rightly. That is the claim it is allowed to make.
+    said = " ".join(outcome.said)
+    for key, negate in (("must_cite", False), ("must_not_cite", True)):
+        wanted = meta.get(key)
+        if not wanted:
+            continue
+        if all(isinstance(w, int) for w in wanted):
+            cited: set[int] = set()
+            for _t, _a, message_ids, _s in outcome.staged:
+                cited |= set(message_ids)
+            ids = {rows.get(label) for label in wanted}
+            if None in ids:
+                failed.append(
+                    f"{key} names a message the case did not seed: {wanted}"
+                )
+                continue
+            hit = {i for i in ids if i is not None} & cited
+            missing = {i for i in ids if i is not None} - cited
+            if negate and hit:
+                failed.append(f"{key}: cited {sorted(hit)}")
+            elif not negate and missing:
+                failed.append(f"{key}: {sorted(missing)} not among {sorted(cited)}")
+        else:
+            present = [w for w in wanted if str(w) in said]
+            absent = [w for w in wanted if str(w) not in said]
+            if negate and present:
+                failed.append(f"{key}: the reply contains {present}")
+            elif not negate and absent:
+                failed.append(f"{key}: the reply does not contain {absent}")
 
     return dataclasses.replace(outcome, checks_failed=tuple(failed))
 

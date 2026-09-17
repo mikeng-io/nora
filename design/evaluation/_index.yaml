@@ -33,12 +33,14 @@ members:
   - 03-step0-results.md
   - 04-the-convention.md
   - 05-live-parity.md
+  - 06-first-full-run.md
 edges:
   - {src: 01-boundaries, dst: 00-overview, rel: depends_on, provenance: asserted}
   - {src: 02-the-rebuild, dst: 01-boundaries, rel: depends_on, provenance: asserted}
   - {src: 03-step0-results, dst: 00-overview, rel: measures, provenance: measured}
   - {src: 04-the-convention, dst: 02-the-rebuild, rel: depends_on, provenance: asserted}
   - {src: 05-live-parity, dst: 02-the-rebuild, rel: measures, provenance: measured}
+  - {src: 06-first-full-run, dst: 02-the-rebuild, rel: measures, provenance: measured}
 external_edges:
   - {dst: "dreamer-agent-loop/35-ambient-participation", rel: relates_to, provenance: asserted}
   - {dst: "dreamer-agent-loop/36-relevance-gate", rel: relates_to, provenance: asserted}
