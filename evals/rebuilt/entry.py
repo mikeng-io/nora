@@ -138,6 +138,21 @@ async def participation(subject: Subject, case: Case, *, now_ms: int) -> Outcome
     )
 
 
+def silently_failed(counted: float, *, said: tuple[str, ...]) -> bool:
+    """Did the turn fail silently — as opposed to replying, or declining?
+
+    `nora_silent_failures_total` answers *"she did not speak and it was not a
+    choice"*, so it only says that when she did not speak. A turn that DID
+    reply and then had a SECOND delivery refused by a guard moves the counter
+    too, and reading that as a failed turn makes a real reply an ERROR — the
+    opposite mistake to the one the counter is here for, and just as wrong.
+
+    A function rather than an inline `and` so the rule can be pinned without a
+    subject: both directions matter and only one of them is obvious.
+    """
+    return bool(counted) and not said
+
+
 async def tag(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     """`Dispatcher.on_message` — the deployment's own inbound path.
 
@@ -200,14 +215,13 @@ async def tag(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     # rather than inventing a signal is the point: the thing that tells an
     # operator the turn broke is the thing that tells the suite.
     failed = silent_failures(subject) - failures_before
-    if failed:
+    hers = await heard(subject, after_id=watermark)
+    if silently_failed(failed, said=tuple(b for b, _ in hers)):
         return Outcome(
             admitted=None,
             source="fail_closed",
             error=f"the turn failed silently ({failed:g} counted)",
         )
-
-    hers = await heard(subject, after_id=watermark)
     return Outcome(
         admitted=bool(hers),
         said=tuple(b for b, _ in hers),
@@ -293,7 +307,14 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
             error="the workspace names no home room, so the pass never ran",
             outcome_token=result.status,
         )
-    if result.status == "unavailable" or result.samples_failed:
+    # `samples_failed and not samples_ok`, NOT `or samples_failed`: the
+    # runtime's own rule is that a pass is `unavailable` only when NONE was
+    # readable, because one good read is a read (`dreamer.py:1470`). Erroring on
+    # one bad sample of three made this layer stricter than the thing it
+    # measures, which is its own kind of wrong number.
+    if result.status == "unavailable" or (
+        result.samples_failed and not result.samples_ok
+    ):
         return Outcome(
             admitted=None,
             source="fail_closed",

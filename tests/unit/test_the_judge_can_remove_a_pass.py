@@ -210,3 +210,40 @@ def test_a_create_case_that_also_revised_something_fails() -> None:
         changed=(("create", "Dinner 19 Sept"), ("update", "Something else")),
     )
     assert out.checks_failed, out
+
+
+def test_a_database_url_never_reaches_the_report() -> None:
+    """`report.render` prints an error verbatim, and a composition failure
+    raised out of `run_migrations` or asyncpg carries the DSN — password
+    included — into something somebody pastes.
+
+    The URL is KNOWN at that point, so it is removed exactly rather than by
+    guessing at what a secret looks like."""
+    from evals.rebuilt.runner import _scrubbed
+
+    dsn = "postgresql+asyncpg://nora:hunter2@10.0.0.4:5432/nora"
+    exc = RuntimeError(f"could not connect to {dsn} — refused")
+    text = _scrubbed(exc, dsn)
+    assert dsn not in text and "hunter2" not in text
+    assert "<database-url>" in text and "refused" in text
+
+
+@pytest.mark.parametrize(
+    "counted,said,failed",
+    [
+        (0, (), False),                      # she declined; a real silence
+        (1, (), True),                       # she did not speak, not a choice
+        (0, ("hi",), False),                 # an ordinary reply
+        # SHE REPLIED, and a second delivery was guard-refused. The counter
+        # moved; the turn did not fail. Reading this as an ERROR turns a real
+        # reply into one — the opposite mistake, and just as wrong.
+        (1, ("hi",), False),
+        (3, ("hi", "and this"), False),
+    ],
+)
+def test_a_counted_failure_only_means_the_turn_failed_if_she_was_silent(
+    counted, said, failed,
+) -> None:
+    from evals.rebuilt.entry import silently_failed
+
+    assert silently_failed(counted, said=said) is failed

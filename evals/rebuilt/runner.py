@@ -15,6 +15,7 @@ nothing is shared between two of them.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import shutil
 import tempfile
@@ -306,7 +307,10 @@ async def run_once(
         )
     except Exception as exc:                        # noqa: BLE001 — see docstring
         shutil.rmtree(workdir, ignore_errors=True)
-        return Outcome(admitted=None, error=f"could not obtain the subject: {exc}")
+        return Outcome(
+            admitted=None,
+            error=f"could not obtain the subject: {_scrubbed(exc, database_url)}",
+        )
 
     try:
         written = await know(
@@ -340,9 +344,42 @@ async def run_once(
             outcome, elapsed_seconds=time.monotonic() - started,
         )
     except Exception as exc:                        # noqa: BLE001
-        return Outcome(admitted=None, error=f"{type(exc).__name__}: {exc}")
+        return Outcome(
+            admitted=None,
+            error=f"{type(exc).__name__}: {_scrubbed(exc, database_url)}",
+        )
     finally:
+        # TEARDOWN, the three things `nora/__main__.py`'s shutdown does. Without
+        # it every draw leaks a connection pool and an LLM client and leaves any
+        # spawned task running against the shared database while the next case
+        # starts — 150 cases at five samples is 750 pools, and the failure
+        # arrives as case errors rather than as an instrument fault.
+        await _close(subject)
         shutil.rmtree(workdir, ignore_errors=True)
+
+
+async def _close(subject: Any) -> None:
+    """Best-effort teardown. Never raises: a case's RESULT must not depend on
+    whether its cleanup worked, and a teardown error is not a reading."""
+    for shut in (
+        subject.deps.background.cancel_all(),
+        subject.deps.audit.aclose(),
+        subject.deps.client.close(),
+    ):
+        with contextlib.suppress(Exception):
+            await shut
+
+
+def _scrubbed(exc: BaseException, database_url: str) -> str:
+    """An exception's text, with the database URL taken out.
+
+    `report.render` prints these verbatim, and a composition failure raised out
+    of `run_migrations` or asyncpg carries the DSN — password included — into a
+    report somebody pastes. The URL is known here, so removing it is exact
+    rather than a pattern guess at what a secret looks like.
+    """
+    text = str(exc)
+    return text.replace(database_url, "<database-url>") if database_url else text
 
 
 def _check_the_corpus_assertions(

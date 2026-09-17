@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -272,8 +273,10 @@ async def obtain(spec: SubjectSpec) -> Subject:
     **The database is handed over through the ENVIRONMENT**, because that is
     production's own seam: `composition.py:1026` reads
     `os.environ[cfg.store.database_url_env]` and there is no parameter to pass
-    it by. So `spec.database_url` sets that variable for the duration of the
-    call and restores it after.
+    it by. So `spec.database_url` goes into a variable of this call's own, named
+    uniquely, and `cfg.store.database_url_env` is pointed at it — rather than
+    borrowing the deployment's variable and putting it back, which cannot be
+    made safe under concurrency.
 
     **The clock is handed over as a parameter**, because `build_dependencies`
     now takes one (it always had the dependency; it wrote the same literal nine
@@ -287,25 +290,38 @@ async def obtain(spec: SubjectSpec) -> Subject:
     passed because the two happened to be equal. A seam that is ignored is
     worse than one that is absent — it reads as a promise.
 
-    The mutation is global for the duration of composition. It is the narrowest
-    honest option: the alternative is a new parameter on `build_dependencies`,
-    which is production surface changed for a non-production caller, and
-    `01-boundaries` §5(2) is exactly the rule against that.
+    Nothing of the deployment's is touched, so there is nothing to restore and
+    no window in which a concurrent caller can see the wrong value. The
+    alternative — a new parameter on `build_dependencies` — is production
+    surface changed for a non-production caller, which `01-boundaries` §5(2) is
+    the rule against.
     """
     cfg = build_config(spec)
     clock: Callable[[], datetime] = (
         wall_clock if spec.now is None else (lambda at=spec.now: at)
     )
-    var = cfg.store.database_url_env
-    before = os.environ.get(var)
+    # A VARIABLE OF THIS SUBJECT'S OWN, rather than borrowing the deployment's
+    # and putting it back.
+    #
+    # `build_dependencies` reads the URL from `os.environ[store.database_url_env]`
+    # — production's seam is the environment and there is no parameter to pass
+    # it by. Setting the DEPLOYMENT's variable and restoring it afterwards is
+    # safe to READ (nothing awaits between the set and the read) and unsafe to
+    # RESTORE: the restore runs after the whole of `build_dependencies`, which
+    # awaits extensively, so two interleaved callers leave the process pointing
+    # at a database that is gone.
+    #
+    # A unique name removes the race instead of serialising it: two subjects
+    # never touch one variable, nothing has to be put back, and the runner can
+    # be parallelised without this becoming a real bug. The name is per-call
+    # rather than per-case so two draws of the same case cannot collide either.
+    var = f"NORA_SUBJECT_DATABASE_URL_{uuid.uuid4().hex}"
+    cfg = _with(cfg, "store.database_url_env", var)
     os.environ[var] = spec.database_url
     try:
         deps = await build_dependencies(cfg, clock=clock)
     finally:
-        if before is None:
-            os.environ.pop(var, None)
-        else:
-            os.environ[var] = before
+        os.environ.pop(var, None)
     return Subject(
         deps=deps, cfg=cfg, database_url=spec.database_url, room=spec.room,
     )

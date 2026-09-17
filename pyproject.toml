@@ -269,7 +269,7 @@ forbidden_modules = ["nora.config"]
 as_packages = false
 
 [[tool.importlinter.contracts]]
-name = "evals may only reach nora.app and nora.testing"
+name = "evals may only reach nora.app, nora.testing and nora.subject"
 type = "forbidden"
 # Positive framing ("evals may import nora.app and nora.testing — nothing else",
 # spec §4.1) expressed as its complement, the same shape contract 3 already uses:

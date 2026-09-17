@@ -63,7 +63,15 @@ def render(
     # tenths of a second, a cache hit returns in milliseconds, and the two do
     # not overlap. No threshold is applied — what is "too fast" depends on the
     # model and the route, and a number baked in here would be a proxy.
-    times = sorted(o.elapsed_seconds for v in verdicts for o in v.outcomes)
+    # GRADABLE DRAWS ONLY. An errored draw returns in milliseconds and entered
+    # this list as ~0.00, so the report offered a failure to the reader as
+    # evidence of a cache hit — on the one line whose whole job is to say
+    # whether the draws were real calls.
+    times = sorted(
+        o.elapsed_seconds
+        for v in verdicts for o in v.outcomes
+        if o.error is None and o.elapsed_seconds > 0
+    )
     if times:
         out.append(
             f"   per-draw seconds: min {times[0]:.2f}  median "

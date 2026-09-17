@@ -92,3 +92,36 @@ async def test_overrides_reach_the_composed_graph(spec) -> None:
     from one."""
     subject = await obtain(dataclasses.replace(spec, overrides={"llm.model": "nora"}))
     assert subject.cfg.llm.model == "nora"
+
+
+@pytest.mark.asyncio
+async def test_two_subjects_do_not_share_an_environment_variable(
+    pg_url, tmp_path, monkeypatch,
+) -> None:
+    """`obtain` gives each call its OWN variable rather than borrowing the
+    deployment's and putting it back.
+
+    Restoring cannot be made safe: it runs after the whole of
+    `build_dependencies`, which awaits extensively, so two interleaved callers
+    leave the process pointing at a database that is gone. A unique name removes
+    the race rather than serialising it — and leaves the deployment's own
+    variable untouched, which this asserts.
+    """
+    import os
+
+    from nora.subject import SubjectSpec, obtain, room_for
+
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://untouched/db")
+
+    a = await obtain(SubjectSpec(
+        database_url=pg_url, workdir=tmp_path / "a", room=room_for("a"),
+    ))
+    b = await obtain(SubjectSpec(
+        database_url=pg_url, workdir=tmp_path / "b", room=room_for("b"),
+    ))
+    assert a.cfg.store.database_url_env != b.cfg.store.database_url_env
+    assert os.environ["DATABASE_URL"] == "postgresql+asyncpg://untouched/db"
+    # And neither left its own variable behind.
+    assert a.cfg.store.database_url_env not in os.environ
+    assert b.cfg.store.database_url_env not in os.environ
