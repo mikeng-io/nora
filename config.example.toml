@@ -1703,19 +1703,25 @@ max_memory_calls = 2
 # block above already paid for once, on a bigger roster.
 #
 # `output_tokens` is DERIVED and is not a free number: see
-# `nora.domain.culture.ACCOUNT_OUTPUT_TOKENS`. The account cap is 1,600
-# CHARACTERS and this budget is in TOKENS; the bridge is one token per
-# character (the CJK worst case — the prose is mostly Cantonese), so emitting a
-# full account costs ~1,664. The rule is that the loop must be able to emit one
-# TWICE — once for the tool-call arguments it spends before it writes, once for
-# the account — and `tests/unit/test_culture_adaptor.py` asserts that against
-# the FIELD DEFAULT, so an operator who deletes this block still gets a fold
-# that can finish its sentence. 6,000 is that floor with room for the research.
+# `nora.domain.culture.ACCOUNT_OUTPUT_TOKENS`. The account cap is 1,400
+# CHARACTERS and this budget is in TOKENS; the bridge is 1.15 output tokens per
+# character — MEASURED 2026-09-17 with `o200k_base` over a realistic
+# dense-Cantonese account (1.094) and continuous Cantonese prose (1.131), not
+# assumed — so emitting a full account costs ~1,674. The rule is that the loop
+# must be able to emit one TWICE — once for the tool-call arguments it spends
+# before it writes, once for the account — and
+# `tests/unit/test_culture_adaptor.py` asserts that against the FIELD DEFAULT,
+# so an operator who deletes this block still gets a fold that can finish its
+# sentence. 6,000 is that floor with room for the research.
 #
 # NOT `[dreamer] max_tokens`, which is the PROVIDER's ceiling on one completion
 # and is the tighter of the two: at `[llm] max_tokens = 2000` an account at the
-# cap uses ~83% of a single completion. Raise THAT, not this, if a fold is ever
-# seen truncating.
+# cap uses ~84% of a single completion. Raise THAT, not this, if a fold is ever
+# seen truncating — and the ONE reading that would is a model emitting
+# `\uXXXX` escapes instead of raw UTF-8, which costs 2.85x the measured bridge
+# (3.117 tok/char) and puts an account at the cap at ~4,400 tokens. That is a
+# truncation, so it shows up as `unavailable` with the watermark held, never as
+# a quietly shorter account.
 [dreamer.budgets.culture]
 turns = 10
 total_tokens = 120000

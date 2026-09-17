@@ -3106,18 +3106,30 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                         for conv in allowlist.conversations
                         if conv.primary_id and conv.workspace
                     }.get,
-                    # THE TRANSLATION, not an identity. `standing` is keyed
-                    # `(platform, conversation_id)` because the debrief that
-                    # writes it is handed the message that arrived; this
-                    # adaptor keys `primary_id`. They are equal for every live
-                    # conversation and that is an ACCIDENT OF DATA (#229) — a
-                    # conversation with a second id form may hold its standing
-                    # row under the other one, which #229 owns and this map
-                    # cannot decide. Resolving through the policy is what makes
-                    # the pairing a statement rather than an assumption; the
-                    # failure it avoids is a read that matches zero rows and
-                    # renders as «this room has no standing», a real state
-                    # nothing reports as a miss.
+                    # THE PLATFORM is resolved; the conversation_id half is
+                    # the key VERBATIM, and saying so is the point of this
+                    # comment. `standing` is keyed `(platform,
+                    # conversation_id)` because the debrief that writes it is
+                    # handed the message that arrived; this adaptor keys
+                    # `primary_id`. What the policy supplies is the PLATFORM —
+                    # which this adaptor has no other way to know, and guessing
+                    # would be a read against the wrong tier — while the second
+                    # element is `conv.primary_id`, i.e. the adaptor's own key
+                    # passed through unchanged. An earlier version of this
+                    # comment called the map "THE TRANSLATION, not an identity"
+                    # and that overclaims: half of it is an identity.
+                    #
+                    # It is still worth being a map rather than a
+                    # `(platform, key)` built at the call site, for the half it
+                    # does resolve and for the MEMBERSHIP test it carries: a
+                    # key absent from the allowlist resolves to `None` and the
+                    # adaptor logs it, instead of reading `standing` for a
+                    # conversation policy never named. The id half is #229's:
+                    # a conversation with a second id form may hold its standing
+                    # row under the other one, which that issue owns and this
+                    # map cannot decide. The failure both halves avoid is a read
+                    # that matches zero rows and renders as «this room has no
+                    # standing», a real state nothing reports as a miss.
                     standing_key_for={
                         conv.primary_id: (conv.platform, conv.primary_id)
                         for conv in allowlist.conversations

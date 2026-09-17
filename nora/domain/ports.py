@@ -1836,8 +1836,21 @@ class DreamAdaptor(Protocol):
 
         Returning fewer values than it was given is therefore ordinary and
         means «some items were malformed», not «the batch failed». Returning
-        NOTHING for a non-empty `items` is still ordinary; it is the RUNTIME's
-        envelope failure, not this, that means «nobody read this batch»."""
+        NOTHING for a non-empty `items` is still ordinary — «I looked and there
+        was nothing usable» — and it lets the watermark advance.
+
+        **One narrow exception, and it is a raise rather than a fourth return
+        value** (2026-09-17, `nora.language.culture`). An adaptor MAY raise
+        when the model's result was READ and is being DISCARDED, and losing
+        the batch with it would lose the only copy: `DreamerRuntime.run`
+        reports any exception here as `unavailable`, which is the one status
+        that HOLDS the watermark, so the batch is folded again rather than
+        spent. It is deliberately not available for a malformed ITEM — that is
+        still dropped silently, so one bad element cannot discard a batch that
+        was otherwise fine — and it is not available for «there was nothing»,
+        which is `()` and R-27's `nothing_found`. The test is whether a
+        SECOND fold of the same batch is the right next move; for a malformed
+        item it is not, and for an account the tier refused to write it is."""
         ...
 
     async def commit(

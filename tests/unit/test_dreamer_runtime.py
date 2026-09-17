@@ -143,9 +143,13 @@ class _Adaptor:
 
     def __init__(
         self, *, sink: _Sink, tools: frozenset[str] = frozenset({"now"}),
+        accept_raises: bool = False,
     ) -> None:
         self.tools = tools
         self.sink = sink
+        #: `DreamAdaptor.accept`'s narrow raise — «the model's result was read
+        #: and is being discarded, so do not spend the batch too».
+        self.accept_raises = accept_raises
         self.accepted: list[Sequence[Mapping[str, object]]] = []
 
     async def inputs(self, *, key: str, batch: Sequence[Any]) -> str:
@@ -155,6 +159,8 @@ class _Adaptor:
         self, *, key: str, items: Sequence[Mapping[str, object]]
     ) -> Sequence[object]:
         self.accepted.append(items)
+        if self.accept_raises:
+            raise RuntimeError("this result cannot be recorded")
         return tuple(dict(item) for item in items if item.get("term"))
 
     async def commit(
@@ -478,6 +484,34 @@ async def test_a_sink_that_raises_is_unavailable_and_does_not_escape(monkeypatch
     outcome = await runtime.run(adaptor=_Adaptor(sink=sink), key="g1", batch=())
 
     assert outcome.status == "unavailable"
+
+
+async def test_an_accept_that_RAISES_is_unavailable_and_never_reaches_commit(
+    monkeypatch,
+):
+    """`DreamAdaptor.accept`'s narrow raise, and the only reason it is worth
+    having: `unavailable` is the one status `_dream_once` holds the watermark
+    on, so an adaptor that read its model's result and refused to record it
+    does not also spend the messages it read.
+
+    `nora.language.culture.CultureAdaptor` is the shipped user — an account
+    past `BODY_MAX_CHARS` is thrown away, and returning `()` for it gave status
+    `ok` and advanced the cursor, so the account AND the batch were lost with
+    nothing durable saying so. This is the runtime half of that pin: the unit
+    test says the adaptor raises, this says what the raise buys."""
+    sink = _Sink()
+    runtime, _ = _runtime(monkeypatch, raw='{"observations": [{"term": "a"}]}')
+
+    outcome = await runtime.run(
+        adaptor=_Adaptor(sink=sink, accept_raises=True), key="g1", batch=(),
+    )
+
+    assert outcome.status == "unavailable"
+    assert outcome.written == 0
+    # NOT called: the batch is held, so nothing about this run is recorded —
+    # `commit(key, ())` would be the `nothing_found` claim this run is not
+    # entitled to make.
+    assert sink.commits == []
 
 
 # ---------------------------------------------------------------------------
@@ -1047,6 +1081,50 @@ def test_without_a_grant_the_build_is_byte_for_byte_the_old_one():
     assert call["conversation_id"] == "friends"
     assert call["location_trusted"] is False
     assert call["room"].platform == ""
+
+
+def test_without_a_grant_a_SCOPE_keyed_build_is_the_closed_empty_room():
+    """The same guarantee as the test above, on the OTHER branch — and the one
+    the suite did not cover.
+
+    `if not allowance.home_room: home = None` is the ceiling by omission: an
+    adaptor with no `AdaptorGrant` gets the pre-DEC-162 shape whatever the maps
+    hold. An audit mutated that branch to `home = self._scope_rooms.get(key)`
+    — the grant ignored, every scope-keyed adaptor standing in a real room —
+    and the WHOLE suite stayed green. It was equivalent only by accident:
+    `test_without_a_grant_the_build_is_byte_for_byte_the_old_one` passes
+    `workspace="friends"` and populates `home_rooms`, so it exercises the
+    workspace branch only, and the one ungranted scope-keyed adaptor shipped
+    (`NoteCandidateAdaptor`) declares `tools = frozenset()`, so `build`
+    returns at the `if not wanted` guard before any room is constructed.
+
+    It goes live the moment a scope-keyed adaptor declares a tool without a
+    grant — which is exactly the drift `AdaptorGrant` exists to stop, so the
+    pin is on the ROOM's SHAPE rather than on a byte comparison: what must
+    hold is «closed», not «identical to the call I happened to record»."""
+    registry = _RecordingRegistry()
+    source = RegistryToolSource(
+        registry=registry, store=None, persons=None, honcho=None,
+        metrics=Metrics(),
+        scope_rooms={"g1": HomeRoom(
+            workspace="friends", platform="discord", conversation_id="g1",
+            location_trusted=True,
+        )},
+        rosters={"discord": object()},  # type: ignore[dict-item]
+    )
+
+    # NO `grant=`, and a tool asked for: the ungranted scope-keyed adaptor of
+    # tomorrow, not the tool-free one of today.
+    source.build(key="g1", names=frozenset({"where_is"}), workspace=None)
+
+    (call,) = registry.calls
+    room = call["room"]
+    assert room.platform == "", "a granted room would name its platform"
+    assert room._roster_source is None, "no roster: the view is «I could not look»"
+    assert room._self_ids == frozenset()
+    assert call["location_trusted"] is False, "the strict gate, never the room's flag"
+    assert call["conversation_id"] == "g1"
+    assert call["supplied_workspace"] is None
 
 
 def test_the_tool_source_builds_the_workspace_safe_tools():

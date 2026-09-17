@@ -23,6 +23,7 @@ from nora.config import DreamBudgetConfig
 from nora.domain.culture import (
     ACCOUNT_OUTPUT_TOKENS,
     BODY_MAX_CHARS,
+    OUTPUT_TOKENS_PER_CHAR,
     CultureProposal,
     CultureRevision,
 )
@@ -35,6 +36,7 @@ from nora.language.culture import (
     CULTURE_OUTCOMES,
     CULTURE_TOOLS,
     STORE_CALLS_PER_TICK,
+    AccountNotRecordableError,
     CultureAdaptor,
 )
 from nora.obs.metrics import Metrics
@@ -348,13 +350,41 @@ async def test_a_malformed_item_is_dropped_not_raised(item):
     assert await _adaptor(_Store()).accept(key=KEY, items=[item]) == ()
 
 
-async def test_an_oversize_account_is_refused_as_drift_back_into_chronicle():
+async def test_an_oversize_account_RAISES_so_the_batch_is_not_spent_too():
+    """**The refusal must not cost the batch as well**, and returning `()`
+    here did exactly that.
+
+    Traced: no proposal -> `commit(key, ())` -> status `ok` ->
+    `_dream_once` advances the watermark. The account was discarded, the
+    messages it was written from were consumed, and the only record was a
+    counter whose label is destroyed at every process restart — so a room whose
+    fold habitually runs long wrote nothing, forever, and nothing durable said
+    so. Raising makes the run `unavailable`, which is the one status that HOLDS
+    the cursor, so the same batch is folded again tomorrow.
+
+    `unavailable` and not `nothing_found`: the model DID return an account, so
+    «there was nothing in this batch» is a claim this run is not entitled to
+    make (R-27, and the module docstring's own line about a batch that will not
+    parse)."""
     m = Metrics()
-    got = await _adaptor(_Store(), m).accept(
-        key=KEY, items=[{"body": "x" * (BODY_MAX_CHARS + 1)}],
-    )
-    assert got == ()
+    with pytest.raises(AccountNotRecordableError):
+        await _adaptor(_Store(), m).accept(
+            key=KEY, items=[{"body": "x" * (BODY_MAX_CHARS + 1)}],
+        )
     assert m.get("nora_culture_fold_total", outcome="oversize") == 1
+
+
+async def test_the_OTHER_two_refusals_still_return_and_let_the_batch_advance():
+    """Only `oversize` holds. `empty` and `too_many` are «I looked and there
+    was nothing usable» — true, and the previous account stands — so holding
+    the cursor for them would re-fold a batch that has already been answered,
+    which is the wedge with none of the benefit."""
+    adaptor = _adaptor(_Store())
+    assert await adaptor.accept(key=KEY, items=[]) == ()
+    assert await adaptor.accept(
+        key=KEY, items=[{"body": "one"}, {"body": "two"}],
+    ) == ()
+    assert await adaptor.accept(key=KEY, items=[{"body": "  "}]) == ()
 
 
 async def test_an_account_exactly_at_the_cap_is_accepted():
@@ -508,12 +538,18 @@ def test_an_account_at_the_cap_fits_inside_the_budget_that_must_emit_it():
     `AdaptorSchedule` comment, reached from the other end): an output cap that
     binds truncates the JSON, `parse_envelope` reads no envelope, the run is
     `unavailable`, the watermark is HELD, and the same batch is re-read and
-    re-truncated on every fire, forever.
+    re-truncated on every fire, forever. **This is what `[llm] max_tokens`
+    guards and what `BODY_MAX_CHARS` does NOT** — the character cap is read in
+    `accept`, on a body the model already emitted in full, so it is a quality
+    refusal and never a truncation guard. The two were one paragraph until
+    2026-09-17 and that is how 1,600 came to be derived from the wrong one.
 
     The cap is in CHARACTERS and the budget in TOKENS; the bridge is
-    `ACCOUNT_OUTPUT_TOKENS` — one token per character, the CJK worst case,
-    because this room's prose is mostly Cantonese and a cap sized for English
-    is wrong by a factor of two in the direction that truncates.
+    `ACCOUNT_OUTPUT_TOKENS`, built on the MEASURED
+    `OUTPUT_TOKENS_PER_CHAR` (1.15, against 1.094 for a realistic
+    dense-Cantonese account and 1.131 for continuous Cantonese prose). The
+    previous 1.0 was asserted rather than taken and was optimistic on the very
+    case it named, which is the direction that truncates.
 
     The rule: **the loop must be able to emit a full account twice** — once for
     the tool-call arguments and any preamble the pass spends before it writes,
@@ -552,18 +588,55 @@ def test_the_cap_is_a_SHORT_account_measured_against_the_objectives_example():
     """The objective asks for «one paragraph or two» and prints a worked
     example. The cap must admit the second paragraph and refuse the essay, so
     it is pinned as a band around that example rather than as a bare number —
-    a cap nine times the operator's own example (8,000, until 2026-09-17) said
-    «short account» while admitting something no reader would call one."""
+    a cap 10.8x the operator's own example (8,000, until 2026-09-17) said
+    «short account» while admitting something no reader would call one.
+
+    **The band was 1.5x-2.5x and that was loose enough to admit a wrong
+    number.** `BODY_MAX_CHARS`' own comment claimed the example was «~890
+    characters» and the cap «1.8x» it; extracted the way this test extracts it,
+    the example is 739 and the old 1,600 was 2.17x. Both figures passed the old
+    band, so the band certified an arithmetic error as correct. 1.75x-2.05x is
+    tight enough that the stated ratio has to be the true one, and an
+    operator-side edit to the worked example reddens this instead of silently
+    re-pointing the cap."""
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[2]
     objective = (root / "nora/dreamer/objectives/culture.md").read_text()
     body = objective.split('{"account": [{"body": "')[1].split('"}]}')[0]
-    assert 1.5 * len(body) <= BODY_MAX_CHARS <= 2.5 * len(body), (
-        f"the objective's worked account is {len(body)} chars and the cap is "
-        f"{BODY_MAX_CHARS}: outside 1.5x-2.5x, the cap and the instruction are "
-        f"asking for different things"
+    assert len(body) == 739, (
+        f"the worked example moved to {len(body)} chars; BODY_MAX_CHARS' "
+        f"comment states 739 and states the ratio against it, so both have to "
+        f"be re-derived rather than re-approximated"
     )
+    ratio = BODY_MAX_CHARS / len(body)
+    assert 1.75 <= ratio <= 2.05, (
+        f"the objective's worked account is {len(body)} chars and the cap is "
+        f"{BODY_MAX_CHARS} ({ratio:.2f}x): outside 1.75x-2.05x, the cap and "
+        f"the instruction are asking for different things"
+    )
+
+
+def test_the_character_to_token_bridge_is_the_MEASURED_one():
+    """**The one number in this pair that was asserted rather than taken.**
+
+    It was 1.0 «the CJK worst case» and nothing had encoded anything. Measured
+    2026-09-17 with `tiktoken`'s `o200k_base` over the JSON envelope the
+    objective requires: 1.094 tok/char for a realistic dense-Cantonese account
+    (89% CJK, Latin technical terms, an emoji nickname), 1.131 for continuous
+    Cantonese prose with no Latin in it, and 0.227 for the objective's own
+    English worked example. So 1.0 was OPTIMISTIC on the very case it named,
+    which is the direction that truncates.
+
+    `tiktoken` is not a test dependency — pinning the constant here is what
+    keeps the measurement from being quietly reverted to a rounder number, and
+    `nora.domain.culture.OUTPUT_TOKENS_PER_CHAR` carries the table and the
+    command that produced it."""
+    assert OUTPUT_TOKENS_PER_CHAR >= 1.131, (
+        "below the measured continuous-Cantonese-prose ratio: an account at "
+        "the cap would cost more output tokens than ACCOUNT_OUTPUT_TOKENS says"
+    )
+    assert ACCOUNT_OUTPUT_TOKENS >= BODY_MAX_CHARS * OUTPUT_TOKENS_PER_CHAR
 
 
 def test_the_declared_store_calls_cover_the_three_inputs_and_the_two_writes():

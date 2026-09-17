@@ -1519,8 +1519,15 @@ class DreamerRuntime:
                 ),
             )
         except Exception:
+            # ACCEPT OR COMMIT — the try spans both, and naming only the
+            # second sent a reader to the store for a fault that was the
+            # adaptor refusing its own model's result (`DreamAdaptor.accept`'s
+            # narrow raise). Either way the status below is `unavailable` and
+            # the watermark is HELD, which is the point of catching here at
+            # all.
             log.exception(
-                "dream commit failed (adaptor=%s key=%s)", adaptor.name, key,
+                "dream accept/commit failed (adaptor=%s key=%s)",
+                adaptor.name, key,
             )
             return self._finish(
                 adaptor, "unavailable", 0, sha, stop_reason, started,

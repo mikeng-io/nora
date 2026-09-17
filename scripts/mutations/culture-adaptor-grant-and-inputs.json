@@ -128,14 +128,14 @@
   {
     "name": "part 2d: the account cap goes back to 8000 characters",
     "file": "nora/domain/culture.py",
-    "old": "BODY_MAX_CHARS = 1_600",
+    "old": "BODY_MAX_CHARS = 1_400",
     "new": "BODY_MAX_CHARS = 8_000",
     "target": "tests/unit/test_culture_adaptor.py::test_an_account_at_the_cap_fits_inside_the_budget_that_must_emit_it tests/unit/test_culture_adaptor.py::test_the_cap_is_a_SHORT_account_measured_against_the_objectives_example"
   },
   {
     "name": "part 2d: the character-to-token bridge stops covering the cap",
     "file": "nora/domain/culture.py",
-    "old": "ACCOUNT_OUTPUT_TOKENS = BODY_MAX_CHARS + 64",
+    "old": "ACCOUNT_OUTPUT_TOKENS = ceil(BODY_MAX_CHARS * OUTPUT_TOKENS_PER_CHAR) + 64",
     "new": "ACCOUNT_OUTPUT_TOKENS = BODY_MAX_CHARS // 4 + 64",
     "target": "tests/unit/test_culture_adaptor.py -k fits_inside_the_budget"
   },
@@ -159,5 +159,40 @@
     "old": "STORE_CALLS_PER_TICK = 5",
     "new": "STORE_CALLS_PER_TICK = 3",
     "target": "tests/unit/test_culture_adaptor.py tests/architecture/test_dream_store_calls_are_declared.py"
+  },
+  {
+    "name": "F1: the oversize account is discarded AND the batch is spent (the defect)",
+    "file": "nora/language/culture.py",
+    "old": "            raise AccountNotRecordableError(\n                f\"culture account for scope={key} is {len(parsed.body)} chars, \"\n                f\"past the {BODY_MAX_CHARS} cap\"\n            )",
+    "new": "            return ()",
+    "target": "tests/unit/test_culture_adaptor.py -k oversize_account_RAISES"
+  },
+  {
+    "name": "F1: the runtime treats an accept that raises as an ordinary empty run",
+    "file": "nora/agent/dreamer.py",
+    "old": "            payloads = await adaptor.accept(key=key, items=kept)",
+    "new": "            try:\n                payloads = await adaptor.accept(key=key, items=kept)\n            except Exception:\n                payloads = ()",
+    "target": "tests/unit/test_dreamer_runtime.py -k accept_that_RAISES"
+  },
+  {
+    "name": "F3: the measured character-to-token bridge is rounded back down to 1.0",
+    "file": "nora/domain/culture.py",
+    "old": "OUTPUT_TOKENS_PER_CHAR = 1.15",
+    "new": "OUTPUT_TOKENS_PER_CHAR = 1.0",
+    "target": "tests/unit/test_culture_adaptor.py -k MEASURED_one"
+  },
+  {
+    "name": "F3: the cap-to-token conversion rounds DOWN instead of up",
+    "file": "nora/domain/culture.py",
+    "old": "ACCOUNT_OUTPUT_TOKENS = ceil(BODY_MAX_CHARS * OUTPUT_TOKENS_PER_CHAR) + 64",
+    "new": "ACCOUNT_OUTPUT_TOKENS = int(BODY_MAX_CHARS * OUTPUT_TOKENS_PER_CHAR)",
+    "target": "tests/unit/test_culture_adaptor.py -k MEASURED_one"
+  },
+  {
+    "name": "F5: the no-grant branch reads the scope room anyway (the safety bound)",
+    "file": "nora/agent/dreamer.py",
+    "old": "        if not allowance.home_room:\n            home = None",
+    "new": "        if not allowance.home_room:\n            home = self._scope_rooms.get(key)",
+    "target": "tests/unit/test_dreamer_runtime.py -k SCOPE_keyed_build_is_the_closed"
   }
 ]

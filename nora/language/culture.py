@@ -66,6 +66,7 @@ from typing import Protocol
 
 from nora.domain.blocks import RowStyle, render_rows
 from nora.domain.culture import BODY_MAX_CHARS, CultureProposal, CultureRevision
+from nora.domain.errors import NoraError
 from nora.domain.models import TranscriptRow
 from nora.domain.notes import Note
 from nora.domain.ports import Proposal
@@ -82,8 +83,55 @@ __all__ = [
     "CULTURE_OUTCOMES",
     "CULTURE_TOOLS",
     "STORE_CALLS_PER_TICK",
+    "AccountNotRecordableError",
     "CultureAdaptor",
 ]
+
+
+class AccountNotRecordableError(NoraError):
+    """The model wrote one account, it was read, and it cannot enter the chain.
+
+    **Raised so the BATCH IS NOT CONSUMED**, which is the whole point of it
+    being an exception rather than an empty return. `DreamerRuntime.run`
+    reports an adaptor raising as `unavailable`, and `_dream_once` holds the
+    watermark on `unavailable` alone — so the messages this fold read are
+    folded again tomorrow instead of being spent on an account nobody kept.
+
+    **The failure this closes, traced end to end.** `accept` returning `()`
+    for an oversize body gave: no proposal -> `commit(key, ())` -> status `ok`
+    -> the watermark advances. The account was discarded, the batch was
+    consumed, and the ONLY record was
+    `nora_culture_fold_total{outcome="oversize"}`, a counter whose own comment
+    concedes it cannot support a rate because the label is destroyed at every
+    process restart. A room whose fold habitually runs long would therefore
+    have written nothing, forever, and nothing durable would have said so.
+
+    **It is `unavailable` rather than `nothing_found` for R-27's reason, not
+    as a convenience.** `nothing_found` is the claim «there was nothing in this
+    batch», and a run whose model returned an account is not entitled to make
+    it — the same rule that stops an empty bus catalogue becoming 「冇呢條線」.
+    `unavailable` is «I could not record this», which is what happened. The
+    module docstring's own line: a batch that will not parse is `unavailable`,
+    never `nothing_found`, *because the loop must not advance a watermark past
+    a batch nobody read*. A batch whose one account was refused is that batch.
+
+    **The cost, named rather than discovered.** If EVERY draw for a room
+    overruns the cap, that room's fold wedges: the watermark never moves and
+    `lag` grows. That is the accepted trade and it is the loud half of the
+    pair — a wedged fold shows up as `nora_dream_run_total{status=
+    "unavailable"}`, a growing lag and a WARNING naming the scope, where the
+    silent discard showed up as nothing. It also self-heals on any compliant
+    draw, because the next fire is a fresh sample at non-zero temperature. The
+    cap is set (`BODY_MAX_CHARS`) so that an account written to the objective's
+    own instruction does not reach it, which is what makes a wedge a
+    configuration fault rather than a normal Tuesday.
+
+    **What would close this properly is in the OBJECTIVE, and the objective is
+    `change_policy: operator-only`.** The model is never told the cap — it is
+    enforced after emission, on prose already written — so nothing in this
+    module can stop a long account being produced, only stop it being lost.
+    See the note in `CultureAdaptor.accept`.
+    """
 
 #: The adaptor's `name`: the metric label, the schedule and budget key, and the
 #: `AdaptorGrant` key the composition root reads (`PROACTIVE_ADAPTOR_NAME`'s own
@@ -294,12 +342,16 @@ def _render_batch(batch: Sequence[TranscriptRow]) -> str:
 def _parse(item: Mapping[str, object]) -> CultureProposal | None:
     """One envelope item -> a proposal, or `None` for anything malformed.
 
-    Dropping rather than raising is `DreamAdaptor.accept`'s own contract. The
-    length cap is applied HERE, before the row exists: `BODY_MAX_CHARS` says
-    "no writer should produce that" and a body past it has almost certainly
-    drifted back into chronicle — restating what happened instead of saying what
-    the room is. The database ceiling far above it
-    (`CULTURE_BODY_CEILING_CHARS`) is a corruption check and not this one.
+    Dropping rather than raising is `DreamAdaptor.accept`'s own contract, and
+    this function keeps it: malformed is `None`, never an exception.
+
+    **The length cap is NOT applied here.** It is applied in `accept`, on the
+    parsed body, because a body past `BODY_MAX_CHARS` is not malformed — it is
+    a well-formed account that must not be written AND must not cost the batch,
+    and only `accept` can raise for that (see `AccountNotRecordableError`).
+    `BODY_MAX_CHARS` says "no writer should produce that"; the database ceiling
+    far above it (`CULTURE_BODY_CEILING_CHARS`) says "this row is corrupt", and
+    neither says anything about what could be emitted.
     """
     body = item.get("body")
     if not isinstance(body, str):
@@ -490,10 +542,24 @@ class CultureAdaptor:
         if standing_key is None or workspace is None:
             # A key that names no policy conversation. Not silent — but not
             # counted here either, because `RegistryToolSource.build` counts
-            # and logs this exact fault for this exact key on this same run
-            # (`nora_dream_home_room_missing_total`, the scope-keyed branch):
-            # the grant resolves through the same allowlist, so a second
-            # counter would be the same fact under a second name.
+            # and logs a fault for this key on this same run
+            # (`nora_dream_home_room_missing_total`, the scope-keyed branch),
+            # and a second counter would mostly be the same fact under a
+            # second name.
+            #
+            # **MOSTLY, and the gap is stated rather than assumed away.** The
+            # two resolutions read the SAME allowlist and build DIFFERENT KEY
+            # SETS from it: `scope_rooms` is keyed by every id form a
+            # conversation answers to (`conv.ids`), while the four maps above
+            # — `workspace_for`, `standing_key_for`, `label_for`,
+            # `description_for` — are keyed by `conv.primary_id` alone. So a
+            # conversation reached by an `also_ids` form resolves a home room
+            # and NO policy inputs, and only this `log.warning` would say so.
+            # It cannot happen today because `language_scopes` emits
+            # `primary_id` exclusively (`nora/app/composition.py`), which is a
+            # property of the SCHEDULER and not of either map — the day a
+            # second id form reaches this adaptor, this branch is the only
+            # thing that reports it.
             log.warning(
                 "culture: scope=%s resolves to no policy conversation "
                 "(workspace=%r standing_key=%r); folding without those inputs",
@@ -546,6 +612,34 @@ class CultureAdaptor:
         misread of the task — and picking one of them would be an arbitrary
         choice made silently, on the row that claims to say how the room works.
         Refusing is visible (`outcome="too_many"`); picking is not.
+
+        **The three refusals are not the same refusal, and only one of them
+        holds the batch.** `empty` and `too_many` return `()`: the model said
+        nothing usable, so «I looked and there was nothing» is true and the
+        batch is spent honestly — the previous account stands, which the
+        objective explicitly calls a real answer. `oversize` RAISES
+        (`AccountNotRecordableError`), because the model DID write an account,
+        it was read, and it is being thrown away; consuming the batch as well
+        would lose both, with only a restart-scoped counter to say so.
+
+        **The cap is enforced HERE, after the model has already emitted, and
+        the model is never told it.** `BODY_MAX_CHARS` appears in no prompt and
+        cannot: `nora/dreamer/objectives/culture.md` is
+        `change_policy: operator-only`, and stating a hard cap to a model has
+        its own measured failure anyway (`DreamBudgetConfig.max_memory_calls`:
+        a model told a ceiling in words declined the work rather than spending
+        less, 5/5 -> 1/5 on one case). So this module cannot stop a long
+        account being WRITTEN; it can only stop one being written AND the
+        batch being lost with it, and that is exactly what the raise buys.
+
+        **What would close it properly belongs to the operator.** The objective
+        would have to ask for the length it wants in terms the model can act on
+        — its own worked example is 739 characters, and the instruction around
+        it says "one paragraph or two" without ever saying what that is in
+        prose it has not yet written. A line in "What to write" naming the
+        worked example AS the target length ("about as long as the example
+        below, and never more than twice it") is the change; it is a prompt
+        change, so it needs the arm that measures it, not an assertion here.
         """
         if not items:
             self._inc("empty")
@@ -564,11 +658,15 @@ class CultureAdaptor:
         if len(parsed.body) > BODY_MAX_CHARS:
             log.warning(
                 "culture: account for scope=%s is %d chars, past the %d cap — "
-                "almost certainly drifted back into chronicle",
+                "almost certainly drifted back into chronicle; HOLDING the "
+                "watermark, this batch is folded again rather than spent",
                 key, len(parsed.body), BODY_MAX_CHARS,
             )
             self._inc("oversize")
-            return ()
+            raise AccountNotRecordableError(
+                f"culture account for scope={key} is {len(parsed.body)} chars, "
+                f"past the {BODY_MAX_CHARS} cap"
+            )
         return (parsed,)
 
     # -- commit ---------------------------------------------------------
