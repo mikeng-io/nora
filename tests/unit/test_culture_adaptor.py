@@ -287,7 +287,7 @@ async def test_the_previous_account_precedes_standing_notes_AND_the_batch():
         out.index("previous_account")
         < out.index("<standing")
         < out.index("<notes")
-        < out.index("Messages in this batch")
+        < out.index("<batch ")
     ), out
 
 

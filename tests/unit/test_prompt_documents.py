@@ -324,9 +324,17 @@ async def candidates(body: str = "去邊食", *, name: str = "Ada") -> str:
 
 
 async def culture(body: str = "去邊食", *, name: str = "Ada") -> str:
-    return await CultureAdaptor(culture=_CultureStore()).inputs(
-        key="discord/g1", batch=[row(body, name=name)],
-    )
+    # The four policy accessors are REQUIRED since master gave the culture fold
+    # its own `<room>` block: without them the adaptor cannot name the room it
+    # is reading, which is #161's defect one tier over. `None` for the two store
+    # keys keeps this builder to the blocks this file is about.
+    return await CultureAdaptor(
+        culture=_CultureStore(),
+        workspace_for=lambda _k: None,
+        standing_key_for=lambda _k: None,
+        label_for=lambda _k: "Dinner",
+        description_for=lambda _k: None,
+    ).inputs(key="discord/g1", batch=[row(body, name=name)])
 
 
 def skills(body: str = "when someone asks the way", *, name: str = "navigation") -> str:
@@ -560,7 +568,12 @@ SHAPES = {
 <notes untrusted=true note>
   <note about n title>
 """,
+    # `<room>` arrived from master while #292's conversion was in flight — the
+    # culture fold could not name the room it was reading, which is #161's
+    # defect one tier over. Unmarked: the label and the operator's description
+    # are policy, not anything a member typed.
     "culture": """
+<room note label>
 <batch untrusted=true note>
   <m from n>
 """,
