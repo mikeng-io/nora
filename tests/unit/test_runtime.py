@@ -891,15 +891,74 @@ async def test_a_scheduled_watermark_free_adaptor_fires_once_then_holds_for_the_
     assert [c for c in runner.calls if c[0] == "curator"] == [("curator", "g1", 0)]
 
 
+class _CountingRunner(_RecordingRunner):
+    """`_RecordingRunner` plus an `asyncio.Event` set the moment `curator`'s
+    SECOND call lands — the condition
+    `test_a_scheduled_watermark_free_adaptor_fires_again_after_the_interval`
+    below waits on, instead of guessing how long two fires take."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.curator_fired_twice = asyncio.Event()
+
+    async def run(self, *, adaptor, key, batch):
+        outcome = await super().run(adaptor=adaptor, key=key, batch=batch)
+        if adaptor.name == "curator" and len(
+            [c for c in self.calls if c[0] == "curator"]
+        ) >= 2:
+            self.curator_fired_twice.set()
+        return outcome
+
+
 async def test_a_scheduled_watermark_free_adaptor_fires_again_after_the_interval():
     """The other half of the clock: the interval elapses and the adaptor
-    fires again — bounded above by the tick count (the interval is holding)
-    and below by more than one (the first fire was not a latch)."""
-    language = _KeyedLanguage()
-    runner = _RecordingRunner()
+    fires again.
 
-    await _tick(dream_loop(
-        _FakeRecord({}), language, Metrics(),
+    The previous form slept a fixed 0.12s and asserted `2 <= len(calls) < 12`
+    — the only TWO-SIDED count assertion in the suite (#180). The lower bound
+    needed ~0.09s inside that window (3x margin); the upper bound had ZERO
+    margin: `_slot` buckets on REAL wall-clock time (`_now_ms`, not
+    `monotonic()` — see its own docstring), so under load a nominally-0.12s
+    `asyncio.sleep` can run for far longer than 0.12s, the slot can advance
+    more than twelve times over that stretched real interval, and the bound
+    fails from the OTHER direction too.
+
+    Converted to wait on the CONDITION — the second fire — guarded by a
+    generous timeout rather than measured by one. Cancelling the instant the
+    second fire lands makes the old upper bound structural instead of a magic
+    constant: nothing more can accumulate once the task is dead.
+
+    What the count bound was ALSO standing in for — that this is a genuine
+    interval re-fire and not the adaptor running on every tick — is
+    deliberately NOT re-proven here by a second wall-clock measurement. The
+    first attempt at this fix tried exactly that: assert
+    `nora_dream_skipped_total{reason="schedule"} > 0` (the schedule's own
+    "a tick was held" counter, incremented at
+    `nora/app/runtime.py::_dream_adaptor_once`) between the two fires. MEASURED
+    rather than assumed correct: 8 solo reruns, 3 failures — because whether
+    ANY tick lands inside the ~20ms window between the first fire and the
+    slot boundary depends on where in its 30ms slot the first fire happens to
+    land, which is exactly the kind of real-clock phase alignment this issue
+    exists to stop testing against. Re-deriving "holds between fires" from
+    wall-clock phase would have reintroduced #180's own failure mode inside
+    its own fix.
+
+    That property is proven WITHOUT a clock instead, by two sibling tests:
+    `test_a_scheduled_watermark_free_adaptor_fires_once_then_holds_for_the_interval`
+    (a schedule holds an adaptor open-ended, not just once) and
+    `test_a_watermark_free_adaptor_without_a_schedule_still_runs_every_tick`
+    (the contrasting, unscheduled "every tick" case the schedule exists to
+    prevent) — plus `test_two_adaptors_sharing_an_interval_can_hold_different_
+    phases`, which exercises `_slot` as a pure function with fixed
+    millisecond inputs, no clock at all. This test's own job shrinks to the
+    one claim its name makes: fires again.
+    """
+    language = _KeyedLanguage()
+    metrics = Metrics()
+    runner = _CountingRunner()
+
+    task = asyncio.create_task(dream_loop(
+        _FakeRecord({}), language, metrics,
         scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
         quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
         adaptors=[_StubAdaptor("curator", uses_watermark=False)],
@@ -907,10 +966,22 @@ async def test_a_scheduled_watermark_free_adaptor_fires_again_after_the_interval
         schedules={"curator": AdaptorSchedule(
             min_interval_seconds=0.03, batch_limit=10)},
         schedule_clock=InMemoryDreamScheduleClock(),
-    ), ticks=0.12)
+    ))
+    try:
+        await asyncio.wait_for(runner.curator_fired_twice.wait(), timeout=5.0)
+    except TimeoutError:  # pragma: no cover - only on a real regression
+        calls = [c for c in runner.calls if c[0] == "curator"]
+        pytest.fail(
+            "the scheduled adaptor did not fire a second time; "
+            f"fires={len(calls)}"
+        )
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
     calls = [c for c in runner.calls if c[0] == "curator"]
-    assert 2 <= len(calls) < 12
+    assert len(calls) >= 2, "must fire again, not just once"
 
 
 async def test_a_watermark_free_adaptor_without_a_schedule_still_runs_every_tick():

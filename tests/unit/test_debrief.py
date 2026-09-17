@@ -14,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
-import time
 
 import pytest
 
@@ -729,16 +728,19 @@ async def test_the_two_calls_start_before_either_finishes():
                 else _grounded()
             )
 
-    started = time.perf_counter()
+    # A `perf_counter` bound used to stand beside this: `elapsed < 0.18` for
+    # two overlapped 0.10s sleeps, 80ms of slack (#180). That is a machine
+    # measurement dressed as a concurrency assertion — starvation makes
+    # `elapsed` grow, so it gets MORE likely to fail exactly when the machine
+    # is loaded, never less. The `events` order below is the grounded
+    # property: it directly proves both calls started before either
+    # finished, which is the only thing "the two calls start before either
+    # finishes" claims, and a sequential fold cannot produce it regardless of
+    # how fast the machine is.
     await _run(client=_Stagger())
-    elapsed = time.perf_counter() - started
     assert events == ["start", "start", "end", "end"], (
         f"the calls did not overlap: {events} — the second completed only "
         "after the first finished, so latency is the SUM of the two"
-    )
-    assert elapsed < 0.18, (
-        f"fold wall time was {elapsed:.3f}s — two overlapped 0.10s calls fit "
-        "comfortably under 0.18s; two sequential ones take 0.2s"
     )
 
 

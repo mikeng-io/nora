@@ -200,10 +200,27 @@ async def test_the_prune_sweep_actually_prunes(pg_url, monkeypatch):
         task = asyncio.create_task(
             prune_loop(store, metrics, interval_seconds=main_module.PRUNE_INTERVAL_SECONDS)
         )
-        await asyncio.sleep(0.1)
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+        # Poll the CONDITION (the row count actually dropping), not the clock.
+        # The previous form slept a fixed 0.1s over a 0.01s sweep interval —
+        # true on an idle loop, false on a loaded one: observed failing
+        # (`assert 10 == 3`) 1 run in 3 on an otherwise unchanged tree under a
+        # full serial `make gate` against a real Postgres container (#180).
+        # The timeout is a DEADLOCK GUARD, not a measurement.
+        try:
+            deadline = asyncio.get_running_loop().time() + 5.0
+            rows = await store.recent(conversation_id="g1", limit=1000)
+            while len(rows) != 3:
+                if asyncio.get_running_loop().time() > deadline:
+                    pytest.fail(
+                        "the prune sweep did not prune within 5s; "
+                        f"rows={len(rows)}, expected 3"
+                    )
+                await asyncio.sleep(0.01)
+                rows = await store.recent(conversation_id="g1", limit=1000)
+        finally:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
         assert len(await store.recent(conversation_id="g1", limit=1000)) == 3
     finally:

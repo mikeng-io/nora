@@ -95,6 +95,25 @@ def _waiting(pipeline: EngagementPipeline) -> int:
     return len(pipeline._slots)
 
 
+async def _wait_for(
+    predicate, *, timeout_seconds: float = 5.0, message: str
+) -> None:
+    """Poll `predicate()` until true, bounded by a DEADLOCK GUARD rather than
+    a measurement — the same idiom as `tests/infra/compute/test_docker_backend
+    .py`'s own `_wait_for`.
+
+    Replaces `await asyncio.sleep(0.02)` followed by a state assertion
+    (`assert _held(pipeline) is True`, ...) across this file's queueing tests
+    (#180): that fixed window is a guess about how long admission takes to
+    reach "mid-invoke", true on an idle loop and false on a loaded one.
+    """
+    deadline = time.monotonic() + timeout_seconds
+    while not predicate():
+        if time.monotonic() >= deadline:
+            pytest.fail(message)
+        await asyncio.sleep(0.001)
+
+
 class _FakeClock:
     def __init__(self, start: float = 1000.0) -> None:
         self.t = start
@@ -1142,8 +1161,10 @@ async def test_three_tags_for_one_conversation_are_answered_in_fifo_order():
     pipeline, metrics, _, _, background = _build_pipeline(adapter=adapter, runner=runner)
 
     first = asyncio.create_task(pipeline.run(_req(body="q1", tag_id="t1")))
-    await asyncio.sleep(0.02)   # first tag admitted and mid-invoke
-    assert _held(pipeline) is True
+    await _wait_for(
+        lambda: _held(pipeline),
+        message="t1 was never admitted (pipeline never held)",
+    )
 
     await pipeline.run(_req(body="q2", tag_id="t2"))   # queued behind t1
     await pipeline.run(_req(body="q3", tag_id="t3"))   # queued behind t2
@@ -1173,7 +1194,10 @@ async def test_a_queued_tag_sees_the_earlier_tags_reply_in_its_context():
     pipeline, _, _, _, background = _build_pipeline(adapter=adapter, runner=runner)
 
     first = asyncio.create_task(pipeline.run(_req(body="q1", tag_id="t1")))
-    await asyncio.sleep(0.02)
+    await _wait_for(
+        lambda: _held(pipeline),
+        message="t1 was never admitted (pipeline never held)",
+    )
     await pipeline.run(_req(body="q2", tag_id="t2"))
     await first
     await _drain(background)
@@ -1193,7 +1217,10 @@ async def test_different_conversations_still_run_concurrently():
 
     a = asyncio.create_task(pipeline.run(_req(conversation_id="g1", body="qa", tag_id="ta")))
     b = asyncio.create_task(pipeline.run(_req(conversation_id="g2", body="qb", tag_id="tb")))
-    await asyncio.sleep(0.02)
+    await _wait_for(
+        lambda: _held(pipeline, G1) and _held(pipeline, G2),
+        message="both conversations were never held concurrently",
+    )
 
     # BOTH in flight at once — neither queued behind the other.
     assert _held(pipeline, G1) is True
@@ -1222,7 +1249,10 @@ async def test_a_flood_past_the_queue_bound_is_shed_with_its_own_counter():
     )
 
     first = asyncio.create_task(pipeline.run(_req(body="q1", tag_id="t1")))
-    await asyncio.sleep(0.02)
+    await _wait_for(
+        lambda: _held(pipeline),
+        message="t1 was never admitted (pipeline never held)",
+    )
     await pipeline.run(_req(body="q2", tag_id="t2"))   # queued (depth 0 -> 1)
     await pipeline.run(_req(body="q3", tag_id="t3"))   # queued (depth 1 -> 2)
     await pipeline.run(_req(body="q4", tag_id="t4"))   # queue full -> shed
@@ -1326,17 +1356,30 @@ async def test_a_queued_tag_gets_its_eyes_promptly_while_it_waits():
     )
 
     first = asyncio.create_task(pipeline.run(_req(body="q1", tag_id="t1", ts=1)))
-    await asyncio.sleep(0.02)
+    await _wait_for(
+        lambda: _held(pipeline),
+        message="t1 was never admitted (pipeline never held)",
+    )
     await pipeline.run(_req(body="q2", tag_id="t2", ts=2))   # queued behind t1
-    # Pump the loop briefly — enough for the queued tag's spawned 👀 to land,
-    # but far short of t1's 0.3s turn, so t2 is provably STILL waiting.
-    for _ in range(5):
-        await asyncio.sleep(0)
 
+    def _ack_timestamps() -> list[int]:
+        return [ts for emoji, _a, ts, remove in adapter.reactions
+                if emoji == indicate.ACK and not remove]
+
+    # Wait for the CONDITION (the queued tag's 👀 landing), not for a fixed
+    # count of event-loop turns — the previous form pumped exactly 5 bare
+    # `asyncio.sleep(0)`s and hoped that was enough for the spawned reaction
+    # task to run, which is the same "guess how long it takes" shape as a
+    # wall-clock sleep, just measured in turns instead of seconds (#180).
+    await _wait_for(
+        lambda: 2 in _ack_timestamps(),
+        message=f"the queued tag's 👀 never landed; reactions={adapter.reactions}",
+    )
+    # t2 must still be QUEUED when its 👀 lands — that is the property this
+    # test is named for (fires at admission, not at turn start). t1's turn
+    # holds for 0.3s, several orders of magnitude longer than the 👀 above
+    # can take to land, so this is not a race with the wait above.
     assert _depth(pipeline) == 1                                # t2 still queued
-    ack_timestamps = [ts for emoji, _a, ts, remove in adapter.reactions
-                      if emoji == indicate.ACK and not remove]
-    assert 2 in ack_timestamps   # the 👀 for the QUEUED tag's message fired already
 
     await first
     await _drain(background)
@@ -2777,7 +2820,10 @@ async def test_a_queued_tag_lands_in_the_trace_that_admitted_it(exported_spans):
     )
 
     first = asyncio.create_task(pipeline.run(_req(body="q1", tag_id="t1")))
-    await asyncio.sleep(0.02)                          # t1 admitted, mid-invoke
+    await _wait_for(
+        lambda: _held(pipeline),
+        message="t1 was never admitted (pipeline never held)",
+    )
     await pipeline.run(_req(body="q2", tag_id="t2"))   # QUEUED behind t1
     await first
     await _drain(background)
@@ -2813,7 +2859,10 @@ async def test_a_queued_tag_with_no_carried_context_starts_its_own_trace(exporte
     )
 
     first = asyncio.create_task(pipeline.run(_req(body="q1", tag_id="t1")))
-    await asyncio.sleep(0.02)
+    await _wait_for(
+        lambda: _held(pipeline),
+        message="t1 was never admitted (pipeline never held)",
+    )
     # Enqueued WITHOUT a carrier, through the real `ConversationSlots` rather
     # than by calling `_run_queued` directly — the dispatch is the thing under
     # test, so it has to be the real one.
