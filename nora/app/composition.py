@@ -1364,17 +1364,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # is that the read and the write are the same row seen twice, and two
         # objects for one row is how that stops being structurally true.
         standing=standing_store if cfg.standing.enabled else None,
-        # The culture head's READ half (design/culture-tier). `None` while
-        # `[culture] enabled = false`, the shipped default, so `<culture>`
-        # renders nothing at all.
-        #
-        # UNLIKE `standing` directly above, this one keys on `primary_id` and
-        # therefore DOES need the policy the assembler already holds: a Dreamer
-        # adaptor is handed `scopes()`, so that is what it wrote under, and
-        # reading it with the arriving thread's id would match zero rows and
-        # render as «this room has no account» — a real state, so nothing would
-        # report the miss.
-        culture=SqlCultureStore(engine) if cfg.culture.enabled else None,
         # The media join (issue #116). The same instance every other
         # transcript builder holds — the comprehension a spawned job wrote is
         # the one the transcript renders, the one the note tier reads and the
@@ -2513,17 +2502,6 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # the fire path writes no position, because S1 is blocked on it
             # retaining a `TagTrace` at all (see `FirePath.__init__`).
             standing=standing_store if cfg.standing.enabled else None,
-            # The culture head's READ half (design/culture-tier). `None` while
-            # `[culture] enabled = false`, the shipped default, so `<culture>`
-            # renders nothing at all.
-            #
-            # UNLIKE `standing` directly above, this one keys on `primary_id` and
-            # therefore DOES need the policy the assembler already holds: a Dreamer
-            # adaptor is handed `scopes()`, so that is what it wrote under, and
-            # reading it with the arriving thread's id would match zero rows and
-            # render as «this room has no account» — a real state, so nothing would
-            # report the miss.
-            culture=SqlCultureStore(engine) if cfg.culture.enabled else None,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
             # The participation turn's memory reads (issue #210). ONE knob set,
             # read at the composition root exactly as the tag assembler reads

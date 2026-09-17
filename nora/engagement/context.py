@@ -23,7 +23,6 @@ import logging
 import time
 from typing import Any, Protocol
 
-from nora.domain.culture import CultureRevision
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import (
     NormalizedMessage,
@@ -43,18 +42,6 @@ from nora.persons import Persons
 from nora.policy import Policy
 
 log = logging.getLogger(__name__)
-
-
-class CultureReader(Protocol):
-    """The ONE method this assembler calls on the culture store.
-
-    A Protocol and not `SqlCultureStore`, for `StandingNotesReader`'s reason
-    below: the concrete store also exposes `append`, and naming only what is
-    called makes «the tag path never writes a culture row» a fact a type checker
-    enforces rather than a habit a later edit could quietly break.
-    """
-
-    async def head(self, *, key: str) -> CultureRevision | None: ...
 
 
 class StandingNotesReader(Protocol):
@@ -101,7 +88,6 @@ class TranscriptInjection:
         notes: StandingNotesReader | None = None,
         policy: Policy | None = None,
         standing: StandingStore | None = None,
-        culture: CultureReader | None = None,
         media_join: MediaJoin | None = None,
     ) -> None:
         self._audit = audit
@@ -142,19 +128,6 @@ class TranscriptInjection:
         # unlike `notes`: a position is held in a room, not shared
         # across a workspace's rooms, so there is no workspace to resolve.
         self._standing_store = standing
-        # THE CULTURE HEAD (design/culture-tier). `None` is the dormant default
-        # — `[culture] enabled = false` builds no store at all.
-        #
-        # **Keyed on `primary_id`, NOT `(platform, conversation_id)` like
-        # `standing` directly above**, and the difference is not cosmetic: a
-        # Dreamer adaptor is handed `scopes()`, so that is what it writes under.
-        # Reading this store with the arriving thread's id matches ZERO ROWS on
-        # every room whose conversation carries more than one id — silently, as
-        # «this room has no account yet», which is a real state and therefore
-        # unreportable. All six live conversations hold exactly one id today, so
-        # the two are equal BY ACCIDENT OF DATA (issue #229); resolving through
-        # the policy is what keeps that accident from becoming the contract.
-        self._culture_store = culture
         # THE MEDIA JOIN (issue #116). `messages.body` carries `[image a3f2c1]`
         # and nothing more; the comprehension lives in `media_objects`, and the
         # join is where the two meet — in the ASSEMBLER and not in
@@ -196,14 +169,6 @@ class TranscriptInjection:
         # `_notes` is the one read scoped by WORKSPACE rather than by room, and
         # it is gathered beside the rest anyway — where a read is scheduled says
         # nothing about what it is keyed on.
-        # CULTURE runs beside the gather rather than inside it, and the reason
-        # is the type checker rather than the scheduler: `asyncio.gather`'s
-        # overloads stop at six awaitables, so a seventh collapses every result
-        # to `Any` — which on this function would erase the types of all six
-        # siblings, silently, on the path that assembles the prompt. A task
-        # started here is running during the gather exactly as a seventh
-        # argument would be, and keeps its type.
-        culture_task = asyncio.create_task(self._culture(msg))
         (
             transcript, card, self_card, tagger_card, standing, notes,
         ) = await asyncio.gather(
@@ -214,7 +179,6 @@ class TranscriptInjection:
             self._standing(msg),
             self._notes(msg),
         )
-        culture = await culture_task
 
         # One name space for the whole prompt (DEC-80) — see `Persons.name_transcript`.
         transcript = self._persons.name_transcript(transcript, platform=msg.platform)
@@ -245,45 +209,7 @@ class TranscriptInjection:
             tagger_card=tagger_card,
             notes=notes,
             standing=standing,
-            culture=culture,
         )
-
-    async def _culture(self, msg: NormalizedMessage) -> CultureRevision | None:
-        """This room's current account, or `None`.
-
-        **Resolved through the policy to a `primary_id`** — see
-        `self._culture_store`'s comment for why reading it with the arriving
-        thread's id is a silent miss rather than an error.
-
-        Four states collapsing to `None`, and collapsing them is right here for
-        `_standing`'s reason — the prompt cannot express the difference and
-        nothing downstream needs it: **no store** is the dormant default; **no
-        policy conversation** is a room outside the allowlist; **no row** is a
-        room not folded yet, which is the ORDINARY state for a while after the
-        tier is enabled, since a fold needs new messages and a day; and a
-        **failed read** is the one that is counted, because a head that exists
-        and could not be fetched reported as «no account» is `unavailable`
-        collapsed into `nothing_found` (R-27).
-
-        Fail-SOFT like every sibling — a thinner prompt beats no reply — but
-        never silent.
-        """
-        if self._culture_store is None:
-            return None
-        convo = (
-            self._policy.conversation(msg.platform, msg.conversation_id)
-            if self._policy is not None
-            else None
-        )
-        if convo is None or not convo.primary_id:
-            return None
-        try:
-            return await self._culture_store.head(key=convo.primary_id)
-        except Exception:
-            log.exception("culture read failed; continuing without it")
-            self._metrics.inc(
-                "nora_errors_total", stage="culture", platform=msg.platform)
-            return None
 
     async def _recent(self, msg: NormalizedMessage) -> tuple[TranscriptRow, ...]:
         """The transcript, or an empty one — a thinner reply beats no reply."""

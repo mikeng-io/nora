@@ -25,7 +25,6 @@ from nora.domain.ports import (
     StandingStore,
 )
 from nora.engagement.context import (
-    CultureReader,
     StandingNotesReader,
     TranscriptInjection,
 )
@@ -44,7 +43,6 @@ def build_assembler(
     policy: Policy,
     notes: StandingNotesReader | None = None,
     standing: StandingStore | None = None,
-    culture: CultureReader | None = None,
     media_join: MediaJoin | None = None,
 ) -> TranscriptInjection:
     return TranscriptInjection(
@@ -55,10 +53,6 @@ def build_assembler(
         tagger_card_conclusions=cfg.memory.tagger_card_conclusions,
         notes=notes, policy=policy,
         standing=standing,
-        # The culture head (design/culture-tier). Read-only by type: the
-        # assembler takes a `CultureReader`, which has `head` and nothing else,
-        # so the tag path cannot write a culture row even by accident.
-        culture=culture,
         # The media join (issue #116): the transcript's `[image a3f2c1]`
         # placeholders gain their stored comprehension here, in the assembler,
         # so `nora/agent/prefill.py` stays a pure renderer over `TagContext`.

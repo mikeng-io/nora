@@ -27,7 +27,6 @@ from ..domain.decision_log import (
 from ..domain.models import TagContext, TranscriptRow
 from ..domain.prompt import escape
 from ..domain.prompt import escape_attr as _escape_attr
-from ..language.culture_render import CULTURE_HEADER, render_culture
 from ..language.note_render import NOTES_HEADER, render_notes
 from ..language.standing_render import STANDING_HEADER, render_standing
 from ..obs.tracing import annotate, span
@@ -173,13 +172,6 @@ _BLOCKS: tuple[tuple[str, int, BlockKey, str], ...] = (
      "looked — never that there is nothing to know."),
     ("notes", 40, "workspace", NOTES_HEADER),
     ("loop_decisions", 50, "workspace", LOOP_DECISIONS_HEADER),
-    # BEFORE `standing`, and the order is the argument. The blocks above widen
-    # — her past, then theirs, then the workspace's. Culture is the room she is
-    # in, which is wider than «where I had got to in this conversation» and
-    # narrower than the workspace, so it sits between them. Read in order the
-    # tail now says: here is what this room IS, here is where you had got to in
-    # it, here is what has been said since.
-    ("culture", 55, "room", CULTURE_HEADER),
     ("standing", 60, "room", STANDING_HEADER),
     ("group_transcript", 70, "room",
      "group_transcript: the last {context_window} messages, oldest first. "
@@ -779,26 +771,6 @@ def _standing_block(ctx: TagContext) -> ContextBlock | None:
     return render_standing(ctx.standing)
 
 
-def _culture_block(ctx: TagContext, *, now: datetime) -> ContextBlock | None:
-    """What this ROOM is like, as `<culture>` (design/culture-tier).
-
-    **The only block in this prompt that is about the room rather than about a
-    moment in it.** Its neighbours all answer «what has happened»: the
-    transcript is what was said, `<notes>` what is unsettled, `<standing>` where
-    she had got to. This one answers «what is this place, and why is it like
-    that» — and that difference is the tier's entire reason to exist, because
-    the memory system already produces the other shape and a chronicle of
-    dynasties and their dates is not a culture.
-
-    `None` until the room has been folded at least once, which is the ordinary
-    state for a while after the tier is enabled — a fold needs new messages and
-    a day. `render_culture` emits no block rather than an empty one, for
-    `render_standing`'s reason: a room she has never folded is not a room she
-    looked at and found featureless.
-    """
-    return render_culture(ctx.culture, now=now)
-
-
 def _decisions_block(ctx: TagContext, *, now: datetime) -> ContextBlock | None:
     """What NORA'S OWN LOOP already did across this WORKSPACE, as
     `<loop_decisions>` (issue #199). `""` when there is nothing — which is
@@ -904,7 +876,6 @@ def build_prefill(
             _people_in_window_block(ctx),
             _restamp(_notes_block(ctx, now=clock)),
             _restamp(_decisions_block(ctx, now=clock)),
-            _restamp(_culture_block(ctx, now=clock)),
             _restamp(_standing_block(ctx)),
             _transcript_block(ctx, display_name, clock),
         ])
