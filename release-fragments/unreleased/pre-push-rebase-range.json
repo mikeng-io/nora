@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "pre-push checks only the commits a push actually introduces, not master's own history after a rebase.",
+  "details": [],
+  "limitations": [],
+  "reason": "Developer tooling; no runtime change. The existing-ref branch derived its range from the branch's previous remote tip, so after `git rebase origin/master` it checked every commit the branch was rebased ONTO — refusing pushes over GitHub-default merge subjects on commits already accepted on master. Fixes #315."
+}

@@ -37,16 +37,43 @@ check_one() {  # $1 = sha
   checked=$((checked + 1))
 }
 
+# Git's pre-push protocol feeds FOUR fields per ref on stdin, so all four are
+# read even though only `local_sha` is used now: dropping a name would shift
+# the parse and put a sha in the wrong variable. `remote_ref` was already
+# unused; `remote_sha` became unused when the range stopped being derived from
+# it (#315), and it is kept named because the line documents the protocol.
+# shellcheck disable=SC2034
 while read -r local_ref local_sha remote_ref remote_sha; do
   [ "$local_sha" = "$zero" ] && continue   # branch deletion
-  if [ "$remote_sha" = "$zero" ]; then
-    # New ref: everything reachable from the tip that no remote already has.
-    # Passed as SEPARATE arguments (never one unquoted string) - a single
-    # "$sha --not --remotes" word is not a revision, and rev-list refuses it.
-    mapfile -t shas < <(git rev-list --max-count=201 "$local_sha" --not --remotes)
-  else
-    mapfile -t shas < <(git rev-list --max-count=201 "$remote_sha..$local_sha")
-  fi
+  # Everything reachable from the tip that NO REMOTE ALREADY HAS - which is
+  # exactly the set this push introduces, and is the right range whether the
+  # ref is new or not. Passed as SEPARATE arguments (never one unquoted
+  # string) - a single "$sha --not --remotes" word is not a revision, and
+  # rev-list refuses it.
+  #
+  # **`$remote_sha..$local_sha` was wrong for an existing ref, and a rebase is
+  # what exposed it** (#315). `remote_sha` is the BRANCH's previous remote tip,
+  # so after `git rebase origin/master` that range contains every commit the
+  # branch was rebased ONTO - all of master's recent history, including its
+  # merge commits. Measured 2026-09-17 on `mikeng-io/fix-note-index-xml`: an
+  # 8-commit branch was checked as 33, and the push was refused for a
+  # GitHub-default merge subject on a commit that was already on `origin/master`
+  # and had been accepted there.
+  #
+  # The two ways past that are both worse than the bug: `--no-verify` turns the
+  # gate off for the whole push at exactly the moment a rebase has rewritten
+  # history, or somebody amends a merge commit that is already on master to
+  # satisfy a hook. A gate that can only be satisfied by rewriting shared
+  # history teaches people to bypass it.
+  #
+  # It also interacted with the 200-commit cap below: on a long-lived branch
+  # rebased onto a busy master, the commits actually being pushed could fall
+  # outside the window and go unchecked while the hook reported it was working.
+  #
+  # `--remotes` means ANY remote. This repo has one; if that ever changes and a
+  # fork's branches should not count as "already reviewed", the narrower form
+  # is `--not --remotes=origin`.
+  mapfile -t shas < <(git rev-list --max-count=201 "$local_sha" --not --remotes)
   if [ "${#shas[@]}" -gt 200 ]; then
     echo "pre-push: $local_ref has more than 200 commits; checking the newest 200 only" >&2
     shas=("${shas[@]:0:200}")
