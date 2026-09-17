@@ -421,6 +421,79 @@ def test_a_block_carries_its_framing_and_its_own_header_line():
     assert "the last messages, oldest first" in rendered
 
 
+def test_the_untrusted_flag_is_proven_in_BOTH_directions():
+    """`untrusted=False` actually suppresses the attribute — RUN, not believed.
+
+    **This exists because the flag's false branch had never executed**, in a
+    test or in production: `grep -rn "untrusted=False" nora/ tests/ evals/`
+    returned nothing across the whole tree, and the only assertion touching the
+    attribute at all was a `startswith` on the true branch in the test above.
+    So a load-bearing conditional in `render()` — the ONLY path a block becomes
+    text — was carrying a branch nobody had ever taken.
+
+    That matters at the moment it is first used rather than before it. Two
+    populations reach a model: blocks carrying what somebody TYPED, which need
+    the marker, and blocks carrying our own framing — a legend explaining how
+    to read a sibling, the context header's catalogue — for which the marker
+    would say a model's own operating instructions are suspect. #292 converts
+    the second kind into this injector, and if the false branch were broken the
+    conversion would look like it worked: the block renders, the suite is
+    green, and the only symptom is an attribute that should be absent and is
+    not. One assertion here means that conversion debugs one thing, not two.
+
+    Raised by review on #295, which is the right place for it — the finding was
+    «nothing has ever passed False», and the honest response to an unexercised
+    seam is to exercise it rather than to describe it.
+    """
+    common = {
+        "name": "how_to_read_reasoning",
+        "note": "what the clip mark means",
+        "body": "A block ending [clipped] was cut before it reached you.",
+    }
+    trusted = ContextBlock(**common, untrusted=False).render()
+    untrusted = ContextBlock(**common).render()
+
+    # The false branch: absent entirely, not rendered as `untrusted="false"` —
+    # a symbol that can mean «no» invites a model to reason about it
+    # (`_parent_of`'s rule), and the whole point is that the block reads as
+    # ordinary framing.
+    assert "untrusted" not in trusted, trusted
+    assert trusted.startswith('<how_to_read_reasoning note="')
+
+    # The default is the DANGEROUS case, so a converter who does not think
+    # about it lands on the safe side. That is the property the two classes
+    # depend on and it is asserted beside its opposite rather than apart.
+    assert untrusted.startswith('<how_to_read_reasoning untrusted="true" note="')
+
+    # Nothing ELSE moves with the flag: same name, same note, same body, same
+    # closing tag. A branch that also dropped the framing note would satisfy
+    # the assertions above and be a worse bug than the one they guard.
+    for rendered in (trusted, untrusted):
+        assert "what the clip mark means" in rendered
+        assert rendered.endswith("\n</how_to_read_reasoning>")
+        assert "A block ending [clipped] was cut" in rendered
+
+
+def test_the_untrusted_flag_does_not_disturb_a_blocks_own_attributes():
+    """Attribute ORDER is `render()`'s, and it is uniform on purpose — two
+    blocks once carried two orders for no reason anybody wrote down. The
+    block's own attributes come first, `untrusted` second when present, `note`
+    last; dropping the marker must close the gap rather than leave the order
+    depending on a flag."""
+    common = {
+        "name": "peer_card",
+        "note": "what you remember about them",
+        "attrs": (("person", "Grant"),),
+        "body": "- likes espresso",
+    }
+    assert ContextBlock(**common).render().startswith(
+        '<peer_card person="Grant" untrusted="true" note="'
+    )
+    assert ContextBlock(**common, untrusted=False).render().startswith(
+        '<peer_card person="Grant" note="'
+    )
+
+
 def test_a_note_containing_a_quote_cannot_close_the_attribute():
     """The `note=` is ours rather than anybody's content, but it is an XML
     attribute and `escape` alone leaves `"` intact — `escape_attr` is the one
