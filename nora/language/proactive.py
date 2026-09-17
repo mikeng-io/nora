@@ -1391,6 +1391,15 @@ class ProactiveAdaptor:
 #: one this tier is careful about: a wake is charged when the decide turn writes
 #: the row, BEFORE the act turn speaks or declines, so it counts decisions the
 #: room never answered — never messages sent to them.
+#: **This block gained `untrusted="true"` at #292 and no commit message said
+#: so.** Master's hand-built `<open_notes …>` carried no marker; routing the
+#: pass through `ContextBlock` took the type's default. That is the right
+#: classification under either reading of the word (#314) — the entries are
+#: model-authored FROM member text — but it is a byte change to a prompt the
+#: `proactive_decide` suite grades, and it arrived unannounced while
+#: `<tag_message>` gaining the same marker got four paragraphs. Recorded here
+#: because an unrecorded prompt change is indistinguishable from an accident
+#: the next time somebody reads the diff.
 OPEN_NOTES_NOTE = (
     "what this group has not settled, one note each — the index only; "
     "note_read gives a body. `about` is the day it turns on. `revisit` is "
