@@ -6853,8 +6853,7 @@ when somebody asks what song is on.
             times: how many times in total, including the first. Repeats only.
             until: the last date/moment it may go off, ISO-8601. Repeats only.
             note: the TITLE of the note this is about, exactly as listed in
-                <notes> (or in <open_notes> on your own morning pass), when the
-                reminder is about one of them. Optional. It
+                <notes>, when the reminder is about one of them. Optional. It
                 records the link; a reminder you set for yourself on your own
                 pass is dropped if the note is settled before it fires.
         """

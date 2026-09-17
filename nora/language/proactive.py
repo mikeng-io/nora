@@ -1347,13 +1347,30 @@ class ProactiveAdaptor:
 # -- rendering ----------------------------------------------------------------
 
 
-#: `<open_notes>` keeps its OWN element name, and that is deliberate rather than
-#: a missed unification. The decide turn's objective addresses this block by
-#: name, `note_wake`/`remind` resolve `[n]` against it, and the tag path's
-#: `<notes>` is a different block in a different prompt with a different
-#: framing sentence. One RENDERER, two names — renaming it would be a prompt
-#: change wearing a refactor's clothes (#292).
-#: **`revisit` and `raised` are NAMED here because the line that used to carry
+#: **It is `<notes>`, and the second name is gone** (#314). It was
+#: `<open_notes>` from the day this pass was written — hand-built as an
+#: f-string, months after the tag path had already named its block `<notes>`,
+#: with nothing choosing between them. #292 routed both through the injector
+#: and kept each caller's tag, because a rename is a prompt change; #314 then
+#: declared both as types, and a registry that can only see names recorded the
+#: accident as a distinction.
+#:
+#: The argument for keeping it was written down here and BOTH HALVES WERE
+#: FALSE, checked 2026-09-17: the decide turn's objective does not address this
+#: block by name — `instructions.dreamer` serves `objective.body`, whose only
+#: mentions are the prose «the notes» and «open-notes list», with every
+#: `<open_notes>` hit sitting in unserved front matter — and `remind`/
+#: `note_wake` resolve `[n]` against `_Shown.by_handle`, a dict built from the
+#: same tuple, which no tag name touches.
+#:
+#: What the second name actually bought was room to drift. Same rows, same
+#: renderer, and the two descriptions had grown 100 words apart: this one had
+#: lost «where an entry here and the transcript disagree, the transcript is
+#: what happened», «never name this bookkeeping itself» and «one still listed
+#: here may already have settled», and annotated `title` differently. The tag
+#: is what let that happen quietly, so the tag is what went.
+#:
+#: **`revisit` and `raised` are NAMED because the line that used to carry
 #: their meaning is gone** (#292 audit). The flat entry said «; you decided to
 #: raise this 2x before, no reply since» — the number arrived with its own
 #: sentence. As an attribute it arrives as a bare `raised="2"`, and a first cut
@@ -1363,6 +1380,7 @@ class ProactiveAdaptor:
 #: one this tier is careful about: a wake is charged when the decide turn writes
 #: the row, BEFORE the act turn speaks or declines, so it counts decisions the
 #: room never answered — never messages sent to them.
+#:
 #: **This block gained `untrusted="true"` at #292 and no commit message said
 #: so.** Master's hand-built `<open_notes …>` carried no marker; routing the
 #: pass through `ContextBlock` took the type's default. That is the right
@@ -1414,7 +1432,8 @@ def _open_notes_block(
         )
 
     return ContextBlock(
-        name="open_notes", body=render_note_rows(notes, today=today, extra=_extra) or "(none)",
+        name="notes",
+        body=render_note_rows(notes, today=today, extra=_extra) or "(none)",
     ).render()
 
 

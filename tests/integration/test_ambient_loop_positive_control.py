@@ -1019,8 +1019,11 @@ def test_3d_the_proactive_decider_is_never_shown_the_false_premise(
         "fold writing a position, this pass now renders nothing — rewrite, "
         "do not delete)"
     )
-    open_notes = journey.first_seeing_envelope.split("<open_notes")[1].split(
-        "</open_notes>",
+    # `<notes>` since #314, not `<open_notes>`: this pass renders the tag
+    # path's block through the tag path's renderer, and the second name was an
+    # accident of the two prompts being written months apart.
+    open_notes = journey.first_seeing_envelope.split("<notes")[1].split(
+        "</notes>",
     )[0]
     assert "(none)" in open_notes, (
         "a dead tag turn must leave the proactive decider nothing to raise; "

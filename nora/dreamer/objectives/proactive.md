@@ -26,13 +26,15 @@ description: >-
   not the schemas' imperative one, so the fix is vocabulary only: `note`, the
   word the tools already use for the same thing, everywhere this text said
   `open note`. (Correction, 2026-09-16: the commit's own body named this as
-  matching "the `<notes>` block's own framing" — the block the runtime
-  actually renders is `<open_notes>` (`nora/language/proactive.py`), not
-  `<notes>`. `open_notes`/`<open_notes>`, with the underscore, is a
-  structural identifier — an XML tag, not spoken prose — and is untouched by
-  this change; it is a different thing from the spoken phrase 「open note」
-  (two words, a space) that issue #242 tracks and this version removes from
-  the body text.) Settle measurements for #242 (operator, 2026-09-16): (1)
+  matching "the `<notes>` block's own framing" — the block the runtime then
+  rendered was `<open_notes>` (`nora/language/proactive.py`), not `<notes>`.
+  Superseded 2026-09-17 by #314: this pass renders `<notes>`, the same tag and
+  the same type as the tag path, because the two names were an accident of two
+  prompts written months apart and the descriptions under them had drifted 100
+  words. The original point stands either way — a tag is a structural
+  identifier, not spoken prose, and is a different thing from the spoken
+  phrase 「open note」 that issue #242 tracks and this version removes from the
+  body text.) Settle measurements for #242 (operator, 2026-09-16): (1)
   grep — no decide-suite written rows exist anywhere outside a live run (the
   suite's `FakeReminderStore` is in-process and discarded per run; the
   Langfuse sink records only a per-case PASS/FAIL score, never the `intent`/

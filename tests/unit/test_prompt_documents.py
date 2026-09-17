@@ -543,7 +543,7 @@ SHAPES = {
     "proactive": """
 <now description>
 <home_room description fields label platform>
-<open_notes description fields>
+<notes description fields>
   <note about n title>
 <rooms description>
 <decisions days description fields>""",

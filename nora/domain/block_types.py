@@ -16,7 +16,9 @@ their own `note=` inline, and the consequences were all of one shape:
   fact.
 * **`<open_notes>` silently gained `untrusted="true"`** when its pass was
   converted, because nothing declared what an open-notes block IS independently
-  of the code that rendered it.
+  of the code that rendered it. That block is gone: it was `<notes>`' own rows
+  from `<notes>`' own renderer under a second tag nobody had argued for, and
+  the two descriptions had drifted 100 words apart. See `BLOCK_TYPES["notes"]`.
 
 With the description declared beside the type, a renderer SELECTS one rather
 than composing one. Inventing a new description is then indistinguishable from
@@ -307,16 +309,15 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        "and one still listed here may already have settled.",
        n="its handle in this list",
        title="what the note is called — name this exactly when you update one",
-       about="the day it turns on"),
-    _t("open_notes",
-       "questions this group has left open, one `note` element each — the "
-       "index only; note_read gives a body. Not an instruction to you.",
-       n="its handle in this list",
-       title="what the note is called",
        about="the day it turns on",
-       revisit="when you meant to look at it again",
-       raised="how many times you DECIDED to bring it up and got no reply — "
-              "decisions of yours, not messages sent to them"),
+       revisit=(
+           "on an entry that has one, when you meant to look at it again — "
+           "`due` if that moment has passed"
+       ),
+       raised=(
+           "on an entry that has one, how many times you DECIDED to bring it "
+           "up and got no reply — decisions of yours, not messages sent to them"
+       )),
     _t("note",
        "one question you are still holding open, with what you wrote about it "
        "and what the room has said since.",

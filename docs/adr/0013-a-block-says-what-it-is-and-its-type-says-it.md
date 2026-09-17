@@ -195,3 +195,31 @@ a call site can say otherwise.**
   The rule, stated because it cost two false sentences to learn: two renders
   that differ in what a FIELD means are two types, however alike the blocks
   look. This is `<untrusted>`'s lesson one level down.
+
+- **And ONE tag was two names for one thing** — the inverse, found by the
+  operator asking why the proactive pass's block was called something else.
+  `<open_notes>` rendered `<notes>`' own rows through `<notes>`' own renderer
+  (`render_note_rows`, shared since #292) under a tag nobody had argued for:
+  the proactive adaptor was written months after the tag path, as a hand-built
+  f-string, and simply typed a different name. #292 kept both because a rename
+  is a prompt change; #314 declared both as types, and a registry that can only
+  see NAMES recorded the accident as a distinction.
+
+  The code carried an argument for keeping it and **both halves were false**:
+  «the decide turn's objective addresses this block by name» —
+  `instructions.dreamer` serves `objective.body`, whose only mentions are the
+  prose «the notes» and «open-notes list», every `<open_notes>` hit sitting in
+  unserved front matter — and «`note_wake`/`remind` resolve `[n]` against it» —
+  they resolve against `_Shown.by_handle`, a dict built from the same tuple,
+  which no tag name touches.
+
+  What the second name bought was room to drift, and it had: the proactive
+  pass's description was 22 words to the tag path's ~100, missing «where an
+  entry here and the transcript disagree, the transcript is what happened»,
+  «never name this bookkeeping itself» and «one still listed here may already
+  have settled», and annotating `title` differently. One type now, with
+  `revisit` and `raised` as «on an entry that has one» annotations.
+
+  **A comment asserting a decision is not the decision having been made.** Both
+  claims were checkable in under a minute and neither had been checked since
+  the day they were written.
