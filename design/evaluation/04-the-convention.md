@@ -138,9 +138,13 @@ The report prints `judge=` beside `subject=`, and its loudest value is
 
 ## 6. What is NOT true yet
 
-- **`evals/*.py` still exists**, and Step 5 is BLOCKED rather than pending.
-  Measured 2026-09-18 by running the delete: it stops ~372 tests, 16 of them
-  at collection. The bundle was wrong about what three of those files are.
+- **Step 5 is DONE for the old CLI and its drivers, and BLOCKED for three
+  files.** 2026-09-18: `evals/run.py`, `sink.py`, `datasets.py`,
+  `journeys.py`, `note_candidates.py`, `proactive.py`, `relevance_gate.py` and
+  twelve test files are gone — **8,218 lines**, `make gate` green at 7,900
+  passed.
+
+  What STAYS, and the bundle was wrong about all three:
 
   - **`nora/app/offline.py` is not an eval module.** It is the offline
     composition root for `tests/integration/harness.py` — 106 tests and ten
@@ -155,8 +159,24 @@ The report prints `judge=` beside `subject=`, and its loudest value is
     reasons. Moving `evals/evaluators.py` out from under it was tried and
     `tests/test_boundaries.py` refused it.
 
-  `design/evaluation/GOAL.md` carries the seven blocking items and the eleven
+  `design/evaluation/GOAL.md` carries the remaining blockers and the
   capabilities that must be consciously accepted or replaced.
+
+- **The ROUTING tier is gone with no counterpart**, and two decisions are now
+  marked NOT ENFORCED in `design/09-decision-index.md` because of it —
+  **DEC-76** (an intent graph grading which tool she reached for) and
+  **DEC-84** (whose re-runnable gate was `--suite journeys`). `Outcome` carries
+  no tool calls and no corpus is a journey.
+
+  This is the sharpest thing the delete cost, and it is recorded rather than
+  absorbed: a wrong route answers fluently from the wrong source, and DEC-75
+  and DEC-76 both record that a reply-grader is blind to it. `docs/eval-sop.md`
+  step 2 now says the step has no instrument.
+
+- **Four corpora are ungradable** — `identity_grounding`, `source_scope`,
+  `injections`, `being_contradicted` — because they are about what the reply
+  SAYS and the judge is too slow to run (§8.4 of `06-first-full-run`:
+  ~211s a sample, five timeouts in six cases).
 - **Four assertions in the note-candidates corpus are parked**, not graded:
   `must_cite`, `anchor_date`, `creates`, `updates`. They need the staged
   candidate's `message_ids`, which the notebook diff does not carry.

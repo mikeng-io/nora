@@ -214,10 +214,16 @@ This is the SOP, not a one-time setup:
 
 1. **Comprehend** — a real turn went wrong (weather web-searched, "我邊度返工"
    answered with live GPS). Name the journey and its *correct* tool path.
-2. **Measure** — add a `Journey` to `evals/journeys.py` with the real message, the
-   required tool(s), and the trap. If the trap is a tool not yet in
-   `SEED_INTENT_GRAPH`, add the confusability edge — every touching journey
-   tightens at once.
+2. **Measure** — **THIS STEP HAS NO INSTRUMENT as of 2026-09-18.** The routing
+   tier went with the old eval layer and the rebuilt one has no counterpart:
+   its `Outcome` carries no tool calls and no corpus is a journey, so "which
+   tool did she reach for" cannot currently be graded. DEC-76 and DEC-84 are
+   marked NOT ENFORCED in `design/09-decision-index.md` for exactly this.
+
+   Until it is rebuilt, a routing failure is caught by a reply-grader that
+   `design/09-decision-index.md` DEC-75/DEC-76 both record as BLIND to it — a
+   wrong route answers fluently from the wrong source. Adding a corpus case
+   still measures whether she replied; it does not measure where she looked.
 3. **Serialize** — tier 1 pins intended-vs-regression (offline, no model); tier 2
    proves the *current* model against it. The verdict is the gate's exit code and,
    when exported, a Langfuse score.

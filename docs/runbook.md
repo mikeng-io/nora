@@ -616,10 +616,14 @@ place** rather than duplicating — ids are deterministic UUID5 over
 Langfuse still prints its verdict and exits with the same code. That independence
 is deliberate — an observability store must not be able to break CI.
 
-**Known: `--suite all` currently reports GATE FAILED, and has since before this
-work.** The `trigger` suite's live-model path is deferred (see `evals/run.py`'s
-module docstring), so `RepliesAtLeastOnce` sees zero `send_reply` calls and
-scores `false`. Confirmed identical on the pre-Phase-7 commit. The export is
+**SUPERSEDED 2026-09-18.** `--suite all` and the whole `python -m evals.run`
+CLI are gone (`design/evaluation/` Step 5). The suite is now
+`python -m evals.rebuilt evals/corpora/<name>.yaml`, one corpus per file, and
+`make eval-participation` / `eval-note-candidates` / `eval-gate` /
+`eval-adversarial-corpora` are the wrappers. Read
+`design/evaluation/06-first-full-run.md` before quoting any number from it —
+four corpora are currently ungradable without a judge, and the judge is too
+slow to run at corpus scale. The paragraph below is kept as history. The export is
 working correctly — it is faithfully recording a real failing verdict.
 
 **Two wire-format traps, both found only by pushing to the live instance:**

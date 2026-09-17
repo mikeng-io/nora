@@ -232,6 +232,42 @@ def _tracked_markdown_files() -> list[str]:
 # the operator; do not mass-rewrite the docs to clear it, and do not add to it
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
+    # --- the old eval layer, deleted 2026-09-18 (design/evaluation Step 5) ---
+    #
+    # These are HISTORY, not broken links: each describes what was true when it
+    # was written, and `evals/run.py` was the CLI at the time. Pinned rather
+    # than rewritten, for this gate's own stated reason — a design brief that
+    # names the code of its day is not drift, and mass-rewriting prose to chase
+    # a delete loses the record of what the delete removed.
+    #
+    # The OPERATOR-facing docs were fixed instead, because those tell somebody
+    # to run a command: `docs/runbook.md`, `docs/eval-sop.md`,
+    # `docs/CONVENTIONS.md` and the `make eval-*` targets now name
+    # `python -m evals.rebuilt`.
+    **{
+        (doc, "evals/run.py"): (
+            "the old eval CLI, deleted 2026-09-18; this line records what was "
+            "true when it was written (design/evaluation Step 5)"
+        )
+        for doc in (
+            "design/ambient-loop/02-doctrine-and-measurement.md",
+            "design/capability-drop/03-code-surface.md",
+            "design/capability-drop/implementation-brief.md",
+            "design/dreamer-agent-loop/13-doctrine.md",
+            "design/dreamer-agent-loop/39-proactive-ooda-loop.md",
+            "design/evaluation/06-first-full-run.md",
+        )
+    },
+    # The ROUTING tier, which has no counterpart — DEC-76 is NOT ENFORCED.
+    # These two lines NAME that absence, so the reference is the point.
+    ("design/evaluation/GOAL.md", "evals/journeys.py"): (
+        "names the routing tier as a capability that must be consciously "
+        "replaced; the file is gone and that is what the line says"
+    ),
+    ("docs/eval-sop.md", "evals/journeys.py"): (
+        "the SOP's step 2 now states that this step has no instrument; the "
+        "reference is to the thing that no longer exists, deliberately"
+    ),
     ("voice-lab/docs/audit-brief-kimi-integration.md", "nora/platform/discord/voice_session.py"): (
         "a 2026-09 audit brief moved in from the voice-lab repo; it proposes where "
         "stage-1 TTS+ducking WOULD live. The file was never created (the voice "

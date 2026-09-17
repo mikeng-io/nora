@@ -8,7 +8,7 @@
 
 .PHONY: test test-fast test-affected lint typecheck imports gate mutate \
         setup hooks schema-parity heads decision-numbers \
-        eval-participation eval-note-candidates eval-journeys eval-adversarial \
+        eval-participation eval-note-candidates eval-adversarial-corpora eval-gate \
         release-check release-notes release \
         build build-release up stop logs ps \
         branches
@@ -74,13 +74,17 @@ test-affected:
 		uv run pytest -q -n 8 $$targets; \
 	fi
 
-# --- eval gates (evals/run.py; the live ones need the LLM key env set) ---
+# --- eval gates (evals/rebuilt; the live ones need the LLM key env set) ---
+#
+# A SUITE IS A CORPUS FILE (`design/evaluation/04-the-convention.md` §2), so
+# these targets name files rather than a `--suite` vocabulary. Adding a suite
+# adds a file and no target.
 
 # The ambient-participation flip gate (design/dreamer-agent-loop/35 §9): all
 # 15 cases must reach their expected verdict — zero false-speaks on the
 # knowledge-cut twins, zero speaks on the pure-No five.
 eval-participation:
-	uv run python -m evals.run --suite participation
+	uv run python -m evals.rebuilt evals/corpora/participation.yaml
 
 # The note-candidates scenario suite (design/dreamer-agent-loop/37 §7, issue
 # #118): 18 batches through the real Dreamer runtime + adaptor, N samples
@@ -88,7 +92,7 @@ eval-participation:
 # DREAMER_DIR=/path/to/variant` measures a prompt variant held as files.
 SAMPLES ?= 3
 eval-note-candidates:
-	uv run python -m evals.run --suite note_candidates --samples $(SAMPLES) \
+	uv run python -m evals.rebuilt evals/corpora/note_candidates.yaml --sample $(SAMPLES) \
 		$(if $(DREAMER_DIR),--dreamer-dir $(DREAMER_DIR),) $(if $(EFFORT),--effort $(EFFORT),) \
 		$(if $(MODEL),--model $(MODEL),) $(if $(PER_FIRE),--samples-per-fire $(PER_FIRE),)
 
@@ -169,8 +173,14 @@ schema-parity:
 # --- evals, tier 2 (docs/eval-sop.md; network-marked, so excluded from `make
 # test` by pyproject's addopts and never part of the gate) ---
 
-eval-journeys:
-	uv run python -m evals.run --suite journeys
+# The ROUTING tier has no counterpart in the rebuilt layer (DEC-76 is marked
+# NOT ENFORCED). This target now runs the corpora that DO exist, so it is not a
+# command that lies about what it measures.
+eval-adversarial-corpora:
+	uv run python -m evals.rebuilt evals/corpora/injections.yaml \
+	  evals/corpora/near_miss.yaml evals/corpora/transcript_injection.yaml \
+	  evals/corpora/identity_grounding.yaml evals/corpora/source_scope.yaml \
+	  evals/corpora/being_contradicted.yaml --judge
 
-eval-adversarial:
-	uv run python -m evals.run --suite adversarial
+eval-gate:
+	uv run python -m evals.rebuilt evals/corpora/relevance_gate.yaml
