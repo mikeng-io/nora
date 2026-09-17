@@ -204,7 +204,7 @@ V4 (Modal run, contamination removed, 50k steps) reported **Accuracy 0.767 /
 Recall 0.619 / FP-per-hour 245.4** and was correctly blocked by the publish
 gate. This section is the experiment-driven diagnosis. Every number below was
 measured in this session on this host; scripts, clip lists, transcripts and
-the candidate model are checked in under `voice-lab/` next to this file.
+the candidate model are checked in under `voice-lab/` at the repo root.
 The V4 artefacts (ONNX + the four feature arrays) were recovered from the
 Modal volume (`wakeword-data:/output/`); the V4 `train-run.log` really is lost
 (the older script overwrote it with a one-line note).
@@ -268,7 +268,7 @@ is passed `n_total=len(os.listdir(dir))`, so the memmap holds one pass
 
 ### Where V5 stands against the acceptance bar
 
-Measured with `voice-lab/scripts/accept.py` (the exp5 peak-score AUC on raw
+Measured with `voice-lab/experiments/wake-v5/accept.py` (the exp5 peak-score AUC on raw
 test wavs, 300/class; exp7 debounced activations on the 10.7 h validation
 set) and `real_eval3.py` (timeline over Miles's two Discord recordings, 38 s,
 7 wake utterances located by the STT container's transcripts).
@@ -319,22 +319,22 @@ moving it.
   parallel froze the host (24 GB swap, no OOM-kill). Every heavy job now runs
   under `systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0`.
 - The `/tmp` evidence (`gate16k.wav`, V3 `modal-train.log`) did not survive
-  the reboot; the real recordings are still in `voice-lab/sidecar/recordings/`
+  the reboot; the real recordings are still in `~/workspace/voice-lab-data/sidecar/recordings/`
   and the STT container (`/v1/audio/transcriptions`, model `sensevoice`)
   labels bursts well enough to build a real-audio eval.
 - openWakeWord upstream: last release v0.6.0 (2024-02), last commit 2025-12,
   README "English only", adversarial-phrase generator is CMU-phoneme based.
   Alternatives survey (Porcupine has no Cantonese; sherpa-onnx KWS has no yue
   model; STT-as-wake via SenseVoice is the only path with verified Cantonese
-  today) is in `voice-lab/oww-and-alternatives.md`.
+  today) is in `voice-lab/docs/oww-and-alternatives.md`.
 
 ## 2026-09-17 (overnight): V6 — 278 cloned Cantonese speakers (append)
 
 **Why.** V5's recall ceiling was the positive set: six MiniMax voices, and the head
 partly learned timbre. Cantonese TTS catalogues top out at ~13 speakers, so speaker
 diversity has to come from zero-shot cloning seeded by real speakers. Plan and the
-verified model facts: `voice-lab/PLAN-v6-cloned-voices.md`,
-`voice-lab/cosyvoice-cantonese-plan.md`.
+verified model facts: `voice-lab/docs/PLAN-v6-cloned-voices.md`,
+`voice-lab/docs/cosyvoice-cantonese-plan.md`.
 
 **Pilots (Modal T4).** `ASLP-lab/Cosyvoice2-Yue` renders every Cantonese negative
 perfectly but not the Latin name (2/120 positives pass the STT gate; 諾拉 → nok-laai,
@@ -390,7 +390,7 @@ keys on, so the head learns the artefact rather than "fast 喂 Nora". Fast utter
 have to come from the TTS itself (CosyVoice `speed` 1.3–1.5, ~0.5 T4-hour, not run:
 the approved Modal budget is spent) or from real speakers.
 
-**Status at hand-off (2026-09-17 morning).** Best artefacts, all in `voice-lab/models/`:
+**Status at hand-off (2026-09-17 morning).** Best artefacts, all in `voice-lab/models/` (repo):
 `v6_s2` (AUC 0.972, trap 1.3 %, 7/7 real wakes, 1.7 debounced FP/hr), `v6_s1` (trap 0 %,
 7/7, 1.5/hr), `v6_s0` (clears the FP gate at 0.97 frame-FP/hr but 4/7 real wakes),
 `v6_p150` (AUC 0.984 bare, trap 0.7 %, 7/7, 1.6/hr). Open acceptance items: recall @0.5
@@ -406,5 +406,5 @@ limits: ~1.5 debounced FP/hr on the English validation set, and fast (< 1 s) 「
 0.5 about a quarter of the time. **master still carries the Sep-16 model**: a rebuild from master
 reverts this until feat/wake-v4-postmortem is merged.
 Note: `deploy/voice-wake/models/` is gitignored, so the shipped file is NOT in git; the
-canonical copy is `design/voice-channel/voice-lab/models/v6_s2-喂Nora.onnx` — copy it into
+canonical copy is `voice-lab/models/v6_s2-喂Nora.onnx` — copy it into
 `deploy/voice-wake/models/喂Nora.onnx` before building on any other checkout.
