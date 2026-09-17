@@ -36,7 +36,7 @@ floored into range while the local clamp stays authoritative.
 What is identical, because the port requires it:
 * NEVER raises — a non-200, non-JSON body, or transport error is a tool STATUS
   (`unavailable`), never an exception into the loop (R-5).
-* Retrieved text is `untrusted`-wrapped (R-13) — a page controls its own text,
+* Retrieved text is `fetched_page`-wrapped (R-13) — a page controls its own text,
   so it cannot forge the boundary — and CLAMPED.
 * The query/url is an EGRESS surface — an identifier/coordinate is screened at
   the tool layer (`nora.agent.tools`, unchanged) BEFORE it reaches here.
@@ -152,9 +152,13 @@ class ExaSearchProvider:
             clamped, truncated = clamp_chars(body_text, self._content_max_chars)
             truncated = truncated or self._exa_cut(text, self._content_max_chars)
             # Title + text are page-controlled → the whole body is wrapped
-            # `untrusted` with the source URL as provenance. The URL rides PLAIN
+            # `fetched_page` with the source URL as provenance. The URL rides PLAIN
             # beside it so the model can cite it in the reply.
-            wrapped.append({"url": url, "content": wrap(url, clamped), "truncated": truncated})
+            wrapped.append({
+                "url": url,
+                "content": wrap(url, clamped, name="fetched_page"),
+                "truncated": truncated,
+            })
         if not wrapped:
             return {"status": "nothing_found", "results": []}
         return {"status": "ok", "results": wrapped}
@@ -211,7 +215,7 @@ class ExaSearchProvider:
             return {"status": "nothing_found"}
         clamped, truncated = clamp_chars(text, self._extract_max_chars)
         truncated = truncated or self._exa_cut(text, self._extract_max_chars)
-        # Page-controlled → wrapped `untrusted` with the source URL as
+        # Page-controlled → wrapped `fetched_page` with the source URL as
         # provenance, the same discipline as a search snippet (R-13). The key is
         # `text`, NOT `content` — Strands passes a dict carrying both `status`
         # and `content` through unchanged, so a bare-string `content` reaches
@@ -220,7 +224,7 @@ class ExaSearchProvider:
         return {
             "status": "ok",
             "url": url,
-            "text": wrap(url, clamped),
+            "text": wrap(url, clamped, name="fetched_page"),
             "truncated": truncated,
         }
 

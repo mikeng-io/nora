@@ -26,7 +26,7 @@ over. The whole apparatus (and `deploy/egress.sh`) stays gone.
 What survives is the discipline every grounding client holds:
 * NEVER raises — a non-200, non-JSON body, or transport error is a tool STATUS
   (`unavailable`), never an exception into the loop (R-5).
-* Retrieved text is `untrusted`-wrapped (R-13) — a page controls its own snippet,
+* Retrieved text is `fetched_page`-wrapped (R-13) — a page controls its own snippet,
   so it cannot forge the boundary — and CLAMPED, because a tool result is re-sent
   on every subsequent model call (the token lesson: bound what accumulates).
 * The query is an EGRESS surface — an identifier/coordinate is screened at the
@@ -168,9 +168,13 @@ class TavilySearchProvider:
             body_text = f"{title}\n{content}".strip() if title else content
             clamped, truncated = clamp_chars(body_text, self._content_max_chars)
             # Title + snippet are page-controlled → the whole body is wrapped
-            # `untrusted` with the source URL as provenance. The URL rides PLAIN
+            # `fetched_page` with the source URL as provenance. The URL rides PLAIN
             # beside it so the model can cite it in the reply.
-            wrapped.append({"url": url, "content": wrap(url, clamped), "truncated": truncated})
+            wrapped.append({
+                "url": url,
+                "content": wrap(url, clamped, name="fetched_page"),
+                "truncated": truncated,
+            })
         if not wrapped:
             return {"status": "nothing_found", "results": []}
         return {"status": "ok", "results": wrapped}
@@ -237,7 +241,7 @@ class TavilySearchProvider:
         if not raw_content:
             return {"status": "nothing_found"}
         clamped, truncated = clamp_chars(raw_content, self._extract_max_chars)
-        # Page-controlled → wrapped `untrusted` with the source URL as
+        # Page-controlled → wrapped `fetched_page` with the source URL as
         # provenance, the same discipline as a search snippet (R-13). The key
         # is `text`, NOT `content` — see the bridge client's identical note:
         # Strands passes a dict with both `status` and `content` through
@@ -247,6 +251,6 @@ class TavilySearchProvider:
         return {
             "status": "ok",
             "url": url,
-            "text": wrap(url, clamped),
+            "text": wrap(url, clamped, name="fetched_page"),
             "truncated": truncated,
         }

@@ -313,7 +313,7 @@ async def test_the_window_it_searches_is_the_one_the_prefill_rendered(persons, t
     )
     # `.render()` — `_transcript_block` returns the declared block now, and
     # `ContextBlock.render()` is the only thing that turns one into text.
-    block = _transcript_block(ctx, "Nora", datetime.now(UTC)).render()
+    block = _transcript_block(ctx, "Nora", datetime.now(UTC), 40).render()
     tools, _, _ = _build(persons)
 
     for row in WINDOW:

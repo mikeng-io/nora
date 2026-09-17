@@ -19,7 +19,6 @@ from datetime import UTC, datetime
 import pytest
 
 from nora.domain.decision_log import (
-    PARTICIPATION_DECISION_WRITERS,
     REASON_MAX_CHARS,
     RECENT_LIMIT,
     RECENT_WINDOW_MS,
@@ -397,24 +396,34 @@ async def test_a_blank_workspace_answers_nothing():
 
 
 def test_the_note_names_only_the_writers_it_carries():
-    """**The review's M2, as a property.** Both readers filter, in opposite
-    directions. A static note enumerating all four deciders told each reader
-    its block contained rows it would never be shown — and absence then reads
-    as FACT: «participation never ran here», «she has raised nothing», when it
-    is a filter. A block describing a superset of itself is the same defect as
-    a block with no age on its rows, one axis over.
+    """**The review's M2, and the form it survives in.** Both readers filter,
+    in opposite directions. A static gloss enumerating all four deciders tells
+    each reader its block contains rows it will never be shown — and absence
+    then reads as FACT: «participation never ran here», «she has raised
+    nothing», when it is a filter. A block describing a superset of itself is
+    the same defect as a block with no age on its rows, one axis over.
 
-    Falsification: make `_note_for` ignore `writers` and gloss every writer.
+    **The block DOES describe a superset of itself now, and this is where that
+    was traded** (#314). It named only the writers it was handed, which needs
+    the sentence composed per render — and a sentence composed per render is a
+    block described one way by one caller and another way by another, which is
+    the defect the type registry exists for and which four block types had
+    already committed. So the gloss lists all four, and the reading M2 closes
+    is closed in words: a decider you do not see ON A ROW is one this block
+    does not carry.
+
+    What is asserted is that replacement, and it is strictly weaker: the model
+    must now read the rows to know what is in the block, where before the
+    sentence told it. If a measurement ever shows it reading absence as fact
+    anyway, the answer is a per-render ANNOTATION — the field-level twin of a
+    description, which may vary — and not a second description.
     """
-    block = _text(render_decisions(
-        [("", ())], now=NOW, writers=PARTICIPATION_DECISION_WRITERS,
-    ))
-    assert "proactive_decide" in block and "proactive_act" in block
-    for absent in ("participation -", "tag -"):
-        assert absent not in block
-    # And it says WHY they are absent, rather than leaving the reader to infer
-    # that those deciders never ran.
-    assert "not in this block at all" in block
+    block = _text(render_decisions([("", ())], now=NOW))
+    for decider in ("participation -", "tag -", "proactive_decide -",
+                    "proactive_act -"):
+        assert decider in block, decider
+    assert "do not see on any row here" in block
+    assert "absence says nothing about it" in block
 
 
 def test_the_note_speaks_to_the_model_in_the_second_person():
@@ -423,7 +432,7 @@ def test_the_note_speaks_to_the_model_in_the_second_person():
     own loop» and «her deciders» invites the model — which IS Nora — to read
     the second block as somebody else's record. Same agent, same prompt, one
     grammatical person."""
-    block = _text(render_decisions([("", ())], now=NOW, writers=WRITERS))
+    block = _text(render_decisions([("", ())], now=NOW))
     assert "your own ambient loop" in block
     assert "Nora" not in block
 
@@ -433,7 +442,7 @@ def test_the_note_glosses_every_verdict_it_can_show():
     `decline` are named as HEALTHY outcomes, because the neighbouring
     `<decisions>` block uses `silent` with a different meaning and `failed`
     reads as a defect unless something says otherwise."""
-    block = _text(render_decisions([("", ())], now=NOW, writers=WRITERS))
+    block = _text(render_decisions([("", ())], now=NOW))
     for verdict in VERDICTS:
         assert verdict in block, verdict
     assert "HEALTHY OUTCOMES" in block

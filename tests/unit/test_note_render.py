@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+from nora.domain.block_types import BLOCK_TYPES
 from nora.domain.notes import DESCRIPTION_MAX_CHARS, TITLE_MAX_CHARS, Note
-from nora.language.note_render import NOTES_BLOCK_NOTE, render_notes
+from nora.domain.prompt import escape_attr
+from nora.language.note_render import render_notes
+
+#: What `<notes>` says it is, declared once on the type (#314). It used to be
+#: a `NOTES_BLOCK_NOTE` constant here AND a `NOTES_HEADER` catalogue line in
+#: `prefill` — two strings for one fact, free to disagree, which four block
+#: types managed to do before the registry existed.
+NOTES_BLOCK_NOTE = BLOCK_TYPES["notes"].description
 
 
 def _text(block) -> str:
@@ -151,16 +159,22 @@ def test_the_note_still_invites_her_to_raise_what_a_note_is_about():
     assert "raise what one of them is about whenever it would help" in note
 
 
-def test_the_opening_tag_carries_the_note_and_the_marker():
+def test_the_opening_tag_carries_what_the_block_is():
     """Same ruling as every sibling block: an attribute is the one position
     rendered content can never reach, and it is read before the body. A
-    regression that moved the note into the body text — still true, but no
-    longer load-bearing at the un-spoofable position — would pass every other
-    test in this file."""
+    regression that moved this into the body text — still true, but no longer
+    load-bearing at the un-spoofable position — would pass every other test in
+    this file.
+
+    There is no `untrusted="true"` beside it any more and its absence is the
+    point (#314): that token's definition lived in one doctrine file which this
+    audience does not load, so the marker reached the model as a word with no
+    meaning attached. The clauses above are the meaning, and they are here.
+    """
     out = _text(render_notes((_note(),)))
     opening_tag = out[: out.index(">") + 1]
-    assert NOTES_BLOCK_NOTE in opening_tag
-    assert 'untrusted="true"' in opening_tag
+    assert escape_attr(NOTES_BLOCK_NOTE) in opening_tag
+    assert "untrusted" not in opening_tag
 
 
 def test_everything_model_authored_is_escaped():

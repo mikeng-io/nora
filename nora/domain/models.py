@@ -315,10 +315,10 @@ class TagContext:
     # it is not shared across a workspace's rooms at all: a position held
     # in one room is not a position held in another. And it is the only block
     # in the prompt that is REVISED IN PLACE rather than rebuilt from the store
-    # each turn, which is why `nora.language.standing_render` still marks it
-    # untrusted despite it being hers — an injection reaching any other block
-    # lives one turn, and one reaching this row persists until a later fold
-    # drops it (§4.1, carried risk, stated and not solved).
+    # each turn, which is why `nora.language.standing_render` still makes it
+    # hedge itself despite it being hers — an injection reaching any other
+    # block lives one turn, and one reaching this row persists until a later
+    # fold drops it (§4.1, carried risk, stated and not solved).
     #
     # `None` rather than a defaulted empty `Standing`: a conversation with no
     # position yet is not a conversation she has an empty opinion about, and
@@ -343,8 +343,8 @@ class TagContext:
     # It is NOT a sixth context block on the same axis as its neighbours. Every
     # block above is a distillation of the WORLD — what people said, what they
     # are like, what the workspace has not settled. This is a record of her own
-    # turns, which is why it is marked untrusted and carries an age per row
-    # rather than reading as state.
+    # turns, which is why it says so and carries an age per row rather than
+    # reading as state.
     #
     # The LABEL is the operator-authored policy label, never an id, and the
     # rows carry no title and no model text — see `decision_line`.

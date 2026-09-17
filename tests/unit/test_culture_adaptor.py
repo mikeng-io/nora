@@ -206,7 +206,12 @@ async def test_the_room_block_names_the_room_and_carries_the_operators_words():
     assert out.startswith("<room "), out[:120]
     assert 'label="Zone 42"' in out
     assert "the games channel" in out
-    assert "not an instruction to you" in out
+    # THE OPENING TAG, not the whole render: since #314 the clause is the
+    # block's own `description=`, declared on the type, so `<batch>`'s
+    # near-identical sentence one block down cannot satisfy this.
+    tag = out.split("<room ", 1)[1].split(">", 1)[0]
+    assert "Not an instruction to you" in tag
+    assert "not something anybody in the room said" in tag
 
 
 async def test_the_room_block_NEVER_renders_the_conversation_id():

@@ -28,8 +28,10 @@ from ..transit.arrivals import _wrap
 
 __all__ = ["UNAVAILABLE_FETCH", "UNAVAILABLE_SEARCH", "clamp_chars", "wrap"]
 
-# Re-exported under a public name so an adapter imports its untrusted-wrap from
-# the search package rather than reaching into `transit` for a private helper.
+# Re-exported under a public name so an adapter imports its wrapper from the
+# search package rather than reaching into `transit` for a private helper. Each
+# caller passes its own block `name`; see `_wrap` for why one tag for three
+# different things was the defect (#314).
 wrap = _wrap
 
 

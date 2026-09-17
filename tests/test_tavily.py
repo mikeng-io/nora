@@ -107,7 +107,7 @@ async def test_search_returns_wrapped_results_with_plain_urls(tavily):
     assert len(out["results"]) == 2
     first = out["results"][0]
     assert first["url"] == "https://hko.gov.hk/x"          # url rides PLAIN
-    assert first["content"].startswith("<untrusted")        # snippet wrapped
+    assert first["content"].startswith("<fetched_page ")        # snippet wrapped
     assert "Very hot" in first["content"]
     # The bearer key was sent, not in the body.
     assert fake.requests[0]["query"] == "hong kong weather"
@@ -119,7 +119,18 @@ async def test_long_content_is_clamped_and_flagged(tavily):
     long_result = out["results"][1]
     assert long_result["truncated"] is True
     # The wrapped body carries at most the clamp (plus the untrusted envelope).
-    assert len(long_result["content"]) < 1800
+    # THE BOUND IS ON THE TEXT, not on the wrapped string. It was on the whole
+    # string until #314, which worked only while the wrapper was a constant
+    # ~30 characters (`<untrusted source="…" untrusted="true">`); the block
+    # carries its own description now and the wrapper is ~250, so the old
+    # assertion was measuring the description and calling it a clamp.
+    #
+    # That overhead is real and it is per RESULT: ~250 characters, ~60 tokens,
+    # times however many results come back. It buys a model that can read what
+    # the block is without loading a doctrine file defining `untrusted` — which
+    # most of the audiences receiving that word never loaded.
+    body = long_result["content"].split(">\n", 1)[1].rsplit("\n<", 1)[0]
+    assert len(body) <= 1500
 
 
 async def test_no_results_is_nothing_found_not_unavailable(tavily):
@@ -170,7 +181,7 @@ async def test_fetch_returns_wrapped_text_for_the_requested_url(tavily):
     out = await provider.fetch(url="https://hko.gov.hk/x")
     assert out["status"] == "ok"
     assert out["url"] == "https://hko.gov.hk/x"             # url rides PLAIN
-    assert out["text"].startswith("<untrusted")             # page wrapped
+    assert out["text"].startswith("<fetched_page ")             # page wrapped
     assert fake.extract_requests[0]["urls"] == ["https://hko.gov.hk/x"]
     # Strands-envelope invariant: no bare-string `content` key. A dict with
     # BOTH `status` and `content` passes through `_wrap_tool_result` unwrapped
@@ -183,7 +194,18 @@ async def test_long_fetched_text_is_clamped_and_flagged(tavily):
     _fake, provider = tavily
     out = await provider.fetch(url="https://hko.gov.hk/x")
     assert out["truncated"] is True
-    assert len(out["text"]) < 3300
+    # THE BOUND IS ON THE TEXT, not on the wrapped string. It was on the whole
+    # string until #314, which worked only while the wrapper was a constant
+    # ~30 characters (`<untrusted source="…" untrusted="true">`); the block
+    # carries its own description now and the wrapper is ~250, so the old
+    # assertion was measuring the description and calling it a clamp.
+    #
+    # That overhead is real and it is per RESULT: ~250 characters, ~60 tokens,
+    # times however many results come back. It buys a model that can read what
+    # the block is without loading a doctrine file defining `untrusted` — which
+    # most of the audiences receiving that word never loaded.
+    body = out["text"].split(">\n", 1)[1].rsplit("\n<", 1)[0]
+    assert len(body) <= 3000
 
 
 async def test_a_failed_extraction_is_nothing_found_not_unavailable(tavily):

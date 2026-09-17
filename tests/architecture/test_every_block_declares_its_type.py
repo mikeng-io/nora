@@ -26,6 +26,7 @@ impossible and what this file keeps impossible.
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 from nora.domain.block_types import BLOCK_TYPES
@@ -34,20 +35,17 @@ ROOT = Path(__file__).resolve().parents[2]
 
 #: Names passed to `ContextBlock(name=…)` that are NOT block types, with the
 #: reason. Kept as an inverted allowlist so a new name has to be argued for.
-_NOT_A_BLOCK_TYPE: dict[str, str] = {
-    # THE LEGENDS, and they are on their way out rather than exempt forever.
-    # `how_to_read_the_transcript` and `how_to_read_reasoning` exist ONLY
-    # because there was nowhere to say what a field means — they are a block
-    # whose whole content is an annotation, written as prose beside the block
-    # it annotates. Once the notation is derived from `BlockType.annotations`,
-    # they have no content left and go.
-    "how_to_read_the_transcript": "a legend; becomes derived annotation",
-    "how_to_read_reasoning": "a legend; becomes derived annotation",
-    # The catalogue's wrapper. Deleted with the catalogue (#314) — it is the
-    # envelope around «What you can see:», which is the second copy of what
-    # every block's own description already says.
-    "context_header": "wraps the catalogue, which is being deleted",
-}
+#:
+#: **It is EMPTY, and it stays here for that reason.** Its two entries were the
+#: legends — `how_to_read_the_transcript` and `how_to_read_reasoning`, blocks
+#: whose whole content was prose describing a sibling's fields, which existed
+#: only because a field's meaning had nowhere to live. `BlockType.annotations`
+#: is where it lives, so both were deleted rather than exempted.
+#:
+#: An empty dict is the honest state of an inverted allowlist that has nothing
+#: to exempt. Deleting it would make the next exemption a one-line edit with no
+#: place to write the reason, which is how the list this file replaces grew.
+_NOT_A_BLOCK_TYPE: dict[str, str] = {}
 
 
 def _table_names() -> set[str]:
@@ -56,6 +54,41 @@ def _table_names() -> set[str]:
     from nora.agent.prefill import _BLOCKS, _TAG_MESSAGE_BLOCKS
 
     return {row[0] for row in _BLOCKS} | {row[0] for row in _TAG_MESSAGE_BLOCKS}
+
+
+def _wrapper_names() -> set[str]:
+    """The block names `infra.transit.arrivals._wrap` renders.
+
+    It builds its `ContextBlock` from a `name` PARAMETER — three callers wrap
+    three different kinds of outside text through one helper — so the literal
+    is at the call site and at the default, never at the constructor. The AST
+    walk below looks only at `ContextBlock(name="…")` and would report all
+    three as declared-and-unrendered, which is an argument for deleting three
+    descriptions of blocks that ship on every web search.
+
+    The same shape as `_table_names`, and the second time this file has needed
+    it: a census that reads only constructors is a census of one calling
+    convention.
+    """
+    import inspect
+
+    from nora.infra.transit import arrivals
+
+    names = {inspect.signature(arrivals._wrap).parameters["name"].default}
+    for path in (ROOT / "nora").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id in {"wrap", "_wrap"}
+            ):
+                names |= {
+                    kw.value.value for kw in node.keywords
+                    if kw.arg == "name" and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                }
+    return names
 
 
 def _rendered_names() -> set[str]:
@@ -68,7 +101,7 @@ def _rendered_names() -> set[str]:
     UNRENDERED, which would have argued for deleting three descriptions of
     blocks that ship on every tag turn.
     """
-    found: set[str] = set(_table_names())
+    found: set[str] = set(_table_names()) | _wrapper_names()
     for path in sorted((ROOT / "nora").rglob("*.py")):
         if "compute/smith" in path.as_posix():
             continue
@@ -158,3 +191,49 @@ def test_no_description_leans_on_a_word_only_we_know():
         f"these descriptions use a word only this codebase defines: {offenders}. "
         "Say what the thing IS in her terms, not what we call it."
     )
+
+
+def test_a_description_that_talks_about_ABSENCE_says_the_read_may_have_failed():
+    """R-27, moved here from the catalogue and widened to every type.
+
+    `assemble` drops a block with an empty body, so every description is read
+    on turns where its block is not there. That is fine when it says what
+    absence MEANS; it is a LIE when it says «Absent means you have nothing on
+    them» and the turn in question never looked. `<people_in_window>` shipped
+    exactly that for one commit: the tag path cannot populate it at all (only
+    the participation occasion reads it), so on every tag turn the model was
+    told a lookup had come back empty when no lookup had been attempted. An
+    un-attempted read rendering as a negative result is the ERROR-as-PASS
+    AGENTS.md names, arriving inside a prompt.
+
+    So: a description MAY stay silent about absence, and one that mentions it
+    MUST carry the hedge.
+
+    **It used to live in `tests/test_prefill.py` and it covered eight blocks —
+    the ones with a catalogue line.** The catalogue is gone and the claim moved
+    into the descriptions themselves (#314), which is what lets it be checked
+    over all of them at once. That is the second time this branch has found the
+    registry testing something the hand-written list could only test a subset
+    of; the first was `test_every_rendered_block_has_a_declared_type`.
+    """
+    hedges = (
+        "the read failed", "did not come back", "never that", "never look",
+        "it can also mean",
+    )
+    for name, block_type in BLOCK_TYPES.items():
+        # PER SENTENCE, not per description. Matching anywhere let a hedge
+        # sitting in an unrelated clause authorise a bare «Absent means you
+        # have nothing on them» three sentences away — the exact wording this
+        # refuses, so the first version of it could be satisfied by the bug.
+        # The claim and its qualifier have to be the same sentence because that
+        # is the unit she reads them in.
+        for sentence in re.split(r"(?<=\.)\s+", block_type.description):
+            if "bsent" not in sentence and "No block" not in sentence:
+                continue
+            assert any(h in sentence for h in hedges), (
+                f"<{name}> tells her what an ABSENT block means without "
+                "saying, IN THE SAME SENTENCE, that the read may simply not "
+                "have happened. A turn that never looked must not read as a "
+                f"turn that looked and found nothing (R-27). Add one of "
+                f"{hedges}:\n  {sentence}"
+            )

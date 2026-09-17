@@ -50,9 +50,10 @@ def _inner(rendered: str, tag: str) -> str:
     """The body of one rendered block, by tag name.
 
     A helper rather than a literal split at each site: since #292 routed these
-    blocks through `ContextBlock`, every opening tag carries `note=` (and
-    `untrusted` where the content is the room's), so splitting on `"<transcript>"`
-    stopped matching in seven places at once.
+    blocks through `ContextBlock`, every opening tag carries attributes — since
+    #314 a `description=` on every block and a `fields=` wherever the type
+    annotates one — so splitting on `"<transcript>"` stopped matching in seven
+    places at once.
     """
     after_open = rendered.split(f"<{tag} ", 1)[1].split(">\n", 1)[1]
     return after_open.split(f"</{tag}>", 1)[0].rstrip("\n").rstrip()
@@ -246,10 +247,17 @@ def test_a_tool_call_and_its_result_are_rendered_as_such():
 
 
 def _reasoning_body(out: str) -> str:
-    """The `<reasoning>` block's own text, with the always-present legend
-    sliced off — so a test asking "did THIS block clip" is not confounded by
-    the legend's own worked example of the mark it explains."""
-    return out.split("<reasoning ")[1].split("</reasoning>")[0]
+    """The `<reasoning>` block's own text, BODY ONLY — opening tag excluded.
+
+    Excluding it is the point rather than tidiness. The sentence explaining the
+    clip mark used to be a sibling `<how_to_read_reasoning>` block and is now
+    this block's `fields=`, which puts a worked example of «…[clipped]» inside
+    the opening tag on every turn, clipped or not. A slice that kept the tag
+    would read one clip on a turn that clipped nothing, and
+    `test_a_block_under_the_ceiling_is_not_counted_and_carries_no_mark` — the
+    zero-assertion — would be the test that never went red.
+    """
+    return _inner(out, "reasoning")
 
 
 def test_an_oversize_tool_result_is_clipped_counted_and_marked():
@@ -306,17 +314,28 @@ def test_a_block_under_the_ceiling_is_not_counted_and_carries_no_mark():
     assert metrics.get("nora_debrief_clips_total") == 0
 
 
-def test_the_reasoning_legend_explains_the_clip_mark_and_sits_beside_reasoning():
-    """The mark and its explanation are shipped together, the same rule
-    `_transcript_block`'s delivery legend already follows — a mark with no
-    sentence explaining it is decoration a model gets to invent a meaning for.
-    Present on EVERY turn, clipped or not, so the model learns one contract
-    rather than a sometimes-explained mark (see `_TRANSCRIPT_LEGEND`)."""
+def test_the_clip_mark_is_explained_ON_the_block_that_can_carry_it():
+    """The mark and its explanation ship together — a mark with no sentence
+    explaining it is decoration a model gets to invent a meaning for. Present
+    on EVERY turn, clipped or not, so the model learns one contract rather than
+    a sometimes-explained mark.
+
+    **It is an ATTRIBUTE of `<reasoning>` now, not a sibling block** (#314).
+    `<how_to_read_reasoning>` was a block whose entire content was prose about
+    the block beside it, which existed only because a field's meaning had
+    nowhere to live. It has one: `BlockType.annotations`, rendered as `fields=`
+    on the block itself. Travelling WITH the block is what the sibling could
+    never do — it sat next to `<reasoning>` by an `order` number, and a
+    renderer that moved one and not the other would ship an explanation
+    describing something else.
+    """
     out = _render()
-    assert "<how_to_read_reasoning " in out
-    assert f"…[{_CLIP_MARK}]" in out.split("<how_to_read_reasoning ")[1].split(
-        "</how_to_read_reasoning>")[0]
-    assert out.index("<how_to_read_reasoning ") < out.index("<reasoning ")
+    assert "<how_to_read_reasoning" not in out, (
+        "the legend block is back; its content belongs in the type's "
+        "annotations, where it cannot be separated from what it explains"
+    )
+    tag = out.split("<reasoning ", 1)[1].split(">", 1)[0]
+    assert f"…[{_CLIP_MARK}]" in tag, tag
 
 
 def test_the_verdict_render_also_counts_and_marks_its_own_clip():
@@ -463,15 +482,17 @@ def test_the_transcript_says_what_the_delivery_mark_means():
     out = _render(trace=_trace(rows=(
         _row(1, 1_756_000_920_000, None, "路線係咁", is_nora=True),
     )))
-    assert 'Every `m` element below is a message that is IN THE RECORD' in out
-    assert "another turn may have sent it" in out
-    # A SIBLING of `<transcript>`, never a line inside it: everything between
-    # those tags is a message somebody sent, and a sentence of ours in there
-    # is one more thing the reader has to work out is not one.
-    assert "<how_to_read_the_transcript " in out
+    # AN ATTRIBUTE of `<transcript>`, never a line inside it and no longer a
+    # sibling block either (#314). Everything between those tags is a message
+    # somebody sent; a sentence of ours in there is one more thing the reader
+    # has to work out is not one. And a sibling could be separated from what it
+    # explains by an `order` number, which an attribute cannot.
+    assert "<how_to_read_the_transcript" not in out
+    tag = out.split("<transcript ", 1)[1].split(">", 1)[0]
+    assert "read off the send record" in tag
+    assert "another turn may have sent it" in tag
     body = _inner(out, "transcript")
     assert "How to read" not in body and "read off the send record" not in body
-    assert out.index("<how_to_read_the_transcript ") < out.index("路線係咁")
 
 
 def test_a_crashed_turns_header_says_it_is_this_turn_that_sent_nothing():
@@ -512,7 +533,7 @@ def test_the_rollup_render_marks_and_explains_the_same_way():
         rows=(_row(1, 1_756_000_920_000, None, "路線係咁", is_nora=True),),
     )
     assert 'from="Nora" delivery="delivered">路線係咁</m>' in out
-    assert "<how_to_read_the_transcript " in out
+    assert "another turn may have sent it" in out.split("<transcript ")[1]
 
 
 def test_the_rollup_verdict_render_sees_the_same_marked_transcript():
@@ -529,7 +550,7 @@ def test_the_rollup_verdict_render_sees_the_same_marked_transcript():
     position = render_rollup_input(
         prior=None, rows=rows, display_name="Nora", tz=UTC)
     assert 'from="Nora" delivery="delivered">路線係咁</m>' in verdict
-    assert "<how_to_read_the_transcript " in verdict
+    assert "another turn may have sent it" in verdict.split("<transcript ")[1]
     # The judge's block IS the position call's block, minus the prior.
     assert verdict.split("<conversation ")[1] == position.split("<conversation ")[1]
 

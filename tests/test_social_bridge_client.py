@@ -190,7 +190,7 @@ async def test_ok_text_is_wrapped_and_the_url_rides_plain(bridge):
     out = await _read(client)
     assert out["status"] == "ok"
     assert out["url"] == "https://x.com/nasa"               # url rides PLAIN
-    assert out["text"].startswith("<untrusted")             # text wrapped
+    assert out["text"].startswith("<social_post ")             # text wrapped
     assert "nasa" in out["text"]
     # The request body is the four fields, nothing else.
     assert fake.requests[0] == {
@@ -209,7 +209,21 @@ async def test_long_text_is_clamped_and_flagged(bridge):
     out = await _read(client)
     assert out["truncated"] is True
     # The wrapped body carries at most the clamp (plus the untrusted envelope).
-    assert len(out["text"]) < 1800
+    # THE BOUND IS ON THE TEXT, not on the wrapped string. It was on the whole
+    # string until #314, which worked only while the wrapper was a constant
+    # ~30 characters (`<untrusted source="…" untrusted="true">`); the block
+    # carries its own description now and the wrapper is ~250, so the old
+    # assertion was measuring the description and calling it a clamp.
+    #
+    # That overhead is real and it is per RESULT: ~250 characters, ~60 tokens,
+    # times however many results come back. It buys a model that can read what
+    # the block is without loading a doctrine file defining `untrusted` — which
+    # most of the audiences receiving that word never loaded.
+    body = out["text"].split(">\n", 1)[1].rsplit("\n<", 1)[0]
+    # 1500 is the CONTENT clamp; the body also carries the bridge's own author
+    # line («nasa (NASA)\n») and the truncation marker, which are bounded and
+    # not what the clamp is about.
+    assert len(body) <= 1500 + 32
 
 
 async def test_content_is_readable_text_not_json_soup(bridge):
@@ -274,7 +288,7 @@ async def test_result_envelope_wraps_like_web_search(bridge):
     # a text block the model quotes.
     inner = json.loads(social_envelope["content"][0]["text"])
     assert inner["status"] == "ok"
-    assert inner["text"].startswith("<untrusted")
+    assert inner["text"].startswith("<social_post ")
     assert "opus 5 is so bad lately" in inner["text"]
 
     # web_fetch's provider must hit the same invariant (it had the identical
@@ -283,7 +297,7 @@ async def test_result_envelope_wraps_like_web_search(bridge):
     fetch_out = {
         "status": "ok",
         "url": "https://example.com/a",
-        "text": "<untrusted source=\"https://example.com/a\">page body …</untrusted>",
+        "text": "<social_post source=\"https://example.com/a\">page body …</social_post>",
         "truncated": False,
     }
     fetch_envelope = _wrap_tool_result(None, "call_y", fetch_out)["tool_result"]

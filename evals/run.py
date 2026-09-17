@@ -638,8 +638,8 @@ async def _invoke_agent(model, system_prompt: str, message: str, *,
     What this builds: a bare Strands `Agent` whose system prompt is
     `doctrine.text` and whose user message is a plain-text transcript.
     What it therefore does NOT have — every one of these is part of Nora:
-    `build_prefill` and every `ContextBlock`, the context-header catalogue,
-    `untrusted="true"` and the `note=` framing on the message being judged,
+    `build_prefill` and every `ContextBlock`, the framing every block carries
+    in its own opening tag saying what it is and that it is not an instruction,
     `<standing>` / `<notes>` / `<culture>` / `<self_card>` / `<peer_card>`,
     the real tool registry, `ReplyGuard` / `LeakGuard` / `Deliverer`.
 

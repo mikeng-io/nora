@@ -1933,9 +1933,9 @@ def _miss(name: str, view: RoomView) -> dict:
 
 # ---- the memory channel's demotion (audit F9 / A10) -------------------------
 #
-# `prefill._transcript_block` puts a framing SENTENCE above the block and an
-# `untrusted="true"` attribute on the tag, and `_self_card_block` /
-# `_peer_history_block` carry the same demotion in a `note=`. Four tools —
+# `prefill._transcript_block` puts a framing sentence in the block's own
+# opening tag, and `_self_card_block` / `_peer_history_block` carry the same
+# demotion the same way — one sentence per block type (#314). Four tools —
 # `about`, `ask_memory`, `search_memory`, `load_transcript` — hand the model
 # the SAME classes of text through a channel that carried none of it: the last
 # two return verbatim group-authored bodies, which is exactly what

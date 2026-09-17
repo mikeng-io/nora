@@ -57,7 +57,9 @@ class _FakeSocialProvider:
         # `text`, NOT `content` — the Strands envelope invariant (a dict
         # carrying both `status` and `content` passes through unwrapped and
         # reads as "empty"; see nora/infra/social/bridge_client.py).
-        return {"status": "ok", "text": "<untrusted>the post</untrusted>"}
+        # The live tag name (#314). A fake echoing a tag the real client no
+        # longer emits is a fake that has stopped standing for it.
+        return {"status": "ok", "text": "<social_post>the post</social_post>"}
 
 
 def _room() -> Room:

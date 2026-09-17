@@ -1,6 +1,6 @@
 # 0012 — Every context block is built by one renderer, and the transcript stops being lines
 
-- **Status:** accepted
+- **Status:** accepted; clauses 4 and 5 of the Decision superseded by [0013](0013-a-block-says-what-it-is-and-its-type-says-it.md)
 - **Date:** 2026-09-13
 - **Index:** none — this changes no rule about what Nora may do. It changes how
   the text she is shown is BUILT, and it strengthens two existing rules on the

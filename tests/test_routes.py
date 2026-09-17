@@ -232,9 +232,11 @@ async def test_a_dining_destination_returns_typed_fields_unwrapped(google):
     assert info["rating"] == 4.2
     assert info["price_level"] == "PRICE_LEVEL_MODERATE"
     assert info["open_now"] is True
-    # Typed — nothing here is wrapped `untrusted="true"`, and no free-text
+    # Typed — no free-text block is wrapped here at all, and no free-text
     # review field is present (design/14 §2.1; the field mask omits reviews).
-    assert "<untrusted" not in json.dumps(out, ensure_ascii=False)
+    body = json.dumps(out, ensure_ascii=False)
+    for wrapper in ("<transit_remark", "<fetched_page", "<social_post"):
+        assert wrapper not in body, wrapper
     assert "review" not in json.dumps(out, ensure_ascii=False).lower()
 
 
