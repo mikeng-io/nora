@@ -1,170 +1,142 @@
-# Evaluation — the chain from a decision to a thing that can refute it
+# Evaluation — one Nora, many inputs
 
-## 0. The question this bundle exists to answer
+## 0. The invariant
 
-> **How does the evaluation suite establish that Nora behaves correctly, as
-> designed and as expected?**
+> **Different evaluation suites. Different input. One Nora.**
 
-Operator, 2026-09-17. Everything here is downstream of that sentence, including
-the plumbing question an earlier draft of this file mistook for the subject.
+## 1. The finding
 
-The answer today, measured: **it almost entirely does not.**
+**Every component the eval layer builds is built smaller than production builds
+it.** Measured by AST over the call sites, 2026-09-17:
 
-## 0.1 What is NOT in scope, and why it is worth saying first
+| component | production | eval | missing |
+|---|---|---|---|
+| `FirePath` | `composition.py:2458` **36** | `eval_support.py:1703` **21** | **15** |
+| `DreamerRuntime` | `composition.py:3322` **12** | `eval_support.py:1109` **9** | 3 |
+| `DreamerRuntime` | same | `eval_support.py:1359` **11** | 1 |
+| `RelevanceGate` | `composition.py:2692` **9** | `eval_support.py:980` **8** | 2 (+1 eval-only) |
+| `RegistryToolSource` | `composition.py:3252` **11** | `eval_support.py:1303` **9** | 2 |
+| `LiveAgentRunner` | `composition.py:1414` **5** | `eval_support.py:281` **4** | 1 |
 
-**The test suite.** Unit, integration and e2e are a solved problem outside this
-repo, and nothing about them is ours to invent:
+Plus `evals/harness.py:612` `build_offline_pipeline(14)` and `evals/run.py:665`
+`Agent(5)`, which assemble subjects of their own.
 
-> test case 嗰度其實冇乜需要太多嘢要 test … 你 search 返到底人哋 unit test 點做、
-> integration test 點做、e2e test 點做，就已經完咗件事。嗰度其實冇乜嘢好傾。
+**Seven places build a Nora. None of them is `build_dependencies`, which is what
+the deployment runs** (`Dockerfile` → `nora/__main__.py:84`).
 
-That is right, and it also bounds this bundle. The test layer's blast radius is
-*"do we catch a mistake before it ships"*. It does not reach runtime behaviour.
-When it is disorganised, look up standard practice and follow it — do not write
-a bespoke convention for it, which is what #113's remaining third would be if
-taken further than it has been.
+## 2. What is missing, and why it is not cosmetic
 
-**What has no industry answer is the question in §0.** *"Does an LLM agent behave
-as it was designed to"* is not unit testing at a larger scale, and the reason is
-§3: the entire test discipline establishes that code is wired, and none of it
-establishes how a model behaves once it is. That gap is ours, it is why this
-bundle exists, and it is the only thing in it.
-
-## 1. The chain
-
-For a design statement to be more than prose, four links have to hold:
+### `FirePath` — 15 collaborators, driving `proactive_act`
 
 ```
-a design decision            DEC-n / R-n in design/09-decision-index.md
-  → the behaviour it claims   what she must or must not DO
-    → an evaluation that can refute it
-      → driven against the real Nora
+decisions                        media_join
+self_card_conclusions            people_in_window_conclusions
+people_in_window_speakers        tool_call_log_store
+llm_state                        preview_source
+participation_runner             memory_read_timeout_seconds
+standing_store_timeout_seconds   shadow_channel / shadow_platform
+gate_shadow_channel / gate_shadow_platform
 ```
 
-Break any link and the decision is unenforced.
+`decisions`, `self_card_conclusions`, `people_in_window_*` and `media_join` are
+**prompt inputs**. A suite graded on *"what the room heard"* is grading a turn
+assembled from a materially smaller prompt than the deployment sends.
 
-## 2. Where it is broken, measured
+### `RelevanceGate` — `persons` and `media_join`, and production says what breaks
 
-`design/09-decision-index.md` at `b3c21686`. `AGENTS.md` sends readers here to
-answer *"which test guards this?"*
+`composition.py` documents both, on the lines that pass them: without `persons`,
+`person_name` is `None` on every row; without `media_join`, an image-only message
+reads as an **empty body** and `render_context` drops the row — *a systematic
+under-admission*.
 
-**250 decision and rule rows:**
+The gate suite omits both **and adds `capabilities`**, which production
+deliberately does not pass (reversed 2026-09-10 on measured numbers). So the eval
+gate reads a different prompt than the deployed gate in three ways at once.
 
-| | |
-|---|---|
-| cite an `evals/` instrument | **10** |
-| cite a `tests/` unit test only | **196** |
-| cite neither | **44** |
+### `DreamerRuntime` — `store_timeout_seconds`, absent from BOTH eval sites
 
-And of the ten:
+Production passes `cfg.dreamer.store_timeout_seconds`; neither eval site does, so
+both silently run on the module default.
 
-| row | instrument | |
-|---|---|---|
-| R-14 | `evals/adversarial/` | **reconstruction** |
-| R-53, R-54 | `source_scope.yaml` | **reconstruction** |
-| DEC-75 | `identity_grounding.yaml` | **reconstruction** |
-| R-83 | `being_contradicted.yaml` | **reconstruction** |
-| DEC-76 | `journeys.py`, `evaluators.py` | real |
-| DEC-45 | `harness.py` | real |
-| DEC-30, DEC-33, DEC-58 | prose mention, no path | — |
+### Nothing guards any of this
 
-**Two rows of 250 have a behavioural instrument that drives her. Five have one
-that drives a bare model.**
+`tests/architecture/test_assembler_parity.py` compares `composition.py` against
+`offline.py` — both pass `FirePath(36)`, so it is green and always will be. **It
+does not look at `eval_support.py`**, which is where all six divergences live.
 
-### 2.1 The sharper cut — the rules
+## 3. Why DELETE and not refactor
 
-`R-*` rules are behavioural by construction: each says what she must or must not
-do. **92 of them.**
+A refactor needs a target shape the current code is an imperfect version of.
+There are seven shapes and the target is in production. Each was a reasonable
+local change — somebody needed to measure a thing, the existing shape did not
+fit, so they added a path beside it. Editing again is another local change
+fitting what is already there.
 
-| | |
-|---|---|
-| with an eval | **4** |
-| unit test only | **52** |
-| nothing at all | **36** |
+> 因為你改，你最終只會越改越錯。
 
-Sampled, claim against guard:
+## 4. What this bundle does NOT rest on
 
-- **R-7** — *"Per-tag tool-call budget; unknown tools default-deny."* → a file,
-  no selector.
-- **R-17** — *"A degraded derivation of Nora's own identity is counted, never
-  merely logged."* → a file, no selector.
-- **R-22** — *"A tool that could not answer says so in its RETURN VALUE, and
-  'asked and nothing known' is never the same value as 'could not ask'."* →
-  `test_honcho_representation.py::test_an_unknown_peer_is_reachable_and_empty_never_unreachable`
+An earlier draft supported the argument with counts from
+`design/09-decision-index.md` — how many rules have an eval, how many have only a
+unit test. **Those counts are withdrawn.** They were measured three times and
+produced three answers; two independent reviews produced two more, disagreeing
+with each other. The index is harder to count than it looks, and the counts were
+decoration on a finding that does not need them.
 
-R-22's guard is a good test and it proves the **port** returns distinct values.
-It cannot show that **she** keeps them distinct in a reply, which is what R-22 is
-about. That is the normal case: **52 behavioural rules are guarded by tests that
-measure wiring.**
+**§1's table is the whole argument.** It is AST-measured, reproducible in one
+command, and every row is a `file:line` anyone can open.
 
-## 3. The line, and why it is not a criticism of the tests
+The underlying concern remains real and belongs on **#311**, not here: most
+behavioural rules are guarded by tests that establish the code is wired, which is
+a different claim from "she behaves". That is a separate finding and it will be
+stated with numbers somebody can reproduce, or not stated.
 
-7,249 tests pass and they catch real defects. This is about which link they hold.
+## 5. Out of scope
 
-| | unit/integration | evaluation |
-|---|---|---|
-| `participation.md` is loaded, non-empty, at the pinned sha | ✅ | |
-| the gate admits the windows it should | | ✅ |
-| `_clip` marks a cut block | ✅ | |
-| the grader reads the mark and changes its verdict | | ✅ |
-| `send_reply` is registered with budget 1 | ✅ | |
-| she stops at one reply when pushed | | ✅ |
+**The test suite.** Unit, integration and e2e are solved outside this repo:
 
-Left column: *the code is wired*. Right column: *she behaves*. Standard practice
-covers the left completely (§0.1). **The decision index's test column is a
-left-column column, and `AGENTS.md` presents it as the answer to a right-column
-question.**
+> 你 search 返到底人哋 unit test 點做、integration test 點做、e2e test 點做，就已經
+> 完咗件事。
 
-## 4. Why the bare-model corpus survived as long as it did
+Its blast radius is *"do we catch a mistake before it ships"*, not runtime
+behaviour. **What has no industry answer is whether an LLM agent behaves as
+designed**, and that is the only thing here.
 
-It is one of the few behavioural instruments there are. With five of ten
-citations pointing at reconstructions and 244 rows carrying no behavioural
-reading at all, **a number from it had nothing to be compared against.** A 67%
-reads as a 67% when it is the only reading in the room.
+## 6. What survives the delete
 
-The reconstruction is not the disease. It is what the absence of the chain looks
-like when somebody finally builds an instrument and nothing tells them what an
-instrument is for.
+- **13 corpora** (`evals/**/*.yaml`) — cases and expectations are data.
+- **The graders** — judge, rubric, structural. What a verdict means does not
+  depend on how the subject was built.
+- **Measured readings in corpus headers**, which are provenance.
+- **`subject=` in the provenance line** (#310) — the qualifier travels with the
+  number into logs, where prose does not. **Caveat:** it exists at exactly one
+  print site today and covers none of the other drivers.
 
-## 5. What this bundle proposes
+## 7. What this does NOT claim
 
-**The chain is the artifact.** A design statement that claims a behaviour names
-the evaluation that can refute it, and that evaluation drives her.
+- **That each divergence is a defect.** Several are deliberate and documented —
+  `participation_gate=None` is right for its stated reason (*"a suite that had to
+  get past a live gate call first would be measuring the gate's verdict and the
+  turn's behaviour in one number"*). The defect is that seven assemblies exist,
+  nothing relates them, and **nothing detects when one drifts.**
+- **That the rebuild is cheap.** ~7,700 lines. `02-the-rebuild` sizes it.
+- **A convention.** Written last, describing what exists. Attempted first on
+  2026-09-17 (PR #307) and withdrawn the same day.
 
-**5.1 The index's test column splits.** Two answers, not one: what proves the
-code is wired, and what would show the behaviour is wrong. Either may be absent —
-but absent must READ as absent, rather than a wiring test standing in the
-behavioural column. 36 `R-*` rules have neither today and say nothing about it.
+## 8. What would refute this bundle
 
-**5.2 An evaluation is written against a decision, not against a capability.**
-Today a suite exists because somebody wanted to measure a feature, so its
-contents are whatever that person thought of. Under the chain it exists because a
-decision claims something falsifiable, which makes *"what should this suite
-contain"* answerable: **what would refute the decision it names.**
+**Diff each eval-built component against the production construction of the same
+component** — gate against gate, `FirePath` against `FirePath`, Dreamer against
+Dreamer — and show the divergences do not reach the model.
 
-**5.3 Link 4 is a precondition, and it is `01-`'s subject.** An evaluation that
-does not drive her cannot refute anything about her. The plumbing matters only
-because of this, and not on its own.
+§1 is the kwarg diff. What it does not establish is **impact**: whether a missing
+`media_join` or `decisions` changes the bytes that reach the model for the cases
+these suites actually run. If it does not, the seven are one Nora wearing seven
+coats and this bundle is withdrawn.
 
-## 6. What this bundle does NOT propose
-
-- **That all 250 rows get an evaluation.** Most are not behavioural — a schema
-  constraint, a key shape, a build rule. The 92 `R-*` rules are the population to
-  ask, and 52 of them guarded by wiring is the finding.
-- **That unit tests be replaced, or given a new convention.** §0.1.
-- **A convention for writing evaluations.** That comes last, describing what
-  exists. The attempt to write it first (PR #307) was withdrawn the same day.
-
-## 7. The reading that would refute this bundle
-
-If the 52 wiring-guarded rules are mostly rules whose behaviour is genuinely
-settled by wiring — a budget that cannot be exceeded because the registry will
-not allow it — then the gap is smaller than §2.1 makes it look and this bundle is
-overstated.
-
-**That is checkable and has not been checked.** Read the 52, classify each as
-*settled by wiring* or *asserted about behaviour*, and report the split. Do it
-before building anything, alongside `01-` §6's sizing.
-
-A bundle about not trusting unmeasured claims should not ship one, and §2.1 is
-currently the strongest claim here with the least work behind it.
+*(An earlier draft proposed diffing the six subjects' prompts against **each
+other**. That check cannot fire: the gate reads `applies_to="relevance_gate"`,
+the adversarial path reads `"tag"`, the Dreamer reads `cfg.dreamer.dir`, and
+`RegistryToolSource` sends nothing to a model — `composition.py:2708` states the
+gate/Nora split as a decision this bundle endorses. Same-component-against-
+production is the comparison that can come back empty.)*
