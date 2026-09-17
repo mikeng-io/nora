@@ -16,26 +16,29 @@ shapes and the target is in production.
 
 ## 2. Order, and the first step is not code
 
-**Step 0 — diff each eval-built component against PRODUCTION's construction of
-the same component.** Gate against gate, `FirePath` against `FirePath`, Dreamer
-against Dreamer. Not the subjects against each other — that comparison cannot
-come back empty, because they read different doctrine audiences by an existing
-decision (`00-overview` §8).
+**Step 0 — DONE, 2026-09-17. See `03-step0-results.md`.**
 
-`00-overview` §1 is the kwarg half of this, already done. What remains is
-**impact**: does a missing `media_join`, `persons` or `decisions` change the
-bytes that reach the model for the cases these suites actually run?
+Two components checked against production's construction of the same component.
+**Both diverge in bytes that reach the model**, so `00-overview` §8's refutation
+does not fire and this bundle stands:
 
-Two outcomes, both useful:
+- **`RelevanceGate`** — 539 vs 559 bytes for the same window. The eval gate loses
+  the operator-canonical name and the media description; an image-only message
+  reads as an empty body and its row is dropped.
+- **`FirePath`** — three prompt blocks empty or absent, from three integers that
+  default to zero. `<people_in_window>` is not rendered at all
+  (`fire.py:1122`). Nothing guards this: `test_assembler_parity.py` compares
+  `composition.py` against `offline.py`, both `FirePath(36)`, and never looks at
+  `eval_support.py`.
 
-- **The bytes differ** → the diff IS the specification for what the one subject
-  must carry, and it names every place a suite measures something the deployment
-  does not send.
-- **The bytes are identical** → the seven are one Nora wearing seven coats, and
-  this bundle is withdrawn.
+**The cost objection is also settled and was false** — `build_dependencies` costs
+**64ms** per case against one session-scoped container and a template clone, not
+a container per case. So "one Nora, obtained per case" is affordable and a case
+can be plain data.
 
-Do this before deleting anything. It is the only step that can stop the rest, and
-unlike the earlier draft's version it **can** return empty.
+**Five components remain unchecked** — the two `DreamerRuntime`s,
+`RegistryToolSource`, `LiveAgentRunner`, `build_offline_pipeline(14)` — and each
+could still come back empty.
 
 **Step 1 — the one subject.** One function returning Nora, its home settled
 (`01-boundaries` §6 — the layer contract refuses `nora.testing`, measured). No
