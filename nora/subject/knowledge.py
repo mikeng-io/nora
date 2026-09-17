@@ -39,7 +39,7 @@ from .obtain import Subject
 #: is a member `identity.toml` does not know — also a real case, and the one
 #: that produces `person_name=None`.
 _KNOWN_SENDER = "+852111"
-_KNOWN_PERSON = "miles"
+_KNOWN_PERSON = "miles_novak"
 _KNOWN_NAME = "Miles"
 
 
@@ -170,6 +170,26 @@ class Knowledge:
 
     #: How long ago the standing was written; it renders as an AGE.
     standing_age_hours: float | None = None
+
+    #: What she has CONCLUDED about a person, keyed by Honcho peer id.
+    #:
+    #: Written through `MemoryStore.conclude` — production's own write lane, the
+    #: one the `remember` tool uses, over the same (observer, observed) pair
+    #: `representation` reads back. So this is not a substitution: it is the
+    #: write side of the tier whose read side the turn uses.
+    #:
+    #: THIS WAS WRONGLY DECLARED IMPOSSIBLE. Two participation cases were
+    #: refused on the claim that "Honcho DERIVES a conclusion from messages, so
+    #: there is no way to state one without substituting the client" — an
+    #: absence asserted without reading `nora/infra/honcho/client.py:489`, which
+    #: has said the opposite since the tool was built.
+    #:
+    #: The key is the peer id, which IS the person id
+    #: (`PersonRef.honcho_peer_id`). A key that is no person seeds a conclusion
+    #: nothing can read: `representation` looks up `target or peer_id` and an
+    #: unknown peer comes back reachable-and-knowing-nothing, so the case would
+    #: grade a prompt missing the very block it is about.
+    conclusions: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     #: OTHER rooms of the same workspace, each with its own transcript and
     #: standing. Empty for every single-room case, which is most of them.
@@ -450,6 +470,35 @@ async def know(
         )
         if msg.label is not None:
             rows[msg.label] = row_id
+
+    # WHAT SHE HAS CONCLUDED, through the production write lane.
+    #
+    # Fail-LOUD rather than best-effort: `conclude` answers False on any
+    # failure because the `remember` tool must never take a reply path down
+    # with it. Here the opposite is true — a conclusion that did not land makes
+    # the `-known` half of a twin pair identical to its `-unknown` half, and
+    # the pair reports that the knowledge cut works having cut nothing.
+    known = set(await subject.deps.persons.all_ids()) if hasattr(
+        subject.deps.persons, "all_ids"
+    ) else {_KNOWN_PERSON, subject.cfg.memory.ai_peer}
+    for peer, lines in knowledge.conclusions.items():
+        if peer not in known:
+            # LOUD. A conclusion under an id that is nobody is written and
+            # unreadable, which is the quietest way for a knowledge-cut twin
+            # pair to agree while asserting that it disagrees.
+            raise ValueError(
+                f"conclusion keyed {peer!r}, which is not a person this "
+                f"subject knows ({sorted(known)}); it would be written and "
+                "never read"
+            )
+        for line in lines:
+            if not await subject.deps.memory.conclude(
+                peer_id=subject.cfg.memory.ai_peer, content=line, target=peer,
+            ):
+                raise RuntimeError(
+                    f"could not write a conclusion for {peer!r} — Honcho is "
+                    f"at {subject.cfg.memory.base_url} and did not accept it"
+                )
 
     # The OTHER rooms of this workspace, each written into its own room.
     for extra in knowledge.rooms:

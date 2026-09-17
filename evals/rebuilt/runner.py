@@ -124,23 +124,22 @@ def _case(
     )
 
 
-#: What `nora.subject.Knowledge` can actually write into a real store.
+#: What `nora.subject.Knowledge` can write into a real store.
 #:
-#: `conclusions` is NOT here, and that is a finding rather than an omission:
-#: Honcho derives a conclusion from messages, so there is no way to state one
-#: for a case except by substituting the client — which is the thing this
-#: rebuild ends. Two cases in the participation corpus need it (issue #210's
-#: pair) and they come back as ERROR until the memory tier has a seam that is
-#: not a substitution.
-#:
-#: Fail-closed rather than ignore-unknown, because ignoring is the worse of the
-#: two by a long way: a dropped `conclusions` turns a `-known` case into its own
+#: Fail-closed rather than ignore-unknown, because ignoring is much the worse
+#: of the two: a dropped `conclusions` turns a `-known` case into its own
 #: `-unknown` twin, so the pair reports "the knowledge cut works" having cut
-#: nothing. That is `seed_from_dict`'s own documented footgun, arriving by a
-#: different road.
+#: nothing. That is `seed_from_dict`'s own documented footgun.
+#:
+#: `conclusions` was on the WRONG side of this list for half a day, refused on
+#: the claim that Honcho only derives conclusions and cannot be told one. That
+#: was an absence asserted without reading
+#: `nora/infra/honcho/client.py:489` — `conclude()` is production's own write
+#: lane, the one the `remember` tool uses, and it has existed since that tool
+#: was built.
 _KNOWABLE = {
     "transcript", "standing", "standing_age_hours", "notes",
-    "spacing_seconds", "rooms",
+    "spacing_seconds", "rooms", "conclusions",
 }
 
 #: What one transcript ROW may state. Same fail-closed rule, one level in.
@@ -228,6 +227,10 @@ def _knowledge(raw: Mapping[str, Any]) -> Knowledge:
         for r in (raw.get("rooms") or ())
     )
     return Knowledge(
+        conclusions={
+            str(peer): tuple(str(x) for x in (lines or ()))
+            for peer, lines in (raw.get("conclusions") or {}).items()
+        },
         transcript=tuple(transcript),
         standing=raw.get("standing"),
         standing_age_hours=raw.get("standing_age_hours"),

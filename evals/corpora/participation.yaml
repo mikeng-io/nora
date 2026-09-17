@@ -46,20 +46,24 @@
 # The CASES are unchanged — same names, same inputs, same seeds, same labels,
 # same `sample`. `seed:` is now `knows:` and each case names its entry point.
 #
-# TWO CASES DO NOT RUN, and are kept rather than deleted:
+# THE TWO `conclusions` CASES RUN (GOAL step 2). They were refused for half a
+# day on a claim that was simply false: that Honcho only DERIVES conclusions
+# and cannot be told one. `nora/infra/honcho/client.py:489` `conclude()` is
+# production's OWN write lane — the one the `remember` tool uses — over the
+# same (observer, observed) pair `representation` reads back. Seeding one is
+# the WRITE side of the tier whose READ side the turn uses, not a substitution.
 #
-#   admin-joke-known, asked-before-known
+# The claim was asserted without reading the file. That is the failure mode
+# this bundle exists to end, committed inside the bundle.
 #
-# They seed Honcho `conclusions`, and Honcho DERIVES a conclusion from
-# messages — there is no way to state one for a case except by substituting the
-# client, which is the thing this rebuild ends. They come back as ERROR, not
-# FAIL and never PASS, until the memory tier has a seam that is not a
-# substitution.
+# The key is the Honcho peer id, which IS the person id, and these cases spell
+# `miles_novak` — so `SubjectSpec.identity` does too. Keyed under anything else the
+# conclusion is written and cannot be read: `representation` looks up
+# `target or peer_id` and an unknown peer answers reachable-and-knowing-
+# nothing, so the `-known` half of a pair would come back identical to its
+# `-unknown` half. `know()` refuses an unknown key rather than writing it.
 #
-# Deliberately not "just drop the key": a dropped `conclusions` turns a
-# `-known` case into its own `-unknown` twin, so the pair would report that the
-# knowledge cut works having cut nothing. That is the footgun
-# `seed_from_dict`'s docstring already names, arriving by a different road.
+# They ERROR when Honcho is unreachable, naming the address it tried.
 
 - name: stalled-question-known
   entry: participation

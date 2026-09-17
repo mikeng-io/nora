@@ -64,6 +64,16 @@ def room_for(case_name: str) -> tuple[str, str]:
 #: `tests/builders.copy_example_config` holds for the test suite (R-B, #113).
 _TEMPLATE = _REPO_ROOT / "config.example.toml"
 
+#: `miles_novak`, matching the old driver's `_EVAL_PERSON_ID`, and it matters.
+#:
+#: A conclusion is keyed by the Honcho PEER id, which IS the person id, and the
+#: two participation corpora spell `miles_novak`. Keyed under any other id the
+#: conclusion is written and cannot be read — `representation` looks up
+#: `target or peer_id` and an unknown peer answers reachable-and-knowing-
+#: nothing — so the `-known` half of a twin pair would come back identical to
+#: its `-unknown` half and the pair would report that the knowledge cut works
+#: having cut nothing.
+#:
 #: A SYNTHETIC account, and deliberately not the real one.
 #:
 #: Any E.164-shaped string short-circuits the startup resolution; the value is
@@ -77,8 +87,8 @@ _PLACEHOLDER_ACCOUNT = "+85200000000"
 #: identity gets something VALID and CLOSED rather than an accident — the same
 #: fail-closed default the real `policy.toml` opens with.
 _DEFAULT_IDENTITY = (
-    '[persons.miles]\nname = "Miles"\n'
-    '[[persons.miles.signal]]\nphone = "+852111"\n'
+    '[persons.miles_novak]\nname = "Miles"\n'
+    '[[persons.miles_novak.signal]]\nphone = "+852111"\n'
 )
 def default_policy(room: tuple[str, str]) -> str:
     """One allowed room, `default = "deny"`, built FROM the room.
