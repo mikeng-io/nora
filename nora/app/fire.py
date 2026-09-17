@@ -87,6 +87,7 @@ from nora.domain.blocks import RowStyle, render_rows
 from nora.domain.compute import ComputeJob
 from nora.domain.decision_log import (
     PARTICIPATION_DECISION_WRITERS,
+    PROACTIVE_ACT_DECISION_WRITERS,
     DecisionLogRecorder,
     DecisionRow,
     DecisionWriter,
@@ -209,6 +210,22 @@ SILENT = "silent"
 # `SILENT`, the same healthy default participation has and the heartbeat
 # cannot.
 PROACTIVE_AUDIENCE = "proactive"
+
+# WHICH OCCASIONS READ THE SHARED DECISION LOG, AND WITH WHICH WRITERS — one
+# statement, because they are one decision (`_read_decisions`). A kind absent
+# from this mapping renders no `<loop_decisions>` block at all: the reminder
+# and gathering occasions were decided when their row was written and are not
+# weighing whether to take a floor, so the read would cost a query and change
+# nothing.
+#
+# Both values are `nora.domain.decision_log`'s own constants and neither is
+# spelled out here, so the writers a query asks for and the deciders the
+# block's note glosses cannot drift apart — the module's own rule, and the
+# reason those constants exist at all.
+_DECISION_WRITERS_BY_KIND: dict[str, tuple[DecisionWriter, ...]] = {
+    "participation": PARTICIPATION_DECISION_WRITERS,
+    "proactive": PROACTIVE_ACT_DECISION_WRITERS,
+}
 
 # The §10.6 shadow mirror's audience label: the mirror IS a send (it goes
 # through `deliver.build` and every guard that carries), but it is operator
@@ -1058,14 +1075,21 @@ class FirePath:
         behind a blind gate rendered NO memory block at all: it knew the people
         in the window by display name.
 
-        **Participation only, and the restriction is the decision** —
-        `_read_decisions`' argument, and it applies more sharply here because
-        this costs Honcho round trips rather than one SQL read. A reminder or a
-        gathering firing was decided when its row was written; a proactive act
-        turn already holds the decide pass's own index. This is the turn
-        deciding whether to speak into a room nobody addressed her in, which is
-        the only fire occasion for which «what do I know about these people»
-        changes the answer.
+        **Participation only, and the restriction is the decision** — the
+        narrow half of `_read_decisions`' argument, and it stays narrow here
+        after that method widened to the proactive act turn (2026-09-17),
+        because the two reads answer different questions at different prices.
+        A reminder or a gathering firing was decided when its row was written,
+        so neither reads either. The proactive act turn now reads the decision
+        log, because «the loop already took this floor 31 minutes ago» is a
+        fact about the ROOM that its own decide-pass index cannot carry — but
+        it still does not read memory, because «what do I know about these
+        people» is research the decide pass already did, at Honcho round trips
+        rather than one SQL read, and design 39's whole split is research at
+        decide time and the room at act time. This is the turn deciding
+        whether to speak into a room nobody addressed her in AND holding no
+        earlier pass of its own, which is what makes the memory read change
+        the answer here and nowhere else.
 
         **Fail-soft in three separate places, which is three states and not
         one.** Each read catches and counts on its OWN stage — an operator
@@ -1230,8 +1254,10 @@ class FirePath:
     async def _read_decisions(
         self, occasion: Event, workspace: str | None,
     ) -> tuple[tuple[str, tuple[DecisionRow, ...]], ...]:
-        """What her PROACTIVE half already did across this WORKSPACE, for the
-        participation turn only (issue #199). `(room label, rows)` groups.
+        """What her AMBIENT LOOP already did across this WORKSPACE, for the two
+        occasions that decide whether to take a floor nobody offered them
+        (issue #199; the proactive act turn added 2026-09-17). `(room label,
+        rows)` groups.
 
         **Workspace-scoped, and «this room» would have missed the incident it
         exists for.** A `kind="proactive"` row fires into the workspace's home
@@ -1241,18 +1267,32 @@ class FirePath:
         anyway. The room a decision was made in is rendered as its policy
         LABEL instead, which is what a reader actually needs from it.
 
-        **Participation only, and the restriction is the decision.** This is
-        the turn deciding whether to speak into a room nobody addressed her in,
-        so «she raised this two hours ago in another room» is the fact that
-        changes the answer. A reminder or a gathering firing was decided when
-        its row was written; handing it this block would cost a read and change
-        nothing.
+        **Two occasions, and the restriction is still the decision.** Both are
+        turns deciding whether to speak into a room nobody addressed her in, so
+        «she raised this two hours ago in another room» is the fact that changes
+        the answer. A reminder or a gathering firing was decided when its row
+        was written and is not weighing the floor at all; handing it this block
+        would cost a read and change nothing.
 
-        **Her own participation rows are excluded.** A turn reading back its
-        own last verdict is a turn agreeing with itself, and on the ambient
-        path that is the direction design 35's silence bias already leans. The
-        tag rows are excluded too: a tag is somebody asking, so what it
-        answered belongs in the transcript underneath, where it already is.
+        **The proactive act turn was excluded here until 2026-09-17, and the
+        exclusion is what shipped that day's duplicate** (msgs 5450/5455). The
+        docstring's own argument for it — «a proactive act turn already holds
+        the decide pass's own index» — is true and answers the wrong question.
+        The decide pass's index is what she MEANT TO RAISE. It says nothing
+        about what the loop has since DONE, and on that day two rows about two
+        notes came due 30 minutes apart: the first turn raised both (it reads
+        `<notes>`, which lists both), the second raised the second one again.
+        Its window carried the first message — as an unlabelled line of her own
+        speech, with nothing marking it as a raise she had just made. This
+        block is what marks it.
+
+        **Each occasion gets its own writer set** (`decision_log`'s constants,
+        which carry the reasoning): participation excludes its own verdicts,
+        the act turn excludes `proactive_decide` — the deliberation that
+        produced this very turn, already in front of her in the header — and
+        reads `proactive_act`, which is the sibling-row fact it exists for.
+        Neither reads `tag`: a tag is somebody asking, so what it answered
+        belongs in the transcript underneath, where it already is.
 
         **A turn with no workspace renders NO block, rather than falling back
         to this room.** No workspace is the wiring gap `_workspace_for` already
@@ -1263,11 +1303,12 @@ class FirePath:
         answers `()` on every failure and counts it. `None` is the dormant
         default.
         """
-        if (
-            self._decisions is None
-            or occasion.kind != "participation"
-            or not workspace
-        ):
+        # A MAPPING, not a chain of `or`s: the set a turn reads with IS the
+        # decision, and a lookup that answers `None` for an unlisted kind makes
+        # «this occasion does not read the log» and «this occasion reads it
+        # with these writers» one statement instead of two that can disagree.
+        writers = _DECISION_WRITERS_BY_KIND.get(occasion.kind)
+        if self._decisions is None or writers is None or not workspace:
             return ()
         rows = await self._decisions.read_workspace(
             platform=occasion.platform, workspace=workspace,
@@ -1278,7 +1319,7 @@ class FirePath:
             #
             # The SAME constant `build_prefill` hands the renderer, so the
             # block's note names exactly the deciders the query asked for.
-            writers=PARTICIPATION_DECISION_WRITERS,
+            writers=writers,
         )
         return tuple((self._room_label(row), (row,)) for row in rows)
 

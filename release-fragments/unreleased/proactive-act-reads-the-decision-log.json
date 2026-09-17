@@ -1,0 +1,12 @@
+{
+  "type": "fix",
+  "summary": "Two reminders Nora had set herself, coming due in the same room half an hour apart, no longer raise the same thing twice.",
+  "details": [
+    "A proactive turn now sees what her own ambient loop already did in the group over the last 24 hours, with how long ago — the same record the participation turn has read since it shipped. Before this it could only see its own earlier message as an unlabelled line of chat, and raised again.",
+    "It still does not see the decision that scheduled it a second time: that intention is already in front of her, and reading it back twice only pushes toward speaking."
+  ],
+  "limitations": [
+    "This is context, not a rule: nothing stops two raises half an hour apart, it is now her judgement whether the second one is worth making.",
+    "Two reminders coming due in the SAME minute were already merged into one turn; only ones spread across ticks were affected."
+  ]
+}
