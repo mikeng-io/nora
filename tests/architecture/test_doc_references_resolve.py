@@ -232,6 +232,12 @@ def _tracked_markdown_files() -> list[str]:
 # the operator; do not mass-rewrite the docs to clear it, and do not add to it
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
+    ("voice-lab/docs/audit-brief-kimi-integration.md", "nora/platform/discord/voice_session.py"): (
+        "a 2026-09 audit brief moved in from the voice-lab repo; it proposes where "
+        "stage-1 TTS+ducking WOULD live. The file was never created (the voice "
+        "channel went the sidecar route, design/voice-channel/05) — the brief is a "
+        "historical record of the proposal, not a link to fix"
+    ),
     ("scrub/README.md", "docs/ai-thinkathon-2026-09.md"): (
         "the note was removed from HEAD once its event had happened, and the "
         "scrub rewrites HISTORY, where the file still is — so the citation "

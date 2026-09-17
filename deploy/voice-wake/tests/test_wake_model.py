@@ -13,6 +13,7 @@ the model; the lab tree only exists on the training host).
 """
 
 import glob
+import os
 import wave
 from pathlib import Path
 
@@ -23,12 +24,10 @@ from wakegate.audio import OWW_CHUNK
 from wakegate.gate import WakeGate
 
 MODEL = Path(__file__).parents[1] / "models" / "喂Nora.onnx"
-LAB_POSITIVE = Path(
-    "/home/norty/workspace/voice-lab/oww-data/output/喂Nora/positive_train"
-)
-LAB_NEGATIVE = Path(
-    "/home/norty/workspace/voice-lab/oww-data/output/喂Nora/negative_train"
-)
+# the training corpus lives OUTSIDE the repo (43 GB); see voice-lab/README.md
+LAB_DATA = Path(os.environ.get("VOICE_LAB_DATA", "/home/norty/workspace/voice-lab-data"))
+LAB_POSITIVE = LAB_DATA / "oww-data/output/喂Nora/positive_train"
+LAB_NEGATIVE = LAB_DATA / "oww-data/output/喂Nora/negative_train"
 
 pytestmark = pytest.mark.skipif(
     not MODEL.is_file() or not LAB_POSITIVE.is_dir(),
