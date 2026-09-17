@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Design documents only — no code, no prompt text, no behaviour change. Records D10 in design/dreamer-agent-loop/13-doctrine.md: the Dreamer doctrine is the RUNTIME layer and each adaptor's job belongs to its objective, superseding D9's audience-field mechanism in part; two shape-classification schemes recorded as rejected; the earlier \"this preserves the 0.93 by construction\" safety claim withdrawn. Also corrects 03-no-agent-loop.md section 7 against the tree after the culture grant landed. The doctrine file itself is operator-only and untouched.",
+  "details": [],
+  "limitations": []
+}

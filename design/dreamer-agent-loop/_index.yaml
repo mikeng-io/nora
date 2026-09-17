@@ -17,6 +17,14 @@ description: >
   one batch it was handed. An objective whose answer could have been written
   from its own prompt has wasted the loop, and the tautology it produces passes
   every gate the runtime owns.
+  REVISED AGAIN 2026-09-17 (13 section 8, D10): the Dreamer's single doctrine
+  mixes two LAYERS, not two shapes. It is meant to say what the RUNTIME is —
+  true of every adaptor — and version 2 also tells every adaptor what its JOB
+  is, which belongs to the objective that already exists per adaptor. Strip the
+  job claims and the preamble is shape-free with no new machinery: no audience
+  field, no shape declaration, no gate. Two shape-classification schemes are
+  recorded as rejected, and the earlier "this preserves the 0.93 by
+  construction" safety claim is WITHDRAWN.
 status: checkpoint
 deprecation: >
   DEPRECATED IN PART, 2026-09-07. The knowledge tier (the "fact tier") and the
@@ -175,6 +183,7 @@ edges:
   - {src: 37-note-candidates-v2, dst: 27-note-dreamer, rel: revises, provenance: asserted}
   - {src: 03-no-agent-loop, dst: 17-failure-classes, rel: relates_to, provenance: asserted}
   - {src: 03-no-agent-loop, dst: 39-proactive-ooda-loop, rel: relates_to, provenance: asserted}
+  - {src: 13-doctrine, dst: 03-no-agent-loop, rel: relates_to, provenance: asserted}
 scope:
   v1:
     - "This is the KNOWLEDGE tier: write canonical entity ids, the one column four problems bottom out in"
@@ -185,7 +194,8 @@ scope:
     - "Measurement: every seam ships its instrument, this bundle's own change first"
     - "Phase A gains GROUNDING as an INPUT between the two extraction calls (D32 amends D5's mechanism), and must NOT deduplicate against existing candidates"
     - "Room access splits by key kind: scope-keyed proceeds, workspace-keyed is blocked"
-    - "Doctrine becomes shape-aware; the audience field stops being decorative"
+    - "Doctrine becomes shape-aware; the audience field stops being decorative (D9 — SUPERSEDED IN PART 2026-09-17 by D10: the split is by LAYER, runtime vs job, so there is nothing for an audience field to select; 13 section 6)"
+    - "The Dreamer doctrine says what the RUNTIME is and nothing about what a run is for; what the pass must find out belongs to its objective (D10, 13 section 8)"
     - "The language tier GETS supersession — D19 reverses D9's designed cost, which had already consumed 100% of the tier's output (16 §7)"
     - "What <facts> renders is DECIDED: both a block and a verb, and the block stops being a recency slice (16 §8, 19 §6)"
     - "Entity resolution HAS an owner: the matcher is vendored, the candidate query is ours (25 §4.1)"
@@ -203,6 +213,8 @@ scope:
     - "UNMEASURED — the room's literal-object rate, the reading that would have caught the shape mismatch on day one (16 §10)"
     - "UNMEASURED — the person-claim rate with speakers ABSENT; decides whether the sink refusal is backstop or primary"
     - "UNMEASURED — whether the vendored entity prompt beats one we write, on our corpus"
+    - "BLOCKED — D10 shipping for note-candidates, pending a paired A/B of the note_candidates suite at more than one sample; the 10-case corpus that produced 0.93 on 2026-09-08 is 21 cases today, so that number is not a threshold (13 section 8.5)"
+    - "UNMEASURED — every synthesis-shaped adaptor. evals/run.py SUITES has nothing for culture or note-curation, and culture is the adaptor D10 most changes"
     - "Whether the instruction digest must cover the tool subset and budget"
     - "R-57's text and DEC-135's row, both reserved and undrafted"
     - "OUT OF SCOPE — the fact tier's store"

@@ -136,14 +136,27 @@ inventory, read off the tree at `a8cd40db`.
 |---|---|---|---|---|
 | `NoteCandidateAdaptor` | `nora/language/note_candidates.py:845-855` | `scope` | **none** | no |
 | `NoteCuratorAdaptor` | `nora/language/note_curator.py:576-585` | `workspace` | **none** | no |
-| `CultureAdaptor` | `nora/language/culture.py:144-166` | `scope` | **none** | no |
+| `CultureAdaptor` | `nora/language/culture.py:365-390` | `scope` | 9, `CULTURE_TOOLS` | **yes** |
 | `ProactiveAdaptor` | `nora/language/proactive.py:410-415` | `workspace` | 16, `PROACTIVE_TOOLS` | **yes** |
 
-Three of four are one completion with a JSON instruction attached — §1's shape,
+> **The culture row moved later the same day** and the rest of this section is
+> left as written, because what changed is exactly what §7.4 and §7.5 asked
+> for. `CultureAdaptor.tools` was `frozenset()` when the table was first
+> compiled and is nine read verbs since — `ask_memory`, `search_memory`,
+> `about`, `lookup_person`, `group_members`, `where_been`, `online_now`,
+> `web_search`, `web_fetch` — reachable through an
+> `AdaptorGrant(home_room=True)` (`culture_grant`), and its `inputs` now render
+> the room block, the previous account, `standing` and the note index before
+> the batch. **Its objective text did not move**, which is the live instance of
+> [13](13-doctrine.md) §8.3: the grant landed and the sentence that would spend
+> it did not.
+
+Two of four are one completion with a JSON instruction attached — §1's shape,
 arrived at independently a second time, by tiers designed after the node that
 named it. The runtime is not the reason and never was:
 `ToolRegistry.read_only_tools()` (`nora/agent/registry.py:533`) resolves to
-**35 verbs** today, and three adaptors ask for none of them.
+**35 verbs** today (re-measured 2026-09-17: 35 of 56 `NATIVE_TOOLS` rows carry
+`read_only=True`), and two adaptors ask for none of them.
 
 **The count is the old finding. The new one is that the count was never the
 point**, and this node's title is a symptom of reading it that way: an adaptor
@@ -244,15 +257,24 @@ Its instruction is the most explicitly anti-tautological text in the corpus:
 > sentence without changing the meaning, it was a record and you should cut
 > it."*
 
-That is the research-loop test written out in full, one level down. But the
-adaptor holding it declares `tools = frozenset()` (`culture.py:166`) and its
-`inputs` render exactly two things — the previous account and the batch
-(`culture.py:193`) — so the only material it can derive across is one
-room's messages and its own last answer. It is asked for a join and handed one
-table. The tier's own design bundle carries the sharpest instance:
+That is the research-loop test written out in full, one level down. But when
+this was written the adaptor holding it declared `tools = frozenset()` and its
+`inputs` rendered exactly two things — the previous account and the batch — so
+the only material it could derive across was one room's messages and its own
+last answer. It was asked for a join and handed one table. The tier's own
+design bundle carried the sharpest instance:
 `design/culture-tier/01-the-adaptor §2` asks the model for *"my own standing
 here"* while the `standing` tier holds precisely that, per room, and the
-adaptor reads it not at all.
+adaptor read it not at all.
+
+**Closed the same day, on the input side only.** `CultureAdaptor.tools` is now
+`CULTURE_TOOLS` (nine verbs, `culture.py:365-390`) and `inputs` renders
+`standing` and the note index alongside the previous account and the batch
+(`culture.py:454`). The join is reachable. **What did not change is the
+objective**, which still nowhere says what the pass must go and find out — and
+under the doctrine above it did not need to, because the preamble answered that
+question for it with «answer from the text you were handed». That is
+[13](13-doctrine.md) §8's finding, met here first.
 
 **`proactive.md` — a genuine research loop, and the operator's claim does not
 hold against it.** Reported as found rather than as expected:
@@ -291,14 +313,18 @@ off was raised into the home room while the group was mid-game, *"because
 nothing in the turn could observe the state contradicting the note."* **That is
 the 宵夜 example's structure exactly, found in production, one store short.**
 `where_been` — the other half of the example, and in `read_only_tools()` —
-is in no adaptor's grant at all.
+was in no adaptor's grant at all when this was written. It is in
+`CULTURE_TOOLS` since 2026-09-17, and in no other adaptor's; the proactive
+pass is still the verb short.
 
 ### 7.4 Tool access is the precondition, and `AdaptorGrant` is how an adaptor gets it
 
-A research loop is not reachable by rewriting an objective. Three of the four
-adaptors could be handed the best-written instruction in the corpus and would
-still have nothing to call, and the fourth would still be unable to ask where
-anybody has been.
+A research loop is not reachable by rewriting an objective. When this was
+written, three of the four adaptors could have been handed the best-written
+instruction in the corpus and would still have had nothing to call, and the
+fourth would still have been unable to ask where anybody has been. Two of four
+today — the culture grant closed one of them, and §7.5's coda records what it
+did not close.
 
 The mechanism exists and is not new. `AdaptorGrant` (`nora/agent/dreamer.py:387`)
 is what an adaptor holds past the Dreamer's defaults, and `RegistryToolSource`
@@ -340,6 +366,14 @@ passes `conversation_id=key`; what is missing is the platform and the roster
 source, which is a small resolution nobody has written, not a decision nobody
 has taken.
 
+> **Written 2026-09-17. ADDRESSED the same day**, and the paragraph is kept
+> because the reasoning is what the fix implemented. `RegistryToolSource.build`
+> now resolves the grant through two maps, one per `key_kind`
+> (`nora/agent/dreamer.py:842-855`): a workspace-keyed adaptor still looks the
+> room up in `home_rooms` — the operator's choice, per `policy.toml` — and a
+> scope-keyed one resolves its own conversation, the room whose batch the
+> runtime already handed it. `culture_grant` is the first user.
+
 ### 7.5 The corollary: an objective that needs one store is not a Dreamer adaptor
 
 The Dreamer's cost over a scheduled completion is the loop — the guard, the
@@ -362,10 +396,21 @@ adaptor and not answered here:
 > is the fix.**
 
 Applied to the four above, on the evidence in §7.3: proactive has its answer
-and is one verb short of the worked example (`where_been`); culture is asked
-for a join and handed one table, and its own bundle names two stores it should
-read (`standing`, `notes`); the two note objectives have not been asked the
-question, and should be, before either is rewritten again.
+and is one verb short of the worked example (`where_been`); culture was asked
+for a join and handed one table, and its own bundle named two stores it should
+read (`standing`, `notes`) — **both granted and rendered on 2026-09-17, with
+the objective unchanged**, which is the half of the fix the grant cannot do;
+the two note objectives have not been asked the question, and should be, before
+either is rewritten again.
+
+**And the question has a prerequisite this section did not state.** An
+objective cannot answer «name the second store» while the doctrine above it
+already answers «answer from the text you were handed» — an objective's silence
+about what to find out is not read as silence, it is filled in from the
+preamble. That is why the culture grant could land with the objective untouched
+and nothing look wrong. See [13](13-doctrine.md) §8 (D10): the doctrine is the
+runtime layer, the job is the objective's, and until the two are separated the
+test above cannot be answered in the file that owns the answer.
 
 This is also why the failure is invisible rather than loud: §7.1's tautology
 is a PASS at every gate the runtime owns. Naming it is the only instrument
@@ -376,3 +421,5 @@ this bundle has for it today — see [17-failure-classes.md](17-failure-classes.
 2026-08-24 — The mechanism behind F1, unchanged. Cited by [28](28-language-tier.md) §2 — all three language adaptors are tools-less, so each is a single completion.
 
 2026-09-17 — §5's five participants are gone and §7 replaces them with the four that run. The node's original finding (no tools, so no loop) is now the smaller half: three of four adaptors are still single completions, but the tool count was never the measure. §7 states the one that is — **an answer that could have been written from its own prompt has wasted the loop** — and names the grant, not the prompt, as the fix. §7.3 checks all four objective texts; the proactive objective already drives a real research loop and is the precedent the rest should be argued from.
+
+2026-09-17 (later) — §7 re-read against the tree after the culture grant landed. Two of four adaptors hold tools now, not one: `CultureAdaptor` went `frozenset()` → nine verbs with `standing` and the note index added to its inputs, the scope-keyed `home_room` resolution §7.4 called unwired is wired, and `where_been` is in one grant rather than none. Every correction is marked in place rather than rewritten away. **The grant landed and the objective did not move**, and §7.5's test cannot be answered while the doctrine above an objective already answers it — see [13](13-doctrine.md) §8 (D10).
