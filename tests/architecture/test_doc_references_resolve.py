@@ -256,7 +256,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
             "design/dreamer-agent-loop/13-doctrine.md",
             "design/dreamer-agent-loop/39-proactive-ooda-loop.md",
             "design/evaluation/06-first-full-run.md",
-            "design/evaluation/04-the-convention.md",
         )
     },
     # The eval-layer modules RE-HOMED into `tests/` on 2026-09-18 — they were
@@ -310,10 +309,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "re-homed to `tests/offline_pipeline.py` 2026-09-18 (design/evaluation Step 5); the "
         "reference records where it lived"
     ),
-    ("design/evaluation/04-the-convention.md", "evals/evaluators.py"): (
-        "re-homed to `tests/offline_eval_evaluators.py` 2026-09-18 (design/evaluation Step 5); "
-        "the reference records where it lived"
-    ),
     ("design/evaluation/04-the-convention.md", "evals/harness.py"): (
         "re-homed to `tests/offline_eval_harness.py` 2026-09-18 (design/evaluation Step 5); the "
         "reference records where it lived"
@@ -324,26 +319,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ),
     ("design/evaluation/05-live-parity.md", "nora/app/eval_support.py"): (
         "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/evaluation/GOAL.md", "evals/evaluators.py"): (
-        "re-homed to `tests/offline_eval_evaluators.py` 2026-09-18 (design/evaluation Step 5); "
-        "the reference records where it lived"
-    ),
-    ("design/evaluation/GOAL.md", "evals/judge.py"): (
-        "re-homed to `evals/rebuilt/judge.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/evaluation/GOAL.md", "evals/rubric.py"): (
-        "re-homed to `evals/rebuilt/rubric.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/evaluation/GOAL.md", "nora/app/eval_support.py"): (
-        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
-        "reference records where it lived"
-    ),
-    ("design/evaluation/GOAL.md", "nora/app/offline.py"): (
-        "re-homed to `tests/offline_pipeline.py` 2026-09-18 (design/evaluation Step 5); the "
         "reference records where it lived"
     ),
     ("design/evaluation/GOAL.md", "tests/integration/test_live_parity_gate.py"): (
@@ -361,12 +336,18 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "re-homed to `tests/offline_eval_evaluators.py` 2026-09-18 (design/evaluation Step 5); "
         "the reference records where it lived"
     ),
+    ("design/evaluation/04-the-convention.md", "nora/app/eval_support.py"): (
+        "the convention names where it WAS while explaining where it went"
+    ),
+    ("design/evaluation/04-the-convention.md", "evals/relevance_gate.py"): (
+        "the convention quotes its docstring as the evidence that the facade was a boundary adapter"
+    ),
+    ("design/evaluation/04-the-convention.md", "tests/integration/test_live_parity_gate.py"): (
+        "the convention names the parity test as the one-way door the delete passed; the "
+        "reference is the point"
+    ),
     # The ROUTING tier, which has no counterpart — DEC-76 is NOT ENFORCED.
     # These two lines NAME that absence, so the reference is the point.
-    ("design/evaluation/GOAL.md", "evals/journeys.py"): (
-        "names the routing tier as a capability that must be consciously "
-        "replaced; the file is gone and that is what the line says"
-    ),
     ("docs/eval-sop.md", "evals/journeys.py"): (
         "the SOP's step 2 now states that this step has no instrument; the "
         "reference is to the thing that no longer exists, deliberately"

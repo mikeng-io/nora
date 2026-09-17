@@ -127,64 +127,33 @@ For each corpus say what it measures and what it found. A number without a
 reading is not a result. Where the two layers disagree, understand it before
 deleting either — that is what found the speaker-rotation defect.
 
-## Step 8 — audit, then Step 5 of `02-the-rebuild`: the delete
+## Step 8 — audit, then the delete. **DONE 2026-09-18.**
 
-Spawn adversarial Opus reviewers first (see discipline 6). **DONE 2026-09-18,
-and the answer was NO** — see `02-the-rebuild` Step 5 and the blocking list
-below.
+Three adversarial Opus reviewers ran first. Production safety came back clean;
+the other two refuted most of the first live run, and everything they found is
+fixed and falsified (`06-first-full-run` §1, `04-the-convention` §5).
 
-Delete `evals/*.py` and `nora/app/eval_support.py`, plus the shims in
-`evals/rubric.py` and `evals/judge.py`. **NOT `nora/app/offline.py`** — it is
-the offline composition root for 106 integration tests and ten acceptance
-rules, and this bundle was wrong to list it.
+The delete landed: **8,218 lines** of old CLI and drivers deleted outright,
+and three files RE-HOMED into `tests/` rather than removed —
+`tests/offline_pipeline.py`, `tests/offline_eval_support.py`,
+`tests/offline_eval_harness.py` (+ its evaluators).
 
-**AND A SEVENTH, found by trying to clear the second one.** `eval_support.py`
-is not only a pile of assemblies — it is the BOUNDARY ADAPTER. `evals/` may
-reach `nora.app` and nothing else, so a grader that needs
-`nora.agent.registry`'s budgets or `nora.engagement.stages.deliver`'s stop
-reasons can only get them through a `nora.app` module. `evals/evaluators.py`
-imports both FROM `eval_support` for exactly that reason, and its own docstring
-says so: *"evals may only reach nora.app and nora.testing, so the gate's
-construction lives HERE."*
+**The blocking list above was solved by reading the constraint correctly, not
+by clearing seven items.** Those three files were in `nora/` for one reason,
+which each said itself: `evals/` may import `nora.app` and `nora.testing` only,
+so a shared TEST helper had to live inside the application to be reachable from
+`evals/`. Once `evals/` had no harness, every consumer was under `tests/`,
+which has no contract — and the workaround was unnecessary.
 
-Moving the evaluators into `evals/rebuilt/` to save R-15 was tried and
-`tests/test_boundaries.py` refused it, correctly. So deleting `eval_support.py`
-requires deciding where `evals/` gets production constants from — and every
-answer is either a new `nora.app` surface that exists only for evaluation
-(§5(2)) or a widening of the import contract. That is a decision about the
-boundary, which is `01-boundaries`'s own subject, not a tidy-up.
+**What it cost, and neither is recoverable by trying harder:**
 
-**Blocking, measured by running the delete:**
-
-1. Port `tests/integration/harness.py` off `build_offline_pipeline`, or keep
-   `offline.py`. 106 tests, 10 rules.
-2. Re-home R-15 and R-97, whose only named tests live in `evals/` — and see
-   the seventh item: R-15's grader cannot simply move, because the import
-   contract is what put it there.
-3. Give `test_the_barred_call_is_a_name_this_gate_can_see` a positive example
-   outside `eval_support.py`. It is the control for a bar protecting a MEASURED
-   safety property (ADR 0011, 1/6 vs 6/6), its one example is
-   `_StrandsGateClient`, and the obvious "fix" — dropping the assertion — makes
-   its sibling vacuous. Disarming a forgery probe by renaming its payload.
-4. Extend `tests/integration/test_live_parity_gate.py` to the other four entry
-   points. **This is the one-way door**: after the delete, `tag`,
-   `participation`, `dreamer` and `proactive_act` can never again be compared
-   against the layer that produced every number the repo currently quotes.
-5. Fix the 30 dangling doc references, `nora/dreamer/objectives/proactive.md`
-   LAST and carefully — it is a live, bind-mounted prompt.
-6. Update the four `make eval-*` targets, or they name commands that do not
-   exist.
-
-**Consciously accept or replace** — each is a real capability with no
-counterpart today: the journeys/routing tier (`evals/journeys.py`, DEC-76's
-whole subject), Langfuse export, token-cost accounting, `--repeat`'s k/N and
-spread, `--seed-production`, `--effort`, `--skills`, `--via-sdk`,
-`--capabilities`, leak/reveal detection, precision/recall and the
-false-positive rate design 39 §5 calls the primary number.
-
-Check before deleting: `tests/test_evals_rubric.py` and anything else importing
-the shims; `tests/architecture/test_corpora_are_rehomed_not_rewritten.py` dies
-WITH the old corpora and that is correct — it exists to make one move safe.
+1. **The routing tier.** DEC-76 and DEC-84 are marked NOT ENFORCED.
+   `Outcome` carries no tool calls and no corpus is a journey, so "which tool
+   did she reach for" is unmeasured. `docs/eval-sop.md` step 2 says so.
+2. **Live parity.** `test_live_parity_gate.py` is gone: parity cannot outlive
+   one of its two arms. The GATE was compared once and that comparison found a
+   real defect (`05-live-parity` §2). The other four entry points never were,
+   and now never can be against the old layer.
 
 ## Step 9 — close out
 
