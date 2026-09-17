@@ -1615,80 +1615,74 @@ class SpeechTtsConfig(BaseModel):
                      "surprised", "calm", "fluent", "whisper"] = ""
     duck_gain: float = Field(default=0.25, gt=0, lt=1)
     duck_ramp_ms: int = Field(default=150, gt=0)
-    # The audio-controller's HTTP base (design/voice-channel/07 — the
-    # sidecar IS the audio-controller, the sole owner of the Discord voice
-    # connection). Empty (the default) leaves the whole voice seam UNWIRED:
-    # a reply to a Discord voice channel is still delivered as an audit row,
-    # but no audio reaches the channel, and every `/music`/`/discord join`
-    # fails closed. Non-empty wires both planes — `send` to a GUILD_VOICE
-    # channel synthesizes the reply via the speaker and POSTs it to
-    # `{sidecar_endpoint}/stream`, and the music verbs drive
-    # `{sidecar_endpoint}/music/*` on the same connection that hears the
-    # wake word.
-    sidecar_endpoint: str = ""
-    # Discord GUILD ids whose voice channels Nora may be asked to join
-    # (design/voice-channel/07 §12.2, reversed 2026-09-17 by the operator).
-    # Any voice channel in a listed guild is admissible; none in an unlisted
-    # one is. Empty (default) leaves every `/music` and `/discord join`
-    # failing closed, which is the unwired posture.
+    # GUILD -> that guild's audio-controller HTTP base (design/voice-channel/07;
+    # multi-guild 2026-09-17). The sidecar IS the audio-controller, the sole
+    # owner of the Discord voice connection.
     #
-    # GUILDS, not channels, and the reason is that a channel list cannot be
-    # kept true: Zone 42 has 10+ voice channels and gains more, so phase 1's
-    # single immutable channel was an allow-list that would drift into being
-    # quietly wrong. The controller is already hard-bound to ONE guild (§12.5,
-    # any other `guild_id` → 400), so this is the binding that was carrying
-    # the weight all along.
+    # ONE CONTROLLER PER GUILD, and that is the whole of multi-guild. Discord's
+    # limit is one voice connection per bot token PER GUILD, so a guild is the
+    # natural unit of ownership — and §12.5's "single guild, hard-bound" stays
+    # exactly as written rather than being reversed: each controller still
+    # answers 400 to any other guild, which is a safety property worth more
+    # than the two containers it costs. A controller that juggled several would
+    # need its generation counter, its outbox and its desired-state file keyed
+    # by guild, all of which are single-connection by design and all of which
+    # were audited as such in September.
     #
-    # NOT a reply-routing input any more. Whether a reply is spoken is a fact
-    # about the TURN (`ConversationTarget.voice`), and where speech is
-    # RECORDED is `policy.toml`'s `voice = true` — three questions that phase
-    # 1 could answer with one list because speech had a room of its own.
-    voice_guild_ids: list[str] = Field(default_factory=list)
+    #     [speech.tts.sidecars]
+    #     "100000000000000203" = "http://voice-sidecar:4600"
+    #     "100000000000000201" = "http://voice-sidecar-zone42:4600"
+    #
+    # THIS MAP IS THE JOIN ALLOW-LIST. It replaced a separate `voice_guild_ids`
+    # on the same day that key was added: a guild is joinable exactly when a
+    # controller exists for it, and two keys that must agree are a drift source
+    # rather than a second opinion. Empty (the default) leaves the voice seam
+    # UNWIRED — a reply to a voice channel is still an audit row, but no audio
+    # reaches the channel and every `/music`/`/discord join` fails closed.
+    #
+    # WHERE a guild's speech is RECORDED is policy.toml's `voice = true`, not
+    # here. A guild may be marked there with no controller listed here: its
+    # words are recorded, and nothing can join it. The reverse is also legal
+    # and equally deliberate — music with no wake path.
+    sidecars: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def _one_guild_the_controller_can_serve(self) -> SpeechTtsConfig:
-        """The audio-controller is hard-bound to ONE guild (§12.5): any
-        request carrying a different `guild_id` is answered 400. A second
-        guild here would let `/music play` / `/discord join` pass the LOCAL
-        gate for a guild the controller then refuses — the worst of both: the
-        gate says yes, the join says no. Multi-guild is a controller change
-        first, and this is where its absence is stated.
+    def _each_sidecar_names_a_guild_and_a_base(self) -> SpeechTtsConfig:
+        """A key is a bare Discord guild id and a value is a non-empty HTTP
+        base. Refused at LOAD rather than warned about, and NOT gated on
+        `enabled`: `_lead_clears_the_tick`'s argument applies unchanged — a
+        config that only becomes wrong when someone flips the switch becomes
+        wrong at the worst moment, so it fails while the operator is still
+        holding the file.
 
-        What this NO LONGER refuses is a second CHANNEL: §12.2's single
-        immutable channel was reversed 2026-09-17, because a server's voice
-        channels are not a fixed list and per-channel allowlisting could not
-        be kept true. A bare guild id is the whole entry now, and a
-        `"guild/channel"` pair is refused outright rather than silently
-        truncated — an operator upgrading from phase 1 must SEE that the key
-        changed meaning, not discover it from a join that goes somewhere
-        unexpected.
+        A `"guild/channel"` key is refused with the reason spelled out. Two
+        keys before this held these ids: `voice_channel_ids` named channels
+        until 2026-09-17, and `voice_guild_ids` replaced it the same day. An
+        operator carrying either forward must SEE that the shape changed,
+        because a pair silently truncated to its guild half would look like it
+        still worked while quietly meaning something else.
 
-        Refused at load rather than warned about, and NOT gated on
-        `enabled`: `_lead_clears_the_tick`'s argument applies unchanged —
-        a config that only becomes wrong when someone flips the switch
-        becomes wrong at the worst moment, so it fails here, while the
-        operator is still holding the file."""
-        if not self.voice_guild_ids:
-            return self
-        for entry in self.voice_guild_ids:
-            if not entry or "/" in entry:
+        There is deliberately NO cap on how many guilds may be listed. The
+        single-guild bound belongs to a controller (§12.5) and each one still
+        enforces its own; listing two here means two controllers, which is
+        what multi-guild IS."""
+        for guild_id, endpoint in self.sidecars.items():
+            if not guild_id or "/" in guild_id:
                 raise ValueError(
-                    f"[speech.tts] voice_guild_ids entry {entry!r} must be a "
-                    "bare Discord guild id, not \"<guild_id>/<channel_id>\" — "
-                    "this key names GUILDS since 2026-09-17 "
-                    "(design/voice-channel/07 §12.2), and every voice channel "
-                    "in a listed guild is admissible. Where a guild's SPEECH "
-                    "is recorded is policy.toml's `voice = true`, not here."
+                    f"[speech.tts.sidecars] key {guild_id!r} must be a bare "
+                    "Discord guild id, not \"<guild_id>/<channel_id>\" — this "
+                    "table maps a GUILD to the audio-controller that owns its "
+                    "voice connection (design/voice-channel/07 §12.5). Where a "
+                    "guild's SPEECH is recorded is policy.toml's `voice = "
+                    "true`, not here."
                 )
-        guilds = set(self.voice_guild_ids)
-        if len(guilds) > 1:
-            raise ValueError(
-                f"[speech.tts] voice_guild_ids names {len(guilds)} guilds — "
-                "the audio-controller is hard-bound to exactly ONE "
-                "(design/voice-channel/07 §12.5), and every guild past the "
-                "first is one the join gate would admit and the controller "
-                "would reject with 400"
-            )
+            if not endpoint.strip():
+                raise ValueError(
+                    f"[speech.tts.sidecars] guild {guild_id!r} has an empty "
+                    "endpoint. An entry with no controller behind it would "
+                    "admit a join the hub then cannot make — leave the guild "
+                    "out to mean 'no voice here', which fails closed."
+                )
         return self
 
 

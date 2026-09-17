@@ -1,0 +1,18 @@
+{
+  "type": "feature",
+  "type_note": "user-visible: Nora can hold voice on more than one Discord server, and a config key changes shape.",
+  "summary": "Nora can now be in voice on more than one Discord server at a time — one audio-controller per server, rather than one in total.",
+  "details": [
+    "Until now a single audio-controller owned the one Discord voice connection, and it was hard-bound to one server. A second server could have its speech recorded but nothing could ever join it. Each server now gets its own controller and its own wake gate, so voice works on all of them at once.",
+    "`[speech.tts] sidecar_endpoint` and `voice_guild_ids` are replaced by one table, `[speech.tts.sidecars]`, mapping each server id to its controller's address. That table is also the join allow-list: a server with no controller listed has no voice at all. Two keys that had to agree were a way for them to disagree.",
+    "Run the extra containers with `COMPOSE_PROFILES=multi-guild docker compose up -d`. A single-server deployment starts exactly as before — the second pair is behind a profile, not idling.",
+    "Nora's bookkeeping of controller callbacks is now kept per server. Each controller numbers its own events from 1, so a single shared counter read the second server's first event as a jump backwards and the first server's next as a gap — the warning that means \"events were lost while Nora was down\" would have fired on every healthy two-server start, which is how a real one stops being noticed."
+  ],
+  "limitations": [
+    "Each server needs its own wake gate container, not just its own controller. The audio seam between them carries a speaker id and audio frames and nothing else, so a shared gate could not tell which server someone was speaking on. Measured cost of a second server: ~261 MiB (controller 60 MiB + wake gate 201 MiB). The transcription service is shared, not duplicated.",
+    "Each controller is still bound to one server and still refuses any request naming another, unchanged. Multi-server is a deployment shape, not a controller that juggles several — deliberately, because a controller's connection bookkeeping is single-connection by design and reusing it as-is keeps that intact.",
+    "Discord's own limit is unchanged: one voice connection per server. Nora can be in one voice channel per server at a time, and a join to a second channel on the same server is still refused as a conflict.",
+    "Not exercised live with two servers. The suites are green, including new ones pinning that each server keeps its own event bookmark and that a server with no controller fails closed with a named error rather than reaching for another server's. The second controller has not been started against a real Discord server."
+  ],
+  "reason": "design/voice-channel/07 §12.5 said multi-guild was phase 2+ because the data model is single-connection. It turned out to name the wrong axis: Discord's limit is per guild, so a guild is the unit of ownership and §12.5 stands unchanged. Follows the same day's §12.2 reversal, which made a guild's speech land in that guild's own room."
+}

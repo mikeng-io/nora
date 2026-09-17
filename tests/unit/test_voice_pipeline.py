@@ -56,7 +56,7 @@ class _Pipeline:
     def __init__(self, base_url: str, fake: FakeVoiceController) -> None:
         self.fake = fake
         self.client = VoiceControllerClient(base_url)
-        self.hub = VoiceControllerHub(self.client)
+        self.hub = VoiceControllerHub({GUILD: self.client})
         self.queue_store = FakeMusicQueueStore()
         self.session_store = FakeMusicSessionStore()
         self.manager = MusicPlayerManager(

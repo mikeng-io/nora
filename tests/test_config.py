@@ -1463,48 +1463,57 @@ def test_a_misspelt_dreamer_effort_refuses_to_start(toml_path):
 
 
 
-def test_voice_guild_ids_with_two_guilds_refuses_to_start(toml_path):
-    """B10 (design/voice-channel/07 §12.5): the audio-controller is hard-bound
-    to ONE guild. A second would pass the local gate and then be refused by
-    the controller's own 400 — refused at LOAD, while the operator is still
-    holding the file."""
-    toml_path.write_text(_set_key(
-        toml_path.read_text(), "voice_guild_ids", '["g1", "g2"]',
-    ))
-
-    with pytest.raises(ConfigError, match="hard-bound"):
-        load(toml_path)
+def _with_sidecars(text: str, table: str) -> str:
+    """Append a `[speech.tts.sidecars]` table. Not `_set_key`: this is a TOML
+    sub-table, not a scalar, and it has no line in the shipped example to
+    rewrite — the example ships it commented out, which is the unwired
+    posture."""
+    return text + "\n[speech.tts.sidecars]\n" + table + "\n"
 
 
-def test_two_channels_in_one_guild_is_no_longer_a_config_question(toml_path):
-    """THE REVERSAL (§12.2, 2026-09-17). Phase 1 refused a second CHANNEL
-    here; a server's voice channels are not a fixed list, so that refusal made
-    a 10-voice-channel guild unusable. One guild id now admits every channel
-    in it, and there is no second entry to refuse."""
-    toml_path.write_text(_set_key(
-        toml_path.read_text(), "voice_guild_ids", '["g1"]',
+def test_two_guilds_each_with_a_controller_load(toml_path):
+    """MULTI-GUILD (2026-09-17). There is deliberately no cap: the single-guild
+    bound belongs to a CONTROLLER (§12.5) and each still enforces its own, so
+    two entries here mean two controller containers — which is what multi-guild
+    is. The key that came before this refused a second guild outright."""
+    toml_path.write_text(_with_sidecars(
+        toml_path.read_text(),
+        '"g1" = "http://voice-sidecar:4600"\n"g2" = "http://voice-sidecar-two:4600"',
     ))
 
     cfg = load(toml_path)
 
-    assert cfg.speech.tts.voice_guild_ids == ["g1"]
+    assert cfg.speech.tts.sidecars == {
+        "g1": "http://voice-sidecar:4600",
+        "g2": "http://voice-sidecar-two:4600",
+    }
 
 
-def test_a_guild_channel_pair_refuses_to_start(toml_path):
-    """An operator upgrading from phase 1 must SEE that the key changed
-    meaning. A `"guild/channel"` pair silently truncated to its guild would
-    look like it kept working while quietly widening the allow-list, so it is
-    refused with the reason spelled out."""
-    toml_path.write_text(_set_key(
-        toml_path.read_text(), "voice_guild_ids", '["g1/c1"]',
+def test_a_guild_channel_pair_as_a_key_refuses_to_start(toml_path):
+    """An operator carrying forward either earlier key must SEE that the shape
+    changed — `voice_channel_ids` named channels, `voice_guild_ids` named
+    guilds, and both are gone. A pair silently truncated to its guild half
+    would look like it kept working while meaning something else."""
+    toml_path.write_text(_with_sidecars(
+        toml_path.read_text(), '"g1/c1" = "http://voice-sidecar:4600"',
     ))
 
     with pytest.raises(ConfigError, match="bare Discord guild id"):
         load(toml_path)
 
 
-def test_an_empty_voice_guild_ids_loads_and_fails_closed(toml_path):
-    """The shipped posture: nothing configured, nothing joinable."""
+def test_a_guild_with_an_empty_endpoint_refuses_to_start(toml_path):
+    """An entry with no controller behind it would admit a join the hub then
+    cannot make. Leaving the guild out is how you say "no voice here", and
+    that fails closed."""
+    toml_path.write_text(_with_sidecars(toml_path.read_text(), '"g1" = "   "'))
+
+    with pytest.raises(ConfigError, match="empty endpoint"):
+        load(toml_path)
+
+
+def test_no_sidecars_loads_and_fails_closed(toml_path):
+    """The shipped posture: no controller for any guild, so nothing joinable."""
     cfg = load(toml_path)
 
-    assert cfg.speech.tts.voice_guild_ids == []
+    assert cfg.speech.tts.sidecars == {}

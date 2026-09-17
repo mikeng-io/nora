@@ -224,7 +224,9 @@ async def test_voice_channel_send_goes_through_speaker_not_rest(aiohttp_server):
     app.router.add_post("/stream", stream_handler)
     server = await aiohttp_server(app)
 
-    hub = VoiceControllerHub(VoiceControllerClient(str(server.make_url("")).rstrip("/")))
+    hub = VoiceControllerHub(
+        {"111": VoiceControllerClient(str(server.make_url("")).rstrip("/"))}
+    )
     await hub.join("111", "222")
     speaker = _FakeSpeaker(
         SpeakResult(available=True, audio=b"\x00\x01fake-mp3", media_type="audio/mpeg")
@@ -253,7 +255,9 @@ async def test_voice_channel_send_without_a_voice_session_is_a_refused_send(aioh
     app = web.Application()
     server = await aiohttp_server(app)
 
-    hub = VoiceControllerHub(VoiceControllerClient(str(server.make_url("")).rstrip("/")))
+    hub = VoiceControllerHub(
+        {"111": VoiceControllerClient(str(server.make_url("")).rstrip("/"))}
+    )
     speaker = _FakeSpeaker(SpeakResult(available=True, audio=b"mp3", media_type="audio/mpeg"))
     adapter = DiscordAdapter(
         "tok", base_url=str(server.make_url("")).rstrip("/"),
@@ -291,7 +295,9 @@ async def test_non_speakable_text_is_refused_on_voice_channel(aiohttp_server):
     server = await aiohttp_server(app)
 
     speaker = _FakeSpeaker(SpeakResult(available=True, audio=b"mp3", media_type="audio/mpeg"))
-    hub = VoiceControllerHub(VoiceControllerClient(str(server.make_url("")).rstrip("/")))
+    hub = VoiceControllerHub(
+        {"111": VoiceControllerClient(str(server.make_url("")).rstrip("/"))}
+    )
     adapter = DiscordAdapter(
         "tok", base_url=str(server.make_url("")).rstrip("/"),
         speaker=speaker, voice_hub=hub,
@@ -327,7 +333,9 @@ async def test_a_typed_turn_in_a_voice_enabled_room_still_goes_out_as_text(aioht
     server = await aiohttp_server(app)
 
     speaker = _FakeSpeaker(SpeakResult(available=True, audio=b"mp3", media_type="audio/mpeg"))
-    hub = VoiceControllerHub(VoiceControllerClient(str(server.make_url("")).rstrip("/")))
+    hub = VoiceControllerHub(
+        {"111": VoiceControllerClient(str(server.make_url("")).rstrip("/"))}
+    )
     adapter = DiscordAdapter(
         "tok", base_url=str(server.make_url("")).rstrip("/"),
         speaker=speaker, voice_hub=hub,

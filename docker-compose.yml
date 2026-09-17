@@ -901,6 +901,89 @@ services:
       start_period: 60s
       retries: 3
 
+  # --- a SECOND guild: one more controller + wake gate ----------------------
+  #
+  # MULTI-GUILD IS A TOPOLOGY, NOT A CONTROLLER FEATURE (design/voice-channel/
+  # 07 §12.5, 2026-09-17). Discord allows one voice connection per bot token
+  # PER GUILD, so a guild is the natural unit of ownership — and each
+  # controller stays hard-bound to one, answering 400 to any other. Running a
+  # second pair reuses that audited single-connection state machine verbatim;
+  # teaching ONE controller to juggle two would mean keying its generation
+  # counter, its outbox and its desired-state file by guild, all of which are
+  # single-connection by design.
+  #
+  # Behind the `multi-guild` profile, so a single-guild deployment starts
+  # EXACTLY as before rather than idling two extra containers. Measured
+  # 2026-09-17: voice-sidecar 60 MiB, voice-wake 201 MiB, so a second guild
+  # costs ~261 MiB. `stt` is NOT duplicated — it is a stateless HTTP service
+  # and both wake gates call the same one.
+  #
+  #   COMPOSE_PROFILES=multi-guild docker compose up -d
+  #
+  # nora reaches this pair by SERVICE NAME, through `[speech.tts.sidecars]`:
+  #   [speech.tts.sidecars]
+  #   "<guild-a>" = "http://voice-sidecar:4600"
+  #   "<guild-b>" = "http://voice-sidecar-b:4600"
+  voice-sidecar-b:
+    profiles: [multi-guild]
+    build:
+      context: ./deploy/voice-sidecar
+      network: host
+    image: voice-sidecar:latest
+    container_name: voice-sidecar-b
+    restart: unless-stopped
+    networks: [nora]
+    environment:
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+      # The SECOND guild's hard binding. Same meaning as the primary pair
+      # above; `:-` so enabling the profile without configuring it yields
+      # healthy-but-idle rather than a crash loop.
+      - GUILD_ID=${VOICE_GUILD_ID_B:-}
+      - CHANNEL_ID=${VOICE_CHANNEL_ID_B:-}
+      # Its OWN wake gate. Two controllers must never share one: the seam
+      # carries `(user_id, pcm)` and nothing else, so a shared gate could not
+      # tell which guild a speaker was in and would forward every utterance
+      # under one guild id.
+      - PUMP_HOST=${VOICE_PUMP_HOST_B:-voice-wake-b}
+      - PUMP_PORT=${VOICE_PUMP_PORT_B:-4599}
+      - HOST=0.0.0.0
+      # Its OWN desired-state volume. Sharing one file would have each
+      # controller overwrite the other's channel on every join.
+      - STATE_FILE=/var/lib/audio-controller/desired_state.json
+      - NORA_EVENT_URL=http://nora:9100/app/v1/voice/event
+    volumes:
+      - audio-controller-state-b:/var/lib/audio-controller
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:$${PORT:-4600}/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+
+  voice-wake-b:
+    profiles: [multi-guild]
+    build:
+      context: ./deploy/voice-wake
+      network: host
+    image: voice-wake:latest
+    container_name: voice-wake-b
+    restart: unless-stopped
+    networks: [nora]
+    environment:
+      # The second guild. nora resolves it to the room whose policy.toml entry
+      # says `voice = true` — so this gate needs no room configuration at all,
+      # and the two gates differ by exactly this one value.
+      - VOICE_GUILD_ID=${VOICE_GUILD_ID_B:-}
+      - NORA_INGEST_URL=http://nora:9100
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4601/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+
   # --- the metrics reader, and the path an alert takes to a human -----------
   #
   # Added 2026-09-09. Until then NOTHING scraped the 94 `nora_*` series: they
@@ -1019,3 +1102,7 @@ volumes:
   # Named (not a bind mount) so the volume inherits the image's
   # `chown node:node /var/lib/audio-controller` on first use (B-1).
   audio-controller-state:
+  # The SECOND guild's desired-state, on its own volume and never shared: one
+  # file cannot serve two controllers, because each would overwrite the
+  # other's channel on every join. Only used under the `multi-guild` profile.
+  audio-controller-state-b:

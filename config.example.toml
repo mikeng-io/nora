@@ -1011,27 +1011,29 @@ provider = ""                  # empty provider = no speaker; a real deployment
                                # design/voice-channel/04 §3b). The key is read
                                # from the env var api_key_env NAMES (default
                                # MINIMAX_CN_API_KEY), never from this file.
-sidecar_endpoint = ""          # the AUDIO-CONTROLLER's HTTP base
+# [speech.tts.sidecars]         # GUILD -> that guild's AUDIO-CONTROLLER HTTP base
+# "100000000000000203" = "http://voice-sidecar:4600"
                                # (design/voice-channel/07): speech plays via
                                # /stream, music via /music/*, joins via
                                # /voice/join — all on the one voice connection
-                               # the controller owns. Empty = the voice seam
-                               # is unwired; joins and speech fail closed.
-voice_guild_ids = []           # Discord GUILD ids whose voice channels
-                               # /music play and /discord join may auto-join.
-                               # ANY channel in a listed guild; empty =
-                               # nowhere (fail-closed). Exactly one guild —
-                               # the audio-controller is hard-bound to one
-                               # (design/voice-channel/07 §12.5).
+                               # that controller owns. Absent/empty = the voice
+                               # seam is unwired; joins and speech fail closed.
                                #
-                               # GUILDS since 2026-09-17 (§12.2 reversed): a
-                               # server's voice channels are not a fixed list,
-                               # so a per-channel allow-list could not be kept
-                               # true. WHERE a guild's speech is RECORDED is
-                               # policy.toml's `voice = true`, not here, and
-                               # whether a reply is SPOKEN is a fact about the
-                               # turn — three questions one list used to
-                               # answer only because speech had its own room.
+                               # ONE CONTROLLER PER GUILD. Discord allows one
+                               # voice connection per bot token PER GUILD, so
+                               # each controller stays hard-bound to one
+                               # (§12.5) and multi-guild is a deployment
+                               # topology, not a controller that juggles
+                               # several. List a second guild here and run a
+                               # second controller container for it.
+                               #
+                               # THIS TABLE IS THE JOIN ALLOW-LIST: a guild is
+                               # joinable exactly when a controller exists for
+                               # it. WHERE a guild's speech is RECORDED is
+                               # policy.toml's `voice = true`, and the two are
+                               # independent on purpose — a guild may be
+                               # recorded with nothing able to join it, or
+                               # joinable with no wake path.
 # voice = "Cantonese_CuteGirl" # a NATIVE Cantonese voice — the lever is the
 #                              # voice, not the model tier; language_boost is
 #                              # hard-set in the adapter ("auto" mis-renders 係/唔該)

@@ -66,7 +66,7 @@ class _StubManager:
 
 async def _consumer() -> tuple[VoiceEventConsumer, _StubManager, VoiceControllerHub]:
     manager = _StubManager()
-    hub = VoiceControllerHub(_StubClient())
+    hub = VoiceControllerHub({GUILD: _StubClient()})
     await hub.join(GUILD, "cortez-1")
     return VoiceEventConsumer(manager, hub), manager, hub
 
@@ -260,7 +260,7 @@ async def test_an_event_seq_gap_is_warned_about(caplog):
         "seq gap" in record.message and "guild-1" in record.message
         for record in caplog.records
     )
-    assert hub.last_event_seq == 5, (
+    assert hub.last_event_seq(GUILD) == 5, (
         "a SUCCESSFUL delivery moves the bookmark; the gap warning compared "
         "against the previous one"
     )
@@ -272,6 +272,6 @@ async def test_a_failed_delivery_does_not_move_the_seq_bookmark():
 
     await consumer.consume(_event("track-finished", playback_id=PLAYBACK, event_seq=3))
 
-    assert hub.last_event_seq is None, (
+    assert hub.last_event_seq(GUILD) is None, (
         "a failed delivery stays retryable — its seq is not consumed either"
     )

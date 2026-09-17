@@ -15,6 +15,7 @@ from aiohttp import web
 from nora.infra.voice.http_controller import (
     GenerationConflict,
     VoiceControllerClient,
+    VoiceControllerUnavailable,
 )
 from nora.infra.voice.hub import _EVENT_ID_BOUND, VoiceControllerHub
 
@@ -96,9 +97,11 @@ def _app(
 
 async def _hub(aiohttp_client, app) -> VoiceControllerHub:
     test_client = await aiohttp_client(app)
-    return VoiceControllerHub(
-        VoiceControllerClient(str(test_client.make_url("")).rstrip("/"))
-    )
+    # One client per guild (§12.5, multi-guild 2026-09-17). Both test guilds
+    # point at the same fake controller: what is under test here is the hub's
+    # per-guild bookkeeping, not two real processes.
+    client = VoiceControllerClient(str(test_client.make_url("")).rstrip("/"))
+    return VoiceControllerHub({"guild-1": client, "guild-2": client})
 
 
 async def test_join_caches_the_session_per_guild(aiohttp_client):
@@ -253,7 +256,7 @@ async def test_adopting_a_status_with_an_event_seq_gap_warns(aiohttp_client, cap
     hub = await _hub(
         aiohttp_client, _app(join_status=409, status_last_event_seq=9),
     )
-    hub.note_event_seq(4)
+    hub.note_event_seq("guild-1", 4)
 
     with caplog.at_level(logging.WARNING, logger="nora.infra.voice"):
         session = await hub.join("guild-1", "cortez-1")
@@ -273,7 +276,7 @@ async def test_adoption_without_a_seq_gap_does_not_warn(aiohttp_client, caplog):
         hub = await _hub(
             aiohttp_client, _app(join_status=409, status_last_event_seq=last_event_seq),
         )
-        hub.note_event_seq(4)
+        hub.note_event_seq("guild-1", 4)
 
         with caplog.at_level(logging.WARNING, logger="nora.infra.voice"):
             await hub.join("guild-1", "cortez-1")
@@ -284,12 +287,12 @@ async def test_adoption_without_a_seq_gap_does_not_warn(aiohttp_client, caplog):
 async def test_note_event_seq_is_monotonic(aiohttp_client):
     hub = await _hub(aiohttp_client, _app())
 
-    assert hub.last_event_seq is None
-    hub.note_event_seq(5)
-    hub.note_event_seq(3)  # a replayed/out-of-order delivery never moves it back
-    hub.note_event_seq(7)
+    assert hub.last_event_seq("guild-1") is None
+    hub.note_event_seq("guild-1", 5)
+    hub.note_event_seq("guild-1", 3)  # a replay never moves it back
+    hub.note_event_seq("guild-1", 7)
 
-    assert hub.last_event_seq == 7
+    assert hub.last_event_seq("guild-1") == 7
 
 
 async def test_seen_event_reads_the_dedupe_window_without_consuming(aiohttp_client):
@@ -392,3 +395,40 @@ async def test_adopt_boot_voice_sessions_does_not_raise_when_the_controller_is_d
     await hub.adopt_boot_voice_sessions(["guild-1"])  # must not raise
 
     assert hub.session_for("guild-1") is None
+
+
+async def test_the_event_seq_bookmark_is_per_guild(aiohttp_client):
+    """THE REGRESSION THIS GUARDS (multi-guild, 2026-09-17). Each controller
+    mints its own `event_seq` from 1. With ONE counter, guild-2's first event
+    would read as a jump backwards from guild-1's 40th, and guild-1's next
+    would read as a 39-event gap — so the warning that exists to mean "events
+    were lost while nora was down" would have fired on every healthy
+    two-guild boot, which is how a real gap stops being noticed."""
+    hub = await _hub(aiohttp_client, _app())
+
+    hub.note_event_seq("guild-1", 40)
+
+    assert hub.last_event_seq("guild-2") is None, (
+        "a guild nora has consumed nothing for has no baseline, not another "
+        "guild's"
+    )
+    hub.note_event_seq("guild-2", 1)
+    assert hub.last_event_seq("guild-1") == 40, "guild-2 must not move guild-1"
+    assert hub.last_event_seq("guild-2") == 1
+
+
+async def test_an_unmapped_guild_has_no_controller_and_fails_closed(aiohttp_client):
+    """The clients map IS the allow-list: a guild with no controller cannot be
+    joined, and says so rather than reaching for another guild's."""
+    hub = await _hub(aiohttp_client, _app())
+
+    assert "guild-3" not in hub.guild_ids
+    with pytest.raises(VoiceControllerUnavailable, match="no audio-controller"):
+        await hub.join("guild-3", "cortez-1")
+    assert hub.session_for("guild-3") is None
+
+
+async def test_guild_ids_is_the_join_allow_list(aiohttp_client):
+    hub = await _hub(aiohttp_client, _app())
+
+    assert hub.guild_ids == frozenset({"guild-1", "guild-2"})

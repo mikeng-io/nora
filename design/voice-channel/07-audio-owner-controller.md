@@ -499,9 +499,35 @@ audio-controller's one allowed decision, documented here and nowhere in nora's d
 4. **`/music stop` when `state=idle` → no-op** (200 with unchanged state).
    Routine contract choice.
 5. **Controller scope: SINGLE GUILD, hard-bound.** Any request with a
-   `guild_id` ≠ configured guild → 400. Multi-guild is phase 2+; nothing in
-   the data model assumes multi-guild (generation is a single counter, the
-   outbox is a single queue, the state file is single-connection).
+   `guild_id` ≠ configured guild → 400. Nothing in the data model assumes
+   multi-guild (generation is a single counter, the outbox is a single queue,
+   the state file is single-connection).
+
+   **This decision STANDS, and multi-guild landed 2026-09-17 without touching
+   it.** "Phase 2+" turned out to name the wrong axis. Discord's limit is one
+   voice connection per bot token PER GUILD, so a guild is the natural unit of
+   ownership — which makes multi-guild a deployment TOPOLOGY (one controller
+   container per guild) rather than a controller that juggles several. The
+   single-connection state machine above is reused verbatim, N times, and each
+   controller keeps answering 400 to any guild but its own. That 400 is a
+   safety property; keying the generation counter, the outbox and the
+   desired-state file by guild would have traded it for two containers, in
+   exactly the concurrency code the September audit went through.
+
+   nora holds one `VoiceControllerClient` per guild, mapped in
+   `[speech.tts.sidecars]`, and that map IS the join allow-list — a guild with
+   no controller has no voice. `VoiceControllerHub` was already per-guild
+   everywhere except its `event_seq` bookmark, which had to become per-guild
+   too: each controller mints its own sequence from 1, so one counter read the
+   second guild's first event as a jump backwards and the first guild's next
+   as a gap. Each guild needs its OWN wake gate as well — the pump seam
+   carries `(user_id, pcm)` and nothing else, so a shared gate could not say
+   which guild a speaker was in.
+
+   Cost, measured 2026-09-17: ~261 MiB per extra guild (voice-sidecar 60 MiB +
+   voice-wake 201 MiB). `stt` is shared, not duplicated. The second pair sits
+   behind compose's `multi-guild` profile so a single-guild deployment starts
+   unchanged.
 6. **Empty-channel auto-leave (Miles, 2026-09-16 11:2x HKT): when the last
    human leaves the voice channel, start a 1-minute timer; if no human
    returns before it fires, the controller tears the connection down
