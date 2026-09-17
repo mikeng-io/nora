@@ -48,9 +48,20 @@ is inert, `store_timeout_seconds` looks inert and had to be checked against a
 constant, and `media_join` turns up in three of the four. Every answer was
 derived by hand today, and nothing stops them changing tomorrow.
 
-**Step 1 — the one subject.** One function returning Nora, its home settled
-(`01-boundaries` §6 — the layer contract refuses `nora.testing`, measured). No
-caller passes collaborators.
+**Step 1 — the one subject. Home DECIDED 2026-09-17: option 1, name the slot.**
+
+A new layer above `nora.app`, inside the `nora` root package so the contracts can
+see it (`01-boundaries` §6). Probed: the layer holds, and `nora.app` → the new
+package is correctly refused.
+
+**Three edits, two found only by probing** — the layers list; the "only app and
+`__main__` read config" contract, whose `source_modules` is explicit so a new
+package is unconstrained by default; and `EVALS_ALLOWED_NORA_PACKAGES` in
+`tests/test_boundaries.py`, which is the gate that actually binds (the
+import-linter evals contract passed while `evals/` imported the new package, by
+design — `allow_indirect_imports`).
+
+Then: one function returning Nora, no caller passing collaborators.
 
 **Step 2 — two entry points through one runner.** `relevance_gate` and
 `participation`, deliberately the least alike. `01-boundaries` §7: if they cannot

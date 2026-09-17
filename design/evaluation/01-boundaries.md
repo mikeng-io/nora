@@ -91,20 +91,117 @@ grew.**
 
 Each is a property a test can hold, and (1) and (3) are the two that decay first.
 
-## 6. What is NOT decided here
+## 6. Step 1's real question, measured 2026-09-17
 
-- **Where the one subject function lives**, given that the import rule
-  (`tests/test_boundaries.py`) is what pushed the assembly into `nora/app/`. The
-  layer contract refuses `nora.testing` — measured 2026-09-17: `nora.testing →
-  nora.app` breaks 2 contracts (a reverse import), `→ nora.infra` 1, `→
-  nora.config` 2. So the home is an open question and it is the first one.
-- **Whether the runner can drive `build_dependencies` directly.** It is drivable
-  — `tests/test_composition.py` calls it ~90 times against a throwaway Postgres —
-  but the live tier's cost is unmeasured.
-- **What replaces the reconstruction suites.** A bare model on doctrine text is a
-  cheap, useful probe of WORDING. Under this boundary it is not an evaluation of
-  Nora and cannot use the runner; whether it survives as a separate named tool is
-  open.
+Not *"where does the one subject function go"* — **there is no existing place for
+it**, and that is the finding rather than an obstacle to route around.
+
+Three candidate homes. All three probed by injecting the imports the subject
+function actually needs (`nora.app.composition`, `nora.infra.sql`, `nora.config`)
+and running `lint-imports`:
+
+| home | result |
+|---|---|
+| **`nora.testing`** | `→ nora.app` breaks **1** contract (the layered architecture — a REVERSE import, which is what layers exist to prevent); `→ nora.infra` **1**; `→ nora.config` **2** |
+| **`nora/app/`** | legal, and it is where the code is today. Also where §4 says eval-only code must not be: the application would know about being measured |
+| **a new top-level package** | **`lint-imports` 0, `tests/test_boundaries.py` 0 — nothing objects** |
+
+### The third result is not a solution. It is a hole.
+
+A probe package importing `nora.app`, `nora.infra` and `nora.config` **all at
+once** passed both gates clean:
+
+```
+lint-imports            0    Contracts: 6 kept, 0 broken
+tests/test_boundaries   0    6 passed
+```
+
+Because:
+
+```
+pyproject.toml:169        root_packages = ["nora", "evals"]
+test_boundaries.py:160    EVALS_DIR = ROOT / "evals"
+```
+
+**Import-linter knows two root packages. The boundary test scans one directory.**
+A third top-level package is outside both, so it may import anything — not
+because that was decided, because nothing looks.
+
+So taking it means **also** adding it to `root_packages` and writing its
+contract. And writing that contract is answering *what may this package reach*,
+which is Step 1 itself. **The new package does not route around the question; it
+converts it from choosing a location into writing a rule.**
+
+### What that means
+
+**The layer architecture has no slot for a thing that obtains the real Nora and
+is not the application.** Every existing slot either forbids reaching the top
+(everything below `nora.app`) or is the top. The eval layer needs exactly that
+and the contract has never had a name for it.
+
+That is why `nora/app/offline.py` exists, why it drifted to a second assembly,
+and why `eval_support.py` is 1,739 lines of test scaffolding inside the
+application. **None of those were mistakes given the available slots.** They are
+what you get when the shape you need has no place to live.
+
+### DECIDED 2026-09-17 — option 1: name the slot
+
+**A new layer above `nora.app`, inside the `nora` root package so the contracts
+can see it.** Probed before recording, and the probe is why the edit list below
+has three items rather than one.
+
+Working name `nora.harness`; **the name is open** and collides with two things it
+replaces (`evals/harness.py`, `tests/integration/harness.py`), so pick it
+deliberately when the package lands.
+
+**What the probe established** — a package at that layer importing
+`nora.app.composition` and `nora.config`:
+
+| | |
+|---|---|
+| `lint-imports`, with `"nora.harness"` added above `nora.app` | **0 — 6 kept, 0 broken** |
+| the reverse, `nora.app` → `nora.harness` | **1 broken.** The property holds in the direction that matters |
+
+So the slot exists and is enforceable. **Three edits are needed, not one**, and
+two are visible only because the probe ran:
+
+**1. `pyproject.toml` layers** — a new top entry above
+`"nora.app | nora.presence | nora.analytics"`.
+
+**2. `pyproject.toml`'s "only app and `__main__` read config" contract.** Its
+`source_modules` list is explicit, so a new package is **not covered by
+default** — the probe imported `nora.config` and nothing objected. That is §6's
+own hole one level in: unconstrained because nothing looks, not because anything
+decided. Either the package joins that list or it is exempted **with the reason
+written down**, and the exemption is arguable — composing the real graph means
+reading the real config.
+
+**3. `tests/test_boundaries.py`** — `EVALS_ALLOWED_NORA_PACKAGES` is
+`{"app", "testing"}` and must gain the new name.
+
+### The probe also found which of the two `evals/` gates actually binds
+
+With `evals/` importing the new package:
+
+```
+lint-imports              "evals may only reach nora.app and nora.testing"   KEPT
+tests/test_boundaries.py  FAILED — evals/_zz_probe.py: nora.harness
+```
+
+**The import-linter contract passed while `evals/` imported a package its own
+name forbids.** Not a defect — `pyproject.toml:268` documents it:
+`allow_indirect_imports = "True"` is load-bearing, because `nora.app`
+legitimately imports half the tree and the default whole-chain check would flag
+`evals -> nora.app.eval_support -> nora.doctrine.loader` as evals' own import.
+
+The same comment names the consequence: *"A new nora subpackage added later needs
+a line here too; `tests/test_boundaries.py`'s AST-based sibling check is the
+allowlist-style backstop."*
+
+**So the boundary TEST is the binding gate and the contract is the looser
+sibling.** Worth knowing before anyone reads a green `lint-imports` as proof the
+boundary held — which is the shape this whole bundle is about, appearing inside
+the bundle's own first step.
 
 ## 7. The reading that would refute this node
 
