@@ -3232,7 +3232,16 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         dream_models = factory.ModelSource(
             client=client,
             spec=factory.ModelSpec(
-                model=dream_model, max_tokens=tier.max_tokens,
+                # `cfg.dreamer_max_tokens()` and NOT `tier.max_tokens`, which
+                # is what this said until issue #291. The tier's number is
+                # sized for a TAG TURN; a batch pass whose objective asks for
+                # one verdict per message has an output that scales with the
+                # batch, and at `[llm] max_tokens = 2000` one scope spent ~24
+                # hours failing every run with `PartialReplyError` — held
+                # watermark, re-read batch, one retry per hour forever.
+                # The accessor folds the `[llm]` fallback in, so an unset
+                # `[dreamer] max_tokens` still resolves to exactly this.
+                model=dream_model, max_tokens=cfg.dreamer_max_tokens(),
                 temperature=tier.temperature,
                 # `[dreamer] reasoning_effort` where set, else the tier's.
                 # Measured: at the tier's "low" this model reasons its way to

@@ -1368,6 +1368,52 @@ async def test_an_unset_dreamer_effort_leaves_the_model_on_the_tiers(cfg):
     assert spec.reasoning_effort == cfg.llm.reasoning_effort
 
 
+async def test_the_dreamer_is_built_with_its_own_per_call_max_tokens(cfg):
+    """Issue #291: the Dreamer's PER-CALL ceiling is its own, not the tier's.
+
+    Asserted on the SPEC and not on the config value, for the reason the
+    effort test above states outright — a config key nothing reads is a
+    phantom. Reverting `composition.py` to `max_tokens=tier.max_tokens` must
+    turn THIS red, so the value asserted is deliberately not the tier's.
+
+    This is the ceiling that raises. `[dreamer.budgets.*] output_tokens` is
+    the Strands LOOP budget and binds without raising
+    (`nora/agent/factory.py:238`); exceeding THIS one raises
+    `MaxTokensReachedException` -> `PartialReplyError` (`factory.py:541`),
+    which is the error that held one scope's watermark for ~24 hours.
+    """
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True,
+        "dreamer.max_tokens": 16000,
+    }))
+
+    assert deps.dreamer_runtime is not None, "the runtime must be built at all"
+    spec = deps.dreamer_runtime._models._spec
+    assert spec.max_tokens == 16000
+    assert spec.max_tokens != cfg.llm.max_tokens, (
+        "the fixture's tier value would make this test pass by coincidence"
+    )
+
+
+async def test_an_unset_dreamer_max_tokens_leaves_it_on_the_tiers(cfg):
+    """The inherit path, and the positive control for the test above.
+
+    `0` is the sentinel. A composition that read the raw field instead of
+    `Config.dreamer_max_tokens()` would build the Dreamer with `max_tokens=0`
+    — not "no limit" but a model asked to emit nothing — and every deployment
+    that never set the key would break. That is the failure this pins.
+    """
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True,
+        "dreamer.max_tokens": 0,
+    }))
+
+    assert deps.dreamer_runtime is not None
+    spec = deps.dreamer_runtime._models._spec
+    assert spec.max_tokens == cfg.llm.max_tokens
+    assert spec.max_tokens > 0, "0 is the inherit sentinel, never a ceiling"
+
+
 async def test_a_misspelt_inherited_effort_refuses_to_start(cfg):
     """**The typed declaration alone does not give the boot refusal it claims.**
 

@@ -2613,6 +2613,42 @@ class DreamerConfig(BaseModel):
     # is the only resolver, and its own docstring records why the fallback
     # moved off `[language]` (that section is gone).
     model: str = ""
+    # The Dreamer's OWN PER-CALL ceiling, `0` meaning «inherit `[llm]`» —
+    # resolved by `Config.dreamer_max_tokens()`, the `dreamer_model()` shape.
+    #
+    # THIS IS NOT `budgets[...].output_tokens`, and the distinction is the
+    # whole reason the field exists (issue #291). There are two ceilings:
+    #
+    #   `[dreamer.budgets.<adaptor>] output_tokens`  the STRANDS LOOP budget.
+    #       Binds -> `stop_reason = "limit_output_tokens"`, raises NOTHING
+    #       (`nora/agent/factory.py:238`).
+    #   this                                          the PROVIDER's ceiling on
+    #       ONE completion. Binds -> `MaxTokensReachedException` ->
+    #       `PartialReplyError` (`nora/agent/factory.py:541`).
+    #
+    # Until this shipped the Dreamer inherited `[llm] max_tokens` with no way
+    # to override it, and `[llm] max_tokens = 2000` is sized for a TAG TURN
+    # ("the largest legitimate completion — reasoning block plus the tool call
+    # — was 371 tokens, so 2000 is 5.4x headroom"). A batch pass is a different
+    # unit of work: `note-candidates`' objective asks for one verdict per
+    # message PLUS a candidate array, so its output scales with the batch.
+    #
+    # Measured, 2026-09-16/17: one scope spent ~24 hours failing EVERY run on
+    # that 2000 with `PartialReplyError`. The run returns `unavailable`,
+    # `_dream_adaptor_once` holds the watermark, so the same batch was re-read
+    # and re-truncated on every fire — pinned at one attempt per hour by
+    # `_DREAM_BACKOFF_MAX_SECONDS`, which reads exactly like a healthy hourly
+    # adaptor. Lag on that scope reached 1,250 messages.
+    #
+    # Raising `[llm] max_tokens` instead would have been the wrong blast
+    # radius: that number governs every one of Nora's own replies, and this
+    # failure is a background batch pass nobody waits on.
+    #
+    # `0` is the shipped value, so the field's arrival is a runtime no-op for
+    # any deployment that does not set it — the same posture `model = ""`
+    # takes. `ge=0` and not `ge=1`: 0 is the sentinel, and a real 0 would be a
+    # subsystem that silently never produces anything.
+    max_tokens: int = Field(default=0, ge=0)
     # The Dreamer's OWN reasoning effort, `""` meaning «inherit `[llm]`» — the
     # shape `StandingConfig.reasoning_effort` already uses, and TYPED for its
     # reason: a typo in a loose `str` reaches the provider and returns a 400,
@@ -3018,6 +3054,24 @@ class Config(BaseModel):
         never set one falls back to rather than a value anything relies on.
         """
         return self.dreamer.model or self.llm.model
+
+    def dreamer_max_tokens(self) -> int:
+        """`[dreamer].max_tokens`, falling back to `[llm].max_tokens` when 0.
+
+        Here and not on `DreamerConfig` for `dreamer_model`'s reason, which is
+        structural rather than stylistic: the fallback source is a SIBLING
+        section a sub-model cannot see. Folding it in at the one place that
+        holds both means no caller can reach past it to the raw field and read
+        a 0 as a real ceiling.
+
+        `0` is the sentinel, never a value — see `DreamerConfig.max_tokens`
+        for what this ceiling is and, more to the point, what it is NOT
+        (`budgets[...].output_tokens` is the Strands LOOP budget and binds
+        without raising; this is the provider's per-call ceiling and raises
+        `MaxTokensReachedException`). Issue #291 is what happens when the two
+        are confused.
+        """
+        return self.dreamer.max_tokens or self.llm.max_tokens
 
     @model_validator(mode="after")
     def _the_gate_needs_something_behind_it(self) -> Config:
