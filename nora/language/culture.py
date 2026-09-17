@@ -115,22 +115,30 @@ class AccountNotRecordableError(NoraError):
     never `nothing_found`, *because the loop must not advance a watermark past
     a batch nobody read*. A batch whose one account was refused is that batch.
 
-    **The cost, named rather than discovered.** If EVERY draw for a room
+    **The cost, OBSERVED rather than named.** If EVERY draw for a room
     overruns the cap, that room's fold wedges: the watermark never moves and
-    `lag` grows. That is the accepted trade and it is the loud half of the
-    pair — a wedged fold shows up as `nora_dream_run_total{status=
-    "unavailable"}`, a growing lag and a WARNING naming the scope, where the
-    silent discard showed up as nothing. It also self-heals on any compliant
-    draw, because the next fire is a fresh sample at non-zero temperature. The
-    cap is set (`BODY_MAX_CHARS`) so that an account written to the objective's
-    own instruction does not reach it, which is what makes a wedge a
-    configuration fault rather than a normal Tuesday.
+    `lag` grows. This paragraph used to call that an accepted trade that
+    "self-heals on any compliant draw, because the next fire is a fresh sample
+    at non-zero temperature". It does not self-heal, and 2026-09-17 is the
+    reading. With the cap at 1,400 the deployment's busiest room drew 1,876,
+    1,725, 1,677 and 1,583 on four consecutive fires and never once came under
+    — temperature moves the draw, it does not move the LENGTH the instruction
+    implies. The room took four model calls, recorded nothing, and would have
+    gone on doing it for as long as anyone left it.
 
-    **What would close this properly is in the OBJECTIVE, and the objective is
-    `change_policy: operator-only`.** The model is never told the cap — it is
-    enforced after emission, on prose already written — so nothing in this
-    module can stop a long account being produced, only stop it being lost.
-    See the note in `CultureAdaptor.accept`.
+    Loud, it was: `nora_dream_run_total{status="unavailable"}`, a growing lag
+    and a WARNING naming the scope. Loud is not the same as recoverable. What
+    makes a wedge survivable is `BODY_MAX_CHARS` being set where an account
+    written to the objective's own instruction cannot reach it — and that is a
+    claim about what the model EMITS, which is why the cap is now sized on
+    `ACCOUNT_CHARS_OBSERVED_MAX` rather than on a ratio against the worked
+    example.
+
+    **What would make the cap a quality instrument again is in the OBJECTIVE,
+    and the objective is `change_policy: operator-only`.** The model is never
+    told the cap — it is enforced after emission, on prose already written — so
+    nothing in this module can stop a long account being produced, only stop it
+    being lost. See the note in `CultureAdaptor.accept`.
     """
 
 #: The adaptor's `name`: the metric label, the schedule and budget key, and the
@@ -352,8 +360,9 @@ def _parse(item: Mapping[str, object]) -> CultureProposal | None:
     a well-formed account that must not be written AND must not cost the batch,
     and only `accept` can raise for that (see `AccountNotRecordableError`).
     `BODY_MAX_CHARS` says "no writer should produce that"; the database ceiling
-    far above it (`CULTURE_BODY_CEILING_CHARS`) says "this row is corrupt", and
-    neither says anything about what could be emitted.
+    above it (`CULTURE_BODY_CEILING_CHARS`) says "this row is corrupt", and
+    neither says anything about what could be emitted — the budgets are sized
+    on `ACCOUNT_CHARS_OBSERVED_MAX`, which is the number that does.
     """
     body = item.get("body")
     if not isinstance(body, str):
@@ -663,14 +672,26 @@ class CultureAdaptor:
         account being WRITTEN; it can only stop one being written AND the
         batch being lost with it, and that is exactly what the raise buys.
 
-        **What would close it properly belongs to the operator.** The objective
-        would have to ask for the length it wants in terms the model can act on
-        — its own worked example is 739 characters, and the instruction around
-        it says "one paragraph or two" without ever saying what that is in
-        prose it has not yet written. A line in "What to write" naming the
-        worked example AS the target length ("about as long as the example
-        below, and never more than twice it") is the change; it is a prompt
-        change, so it needs the arm that measures it, not an assertion here.
+        **Which is why the raise is now nearly unreachable, and that is the
+        point** (operator, 2026-09-18). `BODY_MAX_CHARS` is 20,000 against a
+        measured emission maximum of 1,876, so `oversize` has gone from a
+        refusal that fired on 6 of 10 live accounts to one that should never
+        fire at all. `nora_culture_fold_total{outcome="oversize"}` reading zero
+        is the EXPECTED state now, not evidence the branch is dead — and if it
+        ever fires it means a body 10x anything observed, which is the
+        corruption the ceiling is for.
+
+        **The quality guard this used to pretend to be belongs to the
+        operator.** The objective would have to ask for the length it wants in
+        terms the model can act on — its own worked example is 739 characters,
+        and the instruction around it says "one paragraph or two" without ever
+        saying what that is in prose it has not yet written. A line in "What to
+        write" naming the worked example AS the target length ("about as long
+        as the example below, and never more than twice it") is the change; it
+        is a prompt change, so it needs the arm that measures it, not an
+        assertion here. Until that lands, nothing stops an account drifting
+        back into chronicle, and refusing 13%-over prose was never the thing
+        that would have.
         """
         if not items:
             self._inc("empty")

@@ -1644,7 +1644,20 @@ model = "ollamacloud/deepseek-v4-flash:0731"
 # Leave at 0 unless a pass is truncating. If one is, raise THIS, not the loop
 # budget — and keep the loop budget a MULTIPLE of it, the ratio `[llm.limits]`
 # already uses, or one call can spend the whole loop's allowance.
-max_tokens = 0
+#
+# 6,000, and this file said 0 while the deployment ran 6,000 until 2026-09-18.
+# That drift is the reason the value is written here rather than inherited: at
+# 0 this resolves to `[llm] max_tokens = 2000`, which is a TAG TURN's ceiling,
+# and `nora.domain.culture.ACCOUNT_OUTPUT_TOKENS` (~2,222 for a realistic
+# culture account) does not fit in it. A template that ships a number no
+# adaptor can actually run under is a template nobody can copy.
+#
+# The history behind 6,000 is note-candidates': 2,000 truncated every run on
+# one scope for ~24h (every failing run pinned at exactly 2,000, so their true
+# length was right-censored and unknown); 8,000 was headroom picked against a
+# failure; 4,000 was set on n=1 and the second uncensored sample was 29%
+# higher; 6,000 is 2.2x the largest of n=2 (2,124 and 2,732).
+max_tokens = 6000
 
 # Per-adaptor run ceilings (`DreamBudgetConfig`; an adaptor with no block gets
 # the defaults: 6 turns, 40000 total tokens, 4000 output tokens, 120 s, and 2
@@ -1731,7 +1744,21 @@ timeout_seconds = 240.0
 # fire — the same grain the three token caps above have. Inert here (the
 # proactive adaptor takes one sample per fire) and stated so that it is not a
 # surprise the day it is not.
-max_memory_calls = 2
+#
+# 2 -> 6 (operator, 2026-09-18), TRIPLED alongside `lookup_person` below —
+# and the pairing is the whole point. `lookup_person` is one of the four verbs
+# in `nora.agent.dreamer.MEMORY_TOOLS`, so THIS number bounds it before its
+# per-tool ceiling ever does: raising `tool_calls.lookup_person` to 12 against
+# a pass ceiling of 2 would have changed nothing at all and left this file
+# recording a bound the pass does not run under.
+#
+# A shared ceiling, not a reservation: the extra four are equally available to
+# `about`, `ask_memory` and `search_memory_workspace`, which is accepted
+# rather than overlooked — headroom on a ceiling costs nothing until a pass
+# spends it, and the instrument that says whether it is being spent well is
+# `nora_dream_guard_vetoes_total{adaptor="proactive",rule="memory-budget"}`
+# against the decide suite's recall.
+max_memory_calls = 6
 
 # **The per-tool call ceilings this pass overrides**, a tool name to how many
 # times ONE pass may call it. Applied OVER `NativeTool.budget` and over
@@ -1767,6 +1794,18 @@ max_memory_calls = 2
 # actually run under, with nothing measuring the difference.
 [dreamer.budgets.proactive.tool_calls]
 note_read = 8
+# `lookup_person` — the table says 4, another TAG TURN's number, sized for
+# "one message routinely names two people". TRIPLED to 12 (operator,
+# 2026-09-18). A decide pass is not answering one message: it is asked for a
+# verdict per open note across a whole roster, and a room's own nicknames
+# («@熱咖啡☕少奶多糖») resolve against the person index rather than against more
+# occurrences of the same handle — which is the reason the verb was granted to
+# this adaptor at all (issue #145).
+#
+# The call is a dict lookup over a cached roster, so this is sized by model
+# round trips and not by work. See `max_memory_calls = 6` above: that is the
+# ceiling that actually binds this verb, and 12 here is inert without it.
+lookup_person = 12
 
 # THE CULTURE FOLD (design/culture-tier). Uncommented from 2026-09-17, when the
 # adaptor stopped being tool-free: it now holds nine read verbs through an
@@ -1786,25 +1825,31 @@ note_read = 8
 # block above already paid for once, on a bigger roster.
 #
 # `output_tokens` is DERIVED and is not a free number: see
-# `nora.domain.culture.ACCOUNT_OUTPUT_TOKENS`. The account cap is 1,400
-# CHARACTERS and this budget is in TOKENS; the bridge is 1.15 output tokens per
-# character — MEASURED 2026-09-17 with `o200k_base` over a realistic
+# `nora.domain.culture.ACCOUNT_OUTPUT_TOKENS`. It is sized on
+# `ACCOUNT_CHARS_OBSERVED_MAX` — 1,876 characters, the longest account this
+# deployment's model has been SEEN to emit (n=10, 2026-09-17) — and NOT on
+# `BODY_MAX_CHARS`, which is the length at which a body is declined. Those
+# answer different questions and tying them together is what made the cap look
+# expensive to move. The budget is in TOKENS; the bridge is 1.15 output tokens
+# per character, MEASURED 2026-09-17 with `o200k_base` over a realistic
 # dense-Cantonese account (1.094) and continuous Cantonese prose (1.131), not
-# assumed — so emitting a full account costs ~1,674. The rule is that the loop
-# must be able to emit one TWICE — once for the tool-call arguments it spends
-# before it writes, once for the account — and
-# `tests/unit/test_culture_adaptor.py` asserts that against the FIELD DEFAULT,
-# so an operator who deletes this block still gets a fold that can finish its
-# sentence. 6,000 is that floor with room for the research.
+# assumed — so a realistic account costs ~2,222.
+#
+# The rule is that the loop must be able to emit one TWICE — once for the
+# tool-call arguments it spends before it writes, once for the account — so
+# the floor is ~4,444 and `tests/unit/test_culture_adaptor.py` asserts 6,000
+# against it. The assertion reads THIS BLOCK, not the field default: the
+# default is 4,000 and would fail, which is honest, because an operator who
+# deletes this block is running a fold that cannot finish its sentence.
 #
 # NOT `[dreamer] max_tokens`, which is the PROVIDER's ceiling on one completion
-# and is the tighter of the two: at `[llm] max_tokens = 2000` an account at the
-# cap uses ~84% of a single completion. Raise THAT, not this, if a fold is ever
-# seen truncating — and the ONE reading that would is a model emitting
-# `\uXXXX` escapes instead of raw UTF-8, which costs 2.85x the measured bridge
-# (3.117 tok/char) and puts an account at the cap at ~4,400 tokens. That is a
-# truncation, so it shows up as `unavailable` with the watermark held, never as
-# a quietly shorter account.
+# and is the tighter of the two: at 6,000 a realistic account uses ~37% of a
+# single completion. Raise THAT, not this, if a fold is ever seen truncating —
+# and the ONE reading that would is a model emitting `\uXXXX` escapes instead
+# of raw UTF-8, which costs 2.85x the measured bridge (3.117 tok/char) and
+# puts a realistic account at ~5,850 tokens. That is a truncation, so it shows
+# up as `unavailable` with the watermark held, never as a quietly shorter
+# account.
 [dreamer.budgets.culture]
 turns = 10
 total_tokens = 120000
@@ -1816,12 +1861,30 @@ output_tokens = 6000
 # Memory reads per pass. 4 rather than the default 2: the decide turn asks
 # about the one or two people a note names, and this pass is asking what a
 # ROOM is — several members, each a separate `about`/`ask_memory`. Still a
-# ceiling and still fail-closed (the 5th read is answered `unavailable` with a
-# reason, never an error and never a silent empty). The reading that would
-# raise it is a fold that spends all four and still names people it could not
-# resolve; the one that would lower it is four reads that never change the
+# ceiling and still fail-closed (the Nth+1 read is answered `unavailable` with
+# a reason, never an error and never a silent empty). The reading that would
+# raise it is a fold that spends all of them and still names people it could
+# not resolve; the one that would lower it is reads that never change the
 # account.
-max_memory_calls = 4
+#
+# 4 -> 12 (operator, 2026-09-18), TRIPLED alongside `lookup_person` below, and
+# for the reason the proactive block states at length: `lookup_person` lives
+# in `MEMORY_TOOLS`, so this ceiling binds it before its per-tool one does,
+# and raising only the per-tool number would have been decoration. A room's
+# account names several members; 4 was the count of a pass that had not yet
+# been asked to resolve all of them.
+max_memory_calls = 12
+
+# **The per-tool call ceilings this fold overrides.** A key naming a verb the
+# adaptor does not declare REFUSES THE BOOT — `culture_grant` grants
+# `lookup_person`, so this one reaches something.
+#
+# 4 in `NATIVE_TOOLS`, sized for a tag turn where "one message routinely names
+# two people". This pass is writing what a ROOM is, and the objective's own
+# bar is a name whose ORIGIN can be explained — which is per-member work
+# against the person index, not two lookups. 12 (operator, 2026-09-18).
+[dreamer.budgets.culture.tool_calls]
+lookup_person = 12
 
 
 

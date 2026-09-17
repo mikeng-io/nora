@@ -1,0 +1,12 @@
+{
+  "type": "fix",
+  "summary": "A room's culture account is no longer refused for being slightly long, and the fold can look up three times as many people before it writes.",
+  "details": [
+    "The culture fold refused any account over 1,400 characters, and the busiest room in the deployment wrote 1,583-1,876 every time: it folded four times, was refused four times, recorded nothing, and held its watermark so it retried on every tick. The cap is 20,000 now and is a corruption ceiling rather than a quality judgement.",
+    "The cap no longer sizes the fold's token budgets. Those are sized on what the model has actually been observed to emit, so raising the refusal threshold no longer demands a completion ceiling nothing would use.",
+    "The culture fold and the proactive pass may each make three times as many person lookups before deciding - 12 rather than 4, with the shared per-pass memory ceiling raised alongside so the rise is not inert."
+  ],
+  "limitations": [
+    "Nothing automatically refuses an account that has drifted back into chronicle. That guard belongs to the objective's own instruction, which is operator-owned and needs its eval arm; the character cap was never able to do it."
+  ]
+}

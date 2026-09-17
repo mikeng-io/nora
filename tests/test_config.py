@@ -915,14 +915,20 @@ def test_every_budget_block_the_template_declares_is_pinned_with_its_reasoning(
     )
     # CULTURE, pinned 2026-09-17, when the adaptor stopped being tool-free.
     #
-    # `output_tokens` is DERIVED, not chosen: the account cap is in CHARACTERS
-    # and this is in TOKENS, and the bridge is `ACCOUNT_OUTPUT_TOKENS` — one
-    # token per character, the CJK worst case. The rule is that the loop must
-    # be able to emit a full account TWICE (the tool-call arguments it spends
-    # before it writes, then the account), which 6,000 clears with room for the
-    # research. `tests/unit/test_culture_adaptor.py` asserts the same rule
-    # against the FIELD DEFAULT, so deleting this block still leaves a fold
-    # that can finish its sentence.
+    # `output_tokens` is DERIVED, not chosen: a length in CHARACTERS converted
+    # at the MEASURED `OUTPUT_TOKENS_PER_CHAR` (1.15). **The length it converts
+    # is `ACCOUNT_CHARS_OBSERVED_MAX` — what the model is seen to emit — and
+    # NOT `BODY_MAX_CHARS`, what we decline to record** (corrected 2026-09-18;
+    # this comment previously said "the account cap" and "one token per
+    # character, the CJK worst case", and both were wrong). The rule is that
+    # the loop must be able to emit a full account TWICE — the tool-call
+    # arguments it spends before it writes, then the account — so the floor is
+    # ~4,444 and 6,000 clears it with room for the research.
+    #
+    # `max_memory_calls` 4 -> 12 (operator, 2026-09-18), tripled together with
+    # `tool_calls.lookup_person`: that verb is one of the four in
+    # `MEMORY_TOOLS`, so this ceiling binds it before its per-tool one does and
+    # raising only the per-tool number would have been decoration.
     #
     # `turns`/`total_tokens` are the proactive block's own lesson applied one
     # adaptor over and are NOT measurements: `[culture] batch_limit = 300` is
@@ -932,8 +938,14 @@ def test_every_budget_block_the_template_declares_is_pinned_with_its_reasoning(
     # same batch forever — the trap this whole pairing exists to keep shut.
     culture = budgets["culture"]
     assert (culture.turns, culture.total_tokens) == (10, 120_000)
-    assert (culture.output_tokens, culture.max_memory_calls) == (6_000, 4)
+    assert (culture.output_tokens, culture.max_memory_calls) == (6_000, 12)
     assert culture.timeout_seconds == DreamBudgetConfig().timeout_seconds
+    # Its per-tool ceiling, pinned 2026-09-18. `lookup_person` is 4 on the
+    # NATIVE_TOOLS table, sized for a tag turn where "one message routinely
+    # names two people". This pass writes what a ROOM is, and the objective's
+    # own bar is a name whose ORIGIN can be explained — per-member work against
+    # the person index, not two lookups.
+    assert culture.tool_calls == {"lookup_person": 12}
     # PROACTIVE, pinned 2026-09-10 with its reasoning, which is what the
     # message above asks of anything that lands in this section.
     #
@@ -951,6 +963,12 @@ def test_every_budget_block_the_template_declares_is_pinned_with_its_reasoning(
     proactive = budgets["proactive"]
     assert (proactive.turns, proactive.total_tokens) == (24, 1_000_000)
     assert (proactive.output_tokens, proactive.timeout_seconds) == (10_000, 240.0)
+    # `max_memory_calls` 2 -> 6 (operator, 2026-09-18) — the shared per-pass
+    # ceiling across `MEMORY_TOOLS`, tripled so that the `lookup_person` rise
+    # below reaches anything at all. A ceiling and not a reservation: the extra
+    # four are equally available to `about`, `ask_memory` and
+    # `search_memory_workspace`.
+    assert proactive.max_memory_calls == 6
     # And its per-tool ceiling, pinned 2026-09-17. `note_read = 3` on the
     # NATIVE_TOOLS table is a TAG TURN's number — a reply that reads a note or
     # two before answering — while this pass is asked for one decision per
@@ -967,7 +985,11 @@ def test_every_budget_block_the_template_declares_is_pinned_with_its_reasoning(
     # headroom costs nothing until a pass spends it, and one more note must
     # not re-open the config. The instrument that says it is still too low is
     # `nora_dream_guard_vetoes_total{rule="tool-budget"}`.
-    assert proactive.tool_calls == {"note_read": 8}
+    #
+    # `lookup_person` 4 -> 12 (operator, 2026-09-18). 4 is another TAG TURN's
+    # number; a decide pass resolves a whole roster's nicknames against the
+    # person index, which is the reason the verb was granted here (#145).
+    assert proactive.tool_calls == {"note_read": 8, "lookup_person": 12}
     # NOTE-CANDIDATES, pinned 2026-09-17 — declared in the template only
     # because the DEPLOYMENT sets it (it was set live while chasing #291 and
     # the template did not follow, which is the drift
