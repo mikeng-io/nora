@@ -255,7 +255,20 @@ def test_the_converted_list_is_not_quietly_shrinking():
     uses_injector = set()
     for path in sorted((ROOT / "nora").rglob("*.py")):
         rel = path.relative_to(ROOT).as_posix()
-        if "ContextBlock(" in path.read_text(encoding="utf-8"):
+        # AST, not a substring. `"ContextBlock(" in source` also matches PROSE:
+        # `nora/domain/block_types.py`'s docstring says «27 of 39
+        # `ContextBlock(...)` call sites», and the substring check read that as
+        # a module building blocks. Same defect as a gate satisfied by its own
+        # documentation, arriving from the false-POSITIVE side.
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:                                # pragma: no cover
+            continue
+        if any(
+            isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+            and n.func.id == "ContextBlock"
+            for n in ast.walk(tree)
+        ):
             uses_injector.add(rel)
     missing = uses_injector - builds - {"nora/domain/blocks.py"}
     assert not missing, (

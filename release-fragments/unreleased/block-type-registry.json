@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "Context block descriptions are declared once per block type instead of authored at each render.",
+  "details": [],
+  "limitations": [],
+  "reason": "Step 1 of #314. Adds nora/domain/block_types.py: 32 block types, each declaring what the block IS and what its fields are. No renderer reads it yet — this commit is the declaration plus the gate. Resolves four types that carried TWO different descriptions (room, standing, batch, now). Prompt bytes unchanged in this step."
+}
