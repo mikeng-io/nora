@@ -420,9 +420,42 @@ class MobilityRollup:
                 elapsed_s = (now_ms - last_open_stay.ended_ts) / 1000
                 span_ms = last_open_stay.ended_ts - last_open_stay.started_ts
                 if (
-                    elapsed_s >= self._cfg.settled_seconds
+                    elapsed_s >= DWELL_CAP_MS / 1000
                     and span_ms >= min_dwell_ms
                 ):
+                    # The close clock is DWELL_CAP_MS (31.7 min), NOT
+                    # `settled_seconds` (15 min), and it is deliberately the
+                    # SAME clock the hold branch below uses. `settled_seconds`
+                    # here was the 2026-09-17 production defect: measured over
+                    # 26,047 inter-fix gaps across 14 live days, the p90 gap is
+                    # 30.1 min and the p99 is 30.2 — so 15 min of silence is
+                    # what a resting subject looks like BETWEEN two fixes of
+                    # one stay, not evidence the stay ended. Two fixes clear
+                    # `min_dwell_ms` (10 min), so this gate fired between every
+                    # pair, closed the group at 2 fixes, and the next fix
+                    # started a fresh one: 3,130 stays in `presence_stays`
+                    # where a clean re-derive of the same fixes at the same
+                    # parameters gives 1,399, median duration 30.1 min against
+                    # 65.2, and 42% of rows pinned in a 29-32.5 min band that
+                    # is the cadence rather than behaviour. It also fed Tier 3
+                    # a degenerate anomaly baseline — `presence_place_rhythm`
+                    # MADs of 500-5,000 ms against a ~1,804,000 ms median, so
+                    # |z| >= 3 tripped on a ~4-second deviation.
+                    #
+                    # The hold branch below already carried this reasoning
+                    # ("settled_seconds (15 min) is too short for this job")
+                    # when issue #82 raised the HOLD ceiling to DWELL_CAP_MS —
+                    # but the close gate above it was left on the old clock, so
+                    # it fired first and the hold was unreachable for any group
+                    # past min-dwell. One clock, read in both places, is the
+                    # fix. 31.7 min sits above the p99 gap with ~1.5 min of
+                    # headroom, so a stay now closes by the clock only on the
+                    # 0.265% of gaps that are genuinely unusual; every ordinary
+                    # one keeps the group open until a radius break closes it.
+                    #
+                    # `settled_seconds` keeps its other job untouched — it is
+                    # still the trip-settlement clock `trailing_fix_is_settled`
+                    # and `extract_trips` read above.
                     new_stays.append(last_open_stay)
                 elif elapsed_s < DWELL_CAP_MS / 1000:
                     # Hold ANY open stay that has not yet settled — whether it
@@ -436,13 +469,21 @@ class MobilityRollup:
                     # every fix — the group never grew, and a real overnight
                     # home stay was consumed fix-by-fix and never written.
                     #
-                    # The hold ceiling is DWELL_CAP_MS, NOT settled_seconds:
-                    # `_chunk_by_gap` splits the batch wherever the gap
-                    # between consecutive fixes exceeds DWELL_CAP_MS, so a
-                    # fix arriving more than DWELL_CAP_MS after the group's
-                    # last fix can never join this group — holding past that
-                    # point would only stall the watermark on a group whose
-                    # fate is already decided. settled_seconds (15 min) is
+                    # The hold ceiling is DWELL_CAP_MS, NOT settled_seconds.
+                    # It is the same clock the close gate above now reads, so
+                    # the two branches partition the elapsed axis at one point
+                    # instead of two. DWELL_CAP_MS is the resting-cadence
+                    # ceiling: 31.7 min, measured against a live p99 inter-fix
+                    # gap of 30.2 min, so a fix arriving later than that is a
+                    # genuine break in observation rather than the ordinary
+                    # silence between two fixes of one stay, and holding past
+                    # it would only stall the watermark on a group whose fate
+                    # is already decided. (This once read "`_chunk_by_gap`
+                    # splits the batch wherever the gap exceeds DWELL_CAP_MS";
+                    # that stopped being true on 2026-09-05 when CHUNK_GAP_MS
+                    # became 12h, and the ceiling's justification is the
+                    # cadence measurement above, not the chunk split.)
+                    # settled_seconds (15 min) is
                     # too short for this job: at a resting cadence of one
                     # fix every 10-55 min, the clock runs past the group
                     # between fixes, the watermark advances, and the next
