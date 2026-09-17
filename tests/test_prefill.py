@@ -2,6 +2,8 @@ import inspect
 import re
 from datetime import UTC, datetime
 
+import pytest
+
 from nora.agent.prefill import (
     _BLOCKS,
     _declared,
@@ -1367,3 +1369,106 @@ def test_a_bare_context_still_declares_its_empty_blocks(exported_spans):
     (recorded,) = exported_spans.get_finished_spans()
     assert recorded.attributes["nora.prefill.blocks_declared"] > 0
     assert recorded.attributes["nora.prefill.blocks_empty"] != ""
+
+
+# -- the whole turn, not one message of it -----------------------------------
+
+def _whole_turn() -> tuple[tuple[str, str], ...]:
+    """Every model-facing text ONE tag turn produces, labelled by where it came
+    from — `build_prefill`'s three messages AND `build_tag_message`.
+
+    **This exists because `_served_blocks(_full_prefill_body())` cannot see two
+    of the blocks she is served.** `_full_prefill_body` reads `build_prefill(
+    ...)[1]`, the volatile message, so `test_every_injected_block_is_labelled_
+    untrusted` and its sibling have never looked at `<tag_message>` or
+    `<replying_to>` — `_served_blocks`' own docstring says so, and both are
+    declared to the catalogue by `_declared` with `note=""` and `body=""`, which
+    makes them LOOK covered in every table that lists them.
+
+    A framing gate scoped to one message of a four-message turn is the shape
+    issue #187 collects: a declaration standing in for the thing declared. So
+    the assembly is reproduced here — the two callers that build a real turn
+    (`engagement.pipeline` and `app.fire`) both call these two functions and
+    nothing else reaches the model from this layer.
+    """
+    ctx = _ctx(
+        [_row(1, "Bob", "見到你喇", 1000)],
+        peer_card=("likes espresso",), self_card=("nora said a thing",),
+        tagger_card=("asked about dinner",),
+        tagger=PersonRef("miles", "Miles", "miles"), notes=(_note(),),
+        standing=_standing(), culture=_culture(), decisions=_decisions(),
+        people_in_window=(("Grant", ("asked about dinner",)),),
+        # A RESOLVABLE quote, so `<replying_to>` actually renders — an
+        # unresolvable one omits the block and the gate would pass by rendering
+        # less rather than by framing more.
+        quote=Quote(author_id="+852999", text="whatever", quoted_ts=1000),
+    )
+    prefill = build_prefill(ctx, display_name="Nora", context_window=40)
+    out = [
+        (f"build_prefill[{i}]", m["content"][0]["text"])
+        for i, m in enumerate(prefill) if m["role"] == "user"
+    ]
+    out.append((
+        "build_tag_message",
+        build_tag_message(ctx, tagger_name="Miles", display_name="Nora"),
+    ))
+    return tuple(out)
+
+
+#: The one element in the turn that is hers rather than data. `<context_header>`
+#: wraps the situation paragraph and the catalogue — Nora's own instructions,
+#: which is the single thing in a turn that IS an instruction to her. Marking it
+#: `untrusted` would say the opposite of what it is.
+_NOT_DATA = {"context_header"}
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="issue #292 (was #239): <tag_message> carries no marker and no "
+           "clause. The fix is a prompt-content change on the message she "
+           "was asked to answer, so it ships with the participation and "
+           "routing suites, not with the refactor.",
+)
+def test_the_whole_turn_renders_no_unframed_block():
+    """THE GATE the existing two cannot be: every block in every message.
+
+    `<tag_message>` carries neither marker nor clause. That is issue #239,
+    folded into #292, and it is deliberately still failing here: adding the
+    marker to the message Nora was directly ASKED to answer is a change to what
+    she is told, not to how the prompt is assembled, and #220's rule is that no
+    prompt-content change ships unmeasured. The participation and routing
+    suites settle it; until then this is the honest state, visible instead of
+    hidden behind a gate that looks at one message.
+    """
+    unframed = []
+    for where, text in _whole_turn():
+        for name in _served_blocks(text):
+            if name in _NOT_DATA:
+                continue
+            tag = _opening_tag(text, name)
+            haystack = (
+                text[:text.index("<group_transcript")]
+                if name == "group_transcript" else tag
+            )
+            if 'untrusted="true"' not in tag or not any(
+                p in haystack for p in _NOT_AN_INSTRUCTION
+            ):
+                unframed.append(f"{name} (in {where})")
+    assert not unframed, (
+        f"served to the model with no untrusted marker or no framing clause: "
+        f"{unframed}"
+    )
+
+
+def test_the_whole_turn_gate_actually_looks_at_the_tag_message():
+    """The gate above is only worth its name if it READS the message the other
+    two cannot. Pinned, because a refactor of `_whole_turn` that quietly
+    dropped `build_tag_message` would turn the xfail above green and look like
+    progress."""
+    where = dict(_whole_turn())
+    assert "build_tag_message" in where
+    assert "tag_message" in _served_blocks(where["build_tag_message"])
+    assert "<replying_to" in where["build_tag_message"], (
+        "the fixture stopped rendering a resolvable quote, so the nested "
+        "block is no longer in front of the gate"
+    )
