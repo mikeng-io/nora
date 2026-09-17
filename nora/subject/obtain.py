@@ -15,6 +15,7 @@ it.
 
 from __future__ import annotations
 
+import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -96,6 +97,12 @@ class Subject:
     deps: Dependencies
     cfg: Config
 
+    #: The database this graph was composed against. Carried because
+    #: `Config` does not hold it — production's seam for the store is the
+    #: ENVIRONMENT (`cfg.store.database_url_env` names the variable), so the
+    #: URL is nowhere on `cfg` to read back.
+    database_url: str
+
 
 def _with(obj: Any, path: str, value: Any) -> Any:
     head, _, rest = path.partition(".")
@@ -164,7 +171,34 @@ async def obtain(spec: SubjectSpec) -> Subject:
     (`design/evaluation/03-step0-results.md` §3), which is why this is per-case
     rather than session-scoped: a case can be plain data and nothing has to be
     reset between two of them.
+
+    **The database is handed over through the ENVIRONMENT**, because that is
+    production's own seam: `composition.py:958` reads
+    `os.environ[cfg.store.database_url_env]` and there is no parameter to pass
+    it by. So `spec.database_url` sets that variable for the duration of the
+    call and restores it after.
+
+    This was found by writing `knowledge.py` against `cfg.store.database_url`
+    and discovering no such field exists. Before that, `spec.database_url` was
+    declared and never read: a caller passing a URL different from the
+    environment's got the environment's, silently, and the integration tests
+    passed because the two happened to be equal. A seam that is ignored is
+    worse than one that is absent — it reads as a promise.
+
+    The mutation is global for the duration of composition. It is the narrowest
+    honest option: the alternative is a new parameter on `build_dependencies`,
+    which is production surface changed for a non-production caller, and
+    `01-boundaries` §5(2) is exactly the rule against that.
     """
     cfg = build_config(spec)
-    deps = await build_dependencies(cfg)
-    return Subject(deps=deps, cfg=cfg)
+    var = cfg.store.database_url_env
+    before = os.environ.get(var)
+    os.environ[var] = spec.database_url
+    try:
+        deps = await build_dependencies(cfg)
+    finally:
+        if before is None:
+            os.environ.pop(var, None)
+        else:
+            os.environ[var] = before
+    return Subject(deps=deps, cfg=cfg, database_url=spec.database_url)

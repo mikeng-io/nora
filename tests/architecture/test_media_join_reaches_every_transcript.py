@@ -61,6 +61,13 @@ _NOT_A_BUILDER = {
     # and its own log, never transcript rows (39 §1 keeps `load_transcript`
     # out of it on purpose).
     "nora/language/proactive.py": "reads one row's ts per room for the quiet check",
+    # The eval seam's read-back (`design/evaluation/01-boundaries.md`): `heard`
+    # reads NORA'S OWN rows after a turn, to report what the room heard, and
+    # `last_row_id` reads one row's id as a watermark. Neither body reaches a
+    # prompt — they are the OUTPUT side. What this test guards is the input
+    # side, and the input side of a case is `know()`, which WRITES rows and
+    # reads none.
+    "nora/subject/knowledge.py": "reads Nora's own rows back as the outcome, never into a prompt",
 }
 
 

@@ -70,12 +70,30 @@ def test_the_application_cannot_reach_the_subject() -> None:
     )
 
 
-def test_obtain_is_the_only_entry_point() -> None:
-    """A second way in is a second Nora, which is the whole finding."""
-    import nora.subject as pkg
+def test_obtain_is_the_only_thing_that_composes() -> None:
+    """A second way to COMPOSE is a second Nora, which is the whole finding.
 
-    public = {n for n in pkg.__all__}
-    assert public == {"obtain", "Subject", "SubjectSpec"}, (
-        f"nora.subject's public surface changed: {sorted(public)}. `obtain` is "
-        "the only way in by design; a second entry point is a second assembly."
+    Stated as "returns a `Dependencies`" rather than "is the only public name".
+    The first draft pinned the whole `__all__`, and `know()` — which writes rows
+    into stores the subject already has — reddened it. That was the pin
+    measuring spelling instead of the property: the finding is seven ASSEMBLIES,
+    not seven exported names.
+    """
+    import inspect
+
+    import nora.subject as pkg
+    from nora.app.composition import Dependencies
+
+    composers = set()
+    for name in pkg.__all__:
+        obj = getattr(pkg, name)
+        if not callable(obj) or inspect.isclass(obj):
+            continue
+        ret = inspect.signature(obj).return_annotation
+        if "Subject" in str(ret) or ret is Dependencies:
+            composers.add(name)
+    assert composers == {"obtain"}, (
+        f"more than one name in nora.subject returns a composed Nora: "
+        f"{sorted(composers)}. A second composer is a second assembly, which is "
+        "the defect this package exists to end."
     )

@@ -31,6 +31,28 @@ the parity test that exists compares `composition.py` to `offline.py` (both
 
 from __future__ import annotations
 
+from .knowledge import (
+    DEFAULT_ROOM,
+    Knowledge,
+    Message,
+    NoteSeed,
+    arrive,
+    heard,
+    know,
+    last_row_id,
+)
 from .obtain import Subject, SubjectSpec, obtain
 
-__all__ = ["Subject", "SubjectSpec", "obtain"]
+__all__ = [
+    "DEFAULT_ROOM",
+    "Knowledge",
+    "Message",
+    "NoteSeed",
+    "Subject",
+    "SubjectSpec",
+    "arrive",
+    "heard",
+    "know",
+    "last_row_id",
+    "obtain",
+]

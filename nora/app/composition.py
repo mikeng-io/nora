@@ -803,6 +803,31 @@ class Dependencies:
     # built. `nora/__main__.py` spawns `runtime.participation_loop` on it —
     # the same "dependencies, not config" split every other loop uses.
     participation_trigger: ParticipationTrigger | None
+    #: The deployed gate, named so it can be reached without a private.
+    #:
+    #: It is BUILT below beside `participation_trigger` and held by it
+    #: (`ParticipationTrigger._gate`) — that stays true, and the two still
+    #: cannot come apart because one branch constructs both. This field adds
+    #: no second instance and changes no behaviour; it makes the graph's own
+    #: inventory complete.
+    #:
+    #: Added because the gate is an ENTRY POINT into Nora
+    #: (`design/evaluation/01-boundaries.md` §3) and every other entry point is
+    #: already an attribute here — `dispatcher`, `engagement`,
+    #: `participation_trigger`, `dreamer_runtime`. The gate was the one that
+    #: was not, which is a fair part of why measuring it meant building a
+    #: second one (`eval_support.py:980`) rather than reaching the deployed
+    #: one.
+    relevance_gate: RelevanceGate | None
+    #: The deployed fire path, named for the same reason as `relevance_gate`
+    #: above: it is an ENTRY POINT and was reachable only as
+    #: `participation_trigger._speak`, a bound method behind a private.
+    #:
+    #: `FirePath.speak` is what the trigger calls once the gate admits a
+    #: window, what the heartbeat calls when a reminder comes due, and what
+    #: every proactive occasion runs through. Nothing here changes any of
+    #: that; the object was already built and already held.
+    fire_path: FirePath | None
     adapter: SignalAdapter
     # EVERY built adapter, keyed by platform. `adapter` above stays the concrete
     # Signal one because a handful of call sites are still Signal-specific by
@@ -2711,6 +2736,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # `nora/__main__.py` from `deps.participation_trigger`, like every other
     # background clock — this section only builds the trigger itself.
     participation_trigger: ParticipationTrigger | None = None
+    # Bound in the branch below, beside the trigger that holds it.
+    gate: RelevanceGate | None = None
     if cfg.relevance_gate.enabled and fire_path is not None:
         # The gate is built HERE and not beside the other model clients,
         # because it is the only one whose absence would change behaviour
@@ -3493,6 +3520,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         resolve_voice_room=_voice_room_of(allowlist),
         dispatcher=dispatcher, adapter=adapter, registry=registry,
         participation_trigger=participation_trigger,
+        relevance_gate=gate,
+        fire_path=fire_path,
         account=account, doctrine=doctrine,
         doctrine_store=doctrine_store, debounce=debounce, background=background,
         llm_state=llm_state, client=client, reminders=reminders,

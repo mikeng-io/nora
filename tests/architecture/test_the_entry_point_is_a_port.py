@@ -1,0 +1,118 @@
+"""`design/evaluation/01-boundaries.md` §7 — the reading that would refute the design.
+
+> If driving `RelevanceGate.decide` and `FirePath.speak` through one runner
+> needs different lifecycles, different setup order, or different outcome
+> shapes, then §2's four things are really five or six, and the boundary is
+> drawn wrong.
+
+Two entry points chosen for being maximally unalike: one drives a component and
+no turn, the other a whole turn and no gate. These are the mechanical halves of
+that reading; `tests/integration/test_two_entry_points_one_runner.py` is the
+half that actually drives both.
+"""
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+REBUILT = ROOT / "evals" / "rebuilt"
+
+#: `01-boundaries` §5(1), stated so it can be checked: the eval layer never
+#: composes a subject. These are the call names the seven assemblies used.
+FORBIDDEN_CALLS = {
+    "RelevanceGate",
+    "FirePath",
+    "DreamerRuntime",
+    "RegistryToolSource",
+    "LiveAgentRunner",
+    "Agent",
+    "build_offline_pipeline",
+    "build_dependencies",
+}
+
+
+def _sources() -> list[tuple[Path, ast.Module]]:
+    return [
+        (p, ast.parse(p.read_text(encoding="utf-8")))
+        for p in sorted(REBUILT.rglob("*.py"))
+    ]
+
+
+def test_the_eval_layer_composes_nothing() -> None:
+    """§5(1). The property, not the spelling: a CALL to any assembler."""
+    offenders = []
+    for path, tree in _sources():
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            fn = node.func
+            name = fn.id if isinstance(fn, ast.Name) else getattr(fn, "attr", "")
+            if name in FORBIDDEN_CALLS:
+                offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}: {name}(")
+    assert not offenders, (
+        f"the eval layer composes a subject: {offenders}. There is one way to "
+        "get Nora and it is `nora.subject.obtain`; a second is a second Nora, "
+        "which is the entire finding this rebuild answers."
+    )
+
+
+def test_the_runner_has_no_suite_specific_branch() -> None:
+    """§3.1 — the entry point is a SELECTION ON A CASE, not a branch.
+
+    A runner that branches on `case.entry` is a runner that grows a limb per
+    suite, which is the eight drivers reappearing inside one file.
+    """
+    tree = ast.parse((REBUILT / "runner.py").read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Compare):
+            continue
+        left = node.left
+        if isinstance(left, ast.Attribute) and left.attr == "entry":
+            raise AssertionError(
+                f"runner.py:{node.lineno} compares `case.entry` — the entry "
+                "point is a port looked up in ENTRY_POINTS, not a branch."
+            )
+
+
+def test_adding_a_suite_adds_no_code() -> None:
+    """§5(3), the property that decays first.
+
+    Checked as: the runner reaches an entry point ONLY through the registry, so
+    there is no name a new suite could need it to import.
+    """
+    src = (REBUILT / "runner.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and (node.module or "").endswith("entry"):
+            imported = {a.name for a in node.names}
+    assert imported == {"ENTRY_POINTS"}, (
+        f"runner.py imports {sorted(imported)} from the entry module. Only "
+        "ENTRY_POINTS may cross: importing an entry point by name is how a "
+        "runner acquires a suite-specific path without looking like it has one."
+    )
+
+
+def test_both_entry_points_have_the_same_signature() -> None:
+    """One lifecycle for both, or §7 fires.
+
+    Same parameters and the same return type is the mechanical half of "they
+    share a runner": a port whose implementations take different arguments is
+    two ports wearing one name.
+    """
+    import inspect
+
+    from evals.rebuilt.entry import ENTRY_POINTS
+
+    sigs = {
+        name: (
+            tuple(inspect.signature(port.drive).parameters),
+            str(inspect.signature(port.drive).return_annotation),
+        )
+        for name, port in ENTRY_POINTS.items()
+    }
+    assert len(set(sigs.values())) == 1, (
+        f"entry points do not share a shape: {sigs}. §7: if they cannot share "
+        "a runner, the boundary is drawn wrong and this is where we learn it."
+    )
