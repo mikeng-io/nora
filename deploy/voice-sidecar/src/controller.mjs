@@ -73,6 +73,23 @@ function readBody(req, limit) {
   });
 }
 
+//: The control-plane routes, as a fact about the PROTOCOL rather than about
+//: any one guild's controller. The front door has to answer "is this a route
+//: we serve" BEFORE it knows the guild, and asking a core for that was a
+//: cold-boot deadlock: with no core yet, every route — including the join
+//: that would create the first one — answered 404. Voice could never be
+//: joined for the life of the process.
+export const CONTROL_ROUTES = new Set([
+  'POST /voice/join',
+  'POST /voice/exit',
+  'POST /music/play',
+  'POST /music/stop',
+  'POST /music/pause',
+  'POST /music/resume',
+  'POST /music/volume',
+  'POST /stream',
+]);
+
 export function createController({
   guildId,
   lifecycle,
@@ -310,10 +327,16 @@ export function createFrontDoor({ controllerFor, health, log = () => {} }) {
   }
 
   // No controller resolved, so there is no `state` to attach — the shape
-  // stays the contract's three keys with `state: null`. nora's client reads
-  // all three unconditionally.
-  function bareError(res, status, error) {
-    respond(res, status, { error, request_id: null, state: null });
+  // stays the contract's three keys with `state: null`. The `request_id` IS
+  // echoed whenever the body was parsed far enough to carry one: the module
+  // header promises `{error, request_id, state}` and dropping the echo made a
+  // retried command indistinguishable from a fresh one in a log.
+  function bareError(res, status, error, requestId = null) {
+    respond(res, status, { error, request_id: requestId, state: null });
+  }
+
+  function requestIdOf(body) {
+    return typeof body?.request_id === 'string' ? body.request_id : null;
   }
 
   const server = http.createServer((req, res) => {
@@ -331,8 +354,9 @@ export function createFrontDoor({ controllerFor, health, log = () => {} }) {
       return c.handleStatus(res);
     }
     (async () => {
-      const probe = controllerFor(null, { create: false, any: true });
-      if (!probe || !probe.knowsRoute(route)) {
+      // Static: see CONTROL_ROUTES. Asking a core whether it knows the route
+      // deadlocked a cold boot.
+      if (!CONTROL_ROUTES.has(route)) {
         return respond(res, 404, { error: 'not_found', request_id: null, state: null });
       }
       const read = await readBody(req, route === 'POST /stream' ? MAX_BODY_BYTES : MAX_CONTROL_BYTES);
@@ -355,12 +379,25 @@ export function createFrontDoor({ controllerFor, health, log = () => {} }) {
         return bareError(res, 400, 'invalid_body');
       }
       const guildId = typeof body.guild_id === 'string' ? body.guild_id : null;
-      if (!guildId) return bareError(res, 400, 'wrong_guild');
+      if (!guildId) return bareError(res, 400, 'wrong_guild', requestIdOf(body));
+      // A Discord snowflake, and nothing else. `guild_id` reaches
+      // `path.join(STATE_DIR, ...)` and mints a core, on a control plane with
+      // no auth by design — so "../../etc/evil" must die here, not at the
+      // Discord API by luck.
+      if (!/^[0-9]{15,25}$/.test(guildId)) {
+        return bareError(res, 400, 'wrong_guild', requestIdOf(body));
+      }
       // `create` ONLY on a join: every other verb addresses a connection that
-      // must already exist, so minting for them would build an unbounded map
-      // keyed by request input, on a control plane with no auth by design.
+      // must already exist.
       const controller = controllerFor(guildId, { create: route === 'POST /voice/join' });
-      if (!controller) return bareError(res, 400, 'wrong_guild');
+      if (!controller) {
+        // NOT `wrong_guild`. "I hold no connection for this guild" is the
+        // same fact `GET /voice/status` answers 404 `unknown_guild` for, and
+        // after a restart into idle it is the ordinary state — nora reads it
+        // as "reconnect me", where `wrong_guild` reads as "you are
+        // misconfigured".
+        return bareError(res, 404, 'unknown_guild', requestIdOf(body));
+      }
       return controller.handleParsedPost(res, route, body);
     })().catch((err) => {
       log('error', { event: 'request_error', route, error: String(err?.message ?? err) });

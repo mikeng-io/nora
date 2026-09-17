@@ -11,6 +11,7 @@
   "limitations": [
     "Inert as shipped: without VOICE_GUILD_ID + VOICE_CHANNEL_ID in the operator's .env the service is healthy-but-idle, and voice answers stay text-only until [speech.tts] enabled = true is an explicit operator decision.",
     "Verified by unit tests (codec against a sidecar-written frame fixture, resampler, gate state machine, real v3 ONNX against lab TTS clips), an integration test (POST -> audit row + Honcho feed + 202), a TCP-seam smoke test, and `docker compose config`; the container image was not built and no live Discord round trip was run in this stage.",
-    "The STT container predates the dual-engine server (c84a49cb) and needs a rebuild before the wake gate's model=noise-detection calls resolve against the running service."
+    "The STT container predates the dual-engine server (c84a49cb) and needs a rebuild before the wake gate's model=noise-detection calls resolve against the running service.",
+    "Superseded in part by 'voice-on-more-than-one-server' in this same unreleased set: the voice containers no longer read any server or channel id from the environment, and one of each serves every server. Read that fragment for the shipped shape."
   ]
 }

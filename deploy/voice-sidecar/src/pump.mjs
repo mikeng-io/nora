@@ -26,7 +26,15 @@ import { encodeHello, encodeFrame } from './codec.mjs';
  */
 export function createPump({ guildId, host = '127.0.0.1', port = 4599, maxPending = 200, maxUserBacklog = 16, connectImpl = net.connect } = {}) {
   let socket = null;
+  // Validated HERE, not in the connect handler: a throw inside `'connect'` is
+  // an uncaught exception on the event loop and would take the whole process
+  // down. A pump without a guild cannot produce attributable audio, so there
+  // is no useful degraded mode to fall back to.
+  if (typeof guildId !== 'string' || !guildId) {
+    throw new Error('createPump needs a guildId — a hello-less connection is dropped by the gate');
+  }
   let connecting = false;
+  let closed = false;
   let connectingSocket = null; // mid-handshake socket — close() must reach it too
   let pending = [];
   const userBacklog = new Map(); // userId -> frames written but not yet flushed
@@ -61,7 +69,16 @@ export function createPump({ guildId, host = '127.0.0.1', port = 4599, maxPendin
       // exists to prevent. Written directly rather than through
       // `writeCounted`: it is not a user's audio and must not enter a user's
       // backlog accounting.
-      if (guildId) s.write(encodeHello(guildId));
+      // A LATE connect on a CLOSED pump writes nothing — not even this. The
+      // socket is already destroyed, so the write is inert, but announcing a
+      // guild for a connection that will never carry audio is a lie in the
+      // one frame a gate uses to decide what it is listening to.
+      if (closed) return;
+      // Unconditional: a hello-less connection is dropped wholesale by the
+      // gate, so a falsy guildId would silently produce a pump forwarding
+      // audio nobody can attribute — a failure in another container, with
+      // nothing here to point at it. `createPump` refuses one outright.
+      s.write(encodeHello(guildId));
       const held = pending;
       pending = [];
       for (const { userId, frame } of held) writeCounted(userId, frame);
@@ -94,6 +111,7 @@ export function createPump({ guildId, host = '127.0.0.1', port = 4599, maxPendin
     }
   }
   pump.close = () => {
+    closed = true;
     socket?.destroy();
     connectingSocket?.destroy(); // a close mid-handshake must not leak the socket
   };

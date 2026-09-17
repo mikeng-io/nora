@@ -252,6 +252,23 @@ async function main() {
     }
     for (const file of files) {
       const guildId = file.slice(0, -'.json'.length);
+      // ONLY a Discord snowflake names a guild's state. Before multi-guild
+      // this directory held a single `desired_state.json`, and globbing `*.json`
+      // adopted it as a guild literally called "desired_state": every boot
+      // tried `guilds.fetch("desired_state")`, failed, left a junk core in the
+      // map and in /health — while the REAL guild's connection, whose state
+      // lived under the old filename, was never restored at all.
+      //
+      // Skipped rather than migrated: the old file records a channel for a
+      // guild it does not name, so there is nothing to migrate it TO. The
+      // honest outcome is to ignore it and let the next join re-persist.
+      if (!/^[0-9]{15,25}$/.test(guildId)) {
+        log('boot_skip_state_file', {
+          file,
+          reason: 'not a guild snowflake (pre-multi-guild state file or junk)',
+        });
+        continue;
+      }
       const store = createStateStore({ path: path.join(STATE_DIR, file) });
       const stored = await store.read();
       if (stored.status === 'corrupt' || stored.status === 'error') {

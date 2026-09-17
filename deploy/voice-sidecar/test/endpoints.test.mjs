@@ -817,7 +817,6 @@ test('the front door asks to CREATE only on a join', async () => {
   // plane that has no auth by design.
   const asked = [];
   const stub = {
-    knowsRoute: () => true,
     handleParsedPost: (res) => {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end('{}');
@@ -825,7 +824,6 @@ test('the front door asks to CREATE only on a join', async () => {
   };
   const server = createFrontDoor({
     controllerFor: (guildId, opts = {}) => {
-      if (opts.any) return stub;
       asked.push({ guildId, create: Boolean(opts.create) });
       return stub;
     },
@@ -837,7 +835,7 @@ test('the front door asks to CREATE only on a join', async () => {
   const send = (p) => fetch(base + p, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ guild_id: 'g1' }),
+    body: JSON.stringify({ guild_id: GUILD }),
   });
 
   await send('/voice/join');
@@ -845,9 +843,80 @@ test('the front door asks to CREATE only on a join', async () => {
   await send('/stream');
 
   assert.deepEqual(asked, [
-    { guildId: 'g1', create: true },   // join may create
-    { guildId: 'g1', create: false },  // every other verb may not
-    { guildId: 'g1', create: false },
+    { guildId: GUILD, create: true },   // join may create
+    { guildId: GUILD, create: false },  // every other verb may not
+    { guildId: GUILD, create: false },
   ]);
   await new Promise((r) => server.close(r));
+});
+
+test('a COLD BOOT with zero cores still accepts a join', async () => {
+  // THE DEADLOCK THIS GUARDS, shipped to production 2026-09-17. The front door
+  // asked a CORE whether a route was known, to answer before the guild was
+  // known. With no cores yet — a fresh volume, or a restart after every guild
+  // exited — that probe returned null and EVERY route 404'd, including the
+  // join that would have created the first core. Voice could never be joined
+  // for the life of the process, and /health stayed 200 throughout.
+  //
+  // Route knowledge is static. It must not depend on state that a join creates.
+  const cores = new Map();
+  const stub = {
+    handleParsedPost: (res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{}');
+    },
+  };
+  const server = createFrontDoor({
+    controllerFor: (guildId, opts = {}) => {
+      if (cores.has(guildId)) return stub;
+      if (!opts.create) return null;
+      cores.set(guildId, stub);
+      return stub;
+    },
+    health: () => ({ status: 'ok', guilds: [...cores.keys()] }),
+    log: () => {},
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  assert.equal(cores.size, 0, 'precondition: no cores, as on a cold boot');
+  const res = await fetch(`${base}/voice/join`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ guild_id: '100000000000000203', channel_id: 'c1' }),
+  });
+
+  assert.equal(res.status, 200, 'a join on a cold boot must not 404');
+  assert.equal(cores.size, 1);
+  await new Promise((r) => server.close(r));
+});
+
+test('a guild_id that is not a snowflake is refused before it can name a file', async () => {
+  // `guild_id` reaches `path.join(STATE_DIR, `${guildId}.json`)` and mints a
+  // core, on a control plane with no auth by design. Production accepted
+  // "../../etc/evil" and only Discord's own API refused it, by luck.
+  const h = await makeHarness();
+
+  for (const bad of ['../../etc/evil', 'desired_state', '', 'g1', '12345']) {
+    const res = await h.post('/voice/join', { guild_id: bad, channel_id: 'c1' });
+    assert.equal(res.status, 400, bad);
+    assert.equal(res.body.error, 'wrong_guild', bad);
+  }
+  await h.close();
+});
+
+test('a guild the process holds no connection for is 404, not wrong_guild', async () => {
+  // Same fact as GET /voice/status's 404: "I have no connection for this
+  // guild" is the ordinary state after a restart into idle, and nora reads it
+  // as "reconnect me". `wrong_guild` reads as "you are misconfigured".
+  const h = await makeHarness();
+
+  const res = await h.post('/music/stop', {
+    guild_id: '222222222222222222', generation: 'g', request_id: 'r',
+  });
+
+  assert.equal(res.status, 404);
+  assert.equal(res.body.error, 'unknown_guild');
+  assert.equal(res.body.request_id, 'r', 'the envelope still echoes request_id');
+  await h.close();
 });

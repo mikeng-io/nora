@@ -1127,8 +1127,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     discord_token = os.environ.get(cfg.platforms.discord.token_env, "")
     # The audio-controllers (design/voice-channel/07): ONE PER GUILD, because
     # Discord's limit is one voice connection per bot token per guild and each
-    # controller stays hard-bound to one (§12.5). `[speech.tts] sidecars` lists
-    # a controller per guild, and IS the join allow-list — a guild with no
+    # connection stays single (§12.5). `[speech.tts] sidecars` lists a
+    # controller endpoint per guild — usually the SAME one, since a single
+    # sidecar serves them all — and IS the join allow-list: a guild with no
     # entry has no voice at all. Empty (the default) leaves the
     # whole seam unwired: no hub, no speech playout, and every `/music` or
     # `/discord join` failing CLOSED (the join-failed reply), never a local
@@ -1163,6 +1164,24 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         if cfg.music.enabled
         else None
     )
+    # A room marked `voice = true` with NO controller for its guild is the one
+    # combination that is neither useful nor refused: the join fails, so the
+    # sidecar never connects, so no utterance is ever produced — and nothing
+    # anywhere says why. The other three combinations are either a working
+    # path or a loud 400 at the first wake.
+    _joinable = voice_hub.guild_ids if voice_hub is not None else frozenset()
+    for _convo in allowlist.conversations:
+        if not _convo.voice:
+            continue
+        _guild = _convo.primary_id.partition("/")[0]
+        if _guild not in _joinable:
+            log.warning(
+                "policy.toml marks %s (guild %s) `voice = true`, but no "
+                "audio-controller is configured for that guild in "
+                "[speech.tts] sidecars — nothing can join it, so no spoken "
+                "utterance will ever be recorded there",
+                _convo.label or _convo.primary_id, _guild,
+            )
     if music_manager is not None and voice_hub is None:
         log.warning(
             "[music] enabled but [speech.tts] sidecars is empty — no "

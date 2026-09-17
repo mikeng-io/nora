@@ -63,6 +63,15 @@ export function createFrameParser(onFrame, onHello = () => {}) {
       const payloadLen = buf.readUInt32BE(0);
       if (buf.length < 4 + payloadLen) return;
       const payload = buf.subarray(4, 4 + payloadLen);
+      // A zero-length payload has no length byte at all. JS read `payload[0]`
+      // as `undefined` and fell through to emit a phantom frame for the empty
+      // speaker; Python raised IndexError, which its caller turns into a
+      // dropped CONNECTION. Two implementations of one format disagreeing
+      // about what a frame is — and neither failing closed.
+      if (payloadLen < 1) {
+        buf = buf.subarray(4 + payloadLen);
+        continue;
+      }
       const idLen = payload[0];
       if (idLen === 0) {
         const guildId = payload.subarray(1).toString('utf8');
