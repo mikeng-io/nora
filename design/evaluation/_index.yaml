@@ -1,19 +1,20 @@
 kind: design_index
-title: "Evaluation — the chain from a design decision to a thing that can refute it"
+title: "Evaluation — one Nora, many inputs (a delete and rebuild, not a refactor)"
 description: >
-  250 decision and rule rows in design/09-decision-index.md; 10 cite an evals/
-  instrument, 196 cite a unit test only, 44 cite nothing. Five of the ten point
-  at a corpus that drives a bare model on doctrine text rather than Nora. Cut to
-  the R-* rules, which are behavioural by construction: 92 of them, 4 with an
-  eval, 52 guarded by a test that measures WIRING, 36 with nothing. So the
-  decision index's test column answers "is the code wired" while AGENTS.md
-  presents it as the answer to "does she behave as designed". This bundle is
-  about that chain — decision, the behaviour it claims, an evaluation that can
-  refute it, driven against the real Nora — and about nothing else. The test
-  layer is explicitly out of scope: unit, integration and e2e are solved outside
-  this repo and want standard practice rather than a bespoke convention. What
-  has no industry answer is whether an LLM agent behaves as designed, and that
-  is the only thing here.
+  One invariant: different evaluation suites, different input, ONE Nora. Measured
+  2026-09-17, there are SIX — evals/harness.py:612 build_offline_pipeline(14),
+  eval_support.py:1109 DreamerRuntime(9), eval_support.py:1359
+  DreamerRuntime(11, and not the same object), eval_support.py:980
+  RelevanceGate(8), eval_support.py:1303 RegistryToolSource(9), run.py:665
+  Agent(5) — and none of them is build_dependencies, which is what the
+  deployment runs. So four numbers this layer has produced (#227's 67/53/42,
+  #158's proactive recall, note_candidates' sampling, #221's 35/35) are about
+  four different objects and none is about her. This is therefore a DELETE and
+  rebuild, not a refactor: there is no target shape the current code is an
+  imperfect version of. The boundary is clean-code/DDD — the eval layer depends
+  on Nora, Nora depends on nothing in it, and the eval layer assembles nothing;
+  a suite is cases, and if adding one needs code the boundary has leaked. Step 0
+  is a check that can withdraw the whole bundle.
 status: proposed
 origin: >
   Operator session 2026-09-17, opened by one question — "your measurement, what
@@ -27,9 +28,11 @@ origin: >
   any convention must satisfy are on #311. Tree at b3c21686.
 members:
   - 00-overview.md
-  - 01-the-runner.md
+  - 01-boundaries.md
+  - 02-the-rebuild.md
 edges:
-  - {src: 01-the-runner, dst: 00-overview, rel: depends_on, provenance: asserted}
+  - {src: 01-boundaries, dst: 00-overview, rel: depends_on, provenance: asserted}
+  - {src: 02-the-rebuild, dst: 01-boundaries, rel: depends_on, provenance: asserted}
 external_edges:
   - {dst: "dreamer-agent-loop/35-ambient-participation", rel: relates_to, provenance: asserted}
   - {dst: "dreamer-agent-loop/36-relevance-gate", rel: relates_to, provenance: asserted}
@@ -55,13 +58,10 @@ governance:
     corpus that strips the framing it is about, which is this bundle's problem
     seen from the other side. #311 carries the findings.
 open_questions:
-  - "OPERATOR — 01-the-runner section 3: move the integration harness into nora.testing (A), widen the evals import boundary (B), or keep two builders behind a full parity gate (C). A matches the bundle's sentence; its cost is unsized"
-  - "UNSIZED and it gates everything — how much of tests/integration/harness.py can move into nora.testing without dragging pytest-only machinery with it. 01-the-runner section 6 says size this before building anything"
-  - "ASSERTED, NOT DECIDED — that relevance_gate fits as an entry point rather than a special case (00-overview section 4.1). If it does not, the shape is refuted; it is the cleanest instrument in the repo and a taxonomy that cannot hold it is wrong"
-  - "OPEN — what happens to the four reconstruction suites. Rebuilt on the runner, kept under an honest name as doctrine-wording probes, or deleted. A cheap probe has a use; a probe whose number reads like production does not"
-  - "OPEN — where the model sits. It is substituted routinely (--model, --effort, _ALWAYS_SENDS) and appeared on neither list in the withdrawn attempt. Presumably part of the subject with the override as declared input, but that is asserted"
-  - "OPEN — absorption order. relevance_gate is closest to the shape, adversarial is furthest. The test that the bundle is working is that every absorbed driver DELETES a _run_* function; if the count does not fall, the runner became a ninth builder"
-  - "NOT IN THIS BUNDLE — the convention itself. 00-overview section 7: build the runner, absorb the drivers, write the convention LAST describing what exists. A convention written first describes eight variations and legitimises them, which is the mistake already made once"
-  - "MEASURED, AND THE BUNDLE'S OWN WEAKEST CLAIM — 00-overview section 7: the 52 R-* rules guarded by a wiring test have NOT been read one by one. Some may be genuinely settled by wiring. Classify them before building anything; a bundle about not trusting unmeasured claims should not ship one"
-  - "BLOCKED, MEASURED 2026-09-17 — 01-the-runner's shape A (move tests/integration/harness.py into nora.testing) is REFUTED by the layer contract. Three probes, each an injected import run through lint-imports: nora.testing -> nora.app breaks 2 contracts (a reverse import, which is what layers exist to prevent), -> nora.infra breaks 1, -> nora.config breaks 2. The test-only dependency is trivial (3 names, no pytest import); the blocker is architectural"
-  - "REFRAMED 2026-09-17 — 'there are two builders' is not accurate. BOTH harnesses already call nora.app.offline.build_offline_pipeline (tests/integration/harness.py:484, evals/harness.py:612). What diverges is the SETUP around it: real Postgres + run_migrations versus FakeRecordStore/FakeMemoryStore. The 13 None-defaulting parameters are what let two callers forget different things"
+  - "STEP 0, AND IT CAN WITHDRAW THIS BUNDLE — nobody has ever compared what two eval subjects send to the model. Same input, each of the six paths, diff the assembled prompt. If they agree, the six are one Nora wearing six coats and the delete is unjustified. If they differ, the diff IS the specification. One script, before anything is deleted"
+  - "OPERATOR, AND IT IS THE FIRST REAL ONE — where the single subject function lives. The layer contract refuses nora.testing, probed 2026-09-17: -> nora.app breaks 2 contracts (a REVERSE import, which is what layers exist to prevent), -> nora.infra 1, -> nora.config 2. nora/app/offline.py sits in the application package only because evals/ may import nora.app and may not import tests/. If no location is legal, the contract is the thing to change and that is a larger decision than this bundle"
+  - "REFUTES 01-boundaries IF FALSE — that the entry point can be a PORT rather than a taxonomy. Try relevance_gate (a real component, no turn) and participation (a full turn) through one runner before building the rest; they are deliberately the least alike. A previous attempt had a binary that could not hold relevance_gate and graded it with a third answer its own rule did not contain (PR #307, withdrawn)"
+  - "CORRECTED 2026-09-17 AND FLAGGED AS JUDGEMENT — 00-overview section 3 first said 52 behavioural rules are guarded by wiring tests. Reading them: 8 are DEPRECATED/RETIRED/REVERSED (mechanically counted) and ~30 are genuinely settled by a mechanism (a lock, a PRIMARY KEY, a registry, a startup gate). The population needing a behavioural instrument is closer to 13. That is a judgement from reading, not a measurement"
+  - "NOT DECIDED — what replaces the reconstruction suites. A bare model on doctrine text is a cheap and useful probe of WORDING; under this boundary it is not an evaluation of Nora and cannot use the runner. Whether it survives as a separately named tool is open"
+  - "DISCIPLINE WHILE THIS RUNS, not a question — until step 5, no number from the old layer may be quoted as behaviour without naming its subject. That is what #310's subject= provenance token was added for"
+  - "NOT IN THIS BUNDLE — the convention. Step 6, describing what exists. Written first it describes the six variations and legitimises them, which was attempted on 2026-09-17 (PR #307) and withdrawn the same day after two adversarial reviews"

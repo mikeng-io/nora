@@ -1,170 +1,143 @@
-# Evaluation — the chain from a decision to a thing that can refute it
+# Evaluation — one Nora, many inputs
 
-## 0. The question this bundle exists to answer
+## 0. The invariant
 
-> **How does the evaluation suite establish that Nora behaves correctly, as
-> designed and as expected?**
+> **Different evaluation suites. Different input. One Nora.**
 
-Operator, 2026-09-17. Everything here is downstream of that sentence, including
-the plumbing question an earlier draft of this file mistook for the subject.
+Operator, 2026-09-17. Everything below is that sentence with its consequences
+written out. It is not a goal or a direction; it is the property that decides
+whether any number out of this layer means anything.
 
-The answer today, measured: **it almost entirely does not.**
+## 1. Why this is a DELETE, not a refactor
 
-## 0.1 What is NOT in scope, and why it is worth saying first
+`evals/` is rebuilt from zero. The directory is removed, not modified.
 
-**The test suite.** Unit, integration and e2e are a solved problem outside this
-repo, and nothing about them is ours to invent:
+**Because modifying is what produced the current state.** Every driver in there
+was a reasonable local change — somebody needed to measure a thing, the existing
+shape did not fit, so they added a path beside it. Eight times. The result is not
+a messy implementation of one idea; it is eight ideas, and no amount of editing
+converges them, because each edit is again a local change that has to fit what is
+already there.
 
-> test case 嗰度其實冇乜需要太多嘢要 test … 你 search 返到底人哋 unit test 點做、
-> integration test 點做、e2e test 點做，就已經完咗件事。嗰度其實冇乜嘢好傾。
+The operator's version:
 
-That is right, and it also bounds this bundle. The test layer's blast radius is
-*"do we catch a mistake before it ships"*. It does not reach runtime behaviour.
-When it is disorganised, look up standard practice and follow it — do not write
-a bespoke convention for it, which is what #113's remaining third would be if
-taken further than it has been.
+> 因為你改，你最終只會越改越錯。
 
-**What has no industry answer is the question in §0.** *"Does an LLM agent behave
-as it was designed to"* is not unit testing at a larger scale, and the reason is
-§3: the entire test discipline establishes that code is wired, and none of it
-establishes how a model behaves once it is. That gap is ours, it is why this
-bundle exists, and it is the only thing in it.
+The measurement that makes this concrete is §2: there is no single subject to
+refactor **toward**. A refactor needs a target shape that the current code is an
+imperfect version of. Here the current code is six different shapes, and the
+target is in production.
 
-## 1. The chain
+## 2. What is actually there — six Noras
 
-For a design statement to be more than prose, four links have to hold:
+Every place an eval composes a subject, and what it wires:
+
+```
+evals/harness.py:612        build_offline_pipeline(14 kwargs)   participation, journeys
+nora/app/eval_support.py:1109   DreamerRuntime(9 kwargs)        note_candidates
+nora/app/eval_support.py:1359   DreamerRuntime(11 kwargs)       proactive        <- DIFFERENT
+nora/app/eval_support.py:980    RelevanceGate(8 kwargs)         relevance_gate
+nora/app/eval_support.py:1303   RegistryToolSource(9 kwargs)    proactive's tools
+evals/run.py:665            Agent(5 kwargs)                     adversarial
+```
+
+**The two `DreamerRuntime`s are not the same object** — one takes `grants` and
+`tool_budget_overrides`, the other does not. So `note_candidates` and
+`proactive_decide` measure two different Dreamers, and nothing says so.
+
+**None of the six is `build_dependencies`**, which is what the deployment runs.
+
+### 2.1 What that means for every number this layer has produced
+
+| reading | subject |
+|---|---|
+| `being_contradicted` 67% / 53%, `identity_grounding` 42% (#227) | `Agent(doctrine.text, tools=[])` |
+| `proactive_decide` recall 0.20–0.50 (#158) | `DreamerRuntime(11 kwargs)` |
+| `note_candidates` 1 − 0.7^N sampling | `DreamerRuntime(9 kwargs)` |
+| the gate's 35/35 `no_go` (#221) | `RelevanceGate(8 kwargs)` |
+
+Four numbers, four different objects, none of them the deployed one — and all
+four have been quoted in the same breath as statements about Nora, by this
+session among others. **No two of them are comparable, and none is about her.**
+
+## 3. The chain this exists to serve
 
 ```
 a design decision            DEC-n / R-n in design/09-decision-index.md
   → the behaviour it claims   what she must or must not DO
     → an evaluation that can refute it
-      → driven against the real Nora
+      → driven against the one Nora
 ```
 
-Break any link and the decision is unenforced.
+Measured on `design/09-decision-index.md`: **250 decision and rule rows — 10 cite
+an `evals/` instrument (five of them the bare-model corpora), 196 cite a unit
+test only, 44 cite nothing.** Of the 92 `R-*` rules, which are behavioural by
+construction: 4 have an eval, 52 are guarded by a test that measures wiring, 36
+have nothing.
 
-## 2. Where it is broken, measured
+**Corrected 2026-09-17, and the correction matters**: of those 52, **8 are
+DEPRECATED/RETIRED/REVERSED** (mechanically counted) and roughly 30 are genuinely
+settled by a mechanism — a lock, a `PRIMARY KEY`, a registry, a startup gate. The
+population that needs a behavioural instrument is closer to **13** than 52. That
+is a judgement from reading them, not a measurement, and it is flagged as such.
 
-`design/09-decision-index.md` at `b3c21686`. `AGENTS.md` sends readers here to
-answer *"which test guards this?"*
+Thirteen is a list, not a substrate problem — **but the list cannot be worked
+while the thirteen would be measured against six different objects.** That is why
+this comes first and the list comes after.
 
-**250 decision and rule rows:**
+## 4. Out of scope, said first because it bounds everything
 
-| | |
-|---|---|
-| cite an `evals/` instrument | **10** |
-| cite a `tests/` unit test only | **196** |
-| cite neither | **44** |
+**The test suite.** Unit, integration and e2e are solved outside this repo:
 
-And of the ten:
+> 你 search 返到底人哋 unit test 點做、integration test 點做、e2e test 點做，就已經
+> 完咗件事。嗰度其實冇乜嘢好傾。
 
-| row | instrument | |
-|---|---|---|
-| R-14 | `evals/adversarial/` | **reconstruction** |
-| R-53, R-54 | `source_scope.yaml` | **reconstruction** |
-| DEC-75 | `identity_grounding.yaml` | **reconstruction** |
-| R-83 | `being_contradicted.yaml` | **reconstruction** |
-| DEC-76 | `journeys.py`, `evaluators.py` | real |
-| DEC-45 | `harness.py` | real |
-| DEC-30, DEC-33, DEC-58 | prose mention, no path | — |
+Correct, and it bounds this bundle. The test layer's blast radius is *"do we
+catch a mistake before it ships"* — it does not reach runtime behaviour. Look up
+standard practice and follow it; do not invent a convention for it here.
 
-**Two rows of 250 have a behavioural instrument that drives her. Five have one
-that drives a bare model.**
+**What has no industry answer is whether an LLM agent behaves as designed.** That
+is the only thing in this bundle.
 
-### 2.1 The sharper cut — the rules
+## 5. What survives the delete
 
-`R-*` rules are behavioural by construction: each says what she must or must not
-do. **92 of them.**
+Not the drivers. The things that took real work and are independent of how the
+subject is assembled:
 
-| | |
-|---|---|
-| with an eval | **4** |
-| unit test only | **52** |
-| nothing at all | **36** |
+- **The corpora** — `evals/**/*.yaml`, 13 files. Cases and expectations are data
+  and were never the problem. They are re-homed, not rewritten.
+- **The grading** — the judge, the rubric, the structural graders. What a verdict
+  means does not depend on how Nora was built.
+- **The findings recorded inside them.** Corpus headers carry measured readings
+  and their caveats; those are provenance and travel with the cases.
+- **The `subject=` provenance token** (#310), which is the one idea from tonight
+  worth keeping: the qualifier travels with the number into logs and pastes,
+  where prose in a document does not.
 
-Sampled, claim against guard:
+## 6. What this bundle does NOT claim
 
-- **R-7** — *"Per-tag tool-call budget; unknown tools default-deny."* → a file,
-  no selector.
-- **R-17** — *"A degraded derivation of Nora's own identity is counted, never
-  merely logged."* → a file, no selector.
-- **R-22** — *"A tool that could not answer says so in its RETURN VALUE, and
-  'asked and nothing known' is never the same value as 'could not ask'."* →
-  `test_honcho_representation.py::test_an_unknown_peer_is_reachable_and_empty_never_unreachable`
-
-R-22's guard is a good test and it proves the **port** returns distinct values.
-It cannot show that **she** keeps them distinct in a reply, which is what R-22 is
-about. That is the normal case: **52 behavioural rules are guarded by tests that
-measure wiring.**
-
-## 3. The line, and why it is not a criticism of the tests
-
-7,249 tests pass and they catch real defects. This is about which link they hold.
-
-| | unit/integration | evaluation |
-|---|---|---|
-| `participation.md` is loaded, non-empty, at the pinned sha | ✅ | |
-| the gate admits the windows it should | | ✅ |
-| `_clip` marks a cut block | ✅ | |
-| the grader reads the mark and changes its verdict | | ✅ |
-| `send_reply` is registered with budget 1 | ✅ | |
-| she stops at one reply when pushed | | ✅ |
-
-Left column: *the code is wired*. Right column: *she behaves*. Standard practice
-covers the left completely (§0.1). **The decision index's test column is a
-left-column column, and `AGENTS.md` presents it as the answer to a right-column
-question.**
-
-## 4. Why the bare-model corpus survived as long as it did
-
-It is one of the few behavioural instruments there are. With five of ten
-citations pointing at reconstructions and 244 rows carrying no behavioural
-reading at all, **a number from it had nothing to be compared against.** A 67%
-reads as a 67% when it is the only reading in the room.
-
-The reconstruction is not the disease. It is what the absence of the chain looks
-like when somebody finally builds an instrument and nothing tells them what an
-instrument is for.
-
-## 5. What this bundle proposes
-
-**The chain is the artifact.** A design statement that claims a behaviour names
-the evaluation that can refute it, and that evaluation drives her.
-
-**5.1 The index's test column splits.** Two answers, not one: what proves the
-code is wired, and what would show the behaviour is wrong. Either may be absent —
-but absent must READ as absent, rather than a wiring test standing in the
-behavioural column. 36 `R-*` rules have neither today and say nothing about it.
-
-**5.2 An evaluation is written against a decision, not against a capability.**
-Today a suite exists because somebody wanted to measure a feature, so its
-contents are whatever that person thought of. Under the chain it exists because a
-decision claims something falsifiable, which makes *"what should this suite
-contain"* answerable: **what would refute the decision it names.**
-
-**5.3 Link 4 is a precondition, and it is `01-`'s subject.** An evaluation that
-does not drive her cannot refute anything about her. The plumbing matters only
-because of this, and not on its own.
-
-## 6. What this bundle does NOT propose
-
-- **That all 250 rows get an evaluation.** Most are not behavioural — a schema
-  constraint, a key shape, a build rule. The 92 `R-*` rules are the population to
-  ask, and 52 of them guarded by wiring is the finding.
-- **That unit tests be replaced, or given a new convention.** §0.1.
-- **A convention for writing evaluations.** That comes last, describing what
-  exists. The attempt to write it first (PR #307) was withdrawn the same day.
+- **That the six subjects are each wrong.** Several are locally reasonable —
+  `participation_gate=None` is deliberate, documented, and right (*"a suite that
+  had to get past a live gate call first would be measuring the gate's verdict
+  and the turn's behaviour in one number"*). The defect is that six exist and
+  nothing relates them, not that any one is badly built.
+- **That the rebuild is cheap.** `evals/` is 5,629 lines of Python and 13
+  corpora; `nora/app/eval_support.py` is another 1,739. §`02` sizes it.
+- **A convention for writing suites.** That is written LAST, describing what
+  exists. Writing it first describes the six variations and legitimises them,
+  which was attempted on 2026-09-17 (PR #307) and withdrawn the same day.
 
 ## 7. The reading that would refute this bundle
 
-If the 52 wiring-guarded rules are mostly rules whose behaviour is genuinely
-settled by wiring — a budget that cannot be exceeded because the registry will
-not allow it — then the gap is smaller than §2.1 makes it look and this bundle is
-overstated.
+If the six subjects turn out to produce **the same prompt** for the same input,
+then they are one Nora wearing six coats and the delete is unjustified.
 
-**That is checkable and has not been checked.** Read the 52, classify each as
-*settled by wiring* or *asserted about behaviour*, and report the split. Do it
-before building anything, alongside `01-` §6's sizing.
+Nobody has checked. `test_assembler_parity.py` compares two call sites' kwarg
+NAMES; `test_offline_pipeline_assembler.py` checks that `notes`/`standing` reach
+the prompt in the offline path alone. **Nothing compares what two subjects
+actually send to the model.**
 
-A bundle about not trusting unmeasured claims should not ship one, and §2.1 is
-currently the strongest claim here with the least work behind it.
+That check is cheap and decisive — same input, each path, diff the assembled
+prompt — and it should be run before the delete, not because the delete is in
+doubt but because the diff is the specification for what the one subject has to
+carry.
