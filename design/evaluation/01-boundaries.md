@@ -91,20 +91,76 @@ grew.**
 
 Each is a property a test can hold, and (1) and (3) are the two that decay first.
 
-## 6. What is NOT decided here
+## 6. Step 1's real question, measured 2026-09-17
 
-- **Where the one subject function lives**, given that the import rule
-  (`tests/test_boundaries.py`) is what pushed the assembly into `nora/app/`. The
-  layer contract refuses `nora.testing` — measured 2026-09-17: `nora.testing →
-  nora.app` breaks 2 contracts (a reverse import), `→ nora.infra` 1, `→
-  nora.config` 2. So the home is an open question and it is the first one.
-- **Whether the runner can drive `build_dependencies` directly.** It is drivable
-  — `tests/test_composition.py` calls it ~90 times against a throwaway Postgres —
-  but the live tier's cost is unmeasured.
-- **What replaces the reconstruction suites.** A bare model on doctrine text is a
-  cheap, useful probe of WORDING. Under this boundary it is not an evaluation of
-  Nora and cannot use the runner; whether it survives as a separate named tool is
-  open.
+Not *"where does the one subject function go"* — **there is no existing place for
+it**, and that is the finding rather than an obstacle to route around.
+
+Three candidate homes. All three probed by injecting the imports the subject
+function actually needs (`nora.app.composition`, `nora.infra.sql`, `nora.config`)
+and running `lint-imports`:
+
+| home | result |
+|---|---|
+| **`nora.testing`** | `→ nora.app` breaks **1** contract (the layered architecture — a REVERSE import, which is what layers exist to prevent); `→ nora.infra` **1**; `→ nora.config` **2** |
+| **`nora/app/`** | legal, and it is where the code is today. Also where §4 says eval-only code must not be: the application would know about being measured |
+| **a new top-level package** | **`lint-imports` 0, `tests/test_boundaries.py` 0 — nothing objects** |
+
+### The third result is not a solution. It is a hole.
+
+A probe package importing `nora.app`, `nora.infra` and `nora.config` **all at
+once** passed both gates clean:
+
+```
+lint-imports            0    Contracts: 6 kept, 0 broken
+tests/test_boundaries   0    6 passed
+```
+
+Because:
+
+```
+pyproject.toml:169        root_packages = ["nora", "evals"]
+test_boundaries.py:160    EVALS_DIR = ROOT / "evals"
+```
+
+**Import-linter knows two root packages. The boundary test scans one directory.**
+A third top-level package is outside both, so it may import anything — not
+because that was decided, because nothing looks.
+
+So taking it means **also** adding it to `root_packages` and writing its
+contract. And writing that contract is answering *what may this package reach*,
+which is Step 1 itself. **The new package does not route around the question; it
+converts it from choosing a location into writing a rule.**
+
+### What that means
+
+**The layer architecture has no slot for a thing that obtains the real Nora and
+is not the application.** Every existing slot either forbids reaching the top
+(everything below `nora.app`) or is the top. The eval layer needs exactly that
+and the contract has never had a name for it.
+
+That is why `nora/app/offline.py` exists, why it drifted to a second assembly,
+and why `eval_support.py` is 1,739 lines of test scaffolding inside the
+application. **None of those were mistakes given the available slots.** They are
+what you get when the shape you need has no place to live.
+
+### The decision Step 1 actually asks for
+
+Not a directory. **A layer.** Either:
+
+- **name the slot** — a package above `nora.app` in the layers contract whose
+  whole job is composing the real graph for a caller that is not production, with
+  `evals/` permitted to import it and nothing permitted to import `evals/`; or
+- **decide the eval layer may reach the top directly**, and widen `evals/`'s
+  allowlist from `{app, testing}` — cheaper, and it makes `evals/` a peer of the
+  application rather than a consumer of a seam; or
+- **keep it in `nora/app/`** and accept that the application ships eval
+  scaffolding, with a parity gate over every assembly rather than the two
+  construction sites covered today.
+
+All three are legal. None is free, and the third is the status quo with
+enforcement. **This is the operator's, and it is the first decision in the
+bundle.**
 
 ## 7. The reading that would refute this node
 

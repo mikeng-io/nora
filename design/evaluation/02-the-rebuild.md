@@ -48,9 +48,19 @@ is inert, `store_timeout_seconds` looks inert and had to be checked against a
 constant, and `media_join` turns up in three of the four. Every answer was
 derived by hand today, and nothing stops them changing tomorrow.
 
-**Step 1 — the one subject.** One function returning Nora, its home settled
-(`01-boundaries` §6 — the layer contract refuses `nora.testing`, measured). No
-caller passes collaborators.
+**Step 1 — the one subject, and it needs an operator decision first.**
+
+`01-boundaries` §6, measured 2026-09-17: **there is no existing home.**
+`nora.testing` breaks contracts; `nora/app/` is where eval-only code must not be;
+a new top-level package passes both gates **only because `root_packages` is
+`["nora","evals"]` and the boundary test scans one directory** — it is outside
+both and nothing looks.
+
+So the decision is **a layer, not a directory**: name a slot above `nora.app`,
+widen `evals/`'s allowlist to reach the top directly, or keep it in `nora/app/`
+with a parity gate over every assembly. **Nothing else in this bundle can start
+until that is answered** — every later step composes through whatever Step 1
+produces.
 
 **Step 2 — two entry points through one runner.** `relevance_gate` and
 `participation`, deliberately the least alike. `01-boundaries` §7: if they cannot
