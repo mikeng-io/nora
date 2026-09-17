@@ -15,9 +15,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import sqlalchemy as sa
+
 from nora.domain.media_join import MediaJoin
 from nora.infra.sql import create_sql_engine
 from nora.infra.sql.notes import SqlNoteStore
+from nora.infra.sql.schema import NOTE_CANDIDATE
 
 from .obtain import Subject
 
@@ -60,6 +63,15 @@ class Pass:
     samples_ok: int = 0
     samples_failed: int = 0
 
+    #: Every candidate the pass STAGED, as
+    #: `(title, anchor_date, message_ids, status)`.
+    #:
+    #: The note-candidates corpus asserts `must_cite` against a staged
+    #: candidate's `message_ids` and `anchor_date` against its anchor — neither
+    #: of which the notebook diff carries, so eight of its cases were asserting
+    #: more than anything checked.
+    staged: tuple[tuple[str, int, tuple[int, ...], str], ...] = ()
+
     #: Why the pass declined BEFORE any model call, from
     #: `nora_proactive_pass_total{reason}` — production's own counter.
     #:
@@ -92,6 +104,33 @@ def _samples(subject: Subject, status: str) -> int:
 
 def adaptor_names(subject: Subject) -> tuple[str, ...]:
     return tuple(a.name for a in subject.deps.dream_adaptors)
+
+
+async def _staged(
+    subject: Subject, workspace: str,
+) -> tuple[tuple[str, int, tuple[int, ...], str], ...]:
+    """The pass's staged create-candidates, read off the table it writes.
+
+    Queried directly because `SqlNoteStore` offers a write
+    (`record_create_candidate`) and a status update, and no read — the
+    production readers are the adaptor's own SQL. What a case needs is the
+    `message_ids` it cited, which is the only place a citation exists.
+    """
+    engine = create_sql_engine(subject.database_url)
+    try:
+        stmt = sa.select(
+            NOTE_CANDIDATE.c.title, NOTE_CANDIDATE.c.anchor_date,
+            NOTE_CANDIDATE.c.message_ids, NOTE_CANDIDATE.c.status,
+        ).where(NOTE_CANDIDATE.c.workspace == workspace)
+        async with engine.begin() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return tuple(
+            (str(r.title), int(r.anchor_date or 0),
+             tuple(int(i) for i in (r.message_ids or ())), str(r.status))
+            for r in rows
+        )
+    finally:
+        await engine.dispose()
 
 
 async def _notebook(subject: Subject, workspace: str) -> dict[str, str]:
@@ -174,6 +213,7 @@ async def dream(
     outcome = await runtime.run(adaptor=chosen, key=key, batch=batch)
 
     after = await _notebook(subject, workspace)
+    staged = await _staged(subject, workspace)
     changed = [("create", t) for t in after if t not in before]
     changed += [
         ("update", t) for t, head in after.items()
@@ -187,4 +227,5 @@ async def dream(
         samples_ok=_samples(subject, "ok") - ok_before,
         samples_failed=_samples(subject, "unavailable") - failed_before,
         declined=_declined(subject),
+        staged=staged,
     )

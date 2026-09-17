@@ -161,6 +161,18 @@ class Outcome:
     #: Rows the pass WROTE. The proactive decide pass's entire output.
     written: int = 0
 
+    #: What the pass STAGED, as `(title, anchor_date, message_ids, status)`.
+    staged: tuple[tuple[str, int, tuple[int, ...], str], ...] = ()
+
+    #: Structural assertions the corpus made and the outcome did not meet.
+    #:
+    #: SEPARATE from `judged`, which is a model's opinion: these are facts the
+    #: corpus states and something checks — `must_cite`, `anchor_date`,
+    #: `creates`, `updates`. Eight note-candidates cases asserted all four while
+    #: `meets` checked only "a create happened", so a case passed if the adaptor
+    #: created the wrong note, cited nothing, and revised three others.
+    checks_failed: tuple[str, ...] = ()
+
     #: The JUDGE's verdict on what she said — `PASS`, `FAIL`, `REVIEW`, or `""`
     #: when this case was not judged.
     #:
@@ -223,7 +235,12 @@ class Outcome:
         """
         if self.error is not None:
             return None
-        # THE JUDGE FIRST, and it can only ever REMOVE a pass.
+        # THE CORPUS'S OWN ASSERTIONS FIRST. They are facts it stated, so a
+        # structural pass that misses one is not a pass — and unlike the judge
+        # below there is no model involved and nothing to review.
+        if self.checks_failed:
+            return False
+        # THE JUDGE NEXT, and it can only ever REMOVE a pass.
         #
         # A reply that a judge called a fabrication is not rescued by having
         # been a reply; the structural check below would say `reply` and be

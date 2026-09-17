@@ -98,6 +98,25 @@ config:
 # so without the description they are byte-identical reruns and the control
 # they form controls for nothing. NOT yet wired -- stated so it is a known gap
 # rather than an invisible one.
+#
+# --- room_label / room_description REACH THE ADAPTOR 2026-09-18 -------------
+#
+# They were parked in `metadata:` and reached nothing. The adaptor's labels
+# come from `policy.toml` (`label_for` / `description_for`), so a case that
+# wants one states a POLICY -- which it can, as a template the runner fills
+# with the room this case actually runs in.
+#
+# It matters most for `n10b` and `n11b`, which exist ONLY as the described-room
+# variants of `n10` and `n11`. Without the description they were byte-identical
+# reruns, so the control they form controlled for nothing.
+#
+# `room_label` reaches every rendered batch line (issue #161).
+#
+# The four remaining assertions -- `must_cite`, `anchor_date`, `creates`,
+# `updates` -- are GRADED now, not parked. `must_cite` translates a case's own
+# message label into the id the store assigned (`Written.rows`), which is what
+# `Message.label` exists for and what was being discarded: a citation checked
+# against a renumbered store is checked against nothing.
 
 cases:
   - name: p1_group_dinner_date_set_venue_open
@@ -110,9 +129,9 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
@@ -162,9 +181,9 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
@@ -194,9 +213,9 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
@@ -236,9 +255,9 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
@@ -293,9 +312,9 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
@@ -333,9 +352,9 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
@@ -371,9 +390,9 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
@@ -409,9 +428,9 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
@@ -449,9 +468,9 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
@@ -492,9 +511,9 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
@@ -530,9 +549,9 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
@@ -565,9 +584,9 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
@@ -597,9 +616,9 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
@@ -640,9 +659,9 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
@@ -679,9 +698,9 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
@@ -707,9 +726,9 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
@@ -740,9 +759,9 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
@@ -789,13 +808,17 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
       workspace = "friends"
+    
+      label = "Zone 42"
+    
+      description = "a games room; 2200 is when people log on, not an appointment"
     
       '
     knows:
@@ -841,9 +864,9 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
@@ -899,13 +922,17 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
       workspace = "friends"
+    
+      label = "Zone 42"
+    
+      description = "a games room; 2200 is when people log on, not an appointment"
     
       '
     knows:
@@ -960,13 +987,15 @@ cases:
     
       [[conversations]]
     
-      platform = "signal"
+      platform = "{platform}"
     
-      id = "g1"
+      id = "{room}"
     
       persons = "*"
     
       workspace = "friends"
+    
+      label = "Friends"
     
       '
     knows:

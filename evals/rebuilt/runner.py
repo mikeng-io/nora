@@ -314,6 +314,7 @@ async def run_once(
             leave_room_for_arrival=port.delivers_input,
         )
         outcome = await port.drive(subject, case, now_ms=written.now_ms)
+        outcome = _check_the_corpus_assertions(case, outcome, written.rows)
         # JUDGED HERE, while the subject is alive, because the judge needs the
         # doctrine she actually ran on — not a copy read off disk, which is the
         # same file only until somebody edits it mid-run. The prompt is
@@ -342,6 +343,67 @@ async def run_once(
         return Outcome(admitted=None, error=f"{type(exc).__name__}: {exc}")
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _check_the_corpus_assertions(
+    case: Case, outcome: Outcome, rows: Mapping[Any, int],
+) -> Outcome:
+    """`must_cite`, `anchor_date`, `creates`, `updates` — the four the
+    note-candidates corpus states and nothing checked.
+
+    `rows` translates a case's own message LABEL into the id the store
+    assigned. That translation is the whole reason `Message.label` and
+    `Written.rows` exist, and it was being discarded: a citation checked
+    against a renumbered store is checked against nothing.
+
+    Skipped entirely for an outcome that already carries an error — an un-run
+    case must not acquire a second reason to fail.
+    """
+    meta = case.metadata
+    if outcome.error is not None or not meta:
+        return outcome
+    failed: list[str] = []
+
+    creates = [t for kind, t in outcome.changed if kind == "create"]
+    updates = [t for kind, t in outcome.changed if kind == "update"]
+    if meta.get("creates") is not None and len(creates) != int(meta["creates"]):
+        failed.append(f"creates: expected {meta['creates']}, got {len(creates)}")
+    if meta.get("updates") and meta["updates"] not in updates:
+        failed.append(f"updates: {meta['updates']!r} was not revised; got {updates}")
+    # A `create` case asserts that NOTHING standing was revised — the corpus
+    # header says so, and a pass that creates the right note while quietly
+    # rewriting three others is not the behaviour it describes.
+    if case.expect == "create" and updates:
+        failed.append(f"create case also revised {updates}")
+
+    if meta.get("anchor_date") is not None and outcome.staged:
+        want = int(meta["anchor_date"])
+        got = [a for _t, a, _m, _s in outcome.staged]
+        if want not in got:
+            failed.append(f"anchor_date: expected {want}, staged {got}")
+    if meta.get("must_cite"):
+        want_ids = {rows.get(label) for label in meta["must_cite"]}
+        cited: set[int] = set()
+        for _t, _a, message_ids, _s in outcome.staged:
+            cited |= set(message_ids)
+        missing = {i for i in want_ids if i is not None} - cited
+        if None in want_ids:
+            failed.append(
+                f"must_cite names a message the case did not seed: "
+                f"{meta['must_cite']}"
+            )
+        elif missing:
+            failed.append(f"must_cite: {sorted(missing)} not among {sorted(cited)}")
+    if meta.get("must_not_cite"):
+        forbidden = {rows.get(label) for label in meta["must_not_cite"]}
+        cited = set()
+        for _t, _a, message_ids, _s in outcome.staged:
+            cited |= set(message_ids)
+        hit = {i for i in forbidden if i is not None} & cited
+        if hit:
+            failed.append(f"must_not_cite: cited {sorted(hit)}")
+
+    return dataclasses.replace(outcome, checks_failed=tuple(failed))
 
 
 def _source(case: Case) -> str | None:
