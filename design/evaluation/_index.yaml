@@ -32,11 +32,13 @@ members:
   - 02-the-rebuild.md
   - 03-step0-results.md
   - 04-the-convention.md
+  - 05-live-parity.md
 edges:
   - {src: 01-boundaries, dst: 00-overview, rel: depends_on, provenance: asserted}
   - {src: 02-the-rebuild, dst: 01-boundaries, rel: depends_on, provenance: asserted}
   - {src: 03-step0-results, dst: 00-overview, rel: measures, provenance: measured}
   - {src: 04-the-convention, dst: 02-the-rebuild, rel: depends_on, provenance: asserted}
+  - {src: 05-live-parity, dst: 02-the-rebuild, rel: measures, provenance: measured}
 external_edges:
   - {dst: "dreamer-agent-loop/35-ambient-participation", rel: relates_to, provenance: asserted}
   - {dst: "dreamer-agent-loop/36-relevance-gate", rel: relates_to, provenance: asserted}
@@ -72,4 +74,5 @@ open_questions:
   - "UNADDRESSED — what happens to #227's and #158's open findings during the rebuild. Section 2.1's retraction de-evidences a live safety reading (being_contradicted.yaml records 0/5 on the never-grounded control, 'R-83's own carve-out failing in the direction it was written to prevent') and the bundle names no owner, replacement or date for it"
   - "SUPERSESSION UNSTATED — design/05-evaluation.md is the repo's existing evaluation node, live and cited by design/00-overview.md and by decision-index rows A8, A11, A12. This bundle proposes deleting the layer that implements it and never mentions it"
   - "OPEN, AND IT BOUNDS THE METHOD — which eval clients bypass the gateway cache is a divergence from production that a kwarg diff CANNOT SEE, because it is a header (03-step0-results section 2.7). NO_CACHE_HEADERS is on the SDK gate arm, GateProbe and the judge; build_live_runner and build_live_participation_runner pass no default_headers, so the REPLY subject is not cache-bypassed. For a suite with sample: 5 the effective n is unverifiable from the outputs alone — 0/5 and 5/5 are exactly the shape a cache produces. Nothing audits the split and the run logs carry no per-sample elapsed time, so it needs a re-run with timing on the case line. Found by the culture-tier session. Section 1's table is therefore a FLOOR on the divergence, not a measurement of it"
+  - "RUN 2026-09-17, AND IT DISAGREED — 05-live-parity. Old 10/10, new 9/10 on the same ten cases against the DEPLOYED nora-gate alias over a tunnel. The divergence was systematic (go 5/5 vs no_go 5/5) and was NOT a plumbing bug: eval_support._gate_records rotated three speakers 180s apart and the corpus never said so, while the participation corpus's identical syntax meant every line from one member 60s apart. One syntax, two meanings, one per driver — and a byte-for-byte re-homing check PASSED the whole time, because the strings are identical. The corpus now states its speakers and spacing; agreement is 15/16. The residual is a borderline case the corpus header itself describes, reported by the determinism control"
   - "WRITTEN 2026-09-17 — the convention is 04-the-convention.md, last as planned, describing what exists and naming in section 6 what does not. Step 5 (the delete) is NOT done and is the one remaining step: evals/*.py is still where a live number comes from, and removing it before the replacement has driven a LIVE run would be this bundle repeating its own finding rather than fixing it"

@@ -120,6 +120,16 @@ class Knowledge:
 
     transcript: tuple[Message, ...] = ()
     standing: str | None = None
+
+    #: Seconds between consecutive messages, oldest first, ending one step
+    #: before `now_ms`.
+    #:
+    #: STATED rather than defaulted-and-forgotten, because the rendered prompt
+    #: shows an AGE per row and the gate is asked whether the room has moved
+    #: past something. The two old drivers used different steps — 60s for
+    #: participation, 180s for the gate — and neither corpus said so, so the
+    #: ages the labels were assigned against lived in the driver.
+    spacing_seconds: int = 60
     notes: tuple[NoteSeed, ...] = field(default_factory=tuple)
 
 
@@ -301,14 +311,23 @@ async def know(
     *,
     room: tuple[str, str] = DEFAULT_ROOM,
     now_ms: int | None = None,
+    leave_room_for_arrival: bool = True,
 ) -> Written:
     """Write `knowledge` into the subject's stores.
 
     The returned instant is the one the caller must stamp the INCOMING line
-    with: the window is laid down ending one minute before it, so the judged
-    line is strictly the newest row `recent`'s `(ts, id)` sort sees. Two
-    independent reads of the clock a few lines apart is how a judged line ends
-    up sorting above the window it is read against (issue #213).
+    with: the window is laid down ending one step before it, so the judged line
+    is strictly the newest row `recent`'s `(ts, id)` sort sees. Two independent
+    reads of the clock a few lines apart is how a judged line ends up sorting
+    above the window it is read against (issue #213).
+
+    `leave_room_for_arrival=False` ends the window AT `now_ms` instead, for an
+    entry point where the window IS the input and nothing arrives after it —
+    the gate. It is not cosmetic: the prompt renders an AGE per row, and with
+    the step reserved anyway the newest line reads "3m ago" when it had in fact
+    just landed. The gate is asked whether the room has moved past something,
+    so the age of its last line is part of the question. Measured against the
+    old driver's prompt, which ended at "just now".
 
     Ages, not absolute times, are what reach the model
     (`nora.agent.prefill._age`), so the base has to be a REAL recent instant. A
@@ -321,7 +340,9 @@ async def know(
     rows: dict[int | str, int] = {}
 
     speakers = _speakers(knowledge.transcript)
-    base = now_ms - len(knowledge.transcript) * 60_000
+    step = knowledge.spacing_seconds * 1000
+    reserved = step if leave_room_for_arrival else 0
+    base = now_ms - reserved - (len(knowledge.transcript) - 1) * step
     for i, msg in enumerate(knowledge.transcript):
         sender_id, person_id = speakers[msg.name]
         if msg.person != "":
@@ -333,7 +354,7 @@ async def know(
                 conversation_type="group",
                 sender_id=sender_id,
                 sender_name=msg.name,
-                timestamp=msg.at_ms if msg.at_ms is not None else base + i * 60_000,
+                timestamp=msg.at_ms if msg.at_ms is not None else base + i * step,
                 body=msg.body,
                 raw={},
             ),

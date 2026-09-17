@@ -46,11 +46,38 @@ def _load(rel: str) -> list[dict]:
     return doc.get("cases") or [] if isinstance(doc, dict) else doc
 
 
+#: The rotation `eval_support._gate_records` applied to the gate corpus's bare
+#: strings, and the step it spaced them by. The gate corpus now STATES both.
+#:
+#: Written here as well as in the corpus because this is the pin that failed to
+#: catch the divergence and must be able to next time: the strings were
+#: byte-identical, so "data, not rewrites" passed while the WINDOW the labels
+#: were assigned against had silently changed from three speakers to one. Found
+#: by running both layers live on the same case — `go` 5/5 against `no_go` 5/5.
+_GATE_SPEAKERS = ("Kit", "Sam", "Aaron")
+_GATE_SPACING = 180
+
+
 def _old_shape(raw: dict) -> dict:
     """The old shape, normalised. The gate stated its window at the top level;
-    participation stated it under `seed:`. Both are `knows:` now."""
+    participation stated it under `seed:`. Both are `knows:` now.
+
+    A bare transcript string is expanded to the speaker and spacing its driver
+    gave it, because that is what the case MEANT. The two old drivers disagreed
+    on the same syntax — the gate rotated three members 180s apart, participation
+    gave every line to the one mapped member 60s apart — and neither corpus said
+    so.
+    """
     knows = dict(raw.get("seed") or {})
-    if raw.get("transcript"):
+    if raw.get("transcript") and "category" in raw:
+        # A gate case: `category` is the gate corpus's own field and no other
+        # corpus carries it, so it is what tells the two apart here.
+        knows["transcript"] = [
+            {"body": b, "name": _GATE_SPEAKERS[i % 3], "person": None}
+            for i, b in enumerate(raw["transcript"], 1)
+        ]
+        knows["spacing_seconds"] = _GATE_SPACING
+    elif raw.get("transcript"):
         knows["transcript"] = list(raw["transcript"])
     if raw.get("standing"):
         knows["standing"] = raw["standing"]

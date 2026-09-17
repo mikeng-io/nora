@@ -93,7 +93,7 @@ def _case(
 #: `-unknown` twin, so the pair reports "the knowledge cut works" having cut
 #: nothing. That is `seed_from_dict`'s own documented footgun, arriving by a
 #: different road.
-_KNOWABLE = {"transcript", "standing", "notes"}
+_KNOWABLE = {"transcript", "standing", "notes", "spacing_seconds"}
 
 
 def _ms(ts: Any) -> int | None:
@@ -151,6 +151,7 @@ def _knowledge(raw: Mapping[str, Any]) -> Knowledge:
         transcript=tuple(transcript),
         standing=raw.get("standing"),
         notes=notes,
+        spacing_seconds=int(raw.get("spacing_seconds", 60)),
     )
 
 
@@ -185,7 +186,10 @@ async def run_once(
         return Outcome(admitted=None, error=f"could not obtain the subject: {exc}")
 
     try:
-        written = await know(subject, _knowledge(case.knows))
+        written = await know(
+            subject, _knowledge(case.knows),
+            leave_room_for_arrival=port.delivers_input,
+        )
         return await port.drive(subject, case, now_ms=written.now_ms)
     except Exception as exc:                        # noqa: BLE001
         return Outcome(admitted=None, error=f"{type(exc).__name__}: {exc}")

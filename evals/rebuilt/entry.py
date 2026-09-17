@@ -289,6 +289,15 @@ class EntryPoint:
     """
 
     drive: Callable[..., Awaitable[Any]]
+
+    #: Does a line ARRIVE after the window this entry point is given?
+    #:
+    #: Declared here rather than branched on in the runner, for §3.1's reason:
+    #: the entry point is a selection on a case. The gate is handed a closed
+    #: window and nothing follows it; the other three are handed a window and
+    #: then a line.
+    delivers_input: bool = False
+
     #: Dotted config paths, applied UNDER a case's own overrides so a case can
     #: still change anything.
     config: dict[str, Any] = field(default_factory=dict)
@@ -309,11 +318,13 @@ _PARTICIPATION_SUBSYSTEM = {
 #: it is the property that decays first, so it is pinned by a test.
 ENTRY_POINTS = {
     "gate": EntryPoint(drive=gate, config=_PARTICIPATION_SUBSYSTEM),
-    "participation": EntryPoint(drive=participation, config=_PARTICIPATION_SUBSYSTEM),
+    "participation": EntryPoint(
+        drive=participation, config=_PARTICIPATION_SUBSYSTEM, delivers_input=True,
+    ),
     # The tag path needs NOTHING turned on: `[engagement.trigger] enabled` ships
     # true, which is the deployment's own default and the reason this is the
     # cheapest of the three to drive.
-    "tag": EntryPoint(drive=tag),
+    "tag": EntryPoint(drive=tag, delivers_input=True),
     # `[dreamer] enabled` ships false, and `[notes]` decides whether the
     # note-candidates adaptor is built at all — two switches for two risks, and
     # a corpus that needs the pass needs both on.
