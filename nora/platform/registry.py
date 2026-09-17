@@ -151,7 +151,7 @@ class AdapterRegistry:
 
         `voice_hub` (design/voice-channel/07) is the audio-controller's
         per-guild session registry — `None` when `[speech.tts]
-        sidecar_endpoint` is empty, which leaves every voice join and speech
+        sidecars` is empty, which leaves every voice join and speech
         stream failing closed."""
         adapters: dict[str, PlatformAdapter] = {}
         identities: dict[str, PlatformIdentity] = {}

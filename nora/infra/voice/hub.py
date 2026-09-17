@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 from collections import deque
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Any
 from uuid import uuid4
 
@@ -33,21 +33,68 @@ from nora.infra.voice.http_controller import (
 
 log = logging.getLogger("nora.infra.voice")
 
-#: Bound on the event-id dedupe window (FIFO). Controller callbacks retry
-#: from a ≤256-event outbox (§3.3), so 1024 covers several full replays.
-_EVENT_ID_BOUND = 1024
+#: Bound on the event-id dedupe window (FIFO), PER GUILD. Controller callbacks
+#: retry from a ≤256-event outbox each (§3.3), so 1024 covers several full
+#: replays of one controller's outbox.
+#:
+#: Multiplied by the number of guilds, because the deque is process-global
+#: while the topology is now one controller per guild (2026-09-17). Event ids
+#: are `randomUUID()` per controller so they cannot collide, and sharing one
+#: deque is right — but sharing one BOUND is not: at four guilds a flat 1024
+#: is exactly one outbox, and at five a guild's ids can be evicted while its
+#: own outbox is still replaying them.
+_EVENT_ID_BOUND_PER_GUILD = 1024
 
 
 class VoiceControllerHub:
-    def __init__(self, client: VoiceControllerClient) -> None:
-        self._client = client
+    def __init__(self, clients: Mapping[str, VoiceControllerClient]) -> None:
+        # ONE CLIENT PER GUILD (§12.5, multi-guild 2026-09-17). Discord's
+        # limit is one voice connection per bot token PER GUILD, so a guild is
+        # the natural unit of ownership — and the controller stays hard-bound
+        # to one, exactly as §12.5 wrote it. Multi-guild is a deployment
+        # TOPOLOGY (a controller per guild) rather than a controller that
+        # juggles several: its generation counter, outbox and desired-state
+        # file are single-connection by design, and threading a guild key
+        # through that state machine would put the audited concurrency at
+        # risk to save two containers.
+        #
+        # An unlisted guild has no controller and therefore no voice at all —
+        # this mapping IS the join allow-list (`allowed_guilds`).
+        self._clients = dict(clients)
         self._sessions: dict[str, HttpVoiceSession] = {}
+        # WHICH CHANNEL each cached session is connected to. `HttpVoiceSession`
+        # does not carry it, and the cache is keyed by GUILD — which was safe
+        # only while exactly one channel per guild could ever be joined. Once
+        # any channel in a guild became joinable (§12.2, 2026-09-17), a cache
+        # hit stopped implying the same channel, and `join` has to compare.
+        self._channels: dict[str, str] = {}
         self._seen_event_ids: deque[str] = deque()
         self._seen_event_id_set: set[str] = set()
+        self._event_id_bound = _EVENT_ID_BOUND_PER_GUILD * max(len(self._clients), 1)
         # The highest `event_seq` the consumer has successfully processed
-        # (§3.3). Read against `/voice/status`'s `last_event_seq` on
-        # adoption: a controller AHEAD of it holds events nora never saw.
-        self._last_event_seq: int | None = None
+        # (§3.3), PER GUILD. Read against `/voice/status`'s `last_event_seq`
+        # on adoption: a controller AHEAD of it holds events nora never saw.
+        #
+        # Per guild since 2026-09-17, and it has to be: each controller mints
+        # its own sequence from 1, so a single counter would read the second
+        # guild's first event as a jump backwards and the first guild's next
+        # as a gap — a warning that exists to mean "events were lost while
+        # nora was down" would have fired on every healthy two-guild boot.
+        self._last_event_seq: dict[str, int] = {}
+
+    @property
+    def guild_ids(self) -> frozenset[str]:
+        """The guilds a controller exists for — the join allow-list."""
+        return frozenset(self._clients)
+
+    def _client_for(self, guild_id: str) -> VoiceControllerClient:
+        client = self._clients.get(guild_id)
+        if client is None:
+            raise VoiceControllerUnavailable(
+                f"no audio-controller is configured for guild {guild_id} "
+                "([speech.tts] sidecars)"
+            )
+        return client
 
     async def join(self, guild_id: str, channel_id: str) -> HttpVoiceSession:
         """The cached session if this guild already has one; otherwise
@@ -55,15 +102,41 @@ class VoiceControllerHub:
         409 that turns out to BE the channel asked for."""
         cached = self._sessions.get(guild_id)
         if cached is not None:
-            return cached
+            if self._channels.get(guild_id) == channel_id:
+                return cached
+            # A DIFFERENT channel is not a cache hit — it is the conflict the
+            # controller would have raised, and nora must not swallow it by
+            # answering with the connection it already holds.
+            #
+            # THE BUG THIS REPLACES: returning `cached` here played the
+            # caller's music out of the channel Nora was ALREADY in, while the
+            # music player persisted the CALLER's channel. `channel-emptied`
+            # then never matched (the player's channel was not the connected
+            # one) so auto-leave stopped firing, and the next boot resumed
+            # against the channel nobody was in. `/discord join` escaped it
+            # only by having its own `session_for` check; `/music play` and
+            # the agent tool bridge did not.
+            #
+            # Raised as the controller's own `connected_elsewhere` so every
+            # caller that already handles a join conflict is unchanged.
+            raise GenerationConflict(
+                f"already connected to channel {self._channels.get(guild_id)} "
+                f"in guild {guild_id}, not {channel_id}"
+            )
         try:
-            state = await self._client.join(
+            state = await self._client_for(guild_id).join(
                 guild_id, channel_id, request_id=str(uuid4()),
             )
         except GenerationConflict:
             state = await self._adopt_existing(guild_id, channel_id)
         session = self._build_session(guild_id, state)
         self._sessions[guild_id] = session
+        # The channel the controller reports, not the one asked for: an
+        # adopted 409 lands on whatever it was already connected to.
+        reported = state.get("channel_id")
+        self._channels[guild_id] = (
+            reported if isinstance(reported, str) and reported else channel_id
+        )
         return session
 
     async def _adopt_existing(self, guild_id: str, channel_id: str) -> dict[str, Any]:
@@ -71,7 +144,7 @@ class VoiceControllerHub:
         is already connected. Adopt its generation ONLY when the live
         connection is to the very channel requested — anything else is a
         real conflict and climbs back out as one."""
-        status = await self._client.status()
+        status = await self._client_for(guild_id).status()
         if status.get("voice") == "connected" and status.get("channel_id") == channel_id:
             log.info(
                 "voice join for guild %s: adopting the controller's existing "
@@ -94,18 +167,21 @@ class VoiceControllerHub:
         silently when either side carries no seq (an older controller's
         status, or no event consumed yet — nothing to compare)."""
         controller_seq = status.get("last_event_seq")
+        # THIS guild's bookmark against THIS guild's controller — each mints
+        # its own sequence, so comparing across guilds would compare two
+        # unrelated counters (see `_last_event_seq`).
+        consumed = self._last_event_seq.get(guild_id)
         if (
             not isinstance(controller_seq, int) or isinstance(controller_seq, bool)
-            or self._last_event_seq is None
-            or controller_seq <= self._last_event_seq
+            or consumed is None
+            or controller_seq <= consumed
         ):
             return
         log.warning(
             "voice event gap for guild %s: controller last_event_seq=%d but nora "
             "last consumed %d — %d event(s) were emitted while nora was not "
             "consuming; music state may be stale until the outbox re-delivers",
-            guild_id, controller_seq, self._last_event_seq,
-            controller_seq - self._last_event_seq,
+            guild_id, controller_seq, consumed, controller_seq - consumed,
         )
 
     def _build_session(self, guild_id: str, state: dict[str, Any]) -> HttpVoiceSession:
@@ -114,7 +190,9 @@ class VoiceControllerHub:
             raise VoiceControllerUnavailable(
                 "join succeeded but the state snapshot carries no generation"
             )
-        session = HttpVoiceSession(self._client, guild_id=guild_id, generation=generation)
+        session = HttpVoiceSession(
+            self._client_for(guild_id), guild_id=guild_id, generation=generation,
+        )
         playback_id = state.get("playback_id")
         session.playback_id = playback_id if isinstance(playback_id, str) else None
         return session
@@ -124,6 +202,10 @@ class VoiceControllerHub:
         there was no session, or the exit itself failed (the cache is
         dropped either way — a dead connection must not be reused)."""
         session = self._sessions.pop(guild_id, None)
+        # Cleared with the session, always: a stale channel left here would
+        # make the next `join` to that channel look like a cache hit for a
+        # connection that no longer exists.
+        self._channels.pop(guild_id, None)
         if session is None:
             return False
         try:
@@ -142,6 +224,7 @@ class VoiceControllerHub:
         (Named `drop`, not `clear`: `clear` is a store method name and the
         store-caller gate must be able to resolve it.)"""
         self._sessions.pop(guild_id, None)
+        self._channels.pop(guild_id, None)
 
     async def stream_speech(self, guild_id: str, audio: bytes, media_type: str) -> bool:
         """`POST /stream` for the guild's current generation. NEVER raises —
@@ -154,7 +237,7 @@ class VoiceControllerHub:
             log.info("speech for guild %s dropped: no voice session", guild_id)
             return False
         try:
-            await self._client.stream(
+            await self._client_for(guild_id).stream(
                 session.generation, audio,
                 media_type=media_type, guild_id=guild_id, request_id=str(uuid4()),
             )
@@ -189,17 +272,19 @@ class VoiceControllerHub:
         nothing may be marked consumed before its transition succeeded)."""
         return event_id in self._seen_event_id_set
 
-    @property
-    def last_event_seq(self) -> int | None:
-        return self._last_event_seq
+    def last_event_seq(self, guild_id: str) -> int | None:
+        """This GUILD's bookmark. A guild nora has consumed nothing for
+        answers `None`, which reads as "no baseline yet" — never as a gap."""
+        return self._last_event_seq.get(guild_id)
 
-    def note_event_seq(self, event_seq: int) -> None:
+    def note_event_seq(self, guild_id: str, event_seq: int) -> None:
         """Record a successfully processed event's `event_seq` (§3.3) —
         the consumption-side bookmark `_warn_on_event_seq_gap` and the
         consumer's own per-event gap warning read. Monotonic: a replayed
         or out-of-order delivery never moves it backwards."""
-        if self._last_event_seq is None or event_seq > self._last_event_seq:
-            self._last_event_seq = event_seq
+        last = self._last_event_seq.get(guild_id)
+        if last is None or event_seq > last:
+            self._last_event_seq[guild_id] = event_seq
 
     async def adopt_boot_voice_sessions(self, voice_guild_ids: Iterable[str]) -> None:
         """Boot-time §12.1 reconciliation for guilds with NO persisted music
@@ -236,7 +321,7 @@ class VoiceControllerHub:
             if not guild_id:
                 continue
             try:
-                status = await self._client.status()
+                status = await self._client_for(guild_id).status()
                 if status.get("voice") != "connected":
                     continue
                 channel_id = status.get("channel_id")
@@ -265,7 +350,7 @@ class VoiceControllerHub:
             return False
         self._seen_event_ids.append(event_id)
         self._seen_event_id_set.add(event_id)
-        while len(self._seen_event_ids) > _EVENT_ID_BOUND:
+        while len(self._seen_event_ids) > self._event_id_bound:
             evicted = self._seen_event_ids.popleft()
             self._seen_event_id_set.discard(evicted)
         return True

@@ -1011,27 +1011,37 @@ provider = ""                  # empty provider = no speaker; a real deployment
                                # design/voice-channel/04 §3b). The key is read
                                # from the env var api_key_env NAMES (default
                                # MINIMAX_CN_API_KEY), never from this file.
-sidecar_endpoint = ""          # the AUDIO-CONTROLLER's HTTP base
-                               # (design/voice-channel/07): speech plays via
-                               # /stream, music via /music/*, joins via
-                               # /voice/join — all on the one voice connection
-                               # the controller owns. Empty = the voice seam
-                               # is unwired; joins and speech fail closed.
-voice_guild_ids = []           # Discord GUILD ids whose voice channels
-                               # /music play and /discord join may auto-join.
-                               # ANY channel in a listed guild; empty =
-                               # nowhere (fail-closed). Exactly one guild —
-                               # the audio-controller is hard-bound to one
-                               # (design/voice-channel/07 §12.5).
+sidecars = []                  # one AUDIO-CONTROLLER per GUILD — the sole
+                               # owner of that server's Discord voice
+                               # connection (design/voice-channel/07 §12.5):
                                #
-                               # GUILDS since 2026-09-17 (§12.2 reversed): a
-                               # server's voice channels are not a fixed list,
-                               # so a per-channel allow-list could not be kept
-                               # true. WHERE a guild's speech is RECORDED is
-                               # policy.toml's `voice = true`, not here, and
-                               # whether a reply is SPOKEN is a fact about the
-                               # turn — three questions one list used to
-                               # answer only because speech had its own room.
+                               #   sidecars = [
+                               #     { guild = "<guild_id>", endpoint = "http://voice-sidecar:4600" },
+                               #     { guild = "<other_id>", endpoint = "http://voice-sidecar-b:4600" },
+                               #   ]
+                               #
+                               # Speech plays via /stream, music via /music/*,
+                               # joins via /voice/join — all on the one voice
+                               # connection that controller owns. Empty (the
+                               # default) = the voice seam is unwired; joins
+                               # and speech fail closed.
+                               #
+                               # ONE PER GUILD because Discord allows one voice
+                               # connection per bot token PER GUILD, so each
+                               # controller stays hard-bound to one and
+                               # multi-guild is a deployment topology, not a
+                               # controller that juggles several. A second
+                               # guild means a second controller container:
+                               # COMPOSE_PROFILES=multi-guild.
+                               #
+                               # A LIST, not a table keyed by guild: the
+                               # config/example parity gate flattens tables to
+                               # leaf paths, and a guild-keyed table would need
+                               # a real snowflake declared in this file.
+                               #
+                               # THIS IS THE JOIN ALLOW-LIST. WHERE a guild's
+                               # speech is RECORDED is policy.toml's
+                               # `voice = true` — independent on purpose.
 # voice = "Cantonese_CuteGirl" # a NATIVE Cantonese voice — the lever is the
 #                              # voice, not the model tier; language_boost is
 #                              # hard-set in the adapter ("auto" mis-renders 係/唔該)
