@@ -1685,6 +1685,62 @@ timeout_seconds = 240.0
 # surprise the day it is not.
 max_memory_calls = 2
 
+# THE CULTURE FOLD (design/culture-tier). Uncommented from 2026-09-17, when the
+# adaptor stopped being tool-free: it now holds nine read verbs through an
+# `AdaptorGrant`, so its loop can spend turns researching before it writes, and
+# the field defaults (6 turns / 40,000 total) were sized for a pass that made
+# one model call and stopped.
+#
+# **The arithmetic, because the failure it avoids is silent and
+# self-perpetuating.** A cut loop emits no envelope; `parse_envelope` reads
+# nothing; the run is `unavailable`; the watermark is HELD; the SAME batch is
+# re-read and re-cut on the next fire, forever. `[culture] batch_limit` is 300
+# messages, ~7-9k tokens of context with the room block, the previous account,
+# the standing position and the note index — and every turn RE-SENDS it, so the
+# loop's running total is roughly context x turns. At the 40,000 default that
+# buys four turns, and the fourth is where the fold is still reading rather
+# than writing. This is the reading that the `[dreamer.budgets.proactive]`
+# block above already paid for once, on a bigger roster.
+#
+# `output_tokens` is DERIVED and is not a free number: see
+# `nora.domain.culture.ACCOUNT_OUTPUT_TOKENS`. The account cap is 1,400
+# CHARACTERS and this budget is in TOKENS; the bridge is 1.15 output tokens per
+# character — MEASURED 2026-09-17 with `o200k_base` over a realistic
+# dense-Cantonese account (1.094) and continuous Cantonese prose (1.131), not
+# assumed — so emitting a full account costs ~1,674. The rule is that the loop
+# must be able to emit one TWICE — once for the tool-call arguments it spends
+# before it writes, once for the account — and
+# `tests/unit/test_culture_adaptor.py` asserts that against the FIELD DEFAULT,
+# so an operator who deletes this block still gets a fold that can finish its
+# sentence. 6,000 is that floor with room for the research.
+#
+# NOT `[dreamer] max_tokens`, which is the PROVIDER's ceiling on one completion
+# and is the tighter of the two: at `[llm] max_tokens = 2000` an account at the
+# cap uses ~84% of a single completion. Raise THAT, not this, if a fold is ever
+# seen truncating — and the ONE reading that would is a model emitting
+# `\uXXXX` escapes instead of raw UTF-8, which costs 2.85x the measured bridge
+# (3.117 tok/char) and puts an account at the cap at ~4,400 tokens. That is a
+# truncation, so it shows up as `unavailable` with the watermark held, never as
+# a quietly shorter account.
+[dreamer.budgets.culture]
+turns = 10
+total_tokens = 120000
+output_tokens = 6000
+# 120 s is the shared default and it is left alone: unlike the decide turn this
+# pass has no live deadline behind it, and a fold that runs long is skipped on
+# the next tick rather than making anybody wait.
+#
+# Memory reads per pass. 4 rather than the default 2: the decide turn asks
+# about the one or two people a note names, and this pass is asking what a
+# ROOM is — several members, each a separate `about`/`ask_memory`. Still a
+# ceiling and still fail-closed (the 5th read is answered `unavailable` with a
+# reason, never an error and never a silent empty). The reading that would
+# raise it is a fold that spends all four and still names people it could not
+# resolve; the one that would lower it is four reads that never change the
+# account.
+max_memory_calls = 4
+
+
 
 [obs.logging]
 level = "INFO"

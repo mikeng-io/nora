@@ -893,26 +893,48 @@ def test_a_partial_budget_block_fills_the_rest_from_the_default(toml_path):
     assert budget.timeout_seconds == DreamBudgetConfig().timeout_seconds == 120.0
 
 
-def test_the_shipped_template_declares_no_budget_block_at_all(toml_path):
-    """**Stated rather than hidden: every surviving adaptor runs on
-    `DreamBudgetConfig`'s defaults.**
+def test_every_budget_block_the_template_declares_is_pinned_with_its_reasoning(
+    toml_path,
+):
+    """**Stated rather than hidden: which adaptors got numbers somebody chose,
+    and which run on `DreamBudgetConfig`'s defaults.**
 
-    The template declared five blocks — two room ones that named nothing and
-    three `fact-*` ones that were the only measured numbers in the section.
-    All five went with the knowledge and language tiers. The note tier's three
-    adaptors never had a block, so nothing regressed; what changed is that the
-    section is now empty rather than partly filled, and this test says so out
-    loud instead of leaving the next reader to infer it from a passing suite.
+    The template once declared five blocks — two room ones that named nothing
+    and three `fact-*` ones that were the only measured numbers in the section.
+    All five went with the knowledge and language tiers, leaving the section
+    empty. It refills only under this test, which is the point: `budget_for`
+    falls back SILENTLY for an unknown key (its own docstring concedes it), so
+    an adaptor with no block runs on numbers nobody chose — and that state must
+    not be confused with «somebody sized these».
 
-    `budget_for` falls back SILENTLY for an unknown key (its own docstring
-    concedes it), so an adaptor with no block runs on numbers nobody chose.
-    That is the shipped state and it is bounded — the assertion below is what
-    keeps it from being confused with «somebody sized these»."""
+    The note tier's two adaptors still have no block and still run on the
+    defaults."""
     budgets = load(toml_path).dreamer.budgets
-    assert set(budgets) == {"proactive"}, (
+    assert set(budgets) == {"proactive", "culture"}, (
         "a [dreamer.budgets.*] block arrived — pin it here with the reasoning "
         "for its numbers, so the section cannot fill up unmeasured"
     )
+    # CULTURE, pinned 2026-09-17, when the adaptor stopped being tool-free.
+    #
+    # `output_tokens` is DERIVED, not chosen: the account cap is in CHARACTERS
+    # and this is in TOKENS, and the bridge is `ACCOUNT_OUTPUT_TOKENS` — one
+    # token per character, the CJK worst case. The rule is that the loop must
+    # be able to emit a full account TWICE (the tool-call arguments it spends
+    # before it writes, then the account), which 6,000 clears with room for the
+    # research. `tests/unit/test_culture_adaptor.py` asserts the same rule
+    # against the FIELD DEFAULT, so deleting this block still leaves a fold
+    # that can finish its sentence.
+    #
+    # `turns`/`total_tokens` are the proactive block's own lesson applied one
+    # adaptor over and are NOT measurements: `[culture] batch_limit = 300` is
+    # ~7-9k tokens of context, every turn re-sends it, so the running total is
+    # roughly context x turns and the 40,000 default buys four. A loop cut
+    # before it writes emits no envelope, HOLDS its watermark and re-reads the
+    # same batch forever — the trap this whole pairing exists to keep shut.
+    culture = budgets["culture"]
+    assert (culture.turns, culture.total_tokens) == (10, 120_000)
+    assert (culture.output_tokens, culture.max_memory_calls) == (6_000, 4)
+    assert culture.timeout_seconds == DreamBudgetConfig().timeout_seconds
     # PROACTIVE, pinned 2026-09-10 with its reasoning, which is what the
     # message above asks of anything that lands in this section.
     #
@@ -937,8 +959,8 @@ def test_a_zero_budget_field_is_a_startup_failure(toml_path):
     can be zeroed is a cap an operator can turn into a silent outage by hand,
     and this section's whole job is to be edited by hand.
 
-    The block is APPENDED here rather than edited in place, because the shipped
-    template declares none (see the test above)."""
+    The block is APPENDED here rather than edited in place, so it does not have
+    to know which blocks the template already declares (see the test above)."""
     toml_path.write_text(
         toml_path.read_text()
         + "\n[dreamer.budgets.note-curation]\nturns = 0\n")
@@ -955,7 +977,7 @@ def test_an_unknown_budget_key_is_a_startup_failure(toml_path):
 
 
 def test_a_declared_budget_block_parses_into_a_bounded_budget(toml_path):
-    """The positive control for the two refusals above, and for the empty-map
+    """The positive control for the two refusals above, and for the key-set
     assertion two tests up: a LEGAL block must actually reach `budget_for`.
 
     "It loaded" is not the same as "it loaded what we think": a

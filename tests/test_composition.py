@@ -1524,6 +1524,95 @@ async def test_a_home_room_wires_the_proactive_adaptor_its_schedule_and_its_gran
     assert (home.platform, home.conversation_id, home.location_trusted) == ("signal", "g1", True)
 
 
+async def test_the_culture_adaptor_is_wired_with_its_grant_and_its_OWN_room(
+    cfg, tmp_path,
+):
+    """**The end of the wiring defect** (design/culture-tier `03-decisions`
+    correction 14). Three things have to line up or the grant is inert and
+    nothing says so: the runtime must hold a grant under the adaptor's OWN name
+    (a second spelling is a grant that silently does not apply), the tool
+    source must hold this key's room in `scope_rooms`, and the room must carry
+    the platform — without it there is no roster source, `view.available` is
+    `False`, and every room-scoped verb answers `unavailable` forever while
+    every counter stays green.
+
+    `home_rooms` is asserted NOT to be the resolution path: culture is
+    scope-keyed and `DreamerRuntime.run` supplies `workspace=None` for it, so a
+    resolution through `home_rooms` would look up `""` and find nothing — which
+    is exactly the branch this change replaces."""
+    from nora.agent.dreamer import culture_grant
+
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True, "culture.enabled": True,
+    }))
+
+    assert "culture" in [a.name for a in deps.dream_adaptors]
+    assert deps.dreamer_runtime is not None
+    assert deps.dreamer_runtime.grant_for("culture") == culture_grant()
+    source = deps.dreamer_runtime._tools
+    # Every policy conversation, by every id form it answers to — the second
+    # room too, which has no `home_room = true` and needs none.
+    assert set(source._scope_rooms) == {"g1", "g2"}
+    room = source._scope_rooms["g1"]
+    assert (room.platform, room.conversation_id) == ("signal", "g1")
+    assert room.location_trusted is True and room.workspace == "friends"
+    assert "g1" not in source._home_rooms
+
+
+async def test_the_granted_verbs_are_actually_BUILT_for_a_culture_key(cfg, tmp_path):
+    """The property the grant exists for, measured at the seam rather than
+    inferred from it: `RegistryToolSource.build` with the culture adaptor's own
+    name, key and grant returns the room-scoped verbs — including `where_been`,
+    which was in no adaptor's grant at all before this — over a room with a
+    real platform rather than the empty one.
+
+    Without the scope-keyed resolution this returns the same NAMES built
+    against `Room(platform="", roster_source=None)`, which is why the room is
+    asserted too: a green name list is exactly what the defect looked like."""
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True, "culture.enabled": True,
+    }))
+
+    assert deps.dreamer_runtime is not None
+    source = deps.dreamer_runtime._tools
+    culture = next(a for a in deps.dream_adaptors if a.name == "culture")
+    # THE ROOM, captured off the one call that receives it. Asserting the
+    # returned NAMES alone does not measure this property and a mutation
+    # proved it: with the grant reverted to `AdaptorGrant()` all nine verbs
+    # still build — they are read-only, so the ceiling admits them — over
+    # `Room(platform="", roster_source=None)`, where every one of them answers
+    # `unavailable` forever. A green name list IS the defect.
+    captured: dict[str, object] = {}
+    real_build = source._registry.build
+
+    def _spy(**kw: object) -> object:
+        captured.update(kw)
+        return real_build(**kw)
+
+    source._registry.build = _spy
+    try:
+        built = source.build(
+            key="g1", names=frozenset(culture.tools), workspace=None,
+            adaptor="culture", grant=deps.dreamer_runtime.grant_for("culture"),
+        )
+    finally:
+        del source._registry.build
+
+    names = {
+        getattr(t, "tool_name", None) or getattr(t, "__name__", "") for t in built
+    }
+    assert names == set(culture.tools), sorted(set(culture.tools) - names)
+    assert "where_been" in names and "ask_memory" in names
+    room = captured["room"]
+    assert room.platform == "signal", "the verbs were built over the EMPTY room"
+    assert room._roster_source is not None, "no roster: every verb is unavailable"
+    assert captured["conversation_id"] == "g1"
+    assert captured["location_trusted"] is True
+    assert captured["supplied_workspace"] is None
+
+
 async def test_no_home_room_wires_no_proactive_adaptor(cfg):
     deps = await build_dependencies(override_config(cfg, {
         "dreamer.enabled": True, "notes.enabled": True,
