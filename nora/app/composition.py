@@ -324,6 +324,10 @@ def _adaptor_budget(b: DreamBudgetConfig) -> AdaptorBudget:
         output_tokens=b.output_tokens,
         timeout_seconds=b.timeout_seconds,
         max_memory_calls=b.max_memory_calls,
+        # Copied, not aliased: `DreamBudgetConfig` is frozen but its `dict`
+        # field is not, and an `AdaptorBudget` handed the same object would
+        # share it with the config tree for the process's life.
+        tool_calls=dict(b.tool_calls),
     )
 
 
@@ -3442,7 +3446,16 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # STARTUP rather than at the first tick: an adaptor holding an act verb
         # is not a condition to discover at 3am from a metric. Since DEC-162
         # it refuses everything but the one grant it is handed.
-        verify_tool_subsets(dream_adaptors, tools=dream_tools, grants=dream_grants)
+        verify_tool_subsets(
+            dream_adaptors, tools=dream_tools, grants=dream_grants,
+            # The per-adaptor per-tool ceilings, read off the SAME budgets the
+            # runtime got above — so «this ceiling names a tool the adaptor
+            # does not hold» is a boot failure rather than a raise the
+            # operator made that quietly does nothing.
+            tool_calls={
+                name: b.tool_calls for name, b in cfg.dreamer.budgets.items()
+            },
+        )
 
     return Dependencies(
         audit=audit, memory=memory, persons=persons, metrics=metrics,

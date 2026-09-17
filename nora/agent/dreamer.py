@@ -81,7 +81,7 @@ import json
 import logging
 import time
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, TypeVar, get_args
 
 from ..domain.models import PersonRef, TranscriptRow
@@ -238,6 +238,22 @@ class AdaptorBudget:
     #: needs more; the reading that would move the default is the decide suite
     #: losing recall at 2 that it keeps at 3.
     max_memory_calls: int = 2
+    #: **The per-adaptor delta over the per-tool call ceilings**
+    #: (`[dreamer.budgets.<adaptor>.tool_calls]`) — tool name to how many
+    #: calls ONE pass may make, applied by `_tool_budgets` OVER
+    #: `NativeTool.budget` and over `[llm.budgets]`.
+    #:
+    #: The paragraph above says a per-tool budget «lives with the tool
+    #: (`NativeTool.budget`, DEC-10)», and that is still where the TABLE
+    #: lives. This is the per-adaptor override OF that table, the same
+    #: relationship `[llm.budgets]` already has to it for a tag turn — the
+    #: difference being that `[llm.budgets]` is deployment-wide and this is
+    #: one adaptor's. Without it the only way to give the proactive pass more
+    #: `note_read` was to give every one of Nora's own replies more too.
+    #:
+    #: Empty by omission, so an adaptor that says nothing runs on exactly the
+    #: ceilings it ran on before this field existed.
+    tool_calls: Mapping[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -599,6 +615,7 @@ class AdaptorToolError(ValueError):
 def verify_tool_subsets(
     adaptors: Sequence[DreamAdaptor], *, tools: DreamToolSource,
     grants: Mapping[str, AdaptorGrant] | None = None,
+    tool_calls: Mapping[str, Mapping[str, int]] | None = None,
 ) -> None:
     """Refuse to start if any adaptor's declared subset escapes the ceiling.
 
@@ -614,11 +631,23 @@ def verify_tool_subsets(
     `grants` is the SAME mapping the runtime holds (the composition root
     builds one and passes it to both), so the startup check measures exactly
     what the runtime enforces.
+
+    `tool_calls` maps an adaptor name to its
+    `[dreamer.budgets.<adaptor>.tool_calls]` — checked here and nowhere else,
+    because a per-tool ceiling the operator raised for a tool the adaptor
+    does not hold has no runtime symptom at all: the pass runs on the table's
+    number and the config file says it does not. There is nothing to discover
+    at 3am from a metric, which is the same argument the act-verb check above
+    is made on.
     """
     ceiling = tools.read_only()
     for adaptor in adaptors:
         grant = (grants or {}).get(adaptor.name, AdaptorGrant())
         for message in tool_subset_faults(adaptor, ceiling=ceiling, grant=grant):
+            raise AdaptorToolError(message)
+        for message in tool_call_faults(
+            adaptor, tool_calls=(tool_calls or {}).get(adaptor.name),
+        ):
             raise AdaptorToolError(message)
 
 
@@ -682,6 +711,51 @@ def tool_subset_faults(
                 f"{', '.join(sorted(WORKSPACE_SAFE_TOOLS))}."
             )
     return tuple(faults)
+
+
+def tool_call_faults(
+    adaptor: DreamAdaptor, *, tool_calls: Mapping[str, int] | None = None,
+) -> tuple[str, ...]:
+    """Every per-tool ceiling this adaptor was given for a tool it does not
+    hold, as messages.
+
+    A SEPARATE function from `tool_subset_faults` rather than a third axis
+    inside it, because the two read different things: that one measures the
+    adaptor's own declaration against the ceiling, this one measures the
+    OPERATOR's config against the adaptor's declaration. They also fail at
+    different grains — a subset fault is a code mistake in the objective
+    corpus, a ceiling fault is a typo in `config.toml` — and a reader
+    chasing one should not have to read the other.
+
+    Pure and returning messages, the same shape, so `verify_tool_subsets` is
+    still the only thing that raises.
+
+    **Why a boot failure and not a warning.** `_tool_budgets` skips a key
+    naming a tool that did not build, so the wrong outcome is already SAFE —
+    it cannot conjure permission for a tool the adaptor was never granted.
+    What it cannot be is visible: the pass runs on the table's ceiling while
+    `config.toml` records a raised one, and the only tell is a veto counter
+    nobody is watching. `[dreamer.budgets.<adaptor>] max_memory_calls` takes
+    the opposite posture for a misspelled ADAPTOR name (`budget_for` is
+    deliberately lenient) and the difference is what the mistake costs: there
+    the run is bounded by numbers the operator did not choose, which is
+    survivable; here the operator's own fix is inert.
+    """
+    if not tool_calls:
+        return ()
+    declared = frozenset(adaptor.tools)
+    unheld = frozenset(tool_calls) - declared
+    if not unheld:
+        return ()
+    return (
+        f"Dreamer adaptor {adaptor.name!r} has per-tool call ceilings for "
+        f"tools it does not declare: {', '.join(sorted(unheld))}. "
+        f"[dreamer.budgets.{adaptor.name}.tool_calls] may only name a tool "
+        f"in this adaptor's own subset ({', '.join(sorted(declared)) or 'none'}) "
+        f"— a ceiling on a tool it never calls raises nothing and is read by "
+        f"nothing, so it would leave the config saying a pass is bounded "
+        f"differently than it is.",
+    )
 
 
 def _envelopes(raw: str, *, key: str):
@@ -1378,7 +1452,15 @@ class DreamerRuntime:
             # rule is stated instead of the tally. The guard is built inside
             # `_sample` for that reason regardless.
             tool_budgets = _tool_budgets(
-                tools, adaptor, self._tool_budget_overrides)
+                tools, adaptor, self._tool_budget_overrides,
+                # This adaptor's own delta, last and narrowest. It rides on
+                # `budget` rather than on `__init__` because it is one
+                # adaptor's number, and `budget_for` is already the one place
+                # that answers «what may this adaptor spend» — a second
+                # name-keyed mapping on the runtime would be a second place
+                # for the same question to be answered differently.
+                budget.tool_calls,
+            )
         except Exception:
             log.exception(
                 "dream run failed (adaptor=%s key=%s)", adaptor.name, key,
@@ -1669,6 +1751,7 @@ def _tool_budgets(
     tools: list[Any],
     adaptor: DreamAdaptor,
     overrides: Mapping[str, int] | None = None,
+    adaptor_overrides: Mapping[str, int] | None = None,
 ) -> dict[str, int]:
     """The per-tool call ceiling `DreamGuard` enforces under R-7.
 
@@ -1684,6 +1767,19 @@ def _tool_budgets(
     to a tool that BUILT: an override naming a tool this adaptor does not hold
     must not conjure a budget entry, because a name in `budgets` is what turns
     default-deny into permission.
+
+    `adaptor_overrides` is THIS adaptor's `[dreamer.budgets.<adaptor>.
+    tool_calls]`, applied last and winning over both — three layers, widest
+    first: the tool's own table, the deployment's delta, this adaptor's. The
+    order is the only one that makes the narrow value reachable; applied
+    before `overrides` it would be silently overwritten by a deployment-wide
+    number the operator set for the tag path.
+
+    It is subject to the same built-only rule, and a key that names a tool
+    this adaptor does not hold has ALREADY refused the boot
+    (`tool_call_faults`) — this skip is the second half of that, for the
+    window where a hot-reloaded objective drops a tool the config still
+    names.
     """
     from .tools import NATIVE_TOOLS
 
@@ -1699,5 +1795,7 @@ def _tool_budgets(
                 "(adaptor=%s)", name, adaptor.name,
             )
             continue
-        budgets[name] = (overrides or {}).get(name, spec.budget)
+        budgets[name] = (adaptor_overrides or {}).get(
+            name, (overrides or {}).get(name, spec.budget),
+        )
     return budgets

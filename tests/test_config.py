@@ -907,10 +907,9 @@ def test_every_budget_block_the_template_declares_is_pinned_with_its_reasoning(
     an adaptor with no block runs on numbers nobody chose — and that state must
     not be confused with «somebody sized these».
 
-    The note tier's two adaptors still have no block and still run on the
-    defaults."""
+    `note-curation` still has no block and still runs on the defaults."""
     budgets = load(toml_path).dreamer.budgets
-    assert set(budgets) == {"proactive", "culture"}, (
+    assert set(budgets) == {"proactive", "culture", "note-candidates"}, (
         "a [dreamer.budgets.*] block arrived — pin it here with the reasoning "
         "for its numbers, so the section cannot fill up unmeasured"
     )
@@ -952,6 +951,45 @@ def test_every_budget_block_the_template_declares_is_pinned_with_its_reasoning(
     proactive = budgets["proactive"]
     assert (proactive.turns, proactive.total_tokens) == (24, 1_000_000)
     assert (proactive.output_tokens, proactive.timeout_seconds) == (10_000, 240.0)
+    # And its per-tool ceiling, pinned 2026-09-17. `note_read = 3` on the
+    # NATIVE_TOOLS table is a TAG TURN's number — a reply that reads a note or
+    # two before answering — while this pass is asked for one decision per
+    # note the group has open, so its need is the OPEN-NOTE COUNT.
+    #
+    # MEASURED, unlike the three numbers above: the 05:00 pass that day
+    # (Langfuse `8b3e6522`) held 5 open notes in one scope and 6 in the other,
+    # read three in each, was refused a FOURTH DISTINCT note in each, and then
+    # decided every note anyway — three grounded in a body, the rest in the
+    # index line. Status `ok`, watermark advanced, so the only tell was a veto
+    # counter that could not be told apart from a misspelled tool name.
+    #
+    # 8 and not 6 because this is a CEILING and not a reservation: the
+    # headroom costs nothing until a pass spends it, and one more note must
+    # not re-open the config. The instrument that says it is still too low is
+    # `nora_dream_guard_vetoes_total{rule="tool-budget"}`.
+    assert proactive.tool_calls == {"note_read": 8}
+    # NOTE-CANDIDATES, pinned 2026-09-17 — declared in the template only
+    # because the DEPLOYMENT sets it (it was set live while chasing #291 and
+    # the template did not follow, which is the drift
+    # `tests/test_env_template.py` exists to catch).
+    #
+    # NOT measurements, and specifically not the ceiling #291 was about: that
+    # was `[dreamer] max_tokens`, the provider's limit on ONE completion,
+    # which raises. These two are the Strands LOOP budget and bind without
+    # raising. They are here for the other half of the same argument — a batch
+    # pass's output scales with the BATCH, so the field defaults (sized for a
+    # pass that makes one model call) are a tag turn's numbers on a job that
+    # is not one.
+    #
+    # `turns`/`timeout_seconds` are deliberately absent: this adaptor holds no
+    # tools, so it cannot spend a turn researching and the defaults bound it.
+    candidates = budgets["note-candidates"]
+    assert (candidates.total_tokens, candidates.output_tokens) == (200_000, 36_000)
+    assert candidates.turns == DreamBudgetConfig().turns
+    assert candidates.timeout_seconds == DreamBudgetConfig().timeout_seconds
+    assert candidates.tool_calls == {}, (
+        "a tool-free adaptor with a per-tool ceiling would refuse the boot"
+    )
 
 
 def test_a_zero_budget_field_is_a_startup_failure(toml_path):

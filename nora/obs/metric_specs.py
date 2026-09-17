@@ -1181,12 +1181,23 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # help text was wrong for a day:
     #
     #   rule="R-7"           — the model asked for a tool its adaptor never
-    #                          granted, or spent that tool's own ceiling. Under
-    #                          a read-only ceiling that is not a leak, but it IS
-    #                          the tell that an objective and its tool subset
-    #                          disagree about what the job needs. A CONFIG
-    #                          fault: it should be near zero, and a steady rate
-    #                          is something to go and fix.
+    #                          granted. Under a read-only ceiling that is not a
+    #                          leak, but it IS the tell that an objective and
+    #                          its tool subset disagree about what the job
+    #                          needs. A CONFIG fault: it should be near zero,
+    #                          and a steady rate is something to go and fix.
+    #   rule="tool-budget"    — the model spent one tool's own per-pass ceiling
+    #                          and called it again (2026-09-17). Split OFF
+    #                          `R-7`, which carried both until then and so
+    #                          could not answer whether a ceiling was binding:
+    #                          the proactive pass was refused a fourth note in
+    #                          both its scopes that morning and decided every
+    #                          note anyway, indistinguishable in this series
+    #                          from a misspelled tool name. This is the
+    #                          instrument for `[dreamer.budgets.<adaptor>]
+    #                          tool_calls` — a sustained rate on a READ verb
+    #                          says the number is too low for the work, the
+    #                          same reading `memory-budget` carries below.
     #   rule="memory-budget" — the pass spent its whole memory ration and asked
     #                          again (R-91, issue #160). Ordinary model
     #                          behaviour that the ceiling absorbs, not a fault;
@@ -1201,8 +1212,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_dream_guard_vetoes_total",
         "Tool calls refused by DreamGuard, by adaptor and rule: R-7 is a tool "
-        "never granted or past its own ceiling, memory-budget is the pass's "
-        "memory ration spent.",
+        "never granted, tool-budget is that tool's own per-pass ceiling spent, "
+        "memory-budget is the pass's memory ration spent.",
         ("adaptor", "rule"),
     ),
     _CounterSpec(

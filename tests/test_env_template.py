@@ -131,6 +131,27 @@ _MAY_DIFFER = {
     # DEC-43 posture as speech.tts.enabled above.
     "speech.tts.speed", "speech.tts.pitch", "speech.tts.vol",
     "speech.tts.emotion",
+    # The voice sidecar's own topology and the operator's vendor choice
+    # (2026-09-17). `provider` names a vendor account, `sidecar_endpoint` is a
+    # compose service on this host, and `voice_channel_ids` are Discord
+    # snowflakes for THIS deployment's rooms — a copied config has none of the
+    # three, and the template shipping them would be an identifier in the tree
+    # (`tests/architecture/test_no_real_identifiers_in_the_tree.py`).
+    "speech.tts.provider", "speech.tts.sidecar_endpoint",
+    "speech.tts.voice_channel_ids",
+    # The LIVE operator's ON decision for the culture fold (steps 0-4 are
+    # merged and running); the template ships the DEC-43 posture, OFF, so a
+    # copied config does not start folding a room it has never read. Same
+    # class as `notes.candidates_enabled` above.
+    "culture.enabled",
+    # `[dreamer] max_tokens` — the Dreamer's own per-call ceiling, `0` meaning
+    # «inherit `[llm] max_tokens`» (issue #291). The TEMPLATE must keep the
+    # sentinel: the field's whole posture is that its arrival is a runtime
+    # no-op for a deployment that does not set it, the same as `model = ""`.
+    # The live number is the operator's, raised off a measured truncation on
+    # the note batch, and a fresh install must not inherit a ceiling sized for
+    # a roster it does not have.
+    "dreamer.max_tokens",
     # Env-var NAMES are the operator's choice of what to call a secret.
     "media.encryption_key_env",
     # The five model lanes, added 2026-09-06 after ea626821 routed them through
