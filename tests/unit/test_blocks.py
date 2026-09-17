@@ -16,10 +16,6 @@ import pytest
 from nora.app.fire import _MIRROR_STYLE, _VERDICT_STYLE
 from nora.domain.blocks import ContextBlock, RowStyle, render_rows
 from nora.domain.models import DeliveryStatus, TranscriptRow
-from nora.engagement.debrief_render import _FOLD_STYLE
-from nora.ingest.relevance_gate import _GATE_STYLE
-from nora.language.note_candidates import _CANDIDATE_STYLE
-from nora.language.note_curator import _EVIDENCE_STYLE, _OWN_SENDS_STYLE
 from nora.language.proactive import _ROOM_STYLE
 
 NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
@@ -44,6 +40,20 @@ def _render(style: RowStyle, **extra) -> str:
 
 
 #: EVERY live `RowStyle` in the tree, with the line each one produces.
+#:
+#: **Down from nine to three at #292, and the three that remain are the ones
+#: that are not transcripts.** Every builder that renders a MESSAGE now renders
+#: an element per message rather than a line per message, so its grammar is no
+#: longer a `RowStyle` and no longer belongs in a table of lines: the gate, the
+#: debrief fold, the curator's two, the note-candidate index and the culture
+#: batch all left together. What is left is a room listing and the operator's
+#: two Discord surfaces — rows that are genuinely lines, addressed to a human or
+#: describing something other than a message.
+#:
+#: The table did not need editing to notice: it is keyed on the imported
+#: objects, so deleting a style breaks the import, and
+#: `test_every_live_rowstyle_is_in_this_table` closes the other direction by
+#: discovering them from the source.
 #:
 #: **The styles are IMPORTED, not retyped, and that is the correction this
 #: table is on its third version for.** Version one hand-wrote seven grammars
@@ -70,23 +80,9 @@ def _render(style: RowStyle, **extra) -> str:
 _CULTURE_STYLE = RowStyle(handle="none", time="none")
 
 PARITY = [
-    ("relevance gate", "(60m ago) [Grant]: 去邊食", _GATE_STYLE, {}),
-    ("debrief + rollup fold", "[11:00] Grant: 去邊食", _FOLD_STYLE, {"tz": UTC}),
-    ("note curator evidence", "[7] (60m ago) Grant: 去邊食", _EVIDENCE_STYLE, {}),
-    ("curator own sends", "[7] (60m ago) you: 去邊食", _OWN_SENDS_STYLE,
-     {"is_self": lambda r: True}),
-    ("note candidate index", "7 [2026-09-12 Sat 11:00 UTC] Grant: 去邊食",
-     _CANDIDATE_STYLE, {"tz": UTC}),
     ("proactive room listing", "- Grant: 去邊食", _ROOM_STYLE, {}),
     ("shadow mirror window", "- Grant: 去邊食", _MIRROR_STYLE, {}),
     ("gate verdict line", "Grant: 去邊食", _VERDICT_STYLE, {}),
-    # The culture batch. The BAREST grammar in the table and the only one with
-    # neither a handle nor a time, which is the point rather than a default:
-    # the objective's load-bearing clause is «not dated observations», and a
-    # model handed `[482] 2026-09-12 14:03` writes about the 12th while one
-    # handed a name and a line writes about the room. The chronicle this tier
-    # exists to not be IS `[when] what happened`.
-    ("culture batch", "Grant: 去邊食", _CULTURE_STYLE, {}),
 ]
 
 
@@ -247,7 +243,11 @@ def test_the_trailing_accessor_is_collapsed_and_escaped_like_the_rest():
 
 def test_the_note_candidate_index_marks_a_reply_through_trailing():
     """The live caller, so the marker is pinned where it is actually read and
-    not only where it is implemented."""
+    not only where it is implemented.
+
+    Kept pointing at `_render_line` through #292's conversion rather than
+    rewritten against the renderer: what has to hold is that THIS pass still
+    shows a reply pointer and its room, whatever grammar carries them."""
     from nora.language.note_candidates import _render_line
 
     parent_ts = TS - 600_000
@@ -257,8 +257,12 @@ def test_the_note_candidate_index_marks_a_reply_through_trailing():
         person_name="Grant", quoted_ts=parent_ts,
     )
     line = _render_line(row, room="Dinner", tz=UTC)
-    assert line.endswith("(reply to 2026-09-12 Sat 10:50 UTC)"), line
-    assert " (Dinner): " in line
+    # ATTRIBUTES since #292, not a trailing parenthetical and a suffix wedged
+    # into the speaker field — the room label used to sit INSIDE that field,
+    # before the `: ` that ends it, so a label containing a colon wrote a second
+    # delimiter into the one position the line treated as one.
+    assert 'reply_to="2026-09-12 Sat 10:50 UTC"' in line, line
+    assert 'room="Dinner"' in line, line
     # No pointer, no marker — never `(reply to ?)`, which is `_parent_of`'s rule.
     plain = _render_line(
         TranscriptRow(
@@ -267,8 +271,8 @@ def test_the_note_candidate_index_marks_a_reply_through_trailing():
             person_name="Grant",
         ), room="Dinner", tz=UTC,
     )
-    assert "reply to" not in plain
-    assert plain.endswith("去邊食")
+    assert "reply_to" not in plain
+    assert plain.endswith("去邊食</m>")
 
 
 def test_markup_false_drops_the_escape_and_nothing_else():

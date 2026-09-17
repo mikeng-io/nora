@@ -1070,10 +1070,10 @@ def test_the_notes_index_says_which_day_each_note_is_about():
     from nora.language.note_render import render_notes
 
     dated = dataclasses.replace(_note(), anchor_date=20260912)
-    assert "(about Sat 12 Sep, in 2 days)" in render_notes((dated,), today=20260910).render()
-    assert "(about Sat 12 Sep, yesterday)" in render_notes((dated,), today=20260913).render()
+    assert 'about="Sat 12 Sep, in 2 days"' in render_notes((dated,), today=20260910).render()
+    assert 'about="Sat 12 Sep, yesterday"' in render_notes((dated,), today=20260913).render()
     # No clock: the bare date rather than a distance, never a wrong distance.
-    assert "(about 20260912)" in render_notes((dated,)).render()
+    assert 'about="20260912"' in render_notes((dated,)).render()
 
 
 def test_the_prefill_reads_the_clock_once():

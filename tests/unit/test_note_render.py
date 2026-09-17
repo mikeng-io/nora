@@ -87,7 +87,7 @@ def test_the_note_says_whose_words_the_index_is_in():
     assert "from what the room actually did" in note
     # And the tie-break said outright, because a summary is the thing that
     # reads as settled: on `a10` the stale line is what she reached for.
-    assert "where a line here and the transcript disagree, the transcript is "\
+    assert "where an entry here and the transcript disagree, the transcript is "\
            "what happened" in note
 
 
@@ -99,7 +99,7 @@ def test_the_note_forbids_reading_a_line_out_as_well_as_acting_on_one():
     because an author tightening one is exactly how the other goes."""
     note = NOTES_BLOCK_NOTE.lower()
     assert "read one before acting on what it holds" in note
-    assert "never read a line out as if it were what was said" in note
+    assert "never read an entry out as if it were what was said" in note
 
 
 def test_the_note_keeps_the_machinery_out_of_the_room():
@@ -187,7 +187,7 @@ def test_a_retired_note_is_never_rendered_beside_a_standing_one():
     out = _text(render_notes((retired, standing)))
     assert "retired note" not in out
     assert "standing note" in out
-    assert out.count("\n- ") == 1
+    assert out.count("\n<note ") == 1
 
 
 def test_the_index_is_uncapped_and_every_standing_note_appears():
@@ -212,7 +212,7 @@ def test_the_index_is_uncapped_and_every_standing_note_appears():
     out = _text(render_notes(notes))
     for i in range(60):
         assert f"note {i:03d}" in out, i
-    assert out.count("\n- ") == 60
+    assert out.count("\n<note ") == 60
 
 
 def test_the_entries_are_capped_upstream_not_here():

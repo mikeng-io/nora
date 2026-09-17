@@ -8,6 +8,7 @@ adaptor's own logic and not about a double that says yes to everything.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import replace
 
@@ -189,7 +190,7 @@ async def test_inputs_renders_the_batch_and_the_standing_note_index():
         key=SCOPE, batch=(_row(41, "let's do Sai Kung this time"),),
     )
 
-    assert "41 " in rendered and "let's do Sai Kung this time" in rendered
+    assert '<m n="41" ' in rendered and "let's do Sai Kung this time" in rendered
     assert "Wedding venue" in rendered
     assert "Venue undecided" in rendered
 
@@ -219,11 +220,11 @@ async def test_every_batch_line_is_attributed_to_the_room_not_the_workspace():
     games = await adaptor.inputs(key=GAMES_SCOPE, batch=batch)
     signal = await adaptor.inputs(key=SCOPE, batch=batch)
 
-    assert f"({GAMES_LABEL})" in games, games
-    assert f"({LABEL})" in signal, signal
+    assert f'room="{GAMES_LABEL}"' in games, games
+    assert f'room="{LABEL}"' in signal, signal
     # The defect itself: the workspace name attributed to a line.
-    assert f"({WS})" not in games, games
-    assert f"({WS})" not in signal, signal
+    assert f'room="{WS}"' not in games, games
+    assert f'room="{WS}"' not in signal, signal
 
 
 async def test_the_room_is_named_once_above_the_batch():
@@ -235,7 +236,7 @@ async def test_the_room_is_named_once_above_the_batch():
 
     assert rendered.startswith("<room "), rendered
     assert f'label="{GAMES_LABEL}"' in rendered, rendered
-    assert rendered.index("<room ") < rendered.index("Messages in this batch")
+    assert rendered.index("<room ") < rendered.index("<batch ")
 
 
 async def test_the_operators_description_of_the_room_reaches_the_prompt():
@@ -253,7 +254,7 @@ async def test_the_operators_description_of_the_room_reaches_the_prompt():
     assert "</room>" in rendered, rendered
     # ABOVE the batch — it is how the batch is meant to be read, not a
     # footnote to it.
-    assert rendered.index(GAMES_DESCRIPTION) < rendered.index("41 "), rendered
+    assert rendered.index(GAMES_DESCRIPTION) < rendered.index('<m n="41"'), rendered
 
 
 async def test_the_description_block_says_it_is_not_an_instruction():
@@ -301,7 +302,7 @@ async def test_no_conversation_id_is_rendered_when_the_room_has_no_name():
     rendered = await adaptor.inputs(key=GAMES_SCOPE, batch=(_row(41, "2200"),))
 
     assert GAMES_SCOPE not in rendered, rendered
-    assert f"({UNNAMED_ROOM})" in rendered, rendered
+    assert f'room="{UNNAMED_ROOM}"' in rendered, rendered
 
 
 async def test_a_room_description_cannot_forge_the_blocks_below_it():
@@ -468,17 +469,22 @@ def _as_the_index_rendered_it(note) -> str:
     Lifted out of `render_notes`' own output rather than by calling `escape`
     directly: the contract `note_handle` has to satisfy is a round trip
     through THE INDEX, and an assertion against `escape(...)` would stay green
-    if `_render_entry` ever changed how it writes a title. Reads `.body`
+    if the renderer ever changed how it writes a title. Reads `.body`
     because `render_notes` returns a `ContextBlock` (or `None`) since #243 —
-    binding to the real renderer is what made this notice. The line shape is
-    `- <title> — <description> (about …)`, so the title is what sits between
-    the bullet and the first em-dash separator — which is why every fixture
-    that uses this keeps that separator out of its own title.
+    binding to the real renderer is what made this notice, twice: once when the
+    block type changed, and again at #292 when the entry stopped being a line.
+
+    The title now sits in an ATTRIBUTE, which is the whole point of that change
+    — the old `- <title> — <description>` shape used a separator a 60-character
+    model-authored title may itself contain, and no fixture could be written
+    that kept it out without also being unrepresentative. A quoted attribute has
+    no such hole, so this reads the attribute.
     """
     block = render_notes((note,))
     assert block is not None, "a standing note must render an index entry"
-    line = next(ln for ln in block.body.splitlines() if ln.startswith("- "))
-    return line[2:].split(" — ", 1)[0]
+    match = re.search(r'<note [^>]*title="([^"]*)"', block.body)
+    assert match is not None, block.body
+    return match.group(1)
 
 
 def _note(**overrides):
@@ -1332,8 +1338,12 @@ def test_a_message_moment_renders_in_the_rooms_zone_with_its_weekday():
     hk = _render_line(row, room="ridgeline", tz=ZoneInfo("Asia/Hong_Kong"))
     utc = _render_line(row, room="ridgeline", tz=ZoneInfo("UTC"))
 
-    assert hk.startswith("2816 [2026-09-08 Tue 02:13 HKT] Ada (ridgeline): "), hk
-    assert utc.startswith("2816 [2026-09-07 Mon 18:13 UTC] Ada (ridgeline): "), utc
+    assert hk.startswith(
+        '<m n="2816" at="2026-09-08 Tue 02:13 HKT" from="Ada" room="ridgeline">'
+    ), hk
+    assert utc.startswith(
+        '<m n="2816" at="2026-09-07 Mon 18:13 UTC" from="Ada" room="ridgeline">'
+    ), utc
 
 
 async def test_inputs_renders_moments_in_the_adaptors_zone():
@@ -1359,8 +1369,8 @@ async def test_inputs_renders_moments_in_the_adaptors_zone():
     a = await ahead.inputs(key=SCOPE, batch=(row,))
     b = await behind.inputs(key=SCOPE, batch=(row,))
 
-    assert "[2026-09-08 Tue" in a, a
-    assert "[2026-09-07 Mon" in b, b
+    assert 'at="2026-09-08 Tue' in a, a
+    assert 'at="2026-09-07 Mon' in b, b
 
 
 def test_a_members_message_cannot_forge_the_notes_block_below_it():

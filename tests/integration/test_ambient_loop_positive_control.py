@@ -546,7 +546,7 @@ async def _drive(tmp_path: Path) -> _Journey:
     # Patched for the same reason the tag dispatch below is, and for a row that
     # matters more: her OWN message's timestamp is stamped by
     # `nora/agent/guards.py`'s `send_reply` from `time.time()`, and that row is
-    # the one the fold's transcript window renders as `[16:43] Nora:`. Left on
+    # the one the fold's transcript window renders as `<m at="16:43" from="Nora" …>`. Left on
     # the wall clock it renders as whatever time the suite runs at — so the
     # instrument's rendered input would differ from the incident's at exactly
     # the place #199 says it matters, and any ordering check ("a `Nora:` row in
@@ -728,12 +728,17 @@ def test_0_every_stage_of_the_journey_actually_ran(journey: _Journey) -> None:
     window = journey.fold_input.split("<transcript>")[1].split("</transcript>")[0]
     lines = [line for line in window.splitlines() if line.strip()]
     assert len(lines) == 3, f"expected question, answer, tag; got {lines}"
-    # `"[16:43] Nora"` and not `"[16:43] Nora:"` — the speaker may carry a
-    # trailing marker, which is one of the three shapes `3a2` explicitly
-    # accepts for "the fold is told this row went out". Pinning the colon
-    # would have made this control refuse a fix `3a2` was written to pass.
-    assert lines[1].startswith("[16:43] Nora") and ROUTE_ANSWER[:12] in lines[1], (
-        f"her sent row must render at 16:43 as the middle line; got {lines}"
+    # The clock and the speaker, as ATTRIBUTES — and deliberately NOT pinning
+    # what else the opening tag carries. The row may also carry a delivery
+    # mark, which is one of the shapes `3a2` accepts for "the fold is told this
+    # row went out"; pinning the full tag would make this control refuse a fix
+    # `3a2` was written to pass, exactly as pinning the trailing colon would
+    # have under the flat grammar.
+    assert 'at="16:43"' in lines[1] and 'from="Nora"' in lines[1], (
+        f"her sent row must render at 16:43 as the middle element; got {lines}"
+    )
+    assert ROUTE_ANSWER[:12] in lines[1], (
+        f"her sent row must carry its own text; got {lines}"
     )
     assert "Nora" not in lines[2], (
         f"the tag must render AFTER her row, not before it; got {lines}"
@@ -905,7 +910,7 @@ def test_3a2_the_fold_is_told_her_row_in_the_window_was_delivered(
     window = journey.fold_input.split("<transcript>")[1].split("</transcript>")[0]
     her_row = next(
         line for line in window.splitlines()
-        if line.strip().startswith("[16:43]") and "Nora" in line
+        if 'at="16:43"' in line and 'from="Nora"' in line
     )
     assert any(
         token in her_row.lower() for token in ("delivered", "was sent", "went out")

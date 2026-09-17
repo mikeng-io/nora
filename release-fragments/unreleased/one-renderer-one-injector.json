@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "Every transcript and the note index render through one element renderer, and the blocks that carry them through one injector.",
+  "details": [],
+  "limitations": [],
+  "reason": "Internal: prompt assembly only, no user-visible behaviour change intended. #220 shipped ContextBlock/assemble/render_messages and wired one prompt builder of six; #292 finishes the transcript axis (all six builders) and the note index (all three consumers). Prompt BYTES change for six graded prompts, so this needs the relevance-gate, note-candidates and proactive_decide suites before it is called safe — a green pytest run is not the measurement. Four defects fixed on the way, found by audit rather than by the suite: a member's newline could imitate the note curator's own prose fields; the debrief legend told the model to read a delivery token only a member could type; an empty-after-collapse attribute rendered from=\"\"; and a safety test was passing by counting the forgery it was written to catch."
+}

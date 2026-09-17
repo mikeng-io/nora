@@ -38,12 +38,29 @@ ROOT = Path(__file__).resolve().parents[2]
 
 #: The two renderers in the tree that turn records into prompt text. A module
 #: calling either is rendering something for somebody, and has to say which.
-_RENDERERS = ("render_rows", "render_messages")
+_RENDERERS = ("render_rows", "render_messages", "render_elements")
 
-#: **The converted builders.** Module -> what it renders. These call
-#: `render_messages` and must keep calling it.
+#: **The element renderers.** `render_messages` is a thin caller of
+#: `render_elements` (one renderer, two entry points), so a builder is
+#: converted when it uses EITHER and no longer uses `render_rows`. Builders
+#: whose attribute set is the transcript's — `n`/`age`/`from`/`replying_to` —
+#: call `render_messages`; the ones carrying a different set (a real row id, a
+#: wall clock, a room label, a delivery mark) call `render_elements` directly
+#: rather than bending the transcript's signature around them.
+_ELEMENT_RENDERERS = ("render_messages", "render_elements")
+
+#: **The converted builders.** Module -> what it renders.
 CONVERTED = {
     "nora/agent/prefill.py": "the tag turn's group transcript",
+    "nora/ingest/relevance_gate.py": "the window the gate decides on",
+    "nora/language/culture.py": "the batch the culture fold reads",
+    "nora/language/note_curator.py":
+        "her own sends, and the evidence rows the retirement decision reads",
+    "nora/language/note_candidates.py":
+        "the message batch candidates are proposed from — `n` is the ROW ID "
+        "here, because `accept()` joins the model's `message_ids` onto it",
+    "nora/engagement/debrief_render.py":
+        "the window the fold and the grounding verdict read",
 }
 
 #: **Transcript builders still on `render_rows`** — the census this gate was
@@ -53,20 +70,7 @@ CONVERTED = {
 #: empty dict is the finish line.
 #:
 #: Ordered by blast radius, lightest first — the order the conversion lands in.
-UNCONVERTED = {
-    "nora/language/note_curator.py":
-        "her own sends, and the evidence rows the retirement decision reads",
-    "nora/language/culture.py":
-        "the batch the culture fold reads",
-    "nora/engagement/debrief_render.py":
-        "the window the fold and the grounding verdict read",
-    "nora/language/note_candidates.py":
-        "the message batch candidates are proposed from — NOTE: `accept()` "
-        "joins the model's `message_ids` back onto row ids, so the converted "
-        "call must render `row.id`, never a positional index (#291)",
-    "nora/ingest/relevance_gate.py":
-        "the window the gate decides on — graded by the 40-case suite",
-}
+UNCONVERTED: dict[str, str] = {}
 
 #: Modules that call a row renderer and are NOT rendering a transcript. The
 #: direction matters, exactly as it does in `test_media_join_reaches_every_
@@ -81,6 +85,13 @@ _NOT_A_TRANSCRIPT = {
     # purpose, which is the same reason `test_media_join_reaches_every_
     # transcript` exempts this module.
     "nora/language/proactive.py": "renders one line per ROOM, not per message",
+    # The NOTE INDEX, not a transcript — one element per standing note, through
+    # the same `render_elements` the transcripts use. It appears in this
+    # discovery because "calls an element renderer" is the net; it is exempt
+    # from the transcript rule because it renders no message. Its own
+    # unification is the other half of #292 and is gated by
+    # `test_one_block_injector`.
+    "nora/language/note_render.py": "renders the note index, not a transcript",
 }
 
 #: The operator's surfaces: a Discord review channel, not a prompt. Exempt from
@@ -174,7 +185,9 @@ def test_no_module_is_classified_twice():
 def test_a_converted_builder_renders_messages_and_not_rows(rel: str):
     """What CONVERTED means, asserted rather than asserted-to-have-been-done."""
     calls = _calls(rel)
-    assert "render_messages" in calls, f"{rel} no longer calls render_messages"
+    assert any(r in calls for r in _ELEMENT_RENDERERS), (
+        f"{rel} no longer calls an element renderer"
+    )
     assert "render_rows" not in calls, (
         f"{rel} is listed as converted and calls render_rows again — a "
         "transcript builder does not get to have both"
@@ -199,7 +212,7 @@ def test_every_transcript_builder_renders_messages(rel: str):
         f"{rel} still renders its transcript with render_rows, which collapses "
         "every body to one line before a model reads it"
     )
-    assert "render_messages" in calls
+    assert any(r in calls for r in _ELEMENT_RENDERERS)
 
 
 @pytest.mark.parametrize("rel", sorted(_OPERATOR_SURFACE))

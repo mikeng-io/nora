@@ -88,6 +88,17 @@ _COLLAPSERS = _DIRECT_COLLAPSERS | {"render_rows"}
 #: becomes a formality.
 _NOT_A_LINE = {
     (
+        "nora/ingest/relevance_gate.py", "render_context", "transcript_block",
+    ): (
+        "`<group_transcript>`: no longer LINES at all. Since #292 the gate "
+        "renders one `<m>` element per message through `render_elements`, so "
+        "each body already sits between its own tags and the collapse it used "
+        "to need is what the element boundary now does. Interpolating the "
+        "whole rendered block into the surrounding f-string is joining "
+        "elements, not building a line — and collapsing HERE would flatten "
+        "every message in the window into one."
+    ),
+    (
         "nora/language/culture.py", "inputs", "escape(previous.body)",
     ): (
         "`<previous_account>`: the account written last time, WHOLE, between "
