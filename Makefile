@@ -35,7 +35,7 @@ lint:
 	uv run ruff check nora/ evals/ tests/
 
 typecheck:
-	uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence nora/engagement nora/language
+	uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence nora/engagement nora/language nora/ingest nora/analytics nora/doctrine nora/skills nora/instructions nora/web
 
 imports:
 	uv run lint-imports

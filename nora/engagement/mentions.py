@@ -119,7 +119,7 @@ class MentionRenderer:
             row, body=self._render(row.body, event, platform=platform),
         )
 
-    def _render(self, body: str, event: dict, *, platform: str) -> str:
+    def _render(self, body: str, event: dict[str, Any], *, platform: str) -> str:
         if not body or PLACEHOLDER not in body:
             return body
         spans = mention_spans(event)

@@ -16,10 +16,12 @@ not reader-facing.
 
 from __future__ import annotations
 
+from typing import Any
+
 from nora.doctrine.loader import DoctrineStore
 
 
-def build_doctrine_payload(*, doctrine_store: DoctrineStore) -> list[dict]:
+def build_doctrine_payload(*, doctrine_store: DoctrineStore) -> list[dict[str, Any]]:
     doctrine = doctrine_store.get(applies_to="tag")
     return [
         {

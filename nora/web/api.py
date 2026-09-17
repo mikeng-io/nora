@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from aiohttp import web
@@ -134,7 +135,7 @@ def _analytics_subject_ids(circles: tuple[Circle, ...]) -> list[str]:
     return subject_ids
 
 
-def _place_payload(place: dict) -> dict:
+def _place_payload(place: dict[str, Any]) -> dict[str, Any]:
     return {
         "kind": place["kind"],
         "label": place["label"],
@@ -149,7 +150,7 @@ def _place_payload(place: dict) -> dict:
     }
 
 
-def _trip_payload(trip: dict) -> dict:
+def _trip_payload(trip: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": trip["id"],
         "startedTs": trip["started_ts"],
@@ -162,7 +163,7 @@ def _trip_payload(trip: dict) -> dict:
     }
 
 
-def _corridor_payload(corridor: dict) -> dict:
+def _corridor_payload(corridor: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": corridor["id"],
         "sampleCount": corridor["sample_count"],
