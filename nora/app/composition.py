@@ -903,7 +903,7 @@ class Dependencies:
     # The audio-controller seam (design/voice-channel/07): the per-guild
     # voice-session registry every voice path shares, and the consumer for
     # the controller's `/app/v1/voice/event` callbacks. Both `None` when
-    # `[speech.tts.sidecars]` is empty (the consumer additionally needs
+    # `[speech.tts] sidecars` is empty (the consumer additionally needs
     # `[music] enabled`) — a deployment without a controller boots unchanged
     # and every voice verb fails closed.
     voice_hub: VoiceControllerHub | None
@@ -1116,9 +1116,9 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     discord_token = os.environ.get(cfg.platforms.discord.token_env, "")
     # The audio-controllers (design/voice-channel/07): ONE PER GUILD, because
     # Discord's limit is one voice connection per bot token per guild and each
-    # controller stays hard-bound to one (§12.5). `[speech.tts.sidecars]` maps
-    # a guild to its controller's HTTP base, and IS the join allow-list — a
-    # guild with no entry has no voice at all. Empty (the default) leaves the
+    # controller stays hard-bound to one (§12.5). `[speech.tts] sidecars` lists
+    # a controller per guild, and IS the join allow-list — a guild with no
+    # entry has no voice at all. Empty (the default) leaves the
     # whole seam unwired: no hub, no speech playout, and every `/music` or
     # `/discord join` failing CLOSED (the join-failed reply), never a local
     # connection attempt.
@@ -1130,7 +1130,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     if cfg.speech.tts.sidecars:
         voice_hub = VoiceControllerHub({
             guild_id: VoiceControllerClient(endpoint)
-            for guild_id, endpoint in cfg.speech.tts.sidecars.items()
+            for guild_id, endpoint in cfg.speech.tts.sidecars_by_guild.items()
         })
     # design/discord-music/00-overview.md. `spawn=asyncio.ensure_future`
     # rather than the `BackgroundTasks` instance built further down this
@@ -1154,7 +1154,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     )
     if music_manager is not None and voice_hub is None:
         log.warning(
-            "[music] enabled but [speech.tts.sidecars] is empty — no "
+            "[music] enabled but [speech.tts] sidecars is empty — no "
             "audio-controller is wired for any guild, so every /music join "
             "will fail closed (the join-failed reply); music stays silent "
             "until a guild is mapped to its controller"

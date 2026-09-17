@@ -2557,6 +2557,22 @@ def _synthetic_message(
 
     `sender_name` falls back to `Event.speaker` when no `PersonRef` resolved,
     so a turn nobody asked for still names the author of the words it carries.
+
+    **`voice` is left at its `False` default, DELIBERATELY** (operator,
+    2026-09-17). Every occasion that reaches here — a reminder, a proactive
+    row, a participation turn, a version announcement, the destination half of
+    `send_to` — goes out as TEXT, even when the request that created it was
+    SPOKEN. A reminder asked for aloud at 14:00 arrives as a message in the
+    room at 20:00.
+
+    That is a decision, not an oversight, and it needs saying because it
+    changed shape under §12.2's reversal. While speech had a room of its own,
+    the occasion carried that room's id and `adapter.send` routed on the ROOM,
+    so everything into it was spoken. The routing key is the TURN now, so this
+    default is what decides the surface — and the operator's answer was that a
+    deferred reply can always be a text message. Speaking unprompted into a
+    voice channel is a much larger claim than answering a question that was
+    just asked in one.
     """
     return NormalizedMessage(
         platform=occasion.platform,

@@ -771,7 +771,7 @@ services:
   #
   # Posture mirrors stt: own image from deploy/voice-sidecar/, NO `ports:`
   # publish — reachable only on the private `nora` network. Without
-  # DISCORD_BOT_TOKEN + VOICE_GUILD_ID + VOICE_CHANNEL_ID the service is
+  # DISCORD_BOT_TOKEN + VOICE_GUILD_ID the service is
   # healthy-but-idle (its /health is liveness, see the README in
   # deploy/voice-sidecar/), so a deployment with voice receive off still
   # starts clean.

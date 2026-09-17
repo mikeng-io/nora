@@ -1011,29 +1011,37 @@ provider = ""                  # empty provider = no speaker; a real deployment
                                # design/voice-channel/04 §3b). The key is read
                                # from the env var api_key_env NAMES (default
                                # MINIMAX_CN_API_KEY), never from this file.
-# [speech.tts.sidecars]         # GUILD -> that guild's AUDIO-CONTROLLER HTTP base
-# "100000000000000203" = "http://voice-sidecar:4600"
-                               # (design/voice-channel/07): speech plays via
-                               # /stream, music via /music/*, joins via
-                               # /voice/join — all on the one voice connection
-                               # that controller owns. Absent/empty = the voice
-                               # seam is unwired; joins and speech fail closed.
+sidecars = []                  # one AUDIO-CONTROLLER per GUILD — the sole
+                               # owner of that server's Discord voice
+                               # connection (design/voice-channel/07 §12.5):
                                #
-                               # ONE CONTROLLER PER GUILD. Discord allows one
-                               # voice connection per bot token PER GUILD, so
-                               # each controller stays hard-bound to one
-                               # (§12.5) and multi-guild is a deployment
-                               # topology, not a controller that juggles
-                               # several. List a second guild here and run a
-                               # second controller container for it.
+                               #   sidecars = [
+                               #     { guild = "<guild_id>", endpoint = "http://voice-sidecar:4600" },
+                               #     { guild = "<other_id>", endpoint = "http://voice-sidecar-b:4600" },
+                               #   ]
                                #
-                               # THIS TABLE IS THE JOIN ALLOW-LIST: a guild is
-                               # joinable exactly when a controller exists for
-                               # it. WHERE a guild's speech is RECORDED is
-                               # policy.toml's `voice = true`, and the two are
-                               # independent on purpose — a guild may be
-                               # recorded with nothing able to join it, or
-                               # joinable with no wake path.
+                               # Speech plays via /stream, music via /music/*,
+                               # joins via /voice/join — all on the one voice
+                               # connection that controller owns. Empty (the
+                               # default) = the voice seam is unwired; joins
+                               # and speech fail closed.
+                               #
+                               # ONE PER GUILD because Discord allows one voice
+                               # connection per bot token PER GUILD, so each
+                               # controller stays hard-bound to one and
+                               # multi-guild is a deployment topology, not a
+                               # controller that juggles several. A second
+                               # guild means a second controller container:
+                               # COMPOSE_PROFILES=multi-guild.
+                               #
+                               # A LIST, not a table keyed by guild: the
+                               # config/example parity gate flattens tables to
+                               # leaf paths, and a guild-keyed table would need
+                               # a real snowflake declared in this file.
+                               #
+                               # THIS IS THE JOIN ALLOW-LIST. WHERE a guild's
+                               # speech is RECORDED is policy.toml's
+                               # `voice = true` — independent on purpose.
 # voice = "Cantonese_CuteGirl" # a NATIVE Cantonese voice — the lever is the
 #                              # voice, not the model tier; language_boost is
 #                              # hard-set in the adapter ("auto" mis-renders 係/唔該)

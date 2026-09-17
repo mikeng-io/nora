@@ -248,11 +248,22 @@ async def test_voice_channel_send_goes_through_speaker_not_rest(aiohttp_server):
     )
 
 
-async def test_voice_channel_send_without_a_voice_session_is_a_refused_send(aiohttp_server):
-    """Fail-closed: the hub has no session for the guild (never joined), so
-    speech must not pretend to play."""
+async def test_voice_channel_send_without_a_voice_session_falls_back_to_text(aiohttp_server):
+    """No session for the guild (never joined), so speech cannot play — and
+    since 2026-09-17 the reply is POSTED instead of dropped (operator). Speech
+    is a surface of an ordinary room now, so the target IS a text channel.
+
+    Asserted on the REST call, not just on `ok`: without a `/messages` route
+    this test would pass on a failed fallback and prove nothing."""
+
+    posted: list[str] = []
+
+    async def messages_handler(request: web.Request) -> web.Response:
+        posted.append(request.path)
+        return web.json_response({"id": "1"})
 
     app = web.Application()
+    app.router.add_post("/channels/{cid}/messages", messages_handler)
     server = await aiohttp_server(app)
 
     hub = VoiceControllerHub(
@@ -269,14 +280,22 @@ async def test_voice_channel_send_without_a_voice_session_is_a_refused_send(aioh
         text="喂 Nora，收到。",
     )
 
-    assert result.ok is False
+    assert result.ok is True
+    assert posted == ["/channels/999/messages"], "the reply reached the room"
 
 
-async def test_voice_channel_send_without_speaker_is_silent_fail(aiohttp_server):
-    """Fail-closed: a voice-channel target with no speaker/endpoint returns a
-    refused send — never a text POST that Discord would 400 anyway."""
+async def test_a_voice_target_with_no_speaker_wired_falls_back_to_text(aiohttp_server):
+    """The unwired posture. Before the fallback this returned a refused send
+    and the answer was lost; the room can still read it."""
+
+    posted: list[str] = []
+
+    async def messages_handler(request: web.Request) -> web.Response:
+        posted.append(request.path)
+        return web.json_response({"id": "1"})
 
     app = web.Application()
+    app.router.add_post("/channels/{cid}/messages", messages_handler)
     server = await aiohttp_server(app)
 
     adapter = DiscordAdapter("tok", base_url=str(server.make_url("")).rstrip("/"))
@@ -285,13 +304,24 @@ async def test_voice_channel_send_without_speaker_is_silent_fail(aiohttp_server)
         text="喂 Nora。",
     )
 
-    assert result.ok is False
+    assert result.ok is True
+    assert posted == ["/channels/999/messages"]
 
 
-async def test_non_speakable_text_is_refused_on_voice_channel(aiohttp_server):
-    """design/voice-channel/01 §7 — a machine token must never be read aloud."""
+async def test_non_speakable_text_is_not_spoken_but_is_posted(aiohttp_server):
+    """design/voice-channel/01 §7 — a machine token must never be read aloud.
+    `speakable`'s docstring always said the caller should "send it text-only";
+    since 2026-09-17 one finally does, so a hash-bearing answer reaches the
+    room instead of vanishing into a silent-failure counter."""
+
+    posted: list[str] = []
+
+    async def messages_handler(request: web.Request) -> web.Response:
+        posted.append(request.path)
+        return web.json_response({"id": "1"})
 
     app = web.Application()
+    app.router.add_post("/channels/{cid}/messages", messages_handler)
     server = await aiohttp_server(app)
 
     speaker = _FakeSpeaker(SpeakResult(available=True, audio=b"mp3", media_type="audio/mpeg"))
@@ -308,7 +338,9 @@ async def test_non_speakable_text_is_refused_on_voice_channel(aiohttp_server):
         text="個 hash 係 a3f2c1d4e5b60718293a4b5c",
     )
 
-    assert result.ok is False
+    assert result.ok is True
+    assert speaker.calls == [], "a machine token is never synthesized"
+    assert posted == ["/channels/999/messages"], "but the room still gets it"
     assert speaker.calls == [], "must not synthesize a machine token either"
 
 
@@ -348,3 +380,48 @@ async def test_a_typed_turn_in_a_voice_enabled_room_still_goes_out_as_text(aioht
     assert result.ok is True
     assert speaker.calls == [], "a typed turn must never be synthesized"
     assert posted == ["/channels/222/messages"], "a typed turn goes out as REST text"
+
+
+async def test_a_recorded_guild_with_no_controller_is_never_synthesized(aiohttp_server):
+    """THE COST THIS GUARDS (found by review, 2026-09-17). `policy.toml`'s
+    `voice = true` and `[speech.tts] sidecars` are independent on purpose — a
+    guild's speech may be RECORDED with no controller able to play a reply.
+    That is exactly Zone 42's shipped configuration.
+
+    The guard in `_send_voice` only asked whether a speaker and hub exist AT
+    ALL, and they do — for the OTHER guild. So every spoken turn in the
+    unwired guild billed MiniMax for a synthesis and discarded the audio.
+    Refused before the vendor call now; the answer still reaches the room as
+    text."""
+
+    posted: list[str] = []
+
+    async def messages_handler(request: web.Request) -> web.Response:
+        posted.append(request.path)
+        return web.json_response({"id": "1"})
+
+    app = web.Application()
+    app.router.add_post("/channels/{cid}/messages", messages_handler)
+    server = await aiohttp_server(app)
+
+    speaker = _FakeSpeaker(
+        SpeakResult(available=True, audio=b"mp3", media_type="audio/mpeg")
+    )
+    # A hub that HAS a controller — for guild 111, not for 222.
+    hub = VoiceControllerHub(
+        {"111": VoiceControllerClient(str(server.make_url("")).rstrip("/"))}
+    )
+    adapter = DiscordAdapter(
+        "tok", base_url=str(server.make_url("")).rstrip("/"),
+        speaker=speaker, voice_hub=hub,
+        voice_guild_ids=frozenset({"111"}),
+    )
+
+    result = await adapter.send(
+        target=ConversationTarget("discord", "222/333", "group", voice=True),
+        text="收到，聽日見。",
+    )
+
+    assert speaker.calls == [], "no synthesis is paid for"
+    assert result.ok is True
+    assert posted == ["/channels/333/messages"], "the room still gets the answer"

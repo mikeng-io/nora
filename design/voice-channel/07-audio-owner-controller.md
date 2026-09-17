@@ -401,7 +401,7 @@ traceable end-to-end with zero extra moving parts.
   `approximate_restart`); since 2026-09-17 the revive seeks to the cut
   (`approximate_seek`, §5), except live sources.
 - Gate: `/discord join` requires (a) guild member, (b) caller in a voice
-  channel, (c) that channel's GUILD in `voice_guild_ids` config (existing
+  channel, (c) that channel's GUILD listed in `[speech.tts] sidecars` (existing
   fail-closed list; per-CHANNEL until 2026-09-17, see §12.2). Auto-join per
   Miles's spec (play joins if connected-idle, stays on stop).
 - Deploy: build audio-controller image (has ffmpeg already), nora image;
@@ -476,7 +476,7 @@ audio-controller's one allowed decision, documented here and nowhere in nora's d
    messages, 11 fabricated notes, and the entire `culture` table.
 
    The gate is now **guild member + caller physically in a voice channel +
-   that channel's GUILD on `[speech.tts] voice_guild_ids`**, and the
+   that channel's GUILD listed in `[speech.tts] sidecars`**, and the
    controller admits any channel in its (still single, §12.5) guild. A
    second channel is still refused — as 409 `connected_elsewhere`, which is
    Discord's one-connection-per-bot-per-guild limit rather than a policy.
@@ -492,7 +492,7 @@ audio-controller's one allowed decision, documented here and nowhere in nora's d
    takes both. An unmarked guild is refused 400 and never reaches ingest.
 3. **Permission ruleset (`/discord` group): guild member + caller
    physically in a voice channel + that channel's GUILD in
-   `voice_guild_ids`** (the three-condition gate from the original design,
+   `[speech.tts] sidecars`** (the three-condition gate from the original design,
    with the third condition widened to the guild — see decision 2). NO extra
    `DISCORD_ALLOWED_USERS`-style allowlist for voice — the existing
    chat-admission list stays for chat ONLY.

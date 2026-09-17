@@ -17,7 +17,7 @@ from nora.infra.voice.http_controller import (
     VoiceControllerClient,
     VoiceControllerUnavailable,
 )
-from nora.infra.voice.hub import _EVENT_ID_BOUND, VoiceControllerHub
+from nora.infra.voice.hub import _EVENT_ID_BOUND_PER_GUILD, VoiceControllerHub
 
 
 def _state(**overrides):
@@ -241,12 +241,13 @@ async def test_the_event_id_window_is_bounded_fifo(aiohttp_client):
     hub = await _hub(aiohttp_client, _app())
 
     assert hub.consume_event_id("evt-oldest") is True
-    for i in range(_EVENT_ID_BOUND):
+    bound = _EVENT_ID_BOUND_PER_GUILD * 2  # the fixture wires two guilds
+    for i in range(bound):
         assert hub.consume_event_id(f"evt-{i}") is True
 
     # The oldest entry fell out of the window; newer ones are still held.
     assert hub.consume_event_id("evt-oldest") is True
-    assert hub.consume_event_id(f"evt-{_EVENT_ID_BOUND - 1}") is False
+    assert hub.consume_event_id(f"evt-{bound - 1}") is False
 
 
 async def test_adopting_a_status_with_an_event_seq_gap_warns(aiohttp_client, caplog):
@@ -432,3 +433,91 @@ async def test_guild_ids_is_the_join_allow_list(aiohttp_client):
     hub = await _hub(aiohttp_client, _app())
 
     assert hub.guild_ids == frozenset({"guild-1", "guild-2"})
+
+
+async def test_join_to_a_different_channel_is_a_conflict_not_a_cache_hit(aiohttp_client):
+    """THE BUG THIS GUARDS (found by review, 2026-09-17). The session cache is
+    keyed by GUILD. That was safe only while exactly one channel per guild
+    could be joined — a cache hit necessarily meant the same channel. Widening
+    the join gate to any channel in the guild (§12.2) made "cached session is
+    for a DIFFERENT channel" reachable, and the cache answered it with the
+    connection Nora already held.
+
+    What that cost: `/music play` from channel B while Nora sat in A played
+    the music out of A, while the player persisted B. `channel-emptied` for A
+    then never matched the player's channel, so auto-leave stopped firing, and
+    the next boot resumed against B. `/discord join` escaped it only by having
+    its own `session_for` check.
+
+    The controller's own 409 never fired because nora never sent the request."""
+    record: list = []
+    hub = await _hub(aiohttp_client, _app(record=record))
+    await hub.join("guild-1", "cortez-1")
+    joins_before = len([k for k, _ in record if k == "join"])
+
+    with pytest.raises(GenerationConflict, match="already connected to channel"):
+        await hub.join("guild-1", "cortez-2")
+
+    assert [k for k, _ in record if k == "join"] == ["join"] * joins_before, (
+        "a conflicting join must not reach the controller either"
+    )
+    assert hub.session_for("guild-1") is not None, "the live session survives"
+
+
+async def test_rejoining_the_same_channel_is_still_a_cache_hit(aiohttp_client):
+    record: list = []
+    hub = await _hub(aiohttp_client, _app(record=record))
+    first = await hub.join("guild-1", "cortez-1")
+
+    again = await hub.join("guild-1", "cortez-1")
+
+    assert again is first
+    assert [k for k, _ in record if k == "join"] == ["join"], "no second join"
+
+
+async def test_the_channel_is_forgotten_with_the_session(aiohttp_client):
+    """A stale channel left behind would make the next join to it look like a
+    cache hit for a connection that no longer exists."""
+    hub = await _hub(aiohttp_client, _app())
+    await hub.join("guild-1", "cortez-1")
+
+    hub.drop("guild-1")
+    await hub.join("guild-1", "cortez-2")  # must not raise
+
+    assert hub.session_for("guild-1") is not None
+
+
+async def test_an_adopted_join_records_the_channel_it_adopted(aiohttp_client):
+    """A 409 that IS the channel asked for adopts the live connection
+    (`_adopt_existing`), and the cache must record that channel — otherwise
+    the very next send would re-join and take a second connection.
+
+    Note the shape this pins: adoption can only ever succeed for the channel
+    asked for, because `_adopt_existing` refuses a controller connected
+    anywhere else. So "recorded" and "requested" cannot diverge here — the
+    controller's own value is used anyway, because deriving cache state from
+    what we asked for rather than what we were told is how the bug above
+    happened."""
+    hub = await _hub(
+        aiohttp_client, _app(join_status=409, status_channel="cortez-1"),
+    )
+
+    await hub.join("guild-1", "cortez-1")
+
+    again = await hub.join("guild-1", "cortez-1")
+    assert again is not None, "the adopted session is cached under its channel"
+    with pytest.raises(GenerationConflict, match="already connected to channel"):
+        await hub.join("guild-1", "cortez-2")
+
+
+async def test_an_adoption_for_another_channel_never_caches_anything(aiohttp_client):
+    """The controller is connected somewhere else entirely: that is a real
+    conflict, not an adoption, and it must leave no cache behind."""
+    hub = await _hub(
+        aiohttp_client, _app(join_status=409, status_channel="cortez-elsewhere"),
+    )
+
+    with pytest.raises(GenerationConflict):
+        await hub.join("guild-1", "cortez-1")
+
+    assert hub.session_for("guild-1") is None

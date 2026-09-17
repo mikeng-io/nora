@@ -1565,6 +1565,63 @@ class SpeechSttConfig(BaseModel):
     timeout_seconds: float = Field(default=30.0, gt=0)
 
 
+class SpeechEntryConfigBase(BaseModel):
+    """Shared config for one `[speech.tts] sidecars` entry — see
+    `SidecarEntry`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SidecarEntry(SpeechEntryConfigBase):
+    """ONE GUILD and the audio-controller that owns its voice connection
+    (design/voice-channel/07 §12.5, multi-guild 2026-09-17).
+
+    `guild` is a BARE Discord guild id. A `"<guild>/<channel>"` pair is
+    refused with the reason spelled out: two earlier keys held ids in this
+    section — `voice_channel_ids` named channels until 2026-09-17, and
+    `voice_guild_ids` replaced it the same day — and an operator carrying
+    either forward must SEE that the shape changed rather than discover it
+    from a join that goes somewhere unexpected.
+
+    `endpoint` must be non-empty: an entry with no controller behind it would
+    admit a join the hub then cannot make. Leaving the guild out of the list
+    is how you say "no voice here", and that fails closed."""
+
+    guild: str
+    endpoint: str
+
+    @field_validator("guild")
+    @classmethod
+    def _bare_guild_id(cls, value: str) -> str:
+        value = value.strip()
+        if not value or "/" in value:
+            raise ValueError(
+                f"sidecars entry guild {value!r} must be a bare Discord guild "
+                "id, not \"<guild_id>/<channel_id>\" — an entry maps a GUILD "
+                "to the audio-controller that owns its voice connection "
+                "(design/voice-channel/07 §12.5). Where a guild's SPEECH is "
+                "recorded is policy.toml's `voice = true`, not here."
+            )
+        return value
+
+    @field_validator("endpoint")
+    @classmethod
+    def _non_empty_base(cls, value: str) -> str:
+        # STRIPPED, not merely checked: the validator used to accept on
+        # `.strip()` while composition passed the RAW value to the client, so
+        # " http://voice-sidecar:4600" loaded clean and died at the first
+        # request with a URL error instead of at load.
+        value = value.strip()
+        if not value:
+            raise ValueError(
+                "a sidecars entry has an empty endpoint. An entry with no "
+                "controller behind it would admit a join the hub then cannot "
+                "make — leave the guild out to mean 'no voice here', which "
+                "fails closed."
+            )
+        return value
+
+
 class SpeechTtsConfig(BaseModel):
     """`[speech.tts]` — outbound speech: voice-channel TTS (design/voice-
     channel/01 §5).
@@ -1615,25 +1672,34 @@ class SpeechTtsConfig(BaseModel):
                      "surprised", "calm", "fluent", "whisper"] = ""
     duck_gain: float = Field(default=0.25, gt=0, lt=1)
     duck_ramp_ms: int = Field(default=150, gt=0)
-    # GUILD -> that guild's audio-controller HTTP base (design/voice-channel/07;
-    # multi-guild 2026-09-17). The sidecar IS the audio-controller, the sole
-    # owner of the Discord voice connection.
+    # Each guild's audio-controller, as a LIST of `{guild, endpoint}` entries
+    # (design/voice-channel/07; multi-guild 2026-09-17). The sidecar IS the
+    # audio-controller, the sole owner of the Discord voice connection.
     #
     # ONE CONTROLLER PER GUILD, and that is the whole of multi-guild. Discord's
     # limit is one voice connection per bot token PER GUILD, so a guild is the
     # natural unit of ownership — and §12.5's "single guild, hard-bound" stays
     # exactly as written rather than being reversed: each controller still
     # answers 400 to any other guild, which is a safety property worth more
-    # than the two containers it costs. A controller that juggled several would
+    # than the one container it costs. A controller that juggled several would
     # need its generation counter, its outbox and its desired-state file keyed
     # by guild, all of which are single-connection by design and all of which
     # were audited as such in September.
     #
-    #     [speech.tts.sidecars]
-    #     "100000000000000203" = "http://voice-sidecar:4600"
-    #     "100000000000000201" = "http://voice-sidecar-zone42:4600"
+    #     sidecars = [
+    #       { guild = "1474…", endpoint = "http://voice-sidecar:4600" },
+    #       { guild = "1497…", endpoint = "http://voice-sidecar-b:4600" },
+    #     ]
     #
-    # THIS MAP IS THE JOIN ALLOW-LIST. It replaced a separate `voice_guild_ids`
+    # A LIST, NOT A TABLE KEYED BY GUILD, and the reason is the config/example
+    # parity gate (`tests/test_env_template.py`): it flattens nested tables to
+    # leaf paths, so a guild-keyed table produces one key PER GUILD
+    # (`speech.tts.sidecars.<snowflake>`) that `config.example.toml` cannot
+    # declare without writing real Discord snowflakes into the tree — the
+    # exact thing that file's own `_MAY_DIFFER` note forbids. A list is a
+    # single leaf, so the key set is stable however many guilds are deployed.
+    #
+    # THIS LIST IS THE JOIN ALLOW-LIST. It replaced a separate `voice_guild_ids`
     # on the same day that key was added: a guild is joinable exactly when a
     # controller exists for it, and two keys that must agree are a drift source
     # rather than a second opinion. Empty (the default) leaves the voice seam
@@ -1641,48 +1707,40 @@ class SpeechTtsConfig(BaseModel):
     # reaches the channel and every `/music`/`/discord join` fails closed.
     #
     # WHERE a guild's speech is RECORDED is policy.toml's `voice = true`, not
-    # here. A guild may be marked there with no controller listed here: its
-    # words are recorded, and nothing can join it. The reverse is also legal
-    # and equally deliberate — music with no wake path.
-    sidecars: dict[str, str] = Field(default_factory=dict)
+    # here. The two are independent on purpose, but NOT free: a guild recorded
+    # with no controller listed here still synthesizes a reply it cannot play
+    # (see `DiscordAdapter._send_voice`, which refuses before paying for it).
+    sidecars: list[SidecarEntry] = Field(default_factory=list)
+
+    @property
+    def sidecars_by_guild(self) -> dict[str, str]:
+        """`{guild_id: endpoint}` — the shape every consumer wants, built from
+        the list the parity gate needs. Duplicate guilds are refused at load,
+        so this never silently drops one."""
+        return {entry.guild: entry.endpoint for entry in self.sidecars}
 
     @model_validator(mode="after")
-    def _each_sidecar_names_a_guild_and_a_base(self) -> SpeechTtsConfig:
-        """A key is a bare Discord guild id and a value is a non-empty HTTP
-        base. Refused at LOAD rather than warned about, and NOT gated on
-        `enabled`: `_lead_clears_the_tick`'s argument applies unchanged — a
-        config that only becomes wrong when someone flips the switch becomes
-        wrong at the worst moment, so it fails while the operator is still
-        holding the file.
+    def _no_guild_is_listed_twice(self) -> SpeechTtsConfig:
+        """Two entries for one guild is the operator having written two
+        answers to "which controller owns this guild's voice connection".
+        Picking one would send joins to a controller while events came back
+        from the other. Refused at LOAD, while the operator is still holding
+        the file, and NOT gated on `enabled` — `_lead_clears_the_tick`'s
+        argument applies unchanged.
 
-        A `"guild/channel"` key is refused with the reason spelled out. Two
-        keys before this held these ids: `voice_channel_ids` named channels
-        until 2026-09-17, and `voice_guild_ids` replaced it the same day. An
-        operator carrying either forward must SEE that the shape changed,
-        because a pair silently truncated to its guild half would look like it
-        still worked while quietly meaning something else.
-
-        There is deliberately NO cap on how many guilds may be listed. The
-        single-guild bound belongs to a controller (§12.5) and each one still
-        enforces its own; listing two here means two controllers, which is
-        what multi-guild IS."""
-        for guild_id, endpoint in self.sidecars.items():
-            if not guild_id or "/" in guild_id:
+        There is deliberately NO cap on how many DISTINCT guilds may be
+        listed. The single-guild bound belongs to a controller (§12.5) and
+        each one still enforces its own; listing two here means two
+        controllers, which is what multi-guild IS."""
+        seen: set[str] = set()
+        for entry in self.sidecars:
+            if entry.guild in seen:
                 raise ValueError(
-                    f"[speech.tts.sidecars] key {guild_id!r} must be a bare "
-                    "Discord guild id, not \"<guild_id>/<channel_id>\" — this "
-                    "table maps a GUILD to the audio-controller that owns its "
-                    "voice connection (design/voice-channel/07 §12.5). Where a "
-                    "guild's SPEECH is recorded is policy.toml's `voice = "
-                    "true`, not here."
+                    f"[speech.tts] sidecars lists guild {entry.guild!r} twice — "
+                    "one guild has exactly one audio-controller "
+                    "(design/voice-channel/07 §12.5)"
                 )
-            if not endpoint.strip():
-                raise ValueError(
-                    f"[speech.tts.sidecars] guild {guild_id!r} has an empty "
-                    "endpoint. An entry with no controller behind it would "
-                    "admit a join the hub then cannot make — leave the guild "
-                    "out to mean 'no voice here', which fails closed."
-                )
+            seen.add(entry.guild)
         return self
 
 

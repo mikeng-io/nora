@@ -213,7 +213,23 @@ class DiscordAdapter:
         # meant: answer the way you were asked. A typed question in a room
         # Nora also listens to by voice still gets a text reply.
         if target.voice:
-            return await self._send_voice(target=target, text=text)
+            spoken = await self._send_voice(target=target, text=text)
+            if spoken.ok:
+                return spoken
+            # FALL BACK TO TEXT (operator, 2026-09-17). Speech is a surface of
+            # an ordinary room now, so `target.conversation_id` is a postable
+            # text channel — and an answer the room can read beats an answer
+            # nobody gets. Until §12.2 was reversed the voice room had no text
+            # surface at all, so dropping was the only honest outcome; it is
+            # not any more.
+            #
+            # Covers every reason speech failed, not just an unspeakable one:
+            # no session, a TTS outage, an unwired guild. Each already logged
+            # its own reason.
+            log.info(
+                "voice reply for %s could not be spoken — sending it as text",
+                target.conversation_id,
+            )
         return await self._sender.send(
             target, text, mentions=mentions, styles=styles, preview=preview,
             attachments=attachments, quote=quote,
@@ -229,12 +245,27 @@ class DiscordAdapter:
             return SendResult(ok=False)
         if not speakable(text):
             # design/voice-channel/01 §7 — a long opaque string must not be
-            # read aloud. A voice channel has no text surface; the honest
-            # result is a refused send, matching what Discord would do with
-            # the string anyway.
+            # read aloud. `speakable`'s own docstring said the caller "either
+            # rewords the reply or sends it text-only", and until 2026-09-17
+            # no caller did either: the reply was simply dropped and counted
+            # as a silent failure. `send` above now posts it as text.
             log.info(
                 "voice-channel send refused: not speakable (target=%s)",
                 target.conversation_id,
+            )
+            return SendResult(ok=False)
+        # REFUSE BEFORE PAYING. `policy.toml`'s `voice = true` and
+        # `[speech.tts] sidecars` are independent on purpose, so a guild whose
+        # speech is RECORDED may legitimately have no controller to play it
+        # through. Without this check that configuration billed MiniMax for a
+        # synthesis on every spoken turn and threw the audio away, because the
+        # guard above only asks whether a speaker and hub exist AT ALL — and
+        # they do, for some other guild.
+        guild_id, _, _ = target.conversation_id.partition("/")
+        if self._voice_hub.session_for(guild_id) is None:
+            log.info(
+                "voice reply for %s not synthesized: no live voice session for "
+                "guild %s", target.conversation_id, guild_id,
             )
             return SendResult(ok=False)
         result = await self._speaker.speak(text=text)
@@ -243,9 +274,9 @@ class DiscordAdapter:
             return SendResult(ok=False)
         # The ONLY speech path (design/voice-channel/07 §3): the
         # controller's `/stream` endpoint, generation-scoped via the hub.
-        # `False` covers every failure (no session, stale generation,
-        # controller down) — the hub already logged which.
-        guild_id, _, _ = target.conversation_id.partition("/")
+        # `False` covers every failure (stale generation, controller down) —
+        # the hub already logged which. The no-session case was refused above,
+        # before the synthesis was paid for.
         ok = await self._voice_hub.stream_speech(guild_id, result.audio, result.media_type)
         return SendResult(ok=ok)
 

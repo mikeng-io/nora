@@ -1463,12 +1463,9 @@ def test_a_misspelt_dreamer_effort_refuses_to_start(toml_path):
 
 
 
-def _with_sidecars(text: str, table: str) -> str:
-    """Append a `[speech.tts.sidecars]` table. Not `_set_key`: this is a TOML
-    sub-table, not a scalar, and it has no line in the shipped example to
-    rewrite — the example ships it commented out, which is the unwired
-    posture."""
-    return text + "\n[speech.tts.sidecars]\n" + table + "\n"
+def _with_sidecars(text: str, entries: str) -> str:
+    """Rewrite the template's `sidecars = []` to the given list literal."""
+    return _set_key(text, "sidecars", entries)
 
 
 def test_two_guilds_each_with_a_controller_load(toml_path):
@@ -1478,14 +1475,15 @@ def test_two_guilds_each_with_a_controller_load(toml_path):
     is. The key that came before this refused a second guild outright."""
     toml_path.write_text(_with_sidecars(
         toml_path.read_text(),
-        '"g1" = "http://voice-sidecar:4600"\n"g2" = "http://voice-sidecar-two:4600"',
+        '[{ guild = "g1", endpoint = "http://voice-sidecar:4600" },'
+        ' { guild = "g2", endpoint = "http://voice-sidecar-b:4600" }]',
     ))
 
     cfg = load(toml_path)
 
-    assert cfg.speech.tts.sidecars == {
+    assert cfg.speech.tts.sidecars_by_guild == {
         "g1": "http://voice-sidecar:4600",
-        "g2": "http://voice-sidecar-two:4600",
+        "g2": "http://voice-sidecar-b:4600",
     }
 
 
@@ -1495,7 +1493,8 @@ def test_a_guild_channel_pair_as_a_key_refuses_to_start(toml_path):
     guilds, and both are gone. A pair silently truncated to its guild half
     would look like it kept working while meaning something else."""
     toml_path.write_text(_with_sidecars(
-        toml_path.read_text(), '"g1/c1" = "http://voice-sidecar:4600"',
+        toml_path.read_text(),
+        '[{ guild = "g1/c1", endpoint = "http://voice-sidecar:4600" }]',
     ))
 
     with pytest.raises(ConfigError, match="bare Discord guild id"):
@@ -1506,14 +1505,44 @@ def test_a_guild_with_an_empty_endpoint_refuses_to_start(toml_path):
     """An entry with no controller behind it would admit a join the hub then
     cannot make. Leaving the guild out is how you say "no voice here", and
     that fails closed."""
-    toml_path.write_text(_with_sidecars(toml_path.read_text(), '"g1" = "   "'))
+    toml_path.write_text(_with_sidecars(
+        toml_path.read_text(), '[{ guild = "g1", endpoint = "   " }]',
+    ))
 
     with pytest.raises(ConfigError, match="empty endpoint"):
         load(toml_path)
+
+
+def test_one_guild_listed_twice_refuses_to_start(toml_path):
+    """Two answers to "which controller owns this guild" would send joins to
+    one and take events back from the other."""
+    toml_path.write_text(_with_sidecars(
+        toml_path.read_text(),
+        '[{ guild = "g1", endpoint = "http://a:4600" },'
+        ' { guild = "g1", endpoint = "http://b:4600" }]',
+    ))
+
+    with pytest.raises(ConfigError, match="twice"):
+        load(toml_path)
+
+
+def test_an_endpoint_is_stripped_not_merely_checked(toml_path):
+    """THE BUG THIS GUARDS: the validator accepted on `.strip()` while
+    composition passed the RAW value to the client, so a leading space loaded
+    clean and died at the first request with a URL error instead of at load."""
+    toml_path.write_text(_with_sidecars(
+        toml_path.read_text(),
+        '[{ guild = "g1", endpoint = "  http://voice-sidecar:4600  " }]',
+    ))
+
+    cfg = load(toml_path)
+
+    assert cfg.speech.tts.sidecars_by_guild == {"g1": "http://voice-sidecar:4600"}
 
 
 def test_no_sidecars_loads_and_fails_closed(toml_path):
     """The shipped posture: no controller for any guild, so nothing joinable."""
     cfg = load(toml_path)
 
-    assert cfg.speech.tts.sidecars == {}
+    assert cfg.speech.tts.sidecars == []
+    assert cfg.speech.tts.sidecars_by_guild == {}
