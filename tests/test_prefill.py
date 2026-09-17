@@ -1394,7 +1394,7 @@ def _whole_turn() -> tuple[tuple[str, str], ...]:
         peer_card=("likes espresso",), self_card=("nora said a thing",),
         tagger_card=("asked about dinner",),
         tagger=PersonRef("miles", "Miles", "miles"), notes=(_note(),),
-        standing=_standing(), culture=_culture(), decisions=_decisions(),
+        standing=_standing(), decisions=_decisions(),
         people_in_window=(("Grant", ("asked about dinner",)),),
         # A RESOLVABLE quote, so `<replying_to>` actually renders — an
         # unresolvable one omits the block and the gate would pass by rendering

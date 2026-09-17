@@ -189,7 +189,7 @@ def tag_context(
         "tag-1", message, PersonRef("miles", "Miles", "miles", aliases=("阿Miles",)),
         (row(body, name=name),), ("likes espresso",), 0.0,
         ("nora said a thing",), tagger_card=("asked about dinner",),
-        notes=(), standing=None, culture=None, decisions=(),
+        notes=(), standing=None, decisions=(),
         # TWO people, because `<person>` is a framed block that repeats — a
         # one-person fixture cannot tell a row that repeats from a block served
         # twice, which is what `test_a_prompt_never_serves_the_same_block_twice`
