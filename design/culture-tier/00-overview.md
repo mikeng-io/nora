@@ -6,14 +6,19 @@ The first version of this bundle proposed a new tier with its own store, its
 own derivation, a three-section body under a CHECK constraint, and two
 synthesizers. Almost all of that is now deleted. What survives is much smaller:
 
-> **A Dreamer adaptor that folds its own room's messages into a short account,
-> on a slow clock, and keeps every answer.**
+> **A Dreamer adaptor that synthesises a short account of one room across the
+> stores Nora already holds, on a slow clock, keeping every answer.**
 
-That sentence read *"asks the memory system a question it can already answer"*
+That sentence has been wrong twice and the second time is worth more than the
+first. It read *"asks the memory system a question it can already answer"*
 until §4 falsified it: Honcho does not scope at the layer this tier needs, so
-the tier writes the account itself from a corpus that is genuinely scoped
-(DEC-182). The rest of the summary is unchanged — the clock, the chain, and
-the fact that nothing retires all survive the swap of who writes the prose.
+the tier writes the account ITSELF rather than storing someone else's
+(DEC-182). It then read *"folds its own room's messages"*, which is narrower
+than what was decided — **DEC-182 killed the cache shape, not the use of
+memory** (`03-decisions`, DEC-182 as narrowed 2026-09-17). The room's batch is
+one input among several; `01-the-adaptor §1` and `§1.2` name the rest. What is
+unchanged through both corrections is the clock, the chain, and the fact that
+nothing retires.
 
 The path to that is worth recording, because two of the three corrections came
 from the operator catching a category error, and the third came from a probe
@@ -152,8 +157,8 @@ That is the reconciliation between `reasoning_effort = "none"` and the
 judgement we want: the reasoning moves out of the model.
 
 Two existing issues carry the rest of this and are not restated here: #163
-(the same admission measurement, taken 2026-09-10), #194 (the gate instruction
-has no non-degeneracy floor), #216 (**n=5, never re-taken; CLOSED 2026-09-16 by
+(the same admission measurement, taken 2026-09-10), #187 (the gate instruction
+has no non-degeneracy floor — consolidated from #194), #216 (**n=5, never re-taken; CLOSED 2026-09-16 by
 PR #262** — when the turn *did* run it false-spoke on 4 of 5 silence twins, and
 R-97 now refuses the reply when every three-state lookup came back non-ok. The
 reason it is still cited is the reason it was cited: a fault this size went
@@ -269,9 +274,25 @@ account. `01-the-adaptor §7` deleted the workspace half on the grounds that
 re-deriving workspace-wide recall is duplication — this path means it need not
 be re-derived at all.
 
-**OPERATOR DECISION, not taken here.** Whether to route a Honcho workspace per
-room and reopen DEC-182, or keep the fold. DEC-182 stands until it is decided;
-what changes today is only that its stated reason is now too broad.
+**OPERATOR DECISION — TAKEN 2026-09-17.** Not "route a Honcho workspace per
+room", and not "keep the fold and ask nothing". **Synthesise across the stores,
+including memory.**
+
+The tier is a Dreamer adaptor, and what a Dreamer adaptor is for is deriving
+across the stores Nora already holds rather than restating the one corpus it
+was handed (`design/dreamer-agent-loop/03-no-agent-loop §7`). So the room's
+batch is one input among several — with the account written last time, the
+room's `standing`, what the room has open, and what memory holds about the
+people in it (`01-the-adaptor §1.2`). DEC-182 is narrowed accordingly: it
+killed the CACHE shape — ask Honcho once, store the answer, do nothing else —
+and not the use of memory at all (`03-decisions`, DEC-182 as narrowed).
+
+Per-room Honcho workspaces stay unrouted, and for the reason this section
+already gave: `design/24 §4` makes workspace-wide recall deliberate, splitting
+it per room fragments the person model, and the existing conclusions would have
+to be moved. None of that is required by the decision above, because the fold
+is the author either way — what changes is only what the fold is allowed to
+read.
 
 ### What that changes: the tier stops asking Honcho
 
@@ -332,13 +353,33 @@ which is why this remains a stored tier rather than something the gate computes.
 
 ## 5. What that settles
 
+> **SWEPT 2026-09-17 — two of the three paragraphs below were authored in
+> `db71b8a6` (2026-09-13 02:13), the Honcho-cache draft, and were not touched
+> by `f856cccf` 19 hours later or by `6691daa1`'s sweep. They are the seventh
+> and eighth sites of `03-decisions` correction 13.** They are corrected in
+> place below rather than deleted, because the arguments are still the right
+> arguments — it is their conclusions that belonged to the withdrawn route.
+
+
 **No second model of the room.** The earlier draft built one, and the operator
 named the danger: a room/workspace-scoped re-invention of `representation` and
 the peer card. Two systems accumulating an evolving model of the same entity
 from the same messages is CMS's *interpret twice and two copies drift* — and
 here both would be prose, both injected, both about the same room, with no way
-for the reader to know which to believe. Storing Honcho's own answer removes
-the second interpreter entirely.
+for the reader to know which to believe.
+
+**The last sentence of this paragraph said "storing Honcho's own answer removes
+the second interpreter entirely". That is dead text and its conclusion is
+withdrawn**: the tier writes its own prose now, so DEC-182's fold *creates*
+exactly one second interpreter, which §4.2 states and this paragraph was never
+updated to admit. The danger the operator named is therefore real and unpaid
+rather than removed, and what actually answers it is not an absence — it is
+that the two accounts are not the same shape and not written from the same
+question: `representation` is a chronicle of instants (§3), the culture body is
+an account with a `written=` date on its block (`01-the-adaptor §5`), and a
+reader who can see which is which is not being asked to choose between two
+copies of one claim. That argument has never been measured, and the arm that
+would settle it is `02-measurement §6`.
 
 **Nothing retires.** Culture is not `standing` and not a `note`. It has no
 `closing_condition`, because it is never settled; no `retired_at`, because it
@@ -347,20 +388,34 @@ it is *accurate*. A revision's parent link means "the same thing, earlier" —
 not "superseded". The old name does not become false; it becomes history, and
 the history is part of what the new name means.
 
-**The chain is the evolution.** A single `chat` call reasons from scratch and
-has no memory of its last answer, so one call is a snapshot. Honcho gives
-snapshots; keeping them in order is what gives continuity. That is the tier's
-one genuine contribution and it is why a store exists at all.
+**The chain is the evolution.** A single model call reasons from scratch and
+has no memory of its last answer, so one call is a snapshot. Keeping the
+snapshots in order is what gives continuity, and that is the tier's one genuine
+contribution — it is why a store exists at all.
+
+(This paragraph read *"Honcho gives snapshots"* until 2026-09-17. The property
+is a property of any single call, not of that endpoint; the fold is the caller
+now, and the adaptor's own `inputs` renders the previous account FIRST for
+exactly this reason — `nora/language/culture.py:193`.)
 
 ## 6. Scope, honestly
 
+> **SWEPT 2026-09-17 — the ninth site of `03-decisions` correction 13.** This
+> section was authored in `db71b8a6` (2026-09-13 02:13) and reads the whole
+> question as "what would this tier RE-INVENT". After DEC-182 that is the wrong
+> axis for two of its three rows: the question is no longer whether another
+> store holds the thing, it is whether this tier READS the store that holds it.
+> A thing another store holds and this adaptor never reads is not
+> re-invention — it is an input the design forgot to name
+> (`01-the-adaptor §1.2`).
+
 Three things the first draft claimed as new are the memory system's already:
 
-| claimed | actually |
-|---|---|
-| workspace culture | workspace-wide recall already is this |
-| her own standing in a room | her self-model, already deriving (`observe_me=true`) |
-| per-room knowledge of a person | `session_id` on `representation` — one parameter, works today |
+| claimed | actually | as of 2026-09-17 |
+|---|---|---|
+| workspace culture | workspace-wide recall already is this | **withdrawn.** DEC-182 restores the workspace half — *"fold one workspace's rooms together and the boundary is DEC-105's own"* — and §4.2 finds a workspace account free at today's single-workspace binding. Not built; not duplicative either |
+| her own standing in a room | her self-model, already deriving (`observe_me=true`) | **true and beside the point.** The per-room `standing` tier holds it, `relevance_gate.py:266-272` calls it the only authority on it, and this adaptor reads neither — while `01-the-adaptor §2` asks the model for it in prose. An input, not a re-invention |
+| per-room knowledge of a person | `session_id` on `representation` — one parameter, works today | stands, narrowed by correction 12: `session_id` scopes MESSAGES, not conclusions |
 
 The client omits `session_id` deliberately (*"recall is workspace-wide ON
 PURPOSE"*, design/24 §4). That is a Nora decision, **not a Honcho limitation** —

@@ -1,5 +1,5 @@
 kind: design_index
-title: "The Culture Tier — a Dreamer adaptor that folds a room's own messages into an account"
+title: "The Culture Tier — a Dreamer adaptor that synthesises an account of a room across the stores Nora already holds"
 description: >
   The Relevance Gate admitted one window in 149 over four days. It is not
   mistuned: it is a reasoning-less classifier holding a taxonomy where the room
@@ -7,10 +7,14 @@ description: >
   room works and why — which is what you get by asking a model to write prose
   over a room's own messages, and NOT a property of any memory endpoint: Honcho
   does not scope at the layer this needs (00-overview §4, DEC-182). So the tier
-  is a Dreamer adaptor that folds the batch the runtime already hands it, once
-  a day, keeps every answer, and lets the chain of answers be the evolution a
-  single call cannot express. The bundle also states a measurement for "act"
-  that is not a model agreeing with its own instruction.
+  is a Dreamer adaptor that writes the account itself, once a day, keeps every
+  answer, and lets the chain of answers be the evolution a single call cannot
+  express. NARROWED 2026-09-17: DEC-182 killed the CACHE shape, not the use of
+  memory — the batch the runtime hands it is ONE input among several, beside
+  the account written last time, the room's `standing`, what the room has open,
+  and what memory holds about the people in it (01-the-adaptor §1.2). The
+  bundle also states a measurement for "act" that is not a model agreeing with
+  its own instruction.
 status: proposed
 origin: >
   Working session with miles, 2026-09-12/13, opened by a finding written against
@@ -73,3 +77,7 @@ open_questions:
   - "CLOSED 2026-09-16 - #216 (PR #262, R-97) and #210 (PR #215). Both were cited here as open; both are marked in place. Neither was re-measured"
   - "SETTLED 2026-09-13 - the block is `placement=turn`, `key=room`. #219/#220 added `key` after this bundle asked the question; the rule it encodes is that anything keyed narrower than `global` belongs in `turn`, whatever its cadence"
   - "PHASE 2 - 04-phase-two-note is not executable and waits on Phase 1's instruments. Its #210 dependency landed 2026-09-15 and is unobserved in production"
+  - "DECIDED 2026-09-17 - 00-overview §4.2's operator question is taken: synthesise across the stores, INCLUDING memory. Per-room Honcho workspaces stay unrouted; DEC-182 is narrowed to the cache shape it actually killed"
+  - "OPEN 2026-09-17 - whether `standing` and the note index reach the fold as rendered INPUTS (the `note_candidates` precedent, no grant) or as TOOLS through an `AdaptorGrant` (correction 14). Inputs first; 01-the-adaptor §1.2 carries the sequencing and 02-measurement §5 owns the order"
+  - "NOT WIRED 2026-09-17 - `AdaptorGrant.home_room` resolves through `home_rooms[workspace]` and the runtime passes `workspace=None` for a scope-keyed adaptor, so a home-room grant for culture takes the loud closed branch today. The mechanism exists; the scope-keyed resolution does not. Correction 14"
+  - "STALE 2026-09-17 - `nora/language/culture.py`'s module docstring still says the tier `asks nothing of the memory system (DEC-182)`, which is the pre-narrowing reading. Design-only change; the docstring is not touched here"

@@ -1,12 +1,13 @@
 ---
 type: reference
 title: "Failure Classes — Named Ways a Background Agent Goes Wrong"
-description: "Principles stated for one tier and true of every adaptor: a capability nobody reaches for, a required field as a pressure to fabricate, an optional argument that downgrades a guarded operation, and a reset that resets itself."
+description: "Principles stated for one tier and true of every adaptor: a capability nobody reaches for, a required field as a pressure to fabricate, an optional argument that downgrades a guarded operation, a reset that resets itself, and an answer that restates its own prompt and passes every gate."
 tags: [nora, dreamer, principles, failure-classes, background-agents]
 timestamp: '2026-08-22'
 edges:
   - {dst: 00-overview, rel: realizes, provenance: asserted}
   - {dst: 02-instrument-blindness, rel: relates_to, provenance: asserted}
+  - {dst: 03-no-agent-loop, rel: relates_to, provenance: asserted}
 ---
 
 # Failure Classes — Named Ways a Background Agent Goes Wrong
@@ -170,6 +171,59 @@ it is a convention rather than a rule.
 That gap is itself the point: **cross-session agreement is evidence; a rule is
 real when it has an entry and a test.**
 
+## 11. The tautology that reads as a finding
+
+Added 2026-09-17, and it is the only class here that describes a pass which
+*succeeded* at everything the runtime measures.
+
+> **An answer that could have been written from its own prompt has wasted the
+> loop — and because it is true, well-formed and specific, nothing downstream
+> can tell it from a derived one.**
+
+The operator's example, which is shorter than any argument for it: «Miles likes
+late-night food, therefore Miles likes late-night food». That is a real
+conclusion about a real person, grounded in the batch, and worth nothing —
+*"呢啲資料直接喺 store 度就已經 derive 到出嚟"*, it was already derivable from the
+store without a model.
+
+**Why it is invisible rather than loud**, and this is the part that makes it a
+class rather than a complaint. Trace one through the guards an adaptor
+actually passes: `accept` checks the envelope's SHAPE, R-18/R-28 screen the
+STRINGS, the outcome counter records that a proposal was written, and the
+watermark advances because the batch was read. Every one of those is a PASS.
+Compare §1: the inert capability at least leaves a hole a counter can show —
+*"a granted tool nobody calls"*. A restated input leaves a row, and a row is
+what success looks like.
+
+So this class has no instrument today and the honest position is that naming it
+is the instrument. The falsifiable form, per adaptor, is
+[03-no-agent-loop.md](03-no-agent-loop.md) §7.5: **name the second store this
+objective would consult if it could.** No second store and the pass is a
+scheduled completion wearing a loop's vocabulary; a second store it cannot
+reach and the fix is the grant, never the prompt.
+
+Two things this is NOT, because both are the tempting misreading:
+
+- **It is not "use more tools".** §1's fix was structural for the same reason
+  this one's is: a capability whose use depends on the model deciding to reach
+  for it is not a capability. An objective rewritten to *encourage* research
+  produces the same restatement with more confident wording.
+- **It is not "everything should be an agent".** [03](03-no-agent-loop.md) §5
+  already carried the counter-case — a tier whose objective is executed in code
+  correctly makes no model call at all. The class does not say a one-shot is
+  wrong; it says a one-shot filed as a research loop is measured as one, and is
+  therefore never found out.
+
+The corpus has exactly one worked precedent for escaping it, and it is worth
+citing rather than re-deriving: the proactive objective was amended by the
+operator after a live run *"set a reminder from the note body alone, without
+asking memory about anyone involved"*, and it now carries both the requirement
+and the test — *"A `why` that could have been written from the note alone is a
+sign you skipped this."* An instruction, a suite case that fails without it,
+and a refusal. That is what closing this class costs.
+
 ## Status / Checkpoint
 
 2026-08-24 — Ten named classes, true of any adaptor. §7's route-to-a-human is what [27](27-note-dreamer.md) §3 builds the enqueue/deliver distinction on.
+
+2026-09-17 — Eleven. §11 is the first class here that names a pass which passes every gate the runtime owns, and it is the transferable half of [03](03-no-agent-loop.md) §7.
