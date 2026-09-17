@@ -137,8 +137,14 @@ _MAY_DIFFER = {
     # snowflakes for THIS deployment's servers — a copied config has none of
     # the three, and the template shipping them would be an identifier in the
     # tree (`tests/architecture/test_no_real_identifiers_in_the_tree.py`).
-    "speech.tts.provider", "speech.tts.sidecar_endpoint",
-    "speech.tts.voice_guild_ids",
+    # `sidecars` is a LIST, so it flattens to ONE leaf however many guilds are
+    # deployed — which is why it is a list and not a table keyed by guild id
+    # (a keyed table would need a real snowflake declared in the example).
+    #
+    # `sidecar_endpoint` and `voice_guild_ids` were removed from here with the
+    # keys themselves: a dead allowlist row is a latent hole, because a key
+    # re-added under either name would bypass this gate silently.
+    "speech.tts.provider", "speech.tts.sidecars",
     # The LIVE operator's ON decision for the culture fold (steps 0-4 are
     # merged and running); the template ships the DEC-43 posture, OFF, so a
     # copied config does not start folding a room it has never read. Same

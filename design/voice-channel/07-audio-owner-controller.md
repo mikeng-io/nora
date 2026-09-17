@@ -477,7 +477,7 @@ audio-controller's one allowed decision, documented here and nowhere in nora's d
 
    The gate is now **guild member + caller physically in a voice channel +
    that channel's GUILD listed in `[speech.tts] sidecars`**, and the
-   controller admits any channel in its (still single, §12.5) guild. A
+   controller admits any channel in a guild it holds a connection for. A
    second channel is still refused — as 409 `connected_elsewhere`, which is
    Discord's one-connection-per-bot-per-guild limit rather than a policy.
 
@@ -551,6 +551,24 @@ audio-controller's one allowed decision, documented here and nowhere in nora's d
 
    Cost of a second guild is now one line of config. The 261 MiB the
    container topology would have spent per guild is not spent at all.
+
+6. **Empty-channel auto-leave (Miles, 2026-09-16 11:2x HKT): when the last
+   human leaves the voice channel, start a 1-minute timer; if no human
+   returns before it fires, the controller tears the connection down
+   (exit) AND writes `desired=idle` to the state file, so a restart does
+   NOT rejoin an empty room. Music keeps playing through the timeout (a
+   human returning before the timer fires simply resets it); the teardown
+   fires `channel-emptied`/`voice-death` to nora as today, so nora's
+   session/queue teardown is unchanged. Timer is observed by the
+   controller (it owns membership observation); anyone present (including
+   Nora itself does NOT count — only human listeners) resets it. If Nora
+   is alone in the channel from the start (joined with no humans), the
+   timer arms on join and applies the same policy.**
+
+   *Restored 2026-09-17: the §12.5 rewrite above swallowed this decision, and
+   it was absent for one commit while `lifecycle.mjs` went on citing §12.6 as
+   its only authority in seven places. A live behaviour whose decision cannot
+   be found reads as undecided code.*
 
 ## 13. What this does NOT do (anti-scope, pre-locked)
 

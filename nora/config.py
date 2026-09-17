@@ -1676,19 +1676,21 @@ class SpeechTtsConfig(BaseModel):
     # (design/voice-channel/07; multi-guild 2026-09-17). The sidecar IS the
     # audio-controller, the sole owner of the Discord voice connection.
     #
-    # ONE CONTROLLER PER GUILD, and that is the whole of multi-guild. Discord's
-    # limit is one voice connection per bot token PER GUILD, so a guild is the
-    # natural unit of ownership — and §12.5's "single guild, hard-bound" stays
-    # exactly as written rather than being reversed: each controller still
-    # answers 400 to any other guild, which is a safety property worth more
-    # than the one container it costs. A controller that juggled several would
-    # need its generation counter, its outbox and its desired-state file keyed
-    # by guild, all of which are single-connection by design and all of which
-    # were audited as such in September.
+    # ONE CONNECTION PER GUILD, in ONE process. Discord's limit is one voice
+    # connection per bot token PER GUILD, so a guild is the unit of ownership
+    # — but that is a fact about CONNECTIONS, not about processes. The sidecar
+    # instantiates its per-guild stack (`createCore`) once per guild and serves
+    # them all behind one port, so a second guild is a line here and not a
+    # container.
+    #
+    # §12.5 ("single guild, hard-bound") still holds where it was aimed: one
+    # connection's lifecycle, outbox and desired-state file are single-
+    # connection by design, and none of them is keyed by guild — each guild
+    # gets its own instance instead.
     #
     #     sidecars = [
     #       { guild = "1474…", endpoint = "http://voice-sidecar:4600" },
-    #       { guild = "1497…", endpoint = "http://voice-sidecar-b:4600" },
+    #       { guild = "1497…", endpoint = "http://voice-sidecar:4600" },
     #     ]
     #
     # A LIST, NOT A TABLE KEYED BY GUILD, and the reason is the config/example

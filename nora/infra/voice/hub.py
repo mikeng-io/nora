@@ -51,13 +51,9 @@ class VoiceControllerHub:
     def __init__(self, clients: Mapping[str, VoiceControllerClient]) -> None:
         # ONE CLIENT PER GUILD (§12.5, multi-guild 2026-09-17). Discord's
         # limit is one voice connection per bot token PER GUILD, so a guild is
-        # the natural unit of ownership — and the controller stays hard-bound
-        # to one, exactly as §12.5 wrote it. Multi-guild is a deployment
-        # TOPOLOGY (a controller per guild) rather than a controller that
-        # juggles several: its generation counter, outbox and desired-state
-        # file are single-connection by design, and threading a guild key
-        # through that state machine would put the audited concurrency at
-        # risk to save two containers.
+        # the unit of ownership — of a CONNECTION, not of a process. One
+        # sidecar serves every guild by instantiating its per-guild stack once
+        # each; the entries here may therefore all name the same endpoint.
         #
         # An unlisted guild has no controller and therefore no voice at all —
         # this mapping IS the join allow-list (`allowed_guilds`).

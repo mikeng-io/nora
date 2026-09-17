@@ -58,6 +58,14 @@ class FrameParser:
             if len(self._buf) < _HEADER + payload_len:
                 break
             payload = self._buf[_HEADER : _HEADER + payload_len]
+            if payload_len < 1:
+                # No length byte at all. This used to raise IndexError, which
+                # `service.py`'s `except Exception` turns into a CLOSED seam
+                # connection — every guild on that pump loses audio until a
+                # reconnect. The JS half emitted a phantom frame for the empty
+                # speaker instead. Skipped on both sides now.
+                del self._buf[: _HEADER + payload_len]
+                continue
             id_len = payload[0]
             if id_len == 0:
                 # HELLO: the rest of the payload is the guild id.

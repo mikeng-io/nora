@@ -39,7 +39,7 @@ import { createCore, createFrontDoor } from './controller.mjs';
 import { bootChannel } from './lifecycle.mjs';
 import { realClock } from './outbox.mjs';
 import { join, createPump } from './recv.js';
-import { createStateStore } from './state_store.mjs';
+import { createStateStore, guildsFromStateFiles } from './state_store.mjs';
 
 const HOST = process.env.HOST ?? '127.0.0.1';
 const PORT = Number(process.env.PORT ?? 4600);
@@ -250,8 +250,15 @@ async function main() {
         log('error', { event: 'state_dir_read_failed', path: STATE_DIR, error: String(err?.message ?? err) });
       }
     }
-    for (const file of files) {
-      const guildId = file.slice(0, -'.json'.length);
+    const { guilds, skipped } = guildsFromStateFiles(files);
+    for (const file of skipped) {
+      log('boot_skip_state_file', {
+        file,
+        reason: 'not a guild snowflake (pre-multi-guild state file or junk)',
+      });
+    }
+    for (const guildId of guilds) {
+      const file = `${guildId}.json`;
       const store = createStateStore({ path: path.join(STATE_DIR, file) });
       const stored = await store.read();
       if (stored.status === 'corrupt' || stored.status === 'error') {
@@ -277,7 +284,7 @@ async function main() {
         // restart policy gives the retry. Already logged by the lifecycle.
       });
     }
-    if (!files.length) log('boot_idle', { reason: 'no_persisted_guilds' });
+    if (!guilds.length) log('boot_idle', { reason: 'no_persisted_guilds' });
   } else {
     log('boot_idle', { reason: 'healthy-but-idle', missing: 'DISCORD_BOT_TOKEN' });
   }

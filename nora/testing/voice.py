@@ -12,9 +12,11 @@ audit caught was a fake that accepted what the real controller refuses.
 Mirrored from `controller.mjs` (read it before changing this — one of them
 is off-contract the moment they disagree):
 
-- single guild, hard-bound (§12.5): a body `guild_id` present and ≠ the
-  configured one is 400 `wrong_guild`; `/voice/join` REQUIRES `guild_id`
-  (absent is `wrong_guild` too, matching `body.guild_id !== guildId`);
+- `guild_id` is REQUIRED on EVERY control verb since 2026-09-17, not just
+  `/voice/join`: one process serves several guilds, so the front door reads
+  the guild out of the body to know which controller a request is for. Absent
+  or mismatched is 400 `wrong_guild`; a guild the process holds no connection
+  for is 404 `unknown_guild`;
 - ANY channel in the guild (§12.2, reversed 2026-09-17): `/voice/join` no
   longer checks `channel_id` against a configured one — a missing/empty
   `channel_id` is still 400 `invalid_body`, and joining a SECOND channel
@@ -183,7 +185,21 @@ class FakeVoiceController:
         return body
 
     def _check_guild(self, body: dict[str, Any]) -> web.Response | None:
-        if body.get("guild_id") is not None and body["guild_id"] != self._guild_id:
+        """`guild_id` is REQUIRED on every control verb since 2026-09-17, not
+        just on `/voice/join`. One controller process serves several guilds, so
+        the front door has to read the guild out of the body to know which
+        controller a request is even for — there is no "the" guild to fall
+        back to.
+
+        This fake said `is not None and !=` for one commit after the real
+        controller started requiring it. Nothing caught the drift: this fake is
+        what `tests/contract/` drives, so the contract suite passed while every
+        music verb nora sent to the REAL controller was refused. That is the
+        exact failure this file's docstring warns about — "one of them is
+        off-contract the moment they disagree" — and it shipped."""
+        if body.get("guild_id") is None:
+            return self._error(400, "wrong_guild", body)
+        if body["guild_id"] != self._guild_id:
             return self._error(400, "wrong_guild", body)
         return None
 

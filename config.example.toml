@@ -1017,7 +1017,7 @@ sidecars = []                  # one AUDIO-CONTROLLER per GUILD — the sole
                                #
                                #   sidecars = [
                                #     { guild = "<guild_id>", endpoint = "http://voice-sidecar:4600" },
-                               #     { guild = "<other_id>", endpoint = "http://voice-sidecar-b:4600" },
+                               #     { guild = "<other_id>", endpoint = "http://voice-sidecar:4600" },
                                #   ]
                                #
                                # Speech plays via /stream, music via /music/*,

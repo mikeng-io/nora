@@ -358,6 +358,24 @@ There is no per-guild container: one sidecar serves every server Nora holds
 voice on, and one wake gate serves every sidecar connection
 (design/voice-channel/07 §12.5).
 
+**THE THREE VOICE IMAGES MOVE TOGETHER.** `nora`, `voice-sidecar` and
+`voice-wake` speak two seams that have both changed inside one release:
+
+- sidecar → gate: the audio frames, including the hello that names the server
+- gate → nora: the transcript POST body
+- nora → sidecar: the control plane
+
+A partial deploy fails in the far container, quietly. An old gate reads a new
+hello as audio from an empty speaker and tears the connection down in a loop; a
+new gate drops every frame from an old sidecar and still reports `healthy` with
+`clients: 1` — only its `guilds: []` says otherwise. Rebuild and recreate all
+three, or none.
+
+**Rolling `nora` back also needs `config.toml` and `policy.toml` reverted.**
+`SpeechTtsConfig` is `extra = "forbid"`, so an older nora meets the newer
+`sidecars` key and crash-loops rather than misbehaving — loud, but it will not
+start until the bind-mounted files match the image.
+
 `verify-deploy.py` asks the two questions the deploy itself cannot: is every
 container that asked for this image actually ON the image just built, and is it
 up a grace period later. It exits non-zero on either, so it can be the last

@@ -112,10 +112,11 @@ class VoiceControllerClient:
             {"guild_id": guild_id, "channel_id": channel_id, "request_id": request_id},
         )
 
-    async def exit(self, generation: str, *, request_id: str) -> dict[str, Any]:
+    async def exit(self, generation: str, *, guild_id: str, request_id: str) -> dict[str, Any]:
         """`POST /voice/exit` — stop everything and destroy the connection."""
         return await self._control(
-            "/voice/exit", {"generation": generation, "request_id": request_id},
+            "/voice/exit",
+            {"guild_id": guild_id, "generation": generation, "request_id": request_id},
         )
 
     async def play(
@@ -123,6 +124,7 @@ class VoiceControllerClient:
         generation: str,
         stream_url: str,
         *,
+        guild_id: str,
         title: str | None = None,
         duration_seconds: float | None = None,
         resumable: bool | None = None,
@@ -134,7 +136,8 @@ class VoiceControllerClient:
         policy: speech preemption ENDS it instead of reviving from 0);
         `None` (every caller today) leaves the controller's default."""
         body: dict[str, Any] = {
-            "generation": generation, "stream_url": stream_url, "request_id": request_id,
+            "guild_id": guild_id, "generation": generation,
+            "stream_url": stream_url, "request_id": request_id,
         }
         if title is not None:
             body["title"] = title
@@ -144,33 +147,43 @@ class VoiceControllerClient:
             body["resumable"] = resumable
         return await self._control("/music/play", body)
 
-    async def stop_music(self, generation: str, *, request_id: str) -> dict[str, Any]:
+    async def stop_music(
+        self, generation: str, *, guild_id: str, request_id: str,
+    ) -> dict[str, Any]:
         """`POST /music/stop` — stop the music slot, STAY connected. A no-op
         (200) when idle."""
         return await self._control(
-            "/music/stop", {"generation": generation, "request_id": request_id},
+            "/music/stop",
+            {"guild_id": guild_id, "generation": generation, "request_id": request_id},
         )
 
-    async def pause(self, generation: str, *, request_id: str) -> dict[str, Any]:
+    async def pause(
+        self, generation: str, *, guild_id: str, request_id: str,
+    ) -> dict[str, Any]:
         """`POST /music/pause` — 409 `pause_during_speech` when speech holds
         the pipeline (surfaces as `GenerationConflict`)."""
         return await self._control(
-            "/music/pause", {"generation": generation, "request_id": request_id},
+            "/music/pause",
+            {"guild_id": guild_id, "generation": generation, "request_id": request_id},
         )
 
-    async def resume(self, generation: str, *, request_id: str) -> dict[str, Any]:
+    async def resume(
+        self, generation: str, *, guild_id: str, request_id: str,
+    ) -> dict[str, Any]:
         return await self._control(
-            "/music/resume", {"generation": generation, "request_id": request_id},
+            "/music/resume",
+            {"guild_id": guild_id, "generation": generation, "request_id": request_id},
         )
 
     async def set_volume(
-        self, generation: str, percent: int, *, request_id: str,
+        self, generation: str, percent: int, *, guild_id: str, request_id: str,
     ) -> dict[str, Any]:
         """`POST /music/volume` — `percent` is 0-200 (400
         `percent_out_of_range` otherwise)."""
         return await self._control(
             "/music/volume",
-            {"generation": generation, "percent": percent, "request_id": request_id},
+            {"guild_id": guild_id, "generation": generation,
+             "percent": percent, "request_id": request_id},
         )
 
     async def stream(
@@ -351,7 +364,7 @@ class HttpVoiceSession:
     ) -> None:
         state = await self._with_reconcile(
             lambda request_id: self._client.play(
-                self._generation, stream_url,
+                self._generation, stream_url, guild_id=self._guild_id,
                 duration_seconds=duration_seconds, resumable=resumable,
                 request_id=request_id,
             )
@@ -361,12 +374,16 @@ class HttpVoiceSession:
 
     async def pause(self) -> None:
         await self._with_reconcile(
-            lambda request_id: self._client.pause(self._generation, request_id=request_id)
+            lambda request_id: self._client.pause(
+                self._generation, guild_id=self._guild_id, request_id=request_id,
+            )
         )
 
     async def resume(self) -> None:
         await self._with_reconcile(
-            lambda request_id: self._client.resume(self._generation, request_id=request_id)
+            lambda request_id: self._client.resume(
+                self._generation, guild_id=self._guild_id, request_id=request_id,
+            )
         )
 
     async def stop(self) -> None:
@@ -377,7 +394,9 @@ class HttpVoiceSession:
         teardown (B7, design/voice-channel/07) complete locally instead of
         dying on a controller that is already gone."""
         try:
-            await self._client.stop_music(self._generation, request_id=self._request_id())
+            await self._client.stop_music(
+                self._generation, guild_id=self._guild_id, request_id=self._request_id(),
+            )
         except GenerationConflict as exc:
             if exc.reason != "generation_conflict":
                 raise
@@ -394,7 +413,8 @@ class HttpVoiceSession:
         percent = max(0, min(200, round(volume * 100)))
         await self._with_reconcile(
             lambda request_id: self._client.set_volume(
-                self._generation, percent, request_id=request_id,
+                self._generation, percent, guild_id=self._guild_id,
+                request_id=request_id,
             )
         )
 
@@ -404,7 +424,9 @@ class HttpVoiceSession:
         saw first, an exit someone else issued) is exactly the end state
         this call asks for."""
         try:
-            await self._client.exit(self._generation, request_id=self._request_id())
+            await self._client.exit(
+                self._generation, guild_id=self._guild_id, request_id=self._request_id(),
+            )
         except GenerationConflict:
             log.info(
                 "voice exit for guild %s: generation already invalid — treated as done",

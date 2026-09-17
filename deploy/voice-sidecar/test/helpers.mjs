@@ -10,7 +10,10 @@ import path from 'node:path';
 import { createCore, createFrontDoor } from '../src/controller.mjs';
 import { createStateStore } from '../src/state_store.mjs';
 
-export const GUILD = 'g1';
+// A REAL snowflake shape: the front door refuses anything else, because
+// `guild_id` names a state file and mints a core on an unauthenticated plane.
+// 'g1' would have been rejected, which is the point.
+export const GUILD = '111111111111111111';
 export const CHANNEL = 'c1';
 
 export function createFakeClock(start = 1_000_000) {
@@ -249,8 +252,11 @@ export async function makeHarness(options = {}) {
   // body limits, the 413/400 split, dedupe — through the code production
   // uses.
   const server = createFrontDoor({
-    controllerFor: (guildId, { any = false } = {}) =>
-      (any || guildId === GUILD ? core.controller : null),
+    // NO `any` branch: route knowledge is static (CONTROL_ROUTES) since
+    // 2026-09-17. The harness used to answer `any` unconditionally, which made
+    // the empty-cores branch unreachable from the whole suite — and that
+    // branch was a cold-boot deadlock in production.
+    controllerFor: (guildId) => (guildId === GUILD ? core.controller : null),
     health: () => ({ status: 'ok', guilds: [GUILD] }),
     log: () => {},
   });
