@@ -259,6 +259,108 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
             "design/evaluation/04-the-convention.md",
         )
     },
+    # The eval-layer modules RE-HOMED into `tests/` on 2026-09-18 — they were
+    # in `nora/` and `evals/` only because of an import contract that no longer
+    # binds anything. These references name where the code WAS.
+    ("ARCHITECTURE.md", "evals/harness.py"): (
+        "re-homed into `tests/` 2026-09-18; the reference records where "
+        "it lived (design/evaluation Step 5)"
+    ),
+    ("design/capability-drop/03-code-surface.md", "evals/harness.py"): (
+        "re-homed into `tests/` 2026-09-18; the reference records where "
+        "it lived (design/evaluation Step 5)"
+    ),
+    ("design/13-trace-content-and-redaction.md", "evals/judge.py"): (
+        "re-homed into `tests/` 2026-09-18; the reference records where "
+        "it lived (design/evaluation Step 5)"
+    ),
+    ("design/capability-drop/03-code-surface.md", "nora/app/eval_support.py"): (
+        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/capability-drop/implementation-brief.md", "evals/harness.py"): (
+        "re-homed to `tests/offline_eval_harness.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/capability-drop/implementation-brief.md", "nora/app/eval_support.py"): (
+        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/dreamer-agent-loop/16-open-items.md", "evals/harness.py"): (
+        "re-homed to `tests/offline_eval_harness.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/dreamer-agent-loop/39-proactive-ooda-loop.md", "nora/app/eval_support.py"): (
+        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/evaluation/01-boundaries.md", "evals/harness.py"): (
+        "re-homed to `tests/offline_eval_harness.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/evaluation/01-boundaries.md", "nora/app/eval_support.py"): (
+        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/evaluation/01-boundaries.md", "nora/app/offline.py"): (
+        "re-homed to `tests/offline_pipeline.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/evaluation/02-the-rebuild.md", "nora/app/offline.py"): (
+        "re-homed to `tests/offline_pipeline.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/evaluation/04-the-convention.md", "evals/evaluators.py"): (
+        "re-homed to `tests/offline_eval_evaluators.py` 2026-09-18 (design/evaluation Step 5); "
+        "the reference records where it lived"
+    ),
+    ("design/evaluation/04-the-convention.md", "evals/harness.py"): (
+        "re-homed to `tests/offline_eval_harness.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/evaluation/04-the-convention.md", "nora/app/offline.py"): (
+        "re-homed to `tests/offline_pipeline.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/evaluation/05-live-parity.md", "nora/app/eval_support.py"): (
+        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/evaluation/GOAL.md", "evals/evaluators.py"): (
+        "re-homed to `tests/offline_eval_evaluators.py` 2026-09-18 (design/evaluation Step 5); "
+        "the reference records where it lived"
+    ),
+    ("design/evaluation/GOAL.md", "evals/judge.py"): (
+        "re-homed to `evals/rebuilt/judge.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/evaluation/GOAL.md", "evals/rubric.py"): (
+        "re-homed to `evals/rebuilt/rubric.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/evaluation/GOAL.md", "nora/app/eval_support.py"): (
+        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/evaluation/GOAL.md", "nora/app/offline.py"): (
+        "re-homed to `tests/offline_pipeline.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/evaluation/GOAL.md", "tests/integration/test_live_parity_gate.py"): (
+        "deleted 2026-09-18 with the layer it compared against — parity cannot outlive one of "
+        "its two arms"
+    ),
+    (
+        "docs/adr/0011-the-relevance-gate-stays-off-the-sdk-transport.md",
+        "nora/app/eval_support.py",
+    ): (
+        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("docs/eval-sop.md", "evals/evaluators.py"): (
+        "re-homed to `tests/offline_eval_evaluators.py` 2026-09-18 (design/evaluation Step 5); "
+        "the reference records where it lived"
+    ),
     # The ROUTING tier, which has no counterpart — DEC-76 is NOT ENFORCED.
     # These two lines NAME that absence, so the reference is the point.
     ("design/evaluation/GOAL.md", "evals/journeys.py"): (

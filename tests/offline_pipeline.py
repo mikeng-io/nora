@@ -13,6 +13,23 @@ Deliberately builds NO collaborator itself — no `PlatformAdapter`,
 always supplies those (real for `nora.app.composition.build_dependencies`'s
 production path; fakes from `nora.testing` everywhere else), which is what
 keeps this module free of any network concern.
+
+MOVED from `nora/app/offline.py` 2026-09-18 (`design/evaluation/` Step 5).
+
+It was never production code. Its own home said why it was there:
+`tests/integration/harness.py` put this wiring tail in `nora/app/` because
+`evals/harness.py` needed the same assembly and **`evals/` may import
+`nora.app` and `nora.testing` only** — so a shared test helper had to live
+inside the application to be reachable from both.
+
+`evals/` no longer has a harness, and every consumer is now under `tests/`,
+which has no import contract because a test is allowed to know how the thing
+is built. So the workaround is unnecessary and the file is where it belongs.
+
+`design/evaluation/02-the-rebuild.md` §1 listed it among the ~7,700 lines to
+DELETE, and an adversarial reviewer measured that deleting it stops 106
+integration tests and ten acceptance rules. It is not deleted; it is re-homed,
+which is what "not an eval module" actually implied.
 """
 
 from __future__ import annotations
@@ -24,6 +41,11 @@ from typing import Any
 
 from nora.agent import factory
 from nora.agent.registry import ToolRegistry
+from nora.app.assembler import build_assembler
+from nora.app.dispatch import Dispatcher
+from nora.app.fire import FirePath, gathering_occasion, proactive_occasion, reminder_occasion
+from nora.app.participation import ParticipationTrigger
+from nora.app.runtime import BackgroundTasks
 from nora.config import Config
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.media_join import MediaJoin
@@ -44,12 +66,6 @@ from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import permissive_policy
 from nora.tag import Debounce
-
-from .assembler import build_assembler
-from .dispatch import Dispatcher
-from .fire import FirePath, gathering_occasion, proactive_occasion, reminder_occasion
-from .participation import ParticipationTrigger
-from .runtime import BackgroundTasks
 
 
 def build_offline_pipeline(

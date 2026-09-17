@@ -19,7 +19,6 @@ from pathlib import Path
 import pytest
 from aiohttp import web
 
-from nora.app.offline import build_offline_pipeline
 from nora.app.runtime import BackgroundTasks
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
@@ -34,6 +33,7 @@ from nora.web.voice import register_voice
 from tests.builders import load_example_config, override_config
 from tests.conftest import build_test_doctrine_store
 from tests.fakes import SinkSender
+from tests.offline_pipeline import build_offline_pipeline
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

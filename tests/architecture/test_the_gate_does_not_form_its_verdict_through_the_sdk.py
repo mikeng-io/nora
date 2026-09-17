@@ -64,12 +64,6 @@ BARRED = "ask_structured"
 #: Modules that construct a `RelevanceGate` whose client this gate cannot
 #: resolve to a class, each with the reason it is not a production verdict.
 EXEMPT: dict[str, str] = {
-    "nora/app/eval_support.py": (
-        "the eval harness's own probe. It picks between `_MeasuringGateClient` "
-        "and `_StrandsGateClient` at runtime because measuring the two arms "
-        "against each other is the whole point of it — the instrument that "
-        "produced the numbers above has to be able to drive the arm that fails."
-    ),
 }
 
 
@@ -321,7 +315,7 @@ def test_the_barred_call_is_a_name_this_gate_can_see() -> None:
         f"async def {BARRED}(",
     ) == 1, f"{BARRED} is no longer defined in nora/agent/structured.py"
 
-    assert _reaches("nora/app/eval_support.py", "_StrandsGateClient", BARRED), (
+    assert _reaches("tests/offline_eval_support.py", "_StrandsGateClient", BARRED), (
         f"the matcher cannot see the one call to {BARRED} it is known to be "
         f"able to see; every assertion made with it is now vacuous"
     )

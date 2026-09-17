@@ -1,10 +1,28 @@
+"""MOVED from `evals/evaluators.py` 2026-09-18. These are GRADERS and they
+outlive the eval layer they were written for. They sit under `tests/`
+because their only consumers are tests, and because the import contract
+that forced their constants through `nora.app.eval_support` applies to
+`evals/` alone. `NoRedundantRead` is R-15's subject.
+"""
+
 from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 
-from nora.app.eval_support import BUDGET_STOP_REASONS, REPLY_GUARD_BUDGETS
+from nora.agent.registry import ToolRegistry
+from nora.engagement.stages.deliver import BUDGET_STOP_REASONS
+
+#: The reply guard's per-tool budgets, from the REGISTRY.
+#:
+#: This used to come through `nora.app.eval_support`, and that indirection was
+#: the whole reason the facade existed: `evals/` may reach `nora.app` and
+#: nothing else, so a grader living under `evals/` could not read
+#: `nora.agent.registry` directly. Living under `tests/` it can — `tests/` has
+#: no import contract, because a test is allowed to know how the thing is
+#: built.
+REPLY_GUARD_BUDGETS = ToolRegistry().budgets()
 
 
 @dataclass(frozen=True)

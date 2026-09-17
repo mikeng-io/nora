@@ -10,6 +10,26 @@ pass-through wrapper; nothing here changes behavior, it only relocates which
 module gets to import the lower-level pieces. `nora.app` already imports all
 of these directly in `composition.py`, so none of this widens what `nora.app`
 itself is allowed to reach.
+
+MOVED from `nora/app/eval_support.py` 2026-09-18 (`design/evaluation/` Step 5).
+
+It was never production code — `nora/__main__.py` never imported it, and no
+deployed path reaches it. It lived inside the application for ONE reason, which
+its own docstring gives: *"`evals/` may import `nora.app` and `nora.testing` and
+nothing else, so the gate's construction lives HERE rather than in
+`evals/relevance_gate.py`."* It was the BOUNDARY ADAPTER.
+
+`evals/` no longer has anything that needs it. Its only remaining consumer is
+`tests/offline_eval_harness.py`, and `tests/` has no import contract, so the
+adapter is unnecessary and the file is where it belongs.
+
+WHAT THIS DOES NOT UNDO. `design/evaluation/00-overview.md` §1's finding stands:
+five of the seven places that build a Nora are in this file, each smaller than
+production's construction of the same component. They are still here, and they
+still serve two unit tests — R-97's silence twins and the deterministic
+evaluators — because those run a case with a SCRIPTED model and the rebuilt
+layer cannot. What changed is that they are no longer inside `nora/`, so they
+can no longer be mistaken for something the deployment runs.
 """
 
 from __future__ import annotations
@@ -42,7 +62,10 @@ from nora.agent.guards import LeakGuard
 from nora.agent.registry import ToolRegistry
 from nora.agent.structured import ask_structured, build_structured_model
 from nora.agent.whereis import Circle
+from nora.app.agent_runner import LiveAgentRunner
 from nora.app.composition import _adaptor_budget
+from nora.app.fire import FirePath, proactive_occasion
+from nora.app.proactive_screen import ProactiveScreen
 from nora.config import Config, ConfigError
 from nora.config import load as load_config
 from nora.doctrine.loader import Doctrine, DoctrineStore
@@ -84,10 +107,6 @@ from nora.testing import (
 )
 from nora.testing.fakes import FakeMemoryStore, FakeRecordStore
 from nora.testing.reminders import FakeReminderStore
-
-from .agent_runner import LiveAgentRunner
-from .fire import FirePath, proactive_occasion
-from .proactive_screen import ProactiveScreen
 
 #: The single person the eval harness identity (`_IDENTITY_TOML`) maps — the
 #: harness's `+852111` sender resolves to this person_id (kept as the REAL

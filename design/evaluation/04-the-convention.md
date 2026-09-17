@@ -138,29 +138,42 @@ The report prints `judge=` beside `subject=`, and its loudest value is
 
 ## 6. What is NOT true yet
 
-- **Step 5 is DONE for the old CLI and its drivers, and BLOCKED for three
-  files.** 2026-09-18: `evals/run.py`, `sink.py`, `datasets.py`,
-  `journeys.py`, `note_candidates.py`, `proactive.py`, `relevance_gate.py` and
-  twelve test files are gone — **8,218 lines**, `make gate` green at 7,900
-  passed.
+- **Step 5 is DONE.** `nora/app/eval_support.py`, `nora/app/offline.py` and
+  every old `evals/*.py` are gone from where they were. `evals/` is now
+  `__init__.py`, `rebuilt/` and the corpora.
 
-  What STAYS, and the bundle was wrong about all three:
+  Three of them were **re-homed into `tests/`, not deleted**, and that turned
+  out to be what "not an eval module" actually meant:
 
-  - **`nora/app/offline.py` is not an eval module.** It is the offline
-    composition root for `tests/integration/harness.py` — 106 tests and ten
-    acceptance rules.
-  - **`evals/harness.py` is the offline DRIVER**, and three unit/acceptance
-    tests use it to run a case with no model at all. The new layer has no
-    equivalent: `obtain()` always composes a real graph against a real
-    database.
-  - **`eval_support.py` is the BOUNDARY ADAPTER.** `evals/` may reach
-    `nora.app` and nothing else, so it is how a grader gets
-    `nora.agent.registry`'s budgets and `nora.engagement.stages.deliver`'s stop
-    reasons. Moving `evals/evaluators.py` out from under it was tried and
-    `tests/test_boundaries.py` refused it.
+  - **`offline.py` → `tests/offline_pipeline.py`.** Its own docstring said why
+    it was in `nora/app/`: `tests/integration/harness.py` needed this wiring
+    and so did `evals/harness.py`, and *"`evals/` may import `nora.app` and
+    `nora.testing` only"* — so a shared TEST helper had to live inside the
+    application to be reachable from both.
+  - **`eval_support.py` → `tests/offline_eval_support.py`.** Same reason, said
+    the same way: *"the gate's construction lives HERE rather than in
+    `evals/relevance_gate.py`."* It was the boundary adapter.
+  - **`evals/harness.py` + `evaluators.py` → `tests/`.** The offline driver and
+    its graders. Two unit tests need them, one of which is R-97's only named
+    test.
 
-  `design/evaluation/GOAL.md` carries the remaining blockers and the
-  capabilities that must be consciously accepted or replaced.
+  **The import contract that forced all of them into `nora/` binds `evals/`
+  alone.** With `evals/` no longer having a harness, every consumer is under
+  `tests/` — which has no contract, because a test is allowed to know how the
+  thing is built. So the workaround is unnecessary and they are where they
+  belong.
+
+  What this does NOT undo: `00-overview` §1's finding stands. Five of the seven
+  places that build a Nora are still in `tests/offline_eval_support.py`,
+  serving two unit tests that need a SCRIPTED model — which the rebuilt layer
+  cannot provide. What changed is that they are no longer inside `nora/`, where
+  they could be mistaken for something the deployment runs.
+
+  **`tests/integration/test_live_parity_gate.py` is gone**, and that is the
+  one-way door this bundle warned about: parity cannot outlive one of its two
+  arms. The gate arm was compared once (`05-live-parity`) and found a real
+  defect; the other four entry points never were, and now never can be against
+  the old layer.
 
 - **The ROUTING tier is gone with no counterpart**, and two decisions are now
   marked NOT ENFORCED in `design/09-decision-index.md` because of it —

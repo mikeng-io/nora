@@ -13,14 +13,14 @@ takes whatever it enforced along with it.
 """
 from __future__ import annotations
 
-from evals.evaluators import (
+from tests.offline_eval_evaluators import (
     HonchoFedOncePerReply,
     NoRedundantRead,
     NoSendWithoutTrigger,
     RepliesAtLeastOnce,
     ToolBudget,
 )
-from evals.harness import Trajectory
+from tests.offline_eval_harness import Trajectory
 
 
 def _t(tool_calls=(), sent=(), reply=None, feeds=0, prefill_sufficient=True) -> Trajectory:

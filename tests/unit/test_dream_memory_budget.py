@@ -723,7 +723,7 @@ def test_the_grader_counts_every_verb_the_ceiling_does():
     one and not the other reddens here rather than in a live suite run someone
     has to interpret.
     """
-    from nora.app.eval_support import _MEMORY_VERB_SERIES
+    from tests.offline_eval_support import _MEMORY_VERB_SERIES
 
     graded: set[str] = set()
     for verbs in _MEMORY_VERB_SERIES.values():

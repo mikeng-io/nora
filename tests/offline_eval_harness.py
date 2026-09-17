@@ -9,7 +9,7 @@ Two drive modes, mutually exclusive on `run_case`:
   sequence, driven through `FakeAgentRunner`: offline, no network. `script=None`
   degrades to a zero-turn silent run.
 - **Live (`live=True`)** — Nora's actual model through the actual Strands loop
-  (`nora.app.eval_support.build_live_runner` + `nora.app.agent_runner.
+  (`tests.offline_eval_support.build_live_runner` + `nora.app.agent_runner.
   LiveAgentRunner`, which wraps `nora.agent.factory.create_agent`/`invoke` — the
   same code path production runs), reaching the network. This is what
   `evals/run.py --suite journeys` and `--suite participation` drive.
@@ -26,7 +26,7 @@ Two drive modes, mutually exclusive on `run_case`:
 
 Design note (this file's `run_case`/`Case` are design guidance, not pinned by
 `tests/test_evals_gate.py` — that test only exercises `Trajectory` + the evaluators):
-`run_case` builds its own pipeline graph from `nora.app.offline.build_offline_pipeline`
+`run_case` builds its own pipeline graph from `tests.offline_pipeline.build_offline_pipeline`
 plus `nora.testing`'s fakes, rather than reusing `tests/integration/harness.py` —
 `evals/` may import `nora.app` and `nora.testing` and nothing else from `nora/`, and
 may not import `tests/` at all (`tests/test_boundaries.py`). The live-model branch
@@ -42,6 +42,12 @@ evaluators only ever read the returned `Trajectory` — not persisted rows — s
 in-memory double is equivalent for this harness's purpose and drops the tmp-dir/
 migration machinery `tests/integration/harness.py` needs for its own, broader,
 fault-injection-capable test suite.
+
+MOVED from `evals/harness.py` 2026-09-18. It runs a case through the real
+pipelines with a SCRIPTED model and no network, which the rebuilt layer
+cannot do — `nora.subject.obtain` always composes the real graph against a
+real database and a real provider. Two unit tests need that, and one of
+them is R-97's only named test.
 """
 
 from __future__ import annotations
@@ -57,19 +63,6 @@ from pathlib import Path
 
 import yaml
 
-from nora.app.eval_support import (
-    TOOL_NAMES,
-    DoctrineStore,
-    Metrics,
-    ProductionSeed,
-    build_eval_tool_registry,
-    build_live_participation_runner,
-    build_live_runner,
-    load_eval_config,
-    load_persons,
-    seed_from_dict,
-)
-from nora.app.offline import build_offline_pipeline
 from nora.testing import (
     FakeAdapter,
     FakeAgentRunner,
@@ -81,6 +74,19 @@ from nora.testing import (
     ScriptedTurn,
     group_event,
 )
+from tests.offline_eval_support import (
+    TOOL_NAMES,
+    DoctrineStore,
+    Metrics,
+    ProductionSeed,
+    build_eval_tool_registry,
+    build_live_participation_runner,
+    build_live_runner,
+    load_eval_config,
+    load_persons,
+    seed_from_dict,
+)
+from tests.offline_pipeline import build_offline_pipeline
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCTRINE_DIR = REPO_ROOT / "nora" / "doctrine"
@@ -127,7 +133,7 @@ TRIGGER_TEXT = _configured_trigger()
 # sender "+852111" — and `_IDENTITY_TOML` maps that sender to person "miles_novak",
 # the same production person id `--seed-production` reads Honcho under. The
 # live-mode roster below names that one member so the room resolves to {miles_novak},
-# a verified subset of the eval circle (`nora.app.eval_support`), which is what lets
+# a verified subset of the eval circle (`tests.offline_eval_support`), which is what lets
 # `saved_places`/`where_is` disclose instead of degrading (F4). If `group_event`'s
 # defaults change, these must change with them.
 _EVAL_GROUP_ID = "g1"
@@ -203,7 +209,7 @@ class Case:
     # "silence" — graded on `Trajectory.sent` (see `evals.evaluators.
     # ParticipationVerdict` for why `sent`, not `tool_calls`). `seed` is the
     # per-case seed MAPPING (transcript + standing/notes), built into a
-    # `ProductionSeed` by `nora.app.eval_support.seed_from_dict` inside
+    # `ProductionSeed` by `tests.offline_eval_support.seed_from_dict` inside
     # `run_case` — everything in it is keyed to the eval workspace there, so
     # a case author cannot accidentally seed rows the eval room never reads.
     expect: str | None = None
@@ -247,7 +253,7 @@ async def _drain(background) -> None:
     spawned tags, AND `EngagementPipeline`'s post-reply exchange feed all land
     in the same shared `BackgroundTasks` now (`EngagementPipeline` takes an
     injected `spawn` instead of rolling its own private task set;
-    `nora.app.offline.build_offline_pipeline` wires both pipelines' spawns to
+    `tests.offline_pipeline.build_offline_pipeline` wires both pipelines' spawns to
     this one `background.spawn`) — including ones spawned by tasks that are
     themselves still in flight.
 
@@ -446,7 +452,7 @@ async def run_case(
       of "what did the model try to do" for the evaluators to grade.
 
     - **Live (`live=True`)** — drives Nora's REAL model
-      (`nora.app.eval_support.build_live_runner`, `cfg.llm`) through the same
+      (`tests.offline_eval_support.build_live_runner`, `cfg.llm`) through the same
       real pipeline, reaching the network. `script` is ignored. There is no
       scripted tool list to read, so `Trajectory.tool_calls` is reconstructed
       after the run from the `nora_tool_calls_total` metric the tools emit (see

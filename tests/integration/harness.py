@@ -12,7 +12,7 @@ cutover from the deleted `Handler`: the wiring below is the harness-side mirror 
 10 (Phase 3): `evals/harness.py` needed the same scripted-model double and event
 builder without importing `tests/`, so there is one definition, imported here and
 there. The ingest+engagement+dispatcher wiring tail itself moved to
-`nora.app.offline.build_offline_pipeline` for the same reason — `evals/` may import
+`tests.offline_pipeline.build_offline_pipeline` for the same reason — `evals/` may import
 `nora.app` and `nora.testing` only, so that function is what it calls instead of
 duplicating this module's pipeline assembly.
 """
@@ -29,7 +29,6 @@ from pathlib import Path
 from typing import Any
 
 from nora.app.dispatch import Dispatcher
-from nora.app.offline import build_offline_pipeline
 from nora.app.participation import ParticipationTrigger
 from nora.app.runtime import BackgroundTasks
 from nora.config import Config
@@ -49,6 +48,7 @@ from nora.policy import load_policy
 from nora.testing import FakeAgentRunner, FakeMemoryStore, ScriptedTurn
 from tests.builders import load_example_config, override_config
 from tests.fakes import SinkSender
+from tests.offline_pipeline import build_offline_pipeline
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DOCTRINE_DIR = REPO_ROOT / "nora" / "doctrine"
@@ -216,7 +216,7 @@ class Harness:
         spawned tags, AND `EngagementPipeline`'s post-reply exchange feed all
         land in the same shared `BackgroundTasks` now (Important 2's fix:
         `EngagementPipeline` takes an injected `spawn` instead of rolling its
-        own private task set, so `nora.app.offline.build_offline_pipeline`
+        own private task set, so `tests.offline_pipeline.build_offline_pipeline`
         wires both pipelines' spawns to the one `background.spawn` — see
         `nora/engagement/pipeline.py`'s `spawn` constructor parameter) —
         including ones spawned by tasks that are themselves still in flight.
