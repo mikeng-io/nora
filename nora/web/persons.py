@@ -28,6 +28,8 @@ only on the viewer's own profile."""
 
 from __future__ import annotations
 
+from typing import Any
+
 from nora.persons import Persons
 from nora.web.games import GamesUnavailableError, PulseGamesClient
 
@@ -37,7 +39,7 @@ from nora.web.games import GamesUnavailableError, PulseGamesClient
 _CONTAINER_PLAYER_LOOKUP_CAP = 50
 
 
-def build_persons_roster_payload(*, persons: Persons) -> list[dict]:
+def build_persons_roster_payload(*, persons: Persons) -> list[dict[str, Any]]:
     """`GET /app/v1/persons` — everyone identity.toml knows, opt-out (not
     opt-in): matches how the games/players pages already list every known
     person by default."""
@@ -52,7 +54,7 @@ def build_persons_roster_payload(*, persons: Persons) -> list[dict]:
 
 async def build_person_profile_payload(
     *, persons: Persons, games_client: PulseGamesClient | None, person_id: str,
-) -> dict | None:
+) -> dict[str, Any] | None:
     """`GET /app/v1/persons/{personId}` — `None` for an unrecognized person
     (the route answers 404, fail-closed rather than an empty-but-200 body).
 
@@ -74,7 +76,7 @@ async def build_person_profile_payload(
 
 async def _game_profiles(
     games_client: PulseGamesClient | None, persons: Persons, person_id: str,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     steam_ids = persons.platform_ids("pulse", person_id)
     if not steam_ids or games_client is None:
         return []
@@ -83,7 +85,7 @@ async def _game_profiles(
     except GamesUnavailableError:
         return []
 
-    profiles: list[dict] = []
+    profiles: list[dict[str, Any]] = []
     for server in servers:
         if not isinstance(server, dict):
             continue

@@ -73,7 +73,7 @@ class DirectoryWatcher(Generic[T]):
         self._reload = reload
         self._value: T | None = None
         self._loaded = False
-        self._fingerprint: tuple | None = None
+        self._fingerprint: tuple[tuple[str, int, int], ...] | None = None
         self._generation = 0
         self.failures = 0
 
@@ -89,7 +89,7 @@ class DirectoryWatcher(Generic[T]):
         """
         return self._generation
 
-    def fingerprint(self) -> tuple:
+    def fingerprint(self) -> tuple[tuple[str, int, int], ...]:
         """Path, mtime and size of every matching file, sorted.
 
         Size is in there beside mtime because an edit written back at the file's

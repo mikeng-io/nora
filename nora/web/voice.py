@@ -38,6 +38,7 @@ import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 from aiohttp import web
 
@@ -50,7 +51,7 @@ def register_voice(
     app: web.Application,
     *,
     ingest: Callable[[NormalizedMessage], Awaitable[None]],
-    on_voice_event: Callable[[object], Awaitable[tuple[int, dict]]] | None = None,
+    on_voice_event: Callable[[object], Awaitable[tuple[int, dict[str, Any]]]] | None = None,
 ) -> None:
     """`ingest` is the SAME callable a platform adapter's `listen()` loop
     receives — production wires `deps.dispatcher.on_message` (see

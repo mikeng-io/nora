@@ -89,38 +89,38 @@ class PulseGamesClient:
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
 
-    async def servers(self) -> list[dict]:
+    async def servers(self) -> list[dict[str, Any]]:
         body = await self._get("/servers")
         if not isinstance(body, list):
             raise GamesUnavailableError(f"GET /servers returned a non-list body: {body!r}")
         return body
 
-    async def server_status(self, server_id: str) -> dict:
+    async def server_status(self, server_id: str) -> dict[str, Any]:
         return await self._get_dict(f"/servers/{_seg(server_id)}/status")
 
-    async def server_graph(self, server_id: str, hours: int) -> dict:
+    async def server_graph(self, server_id: str, hours: int) -> dict[str, Any]:
         return await self._get_dict(
             f"/servers/{_seg(server_id)}/history", params={"hours": str(hours)},
         )
 
-    async def weekly(self, server_id: str) -> dict:
+    async def weekly(self, server_id: str) -> dict[str, Any]:
         return await self._get_dict(f"/servers/{_seg(server_id)}/weekly")
 
-    async def world(self, server_id: str) -> dict:
+    async def world(self, server_id: str) -> dict[str, Any]:
         return await self._get_dict(f"/servers/{_seg(server_id)}/world")
 
-    async def insights(self, server_id: str, *, days: int) -> dict:
+    async def insights(self, server_id: str, *, days: int) -> dict[str, Any]:
         return await self._get_dict(
             f"/servers/{_seg(server_id)}/insights", params={"days": str(days)},
         )
 
-    async def progress(self, server_id: str) -> dict:
+    async def progress(self, server_id: str) -> dict[str, Any]:
         """Local-save games only (e.g. Big Walk) — a synthesized completion
         summary derived from the last uploaded save. A container-backed
         game has no such route."""
         return await self._get_dict(f"/servers/{_seg(server_id)}/progress")
 
-    async def save_history(self, server_id: str, hours: int) -> dict:
+    async def save_history(self, server_id: str, hours: int) -> dict[str, Any]:
         """Local-save games only — time series of playtime/completion
         counts per upload, the save-upload equivalent of `server_graph`'s
         CPU/memory/network history (which needs a container Big Walk
@@ -131,13 +131,13 @@ class PulseGamesClient:
 
     async def players(
         self, server_id: str, *, page: int, page_size: int, online: bool | None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         params = {"page": str(page), "pageSize": str(page_size)}
         if online is not None:
             params["online"] = "true" if online else "false"
         return await self._get_dict(f"/servers/{_seg(server_id)}/players", params=params)
 
-    async def player(self, server_id: str, player_key: str) -> dict:
+    async def player(self, server_id: str, player_key: str) -> dict[str, Any]:
         return await self._get_dict(
             f"/servers/{_seg(server_id)}/players/{_seg(player_key)}"
         )
@@ -145,7 +145,7 @@ class PulseGamesClient:
     async def activity(
         self, server_id: str, *, page: int, page_size: int,
         since_ms: int | None, until_ms: int | None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         params = {"page": str(page), "pageSize": str(page_size)}
         if since_ms is not None:
             params["from"] = str(since_ms)
@@ -156,7 +156,7 @@ class PulseGamesClient:
     async def sessions(
         self, server_id: str, *, page: int, page_size: int,
         player_key: str | None, since_ms: int | None, until_ms: int | None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         params = {"page": str(page), "pageSize": str(page_size)}
         if player_key is not None:
             params["playerKey"] = player_key
@@ -166,7 +166,7 @@ class PulseGamesClient:
             params["to"] = str(until_ms)
         return await self._get_dict(f"/servers/{_seg(server_id)}/sessions", params=params)
 
-    async def _get_dict(self, path: str, *, params: dict[str, str] | None = None) -> dict:
+    async def _get_dict(self, path: str, *, params: dict[str, str] | None = None) -> dict[str, Any]:
         body = await self._get(path, params=params)
         if not isinstance(body, dict):
             raise GamesUnavailableError(f"GET {path} returned a non-dict body: {body!r}")
@@ -199,35 +199,35 @@ def _require_client(client: PulseGamesClient | None) -> PulseGamesClient:
     return client
 
 
-async def build_games_servers_payload(*, client: PulseGamesClient | None) -> list[dict]:
+async def build_games_servers_payload(*, client: PulseGamesClient | None) -> list[dict[str, Any]]:
     """`GET /app/v1/games/servers`."""
     return await _require_client(client).servers()
 
 
 async def build_game_server_status_payload(
     *, client: PulseGamesClient | None, server_id: str,
-) -> dict:
+) -> dict[str, Any]:
     """`GET /app/v1/games/servers/{id}/status`."""
     return await _require_client(client).server_status(server_id)
 
 
 async def build_game_server_graph_payload(
     *, client: PulseGamesClient | None, server_id: str, hours: int,
-) -> dict:
+) -> dict[str, Any]:
     """`GET /app/v1/games/servers/{id}/graph?hours=`."""
     return await _require_client(client).server_graph(server_id, hours)
 
 
 async def build_game_server_weekly_payload(
     *, client: PulseGamesClient | None, server_id: str,
-) -> dict:
+) -> dict[str, Any]:
     """`GET /app/v1/games/servers/{id}/weekly`."""
     return await _require_client(client).weekly(server_id)
 
 
 async def build_game_server_world_payload(
     *, client: PulseGamesClient | None, server_id: str, persons: Persons,
-) -> dict:
+) -> dict[str, Any]:
     """`GET /app/v1/games/servers/{id}/world`.
 
     A local-save game's `players` entries are enriched with `linkedPerson`
@@ -254,14 +254,14 @@ async def build_game_server_world_payload(
 
 async def build_game_server_progress_payload(
     *, client: PulseGamesClient | None, server_id: str,
-) -> dict:
+) -> dict[str, Any]:
     """`GET /app/v1/games/servers/{id}/progress` — local-save games only."""
     return await _require_client(client).progress(server_id)
 
 
 async def build_game_server_save_history_payload(
     *, client: PulseGamesClient | None, server_id: str, hours: int,
-) -> dict:
+) -> dict[str, Any]:
     """`GET /app/v1/games/servers/{id}/save-history?hours=` — local-save
     games only."""
     return await _require_client(client).save_history(server_id, hours)
@@ -269,7 +269,7 @@ async def build_game_server_save_history_payload(
 
 async def build_game_server_insights_payload(
     *, client: PulseGamesClient | None, server_id: str, days: int,
-) -> dict:
+) -> dict[str, Any]:
     """`GET /app/v1/games/servers/{id}/insights?days=`."""
     return await _require_client(client).insights(server_id, days=days)
 
@@ -277,7 +277,7 @@ async def build_game_server_insights_payload(
 async def build_game_server_players_payload(
     *, client: PulseGamesClient | None, server_id: str,
     page: int, page_size: int, online: bool | None,
-) -> dict:
+) -> dict[str, Any]:
     """`GET /app/v1/games/servers/{id}/players?page=&pageSize=&online=`."""
     return await _require_client(client).players(
         server_id, page=page, page_size=page_size, online=online,
@@ -287,7 +287,7 @@ async def build_game_server_players_payload(
 async def build_game_server_player_payload(
     *, client: PulseGamesClient | None, server_id: str, player_key: str,
     persons: Persons,
-) -> dict:
+) -> dict[str, Any]:
     """`GET /app/v1/games/servers/{id}/players/{playerKey}`.
 
     Enriched with `linkedPerson` when the response's `steamId` resolves to
@@ -312,7 +312,7 @@ async def build_game_server_player_payload(
 async def build_game_server_activity_payload(
     *, client: PulseGamesClient | None, server_id: str,
     page: int, page_size: int, since_ms: int | None, until_ms: int | None,
-) -> dict:
+) -> dict[str, Any]:
     """`GET /app/v1/games/servers/{id}/activity?page=&pageSize=&from=&to=`."""
     return await _require_client(client).activity(
         server_id, page=page, page_size=page_size, since_ms=since_ms, until_ms=until_ms,
@@ -323,7 +323,7 @@ async def build_game_server_sessions_payload(
     *, client: PulseGamesClient | None, server_id: str,
     page: int, page_size: int, player_key: str | None,
     since_ms: int | None, until_ms: int | None,
-) -> dict:
+) -> dict[str, Any]:
     """`GET /app/v1/games/servers/{id}/sessions?page=&pageSize=&playerKey=&from=&to=`."""
     return await _require_client(client).sessions(
         server_id, page=page, page_size=page_size, player_key=player_key,

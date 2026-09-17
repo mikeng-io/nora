@@ -26,11 +26,12 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import Any
 
 from nora.skills.loader import SkillStore
 
 
-def _scan(skills_dir: Path) -> list[dict]:
+def _scan(skills_dir: Path) -> list[dict[str, Any]]:
     if not skills_dir.is_dir():
         return []
     store = SkillStore(skills_dir, strict=False)
@@ -44,7 +45,7 @@ def _scan(skills_dir: Path) -> list[dict]:
     ]
 
 
-async def build_skills_payload(*, skills_dir: Path) -> list[dict]:
+async def build_skills_payload(*, skills_dir: Path) -> list[dict[str, Any]]:
     """Every loaded skill's public metadata — name, description, and the
     instructions body (operator 2026-09-03: private portal shows the body).
     `[]` when the directory is absent — that's the honest "no skills

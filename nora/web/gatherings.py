@@ -6,13 +6,14 @@ REST API."""
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
 from nora.app.gatherings import GatheringService
 from nora.domain.gatherings import Gathering
 
 
-def _gathering_dict(event: Gathering) -> dict:
+def _gathering_dict(event: Gathering) -> dict[str, Any]:
     return {
         "id": str(event.id),
         "title": event.title,
@@ -33,7 +34,7 @@ def _gathering_dict(event: Gathering) -> dict:
 
 async def build_gatherings_payload(
     *, events: GatheringService, person_id: str,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Not conversation-scoped, deliberately: every event `person_id`
     created or RSVP'd to, across every group they're in. If they're not a
     participant, they don't see it — the web app's whole authorization
@@ -44,7 +45,7 @@ async def build_gatherings_payload(
 
 async def build_gathering_payload(
     *, events: GatheringService, event_id: UUID, person_id: str,
-) -> dict | None:
+) -> dict[str, Any] | None:
     event = await events.get_event_for_person(event_id=event_id, person_id=person_id)
     if event is None:
         return None

@@ -21,6 +21,7 @@ nothing to show, not a read that failed.
 from __future__ import annotations
 
 import time
+from typing import Any
 
 from nora.agent.whereis import Circle, PresenceReader
 from nora.domain.presence import PresenceFix, haversine_distance_m
@@ -44,7 +45,7 @@ _MAX_HISTORY_HOURS = 24 * 30
 _MAX_HISTORY_POINTS = 5000
 
 
-def _fix_to_dict(fix: PresenceFix, *, now_ms: int) -> dict:
+def _fix_to_dict(fix: PresenceFix, *, now_ms: int) -> dict[str, Any]:
     return {
         "lat": fix.lat,
         "lng": fix.lng,
@@ -60,7 +61,7 @@ def _fix_to_dict(fix: PresenceFix, *, now_ms: int) -> dict:
 
 async def build_presence_payload(
     *, presence: PresenceReader | None, circles: tuple[Circle, ...],
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """One entry per known circle member (resolved via identity.toml — an
     unmapped Life360 account has no name to show and is skipped, same as
     `Circle.people`'s own construction), with their latest fix if any.
@@ -77,7 +78,7 @@ async def build_presence_payload(
         return []
     now_ms = int(time.time() * 1000)
     seen: set[str] = set()
-    out: list[dict] = []
+    out: list[dict[str, Any]] = []
     for circle in circles:
         for ref in circle.people:
             if ref.person_id in seen:
@@ -113,12 +114,12 @@ async def _latest_fix_across(
     return max(candidates, key=lambda f: f.ts) if candidates else None
 
 
-def _snap_stay_points(fixes: list[PresenceFix]) -> list[dict]:
+def _snap_stay_points(fixes: list[PresenceFix]) -> list[dict[str, Any]]:
     """Oldest-first `fixes` (the store's own ordering) reduced to a polyline
     where a run of fixes within `_STAY_POINT_RADIUS_M` of the last emitted
     point contributes no new vertex — the point "stays at the same
     location" rather than jittering, exactly the operator's ask."""
-    out: list[dict] = []
+    out: list[dict[str, Any]] = []
     anchor: PresenceFix | None = None
     for fix in fixes:
         if (
@@ -134,7 +135,7 @@ def _snap_stay_points(fixes: list[PresenceFix]) -> list[dict]:
 
 async def build_presence_places_payload(
     *, presence: PresenceReader | None, circles: tuple[Circle, ...],
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Every circle's saved places (Life360's named landmarks — "Home",
     etc.), deduped by name: a person in more than one circle (Miles's own
     account, "Ridgeline" and "TEAM_42") can otherwise surface the same
@@ -146,7 +147,7 @@ async def build_presence_places_payload(
     if presence is None:
         return []
     seen: set[str] = set()
-    out: list[dict] = []
+    out: list[dict[str, Any]] = []
     for circle in circles:
         for place in await presence.places_for(circle_id=circle.circle_id):
             if place.name in seen:
@@ -159,7 +160,7 @@ async def build_presence_places_payload(
 async def build_presence_history_payload(
     *, presence: PresenceReader | None, circles: tuple[Circle, ...],
     person_id: str, hours: int,
-) -> dict | None:
+) -> dict[str, Any] | None:
     """`person_id`'s fix history over the last `hours`, stay-point-snapped.
     `None` means "no such circle member" (a 404) — distinct from a real,
     empty history (`points: []`, a 200) for someone with no fixes yet.
