@@ -40,6 +40,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from xml.sax.saxutils import unescape
 
+from nora.domain.prompt import one_line
+
 #: The injected index carries one line per note on EVERY tag (§5.1), so these
 #: are prompt-budget decisions, not cosmetic ones. They are enforced in
 #: `__post_init__` rather than in `nora.language.note_render` because a renderer
@@ -251,6 +253,18 @@ def note_handle(title: str) -> str:
     «exactly as `<notes>` shows it» — which then failed to match the stored
     title and answered «No note in `<notes>` has that title».
 
+    **`&quot;` IS IN THAT SET, and it was not until #292.** `unescape` from
+    `xml.sax.saxutils` decodes `&amp;`, `&lt;` and `&gt;` and NOTHING ELSE
+    unless it is handed the extra entities — `escape_attr`'s own asymmetry with
+    `escape`, one layer down. It did not bite while the index rendered the title
+    BETWEEN tags, where `escape` leaves `"` alone. The moment the title moved
+    into an attribute — which is what closes the forgeable ` — ` separator — a
+    note called «She said "no"» began reaching the model as
+    «She said &amp;quot;no&amp;quot;», and typing that back exactly as shown
+    stopped resolving. Same defect as the paragraph above, same consequence (a
+    duplicate note instead of an update, an unlinkable decision), reached from
+    the fix for a different one.
+
     The decision was unlinkable after that, not merely refused: a proactive
     `remind` written without its `note_id` falls through `ProactiveScreen` to
     the flag-only path, so the note-moved cancellation D11 exists for never
@@ -258,7 +272,39 @@ def note_handle(title: str) -> str:
     the paragraph above makes about `casefold` — the readers must agree
     exactly.
     """
-    return unescape(title.strip()).casefold()
+    # COLLAPSED, because the index collapses it. `render_note_rows` puts the
+    # title in an attribute and `render_elements` runs `one_line` on every
+    # attribute value, so a title holding a newline reaches the model as one
+    # line — and the model types back what it was SHOWN. Without this, a note
+    # titled «Dinner\nplan» stored as two lines never matches the one-line form
+    # it was displayed as: `_resolve_updates` finds nothing, the pass writes a
+    # DUPLICATE instead of an update, and a proactive `remind` written without
+    # its `note_id` falls through `ProactiveScreen`. Exactly the consequence the
+    # paragraph above records for `&` — same defect, reached through the fix
+    # for a different one.
+    return one_line(unescape(title.strip(), _ATTR_ENTITIES)).casefold()
+
+
+#: What `escape_attr` writes and `escape` does not, so `note_handle` decodes the
+#: index's attribute form as well as its text form.
+#:
+#: **This widens a pre-existing asymmetry rather than closing one, and the
+#: limit is written down because it was measured rather than assumed.**
+#: `note_handle` unescapes BOTH sides — the stored title and what the model
+#: typed — so a title whose own characters spell an entity does not round-trip.
+#: Already true of `&amp;` before this line existed; now also true of `&quot;`:
+#: a note literally titled «literal &quot; in the title» normalises to a quote
+#: on the stored side and to the entity text on the rendered side, and stops
+#: resolving. Verified, not reasoned — an earlier version of this comment
+#: claimed `unescape`'s `&amp;`-last ordering made that case safe, and running
+#: it showed it does not.
+#:
+#: Out of scope here: the real fix is to unescape only the MODEL's input and
+#: never the stored title, which is a change to a function four readers share
+#: (`tools`' resolve, R-55's latch, the debrief latch, #228's create gate) and
+#: belongs with them in view. The case needs a title containing the literal
+#: text of an XML entity, which nothing has produced in the live tier.
+_ATTR_ENTITIES = {"&quot;": '"'}
 
 
 def _required(value: str, what: str) -> str:

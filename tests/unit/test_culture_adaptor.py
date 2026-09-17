@@ -162,7 +162,7 @@ async def test_the_previous_account_comes_FIRST_when_there_is_one():
     out = await _adaptor(_Store(_revision("they decide by attrition"))).inputs(
         key=KEY, batch=[_row("hi")],
     )
-    assert out.index("previous_account") < out.index("Messages in this batch")
+    assert out.index("previous_account") < out.index("<batch ")
     assert "they decide by attrition" in out
 
 
@@ -181,13 +181,19 @@ async def test_the_batch_carries_NO_row_ids_and_NO_timestamps():
     out = await _adaptor(_Store()).inputs(
         key=KEY, batch=[_row("開車喇", ts=T0, rid=482)],
     )
-    batch = out.split("Messages in this batch:")[1]
-    assert "482" not in batch, "a row id reached the prompt"
-    assert not re.search(r"\d{4}-\d{2}-\d{2}|\d{1,2}:\d{2}|\bago\b", batch), (
-        f"a date, a clock time or an age reached the prompt: {batch!r}"
+    batch = out.split("<batch ")[1].split("</batch>")[0]
+    body = batch.split(">", 1)[1]
+    # THE ROW ID, still absent. `n` is a per-render position (1..N), never
+    # `row.id` — the culture fold cites nothing back, so a real id here would be
+    # a handle to a stored row for no reader.
+    assert "482" not in body, "a row id reached the prompt"
+    assert not re.search(r"\d{4}-\d{2}-\d{2}|\d{1,2}:\d{2}|\bago\b", body), (
+        f"a date, a clock time or an age reached the prompt: {body!r}"
     )
-    # The speaker separator is the ONLY colon, and the line is the whole line.
-    assert batch.strip() == "Ada: 開車喇"
+    # Exact bytes, so «no time» cannot rot into «a time nobody grepped for».
+    # `n` and `from` are the only attributes: no `age`, because `_render_batch`
+    # passes no `timestamp` accessor and `render_elements` drops what is None.
+    assert body.strip() == '<m n="1" from="Ada">開車喇</m>', body
 
 
 async def test_the_room_block_names_the_room_and_carries_the_operators_words():
@@ -281,7 +287,7 @@ async def test_the_previous_account_precedes_standing_notes_AND_the_batch():
         out.index("previous_account")
         < out.index("<standing")
         < out.index("<notes")
-        < out.index("Messages in this batch")
+        < out.index("<batch ")
     ), out
 
 

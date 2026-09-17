@@ -32,15 +32,41 @@ from __future__ import annotations
 from datetime import datetime
 from xml.sax.saxutils import escape as _escape
 
+#: The C0 control characters XML 1.0 forbids OUTRIGHT — everything below 0x20
+#: except tab, newline and carriage return, plus the lone 0x7F. There is no
+#: escape for these: `&#11;` is as illegal as the raw byte, so the only
+#: conforming rendering is to remove them.
+#:
+#: **Found by a component test that PARSED a rendered prompt instead of
+#: substring-matching it.** A member's body containing U+000B renders
+#: `<m n="1">ok\x0bhidden</m>`, which is not well-formed XML — and the element
+#: form's whole argument is that the tag is a delimiter a body cannot break.
+#: `escape` handles `&`, `<`, `>` and is blind to these exactly as it was blind
+#: to the newline; the body is deliberately NOT collapsed, so nothing else was
+#: going to catch them.
+#:
+#: Stripped rather than replaced with a space: a control character carries no
+#: meaning a reader loses, and a substitution would change the body's length
+#: for a caller that bounds it.
+_XML_FORBIDDEN = {
+    c: None for c in [*range(0x20), 0x7F]
+    if c not in (0x09, 0x0A, 0x0D)
+}
+
+
+def _legal(text: object) -> str:
+    """`str()`, with the characters XML cannot carry at all removed."""
+    return str(text).translate(_XML_FORBIDDEN)
+
 
 def escape(text: object) -> str:
     """XML-escape text that will sit BETWEEN tags."""
-    return _escape(str(text))
+    return _escape(_legal(text))
 
 
 def escape_attr(text: object) -> str:
     """XML-escape text that will sit inside a double-quoted attribute value."""
-    return _escape(str(text), {'"': "&quot;"})
+    return _escape(_legal(text), {'"': "&quot;"})
 
 
 def age(ts_ms: int, now: datetime) -> str:

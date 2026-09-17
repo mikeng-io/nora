@@ -14,12 +14,13 @@ from datetime import UTC, datetime
 import pytest
 
 from nora.app.fire import _MIRROR_STYLE, _VERDICT_STYLE
-from nora.domain.blocks import ContextBlock, RowStyle, render_rows
+from nora.domain.blocks import (
+    ContextBlock,
+    RowStyle,
+    render_elements,
+    render_rows,
+)
 from nora.domain.models import DeliveryStatus, TranscriptRow
-from nora.engagement.debrief_render import _FOLD_STYLE
-from nora.ingest.relevance_gate import _GATE_STYLE
-from nora.language.note_candidates import _CANDIDATE_STYLE
-from nora.language.note_curator import _EVIDENCE_STYLE, _OWN_SENDS_STYLE
 from nora.language.proactive import _ROOM_STYLE
 
 NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
@@ -44,6 +45,20 @@ def _render(style: RowStyle, **extra) -> str:
 
 
 #: EVERY live `RowStyle` in the tree, with the line each one produces.
+#:
+#: **Down from nine to three at #292, and the three that remain are the ones
+#: that are not transcripts.** Every builder that renders a MESSAGE now renders
+#: an element per message rather than a line per message, so its grammar is no
+#: longer a `RowStyle` and no longer belongs in a table of lines: the gate, the
+#: debrief fold, the curator's two, the note-candidate index and the culture
+#: batch all left together. What is left is a room listing and the operator's
+#: two Discord surfaces — rows that are genuinely lines, addressed to a human or
+#: describing something other than a message.
+#:
+#: The table did not need editing to notice: it is keyed on the imported
+#: objects, so deleting a style breaks the import, and
+#: `test_every_live_rowstyle_is_in_this_table` closes the other direction by
+#: discovering them from the source.
 #:
 #: **The styles are IMPORTED, not retyped, and that is the correction this
 #: table is on its third version for.** Version one hand-wrote seven grammars
@@ -70,23 +85,9 @@ def _render(style: RowStyle, **extra) -> str:
 _CULTURE_STYLE = RowStyle(handle="none", time="none")
 
 PARITY = [
-    ("relevance gate", "(60m ago) [Grant]: 去邊食", _GATE_STYLE, {}),
-    ("debrief + rollup fold", "[11:00] Grant: 去邊食", _FOLD_STYLE, {"tz": UTC}),
-    ("note curator evidence", "[7] (60m ago) Grant: 去邊食", _EVIDENCE_STYLE, {}),
-    ("curator own sends", "[7] (60m ago) you: 去邊食", _OWN_SENDS_STYLE,
-     {"is_self": lambda r: True}),
-    ("note candidate index", "7 [2026-09-12 Sat 11:00 UTC] Grant: 去邊食",
-     _CANDIDATE_STYLE, {"tz": UTC}),
     ("proactive room listing", "- Grant: 去邊食", _ROOM_STYLE, {}),
     ("shadow mirror window", "- Grant: 去邊食", _MIRROR_STYLE, {}),
     ("gate verdict line", "Grant: 去邊食", _VERDICT_STYLE, {}),
-    # The culture batch. The BAREST grammar in the table and the only one with
-    # neither a handle nor a time, which is the point rather than a default:
-    # the objective's load-bearing clause is «not dated observations», and a
-    # model handed `[482] 2026-09-12 14:03` writes about the 12th while one
-    # handed a name and a line writes about the room. The chronicle this tier
-    # exists to not be IS `[when] what happened`.
-    ("culture batch", "Grant: 去邊食", _CULTURE_STYLE, {}),
 ]
 
 
@@ -247,7 +248,11 @@ def test_the_trailing_accessor_is_collapsed_and_escaped_like_the_rest():
 
 def test_the_note_candidate_index_marks_a_reply_through_trailing():
     """The live caller, so the marker is pinned where it is actually read and
-    not only where it is implemented."""
+    not only where it is implemented.
+
+    Kept pointing at `_render_line` through #292's conversion rather than
+    rewritten against the renderer: what has to hold is that THIS pass still
+    shows a reply pointer and its room, whatever grammar carries them."""
     from nora.language.note_candidates import _render_line
 
     parent_ts = TS - 600_000
@@ -257,8 +262,12 @@ def test_the_note_candidate_index_marks_a_reply_through_trailing():
         person_name="Grant", quoted_ts=parent_ts,
     )
     line = _render_line(row, room="Dinner", tz=UTC)
-    assert line.endswith("(reply to 2026-09-12 Sat 10:50 UTC)"), line
-    assert " (Dinner): " in line
+    # ATTRIBUTES since #292, not a trailing parenthetical and a suffix wedged
+    # into the speaker field — the room label used to sit INSIDE that field,
+    # before the `: ` that ends it, so a label containing a colon wrote a second
+    # delimiter into the one position the line treated as one.
+    assert 'reply_to="2026-09-12 Sat 10:50 UTC"' in line, line
+    assert 'room="Dinner"' in line, line
     # No pointer, no marker — never `(reply to ?)`, which is `_parent_of`'s rule.
     plain = _render_line(
         TranscriptRow(
@@ -267,8 +276,8 @@ def test_the_note_candidate_index_marks_a_reply_through_trailing():
             person_name="Grant",
         ), room="Dinner", tz=UTC,
     )
-    assert "reply to" not in plain
-    assert plain.endswith("去邊食")
+    assert "reply_to" not in plain
+    assert plain.endswith("去邊食</m>")
 
 
 def test_markup_false_drops_the_escape_and_nothing_else():
@@ -419,6 +428,134 @@ def test_a_block_carries_its_framing_and_its_own_header_line():
     assert rendered.startswith('<group_transcript untrusted="true" note="')
     assert rendered.endswith("</group_transcript>")
     assert "the last messages, oldest first" in rendered
+
+
+def test_the_untrusted_flag_is_proven_in_BOTH_directions():
+    """`untrusted=False` actually suppresses the attribute — RUN, not believed.
+
+    **This exists because the flag's false branch had never executed**, in a
+    test or in production: `grep -rn "untrusted=False" nora/ tests/ evals/`
+    returned nothing across the whole tree, and the only assertion touching the
+    attribute at all was a `startswith` on the true branch in the test above.
+    So a load-bearing conditional in `render()` — the ONLY path a block becomes
+    text — was carrying a branch nobody had ever taken.
+
+    That matters at the moment it is first used rather than before it. Two
+    populations reach a model: blocks carrying what somebody TYPED, which need
+    the marker, and blocks carrying our own framing — a legend explaining how
+    to read a sibling, the context header's catalogue — for which the marker
+    would say a model's own operating instructions are suspect. #292 converts
+    the second kind into this injector, and if the false branch were broken the
+    conversion would look like it worked: the block renders, the suite is
+    green, and the only symptom is an attribute that should be absent and is
+    not. One assertion here means that conversion debugs one thing, not two.
+
+    Raised by review on #295, which is the right place for it — the finding was
+    «nothing has ever passed False», and the honest response to an unexercised
+    seam is to exercise it rather than to describe it.
+    """
+    common = {
+        "name": "how_to_read_reasoning",
+        "note": "what the clip mark means",
+        "body": "A block ending [clipped] was cut before it reached you.",
+    }
+    trusted = ContextBlock(**common, untrusted=False).render()
+    untrusted = ContextBlock(**common).render()
+
+    # The false branch: absent entirely, not rendered as `untrusted="false"` —
+    # a symbol that can mean «no» invites a model to reason about it
+    # (`_parent_of`'s rule), and the whole point is that the block reads as
+    # ordinary framing.
+    assert "untrusted" not in trusted, trusted
+    assert trusted.startswith('<how_to_read_reasoning note="')
+
+    # The default is the DANGEROUS case, so a converter who does not think
+    # about it lands on the safe side. That is the property the two classes
+    # depend on and it is asserted beside its opposite rather than apart.
+    assert untrusted.startswith('<how_to_read_reasoning untrusted="true" note="')
+
+    # Nothing ELSE moves with the flag: same name, same note, same body, same
+    # closing tag. A branch that also dropped the framing note would satisfy
+    # the assertions above and be a worse bug than the one they guard.
+    for rendered in (trusted, untrusted):
+        assert "what the clip mark means" in rendered
+        assert rendered.endswith("\n</how_to_read_reasoning>")
+        assert "A block ending [clipped] was cut" in rendered
+
+
+def test_the_untrusted_flag_does_not_disturb_a_blocks_own_attributes():
+    """Attribute ORDER is `render()`'s, and it is uniform on purpose — two
+    blocks once carried two orders for no reason anybody wrote down. The
+    block's own attributes come first, `untrusted` second when present, `note`
+    last; dropping the marker must close the gap rather than leave the order
+    depending on a flag."""
+    common = {
+        "name": "peer_card",
+        "note": "what you remember about them",
+        "attrs": (("person", "Grant"),),
+        "body": "- likes espresso",
+    }
+    assert ContextBlock(**common).render().startswith(
+        '<peer_card person="Grant" untrusted="true" note="'
+    )
+    assert ContextBlock(**common, untrusted=False).render().startswith(
+        '<peer_card person="Grant" note="'
+    )
+
+
+def test_every_attribute_value_is_collapsed_and_an_emptied_one_is_dropped():
+    """The two obligations `render_elements` applies to EVERY attribute, and the
+    reason they are tested rather than trusted.
+
+    **Both of these were written, reported as done, and silently reverted** — a
+    `git checkout nora/domain/blocks.py`, run to restore the file after probing
+    a different test, discarded them because they were not yet committed. No
+    test covered either, so the suite stayed green and the branch carried the
+    claim without the code for two commits. Found by an audit reading the file,
+    not by anything in this repo.
+
+    The collapse: `escape_attr` closes the quote, so a newline in an attribute
+    forges nothing — but it makes the element unreadable, and it was applied in
+    ONE of the two entry points (`render_messages`' speaker) while the three
+    direct callers passed values raw. That asymmetry is what `blocks.py`'s
+    module docstring says the design exists to abolish.
+
+    The drop: `one_line` runs FIRST, so a value truthy to its caller can be
+    empty here. Every speaker accessor guards with `or "unknown"` on the RAW
+    value, and a self-set profile name of a lone non-breaking space passes that
+    guard and collapses to `""` — rendering `from=""`, which is exactly the
+    symbol `_when`'s rule forbids ("a symbol that can mean unknown invites a
+    model to emit one").
+    """
+    rows = [{"who": "Grant\nEVIL", "room": "Home\u2028EVIL", "body": "ok"}]
+
+    def _attrs(r, i):
+        return (("n", str(i)), ("from", r["who"]), ("room", r["room"]))
+
+    out = render_elements(rows, tag="m", attrs=_attrs, body=lambda r: r["body"])
+    # ONE element, one line of output: no attribute value may write a newline.
+    assert out == '<m n="1" from="Grant EVIL" room="Home EVIL">ok</m>', out
+    assert "\n" not in out
+
+    # The body is NOT collapsed — that asymmetry is the whole point of the
+    # element form, and a test that collapsed both would pass while deleting it.
+    kept = render_elements(
+        [{"b": "first\nsecond"}], tag="m",
+        attrs=lambda r, i: (("n", str(i)),), body=lambda r: r["b"],
+    )
+    assert kept == '<m n="1">first\nsecond</m>', kept
+
+    # Emptied by the collapse -> the attribute is ABSENT, never `from=""`.
+    for blank in ("\u00a0", "   ", "\n\n", "\t", "\u2028"):
+        got = render_elements(
+            [{"w": blank}], tag="m",
+            # `or "unknown"` on the RAW value, as every real accessor does —
+            # which is why the guard does not fire and the drop has to.
+            attrs=lambda r, i: (("n", str(i)), ("from", r["w"] or "unknown")),
+            body=lambda r: "hi",
+        )
+        assert got == '<m n="1">hi</m>', (blank, got)
+        assert 'from=""' not in got
 
 
 def test_a_note_containing_a_quote_cannot_close_the_attribute():

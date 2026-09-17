@@ -540,7 +540,7 @@ async def test_the_two_calls_share_one_budget():
             # answer time is whichever task happened to resume, not which
             # call this is. The first STANDING answer overflows, forcing the
             # consolidate retry; the judge is never retried and needs none.
-            if "consolidate" not in prompt and "<standing_prior>" in prompt:
+            if "consolidate" not in prompt and "<standing_prior " in prompt:
                 return _ok("x" * 60)
             return _ok("short")
 
@@ -701,11 +701,11 @@ async def test_the_verdict_sees_the_whole_turn_and_the_standing_sees_the_prior()
     client = _Client(_ok("a position"), _grounded())
     await _run(store=store, client=client)
     standing, verdict = client.prompts[0], client.prompts[1]
-    assert "<standing_prior>" in standing
-    assert "<standing_prior>" not in verdict
+    assert "<standing_prior " in standing
+    assert "<standing_prior " not in verdict
     assert 'outcome="send_reply"' in verdict
-    assert "<what_happened>" in verdict
-    assert "<transcript>" in verdict and "<reasoning>" in verdict
+    assert "<what_happened " in verdict
+    assert "<transcript " in verdict and "<reasoning " in verdict
     # The SAME turn labelling the standing call reads — one turn block, two
     # consumers, no disagreement about what happened.
     assert 'outcome="send_reply"' in standing
@@ -724,7 +724,7 @@ async def test_the_two_calls_start_before_either_finishes():
             await asyncio.sleep(0.10)
             events.append("end")
             return (
-                _ok("a position") if "<standing_prior>" in prompt
+                _ok("a position") if "<standing_prior " in prompt
                 else _grounded()
             )
 
@@ -2232,7 +2232,7 @@ async def test_r81_a_quote_is_grounded_only_against_the_person_who_said_it():
     # Everything before the close tag, then after the LAST open tag: the rubric
     # itself names `<transcript>` when it tells the model what it is given, so
     # a leading split lands inside the instructions instead of the room.
-    transcript = prompt.split("</transcript>")[0].rsplit("<transcript>", 1)[1]
+    transcript = prompt.split("</transcript>")[0].rsplit("<transcript ", 1)[1]
 
     quoted = [line for line in transcript.splitlines() if "收隊" in line]
     assert len(quoted) == 1, (
@@ -2322,7 +2322,7 @@ async def test_a_dead_turn_never_becomes_a_claim_that_she_never_answered():
         p for p in client.prompts if p.startswith("OBJECTIVE-TEXT"))
     assert "this turn's model call failed, so THIS TURN sent nothing" in fold_prompt
     assert "does not describe what any other turn of yours sent" in fold_prompt
-    assert "Nora (delivered): 聽朝 10 點到數碼港" in fold_prompt
+    assert 'from="Nora" delivery="delivered">聽朝 10 點到數碼港' in fold_prompt
 
     verdict = await verdicts.read(tag_id="2301f72a")
     assert verdict is not None

@@ -211,10 +211,11 @@ async def test_inputs_renders_the_index_the_rooms_the_log_and_the_self_card():
 
     text = await adaptor.inputs(key=WS, batch=())
 
-    assert "<now>2026-09-09 Wed 07:00 (Asia/Hong_Kong)</now>" in text
+    assert "2026-09-09 Wed 07:00 (Asia/Hong_Kong)" in text.split("</now>")[0]
     assert '<home_room platform="signal" label="Friends"' in text
     assert (
-        "[1] «AI Hackathon dinner plan» — where to eat is open; about Sat 12 Sep, in 3 days"
+        '<note n="1" title="AI Hackathon dinner plan" '
+        'about="Sat 12 Sep, in 3 days">where to eat is open</note>'
         in text
     )
     assert note.id not in text                      # the index, never the id
@@ -276,8 +277,13 @@ async def test_strikes_and_a_due_revisit_are_said_on_the_line():
 
     text = await adaptor.inputs(key=WS, batch=())
 
-    assert "revisit due" in text
-    assert "you decided to raise this 1x before, no reply since" in text
+    # ATTRIBUTES now, not a `; …` tail on a flat line. The meaning the old
+    # sentence carried — that `raised` counts DECISIONS the room never answered
+    # rather than messages sent — moved into `OPEN_NOTES_NOTE`, so assert it is
+    # actually there rather than trusting the number to explain itself.
+    assert 'revisit="due"' in text
+    assert 'raised="1"' in text
+    assert "how many times you DECIDED to bring it up and got no reply" in text
 
 
 async def test_a_failed_standing_read_is_rendered_as_unread_not_as_no_position():

@@ -42,17 +42,31 @@ Reported as «Blake: go to school by bus». It needed no attacker.
 
 **One renderer per shape, and a block becomes text exactly one way.**
 
-1. `nora/domain/blocks.py::render_rows` renders a record as a LINE. All eight
-   live line grammars are a `RowStyle` — four fields of plain data — plus
-   accessors the caller passes. The collapse and the speaker-delimiter strip
-   are applied by the renderer and no style turns them off.
-2. `render_messages` renders a conversation as one `<m>` ELEMENT per message.
-   The tag prefill's transcript uses this instead of lines. A body then keeps
-   its paragraph breaks, because the separator is a tag rather than a newline —
+1. `nora/domain/blocks.py::render_rows` renders a record as a LINE. A line
+   grammar is a `RowStyle` — four fields of plain data — plus accessors the
+   caller passes. The collapse and the speaker-delimiter strip are applied by
+   the renderer and no style turns them off.
+2. `render_elements` renders a record as one ELEMENT: the identifying fields
+   become ATTRIBUTES, where `escape_attr` closes the quote and every value is
+   collapsed, and the record's own prose becomes CONTENT, where it keeps its
+   shape. `render_messages` is a thin caller of it with the transcript's
+   attribute set (`n`/`age`/`from`/`replying_to`). A body then keeps its
+   paragraph breaks, because the separator is a tag rather than a newline —
    the rule this repo had already written down in `relevance_gate`'s docstring
    and applied to nothing: *the separator has to be something a row's content
    cannot contain*. ChatML's special tokens, LangChain's message objects and
    Anthropic's `<document index="n">` are three stacks making the same choice.
+
+   **Amended by #292.** This ADR was written when the element form had exactly
+   one caller and eight line grammars remained. Every builder that renders a
+   MESSAGE now renders elements — the relevance gate, the culture fold, the
+   note curator's evidence and own-sends, the note-candidate batch, the debrief
+   fold, and the tag prefill — and so does the note index. Three line grammars
+   survive, and none of them is a transcript: the proactive room listing and
+   the operator's two Discord surfaces, which are rows addressed to a human or
+   describing something other than a message. `render_rows` is now the
+   exception rather than the default, and `tests/architecture/test_one_transcript_renderer.py`
+   is what keeps it that way.
 3. `render_bullets` renders a record as one bullet, for the memory blocks that
    list conclusions.
 4. `ContextBlock.render()` is how a block becomes text. There is no `text`

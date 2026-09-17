@@ -178,7 +178,7 @@ async def test_the_block_reaches_the_prompt_under_its_own_tag() -> None:
     ))
 
     assert "<people_in_window" in rendered
-    assert '<person name="Miles Novak">' in rendered
+    assert '<person name="Miles Novak" ' in rendered
     assert "- miles_novak jokingly calls nora 管理員" in rendered
 
 
