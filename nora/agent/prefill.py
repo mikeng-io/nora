@@ -27,9 +27,10 @@ from ..domain.decision_log import (
 from ..domain.models import TagContext, TranscriptRow
 from ..domain.prompt import escape
 from ..domain.prompt import escape_attr as _escape_attr
-from ..language.note_render import NOTES_HEADER, render_notes
 from ..language.culture_render import CULTURE_HEADER, render_culture
+from ..language.note_render import NOTES_HEADER, render_notes
 from ..language.standing_render import STANDING_HEADER, render_standing
+from ..obs.tracing import annotate, span
 
 _CLOSING_LINE = "Understood. I'll read the conversation and reply as myself."
 
@@ -872,50 +873,81 @@ def build_prefill(
     up. `group_members` (`nora.agent.tools`) answers the same question from
     THIS conversation's own membership list, and only when it is asked.
     """
-    # ONE read of the clock for the whole prefill. It used to be read twice —
-    # once for the stated wall time, once for the transcript's ages — so the
-    # time she is told it is and the time the ages are measured against came
-    # from two different reads of the same clock. Sub-millisecond in effect,
-    # and exactly the «interpret once» the spine asks for: everything below
-    # computes on one fixed model of now.
-    clock = now or datetime.now().astimezone()
-    # RENDER first, DECLARE second, ASSEMBLE third. The order the blocks reach
-    # her, and the catalogue that introduces them, both come from `_BLOCKS` —
-    # so a block cannot be served without an entry, and an entry cannot survive
-    # a block that stopped rendering.
-    declared = _declared(context_window, [
-        _self_card_block(ctx),
-        _peer_card_block(ctx),
-        _peer_history_block(ctx),
-        _people_in_window_block(ctx),
-        _restamp(_notes_block(ctx, now=clock)),
-        _restamp(_decisions_block(ctx, now=clock)),
-        _restamp(_culture_block(ctx, now=clock)),
-        _restamp(_standing_block(ctx)),
-        _transcript_block(ctx, display_name, clock),
-    ])
-    return [
-        _message("user", _context_header(
-            context_window, header, catalogue(declared))),
-        _message(
-            "user",
-            # The clock leads the VOLATILE block, not the header: see
-            # `_context_header`'s docstring for the cache measurement that
-            # decided this. It is still the first thing after the static
-            # instructions, so nothing about how she reads it changes.
-            #
-            # THE ORDER OF THE BLOCKS BELOW IS `_BLOCKS`, not this expression.
-            # The fifteen lines of prose that used to argue the sequence here
-            # are gone — they lived beside an order nothing could check against
-            # them, which is how `<loop_decisions>` came to ship with no
-            # catalogue entry. The argument is now the `order` column and the
-            # comment above that table.
-            _now_line(clock)
-            + _where_line(ctx.message.platform)
-            + assemble(declared),
-        ),
-        _message("assistant", _CLOSING_LINE),
-    ]
+    # ONE root per prefill (issue #55, Layer 7's other unlit half): before this
+    # the largest single input to the model call — which blocks were built,
+    # from which reads, at what size — had no trace at all. A turn that timed
+    # out or errored INSIDE this assembly (a block that raises, a slow
+    # `_peer_history_block` read) left no evidence it had even started.
+    # Un-rooted deliberately: `build_prefill` is called from both the tag path
+    # (under `engagement`'s root) and the fire path (under its own
+    # `occasion.kind` root, `nora.app.fire`) and from a few offline callers
+    # with no root open at all (`note_candidates`, `announce`) — `span` with no
+    # declared `nora.trace_kind` nests under whichever root is current and, for
+    # the callers with none, is exported as a root of its own (R-76's
+    # fail-open default), never silently dropped.
+    with span("agent.prefill", **{"nora.tag_id": ctx.tag_id}):
+        # ONE read of the clock for the whole prefill. It used to be read
+        # twice — once for the stated wall time, once for the transcript's
+        # ages — so the time she is told it is and the time the ages are
+        # measured against came from two different reads of the same clock.
+        # Sub-millisecond in effect, and exactly the «interpret once» the
+        # spine asks for: everything below computes on one fixed model of now.
+        clock = now or datetime.now().astimezone()
+        # RENDER first, DECLARE second, ASSEMBLE third. The order the blocks
+        # reach her, and the catalogue that introduces them, both come from
+        # `_BLOCKS` — so a block cannot be served without an entry, and an
+        # entry cannot survive a block that stopped rendering.
+        declared = _declared(context_window, [
+            _self_card_block(ctx),
+            _peer_card_block(ctx),
+            _peer_history_block(ctx),
+            _people_in_window_block(ctx),
+            _restamp(_notes_block(ctx, now=clock)),
+            _restamp(_decisions_block(ctx, now=clock)),
+            _restamp(_culture_block(ctx, now=clock)),
+            _restamp(_standing_block(ctx)),
+            _transcript_block(ctx, display_name, clock),
+        ])
+        # WHICH blocks were actually built (non-empty body — `assemble`'s own
+        # test, see `_declared`'s docstring for why a block with nothing to
+        # say is still DECLARED), and AT WHAT SIZE: each block's name already
+        # names its read (`peer_card` is the peer-card store, `notes` is the
+        # note tier, …), so the block name doubles as provenance for where the
+        # bytes came from without this module reaching into those stores a
+        # second time to ask. Sizes are the rendered body only — the wrapping
+        # tag and the catalogue line are the assembler's cost, not the read's.
+        rendered = [b for b in declared if b.body]
+        annotate(**{
+            "nora.prefill.blocks_declared": len(declared),
+            "nora.prefill.blocks_rendered": ",".join(b.name for b in rendered),
+            "nora.prefill.blocks_empty": ",".join(
+                b.name for b in declared if not b.body
+            ),
+            "nora.prefill.size_chars": sum(len(b.body) for b in rendered),
+        })
+        return [
+            _message("user", _context_header(
+                context_window, header, catalogue(declared))),
+            _message(
+                "user",
+                # The clock leads the VOLATILE block, not the header: see
+                # `_context_header`'s docstring for the cache measurement that
+                # decided this. It is still the first thing after the static
+                # instructions, so nothing about how she reads it changes.
+                #
+                # THE ORDER OF THE BLOCKS BELOW IS `_BLOCKS`, not this
+                # expression. The fifteen lines of prose that used to argue
+                # the sequence here are gone — they lived beside an order
+                # nothing could check against them, which is how
+                # `<loop_decisions>` came to ship with no catalogue entry. The
+                # argument is now the `order` column and the comment above
+                # that table.
+                _now_line(clock)
+                + _where_line(ctx.message.platform)
+                + assemble(declared),
+            ),
+            _message("assistant", _CLOSING_LINE),
+        ]
 
 
 def _replying_to_block(ctx: TagContext, display_name: str) -> str:

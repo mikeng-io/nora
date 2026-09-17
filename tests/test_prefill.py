@@ -9,6 +9,7 @@ from nora.agent.prefill import (
     build_tag_message,
     escape,
 )
+from nora.domain.culture import CultureRevision
 from nora.domain.decision_log import DecisionRow
 from nora.domain.models import (
     DeliveryStatus,
@@ -19,7 +20,6 @@ from nora.domain.models import (
     TranscriptRow,
 )
 from nora.domain.notes import Note
-from nora.domain.culture import CultureRevision
 from nora.domain.standing import Standing
 
 
@@ -1325,3 +1325,63 @@ def test_a_reply_only_ever_points_at_a_handle_in_this_window():
     assert targets, "the in-window reply lost its reference"
     assert targets <= handles, f"dangling: {targets - handles}"
     assert len(targets) == 1, "the out-of-window pointer rendered a reference"
+
+
+# ---------------------------------------------------------------------------
+# THE PREFILL SPAN (issue #55, Layer 7's third unlit boundary). Before this,
+# `build_prefill` — the largest single input to the model call — opened zero
+# spans, so a turn that timed out or raised assembling it left no trace at
+# all. These assert on EXPORTED spans (`exported_spans`, `tests/conftest.py`),
+# the same discipline `test_engagement_pipeline.py`'s #64 tests use: a test
+# that only checked `span` was CALLED would stay green if the wrapper moved to
+# the wrong scope or lost its attributes.
+# ---------------------------------------------------------------------------
+
+
+def test_build_prefill_emits_its_own_span(exported_spans):
+    """PROBE: delete the `with span("agent.prefill", ...)` in `build_prefill`
+    and this reddens — nothing named `agent.prefill` is exported at all."""
+    build_prefill(_ctx(), display_name="Nora", context_window=40)
+    names = [s.name for s in exported_spans.get_finished_spans()]
+    assert names == ["agent.prefill"]
+
+
+def test_the_prefill_span_names_which_blocks_were_built_and_at_what_size(
+    exported_spans,
+):
+    """The issue's own wording: "which blocks were built, from which reads, at
+    what size" — every block name doubles as the read it came from
+    (`peer_card` is the peer-card store, `notes` is the note tier, …), so the
+    span needs only the name and the rendered size, not a second lookup back
+    into those stores.
+
+    PROBE: delete the `annotate(...)` call and every one of these attributes
+    disappears from the exported span.
+    """
+    ctx = _ctx(
+        _rows("hello"), peer_card=("likes espresso",), self_card=("nora said a thing",),
+        tagger_card=("asked about dinner",), tagger=PersonRef("miles", "Miles", "miles"),
+        notes=(_note(),), standing=_standing(), decisions=_decisions(),
+        people_in_window=(("Grant", ("asked about dinner",)),),
+    )
+    build_prefill(ctx, display_name="Nora", context_window=40)
+
+    (recorded,) = exported_spans.get_finished_spans()
+    assert recorded.attributes["nora.tag_id"] == "tag-1"
+    rendered = recorded.attributes["nora.prefill.blocks_rendered"].split(",")
+    # `self_card`/`peer_card`/`notes`/`standing`/`transcript` all have content
+    # in this fixture and must show up as BUILT; asserted by subset rather
+    # than equality, so this does not have to re-derive the full catalogue.
+    assert {"self_card", "peer_card", "notes", "standing", "group_transcript"} <= set(rendered)
+    assert recorded.attributes["nora.prefill.blocks_declared"] >= len(rendered)
+    assert recorded.attributes["nora.prefill.size_chars"] > 0
+
+
+def test_a_bare_context_still_declares_its_empty_blocks(exported_spans):
+    """A block with nothing to say is still DECLARED (`_declared`'s own
+    contract) — the span's empty list should say so too, rather than reading
+    identically to a turn that built nothing because nothing was ASKED for."""
+    build_prefill(_ctx(), display_name="Nora", context_window=40)
+    (recorded,) = exported_spans.get_finished_spans()
+    assert recorded.attributes["nora.prefill.blocks_declared"] > 0
+    assert recorded.attributes["nora.prefill.blocks_empty"] != ""
