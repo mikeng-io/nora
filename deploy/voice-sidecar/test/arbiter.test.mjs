@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { EventEmitter } from 'node:events';
 
-import { createArbiter } from '../src/arbiter.mjs';
+import { createArbiter, DEFAULT_VOLUME_PERCENT } from '../src/arbiter.mjs';
 import {
   createFakeClock,
   createFakePlayer,
@@ -540,4 +540,16 @@ test('a second speech while MUSIC-RESUMING preempts again: the in-flight revive 
   secondRevive.data();
   assert.equal(arbiter.state(), 'playing');
   assert.equal(player.played.length, 4);
+});
+
+test('a fresh connection starts music at the quiet default, not full scale', () => {
+  // Operator, 2026-09-17: Discord voice is loud and a track at full scale
+  // buries the people talking over it. `/music volume` raises it for the life
+  // of the connection; a new one starts quiet again.
+  const { player, playToPlaying } = makeArbiter();
+
+  playToPlaying();  // no setVolume first: this is the DEFAULT
+
+  assert.equal(player.current.volume.value, DEFAULT_VOLUME_PERCENT / 100);
+  assert.equal(DEFAULT_VOLUME_PERCENT, 25, 'the operator asked for 25%');
 });

@@ -66,6 +66,10 @@ export const FFMPEG_ARGS = (url, startOffsetMs = 0) => [
 
 const STDERR_TAIL_BYTES = 2048;
 
+//: The volume a fresh connection starts music at, as a percent of source.
+//: `/music volume` overrides it for the life of that connection.
+export const DEFAULT_VOLUME_PERCENT = 25;
+
 export function createArbiter({
   spawn,
   createMusicResource,
@@ -85,7 +89,17 @@ export function createArbiter({
   let activeKind = null; // 'music' | 'speech' — what the player is playing
   let speechActive = null; // { requestId }
   const speechQueue = [];
-  let volumePercent = 100;
+  // MUSIC STARTS AT 25% (operator, 2026-09-17). Discord voice is loud and a
+  // track at full scale buries the people talking over it; `/music volume`
+  // raises it per session, and a fresh connection starts quiet again.
+  //
+  // NOT a restoration of an old default, though it is the number the operator
+  // remembers: nothing ever defaulted music to 25%. The pre-controller player
+  // started at 1.0 and this arbiter started at 100. The 0.25 in memory is
+  // `[speech.tts] duck_gain` — how far music was SCALED DOWN while Nora spoke
+  // — and design 07 replaced ducking with a hard cut, so that key is now read
+  // by nothing. Same number, different mechanism; this is a new decision.
+  let volumePercent = DEFAULT_VOLUME_PERCENT;
   let streaming = false;
   let lastError = null;
   // Close-promises of killed-but-not-yet-reaped ffmpegs; a new spawn waits
