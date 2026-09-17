@@ -1589,6 +1589,29 @@ reasoning_effort = "none"
 # Reopen with evidence from real runs, not before.
 # Tagged :0731 (2026-08-30) — same catalog-400 fix as [llm].model.
 model = "ollamacloud/deepseek-v4-flash:0731"
+# The Dreamer's OWN per-call ceiling, `0` = inherit `[llm] max_tokens`
+# (issue #291). NOT `[dreamer.budgets.*] output_tokens`, and the two are easy
+# to confuse in exactly the direction that wastes a day:
+#
+#   budgets[...].output_tokens  the STRANDS LOOP budget. Binds -> stop_reason
+#                               "limit_output_tokens", raises NOTHING.
+#   max_tokens (this)           the PROVIDER's ceiling on ONE completion.
+#                               Binds -> MaxTokensReachedException ->
+#                               PartialReplyError: "model cut off at
+#                               max_tokens". THIS is the one in the logs when
+#                               a pass truncates.
+#
+# `[llm] max_tokens` is sized for a TAG TURN (measured: the largest legitimate
+# completion was 371 tokens). A batch pass is a different unit of work —
+# `note-candidates` asks for one verdict per message PLUS a candidate array,
+# so its output scales with the batch. Inheriting the tag turn's ceiling is
+# what let one scope fail every run for ~24 hours, watermark held, the same
+# batch re-read hourly, lag at 1,250 messages.
+#
+# Leave at 0 unless a pass is truncating. If one is, raise THIS, not the loop
+# budget — and keep the loop budget a MULTIPLE of it, the ratio `[llm.limits]`
+# already uses, or one call can spend the whole loop's allowance.
+max_tokens = 0
 
 # Per-adaptor run ceilings (`DreamBudgetConfig`; an adaptor with no block gets
 # the defaults: 6 turns, 40000 total tokens, 4000 output tokens, 120 s, and 2
