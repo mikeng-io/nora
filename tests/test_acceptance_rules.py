@@ -603,10 +603,12 @@ def test_r53_is_covered_by_the_source_scope_corpus():
     question at the right scope (she answers plainly). Without those, a fix that
     overcorrected into hedging everything would score as a pass.
 
-    It is deliberately NOT wired into `evals/run.py`'s `SUITES`: it is a
-    measured record of the doctrine gap, not a gate the shipped doctrine is
-    known to clear. This test pins that the measurement exists and is findable,
-    not that the rule holds.
+    It is deliberately NOT in `evals/run.py`'s gated `adversarial` corpus: it is
+    a measured record of the doctrine gap, not a gate the shipped doctrine is
+    known to clear. It IS selectable — `--suite source_scope`, since 2026-09-17
+    (#227) — because being ungated and being unrunnable are different decisions
+    and only the first was made. This test pins that the measurement exists and
+    is findable, not that the rule holds.
     """
     assert (ROOT / "evals" / "adversarial" / "source_scope.yaml").exists()
 
@@ -627,9 +629,11 @@ def test_r83_is_covered_by_the_being_contradicted_corpus():
     BOTH controls — real evidence arriving (updating is correct) and a claim she
     never grounded (R-83's own carve-out, where neither holding nor conceding is
     right) — so a fix that overcorrected into never moving cannot score as a pass.
-    It is deliberately NOT in `evals/run.py`'s `SUITES`: a measured record of the
-    gap, not a gate the shipped doctrine is known to clear. This test pins that
-    the measurement exists and is findable, not that the rule holds.
+    It is deliberately NOT in `evals/run.py`'s gated `adversarial` corpus: a
+    measured record of the gap, not a gate the shipped doctrine is known to
+    clear. `--suite being_contradicted` runs it (2026-09-17, #227); `--repeat N`
+    is how it is read, because one window is not a rate. This test pins that the
+    measurement exists and is findable, not that the rule holds.
     """
     assert (ROOT / "evals" / "adversarial" / "being_contradicted.yaml").exists()
 

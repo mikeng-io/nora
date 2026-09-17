@@ -52,6 +52,17 @@ OMNIROUTE_API_KEY=… DATABASE_URL=… uv run python -m evals.run --suite journe
 # identity-grounding / injection judge gate
 OMNIROUTE_API_KEY=… uv run python -m evals.run --suite adversarial
 
+# the three corpora that MEASURE a doctrine gap instead of gating one (#227).
+# Same live path, same fail-closed grading, their own suite names — and they are
+# never part of `--suite adversarial`, so a red reading here cannot block a
+# deploy. `--repeat N` runs the whole corpus N independent times (verdict cache
+# off), binds the strict majority per case, and prints per-case `k/N` plus the
+# per-run spread. Read the spread: one green window is not a rate, which is what
+# the 40-case relevance-gate regression shipped on.
+OMNIROUTE_API_KEY=… uv run python -m evals.run --suite being_contradicted --repeat 5
+OMNIROUTE_API_KEY=… uv run python -m evals.run --suite source_scope --repeat 5
+OMNIROUTE_API_KEY=… uv run python -m evals.run --suite identity_grounding --repeat 5
+
 # the note-candidates scenario suite (design 37 §7, issue #118): ten batches
 # through the REAL DreamerRuntime + NoteCandidateAdaptor over an in-memory
 # notebook, N samples each, graded on the notebook (a note created, a head
@@ -100,7 +111,24 @@ pkill -f 'ssh -f -N -L 20128'
 `--model` is not optional in this shape. `config.example.toml` names the
 provider id and the deployment routes through an alias (`nora`,
 `nora-dreamer`), so a run without it measures a different model than
-production and its verdict is about nothing anyone deploys. The key is read
+production and its verdict is about nothing anyone deploys.
+
+The adversarial suites take the same treatment and need one more flag, because
+they drive TWO models: `--model nora` is the reply tier and `--judge-model
+nora-judge` the grader (the self-grade guard compares what will actually be
+called, so it still refuses a run where the two are the same id). Add
+`--judge-samples 3` to match the deployment's `[evals] judge_samples` — the
+committed template says 1, and a single judge sample is the noise A2 exists to
+kill. The whole invocation, from the Mac, with the tunnel up:
+
+```bash
+uv run python -m evals.run --suite being_contradicted --repeat 5 --no-cache \
+    --model nora --judge-model nora-judge --judge-samples 3
+```
+
+Every run prints its own provenance first — corpora, both model ids, judge
+samples, the doctrine sha256 and the base url — so a rate quoted from a log can
+be re-derived instead of trusted. The key is read
 from the deployment's `.env` through ssh rather than stored anywhere local —
 same rule as every other secret (`AGENTS.md`, "Reaching the deployment").
 

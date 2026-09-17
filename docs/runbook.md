@@ -587,7 +587,9 @@ stays the *runner*; Langfuse is the *store* for datasets, dataset runs and score
 
 **Datasets** (one per corpus, seeded from the YAML in `evals/`):
 `nora-trigger`, `nora-no-trigger` (12 items each), `nora-adversarial` (10:
-the union of the three adversarial corpora) — keyed
+the union of the three GATED adversarial corpora — the three measured-gap
+corpora wired in 2026-09-17 export nothing, the same as every other live
+suite) — keyed
 `<corpus>/<case-name>`. Langfuse item IDs are unique **per project across all
 datasets**, which is why the ids are namespaced; a bare case name would let one
 corpus silently overwrite another's item.

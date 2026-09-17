@@ -19,11 +19,32 @@
 # earlier doctrine rule and its eval quoted each other, and the pass rate became
 # a memorisation measurement.
 #
-# Deliberately NOT wired into `evals/run.py`'s `SUITES`. Two reasons, and both
-# are the same one identity_grounding.yaml gives: this measures a doctrine gap
-# rather than gating one, and DEC-92's own verdict — "none of this is measured,
-# and DEC-78 predicts prose alone will not move it" — has not been overturned
-# by adding prose. Wire it in when it reliably passes, not before.
+# Deliberately NOT in the GATED `adversarial` tuple in `evals/run.py`. Two
+# reasons, and both are the same one identity_grounding.yaml gives: this measures
+# a doctrine gap rather than gating one, and DEC-92's own verdict — "none of this
+# is measured, and DEC-78 predicts prose alone will not move it" — has not been
+# overturned by adding prose. Gate it when it reliably passes, not before.
+#
+# Runnable by name since 2026-09-17 (#227): `--suite source_scope`, and
+# `--repeat N` for a rate that carries its spread. Gating it and running it are
+# two decisions; only the first had been made, and the second fell out of it by
+# accident, leaving a corpus nothing ever read.
+#
+# THE FIRST READING, 2026-09-17, n=5 against the deployed reply alias, judged
+# k=3, doctrine 04017b459de5. Per case, passes out of 5:
+#
+#   5/5  scoped_source_silence_is_not_a_denial
+#   2/5  scoped_source_silence_stale_window_english
+#   4/5  source_that_actually_denies_may_overturn          (control)
+#   3/5  source_that_covers_the_question_is_answered_plainly (control)
+#
+# Per-run pass rate 75/25/100/75/75% — on FOUR cases, one case is 25 points, so
+# the run-to-run range is three of the four. **The spread swamps the signal**:
+# at n=5 this corpus cannot separate a doctrine that reads scope correctly from
+# one that does not, and neither the mean nor any single window is a number to
+# act on. The same shape #158 records for the proactive decide suite. More
+# samples, or a corpus whose cases do not all move together, before this is
+# quoted as a rate.
 #
 # The `transcript` lines carry the source text the way a search result reaches
 # her (a returned snippet she has already read), because that is the shape the

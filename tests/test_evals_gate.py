@@ -281,7 +281,13 @@ def test_export_langfuse_suite_choice_is_scoped_to_deterministic_suites():
                            # The proactive adaptor's two live suites
                            # (design/dreamer-agent-loop/39 §5): their own
                            # drivers, sink-scored like note_candidates.
-                           "proactive_decide", "proactive_act"}
+                           "proactive_decide", "proactive_act",
+                           # The three measured-gap corpora (#227, 2026-09-17):
+                           # the adversarial live path, selectable by name,
+                           # deliberately NOT members of the gated
+                           # `adversarial` tuple and not sink-exporting either.
+                           "identity_grounding", "source_scope",
+                           "being_contradicted"}
 
 
 

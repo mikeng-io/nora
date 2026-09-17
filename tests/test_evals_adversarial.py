@@ -71,8 +71,12 @@ def test_the_source_scope_corpus_pairs_every_silence_case_with_a_denial_control(
     hedges everything as perfect, which is the overcorrection the rule must not
     produce. So this pins that the file carries BOTH a source whose silence is
     scope (she keeps her sourced answer) and a source that denies in terms (she
-    may overturn), and that the corpus is deliberately absent from `SUITES` —
-    it is a measured record of a doctrine gap, not a passing gate.
+    may overturn), and that the corpus is absent from the GATED `adversarial`
+    tuple — it is a measured record of a doctrine gap, not a passing gate.
+
+    Since 2026-09-17 (#227) it IS selectable, as its own suite name; what it must
+    never do is decide `--suite adversarial`. The two were one thing until then,
+    which is how three corpora ended up runnable by nothing at all.
     """
     cases = _cases("source_scope.yaml")
     names = {c["name"] for c in cases}
@@ -413,8 +417,9 @@ def test_the_being_contradicted_corpus_pairs_the_hold_cases_with_both_controls()
     that the file carries the bare-assertion cases, a control where real evidence
     arrives (updating is correct), and a control where the earlier claim was never
     grounded (neither holding nor conceding is correct), and that the corpus is
-    deliberately absent from `SUITES` — a measured record of a doctrine gap, not a
-    passing gate.
+    absent from the GATED `adversarial` tuple — a measured record of a doctrine
+    gap, not a passing gate. Selectable as its own suite since 2026-09-17 (#227),
+    which is a different decision from gating and was never separately made.
     """
     cases = _cases("being_contradicted.yaml")
     names = {c["name"] for c in cases}
@@ -683,3 +688,234 @@ def test_the_axes_line_folds_in_a_verdict_cached_before_the_map_existed():
                                   "source_scope_read_correctly": "FAIL"}}
     assert run._axes_line(both) == (
         "contradiction_handled_correctly=PASS source_scope_read_correctly=FAIL")
+
+
+# --- the wiring itself (#227, 2026-09-17) ---------------------------------------
+#
+# The defect this issue is about, one layer up: a corpus that exists, is named,
+# and is executed by nothing. `adversarial_gate([])` is True, so a suite whose
+# files cannot be read — a typo, a moved file, a renamed `cases:` key — would
+# print `GATE PASSED` over zero cases. These are the tests that make the wiring
+# itself fail-closed rather than the corpora vouching for it.
+
+
+def test_an_empty_result_list_passes_the_gate_by_vacuity():
+    """The premise the two guards below exist for, pinned rather than assumed.
+
+    `adversarial_gate` is an AND over per-case checks, so no cases is a PASS —
+    correct as a gate, useless as a measurement. Everything that could deliver
+    zero cases has therefore to raise BEFORE the gate is reached.
+    """
+    assert adversarial_gate([])
+
+
+def test_every_suite_maps_to_files_that_exist():
+    """A suite name resolving to a path that is not there is a wiring defect, and
+    it must be findable without a live run. `journeys` is the one suite with no
+    case files (its cases are `evals/journeys.py`), so it is the only empty
+    tuple — pinned, so a corpus suite silently becoming empty reads as a failure
+    rather than as "like journeys"."""
+    empty = {name for name, paths in SUITES.items() if not paths}
+    assert empty == {"journeys"}
+    for name, paths in SUITES.items():
+        for path in paths:
+            assert path.exists(), f"suite {name} names a missing file: {path}"
+
+
+def test_every_adversarial_suite_runs_a_non_empty_corpus():
+    """Each of the four live adversarial suites loads the cases its files hold.
+
+    The counts are spelled out: a corpus losing its cases to a bad edit is the
+    silent version of the same defect, and a `> 0` assertion would not see it.
+    """
+    counts = {name: len(run._load_adversarial_cases(SUITES[name]))
+              for name in run.ADVERSARIAL_SUITES}
+    assert counts == {
+        "adversarial": 10,             # 5 injections + 4 near_miss + 1 transcript
+        "identity_grounding": 8,
+        "source_scope": 4,
+        "being_contradicted": 6,
+    }
+
+
+def test_a_suite_naming_a_missing_file_raises_rather_than_running_nothing():
+    """Reverting the `path.exists()` guard in `_load_adversarial_cases` reddens
+    this: without it the call dies on `read_text` in some runs and — for a suite
+    whose OTHER files still load — quietly measures a subset in others."""
+    with pytest.raises(FileNotFoundError, match="must fail"):
+        run._load_adversarial_cases((CORPUS / "no_such_corpus.yaml",))
+
+
+def test_a_corpus_that_contributes_no_cases_raises(tmp_path):
+    """The second way a wired corpus measures nothing: the file is there and has
+    no cases in it (an empty list, or a `cases:` key that moved). Reverting the
+    emptiness guard reddens this."""
+    empty = tmp_path / "empty.yaml"
+    empty.write_text("cases: []\n")
+    with pytest.raises(ValueError, match="contributed no cases"):
+        run._load_adversarial_cases((empty,))
+
+    no_key = tmp_path / "renamed.yaml"
+    no_key.write_text("scenarios:\n  - name: c1\n    input: hi\n    expect: reply\n")
+    with pytest.raises(ValueError, match="contributed no cases"):
+        run._load_adversarial_cases((no_key,))
+
+
+@pytest.mark.parametrize("suite", ["identity_grounding", "source_scope",
+                                   "being_contradicted"])
+def test_each_measured_gap_suite_actually_drives_every_one_of_its_cases(
+        suite, fake_env, monkeypatch):
+    """Wired-in-but-never-executed is the same defect as never-wired.
+
+    So this drives `main` for each newly selectable suite and asserts a REPLY was
+    produced for every case in that suite's file — the corpus was executed, not
+    merely named. Reverting the `SUITES` entry (or dropping the suite from
+    `ADVERSARIAL_SUITES`, which would send it down the scripted `_run_suite`
+    path) reddens it.
+    """
+    seen: list[str] = []
+
+    async def _capture(model, system_prompt, message, *, role):
+        if role == "reply":
+            seen.append(message)
+            return "唔記得喎，等我睇返先"
+        return RUBRIC_OK
+
+    monkeypatch.setattr(run, "_invoke_agent", _capture)
+    run.main(suite, no_cache=True)
+    # Rendered against the configured trigger, exactly as the runner loads them —
+    # a `{trigger}` template compared raw would never match what was sent.
+    cfg = run._load_eval_config()
+    cases = run._load_adversarial_cases(SUITES[suite], cfg.engagement.trigger.text)
+    assert len(seen) == len(cases)
+    for case in cases:
+        assert any(case["input"] in message for message in seen), case["name"]
+
+
+def test_the_measured_gap_corpora_stay_out_of_the_gated_tuple():
+    """Selectable is not gated. `--suite adversarial` is the pre-deploy gate, and
+    a corpus recording a doctrine gap must not decide it — that is the property
+    the three files' headers protect, and wiring them in by name does not touch
+    it."""
+    for name in ("identity_grounding", "source_scope", "being_contradicted"):
+        assert SUITES[name][0] not in SUITES["adversarial"]
+    assert SUITES["adversarial"] == (
+        CORPUS / "injections.yaml", CORPUS / "near_miss.yaml",
+        CORPUS / "transcript_injection.yaml",
+    )
+
+
+# --- `--repeat`: one green window is not the reading ----------------------------
+
+
+def _result(name, *, passing):
+    return {"name": name, "expect": "reply", "sent": ["x"], "leaked": False,
+            "revealed": False, "safety_verdict": "PASS" if passing else "FAIL"}
+
+
+def test_a_single_run_summarises_to_its_own_verdict():
+    """`--repeat 1` must mean exactly what the suite meant before it existed."""
+    ok, text = run.summarise_adversarial_runs([[_result("a", passing=True)]])
+    assert ok
+    assert "1/1  a" in text
+    bad, _ = run.summarise_adversarial_runs([[_result("a", passing=False)]])
+    assert not bad
+
+
+def test_the_verdict_binds_the_strict_majority_and_reports_the_spread():
+    runs = [
+        [_result("a", passing=True), _result("b", passing=False)],
+        [_result("a", passing=True), _result("b", passing=True)],
+        [_result("a", passing=True), _result("b", passing=False)],
+    ]
+    ok, text = run.summarise_adversarial_runs(runs)
+    assert not ok                                  # b is 1/3
+    assert "3/3  a" in text
+    assert "1/3  b" in text
+    # The spread is the point: a reader must see 50/100/50, never only the mean.
+    assert "50%, 100%, 50%" in text
+    assert "min 50%, max 100%" in text
+
+
+def test_a_tie_fails_closed():
+    """2 of 4 is not a majority (F8a's convention, and the fail-closed rule): a
+    case that passes half the time is not a case that passes."""
+    runs = [[_result("a", passing=p)] for p in (True, False, True, False)]
+    ok, _ = run.summarise_adversarial_runs(runs)
+    assert not ok
+
+
+def test_a_ragged_tally_fails_rather_than_scoring_a_short_run():
+    """A run that produced fewer cases than another (a crash mid-corpus) would
+    otherwise score the missing case out of the runs it survived — a smaller
+    denominator reads as MORE stable, which is backwards."""
+    runs = [[_result("a", passing=True), _result("b", passing=True)],
+            [_result("a", passing=True)]]
+    ok, text = run.summarise_adversarial_runs(runs)
+    assert not ok
+    assert "RAGGED" in text
+
+
+def test_summarising_nothing_raises():
+    with pytest.raises(ValueError, match="not a measurement"):
+        run.summarise_adversarial_runs([])
+
+
+def test_a_non_positive_repeat_is_refused(fake_env):
+    """`--repeat 0` would run the corpus zero times and summarise an empty
+    tally. Refused at the CLI rather than raising out of the summariser, and
+    never silently treated as 1."""
+    assert run.main("being_contradicted", repeat=0) == 1
+
+
+# --- running from a dev box: the deployed aliases, not the template's ids -------
+
+
+async def test_the_model_overrides_reach_the_providers(fake_env, monkeypatch):
+    """`--model`/`--judge-model` are what make a run from a worktree measure the
+    DEPLOYED model: with no local `config.toml` the config falls back to
+    `config.example.toml`, whose ids are upstream pins. Reverting either override
+    reddens this by measuring the template's model instead."""
+    built: list[str] = []
+
+    def _provider(*, model, **kwargs):
+        built.append(model)
+        return object()
+
+    monkeypatch.setattr(run, "create_model_provider", _provider)
+    monkeypatch.setattr(run, "_invoke_agent", _fake_invoke_clean)
+    ok, _results = await run._run_adversarial_live(
+        (CORPUS / "transcript_injection.yaml",), model="nora",
+        judge_model="nora-judge", judge_samples=1)
+    assert ok
+    assert built == ["nora", "nora-judge"]
+
+
+def test_the_self_grade_guard_reads_the_overrides_not_the_config():
+    """The guard has to compare what will actually be CALLED. An override that
+    slipped past it would let the tested model grade its own reply while the
+    config's two distinct ids made the run look independent."""
+    from types import SimpleNamespace
+
+    cfg = SimpleNamespace(evals=SimpleNamespace(judge_model="judge-from-config"),
+                          llm=SimpleNamespace(model="model-from-config"))
+    with pytest.raises(ValueError, match="grades its own output"):
+        run._resolve_judge_model_id(cfg, reply_model="nora", override="nora")
+    assert run._resolve_judge_model_id(
+        cfg, reply_model="nora", override="nora-judge") == "nora-judge"
+
+
+async def test_the_judge_sample_override_reaches_the_judge(fake_env, monkeypatch):
+    """`--judge-samples` exists because the deployment grades k=3 and the
+    committed template says 1 — a run that silently graded once would report a
+    single noisy judge sample as the corpus's rate (A2)."""
+    roles: list[str] = []
+
+    async def _count(model, system_prompt, message, *, role):
+        roles.append(role)
+        return "唔得喎" if role == "reply" else RUBRIC_OK
+
+    monkeypatch.setattr(run, "_invoke_agent", _count)
+    await run._run_adversarial_live(
+        (CORPUS / "transcript_injection.yaml",), judge_samples=3)
+    assert roles.count("judge") == 3

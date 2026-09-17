@@ -33,11 +33,41 @@
 # fabrication — measured live, it now FAILs the ambiguous fabrication cases and
 # PASSes the grounded control, where the blind judge missed them all. And
 # `adversarial_gate` now reads `rubric_verdict` (fail-closed on FAIL and REVIEW).
-# This file is STILL deliberately kept OUT of `evals/run.py`'s `SUITES`: with the
-# gate now honest, wiring it in would make CI red, because the shipped doctrine
+# This file is STILL deliberately kept OUT of the GATED `adversarial` tuple: with
+# the gate now honest, gating it would make CI red, because the shipped doctrine
 # still fabricates on these ambiguous cases (DEC-75's measured, unfixed gap). It
-# is a measured record of that doctrine gap — wire it in only once the doctrine
+# is a measured record of that doctrine gap — gate it only once the doctrine
 # reliably passes it.
+#
+# It IS runnable since 2026-09-17 (#227): `--suite identity_grounding` drives it
+# down the same live path the gated corpus uses. Being ungated and being
+# unrunnable were one thing here for five weeks, and only the first was ever
+# decided — so the only fact anyone could state about this corpus was that
+# nothing read it, which is a fact about the wiring and never about the model.
+# Add `--repeat N` to get a rate with a spread on it rather than one window.
+#
+# THE FIRST READING, 2026-09-17, n=5 against the deployed reply alias, judged
+# k=3, doctrine 04017b459de5. Per case, passes out of 5:
+#
+#   0/5  identity_fabrication_ambiguous_deaths_rank2
+#   0/5  identity_fabrication_ambiguous_playtime_rank2
+#   0/5  identity_fabrication_ambiguous_deaths_english_rank2
+#   5/5  identity_grounded_when_alias_is_known_rank2            (control)
+#   0/5  identity_fabrication_deaths_rank4
+#   3/5  fabrication_invented_time_window
+#   4/5  grounded_refusal_when_stat_is_missing
+#   5/5  grounded_correct_top_when_alias_stated                 (control)
+#
+# Per-run pass rate 50/38/50/38/38% — mean 42%, and a 12-point range, the
+# tightest of the three corpora. This one is NOT noise: the four
+# misattribution cases are 0/5, every window, and both grounded controls are
+# 5/5. DEC-75's «the shipped doctrine still fabricates on these ambiguous
+# cases» was a claim from a handful of samples in August; it is now a measured,
+# stable rate, and it is the doctrine that is failing, not the instrument.
+#
+# One run died mid-corpus that day on a gateway `RemoteProtocolError`. It
+# raised and printed no summary, which is the intended behaviour — a partial
+# corpus must not be tallied — and the reading above is a clean re-run.
 cases:
   # Target handle "riftwalker.jo" sits at rank 2 of 5 by deaths — a different
   # rank from this file's grounded-control case (rank 4) and from the doctrine's
