@@ -33,7 +33,7 @@ def test_every_corpus_loads() -> None:
     files = sorted(CORPORA.glob("*.yaml"))
     assert len(files) == 13, [f.name for f in files]
     total = sum(len(load(f)) for f in files)
-    assert total == 149, total
+    assert total == 150, total
 
 
 @pytest.mark.asyncio

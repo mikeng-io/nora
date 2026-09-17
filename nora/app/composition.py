@@ -850,6 +850,9 @@ class Dependencies:
     #: every proactive occasion runs through. Nothing here changes any of
     #: that; the object was already built and already held.
     fire_path: FirePath | None
+    #: The clock this graph runs on. Named for the same reason the two entry
+    #: points above are: it was a fact the graph had and could not be asked for.
+    clock: Callable[[], datetime]
     adapter: SignalAdapter
     # EVERY built adapter, keyed by platform. `adapter` above stays the concrete
     # Signal one because a handful of call sites are still Signal-specific by
@@ -957,12 +960,39 @@ class Dependencies:
     voice_event_consumer: VoiceEventConsumer | None
 
 
-async def build_dependencies(cfg: Config) -> Dependencies:
+def wall_clock() -> datetime:
+    """The deployment's clock. THE default, and the only one production uses."""
+    return datetime.now(UTC)
+
+
+async def build_dependencies(
+    cfg: Config, *, clock: Callable[[], datetime] = wall_clock,
+) -> Dependencies:
     """Build the object graph from `cfg`.
 
     This function is the only place in the codebase allowed to know `Config`'s
     shape (besides `nora.__main__` itself, which only ever passes `cfg`
     straight through here). Everything downstream takes a `Dependencies`.
+
+    **`clock` names a dependency this function already had.** Nine components
+    below take `clock: Callable[[], datetime]` — `FirePath`, `HeartbeatLoop`,
+    `ComputePoller`, `VersionAnnouncer`, `ProactiveAdaptor` and the rest — each
+    for the reason `FirePath`'s own docstring gives: *"a module that read the
+    wall clock itself could not be tested at a fixed instant."* Every one of
+    them was then handed a separately-written `lambda: datetime.now(UTC)` from
+    here. NINE literals for one fact.
+
+    So this is not a new seam bolted on: it is the composition root stating
+    once what it was already saying nine times, and the default is the same
+    literal, so production composes exactly the graph it composed before.
+
+    What it makes possible is the part that could not be done at all: a caller
+    can say WHAT TIME IT IS. The proactive adaptor's whole judgement is about
+    time — is this note due, has this position gone stale, is now the moment —
+    and until this parameter existed the only way to ask it a question at a
+    fixed instant was to build a second adaptor by hand. That is one of the
+    seven assemblies `design/evaluation/` measures, and this is the seam whose
+    absence produced it.
     """
     try:
         persons = load_persons(cfg.identity_file)
@@ -1118,7 +1148,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     decision_log = DecisionLogRecorder(
         store=SqlDecisionLogStore(engine),
         metrics=metrics,
-        clock=lambda: datetime.now(UTC),
+        clock=clock,
         workspace_of=lambda platform, conversation_id: (
             convo.workspace
             if (convo := allowlist.conversation(platform, conversation_id))
@@ -2286,7 +2316,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # it for three of its six refusals, and a registry clock that disagreed
         # with the tick's would let a row be accepted as "two minutes out" and
         # then be found already due.
-        clock=lambda: datetime.now(UTC),
+        clock=clock,
         # The note tier's four tools. `None` while `[notes] enabled = false`,
         # so all four answer `unavailable` (R-5) rather than a guessed empty
         # result — the same optional-collaborator shape `events` and
@@ -2477,7 +2507,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     #
     # `recover` counts what it sweeps; this call site logged and counted nothing,
     # which made a crash that ate reminders invisible to every dashboard.
-    await recover(store=reminders, metrics=metrics, now=datetime.now(UTC))
+    await recover(store=reminders, metrics=metrics, now=clock())
     # Compute-job boot recovery, ALSO unconditional, and for the SAME reason —
     # deliberately NOT behind `cfg.compute.enabled`. An earlier draft of this
     # wiring put this call inside that gate; a deployment that crashes
@@ -2493,7 +2523,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # requester heard «I'm working on it» and then nothing, ever. Delivered
     # below, once `fire_path` exists.
     lost_jobs = await compute_poller_recover(
-        store=compute_jobs, metrics=metrics, now=datetime.now(UTC),
+        store=compute_jobs, metrics=metrics, now=clock(),
     )
     # The liveness gauge is seeded HERE, not in `HeartbeatLoop.__init__` alone —
     # otherwise every deployment on the shipped default (`enabled = false`)
@@ -2544,7 +2574,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # the 60s chosen for a person staring at a group chat is the wrong
             # bound (§5.4).
             timeout_seconds=cfg.heartbeat.timeout_seconds,
-            clock=lambda: datetime.now(UTC),
+            clock=clock,
             rosters=rosters,
             # The SAME preview source the tag path holds. A fire turn is a
             # message into the same group, so a link in it earns the same card.
@@ -2669,7 +2699,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # whole point of this parameter (§5.1): the file is read once at
             # startup and a row may be thirty days old.
             policy=allowlist,
-            clock=lambda: datetime.now(UTC),
+            clock=clock,
             metrics=metrics,
             tick_seconds=cfg.heartbeat.tick_seconds,
             fire=fire_path.run,
@@ -2713,7 +2743,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # locks and no serialisation at all.
             slots=slots,
             metrics=metrics,
-            clock=lambda: datetime.now(UTC),
+            clock=clock,
         )
         # Spawned, never awaited: a boot must not wait on a model call, and this
         # is the least important thing the process does. `BackgroundTasks` holds
@@ -2740,7 +2770,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             slots=slots,
             metrics=metrics,
             tick_seconds=cfg.compute.poll_tick_seconds,
-            clock=lambda: datetime.now(UTC),
+            clock=clock,
         )
         # Spawned, never awaited — the same reason `heartbeat.run()`/
         # `announcer.run()` above are: a boot must not wait on a background
@@ -3312,7 +3342,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     # for the platform means no block, not a failure.
                     people_of=_home_room_people(rosters, persons),
                     ai_peer=cfg.memory.ai_peer,
-                    clock=lambda: datetime.now(UTC),
+                    clock=clock,
                     timezone=ZoneInfo(cfg.reminders.timezone),
                     self_card_conclusions=cfg.memory.self_card_conclusions,
                     # The roster index's DEPTH (issue #210, 39 D9). Read from
@@ -3544,6 +3574,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         participation_trigger=participation_trigger,
         relevance_gate=gate,
         fire_path=fire_path,
+        clock=clock,
         account=account, doctrine=doctrine,
         doctrine_store=doctrine_store, debounce=debounce, background=background,
         llm_state=llm_state, client=client, reminders=reminders,

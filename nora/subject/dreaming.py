@@ -41,6 +41,35 @@ class Pass:
     #: whether the loop completed.
     changed: tuple[tuple[str, str], ...]
 
+    #: What the pass WROTE — `DreamOutcome.written`. For the proactive adaptor
+    #: that is reminder rows, which is its whole output: it does not speak and
+    #: it does not touch the notebook, so `changed` is empty for it by
+    #: construction and grading it on `changed` would grade every case the same.
+    written: int = 0
+
+    #: Model samples that came back readable, and samples that did not.
+    #:
+    #: `nora_dream_sample_total{status="ok"|"unavailable"}` — production's own
+    #: per-sample counters. They exist here because `status` cannot separate the
+    #: two things a caller must never confuse: a pass that ASKED the model and
+    #: could not reach it, and a pass that never needed to ask because nothing
+    #: was due. Both end as `nothing_found` with an empty diff.
+    #:
+    #: Measured, not assumed: with no provider reachable, four proactive cases
+    #: returned `nothing_found` and NO error, and the one expecting silence
+    #: scored a PASS. That is ERROR-as-PASS inside the layer built to end it.
+    samples_ok: int = 0
+    samples_failed: int = 0
+
+
+def _samples(subject: Subject, status: str) -> int:
+    """`nora_dream_sample_total{status=...}`, summed over adaptors."""
+    return int(sum(
+        v for key, v in subject.deps.metrics.snapshot().items()
+        if key and key[0] == "nora_dream_sample_total"
+        and ("status", status) in (key[1] or ())
+    ))
+
 
 def adaptor_names(subject: Subject) -> tuple[str, ...]:
     return tuple(a.name for a in subject.deps.dream_adaptors)
@@ -82,6 +111,8 @@ async def dream(
     _, key = room
     workspace = subject.cfg.memory.workspace_id
     before = await _notebook(subject, workspace)
+    ok_before = _samples(subject, "ok")
+    failed_before = _samples(subject, "unavailable")
 
     # The production order, verbatim: read the batch, join media, run.
     batch = await subject.deps.audit.since(
@@ -114,4 +145,7 @@ async def dream(
         status=outcome.status,
         stop_reason=outcome.stop_reason,
         changed=tuple(sorted(changed)),
+        written=outcome.written,
+        samples_ok=_samples(subject, "ok") - ok_before,
+        samples_failed=_samples(subject, "unavailable") - failed_before,
     )

@@ -226,26 +226,33 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     adaptor are two passes over one runtime, and branching on them in the
     runner would be the eight drivers growing back inside one file.
     """
-    # AN INPUT THE GRAPH CANNOT HONOUR IS AN ERROR.
+    # `now:` used to be refused here. It no longer is: `build_dependencies`
+    # takes a `clock` and `SubjectSpec.now` sets it, so a case that states the
+    # time is judged AT that time. The refusal stood for as long as the graph
+    # could not be told, which was the honest answer then and is the wrong one
+    # now — see `01-boundaries` §3.
+    # AN INPUT THE GRAPH CANNOT HONOUR IS AN ERROR — the same rule the Honcho
+    # conclusions follow, and the clock used to.
     #
-    # `now:` says what time it is, and the proactive decision is entirely about
-    # time. `nora/app/composition.py` builds the adaptor with
-    # `clock=lambda: datetime.now(UTC)` — a literal, with no config path behind
-    # it — so a case that states a `now` would silently be judged at wall-clock
-    # time instead, and the twenty-one cases that turn on due dates would all
-    # answer about today.
+    # The proactive corpora are MULTI-ROOM: a case names two rooms and keys its
+    # standing per room, because the decide pass judges a workspace and picks
+    # which of its rooms to stand in. `nora.subject.Knowledge` is single-room —
+    # one transcript, one standing, one `DEFAULT_ROOM`.
     #
-    # Refused rather than run, for the reason the two Honcho-seeded
-    # participation cases are refused: a case measured against an input it did
-    # not state is measuring nothing, and it does not look like it.
-    if case.metadata.get("now"):
+    # Refused rather than run, and this one had to be caught rather than
+    # noticed: with the rooms unseeded the pass finds nothing due, writes
+    # nothing, and returns `nothing_found` with no error — so every case
+    # expecting `none` PASSES, having measured an empty workspace. That is the
+    # shape this whole layer exists to refuse, and it survived one round of
+    # fixing here because the clock was the louder problem.
+    unseeded = [k for k in ("rooms", "standing", "rows", "row") if case.metadata.get(k)]
+    if unseeded:
         return Outcome(
             admitted=None,
             source="fail_closed",
             error=(
-                f"the case states now={case.metadata['now']} and the composed "
-                "graph has no clock seam (composition.py builds the adaptor "
-                "with a literal datetime.now)"
+                f"the case states {unseeded} and `Knowledge` is single-room; "
+                "multi-room seeding does not exist yet"
             ),
         )
     adaptor = case.category or "note-candidates"
@@ -254,19 +261,38 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     except LookupError as exc:
         return Outcome(admitted=None, source="fail_closed", error=str(exc))
 
-    # `unavailable` is the fail-closed one — the adaptor could not run. It must
-    # not grade as `none`, which is a legitimate verdict a corpus expects and
-    # which an un-run pass produces byte-identically: an empty notebook diff.
-    if result.status == "unavailable":
+    # THE FAIL-CLOSED RULE, and `status` alone cannot carry it.
+    #
+    # `unavailable` is the obvious half: the adaptor could not run, and an
+    # un-run pass produces an empty notebook diff byte-identically to a pass
+    # that correctly found nothing.
+    #
+    # The half that was MISSING is `nothing_found` after a model call that
+    # failed. Measured with no provider reachable: four proactive cases came
+    # back `nothing_found` with NO error, and the one expecting silence scored
+    # a PASS — ERROR-as-PASS inside the layer built to end it, found by
+    # checking rather than by reading.
+    #
+    # `samples_failed` is production's own per-sample counter
+    # (`nora_dream_sample_total{status="unavailable"}`), which is the only
+    # thing that separates "asked the model and could not reach it" from "never
+    # needed to ask, because nothing was due". The second is a real verdict a
+    # corpus expects; the first is not a verdict at all.
+    if result.status == "unavailable" or result.samples_failed:
         return Outcome(
             admitted=None,
             source="fail_closed",
-            error=f"the pass was unavailable: {result.stop_reason}",
+            error=(
+                f"the pass did not complete: status={result.status}, "
+                f"{result.samples_failed} sample(s) unreachable, "
+                f"stop_reason={result.stop_reason}"
+            ),
             outcome_token=result.status,
         )
     return Outcome(
         admitted=None,
         changed=result.changed,
+        written=result.written,
         outcome_token=result.status,
     )
 

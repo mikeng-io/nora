@@ -73,8 +73,10 @@ it today:
 - **Honcho `conclusions:`** — Honcho DERIVES a conclusion from messages, so
   there is no way to state one without substituting the client. Two
   participation cases.
-- **`now:`** — the graph has no clock seam, so a case stating a time would be
-  judged at wall-clock time instead. Twenty-one proactive cases.
+- **multi-room cases** — a proactive case names two rooms and keys its standing
+  per room; `Knowledge` is single-room. Twenty-one proactive cases. (`now:` was
+  on this list until the clock seam landed — `build_dependencies(cfg, clock=…)`
+  — and is now an ordinary case field.)
 - **any unreachable model** — on all four entry points, each through its own
   signal (§5.1).
 
@@ -91,7 +93,7 @@ There is no shared one, because the deployment does not offer one:
 | `gate` | `GateVerdict.source == "fail_closed"` | the gate never raises; a timeout, a refusal and an unparseable body all arrive as `no_go` |
 | `participation` | `speak`'s token is not `sent`/`silent` | a failed turn writes no row, which reads as silence |
 | `tag` | `nora_silent_failures_total` rose | `Dispatcher.on_message` returns `None` and spawns the turn — there is nothing else to read |
-| `dreamer` | `DreamOutcome.status == "unavailable"` | an un-run pass has an empty notebook diff, byte-identical to a correct `none` |
+| `dreamer` | `status == "unavailable"` OR `nora_dream_sample_total{status="unavailable"}` rose | an un-run pass has an empty diff, byte-identical to a correct `none` — and `status` ALONE was not enough: a pass that asked the model and failed still answers `nothing_found` |
 
 Every one of those four was found by RUNNING the entry point with no provider
 and reading what came back. Three of the four returned a verdict.
@@ -127,7 +129,8 @@ not be asked for something it does**, so each driver built its own:
 |---|---|---|
 | `RelevanceGate` not on `Dependencies` | trying to reach the gate | **yes** — a field |
 | `FirePath` not on `Dependencies` | trying to reach the turn | **yes** — a field |
-| no clock seam | the proactive corpora | **no** — needs its own decision |
+| no clock seam | the proactive corpora | **yes** — one `clock` parameter replacing nine literals |
+| no multi-room seeding | the proactive corpora, one layer in | **no** — found by the clock fix unblocking them |
 | no Honcho write seam | two participation cases | **no** — may not be fixable |
 
 The first two cost one line each and no behaviour change. That they were

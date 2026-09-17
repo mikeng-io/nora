@@ -36,6 +36,21 @@ model, no `nora.app`. This is where "what a suite IS" lives, and it is small.
 - **stores** — what she knows. Per the operator: *配置嘅啫嘛*. A case says what
   she knows; that is input, not substitution.
 - **model** — which one, at what effort.
+- **clock** — what time it is. Added 2026-09-17, and it belongs on this list
+  for the same reason the transcript does: it is the world reaching her, not
+  part of her. For the proactive adaptor the time is not context around the
+  question, it IS the question — whether a note is due, whether a position has
+  gone stale, whether now is the moment. A case that cannot state it can only
+  watch that adaptor answer about today.
+
+  **It was not addable before.** `build_dependencies` wrote
+  `lambda: datetime.now(UTC)` at NINE separate sites while nine components
+  already accepted an injectable `clock`, each for the reason `FirePath`'s own
+  docstring gives. So the composition root had the dependency and had no name
+  for it, and the only way to ask the adaptor a dated question was to build a
+  second one by hand — which is one of the seven assemblies §4 counts. Naming
+  it once, with the same literal as the default, is a fix to the composition
+  root on its own terms and closes the third of §7's four missing seams.
 
 **Application** — the runner. One function. No suite-specific branch.
 

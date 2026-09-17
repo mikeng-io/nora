@@ -32,7 +32,17 @@ ROOT = Path(__file__).resolve().parents[2]
 #: her.** `build_offline_pipeline` reached 21 parameters, 13 of them defaulting
 #: to `None`, one caller at a time — each addition locally reasonable, and the
 #: result was two callers each forgetting a different thing.
-_SEAMS = frozenset({"database_url", "workdir", "overrides", "identity", "policy"})
+#: Added 2026-09-17 with its argument, which is what this pin exists to force:
+#: `now`. WHAT TIME IT IS is not part of Nora — it is the world reaching her,
+#: exactly as a message is. For the proactive adaptor the time IS the question
+#: it answers (is this due, has this gone stale), so a case that cannot state it
+#: cannot ask that adaptor anything; it can only watch it answer about today.
+#: `build_dependencies` grew the parameter for the same reason and it is not an
+#: eval-only seam: nine components already took an injectable `clock` and the
+#: composition root was writing the same literal nine times.
+_SEAMS = frozenset({
+    "database_url", "workdir", "overrides", "identity", "policy", "now",
+})
 
 
 def test_the_spec_names_only_seams() -> None:

@@ -17,11 +17,13 @@ from __future__ import annotations
 
 import os
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from nora.app.composition import Dependencies, build_dependencies
+from nora.app.composition import Dependencies, build_dependencies, wall_clock
 from nora.config import Config
 from nora.config import load as _load_config
 
@@ -81,6 +83,19 @@ class SubjectSpec:
     #: default is one allowed group and `default = "deny"`, so a caller that
     #: does not care gets a valid, closed policy rather than an accident.
     policy: str = _DEFAULT_POLICY
+
+    #: WHAT TIME IT IS. `None` means the wall clock, which is production.
+    #:
+    #: A seam because for some of her the answer IS the question: the proactive
+    #: adaptor decides whether a note is due, whether a position has gone stale,
+    #: whether now is the moment. A case that cannot say when "now" is cannot
+    #: ask that adaptor anything — it can only watch it answer about today.
+    #:
+    #: FROZEN, not offset: the same instant every call, so a turn and the window
+    #: it reads cannot drift apart mid-case. That is the property the old
+    #: drivers lost by computing two clock reads a few lines apart (issue #213),
+    #: and it is cheaper to hold here than to remember at each call site.
+    now: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,6 +193,11 @@ async def obtain(spec: SubjectSpec) -> Subject:
     it by. So `spec.database_url` sets that variable for the duration of the
     call and restores it after.
 
+    **The clock is handed over as a parameter**, because `build_dependencies`
+    now takes one (it always had the dependency; it wrote the same literal nine
+    times instead of naming it). `spec.now` is frozen rather than offset, so
+    every component on the graph agrees about the instant.
+
     This was found by writing `knowledge.py` against `cfg.store.database_url`
     and discovering no such field exists. Before that, `spec.database_url` was
     declared and never read: a caller passing a URL different from the
@@ -191,11 +211,14 @@ async def obtain(spec: SubjectSpec) -> Subject:
     `01-boundaries` §5(2) is exactly the rule against that.
     """
     cfg = build_config(spec)
+    clock: Callable[[], datetime] = (
+        wall_clock if spec.now is None else (lambda at=spec.now: at)
+    )
     var = cfg.store.database_url_env
     before = os.environ.get(var)
     os.environ[var] = spec.database_url
     try:
-        deps = await build_dependencies(cfg)
+        deps = await build_dependencies(cfg, clock=clock)
     finally:
         if before is None:
             os.environ.pop(var, None)

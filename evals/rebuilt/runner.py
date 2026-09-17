@@ -78,6 +78,7 @@ def _case(
         # can differ without a second file.
         config={**config, **(raw.get("config") or {})},
         policy=str(raw.get("policy") or policy),
+        now=str(raw.get("now") or ""),
     )
 
 
@@ -137,6 +138,7 @@ def _knowledge(raw: Mapping[str, Any]) -> Knowledge:
             person=entry.get("person", ""),
             label=entry.get("id"),
             at_ms=_ms(entry.get("ts")),
+            is_nora=bool(entry.get("is_nora", False)),
         ))
     notes = tuple(
         NoteSeed(
@@ -178,6 +180,10 @@ async def run_once(
                 # A suite's room set, when it has one. `SubjectSpec` supplies a
                 # valid closed default otherwise.
                 **({"policy": case.policy} if case.policy else {}),
+                # WHAT TIME IT IS, when the case says. Parsed here rather than
+                # in the domain, which imports nothing from `nora` and knows
+                # nothing about datetimes.
+                **({"now": datetime.fromisoformat(case.now)} if case.now else {}),
                 # The entry point's own requirements UNDER the case's, so a
                 # case can still override anything and nothing has to remember
                 # which switch its suite needs.

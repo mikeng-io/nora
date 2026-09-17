@@ -39,31 +39,82 @@
 # `entry: dreamer`, `category: proactive` -- the real `DreamerRuntime` and the
 # real `ProactiveAdaptor` on the composed graph.
 #
-# THESE CASES DO NOT RUN YET, and they are kept rather than deleted or quietly
-# re-timed. Every one states a `now:`, because the proactive decision IS about
-# time: whether a note is due, whether a position has gone stale, whether the
-# moment to say something has arrived. The composed graph offers no way to say
-# what time it is -- `nora/app/composition.py` builds the adaptor with
-# `clock=lambda: datetime.now(UTC)`, a literal, with no config path behind it.
+# STILL REFUSED, FOR A DIFFERENT AND SHARPER REASON: these cases are
+# MULTI-ROOM. Each names two rooms and keys its standing per room, because the
+# decide pass judges a WORKSPACE and picks which of its rooms to stand in.
+# `nora.subject.Knowledge` is single-room -- one transcript, one standing, one
+# room -- so the rooms cannot be seeded and the pass judges an empty workspace.
 #
-# So a case here has three options and two of them are wrong:
+# That had to be CAUGHT, not noticed. With the rooms unseeded the pass finds
+# nothing due, writes nothing and returns `nothing_found` with no error, so
+# every case expecting `none` PASSED -- having measured an empty workspace. It
+# survived one round of fixing here because the clock was the louder problem.
+# The entry point now refuses any case naming `rooms`, `standing`, `rows` or
+# `row`, so they are ERROR and cannot score.
 #
-#   pass a clock        -- a collaborator, which is the one thing this rebuild
-#                          exists to stop. Seven assemblies is what happens when
-#                          each caller passes the one thing it needs.
-#   shift the data      -- `anchor_date: 20260912` and the note body that says
-#                          "Saturday 12 Sep" would stop agreeing, and the case
-#                          would be asserting against prose it had invalidated.
-#   refuse, and say so  -- what happens. `now:` lands in `metadata:` and the
-#                          entry point returns ERROR naming the missing seam.
+# `now:` IS A FIRST-CLASS CASE FIELD. Every case here states one, because the
+# proactive decision is about time: whether a note is due, whether a position
+# has gone stale, whether the moment to say something has arrived.
 #
-# That is the same rule the two Honcho-seeded participation cases follow: an
-# input the graph cannot honour is an ERROR, never a FAIL and never a PASS.
+# It was parked in `metadata:` for half a day, and these cases were REFUSED as
+# ERROR, because the composed graph had no way to be told what time it is --
+# `build_dependencies` wrote `lambda: datetime.now(UTC)` at nine separate sites
+# while nine components already accepted an injectable `clock`. The two wrong
+# ways out were to pass a clock (a collaborator, the one thing this rebuild
+# exists to stop) or to shift the data (`anchor_date: 20260912` and a note body
+# saying "Saturday 12 Sep" would stop agreeing, and the case would assert
+# against prose it had invalidated).
 #
-# The finding is not that these cases are awkward. It is that the deployed
-# graph has no clock seam, which is why every driver that needed one built its
-# own adaptor -- the same shape as the gate and the fire path not being fields
-# on `Dependencies`. Fixing it is a change to `nora.app`, argued on its own.
+# The seam was built instead: `build_dependencies(cfg, clock=...)`, wall clock
+# by default, one name replacing nine literals. `SubjectSpec.now` sets it and
+# it is FROZEN, so a turn and the window it reads cannot drift apart mid-case.
+#
+# `config:` and `policy:` state what the adaptor NEEDS TO EXIST. It has no
+# config flag of its own -- `composition.py:1558` wires it on
+# `dreamer.enabled and notes.enabled and proactive_homes`, and
+# `proactive_homes` comes from `policy.toml`, because the HOME ROOM is the
+# operator's opt-in (design/dreamer-agent-loop/39 D2). So a proactive suite
+# states a policy, and no number of dotted config paths could say it.
+#
+# --- a11, ADDED 2026-09-17 from the live duplicate-reminder incident ---------
+#
+# She raised the same errand twice, 20:00 and 20:31. Two proactive rows about
+# two different notes came due 30 minutes apart; `heartbeat._by_turn` coalesces
+# only rows due in the SAME tick, and `FirePath._read_decisions` returned () for
+# every occasion.kind != "participation", so the act turn had no
+# <loop_decisions> block and no way to know the loop had just taken that floor.
+# Fixed on nora/app/fire.py by 271909aa (_DECISION_WRITERS_BY_KIND).
+#
+# THE POINT OF THE CASE: every ground for declining was already in the prompt on
+# the day. Her own line was in the transcript, saying the thing. What was
+# missing was the mark that the unattributed line was HERS, unprompted, moments
+# ago. 271909aa supplies the mark. Whether it changes the JUDGEMENT is exactly
+# what this case measures and what nobody has measured yet.
+#
+# FOUR CONSTRAINTS, from its author, carried because a case ported without them
+# is a different case:
+#
+#  1. Her line is `is_nora: true`, NOT `name: Nora`. `prefill._speaker` reads
+#     the FLAG; a row merely named Nora renders as an ordinary member called
+#     that, which is a different input and the wrong one.
+#  2. `decisions.minutes_ago` MUST agree with where her line falls in the
+#     rendered window. Two inputs disagreeing about one event is an undecidable
+#     input, not a harder test. RE-DERIVED here, not copied: the original said 2
+#     against a window that walked one row per minute from a different base;
+#     this corpus pins `spacing_seconds: 60` on a four-row window ending at
+#     `now`, so her line (third of four) is ONE minute back.
+#  3. The gap is MINUTES, not the incident's 31. Thirty-one minutes of distance
+#     would cost 31 filler rows against a 40-row window and the case would be
+#     measuring dilution. What must be true is what was true on the day: her
+#     raise is IN the window, nobody answered it, and the decision row marks it
+#     as hers.
+#  4. `silence`, not `either`. Minutes after saying it, with no reply, there is
+#     no defensible second raise — so this binds at zero and one speak in five
+#     fails it, which is right, because one is what the room heard.
+#
+# It does not run yet, for this file's own reason above: `standing` and `row`
+# are unseedable. It is here as DATA so that stops being a thing anyone has to
+# reconstruct.
 
 cases:
   - name: a01_dinner_nobody_said_where
@@ -72,6 +123,7 @@ cases:
     expect: speak
     config:
       memory.workspace_id: nora
+      notes.enabled: true
     knows:
       transcript:
       - 聽日 hackathon 我八點幾出門
@@ -83,7 +135,6 @@ cases:
         body: Miles is at the AI Thinking hackathon at 數碼港 on Saturday 12 Sep. Teammates unknown; dinner venue undecided.
         anchor_date: 20260912
     metadata:
-      now: '2026-09-11T16:00:00+08:00'
       expect_original: speak
       row:
         note: AI Hackathon dinner plan
@@ -92,6 +143,22 @@ cases:
       standing: Miles is going to the 數碼港 hackathon Saturday; nobody has said where dinner is.
       must_cite:
       - 數碼港
+    now: '2026-09-11T16:00:00+08:00'
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "nora"
+    
+      home_room = true
+    
+      '
 
   - name: a02_note_moved_on_the_tag_path
     entry: dreamer
@@ -99,6 +166,7 @@ cases:
     expect: silence
     config:
       memory.workspace_id: nora
+      notes.enabled: true
     knows:
       transcript:
       - 聽日 hackathon 我八點幾出門
@@ -108,7 +176,6 @@ cases:
         body: Dinner Saturday after the hackathon; venue open.
         anchor_date: 20260912
     metadata:
-      now: '2026-09-11T16:00:00+08:00'
       expect_original: silent
       row:
         note: AI Hackathon dinner plan
@@ -116,6 +183,22 @@ cases:
         decided_hours_ago: 9
       standing: Dinner Saturday; venue open.
       note_moved: true
+    now: '2026-09-11T16:00:00+08:00'
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "nora"
+    
+      home_room = true
+    
+      '
 
   - name: a03_standing_says_settled
     entry: dreamer
@@ -123,6 +206,7 @@ cases:
     expect: silence
     config:
       memory.workspace_id: nora
+      notes.enabled: true
     knows:
       transcript:
       - name: Ada
@@ -136,13 +220,28 @@ cases:
         body: Drinks tonight after work. Central or K-Town — nobody has picked.
         anchor_date: 20260911
     metadata:
-      now: '2026-09-11T16:00:00+08:00'
       expect_original: silent
       row:
         note: Friday drinks
         intent: Ask whether drinks tonight are Central or K-Town.
         decided_hours_ago: 9
       standing: 'Drinks tonight are settled: Kennedy Town, 7pm at the usual bar, everyone has said yes.'
+    now: '2026-09-11T16:00:00+08:00'
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "nora"
+    
+      home_room = true
+    
+      '
 
   - name: a04_someone_already_said_it
     entry: dreamer
@@ -150,6 +249,7 @@ cases:
     expect: silence
     config:
       memory.workspace_id: nora
+      notes.enabled: true
     knows:
       transcript:
       - name: Ada
@@ -164,13 +264,28 @@ cases:
         body: Ben asked his landlord about ten people on Sat 25 Sep; answer promised by Fri 11 Sep.
         anchor_date: 20260925
     metadata:
-      now: '2026-09-11T16:00:00+08:00'
       expect_original: silent
       row:
         note: Ben's flat for the 25th
         intent: Ben promised the landlord's answer by today; nudge him if it has not come.
         decided_hours_ago: 9
       standing: Party on the 25th hinges on Ben's landlord.
+    now: '2026-09-11T16:00:00+08:00'
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "nora"
+    
+      home_room = true
+    
+      '
 
   - name: a05_room_said_decide_later
     entry: dreamer
@@ -178,6 +293,7 @@ cases:
     expect: silence
     config:
       memory.workspace_id: nora
+      notes.enabled: true
     knows:
       transcript:
       - name: Cat
@@ -190,13 +306,28 @@ cases:
         body: Hike Sat 3 Oct. Trail to be decided nearer the time.
         anchor_date: 20261003
     metadata:
-      now: '2026-09-11T16:00:00+08:00'
       expect_original: silent
       row:
         note: October hike
         intent: Ask which trail for the October hike.
         decided_hours_ago: 9
       standing: October hike is on; the trail gets picked the week before, the group said not to fuss about it yet.
+    now: '2026-09-11T16:00:00+08:00'
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "nora"
+    
+      home_room = true
+    
+      '
 
   - name: a06_plan_cancelled_in_the_room
     entry: dreamer
@@ -204,6 +335,7 @@ cases:
     expect: silence
     config:
       memory.workspace_id: nora
+      notes.enabled: true
     knows:
       transcript:
       - name: Ada
@@ -217,13 +349,28 @@ cases:
         body: Dim sum this Saturday. Place and time open.
         anchor_date: 20260912
     metadata:
-      now: '2026-09-11T16:00:00+08:00'
       expect_original: silent
       row:
         note: Saturday dim sum
         intent: Ask what time dim sum is on Saturday.
         decided_hours_ago: 9
       standing: Dim sum Saturday was floated; time and place open.
+    now: '2026-09-11T16:00:00+08:00'
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "nora"
+    
+      home_room = true
+    
+      '
 
   - name: a07_follow_up_still_owed
     entry: dreamer
@@ -231,6 +378,7 @@ cases:
     expect: speak
     config:
       memory.workspace_id: nora
+      notes.enabled: true
     knows:
       transcript:
       - name: Ada
@@ -243,7 +391,6 @@ cases:
         body: Ben asked his 業主 about ten people on Sat 25 Sep and promised an answer by Fri 11 Sep. Ada and Cat are waiting.
         anchor_date: 20260925
     metadata:
-      now: '2026-09-11T16:00:00+08:00'
       expect_original: speak
       row:
         note: Ben's flat for the 25th
@@ -252,6 +399,22 @@ cases:
       standing: Party on the 25th hinges on Ben's 業主; Ben said Friday. Nothing since.
       must_cite:
       - 業主
+    now: '2026-09-11T16:00:00+08:00'
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "nora"
+    
+      home_room = true
+    
+      '
 
   - name: a08_nothing_new_since_she_last_asked
     entry: dreamer
@@ -259,6 +422,7 @@ cases:
     expect: silence
     config:
       memory.workspace_id: nora
+      notes.enabled: true
     knows:
       transcript:
       - name: Ada
@@ -271,13 +435,28 @@ cases:
         body: Cat floated mahjong in August. No date, no host. Nora has asked about it three times and nobody answered.
         anchor_date: 20260913
     metadata:
-      now: '2026-09-11T16:00:00+08:00'
       expect_original: silent
       row:
         note: Mahjong night
         intent: Ask if mahjong is still happening.
         decided_hours_ago: 9
       standing: Mahjong keeps being mentioned and going nowhere; Nora asked yesterday and nobody replied.
+    now: '2026-09-11T16:00:00+08:00'
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "nora"
+    
+      home_room = true
+    
+      '
 
   - name: a09_her_own_machinery_is_never_named
     entry: dreamer
@@ -285,6 +464,7 @@ cases:
     expect: either
     config:
       memory.workspace_id: nora
+      notes.enabled: true
     knows:
       transcript:
       - name: Ada
@@ -297,7 +477,6 @@ cases:
         body: 十月長跑,報名 11 Sep 夜晚截。Ada 話想報。Ben 話今日會覆報唔報。到而家兩個都未講。
         anchor_date: 20260911
     metadata:
-      now: '2026-09-11T16:00:00+08:00'
       expect_original: either
       row:
         note: 十月長跑報名
@@ -311,6 +490,22 @@ cases:
       - 備忘
       - reminder
       - 提醒自己
+    now: '2026-09-11T16:00:00+08:00'
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "nora"
+    
+      home_room = true
+    
+      '
 
   - name: a10_the_transcript_outranks_her_own_summary
     entry: dreamer
@@ -318,6 +513,7 @@ cases:
     expect: either
     config:
       memory.workspace_id: nora
+      notes.enabled: true
     knows:
       transcript:
       - name: Ada
@@ -333,7 +529,6 @@ cases:
         body: 星期六聚餐,地點灣仔。時間未定,冇人講過。
         anchor_date: 20260912
     metadata:
-      now: '2026-09-11T16:00:00+08:00'
       expect_original: either
       row:
         note: 星期六聚餐
@@ -342,3 +537,75 @@ cases:
       standing: 星期六聚餐照去;時間仲未有人講過。
       must_cite:
       - 觀塘
+    now: '2026-09-11T16:00:00+08:00'
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "nora"
+    
+      home_room = true
+    
+      '
+
+  - name: a11_she_already_raised_this_minutes_ago
+    entry: dreamer
+    category: proactive
+    expect: silence
+    now: '2026-09-11T16:00:00+08:00'
+    config:
+      memory.workspace_id: nora
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "nora"
+    
+      home_room = true
+    
+      '
+    knows:
+      spacing_seconds: 60
+      transcript:
+      - name: Yat Ho
+        body: 藍色鳳凰嗰隻過咗
+      - name: Chi Ming
+        body: 仲諗住抽到就賣
+      - body: '@Avery 聽日拎抽包，同 Chi Ming 傾咗邊度幾點未？佢禮拜六要用嗰個陀螺盤都喺你手，一次過搞埋好過聽日撲。'
+        is_nora: true
+      - name: Yat Ho
+        body: 你聽日收幾點
+      notes:
+      - title: 抽包 handover tomorrow
+        description: Yat Ho collects the 抽包 tomorrow — where and when are open
+        body: Yat Ho said he would collect the 抽包 on Fri 12 Sep. Chi Ming replied with a sticker only; time and place undecided.
+        anchor_date: 20260912
+      - title: Pick up the 陀螺盤 before Saturday
+        description: the 陀螺盤 is with Avery and Chi Ming needs it Saturday
+        body: Chi Ming needs the 陀螺盤 on Sat 13 Sep and it is with Avery. Friday is Chi Ming's only free day; the pickup date is not fixed.
+        anchor_date: 20260913
+    metadata:
+      expect_original: silent
+      standing: 抽包 handover is tomorrow with no time or place set, and the 陀螺盤 is still with Avery.
+      row:
+        note: Pick up the 陀螺盤 before Saturday
+        intent: Chi Ming only has Friday free and needs the 陀螺盤 on Saturday; the pickup date is still not set. Nudge so it is not a last-minute scramble.
+        decided_hours_ago: 43
+      decisions:
+      - writer: proactive_act
+        verdict: spoke
+        reason: spoke
+        minutes_ago: 1
+      origin: emperor-60, from the 2026-09-17 duplicate-reminder incident

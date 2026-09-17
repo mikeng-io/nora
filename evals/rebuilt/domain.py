@@ -20,6 +20,12 @@ from typing import Any, Literal
 #: survive on purpose: the corpora say `reply`, and Step 3's rule is data, not
 #: rewrites. A label edited during a move is a new case wearing the old name.
 #:
+#: `remind` is the proactive DECIDE pass's, and it is graded on
+#: `DreamOutcome.written` — a reminder ROW. That adaptor does not speak and does
+#: not touch the notebook, so grading it on `said` or `changed` would score
+#: every case identically. The corpus said `remind` all along; mapping it onto
+#: `speak` was a translation that lost the only thing it meant.
+#:
 #: `either` means BOTH answers are acceptable. It exists because the proactive
 #: corpus has cases where the design deliberately declines to say — and mapping
 #: it onto one side would harden a permissive label into a strict one, which is
@@ -32,7 +38,7 @@ from typing import Any, Literal
 #: about.
 Expectation = Literal[
     "go", "no_go", "speak", "silence", "reply", "no_reply",
-    "create", "update", "none", "either",
+    "create", "update", "none", "either", "remind",
 ]
 
 #: Which entry point the input enters at. A SELECTION ON A CASE, not a branch
@@ -86,6 +92,15 @@ class Case:
     #: and the next person to want it has to re-derive it by hand.
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    #: WHEN this case happens, as an ISO-8601 instant. Empty means the wall
+    #: clock.
+    #:
+    #: A first-class field and not `metadata`, because for the proactive
+    #: adaptor it is the question rather than a note about it. It was in
+    #: `metadata` for exactly as long as the graph had no clock seam, and the
+    #: entry point refused every case that set it.
+    now: str = ""
+
     #: `policy.toml`, when this suite needs a room set the default does not
     #: give. Corpus-level in practice, like `config:`.
     #:
@@ -133,6 +148,9 @@ class Outcome:
     #: What the pass changed, as `("create", title)` / `("update", title)`.
     #: Empty for every entry point that writes no notes.
     changed: tuple[tuple[str, str], ...] = ()
+
+    #: Rows the pass WROTE. The proactive decide pass's entire output.
+    written: int = 0
 
     #: `"model"` or `"fail_closed"` — WHERE the decision came from. Kept beside
     #: the verdict because they are not the same fact: the gate fails closed,
@@ -191,10 +209,14 @@ class Outcome:
             return bool(self.said)
         if expect in ("create", "update"):
             return any(kind == expect for kind, _ in self.changed)
+        if expect == "remind":
+            return self.written > 0
         if expect == "either":
             return True
         if expect == "none":
-            return not self.changed
+            # BOTH, because `none` is the negative of two different positives:
+            # the note pass writing a note and the proactive pass writing a row.
+            return not self.changed and self.written == 0
         return not self.said
 
 

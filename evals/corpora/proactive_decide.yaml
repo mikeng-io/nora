@@ -28,39 +28,56 @@
 # `entry: dreamer`, `category: proactive` -- the real `DreamerRuntime` and the
 # real `ProactiveAdaptor` on the composed graph.
 #
-# THESE CASES DO NOT RUN YET, and they are kept rather than deleted or quietly
-# re-timed. Every one states a `now:`, because the proactive decision IS about
-# time: whether a note is due, whether a position has gone stale, whether the
-# moment to say something has arrived. The composed graph offers no way to say
-# what time it is -- `nora/app/composition.py` builds the adaptor with
-# `clock=lambda: datetime.now(UTC)`, a literal, with no config path behind it.
+# STILL REFUSED, FOR A DIFFERENT AND SHARPER REASON: these cases are
+# MULTI-ROOM. Each names two rooms and keys its standing per room, because the
+# decide pass judges a WORKSPACE and picks which of its rooms to stand in.
+# `nora.subject.Knowledge` is single-room -- one transcript, one standing, one
+# room -- so the rooms cannot be seeded and the pass judges an empty workspace.
 #
-# So a case here has three options and two of them are wrong:
+# That had to be CAUGHT, not noticed. With the rooms unseeded the pass finds
+# nothing due, writes nothing and returns `nothing_found` with no error, so
+# every case expecting `none` PASSED -- having measured an empty workspace. It
+# survived one round of fixing here because the clock was the louder problem.
+# The entry point now refuses any case naming `rooms`, `standing`, `rows` or
+# `row`, so they are ERROR and cannot score.
 #
-#   pass a clock        -- a collaborator, which is the one thing this rebuild
-#                          exists to stop. Seven assemblies is what happens when
-#                          each caller passes the one thing it needs.
-#   shift the data      -- `anchor_date: 20260912` and the note body that says
-#                          "Saturday 12 Sep" would stop agreeing, and the case
-#                          would be asserting against prose it had invalidated.
-#   refuse, and say so  -- what happens. `now:` lands in `metadata:` and the
-#                          entry point returns ERROR naming the missing seam.
+# `now:` IS A FIRST-CLASS CASE FIELD. Every case here states one, because the
+# proactive decision is about time: whether a note is due, whether a position
+# has gone stale, whether the moment to say something has arrived.
 #
-# That is the same rule the two Honcho-seeded participation cases follow: an
-# input the graph cannot honour is an ERROR, never a FAIL and never a PASS.
+# It was parked in `metadata:` for half a day, and these cases were REFUSED as
+# ERROR, because the composed graph had no way to be told what time it is --
+# `build_dependencies` wrote `lambda: datetime.now(UTC)` at nine separate sites
+# while nine components already accepted an injectable `clock`. The two wrong
+# ways out were to pass a clock (a collaborator, the one thing this rebuild
+# exists to stop) or to shift the data (`anchor_date: 20260912` and a note body
+# saying "Saturday 12 Sep" would stop agreeing, and the case would assert
+# against prose it had invalidated).
 #
-# The finding is not that these cases are awkward. It is that the deployed
-# graph has no clock seam, which is why every driver that needed one built its
-# own adaptor -- the same shape as the gate and the fire path not being fields
-# on `Dependencies`. Fixing it is a change to `nora.app`, argued on its own.
+# The seam was built instead: `build_dependencies(cfg, clock=...)`, wall clock
+# by default, one name replacing nine literals. `SubjectSpec.now` sets it and
+# it is FROZEN, so a turn and the window it reads cannot drift apart mid-case.
+#
+# `config:` and `policy:` state what the adaptor NEEDS TO EXIST. It has no
+# config flag of its own -- `composition.py:1558` wires it on
+# `dreamer.enabled and notes.enabled and proactive_homes`, and
+# `proactive_homes` comes from `policy.toml`, because the HOME ROOM is the
+# operator's opt-in (design/dreamer-agent-loop/39 D2). So a proactive suite
+# states a policy, and no number of dotted config paths could say it.
+#
+# `expect: remind|none` is the corpus's OWN vocabulary, restored. It was briefly
+# translated to `speak|none`, which lost the only thing it meant: this pass does
+# not speak and does not touch the notebook, it writes a REMINDER ROW. Graded on
+# `DreamOutcome.written`; on `changed` or `said` every case would score alike.
 
 cases:
   - name: d01_dinner_note_the_day_before
     entry: dreamer
     category: proactive
-    expect: speak
+    expect: remind
     config:
       memory.workspace_id: ridgeline
+      notes.enabled: true
     knows:
       notes:
       - title: AI Hackathon dinner plan
@@ -68,7 +85,6 @@ cases:
         body: Miles is at the AI Thinking hackathon at Cyberport on Saturday 12 Sep. He does not know his teammates yet and has not decided where to eat that night.
         anchor_date: 20260912
     metadata:
-      now: '2026-09-11T07:00:00+08:00'
       expect_original: remind
       rooms:
       - platform: signal
@@ -88,13 +104,30 @@ cases:
         body: Miles is going to the Cyberport hackathon on Saturday; nobody has said where dinner is or who is coming.
         age_hours: 30
       workspace: ridgeline
+    now: '2026-09-11T07:00:00+08:00'
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "ridgeline"
+    
+      home_room = true
+    
+      '
 
   - name: d02_anchored_today_open_corner
     entry: dreamer
     category: proactive
-    expect: speak
+    expect: remind
     config:
       memory.workspace_id: friends
+      notes.enabled: true
     knows:
       notes:
       - title: Friday drinks
@@ -102,7 +135,6 @@ cases:
         body: Ada, Ben and Cat are meeting for drinks tonight (Fri 11 Sep) after work. Central or Kennedy Town — nobody has picked.
         anchor_date: 20260911
     metadata:
-      now: '2026-09-11T07:00:00+08:00'
       expect_original: remind
       rooms:
       - platform: signal
@@ -119,13 +151,30 @@ cases:
         body: Drinks tonight are on; the area is still a coin toss between Central and K-Town.
         age_hours: 14
       workspace: friends
+    now: '2026-09-11T07:00:00+08:00'
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "friends"
+    
+      home_room = true
+    
+      '
 
   - name: d03_follow_up_owed_today
     entry: dreamer
     category: proactive
-    expect: speak
+    expect: remind
     config:
       memory.workspace_id: friends
+      notes.enabled: true
     knows:
       notes:
       - title: Ben's flat for the 25th
@@ -133,7 +182,6 @@ cases:
         body: Ben asked his landlord whether ten people can come to his flat on Sat 25 Sep and promised the group an answer by Friday 11 Sep. Ada and Cat are waiting on it before booking anything else.
         anchor_date: 20260925
     metadata:
-      now: '2026-09-11T07:00:00+08:00'
       expect_original: remind
       rooms:
       - platform: signal
@@ -150,6 +198,22 @@ cases:
         body: Party on the 25th hinges on Ben's landlord; Ben said Friday for an answer. Nothing since.
         age_hours: 40
       workspace: friends
+    now: '2026-09-11T07:00:00+08:00'
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "friends"
+    
+      home_room = true
+    
+      '
 
   - name: d04_already_raised_four_times
     entry: dreamer
@@ -157,6 +221,7 @@ cases:
     expect: none
     config:
       memory.workspace_id: friends
+      notes.enabled: true
     knows:
       notes:
       - title: Mahjong night
@@ -164,7 +229,6 @@ cases:
         body: Cat floated a mahjong night back in August. No date, no host, nobody has answered the last few times it came up.
         anchor_date: 20260913
     metadata:
-      now: '2026-09-11T07:00:00+08:00'
       expect_original: none
       rooms:
       - platform: signal
@@ -187,6 +251,22 @@ cases:
         due_hours_ago: 36
         outcome: silent
       workspace: friends
+    now: '2026-09-11T07:00:00+08:00'
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "friends"
+    
+      home_room = true
+    
+      '
 
   - name: d05_standing_says_settled
     entry: dreamer
@@ -194,6 +274,7 @@ cases:
     expect: none
     config:
       memory.workspace_id: friends
+      notes.enabled: true
     knows:
       notes:
       - title: Saturday dim sum
@@ -201,7 +282,6 @@ cases:
         body: Dim sum this Saturday 12 Sep. Ada suggested Lin Heung or Sun Tung Lok; time undecided.
         anchor_date: 20260912
     metadata:
-      now: '2026-09-11T07:00:00+08:00'
       expect_original: none
       rooms:
       - platform: signal
@@ -213,6 +293,22 @@ cases:
         body: 'Dim sum Saturday is booked: Sun Tung Lok, 11:30, Ada has the table for five. Everyone has confirmed.'
         age_hours: 9
       workspace: friends
+    now: '2026-09-11T07:00:00+08:00'
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "friends"
+    
+      home_room = true
+    
+      '
 
   - name: d06_dateless_note
     entry: dreamer
@@ -220,13 +316,13 @@ cases:
     expect: none
     config:
       memory.workspace_id: friends
+      notes.enabled: true
     knows:
       notes:
       - title: Japan trip someday
         description: a Japan trip everyone wants and nobody has dated
         body: Everyone wants to do Japan together — Kyoto in autumn was mentioned. No year, no month, no budget. Purely a wish for now.
     metadata:
-      now: '2026-09-11T07:00:00+08:00'
       expect_original: none
       rooms:
       - platform: signal
@@ -238,6 +334,22 @@ cases:
         body: Japan comes up now and then as a someday plan.
         age_hours: 50
       workspace: friends
+    now: '2026-09-11T07:00:00+08:00'
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "friends"
+    
+      home_room = true
+    
+      '
 
   - name: d07_three_weeks_out
     entry: dreamer
@@ -245,6 +357,7 @@ cases:
     expect: none
     config:
       memory.workspace_id: friends
+      notes.enabled: true
     knows:
       notes:
       - title: October hike
@@ -252,7 +365,6 @@ cases:
         body: Hike on Sat 3 Oct. Dragon's Back or Lion Rock, to be decided nearer the time. Everyone is in.
         anchor_date: 20261003
     metadata:
-      now: '2026-09-11T07:00:00+08:00'
       expect_original: none
       rooms:
       - platform: signal
@@ -264,6 +376,22 @@ cases:
         body: October hike is on; trail to be chosen the week before.
         age_hours: 20
       workspace: friends
+    now: '2026-09-11T07:00:00+08:00'
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "friends"
+    
+      home_room = true
+    
+      '
 
   - name: d08_empty_workspace
     entry: dreamer
@@ -271,8 +399,8 @@ cases:
     expect: none
     config:
       memory.workspace_id: wedding
+      notes.enabled: true
     metadata:
-      now: '2026-09-11T07:00:00+08:00'
       expect_original: none
       rooms:
       - platform: signal
@@ -284,6 +412,22 @@ cases:
         body: Quiet since the invitations went out.
         age_hours: 120
       workspace: wedding
+    now: '2026-09-11T07:00:00+08:00'
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "wedding"
+    
+      home_room = true
+    
+      '
 
   - name: d09_all_corners_closed_tomorrow
     entry: dreamer
@@ -291,6 +435,7 @@ cases:
     expect: none
     config:
       memory.workspace_id: ridgeline
+      notes.enabled: true
     knows:
       notes:
       - title: Saturday hackathon logistics
@@ -298,7 +443,6 @@ cases:
         body: Miles is at the Cyberport hackathon Saturday 12 Sep. Registration confirmed, badge emailed, he is taking the 8:15 bus with Grant. Nothing left to arrange.
         anchor_date: 20260912
     metadata:
-      now: '2026-09-11T07:00:00+08:00'
       expect_original: none
       rooms:
       - platform: signal
@@ -310,6 +454,22 @@ cases:
         body: 'Hackathon Saturday: everything is sorted — badge, bus, Grant is going too.'
         age_hours: 12
       workspace: ridgeline
+    now: '2026-09-11T07:00:00+08:00'
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "ridgeline"
+    
+      home_room = true
+    
+      '
 
   - name: d10_reminded_yesterday_and_it_landed
     entry: dreamer
@@ -317,6 +477,7 @@ cases:
     expect: none
     config:
       memory.workspace_id: friends
+      notes.enabled: true
     knows:
       notes:
       - title: Cat's birthday gift
@@ -324,7 +485,6 @@ cases:
         body: Cat's birthday is Mon 14 Sep. Ada and Ben want to chip in for a gift; nobody has volunteered to buy it.
         anchor_date: 20260914
     metadata:
-      now: '2026-09-11T07:00:00+08:00'
       expect_original: none
       rooms:
       - platform: signal
@@ -342,13 +502,30 @@ cases:
         due_hours_ago: 18
         outcome: sent
       workspace: friends
+    now: '2026-09-11T07:00:00+08:00'
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "friends"
+    
+      home_room = true
+    
+      '
 
   - name: d11_note_written_in_the_rooms_own_handles
     entry: dreamer
     category: proactive
-    expect: speak
+    expect: remind
     config:
       memory.workspace_id: friends
+      notes.enabled: true
     knows:
       notes:
       - title: Bath gathering tonight
@@ -356,7 +533,6 @@ cases:
         body: 熱咖啡 said he wants a bath tonight; 明明 is in. Nobody has said which place or what time.
         anchor_date: 20260911
     metadata:
-      now: '2026-09-11T07:00:00+08:00'
       expect_original: remind
       rooms:
       - platform: signal
@@ -374,3 +550,19 @@ cases:
         age_hours: 9
       max_memory_calls: 2
       workspace: friends
+    now: '2026-09-11T07:00:00+08:00'
+    policy: 'default = "deny"
+    
+      [[conversations]]
+    
+      platform = "signal"
+    
+      id = "g1"
+    
+      persons = "*"
+    
+      workspace = "friends"
+    
+      home_room = true
+    
+      '

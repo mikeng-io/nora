@@ -85,6 +85,16 @@ class Message:
     #: relies on.
     at_ms: int | None = None
 
+    #: HER OWN speech. Not `name="Nora"` — `nora.agent.prefill._speaker` reads
+    #: the FLAG, so a row merely named Nora renders as an ordinary member who
+    #: happens to be called that. A different input, and the wrong one.
+    #:
+    #: Needed by any case about "did she already say this", which could not be
+    #: written at all before: her own speech was unseedable. Credit
+    #: emperor-60, who found it while building the duplicate-reminder case and
+    #: landed the matching flag on `nora.testing.fakes.transcript_rows`.
+    is_nora: bool = False
+
 
 @dataclass(frozen=True, slots=True)
 class NoteSeed:
@@ -359,6 +369,7 @@ async def know(
                 raw={},
             ),
             person_id=person_id,
+            is_nora=msg.is_nora,
         )
         if msg.label is not None:
             rows[msg.label] = row_id

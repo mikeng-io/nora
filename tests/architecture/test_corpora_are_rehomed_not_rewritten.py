@@ -54,6 +54,15 @@ def _load(rel: str) -> list[dict]:
 #: byte-identical, so "data, not rewrites" passed while the WINDOW the labels
 #: were assigned against had silently changed from three speakers to one. Found
 #: by running both layers live on the same case — `go` 5/5 against `no_go` 5/5.
+#: Cases added to a corpus AFTER its move, by path. Declared rather than merely
+#: allowed: a corpus is data, and a case that arrives without an argument is the
+#: same drift as a label edited during a move.
+_EXPECTED_ADDITIONS = {
+    # From the 2026-09-17 live duplicate-reminder incident, via emperor-60. The
+    # file's header carries the four constraints it must be ported with.
+    "evals/corpora/proactive_act.yaml": ["a11_she_already_raised_this_minutes_ago"],
+}
+
 _GATE_SPEAKERS = ("Kit", "Sam", "Aaron")
 _GATE_SPACING = 180
 
@@ -222,27 +231,50 @@ def test_note_candidates_survived_its_deeper_reshape() -> None:
     ("evals/cases/proactive/decide.yaml", "evals/corpora/proactive_decide.yaml"),
     ("evals/cases/proactive/act.yaml", "evals/corpora/proactive_act.yaml"),
 ])
-def test_the_proactive_corpora_survived_a_move_they_cannot_yet_run(
-    old: str, new: str,
-) -> None:
-    """Re-homed and REFUSED, which is a different thing from deleted.
+def test_the_proactive_corpora_survived_their_move(old: str, new: str) -> None:
+    """Re-homed, and — since the clock seam landed — runnable.
 
-    Every case states a `now:`, and the composed graph has no clock seam. So
-    these run as ERROR — the same rule the two Honcho-seeded participation
-    cases follow. What this checks is that the move lost nothing on the way to
-    being refused: a corpus parked as data is only worth parking if it is still
-    the corpus.
+    These were REFUSED for half a day: every case states a `now:` and the
+    composed graph had no way to be told the time. `build_dependencies` now
+    takes a `clock` and `SubjectSpec.now` sets it, so `now` moved from
+    `metadata:` to a field the runner reads.
+
+    What this checks is that nothing was lost across either move — the parking
+    or the unparking. A corpus is only worth parking if it is still the corpus
+    when it comes back.
     """
     before = {c["name"]: c for c in _load(old)}
     after = {c["name"]: c for c in _load(new)}
-    assert set(before) == set(after), sorted(set(before) ^ set(after))
+
+    # NOTHING LOST is the property; nothing ADDED is not. The first draft
+    # asserted equality and reddened when a new case landed, which would have
+    # made the corpus unextendable to keep it faithful — the wrong trade, and
+    # the opposite of what a corpus is for. A case that vanishes takes its label
+    # with it and nothing reports the gap; a case that arrives is visible in the
+    # file.
+    assert not set(before) - set(after), (
+        f"{new} LOST cases: {sorted(set(before) - set(after))}"
+    )
+    added = sorted(set(after) - set(before))
+    assert added == _EXPECTED_ADDITIONS.get(new, []), (
+        f"{new} gained {added}; declare it in _EXPECTED_ADDITIONS with where it "
+        "came from, so a case nobody argued for cannot drift in."
+    )
 
     for name, b in before.items():
         a = after[name]
         assert a["entry"] == "dreamer" and a["category"] == "proactive", name
         meta = a.get("metadata") or {}
-        # `now:` is the reason they are refused, so it above all must survive.
-        assert meta["now"] == b["now"], name
+        # `now:` is a FIRST-CLASS field now, not metadata. It sat in metadata
+        # for as long as the graph had no clock seam and these cases were
+        # refused; `build_dependencies(cfg, clock=...)` closed that, so the
+        # field moved to where the runner reads it. The value must be identical
+        # either way — it is the instant the labels were assigned against.
+        assert a["now"] == b["now"], name
+        assert "now" not in meta, (
+            f"{name}: `now` is in metadata AND a field. One fact, one place — "
+            "two is how they drift."
+        )
         # The corpus's own expectation vocabulary — `remind`/`none`/`silent`/
         # `either` — is mapped onto the shared one, so the ORIGINAL is carried
         # rather than replaced. `either` in particular has no shared spelling
