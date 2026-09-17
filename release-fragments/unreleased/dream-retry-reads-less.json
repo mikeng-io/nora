@@ -1,0 +1,12 @@
+{
+  "type": "fix",
+  "summary": "When a background pass fails on a stretch of conversation, it now retries with a smaller piece instead of re-sending the same one forever.",
+  "details": [
+    "A pass that fails reads half as much on its next attempt, halving again each time it keeps failing, down to a floor — so a stretch that was slightly too large to handle drains on the first retry rather than never.",
+    "A pass that is simply waiting on an unavailable model is unaffected in practice: the smaller attempt succeeds once the model is back, and the next one is full size again.",
+    "Operators get a new reading for how often this is happening, so a mis-sized pass is visible instead of looking like an ordinary hourly job."
+  ],
+  "limitations": [
+    "The floor means a single stretch that cannot be handled even at the smallest size will still retry indefinitely rather than being set aside."
+  ]
+}
