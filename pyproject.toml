@@ -152,7 +152,17 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "BLE", "ASYNC", "S", "C4", "SIM", 
 #            corpus is test DATA. Replacing it with ASCII would change which
 #            adversarial inputs are exercised — a behaviour change to the suite.
 #   N803/N818 — test-local argument and exception-class naming, not production surface.
-"tests/**" = ["S101", "S104", "S311", "S607", "RUF001", "N803", "N818"]
+#   N802  — a test NAME here is a sentence stating the claim, and ALL-CAPS marks the
+#           claim's hinge: `test_chain_walks_PARENT_LINKS_newest_first`,
+#           `test_an_empty_batch_renders_NOTHING_so_the_runtime_does_not_fire`. The
+#           convention is deliberate and load-bearing for readability; N802 was
+#           finding it, not finding a defect. Added 2026-09-17 (#285) after 25 N802s
+#           accumulated across the culture-tier and participation-measure suites and
+#           `make gate` went red at its FIRST step. Renaming them was the alternative
+#           and is worse: it costs the emphasis and churns names `design/09-decision-index.md`
+#           cites (#187 already carries 91 stale selectors, largely from renames).
+#           Scoped to tests/ on purpose — in `nora/` lowercase function names ARE the rule.
+"tests/**" = ["S101", "S104", "S311", "S607", "RUF001", "N802", "N803", "N818"]
 "evals/**" = ["S101"]
 
 [tool.importlinter]

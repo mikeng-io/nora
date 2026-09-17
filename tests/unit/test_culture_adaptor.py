@@ -242,6 +242,6 @@ async def test_an_outcome_outside_the_vocabulary_raises():
 def test_every_declared_outcome_is_reachable():
     """A vocabulary member nothing produces is a label that renders as a series
     which is always zero."""
-    assert CULTURE_OUTCOMES == {
+    assert {
         "written", "empty", "too_many", "unchanged", "oversize",
-    }
+    } == CULTURE_OUTCOMES

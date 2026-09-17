@@ -85,6 +85,7 @@ from nora.agent.room import Room
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.blocks import RowStyle, render_rows
 from nora.domain.compute import ComputeJob
+from nora.domain.culture import CultureRevision
 from nora.domain.decision_log import (
     PARTICIPATION_DECISION_WRITERS,
     DecisionLogRecorder,
@@ -114,7 +115,6 @@ from nora.domain.ports import (
 )
 from nora.domain.prompt import one_line
 from nora.domain.reminders import Recurrence, Reminder, remaining_occurrences
-from nora.domain.culture import CultureRevision
 from nora.domain.standing import (
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
     Standing,

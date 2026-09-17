@@ -30,7 +30,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.culture import Culture, CultureRevision
+from nora.domain.culture import CultureRevision
 from nora.infra.sql.schema import CULTURE, CULTURE_REVISION
 
 __all__ = ["SqlCultureStore"]
