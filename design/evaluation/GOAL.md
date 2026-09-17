@@ -138,11 +138,29 @@ Delete `evals/*.py` and `nora/app/eval_support.py`, plus the shims in
 the offline composition root for 106 integration tests and ten acceptance
 rules, and this bundle was wrong to list it.
 
+**AND A SEVENTH, found by trying to clear the second one.** `eval_support.py`
+is not only a pile of assemblies — it is the BOUNDARY ADAPTER. `evals/` may
+reach `nora.app` and nothing else, so a grader that needs
+`nora.agent.registry`'s budgets or `nora.engagement.stages.deliver`'s stop
+reasons can only get them through a `nora.app` module. `evals/evaluators.py`
+imports both FROM `eval_support` for exactly that reason, and its own docstring
+says so: *"evals may only reach nora.app and nora.testing, so the gate's
+construction lives HERE."*
+
+Moving the evaluators into `evals/rebuilt/` to save R-15 was tried and
+`tests/test_boundaries.py` refused it, correctly. So deleting `eval_support.py`
+requires deciding where `evals/` gets production constants from — and every
+answer is either a new `nora.app` surface that exists only for evaluation
+(§5(2)) or a widening of the import contract. That is a decision about the
+boundary, which is `01-boundaries`'s own subject, not a tidy-up.
+
 **Blocking, measured by running the delete:**
 
 1. Port `tests/integration/harness.py` off `build_offline_pipeline`, or keep
    `offline.py`. 106 tests, 10 rules.
-2. Re-home R-15 and R-97, whose only named tests live in `evals/`.
+2. Re-home R-15 and R-97, whose only named tests live in `evals/` — and see
+   the seventh item: R-15's grader cannot simply move, because the import
+   contract is what put it there.
 3. Give `test_the_barred_call_is_a_name_this_gate_can_see` a positive example
    outside `eval_support.py`. It is the control for a bar protecting a MEASURED
    safety property (ADR 0011, 1/6 vs 6/6), its one example is

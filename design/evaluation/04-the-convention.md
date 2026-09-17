@@ -138,10 +138,25 @@ The report prints `judge=` beside `subject=`, and its loudest value is
 
 ## 6. What is NOT true yet
 
-- **`evals/*.py` still exists** and is still where a live number comes from.
-  Step 5 deletes it after the replacement has driven a live run. Deleting
-  first would mean a period with no instrument at all, and it is what this
-  bundle would be repeating rather than fixing.
+- **`evals/*.py` still exists**, and Step 5 is BLOCKED rather than pending.
+  Measured 2026-09-18 by running the delete: it stops ~372 tests, 16 of them
+  at collection. The bundle was wrong about what three of those files are.
+
+  - **`nora/app/offline.py` is not an eval module.** It is the offline
+    composition root for `tests/integration/harness.py` — 106 tests and ten
+    acceptance rules.
+  - **`evals/harness.py` is the offline DRIVER**, and three unit/acceptance
+    tests use it to run a case with no model at all. The new layer has no
+    equivalent: `obtain()` always composes a real graph against a real
+    database.
+  - **`eval_support.py` is the BOUNDARY ADAPTER.** `evals/` may reach
+    `nora.app` and nothing else, so it is how a grader gets
+    `nora.agent.registry`'s budgets and `nora.engagement.stages.deliver`'s stop
+    reasons. Moving `evals/evaluators.py` out from under it was tried and
+    `tests/test_boundaries.py` refused it.
+
+  `design/evaluation/GOAL.md` carries the seven blocking items and the eleven
+  capabilities that must be consciously accepted or replaced.
 - **Four assertions in the note-candidates corpus are parked**, not graded:
   `must_cite`, `anchor_date`, `creates`, `updates`. They need the staged
   candidate's `message_ids`, which the notebook diff does not carry.
