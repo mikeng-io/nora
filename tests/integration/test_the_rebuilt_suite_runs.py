@@ -31,9 +31,9 @@ _NO_PROVIDER = {"llm.base_url": "http://127.0.0.1:9/v1"}
 def test_every_corpus_loads() -> None:
     """Ten files, one loader, no per-suite code."""
     files = sorted(CORPORA.glob("*.yaml"))
-    assert len(files) == 11, [f.name for f in files]
+    assert len(files) == 13, [f.name for f in files]
     total = sum(len(load(f)) for f in files)
-    assert total == 128, total
+    assert total == 149, total
 
 
 @pytest.mark.asyncio

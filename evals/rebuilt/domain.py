@@ -20,6 +20,11 @@ from typing import Any, Literal
 #: survive on purpose: the corpora say `reply`, and Step 3's rule is data, not
 #: rewrites. A label edited during a move is a new case wearing the old name.
 #:
+#: `either` means BOTH answers are acceptable. It exists because the proactive
+#: corpus has cases where the design deliberately declines to say — and mapping
+#: it onto one side would harden a permissive label into a strict one, which is
+#: a corpus rewrite wearing a type signature.
+#:
 #: `create`/`update`/`none` are the Dreamer's, and they are graded on the
 #: NOTEBOOK — what the pass wrote — never on `DreamOutcome.status`, which says
 #: only whether the loop completed. A pass can return `ok` having written
@@ -27,7 +32,7 @@ from typing import Any, Literal
 #: about.
 Expectation = Literal[
     "go", "no_go", "speak", "silence", "reply", "no_reply",
-    "create", "update", "none",
+    "create", "update", "none", "either",
 ]
 
 #: Which entry point the input enters at. A SELECTION ON A CASE, not a branch
@@ -166,6 +171,8 @@ class Outcome:
             return bool(self.said)
         if expect in ("create", "update"):
             return any(kind == expect for kind, _ in self.changed)
+        if expect == "either":
+            return True
         if expect == "none":
             return not self.changed
         return not self.said

@@ -189,3 +189,43 @@ def test_note_candidates_survived_its_deeper_reshape() -> None:
         ws = before.get("workspace", "nora")
         assert after["config"]["memory.workspace_id"] == ws, name
         assert f'workspace = "{ws}"' in after["policy"], name
+
+
+@pytest.mark.parametrize("old,new", [
+    ("evals/cases/proactive/decide.yaml", "evals/corpora/proactive_decide.yaml"),
+    ("evals/cases/proactive/act.yaml", "evals/corpora/proactive_act.yaml"),
+])
+def test_the_proactive_corpora_survived_a_move_they_cannot_yet_run(
+    old: str, new: str,
+) -> None:
+    """Re-homed and REFUSED, which is a different thing from deleted.
+
+    Every case states a `now:`, and the composed graph has no clock seam. So
+    these run as ERROR — the same rule the two Honcho-seeded participation
+    cases follow. What this checks is that the move lost nothing on the way to
+    being refused: a corpus parked as data is only worth parking if it is still
+    the corpus.
+    """
+    before = {c["name"]: c for c in _load(old)}
+    after = {c["name"]: c for c in _load(new)}
+    assert set(before) == set(after), sorted(set(before) ^ set(after))
+
+    for name, b in before.items():
+        a = after[name]
+        assert a["entry"] == "dreamer" and a["category"] == "proactive", name
+        meta = a.get("metadata") or {}
+        # `now:` is the reason they are refused, so it above all must survive.
+        assert meta["now"] == b["now"], name
+        # The corpus's own expectation vocabulary — `remind`/`none`/`silent`/
+        # `either` — is mapped onto the shared one, so the ORIGINAL is carried
+        # rather than replaced. `either` in particular has no shared spelling
+        # and a mapping that dropped it would silently harden a deliberately
+        # permissive label.
+        assert meta["expect_original"] == b["expect"], name
+        for key in ("rooms", "rows", "row", "standing", "log", "max_memory_calls",
+                    "must_cite", "must_not_cite", "note_moved"):
+            if b.get(key) is not None:
+                assert meta.get(key) == b[key], f"{name}: {key}"
+        knows = a.get("knows") or {}
+        assert [n["title"] for n in knows.get("notes") or []] == \
+            [n["title"] for n in b.get("notes") or []], name

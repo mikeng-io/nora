@@ -63,6 +63,30 @@ design — `allow_indirect_imports`).
 
 Then: one function returning Nora, no caller passing collaborators.
 
+**Steps 1-4 and 6 — DONE 2026-09-17. Step 5 is the only one left.**
+
+| step | state |
+|---|---|
+| 1 — the one subject | `nora/subject/` — `obtain(spec)`, 40-field graph, 3+4 tests |
+| 2 — two entry points, one runner | §7 run; did NOT refute. 4 pins, all falsified |
+| 3 — re-home the corpora | 13 files, 149 cases, pinned field-by-field |
+| 4 — the remaining entry points | `tag` and `dreamer` added. 23 cases refused for missing seams, loudly |
+| 5 — the delete | **NOT DONE.** Waits on a live run |
+| 6 — the convention | `04-the-convention.md` |
+
+**Why Step 5 is not done, stated as a rule rather than a hesitation.** The new
+layer has never reached a model. Every measurement in this session was taken
+with the provider deliberately unreachable, which proves the fail-closed
+behaviour and proves nothing about agreement. Deleting the only instrument
+that has produced a live number, on the strength of a replacement that has
+not, is this bundle's own finding repeated one level up.
+
+What Step 5 needs first: one live run of `evals/corpora/relevance_gate.yaml`
+through both layers, and the two accuracy figures compared. If they disagree,
+the disagreement is the next thing to understand — not a reason to keep both.
+
+---
+
 **Step 2 — two entry points through one runner.** `relevance_gate` and
 `participation`, deliberately the least alike. `01-boundaries` §7: if they cannot
 share a runner, the boundary is drawn wrong and we learn it here rather than at

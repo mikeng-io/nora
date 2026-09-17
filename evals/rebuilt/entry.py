@@ -226,6 +226,28 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     adaptor are two passes over one runtime, and branching on them in the
     runner would be the eight drivers growing back inside one file.
     """
+    # AN INPUT THE GRAPH CANNOT HONOUR IS AN ERROR.
+    #
+    # `now:` says what time it is, and the proactive decision is entirely about
+    # time. `nora/app/composition.py` builds the adaptor with
+    # `clock=lambda: datetime.now(UTC)` — a literal, with no config path behind
+    # it — so a case that states a `now` would silently be judged at wall-clock
+    # time instead, and the twenty-one cases that turn on due dates would all
+    # answer about today.
+    #
+    # Refused rather than run, for the reason the two Honcho-seeded
+    # participation cases are refused: a case measured against an input it did
+    # not state is measuring nothing, and it does not look like it.
+    if case.metadata.get("now"):
+        return Outcome(
+            admitted=None,
+            source="fail_closed",
+            error=(
+                f"the case states now={case.metadata['now']} and the composed "
+                "graph has no clock seam (composition.py builds the adaptor "
+                "with a literal datetime.now)"
+            ),
+        )
     adaptor = case.category or "note-candidates"
     try:
         result = await dream(subject, adaptor=adaptor)
