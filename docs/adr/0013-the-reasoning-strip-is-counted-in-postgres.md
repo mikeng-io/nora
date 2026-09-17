@@ -9,10 +9,12 @@
   `tests/unit/test_reasoning_strip_probe.py` (the counter moves when the condition
   occurs, and does not when it does not),
   `tests/unit/test_reasoning_strip_watch.py` (a retry is not a second
-  opportunity), `tests/infra/test_reasoning_strip_store.py` (the row carries
-  its denominator, an absent tag is stored absent, an impossible row is
-  refused). Issue #325; the same transport limitation on a different caller is
-  #186 and ADR 0011.
+  opportunity; a wedged store does not hold the slot; every declared audience
+  is a legal path), `tests/infra/test_reasoning_strip_store.py` (the row
+  carries its denominator, an absent tag is stored absent, an impossible row is
+  refused) and `tests/architecture/test_slot_held_awaits_are_bounded.py` (the
+  write stays bounded). Issue #325; the same transport limitation on a
+  different caller is #186 and ADR 0011.
 
 ## Context
 
@@ -107,12 +109,22 @@ adaptor per **day**. A counter would report zero across a deploy and be
 believed.
 
 `reasoning_strip_log` (migration 0057) is therefore the record: one row per
-multi-turn agent invocation, carrying `path`, `model`, `reasoning_effort`,
-`tag_id`, `model_calls`, `continuation_calls`, `strip_calls`,
-`stripped_blocks`, `created_at`. Postgres because that is where application
-state that must survive belongs and no new store is introduced; the shape is
-the one accepted in PR #318 — a narrow table, verbs split on the read/write
-asymmetry, absence representable per row rather than defaulted.
+multi-turn TURN, carrying `path`, `model`, `reasoning_effort`, `tag_id`,
+`model_calls`, `continuation_calls`, `strip_calls`, `stripped_blocks`,
+`created_at`. Postgres because that is where application state that must
+survive belongs and no new store is introduced; the shape is the one accepted
+in PR #318 — a narrow table, verbs split on the read/write asymmetry, absence
+representable per row rather than defaulted.
+
+**The write is BOUNDED** (`ReasoningStripWatch.DEFAULT_WRITE_TIMEOUT_SECONDS`,
+two seconds) because every caller awaits it with the conversation's slot held.
+That is not a refinement, it is the same defect this repo has now found three
+times — `debrief.run`, then the fire path in the change that fixed it, then
+this PR's first draft — and it is not catchable: a wedged Postgres does not
+raise, it does not answer, and `create_sql_engine` sets no `command_timeout`.
+The rule lives in `nora/app/fire.py`'s `standing_store_timeout_seconds` and
+`tests/architecture/test_slot_held_awaits_are_bounded.py` is what now enforces
+it beyond one module.
 
 **The counter is still declared, and its own design answers the objection.**
 `nora_reasoning_strip_total{path, outcome}` records the DENOMINATOR in the same
@@ -127,19 +139,55 @@ live window; the question spans deploys, so the answer lives in the table.
 
 A raw count answers nothing. Two strips is a catastrophe at two opportunities
 and a rounding error at two hundred, and #325's production reading could not
-tell which it was. The denominator is **continuation calls**: model calls made
-with a prior assistant turn already in the list, which is exactly the set the
-transport can strip — a `reasoningContent` block can only be there because a
-previous answer this loop received put it there.
+tell which it was. The denominator is **continuation calls**: model calls in a
+turn after its first one, which is exactly the set the transport can strip — a
+`reasoningContent` block can only be in the list because a model answer THIS
+LOOP RECEIVED put it there.
 
 Rows are written **only** when `continuation_calls >= 1`, enforced by a CHECK.
 A single-call turn has zero opportunity; admitting it would make this a log of
 every model call in the system rather than a census of the calls at risk.
 
-`model` and `reasoning_effort` are read off the model provider **at the moment
-of the call**, not from `nora.config`. Config says what was configured; the row
-says what was sent. That is the difference between a `GROUP BY` and the two
-hours of log-diving #325 records.
+**«After the first call», not «with a prior assistant message in the list».**
+The two read as one sentence and are not: `nora.agent.prefill` puts an
+assistant message into every tag prefill, so the message-shape reading makes
+the first call of every tag turn a continuation and inflates the denominator on
+all of them. A prefill is rendered text and carries no `reasoningContent`. The
+code always implemented the loop position; three documents stated the other
+one, and they are corrected.
+
+**The unit is the TURN, which is not always one `invoke_async`.** A turn cut
+off by one of R-8's caps with no prose gets a budget-exhaustion draft (#110) —
+a second invocation on the same agent, over the same accumulated context, with
+the watch still registered. Its request genuinely carries the reasoning and the
+transport genuinely drops it, so it is counted and the unit is stated as the
+turn. Excluding it would under-report a real strip on exactly the turns that
+had already run out of room. `test_the_budget_exhaustion_draft_is_counted_into_
+the_same_row` pins the choice.
+
+`reasoning_effort` is read off the model provider **at the moment of the
+call**, not from `nora.config`. Config says what was configured; the row says
+what the request carried. On 2026-09-17 the operator moved it on two paths in
+opposite directions in one session, and reconstructing which turns ran under
+which cost two hours; beside the rate it is a `GROUP BY`.
+
+**`model` is weaker than it looks, and this ADR would be dishonest to leave the
+claim unqualified.** It is the OmniRoute ALIAS — `[llm] model`, copied into the
+provider at startup — so when the combo behind `nora` is repointed upstream,
+which is exactly the event the Context section above turns on, `GROUP BY model`
+reads `nora` on both sides and sees nothing. This is not fixable at the seam
+that writes the row: `AfterModelCallEvent.ModelStopResponse` carries `message`
+and `stop_reason` and no served-model identity. The column stays because a
+change of ALIAS (a second tier, an eval against `nora-gate`) is legible through
+it, and because dropping it would lose that; **for an upstream repoint the
+instrument is the timestamp read against OmniRoute's own routing log**, and
+`docs/runbook.md` §6d says so where an operator will meet it.
+
+The first version of this ADR and the PR that carried it both claimed the two
+columns together made an upstream repoint a `GROUP BY`. They did not. The claim
+is corrected rather than engineered around, because the alternative available —
+recording the alias and calling it the model — is how an instrument comes to be
+trusted for a question it cannot answer.
 
 **Observation only.** No retry, no transport change, no `reasoning_effort`
 touched. The drop is deterministic — a request-shape incompatibility, not
@@ -156,20 +204,33 @@ a day rather than a reply somebody reads — is labelled by adaptor name.
 
 **What got worse.** Five call sites gained a keyword, and three of them
 (`invoke.run`, `FirePath._invoke`, `DreamerRuntime._sample`) gained an explicit
-`await watch.flush()` that a reader has to notice. `flush` is idempotent and
-swallows its own exceptions precisely because it is called from more than one
-exit, and that is a weaker guarantee than one call site would have been. The
-Dreamer writes it out three times rather than hiding it in a `finally`, because
-awaiting in a `finally` on a cancelled task re-raises out of the cleanup path —
-so a turn cancelled outright writes nothing, and that is stated rather than
-hidden.
+`await watch.flush()` that a reader has to notice — each of them inside a held
+conversation slot, which is why the bound is inside `flush` rather than at the
+call sites: five `wait_for`s is five chances to write four. `flush` is
+idempotent and swallows its own exceptions precisely because it is called from
+more than one exit, and that is a weaker guarantee than one call site would
+have been. The Dreamer writes it out three times rather than hiding it in a
+`finally`, because awaiting in a `finally` on a cancelled task re-raises out of
+the cleanup path — so a turn cancelled outright writes nothing, and that is
+stated rather than hidden.
 
-`reasoning_strip_log` has **no sweep**. Its bound is stated (rows only on
-multi-turn invocations) rather than enforced by arithmetic the way
-`tag_debounce_state`'s is, because pruning here would be a retention judgement
-and the window this table has to answer over is longer than one deploy. If it
-grows past usefulness, that is a decision for whoever reads it, not a default
-chosen here.
+`nora/domain/audience.py` is a new module for four strings that already
+existed, and `nora/app/fire.py`'s constants now derive from it rather than
+declaring themselves. That is a real cost — one more indirection on a hot
+module — bought because the alternative was a `path` vocabulary documented in
+four places and matching the code in none of them.
+
+`reasoning_strip_log` has **no sweep**, and the volume is larger than this ADR
+first said. A row lands for every turn with at least one continuation call on
+EVERY speaking path — tag, heartbeat, participation, proactive — plus one per
+Dreamer sample. "Roughly one run per adaptor per day" describes the Dreamer
+alone and was the wrong rate to size the table from. The row is ten small
+columns and one index entry: on the order of 100 MB a year at 1,000 qualifying
+turns a day, 10 MB at 100. **The rate is unmeasured** — nothing in the tree
+counts tool-using turns per day, and this instrument is the first thing that
+will — so `docs/runbook.md` §6d carries the query that measures it and says to
+decide retention against a number rather than against this paragraph. Pruning
+stays a retention judgement, not a default chosen here.
 
 **What this does NOT fix, stated rather than left to be found.** Nothing acts
 on the signal: a turn whose reasoning is discarded still speaks, exactly as it
@@ -179,6 +240,28 @@ whether a tag or Dreamer turn that loses its reasoning mid-loop is merely
 degraded or is exploitable is an open question that needs its own instrument.
 And the combo-change question is still untested: this makes the NEXT one
 legible, it does not retroactively answer the last one.
+
+**What was measured on it before it landed.** Three independent adversarial
+audits, each required to verify by running rather than reading. What they
+confirmed is worth recording because these were the doubted properties: the
+detector's predicate is EQUIVALENT to the SDK's, checked by pushing seven
+hand-built message lists through the real `OpenAIModel.format_request`;
+counting only `reasoningContent` is correct and load-bearing, because
+`toolUse`/`toolResult` are skipped only to be re-emitted rather than dropped;
+the contract test genuinely goes RED when the SDK is patched to carry reasoning
+through; the watch does not mutate the message list (a `list` subclass whose
+every mutator raises ran clean); and the migration is correct in both
+directions against real Postgres with 100,000 rows. What they found is the
+Decision section's bound, the vocabulary correction, and the `model` claim
+above.
+
+**What is deliberately still not watched.** `nora/agent/structured.py`'s
+`ask_structured` constructs an Agent with no watch, and it is multi-turn by
+construction — the exact shape ADR 0011 measured as a safety breach. Its only
+caller under `nora/` is the eval harness's `_StrandsGateClient`, which exists to
+measure the arm ADR 0011 rejected; production reaches it from nowhere. Naming
+it here makes that a decision rather than an omission: if `ask_structured` ever
+gains a production caller, it needs a watch in the same change.
 
 **What is now load-bearing that was not.** The watch's registration order.
 `BeforeModelCallEvent` dispatches in registration order, so a watch registered

@@ -16,14 +16,31 @@ if the loop only went multi-turn twice, and a rounding error if it went
 multi-turn two hundred times. So the unit of record here is the OPPORTUNITY,
 not the event:
 
-    continuation_calls  — model calls in this invocation that were made with
-                          at least one prior assistant turn already in the
-                          message list. These are exactly the calls the
-                          transport can strip, because a `reasoningContent`
-                          block can only be in the list if a previous model
-                          answer put it there.
+    continuation_calls  — model calls in this TURN after its first one. These
+                          are exactly the calls the transport can strip: a
+                          `reasoningContent` block can only be in the list if a
+                          model answer THIS LOOP RECEIVED put it there.
     strip_calls         — of those, how many carried reasoning that the
                           formatter then discarded.
+
+**«after the first call», not «with a prior assistant message in the list».**
+The two read as the same sentence and are not: `nora.agent.prefill` puts an
+assistant message into every tag prefill (`prefill.py`, the rendered
+conversation), so by the message-shape reading the FIRST call of every tag turn
+would be a continuation. It carries no `reasoningContent` — a prefill is
+rendered text — so counting it would inflate the denominator by one on every
+tag turn and dilute the rate. The loop position is the grounded predicate and
+is what the code implements; this paragraph exists because the first version of
+this docstring stated the other one (audit, 2026-09-17).
+
+**ONE TURN, WHICH IS NOT ALWAYS ONE `invoke_async`.** A turn cut off by one of
+R-8's caps with no prose gets a budget-exhaustion draft (#110,
+`factory.draft_from_exhausted_loop`) — a second invocation on the SAME agent,
+over the same accumulated context, with this watch still registered. Its
+request genuinely carries the accumulated reasoning and the transport genuinely
+drops it, so it is counted, and the unit of a row is deliberately the TURN
+rather than the invocation. Excluding it would under-report a real strip on
+precisely the turns that had already run out of room.
 
 `strip_calls / continuation_calls`, summed over rows, is the rate. It is
 computable from this table alone, at any later date, without the process that
@@ -35,16 +52,36 @@ zero opportunity: it contributes nothing to either half of the ratio, and
 writing it would make this table a log of every model invocation in the system
 rather than a census of the ones at risk.
 
+**A row with `strip_calls > continuation_calls` cannot be produced by the loop**
+— it would mean the reasoning came from the prefill rather than from a model
+answer — and it is refused three times over: `ReasoningStripWatch` logs it at
+ERROR and declines to write, the write counter records `impossible` rather than
+`failed`, and the table's CHECK would refuse it anyway. An earlier version of
+this module said such a row «should reach whoever looks»; it never could, and
+the two documents disagreeing was itself the defect.
+
 WHAT MAKES A CHANGE LEGIBLE
 ---------------------------
-`model` and `reasoning_effort` are read off the model provider's OWN config at
-the moment of the call, never from `nora.config` — the row records what was
-actually sent. Between 08:52Z and 09:42Z on 2026-09-17 the OmniRoute combo
-behind the alias changed upstream and the operator moved `reasoning_effort` on
-two paths in opposite directions; it took two hours and a log dive to see it,
-and the before-window turned out to contain zero comparable events. With these
-two columns beside the ratio, the next such change is a `GROUP BY` rather than
-an investigation.
+`reasoning_effort` is read off the model provider's OWN config at the moment of
+the call, never from `nora.config` — it records the value the request actually
+carried, which is what makes an operator's change to it legible the next day
+rather than after a log dive.
+
+**`model` is the OmniRoute ALIAS, and cannot see a combo repoint.** State this
+plainly, because the column looks like it answers more than it does: the
+provider holds a `model_id` copied from `[llm] model` at startup, so when the
+combo behind `nora` is repointed upstream — which is the change ADR 0013's own
+story turns on — `GROUP BY model` reads `nora` on both sides of it. The served
+model id is not available at this seam at all: `AfterModelCallEvent.
+ModelStopResponse` carries `message` and `stop_reason` and nothing else. The
+column is worth keeping because a deployment that moves the ALIAS (a second
+tier, an eval run against `nora-gate`) is legible through it; it is not the
+instrument for an upstream repoint, and nothing here pretends otherwise.
+
+What `reasoning_effort` beside the rate DOES answer is the other half of
+2026-09-17: the operator moved it on two paths in opposite directions in one
+session, and reconstructing which turns ran under which cost two hours and a
+log dive. That is a `GROUP BY` now.
 
 `reasoning_effort = "none"` is the case that must not read as health: a path
 emitting no reasoning at all cannot be stripped, so `strip_calls = 0` there
@@ -62,6 +99,8 @@ from datetime import UTC, datetime
 from typing import Literal, Protocol, get_args, runtime_checkable
 from uuid import UUID
 
+from nora.domain.audience import SPEAKING_AUDIENCES
+
 #: The two outcomes one CONTINUATION model call can have, and the vocabulary
 #: `nora_reasoning_strip_total`'s `outcome` label is derived from — never hand
 #: copied into the metric declaration (CLAUDE.md's label-vocabulary rule).
@@ -74,6 +113,42 @@ from uuid import UUID
 StripOutcome = Literal["stripped", "clean"]
 
 STRIP_OUTCOMES: tuple[str, ...] = get_args(StripOutcome)
+
+#: What became of one row's WRITE, and the vocabulary
+#: `nora_reasoning_strip_writes_total`'s `outcome` label is derived from.
+#:
+#: **`impossible` is separate from `failed` on purpose.** A row whose
+#: `strip_calls` exceeds its `continuation_calls` cannot be produced by the
+#: loop — it would mean the reasoning arrived from the PREFILL — and the CHECK
+#: on `reasoning_strip_log` refuses it. Letting that arrive as `failed` would
+#: give a corrupt writer exactly the same signal a wedged or restarting
+#: database gives, which is the one confusion this counter exists to prevent.
+WriteOutcome = Literal["ok", "failed", "impossible"]
+
+WRITE_OUTCOMES: tuple[str, ...] = get_args(WriteOutcome)
+
+#: `reasoning_strip_log.path` is this, joined: every audience that runs a model
+#: loop (`nora.domain.audience`), plus one value per Dreamer adaptor prefixed
+#: below. DERIVED rather than written out, because the first version of this
+#: table documented four of the five shapes it was already storing -- `fire.py`
+#: was sending `heartbeat` and `proactive` while the migration, the metric help
+#: text and the runbook all said «tag / participation / dreamer:<adaptor>».
+DREAMER_PATH_PREFIX = "dreamer:"
+
+PATHS_HELP = (
+    " / ".join(SPEAKING_AUDIENCES) + f" / {DREAMER_PATH_PREFIX}<adaptor>"
+)
+
+
+def dreamer_path(adaptor: str) -> str:
+    """The `path` value for one Dreamer adaptor's run.
+
+    A function rather than an f-string at the call site so the prefix has one
+    spelling: `nora.agent.dreamer` writes the row and
+    `nora.obs.metric_specs` renders the help text, and a reader filtering on
+    `path LIKE 'dreamer:%'` depends on those two agreeing.
+    """
+    return f"{DREAMER_PATH_PREFIX}{adaptor}"
 
 
 class NaiveReasoningStripDatetimeError(ValueError):
@@ -94,12 +169,21 @@ def ensure_utc(value: datetime) -> datetime:
 class ReasoningStripObservation:
     """One multi-turn agent invocation, as the transport saw it.
 
-    `path` is which loop ran: `"tag"`, `"participation"`, or
-    `"dreamer:<adaptor>"`. It is a free `str` rather than a `Literal` because
+    `path` is which loop ran: one of `nora.domain.audience.SPEAKING_AUDIENCES`
+    (`tag`, `heartbeat`, `participation`, `proactive`) or
+    `dreamer:<adaptor>`. It is a free `str` rather than a `Literal` because
     the Dreamer half of the vocabulary is the ADAPTOR REGISTRY — a closed set
     here would have to be edited every time an adaptor lands, and would be
     wrong in the interval, which is the failure mode a `Literal` is supposed to
-    prevent.
+    prevent. The other half IS closed and is `SPEAKING_AUDIENCES`, imported
+    rather than restated: this docstring's first version listed three of the
+    four and `heartbeat` was already being written.
+
+    **`proactive` and `dreamer:proactive` are two different loops sharing a
+    word.** The first is a `kind="proactive"` reminder coming due — a turn that
+    may speak into a room. The second is the Dreamer's proactive ADAPTOR, a
+    background research pass that holds no act verb at all. Filtering one and
+    reading it as the other is the mistake this note exists to prevent.
 
     `strip_calls <= continuation_calls <= model_calls` holds by construction in
     `nora.agent.reasoning_strip.ReasoningStripWatch`; it is asserted rather

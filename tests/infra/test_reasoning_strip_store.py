@@ -204,6 +204,32 @@ async def test_the_database_refuses_strips_with_no_blocks(
         await store.record_observation(_observation(stripped_blocks=0))
 
 
+async def test_the_database_refuses_a_negative_numerator(
+    store: SqlReasoningStripStore,
+) -> None:
+    """`sum(strip_calls) / sum(continuation_calls)` is the whole product of
+    this table, and a negative numerator corrupts it silently — it does not
+    look wrong in any single row, it just makes the total smaller. The
+    constraint's own comment claims the counts are «refused at the database
+    rather than trusted from the writer»; until this clause it trusted the
+    writer on the sign."""
+    with pytest.raises(IntegrityError):
+        await store.record_observation(
+            _observation(strip_calls=-1, stripped_blocks=1)
+        )
+
+
+async def test_the_database_refuses_an_empty_tag_id(
+    store: SqlReasoningStripStore,
+) -> None:
+    """NULL is «this path has no tag»; "" is a writer that lost the tag and did
+    not say so. Five places state NULL-not-empty-string, and until this clause
+    the database accepted the empty one — a rule stated everywhere and enforced
+    nowhere, which is the shape that rots."""
+    with pytest.raises(IntegrityError):
+        await store.record_observation(_observation(tag_id=""))
+
+
 async def test_a_naive_timestamp_is_refused_before_it_reaches_the_database(
     store: SqlReasoningStripStore,
 ) -> None:
@@ -252,3 +278,28 @@ async def test_the_rate_is_computable_from_the_table_alone(
         rows = (await conn.execute(stmt)).all()
     rate = {r.path: (int(r.strips), int(r.chances)) for r in rows}
     assert rate == {"dreamer:culture": (0, 6), "tag": (4, 4)}
+
+
+async def test_stripped_blocks_separates_how_much_from_how_often(
+    store: SqlReasoningStripStore, engine: Any
+) -> None:
+    """The column `docs/runbook.md` §6d reads beside the rate, and the only one
+    that can answer «how much reasoning was lost».
+
+    `strip_calls` counts REQUESTS the transport stripped; `stripped_blocks`
+    counts the DISTINCT blocks lost. Two strips of one block (a short loop
+    re-sending the same reasoning) and two strips of two blocks (a loop that
+    reasoned twice and lost both) are different amounts of thinking thrown
+    away, and until this query existed the column had no reader at all."""
+    await store.record_observation(_observation(strip_calls=2, stripped_blocks=1))
+    await store.record_observation(_observation(strip_calls=2, stripped_blocks=2))
+    stmt = sa.select(
+        sa.func.sum(REASONING_STRIP_LOG.c.strip_calls),
+        sa.func.sum(REASONING_STRIP_LOG.c.stripped_blocks),
+    )
+    async with engine.connect() as conn:
+        strips, blocks = (await conn.execute(stmt)).one()
+    assert (int(strips), int(blocks)) == (4, 3), (
+        "the two columns have collapsed into one number — `stripped_blocks` "
+        "can no longer tell one block dropped twice from two blocks dropped"
+    )

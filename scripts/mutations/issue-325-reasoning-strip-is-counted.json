@@ -87,8 +87,8 @@
   {
     "name": "a failed write is counted, never raised into the turn",
     "file": "nora/agent/reasoning_strip.py",
-    "old": "        try:\n            await self._store.record_observation(observation)\n            self._metrics.inc(\"nora_reasoning_strip_writes_total\", outcome=\"ok\")\n        except Exception:\n            log.exception(\"ReasoningStripWatch write failed; ignoring\")\n            self._metrics.inc(\"nora_reasoning_strip_writes_total\", outcome=\"failed\")",
-    "new": "        await self._store.record_observation(observation)\n        self._metrics.inc(\"nora_reasoning_strip_writes_total\", outcome=\"ok\")",
+    "old": "            await asyncio.wait_for(\n                self._store.record_observation(observation),\n                timeout=self._write_timeout_seconds,\n            )\n            outcome = \"ok\"\n        except Exception:\n            log.exception(\"ReasoningStripWatch write failed; ignoring\")",
+    "new": "            await asyncio.wait_for(\n                self._store.record_observation(observation),\n                timeout=self._write_timeout_seconds,\n            )\n            outcome = \"ok\"\n        except ValueError:\n            log.exception(\"ReasoningStripWatch write failed; ignoring\")",
     "target": "tests/unit/test_reasoning_strip_probe.py -k test_a_store_that_raises_costs_the_turn_nothing"
   },
   {
@@ -144,5 +144,90 @@
     "old": "    if value.tzinfo is None:\n        raise NaiveReasoningStripDatetimeError(\n            \"created_at must be timezone-aware; got a naive datetime\"\n        )\n    return value.astimezone(UTC)",
     "new": "    return value.astimezone(UTC)",
     "target": "tests/infra/test_reasoning_strip_store.py -k test_a_naive_timestamp_is_refused_before_it_reaches_the_database"
+  },
+  {
+    "name": "THE BLOCKER: the row write is BOUNDED inside the held slot",
+    "comment": "Round four of a defect this repo has fixed twice. A wedged Postgres does not raise — it does not ANSWER — so `except Exception` is no defence and the conversation's slot is held until the await returns. The target's own outer `wait_for` is what makes this RED rather than a hang, which would stop the sweep instead of reporting on it.",
+    "file": "nora/agent/reasoning_strip.py",
+    "old": "            await asyncio.wait_for(\n                self._store.record_observation(observation),\n                timeout=self._write_timeout_seconds,\n            )",
+    "new": "            await self._store.record_observation(observation)",
+    "target": "tests/unit/test_reasoning_strip_watch.py -k test_a_wedged_store_does_not_hold_the_conversation_slot"
+  },
+  {
+    "name": "the architecture control can SEE the reasoning-strip write",
+    "comment": "The half that stops a fifth instance. The gate walked one module and its docstring claimed that module held the only unbounded slot-held await in the repo; this PR's first draft falsified the sentence and the gate stayed green. Dropping the registry entry must redden the control's own positive control, not the bounded-ness assertion.",
+    "file": "tests/architecture/test_slot_held_awaits_are_bounded.py",
+    "old": "    _Module(\n        \"reasoning_strip\", reasoning_strip, frozenset({\"flush\"}), \"init\",\n    ),",
+    "new": "",
+    "target": "tests/architecture/test_slot_held_awaits_are_bounded.py -k test_the_validator_can_see_the_calls_it_is_checking"
+  },
+  {
+    "name": "an unreadable provenance never overwrites a readable one",
+    "comment": "R-27 applied to provenance. `_model_identity` answers ('', '') for four distinct conditions; overwriting unconditionally let a transient read failure on the LAST call erase a good read from the first.",
+    "file": "nora/agent/reasoning_strip.py",
+    "old": "            if model:\n                self._model = model\n            if effort:\n                self._reasoning_effort = effort",
+    "new": "            self._model = model\n            self._reasoning_effort = effort",
+    "target": "tests/unit/test_reasoning_strip_watch.py -k test_a_later_unreadable_provenance_does_not_erase_an_earlier_read"
+  },
+  {
+    "name": "an impossible row is refused under its own name, not as `failed`",
+    "comment": "`failed` is also what a database blip gives. Letting the CHECK refuse it instead surfaces as an IntegrityError counted `failed` — the one confusion this outcome exists to end.",
+    "file": "nora/agent/reasoning_strip.py",
+    "old": "                outcome = \"impossible\"\n                return",
+    "new": "                return",
+    "target": "tests/unit/test_reasoning_strip_watch.py -k test_an_impossible_row_is_refused_and_named_as_such"
+  },
+  {
+    "name": "a turn with no opportunity moves no write counter",
+    "comment": "Without this the `finally` records `failed` for every single-call turn in the system, on the one series that says the record has gone blind.",
+    "file": "nora/agent/reasoning_strip.py",
+    "old": "            if observation is None:\n                outcome = None\n                return",
+    "new": "            if observation is None:\n                return",
+    "target": "tests/unit/test_reasoning_strip_watch.py -k test_a_turn_with_no_opportunity_moves_no_write_counter"
+  },
+  {
+    "name": "the write counter is recorded on every exit, guarded",
+    "comment": "`flush` runs PAST the stage's own `except`, so an exception from `Metrics.inc` (KeyError on an undeclared name) lands on a turn that was supposed to be costless. The mutation removes the recording entirely.",
+    "file": "nora/agent/reasoning_strip.py",
+    "old": "                if outcome is not None:\n                    self._metrics.inc(\n                        \"nora_reasoning_strip_writes_total\", outcome=outcome,\n                    )",
+    "new": "                pass",
+    "target": "tests/unit/test_reasoning_strip_probe.py -k test_a_store_that_raises_costs_the_turn_nothing"
+  },
+  {
+    "name": "`path`'s vocabulary is DERIVED, so heartbeat and proactive are in it",
+    "comment": "The help text, the migration, the runbook and the ADR all documented three of the five shapes `path` was already storing, because the set was hand-written beside a derived one.",
+    "file": "nora/domain/audience.py",
+    "new": "SpeakingAudience = Literal[\"tag\", \"participation\"]",
+    "old": "SpeakingAudience = Literal[\"tag\", \"heartbeat\", \"participation\", \"proactive\"]",
+    "target": "tests/unit/test_reasoning_strip_watch.py -k test_every_speaking_audience_is_a_path_this_watch_accepts"
+  },
+  {
+    "name": "the tag path passes the NAMED audience, not a literal",
+    "file": "nora/engagement/pipeline.py",
+    "old": "                terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,\n                audience=audience_names.TAG,",
+    "new": "                terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,\n                audience=\"tagg\",",
+    "target": "tests/unit/test_reasoning_strip_probe.py -k test_every_audience_deliver_build_can_be_given_reaches_the_row"
+  },
+  {
+    "name": "the budget-exhaustion draft is counted into the same row",
+    "comment": "A DECISION rather than an accident: the draft is a second `invoke_async` whose request carries the accumulated reasoning and genuinely loses it. The mutation flushes before the draft can run, which is what excluding it would look like.",
+    "file": "nora/engagement/stages/invoke.py",
+    "old": "    if reasoning_watch is not None:\n        await reasoning_watch.flush()",
+    "new": "    if reasoning_watch is not None:\n        reasoning_watch._model_calls = min(reasoning_watch._model_calls, 2)\n        reasoning_watch._continuation_calls = min(\n            reasoning_watch._continuation_calls, 1)\n        reasoning_watch._strip_calls = min(reasoning_watch._strip_calls, 1)\n        await reasoning_watch.flush()",
+    "target": "tests/unit/test_reasoning_strip_probe.py -k test_the_budget_exhaustion_draft_is_counted_into_the_same_row"
+  },
+  {
+    "name": "the database refuses a negative numerator",
+    "file": "nora/infra/sql/migrations/versions/0057_reasoning_strip_log.py",
+    "old": "            \"AND strip_calls >= 0 \"\n            \"AND strip_calls <= continuation_calls \"",
+    "new": "            \"AND strip_calls <= continuation_calls \"",
+    "target": "tests/infra/test_reasoning_strip_store.py -k test_the_database_refuses_a_negative_numerator"
+  },
+  {
+    "name": "the database refuses an empty tag_id",
+    "file": "nora/infra/sql/migrations/versions/0057_reasoning_strip_log.py",
+    "old": "        sa.CheckConstraint(\n            \"tag_id IS NULL OR tag_id <> ''\",\n            name=\"ck_reasoning_strip_log_tag_id_not_empty\",\n        ),",
+    "new": "",
+    "target": "tests/infra/test_reasoning_strip_store.py -k test_the_database_refuses_an_empty_tag_id"
   }
 ]

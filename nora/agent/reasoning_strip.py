@@ -40,6 +40,7 @@ it is judged against the formatter's own output, never against itself.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
@@ -64,6 +65,29 @@ def _utc_now() -> datetime:
     which pulls the whole tool surface in behind it for one function."""
     return datetime.now(UTC)
 
+
+#: How long ONE row's INSERT may take before it is abandoned.
+#:
+#: **This is a slot-hold bound, not a tuning knob, and the rule is fifty lines
+#: from the call site that needed it** (`nora.app.fire.FirePath.__init__`,
+#: `standing_store_timeout_seconds`): the conversation's slot is held around
+#: the whole turn, `create_sql_engine` sets no `command_timeout` and nora sets
+#: no `statement_timeout`, so an unbounded store await here wedges the room —
+#: not with an error, which `except Exception` would catch, but with silence,
+#: which it cannot. That defect has now been found three times in this repo:
+#: `debrief.run`, then re-created on the fire path in the same change that
+#: fixed it, then here (audit, 2026-09-17).
+#:
+#: Two seconds because the work is one INSERT of ten small columns into a
+#: table with one index. A value sized for a query that should take single-digit
+#: milliseconds is a bound, not a budget: if it ever binds, the database is
+#: wedged and the right outcome is to lose the row rather than the room.
+#:
+#: NOT a config key. `nora.agent` may not import `nora.config`, and a knob
+#: nobody turns is a second thing to keep consistent with the timeout it has to
+#: fit inside. Injectable through `__init__` for the test seam, like every
+#: other collaborator here.
+DEFAULT_WRITE_TIMEOUT_SECONDS = 2.0
 
 #: The content-block key the Chat Completions formatter refuses to carry.
 #: ONE spelling, read by the detector and by the contract test that pins the
@@ -154,12 +178,14 @@ class ReasoningStripWatch(HookProvider):
         tag_id: str | None = None,
         store: Any = None,
         clock: Callable[[], datetime] | None = None,
+        write_timeout_seconds: float = DEFAULT_WRITE_TIMEOUT_SECONDS,
     ) -> None:
         self._path = path
         self._metrics = metrics
         self._tag_id = tag_id
         self._store = store
         self._clock = clock
+        self._write_timeout_seconds = write_timeout_seconds
         # Calls that COMPLETED, not attempts — `ReplyGuard._after_model`'s rule
         # and for its reason: `BeforeModelCallEvent` fires inside the retry
         # loop, so an attempt that raised is the SAME call re-entered, not the
@@ -196,7 +222,20 @@ class ReasoningStripWatch(HookProvider):
                 return
             agent = getattr(event, "agent", None)
             messages = getattr(agent, "messages", None) or []
-            self._model, self._reasoning_effort = _model_identity(agent)
+            model, effort = _model_identity(agent)
+            # **`unavailable` never overwrites `available`** (R-27's rule,
+            # applied to provenance). `_model_identity` answers `("", "")` for
+            # four distinct conditions — no model, no `get_config`, a config
+            # that raised, a config missing the keys — and all four land in a
+            # NOT NULL TEXT column as the same empty string. Overwriting
+            # unconditionally meant a transient read failure on the LAST call
+            # of a turn erased a good read from the first, turning a known
+            # model into an unknown one with nothing reporting the
+            # substitution. Only a real reading replaces a real reading.
+            if model:
+                self._model = model
+            if effort:
+                self._reasoning_effort = effort
             self._pending = (len(messages), reasoning_blocks(messages))
         except Exception:
             log.exception("ReasoningStripWatch._before_model raised; ignoring")
@@ -242,10 +281,14 @@ class ReasoningStripWatch(HookProvider):
                     # Structurally unreachable today — a `reasoningContent`
                     # block can only enter `agent.messages` from a model answer
                     # this loop received, and `nora.agent.prefill` builds plain
-                    # text. Said out loud rather than clamped away: the row it
-                    # produces carries `strip_calls > continuation_calls`,
-                    # which is a shape no correct reading can explain, and that
-                    # is exactly what should reach whoever looks.
+                    # text. Counted anyway rather than clamped away, because a
+                    # clamp would make the impossible look ordinary; the row it
+                    # would produce carries `strip_calls > continuation_calls`,
+                    # `flush` refuses to write it, and the write counter
+                    # records `impossible` rather than `failed`. THIS LINE is
+                    # the channel that reaches a reader — an earlier version of
+                    # this comment claimed the ROW was, which the table's own
+                    # CHECK made untrue.
                     log.warning(
                         "reasoning_strip: the FIRST model call of a %s turn "
                         "already carried %d reasoning block(s) — the prefill, "
@@ -288,22 +331,75 @@ class ReasoningStripWatch(HookProvider):
         )
 
     async def flush(self) -> None:
-        """Write the row, once, and never at the cost of the turn.
+        """Write the row, once, BOUNDED, and never at the cost of the turn.
+
+        **The bound is the point, and it is why this method is not one line.**
+        Every caller awaits this while the conversation's slot is held, and
+        `release_and_dispatch` cannot run until it returns — so an unbounded
+        store await here is a room that stops answering, with arriving tags
+        queued or shed (`nora_tags_dropped_total{reason="in_flight"}`) and
+        heartbeat reminders deferred. `except Exception` is no defence: a
+        wedged Postgres does not raise, it does not ANSWER, and there is no
+        `command_timeout` on the engine and no `statement_timeout` on the
+        server. `asyncio.wait_for` is the only thing between the two.
+
+        The bound lives HERE rather than at the five call sites because the
+        store is reached from exactly one place, and five `wait_for`s with five
+        `except TimeoutError`s around them is five chances to write four of
+        them. `tests/architecture/test_slot_held_awaits_are_bounded.py` reads
+        this function and fails if the `wait_for` leaves it or loses its
+        timeout.
 
         Idempotent: a caller that flushes on both the happy path and an error
-        path writes one row. Exceptions are swallowed and counted — this is a
-        record of something that has already happened, and a failed write must
-        not become the reason a reply does not go out (`ToolCallLog`'s rule).
+        path writes one row, and the Dreamer flushes from three exits.
+
+        Everything is inside the `try`, including building the observation and
+        recording the counter — this runs past the stage's own `except`, so an
+        exception escaping here lands on the turn it was supposed to cost
+        nothing.
         """
         if self._flushed:
             return
         self._flushed = True
-        observation = self.observation
-        if observation is None or self._store is None:
+        if self._store is None:
             return
+        # `None` until there is something to report. A turn with no
+        # opportunity writes no row AND moves no write counter — recording
+        # a `failed` for it would put every single-call turn in the system
+        # on the one series that says the record has gone blind.
+        outcome: str | None = "failed"
         try:
-            await self._store.record_observation(observation)
-            self._metrics.inc("nora_reasoning_strip_writes_total", outcome="ok")
+            observation = self.observation
+            if observation is None:
+                outcome = None
+                return
+            if observation.strip_calls > observation.continuation_calls:
+                # Cannot come from the loop; the table's CHECK refuses it and
+                # would arrive as an `IntegrityError` indistinguishable from a
+                # database blip. Refused here instead, under its own name.
+                log.error(
+                    "reasoning_strip: refusing an impossible row (%s): "
+                    "strip_calls=%d > continuation_calls=%d",
+                    self._path, observation.strip_calls,
+                    observation.continuation_calls,
+                )
+                outcome = "impossible"
+                return
+            await asyncio.wait_for(
+                self._store.record_observation(observation),
+                timeout=self._write_timeout_seconds,
+            )
+            outcome = "ok"
         except Exception:
             log.exception("ReasoningStripWatch write failed; ignoring")
-            self._metrics.inc("nora_reasoning_strip_writes_total", outcome="failed")
+        finally:
+            try:
+                if outcome is not None:
+                    self._metrics.inc(
+                        "nora_reasoning_strip_writes_total", outcome=outcome,
+                    )
+            except Exception:
+                # The counter itself is the last thing that may take a turn
+                # down. `Metrics.inc` raises `KeyError` on an undeclared name,
+                # and this runs past the stage's own `except`.
+                log.exception("ReasoningStripWatch could not record its outcome")

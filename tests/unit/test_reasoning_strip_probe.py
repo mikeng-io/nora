@@ -28,6 +28,7 @@ from nora.agent.ports import ToolSpec, adapt
 from nora.agent.reasoning_strip import ReasoningStripWatch
 from nora.app.agent_runner import LiveAgentRunner
 from nora.doctrine.loader import Doctrine
+from nora.domain.audience import SPEAKING_AUDIENCES
 from nora.domain.models import ConversationTarget, NormalizedMessage, TagContext
 from nora.engagement.stages import deliver, invoke
 from nora.obs.metrics import Metrics
@@ -343,6 +344,66 @@ async def test_a_store_that_raises_costs_the_turn_nothing():
     assert metrics.get("nora_reasoning_strip_total", path="tag", outcome="stripped") == 2
 
 
+# ---- the unit of a row is the TURN, not one `invoke_async` ----------------
+
+
+async def test_the_budget_exhaustion_draft_is_counted_into_the_same_row():
+    """A DECISION, recorded here because the row it produces looks like a bug.
+
+    A turn cut off by one of R-8's caps with no prose gets one more completion
+    over its own accumulated context (#110,
+    `factory.draft_from_exhausted_loop`) — a SECOND `invoke_async` on the SAME
+    agent, with this watch still registered. Its request genuinely carries the
+    accumulated reasoning and the transport genuinely drops it.
+
+    So it is counted, and the stated unit of a row is the TURN rather than the
+    invocation. The alternative — excluding it — would under-report a real
+    strip on precisely the turns that had already run out of room, and would
+    need a second flush point to implement. The rate is unaffected either way:
+    numerator and denominator move together.
+
+    This is the population most likely to be inspected (a cut-off turn is why
+    somebody is looking), so the row's scope is pinned rather than left to be
+    rediscovered from a `model_calls` that does not match the loop.
+    """
+    metrics = Metrics()
+    store = _RecordingStore()
+    model = _ScriptedModel(reasons=True, tool_passes=99)
+    watch = ReasoningStripWatch(
+        path="tag", tag_id="tag-1", store=store, metrics=metrics,
+    )
+    deliverer = Deliverer(
+        store=_Store(), adapter=SinkSender(), target=TARGET, doctrine=_doctrine(),
+        canary="C", tag_id="tag-1", nora_sender_id="nora", message_cap=1,
+        audience="tag", metrics=metrics,
+    )
+    tool = adapt(ToolSpec(name="now", description="", schema={}, call=_now,
+                          budget=BUDGETS["now"]))
+    await invoke.run(
+        runner=LiveAgentRunner(models=FixedModelSource(model), retry=RETRY),
+        doctrine=_doctrine(), tools=[tool], pre_fill=[],
+        guard=ReplyGuard(conversation_id="g1", budgets=BUDGETS,
+                         terminal=frozenset(), deliverer=deliverer,
+                         metrics=metrics),
+        reasoning_watch=watch,
+        tag_message="<tag_message/>", ctx=_ctx(),
+        limits={"turns": 2, "output_tokens": 12_000, "total_tokens": 64_000},
+        timeout_seconds=30.0, metrics=metrics, audience="tag",
+    )
+
+    assert model.calls == 3, (
+        "the loop was not cut off, or the budget draft did not fire — this "
+        "probe is about the third call and there isn't one"
+    )
+    (row,) = store.rows
+    assert row.model_calls == 3, (
+        "the draft's model call is missing from the row: the unit has "
+        "silently become one `invoke_async` again"
+    )
+    assert row.continuation_calls == 2
+    assert row.strip_calls == 2
+
+
 # ---- the wiring: both production senders carry one, labelled ---------------
 
 
@@ -358,6 +419,21 @@ def _handle(*, audience: str, store: Any):
         terminal={"send_reply"}, metrics=Metrics(), audience=audience,
         composer=None, reasoning_strip_store=store,
     )
+
+
+def test_every_audience_deliver_build_can_be_given_reaches_the_row():
+    """`path` IS `audience`, and the vocabulary is the declared one.
+
+    Parametrized over `SPEAKING_AUDIENCES` rather than over a list written
+    here: the first version of this instrument tested `tag` and
+    `participation` and documented only those two, while `fire.py` was already
+    sending `heartbeat` (every reminder and gathering turn — tool-using and
+    multi-turn) and `proactive`. A dashboard filtered off the documentation
+    dropped the reminder path in silence.
+    """
+    for audience in SPEAKING_AUDIENCES:
+        handle = _handle(audience=audience, store=None)
+        assert handle.reasoning_watch._path == audience
 
 
 def test_the_participation_occasion_labels_its_rows_participation():

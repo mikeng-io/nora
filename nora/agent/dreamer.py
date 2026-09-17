@@ -91,6 +91,7 @@ from ..domain.ports import (
     Proposal,
     RosterSource,
 )
+from ..domain.reasoning_strip import dreamer_path
 from ..obs.metrics import Metrics
 from ..obs.tracing import TRACE_KIND, annotate, span
 from . import factory
@@ -1669,7 +1670,7 @@ class DreamerRuntime:
         # answer; `tag_id` stays None because a Dreamer run has no tag, and the
         # column is nullable so the absence can be recorded as an absence.
         watch = ReasoningStripWatch(
-            path=f"dreamer:{adaptor.name}",
+            path=dreamer_path(adaptor.name),
             store=self._reasoning_strip_store,
             metrics=self._metrics,
         )
@@ -1720,6 +1721,13 @@ class DreamerRuntime:
         # task re-raises out of the cleanup path, and a record of something that
         # has already happened must never change how a run ends. `flush` is
         # idempotent.
+        #
+        # BOUNDED INSIDE `flush`, for `_bounded_store_call`'s reason one method
+        # over: a dream run holds its unit and a wedged store does not raise.
+        # This one is NOT inside `store_bound_for`'s arithmetic -- it is not an
+        # adaptor store phase and carries its own, smaller, bound
+        # (`ReasoningStripWatch.DEFAULT_WRITE_TIMEOUT_SECONDS`), because one
+        # INSERT is not a render's worth of reads.
         await watch.flush()
         stop_reason = getattr(result, "stop_reason", None)
         if stop_reason is not None:

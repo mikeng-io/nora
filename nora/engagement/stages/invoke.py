@@ -209,6 +209,16 @@ async def run(
     # never be the reason a turn ends differently. A turn cancelled outright
     # therefore writes nothing, which is stated rather than hidden.
     #
+    # BOUNDED INSIDE `flush` (`ReasoningStripWatch.DEFAULT_WRITE_TIMEOUT_SECONDS`),
+    # and that is not optional here: this runs with the conversation's slot
+    # held, `release_and_dispatch` cannot run until it returns, and a wedged
+    # Postgres does not raise — it does not answer, which no `except` can see.
+    # The repo has now paid for this three times (`debrief.run`, then the fire
+    # path in the same change that fixed it, then here); `fire.py`'s
+    # `standing_store_timeout_seconds` states the rule and
+    # `tests/architecture/test_slot_held_awaits_are_bounded.py` is what keeps
+    # the `wait_for` inside `flush`.
+    #
     # `flush` is idempotent, swallows its own exceptions and no-ops when the
     # loop never went multi-turn (`nora.agent.reasoning_strip`), so this line
     # is safe on every path through the stage.

@@ -16,9 +16,13 @@ that answers everything the same way measures nothing.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
+import pytest
+
 from nora.agent.reasoning_strip import ReasoningStripWatch
+from nora.domain.audience import SPEAKING_AUDIENCES
 from nora.obs.metrics import Metrics
 
 REASONING = {"reasoningContent": {"reasoningText": {"text": "thinking"}}}
@@ -248,3 +252,202 @@ async def test_the_dreamer_path_records_the_adaptor_by_name():
     (row,) = store.rows
     assert row.path == "dreamer:culture"
     assert row.tag_id is None
+
+
+# ---- the bound: a wedged store must not hold the slot ----------------------
+
+
+class _WedgedStore:
+    """A database that does not answer. NOT one that raises — an exception is
+    the harmless case (`except Exception` catches it, the turn completes in
+    milliseconds, `writes_total{failed}` moves). The hazard is silence, and no
+    `except` can see it."""
+
+    def __init__(self) -> None:
+        self.entered = asyncio.Event()
+
+    async def record_observation(self, observation: Any) -> None:
+        self.entered.set()
+        await asyncio.Event().wait()          # forever
+
+
+async def _watch_with_one_opportunity(store: Any, **kwargs: Any):
+    watch = ReasoningStripWatch(
+        path="tag", store=store, metrics=Metrics(), **kwargs,
+    )
+    agent = _Agent([])
+    _first_call(agent)
+    watch._before_model(_Before(agent))
+    watch._after_model(_After(agent))
+    _continuation(agent)
+    watch._before_model(_Before(agent))
+    watch._after_model(_After(agent))
+    return watch
+
+
+async def test_a_wedged_store_does_not_hold_the_conversation_slot():
+    """THE BLOCKER'S TEST (#325, review 2026-09-17).
+
+    Every caller awaits `flush` with the conversation's slot held, and
+    `release_and_dispatch` cannot run until it returns. `create_sql_engine`
+    sets no `command_timeout` and nora sets no `statement_timeout`, so without
+    the `wait_for` inside `flush` this await has NO bound at all — and the
+    failure is a room that stops answering, not an exception anybody catches.
+
+    The outer `wait_for` here is the assertion: remove the inner one and this
+    test does not hang, it goes RED with `TimeoutError`. A test that could hang
+    is a test that stops a mutation sweep rather than reporting on it.
+    """
+    store = _WedgedStore()
+    watch = await _watch_with_one_opportunity(store, write_timeout_seconds=0.05)
+
+    await asyncio.wait_for(watch.flush(), timeout=2.0)
+
+    assert store.entered.is_set(), (
+        "the store was never reached — this probe passed without exercising "
+        "the bound it exists to check"
+    )
+
+
+async def test_a_wedged_store_is_counted_as_a_failed_write():
+    """And the abandoned row is REPORTED, not merely dropped. A record that
+    goes blind with no series moving is the defect this whole PR is about, one
+    level down."""
+    metrics = Metrics()
+    watch = ReasoningStripWatch(
+        path="tag", store=_WedgedStore(), metrics=metrics,
+        write_timeout_seconds=0.05,
+    )
+    agent = _Agent([])
+    _first_call(agent)
+    watch._before_model(_Before(agent))
+    watch._after_model(_After(agent))
+    _continuation(agent)
+    watch._before_model(_Before(agent))
+    watch._after_model(_After(agent))
+
+    await asyncio.wait_for(watch.flush(), timeout=2.0)
+
+    assert metrics.get("nora_reasoning_strip_writes_total", outcome="failed") == 1
+    assert metrics.get("nora_reasoning_strip_writes_total", outcome="ok") == 0
+
+
+# ---- R-27: unavailable must not overwrite available ------------------------
+
+
+class _FlakyModel:
+    """Readable once, then not — a transient config read failure on a later
+    call of the same turn."""
+
+    def __init__(self) -> None:
+        self.reads = 0
+
+    def get_config(self) -> Any:
+        self.reads += 1
+        if self.reads == 1:
+            return {"model_id": "nora", "params": {"reasoning_effort": "low"}}
+        raise RuntimeError("config read failed")
+
+
+async def test_a_later_unreadable_provenance_does_not_erase_an_earlier_read():
+    """R-27's rule applied to provenance: `unavailable` never overwrites
+    `available`.
+
+    `_model_identity` answers `("", "")` for four distinct conditions and all
+    four land in a NOT NULL TEXT column as the same empty string. Overwriting
+    unconditionally meant one failed read on the LAST call of a turn silently
+    turned a known model into an unknown one — on the two columns an operator
+    uses to decide whether a clean row means «healthy» or «impossible»."""
+    agent = _Agent([])
+    agent.model = _FlakyModel()  # type: ignore[assignment]
+    store = _Store()
+    watch = ReasoningStripWatch(path="tag", store=store, metrics=Metrics())
+
+    _first_call(agent)
+    watch._before_model(_Before(agent))
+    watch._after_model(_After(agent))
+    _continuation(agent)
+    watch._before_model(_Before(agent))
+    watch._after_model(_After(agent))
+    await watch.flush()
+
+    (row,) = store.rows
+    assert (row.model, row.reasoning_effort) == ("nora", "low"), (
+        "a transient provenance read failure erased a good earlier read"
+    )
+
+
+# ---- the impossible row is refused under its own name ----------------------
+
+
+async def test_an_impossible_row_is_refused_and_named_as_such():
+    """`strip_calls > continuation_calls` cannot come from the loop — it would
+    mean the reasoning arrived from the PREFILL. The table's CHECK refuses it,
+    and letting it get that far would surface as an `IntegrityError` counted
+    `failed`: the same signal a wedged or restarting database gives.
+
+    So it is refused here, before the write, under `impossible`. An earlier
+    version of this module claimed such a row «should reach whoever looks»,
+    which the CHECK made untrue — two documents disagreeing about the same
+    row."""
+    metrics = Metrics()
+    store = _Store()
+    watch = ReasoningStripWatch(path="tag", store=store, metrics=metrics)
+    # Reach past the hooks: this state is unreachable through them, which is
+    # the point — the guard exists for a writer that has drifted, and a test
+    # that could only build it through the writer could not test the guard.
+    watch._model_calls, watch._continuation_calls = 2, 1
+    watch._strip_calls, watch._stripped_blocks = 2, 2
+
+    await watch.flush()
+
+    assert store.rows == [], "an arithmetically impossible row reached the store"
+    assert metrics.get("nora_reasoning_strip_writes_total", outcome="impossible") == 1
+    assert metrics.get("nora_reasoning_strip_writes_total", outcome="failed") == 0, (
+        "an impossible row reported as `failed` is indistinguishable from a "
+        "database blip, which is the one confusion this outcome exists to end"
+    )
+
+
+async def test_a_turn_with_no_opportunity_moves_no_write_counter():
+    """A single-call turn writes no row AND reports no write. Counting it
+    `failed` would put every such turn in the system on the one series that
+    says the record has gone blind."""
+    metrics = Metrics()
+    watch = ReasoningStripWatch(path="tag", store=_Store(), metrics=metrics)
+    agent = _Agent([])
+    _first_call(agent)
+    watch._before_model(_Before(agent))
+    watch._after_model(_After(agent))
+
+    await watch.flush()
+
+    for outcome in ("ok", "failed", "impossible"):
+        assert metrics.get(
+            "nora_reasoning_strip_writes_total", outcome=outcome) == 0
+
+
+@pytest.mark.parametrize("path", list(SPEAKING_AUDIENCES))
+async def test_every_speaking_audience_is_a_path_this_watch_accepts(path: str):
+    """`heartbeat` and `proactive` reach `path` through `deliver.build`'s
+    `audience`, and the first version of this instrument documented neither —
+    the metric help text, the migration, the runbook and the ADR all said
+    «tag / participation / dreamer:<adaptor>» while `fire.py` was sending four
+    values. Anyone filtering a dashboard off that sentence dropped the reminder
+    path in silence.
+
+    Parametrized over the DECLARED set rather than a list written here, so a
+    fifth audience cannot arrive untested."""
+    store = _Store()
+    watch = ReasoningStripWatch(path=path, store=store, metrics=Metrics())
+    agent = _Agent([])
+    _first_call(agent)
+    watch._before_model(_Before(agent))
+    watch._after_model(_After(agent))
+    _continuation(agent)
+    watch._before_model(_Before(agent))
+    watch._after_model(_After(agent))
+    await watch.flush()
+
+    (row,) = store.rows
+    assert row.path == path

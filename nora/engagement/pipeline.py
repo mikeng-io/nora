@@ -89,6 +89,7 @@ from nora.agent.prefill import (
 )
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
+from nora.domain import audience as audience_names
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.ports import (
     EngagementRequest,
@@ -678,7 +679,7 @@ class EngagementPipeline:
                 conversation_id=msg.conversation_id,
                 budgets=self._tool_registry.budgets(allowed_mcp=allowed_mcp),
                 terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,
-                audience="tag",
+                audience=audience_names.TAG,
                 cacheable_tools=self._tool_registry.cacheable_tools(),
                 tool_call_log_store=self._tool_call_log_store,
                 reasoning_strip_store=self._reasoning_strip_store,
@@ -781,10 +782,14 @@ class EngagementPipeline:
                     reasoning_watch=handle.reasoning_watch,
                     tag_message=tag_message, limits=self._limits, ctx=ctx,
                     timeout_seconds=self._timeout_seconds, metrics=self._metrics,
-                    # This pipeline IS the tag path; the literal stays at the
-                    # call site rather than as a default so an omitted one
-                    # cannot compile (the A8 filter is `audience="tag"`).
-                    audience="tag",
+                    # This pipeline IS the tag path; the NAME stays at the
+                    # call site rather than becoming a default so an omitted
+                    # one cannot compile (the A8 filter is `audience="tag"`).
+                    # It is `nora.domain.audience.TAG` rather than a literal
+                    # since 2026-09-17: `reasoning_strip_log.path` reads the
+                    # same vocabulary, and it shipped documenting four of the
+                    # values and carrying five.
+                    audience=audience_names.TAG,
                 )
                 # Inside the `with`, so it lands on the invoke span rather than
                 # on the turn: `ok` and `stop_reason` are what this stage

@@ -2549,8 +2549,10 @@ TAG_DEBOUNCE_STATE = sa.Table(
 # that reasoned fine (issue #325, migration 0057, ADR 0013).
 #
 # **THE ROW CARRIES ITS OWN DENOMINATOR.** `continuation_calls` is how many
-# model calls in that invocation could have been stripped — a call made with a
-# prior assistant turn already in the list — and `strip_calls` is how many were.
+# model calls in that TURN could have been stripped — every call after the
+# first — and `strip_calls` is how many were. «After the first», not «with a
+# prior assistant message»: every tag prefill carries one, and it holds no
+# `reasoningContent` to lose.
 # A count without the denominator answers nothing: two strips in two hours is a
 # catastrophe at two opportunities and a rounding error at two hundred, and the
 # production reading that opened #325 had no way to tell which it was.
@@ -2560,9 +2562,11 @@ TAG_DEBOUNCE_STATE = sa.Table(
 # nothing to either half of the ratio, and admitting it would make this a log of
 # every model call in the system rather than a census of the calls at risk.
 #
-# `model` and `reasoning_effort` are read off the MODEL PROVIDER at the moment
-# of the call, not from config, because the question this table exists to make
-# cheap is «did this move when something else did». `reasoning_effort = 'none'`
+# `reasoning_effort` is read off the MODEL PROVIDER at the moment of the call,
+# not from config, because the question this table exists to make cheap is «did
+# this move when something else did». `model` is the OmniRoute ALIAS and
+# CANNOT see a combo repoint — the served model id does not reach this seam at
+# all; see the migration's docstring for why the column stays anyway. `reasoning_effort = 'none'`
 # is why the column is not optional: a path emitting no reasoning cannot be
 # stripped, so zero strips there means IMPOSSIBLE, not healthy, and without this
 # column the two readings are the same number.
@@ -2603,10 +2607,17 @@ REASONING_STRIP_LOG = sa.Table(
     sa.CheckConstraint(
         "continuation_calls >= 1 "
         "AND continuation_calls <= model_calls "
+        "AND strip_calls >= 0 "
         "AND strip_calls <= continuation_calls "
         "AND stripped_blocks >= 0 "
         "AND ((strip_calls = 0) = (stripped_blocks = 0))",
         name="ck_reasoning_strip_log_counts",
+    ),
+    # NULL is the answer for a Dreamer run; "" is a writer that lost the tag
+    # and did not say so.
+    sa.CheckConstraint(
+        "tag_id IS NULL OR tag_id <> ''",
+        name="ck_reasoning_strip_log_tag_id_not_empty",
     ),
 )
 
