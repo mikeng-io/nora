@@ -49,8 +49,21 @@ __all__ = [
     "trailing_fix_is_settled",
 ]
 
-# The observed 1800s still-ceiling (config.toml's cadence_still_seconds)
-# plus slack (spec §3.3, design/27 §1.1).
+# The observed 1800 s still-ceiling plus slack (spec §3.3, design/27 §1.1).
+#
+# The ceiling is LIFE360's own resting report cadence, NOT Nora's poll interval.
+# This comment used to cite `config.toml`'s `cadence_still_seconds` as the
+# source; that value is 60 in the deployment and 300 by default and has never
+# been 1800, so the citation was wrong and load-bearingly so — since PR #335
+# this constant is also the OPEN-STAY CLOSE GATE (`MobilityRollup.run_once`),
+# and anyone "correcting" it to track `cadence_still_seconds` would set it near
+# 60 s and recreate the fragmentation design/27 §1.3 records: 3,132 stays at a
+# 30 min median where a clean re-derive gives 1,399 at 65 min.
+#
+# The number is bounded by measurement, not by config: inter-fix gaps between
+# two fixes of ONE stay run p90 1,805 s / p99 1,828 s over 41 live days, so
+# 1,900 s sits ~1.2 min above the p99 and closes a stay on the clock for 0.61%
+# of within-stay gaps. Re-measure that distribution before moving it.
 DWELL_CAP_MS = 1_900_000
 
 # The batch-split threshold for `_chunk_by_gap` (rollup Speed 1) — how long a
