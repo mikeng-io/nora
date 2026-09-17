@@ -103,5 +103,3 @@ RELEVANCE_GATE_TASK.md
 # this repo" invariant intact.
 deploy/voice-wake/tests/fixtures/seam_frames.bin
 
-# local experiment cache (feature arrays, seeds, generated audio); not for git
-.lab-cache/
