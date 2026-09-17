@@ -83,6 +83,7 @@ from nora.agent.prefill import (
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.doctrine.loader import DoctrineStore
+from nora.domain import audience as audience_names
 from nora.domain.blocks import RowStyle, render_rows
 from nora.domain.compute import ComputeJob
 from nora.domain.decision_log import (
@@ -145,7 +146,7 @@ log = logging.getLogger("nora.app.fire")
 # takes it. A8 (`docs/runbook.md`) filters on `audience="tag"`, so a fire-turn
 # failure recorded without this would be charged to a <1% budget whose
 # denominator counts only tags.
-AUDIENCE = "heartbeat"
+AUDIENCE = audience_names.HEARTBEAT
 
 # §8.1's four outcomes. The heartbeat derives the ROW's terminal state from the
 # string (`_state_for`: only `sent` is DONE), so these are not log text —
@@ -197,7 +198,7 @@ FAILED_ERROR = "failed_error"
 # the §6 healthy default, counted on `nora_participation_silence_total`, never
 # on `nora_silent_failures_total`. A reminder that says nothing is broken; a
 # participation turn that says nothing is working.
-PARTICIPATION_AUDIENCE = "participation"
+PARTICIPATION_AUDIENCE = audience_names.PARTICIPATION
 SILENT = "silent"
 
 # The proactive occasion's audience (design/dreamer-agent-loop/39 D4/D12,
@@ -208,7 +209,7 @@ SILENT = "silent"
 # and participation's, and a turn that ends without speaking answers
 # `SILENT`, the same healthy default participation has and the heartbeat
 # cannot.
-PROACTIVE_AUDIENCE = "proactive"
+PROACTIVE_AUDIENCE = audience_names.PROACTIVE
 
 # The §10.6 shadow mirror's audience label: the mirror IS a send (it goes
 # through `deliver.build` and every guard that carries), but it is operator
@@ -217,7 +218,7 @@ PROACTIVE_AUDIENCE = "proactive"
 # as a live send on `nora_participation_spoke_total` (that counter moves only
 # on the live path below; the mirror has its own Deliverer and never touches
 # it).
-SHADOW_AUDIENCE = "participation-shadow"
+SHADOW_AUDIENCE = audience_names.SHADOW
 # The Relevance Gate's review surface (design/dreamer-agent-loop/36 §4). A
 # SECOND shadow audience and not a reuse of the one above, because the two
 # mirror different things and an operator reading a dashboard must be able to
@@ -225,7 +226,7 @@ SHADOW_AUDIENCE = "participation-shadow"
 # (a turn ran), `relevance-gate-shadow` carries what the gate ADMITTED (no
 # turn ran at all). Collapsing them would make "the gate let 40 windows
 # through" and "she drafted 40 replies" the same number.
-GATE_SHADOW_AUDIENCE = "relevance-gate-shadow"
+GATE_SHADOW_AUDIENCE = audience_names.GATE_SHADOW
 
 # How a recurrence reads in the fire header. English prose, like the rest of the
 # header: the header is the SITUATION she is told about, and `doctrine` decides
@@ -732,6 +733,7 @@ class FirePath:
         preview_source: LinkPreviewSource | None = None,
         llm_state: Any = None,
         tool_call_log_store: ToolCallLogStore | None = None,
+        reasoning_strip_store: Any = None,
         event_registry: Mapping[str, EventFactory] | None = None,
         standing: StandingStore | None = None,
         standing_store_timeout_seconds: float = DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
@@ -884,6 +886,11 @@ class FirePath:
         # this path exactly as inert as it already is for a deployment that
         # has not wired one.
         self._tool_call_log_store = tool_call_log_store
+        # Issue #325's durable half. Optional and inert when `None`, exactly
+        # like `tool_call_log_store` above — the participation occasion is one
+        # of the two paths the watch labels, and this is where its rows come
+        # from.
+        self._reasoning_strip_store = reasoning_strip_store
         # The participation occasion's runner (design/dreamer-agent-loop/35):
         # the SAME AgentRunner shape composed with `tool_choice="auto"` —
         # the determination may end in silence, which `required` (the tag
@@ -1689,6 +1696,7 @@ class FirePath:
                 audience=audience,
                 cacheable_tools=self._registry.cacheable_tools(),
                 tool_call_log_store=self._tool_call_log_store,
+                reasoning_strip_store=self._reasoning_strip_store,
                 # The participation SEND cooldown (§10.3). True on every other
                 # occasion — the heartbeat has no cooldown, and this keyword's
                 # whole reason for travelling through `deliver.build` rather
@@ -1782,6 +1790,7 @@ class FirePath:
             failure, stop_reason, final_text = await self._invoke(
                 doctrine=doctrine, tools=tools, pre_fill=pre_fill,
                 guard=handle.guard, tool_call_log=handle.tool_call_log,
+                reasoning_watch=handle.reasoning_watch,
                 tag_message=tag_message, ctx=ctx,
                 platform=occasion.platform, deliverer=handle.deliverer,
                 participation=participation, proactive=proactive,
@@ -1932,6 +1941,7 @@ class FirePath:
         pre_fill: list[dict[str, Any]],
         guard: ReplyGuard,
         tool_call_log: Any = None,
+        reasoning_watch: Any = None,
         tag_message: str,
         ctx: TagContext,
         platform: str,
@@ -2008,7 +2018,7 @@ class FirePath:
             stop_reason, final_text, _trace = await asyncio.wait_for(
                 runner.invoke(
                     doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
-                    tool_call_log=tool_call_log,
+                    tool_call_log=tool_call_log, reasoning_watch=reasoning_watch,
                     tag_message=tag_message, limits=self._limits, ctx=ctx,
                     trace_attributes=trace_attributes(ctx, doctrine),
                 ),
@@ -2040,6 +2050,21 @@ class FirePath:
                 "nora_llm_latency_seconds", time.perf_counter() - started,
                 audience=audience,
             )
+        # AFTER the try/finally and before anything is recovered or delivered,
+        # for `nora.engagement.stages.invoke.run`'s reason: a fire turn that
+        # timed out or raised still writes what its loop had already done, and
+        # awaiting inside a `finally` on a cancelled task re-raises out of the
+        # cleanup path. `flush` is idempotent, swallows its own exceptions and
+        # no-ops when the loop never went multi-turn.
+        #
+        # BOUNDED INSIDE `flush`, and the rule is `_standing_store_timeout_
+        # seconds` in this class's own `__init__` — the heartbeat holds this
+        # conversation's slot around the whole fire turn, and an unbounded
+        # store await here wedges it exactly as the unbounded read in
+        # `debrief.run` did. That was the second instance; this line was the
+        # third, shipped unbounded and caught in review (#325).
+        if reasoning_watch is not None:
+            await reasoning_watch.flush()
         if stop_reason is not None:
             self._metrics.inc(
                 "nora_llm_stop_reason_total", reason=stop_reason, audience=audience,
@@ -2258,6 +2283,7 @@ class FirePath:
                 composer=None,
                 cacheable_tools=self._registry.cacheable_tools(),
                 tool_call_log_store=self._tool_call_log_store,
+                reasoning_strip_store=self._reasoning_strip_store,
                 # The mirror is not subject to the room's participation
                 # cooldown — it is how a cooldown-HELD message is reviewed at
                 # all, so holding the mirror too would hide exactly that case.
@@ -2360,6 +2386,7 @@ class FirePath:
                 composer=None,
                 cacheable_tools=self._registry.cacheable_tools(),
                 tool_call_log_store=self._tool_call_log_store,
+                reasoning_strip_store=self._reasoning_strip_store,
                 send_permitted=True,
             )
             posted = await handle.deliverer.deliver(

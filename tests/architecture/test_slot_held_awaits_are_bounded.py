@@ -5,8 +5,25 @@ own parameter names, since the slot-hold ceiling was found understated by 2x.
 `nora/ingest/stages/standing_event.py` runs the SAME fold, holds the SAME
 `ConversationSlots` lock, and had none — so when the media join (issue #116)
 landed in both, the debrief's version was caught and bounded in the same commit
-and this one shipped as the only unbounded await on a slot-held path in the
-repo. Two independent reviewers found it, from two directions.
+and this one shipped unbounded. Two independent reviewers found it, from two
+directions.
+
+**That was round three, and this file used to claim it was the last.** Its own
+first paragraph said `standing_event` held "the only unbounded await on a
+slot-held path in the repo" — a sentence about the WHOLE repo, checked against
+one module, which is the shape of claim this directory exists to refuse. Round
+four arrived on 2026-09-17: `ReasoningStripWatch.flush` (issue #325) awaited a
+store INSERT from `invoke.run`, `FirePath._invoke` and three exits of
+`DreamerRuntime._sample`, all outside the `wait_for` that bounds the model
+loop, and this gate could not see any of it. Confirmed by probe, not by
+reading: with a store that awaits `sleep(3600)`, `invoke.run` had not returned
+1.5s after the model loop finished, on a 30s turn timeout.
+
+So the walk is now over a DECLARED REGISTRY of slot-held entry points rather
+than one import, and adding a module to it is one line. The sentence that
+cannot be checked has been deleted rather than re-asserted: what this file
+knows is that the entries below are bounded, and the registry is what a reviewer
+has to think about.
 
 **Why bounding matters more here than tidiness.** `MediaJoin.enrich` catches
 exceptions, not hangs. A wedged `media_objects` does not raise — it does not
@@ -14,30 +31,70 @@ answer — and the `finally: slots.release_and_dispatch(key)` below cannot run
 until the await returns. That is one conversation's rollup slot held
 indefinitely, on a path nobody is watching.
 
-**Derived, not listed.** The receiver set comes from what `_event_fold` and
-`_fold_batch` are HANDED, so a collaborator this module gains is caught the
-moment it is awaited rather than when somebody remembers to extend a list. That
-derivation is the half that matters: the debrief's own v2 was a hardcoded regex
-and caught exactly what it had been written against.
+**Derived, not listed.** Within each registered module the receiver set is
+DERIVED — from what the slot-held functions are HANDED (`standing_event`), or
+from what the class was CONSTRUCTED with (`reasoning_strip`, where the store
+arrives through `__init__` and is reached as `self._store`). A collaborator a
+registered module gains is caught the moment it is awaited, rather than when
+somebody remembers to extend a list. That derivation is the half that matters:
+the debrief's own v2 was a hardcoded regex and caught exactly what it had been
+written against.
 """
 
 from __future__ import annotations
 
 import ast
 import inspect
+from typing import NamedTuple
 
+from nora.agent import reasoning_strip
 from nora.ingest.stages import standing_event
-
-#: The functions that run while the slot is held. `_check` is included because
-#: it runs before the slot is taken but on the same listener path, and its own
-#: reads are already bounded — a regression there is the same shape.
-_HELD = {"_event_fold", "_fold_batch", "_check"}
 
 #: Not a store call. `client` is the MODEL, bounded by the `wait_for` around
 #: the fold itself and covered separately in the timeout sum; `slots` is the
-#: lock, and awaiting the release is the point rather than a risk. Named so
-#: each exclusion is a decision rather than an oversight.
-_NOT_A_STORE = {"client", "slots", "objective"}
+#: lock, and awaiting the release is the point rather than a risk. `metrics`
+#: and `clock` are in-process. Named so each exclusion is a decision rather
+#: than an oversight.
+_NOT_A_STORE = {"client", "slots", "objective", "metrics", "clock"}
+
+
+class _Module(NamedTuple):
+    """One module whose awaits run inside a held conversation slot.
+
+    `held` names the functions that run under the lock. `receivers_from` says
+    where the collaborator NAMES are derived from — `"params"` for a module of
+    functions handed their collaborators (`standing_event`), `"init"` for a
+    class constructed with them and reaching them as `self._<name>`
+    (`reasoning_strip`). Neither spells the collaborators out.
+    """
+
+    name: str
+    module: object
+    held: frozenset[str]
+    receivers_from: str
+
+
+#: THE REGISTRY. Adding a module is one line; the entries are what a reviewer
+#: has to think about, and a slot-held path that is not here is not checked —
+#: which is the honest statement this file can make, unlike the repo-wide
+#: claim its first version made and round four falsified.
+#:
+#: `_check` is in `standing_event`'s set because it runs before the slot is
+#: taken but on the same listener path, and its own reads are already bounded —
+#: a regression there is the same shape.
+#:
+#: `flush` is `reasoning_strip`'s whole surface that touches a store, and every
+#: one of its five callers awaits it with the slot held: `invoke.run`,
+#: `FirePath._invoke`, and three exits of `DreamerRuntime._sample`.
+_MODULES: tuple[_Module, ...] = (
+    _Module(
+        "standing_event", standing_event,
+        frozenset({"_event_fold", "_fold_batch", "_check"}), "params",
+    ),
+    _Module(
+        "reasoning_strip", reasoning_strip, frozenset({"flush"}), "init",
+    ),
+)
 
 
 def _parents(tree: ast.AST) -> dict[ast.AST, ast.AST]:
@@ -77,19 +134,49 @@ def _in_wait_for(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
     return False
 
 
-def _slot_held_awaits() -> list[tuple[str, bool]]:
-    """`(receiver.method, bounded)` for every collaborator call awaited inside
-    the slot-held functions — including through `wiring.<name>`, which is how
-    this module reaches all of them."""
-    tree = ast.parse(inspect.getsource(standing_event))
-    parents = _parents(tree)
+def _receivers(tree: ast.AST, entry: _Module) -> set[str]:
+    """The collaborator NAMES this module reaches its stores through.
 
-    receivers: set[str] = set()
+    `"params"` — what the slot-held functions are handed. `"init"` — what the
+    class was constructed with, which it then holds as `self._<name>`; the
+    parameter list is the derivation in both cases, so a module that gains a
+    collaborator is covered without anyone editing this file.
+    """
+    names: set[str] = set()
+    wanted = entry.held if entry.receivers_from == "params" else {"__init__"}
     for node in ast.walk(tree):
-        if isinstance(node, ast.AsyncFunctionDef) and node.name in _HELD:
+        if (isinstance(node, ast.AsyncFunctionDef | ast.FunctionDef)
+                and node.name in wanted):
             a = node.args
-            receivers |= {p.arg for p in a.posonlyargs + a.args + a.kwonlyargs}
-    receivers -= _NOT_A_STORE
+            names |= {p.arg for p in a.posonlyargs + a.args + a.kwonlyargs}
+    return names - _NOT_A_STORE - {"self"}
+
+
+def _module_awaits(entry: _Module) -> list[tuple[str, bool]]:
+    """`(receiver.method, bounded)` for every collaborator call awaited inside
+    one module's slot-held functions."""
+    tree = ast.parse(inspect.getsource(entry.module))  # type: ignore[arg-type]
+    parents = _parents(tree)
+    receivers = _receivers(tree, entry)
+
+    # For an `init`-derived module the call has to be INSIDE a held function,
+    # because `self._store` is reachable from every method on the class. For a
+    # `params`-derived one the receiver name itself is only in scope there.
+    held_bodies: list[ast.AST] = [
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.AsyncFunctionDef | ast.FunctionDef)
+        and n.name in entry.held
+    ]
+
+    def _inside_held(node: ast.AST) -> bool:
+        if entry.receivers_from == "params":
+            return True
+        cur: ast.AST | None = node
+        while cur is not None:
+            if cur in held_bodies:
+                return True
+            cur = parents.get(cur)
+        return False
 
     out: list[tuple[str, bool]] = []
     for node in ast.walk(tree):
@@ -98,25 +185,35 @@ def _slot_held_awaits() -> list[tuple[str, bool]]:
         f = node.func
         if not isinstance(f, ast.Attribute):
             continue
-        # `store.read(...)` and `wiring.record_store.since(...)` are both
-        # collaborator calls; the second is how this module names all of them.
+        # `store.read(...)`, `wiring.record_store.since(...)` and
+        # `self._store.record_observation(...)` are all collaborator calls; the
+        # second and third are how those two modules name theirs.
         if isinstance(f.value, ast.Name):
             recv = f.value.id
         elif (isinstance(f.value, ast.Attribute)
               and isinstance(f.value.value, ast.Name)
-              and f.value.value.id in receivers):
-            recv = f.value.attr
+              and (f.value.value.id in receivers
+                   or (f.value.value.id == "self"
+                       and f.value.attr.lstrip("_") in receivers))):
+            recv = f.value.attr.lstrip("_")
         else:
             continue
         if recv in _NOT_A_STORE or (
             isinstance(f.value, ast.Name) and recv not in receivers
         ):
             continue
+        if not _inside_held(node):
+            continue
         bounded = _in_wait_for(node, parents)
         if not (bounded or isinstance(parents.get(node), ast.Await)):
             continue
         out.append((f"{recv}.{f.attr}", bounded))
     return out
+
+
+def _slot_held_awaits() -> list[tuple[str, bool]]:
+    """Every registered module's slot-held collaborator awaits, together."""
+    return [call for entry in _MODULES for call in _module_awaits(entry)]
 
 
 def test_every_slot_held_collaborator_await_is_bounded() -> None:
@@ -143,7 +240,7 @@ def test_the_validator_can_see_the_calls_it_is_checking() -> None:
     pass."""
     found = _slot_held_awaits()
 
-    assert len(found) >= 4, f"the walk went thin — it found only {found}"
+    assert len(found) >= 5, f"the walk went thin — it found only {found}"
     names = {name for name, _ in found}
     assert "media_join.enrich" in names, (
         "the media join is no longer awaited on the fold path, or the walk "
@@ -151,6 +248,30 @@ def test_the_validator_can_see_the_calls_it_is_checking() -> None:
     )
     assert "record_store.since_including_nora" in names
     assert "store.read" in names
+    assert "store.record_observation" in names, (
+        "the reasoning-strip row write is no longer awaited inside `flush`, or "
+        "the `init`-derived receiver walk cannot see it — which is exactly the "
+        "state this gate was in when that write shipped unbounded (#325)"
+    )
+
+
+def test_every_registered_module_contributes_at_least_one_await() -> None:
+    """A registry entry that finds nothing is an entry that checks nothing, and
+    it would read as a pass.
+
+    This is the control on the REGISTRY rather than on the walk: a module
+    renamed, a held function renamed, or a collaborator that stopped arriving
+    through `__init__` all turn a real check into a silent one, and the gate
+    would go green having verified a property of the empty set."""
+    for entry in _MODULES:
+        assert _module_awaits(entry), (
+            f"`{entry.name}` is registered as holding a conversation slot but "
+            f"the walk found no collaborator await in {sorted(entry.held)}. "
+            f"Either the module no longer belongs here, or the derivation "
+            f"({entry.receivers_from}) has stopped matching it — and a "
+            f"registry entry that matches nothing reports «bounded» about "
+            f"nothing."
+        )
 
 
 def test_a_wait_for_with_no_timeout_does_not_count_as_bounded() -> None:

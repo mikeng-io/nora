@@ -59,6 +59,7 @@
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -114,6 +115,7 @@ ADD CONSTRAINT presence_place_rhythm_pkey PRIMARY KEY (subject_id, place_id);
 ADD CONSTRAINT presence_places_pkey PRIMARY KEY (circle_id, place_id);
 ADD CONSTRAINT presence_stays_pkey PRIMARY KEY (id);
 ADD CONSTRAINT presence_trips_pkey PRIMARY KEY (id);
+ADD CONSTRAINT reasoning_strip_log_pkey PRIMARY KEY (id);
 ADD CONSTRAINT reminders_pkey PRIMARY KEY (id);
 ADD CONSTRAINT rendered_claim_pkey PRIMARY KEY (conversation_id, kind, row_key);
 ADD CONSTRAINT room_exchange_pkey PRIMARY KEY (scope_id, act, participants);
@@ -185,6 +187,7 @@ ALTER TABLE ONLY public.presence_place_rhythm
 ALTER TABLE ONLY public.presence_places
 ALTER TABLE ONLY public.presence_stays
 ALTER TABLE ONLY public.presence_trips
+ALTER TABLE ONLY public.reasoning_strip_log
 ALTER TABLE ONLY public.reminders
 ALTER TABLE ONLY public.rendered_claim
 ALTER TABLE ONLY public.room_exchange
@@ -225,6 +228,8 @@ CONSTRAINT ck_events_status CHECK ((status = ANY (ARRAY['proposed'::text, 'confi
 CONSTRAINT ck_music_queue_position_non_negative CHECK (("position" >= 0))
 CONSTRAINT ck_music_session_volume_range CHECK (((volume >= (0.0)::double precision) AND (volume <= (2.0)::double precision)))
 CONSTRAINT ck_occupancy_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
+CONSTRAINT ck_reasoning_strip_log_counts CHECK (((continuation_calls >= 1) AND (continuation_calls <= model_calls) AND (strip_calls >= 0) AND (strip_calls <= continuation_calls) AND (stripped_blocks >= 0) AND ((strip_calls = 0) = (stripped_blocks = 0)))),
+CONSTRAINT ck_reasoning_strip_log_tag_id_not_empty CHECK (((tag_id IS NULL) OR (tag_id <> ''::text)))
 CONSTRAINT ck_reminders_recurrence CHECK ((((recurrence = 'none'::text) AND (recurrence_tz IS NULL) AND (recurrence_count IS NULL) AND (recurrence_until IS NULL) AND (series_id IS NULL) AND (series_anchor_at IS NULL) AND (occurrence = 0)) OR ((recurrence <> 'none'::text) AND (recurrence_tz IS NOT NULL) AND (recurrence_count >= 1) AND (series_id IS NOT NULL) AND (series_anchor_at IS NOT NULL) AND (occurrence >= 0) AND (occurrence < recurrence_count)))),
 CONSTRAINT ck_reminders_recurrence_interval CHECK ((recurrence_interval >= 1)),
 CONSTRAINT ck_reminders_recurrence_kind CHECK ((recurrence = ANY (ARRAY['none'::text, 'minutely'::text, 'hourly'::text, 'daily'::text, 'weekly'::text, 'monthly'::text, 'yearly'::text]))),
@@ -330,6 +335,7 @@ CREATE INDEX idx_presence_derived_places_subject_kind ON public.presence_derived
 CREATE INDEX idx_presence_member_ts ON public.presence_fixes USING btree (circle_id, person_id, ts DESC);
 CREATE INDEX idx_presence_stays_subject_ts ON public.presence_stays USING btree (subject_id, started_ts DESC);
 CREATE INDEX idx_presence_trips_subject_started ON public.presence_trips USING btree (subject_id, started_ts DESC);
+CREATE INDEX idx_reasoning_strip_log_path_ts ON public.reasoning_strip_log USING btree (path, created_at);
 CREATE INDEX idx_reminders_due ON public.reminders USING btree (state, due_at);
 CREATE INDEX idx_rendered_claim_window ON public.rendered_claim USING btree (conversation_id, last_rendered_at DESC);
 CREATE INDEX idx_tag_trace_conversation_created ON public.tag_trace USING btree (conversation_id, created_at);
@@ -373,6 +379,7 @@ CREATE TABLE public.presence_place_rhythm (
 CREATE TABLE public.presence_places (
 CREATE TABLE public.presence_stays (
 CREATE TABLE public.presence_trips (
+CREATE TABLE public.reasoning_strip_log (
 CREATE TABLE public.reminders (
 CREATE TABLE public.rendered_claim (
 CREATE TABLE public.room_exchange (
@@ -479,6 +486,7 @@ consumed_verdict_tag text,
 content text DEFAULT ''::text NOT NULL
 context text NOT NULL,
 context_sha256 text DEFAULT ''::text NOT NULL,
+continuation_calls integer NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
@@ -507,6 +515,7 @@ created_at bigint NOT NULL,
 created_at bigint NOT NULL,
 created_at text DEFAULT (now())::text NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL
+created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone NOT NULL,
@@ -600,6 +609,7 @@ id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
+id uuid NOT NULL,
 instruction_sha256 text NOT NULL,
 instruction_sha256 text NOT NULL,
 instruction_sha256 text,
@@ -664,12 +674,14 @@ messages jsonb NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
+model text NOT NULL,
 model text,
 model text,
 model text,
 model text,
 model text,
 model text,
+model_calls integer NOT NULL,
 name text NOT NULL,
 narrative text NOT NULL,
 note_id text,
@@ -701,6 +713,7 @@ parent_revision_id uuid,
 part_of_speech text,
 participants text[] NOT NULL,
 participants text[] NOT NULL,
+path text NOT NULL,
 paused boolean NOT NULL,
 payload jsonb,
 person_id text NOT NULL,
@@ -734,6 +747,7 @@ radius_m double precision NOT NULL,
 radius_m double precision,
 raw_json text,
 reason text DEFAULT ''::text NOT NULL,
+reasoning_effort text NOT NULL,
 recognition_score double precision DEFAULT 0 NOT NULL,
 recognition_score double precision DEFAULT 0 NOT NULL,
 recorded_at bigint NOT NULL,
@@ -799,6 +813,8 @@ status text NOT NULL,
 status text NOT NULL,
 status text,
 strikes integer DEFAULT 0 NOT NULL,
+strip_calls integer NOT NULL,
+stripped_blocks integer NOT NULL,
 subject_id text NOT NULL,
 subject_id text NOT NULL,
 subject_id text NOT NULL,
@@ -819,6 +835,7 @@ synthesized_at bigint NOT NULL
 tag_id text NOT NULL,
 tag_id text NOT NULL,
 tag_id text NOT NULL,
+tag_id text,
 task text NOT NULL,
 task_sha256 text DEFAULT ''::text NOT NULL,
 text text NOT NULL,

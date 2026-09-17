@@ -102,6 +102,7 @@ from nora.infra.sql.music_session import SqlMusicSessionStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.participation_state import SqlParticipationStateStore
 from nora.infra.sql.presence import PresenceStore
+from nora.infra.sql.reasoning_strip import SqlReasoningStripStore
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.tag_debounce import SqlTagDebounceStore
@@ -997,6 +998,16 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # deliver.build); the THIRD — ToolRegistry(...) below, for
     # recall_lookups — is Task 7's own wiring.
     tool_call_log_store: ToolCallLogStore = SqlToolCallLogStore(engine)
+    # Issue #325's durable half (`reasoning_strip_log`, migration 0057, ADR
+    # 0013), REUSING `engine` for the same reason the three stores above do.
+    # UNCONDITIONAL and behind no flag: an instrument that is off by default
+    # answers nothing, and the question it exists to answer -- how often the
+    # transport throws a turn's reasoning away, per unit of OPPORTUNITY, and
+    # whether that moved when the model or the effort did -- spans deploys,
+    # which is exactly what a Prometheus counter in this process cannot hold.
+    # All three consumers take it: the tag path and the participation occasion
+    # through `deliver.build`, and the Dreamer through `DreamerRuntime`.
+    reasoning_strip_store = SqlReasoningStripStore(engine)
     # The reasoning-continuity retention store (Task 6, spec §6/§7.4),
     # REUSING `engine` for the same reason `reminders`/`compute_jobs`/
     # `tool_call_log_store` do above. UNCONDITIONAL, unlike the Dreamer's own
@@ -2410,6 +2421,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         preview_source=preview_source,
         slots=slots,
         tool_call_log_store=tool_call_log_store,
+        reasoning_strip_store=reasoning_strip_store,
         tag_trace_store=tag_trace_store,
         debrief_wiring=debrief_wiring,
         # The shared decision log (issue #199). The tag path only
@@ -2504,6 +2516,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             preview_source=preview_source,
             llm_state=llm_state,
             tool_call_log_store=tool_call_log_store,
+            reasoning_strip_store=reasoning_strip_store,
             # The reminder-derived Event registry (DEC-139,
             # design/event-abstraction/04): kind -> factory, wired here at
             # the composition root so the domain type stays free of app
@@ -3470,6 +3483,15 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # The per-CALL-SITE allowance for `inputs`/`commit` (issue #60),
             # multiplied by each adaptor's own declared `store_calls_per_tick`.
             store_timeout_seconds=cfg.dreamer.store_timeout_seconds,
+            # Issue #325. The Dreamer is where the 2026-09-17 config change
+            # moved the exposure: `[dreamer] reasoning_effort` went
+            # `none -> low` in the same session `CultureAdaptor.tools` went
+            # from empty to nine read verbs, and a tool-using run at `low` is
+            # the multi-turn shape the transport strips. Low-traffic and
+            # judgement-forming, so a discarded reasoning there is both closer
+            # to being the verdict and harder to notice than on a reply
+            # somebody reads.
+            reasoning_strip_store=reasoning_strip_store,
         )
         # R-5's refuse-to-start shape, and the one check that must run at
         # STARTUP rather than at the first tick: an adaptor holding an act verb

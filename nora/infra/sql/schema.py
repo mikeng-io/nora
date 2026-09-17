@@ -2543,3 +2543,87 @@ TAG_DEBOUNCE_STATE = sa.Table(
     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False,
               server_default=sa.text("now()")),
 )
+
+# `reasoning_strip_log` — one row per MULTI-TURN agent invocation, so that a
+# turn whose reasoning the transport threw away is distinguishable from one
+# that reasoned fine (issue #325, migration 0057, ADR 0013).
+#
+# **THE ROW CARRIES ITS OWN DENOMINATOR.** `continuation_calls` is how many
+# model calls in that TURN could have been stripped — every call after the
+# first — and `strip_calls` is how many were. «After the first», not «with a
+# prior assistant message»: every tag prefill carries one, and it holds no
+# `reasoningContent` to lose.
+# A count without the denominator answers nothing: two strips in two hours is a
+# catastrophe at two opportunities and a rounding error at two hundred, and the
+# production reading that opened #325 had no way to tell which it was.
+#
+# **ONLY MULTI-TURN INVOCATIONS GET A ROW** (`continuation_calls >= 1`, and the
+# CHECK holds it). A single-call turn has zero opportunity: it would contribute
+# nothing to either half of the ratio, and admitting it would make this a log of
+# every model call in the system rather than a census of the calls at risk.
+#
+# `reasoning_effort` is read off the MODEL PROVIDER at the moment of the call,
+# not from config, because the question this table exists to make cheap is «did
+# this move when something else did». `model` is the OmniRoute ALIAS and
+# CANNOT see a combo repoint — the served model id does not reach this seam at
+# all; see the migration's docstring for why the column stays anyway. `reasoning_effort = 'none'`
+# is why the column is not optional: a path emitting no reasoning cannot be
+# stripped, so zero strips there means IMPOSSIBLE, not healthy, and without this
+# column the two readings are the same number.
+#
+# `tag_id` IS NULLABLE, and the NULL is load-bearing: a Dreamer run has no tag.
+# Not "", not a synthesised one — the same rule
+# `participation_window_state.last_send_at` states one table over.
+#
+# NO SWEEP, and the bound is stated rather than assumed: rows land only on
+# multi-turn invocations, which is a few hundred a day at the observed tag rate
+# and roughly one per adaptor per day on the Dreamer. Pruning would be a
+# retention JUDGEMENT rather than arithmetic (unlike `tag_debounce_state`, whose
+# rows provably cannot change an answer once their interval has passed), and
+# this table's whole purpose is to answer a question about a window that is
+# longer than one deploy.
+REASONING_STRIP_LOG = sa.Table(
+    "reasoning_strip_log",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=True), primary_key=True),
+    sa.Column("path", sa.Text, nullable=False),
+    sa.Column("model", sa.Text, nullable=False),
+    sa.Column("reasoning_effort", sa.Text, nullable=False),
+    sa.Column("tag_id", sa.Text),
+    sa.Column("model_calls", sa.Integer, nullable=False),
+    sa.Column("continuation_calls", sa.Integer, nullable=False),
+    sa.Column("strip_calls", sa.Integer, nullable=False),
+    sa.Column("stripped_blocks", sa.Integer, nullable=False),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.text("now()")),
+    # The row's own arithmetic, refused at the database rather than trusted
+    # from the writer. `strip_calls > continuation_calls` is unreachable
+    # through `ReasoningStripWatch` and would mean the reasoning arrived from
+    # the PREFILL rather than from the loop — a shape no correct reading of
+    # this table can explain, and one that must not be silently stored. The
+    # last clause is the pair that must agree: `stripped_blocks` is the
+    # DISTINCT reasoning lost and `strip_calls` is how often, so one of them
+    # being zero while the other is not is a writer that has drifted.
+    sa.CheckConstraint(
+        "continuation_calls >= 1 "
+        "AND continuation_calls <= model_calls "
+        "AND strip_calls >= 0 "
+        "AND strip_calls <= continuation_calls "
+        "AND stripped_blocks >= 0 "
+        "AND ((strip_calls = 0) = (stripped_blocks = 0))",
+        name="ck_reasoning_strip_log_counts",
+    ),
+    # NULL is the answer for a Dreamer run; "" is a writer that lost the tag
+    # and did not say so.
+    sa.CheckConstraint(
+        "tag_id IS NULL OR tag_id <> ''",
+        name="ck_reasoning_strip_log_tag_id_not_empty",
+    ),
+)
+
+# The read this table exists for is «the rate on one path over one window», so
+# the index is (path, created_at) rather than created_at alone.
+IDX_REASONING_STRIP_LOG_PATH_TS = sa.Index(
+    "idx_reasoning_strip_log_path_ts",
+    REASONING_STRIP_LOG.c.path, REASONING_STRIP_LOG.c.created_at,
+)
