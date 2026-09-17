@@ -116,9 +116,16 @@ PATHS = {
     "nora/app/adoption.py": "adoption",
     "nora/agent/tools.py": "load_transcript",
     "nora/ingest/relevance_gate.py": "relevance_gate",
+    # The eval seam's dream pass (`design/evaluation/`). Its OWN label: this
+    # test's control refuses a reused one, and it is right to — nothing here is
+    # scraped alongside the loop's read (a `Subject` carries its own `Metrics()`,
+    # built per case), so the distinct label costs nothing and says something
+    # true about where the read came from.
+    "nora/subject/dreaming.py": "dreamer_eval",
 }
 
 BUILDERS = {
+    "nora/subject/dreaming.py": "since",
     "nora/engagement/context.py": "recent",
     "nora/app/fire.py": "recent",
     "nora/engagement/stages/debrief.py": "since_including_nora",

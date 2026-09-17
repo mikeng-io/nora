@@ -49,10 +49,41 @@ _KNOWN_NAME = "Miles"
 
 @dataclass(frozen=True, slots=True)
 class Message:
-    """One prior room message."""
+    """One prior room message.
+
+    `row_id` and `at_ms` exist because some corpora CITE their own messages:
+    the note-candidates cases assert that a staged candidate's `message_ids`
+    contain a particular row. A case that says "note 101" and a store that
+    assigns ids by insertion order are two different facts, and the second
+    cannot be asserted against.
+
+    `person` is separate from `name` for the reason `identity.toml` exists:
+    the display name is what the platform reports and the person id is who
+    that resolves to. A message from a member the identity does not know has a
+    name and no person — which is a real case, and the one that produces
+    `person_name=None`.
+    """
 
     body: str
     name: str = _KNOWN_NAME
+    #: Who this speaker resolves to. `None` means the identity does not know
+    #: them; `""` means "use the default for this name".
+    person: str | None = ""
+    #: The case's own LABEL for this message, when it cites it elsewhere
+    #: (`must_cite`). It is not a database id and is never forced onto one: the
+    #: store assigns ids, and `know()` returns the mapping so a grader can
+    #: translate a citation into the row it actually landed on.
+    #:
+    #: Forcing it was tried and rejected within the hour. A case that says
+    #: "message 101" against a store that assigned 1 has two bad options —
+    #: raise, which makes the corpus unrunnable, or renumber, which checks the
+    #: citation against whatever happened to land in that slot. Translating is
+    #: the third.
+    label: int | str | None = None
+    #: When it was said. `None` spaces the window a minute apart ending one
+    #: minute before `now_ms`, which is the default every corpus but this one
+    #: relies on.
+    at_ms: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +99,20 @@ class NoteSeed:
 
 
 @dataclass(frozen=True, slots=True)
+class Written:
+    """What `know()` laid down, and where it landed.
+
+    `now_ms` is the instant the caller must stamp the incoming line with.
+    `rows` maps each message's case-label to the id the store assigned, which
+    is what lets a corpus cite its own messages without the case and the
+    database having to agree on numbering.
+    """
+
+    now_ms: int
+    rows: dict[int | str, int]
+
+
+@dataclass(frozen=True, slots=True)
 class Knowledge:
     """Everything a case says she knows. Empty is legal and is the knowledge
     cut — the `-unknown` twin of a pair is this class with one field dropped,
@@ -79,6 +124,7 @@ class Knowledge:
 
 
 def _speakers(transcript: tuple[Message, ...]) -> dict[str, tuple[str, str | None]]:
+    """name -> (sender_id, person_id), stable within one case."""
     out: dict[str, tuple[str, str | None]] = {}
     for msg in transcript:
         if msg.name in out:
@@ -255,8 +301,8 @@ async def know(
     *,
     room: tuple[str, str] = DEFAULT_ROOM,
     now_ms: int | None = None,
-) -> int:
-    """Write `knowledge` into the subject's stores. Returns `now_ms`.
+) -> Written:
+    """Write `knowledge` into the subject's stores.
 
     The returned instant is the one the caller must stamp the INCOMING line
     with: the window is laid down ending one minute before it, so the judged
@@ -272,24 +318,29 @@ async def know(
     if now_ms is None:
         now_ms = int(datetime.now(UTC).timestamp() * 1000)
     platform, conversation_id = room
+    rows: dict[int | str, int] = {}
 
     speakers = _speakers(knowledge.transcript)
     base = now_ms - len(knowledge.transcript) * 60_000
     for i, msg in enumerate(knowledge.transcript):
         sender_id, person_id = speakers[msg.name]
-        await subject.deps.audit.append(
+        if msg.person != "":
+            person_id = msg.person
+        row_id = await subject.deps.audit.append(
             message=NormalizedMessage(
                 platform=platform,
                 conversation_id=conversation_id,
                 conversation_type="group",
                 sender_id=sender_id,
                 sender_name=msg.name,
-                timestamp=base + i * 60_000,
+                timestamp=msg.at_ms if msg.at_ms is not None else base + i * 60_000,
                 body=msg.body,
                 raw={},
             ),
             person_id=person_id,
         )
+        if msg.label is not None:
+            rows[msg.label] = row_id
 
     # A second engine over the SAME database, not a second database: the
     # composition root keeps its engine private and `Dependencies` does not
@@ -324,4 +375,4 @@ async def know(
                 )
     finally:
         await engine.dispose()
-    return now_ms
+    return Written(now_ms=now_ms, rows=rows)

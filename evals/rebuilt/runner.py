@@ -42,13 +42,17 @@ def load(path: Path) -> list[Case]:
     """
     doc = yaml.safe_load(path.read_text(encoding="utf-8")) or []
     if isinstance(doc, dict):
-        rows, config = doc.get("cases") or [], dict(doc.get("config") or {})
+        rows = doc.get("cases") or []
+        config = dict(doc.get("config") or {})
+        policy = str(doc.get("policy") or "")
     else:
-        rows, config = doc, {}
-    return [_case(r, config) for r in rows]
+        rows, config, policy = doc, {}, ""
+    return [_case(r, config, policy) for r in rows]
 
 
-def _case(raw: Mapping[str, Any], config: Mapping[str, Any]) -> Case:
+def _case(
+    raw: Mapping[str, Any], config: Mapping[str, Any], policy: str = "",
+) -> Case:
     for key in ("name", "entry", "expect"):
         if key not in raw:
             raise ValueError(f"case is missing {key!r}: {raw!r}")
@@ -71,6 +75,7 @@ def _case(raw: Mapping[str, Any], config: Mapping[str, Any]) -> Case:
         # The case's own `config:` wins over the corpus's, so one awkward case
         # can differ without a second file.
         config={**config, **(raw.get("config") or {})},
+        policy=str(raw.get("policy") or policy),
     )
 
 
@@ -91,6 +96,22 @@ def _case(raw: Mapping[str, Any], config: Mapping[str, Any]) -> Case:
 _KNOWABLE = {"transcript", "standing", "notes"}
 
 
+def _ms(ts: Any) -> int | None:
+    """An ISO-8601 instant as ms, or `None`.
+
+    Corpora that state their own timestamps do so in ISO. They are kept as
+    STATED rather than shifted onto a recent base: these cases assert an
+    `anchor_date` derived from the messages, so moving them would move the
+    thing being asserted. Every other corpus leaves `ts` out and gets the
+    recent-base rule, which is what an age-rendering prompt needs.
+    """
+    if ts is None:
+        return None
+    if isinstance(ts, (int, float)):
+        return int(ts)
+    return int(datetime.fromisoformat(str(ts).replace("Z", "+00:00")).timestamp() * 1000)
+
+
 def _knowledge(raw: Mapping[str, Any]) -> Knowledge:
     """A case's `knows:` mapping, as the subject's own type.
 
@@ -107,10 +128,14 @@ def _knowledge(raw: Mapping[str, Any]) -> Knowledge:
     for entry in raw.get("transcript") or []:
         if isinstance(entry, str):
             transcript.append(Message(body=entry))
-        else:
-            transcript.append(
-                Message(body=entry["body"], name=entry.get("name", "Miles"))
-            )
+            continue
+        transcript.append(Message(
+            body=entry["body"],
+            name=entry.get("name", "Miles"),
+            person=entry.get("person", ""),
+            label=entry.get("id"),
+            at_ms=_ms(entry.get("ts")),
+        ))
     notes = tuple(
         NoteSeed(
             title=n["title"],
@@ -146,6 +171,9 @@ async def run_once(
             SubjectSpec(
                 database_url=database_url,
                 workdir=workdir,
+                # A suite's room set, when it has one. `SubjectSpec` supplies a
+                # valid closed default otherwise.
+                **({"policy": case.policy} if case.policy else {}),
                 # The entry point's own requirements UNDER the case's, so a
                 # case can still override anything and nothing has to remember
                 # which switch its suite needs.
@@ -157,8 +185,8 @@ async def run_once(
         return Outcome(admitted=None, error=f"could not obtain the subject: {exc}")
 
     try:
-        now_ms = await know(subject, _knowledge(case.knows))
-        return await port.drive(subject, case, now_ms=now_ms)
+        written = await know(subject, _knowledge(case.knows))
+        return await port.drive(subject, case, now_ms=written.now_ms)
     except Exception as exc:                        # noqa: BLE001
         return Outcome(admitted=None, error=f"{type(exc).__name__}: {exc}")
     finally:

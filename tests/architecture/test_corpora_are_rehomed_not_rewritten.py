@@ -148,3 +148,44 @@ def test_the_headers_travelled() -> None:
             f"{new} lost {len(missing)} line(s) of the provenance header, "
             f"first: {missing[0]!r}"
         )
+
+
+def test_note_candidates_survived_its_deeper_reshape() -> None:
+    """The one corpus whose move is not a rename.
+
+    `batch:` -> `knows.transcript:` and `notebook:` -> `knows.notes:` change the
+    SHAPE, because they stop being constructor arguments and become rows in the
+    stores she reads. So the generic pin above cannot compare them field for
+    field, and this checks the facts that must survive instead: every case, every
+    message body in order, every message label, every seeded note title, and
+    every ungraded assertion parked in `metadata`.
+    """
+    old = {c["name"]: c for c in _load(
+        "evals/cases/note_candidates/note_candidates.yaml")}
+    new = {c["name"]: c for c in _load("evals/corpora/note_candidates.yaml")}
+    assert set(old) == set(new), sorted(set(old) ^ set(new))
+
+    for name, before in old.items():
+        after = new[name]
+        assert after["expect"] == before["expect"], name
+        assert after["entry"] == "dreamer" and after["category"] == "note-candidates"
+
+        knows = after.get("knows") or {}
+        assert [m["body"] for m in knows.get("transcript") or []] == \
+            [m["body"] for m in before.get("batch") or []], name
+        assert [m.get("id") for m in knows.get("transcript") or []] == \
+            [m.get("id") for m in before.get("batch") or []], name
+        assert [n["title"] for n in knows.get("notes") or []] == \
+            [n["title"] for n in before.get("notebook") or []], name
+
+        # The assertions the notebook diff cannot yet carry. Parked, not lost —
+        # a fact recorded once and then dropped has to be re-derived by hand.
+        meta = after.get("metadata") or {}
+        for key in ("creates", "updates", "must_cite", "anchor_date"):
+            if before.get(key) is not None:
+                assert meta.get(key) == before[key], f"{name}: {key}"
+
+        # `workspace:` became two settings because it is two facts.
+        ws = before.get("workspace", "nora")
+        assert after["config"]["memory.workspace_id"] == ws, name
+        assert f'workspace = "{ws}"' in after["policy"], name

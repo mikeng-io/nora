@@ -19,13 +19,22 @@ from typing import Any, Literal
 #: `reply`/`no_reply` are structurally what `speak`/`silence` are, and both pairs
 #: survive on purpose: the corpora say `reply`, and Step 3's rule is data, not
 #: rewrites. A label edited during a move is a new case wearing the old name.
-Expectation = Literal["go", "no_go", "speak", "silence", "reply", "no_reply"]
+#:
+#: `create`/`update`/`none` are the Dreamer's, and they are graded on the
+#: NOTEBOOK — what the pass wrote — never on `DreamOutcome.status`, which says
+#: only whether the loop completed. A pass can return `ok` having written
+#: nothing, and a corpus expecting `none` would then pass for a reason it is not
+#: about.
+Expectation = Literal[
+    "go", "no_go", "speak", "silence", "reply", "no_reply",
+    "create", "update", "none",
+]
 
 #: Which entry point the input enters at. A SELECTION ON A CASE, not a branch
 #: in the runner (`01-boundaries` §3.1). Adding a suite that uses one of these
 #: adds no code; adding a new entry point adds one adapter, which is the line
 #: this design draws rather than hides.
-Entry = Literal["gate", "participation", "tag"]
+Entry = Literal["gate", "participation", "tag", "dreamer"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +81,17 @@ class Case:
     #: and the next person to want it has to re-derive it by hand.
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    #: `policy.toml`, when this suite needs a room set the default does not
+    #: give. Corpus-level in practice, like `config:`.
+    #:
+    #: Separate from `config:` because it is NOT configuration: the proactive
+    #: adaptor has no config flag at all — `nora/app/composition.py:3208` says
+    #: so — and is wired only when `policy.toml` names a HOME ROOM, because the
+    #: home room IS the operator's opt-in. A suite about the proactive adaptor
+    #: therefore states a policy, and no amount of dotted config paths can say
+    #: it.
+    policy: str = ""
+
     #: Config this case's SUITE needs, as dotted paths. Applied under the entry
     #: point's own requirements and over nothing else.
     #:
@@ -104,6 +124,10 @@ class Outcome:
     #: silence, which for a participation turn is a complete answer and not a
     #: failure.
     said: tuple[str, ...] = ()
+
+    #: What the pass changed, as `("create", title)` / `("update", title)`.
+    #: Empty for every entry point that writes no notes.
+    changed: tuple[tuple[str, str], ...] = ()
 
     #: `"model"` or `"fail_closed"` — WHERE the decision came from. Kept beside
     #: the verdict because they are not the same fact: the gate fails closed,
@@ -140,6 +164,10 @@ class Outcome:
             return self.admitted is False
         if expect in ("speak", "reply"):
             return bool(self.said)
+        if expect in ("create", "update"):
+            return any(kind == expect for kind, _ in self.changed)
+        if expect == "none":
+            return not self.changed
         return not self.said
 
 

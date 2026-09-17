@@ -31,11 +31,13 @@ the parity test that exists compares `composition.py` to `offline.py` (both
 
 from __future__ import annotations
 
+from .dreaming import Pass, adaptor_names, dream
 from .knowledge import (
     DEFAULT_ROOM,
     Knowledge,
     Message,
     NoteSeed,
+    Written,
     arrive,
     deliver,
     heard,
@@ -51,10 +53,14 @@ __all__ = [
     "Knowledge",
     "Message",
     "NoteSeed",
+    "Pass",
     "Subject",
     "SubjectSpec",
+    "Written",
+    "adaptor_names",
     "arrive",
     "deliver",
+    "dream",
     "heard",
     "know",
     "last_row_id",

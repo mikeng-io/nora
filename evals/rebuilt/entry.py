@@ -37,6 +37,7 @@ from nora.subject import (
     Subject,
     arrive,
     deliver,
+    dream,
     heard,
     last_row_id,
     settle,
@@ -213,6 +214,41 @@ async def tag(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     )
 
 
+async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
+    """One dream pass, graded on the NOTEBOOK.
+
+    The batch is what `know()` wrote — the Dreamer reads the room's rows, so a
+    case's transcript IS its input here, exactly as it is for the gate. There
+    is nothing to deliver.
+
+    `case.category` names the adaptor, because which adaptor runs is a property
+    of the CASE and not of the runner: `note-candidates` and the proactive
+    adaptor are two passes over one runtime, and branching on them in the
+    runner would be the eight drivers growing back inside one file.
+    """
+    adaptor = case.category or "note-candidates"
+    try:
+        result = await dream(subject, adaptor=adaptor)
+    except LookupError as exc:
+        return Outcome(admitted=None, source="fail_closed", error=str(exc))
+
+    # `unavailable` is the fail-closed one — the adaptor could not run. It must
+    # not grade as `none`, which is a legitimate verdict a corpus expects and
+    # which an un-run pass produces byte-identically: an empty notebook diff.
+    if result.status == "unavailable":
+        return Outcome(
+            admitted=None,
+            source="fail_closed",
+            error=f"the pass was unavailable: {result.stop_reason}",
+            outcome_token=result.status,
+        )
+    return Outcome(
+        admitted=None,
+        changed=result.changed,
+        outcome_token=result.status,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class EntryPoint:
     """One port implementation, plus the configuration it needs to EXIST.
@@ -256,4 +292,13 @@ ENTRY_POINTS = {
     # true, which is the deployment's own default and the reason this is the
     # cheapest of the three to drive.
     "tag": EntryPoint(drive=tag),
+    # `[dreamer] enabled` ships false, and `[notes]` decides whether the
+    # note-candidates adaptor is built at all — two switches for two risks, and
+    # a corpus that needs the pass needs both on.
+    # The RUNTIME only. Which adaptor is built is the corpus's business and
+    # they differ: note-candidates needs `[notes] candidates_enabled`, the
+    # proactive adaptor has no flag at all and is wired by `policy.toml` naming
+    # a home room. Putting either here would make one corpus's requirement look
+    # like the entry point's.
+    "dreamer": EntryPoint(drive=dreamer, config={"dreamer.enabled": True}),
 }
