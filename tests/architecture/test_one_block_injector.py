@@ -54,6 +54,25 @@ _CLOSE = re.compile(r"</([a-z_][a-z0-9_]*)>")
 #: an always-present explanation) that simply has no injector to go through yet.
 #: A second such amendment without a reason beside it would be the budget this
 #: construction exists to refuse.
+#:
+#: **CONVERTING A ROW IS NOT THE SAME AS MARKING IT `untrusted`**, and reading
+#: this census as a list of blocks missing a marker would fix one class and
+#: break the other. Two populations are on it:
+#:
+#:   1. blocks carrying what somebody TYPED — `<tag_message>`, `<replying_to>`,
+#:      `<group_transcript>`, `<transcript>`, `<room>`, `<open_notes>` — which
+#:      need the marker and the framing clause; and
+#:   2. blocks carrying OUR OWN framing — `<context_header>`,
+#:      `<how_to_read_reasoning>`, `<how_to_read_the_transcript>` — which are
+#:      legends about how to read a sibling, and for which the marker would
+#:      tell a model its own operating instructions are suspect. That is the
+#:      doctrine/untrusted distinction inverted, not a harmless attribute.
+#:
+#: Both classes belong in the injector; only class 1 gets `untrusted="true"`.
+#: `ContextBlock.untrusted` is the declaration and it defaults to True, so a
+#: converter who does not think about it lands on the safe side. **No caller
+#: passes False today**, so the first class-2 conversion exercises that seam
+#: for the first time — worth a test on the day, not a discovery.
 #: One `xfail` per module below, so converting a builder turns a NAMED row green
 #: and `strict=True` turns it red if the line is left behind. The recorded tags
 #: are pinned in both directions by `test_the_census_can_only_shrink`: a module

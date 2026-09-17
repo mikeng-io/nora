@@ -1415,10 +1415,29 @@ def _whole_turn() -> tuple[tuple[str, str], ...]:
     return tuple(out)
 
 
-#: The one element in the turn that is hers rather than data. `<context_header>`
-#: wraps the situation paragraph and the catalogue — Nora's own instructions,
-#: which is the single thing in a turn that IS an instruction to her. Marking it
-#: `untrusted` would say the opposite of what it is.
+#: **Two populations reach a model and they have opposite requirements**, which
+#: is why this exemption exists at all rather than being an oversight:
+#:
+#:   1. blocks carrying what somebody TYPED — the transcript, `<tag_message>`,
+#:      `<replying_to>`, a tool result — need `untrusted="true"` and the clause;
+#:   2. blocks carrying OUR OWN framing — `<context_header>`'s situation
+#:      paragraph and catalogue, and the legends that explain how to read a
+#:      sibling block — must not, because telling a model its own operating
+#:      instructions are suspect is the doctrine/untrusted distinction inverted
+#:      rather than a harmless extra attribute. `LeakGuard` already treats
+#:      doctrine as the thing that must not come back OUT.
+#:
+#: `ContextBlock.untrusted` is where class 2 is declared, and it defaults to
+#: True so the dangerous case is the one you get by forgetting. Nothing in the
+#: tree passes False yet — `<context_header>` is not a `ContextBlock` at all but
+#: a hand-built wrapper, which is why it is a literal here and why it sits on
+#: `test_one_block_injector`'s census. When it converts, this line goes and the
+#: declaration carries it.
+#:
+#: NOT derived from the declaration today. A derivation over a tree where
+#: nothing opts out returns the empty set, so it would be machinery that
+#: asserts nothing while reading as though it did — this file's own complaint
+#: about `_TAG_MESSAGE_BLOCKS`, one layer up.
 _NOT_DATA = {"context_header"}
 
 
