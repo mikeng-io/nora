@@ -30,9 +30,11 @@ members:
   - 00-overview.md
   - 01-boundaries.md
   - 02-the-rebuild.md
+  - 03-step0-results.md
 edges:
   - {src: 01-boundaries, dst: 00-overview, rel: depends_on, provenance: asserted}
   - {src: 02-the-rebuild, dst: 01-boundaries, rel: depends_on, provenance: asserted}
+  - {src: 03-step0-results, dst: 00-overview, rel: measures, provenance: measured}
 external_edges:
   - {dst: "dreamer-agent-loop/35-ambient-participation", rel: relates_to, provenance: asserted}
   - {dst: "dreamer-agent-loop/36-relevance-gate", rel: relates_to, provenance: asserted}
@@ -58,11 +60,11 @@ governance:
     corpus that strips the framing it is about, which is this bundle's problem
     seen from the other side. #311 carries the findings.
 open_questions:
-  - "STEP 0, AND IT CAN WITHDRAW THIS BUNDLE — 00-overview section 1 is the KWARG diff and is done. What remains is IMPACT: does a missing media_join / persons / decisions change the bytes that reach the model for the cases these suites run? Diff each eval-built component against PRODUCTION's construction of the same component. NOT the subjects against each other, which cannot come back empty because they read different doctrine audiences by an existing decision (composition.py:2708)"
+  - "STEP 0 — RUN 2026-09-17, refutation did NOT fire (03-step0-results). RelevanceGate: 539 vs 559 bytes, eval loses the canonical name and the media description, an image-only message reads as an empty body and its row is dropped. FirePath: three prompt blocks empty or absent from three ints defaulting to 0, and <people_in_window> is not rendered at all (fire.py:1122). FIVE components still unchecked and each could come back empty"
   - "OPERATOR, AND IT IS THE FIRST REAL ONE — where the single subject function lives. Re-probed 2026-09-17 by injecting each import and running lint-imports: nora.testing -> nora.app breaks 1 contract (the layered architecture, a reverse import), -> nora.infra 1, -> nora.config 2. A new top-level package outside both root packages is the option neither the node nor the contract has considered, and taking it would force 'the eval layer' in 01-boundaries section 5 to be DEFINED rather than assumed"
   - "REFUTES 01-boundaries IF FALSE — that the entry point can be a PORT rather than a taxonomy. Try relevance_gate (a real component, no turn) and participation (a full turn) through one runner first; they are deliberately the least alike. Unresolved against it: four things that need code and fit none of the three ports named — note_candidates' samples_per_fire, the gate's capabilities experiment, adversarial judge_samples/judge_model, and proactive_act's room fixtures. Also unconstructed: ONE Outcome shape over four disjoint frozen dataclasses (GateProbeResult, NoteCandidatesDrive, ProactiveDecideDrive, ProactiveActDrive)"
   - "WITHDRAWN 2026-09-17 — this bundle no longer rests on any count from design/09-decision-index.md. Those counts were measured three times by the author and produced three answers, and two independent reviews produced two more that disagreed with each other. The underlying concern (behavioural rules guarded by tests that establish the code is wired) is real and belongs on #311, stated with numbers somebody can reproduce or not stated"
-  - "UNPRICED AND IT COULD KILL THE REBUILD — driving build_dependencies per case needs a fresh Postgres plus migrations (tests/test_composition.py's fixture); the gate suite today runs ~40 windows with no database. This is NOT in 02-the-rebuild section 5's stopper list and should be, priced before Step 2"
+  - "PRICED 2026-09-17 AND THE OBJECTION WAS FALSE — build_dependencies costs 61-84ms per case (median 64ms) against ONE session-scoped container and a template clone, not a container per case; tests/conftest.py's pg_url does CREATE DATABASE ... TEMPLATE, 'one connection and a version check instead of 27 revisions'. Both reviews and this bundle's earlier drafts said 'a fresh Postgres per call' and none had checked. So 'one Nora per case' is affordable and a case can be plain data"
   - "UNADDRESSED — what happens to #227's and #158's open findings during the rebuild. Section 2.1's retraction de-evidences a live safety reading (being_contradicted.yaml records 0/5 on the never-grounded control, 'R-83's own carve-out failing in the direction it was written to prevent') and the bundle names no owner, replacement or date for it"
   - "SUPERSESSION UNSTATED — design/05-evaluation.md is the repo's existing evaluation node, live and cited by design/00-overview.md and by decision-index rows A8, A11, A12. This bundle proposes deleting the layer that implements it and never mentions it"
   - "NOT IN THIS BUNDLE — the convention. Step 6, describing what exists. Written first it describes the variations and legitimises them, attempted 2026-09-17 (PR #307) and withdrawn the same day"
