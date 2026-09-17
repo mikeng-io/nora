@@ -45,9 +45,9 @@ in a bounded outbox (≤256, oldest dropped + counted) and retried with
 exponential backoff until 2xx.
 
 Speech preempts music with a hard cut (no ducking): the music ffmpeg is
-killed, the slot remembered as suspended, and the track revives from 0
-when speech drains (`position_ms` is `approximate_restart` — no seek in
-phase 1). Durable desired-state (`STATE_FILE`): `/voice/exit` writes
+killed, the slot remembered as suspended, and the track revives at the
+cut position when speech drains (ffmpeg `-ss`; `position_policy` is
+`approximate_seek` — the consumed-frames count, not sample-exact). Durable desired-state (`STATE_FILE`): `/voice/exit` writes
 `idle`, a successful join writes `connected`; boot joins only when the
 file says `connected`, or the file is absent AND `CHANNEL_ID` is set.
 

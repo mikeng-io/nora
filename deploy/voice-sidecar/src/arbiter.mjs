@@ -10,10 +10,13 @@
 //   - speech preempts music: the music ffmpeg is KILLED (not paused), its
 //     slot {stream_url, title, duration_seconds, playback_id, generation,
 //     resumable, pauseRequested} remembered as suspended; when the speech
-//     queue drains a RESUMABLE track is revived from 0 (phase-1 position
-//     policy §5: position_ms is reported from the resource's
-//     playbackDuration; resume is approximate_restart, no seek). A
-//     NON-resumable (live) source gets NO resume: speech preempts and the
+//     queue drains a RESUMABLE track is revived FROM THE CUT POSITION
+//     (§5 B7, phase 2): the position is the slot's start offset plus the
+//     resource's playbackDuration at the cut, and the revived ffmpeg seeks
+//     there (`-ss` before `-i`); position_policy is approximate_seek — the
+//     player's consumed-frames count, not a sample-exact cursor. Measured
+//     2026-09-17 before this: every TTS reply restarted the song from 0.
+//     A NON-resumable (live) source gets NO resume: speech preempts and the
 //     stream ENDS — emitted as track-finished so nora treats it as a
 //     natural end (§5 "Live/non-seekable streams (radio) get NO resume").
 //   - a late ffmpeg start whose slot/generation is no longer current is
@@ -46,10 +49,14 @@ import { randomUUID } from 'node:crypto';
 import { realClock } from './outbox.mjs';
 import { redactUrl, redactText } from './redact.mjs';
 
-export const FFMPEG_ARGS = (url) => [
+export const FFMPEG_ARGS = (url, startOffsetMs = 0) => [
   '-reconnect', '1',
   '-reconnect_streamed', '1',
   '-reconnect_delay_max', '5',
+  // Input-side seek (before -i): ffmpeg range-requests into the CDN object
+  // instead of decoding from the top. Omitted at 0 so a fresh play's
+  // command line is byte-identical to before.
+  ...(startOffsetMs > 0 ? ['-ss', (startOffsetMs / 1000).toFixed(3)] : []),
   '-i', url,
   '-f', 's16le',
   '-ar', '48000',
@@ -87,11 +94,16 @@ export function createArbiter({
 
   const speechBusy = () => speechActive !== null || speechQueue.length > 0;
 
+  // Where the track is: the offset this slot's ffmpeg was started at plus
+  // what the player has consumed from it. A revived slot carries the cut
+  // position as its offset, so a second cut compounds correctly.
   function positionMs(s) {
-    return s?.resource ? Math.round(s.resource.playbackDuration ?? 0) : 0;
+    if (!s) return 0;
+    const played = s.resource ? Math.round(s.resource.playbackDuration ?? 0) : 0;
+    return (s.startOffsetMs ?? 0) + played;
   }
 
-  function newSlot({ streamUrl, title, durationSeconds, requestId, playbackId, resumable, pauseRequested }) {
+  function newSlot({ streamUrl, title, durationSeconds, requestId, playbackId, resumable, pauseRequested, startOffsetMs }) {
     return {
       playbackId: playbackId ?? randomUUID(),
       streamUrl,
@@ -100,6 +112,7 @@ export function createArbiter({
       requestId: requestId ?? null,
       resumable: resumable !== false, // live/non-seekable sources pass false
       pauseRequested: pauseRequested === true,
+      startOffsetMs: startOffsetMs > 0 ? Math.round(startOffsetMs) : 0,
       generation: getGeneration(),
       requestedAt: clock.now(), // request arrival — play_latency_ms baseline
       proc: null,
@@ -228,7 +241,7 @@ export function createArbiter({
       if (s.superseded || slot !== s || !player) return;
       let proc;
       try {
-        proc = spawn(FFMPEG_ARGS(s.streamUrl));
+        proc = spawn(FFMPEG_ARGS(s.streamUrl, s.startOffsetMs));
       } catch (err) {
         log('error', { event: 'ffmpeg_spawn_failed', error: String(err?.message ?? err) });
         failStream(s, 'ffmpeg-spawn');
@@ -298,8 +311,8 @@ export function createArbiter({
           log('music_resumed', {
             playback_id: s.playbackId,
             request_id: s.requestId,
-            position_policy: 'approximate_restart',
-            position_ms: 0,
+            position_policy: 'approximate_seek',
+            position_ms: s.startOffsetMs,
           });
         }
       };
@@ -349,6 +362,7 @@ export function createArbiter({
     if (slot) {
       const s = slot;
       slot = null;
+      s.cutAtMs = positionMs(s); // read before the kill: the revive seeks here
       s.superseded = true; // kills the current ffmpeg; the slot is revived later
       killProc(s);
       if (activeKind === 'music') {
@@ -386,8 +400,8 @@ export function createArbiter({
       });
       return;
     }
-    // Phase-1 position policy: restart from 0, same playback_id.
-    const revived = newSlot(s);
+    // §5 B7: same playback_id, ffmpeg seeks to the cut position.
+    const revived = newSlot({ ...s, startOffsetMs: s.cutAtMs ?? 0 });
     slot = revived;
     startFfmpeg(revived, 'resuming');
   }
@@ -612,10 +626,10 @@ export function createArbiter({
       player: {
         status: state === 'stopped' ? 'idle' : state,
         // Coherent with the resume policy: while suspended this is the
-        // position the track was cut at (the revive restarts from 0 and the
-        // policy says so); a live source reports policy 'none'.
+        // position the track was cut at, and the revive seeks there; a live
+        // source reports policy 'none'.
         position_ms: positionMs(current),
-        position_policy: current ? (current.resumable ? 'approximate_restart' : 'none') : null,
+        position_policy: current ? (current.resumable ? 'approximate_seek' : 'none') : null,
         current: current ? { title: current.title, url: current.streamUrl } : null,
       },
       speech_queue: speechQueue.length + (speechActive ? 1 : 0),

@@ -443,13 +443,40 @@ test('/voice/status position reporting is coherent with the resume policy', () =
   player.current.playbackDuration = 7_500;
   let snap = arbiter.statusSnapshot();
   assert.equal(snap.player.position_ms, 7_500);
-  assert.equal(snap.player.position_policy, 'approximate_restart');
+  assert.equal(snap.player.position_policy, 'approximate_seek');
 
   arbiter.enqueueSpeech({ audio: Buffer.from('tts'), mediaType: 'audio/mpeg' });
   snap = arbiter.statusSnapshot();
   assert.equal(snap.player.status, 'suspended');
   assert.equal(snap.player.position_ms, 7_500); // the cut position, not 0
   assert.equal(snap.player.current.title, 'A'); // still names the suspended track
+});
+
+test('speech-suspend then revive seeks the same track to the cut position (§5 B7), not 0', async () => {
+  const { arbiter, player, procs, playToPlaying } = makeArbiter();
+  const a = playToPlaying('https://cdn.test/a');
+  assert.deepEqual(a.proc.args.slice(0, 8), ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5', '-i', 'https://cdn.test/a']); // a fresh play has no seek
+  player.current.playbackDuration = 8_000; // 8 s consumed when speech arrives
+
+  arbiter.enqueueSpeech({ audio: Buffer.from('tts'), mediaType: 'audio/mpeg' });
+  assert.equal(arbiter.state(), 'suspended');
+  assert.equal(arbiter.statusSnapshot().player.position_ms, 8_000);
+  player.finish(); // speech ends
+  await tick(); // the revive waits for the killed ffmpeg to reap
+
+  const revived = procs[1];
+  assert.equal(revived.args[6], '-ss');
+  assert.equal(revived.args[7], '8.000');
+  assert.equal(revived.args[9], 'https://cdn.test/a'); // the seek precedes -i
+  revived.data();
+  assert.equal(arbiter.statusSnapshot().playback_id, a.playbackId); // same slot identity
+  // Position keeps counting from the seek point, and a SECOND cut compounds.
+  player.current.playbackDuration = 2_500;
+  assert.equal(arbiter.statusSnapshot().player.position_ms, 10_500);
+  arbiter.enqueueSpeech({ audio: Buffer.from('tts2'), mediaType: 'audio/mpeg' });
+  player.finish();
+  await tick();
+  assert.equal(procs[2].args[7], '10.500');
 });
 
 test('a suspended live source reports position_policy none', () => {

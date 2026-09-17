@@ -684,7 +684,7 @@ test('/music/play accepts an optional boolean resumable; a non-boolean is 400 in
 
   const regular = await h.post('/music/play', { guild_id: GUILD, generation, stream_url: 'https://cdn.test/a' });
   assert.equal(regular.status, 200);
-  assert.equal(regular.body.state.player.position_policy, 'approximate_restart'); // default unchanged
+  assert.equal(regular.body.state.player.position_policy, 'approximate_seek'); // default unchanged
   await h.close();
 });
 
