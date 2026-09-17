@@ -580,6 +580,63 @@ interval. `02-measurement §3` names the fix — a durable per-verdict row, whic
 DEC-179 excluded from `decision_log` on purpose. Until that exists, `overrides`
 is approximate and is a lower bound.
 
+## 6d. "Did the transport throw away her reasoning?" — `reasoning_strip_log`
+
+**The defect.** OmniRoute's Chat Completions transport cannot carry
+`reasoningContent` in a multi-turn position. When a loop goes multi-turn — on
+the agent path that means it reached for a tool — Strands drops the reasoning
+out of the request, logs one WARNING, and **continues**. In production it does
+not raise: the turn runs on and she speaks with her reasoning gone (#325, read
+back 2026-09-17). ADR 0011 measured the same transport limitation on the
+relevance gate as a **safety breach**, not merely as degradation.
+
+**Read the table, not the counter.** `nora_reasoning_strip_total` exists and is
+useful inside one uptime window, but it resets on every deploy, and an absent
+series there means "nothing since the last restart" — never "never happened".
+The durable answer is in Postgres.
+
+```bash
+docker exec nora-db psql -U nora -d nora -c "
+  SELECT path, model, reasoning_effort,
+         count(*)                   AS turns,
+         sum(continuation_calls)    AS chances,
+         sum(strip_calls)           AS strips,
+         round(100.0 * sum(strip_calls) / nullif(sum(continuation_calls),0), 1)
+                                    AS pct
+  FROM reasoning_strip_log
+  WHERE created_at > now() - interval '7 days'
+  GROUP BY 1,2,3
+  ORDER BY 1,2,3;"
+```
+
+**How to read it, and the two traps.**
+
+- **`chances` is the denominator and it is the point.** `strips = 2` is a
+  catastrophe at `chances = 2` and a rounding error at `chances = 200`. The
+  production reading that opened #325 had no denominator at all, which is why
+  it settled nothing.
+- **`pct = 0` at `reasoning_effort = 'none'` means IMPOSSIBLE, not healthy.**
+  A path emitting no reasoning cannot have any stripped. As of 2026-09-17 the
+  tag and participation paths are at `none` and every Dreamer adaptor is at
+  `low`, so a clean tag row is expected and a clean `dreamer:*` row at `low` is
+  the reading that would be news.
+- **No rows for a path is not a zero.** A row is written only for a MULTI-TURN
+  invocation, so a path with no rows had no tool-using turns in the window —
+  check `nora_tool_call_log_writes_total` or the tool log before concluding
+  anything.
+
+**After a model or config change**, the same query with
+`date_trunc('hour', created_at)` in the GROUP BY is the before/after: the
+columns record what was actually SENT, not what config said. That is the whole
+reason the change of 2026-09-17 — combo `nora` moving to
+`deepseek-v4.1-flash` between 08:52Z and 09:42Z, with `reasoning_effort` moving
+in opposite directions on two paths in the same session — cost two hours and a
+log dive to reconstruct, and left the causation **untested**.
+
+Nothing acts on this signal, deliberately: the drop is deterministic, and a
+retry would turn a request-shape incompatibility into an apparently
+intermittent one. See `docs/adr/0013-the-reasoning-strip-is-counted-in-postgres.md`.
+
 ## 7. "Where do eval results live?"
 
 **Langfuse, as of 2026-08-05 — verified end-to-end.** DEC-6: `strands-agents-evals`

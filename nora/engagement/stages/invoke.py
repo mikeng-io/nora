@@ -82,6 +82,7 @@ class AgentRunner(Protocol):
         pre_fill: list[dict[str, Any]],
         guard: Any,
         tool_call_log: Any = None,
+        reasoning_watch: Any = None,
         tag_message: str,
         limits: dict[str, Any],
         ctx: TagContext,
@@ -108,6 +109,7 @@ async def run(
     pre_fill: list[dict[str, Any]],
     guard: Any,
     tool_call_log: Any = None,
+    reasoning_watch: Any = None,
     tag_message: str,
     limits: dict[str, Any],
     ctx: TagContext,
@@ -155,7 +157,7 @@ async def run(
         stop_reason, final_text, trace = await asyncio.wait_for(
             runner.invoke(
                 doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
-                tool_call_log=tool_call_log,
+                tool_call_log=tool_call_log, reasoning_watch=reasoning_watch,
                 tag_message=tag_message, limits=limits, ctx=ctx,
                 trace_attributes=build_trace_attributes(ctx, doctrine),
             ),
@@ -199,6 +201,19 @@ async def run(
     finally:
         elapsed = time.perf_counter() - started
         metrics.observe("nora_llm_latency_seconds", elapsed, audience=audience)
+    # AFTER the try/finally, so a turn that timed out or raised still writes
+    # what its loop had already done — those are exactly the turns whose model
+    # calls are least visible from anywhere else. NOT inside the `finally`:
+    # awaiting there on a cancelled task re-raises `CancelledError` out of the
+    # cleanup path, and a record of something that has already happened must
+    # never be the reason a turn ends differently. A turn cancelled outright
+    # therefore writes nothing, which is stated rather than hidden.
+    #
+    # `flush` is idempotent, swallows its own exceptions and no-ops when the
+    # loop never went multi-turn (`nora.agent.reasoning_strip`), so this line
+    # is safe on every path through the stage.
+    if reasoning_watch is not None:
+        await reasoning_watch.flush()
     if stop_reason is not None:
         # Every completed invocation, not just the ones that ran out of
         # budget: a series that only ever carries `limit_*` cannot say what

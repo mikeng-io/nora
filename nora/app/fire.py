@@ -732,6 +732,7 @@ class FirePath:
         preview_source: LinkPreviewSource | None = None,
         llm_state: Any = None,
         tool_call_log_store: ToolCallLogStore | None = None,
+        reasoning_strip_store: Any = None,
         event_registry: Mapping[str, EventFactory] | None = None,
         standing: StandingStore | None = None,
         standing_store_timeout_seconds: float = DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
@@ -884,6 +885,11 @@ class FirePath:
         # this path exactly as inert as it already is for a deployment that
         # has not wired one.
         self._tool_call_log_store = tool_call_log_store
+        # Issue #325's durable half. Optional and inert when `None`, exactly
+        # like `tool_call_log_store` above — the participation occasion is one
+        # of the two paths the watch labels, and this is where its rows come
+        # from.
+        self._reasoning_strip_store = reasoning_strip_store
         # The participation occasion's runner (design/dreamer-agent-loop/35):
         # the SAME AgentRunner shape composed with `tool_choice="auto"` —
         # the determination may end in silence, which `required` (the tag
@@ -1689,6 +1695,7 @@ class FirePath:
                 audience=audience,
                 cacheable_tools=self._registry.cacheable_tools(),
                 tool_call_log_store=self._tool_call_log_store,
+                reasoning_strip_store=self._reasoning_strip_store,
                 # The participation SEND cooldown (§10.3). True on every other
                 # occasion — the heartbeat has no cooldown, and this keyword's
                 # whole reason for travelling through `deliver.build` rather
@@ -1782,6 +1789,7 @@ class FirePath:
             failure, stop_reason, final_text = await self._invoke(
                 doctrine=doctrine, tools=tools, pre_fill=pre_fill,
                 guard=handle.guard, tool_call_log=handle.tool_call_log,
+                reasoning_watch=handle.reasoning_watch,
                 tag_message=tag_message, ctx=ctx,
                 platform=occasion.platform, deliverer=handle.deliverer,
                 participation=participation, proactive=proactive,
@@ -1932,6 +1940,7 @@ class FirePath:
         pre_fill: list[dict[str, Any]],
         guard: ReplyGuard,
         tool_call_log: Any = None,
+        reasoning_watch: Any = None,
         tag_message: str,
         ctx: TagContext,
         platform: str,
@@ -2008,7 +2017,7 @@ class FirePath:
             stop_reason, final_text, _trace = await asyncio.wait_for(
                 runner.invoke(
                     doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
-                    tool_call_log=tool_call_log,
+                    tool_call_log=tool_call_log, reasoning_watch=reasoning_watch,
                     tag_message=tag_message, limits=self._limits, ctx=ctx,
                     trace_attributes=trace_attributes(ctx, doctrine),
                 ),
@@ -2040,6 +2049,14 @@ class FirePath:
                 "nora_llm_latency_seconds", time.perf_counter() - started,
                 audience=audience,
             )
+        # AFTER the try/finally and before anything is recovered or delivered,
+        # for `nora.engagement.stages.invoke.run`'s reason: a fire turn that
+        # timed out or raised still writes what its loop had already done, and
+        # awaiting inside a `finally` on a cancelled task re-raises out of the
+        # cleanup path. `flush` is idempotent, swallows its own exceptions and
+        # no-ops when the loop never went multi-turn.
+        if reasoning_watch is not None:
+            await reasoning_watch.flush()
         if stop_reason is not None:
             self._metrics.inc(
                 "nora_llm_stop_reason_total", reason=stop_reason, audience=audience,
@@ -2258,6 +2275,7 @@ class FirePath:
                 composer=None,
                 cacheable_tools=self._registry.cacheable_tools(),
                 tool_call_log_store=self._tool_call_log_store,
+                reasoning_strip_store=self._reasoning_strip_store,
                 # The mirror is not subject to the room's participation
                 # cooldown — it is how a cooldown-HELD message is reviewed at
                 # all, so holding the mirror too would hide exactly that case.
@@ -2360,6 +2378,7 @@ class FirePath:
                 composer=None,
                 cacheable_tools=self._registry.cacheable_tools(),
                 tool_call_log_store=self._tool_call_log_store,
+                reasoning_strip_store=self._reasoning_strip_store,
                 send_permitted=True,
             )
             posted = await handle.deliverer.deliver(

@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "A turn whose reasoning the OmniRoute transport discarded is now a durable row instead of a warning inside a third-party logger.",
+  "reason": "Observation only, with no behaviour change anywhere: no retry, no transport change, no reasoning_effort touched. Nothing a member can see differs. It adds one Postgres table (reasoning_strip_log, migration 0057), two Prometheus counters and a runbook query, so that the rate at which the Chat Completions transport drops reasoning in a multi-turn position — per unit of opportunity, by path, beside the model and effort actually sent — stops being unanswerable. Issue #325, ADR 0013.",
+  "details": [],
+  "limitations": []
+}
