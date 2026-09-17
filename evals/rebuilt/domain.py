@@ -145,6 +145,26 @@ class Outcome:
     #: never graded — ERROR is not FAIL and is certainly not PASS.
     error: str | None = None
 
+    #: Wall-clock seconds this draw took.
+    #:
+    #: Carried because it is the ONLY artifact that can separate a real call
+    #: from a gateway cache hit, and that distinction decides whether `sample:
+    #: 5` means five readings or one reading counted five times. `0/5` and
+    #: `5/5` are exactly the shape a cache produces, so a suite without this
+    #: reports a confidence it cannot support.
+    #:
+    #: Recorded rather than judged: no threshold lives here. What counts as
+    #: "too fast to have been a call" depends on the model and the route, and a
+    #: number baked in would be a proxy for the property. The report prints the
+    #: spread and a reader decides.
+    #:
+    #: The old layer had no equivalent — `NO_CACHE_HEADERS` is on its gate and
+    #: judge paths and not on its reply path, and its run logs carry no
+    #: per-sample timing, so the effective n of an existing number is
+    #: unverifiable from its artifacts (`design/evaluation/03-step0-results.md`
+    #: §2.7). This is that gap closed going forward, not backwards.
+    elapsed_seconds: float = 0.0
+
     #: Provenance that must not be read as behaviour. `delivery` is what the
     #: transport did with what she wrote: with no platform daemon in front of
     #: a case it is `failed`, and that is expected — the grading is on what she

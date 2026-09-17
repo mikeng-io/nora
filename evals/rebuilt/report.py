@@ -51,6 +51,26 @@ def render(verdicts: list[Verdict], *, subject: str) -> tuple[bool, str]:
                    "passes nor failures.")
     else:
         out.append(f"0. THE RUN ITSELF — OK ({got}/{expected} draws)")
+
+    # THE EFFECTIVE-n LINE. Printed inside measurement 0 because it is about
+    # whether the run happened, not about what it found.
+    #
+    # A gateway cache makes `0/5` and `5/5` exactly the shape it produces, so a
+    # sample count is only worth reading if the draws were real calls. The
+    # spread is what shows it: five genuine calls to the same model vary by
+    # tenths of a second, a cache hit returns in milliseconds, and the two do
+    # not overlap. No threshold is applied — what is "too fast" depends on the
+    # model and the route, and a number baked in here would be a proxy.
+    times = sorted(o.elapsed_seconds for v in verdicts for o in v.outcomes)
+    if times:
+        out.append(
+            f"   per-draw seconds: min {times[0]:.2f}  median "
+            f"{times[len(times) // 2]:.2f}  max {times[-1]:.2f}"
+        )
+        out.append(
+            "   Read this before any sample count: draws far below the median "
+            "may be cache hits, and a cached draw is not a second reading."
+        )
     out.append("")
 
     # 1 — DETERMINISM, the control. Reported before accuracy: if a case answers

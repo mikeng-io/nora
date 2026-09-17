@@ -413,6 +413,28 @@ class _RelevanceGateModelClient:
     That is not an accuracy miss, it is an unauthenticated turn: a member who
     can forge Nora's side of a transcript steers the admission decision.
 
+    **CACHE CAVEAT, added 2026-09-17 and it travels with these numbers.** Both
+    arms above ran through `eval_support.build_gate_probe`, and BOTH are
+    cache-bypassed: `NO_CACHE_HEADERS` is applied to the SDK arm's model
+    (`eval_support.py:919`) and to the raw arm's client (`:1014`). This client
+    — the deployed one — sets no such header, and `NO_CACHE_HEADERS` appears
+    nowhere in this file.
+
+    So the comparison BETWEEN the two arms holds: same instruction, same
+    corpus, same bypass, one variable. What does not transfer unqualified is
+    the ABSOLUTE reading — `n=5` against a bypassed gateway and `n=5` against
+    the deployed one are not the same five calls, and `0/5` and `5/5` are
+    exactly the shape a cache produces. The safety finding stands on the
+    mechanism (`structured_output` becomes a tool spec, three messages, the
+    reasoning dropped before the verdict), which is transport-level and does
+    not depend on the sample count.
+
+    Verified here rather than repeated: `design/evaluation/05-live-parity.md`
+    §4. Neither this docstring's author nor the two sessions that have cited
+    #186 has read the issue first-hand — its numbers are quoted from ADR 0011's
+    account of it — so this caveat is stated at the QUOTING site rather than
+    only in a design node, because that is where somebody reads them.
+
     The mechanism is below the prompt, which is why no instruction reaches it:
     Strands converts the schema into a TOOL SPECIFICATION and feeds the result
     back, so one logical call becomes three messages, and against OmniRoute's

@@ -15,8 +15,10 @@ nothing is shared between two of them.
 
 from __future__ import annotations
 
+import dataclasses
 import shutil
 import tempfile
+import time
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -167,6 +169,7 @@ async def run_once(
     """
     port = ENTRY_POINTS[case.entry]
     workdir = Path(tempfile.mkdtemp(prefix="nora-case-"))
+    started = time.monotonic()
     try:
         subject = await obtain(
             SubjectSpec(
@@ -190,7 +193,10 @@ async def run_once(
             subject, _knowledge(case.knows),
             leave_room_for_arrival=port.delivers_input,
         )
-        return await port.drive(subject, case, now_ms=written.now_ms)
+        outcome = await port.drive(subject, case, now_ms=written.now_ms)
+        return dataclasses.replace(
+            outcome, elapsed_seconds=time.monotonic() - started,
+        )
     except Exception as exc:                        # noqa: BLE001
         return Outcome(admitted=None, error=f"{type(exc).__name__}: {exc}")
     finally:

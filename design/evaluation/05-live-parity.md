@@ -96,6 +96,44 @@ gateway cache makes `0/5` and `5/5` exactly the shape it produces. The
 agreement number in §1 is a per-case comparison, not a per-sample one, for that
 reason.
 
+## 4.1 The effective-n instrument, and its first reading
+
+The old layer cannot answer the question §4 raises about itself: its run logs
+carry no per-sample timing, so the effective n of any number already published
+is unverifiable from its artifacts. The new layer records `elapsed_seconds` per
+draw and measurement 0 prints the spread — **inside the "did the run happen"
+section, because it is about whether the draws were real calls, not about what
+they found.** No threshold is applied: what counts as too fast depends on the
+model and the route, and a number baked in would be a proxy for the property.
+
+**Its first reading does not fit, and is recorded rather than explained.**
+Three gate cases, `sample: 2`, against the deployed `nora-gate` alias over the
+tunnel:
+
+```
+0. THE RUN ITSELF — OK (6/6 draws)
+   per-draw seconds: min 0.13  median 0.17  max 0.35
+```
+
+Every draw includes a full `build_dependencies` (~64ms) **and** the gate's
+model call. Yet §1's parity run made 32 gate calls in 105 seconds — about 3.3s
+each. Sub-second draws are an order of magnitude off that, and the obvious
+reading is a gateway cache hit, which is exactly what §4 says these numbers are
+vulnerable to.
+
+**But it does not close.** The same run reports `real/weather-sham-shui-po` as
+`1/2` on the determinism control — two different answers. A cache hit returns
+the same bytes; two answers means two calls. So either these were real calls
+that were ten times faster than the parity run's, or the two draws did not send
+identical prompts (each composes a fresh subject, so the rendered ages differ
+by however long the draw took) and only some hit the cache.
+
+Both are checkable and neither is checked here. What matters is that **the
+instrument produced a reading nobody predicted on its first run**, which is the
+whole reason to carry the number instead of asserting `sample: 5` means five
+readings. Resolving it is the check that must come before #324's arm is
+unparked — otherwise that arm gets recomputed twice.
+
 ## 5. What this licenses, and what it does not
 
 **Licensed:** the new layer reaches the real model, drives the deployed
@@ -110,6 +148,8 @@ on its own (`04-the-convention` §6):
    scored yet;
 2. 23 cases are refused for missing seams in `nora.app`, two of which are not
    closed;
-3. this parity run covered ONE of four entry points.
+3. this parity run covered ONE of four entry points;
+4. §4.1's timing reading is unexplained, and it bears on every sample count
+   this layer will produce.
 
 Step 5 remains the last step and it is still not this one.
