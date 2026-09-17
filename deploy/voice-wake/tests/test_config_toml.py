@@ -67,3 +67,26 @@ def test_malformed_config_raises(tmp_path: Path) -> None:
     bad.write_text("[speech.wake\nthreshold = ", encoding="utf-8")
     with pytest.raises(Exception):  # noqa: B017 — any parse error must surface, never default
         build_config(bad, env={})
+
+
+REPO_EXAMPLE = Path(__file__).resolve().parents[3] / "config.example.toml"
+
+
+@pytest.mark.skipif(not REPO_EXAMPLE.is_file(), reason="repo config.example.toml not present")
+def test_code_defaults_equal_the_committed_example_defaults() -> None:
+    """A live config.toml without [speech.wake] runs on the CODE defaults; the example
+    file is the operator's record of those defaults. They drifted once (2026-09-17:
+    code said noise-detection, example said sensevoice — the wake path silently took
+    the slow whisper). Every key in the example's [speech.wake] must equal Config()."""
+    import tomllib
+
+    wake = tomllib.loads(REPO_EXAMPLE.read_text(encoding="utf-8"))["speech"]["wake"]
+    d = Config()
+    mapping = {
+        "threshold": d.threshold, "model_path": d.model_path, "stt_model": d.stt_model,
+        "vad_enabled": d.vad_enabled, "vad_threshold": d.vad_threshold,
+        "silence_tail_ms": d.silence_tail_ms, "max_utterance_s": d.max_utterance_s,
+        "silence_rms": d.silence_rms,
+    }
+    for key, code_default in mapping.items():
+        assert wake[key] == code_default, f"[speech.wake].{key}: example {wake[key]!r} != code {code_default!r}"
