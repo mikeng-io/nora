@@ -21,6 +21,7 @@ import pytest
 
 from nora.config import DreamBudgetConfig
 from nora.domain.culture import (
+    ACCOUNT_CHARS_OBSERVED_MAX,
     ACCOUNT_OUTPUT_TOKENS,
     BODY_MAX_CHARS,
     OUTPUT_TOKENS_PER_CHAR,
@@ -31,6 +32,7 @@ from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.notes import Note
 from nora.domain.ports import Proposal
 from nora.domain.standing import Standing
+from nora.infra.sql.schema import CULTURE_BODY_CEILING_CHARS
 from nora.language.culture import (
     CULTURE_ADAPTOR_NAME,
     CULTURE_OUTCOMES,
@@ -544,39 +546,59 @@ def test_the_grant_names_NO_act_verb():
 # --- the cap and the budget are ONE decision, not two -----------------------
 
 
-def test_an_account_at_the_cap_fits_inside_the_budget_that_must_emit_it():
+def test_a_realistic_account_fits_inside_the_loop_budget_that_must_emit_it():
     """**The silent, self-perpetuating trap** (`note-candidates`'
     `AdaptorSchedule` comment, reached from the other end): an output cap that
     binds truncates the JSON, `parse_envelope` reads no envelope, the run is
     `unavailable`, the watermark is HELD, and the same batch is re-read and
-    re-truncated on every fire, forever. **This is what `[llm] max_tokens`
+    re-truncated on every fire, forever. **This is what `[dreamer] max_tokens`
     guards and what `BODY_MAX_CHARS` does NOT** — the character cap is read in
-    `accept`, on a body the model already emitted in full, so it is a quality
-    refusal and never a truncation guard. The two were one paragraph until
-    2026-09-17 and that is how 1,600 came to be derived from the wrong one.
+    `accept`, on a body the model already emitted in full, so it is a refusal
+    and never a truncation guard.
 
-    The cap is in CHARACTERS and the budget in TOKENS; the bridge is
-    `ACCOUNT_OUTPUT_TOKENS`, built on the MEASURED
-    `OUTPUT_TOKENS_PER_CHAR` (1.15, against 1.094 for a realistic
+    **What this test measures changed on 2026-09-18, and the old version is
+    why.** It used to size the budget on an account written to
+    `BODY_MAX_CHARS`, which tied a TOKEN RESERVATION to a length nothing is
+    expected to reach — so the cap could not be raised without demanding a
+    23,000-token completion no fold would ever use. The budget is sized on
+    `ACCOUNT_CHARS_OBSERVED_MAX` now: 1,876 characters, the longest account the
+    live fold has been SEEN to emit.
+
+    The length is in CHARACTERS and the budget in TOKENS; the bridge is the
+    MEASURED `OUTPUT_TOKENS_PER_CHAR` (1.15, against 1.094 for a realistic
     dense-Cantonese account and 1.131 for continuous Cantonese prose). The
     previous 1.0 was asserted rather than taken and was optimistic on the very
     case it named, which is the direction that truncates.
 
     The rule: **the loop must be able to emit a full account twice** — once for
     the tool-call arguments and any preamble the pass spends before it writes,
-    once for the account. Against `DreamBudgetConfig`'s own default, because
-    that is what an adaptor with no `[dreamer.budgets.culture]` block gets."""
-    default_loop_budget = DreamBudgetConfig().output_tokens
-    assert ACCOUNT_OUTPUT_TOKENS >= BODY_MAX_CHARS
-    assert default_loop_budget >= 2 * ACCOUNT_OUTPUT_TOKENS, (
-        f"an account at the cap costs ~{ACCOUNT_OUTPUT_TOKENS} output tokens "
-        f"and the default loop budget is {default_loop_budget}: a fold written "
-        f"to the cap truncates, and a truncated fold holds its watermark and "
-        f"re-reads the same batch forever"
+    once for the account. Against the SHIPPED `[dreamer.budgets.culture]`
+    block rather than `DreamBudgetConfig`'s field default, because the default
+    (4,000) does not clear it and saying otherwise would be the decoration this
+    pair of tests exists to refuse. An operator who deletes that block is
+    running a fold that cannot finish its sentence, and the block's own comment
+    says so."""
+    import tomllib
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    cfg = tomllib.loads((root / "config.example.toml").read_text())
+    loop_budget = cfg["dreamer"]["budgets"]["culture"]["output_tokens"]
+    assert ACCOUNT_OUTPUT_TOKENS >= ACCOUNT_CHARS_OBSERVED_MAX
+    assert loop_budget >= 2 * ACCOUNT_OUTPUT_TOKENS, (
+        f"a realistic account costs ~{ACCOUNT_OUTPUT_TOKENS} output tokens and "
+        f"the shipped culture loop budget is {loop_budget}: a fold truncates, "
+        f"and a truncated fold holds its watermark and re-reads the same batch "
+        f"forever"
+    )
+    assert DreamBudgetConfig().output_tokens < 2 * ACCOUNT_OUTPUT_TOKENS, (
+        "the field default now clears the floor, so the comment in "
+        "config.example.toml saying an operator must keep the culture block is "
+        "wrong — re-derive both rather than re-approximating"
     )
 
 
-def test_an_account_at_the_cap_fits_inside_ONE_shipped_completion():
+def test_a_realistic_account_fits_inside_ONE_shipped_completion():
     """The tighter of the two ceilings, and a different mechanism: `[dreamer]
     max_tokens` (0 -> `[llm] max_tokens`) is the PROVIDER's per-completion
     ceiling and binds as `MaxTokensReachedException` -> `PartialReplyError`,
@@ -590,41 +612,49 @@ def test_an_account_at_the_cap_fits_inside_ONE_shipped_completion():
     cfg = tomllib.loads((root / "config.example.toml").read_text())
     ceiling = cfg["dreamer"].get("max_tokens") or cfg["llm"]["max_tokens"]
     assert ceiling >= ACCOUNT_OUTPUT_TOKENS, (
-        f"an account at the cap costs ~{ACCOUNT_OUTPUT_TOKENS} tokens and one "
+        f"a realistic account costs ~{ACCOUNT_OUTPUT_TOKENS} tokens and one "
         f"completion is capped at {ceiling}"
     )
 
 
-def test_the_cap_is_a_SHORT_account_measured_against_the_objectives_example():
-    """The objective asks for «one paragraph or two» and prints a worked
-    example. The cap must admit the second paragraph and refuse the essay, so
-    it is pinned as a band around that example rather than as a bare number —
-    a cap 10.8x the operator's own example (8,000, until 2026-09-17) said
-    «short account» while admitting something no reader would call one.
+def test_the_cap_cannot_wedge_a_room_the_way_1400_did():
+    """**This test replaces one that certified the defect** (2026-09-18), and
+    the swap is the finding.
 
-    **The band was 1.5x-2.5x and that was loose enough to admit a wrong
-    number.** `BODY_MAX_CHARS`' own comment claimed the example was «~890
-    characters» and the cap «1.8x» it; extracted the way this test extracts it,
-    the example is 739 and the old 1,600 was 2.17x. Both figures passed the old
-    band, so the band certified an arithmetic error as correct. 1.75x-2.05x is
-    tight enough that the stated ratio has to be the true one, and an
-    operator-side edit to the worked example reddens this instead of silently
-    re-pointing the cap."""
-    from pathlib import Path
+    The old test pinned `BODY_MAX_CHARS` as a band (1.75x-2.05x) around the
+    objective's 739-character worked example, on the theory that the cap was a
+    QUALITY instrument: admit the second paragraph, refuse the essay. It was
+    green on 1,400 — and 1,400 ran through the middle of what the model
+    actually emits. Measured live the same evening, n=10 across five rooms:
+    563, 811, 1,095 and 1,316 characters written; 1,583, 1,677, 1,725, 1,812,
+    1,826 and 1,876 REFUSED. The deployment's busiest room folded four times,
+    was refused four times, recorded nothing, and held its watermark — one
+    model call per tick against an instruction that never named a length. The
+    band certified all of that as correct, because a ratio against a worked
+    example is not a measurement of a model.
 
-    root = Path(__file__).resolve().parents[2]
-    objective = (root / "nora/dreamer/objectives/culture.md").read_text()
-    body = objective.split('{"account": [{"body": "')[1].split('"}]}')[0]
-    assert len(body) == 739, (
-        f"the worked example moved to {len(body)} chars; BODY_MAX_CHARS' "
-        f"comment states 739 and states the ratio against it, so both have to "
-        f"be re-derived rather than re-approximated"
+    So the property worth pinning is not the cap's ratio to the example. It is
+    that **a normal draw cannot reach the cap**: `accept` RAISES on oversize
+    and the Dreamer holds the watermark for a raise, so a cap inside the
+    emission distribution is not a refusal, it is a wedge. 4x the observed
+    maximum is the margin — wide enough that the 29%-higher next sample this
+    repo has already been bitten by (`[dreamer] max_tokens`, n=1 -> 4,000)
+    cannot reach it either.
+
+    The quality guard the old test thought it was enforcing belongs to the
+    objective, which is `change_policy: operator-only`; `CultureAdaptor.accept`
+    names the line that would restore it. Nothing here pretends to stand in."""
+    assert BODY_MAX_CHARS >= 4 * ACCOUNT_CHARS_OBSERVED_MAX, (
+        f"the cap is {BODY_MAX_CHARS} against a measured emission maximum of "
+        f"{ACCOUNT_CHARS_OBSERVED_MAX}: that is inside the range the model "
+        f"draws from, and a refusal inside that range wedges the room's fold "
+        f"rather than improving it"
     )
-    ratio = BODY_MAX_CHARS / len(body)
-    assert 1.75 <= ratio <= 2.05, (
-        f"the objective's worked account is {len(body)} chars and the cap is "
-        f"{BODY_MAX_CHARS} ({ratio:.2f}x): outside 1.75x-2.05x, the cap and "
-        f"the instruction are asking for different things"
+    assert BODY_MAX_CHARS < CULTURE_BODY_CEILING_CHARS, (
+        f"the operating cap ({BODY_MAX_CHARS}) has reached the database "
+        f"ceiling ({CULTURE_BODY_CEILING_CHARS}): 'no writer should produce "
+        f"that' and 'this row is corrupt' must stay two different refusals, "
+        f"because only the first one is recoverable"
     )
 
 
@@ -647,7 +677,8 @@ def test_the_character_to_token_bridge_is_the_MEASURED_one():
         "below the measured continuous-Cantonese-prose ratio: an account at "
         "the cap would cost more output tokens than ACCOUNT_OUTPUT_TOKENS says"
     )
-    assert ACCOUNT_OUTPUT_TOKENS >= BODY_MAX_CHARS * OUTPUT_TOKENS_PER_CHAR
+    assert (ACCOUNT_OUTPUT_TOKENS
+            >= ACCOUNT_CHARS_OBSERVED_MAX * OUTPUT_TOKENS_PER_CHAR)
 
 
 def test_the_declared_store_calls_cover_the_three_inputs_and_the_two_writes():
