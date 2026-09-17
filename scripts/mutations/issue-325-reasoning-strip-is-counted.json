@@ -32,11 +32,11 @@
   },
   {
     "name": "a model call that raised settles nothing",
-    "comment": "BeforeModelCallEvent fires INSIDE the retry loop, so an attempt that throttled is the same position re-entered. Counting it would inflate the rate exactly when a provider is struggling.",
+    "comment": "BeforeModelCallEvent fires INSIDE the retry loop, so an attempt that throttled is the same position re-entered. The first sweep found this GREEN against the retry test: a retry lands on the same depth either way, so the depth guard masked it and the totals agreed. The target is now the pass that raised and was NOT retried, where the two guards disagree - that one would otherwise put a `stripped` on a request nobody got an answer from.",
     "file": "nora/agent/reasoning_strip.py",
     "old": "            if getattr(event, \"exception\", None) is not None:\n                return",
     "new": "            if False:\n                return",
-    "target": "tests/unit/test_reasoning_strip_watch.py -k test_a_retried_attempt_is_one_opportunity_not_two"
+    "target": "tests/unit/test_reasoning_strip_watch.py -k test_a_call_that_raised_and_was_not_retried_is_not_counted"
   },
   {
     "name": "a stripped continuation call is counted",

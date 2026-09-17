@@ -117,6 +117,35 @@ def test_a_retried_attempt_is_one_opportunity_not_two():
     assert row.strip_calls == 1
 
 
+def test_a_call_that_raised_and_was_not_retried_is_not_counted():
+    """A pass that produced NO ANSWER is not an opportunity that was measured.
+
+    The sibling above cannot separate this from the depth guard — a retry lands
+    on the same position either way, so the totals agree. This one can: the loop
+    gives up (the retry budget is spent, or the error is not retryable) and
+    nothing follows. Counting it would put a `stripped` on a request whose
+    outcome nobody observed, on exactly the turns a provider was failing — the
+    reading least able to afford a false one.
+
+    `exception is None` is the discriminator, the same one
+    `ReplyGuard._after_model` uses and for the same reason.
+    """
+    agent = _Agent([])
+    watch = _watch()
+    _first_call(agent)
+    watch._before_model(_Before(agent))
+    watch._after_model(_After(agent))
+
+    _continuation(agent)
+    watch._before_model(_Before(agent))
+    watch._after_model(_After(agent, exception=RuntimeError("502")))
+
+    assert watch.observation is None, (
+        "a continuation pass that raised was counted as an opportunity — the "
+        "denominator now includes calls nobody got an answer from"
+    )
+
+
 def test_a_position_asked_twice_is_counted_once():
     """A hook that discards a SUCCESSFUL response and re-asks (the SDK's
     `AfterModelCallEvent.retry`) leaves the message list where it was. The
