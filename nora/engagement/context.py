@@ -23,6 +23,7 @@ import logging
 import time
 from typing import Any, Protocol
 
+from nora.domain.culture import CultureRevision
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import (
     NormalizedMessage,
@@ -37,7 +38,6 @@ from nora.domain.ports import (
     RecordStore,
     StandingStore,
 )
-from nora.domain.culture import CultureRevision
 from nora.domain.standing import Standing
 from nora.persons import Persons
 from nora.policy import Policy

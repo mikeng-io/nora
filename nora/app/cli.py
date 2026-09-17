@@ -37,8 +37,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import contextlib
+import json
 import os
 import sys
 from datetime import UTC, datetime
@@ -50,10 +50,10 @@ from sqlalchemy.exc import ArgumentError
 from nora.app import config_cli, report
 from nora.app.participation_measures import gather as gather_measures
 from nora.app.participation_measures import measure as compute_measures
-from nora.domain.participation_measures import Refusal
 from nora.app.pending import correlate
 from nora.config import Config, ConfigError, load
 from nora.domain.models import UnattributedRow
+from nora.domain.participation_measures import Refusal
 from nora.infra.life360 import Life360Client, Life360DiscoveryError
 from nora.infra.sql import SqlRecordStore, create_readonly_sql_engine
 from nora.infra.sql.reminders import SqlReminderStore

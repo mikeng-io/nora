@@ -88,6 +88,7 @@ from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
+from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.decision_log import SqlDecisionLogStore
 from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
 from nora.infra.sql.gatherings import SqlGatheringStore
@@ -126,7 +127,6 @@ from nora.ingest.stages import standing_event
 from nora.ingest.stickers import StickerReader
 from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
-from nora.infra.sql.culture import SqlCultureStore
 from nora.language.culture import CultureAdaptor
 from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.language.note_curator import NoteCuratorAdaptor

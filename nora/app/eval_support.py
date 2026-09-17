@@ -46,10 +46,10 @@ from nora.app.composition import _adaptor_budget
 from nora.config import Config, ConfigError
 from nora.config import load as load_config
 from nora.doctrine.loader import Doctrine, DoctrineStore
+from nora.domain.culture import CultureRevision
 from nora.domain.models import DeliveryStatus, NormalizedMessage, PersonRef, TranscriptRow
 from nora.domain.notes import Note, NoteRevision
 from nora.domain.reminders import Reminder, ReminderCaps, ReminderState
-from nora.domain.culture import CultureRevision
 from nora.domain.standing import Standing
 from nora.engagement.stages.deliver import BUDGET_STOP_REASONS as _BUDGET_STOP_REASONS
 from nora.infra.honcho import HonchoClient

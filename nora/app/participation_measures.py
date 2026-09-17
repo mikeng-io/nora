@@ -35,7 +35,7 @@ from nora.domain.participation_measures import (
 from nora.infra.sql import create_readonly_sql_engine
 from nora.infra.sql.schema import DECISION_LOG, MESSAGES, NOTE
 
-__all__ = ["GatheredRows", "SPOKE_JOIN_TOLERANCE_MS", "gather", "measure", "pair_spoke"]
+__all__ = ["SPOKE_JOIN_TOLERANCE_MS", "GatheredRows", "gather", "measure", "pair_spoke"]
 
 #: How far back from a `participation/spoke` decision row to look for the
 #: message it describes. The row is written AFTER the send (`fire.py` records

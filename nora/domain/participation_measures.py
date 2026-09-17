@@ -17,7 +17,7 @@ escaped.
 
 | measure | labelled by | shape |
 |---|---|---|
-| `expiry_without_action` | her own store | a note passed its anchor while open and she never raised it |
+| `expiry_without_action` | her own store | a note passed its anchor still open, never raised |
 | `holding_refusals` | her own store | the gate refused room R while she held something for R |
 | `overrides` | the room | a human tagged her in R shortly after a `no_go` |
 | `ignored` | the room | she spoke unprompted and the next human line did not engage |
@@ -52,14 +52,14 @@ from typing import Literal, Protocol
 from nora.domain.notes import anchor_bounds_ms
 
 __all__ = [
+    "DecisionLike",
     "Measure",
+    "MessageLike",
     "NoteLike",
     "Observation",
     "Refusal",
     "Spoke",
     "Tag",
-    "DecisionLike",
-    "MessageLike",
     "expiry_without_action",
     "holding_refusals",
     "ignored",
