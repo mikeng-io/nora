@@ -55,12 +55,12 @@ class DiscordMusicToolBridge:
         adapter: DiscordAdapter,
         manager: MusicPlayerManager,
         hub: VoiceControllerHub | None = None,
-        voice_channel_ids: frozenset[str] = frozenset(),
+        voice_guild_ids: frozenset[str] = frozenset(),
     ) -> None:
         self._adapter = adapter
         self._manager = manager
         self._hub = hub
-        self._voice_channel_ids = voice_channel_ids
+        self._voice_guild_ids = voice_guild_ids
 
     def _guild_id(self, conversation_id: str) -> str:
         guild_id, _, _ = conversation_id.partition("/")
@@ -140,14 +140,14 @@ class DiscordMusicToolBridge:
             decision = voice_join_decision(
                 is_member=True,  # the channel came from a guild member lookup
                 guild_id=guild_id, caller_channel_id=str(channel.id),
-                allowed=self._voice_channel_ids,
+                allowed_guilds=self._voice_guild_ids,
             )
             if decision == "ok":
                 connect = _connect_factory(self._hub, guild_id, str(channel.id))
                 voice_channel_id = str(channel.id)
             elif await self._manager.status(guild_id) is None:
                 return MusicToolOutcome(
-                    status="unavailable", note=m.not_in_allowed_channel_note(),
+                    status="unavailable", note=m.not_in_allowed_guild_note(),
                 )
         _, _, notify_channel_id = conversation_id.partition("/")
         # Attribution only (who gets credit for queuing the track) -- unlike

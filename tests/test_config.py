@@ -1463,49 +1463,48 @@ def test_a_misspelt_dreamer_effort_refuses_to_start(toml_path):
 
 
 
-def test_voice_channel_ids_with_two_channels_refuses_to_start(toml_path):
-    """B10 (design/voice-channel/07 §12.2/§12.5, 2026-09-16 audit): phase 1
-    is exactly ONE immutable voice channel. A second channel would pass the
-    local gate and then be refused by the controller's own 400
-    `not_in_allowed_channel` — refused at LOAD, while the operator is still
+def test_voice_guild_ids_with_two_guilds_refuses_to_start(toml_path):
+    """B10 (design/voice-channel/07 §12.5): the audio-controller is hard-bound
+    to ONE guild. A second would pass the local gate and then be refused by
+    the controller's own 400 — refused at LOAD, while the operator is still
     holding the file."""
     toml_path.write_text(_set_key(
-        toml_path.read_text(), "voice_channel_ids", '["g1/c1", "g1/c2"]',
+        toml_path.read_text(), "voice_guild_ids", '["g1", "g2"]',
     ))
 
-    with pytest.raises(ConfigError, match="phase 1"):
+    with pytest.raises(ConfigError, match="hard-bound"):
         load(toml_path)
 
 
-def test_voice_channel_ids_spanning_two_guilds_refuses_to_start(toml_path):
-    """B10: same refusal when the entries name two GUILDS — phase 1 is one
-    guild, one channel."""
+def test_two_channels_in_one_guild_is_no_longer_a_config_question(toml_path):
+    """THE REVERSAL (§12.2, 2026-09-17). Phase 1 refused a second CHANNEL
+    here; a server's voice channels are not a fixed list, so that refusal made
+    a 10-voice-channel guild unusable. One guild id now admits every channel
+    in it, and there is no second entry to refuse."""
     toml_path.write_text(_set_key(
-        toml_path.read_text(), "voice_channel_ids", '["g1/c1", "g2/c2"]',
-    ))
-
-    with pytest.raises(ConfigError, match="phase 1"):
-        load(toml_path)
-
-
-def test_a_voice_channel_id_that_is_not_a_pair_refuses_to_start(toml_path):
-    """B10: entries are `"<guild_id>/<channel_id>"` — the shape policy.toml
-    uses for a Discord room. Anything else is a typo that would never match
-    a real conversation id."""
-    toml_path.write_text(_set_key(
-        toml_path.read_text(), "voice_channel_ids", '["not-a-pair"]',
-    ))
-
-    with pytest.raises(ConfigError, match="voice_channel_ids"):
-        load(toml_path)
-
-
-def test_a_single_voice_channel_id_loads(toml_path):
-    """The happy path: one guild, one channel — the phase-1 posture."""
-    toml_path.write_text(_set_key(
-        toml_path.read_text(), "voice_channel_ids", '["g1/c1"]',
+        toml_path.read_text(), "voice_guild_ids", '["g1"]',
     ))
 
     cfg = load(toml_path)
 
-    assert cfg.speech.tts.voice_channel_ids == ["g1/c1"]
+    assert cfg.speech.tts.voice_guild_ids == ["g1"]
+
+
+def test_a_guild_channel_pair_refuses_to_start(toml_path):
+    """An operator upgrading from phase 1 must SEE that the key changed
+    meaning. A `"guild/channel"` pair silently truncated to its guild would
+    look like it kept working while quietly widening the allow-list, so it is
+    refused with the reason spelled out."""
+    toml_path.write_text(_set_key(
+        toml_path.read_text(), "voice_guild_ids", '["g1/c1"]',
+    ))
+
+    with pytest.raises(ConfigError, match="bare Discord guild id"):
+        load(toml_path)
+
+
+def test_an_empty_voice_guild_ids_loads_and_fails_closed(toml_path):
+    """The shipped posture: nothing configured, nothing joinable."""
+    cfg = load(toml_path)
+
+    assert cfg.speech.tts.voice_guild_ids == []

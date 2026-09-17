@@ -316,16 +316,50 @@ async def test_generation_for_reads_the_cached_sessions_generation(aiohttp_clien
 
 async def test_adopt_boot_voice_sessions_adopts_without_a_persisted_music_row(aiohttp_client):
     """B-2 (2026-09-16 audit): a wake-only guild with no persisted music
-    session never calls `hub.join` any other way — boot adoption must reach
-    it directly from `voice_channel_ids`, and speech must stream afterwards."""
+    session never calls `hub.join` any other way — boot adoption must reach it
+    from config, and speech must stream afterwards.
+
+    Config names GUILDS since 2026-09-17 (§12.2 reversed), so the CHANNEL now
+    comes from the controller's own /voice/status: it is the only thing that
+    knows where it reconnected."""
     record: list = []
     hub = await _hub(aiohttp_client, _app(join_status=409, record=record))
 
-    await hub.adopt_boot_voice_sessions(["guild-1/cortez-1"])
+    await hub.adopt_boot_voice_sessions(["guild-1"])
 
     assert hub.session_for("guild-1") is not None
     assert await hub.stream_speech("guild-1", b"mp3", "audio/mpeg") is True
-    assert [kind for kind, _ in record if kind in ("join", "status")] == ["join", "status"]
+    kinds = [kind for kind, _ in record if kind in ("join", "status")]
+    assert kinds == ["status", "join", "status"], (
+        "status FIRST to learn the channel, then the join it implies"
+    )
+
+
+async def test_adopt_boot_adopts_the_channel_the_controller_is_actually_in(aiohttp_client):
+    """THE REGRESSION THIS GUARDS: the config read this replaced would have
+    re-joined the CONFIGURED channel. A controller that came back up in a
+    different channel — which is now ordinary, since any channel is joinable —
+    would have been dragged back to the old one."""
+    record: list = []
+    hub = await _hub(aiohttp_client, _app(status_channel="somewhere-else", record=record))
+
+    await hub.adopt_boot_voice_sessions(["guild-1"])
+
+    joins = [body for kind, body in record if kind == "join"]
+    assert [j["channel_id"] for j in joins] == ["somewhere-else"]
+
+
+async def test_adopt_boot_skips_a_guild_whose_controller_is_idle(aiohttp_client):
+    """Boot adoption picks up a connection that already EXISTS. An idle
+    controller has none, and joining one anyway would pull Nora into a voice
+    channel nobody asked for, on every restart."""
+    record: list = []
+    hub = await _hub(aiohttp_client, _app(status_voice="idle", record=record))
+
+    await hub.adopt_boot_voice_sessions(["guild-1"])
+
+    assert [kind for kind, _ in record if kind == "join"] == []
+    assert hub.session_for("guild-1") is None
 
 
 async def test_adopt_boot_voice_sessions_is_idempotent_with_an_existing_session(aiohttp_client):
@@ -333,18 +367,18 @@ async def test_adopt_boot_voice_sessions_is_idempotent_with_an_existing_session(
     hub = await _hub(aiohttp_client, _app(record=record))
     await hub.join("guild-1", "cortez-1")
 
-    await hub.adopt_boot_voice_sessions(["guild-1/cortez-1"])
+    await hub.adopt_boot_voice_sessions(["guild-1"])
 
     assert [kind for kind, _ in record if kind == "join"] == ["join"], (
         "an already-cached session must not re-join"
     )
 
 
-async def test_adopt_boot_voice_sessions_skips_malformed_entries(aiohttp_client):
+async def test_adopt_boot_voice_sessions_skips_empty_entries(aiohttp_client):
     record: list = []
     hub = await _hub(aiohttp_client, _app(record=record))
 
-    await hub.adopt_boot_voice_sessions(["not-a-pair", "", "guild-1/"])
+    await hub.adopt_boot_voice_sessions([""])
 
     assert record == []
     assert hub.session_for("guild-1") is None
@@ -355,6 +389,6 @@ async def test_adopt_boot_voice_sessions_does_not_raise_when_the_controller_is_d
 ):
     hub = await _hub(aiohttp_client, _app(join_status=503))
 
-    await hub.adopt_boot_voice_sessions(["guild-1/cortez-1"])  # must not raise
+    await hub.adopt_boot_voice_sessions(["guild-1"])  # must not raise
 
     assert hub.session_for("guild-1") is None

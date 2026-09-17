@@ -19,6 +19,17 @@ class ConversationTarget:
     platform: str
     conversation_id: str
     conversation_type: str
+    # DID THIS TURN ARRIVE BY VOICE (design/voice-channel/07 §12.2, reversed
+    # 2026-09-17). Voice is a SURFACE of a room, not a room of its own: a
+    # guild's spoken utterances land in that guild's own text room
+    # (`Policy.voice_room`), so `conversation_id` alone can no longer say
+    # whether the reply must be SPOKEN or POSTED. Defaulted False, which is
+    # the text posture every existing construction already meant.
+    #
+    # Not read off `NormalizedMessage.raw`: `raw` is the platform envelope,
+    # persisted verbatim as `raw_json`, and a routing decision that changes
+    # whether a reply is audible must not hang on an untyped dict lookup.
+    voice: bool = False
 
 
 @dataclass(frozen=True)
@@ -102,9 +113,16 @@ class NormalizedMessage:
     # contention, and a second write to attach custody to an already-inserted
     # row would be a second contender for it. Same INSERT, no extra parameter.
     media_blobs: tuple[MediaBlob, ...] = ()
+    # SPOKEN, not typed (design/voice-channel/07 §12.2, reversed 2026-09-17).
+    # Set only by `nora.web.voice`, the wake path's entry point; every parser
+    # leaves it False. It rides the message so the reply can be routed back
+    # out the way it came in — see `ConversationTarget.voice`.
+    voice: bool = False
 
     def target(self) -> ConversationTarget:
-        return ConversationTarget(self.platform, self.conversation_id, self.conversation_type)
+        return ConversationTarget(
+            self.platform, self.conversation_id, self.conversation_type, voice=self.voice,
+        )
 
 
 @dataclass(frozen=True)

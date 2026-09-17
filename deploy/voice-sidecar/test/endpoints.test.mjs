@@ -45,7 +45,7 @@ test('request_id echoes null when absent', async () => {
   await h.close();
 });
 
-test('join is idempotent on the configured channel and 400 not_in_allowed_channel on any other', async () => {
+test('join is idempotent in the same channel and 409 connected_elsewhere in another', async () => {
   const h = await makeHarness();
   const first = await h.join();
   const again = await h.post('/voice/join', { guild_id: GUILD, channel_id: CHANNEL });
@@ -53,12 +53,28 @@ test('join is idempotent on the configured channel and 400 not_in_allowed_channe
   assert.equal(again.body.state.generation, first.generation);
   assert.equal(h.joinCalls.length, 1); // no second join happened
 
-  // Phase 1: ONE immutable configured channel (§12.2, B15) — any other
-  // channel is rejected before the lifecycle is consulted.
+  // §12.2 reversed 2026-09-17: a second channel is no longer refused for
+  // being unconfigured (400 not_in_allowed_channel) — it is refused because
+  // Discord allows ONE voice connection per bot per guild, which is the
+  // lifecycle's 409 and not an allow-list at all.
   const elsewhere = await h.post('/voice/join', { guild_id: GUILD, channel_id: 'c2' });
-  assert.equal(elsewhere.status, 400);
-  assert.equal(elsewhere.body.error, 'not_in_allowed_channel');
+  assert.equal(elsewhere.status, 409);
+  assert.equal(elsewhere.body.error, 'connected_elsewhere');
   assert.equal(h.joinCalls.length, 1);
+  await h.close();
+});
+
+test('join admits ANY channel in the guild when idle (§12.2, reversed 2026-09-17)', async () => {
+  // The regression this guards: phase 1 answered 400 not_in_allowed_channel
+  // for every channel but the configured one, so a member sitting in any
+  // other voice channel could never be joined — which is the whole reason
+  // the channel binding went. Idle, not connected, so no 409 is in play.
+  const h = await makeHarness();
+  const res = await h.post('/voice/join', { guild_id: GUILD, channel_id: 'some-other-channel' });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.state.channel_id, 'some-other-channel');
+  assert.equal(h.joinCalls.length, 1);
+  assert.equal(h.joinCalls[0], 'some-other-channel');
   await h.close();
 });
 

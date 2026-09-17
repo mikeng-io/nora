@@ -365,3 +365,110 @@ def test_the_permissive_policy_names_no_home_room():
     invent a home room, or a workspace-keyed harness run would stand in a
     room that does not exist."""
     assert permissive_policy().home_rooms() == {}
+
+
+# --- `voice = true` -----------------------------------------------------------
+# design/voice-channel/07 §12.2, reversed 2026-09-17: a guild's spoken
+# utterances are recorded in the ONE room that claims them, resolved by GUILD.
+
+VOICE_GUILD = "100000000000000203"
+VOICE_ROOM = f"{VOICE_GUILD}/100000000000000204"
+
+
+def _voice_toml(*, extra: str = "", voice_line: str = "voice = true") -> str:
+    return f"""
+default = "deny"
+
+[[conversations]]
+platform = "discord"
+id       = "{VOICE_ROOM}"
+label    = "Ridgeline #discussion"
+persons  = ["miles"]
+{voice_line}
+{extra}
+"""
+
+
+def test_a_guilds_voice_resolves_to_the_room_that_claims_it(tmp_path):
+    policy = load_policy(_write(tmp_path, _voice_toml()))
+
+    room = policy.voice_room("discord", VOICE_GUILD)
+
+    assert room is not None
+    assert room.primary_id == VOICE_ROOM
+    assert room.voice is True
+    # It is the ROOM's own persons list and workspace that speech inherits —
+    # that is the whole point of folding voice into an existing room rather
+    # than giving it one of its own.
+    assert room.persons == frozenset({"miles"})
+
+
+def test_an_unmarked_guild_resolves_to_nothing(tmp_path):
+    """Deny-by-default, same as the room gate. `None` is a refusal the caller
+    must turn into a 400 — never a fallback to the voice channel's own id,
+    which is how per-channel rooms would come back one utterance at a time."""
+    policy = load_policy(_write(tmp_path, _voice_toml(voice_line="")))
+
+    assert policy.voice_room("discord", VOICE_GUILD) is None
+
+
+def test_a_different_guild_resolves_to_nothing(tmp_path):
+    policy = load_policy(_write(tmp_path, _voice_toml()))
+
+    assert policy.voice_room("discord", "999999999999999999") is None
+
+
+def test_two_voice_rooms_in_one_guild_refuse_to_start(tmp_path):
+    """Two answers to "where does this guild's speech go" is not a preference
+    to resolve — picking one would put a spoken plan in a room nobody chose."""
+    extra = f"""
+[[conversations]]
+platform = "discord"
+id       = "{VOICE_GUILD}/1785459208793411409"
+label    = "Ridgeline #other"
+persons  = ["miles"]
+voice = true
+"""
+    with pytest.raises(PolicyError, match="two voice rooms"):
+        load_policy(_write(tmp_path, _voice_toml(extra=extra)))
+
+
+def test_voice_on_a_non_discord_room_refuses_to_start(tmp_path):
+    """Voice is resolved by GUILD and only Discord has one. A Signal room
+    with `voice = true` could never be reached, so it is an operator error
+    stated at startup rather than a line that quietly does nothing."""
+    body = f"""
+default = "deny"
+
+[[conversations]]
+platform = "signal"
+id       = "{GROUP}"
+label    = "Ridgeline"
+persons  = ["miles"]
+voice = true
+"""
+    with pytest.raises(PolicyError, match="only Discord"):
+        load_policy(_write(tmp_path, body))
+
+
+def test_voice_on_an_id_without_a_guild_half_refuses_to_start(tmp_path):
+    body = """
+default = "deny"
+
+[[conversations]]
+platform = "discord"
+id       = "100000000000000204"
+label    = "bare channel id"
+persons  = ["miles"]
+voice = true
+"""
+    with pytest.raises(PolicyError, match="not \\\"<guild_id>/<channel_id>\\\""):
+        load_policy(_write(tmp_path, body))
+
+
+def test_voice_defaults_to_false(tmp_path):
+    """A policy.toml that has never heard of the key loads exactly as before,
+    and claims no guild's speech."""
+    policy = load_policy(_write(tmp_path, TOML))
+
+    assert all(not c.voice for c in policy.conversations)

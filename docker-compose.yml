@@ -794,6 +794,12 @@ services:
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
       # Where to join. Namespaced VOICE_* so the operator's .env carries no
       # bare GUILD_ID that some other service might grow a meaning for.
+      #
+      # GUILD_ID is a HARD BINDING: any request naming another guild is 400
+      # (§12.5). CHANNEL_ID is only the FIRST-BOOT channel — since 2026-09-17
+      # (§12.2 reversed) /voice/join admits any channel in the guild, and a
+      # restart prefers the channel in the controller's own desired-state
+      # file over this one.
       - GUILD_ID=${VOICE_GUILD_ID:-}
       - CHANNEL_ID=${VOICE_CHANNEL_ID:-}
       # The wake-gate seam (deploy/voice-sidecar/TRANSPORT.md). Stage 3 made
@@ -849,9 +855,9 @@ services:
   #
   # Posture mirrors stt/voice-sidecar: own image from deploy/voice-wake/, NO
   # `ports:` publish — the seam (4599) and /health (4601) are reachable only
-  # on the private `nora` network. Without VOICE_GUILD_ID + VOICE_CHANNEL_ID
-  # the service is healthy-but-idle (detects, but has no conversation to
-  # forward into), so a deployment with voice wake off still starts clean.
+  # on the private `nora` network. Without VOICE_GUILD_ID the service is
+  # healthy-but-idle (detects, but has no server to forward into), so a
+  # deployment with voice wake off still starts clean.
   voice-wake:
     build:
       context: ./deploy/voice-wake
@@ -865,12 +871,17 @@ services:
     restart: unless-stopped
     networks: [nora]
     environment:
-      # Where the wake happened — become conversation_id, Discord's flattened
-      # "<guild>/<channel>" (the shape nora/platform/discord/parser.py
-      # produces for typed messages), so a voice utterance lands in the same
-      # conversation namespace as the channel's typed chat.
+      # WHICH SERVER the wake happened on. nora resolves it to the room whose
+      # policy.toml entry says `voice = true` — that server's own text room —
+      # so a spoken utterance lands beside its typed chat, and adding a voice
+      # channel to the server reconfigures nothing here
+      # (design/voice-channel/07 §12.2, reversed 2026-09-17).
+      #
+      # VOICE_CHANNEL_ID is deliberately NOT passed: this service used to
+      # build a "<guild>/<channel>" conversation id from it and no longer
+      # reads it at all. The audio-controller (voice-sidecar, below) still
+      # does, as its first-boot channel.
       - VOICE_GUILD_ID=${VOICE_GUILD_ID:-}
-      - VOICE_CHANNEL_ID=${VOICE_CHANNEL_ID:-}
       # Model knobs — threshold, model path, STT engine (sensevoice: warm 0.3s
       # CPU vs whisper 5.1s), STT endpoint/language/timeout, silence tail —
       # come from config.toml [speech.wake] + [speech.stt], mounted below.

@@ -133,12 +133,12 @@ _MAY_DIFFER = {
     "speech.tts.emotion",
     # The voice sidecar's own topology and the operator's vendor choice
     # (2026-09-17). `provider` names a vendor account, `sidecar_endpoint` is a
-    # compose service on this host, and `voice_channel_ids` are Discord
-    # snowflakes for THIS deployment's rooms — a copied config has none of the
-    # three, and the template shipping them would be an identifier in the tree
-    # (`tests/architecture/test_no_real_identifiers_in_the_tree.py`).
+    # compose service on this host, and `voice_guild_ids` are Discord
+    # snowflakes for THIS deployment's servers — a copied config has none of
+    # the three, and the template shipping them would be an identifier in the
+    # tree (`tests/architecture/test_no_real_identifiers_in_the_tree.py`).
     "speech.tts.provider", "speech.tts.sidecar_endpoint",
-    "speech.tts.voice_channel_ids",
+    "speech.tts.voice_guild_ids",
     # The LIVE operator's ON decision for the culture fold (steps 0-4 are
     # merged and running); the template ships the DEC-43 posture, OFF, so a
     # copied config does not start folding a room it has never read. Same

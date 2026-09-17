@@ -192,9 +192,11 @@ class _FakeSpeaker:
 
 
 async def test_voice_channel_send_goes_through_speaker_not_rest(aiohttp_server):
-    """A target on `voice_channel_ids` must never hit the REST text path —
-    Discord refuses text POSTs into a voice channel. Speech rides the
-    audio-controller's `/stream` endpoint (design/voice-channel/07 §3)."""
+    """A SPOKEN turn must never hit the REST text path — it is answered aloud
+    through the audio-controller's `/stream` endpoint (design/voice-channel/07
+    §3). Routed on `ConversationTarget.voice` since 2026-09-17 (§12.2
+    reversed): the conversation is the guild's ordinary text room now, so the
+    room can no longer say which way to answer."""
 
     seen: list[str] = []
 
@@ -230,10 +232,11 @@ async def test_voice_channel_send_goes_through_speaker_not_rest(aiohttp_server):
     adapter = DiscordAdapter(
         "tok", base_url=str(server.make_url("")).rstrip("/"),
         speaker=speaker, voice_hub=hub,
-        voice_channel_ids=frozenset({"111/222"}),
+        voice_guild_ids=frozenset({"111"}),
     )
     result = await adapter.send(
-        target=ConversationTarget("discord", "111/222", "group"), text="喂 Nora，收到。",
+        target=ConversationTarget("discord", "111/999", "group", voice=True),
+        text="喂 Nora，收到。",
     )
 
     assert result.ok is True
@@ -255,10 +258,11 @@ async def test_voice_channel_send_without_a_voice_session_is_a_refused_send(aioh
     adapter = DiscordAdapter(
         "tok", base_url=str(server.make_url("")).rstrip("/"),
         speaker=speaker, voice_hub=hub,
-        voice_channel_ids=frozenset({"111/222"}),
+        voice_guild_ids=frozenset({"111"}),
     )
     result = await adapter.send(
-        target=ConversationTarget("discord", "111/222", "group"), text="喂 Nora，收到。",
+        target=ConversationTarget("discord", "111/999", "group", voice=True),
+        text="喂 Nora，收到。",
     )
 
     assert result.ok is False
@@ -273,7 +277,8 @@ async def test_voice_channel_send_without_speaker_is_silent_fail(aiohttp_server)
 
     adapter = DiscordAdapter("tok", base_url=str(server.make_url("")).rstrip("/"))
     result = await adapter.send(
-        target=ConversationTarget("discord", "111/222", "group"), text="喂 Nora。",
+        target=ConversationTarget("discord", "111/999", "group", voice=True),
+        text="喂 Nora。",
     )
 
     assert result.ok is False
@@ -290,12 +295,48 @@ async def test_non_speakable_text_is_refused_on_voice_channel(aiohttp_server):
     adapter = DiscordAdapter(
         "tok", base_url=str(server.make_url("")).rstrip("/"),
         speaker=speaker, voice_hub=hub,
-        voice_channel_ids=frozenset({"111/222"}),
+        voice_guild_ids=frozenset({"111"}),
     )
     result = await adapter.send(
-        target=ConversationTarget("discord", "111/222", "group"),
+        target=ConversationTarget("discord", "111/999", "group", voice=True),
         text="個 hash 係 a3f2c1d4e5b60718293a4b5c",
     )
 
     assert result.ok is False
     assert speaker.calls == [], "must not synthesize a machine token either"
+
+
+async def test_a_typed_turn_in_a_voice_enabled_room_still_goes_out_as_text(aiohttp_server):
+    """THE REGRESSION THIS GUARDS (design/voice-channel/07 §12.2, reversed
+    2026-09-17). A guild's speech now lands in its ordinary text room, so one
+    `conversation_id` carries BOTH surfaces. Routing on the room — the rule
+    before this reversal — would have answered every typed message in that
+    room aloud, and POSTed nothing to the channel the person was reading.
+
+    `voice=False` is the default, so this is also the assertion that the
+    default did not quietly become "speak"."""
+
+    posted: list[str] = []
+
+    async def messages_handler(request: web.Request) -> web.Response:
+        posted.append(request.path)
+        return web.json_response({"id": "1"})
+
+    app = web.Application()
+    app.router.add_post("/channels/{cid}/messages", messages_handler)
+    server = await aiohttp_server(app)
+
+    speaker = _FakeSpeaker(SpeakResult(available=True, audio=b"mp3", media_type="audio/mpeg"))
+    hub = VoiceControllerHub(VoiceControllerClient(str(server.make_url("")).rstrip("/")))
+    adapter = DiscordAdapter(
+        "tok", base_url=str(server.make_url("")).rstrip("/"),
+        speaker=speaker, voice_hub=hub,
+        voice_guild_ids=frozenset({"111"}),
+    )
+    result = await adapter.send(
+        target=ConversationTarget("discord", "111/222", "group"), text="收到。",
+    )
+
+    assert result.ok is True
+    assert speaker.calls == [], "a typed turn must never be synthesized"
+    assert posted == ["/channels/222/messages"], "a typed turn goes out as REST text"

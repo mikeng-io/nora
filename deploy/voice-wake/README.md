@@ -23,7 +23,7 @@ sidecar frames (TCP :4599)        [u32be len][u8 id_len][user_id][pcm]
   -> gate.WakeGate (per user)     LISTENING -(score >= threshold)-> COLLECTING
                                   -1s silence tail / 10s ceiling-> Utterance
   -> stt.transcribe               16kHz mono WAV -> stt:8000 (model=$STT_MODEL, default sensevoice, language=yue)
-  -> stt.forward_utterance        JSON {user_id, text, conversation_id} -> nora:9100
+  -> stt.forward_utterance        JSON {user_id, text, guild_id} -> nora:9100
 ```
 
 The wake model is per-user stateful (openWakeWord owns the rolling
@@ -57,7 +57,7 @@ voice-wake`. Set values with `nora config set …` on the host.
 
 | var | default | meaning |
 |---|---|---|
-| `VOICE_GUILD_ID` / `VOICE_CHANNEL_ID` | — | become `conversation_id` = `"<guild>/<channel>"`, the same flattened shape the Discord parser produces for typed messages; empty = healthy-but-idle |
+| `VOICE_GUILD_ID` | — | the Discord server whose speech this gate forwards; nora resolves it to the room marked `voice = true` in policy.toml (design/voice-channel/07 §12.2, reversed 2026-09-17). Empty = healthy-but-idle. `VOICE_CHANNEL_ID` is NOT read here — the audio-controller owns it as a first-boot default |
 | `WAKE_LISTEN_HOST` / `WAKE_LISTEN_PORT` | `0.0.0.0` / `4599` | seam bind (the sidecar connects OUT to here) |
 | `WAKE_HEALTH_HOST` / `WAKE_HEALTH_PORT` | `127.0.0.1` / `4601` | /health bind (loopback only) |
 | `NORA_INGEST_URL` | `http://nora:9100` | Nora's aiohttp app on the `nora` network |

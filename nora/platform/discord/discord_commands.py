@@ -47,12 +47,12 @@ class DiscordCommands(app_commands.Group):
         self,
         *,
         hub: VoiceControllerHub | None,
-        voice_channel_ids: frozenset[str],
+        voice_guild_ids: frozenset[str],
         manager: MusicPlayerManager | None = None,
     ) -> None:
         super().__init__(name="discord", description="Control Nora's voice connection.")
         self._hub = hub
-        self._voice_channel_ids = voice_channel_ids
+        self._voice_guild_ids = voice_guild_ids
         self._manager = manager
 
     @app_commands.command(name="join", description="Join your voice channel.")
@@ -67,13 +67,13 @@ class DiscordCommands(app_commands.Group):
         decision = voice_join_decision(
             is_member=isinstance(interaction.user, discord.Member),
             guild_id=guild_id, caller_channel_id=channel_id,
-            allowed=self._voice_channel_ids,
+            allowed_guilds=self._voice_guild_ids,
         )
         if decision != "ok" or channel_id is None:
             line = (
                 m.join_voice_channel_line()
                 if decision == "not_in_voice"
-                else m.not_in_allowed_channel_line()
+                else m.not_in_allowed_guild_line()
             )
             await interaction.response.send_message(line, ephemeral=True)
             return
@@ -97,7 +97,7 @@ class DiscordCommands(app_commands.Group):
     async def exit(self, interaction: discord.Interaction) -> None:
         # The exit gate IS the join gate (§12.3: guild member + caller
         # physically in a voice channel + that channel on the
-        # `voice_channel_ids` allow-list — "NO extra carve-out"). Without
+        # `voice_guild_ids` allow-list — "NO extra carve-out"). Without
         # it any guild member can tear down the shared connection (music +
         # TTS + wake) from anywhere.
         if interaction.guild_id is None:
@@ -110,13 +110,13 @@ class DiscordCommands(app_commands.Group):
             is_member=isinstance(interaction.user, discord.Member),
             guild_id=guild_id,
             caller_channel_id=_member_voice_channel_id(interaction),
-            allowed=self._voice_channel_ids,
+            allowed_guilds=self._voice_guild_ids,
         )
         if decision != "ok":
             line = (
                 m.join_voice_channel_line()
                 if decision == "not_in_voice"
-                else m.not_in_allowed_channel_line()
+                else m.not_in_allowed_guild_line()
             )
             await interaction.response.send_message(line, ephemeral=True)
             return

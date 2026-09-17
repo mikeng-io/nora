@@ -549,9 +549,11 @@ RULE_TESTS = {
     # never advances twice.
     "R-95": "test_a_track_end_for_a_superseded_playback_does_not_advance",
     # R-96 (DEC-187, §12.2/§12.3): voice commands pass a pure gate — guild
-    # member + caller physically in a voice channel + that channel in
-    # `voice_channel_ids` — and auto-join joins the CALLER's channel or
-    # rejects `not_in_allowed_channel`. The named test is the full matrix.
+    # member + caller physically in a voice channel + that channel's GUILD in
+    # `voice_guild_ids` — and auto-join joins the CALLER's channel or rejects
+    # `not_in_allowed_guild`. Guild-scoped since 2026-09-17 (§12.2 reversed):
+    # a server's voice channels are not a list anyone can keep true. The named
+    # test is the full matrix.
     "R-96": "test_the_join_decision_matrix",
     # R-97 (issue #216, design/dreamer-agent-loop/35 §3②/§10.5): a turn nobody
     # asked for does not take the floor to report an absence. The named test is

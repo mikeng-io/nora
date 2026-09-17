@@ -88,17 +88,27 @@ async def forward_utterance(
     nora_url: str,
     user_id: str,
     text: str,
-    conversation_id: str,
+    guild_id: str,
+    voice_channel_id: str | None = None,
 ) -> bool:
     """The transcript -> Nora's `/app/v1/voice/utterance` as JSON. Text only —
     audio never crosses this boundary. Never raises; a refused forward drops
-    the utterance (transient by design) and is visible in the log."""
+    the utterance (transient by design) and is visible in the log.
+
+    The GUILD is what is sent, not a conversation id (design/voice-channel/07
+    §12.2, reversed 2026-09-17): nora resolves it to the room the operator
+    marked `voice = true`, so this service never has to know — or be
+    reconfigured when — a guild's rooms change.
+
+    `voice_channel_id` is provenance and OPTIONAL. It is whatever the
+    controller reports it is CURRENTLY connected to; omitted when that could
+    not be read, because a stale channel id in a trace is worse than none."""
     url = nora_url.rstrip("/") + "/app/v1/voice/utterance"
+    payload: dict[str, str] = {"user_id": user_id, "text": text, "guild_id": guild_id}
+    if voice_channel_id:
+        payload["voice_channel_id"] = voice_channel_id
     try:
-        async with session.post(
-            url,
-            json={"user_id": user_id, "text": text, "conversation_id": conversation_id},
-        ) as response:
+        async with session.post(url, json=payload) as response:
             if response.status != 202:
                 log.warning("nora refused the utterance (http %s)", response.status)
                 return False

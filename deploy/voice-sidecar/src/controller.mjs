@@ -7,9 +7,19 @@
 // deviate. Every state-changing command except /voice/join is
 // generation-scoped: a stale generation gets 409 generation_conflict and
 // nothing happens. Any body guild_id != the configured guild gets 400
-// wrong_guild (single-guild hard-bound, §12.5), and /voice/join with a
-// channel_id != the ONE configured channel gets 400 not_in_allowed_channel
-// (phase-1 immutable channel, §12.2 / B15).
+// wrong_guild (single-guild hard-bound, §12.5).
+//
+// /voice/join admits ANY channel in that guild (§12.2, reversed 2026-09-17).
+// Phase 1 pinned one immutable CHANNEL_ID; a real server's voice channels are
+// not a fixed list (Zone 42 has 10+ and gains more), so the channel half of
+// the binding could not be kept true and the guild half — which the
+// controller already enforces — is the one that was doing the work. The
+// machinery was always here: lifecycle.join() has taken a target channel from
+// the start, and desired_state has persisted `channel_id` from the start.
+// CHANNEL_ID is now only the FIRST-BOOT channel (see bootChannel).
+//
+// One connection per guild is Discord's own limit, not a policy: joining a
+// second channel while connected is still 409 connected_elsewhere.
 //
 // Request dedupe (§3.3): control POSTs may carry request_id; the FIRST
 // occurrence reserves an in-flight promise BEFORE the handler runs, so
@@ -31,7 +41,6 @@ const DEDUPE_TTL_MS = 5 * 60 * 1000;
 
 export function createController({
   guildId,
-  channelId, // the ONE configured voice channel (phase 1, immutable)
   lifecycle,
   arbiter,
   outbox,
@@ -127,10 +136,10 @@ export function createController({
       if (typeof body.channel_id !== 'string' || !body.channel_id) {
         throw httpError(400, 'invalid_body', 'channel_id is required');
       }
-      // Phase 1: ONE immutable configured channel (§12.2, B15).
-      if (!channelId || body.channel_id !== channelId) {
-        throw httpError(400, 'not_in_allowed_channel');
-      }
+      // Any channel in this guild (§12.2, reversed 2026-09-17). The guild
+      // check above is the whole admission; nora's own join gate has already
+      // required the caller to be a member physically sitting in the channel
+      // it is naming.
       await lifecycle.join(body.channel_id);
     },
     'POST /voice/exit': async (body) => {
@@ -339,7 +348,10 @@ export function createController({
 // real ffmpeg.
 export function createCore({
   guildId,
-  channelId,
+  // No CHANNEL_ID here any more (§12.2, reversed 2026-09-17): the control
+  // plane admits any channel in the guild, and the FIRST-BOOT channel is
+  // service.mjs's own `bootChannel(stored.state, CHANNEL_ID)` call, which is
+  // the only place it was ever a default rather than a gate.
   joinVoice,
   entersStateFn,
   stateStore,
@@ -381,7 +393,6 @@ export function createCore({
   });
   const controller = createController({
     guildId,
-    channelId,
     lifecycle,
     arbiter,
     outbox,

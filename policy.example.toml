@@ -103,6 +103,23 @@ id        = "100000000000000203/100000000000000204"
 workspace = "family"         # the same humans as the Signal group above
 label     = "Zone 42 #general"
 persons  = ["miles", "ada"]
+# voice = true               # (optional, default false) EVERY VOICE CHANNEL IN THIS
+                             # ROOM'S GUILD SPEAKS INTO HERE. 「喂 Nora」 said in any of
+                             # the server's voice channels is transcribed and recorded as
+                             # a message in THIS room — same notebook, same culture, same
+                             # `persons` gate as the typing above it.
+                             #
+                             # Voice is a SURFACE of a room, not a room of its own
+                             # (design/voice-channel/07 §12.2, reversed 2026-09-17). Phase 1
+                             # allowlisted one voice channel and gave it its own id; a real
+                             # server has 10+ voice channels and gains more, so that list
+                             # could not be kept true — and N voice rooms in one workspace
+                             # would breach DEC-105 N times over. The GUILD is matched; the
+                             # channel is recorded as provenance only.
+                             #
+                             # At most one room per guild may set it; a second is a startup
+                             # error. A guild with none refuses speech outright (400) rather
+                             # than guessing a room.
 # location = true            # same switch as Signal, same meaning — see below.
 description = "a games room; 2200 is when people log on, not an appointment"
                              # (optional, no default) WHAT KIND OF ROOM THIS IS, in your own
