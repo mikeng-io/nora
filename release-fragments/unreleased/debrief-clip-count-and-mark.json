@@ -1,0 +1,13 @@
+{
+  "type": "fix",
+  "summary": "The debrief render used to cut a long tool result or a long stretch of her own reasoning silently, with no count anywhere and nothing telling the grading model it had happened. Both now exist.",
+  "details": [
+    "Every block the debrief cuts before handing it to a model — a tool result, a tool call, or her own text/thinking output — now increments a counter (`nora_debrief_clips_total`, labelled by which kind of block) on the actual cut, not on every block rendered. Before this the module could not answer its own question: nothing in it ever mentioned a metric at all.",
+    "A cut block now carries an explicit mark in the text itself, and a standing sentence beside `<reasoning>` explains what the mark means — so the grounding verdict (and the standing fold) can tell \"the support genuinely isn't there\" apart from \"I was handed a fragment of it\", instead of reading a clipped block as if it were the whole thing.",
+    "Applies to both model calls the debrief makes on a turn: the standing fold and the grounding verdict independently, since each renders and is handed its own copy of the turn."
+  ],
+  "limitations": [
+    "The cut-off itself is unchanged (`_BLOCK_CHARS`, 600 characters) — this only makes how often it fires, and on what, readable for the first time. Sizing it against what the new counter actually reports is deliberately left for a follow-up once there is data to size it against (issue #189, step 3).",
+    "Whether a verdict built from a clipped block should be allowed to say `grounded = true` at all, or should fail closed, is an open question this does not answer."
+  ]
+}

@@ -18,12 +18,15 @@ from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.standing import Standing
 from nora.domain.tag_trace import TagTrace
 from nora.engagement.debrief_render import (
+    _BLOCK_CHARS,
+    _CLIP_MARK,
     render_debrief_input,
     render_debrief_turn,
     render_rollup_input,
     render_rollup_verdict_input,
     render_verdict_input,
 )
+from nora.obs.metrics import Metrics
 
 
 def _row(id_: int, ts: int, name: str, body: str, *, is_nora: bool = False,
@@ -47,6 +50,7 @@ def _render(**kw) -> str:
     kw.setdefault("trace", _trace())
     kw.setdefault("prior", None)
     kw.setdefault("display_name", "Nora")
+    kw.setdefault("metrics", Metrics())
     kw.setdefault("tz", UTC)
     return render_debrief_input(**kw)
 
@@ -226,6 +230,98 @@ def test_a_tool_call_and_its_result_are_rendered_as_such():
     assert "at home" in out
 
 
+# --- issue #189: the clip counter and the mark it explains -----------------
+
+
+def _reasoning_body(out: str) -> str:
+    """The `<reasoning>` block's own text, with the always-present legend
+    sliced off — so a test asking "did THIS block clip" is not confounded by
+    the legend's own worked example of the mark it explains."""
+    return out.split("<reasoning>")[1].split("</reasoning>")[0]
+
+
+def test_an_oversize_tool_result_is_clipped_counted_and_marked():
+    """Issue #189 steps 1 and 2. Before this, `_BLOCK_CHARS` cut a tool
+    result and said nothing to anybody: not a series an operator could read,
+    not a mark the grading model could read. Both now exist off one cut."""
+    metrics = Metrics()
+    long_result = "x" * (_BLOCK_CHARS + 50)
+    full_rendered = str([{"text": long_result}])  # what `_block` stringifies
+    out = _render(trace=_trace(messages=(
+        {"role": "user", "content": [
+            {"toolResult": {"content": [{"text": long_result}]}},
+        ]},
+    )), metrics=metrics)
+    body = _reasoning_body(out)
+    assert f"…[{_CLIP_MARK}]" in body
+    assert full_rendered[:_BLOCK_CHARS] in body
+    assert full_rendered not in body  # the tail is genuinely gone
+    assert metrics.get("nora_debrief_clips_total", block="tool_result") == 1
+
+
+def test_an_oversize_tool_call_and_an_oversize_reasoning_text_are_labelled_apart():
+    """A clipped tool CALL hides what she asked; a clipped narration/thinking
+    block hides what she said or thought. Different failures for the grader,
+    so they must not collapse onto one label."""
+    metrics = Metrics()
+    long_text = "t" * (_BLOCK_CHARS + 10)
+    out = _render(trace=_trace(messages=(
+        {"role": "assistant", "content": [
+            {"text": long_text},
+            {"toolUse": {"name": "where_is", "input": "w" * (_BLOCK_CHARS + 10)}},
+            {"reasoningContent": {"reasoningText": {"text": "r" * (_BLOCK_CHARS + 10)}}},
+        ]},
+    )), metrics=metrics)
+    assert _reasoning_body(out).count(f"…[{_CLIP_MARK}]") == 3
+    assert metrics.get("nora_debrief_clips_total", block="tool_call") == 1
+    # the text block and the reasoning block are the SAME label (both are the
+    # model's own output), so together they read 2 on "reasoning"
+    assert metrics.get("nora_debrief_clips_total", block="reasoning") == 2
+
+
+def test_a_block_under_the_ceiling_is_not_counted_and_carries_no_mark():
+    """A zero-assertion needs a positive control (CLAUDE.md) — the two tests
+    above ARE that control: the same suite proves the counter moves when a
+    clip genuinely happens, so a flat zero here means "no clip", not "the
+    series is dead."""
+    metrics = Metrics()
+    out = _render(trace=_trace(messages=(
+        {"role": "user", "content": [
+            {"toolResult": {"content": [{"text": "at home"}]}},
+        ]},
+    )), metrics=metrics)
+    assert f"…[{_CLIP_MARK}]" not in _reasoning_body(out)
+    assert metrics.get("nora_debrief_clips_total") == 0
+
+
+def test_the_reasoning_legend_explains_the_clip_mark_and_sits_beside_reasoning():
+    """The mark and its explanation are shipped together, the same rule
+    `_transcript_block`'s delivery legend already follows — a mark with no
+    sentence explaining it is decoration a model gets to invent a meaning for.
+    Present on EVERY turn, clipped or not, so the model learns one contract
+    rather than a sometimes-explained mark (see `_TRANSCRIPT_LEGEND`)."""
+    out = _render()
+    assert "<how_to_read_reasoning>" in out
+    assert f"…[{_CLIP_MARK}]" in out.split("<how_to_read_reasoning>")[1].split(
+        "</how_to_read_reasoning>")[0]
+    assert out.index("<how_to_read_reasoning>") < out.index("<reasoning>")
+
+
+def test_the_verdict_render_also_counts_and_marks_its_own_clip():
+    """The grounding verdict is the consumer issue #189 is actually about —
+    the standing render sharing `render_debrief_turn` must not be the only
+    one that counts."""
+    metrics = Metrics()
+    long_result = "y" * (_BLOCK_CHARS + 50)
+    out = render_verdict_input(trace=_trace(messages=(
+        {"role": "user", "content": [
+            {"toolResult": {"content": [{"text": long_result}]}},
+        ]},
+    )), display_name="Nora", metrics=metrics, tz=UTC)
+    assert f"…[{_CLIP_MARK}]" in out
+    assert metrics.get("nora_debrief_clips_total", block="tool_result") == 1
+
+
 def test_a_renamed_or_absent_sdk_field_degrades_rather_than_raising():
     """`tag_trace_extract`'s defensive-throughout rule, held one module along.
 
@@ -261,7 +357,7 @@ def test_the_verdict_render_is_the_turn_without_the_prior():
     shown what actually happened, not the position it is about to write. It
     is the local half of the split's impartiality argument: the prompt
     pollution the single completion had was the prior feeding the judge."""
-    out = render_verdict_input(trace=_trace(), display_name="Nora", tz=UTC)
+    out = render_verdict_input(trace=_trace(), display_name="Nora", metrics=Metrics(), tz=UTC)
     assert "<standing_prior>" not in out
     assert "<turn " in out
     assert "<transcript>" in out and "<reasoning>" in out
@@ -271,7 +367,7 @@ def test_the_verdict_render_sees_the_outcome_and_the_gloss():
     """The judge sequences the turn's ENDING too: a verdict about a turn must
     know how it ended (§2 — a silence is the case most worth judging)."""
     out = render_verdict_input(trace=_trace(outcome="silent"),
-                               display_name="Nora", tz=UTC)
+                               display_name="Nora", metrics=Metrics(), tz=UTC)
     assert 'outcome="silent"' in out
     assert "chose to say nothing" in out
 
@@ -283,14 +379,14 @@ def test_the_standing_render_is_the_prior_plus_the_same_turn_block():
     trace = _trace(rows=(_row(1, 1_756_000_920_000, "Miles", "去邊食"),),
                    messages=({"role": "assistant",
                               "content": [{"text": "我諗諗"}]},))
-    turn = render_debrief_turn(trace=trace, display_name="Nora", tz=UTC)
+    turn = render_debrief_turn(trace=trace, display_name="Nora", metrics=Metrics(), tz=UTC)
     standing = render_debrief_input(
         trace=trace,
         prior=Standing(platform="signal", conversation_id="g1",
                        body="old position", fold_count=1, updated_at=1),
-        display_name="Nora", tz=UTC,
+        display_name="Nora", metrics=Metrics(), tz=UTC,
     )
-    verdict = render_verdict_input(trace=trace, display_name="Nora", tz=UTC)
+    verdict = render_verdict_input(trace=trace, display_name="Nora", metrics=Metrics(), tz=UTC)
     assert standing == "<standing_prior>\nold position\n</standing_prior>\n\n" + turn
     assert verdict == turn
     assert standing != verdict  # the whole point of the split
