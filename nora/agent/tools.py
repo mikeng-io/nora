@@ -1096,12 +1096,30 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # each.
     #
     # A THIRD skill shipped 2026-09-13 (`self-description`, issue #227) and the
-    # budget stays 2, which is a decision rather than an oversight: the number
-    # bounds how many domains ONE message can span, not how many skills exist.
-    # A question about what she is does not also need a route planned or a
-    # recommendation weighed, so the pair that can co-occur is still a pair.
-    # Raise it when a message is measured spanning three, not because the
-    # directory grew.
+    # budget stayed 2 — a decision, not an oversight, on the argument that the
+    # number bounds how many domains ONE message can span, not how many skills
+    # exist. **That skill was retired on 2026-09-17**: its body moved into
+    # `nora/doctrine/identity.md`, where a self-account does not have to be
+    # fetched by a model mid-question to be in front of her (operator, #227).
+    #
+    # The directory is back to two, so `budget == directory size` again — but
+    # **that does NOT restore R-7's generic veto, and an earlier draft of this
+    # comment claimed it did.** A repeat `skills` call is not vetoed
+    # (`tests/test_guards_replyguard.py` spends the whole budget on one skill
+    # and is not stopped), so the budget can always be spent with another skill
+    # still unloaded, at any directory size. The equality was never the
+    # property; reachability is. The veto's wording fix from 2026-09-13 —
+    # «not in front of you», «cannot check», instead of «you have that context»
+    # — stands on its own and is unaffected by the retirement.
+    #
+    # Measured while retiring the skill: the positive control that was supposed
+    # to guard this asserted `directory > budget`, which is the wrong quantity,
+    # and would have gone green on a fourth skill while the defect was
+    # untouched. Rewritten to assert the defect is reachable.
+    #
+    # Kept rather than deleted, because the reasoning is what says when to raise
+    # the number: raise it when a message is measured spanning three domains,
+    # not because the directory grew.
     #
     # **What that decision COST, and where it was paid** (review of the same
     # change). Until the third skill, budget == directory size, so exhausting

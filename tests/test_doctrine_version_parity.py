@@ -95,7 +95,14 @@ PINNED: dict[str, tuple[int, str]] = {
     # doctrine directory serves six rooms across three workspaces, and the
     # prompt never renders a room label — so a hard-coded name was the only
     # group identity she got, and it was wrong in five of the six.
-    "identity": (8, "559ce794cad3d90ea41ccc0b9f03b065f34b02eb24057f60493696629e67c1f9"),
+    # v9 (2026-09-17, operator, #227): the `self-description` SKILL was retired
+    # and its body folded in here verbatim. A skill loads only if the model
+    # spends a `skills` call mid-question; doctrine is simply in front of her —
+    # and a skill's `authority_above` reaches nothing (#241), while this file's
+    # does. `not_here` widened from "no capability claims" to "no instance of
+    # anything", which is #227's actual failure: she answered a question about a
+    # website by naming pages.
+    "identity": (9, "cddee24792e17de30c2d79f43128ae4cad91506c0a275038996ac12657e88b18"),
     # v19 (2026-09-10): same room-name removal as identity v8.
     "voice": (19, "5c0bbfcc170307b600b10c3ef9a4bd01193ef63b0ee677b0d10c2a6601aecd58"),
     # conduct v25 / silence v3 (2026-09-10, `14a55ab8`): that commit edited both
