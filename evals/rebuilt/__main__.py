@@ -13,7 +13,7 @@ import os
 import sys
 from pathlib import Path
 
-from .grading import DEFAULT_JUDGE_MODEL, Judge
+from .grading import DEFAULT_JUDGE_MODEL, DEFAULT_SAMPLES, Judge
 from .report import render
 from .runner import load, run
 
@@ -65,6 +65,15 @@ def main() -> int:
     )
     ap.add_argument("--judge-base-url", default="http://127.0.0.1:20128/v1")
     ap.add_argument(
+        "--judge-samples", type=int, default=DEFAULT_SAMPLES,
+        help=(
+            f"judge draws per case (default {DEFAULT_SAMPLES}). MEASURED at "
+            "~211s a draw against the deployed judge, so three draws across a "
+            "150-case suite is about 26 hours — lower it deliberately and say "
+            "so, or run one corpus at a time"
+        ),
+    )
+    ap.add_argument(
         "--sample", type=int, default=None,
         help=(
             "override every case's `sample:`. The corpora ask for five and are "
@@ -86,6 +95,7 @@ def main() -> int:
         return 2
     judge = None if not args.judge else Judge(
         base_url=args.judge_base_url, model=args.judge,
+        samples=args.judge_samples,
     )
     return asyncio.run(_main(args.corpora, database_url=args.database_url,
                              model=args.model, judge=judge, sample=args.sample))

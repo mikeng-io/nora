@@ -31,6 +31,37 @@
 > The empty-workspace direction of this had been found and closed. The
 > FULL-workspace direction — the previous case's output still standing as the
 > next case's input — was the one that actually ran.
+>
+> ### The partial re-run, and why it stopped
+>
+> With the fixes in, two corpora were re-run WITH the judge before the run was
+> stopped:
+>
+> | | before | after |
+> |---|---|---|
+> | `identity_grounding` | 8/8, no errors, no judge | **5/5, 3 ERRORS** |
+> | `source_scope` | 4/4, no errors, no judge | **0/0, 4 ERRORS** |
+>
+> Nothing graded vacuously any more. But the run was stopped, because two
+> things about the JUDGE were wrong and one of them makes the suite unusable:
+>
+> - **The judge was pointed at the wrong alias.** `ollamacloud/glm-5.3` is the
+>   raw model id behind the operator's choice; the deployment's
+>   `[evals] judge_model` is **`nora-judge`**. Both are in `/v1/models`, and
+>   `/v1/models` is not proof an id works.
+> - **The judge is slow and was unbounded.** MEASURED: one sample on a
+>   source-scope case took **211 seconds**, returned correct parseable JSON,
+>   and scored `no_overreach_or_fabrication` at **0.1** — the R-53 failure,
+>   caught. So the judge WORKS. At three samples across 150 cases that is about
+>   **26 hours**, and `grade()` had no timeout at all, so the only bound was
+>   whatever the HTTP client defaulted to.
+>
+> Both fixed: the deployed alias, a 300s per-sample bound with no retries, and
+> `--judge-samples` so a shorter run is a deliberate, stated choice.
+>
+> **The next run is the one worth reading**, and it needs a decision first:
+> three judge samples over thirteen corpora is a day of wall time. One corpus
+> at a time, or fewer samples with that written on the provenance line.
 
 
 GOAL steps 6 and 7. Run 2026-09-18 against the DEPLOYED aliases (`nora`,
