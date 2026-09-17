@@ -256,6 +256,7 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
             "design/dreamer-agent-loop/13-doctrine.md",
             "design/dreamer-agent-loop/39-proactive-ooda-loop.md",
             "design/evaluation/06-first-full-run.md",
+            "design/evaluation/04-the-convention.md",
         )
     },
     # The ROUTING tier, which has no counterpart — DEC-76 is NOT ENFORCED.
