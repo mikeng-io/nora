@@ -1648,6 +1648,28 @@ max_tokens = 0
 # So `turns` is the REAL budget here and `total_tokens` is a safety net, which
 # is the opposite of how the defaults read. Lifting total_tokens alone buys
 # more of the same circling.
+# THE NOTE-CANDIDATE BATCH. Declared here because the deployment sets it and
+# this file is the only committed record of the config's shape — it was set
+# live on 2026-09-17 while chasing issue #291 and the template did not follow,
+# which is exactly the drift `tests/test_env_template.py` exists to catch.
+#
+# **These two are the STRANDS LOOP budget and are NOT the ceiling that broke.**
+# #291's failure was `[dreamer] max_tokens` — the provider's limit on ONE
+# completion, which raises `PartialReplyError` — and raising these would not
+# have touched it. They are here for the other half of the same argument: a
+# batch pass's output scales with the BATCH, because the objective asks for one
+# verdict per message plus a candidate array, so the field defaults (40,000
+# total / 4,000 output, sized for a pass that makes one model call) are a tag
+# turn's numbers on a job that is not a tag turn.
+#
+# `turns` and `timeout_seconds` are deliberately absent: this adaptor holds no
+# tools, so it cannot spend a turn researching and the field defaults bound it
+# correctly. A partial block fills its missing fields from those defaults
+# rather than zeroing them.
+[dreamer.budgets.note-candidates]
+total_tokens = 200000
+output_tokens = 36000
+
 [dreamer.budgets.proactive]
 turns = 24
 total_tokens = 1000000
@@ -1684,6 +1706,41 @@ timeout_seconds = 240.0
 # proactive adaptor takes one sample per fire) and stated so that it is not a
 # surprise the day it is not.
 max_memory_calls = 2
+
+# **The per-tool call ceilings this pass overrides**, a tool name to how many
+# times ONE pass may call it. Applied OVER `NativeTool.budget` and over
+# `[llm.budgets]`, for this adaptor only.
+#
+# `note_read` — the table says 3, which is a TAG TURN's number: a reply that
+# reads a note or two before answering. This pass is asked for one decision
+# per note the group has open, so its need is the OPEN-NOTE COUNT, not a
+# constant.
+#
+# Measured on the deployment, 2026-09-17 05:00 (Langfuse trace `8b3e6522`):
+# the two live scopes hold 5 and 6 open notes. Each read three, was refused a
+# FOURTH DISTINCT note at the ceiling, and then decided every note anyway —
+# three grounded in a body, the rest in the index line alone. Nothing failed:
+# both passes returned a full decision set, status `ok`, watermark advanced.
+# That is the silent shape AGENTS.md names, where a judgement whose input
+# cannot ground it answers wrong at a rate nothing reports.
+#
+# 8, not 6: this is a CEILING and not a reservation, so the headroom costs
+# nothing until a pass spends it, and a roster that grows one note must not
+# re-open this file. The instrument that says whether it is still too low is
+# `nora_dream_guard_vetoes_total{adaptor="proactive",rule="tool-budget"}` —
+# a sustained non-zero rate on a read verb is the ceiling binding.
+#
+# NOT `[llm.budgets] note_read`, which is deployment-wide: raising it there
+# raises it for every reply Nora writes, and this is a background batch pass
+# nobody waits on. Same blast-radius argument `[dreamer] max_tokens` makes
+# against raising `[llm] max_tokens`.
+#
+# A key here naming a tool the adaptor does not declare REFUSES THE BOOT
+# (`nora.agent.dreamer.tool_call_faults`) — a raised ceiling that reaches
+# nothing would otherwise leave this file recording a bound the pass does not
+# actually run under, with nothing measuring the difference.
+[dreamer.budgets.proactive.tool_calls]
+note_read = 8
 
 # THE CULTURE FOLD (design/culture-tier). Uncommented from 2026-09-17, when the
 # adaptor stopped being tool-free: it now holds nine read verbs through an

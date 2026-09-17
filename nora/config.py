@@ -18,6 +18,7 @@ from pydantic import (
     Field,
     ValidationError,
     ValidationInfo,
+    field_validator,
     model_validator,
 )
 
@@ -2522,6 +2523,59 @@ class DreamBudgetConfig(BaseModel):
     #: — a boot failure is the honest answer to it, the same posture
     #: `output_tokens = 0` gets by being `ge=1` above.
     max_memory_calls: int = Field(default=2, ge=1)
+
+    #: **The per-adaptor delta over the per-tool call ceilings** — a tool name
+    #: to how many times ONE pass may call it, overriding `NativeTool.budget`
+    #: and `[llm.budgets]` for this adaptor alone.
+    #:
+    #: It exists because `NativeTool.budget` is a TAG TURN's number and the
+    #: Dreamer was inheriting it with no way to say otherwise — the same
+    #: category error `[dreamer] max_tokens` was added for (issue #291), one
+    #: ceiling over. `note_read = 3` is sized for a reply that reads a note or
+    #: two before answering; the proactive pass is asked for one decision per
+    #: note the group has open, so its need is the OPEN-NOTE COUNT and not a
+    #: constant.
+    #:
+    #: Measured on norty, 2026-09-17, the 05:00 pass (Langfuse trace
+    #: `8b3e6522`): `friends` holds 5 open notes and `ridgeline` 6, against a
+    #: ceiling of 3. Both scopes read three notes, were refused on a FOURTH
+    #: DISTINCT one, and then decided every note anyway — grounding the first
+    #: three in a body and the rest in the index line alone. Nothing failed:
+    #: both passes returned a full decision set, status `ok`, watermark
+    #: advanced. That is the shape AGENTS.md names — a judgement whose input
+    #: cannot ground it answers anyway, wrong, at a rate nothing reports.
+    #:
+    #: **Not `[llm.budgets]`, which is the deployment-wide delta**: raising
+    #: `note_read` there raises it for every reply Nora writes too, and this
+    #: is a background batch pass nobody waits on. Same blast-radius argument
+    #: `[dreamer] max_tokens` makes against raising `[llm] max_tokens`.
+    #:
+    #: **A key naming a tool this adaptor does not declare is a BOOT
+    #: FAILURE**, not a silent no-op (`nora.agent.dreamer.tool_call_faults`,
+    #: raised through `verify_tool_subsets`). The alternative was the shape
+    #: `budget_for` accepts for a misspelled ADAPTOR name — leniency, because
+    #: the cost there is a bounded run the operator did not choose. The cost
+    #: here is different: a typo'd tool key means the ceiling the operator
+    #: raised is still the table's, and the pass goes on being starved with
+    #: the config file saying otherwise. Nothing measures that, so it refuses
+    #: to start instead.
+    #:
+    #: `ge=1` per entry: 0 would be a tool the adaptor holds and can never
+    #: call, which is `output_tokens = 0`'s shape — expressible only by
+    #: removing it from the subset, where it is visible.
+    tool_calls: dict[str, int] = Field(default_factory=dict)
+
+    @field_validator("tool_calls")
+    @classmethod
+    def _positive_tool_calls(cls, value: dict[str, int]) -> dict[str, int]:
+        for name, ceiling in value.items():
+            if ceiling < 1:
+                raise ValueError(
+                    f"tool_calls[{name!r}] = {ceiling} — a ceiling below 1 is a "
+                    "tool the adaptor holds and may never call; drop it from "
+                    "the adaptor's subset instead, where it is visible"
+                )
+        return value
 
 
 class DreamerConfig(BaseModel):

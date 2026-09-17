@@ -83,16 +83,29 @@ _PASS_MEMORY = "<memory reads this pass>"  # noqa: S105 — a ledger key, not a 
 #: second is where a typo would silently start a new series instead of an
 #: error, so it gets one now.
 #:
-#: The two are different FINDINGS and must not collapse into one label: `R-7`
-#: says the objective asked for something it was never granted — a config
-#: fault worth chasing — while `memory-budget` says it asked for MORE of
-#: something it WAS granted than a pass is worth, which is ordinary model
+#: The three are different FINDINGS and must not collapse into one label:
+#: `R-7` says the objective asked for something it was never granted — a
+#: config fault worth chasing — while `memory-budget` says it asked for MORE
+#: of something it WAS granted than a pass is worth, which is ordinary model
 #: behaviour the ceiling is there to absorb.
-GuardRule = Literal["R-7", "memory-budget"]
+#:
+#: **`tool-budget` is the third, split off `R-7` on 2026-09-17**, and the
+#: split is the same argument one ceiling over. It had been reported as `R-7`
+#: — so «this tool does not exist» and «this pass has read as many notes as
+#: it may» were one series, and the series could not answer the only question
+#: worth asking of it: is a ceiling BINDING. Measured that morning, the 05:00
+#: proactive pass was refused a fourth note in each of its two scopes and
+#: went on to decide every note anyway; nothing in Prometheus could
+#: distinguish that from a misspelled tool name, and nothing did. Its own
+#: rate is the instrument for `[dreamer.budgets.<adaptor>] tool_calls`: a
+#: sustained non-zero on a read verb says the number is too low for the work,
+#: which is exactly what `memory-budget` says for the memory ration.
+GuardRule = Literal["R-7", "memory-budget", "tool-budget"]
 GUARD_RULES: frozenset[str] = frozenset(get_args(GuardRule))
 
 _R7_RULE: GuardRule = "R-7"
 _MEMORY_RULE: GuardRule = "memory-budget"
+_TOOL_BUDGET_RULE: GuardRule = "tool-budget"
 
 #: What a memory verb refused by the per-pass ceiling says, verbatim. A
 #: CONSTANT because two readers depend on the exact words — the model, which
@@ -205,7 +218,7 @@ class DreamGuard(HookProvider):
         # batch reads to a model as a reason to retry.
         if self._ledger.at_ceiling(tool_name):
             return self._veto(
-                _R7_RULE, f"You already called {tool_name} "
+                _TOOL_BUDGET_RULE, f"You already called {tool_name} "
                        f"{self._ledger.spent(tool_name)} time(s) and have that context. "
                        "Answer from what you already have.",
             )

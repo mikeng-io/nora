@@ -595,11 +595,16 @@ def test_an_id_less_refusal_never_answers_another_call():
 def test_the_guard_rule_labels_come_from_one_vocabulary():
     """`nora_dream_guard_vetoes_total{rule}` had no vocabulary while it had one
     value. The second is where a typo starts a new series instead of raising,
-    so the label set is DERIVED off a `Literal` (AGENTS.md) and both emitters
-    are pinned to it — R-7 for a tool never granted, memory-budget for a ration
-    spent, and the two are different findings that must not collapse.
+    so the label set is DERIVED off a `Literal` (AGENTS.md) and all three
+    emitters are pinned to it — R-7 for a tool never granted, tool-budget for
+    one tool's own per-pass ceiling spent, memory-budget for the pass's memory
+    ration spent, and the three are different findings that must not collapse.
+
+    `tool-budget` was carried on `R-7` until 2026-09-17, which is what made
+    «is a ceiling binding» unanswerable from this series — see
+    `GuardRule`'s own note and `nora/obs/metric_specs.py`.
     """
-    assert set(GUARD_RULES) == {"R-7", "memory-budget"}
+    assert set(GUARD_RULES) == {"R-7", "memory-budget", "tool-budget"}
 
     m = Metrics()
     guard = DreamGuard(
@@ -608,6 +613,7 @@ def test_the_guard_rule_labels_come_from_one_vocabulary():
     )
     assert guard.evaluate("write_fact", {}) is not None       # R-7
     _run(guard, "about", "t1")
+    assert guard.evaluate("about", {}) is not None            # tool-budget
     assert guard.memory_refusal("about") is not None          # memory-budget
 
     emitted = {
@@ -651,12 +657,24 @@ def test_the_configured_memory_ceiling_reaches_the_runtime():
     configured = DreamBudgetConfig(
         turns=9, total_tokens=11_000, output_tokens=1_200,
         timeout_seconds=13.5, max_memory_calls=5,
+        # EVERY field has to be set to something other than its default, or
+        # the walk below compares two defaults and passes on a conversion
+        # that was never written. `tool_calls` was added 2026-09-17 and is
+        # the second defaulted field on both sides, so it inherits exactly
+        # `max_memory_calls`' silence.
+        tool_calls={"note_read": 8},
     )
     budget = _adaptor_budget(configured)
 
     for field in DreamBudgetConfig.model_fields:
         assert getattr(budget, field) == getattr(configured, field), (
             f"{field} is configured and never reaches the runtime"
+        )
+        assert getattr(configured, field) != getattr(
+            DreamBudgetConfig(), field
+        ), (
+            f"{field} is set to its own default in this fixture, so the "
+            f"assertion above would pass even if nothing carried it"
         )
 
 

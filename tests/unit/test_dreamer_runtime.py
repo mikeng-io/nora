@@ -43,6 +43,7 @@ from nora.agent.dreamer import (
     RegistryToolSource,
     parse_envelope,
     proactive_grant,
+    tool_call_faults,
     tool_subset_faults,
     verify_tool_subsets,
 )
@@ -301,6 +302,44 @@ def test_an_adaptor_reaching_past_the_ceiling_refuses_to_start():
 
 def test_an_adaptor_inside_the_ceiling_starts():
     verify_tool_subsets([_Adaptor(sink=_Sink())], tools=_ToolSource())
+
+
+def test_a_tool_ceiling_for_a_tool_the_adaptor_lacks_refuses_to_start():
+    """**A raised ceiling that reaches nothing is a boot failure, not a
+    warning.**
+
+    `_tool_budgets` already SKIPS a key naming a tool that did not build, so
+    the wrong outcome is safe — it cannot conjure permission. What it cannot
+    be is visible: the pass runs on the table's number while `config.toml`
+    records a raised one, and the only tell is a veto counter nobody watches.
+    So the operator's own typo refuses the boot instead, the same posture the
+    act-verb check above takes.
+
+    Deliberately the OPPOSITE of `budget_for`'s leniency for a misspelled
+    ADAPTOR name, and the difference is what the mistake costs: there the run
+    is bounded by numbers nobody chose, which is survivable; here the fix the
+    operator applied is inert and nothing says so.
+    """
+    adaptor = _Adaptor(sink=_Sink(), tools=frozenset({"now", "web_search"}))
+
+    with pytest.raises(AdaptorToolError) as exc:
+        verify_tool_subsets(
+            [adaptor], tools=_ToolSource(),
+            tool_calls={adaptor.name: {"web_search": 8, "note_read": 4}},
+        )
+
+    assert "note_read" in str(exc.value)
+    assert "web_search: 8" not in str(exc.value), (
+        "the message names the UNHELD tool, not the one that was fine"
+    )
+
+    # The same config, minus the key it does not hold: starts.
+    verify_tool_subsets(
+        [adaptor], tools=_ToolSource(),
+        tool_calls={adaptor.name: {"web_search": 8}},
+    )
+    assert tool_call_faults(adaptor, tool_calls={"web_search": 8}) == ()
+    assert tool_call_faults(adaptor) == (), "no config at all is no fault"
 
 
 async def test_the_ceiling_is_rechecked_per_run_and_reports_unavailable(monkeypatch):
@@ -1554,6 +1593,67 @@ def test_an_override_naming_a_tool_the_adaptor_lacks_grants_nothing():
 
     assert budgets == {"web_fetch": 6}
     assert "send_reply" not in budgets
+
+
+def test_an_adaptors_own_tool_ceiling_wins_over_the_table_and_the_deployment():
+    """**`[dreamer.budgets.<adaptor>.tool_calls]` is the narrowest of three
+    layers and must win both.**
+
+    `NativeTool.budget` is a TAG TURN's number — `note_read = 3` is sized for
+    a reply that reads a note or two before answering — and the Dreamer was
+    inheriting it with no way to say otherwise. `[llm.budgets]` is no answer:
+    it is deployment-wide, so raising `note_read` there raises it for every
+    reply Nora writes, which is the blast radius `[dreamer] max_tokens`
+    (issue #291) was added to avoid one ceiling over.
+
+    Measured on norty 2026-09-17, the 05:00 proactive pass: `friends` holds 5
+    open notes and `ridgeline` 6, against a ceiling of 3. Each scope read three
+    and was refused a FOURTH DISTINCT note, then decided every note anyway —
+    three grounded in a body, the rest in an index line. Status `ok`, no
+    error, watermark advanced.
+
+    Falsification: drop the `adaptor_overrides` lookup in `_tool_budgets` and
+    the last assertion returns the deployment's 5, or the table's 3 with the
+    `[llm.budgets]` layer gone too.
+    """
+    from nora.agent.dreamer import _tool_budgets
+    from nora.agent.tools import NATIVE_TOOLS
+
+    adaptor = _Adaptor(sink=_Sink())
+    tools = [_named_tool("note_read")]
+
+    assert NATIVE_TOOLS["note_read"].budget == 3, (
+        "the table's own value — if this changes, the assertions below are "
+        "comparing against the wrong baseline and say nothing"
+    )
+    assert _tool_budgets(tools, adaptor) == {"note_read": 3}, "table only"
+    assert _tool_budgets(tools, adaptor, {"note_read": 5}) == {"note_read": 5}, (
+        "[llm.budgets] over the table"
+    )
+    assert _tool_budgets(
+        tools, adaptor, {"note_read": 5}, {"note_read": 8},
+    ) == {"note_read": 8}, "the adaptor's own number is the narrowest and wins"
+    assert _tool_budgets(tools, adaptor, None, {"note_read": 8}) == {
+        "note_read": 8
+    }, "and it does not need a deployment-wide layer under it"
+
+
+def test_an_adaptor_tool_ceiling_for_a_tool_it_lacks_grants_nothing():
+    """The built-only rule, for the third layer too: a name in `budgets` is
+    what turns `DreamGuard`'s default-deny into permission, so a per-adaptor
+    ceiling naming a tool this adaptor does not hold must not conjure an
+    entry. `tool_call_faults` refuses that config at BOOT; this is the second
+    half, for the window where a hot-reloaded objective drops a tool the
+    config still names."""
+    from nora.agent.dreamer import _tool_budgets
+
+    budgets = _tool_budgets(
+        [_named_tool("note_read")], _Adaptor(sink=_Sink()),
+        None, {"note_read": 8, "remind": 99},
+    )
+
+    assert budgets == {"note_read": 8}
+    assert "remind" not in budgets
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,14 @@
+{
+  "type": "fix",
+  "summary": "Nora's daily proactive pass can now read every note a group has open before it decides which one to raise, instead of stopping at three.",
+  "details": [
+    "A Dreamer adaptor can be given its own per-tool call ceilings, overriding the shared table and the deployment-wide setting for that adaptor alone.",
+    "The proactive pass is set to eight note reads, against the two live groups' five and six open notes; it was inheriting three, a number sized for one of Nora's own replies.",
+    "A ceiling naming a tool the adaptor does not hold now refuses to start, rather than sitting in the config file reaching nothing.",
+    "A refusal for a spent per-tool ceiling is now counted separately from a tool that was never granted, so a ceiling that is too low for the work is visible as itself."
+  ],
+  "limitations": [
+    "The ceiling is the only lever raised. A pass that reads every note and still judges one badly is a separate question about what its input carries.",
+    "Before this, such a pass did not fail — it decided the notes it could not read from their index line alone, reported success and moved its watermark. Any decision the daily pass made on a fourth-or-later note was made without that note's body."
+  ]
+}
