@@ -129,6 +129,64 @@ An earlier draft of `00-overview` headlined the `DreamerRuntime` difference —
 found that **true and empty**. It is recorded here as measured rather than
 quietly dropped.
 
+## 2.7 A divergence this bundle's method structurally cannot see
+
+Every finding above is a **kwarg diff** — what collaborators a component is built
+with. That method has a blind spot, found 2026-09-17 by the culture-tier session
+while checking its own arm:
+
+**Which eval clients bypass the gateway cache is a divergence from production,
+and a kwarg diff cannot see it, because it is a HEADER.**
+
+```
+eval_support.py:171   NO_CACHE_HEADERS = {"x-omniroute-no-cache": "true"}
+eval_support.py:920   applied  <- the SDK gate arm (#186)
+eval_support.py:1014  applied  <- GateProbe
+evals/run.py:590      applied  <- the judge
+```
+
+`build_live_runner` and `build_live_participation_runner` (`:273`, `:291`) call
+`create_client(base_url=…, api_key=…)` with **no `default_headers`**. So the gate
+and the judge are cache-bypassed and **the reply subject is not.**
+
+Two consequences:
+
+**1. `#186`'s absolute numbers are cache-bypassed readings.** ADR 0011 says so
+itself — *"it does mean the 6/6 reading is a cache-bypassed one"*. The header is
+on BOTH its arms so the 6/6-vs-1/6 comparison holds; neither number describes
+production.
+
+**2. For a reply suite with `sample: 5`, the effective n is unverifiable from the
+outputs alone.** A case returning `0/5` or `5/5` is exactly the shape a cache
+produces and is indistinguishable from genuine determinism. One varying case
+(`2/5` was observed) proves the cache is not total; it cannot establish that any
+other case drew five times. And `sample: 5` exists precisely because *"one draw
+of a stochastic process is not a reading of it"*.
+
+**The split was not chosen.** The header is on the three clients somebody
+happened to be holding when they hit a caching problem — `run.py:580-586` records
+it (*"judge sample 1 took 7558ms, samples 2 and 3 took 35ms and 66ms, and all
+three were byte-identical including their usage"*) — and nothing relates that set
+to the set of clients that make repeated identical calls. It runs along
+gate-vs-reply rather than along anything anyone decided.
+
+**Nothing in the tree audits it**, and the run logs carry no per-sample elapsed
+time, so it cannot be settled from existing output. Per-sample timing on the case
+line would make it answerable for free on the next run — the latency signature is
+how `run.py:580` found it in the first place.
+
+### What this says about Step 0's method
+
+Step 0 compared **constructor arguments**. It found four real divergences and
+correctly cleared three. It could not have found this one, and there is no reason
+to think it is the only such item: anything carried on the client rather than in
+the composition — headers, timeouts set at the transport, retry policy, base URL
+— is outside what §1's table can express.
+
+**So §1 is a floor on the divergence, not a measurement of it.** The rebuild's
+"one Nora" has to mean one *client* as well as one composition, and this bundle
+had not said so.
+
 ## 3. The cost objection is false — and the repo already solved it
 
 Both reviews flagged "driving `build_dependencies` per case needs a fresh Postgres
@@ -160,6 +218,8 @@ databases; it already is.)*
 **Settled:**
 - **Four of seven** subjects diverge in bytes or tool answers that reach the
   model. `FirePath`'s divergence is block-level, not content-level.
+- **And §1's table is a FLOOR, not a measurement** — §2.7 is a divergence the
+  kwarg method structurally cannot see, and nothing says it is the last one.
 - **Three come back empty.** They are not defects.
 - The cost objection is false; "one Nora per case" costs 64ms.
 - `00-overview` §8's refutation does not fire.
