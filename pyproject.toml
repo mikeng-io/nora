@@ -107,10 +107,22 @@ warn_unused_ignores = true
 # match) instead of scoping to the matched modules — verified by a minimal
 # repro. Two of --strict's flags (warn_redundant_casts, warn_unused_ignores)
 # are global-only in mypy and are already set above; the rest are spelled
-# out here so this override only tightens nora.domain/config/app/infra and does
-# not silently tighten nora.obs, nora.agent, etc.
+# out here so this override only tightens the packages named in `module` below
+# and does not silently tighten nora.obs, nora.agent, etc.
+#
+# #121 (measured 2026-09-11, re-measured 2026-09-17): ingest, analytics,
+# doctrine, language and skills cost zero own-file errors; instructions (2),
+# engagement (9) and web (50) were fixed — all `[type-arg]` (missing generic
+# type arguments), no behaviour change. Own-file errors are only reproducible
+# by scoping the override to ONE package at a time and counting `^nora/<pkg>/
+# .*: error:` — strict flags on the command line leak into every transitively
+# imported module and inflate the count (see the issue).
 [[tool.mypy.overrides]]
-module = ["nora.domain.*", "nora.config", "nora.app.*", "nora.infra.*", "nora.presence.*"]
+module = [
+    "nora.domain.*", "nora.config", "nora.app.*", "nora.infra.*", "nora.presence.*",
+    "nora.ingest.*", "nora.analytics.*", "nora.doctrine.*", "nora.language.*",
+    "nora.skills.*", "nora.instructions.*", "nora.engagement.*", "nora.web.*",
+]
 disallow_any_generics = true
 disallow_subclassing_any = true
 disallow_untyped_calls = true

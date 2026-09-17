@@ -15,6 +15,7 @@ existence here.
 from __future__ import annotations
 
 import time
+from typing import Any
 
 from nora.domain.ports import MemoryStore, RecordStore
 from nora.domain.reminders import ReminderStore
@@ -33,7 +34,7 @@ _UPCOMING_SHOWN = 10
 async def build_status_payload(
     *, store: RecordStore, honcho: MemoryStore, reminders: ReminderStore,
     started_at: float,
-) -> dict:
+) -> dict[str, Any]:
     try:
         await store.stats()
         store_reachable = True

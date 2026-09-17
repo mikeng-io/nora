@@ -22,7 +22,7 @@ sidecar frames (TCP :4599)        [u32be len][u8 id_len][user_id][pcm]
   -> audio.downsample_to_16k      3840-sample blocks -> 1280-sample oww chunks
   -> gate.WakeGate (per user)     LISTENING -(score >= threshold)-> COLLECTING
                                   -1s silence tail / 10s ceiling-> Utterance
-  -> stt.transcribe               16kHz mono WAV -> stt:8000 (model=noise-detection, language=yue)
+  -> stt.transcribe               16kHz mono WAV -> stt:8000 (model=$STT_MODEL, default sensevoice, language=yue)
   -> stt.forward_utterance        JSON {user_id, text, conversation_id} -> nora:9100
 ```
 
@@ -40,7 +40,7 @@ float [-1, 1] input silently truncates to 0 and the gate would never fire
 |---|---|---|
 | `WAKE_LISTEN_HOST` / `WAKE_LISTEN_PORT` | `0.0.0.0` / `4599` | seam bind (the sidecar connects OUT to here) |
 | `WAKE_HEALTH_HOST` / `WAKE_HEALTH_PORT` | `127.0.0.1` / `4601` | /health bind (loopback only) |
-| `WAKE_MODEL_PATH` | `/app/models/喂Nora.onnx` | baked into the image |
+| `WAKE_MODEL_PATH` | `/app/models/喂Nora.onnx` | baked into the image from `models/` (tracked in git; provenance, sha and metrics in `models/MODEL.md`; candidates and training code in `voice-lab/`) |
 | `WAKE_THRESHOLD` | `0.5` | wake score that starts collection |
 | `WAKE_SILENCE_TAIL_MS` | `1000` | trailing silence that ends an utterance |
 | `WAKE_MAX_UTTERANCE_S` | `10` | utterance ceiling |

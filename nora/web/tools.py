@@ -12,10 +12,12 @@ rebuild (the portal fetches this endpoint fresh, `cache: no-store`).
 
 from __future__ import annotations
 
+from typing import Any
+
 from nora.agent.registry import ToolRegistry
 
 
-def build_tools_payload() -> list[dict]:
+def build_tools_payload() -> list[dict[str, Any]]:
     """Every tool the deployed agent can call, model-facing description +
     declared registry fields, sorted by name. `ToolRegistry.catalog()`
     handles the R-27 posture internally (one un-introspectable tool logs and

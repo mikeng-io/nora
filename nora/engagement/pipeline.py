@@ -201,7 +201,7 @@ class EngagementPipeline:
         ai_peer: str,
         context_window: int,
         timeout_seconds: float,
-        limits: dict,
+        limits: dict[str, Any],
         metrics: Any,
         spawn: Callable[[Coroutine[Any, Any, None]], Any],
         slots: ConversationSlots,

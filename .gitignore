@@ -101,5 +101,5 @@ RELEVANCE_GATE_TASK.md
 # frames for the codec test. Both are produced/buildable, so leaving them
 # untracked costs nothing and keeps the identifier gate's "no binaries in
 # this repo" invariant intact.
-deploy/voice-wake/models/
 deploy/voice-wake/tests/fixtures/seam_frames.bin
+

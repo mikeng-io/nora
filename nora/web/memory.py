@@ -18,6 +18,8 @@ doesn't render copy, so that rule lives in the frontend, not here.
 
 from __future__ import annotations
 
+from typing import Any
+
 from nora.domain.ports import MemoryStore
 from nora.persons import Persons
 
@@ -29,7 +31,7 @@ _MAX_CONCLUSIONS = 20
 
 async def build_memory_payload(
     *, honcho: MemoryStore, persons: Persons, ai_peer: str, person_id: str | None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """The caller's own entry only — a list of at most one, so the wire shape
     stays what the frontend already expects (see the module docstring for why
     this used to be everyone's and no longer is).

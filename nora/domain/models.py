@@ -9,6 +9,7 @@ from typing import Any
 from .decision_log import DecisionRow
 from .media import MediaBlob, MediaRef
 from .notes import Note
+from .culture import CultureRevision
 from .standing import Standing
 
 
@@ -327,6 +328,18 @@ class TagContext:
     # working, and `[standing] enabled = false` (the shipped default) leaves it
     # `None` on every turn.
     standing: Standing | None = None
+    # The room's CULTURE head — an account of what this room is and why it
+    # became so (design/culture-tier). Beside `standing` because both are
+    # room-scoped and both are her own output, and apart from it on the one
+    # axis that matters: `standing` is where she had got to in this
+    # CONVERSATION and is rewritten every turn; this is what the ROOM is like
+    # and nothing in it ever retires.
+    #
+    # Defaulted like its siblings so the ~40 existing construction sites keep
+    # working, and `[culture] enabled = false` (the shipped default) leaves it
+    # `None` on every turn. `None` is also the ordinary state for a while after
+    # the tier is switched on: a fold needs new messages and a day.
+    culture: CultureRevision | None = None
     # The shared decision log (issue #199) — what NORA'S OWN LOOP already did
     # across this WORKSPACE, as `<loop_decisions>`. `(room label, rows)` per
     # group, because the row that matters is usually from the OTHER room: a
