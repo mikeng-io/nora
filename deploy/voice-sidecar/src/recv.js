@@ -122,40 +122,12 @@ export async function join(guildId, channelId, token, {
   return { bus, leave, connection, client };
 }
 
-// --- Wake-gate seam: TCP with length-prefixed binary frames ---------------
-// Frame: [u32be payload_len][u8 user_id_len][user_id utf8][pcm bytes]
-// See TRANSPORT.md for why.
-
-export function encodeFrame(userId, pcm) {
-  const id = Buffer.from(String(userId), 'utf8');
-  if (id.length > 255) throw new Error('userId too long for frame');
-  const payload = Buffer.concat([Buffer.from([id.length]), id, pcm]);
-  const header = Buffer.alloc(4);
-  header.writeUInt32BE(payload.length, 0);
-  return Buffer.concat([header, payload]);
-}
-
-/**
- * Incremental parser for the frame format above. Feed it arbitrary TCP
- * chunks; it calls onFrame(userId, pcmBuffer) per complete frame.
- */
-export function createFrameParser(onFrame) {
-  let buf = Buffer.alloc(0);
-  return function feed(chunk) {
-    buf = buf.length ? Buffer.concat([buf, chunk]) : chunk;
-    for (;;) {
-      if (buf.length < 4) return;
-      const payloadLen = buf.readUInt32BE(0);
-      if (buf.length < 4 + payloadLen) return;
-      const payload = buf.subarray(4, 4 + payloadLen);
-      const idLen = payload[0];
-      const userId = payload.subarray(1, 1 + idLen).toString('utf8');
-      const pcm = payload.subarray(1 + idLen);
-      buf = buf.subarray(4 + payloadLen);
-      onFrame(userId, pcm);
-    }
-  };
-}
+// --- Wake-gate seam ------------------------------------------------------
+// The codec moved to `codec.mjs` (2026-09-17) so it is testable without a
+// discord.js tree; re-exported here because TRANSPORT.md and both test files
+// name `recv.js` as the seam's home.
+export { encodeHello, encodeFrame, createFrameParser } from './codec.mjs';
+import { encodeHello, encodeFrame, createFrameParser } from './codec.mjs';
 
 /**
  * Create a pump(pcm, userId) that forwards PCM to a local TCP listener
@@ -172,7 +144,7 @@ export function createFrameParser(onFrame) {
  * drop counters for /voice/status. The wake gate degrades into gaps for a
  * slow consumer, never into a memory grow.
  */
-export function createPump({ host = '127.0.0.1', port = 4599, maxPending = 200, maxUserBacklog = 16, connectImpl = net.connect } = {}) {
+export function createPump({ guildId, host = '127.0.0.1', port = 4599, maxPending = 200, maxUserBacklog = 16, connectImpl = net.connect } = {}) {
   let socket = null;
   let connecting = false;
   let connectingSocket = null; // mid-handshake socket — close() must reach it too
@@ -203,6 +175,13 @@ export function createPump({ host = '127.0.0.1', port = 4599, maxPending = 200, 
       connecting = false;
       connectingSocket = null;
       socket = s;
+      // THE HELLO GOES FIRST, before any held audio — a gate that received
+      // frames before knowing the guild would have to buffer them or drop
+      // them, and dropping an utterance's onset is exactly what `maxPending`
+      // exists to prevent. Written directly rather than through
+      // `writeCounted`: it is not a user's audio and must not enter a user's
+      // backlog accounting.
+      if (guildId) s.write(encodeHello(guildId));
       const held = pending;
       pending = [];
       for (const { userId, frame } of held) writeCounted(userId, frame);

@@ -13,7 +13,9 @@ from pathlib import Path
 
 import numpy as np
 
-from wakegate.codec import FrameParser, encode_frame
+import pytest
+
+from wakegate.codec import FrameParser, encode_frame, encode_hello
 
 FIXTURE = Path(__file__).parent / "fixtures" / "seam_frames.bin"
 USER_A = "111222333444555666"
@@ -63,3 +65,60 @@ def test_partial_chunks_reassemble_the_same_frames():
 def test_encode_frame_round_trips_through_the_parser():
     parser = FrameParser()
     assert parser.feed(encode_frame("u1", b"\x01\x02")) == [("u1", b"\x01\x02")]
+
+
+# --- the HELLO frame (multi-guild, 2026-09-17) -------------------------------
+# Twin of `deploy/voice-sidecar/test/codec.test.mjs`. One wire format, two
+# implementations: a change to either is a change to both.
+
+
+def test_a_hello_names_the_guild_and_is_not_an_audio_frame():
+    parser = FrameParser()
+
+    frames = parser.feed(
+        encode_hello("100000000000000203")
+        + encode_frame("u1", b"\x01\x02")
+        + encode_frame("u2", b"\x03")
+    )
+
+    assert parser.guild_id == "100000000000000203"
+    assert frames == [("u1", b"\x01\x02"), ("u2", b"\x03")]
+
+
+def test_the_hello_survives_being_split_across_chunk_boundaries():
+    blob = encode_hello("100000000000000203") + encode_frame("u1", b"\x07" * 3840)
+    parser = FrameParser()
+
+    frames = []
+    for i in range(len(blob)):
+        frames += parser.feed(blob[i : i + 1])
+
+    assert parser.guild_id == "100000000000000203"
+    assert frames == [("u1", b"\x07" * 3840)]
+
+
+def test_the_guild_is_none_until_a_hello_arrives():
+    """A gate must be able to tell "not announced yet" from a guild, or it
+    would attribute the first utterance to whatever it saw last."""
+    parser = FrameParser()
+
+    parser.feed(encode_frame("u1", b"\x01"))
+
+    assert parser.guild_id is None
+
+
+def test_an_empty_user_id_is_refused_because_zero_is_the_hello_marker():
+    with pytest.raises(ValueError, match="hello marker"):
+        encode_frame("", b"\x01")
+
+
+def test_a_hello_with_no_guild_id_is_refused():
+    with pytest.raises(ValueError, match="needs a guild id"):
+        encode_hello("")
+
+
+def test_the_audio_frame_layout_is_byte_identical_to_what_it_was():
+    """The hello reused the existing length byte rather than widening the
+    frame. If this changes, every deployed sidecar mis-parses audio."""
+    assert encode_frame("u1", b"\xab").hex() == "00000004027531ab"
+    assert encode_hello("g9").hex() == "00000003006739"
