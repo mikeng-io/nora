@@ -19,6 +19,7 @@ Nothing here is reachable from the eval layer as a store. `know()` takes a
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -122,6 +123,88 @@ async def arrive(
             raw={},
         ),
         person_id=person_id,
+    )
+
+
+async def deliver(
+    subject: Subject,
+    body: str,
+    *,
+    room: tuple[str, str] = DEFAULT_ROOM,
+    now_ms: int,
+    name: str = _KNOWN_NAME,
+) -> None:
+    """Hand one message to `Dispatcher.on_message` — the deployment's own
+    inbound path, exactly as a platform adapter's `listen()` loop does.
+
+    NOT `arrive()` first: ingest's audit stage appends the row itself
+    (`nora/ingest/stages/audit.py:33`), so writing it here as well would put the
+    message in the transcript TWICE — once as history and once as itself — and
+    the turn would read a room that had said everything twice. `arrive()` is
+    for the paths that bypass ingest, which is why both exist.
+    """
+    platform, conversation_id = room
+    sender_id, _ = (
+        (_KNOWN_SENDER, _KNOWN_PERSON) if name == _KNOWN_NAME else ("+8529900", None)
+    )
+    await subject.deps.dispatcher.on_message(
+        NormalizedMessage(
+            platform=platform,
+            conversation_id=conversation_id,
+            conversation_type="group",
+            sender_id=sender_id,
+            sender_name=name,
+            timestamp=now_ms,
+            body=body,
+            raw={},
+        )
+    )
+
+
+async def settle(subject: Subject, *, timeout_seconds: float = 180.0) -> bool:
+    """Wait until every turn the deployment SPAWNED has finished. `True` if it
+    settled, `False` on timeout.
+
+    `Dispatcher.on_message` does not await the turn — it hands the request to
+    `BackgroundTasks.spawn` and returns, because a platform listen loop must not
+    block on one room. So an entry point that drives the deployment's real
+    inbound path has to wait for what that path fired.
+
+    Polls `len(deps.background)`, which is `BackgroundTasks.__len__` — PUBLIC
+    surface, deliberately. A `drain()` on `BackgroundTasks` would be tidier and
+    would also be a method added to `nora.app` for evaluation's sake, which is
+    the one thing `design/evaluation/01-boundaries.md` §5(2) forbids. Polling is
+    the cost of not breaking that rule, and it is paid once, here.
+    """
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    while len(subject.deps.background):
+        if asyncio.get_running_loop().time() >= deadline:
+            return False
+        await asyncio.sleep(0.05)
+    return True
+
+
+def silent_failures(subject: Subject) -> float:
+    """`nora_silent_failures_total`, summed over every label set.
+
+    Production's OWN instrumentation for "she did not speak and it was not a
+    choice": `handler_error`, `invocation_timeout`, `no_send_call`,
+    `audit_write_failed`. An entry point reads it before and after a turn, and a
+    rise means the turn did not run — which must never be graded as silence.
+
+    Needed because the tag path gives its caller nothing else. `speak` returns
+    an outcome token and the gate returns a `source`; `Dispatcher.on_message`
+    returns `None` and swallows the turn into a background task, so without this
+    an unreachable provider produces "no rows, no error" — indistinguishable
+    from a deliberate silence, and scored as one.
+
+    Summed rather than read per-reason: the question here is "did anything go
+    wrong", and enumerating the reasons would put a list in the eval layer that
+    has to be kept in step with `nora/obs/metric_specs.py`.
+    """
+    return sum(
+        v for key, v in subject.deps.metrics.snapshot().items()
+        if key and key[0] == "nora_silent_failures_total"
     )
 
 

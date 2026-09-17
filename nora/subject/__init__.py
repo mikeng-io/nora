@@ -37,9 +37,12 @@ from .knowledge import (
     Message,
     NoteSeed,
     arrive,
+    deliver,
     heard,
     know,
     last_row_id,
+    settle,
+    silent_failures,
 )
 from .obtain import Subject, SubjectSpec, obtain
 
@@ -51,8 +54,11 @@ __all__ = [
     "Subject",
     "SubjectSpec",
     "arrive",
+    "deliver",
     "heard",
     "know",
     "last_row_id",
     "obtain",
+    "settle",
+    "silent_failures",
 ]

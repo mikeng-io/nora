@@ -31,12 +31,24 @@ from .entry import ENTRY_POINTS
 
 
 def load(path: Path) -> list[Case]:
-    """A corpus file, as cases. DATA — no code runs to add a suite."""
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or []
-    return [_case(r) for r in raw]
+    """A corpus file, as cases. DATA — no code runs to add a suite.
+
+    Two shapes, both already in the tree: a bare list of cases, or a mapping
+    with `cases:` and an optional `config:`. The second is what the adversarial
+    corpora were already written as, and it is what lets a suite state the
+    configuration it is ABOUT — `trigger.yaml`'s twelve cases are twelve hits on
+    the literal `"nora.000"`, so the trigger text is a fact about the corpus and
+    not about any one case.
+    """
+    doc = yaml.safe_load(path.read_text(encoding="utf-8")) or []
+    if isinstance(doc, dict):
+        rows, config = doc.get("cases") or [], dict(doc.get("config") or {})
+    else:
+        rows, config = doc, {}
+    return [_case(r, config) for r in rows]
 
 
-def _case(raw: Mapping[str, Any]) -> Case:
+def _case(raw: Mapping[str, Any], config: Mapping[str, Any]) -> Case:
     for key in ("name", "entry", "expect"):
         if key not in raw:
             raise ValueError(f"case is missing {key!r}: {raw!r}")
@@ -54,7 +66,29 @@ def _case(raw: Mapping[str, Any]) -> Case:
         sample=int(raw.get("sample", 1)),
         category=str(raw.get("category", "")),
         safety=bool(raw.get("safety", False)),
+        expected_output=str(raw.get("expected_output", "")),
+        metadata=dict(raw.get("metadata") or {}),
+        # The case's own `config:` wins over the corpus's, so one awkward case
+        # can differ without a second file.
+        config={**config, **(raw.get("config") or {})},
     )
+
+
+#: What `nora.subject.Knowledge` can actually write into a real store.
+#:
+#: `conclusions` is NOT here, and that is a finding rather than an omission:
+#: Honcho derives a conclusion from messages, so there is no way to state one
+#: for a case except by substituting the client — which is the thing this
+#: rebuild ends. Two cases in the participation corpus need it (issue #210's
+#: pair) and they come back as ERROR until the memory tier has a seam that is
+#: not a substitution.
+#:
+#: Fail-closed rather than ignore-unknown, because ignoring is the worse of the
+#: two by a long way: a dropped `conclusions` turns a `-known` case into its own
+#: `-unknown` twin, so the pair reports "the knowledge cut works" having cut
+#: nothing. That is `seed_from_dict`'s own documented footgun, arriving by a
+#: different road.
+_KNOWABLE = {"transcript", "standing", "notes"}
 
 
 def _knowledge(raw: Mapping[str, Any]) -> Knowledge:
@@ -63,6 +97,12 @@ def _knowledge(raw: Mapping[str, Any]) -> Knowledge:
     The translation lives HERE and not in the domain, which imports nothing
     from `nora`, and not in `nora.subject`, which knows nothing about YAML.
     """
+    unknown = set(raw) - _KNOWABLE
+    if unknown:
+        raise ValueError(
+            f"cannot seed {sorted(unknown)} into a real store; "
+            f"knowable: {sorted(_KNOWABLE)}"
+        )
     transcript = []
     for entry in raw.get("transcript") or []:
         if isinstance(entry, str):
@@ -109,7 +149,7 @@ async def run_once(
                 # The entry point's own requirements UNDER the case's, so a
                 # case can still override anything and nothing has to remember
                 # which switch its suite needs.
-                overrides={**port.config, **(overrides or {})},
+                overrides={**port.config, **case.config, **(overrides or {})},
             )
         )
     except Exception as exc:                        # noqa: BLE001 — see docstring

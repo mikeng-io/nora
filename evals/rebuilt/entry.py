@@ -32,7 +32,16 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from nora.app.fire import SENT, SILENT, participation_occasion
-from nora.subject import DEFAULT_ROOM, Subject, arrive, heard, last_row_id
+from nora.subject import (
+    DEFAULT_ROOM,
+    Subject,
+    arrive,
+    deliver,
+    heard,
+    last_row_id,
+    settle,
+    silent_failures,
+)
 
 from .domain import Case, Outcome
 
@@ -127,6 +136,83 @@ async def participation(subject: Subject, case: Case, *, now_ms: int) -> Outcome
     )
 
 
+async def tag(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
+    """`Dispatcher.on_message` — the deployment's own inbound path.
+
+    This is the entry point a platform adapter's `listen()` loop calls, with an
+    already-parsed message. Nothing stands between it and the turn: ingest
+    decides admission, and an admitted message becomes an `EngagementRequest`
+    the background tasks run.
+
+    **It replaces a reconstruction.** Eight corpora — the six adversarial files
+    plus `trigger`/`no_trigger` — were driven by `evals/run.py`'s
+    `_invoke_agent`, a bare Strands `Agent` whose own docstring says what it is:
+
+      > **NOT NORA.** [...] What this therefore does NOT have — every one of
+      > these is part of Nora: `build_prefill` and every `ContextBlock`, the
+      > framing every block carries in its own opening tag [...] `<standing>` /
+      > `<notes>` / `<self_card>` / `<peer_card>`, the real tool registry,
+      > `ReplyGuard` / `LeakGuard` / `Deliverer`.
+
+    Every one of those is present here, because none of them is passed in.
+
+    The turn is SPAWNED, not awaited — a listen loop must not block on one
+    room — so `settle()` waits for what this path fired. A turn that does not
+    settle is an ERROR, never a silence: see `participation` above for why that
+    distinction is the whole discipline.
+    """
+    # The case's input VERBATIM. Nothing is prepended and no trigger is
+    # inserted: whether the message engages her is exactly the deployment's
+    # decision, made by `nora/tag.py` inside ingest, and it is the whole subject
+    # of two of the corpora that land here. `no_trigger.yaml`'s twelve cases are
+    # near-misses of a specific string — a helpfully-added trigger would turn
+    # every one of them into a hit and the suite would report a perfect score
+    # for a rule it had stopped testing.
+    body = case.input
+    # BEFORE delivering, and nothing is written here: ingest's audit stage
+    # appends the inbound row itself, so pre-writing it would put the message in
+    # the transcript twice.
+    watermark = await last_row_id(subject)
+    failures_before = silent_failures(subject)
+    await deliver(subject, body, now_ms=now_ms)
+    if not await settle(subject):
+        return Outcome(
+            admitted=None,
+            source="fail_closed",
+            error="the turn never settled within the timeout",
+        )
+
+    # THE FAIL-CLOSED RULE, and this path had no other signal for it.
+    #
+    # `Dispatcher.on_message` returns `None` and hands the turn to a background
+    # task, so unlike the gate (`source`) and the turn (`speak`'s token) there
+    # is nothing here to read. Measured: with no provider reachable this entry
+    # point returned `error=None, admitted=False, said=()` — a verdict, from a
+    # run that reached no model. Every corpus that lands here expects a REPLY,
+    # so that is not a near miss: it is every case failing for a reason no
+    # number would have shown, or — one flipped expectation away — every case
+    # passing.
+    #
+    # `nora_silent_failures_total` is production's own counter for "she did not
+    # speak and it was not a choice". Reading the deployment's instrumentation
+    # rather than inventing a signal is the point: the thing that tells an
+    # operator the turn broke is the thing that tells the suite.
+    failed = silent_failures(subject) - failures_before
+    if failed:
+        return Outcome(
+            admitted=None,
+            source="fail_closed",
+            error=f"the turn failed silently ({failed:g} counted)",
+        )
+
+    hers = await heard(subject, after_id=watermark)
+    return Outcome(
+        admitted=bool(hers),
+        said=tuple(b for b, _ in hers),
+        delivery=",".join(sorted({st for _, st in hers})),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class EntryPoint:
     """One port implementation, plus the configuration it needs to EXIST.
@@ -166,4 +252,8 @@ _PARTICIPATION_SUBSYSTEM = {
 ENTRY_POINTS = {
     "gate": EntryPoint(drive=gate, config=_PARTICIPATION_SUBSYSTEM),
     "participation": EntryPoint(drive=participation, config=_PARTICIPATION_SUBSYSTEM),
+    # The tag path needs NOTHING turned on: `[engagement.trigger] enabled` ships
+    # true, which is the deployment's own default and the reason this is the
+    # cheapest of the three to drive.
+    "tag": EntryPoint(drive=tag),
 }

@@ -10,17 +10,22 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-#: What a case expects. Two vocabularies, because the two entry points answer
-#: different questions and flattening them would be a lie — the gate answers
-#: *may this window become a turn*, the turn answers *did the room hear
-#: anything*. They are graded by `Outcome.meets`, which knows both.
-Expectation = Literal["go", "no_go", "speak", "silence"]
+#: What a case expects. THREE vocabularies, because three entry points answer
+#: three questions and flattening them would be a lie — the gate answers *may
+#: this window become a turn*, the participation turn answers *did the room hear
+#: anything*, the tag path answers *did she answer when spoken to*. Graded by
+#: `Outcome.meets`, which knows all three.
+#:
+#: `reply`/`no_reply` are structurally what `speak`/`silence` are, and both pairs
+#: survive on purpose: the corpora say `reply`, and Step 3's rule is data, not
+#: rewrites. A label edited during a move is a new case wearing the old name.
+Expectation = Literal["go", "no_go", "speak", "silence", "reply", "no_reply"]
 
 #: Which entry point the input enters at. A SELECTION ON A CASE, not a branch
 #: in the runner (`01-boundaries` §3.1). Adding a suite that uses one of these
 #: adds no code; adding a new entry point adds one adapter, which is the line
 #: this design draws rather than hides.
-Entry = Literal["gate", "participation"]
+Entry = Literal["gate", "participation", "tag"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +55,33 @@ class Case:
     #: A false admission here is not an accuracy miss, it is a hole: an
     #: uninvited turn an attacker triggered. Hard bar.
     safety: bool = False
+
+    #: What a good answer looks like, in prose, for a JUDGE to grade against.
+    #: Structural grading (`Outcome.meets`) answers "did she reply"; this is the
+    #: half that answers "was the reply right", and it is deliberately not
+    #: machine-readable — a rubric that a string comparison could check is a
+    #: rubric that is measuring spelling.
+    expected_output: str = ""
+
+    #: Whatever else the corpus recorded about this case, carried verbatim.
+    #:
+    #: `trigger.yaml` uses it for `prefill_sufficient` — whether the case should
+    #: be answerable from the prefill alone, with no tool call. Nothing grades
+    #: that yet. It is a field rather than a dropped key because a corpus is
+    #: DATA: silently ignoring a key is how a fact recorded once stops existing,
+    #: and the next person to want it has to re-derive it by hand.
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    #: Config this case's SUITE needs, as dotted paths. Applied under the entry
+    #: point's own requirements and over nothing else.
+    #:
+    #: Corpus-level and not per-case in practice: `trigger.yaml` and
+    #: `no_trigger.yaml` are built on the literal trigger `"nora.000"` and every
+    #: near-miss in them is a near-miss *of that string*, so the trigger text is
+    #: a property of the corpus. `load()` copies the file's `config:` onto every
+    #: case in it, which keeps the file readable as data while leaving each case
+    #: self-contained once loaded.
+    config: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,7 +138,7 @@ class Outcome:
             return self.admitted is True
         if expect == "no_go":
             return self.admitted is False
-        if expect == "speak":
+        if expect in ("speak", "reply"):
             return bool(self.said)
         return not self.said
 
