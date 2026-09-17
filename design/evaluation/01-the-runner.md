@@ -1,4 +1,4 @@
-# The runner — and why there are two builders
+# The runner — where the one composition lives, and what actually diverges
 
 ## 1. The question `00-overview` §5 asked first, answered
 
@@ -34,8 +34,11 @@ and a matching `import-linter` contract.
 
 **`nora/app/offline.py` exists because of an import rule, not because the
 composition root resists being driven.** The rule is defensible on its own terms
-— `evals/` should not depend on `tests/` — but its consequence was a second
-builder, and a second builder is a second Nora.
+— `evals/` should not depend on `tests/`.
+
+*(An earlier draft concluded from this that "a second builder is a second Nora".
+§3.2 measures that and it is not what happened: both harnesses call the same
+wiring. What diverges is the setup around it.)*
 
 The cost was paid and is recorded. `tests/architecture/test_assembler_parity.py`
 (2026-09-04):
@@ -50,29 +53,70 @@ the rest of the wiring tail.
 
 ## 3. What this means for the runner
 
-The runner does not need a new way to build Nora. **It needs the existing one to
-be reachable from `evals/`.** Three candidate shapes, and the choice is the
-decision this node is asking for:
+### 3.1 A is REFUTED, measured 2026-09-17
 
-**A. Move the real harness into `nora.testing`.** `evals/` may already import it.
-The integration harness's wiring becomes one shared function; `offline.py`'s
-mirror is deleted rather than kept in parity. Largest move, removes the cause.
+Moving `tests/integration/harness.py` into `nora.testing` **breaks the layer
+contract three ways.** Not argued — three probes, each an injected import run
+through `lint-imports`:
 
-**B. Widen the boundary** so `evals/` may import the integration harness. Cheapest
-edit, and it inverts a rule that was chosen deliberately — `evals/` depending on
-`tests/` makes the eval layer a consumer of the test layer, which is backwards
-for a thing that is supposed to measure production.
+| probe | result |
+|---|---|
+| `nora.testing` → `nora.app.offline` | **2 contracts broken** |
+| `nora.testing` → `nora.infra.sql.engine` | **1 contract broken** |
+| `nora.testing` → `nora.config` | **2 contracts broken** |
 
-**C. Keep two builders and hold them with a full parity gate.** Honest about the
-constraint, and it is the status quo plus enforcement. It also accepts, forever,
-that the thing measuring Nora is a copy of Nora maintained by a test.
+The first is decisive. `nora.app` is the top layer, `nora.testing` sits at the
+bottom beside `nora.infra`. **`nora.testing` → `nora.app` is a reverse import**,
+which is the thing layers exist to prevent. The harness needs four `nora.app`
+modules, four `nora.infra.sql` modules and `nora.config`.
 
-**A is the one that matches `00-overview`'s sentence.** B and C both leave a
-second assembly in the tree; the bundle's whole claim is that there should not be
-one. But A is a real migration and its cost has not been sized, which is why this
-is a decision and not a plan.
+The test-only dependency, by contrast, is trivial: `tests.builders` supplies two
+names, `tests.fakes` supplies one, and **the harness imports no `pytest` at
+all**. §6's worry was the wrong worry. The blocker is architectural, and taking A
+means redrawing the layer contract — a different and much larger change than an
+eval refactor.
 
-## 4. What the runner is, under A
+### 3.2 And "two builders" was not accurate
+
+**Both harnesses already call the same wiring:**
+
+```
+tests/integration/harness.py:484   build_offline_pipeline(...)
+evals/harness.py:612               build_offline_pipeline(...)
+```
+
+What diverges is the **setup around it**:
+
+| | `tests/integration` | `evals/harness` |
+|---|---|---|
+| store | real Postgres + `run_migrations` | `FakeRecordStore` / `FakeMemoryStore` |
+| doctrine | `shutil.copytree` of the real files | the same `cfg` |
+| sender | `SinkSender` | fake |
+
+So the duplication this node was named for is not in the composition. It is that
+`build_offline_pipeline` takes **13 parameters defaulting to `None`**, which is
+what lets two callers each forget a different thing —
+`test_assembler_parity.py`'s recorded incident (18 kwargs versus 7) is exactly
+that, and it is patched at two construction sites and unheld elsewhere.
+
+### 3.3 The remaining shapes
+
+**A′ — remove the `None` defaults.** One `nora.app`-level seam that takes what
+kind of store, which doctrine, which sender, and returns a composed subject.
+No optional collaborators, so nothing can be forgotten. Both harnesses become
+its callers. This is A's intent at a location the layer contract already allows,
+because `nora/app/offline.py` is already there.
+
+**B — widen the `evals/` import boundary.** Still available, still makes the
+eval layer a consumer of the test layer.
+
+**C — two setups behind a full parity gate.** The status quo plus enforcement.
+
+**A′ is the one that matches `00-overview`'s §5.3.** It is also the one that makes
+the operator's framing literal: *the stores are config behind it* becomes a
+parameter with no default rather than a collaborator each caller wires.
+
+## 4. What the runner is, under A′
 
 - **Compose once** through the shared harness, `nora/testing` fakes wherever
   production would reach the world — fake sender, fake model when scripted, real
@@ -87,8 +131,8 @@ is a decision and not a plan.
 
 ## 5. What is deliberately unanswered here
 
-- **The cost of A.** How much of `tests/integration/harness.py` moves, what it
-  breaks, and whether `nora/testing` is the right home or just the reachable one.
+- **The cost of A′.** What removing 13 `None` defaults breaks at each call site,
+  and whether the setup differences really reduce to parameters.
 - **Whether `evals/` should import `nora.testing` at all** for the LIVE tier, or
   whether a live run should reach further toward production than a scripted one.
   Today both go through the same fakes.
@@ -97,15 +141,19 @@ is a decision and not a plan.
 
 ## 6. The reading that would refute this node
 
-If moving the integration harness into `nora.testing` turns out to drag `tests/`
-machinery with it that has no business in a shipped package — container
-fixtures, migration scaffolding, pytest-only helpers — then A is not available,
-and the bundle's sentence has to survive with two builders or be withdrawn.
+**A was already refuted this way** — §3.1 predicted a `tests/`-machinery drag and
+found an architectural blocker instead, which is a better refutation than the one
+being looked for. Recorded because the node asked for evidence and got some.
 
-`tests/integration/harness.py`'s own note says `ScriptedTurn`, `FakeAgentRunner`
-and `group_event` already made that trip in Task 10, which is weak evidence that
-the rest can. Weak because those are data helpers and the pipeline assembly is
-not.
+A′ falls the same way if **the setup differences do not reduce to parameters.**
+If `tests/integration`'s real-Postgres path needs something structurally
+different from `evals/harness`'s fake-store path — a different call ORDER, a
+collaborator that only exists in one — then "store kind is a parameter" is false
+and A′ collapses into C with extra steps.
 
-**Size that move before anything else in this bundle is built.** It is the one
-fact that decides whether `00-overview` describes an architecture or a wish.
+**Check that before writing the seam.** Diff the two call sites' argument lists
+against `build_offline_pipeline`'s 22 parameters and see whether the difference
+is values or shape. Values → A′ holds. Shape → it does not.
+
+That check is cheap, it is the first thing to do in this node, and it has not
+been done.

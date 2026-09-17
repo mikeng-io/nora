@@ -1,184 +1,170 @@
-# Evaluation — a sandbox you run Nora in
+# Evaluation — the chain from a decision to a thing that can refute it
 
-## 0. The sentence
+## 0. The question this bundle exists to answer
 
-> **The eval suite is a sandbox. You build Nora, you pick which runtime you want
-> to watch, you feed it input, you look at the output. Your change lives in the
-> worktree. The suite does not change.**
+> **How does the evaluation suite establish that Nora behaves correctly, as
+> designed and as expected?**
 
-Operator, 2026-09-17:
+Operator, 2026-09-17. Everything here is downstream of that sentence, including
+the plumbing question an earlier draft of this file mistook for the subject.
 
-> 你有咩改動就寫喺個 worktree 度，你唔使改嗰個 evaluation suite 㗎嘛 … 你只不過係
-> build Nora，然後你要揀返嗰個 runtime … 然後有咩 input，你咪跑囉。至於你後面嗰啲
-> data store、state store、fake store，係你後面再 config 嘅啫嘛。
+The answer today, measured: **it almost entirely does not.**
 
-Four things, and the order is the design:
+## 0.1 What is NOT in scope, and why it is worth saying first
+
+**The test suite.** Unit, integration and e2e are a solved problem outside this
+repo, and nothing about them is ours to invent:
+
+> test case 嗰度其實冇乜需要太多嘢要 test … 你 search 返到底人哋 unit test 點做、
+> integration test 點做、e2e test 點做，就已經完咗件事。嗰度其實冇乜嘢好傾。
+
+That is right, and it also bounds this bundle. The test layer's blast radius is
+*"do we catch a mistake before it ships"*. It does not reach runtime behaviour.
+When it is disorganised, look up standard practice and follow it — do not write
+a bespoke convention for it, which is what #113's remaining third would be if
+taken further than it has been.
+
+**What has no industry answer is the question in §0.** *"Does an LLM agent behave
+as it was designed to"* is not unit testing at a larger scale, and the reason is
+§3: the entire test discipline establishes that code is wired, and none of it
+establishes how a model behaves once it is. That gap is ours, it is why this
+bundle exists, and it is the only thing in it.
+
+## 1. The chain
+
+For a design statement to be more than prose, four links have to hold:
+
+```
+a design decision            DEC-n / R-n in design/09-decision-index.md
+  → the behaviour it claims   what she must or must not DO
+    → an evaluation that can refute it
+      → driven against the real Nora
+```
+
+Break any link and the decision is unenforced.
+
+## 2. Where it is broken, measured
+
+`design/09-decision-index.md` at `b3c21686`. `AGENTS.md` sends readers here to
+answer *"which test guards this?"*
+
+**250 decision and rule rows:**
 
 | | |
 |---|---|
-| **Nora** | built once, unchanged, not assembled here |
-| **which runtime** | a selection — the note-candidates Dreamer, the participation path, the gate. Not code |
-| **input** | data |
-| **the stores** | config behind it. Fake, seeded, real — a knob, not part of the experiment's definition |
+| cite an `evals/` instrument | **10** |
+| cite a `tests/` unit test only | **196** |
+| cite neither | **44** |
 
-**The experiment is the change in your worktree.** Not a thing you add to the
-suite.
+And of the ten:
 
-## 0.1 The defect, stated at its root
+| row | instrument | |
+|---|---|---|
+| R-14 | `evals/adversarial/` | **reconstruction** |
+| R-53, R-54 | `source_scope.yaml` | **reconstruction** |
+| DEC-75 | `identity_grounding.yaml` | **reconstruction** |
+| R-83 | `being_contradicted.yaml` | **reconstruction** |
+| DEC-76 | `journeys.py`, `evaluators.py` | real |
+| DEC-45 | `harness.py` | real |
+| DEC-30, DEC-33, DEC-58 | prose mention, no path | — |
 
-Today, measuring a new capability means **writing a new driver**. Eight exist,
-one per thing somebody wanted to measure. That is the disease in one line: the
-suite is something you EXTEND per experiment, so every experiment gets to decide
-what it is measuring, and one of them decided on a bare model.
+**Two rows of 250 have a behavioural instrument that drives her. Five have one
+that drives a bare model.**
 
-Under §0 there is nothing to extend. A new capability is a new selection and new
-input — both data — and if that requires editing the runner, the runner is wrong.
+### 2.1 The sharper cut — the rules
 
-## 1. What the withdrawn attempt got wrong, and why it matters here
+`R-*` rules are behavioural by construction: each says what she must or must not
+do. **92 of them.**
 
-It wrote the same opening sentence — *build the whole Nora, change nothing, add
-the thing under test* — and then listed **seams that may be substituted** and
-**categories a suite may fall into**.
+| | |
+|---|---|
+| with an eval | **4** |
+| unit test only | **52** |
+| nothing at all | **36** |
 
-That is the error. Describing the eight ways the tree currently varies, and
-naming them legal, is not a fix for a problem caused by variation. It
-**codified the drift**. Two adversarial reviews reached the same verdict from
-different directions: *right as a diagnosis, not achievable as an architecture*,
-and *a rule nothing satisfies gets ignored* — zero of nine suites satisfied its
-first requirement on the day it was written.
+Sampled, claim against guard:
 
-The operator's correction is the design:
+- **R-7** — *"Per-tag tool-call budget; unknown tools default-deny."* → a file,
+  no selector.
+- **R-17** — *"A degraded derivation of Nora's own identity is counted, never
+  merely logged."* → a file, no selector.
+- **R-22** — *"A tool that could not answer says so in its RETURN VALUE, and
+  'asked and nothing known' is never the same value as 'could not ask'."* →
+  `test_honcho_representation.py::test_an_unknown_peer_is_reachable_and_empty_never_unreachable`
 
-> 攞返 Nora 自己本身入去，然後再加返你要 test 嘅嘢，其實件事已經完咗
+R-22's guard is a good test and it proves the **port** returns distinct values.
+It cannot show that **she** keeps them distinct in a reply, which is what R-22 is
+about. That is the normal case: **52 behavioural rules are guarded by tests that
+measure wiring.**
 
-So this bundle proposes no seam list, no category taxonomy, and no rule about
-how to build a subject — because under it, a suite does not build one.
+## 3. The line, and why it is not a criticism of the tests
 
-## 2. The defect, measured
+7,249 tests pass and they catch real defects. This is about which link they hold.
 
-**Eight bespoke drivers**, each composing its own subject
-(`evals/run.py` unless noted):
+| | unit/integration | evaluation |
+|---|---|---|
+| `participation.md` is loaded, non-empty, at the pinned sha | ✅ | |
+| the gate admits the windows it should | | ✅ |
+| `_clip` marks a cut block | ✅ | |
+| the grader reads the mark and changes its verdict | | ✅ |
+| `send_reply` is registered with budget 1 | ✅ | |
+| she stops at one reply when pushed | | ✅ |
 
-```
-_run_adversarial_live        :671      _run_suite                  :906
-_run_participation_live      :983      _run_note_candidates_live  :1269
-_run_proactive_decide_live  :1426      _run_proactive_act_live    :1499
-_run_journeys_live          :1585      run_gate_suite    (evals/relevance_gate.py:325)
-```
+Left column: *the code is wired*. Right column: *she behaves*. Standard practice
+covers the left completely (§0.1). **The decision index's test column is a
+left-column column, and `AGENTS.md` presents it as the answer to a right-column
+question.**
 
-and **five places that compose a subject** — `evals/run.py`, `evals/harness.py`,
-and three sites in `nora/app/eval_support.py`.
+## 4. Why the bare-model corpus survived as long as it did
 
-**The adversarial family is the one that drifted furthest**, into
-`Agent(model, system_prompt=doctrine.text, tools=[])` with a plain-text message:
-no `build_prefill`, no `ContextBlock`s, no `untrusted`/`note=` framing on the
-message being judged, no `<standing>`/`<notes>`, no tool registry, no
-`ReplyGuard`/`Deliverer`. Its numbers were reported as her behaviour for as long
-as it existed.
+It is one of the few behavioural instruments there are. With five of ten
+citations pointing at reconstructions and 244 rows carrying no behavioural
+reading at all, **a number from it had nothing to be compared against.** A 67%
+reads as a 67% when it is the only reading in the room.
 
-**But the drift is the symptom.** Nothing in the tree contradicted it because
-there was no shared subject to contradict it *with*. Eight drivers, no baseline,
-no rule — one of them being a bare model is what that arrangement produces
-eventually, not a separate mistake.
+The reconstruction is not the disease. It is what the absence of the chain looks
+like when somebody finally builds an instrument and nothing tells them what an
+instrument is for.
 
-## 3. What the shape is
+## 5. What this bundle proposes
 
-**One composition.** Nora is built once, through the production composition root.
-A suite cannot reach the builder, so there is nothing for a suite to get wrong.
+**The chain is the artifact.** A design statement that claims a behaviour names
+the evaluation that can refute it, and that evaluation drives her.
 
-**One runner.** Given a subject, a selection and an input, it runs and reports.
-No per-suite drive function, so nowhere for a suite to differ in HOW it runs.
+**5.1 The index's test column splits.** Two answers, not one: what proves the
+code is wired, and what would show the behaviour is wrong. Either may be absent —
+but absent must READ as absent, rather than a wiring test standing in the
+behavioural column. 36 `R-*` rules have neither today and say nothing about it.
 
-**Everything else is config or data.**
+**5.2 An evaluation is written against a decision, not against a capability.**
+Today a suite exists because somebody wanted to measure a feature, so its
+contents are whatever that person thought of. Under the chain it exists because a
+decision claims something falsifiable, which makes *"what should this suite
+contain"* answerable: **what would refute the decision it names.**
 
-- *which runtime* — a selection. `FirePath.speak`, `RelevanceGate.decide`, the
-  note-candidates `DreamerRuntime`. This is what the eight drivers' differences
-  collapse into.
-- *input* — the case.
-- *the stores* — config. Seeded per case, same implementation throughout.
+**5.3 Link 4 is a precondition, and it is `01-`'s subject.** An evaluation that
+does not drive her cannot refute anything about her. The plumbing matters only
+because of this, and not on its own.
 
-The load-bearing claim, and the thing to attack: **every real difference between
-today's eight drivers is a selection plus input plus store config.** §4 records
-the two that are not obviously so.
+## 6. What this bundle does NOT propose
 
-**The test of the whole bundle:** adding a capability must require no edit to the
-runner. If it does, the runner has become the ninth driver.
+- **That all 250 rows get an evaluation.** Most are not behavioural — a schema
+  constraint, a key shape, a build rule. The 92 `R-*` rules are the population to
+  ask, and 52 of them guarded by wiring is the finding.
+- **That unit tests be replaced, or given a new convention.** §0.1.
+- **A convention for writing evaluations.** That comes last, describing what
+  exists. The attempt to write it first (PR #307) was withdrawn the same day.
 
-## 4. The two cases that decide whether this works
+## 7. The reading that would refute this bundle
 
-### 4.1 `relevance_gate` — a real component, no turn
+If the 52 wiring-guarded rules are mostly rules whose behaviour is genuinely
+settled by wiring — a budget that cannot be exceeded because the registry will
+not allow it — then the gap is smaller than §2.1 makes it look and this bundle is
+overstated.
 
-`evals/relevance_gate.py` drives the real `RelevanceGate.decide` against the
-real `participation.md` over labelled windows. Its own docstring: *"No agent, no
-tools, no turn."*
+**That is checkable and has not been checked.** Read the 52, classify each as
+*settled by wiring* or *asserted about behaviour*, and report the split. Do it
+before building anything, alongside `01-` §6's sizing.
 
-It is the cleanest instrument in this repo and it is **not a turn**. The
-withdrawn attempt's binary — either Nora is the subject or she is not — had no
-room for it, and graded it with a third answer its own rule did not contain.
-
-**This bundle must place it without a special case, or it is the same failure
-again.** The candidate answer is that "which entry point" already covers it:
-`RelevanceGate.decide` is an entry point exactly as `FirePath.speak` is. If that
-holds, the taxonomy collapses into data and §3 stands.
-
-### 4.2 The stores
-
-The withdrawn attempt put the stores under *"not Nora — substituting one changes
-what she is GIVEN, never what she IS"*, and then had to defend that.
-
-`nora/app/eval_support.py:356-366` refutes it, measured: with the note store
-unwired, a `-known` case stopped differing from its `-unknown` twin and the model
-reasoned from the gap — *"A pair that cannot flip measures nothing."* The whole
-`_KNOWLEDGE_CUT_TWINS` design demonstrates that **store content moves her
-decision**.
-
-Under §0 this needs no defending and no seam list. **The stores are config
-behind the sandbox** — same implementation, seeded differently per case. Content
-is input. There is no substitution to legislate because nothing is substituted;
-a case says what she knows, which is the same kind of statement as what somebody
-typed.
-
-This is the clearest sign the operator's framing is the right one: the question
-the previous attempt could not answer stops being a question.
-
-## 5. What this does NOT decide
-
-- **How the one composition is reached from `evals/`.** *(The prior question —
-  whether the production root can be driven at all — is ANSWERED in `01-`: it
-  can, and `tests/test_composition.py` does it ~90 times. The second builder
-  exists because `evals/` may not import `tests/`, an import rule rather than a
-  technical limit.)* What remains is which of `01-`'s three shapes is taken, and
-  that is the operator's.
-- **What happens to the reconstruction suites.** Cheap doctrine-wording probes
-  have a use. Whether they survive under an honest name, or are rebuilt on the
-  runner, or are deleted, is a decision this bundle must make and has not.
-- **The model.** It is substituted routinely (`--model`, `--effort`,
-  `_ALWAYS_SENDS`) and appeared on neither of the withdrawn attempt's lists.
-  Under §3 it is presumably part of the subject and the override is a declared
-  input, but that is asserted, not decided.
-- **Order.** Which driver is absorbed first. `relevance_gate` is closest to the
-  shape already; `adversarial` is furthest.
-
-## 6. Why this is worth a bundle rather than a refactor
-
-It changes eight drivers, touches `eval_support.py`'s three composition sites,
-and must answer §4.1 and §4.2 before any of that is safe. Those are design
-decisions.
-
-And it has one property the last attempt lacked: **it can be wrong in a way that
-shows.** If §4.1 cannot be expressed as an entry point, or the composition root
-cannot be driven, the shape is refuted and this bundle says so rather than
-shipping a rule nothing satisfies.
-
-## 7. What must be true before any convention is written
-
-From #311, and stated as the order rather than as requirements:
-
-**Build the one runner first. Absorb the drivers into it one at a time. Write
-the convention last, describing what exists.** A convention written first
-describes eight variations and legitimises them, which is the mistake already
-made once.
-
-The corollary is the test of whether this bundle is working: **every driver
-absorbed is one `_run_*` function deleted.** If the count does not fall, the
-runner has become a ninth way to build a subject.
+A bundle about not trusting unmeasured claims should not ship one, and §2.1 is
+currently the strongest claim here with the least work behind it.
