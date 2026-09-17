@@ -34,7 +34,7 @@ from nora.domain.ports import (
     RosterSource,
     StandingStore,
 )
-from nora.engagement.context import StandingNotesReader
+from nora.engagement.context import CultureReader, StandingNotesReader
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.slots import ConversationSlots
 from nora.ingest.pipeline import IngestPipeline
@@ -72,6 +72,7 @@ def build_offline_pipeline(
     # caller keeps working unchanged.
     notes: StandingNotesReader | None = None,
     standing: StandingStore | None = None,
+    culture: CultureReader | None = None,
     media_join: MediaJoin | None = None,
     participation: ParticipationTrigger | None = None,
     extra_engage_policies: tuple[EngagePolicy, ...] = (),
@@ -130,6 +131,12 @@ def build_offline_pipeline(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
         policy=permissive_policy(),
         notes=notes, standing=standing,
+        # The culture head (design/culture-tier). `None` renders no block,
+        # which is what an eval that seeds no account should see. It is passed
+        # here at all because `tests/architecture/test_assembler_parity.py`
+        # requires it: a collaborator production passes and the harness does
+        # not means every eval measures a prompt production never builds.
+        culture=culture,
         # The media join (issue #116). `None` renders the bare handles a row
         # actually carries; an eval that wants `[image a3f2c1: …]` in its
         # prompt builds a `MediaJoin` over `nora.testing.FakeMediaObjectStore`,
@@ -247,6 +254,12 @@ def build_offline_pipeline(
                 "proactive": proactive_occasion,
             },
             standing=standing,
+            # The culture head (design/culture-tier), named here because
+            # `test_assembler_parity` requires the two call sites to pass the
+            # SAME keyword names: a collaborator production passes and the
+            # harness does not means every participation eval measures a prompt
+            # production never builds.
+            culture=culture,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
             # The participation turn's memory reads (issue #210). ONE knob set,
             # read at the composition root exactly as the tag assembler reads
