@@ -30,6 +30,7 @@ from nora.subject import Knowledge, Message, NoteSeed, SubjectSpec, know, obtain
 
 from .domain import Case, Outcome, Verdict
 from .entry import ENTRY_POINTS
+from .grading import Judge, criteria_for
 
 
 def load(path: Path) -> list[Case]:
@@ -160,7 +161,11 @@ def _knowledge(raw: Mapping[str, Any]) -> Knowledge:
 
 
 async def run_once(
-    case: Case, *, database_url: str, overrides: dict[str, Any] | None = None,
+    case: Case,
+    *,
+    database_url: str,
+    overrides: dict[str, Any] | None = None,
+    judge: Judge | None = None,
 ) -> Outcome:
     """One draw. A fresh subject, a fresh workdir, nothing shared.
 
@@ -200,6 +205,27 @@ async def run_once(
             leave_room_for_arrival=port.delivers_input,
         )
         outcome = await port.drive(subject, case, now_ms=written.now_ms)
+        # JUDGED HERE, while the subject is alive, because the judge needs the
+        # doctrine she actually ran on — not a copy read off disk, which is the
+        # same file only until somebody edits it mid-run. The prompt is
+        # bind-mounted and hot-reloads; that is the whole reason the gate suite
+        # exists.
+        if judge is not None and outcome.said and outcome.error is None:
+            judgement = await judge.grade(
+                said="\n".join(outcome.said),
+                asked=case.input,
+                doctrine=subject.deps.doctrine.doctrine_text,
+                source=_source(case),
+                extra=criteria_for(tuple(case.metadata.get("criteria") or ())),
+            )
+            outcome = dataclasses.replace(
+                outcome,
+                judged=judgement.verdict,
+                # A judge that could not be reached is an ERROR about the
+                # INSTRUMENT and is reported as one, rather than as a REVIEW
+                # nobody can distinguish from a judge that answered vaguely.
+                error=judgement.error,
+            )
         return dataclasses.replace(
             outcome, elapsed_seconds=time.monotonic() - started,
         )
@@ -209,8 +235,29 @@ async def run_once(
         shutil.rmtree(workdir, ignore_errors=True)
 
 
+def _source(case: Case) -> str | None:
+    """The SOURCE the reply had to ground against — the window she read.
+
+    Without it the judge grades grounding BLIND: it cannot tell "correctly named
+    the top entry" from "fabricated which entry is the asker", because both read
+    as fluent confident text (DEC-75). `None` for a case with no transcript,
+    which is the injection corpora's shape and is why SAFETY is the criterion
+    that binds — it is the one meaningful with or without source data.
+    """
+    rows = (case.knows or {}).get("transcript") or []
+    if not rows:
+        return None
+    return "\n".join(
+        r["body"] if isinstance(r, dict) else str(r) for r in rows
+    )
+
+
 async def run(
-    case: Case, *, database_url: str, overrides: dict[str, Any] | None = None,
+    case: Case,
+    *,
+    database_url: str,
+    overrides: dict[str, Any] | None = None,
+    judge: Judge | None = None,
 ) -> Verdict:
     """`case.sample` draws, judged together.
 
@@ -219,7 +266,9 @@ async def run(
     thing under test.
     """
     outcomes = [
-        await run_once(case, database_url=database_url, overrides=overrides)
+        await run_once(
+            case, database_url=database_url, overrides=overrides, judge=judge,
+        )
         for _ in range(case.sample)
     ]
     return Verdict(case=case, outcomes=tuple(outcomes))

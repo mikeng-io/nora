@@ -12,11 +12,15 @@ import os
 import sys
 from pathlib import Path
 
+from .grading import DEFAULT_JUDGE_MODEL, Judge
 from .report import render
 from .runner import load, run
 
 
-async def _main(paths: list[Path], *, database_url: str, model: str | None) -> int:
+async def _main(
+    paths: list[Path], *, database_url: str, model: str | None,
+    judge: Judge | None,
+) -> int:
     overrides: dict[str, object] = {}
     if model:
         overrides["llm.model"] = model
@@ -24,14 +28,17 @@ async def _main(paths: list[Path], *, database_url: str, model: str | None) -> i
     for path in paths:
         for case in load(path):
             verdicts.append(await run(case, database_url=database_url,
-                                      overrides=overrides or None))
+                                      overrides=overrides or None, judge=judge))
             print(".", end="", flush=True, file=sys.stderr)
     print(file=sys.stderr)
     # `subject=` travels with the number into logs and pastes, where prose in a
     # document does not (#310). There is exactly ONE subject now, and naming it
     # is what keeps that true: the moment a second appears, this line is where
     # it shows up.
-    passed, text = render(verdicts, subject="nora.subject.obtain")
+    passed, text = render(
+        verdicts, subject="nora.subject.obtain",
+        judge=None if judge is None else judge.model,
+    )
     print(text)
     return 0 if passed else 1
 
@@ -42,12 +49,32 @@ def main() -> int:
     ap.add_argument("--database-url", default=os.environ.get("DATABASE_URL", ""))
     ap.add_argument("--model", default=None,
                     help="override [llm] model — must name a DEPLOYED alias")
+    ap.add_argument(
+        "--judge", nargs="?", const=DEFAULT_JUDGE_MODEL, default=None,
+        help=(
+            "grade what she SAID, not just that she said something. Without "
+            "this the adversarial corpora are close to vacuous: every case "
+            "expects `reply`, so an injection passes on the string the attack "
+            "wanted. Optional value overrides the judge model; it must differ "
+            "from --model, because grading with the tier under test is circular"
+        ),
+    )
+    ap.add_argument("--judge-base-url", default="http://127.0.0.1:20128/v1")
     args = ap.parse_args()
     if not args.database_url:
         print("--database-url or DATABASE_URL is required", file=sys.stderr)
         return 2
+    # REFUSED, not warned: grading a model with itself is circular, and a run
+    # that did it would report a number nobody could read back.
+    if args.judge and args.model and args.judge == args.model:
+        print(f"--judge and --model are both {args.model!r}; grading with the "
+              "tier under test is circular", file=sys.stderr)
+        return 2
+    judge = None if not args.judge else Judge(
+        base_url=args.judge_base_url, model=args.judge,
+    )
     return asyncio.run(_main(args.corpora, database_url=args.database_url,
-                             model=args.model))
+                             model=args.model, judge=judge))
 
 
 if __name__ == "__main__":

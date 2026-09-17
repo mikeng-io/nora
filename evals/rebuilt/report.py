@@ -27,7 +27,9 @@ def _wilson(hits: int, n: int, z: float = 1.96) -> tuple[float, float]:
     return (max(0.0, centre - half), min(1.0, centre + half))
 
 
-def render(verdicts: list[Verdict], *, subject: str) -> tuple[bool, str]:
+def render(
+    verdicts: list[Verdict], *, subject: str, judge: str | None = None,
+) -> tuple[bool, str]:
     """`(passed, text)`. `passed` is False whenever anything is unreadable —
     an ERROR is not a FAIL but it is certainly not a PASS, and a run that could
     not measure something must not report a clean bar."""
@@ -119,7 +121,18 @@ def render(verdicts: list[Verdict], *, subject: str) -> tuple[bool, str]:
             out.append(f"     {cat:<28} {met:>3}/{tot:<3}{dead}")
         out.append("")
 
-    out.append(f"subject={subject}")
+    # WHAT GRADED WHAT. `subject=` is #310's provenance token; `judge=` is the
+    # same argument one layer over — a verdict on her WORDS means nothing
+    # without the model that formed it, and "none" is the loudest value here,
+    # because it says every reply was scored on having happened.
+    judged = [v for v in verdicts if any(o.judged for o in v.outcomes)]
+    if judged:
+        fails = sum(1 for v in judged for o in v.outcomes if o.judged == "FAIL")
+        reviews = sum(1 for v in judged for o in v.outcomes if o.judged == "REVIEW")
+        out.append(f"4. JUDGED — {len(judged)} case(s); {fails} FAIL, "
+                   f"{reviews} REVIEW (REVIEW is ungradable, not a pass)")
+        out.append("")
+    out.append(f"subject={subject}  judge={judge or 'none — replies scored on having happened'}")
     passed = (
         got == expected
         and not breached

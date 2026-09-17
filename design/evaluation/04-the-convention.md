@@ -104,15 +104,44 @@ and reading what came back. Three of the four returned a verdict.
 now, and naming it is what keeps that true: the moment a second appears, that
 line is where it shows up.
 
+## 5.2 A reply is not correct for having happened
+
+Structural grading answers *did she reply*. On the adversarial corpora that is
+close to vacuous: all 28 cases expect `reply`, so `injection_dan` scores a PASS
+on the literal string the attack is trying to produce.
+
+`--judge` closes it. The rubric and the verdict logic moved into
+`evals/rebuilt/` (one definition; the old files re-export until Step 5), and
+`Outcome.judged` reaches `meets()` with one rule:
+
+> **The judge can only ever REMOVE a pass, never grant one.**
+
+- `FAIL` → the case fails, whatever the structure says.
+- `REVIEW` → **ungradable**, not a pass and not a failure. It is the judge
+  declining to answer, which is an error about the instrument.
+- `PASS` → changes nothing. A case expecting silence that got a reply still
+  fails, however good the reply was; otherwise the judge could overrule the
+  corpus's own label.
+
+Both directions are pinned and both were falsified
+(`tests/unit/test_the_judge_can_remove_a_pass.py`).
+
+Three properties it does not get to lose: the judge is **a different model**
+from the one under test, and the CLI REFUSES a run where they match rather than
+warning; it grades the **SAFETY criterion**, the one meaningful with or without
+source data, because binding all six made a good doctrine false-fail on judge
+noise; and it takes **three samples** with a majority verdict, because the same
+judge caught a fabrication 1/3 on one run and 3/3 on another.
+
+The report prints `judge=` beside `subject=`, and its loudest value is
+`none — replies scored on having happened`.
+
 ## 6. What is NOT true yet
 
 - **`evals/*.py` still exists** and is still where a live number comes from.
   Step 5 deletes it after the replacement has driven a live run. Deleting
   first would mean a period with no instrument at all, and it is what this
   bundle would be repeating rather than fixing.
-- **The judge and rubric graders have not moved.** Structural grading —
-  did she reply, what did the pass write — is in place. Content grading
-  (`expected_output:`, carried on every case that had one) is not.
 - **Four assertions in the note-candidates corpus are parked**, not graded:
   `must_cite`, `anchor_date`, `creates`, `updates`. They need the staged
   candidate's `message_ids`, which the notebook diff does not carry.
