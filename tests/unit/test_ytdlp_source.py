@@ -19,12 +19,19 @@ back to eagerly resolving every playlist entry's stream URL.
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 from yt_dlp.utils import DownloadError
 
 from nora.domain.ports import ResolvedTrack
-from nora.infra.music.ytdlp_source import YtDlpSource
+from nora.infra.music.ytdlp_source import (
+    _EXTRACTOR_TTL_SECONDS,
+    YtDlpSource,
+    _default_extractor,
+    _default_flat_extractor,
+    _RotatingExtractor,
+)
 
 
 class _FakeExtractor:
@@ -300,3 +307,92 @@ async def test_related_with_no_mix_available_is_empty() -> None:
     tracks = await source.related(locator=_watch_url(seed_id))
 
     assert tracks == ()
+
+
+# --- extractor rotation (the 2026-09-18 403) -------------------------------
+#
+# A `YoutubeDL` owns a private cookiejar holding a negotiated YouTube visitor
+# session, and `videoplayback` locators are bound to the session that resolved
+# them. `YtDlpSource` is built ONCE at composition, so before rotation its
+# extractor aged with the process: at 21 hours old every locator it produced
+# was answered `403 Forbidden` by the CDN and each failed stream advanced the
+# queue, draining a guild to silence in about a minute. These pin the repair —
+# the delegate is reused while it is fresh and thrown away once it is not.
+
+
+class _CountingBuild:
+    """Hands out a distinct extractor per call and counts how many it built —
+    a new object IS the observable effect of rotation, the same way a new
+    `VISITOR_INFO1_LIVE` is the observable effect in production."""
+
+    def __init__(self) -> None:
+        self.built = 0
+
+    def __call__(self) -> _FakeExtractor:
+        self.built += 1
+        return _FakeExtractor()
+
+
+def test_the_extractor_is_reused_while_it_is_fresh() -> None:
+    build = _CountingBuild()
+    now = [1_000.0]
+    rotating = _RotatingExtractor(build, ttl_seconds=900.0, monotonic=lambda: now[0])
+
+    rotating.extract_info(_VIDEO_URL, download=False)
+    now[0] += 899.0
+    rotating.extract_info(_VIDEO_URL, download=False)
+
+    assert build.built == 1
+
+
+def test_an_extractor_older_than_the_ttl_is_thrown_away() -> None:
+    build = _CountingBuild()
+    now = [1_000.0]
+    rotating = _RotatingExtractor(build, ttl_seconds=900.0, monotonic=lambda: now[0])
+
+    rotating.extract_info(_VIDEO_URL, download=False)
+    now[0] += 901.0
+    rotating.extract_info(_VIDEO_URL, download=False)
+    # The shape of the production failure: a process-lifetime instance.
+    now[0] += 21 * 60 * 60
+    rotating.extract_info(_VIDEO_URL, download=False)
+
+    assert build.built == 3
+
+
+def test_concurrent_resolves_do_not_each_build_a_replacement() -> None:
+    """`extract_info` runs under `asyncio.to_thread`, so the swap is reachable
+    from several worker threads at once; without the lock two of them would
+    each build a replacement and one would be dropped mid-use."""
+    build = _CountingBuild()
+    rotating = _RotatingExtractor(build, ttl_seconds=900.0, monotonic=lambda: 1_000.0)
+    start = threading.Barrier(8)
+
+    def resolve() -> None:
+        start.wait()
+        rotating.extract_info(_VIDEO_URL, download=False)
+
+    threads = [threading.Thread(target=resolve) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert build.built == 1
+
+
+def test_the_default_extractors_rotate() -> None:
+    """Pins the WIRING, not just the class: rotation that `_default_extractor`
+    does not actually use repairs nothing, and the tests above would stay
+    green through that regression."""
+    assert isinstance(_default_extractor(), _RotatingExtractor)
+    assert isinstance(_default_flat_extractor(), _RotatingExtractor)
+
+
+def test_the_ttl_stays_inside_the_shortest_youtube_session_cookie() -> None:
+    """Measured 2026-09-18 against live YouTube, twice: `GPS` came back at
+    exactly now + 1800s. A TTL at or past that boundary lets the session the
+    locators are bound to expire under a reused extractor, which is the
+    failure this module rotates to avoid — so the bound is an independent
+    number, not this constant restated."""
+    assert _EXTRACTOR_TTL_SECONDS < 1_800.0
