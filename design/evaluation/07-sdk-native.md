@@ -16,8 +16,9 @@ that is a different failure from taking it wrongly: there is no reasoning to
 attack, so nothing in seven nodes could have caught it.
 
 `pyproject.toml:47` has carried `evals = ["strands-agents-evals==1.0.3"]` the
-whole time. Both layers' only contact with it was two classes in the OLD
-`evals/judge.py` — `NoraOutputEvaluator` and `NoraTrajectoryEvaluator` —
+whole time. Both layers' only contact with it was two classes in the OLD judge
+module — `origin/master:evals/judge.py`, deleted here by Step 5 — namely
+`NoraOutputEvaluator` and `NoraTrajectoryEvaluator`,
 defined, never instantiated, never called. Measured: on `origin/master`, `git grep -n "strands_evals" -- evals/judge.py`
 returns FIVE hits — two module-level imports, two in the module docstring, one
 in a comment — and a grep for the two class names returns four, of which one is

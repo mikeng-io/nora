@@ -321,10 +321,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
         "reference records where it lived"
     ),
-    ("design/evaluation/GOAL.md", "tests/integration/test_live_parity_gate.py"): (
-        "deleted 2026-09-18 with the layer it compared against — parity cannot outlive one of "
-        "its two arms"
-    ),
     (
         "docs/adr/0011-the-relevance-gate-stays-off-the-sdk-transport.md",
         "nora/app/eval_support.py",
