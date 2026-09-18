@@ -1,0 +1,18 @@
+# Required-kinds FLOOR (capsule #3 slice 2 / design node 34 Layer 2).
+#
+# Maps a target's declared class (the generator's recorded comprehension, `from.class` on a
+# uacp.check.*) -> the check kind(s) it must carry. A target whose class demands a kind it lacks
+# fails the floor (CHK_FLOOR_UNMET, block). This is what makes "a 'wires up X' claim needs a
+# *resolution* check, not 'a file exists'" an enforced rule, not advice.
+#
+# Doctrine YAML — MERGED over the identical code default (engines/domain/verification_floor.py): a
+# well-formed entry overrides that class; an omitted or malformed entry KEEPS the default. Config can
+# override or add, but neither omission nor garble weakens the floor below the default (fail-closed).
+#
+# Honest edge: wires_symbol / changes_behavior require the code/behavior-plane kinds, which are not
+# yet in the catalog (slice 3) — a target of those classes BLOCKS until that plane is wired.
+target_class_floor:
+  wires_symbol: [uacp.check.symbol_resolves]
+  sets_value: [uacp.check.field_equals]
+  ensures_obligation: [uacp.check.obligation_satisfied]
+  changes_behavior: [uacp.check.behavioral]

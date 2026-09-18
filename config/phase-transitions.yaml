@@ -1,0 +1,532 @@
+schema_version: '0.1'
+kind: uacp.phase_transition_config
+status: seed
+purpose: 'Defines stable lifecycle phase envelopes and the adaptive transition artifact
+  shape. Transition decisions combine invariant checks, selected evidence cluster
+  outcomes, and blocker synthesis.'
+# stages: codified to code in Slice 4b T4d-1. The full per-phase grammar
+# (allowed_tools, forbidden_tools, phase_exit_invariants, plus the doc-only
+# enters_from/purpose/routing_outcomes/can_terminate_without_full_lifecycle) now
+# lives in skills/uacp-core/scripts/engines/domain/phase_transitions.py
+# (stages_default). exits_to is DERIVED from the canonical phase graph
+# (engines/domain/phase_graph.py LIFECYCLE_GRAPH), not re-hardcoded.
+#
+# load_phase_transitions injects that code default when this block is absent, so
+# EVERY consumer keeps pre-slim behavior: Heartgate (_transition_allowed exits_to,
+# _validate_phase_exit_invariants, _validate_scope_artifact execute allowed_tools),
+# Guardian Layer-B (per-phase allowed/forbidden + unknown-phase block — which would
+# fail-OPEN on empty stages, hence the loader fallback is required), and the
+# evidence-completeness engine (phase_exit_invariants). A loaded config that DOES
+# provide `stages` (e.g. tests/conftest.py) wholesale-overrides the default.
+#
+# ---------------------------------------------------------------------------
+# CODIFIED-GATE RESOLUTION SEMANTIC (operator-facing — read before editing)
+# ---------------------------------------------------------------------------
+# The gate/rule grammar that used to live here (plan_validation_gate, ppv_rule,
+# run_registry_rule, heartgate_coherence_required_when, the Pattern-A
+# required_universal_core lists) is now codified in
+# skills/uacp-core/scripts/engines/domain/gate_rules.py. The kernel resolves each
+# block as: KEY ABSENT  -> the codified code-default applies (gate ENFORCED;
+# fail-closed — a missing block can no longer silently disable enforcement, the
+# F-T3-01 invariant); KEY PRESENT -> the loaded value is used verbatim.
+#
+# CONSEQUENCE / FOOT-GUN: because a PRESENT block is used verbatim, a present
+# block that is empty or sets a disabling field turns that gate OFF:
+#   * `plan_validation_gate: {}`  (no required_ledger_gate_for_transition) -> off
+#   * `heartgate_coherence_required_when: {}`                              -> off
+#   * `ppv_rule: {ledger_required: false}`                                 -> off
+# This is DELIBERATE — it is the explicit opt-out the test fixture
+# (tests/conftest.py) uses to preserve lightweight test runs. It is also why the
+# semantic is ASYMMETRIC with `stages` above: stages are load-bearing for the
+# whole system, so the loader injects the default even on an empty/absent block
+# (cannot be disabled); individual gates are legitimately disable-able, so an
+# explicit empty/disabling block is honored. Net safety vs. the pre-Slice-4b
+# state is STRICTLY BETTER: previously an ABSENT block silently disabled a gate
+# (the common accident); now disabling requires an EXPLICIT, greppable block.
+# See docs/decisions/decision-log.md (2026-06-16 — Codified gate resolution
+# semantic) for the rationale and the deferred `enabled: false` sentinel option.
+adaptive_proposal_package_gate:
+  description: >
+    PROPOSE documentation selection is adaptive and context-driven. Granularity
+    scales rigor, evidence depth, and review pressure; it does not impose a
+    fixed OpenSpec-style document list. For selected medium/high consequence
+    work, the proposal is the human-reviewable package directory and the YAML
+    proposal artifact is only a lifecycle envelope.
+  applies_to_transition: propose->plan
+  selected_when_any:
+    routing_outcomes: [standard, full_governance]
+    risk_levels: [high, critical]
+    domains:
+      - governance
+      - runtime
+      - schema_contracts
+      - public_private_boundary
+      - agent_lifecycle
+      - validator_enforcement
+      - heartgate_transition
+      - guardian_policy
+  required_artifacts:
+    - proposals/{run_id}-package-selection.yaml
+    - proposals/{run_id}/
+  # required_universal_core + not_applicable_required_fields: codified to code in
+  # Slice 4b T4c-1 (engines/domain/gate_rules.py
+  # PROPOSAL_REQUIRED_UNIVERSAL_CORE / PROPOSAL_NOT_APPLICABLE_REQUIRED_FIELDS).
+  # The gate reader falls back to those code defaults when these sub-fields are
+  # absent, so behavior is unchanged. The doctrine sub-fields below STAY.
+  block_when:
+    - yaml_only_proposal_for_selected_medium_high_consequence_work
+    - missing_package_selection_artifact
+    - missing_universal_core_concern
+    - missing_selected_module_artifact
+    - selected_module_artifact_missing_on_disk
+    - weak_not_applicable_rationale
+    - unresolved_material_council_findings
+
+adaptive_plan_package_gate:
+  description: >
+    PLAN documentation/execution topology selection is adaptive and context-driven.
+    Granularity scales rigor, evidence depth, and review pressure; it does not
+    impose a fixed OpenSpec-style PLAN file list. For selected medium/high
+    consequence work, the PLAN is the human-reviewable package directory and
+    the YAML plan artifact is only a lifecycle envelope.
+  applies_to_transition: plan->execute
+  selected_when_any:
+    routing_outcomes: [standard, full_governance]
+    risk_levels: [high, critical]
+    domains:
+      - governance
+      - runtime
+      - schema_contracts
+      - public_private_boundary
+      - agent_lifecycle
+      - validator_enforcement
+      - heartgate_transition
+      - guardian_policy
+  required_artifacts:
+    - plans/{run_id}-plan-selection.yaml
+    - plans/{run_id}/
+    - plans/{run_id}-scope.yaml
+  # required_universal_core + not_applicable_required_fields: codified to code in
+  # Slice 4b T4c-1 (engines/domain/gate_rules.py
+  # PLAN_REQUIRED_UNIVERSAL_CORE / PLAN_NOT_APPLICABLE_REQUIRED_FIELDS).
+  # The gate reader falls back to those code defaults when these sub-fields are
+  # absent, so behavior is unchanged. The doctrine sub-fields below STAY.
+  block_when:
+    - yaml_only_plan_for_selected_medium_high_consequence_work
+    - missing_plan_selection_artifact
+    - missing_plan_package_directory
+    - missing_plan_scope_artifact
+    - missing_universal_core_concern
+    - missing_selected_module_artifact
+    - selected_module_artifact_missing_on_disk
+    - weak_not_applicable_rationale
+    - unresolved_material_council_findings
+
+adaptive_execute_evidence_gate:
+  description: >
+    EXECUTE evidence selection is adaptive and context-driven. For selected
+    non-trivial work, PLAN authors a Phase Intent Verification (PIV) contract;
+    EXECUTE records checkpoints and semantic evidence against that contract;
+    VERIFY consumes the evidence before accepting EXECUTE->VERIFY readiness.
+    PIV verifies phase intent, not only software implementation. Low-risk/direct work is not forced into this gate unless PLAN explicitly creates a PIV contract or another selection predicate applies.
+  applies_to_transition: execute->verify
+  selected_when_any:
+    plan_has_piv_contract: true
+    routing_outcomes: [standard, full_governance]
+    risk_levels: [high, critical]
+    domains:
+      - governance
+      - runtime
+      - schema_contracts
+      - public_private_boundary
+      - agent_lifecycle
+      - validator_enforcement
+      - heartgate_transition
+      - guardian_policy
+      - multi_agent_execution
+      - profile_plugin_boundary
+  required_artifacts:
+    - plans/{run_id}-piv.yaml
+    - executions/{run_id}-checkpoint-*.yaml
+    - executions/{run_id}/
+  required_semantic_concerns:
+    - work_narrative
+    - decision_log
+    - evidence_map
+    - intent_drift_and_deviations
+    - verify_handoff
+  block_when:
+    - yaml_only_execute_checkpoint_for_selected_work
+    - missing_piv_contract
+    - missing_execution_package_directory
+    - missing_execution_package_index
+    - checkpoint_not_bound_to_piv_contract
+    - checkpoint_work_unit_not_declared_in_piv
+    - required_evidence_obligation_missing_or_unhandled
+    - intent_drift_without_disposition
+    - verify_handoff_claimed_ready_with_missing_required_evidence
+
+adaptive_verify_evidence_gate:
+  description: >
+    VERIFY evidence selection is adaptive and context-driven. For selected
+    governed/non-trivial work, VERIFY must produce a semantic verification
+    package plus machine artifacts for PIV assessment and resolve readiness.
+    VERIFY judges truth and cannot pass on artifact existence, unsupported
+    facts, unowned assumptions, unresolved findings, or self-remediation.
+  applies_to_transition: verify->resolve
+  selected_when_any:
+    execute_used_piv_contract: true
+    routing_outcomes: [standard, full_governance]
+    risk_levels: [high, critical]
+    domains:
+      - governance
+      - runtime
+      - schema_contracts
+      - public_private_boundary
+      - agent_lifecycle
+      - validator_enforcement
+      - heartgate_transition
+      - guardian_policy
+      - multi_agent_execution
+      - profile_plugin_boundary
+  required_artifacts:
+    - verification/{run_id}-verify-selection.yaml
+    - verification/{run_id}/
+    - verification/{run_id}-resolve-readiness.yaml
+  required_when_execute_used_piv:
+    - verification/{run_id}-piv-assessment.yaml
+  required_semantic_concerns:
+    - piv_assessment
+    - verified_facts
+    - assumptions_and_deferred_items
+    - findings_and_dispositions
+    - council_review
+    - resolve_readiness
+  block_when:
+    - missing_verification_package_directory
+    - missing_verification_package_index
+    - piv_used_but_missing_piv_assessment
+    - verified_facts_without_source_evidence
+    - assumptions_or_deferred_items_without_owner_or_next_phase_obligation
+    - pass_with_open_blocker
+    - council_concerns_without_disposition
+    - verify_self_remediation_without_upstream_repair_or_independent_reverification
+    - resolve_readiness_without_required_heartgate_coherence
+
+# plan_validation_gate: codified to code in Slice 4b T4c-2. The full rule
+# grammar (required_ledger_gate_for_transition=plan->execute, ledger_gate_name=
+# PLAN_VALIDATION, ledger_required_fields, ledger_required_phase=plan, and the
+# pv_1..pv_6 checks) now lives in
+# skills/uacp-core/scripts/engines/domain/gate_rules.py
+# (plan_validation_gate_default). There is no operator knob — the grammar is
+# non-tunable. Heartgate reads the code default (enforce-by-default) when this
+# block is absent, so behavior is unchanged.
+
+# run_registry_rule: codified to code in Slice 4b T4c-1. The rule grammar
+# (registry_path, required_for_transition, writer_tool, exclusive_mutator_advisory)
+# now lives in skills/uacp-core/scripts/engines/domain/gate_rules.py; the
+# operator-tunable enforcement mode lives in config/uacp.toml
+# [heartgate.run_registry]. Heartgate reads the code default when this block is
+# absent, so behavior is unchanged.
+
+# ppv_rule: codified to code in Slice 4b T4c-2. The full rule grammar
+# (ledger_required=true, the ppv_1..ppv_5 checks, ledger_required_fields,
+# max_attempts=2, second_failure_action=block_unconditional) now lives in
+# skills/uacp-core/scripts/engines/domain/gate_rules.py (ppv_rule_default).
+# There is no operator knob — the grammar is non-tunable. Heartgate reads the
+# code default (enforce-by-default) when this block is absent, so behavior is
+# unchanged.
+
+artifact_schema:
+  kind: uacp.phase_transition
+  # required_fields: codified to code in Slice 5 W2 (closes T4d-2). The ~15
+  # uacp.phase_transition required_fields now live in
+  # engines.domain.phase_transitions.PHASE_TRANSITION_REQUIRED_FIELDS. Heartgate
+  # (self.required_fields) and the offline validator (validate_phase_transition)
+  # read the code default when this block omits required_fields, so behavior is
+  # unchanged. The UNCONSUMED field doctrine below STAYS.
+  fields:
+    transition_id: string
+    run_id: string
+    from_phase:
+      type: enum
+      values:
+      - triage
+      - propose
+      - plan
+      - execute
+      - verify
+      - resolve
+    routing_outcome:
+      type: enum
+      values:
+      - direct
+      - lightweight
+      - standard
+      - full_governance
+      - block_or_clarify
+      description: TRIAGE routing outcome; terminal_kind uses the same vocabulary
+        plus none.
+    granularity_level:
+      type: integer
+      description: Canonical required composite governance intensity (== composite_granularity,
+        the value the coherence gate scores on). phase_local_granularity and composite_granularity
+        are the richer per-phase breakdown, NOT a successor to migrate to.
+    triage_artifact:
+      type: string
+    gate_selection_artifact:
+      type: string
+    terminal_kind:
+      type: enum
+      # values: codified to code in Slice 5 W2 (closes T4d-2). The terminal_kind
+      # enum now lives in
+      # engines.domain.phase_transitions.PHASE_TRANSITION_TERMINAL_KIND_VALUES;
+      # the offline validator (validate_phase_transition) reads the code default
+      # when this enum is absent, so behavior is unchanged.
+      description: Disposition/terminal kind aligned with routing_outcome; use none
+        for non-terminal transitions.
+    to_phase:
+      type: enum
+      values:
+      - propose
+      - plan
+      - execute
+      - verify
+      - resolve
+      - terminal
+    decision:
+      type: enum
+      values:
+      - pass
+      - warn
+      - block
+    invariant_summary:
+      type: list
+      item_type: map
+      fields:
+        id: string
+        status: pass|block
+        evidence: string
+    cluster_summary:
+      type: list
+      item_type: map
+      fields:
+        cluster_id: string
+        state: pass|warn|block|not_applicable|deferred
+        artifact_path: string
+    blockers:
+      type: list
+      item_type: string
+    warnings:
+      type: list
+      item_type: string
+    deferred_items:
+      type: list
+      item_type: map
+    authority:
+      type: map
+      fields:
+        requested_by: string
+        authorization_source: string
+    artifact_paths:
+      type: list
+      item_type: string
+      description: UACP_ROOT-relative paths unless a symbolic external root is declared.
+    declared_side_effects:
+      type: list
+      item_type: string
+    write_containment_record:
+      type: string
+    blocker_synthesis:
+      type: string
+    council_synthesis_artifact:
+      type: string
+      description: UACP_ROOT-relative path to artifact matching council_synthesis_schema
+        when council review/orchestration is selected or required.
+    verification_artifact:
+      type: string
+    accepted_exceptions:
+      type: list
+      item_type: map
+      fields:
+        id: string
+        cluster_id: string
+        artifact_path: string
+        rationale: string
+        owner: string
+        accepted_by: string
+        next_phase_acceptance: string
+    phase_local_granularity:
+      type: map
+      description: Phase-local granularity reassessment for the transition phase.
+      fields:
+        phase: string
+        entry_estimate: integer
+        exit_actual: integer
+        delta_reason: string
+        downstream_projection: map
+    composite_granularity:
+      type: integer
+      description: Current run-level granularity derived from phase-local scores and
+        cross-phase coupling.
+    human_involvement:
+      type: map
+      fields:
+        required: boolean
+        reason: string
+        authority_needed: string
+        decision_owner: string
+        accepted_risk_artifact: string
+    source_negative_findings_present:
+      type: boolean
+      required_when: material findings are handled or handled_findings_chain is present
+      description: True when the transition carries handled material council/gate findings or when source council findings required handling before phase movement.
+    handled_findings_chain:
+      type: list
+      description: Traceability chain for handled blockers, concerns, invariant failures, negative findings, or material warnings before transition approval.
+      item_fields:
+        original_finding_id: string
+        original_artifact_path: string
+        finding_classification: blocker|concern|invariant_failure|negative_finding|material_warning
+        handling_classification: remediated|expanded|justified|deferred|accepted_warning|rejected_with_reason
+        handling_artifact_path: string
+        followup_council_synthesis_artifact: string|null
+        followup_required: boolean
+        followup_depth: integer
+        accepted_exception_artifact: string|null
+        owner: string
+        residual_risk: string
+        next_phase_obligation: string|null
+        heartgate_validation: pass|warn|block
+    heartgate_coherence:
+      type: map
+      description: Optional transition-boundary coherence check or Heartgate Council
+        synthesis summary. Records doctrine coherence, cross-artifact consistency,
+        runtime-state alignment, warning/deferred-item honesty, authority-plane integrity,
+        and next-phase readiness.
+council_synthesis_schema:
+  kind: uacp.council_synthesis
+  purpose: Minimum schema for Agent Council outputs consumed by phase transitions.
+  # required_fields: codified to code in Slice 5 W2 (closes T4d-2). The
+  # council_synthesis required_fields now live in
+  # engines.domain.phase_transitions.COUNCIL_SYNTHESIS_REQUIRED_FIELDS; the
+  # offline validator (validate_council_synthesis) reads the code default when
+  # this block omits required_fields, so behavior is unchanged. The UNCONSUMED
+  # field doctrine / conventions / heartgate_council_extension below STAY.
+  fields:
+    council_id:
+      type: string
+    mode:
+      type: enum
+      values:
+      - plan
+      - propose
+      - execute
+      - verify
+      - audit
+      - review
+      - research
+      - brainstorm_design
+      - resolve
+    tier:
+      type: enum
+      values:
+      - tier_0_single
+      - tier_1_bounded
+      - tier_2_role_diverse
+      - tier_3_cross_runtime
+      - tier_4_deep_council
+    phase:
+      type: enum
+      values:
+      - triage
+      - propose
+      - plan
+      - execute
+      - verify
+      - resolve
+    phase_local_granularity:
+      type: map
+    roles:
+      type: list
+    dispatch_surfaces:
+      type: list
+    findings:
+      type: list
+      item_schema: finding schema from docs/lifecycle/orchestration-model.md
+    verdict:
+      type: enum
+      values:
+      - pass
+      - concerns
+      - fail
+    human_escalation:
+      type: map
+    artifact_paths:
+      type: list
+      description: Output, synthesis, and related artifact paths.
+    inspected_paths:
+      type: list
+      description: Ground-truth files, directories, commands, or evidence artifacts inspected by retrieval-led council reviewers.
+    rerun_of_findings:
+      type: list
+      description: Original finding IDs addressed by a rerun council, when applicable.
+  artifact_conventions:
+    phase_local_council: verification/<run-or-topic>-<phase>-council-synthesis-<date>.yaml
+    heartgate_coherence: verification/<run-or-topic>-heartgate-coherence-<date>.yaml
+    transition_reference_rule: council_synthesis_artifact references phase-local council evidence; heartgate_coherence.artifact_path references transition-boundary coherence evidence.
+  heartgate_council_extension:
+    purpose: When a council is attached to Heartgate rather than a phase work product,
+      findings should focus on transition truthfulness, lifecycle contract satisfaction,
+      coherence, consistency, and next-phase readiness.
+# heartgate_coherence_required_when: codified to code in Slice 4b T4c-1. The
+# structural grammar (required_field=heartgate_coherence + the six required_lenses)
+# now lives in skills/uacp-core/scripts/engines/domain/gate_rules.py; the
+# operator-tunable selection policy (min_composite_granularity threshold + the
+# phases/routing_outcomes/domains selectors) lives in config/uacp.toml
+# [heartgate.coherence]. Heartgate reads the code default when this block is
+# absent, so behavior is unchanged.
+
+adaptive_resolve_closure_gate:
+  description: >
+    RESOLVE closure selection is adaptive and context-driven. For selected
+    governed/non-trivial work, RESOLVE must consume run-bound VERIFY readiness,
+    preserve residual risks/deferred items, classify lessons, and produce a
+    semantic closure package plus final closure artifact.
+  applies_to_phase: resolve
+  selected_when_any:
+    verify_readiness_present: true
+    routing_outcomes: [standard, full_governance]
+    risk_levels: [high, critical]
+    domains:
+      - governance
+      - runtime
+      - schema_contracts
+      - public_private_boundary
+      - agent_lifecycle
+      - validator_enforcement
+      - heartgate_transition
+      - guardian_policy
+      - multi_agent_execution
+      - profile_plugin_boundary
+  required_artifacts:
+    - resolutions/{run_id}-resolve-selection.yaml
+    - resolutions/{run_id}/
+    - resolutions/{run_id}-closure.yaml
+  required_semantic_concerns:
+    - closure_summary
+    - final_decision
+    - residual_risks
+    - lessons_and_dispositions
+    - state_and_memory_disposition
+    - operator_handoff
+  block_when:
+    - missing_resolve_package_directory
+    - missing_resolve_package_index
+    - missing_or_unbound_verify_resolve_readiness
+    - verify_readiness_not_ready
+    - open_blockers_carried_to_closure
+    - residual_risk_or_deferred_item_dropped
+    - lesson_disposition_missing_or_ambiguous
+    - final_decision_missing
+    - raw_inventory_operator_handoff

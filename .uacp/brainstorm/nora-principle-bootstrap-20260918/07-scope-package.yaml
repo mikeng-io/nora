@@ -1,0 +1,65 @@
+title: Derive Nora's PRINCIPLE.md from the implementation
+description: Four parallel read-only comprehension readers (kernel/entrypoints, config
+  as-wired, what the tests pin, git trajectory) reconciled into one proposed principle,
+  grounded in cited mechanisms. The operator confirmed the statement and the eight
+  invariants and required the artifact be English-native.
+declared_side_effects:
+- Writes PRINCIPLE.md at the project root
+- Writes one governed uacp.principle_agreement node
+- No production code, no config change, no deployment, no network calls to Nora's
+  own services
+authority:
+  source: operator-request
+  artifact: operator invocation of /uacp:uacp-bootstrap in session 01VqZ3WsQ4xDyrtv2uVqEVj7,
+    followed by an explicit 'agreed' on the proposed statement and invariants
+  status: pass
+routing_advisory: standard
+in_scope:
+- nora/__main__.py and nora/app/composition.py — startup contract, the eight StartupError
+  classes, non-optional vs switchable
+- nora/agent/guards.py and nora/agent/egress.py — the single egress and its five fail-closed
+  branches
+- nora/app/participation.py, heartbeat.py, fire.py — uncalled speech and its at-most-once
+  discipline
+- nora/ingest/pipeline.py, nora/ingest/stages/scope.py, nora/policy.py — deny-by-default
+  and the record/answer split
+- nora/config.py and config.example.toml — validators, inert subsystems, dead-but-unremovable
+  keys
+- tests/architecture (37 files), tests/test_boundaries.py, tests/test_acceptance_rules.py
+  — the self-imposed laws and their registry
+- design/09-decision-index.md — 271 rows parsed for enforcement status
+- 'git history 2026-08-01..2026-09-18: 2,449 commits, 219 PRs, 127 issues — deletions,
+  retractions, recurrence'
+out_of_scope:
+- nora/engagement/stages/debrief.py (97KB, the Standing fold) — unread
+- nora/agent/tools.py — all 56 tool bodies unread
+- nora/agent/dreamer.py — 1,801 lines, only the adaptor contract read
+- nora/app/fire.py — roughly 2,200 of 2,652 lines unread, including _turn, _invoke
+  and build_context
+- all of nora/web, nora/infra, nora/domain, and every platform adapter implementation
+- ARCHITECTURE.md (76KB), GLOSSARY.md, AGENTS.md and CONTRIBUTING.md in full
+- every design/** bundle in full — the retraction analysis rests on commit bodies
+  plus marker counts in the decision index
+- test bodies at scale — 5,570 test functions were counted, not read
+- no tests, no make targets and no gate were executed; every in-gate claim is read
+  off Makefile and pyproject, not off a green run
+findings:
+- FIRST FINDING — stated intent and implementation disagree. README sells a three-platform
+  ambient agent; composition.py:1296 refuses to boot without Signal regardless of
+  Discord or WhatsApp; ~25 subsystems ship inert; relevance_gate ships shadow=true
+  so she never speaks unprompted even when enabled. README says 'eval' zero times
+  while evaluation is 14 issues, 77 commits and the current branch.
+- 'THE FRONTIER — enforcement is voluntary. .github/workflows/ does not exist, so
+  5,570 tests, 37 architecture tests and six import contracts run only when a human
+  types make gate; the git hooks check commit-message grammar only. The largest recurring
+  issue class in the tree is ''a thing that claims to enforce something enforces nothing'',
+  and it recurs because the outermost enforcer is absent. Already measurable: R-85
+  cites a non-existent test node, 12 enforced rules are absent from the index, AGENTS.md
+  names a PII gate not on disk, two modules cite a test_module_size.py that was never
+  written, and nora.agent — guards and egress — is not type-checked.'
+- 'Retraction is first-class and its pattern is narrow: what is withdrawn is almost
+  always a number taken through a proxy (a grep, a getattr default, an index row,
+  a doc''s own copy of a table), and the conclusion usually survives on a narrower
+  re-derived basis.'
+kind: uacp.brainstorm_scope_package
+run_id: nora-principle-bootstrap-20260918

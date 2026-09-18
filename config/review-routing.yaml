@@ -1,0 +1,763 @@
+schema_version: '0.1'
+kind: uacp.review_routing_config
+status: seed
+# Slice 3 (config-collapse): operator knobs moved to config/uacp.toml [review].
+# Removed from this file: operating_mode (locked_current_operating_mode),
+# escalation_rules, and followthrough max_followup_depth_default.
+# This file retains council grammar/surfaces/profiles for Slice 4.
+purpose: 'Defines how UACP chooses review intensity and review surfaces. Review routing
+  is selected by context, risk, domain, artifacts, and side effects; it is not a software-only
+  checklist.
+
+  '
+routing_inputs:
+- phase
+- domains
+- artifact_types
+- risk_level
+# granularity_level == composite_granularity (the canonical required key = the value the
+# coherence gate scores on); phase_local_granularity is the richer per-phase breakdown, not a rename.
+- granularity_level
+- phase_local_granularity
+- composite_granularity
+- cross_phase_coupling
+- routing_outcome
+- triage_factor_scores
+- side_effects
+- reversibility
+- trust_boundary
+- operator_constraints
+- selected_clusters
+- unresolved_warnings
+- prior_scenario_lessons
+- execution_profile
+granularity_model:
+  purpose: Represent granularity as phase-local scores that compose into total run
+    granularity.
+  phase_local_scores:
+    phases:
+    - triage
+    - propose
+    - plan
+    - execute
+    - verify
+    - resolve
+    score_range: 1-10
+    meaning: Governance complexity inside that phase, not the whole run.
+  composite_granularity:
+    derived_from:
+    - phase_local_scores
+    - max_phase_score
+    - cumulative_phase_score
+    - cross_phase_coupling
+    - carried_warnings_or_findings
+    - irreversible_or_external_side_effects
+    - runtime_or_domain_diversity
+    rule: Triage may estimate composite granularity, but later phases may revise it
+      as evidence appears.
+  council_tier_selection: Use the current phase-local granularity plus local risk/evidence
+    need; composite granularity informs defaults and escalation only.
+  granularity_reassessment:
+    required_at:
+    - phase_entry
+    - phase_exit
+    fields:
+    - entry_estimate
+    - exit_actual
+    - delta_reason
+    - downstream_projection
+    rule: Recalculate composite granularity after every phase exit and feed updated
+      projections into subsequent phase routing.
+review_intensity:
+  none:
+    use_when:
+    - low risk
+    - no external side effects
+    - operator only requested direct answer or local artifact read
+    - granularity level is 1
+  lightweight:
+    use_when:
+    - local docs or config changes
+    - limited blast radius
+    - clear authority and containment
+    - granularity level is 2-3
+  local_council:
+    use_when:
+    - multi-domain or architectural implications
+    - moderate ambiguity
+    - phase transition has warnings
+    - granularity level is 7-8
+  deep_council: &id001
+    use_when:
+    - high or critical risk
+    - security, privacy, legal, financial, or safety exposure
+    - tool diversity materially improves confidence
+    - granularity level is 9-10
+    compatibility_alias: deep_council
+    canonical_tiers:
+    - tier_3_cross_runtime
+    - tier_4_deep_council
+    deprecated_alias_for: cross_runtime_council
+  human_operator:
+    use_when:
+    - authority is unclear
+    - requested side effects exceed declared boundaries
+    - irreversible or externally visible action needs explicit approval
+    - phase-local granularity or composite granularity crosses the human escalation
+      threshold
+    - unresolved HIGH or CRITICAL finding requires operator risk acceptance
+    - Guardian or Heartgate cannot classify a protected action safely
+  cross_runtime_council: *id001
+review_surfaces:
+  main_orchestrator:
+    role: Synthesize evidence, decide routing, and report to operator.
+  hermes_kanban:
+    role: Represent bounded execution and review tasks durably.
+  delegate_task:
+    role: Run bounded research, analysis, or validation units.
+  external_coding_agent:
+    role: Handle heavy coding or complex implementation when selected.
+  local_council:
+    role: Run role-diverse adversarial review when ported and available.
+  deep_council:
+    role: Run cross-runtime or cross-agent review when justified.
+  human_operator:
+    role: Resolve authority, policy, and irreversible-decision questions.
+  tool_or_evidence_adapter:
+    role: Use approved tool/evidence services such as browser automation, computer
+      use, Firecrawl, Tavily, SearXNG, search, scraping, OCR, or transcripts under
+      declared authority and side-effect boundaries.
+checkpoint_review_policy:
+  purpose: Define phase or milestone checkpoints that require council review before
+    closure.
+  required_local_council_checkpoints:
+  - id: state_version_control_binding
+    trigger: Before closing the state/version-control milestone or creating lifecycle
+      skills.
+    required_surface: local_council
+    intensity: full_dimension
+    required_artifact_fields:
+    - council_synthesis_artifact
+    - verification_artifact
+    required_dimensions:
+    - document_authority
+    - state_traceability
+    - version_control_binding
+    - hermes_kanban_boundary
+    - adaptive_gate_selection
+    - memory_knowledge_boundary
+    - path_and_write_containment
+    - non_software_domain_coverage
+    - operational_feasibility
+    completion_rule: Council synthesis artifact exists and any HIGH or CRITICAL finding
+      is resolved, accepted with explicit rationale, or blocks the milestone.
+  - id: pre_lifecycle_skill_creation
+    trigger: Before creating uacp-state or lifecycle skill skeletons.
+    required_surface: local_council
+    intensity: full_dimension
+    required_artifact_fields:
+    - council_synthesis_artifact
+    required_dimensions:
+    - mutation_boundary
+    - skill_responsibility_split
+    - document_runtime_drift
+    - state_schema_adequacy
+    - verification_strategy
+    completion_rule: Council synthesis artifact exists and no unresolved blocker remains.
+  exception_recording:
+    operator_accepted_exception_field: accepted_exceptions
+    council_synthesis_reference_field: council_synthesis_artifact
+    rule: Any accepted exception must identify the artifact path, rationale, and explicit
+      owner.
+  unavailable_surface_rule: 'If local council cannot be dispatched, record the unavailable
+    surface in the verification artifact. For medium or higher risk milestones, block
+    closure or require explicit operator acceptance.
+
+    '
+  triage_admission_map:
+    direct:
+      disposition: direct_action
+      lifecycle_entry: none
+      artifact_policy: lightweight
+    lightweight:
+      disposition: lightweight_governed_path
+      lifecycle_entry: propose
+      artifact_policy: lightweight
+    standard:
+      disposition: standard_governed_path
+      lifecycle_entry: propose
+      artifact_policy: standard
+    full_governance:
+      disposition: full_governance_path
+      lifecycle_entry: propose
+      artifact_policy: full
+    block_or_clarify:
+      disposition: blocked_or_clarify
+      lifecycle_entry: none
+      artifact_policy: none
+council_model:
+  purpose: Map phase-local and composite UACP granularity/risk to default Agent Council
+    tier while keeping council tier separate from lifecycle granularity.
+  canonical_doc: docs/lifecycle/orchestration-model.md
+  council_modes:
+  - plan
+  - propose
+  - execute
+  - verify
+  - audit
+  - review
+  - research
+  - brainstorm_design
+  - resolve
+  council_tiers:
+    tier_0_single:
+      description: Main orchestrator only; no council fan-out.
+      default_when:
+      - granularity level is 1-2
+      - risk is low
+      - evidence need is narrow and directly verifiable
+    tier_1_bounded:
+      description: One to three bounded subagents or reviewers with narrow scope.
+      default_when:
+      - granularity level is 3-5
+      - limited ambiguity or domain-specific validation is needed
+    tier_2_role_diverse:
+      description: Multiple role-diverse agents cover material dimensions and adversarial
+        critique.
+      default_when:
+      - granularity level is 6-8
+      - multi-domain or architectural implications exist
+      - phase transition has material warnings
+    tier_3_cross_runtime:
+      description: Runtime-diverse or model/tool-diverse council for independent confidence.
+      default_when:
+      - granularity level is 9-10
+      - runtime diversity materially improves confidence
+      - high or critical risk needs independent perspective
+    tier_4_deep_council:
+      description: Council-of-councils or multi-stage adversarial protocol.
+      default_when:
+      - critical risk with broad domain/runtime impact
+      - high uncertainty remains after tier_3_cross_runtime
+  escalation_overrides:
+  - condition: irreversible or externally visible side effect
+    minimum_tier: tier_2_role_diverse
+  - condition: security, privacy, legal, financial, or safety exposure
+    minimum_tier: tier_3_cross_runtime
+  - condition: runtime contract or Guardian/Heartgate semantics change
+    minimum_tier: tier_2_role_diverse
+  - condition: non-trivial implementation spans multiple files, roles, runtimes, or
+      integration seams
+    minimum_tier: tier_1_bounded
+  - condition: operator explicitly requests independent model/runtime critique
+    minimum_tier: tier_3_cross_runtime
+  - condition: finding remains unresolved at HIGH or CRITICAL severity
+    minimum_tier: tier_3_cross_runtime
+  diversity_dimensions:
+  - domain
+  - runtime
+  - model_or_toolchain
+  - artifact_type
+  - stakeholder_perspective
+  - risk_class
+  - temporal_horizon
+  - execution_profile
+  - instruction_stack
+  - permission_scope
+  dispatch_surfaces:
+  - main_orchestrator
+  - delegate_task
+  - hermes_kanban_worker
+  - external_coding_agent
+  - browser_or_computer_use
+  - tool_or_evidence_adapter
+  - human_operator
+  mid_phase_escalation: Apply higher tier to pending work; pause before next protected/irreversible/external
+    side effect; block phase exit on unresolved HIGH/CRITICAL findings unless resolved,
+    accepted, or re-planned.
+  finding_disposition_protocol:
+    blocker: Must be patched, rescoped, or rejected with explicit human authority before phase transition.
+    concern: Must be patched, accepted as residual risk, or deferred with owner, acceptance, and condition.
+    rerun_required_when:
+      - Guardian or Heartgate boundary semantics changed
+      - protected state or governed writer containment changed
+      - council synthesis schema or artifact evidence contract changed
+      - runtime/tool exposure or execution authority changed
+      - next phase depends on the finding being resolved
+    rerun_synthesis_requires:
+      - original finding IDs
+      - patch or accepted-risk artifact paths
+      - inspected_paths showing ground-truth revalidation
+      - updated verdict and residual risks
+  retrieval_led_council_requirement:
+    applies_to:
+      - governance
+      - runtime_policy
+      - guardian
+      - heartgate
+      - lifecycle
+      - artifact_management
+      - security_sensitive
+    synthesis_must_record:
+      - inspected_paths
+      - file_or_artifact_evidence_for_material_findings
+  profile_selection: Select execution profiles from role, phase-local granularity,
+    risk, required tools/evidence services, permission boundaries, cost/quality tradeoff,
+    and need for independent perspective.
+  profile_runtime_separation:
+    rule: Keep profile_id separate from runtime_surface. profile_id names the Hermes
+      execution identity/config; runtime_surface names where work runs.
+    current_delegate_task_boundary: Native delegate_task does not instantiate a separate
+      Hermes --profile home; use Kanban/spawned Hermes process for full profile isolation.
+  runtime_surfaces:
+  - delegate_task
+  - hermes_kanban_worker
+  - hermes_profile_process
+  - external_coding_agent
+  - tool_or_evidence_adapter
+  - human_operator
+  profile_sets:
+    uacp-orchestrator:
+      positioning: execution topology and synthesis owner
+      default_surface: main_orchestrator
+      reasoning: medium_high
+      write_scope: governed_artifacts
+    uacp-planner:
+      positioning: phased plan and profile/runtime matrix designer
+      default_surface: hermes_kanban_worker
+      reasoning: high
+      write_scope: planning_artifacts
+    uacp-implementer:
+      positioning: bounded local execution worker
+      default_surface: hermes_kanban_worker
+      reasoning: medium
+      write_scope: declared_allowed_files
+    uacp-verifier:
+      positioning: evidence checker and pass/warn/block finding writer
+      default_surface: hermes_kanban_worker
+      reasoning: medium_high
+      write_scope: verification_artifacts
+    uacp-devils-advocate:
+      positioning: adversarial assumption and failure-mode reviewer
+      default_surface: delegate_task_or_kanban
+      reasoning: high
+      write_scope: findings_only
+    uacp-integrator-critic:
+      positioning: coherence reviewer across docs/config/skills/runtime artifacts
+      default_surface: hermes_kanban_worker
+      reasoning: high
+      write_scope: synthesis_artifacts
+    uacp-evidence-researcher:
+      positioning: external/source evidence gatherer
+      default_surface: delegate_task_or_kanban
+      reasoning: medium
+      write_scope: evidence_artifacts
+    uacp-safety-privacy-reviewer:
+      positioning: sensitive-data and side-effect boundary reviewer
+      default_surface: delegate_task_or_kanban
+      reasoning: high
+      write_scope: findings_only
+    uacp-adapter-claude-code:
+      positioning: Host-orchestrator controller profile for Claude Code external runtime
+      default_surface: external_coding_agent
+      reasoning: low_medium_controller
+      write_scope: adapter_evidence_and_declared_runtime_changes
+    uacp-adapter-codex:
+      positioning: Host-orchestrator controller profile for Codex external runtime
+      default_surface: external_coding_agent
+      reasoning: low_medium_controller
+      write_scope: adapter_evidence_and_declared_runtime_changes
+    uacp-adapter-opencode:
+      positioning: Host-orchestrator controller profile for OpenCode external runtime
+      default_surface: external_coding_agent
+      reasoning: low_medium_controller
+      write_scope: adapter_evidence_and_declared_runtime_changes
+    uacp-adapter-kimi:
+      positioning: Host-orchestrator controller profile for Kimi external runtime
+      default_surface: external_coding_agent
+      reasoning: low_medium_controller
+      write_scope: adapter_evidence_and_declared_runtime_changes
+    uacp-adapter-reasonix:
+      positioning: Host-orchestrator controller profile for Reasonix external runtime
+      default_surface: external_coding_agent
+      reasoning: low_medium_controller
+      write_scope: adapter_evidence_and_declared_runtime_changes
+    uacp-adapter-hermes:
+      positioning: Host-orchestrator controller profile for Hermes (hermes-agent) external runtime — host-can-also-be-a-bridge
+      default_surface: external_coding_agent
+      reasoning: low_medium_controller
+      write_scope: adapter_evidence_and_declared_runtime_changes
+  same_profile_branch_boundary:
+    surface: delegate_task
+    classification: same_profile_branch
+    use_for:
+    - scratch_analysis
+    - bounded_brainstorming
+    - provisional_critique
+    - focused_file_inspection
+    - low_risk_research_synthesis
+    not_for:
+    - true_profile_diversity
+    - profile_local_doctrine
+    - durable_debate
+    - independent_worker_identity
+    - auditable_role_assignment
+  council_forms:
+    scratch_council:
+      surface: delegate_task
+      confidence: provisional
+      use_when: fast same-profile role-framed branches are enough
+    profile_council:
+      surface: hermes_kanban_worker_or_profile_process
+      confidence: stronger
+      use_when: profile identity, durable debate, independent prompts/models/tools,
+        or auditability matter
+    cross_runtime_council:
+      surface: external_coding_agent_or_runtime_adapter
+      confidence: runtime-diverse
+      use_when: external toolchain/model/runtime independence materially improves
+        outcome
+  coordination_adapter_boundary:
+    rule: Hermes Kanban is a replaceable coordination adapter, not the Agent Council
+      doctrine or substrate.
+    agent_council_owns:
+    - roles
+    - rounds
+    - debate_state
+    - challenge_rules
+    - rerun_decisions
+    - regrouping
+    - escalation
+    - synthesis
+    - findings
+    - evidence_obligations
+    coordination_adapter_owns:
+    - unit_persistence
+    - assignment
+    - dependencies
+    - comments_or_artifacts
+    - state_marks
+    - notifications_optional
+    - provenance
+    kanban_status: current_adapter_not_lock_in
+    active_coordinator_required_for_debate: true
+  coordination_adapter_contract:
+  - create_unit
+  - assign_unit
+  - declare_dependencies
+  - attach_context
+  - attach_artifact_or_comment
+  - read_unit_outputs
+  - mark_state
+  - retry_or_rerun_unit
+  - preserve_provenance
+  phase_coordination_policy:
+    default_rule: Use coordination adapter only when phase-local needs require durable
+      multi-worker state or full-autonomy task control.
+    mandatory_by_default:
+    - execute
+    optional_by_need:
+    - triage
+    - propose
+    - plan
+    - verify
+    - resolve
+    use_coordination_when:
+    - durable_multi_worker_ownership
+    - profile_specific_workers
+    - long_timeout_or_background_execution
+    - dependencies_between_units
+    - retry_rerun_or_regrouping
+    - notification_or_resume_across_sessions
+    - audit_trail_for_outputs
+    - external_runtime_coordination
+    - full_autonomy_command_bot_execution
+    do_not_use_when:
+    - synchronous_phase_completion_is_clear
+    - single_artifact_direct_reasoning_is_enough
+    - scratch_delegate_branches_are_sufficient
+    phase_controller_rule: Insight/phase controller chooses topology; coordination
+      adapter persists/dispatches selected units only.
+  current_stage_profile_policy:
+    mode: semi_auto_manual_first
+    future_autonomous_topology_reserved: true
+    delegation_paths:
+      delegate_task: synchronous same-profile branch; cannot load separate Hermes
+        profile home
+      coordination_adapter_task: durable/asynchronous; can target named profiles when
+        supported
+    profile_semantics_now:
+    - future_execution_identity
+    - role_template
+    - prompt_config_design_target
+    - optional_escalation_target
+    - routing_label_for_durable_async_work
+    default_phase_executor: main_orchestrator
+    use_named_profiles_when:
+    - non_trivial_execute_work
+    - durable_async_coordination_needed
+    - profile_specific_prompt_model_tool_policy_matters
+    - formal_profile_council_needed
+    do_not_require_named_profiles_for:
+    - ordinary_triage
+    - ordinary_propose
+    - ordinary_plan
+    - ordinary_verify
+    - ordinary_resolve
+  # operating_mode knob moved to config/uacp.toml [review] (Slice 3)
+  execute_task_schema:
+    status: draft_ready_for_review
+    source: plans/uacp-agent-council-followthrough/10-execute-task-schema.md
+    required_field_groups:
+    - uacp
+    - objective
+    - scope
+    - runtime
+    - side_effects
+    - dependencies
+    - execution_contract
+    - verification
+    - rollback
+    - completion
+    runtime_surfaces:
+    - hermes_profile_worker
+    - delegate_task
+    - external_runtime
+    - tool_adapter
+    - evidence_service
+    - human_checkpoint
+    kanban_mapping_rule: Kanban task is a coordination-adapter representation of a
+      bounded EXECUTE work unit, not a lifecycle phase or doctrine.
+    current_stage_use: non_trivial_execute_tasks_only_by_default
+    optional_field_groups:
+    - council
+    - adapter_neutrality
+    - risk
+    - observability
+    - granularity_reassessment
+    - structured_findings
+    adapter_contract_fields:
+    - create_unit
+    - assign_unit
+    - declare_dependencies
+    - attach_context
+    - attach_artifact_or_comment
+    - read_unit_outputs
+    - mark_state
+    - retry_or_rerun_unit
+    - preserve_provenance
+    profile_id_null_semantics: For hermes_profile_worker, null means current/default
+      Hermes profile worker; named profiles are optional/future slots unless justified.
+    finding_states:
+    - open
+    - resolved
+    - accepted_risk
+    - not_applicable
+    - deferred
+  roadmap_full_auto_execute_controller:
+    status: draft_ready_for_review
+    scope: execute_phase_only
+    depends_on: plans/uacp-agent-council-followthrough/10-execute-task-schema.md
+    artifact: plans/uacp-agent-council-followthrough/11-full-auto-execute-phase-controller.md
+    controller_responsibilities:
+    - create_bounded_execute_tasks
+    - assign_dispatch_workers
+    - monitor_done_blocked_crashed_timed_out_protocol_violation
+    - read_outputs_and_evidence
+    - create_fix_rerun_regroup_tasks
+    - escalate_to_external_runtime_or_human_checkpoint
+    - write_execute_evidence_artifact
+    - declare_verify_readiness
+    full_lifecycle_autonomy: deferred_until_execute_controller_stable
+    worker_failure_states:
+    - blocked
+    - crashed
+    - timed_out
+    - protocol_violation
+    execute_evidence_artifact: uacp.execute_evidence schema in plans/uacp-agent-council-followthrough/11-full-auto-execute-phase-controller.md
+    phase_exit_decisions:
+    - pass
+    - warn
+    - block
+  current_dogfood_execution_posture:
+    status: active_until_worker_reliability_diagnosed
+    primary_executor_for_uacp_design: main_session
+    helper_surface: delegate_task_same_profile_scratch
+    pause_kanban_for_uacp_design_dogfood: true
+    reason: default-profile Kanban worker crashed/protocol-violated on t_f66dbea8
+      and t_7676ce1f
+    kanban_architecture_status: still_target_execute_coordination_adapter_not_removed
+    next_runtime_task_option: diagnose default-profile Kanban worker crash/protocol
+      violation
+  coordination_adapter_contract_reference:
+    status: draft_ready_for_review
+    source: plans/uacp-agent-council-followthrough/13-coordination-adapter-contract.md
+    required_operations:
+    - create_unit
+    - assign_unit
+    - declare_dependencies
+    - attach_context
+    - attach_artifact_or_comment
+    - read_unit_outputs
+    - mark_state
+    - retry_or_rerun_unit
+    - preserve_provenance
+    failure_states:
+    - blocked
+    - crashed
+    - timed_out
+    - protocol_violation
+    uacp_owned:
+    - phase
+    - authority
+    - side_effects
+    - granularity
+    - human_checkpoint_policy
+    - evidence_obligations
+    - phase_exit_decision
+    - canonical_artifacts_state
+    - agent_council_protocol
+    adapter_owned:
+    - queue_mechanics
+    - task_ids
+    - assignment_plumbing
+    - dependency_activation
+    - worker_spawn_claim
+    - notifications
+    - event_storage
+domain_routing_notes:
+  software:
+    possible_clusters:
+    - diff_review
+    - tests
+    - static_analysis
+    - security_review
+    - runtime_validation
+    - dependency_impact
+    note: Select only checks relevant to artifact type and risk.
+  infra:
+    possible_clusters:
+    - rollout_safety
+    - rollback_plan
+    - blast_radius
+    - credential_exposure
+    - observability
+  research:
+    possible_clusters:
+    - source_grounding
+    - contradiction_check
+    - methodology_fit
+    - confidence_summary
+  writing:
+    possible_clusters:
+    - audience_fit
+    - claim_grounding
+    - tone_alignment
+    - publication_constraints
+  marketing:
+    possible_clusters:
+    - brand_fit
+    - claims_compliance
+    - channel_format
+    - audience_segment_fit
+  productivity:
+    possible_clusters:
+    - constraint_fit
+    - calendar_or_resource_conflict
+    - reversibility
+  lifestyle:
+    possible_clusters:
+    - safety
+    - cost
+    - availability
+    - personal_preference_fit
+  creative:
+    possible_clusters:
+    - brief_alignment
+    - asset_constraints
+    - rights_or_license_review
+# escalation_rules moved to config/uacp.toml [review.escalation_rules] (Slice 3)
+human_involvement_policy:
+  purpose: Select when Miles/human operator involvement is required from TRIAGE or
+    later phase-local reassessment.
+  selection_inputs:
+  - routing_outcome
+  - phase_local_granularity
+  - composite_granularity
+  - side_effects
+  - reversibility
+  - authority_clarity
+  - unresolved_findings
+  - guardian_heartgate_confidence
+  required_when:
+  - authority is unclear
+  - irreversible or externally visible side effect is requested
+  - phase-local granularity is 9 or 10 and side effects are material
+  - composite granularity is 9 or 10 with material side effects or unresolved warnings
+  - any CRITICAL finding remains unresolved
+  - Guardian or Heartgate fails closed for a protected action
+  may_be_required_when:
+  - phase-local granularity is 7 or 8 with medium/high risk
+  - HIGH finding remains unresolved
+  - runtime/tool/evidence adapter is unclassified or newly introduced
+  - mid-phase escalation would change council tier before a protected action
+  record_fields:
+  - required
+  - reason
+  - authority_needed
+  - decision_owner
+  - accepted_risk_artifact
+council_synthesis:
+  schema_source: config/phase-transitions.yaml#council_synthesis_schema
+  required_when:
+  - council tier is tier_1_bounded or higher
+  - phase transition requires council_synthesis_artifact
+  - HIGH or CRITICAL finding needs adjudication
+  verdict_values:
+  - pass
+  - concerns
+  - fail
+heartgate_council_model:
+  purpose: Define the transition-boundary council distinct from phase-local Agent
+    Council review or execution.
+  distinction:
+    phase_local_council: 'Checks the work product inside a phase: artifact quality,
+      implementation correctness, role-specific risks, and local evidence.'
+    heartgate_council: Checks whether the phase as a whole satisfied its lifecycle
+      contract and whether the transition is truthful, coherent, and safe.
+  trigger_defaults:
+  - phase transition has material warnings or deferred items
+  - runtime, governance, Guardian, Heartgate, Kanban, or Agent Council semantics changed
+  - docs/config/state/runtime/test artifacts could drift or disagree
+  - phase-local council findings are accepted rather than fully resolved
+  - transition would carry hidden assumptions into the next phase
+  required_lenses:
+  - doctrine_coherence
+  - cross_artifact_consistency
+  - runtime_state_alignment
+  - warning_and_deferred_item_honesty
+  - authority_plane_integrity
+  - next_phase_readiness
+  adaptive_depth:
+    low_risk: main orchestrator Heartgate coherence checklist
+    medium_risk: focused Heartgate council or explicit coherence synthesis
+    high_risk: role-diverse or cross-runtime Heartgate council before transition acceptance
+# operating_mode knob moved to config/uacp.toml [review] (Slice 3)
+triage_council_trigger:
+  purpose: Select TRIAGE-local Agent Council before PROPOSE for high-granularity governance-core admission work.
+  required_when:
+    phase: triage
+    any_of:
+      - phase_local_granularity >= 7
+      - composite_granularity >= 7
+      - domains include agent_council/heartgate/guardian/lifecycle_semantics/artifact_schema/runtime_enforcement/protected_state
+  scope: admission, routing, scope, granularity; not proposal authority or side effects
+  minimum_tier: tier_2_role_diverse
+  required_artifact: council_synthesis_artifact
+
+followthrough_council_routing:
+  purpose: Route follow-up councils for handled negative findings.
+  tier_1_bounded_when: [material concern, material warning]
+  tier_2_role_diverse_when: [blocker, invariant_failure, authority-boundary change, lifecycle schema change, runtime enforcement change]
+  # max_followup_depth moved to config/uacp.toml [review.followthrough] (Slice 3)
+  escalate_instead_of_recursing_after_depth: 1

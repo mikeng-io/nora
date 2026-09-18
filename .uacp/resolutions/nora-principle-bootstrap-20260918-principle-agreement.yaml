@@ -1,0 +1,15 @@
+principle_path: PRINCIPLE.md
+principle_content_sha256: 19f7bef9e0c1baa2c0244d4b725924b436ec8d9809aec1e62e1e714d11b9171b
+agreed_by: miles (iam@mikeng.io)
+agreed_at: '2026-09-18T11:07:23Z'
+derived_from: 'implementation-first derivation, run nora-principle-bootstrap-20260918.
+  Four parallel read-only comprehension readers over the implementation (kernel/entrypoints;
+  config as-wired; what the tests pin; git trajectory 2026-08-01..2026-09-18, 2449
+  commits), reconciled into one statement plus eight invariants, each grounded in
+  a cited mechanism. Scope and its stated limits: .uacp/brainstorm/nora-principle-bootstrap-20260918/07-scope-package.yaml.
+  Operator agreed to the statement and the invariants and required the artifact be
+  English-native; the forward vector in the frontier section is the operator''s own
+  stated direction from the same session (adopt UACP as the control plane; one observability
+  layer with three consumers; evaluation built on strands-agents-evals).'
+kind: uacp.principle_agreement
+run_id: nora-principle-bootstrap-20260918

@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "uacp": {
+      "source": {
+        "source": "github",
+        "repo": "mikeng-io/uacp"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "uacp@uacp": true
+  }
+}

@@ -1,0 +1,362 @@
+schema_version: "0.1"
+kind: uacp.gate_selection_config
+status: seed
+# Slice 3 (config-collapse): scoring/weight knobs moved to config/uacp.toml [gates.scoring].
+# Removed from this file: triage_scoring.default_calculation, triage_scoring.route_mapping,
+# ranking_heuristics.risk_weight, and path_resolution (superseded by [paths]).
+# This file retains non_waivable_invariants, classification_inputs, artifact schemas, etc.
+purpose: >
+  Defines the adaptive meta-gate used before UACP stage and phase decisions. The
+  meta-gate selects, ranks, generates, or rejects evidence clusters for the
+  current context. It must not become a fixed numbered checklist.
+
+meta_gate_behavior:
+  lifecycle_phases: [triage, propose, plan, execute, verify, resolve]
+  phase_envelope_is_stable: true
+  evidence_selection_is_adaptive: true
+  required_result: "gate-selection or triage artifact written before transition synthesis"
+  conservative_default: "block when authority, side effects, containment, safety, or traceability are unclear"
+
+classification_inputs:
+  - user_request
+  - explicit_goal
+  - current_phase
+  - artifact_types
+  - domains
+  - affected_workspaces
+  - intended_side_effects
+  - reversibility
+  - trust_boundary
+  - privacy_or_safety_exposure
+  - need_for_current_or_external_facts
+  - ambiguity_level
+  - risk_level
+  - granularity_level
+  - routing_outcome
+  - triage_factor_scores
+  - available_skills_or_domain_templates
+  - prior_scenarios_or_lessons
+  - finding_classification
+  - handling_classification
+  - handled_findings_chain_present
+  - followup_council_required
+  - material_warning_threshold
+
+non_waivable_invariants:
+  - id: authority.explicit
+    description: "No work proceeds without explicit authority for the requested action."
+  - id: side_effects.declared
+    description: "All intended side effects are declared before execution."
+  - id: writes.contained
+    description: "Writes remain inside declared paths and workspaces."
+  - id: privacy_safety.constrained
+    description: "Privacy, safety, and trust-boundary constraints are respected."
+  - id: state.traceable
+    description: "State changes are traceable to artifacts and authority."
+  - id: failure.conservative
+    description: "Missing authority, config, or critical evidence blocks transition."
+  - id: mutation.visible
+    description: "No hidden state mutation or unrecorded self-healing."
+invariant_status_rule: >
+  Non-waivable invariants are pass/block only. Any warn-like observation on a
+  non-waivable invariant must be normalized to block before transition
+  synthesis.
+
+candidate_cluster_sources:
+  - source: universal_cluster_families
+    location: "config/evidence-clusters.yaml"
+  - source: domain_specific_templates
+    location: "knowledge/gate-templates/"
+  - source: prior_scenarios
+    location: "knowledge/scenarios/"
+  - source: prior_lessons
+    location: "knowledge/lessons/"
+  - source: context_generated_clusters
+    location: "embedded in gate-selection artifact until promoted to template"
+
+# path_resolution moved to config/uacp.toml [paths] (Slice 3)
+
+selection_states:
+  required: "Must reach pass or explicitly accepted warn before transition."
+  optional: "May run when useful, but does not block unless promoted."
+  not_applicable: "Considered and rejected with a context-specific reason."
+  generated: "Created for this scenario because available templates are insufficient."
+
+triage_scoring:
+  purpose: >
+    Calculate governance granularity from multiple factors. Depth alone must not
+    determine routing because shallow tasks can still be high impact or hard to
+    verify.
+  factors:
+    impact:
+      scale: "1-10"
+      high_score_means: "Material effect on systems, people, money, reputation, safety, or future work."
+    reversibility:
+      scale: "1-10"
+      high_score_means: "Hard to undo, externally visible, destructive, or costly to roll back."
+    domain_count:
+      scale: "1-10"
+      high_score_means: "Many distinct domains or specialist perspectives are required."
+    runtime_count:
+      scale: "1-10"
+      high_score_means: "Many agents, tools, services, execution environments, or runtimes coordinate."
+    verification_difficulty:
+      scale: "1-10"
+      high_score_means: "Correctness is hard to prove or requires indirect evidence."
+  # default_calculation weights/method and route_mapping moved to config/uacp.toml [gates.scoring] (Slice 3)
+
+triage_artifact_schema:
+  kind: uacp.triage
+  required_fields:
+    - triage_id
+    - request_summary
+    - authority
+    - factor_scores
+    - granularity_level
+    - routing_outcome
+    - rationale
+    - artifact_policy
+  fields:
+    triage_id: string
+    request_summary: string
+    authority:
+      type: map
+      fields:
+        status: "pass|warn|block"
+        source: string
+    factor_scores:
+      type: map
+      fields:
+        impact: integer
+        reversibility: integer
+        domain_count: integer
+        runtime_count: integer
+        verification_difficulty: integer
+        notes: list
+    granularity_level:
+      type: integer
+      # Canonical required contract key = composite_granularity (the value the coherence gate
+      # scores on). granularity_level is what schemas/validators REQUIRE; composite is what is READ.
+      description: "Calculated 1-10 governance burden (canonical alias of composite_granularity)."
+    routing_outcome:
+      type: enum
+      values: [direct, lightweight, standard, full_governance, block_or_clarify]
+    rationale:
+      type: list
+      item_type: string
+    artifact_policy:
+      type: enum
+      values: [none, lightweight, standard, full]
+    next_step:
+      type: string
+
+example_triage_artifact:
+  kind: uacp.triage
+  triage_id: uacp-triage-2026-05-10-001
+  request_summary: "Create initial UACP artifact directories and Stage 2 seed docs/config."
+  authority:
+    status: pass
+    source: "operator prompt explicitly authorizes writes inside UACP_ROOT"
+  factor_scores:
+    impact: 5
+    reversibility: 3
+    domain_count: 2
+    runtime_count: 1
+    verification_difficulty: 3
+    notes:
+      - "Governance docs affect future workflow, but writes are local and reversible."
+      - "No external runtime or production system is touched."
+  granularity_level: 5
+  routing_outcome: standard
+  rationale:
+    - "Multi-step governance bootstrap deserves artifacts and verification."
+    - "Scope remains bounded to Stage 1 and Stage 2."
+  artifact_policy: standard
+  next_step: "Enter PROPOSE or continue with a bounded Stage 1/2 plan artifact."
+
+ranking_heuristics:
+  # risk_weight moved to config/uacp.toml [gates.scoring.risk_weight] (Slice 3)
+  scoring_signals:
+    - domain_similarity
+    - artifact_type_similarity
+    - risk_similarity
+    - side_effect_similarity
+    - reversibility
+    - historical_transition_result
+    - downstream_rework_or_incident_count
+    - cluster_caught_real_issue
+    - repeated_irrelevance
+    - operator_override_history
+    - council_disagreement_level
+    - source_confidence
+  required_promoters:
+    - "matches a non-waivable invariant"
+    - "high or critical risk with direct side effects"
+    - "external fact dependency with high uncertainty"
+    - "writes outside throwaway or scratch artifacts"
+    - "security, privacy, financial, legal, or safety exposure"
+  demoters:
+    - "domain mismatch with explicit reason"
+    - "artifact type mismatch with explicit reason"
+    - "prior scenarios repeatedly mark cluster irrelevant"
+    - "no side effect and no decision impact"
+
+generated_cluster_rules:
+  create_when:
+    - "task domain or artifact type is not covered by existing templates"
+    - "operator constraint creates a scenario-specific risk"
+    - "prior similar scenarios show a missing cluster"
+    - "selected domain has material ambiguity"
+  generated_cluster_must_include:
+    - purpose
+    - trigger_conditions
+    - required_inputs
+    - allowed_tools
+    - output_artifact_path
+    - pass_warn_block_rules
+    - concurrency
+    - dependencies
+  promotion_policy: >
+    Generated clusters remain local to a scenario until repeated usefulness
+    justifies promotion to knowledge/gate-templates.
+
+artifact_output_schema:
+  kind: uacp.gate_selection
+  required_fields:
+    - selection_id
+    - run_id
+    - phase
+    - domains
+    - artifact_types
+    - risk_level
+    - invariant_checks
+    - selected_clusters
+    - not_applicable
+    - ranking_basis
+    - transition_requirements
+    - reasoning
+  fields:
+    selection_id: string
+    run_id: string
+    phase:
+      type: enum
+      values: [triage, propose, plan, execute, verify, resolve]
+    domains:
+      type: list
+      item_type: string
+    artifact_types:
+      type: list
+      item_type: string
+    risk_level:
+      type: enum
+      values: [low, medium, high, critical]
+    granularity_level:
+      type: integer
+      description: "Scale from 1 to 10 used by TRIAGE for governance intensity."
+    routing_outcome:
+      type: enum
+      values: [direct, lightweight, standard, full_governance, block_or_clarify]
+    triage_factor_scores:
+      type: map
+      fields:
+        impact: integer
+        reversibility: integer
+        domain_count: integer
+        runtime_count: integer
+        verification_difficulty: integer
+        calculation_notes: list
+    invariant_checks:
+      type: list
+      item_type: map
+      fields:
+        id: string
+        status: "pass|block"
+        reason: string
+    selected_clusters:
+      type: map
+      fields:
+        required: list
+        optional: list
+        generated: list
+    not_applicable:
+      type: list
+      item_type: map
+      fields:
+        cluster_id: string
+        reason: string
+    ranking_basis:
+      type: map
+      fields:
+        similar_scenarios: list
+        templates_considered: list
+        scoring_notes: list
+    transition_requirements:
+      type: list
+      item_type: string
+    reasoning:
+      type: string
+
+example_artifact:
+  kind: uacp.gate_selection
+  selection_id: uacp-bootstrap-001-plan-selection
+  run_id: uacp-bootstrap-001
+  phase: plan
+  domains: [governance, hermes-agent, software-architecture]
+  artifact_types: [docs, config, directory_structure]
+  risk_level: medium
+  invariant_checks:
+    - id: authority.explicit
+      status: pass
+      reason: "Operator explicitly requested Stage 1 and Stage 2 only."
+    - id: writes.contained
+      status: pass
+      reason: "Writes are constrained to UACP_ROOT."
+    - id: failure.conservative
+      status: pass
+      reason: "Missing future Knowledge Bank service is out of scope and not required."
+  selected_clusters:
+    required:
+      - scope
+      - context
+      - authority
+      - side_effects
+      - write_containment
+      - risk
+      - verification_strategy
+      - memory_lessons
+    optional:
+      - grounding
+      - architecture_design
+    generated:
+      - bootstrap_stage_boundary
+  not_applicable:
+    - cluster_id: marketing_brand_fit
+      reason: "No marketing artifact is being produced."
+    - cluster_id: runtime_validation
+      reason: "No executable runtime service is being changed."
+  ranking_basis:
+    similar_scenarios: []
+    templates_considered:
+      - universal_cluster_families
+      - uacp_blueprint_docs
+    scoring_notes:
+      - "Directory and config bootstrap needs containment and schema clarity."
+      - "Standalone Knowledge Bank implementation is explicitly out of scope."
+  transition_requirements:
+    - "Requested directories exist."
+    - "Requested config and docs exist."
+    - "YAML config files parse."
+  reasoning: >
+    This is a Hermes governance bootstrap task with local file writes only.
+    Required clusters focus on authority, containment, adaptive gate semantics,
+    and verification of the created artifacts.
+
+handled_negative_result_followthrough:
+  purpose: Select evidence when prior negative findings have been marked handled before a phase transition.
+  material_warning_threshold: Warnings are material when they affect lifecycle progression, authority, invariants, trust boundary, side-effect containment, runtime enforcement, artifact schema, or next-phase obligations.
+  required_when:
+    - handled material blocker/concern/invariant_failure/negative_finding/material_warning exists before transition
+  fail_closed_when:
+    - handling chain missing
+    - required follow-up council missing
+    - warning/deferred lacks owner or next-phase acceptance

@@ -1,0 +1,56 @@
+# UACP Guardian hook fix — phase: triage (lowercase)
+# Three concrete changes; each preserves original intent (a session
+# without declared authority cannot make shell writes) and only
+# fixes the implementation gaps.
+
+version: 1
+active: true
+scope:
+  applies_to_tools: [terminal, execute_code]
+
+# Bug 1 fix: declared-stages check accepts lowercase, documents that
+# the skill/docs and system-prompt uppercase forms are normalized to
+# lowercase before comparison.
+declared_stages_normalization:
+  policy: lowercase_before_compare
+  accepted_inputs:
+    - "TRIAGE"
+    - "triage"
+  rationale: >
+    Skill docs and system prompt use uppercase. Runtime has been
+    lowercase. Normalize input to lowercase before comparing
+    against declared_stages. No safety property weakened.
+
+# Bug 2 fix: terminal/execute_code hook consults declared state from
+# state/runs/ rather than asking the calling tool to re-supply fields
+# the tool schema doesn't have.
+terminal_hook:
+  authority_resolution:
+    lookup_path: state/runs/
+    match_field: session_id
+    required_status: in_progress
+    on_match:
+      action: allow
+      audit_field: authority
+    on_no_match:
+      action: block
+      error_message: >
+        UACP Guardian blocked exec.shell: no active declared UACP run
+        for this session. Declare a run via uacp_state_write first.
+
+# Bug 3 fix: document the UACP skill class-dir layout.
+skill_index:
+  path: skills/devops/uacp/
+  layout: modular_class_dirs
+  index_file: INDEX.md
+  entries:
+    - path: uacp-lifecycle/SKILL.md
+    - path: uacp-guardian/SKILL.md
+    - path: uacp-heartgate/SKILL.md
+    - path: uacp-state/SKILL.md
+
+# Original intent preserved:
+# - Sessions without declared authority: still blocked.
+# - Sessions with declared authority: shell writes allowed, audited.
+# - Phase names: lowercase works (always did); uppercase now also works.
+# - UACP skill content: agents can find the lifecycle config.
