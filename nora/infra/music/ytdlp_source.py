@@ -169,6 +169,15 @@ class _RotatingExtractor:
                 self._built_at = now
             return self._delegate
 
+    def invalidate(self) -> None:
+        """Drop the delegate NOW, so the next call builds a fresh one rather
+        than waiting out the remaining TTL. Called when a locator this
+        extractor produced turned out to be unplayable: the TTL bounds how
+        long a session may rot unnoticed, but once something has actually
+        failed there is no reason to keep resolving through it."""
+        with self._lock:
+            self._delegate = None
+
     def extract_info(self, url: str, *, download: bool) -> Any:
         return self._current().extract_info(url, download=download)
 
@@ -235,6 +244,20 @@ class YtDlpSource:
         # A Mix always lists its own seed video first -- autoplay must offer
         # something NEW, never re-queue the track that just finished.
         return tuple(t for t in tracks if t.source_id != video_id)
+
+    async def refresh_session(self) -> None:
+        """Discard the negotiated YouTube visitor session (`TrackSource.
+        refresh_session`) by dropping both rotating extractors, so the next
+        resolve signs its locators with a new one.
+
+        An INJECTED extractor is deliberately untouched: it owns its own
+        lifecycle (`_RotatingExtractor`'s docstring), and this adapter has
+        no business reaching into something it was handed. That makes this a
+        no-op under test, which is correct — a fake extractor has no session
+        to rot."""
+        for extractor in (self._extractor, self._flat_extractor):
+            if isinstance(extractor, _RotatingExtractor):
+                extractor.invalidate()
 
 
 def _is_playlist_page(parsed: SplitResult) -> bool:

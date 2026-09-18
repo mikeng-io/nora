@@ -155,9 +155,16 @@ class VoiceEventConsumer:
         if not isinstance(playback_id, str):
             return 200, {"status": "stale"}
         if event_type == "stream-failed":
-            log.warning(
-                "music stream failed for guild %s (playback %s): %s — advancing",
-                guild_id, playback_id, body.get("reason"),
+            # NOT the same transition as a natural end (design/voice-channel/
+            # 07 §5, audit B14): a track that failed to START has not
+            # finished, and the manager re-resolves it before it will move
+            # the queue. Routing this to `on_track_finished` is what made one
+            # rejected CDN address cost a whole session on 2026-09-18 —
+            # every failure advanced into another track resolved through the
+            # same broken source session.
+            handled = await self._manager.on_stream_failed(
+                guild_id, playback_id=playback_id, reason=_str_field(body, "reason"),
             )
+            return 200, {"status": "ok" if handled else "stale"}
         advanced = await self._manager.on_track_finished(guild_id, playback_id=playback_id)
         return 200, {"status": "ok" if advanced else "stale"}
