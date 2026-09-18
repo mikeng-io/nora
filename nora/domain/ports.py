@@ -2044,6 +2044,27 @@ class TrackSource(Protocol):
         would compound one uncertain match into another."""
         ...
 
+    async def refresh_session(self) -> None:
+        """Throw away whatever per-source session state the implementation
+        holds, so the NEXT `resolve` negotiates a new one. Called when a
+        stream this source resolved turned out to be unplayable, before the
+        retry re-resolves it.
+
+        **A locator is only as good as the session that signed it.**
+        Measured 2026-09-18: a `YoutubeDL` kept for the life of the process
+        handed out CDN addresses that were answered `403 Forbidden` — every
+        one, for 21 hours — because `videoplayback` addresses are bound to
+        the visitor session that produced them. Re-resolving through that
+        same session reproduces the failure exactly. Without this hook a
+        bounded retry is decoration: it spends a network round-trip asking
+        the broken thing for another broken answer.
+
+        A source holding no such state satisfies this by doing nothing.
+        NEVER raises, same discipline as `resolve` — a source that cannot
+        refresh has simply not improved the retry's odds, which is not an
+        error the caller can act on."""
+        ...
+
 
 @dataclass(frozen=True)
 class MusicToolOutcome:

@@ -73,6 +73,20 @@ DropVoiceSession = Callable[[str], None]
 # for a session that has NO music player (voice-only: leaving IS exiting).
 ExitVoiceSession = Callable[[str], Awaitable[bool]]
 
+#: How many times ONE track may be re-resolved after a `stream-failed`
+#: before the queue advances past it (design/voice-channel/07 §5, audit
+#: B14 — "nora may bounded-retry re-resolve").
+#:
+#: Two, because the two failures this bounds are cheap to tell apart by
+#: trying: a single CDN address that expired mid-track, which one re-resolve
+#: fixes, and a source session that has gone bad, which `refresh_session` +
+#: one re-resolve fixes. Neither needs a third. The bound matters as much as
+#: the retry does — an unbounded retry on a genuinely dead track is a guild
+#: stuck on silence with no way out, which is strictly worse than the
+#: advance it replaced, and every attempt costs a resolve round-trip plus a
+#: play POST while the room hears nothing.
+_MAX_STREAM_RETRIES = 2
+
 
 class MusicPlayerManager:
     def __init__(
@@ -106,6 +120,10 @@ class MusicPlayerManager:
         self._players: dict[str, MusicPlayer] = {}
         self._idle_tasks: dict[str, asyncio.Task[None]] = {}
         self._notify: dict[str, Notify] = {}
+        # The stale-stream retry budget: guild -> (locator, attempts spent).
+        # One entry per guild, replaced whenever a different track fails, so
+        # it cannot grow past the number of live guilds.
+        self._stream_retries: dict[str, tuple[str, int]] = {}
         # `play()`'s whole body runs under this — "no existing player, so
         # connect" is a check-then-act across an `await`, and enqueuing a
         # track is another; without a lock, two `/music play` calls for the
@@ -242,12 +260,95 @@ class MusicPlayerManager:
             player = self._players.get(guild_id)
             if player is None:
                 return False
+            # A track that ended on its own clears whatever retry budget it
+            # spent, so a later failure on a DIFFERENT track starts fresh.
+            self._stream_retries.pop(guild_id, None)
             pending = await player.prepare_advance()
         status = await self._commit_and_finish(guild_id, player, pending)
         # This is the ONE transition with no slash-command reply of its own
         # — a track ending naturally and the next one auto-starting is
         # otherwise silent in Discord.
         await self._notify_now_playing(guild_id, status)
+        return True
+
+    def _take_stream_retry(self, guild_id: str, locator: str) -> bool:
+        """Spend one attempt from `locator`'s budget, or report that it is
+        exhausted. Keyed by LOCATOR: each retry starts a new playback, so a
+        playback-keyed budget would reset on every attempt and never run
+        out — the loop this exists to bound."""
+        recorded, spent = self._stream_retries.get(guild_id, (locator, 0))
+        if recorded != locator:
+            spent = 0  # a different track's failure — its own budget
+        if spent >= _MAX_STREAM_RETRIES:
+            self._stream_retries.pop(guild_id, None)
+            return False
+        self._stream_retries[guild_id] = (locator, spent + 1)
+        return True
+
+    async def on_stream_failed(
+        self, guild_id: str, *, playback_id: str | None = None, reason: str | None = None,
+    ) -> bool:
+        """ffmpeg failed on a track that had NOT finished (design/voice-
+        channel/07 §5, audit B14). Re-resolves the same track for a fresh
+        stream address up to `_MAX_STREAM_RETRIES` times, and only then
+        advances the way a natural end does.
+
+        **This is not `on_track_finished` with a different log line.** Until
+        2026-09-18 it was: `stream-failed` called straight through to the
+        advance, so a rejected address cost not one song but the whole
+        session — each failure advanced, the next track was resolved through
+        the same broken source session, failed identically, and autoplay
+        emptied the queue into silence in about a minute. Four plays, four
+        `ffmpeg-exit-1`, zero seconds of audio. A failure to START playing
+        is a reason to try that track AGAIN; it is not evidence the track is
+        over.
+
+        The B5 staleness check is the same one and for the same reason: a
+        failure belonging to a superseded playback must not move a queue the
+        skip that superseded it already moved. Checked HERE, under the lock,
+        never before taking it.
+
+        No `_notify_now_playing` on the retry path — the room is hearing
+        (or about to hear) the track it was already told about, and
+        announcing it again on every stumble is noise. The advance
+        fall-through notifies exactly as it always did."""
+        lock = self._guild_locks.setdefault(guild_id, asyncio.Lock())
+        async with lock:
+            if (
+                playback_id is not None
+                and self._playback_probe is not None
+                and playback_id != self._playback_probe(guild_id)
+            ):
+                log.info(
+                    "stream-failed for guild %s ignored: playback %s is not the "
+                    "currently-expected one (a superseded track's tail)",
+                    guild_id, playback_id,
+                )
+                return False
+            player = self._players.get(guild_id)
+            if player is None:
+                return False
+            pending = None
+            locator = player.now_playing_locator
+            if locator is not None and self._take_stream_retry(guild_id, locator):
+                _, spent = self._stream_retries[guild_id]
+                log.warning(
+                    "music stream failed for guild %s (playback %s): %s — "
+                    "re-resolving the same track, attempt %d of %d",
+                    guild_id, playback_id, reason, spent, _MAX_STREAM_RETRIES,
+                )
+                pending = await player.retry_current_prepare()
+            retrying = pending is not None
+            if not retrying:
+                log.warning(
+                    "music stream failed for guild %s (playback %s): %s — advancing",
+                    guild_id, playback_id, reason,
+                )
+                self._stream_retries.pop(guild_id, None)
+                pending = await player.prepare_advance()
+        status = await self._commit_and_finish(guild_id, player, pending)
+        if not retrying:
+            await self._notify_now_playing(guild_id, status)
         return True
 
     async def _commit_and_finish(

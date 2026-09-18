@@ -270,7 +270,7 @@ anywhere:
 | Event | Payload | Meaning |
 |---|---|---|
 | `track-finished` | `{playback_id, event_id, generation, duration_ms}` | Music ended naturally. nora advances its OWN queue. |
-| `stream-failed` | `{playback_id, event_id, generation, reason}` | ffmpeg failed (not a natural end). nora may bounded-retry re-resolve; distinct from `nothing_found` (B14). |
+| `stream-failed` | `{playback_id, event_id, generation, reason}` | ffmpeg failed (not a natural end). nora re-resolves the SAME track, bounded (`_MAX_STREAM_RETRIES`), and only then advances; distinct from `nothing_found` (B14). **Landed 2026-09-18** — `MusicPlayerManager.on_stream_failed`. |
 | `speech-finished` | `{event_id, request_id}` | TTS played. |
 | `voice-death` | `{event_id, generation}` | Connection died. nora tears down session (existing `on_voice_death` semantics). |
 | `channel-emptied` | `{event_id, generation, channel_id}` | Humans left the channel. nora applies empty-channel policy (§6). |
@@ -278,6 +278,41 @@ anywhere:
 Phase-1 invariant: **no TTS reply is ever cut off by a music skip; no music
 ever overlaps speech** — enforced by the arbiter states above, not by
 convention.
+
+### 5.1 Stale-stream retry (B14) — landed 2026-09-18
+
+**A track that failed to START has not finished.** `stream-failed` used to
+call straight through to the advance, which made it an alias for
+`track-finished` with a louder log line. It cost a whole session, not a song:
+measured live 2026-09-18, a source session had gone bad, so every address it
+signed was answered `403 Forbidden`; each failure advanced, the next track was
+resolved through that same session, failed identically, and autoplay drained
+the guild to silence in about a minute — four plays, four `ffmpeg-exit-1`,
+zero seconds of audio.
+
+`MusicPlayerManager.on_stream_failed` now:
+
+1. applies the SAME B5 staleness check (§3.3) under the guild lock — a failure
+   belonging to a superseded playback neither retries nor advances;
+2. spends one attempt from the failed track's budget, keyed by **locator**.
+   Not by `playback_id`: every retry starts a new playback, so a
+   playback-keyed budget resets on each attempt and never runs out;
+3. calls `TrackSource.refresh_session()` and re-resolves the same track.
+   Refreshing FIRST is what makes this a retry rather than a second helping —
+   a locator is only as good as the session that signed it, and re-resolving
+   through a bad one reproduces the failure at the cost of a round-trip;
+4. advances exactly as before once the budget is spent, the track no longer
+   resolves, or there is nothing playing.
+
+The bound is as load-bearing as the retry. An unbounded retry on a genuinely
+dead track strands a guild on silence with no way out — strictly worse than
+the advance it replaced — and each attempt costs a resolve plus a play POST
+while the room hears nothing. Two attempts separate the two failures worth
+telling apart: one expired address, which a re-resolve fixes, and a rotten
+session, which the refresh plus a re-resolve fixes.
+
+Only the advance path notifies. A retry is the track the room was already told
+about, continuing.
 
 ## 6. Cache — the honest starting point
 
@@ -608,7 +643,7 @@ All findings are incorporated above (B1…B17 map into the §3.1–§3.3 / §4�
 | B11 | MAJOR | Restart reconciliation missing | §12.1 durable desired-state |
 | B12 | MAJOR | PCM pump not memory-bounded | §7 revised (below): connected-state backlog bound |
 | B13 | MAJOR | One AudioPlayer ≠ bounded subprocesses | §7 revised: subprocess ownership + termination |
-| B14 | MAJOR | Stale-stream retry path absent | §5 `stream-failed` + nora bounded retry |
+| B14 | MAJOR | Stale-stream retry path absent | §5 `stream-failed` + nora bounded retry — **landed 2026-09-18** (§5.1) |
 | B15 | MAJOR | Dynamic joins lack channel identity | §12.2 / §13: single immutable channel in phase 1 |
 | B16 | MINOR | Endpoint naming + latency claims inconsistent | §3 table (one canonical schema); §9 latency measured per-stage, not inferred |
 | B17 | MINOR | Crossfade drop needs explicit config migration | §10 crossfade-unsupported + effective-zero surfaced |

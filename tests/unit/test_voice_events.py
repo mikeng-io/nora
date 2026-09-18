@@ -55,6 +55,12 @@ class _StubManager:
         self.calls.append(f"track-finished:{guild_id}:{playback_id}")
         return playback_id == PLAYBACK
 
+    async def on_stream_failed(
+        self, guild_id: str, *, playback_id: str | None = None, reason: str | None = None,
+    ) -> bool:
+        self.calls.append(f"stream-failed:{guild_id}:{playback_id}:{reason}")
+        return playback_id == PLAYBACK
+
     async def on_voice_death(self, guild_id: str, *, generation: str | None = None) -> None:
         self.calls.append(f"voice-death:{guild_id}:{generation}")
 
@@ -179,7 +185,17 @@ async def test_a_stale_track_finished_never_advances():
         assert (status, payload["status"]) == (200, "stale"), playback_id
 
 
-async def test_stream_failed_advances_past_the_failed_track():
+async def test_stream_failed_is_its_own_transition_not_a_track_end():
+    """A track that failed to START has not finished, so this must NOT reach
+    `on_track_finished`. It did until 2026-09-18, and routing a failure to
+    the advance is what made one rejected CDN address cost a whole session:
+    every failure advanced, the next track resolved through the same broken
+    source session and failed identically, and autoplay emptied the queue
+    into silence in about a minute (design/voice-channel/07 §5, audit B14).
+
+    The reason is forwarded because the manager logs it — a failure whose
+    cause is unreadable is the thing that made this take a live incident to
+    find."""
     consumer, manager, _ = await _consumer()
 
     status, _ = await consumer.consume(
@@ -187,7 +203,7 @@ async def test_stream_failed_advances_past_the_failed_track():
     )
 
     assert status == 200
-    assert manager.calls == [f"track-finished:{GUILD}:{PLAYBACK}"]
+    assert manager.calls == [f"stream-failed:{GUILD}:{PLAYBACK}:ffmpeg-exit-1"]
 
 
 async def test_a_stale_stream_failed_never_advances():

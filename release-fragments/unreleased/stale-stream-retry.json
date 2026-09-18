@@ -1,0 +1,14 @@
+{
+  "type": "fix",
+  "summary": "A track that fails to start is retried instead of skipped. One bad stream address used to cost the whole session, not one song — the queue emptied itself into silence in about a minute.",
+  "details": [
+    "Nora hands ffmpeg a signed address for each track. When ffmpeg could not play it, she treated that exactly like the track having finished and moved to the next one. The next track was resolved the same way, failed the same way, and autoplay kept picking and failing until the queue was empty. Measured live on 2026-09-18: four plays, four failures, no audio at all.",
+    "A track that never started has not finished. She now re-resolves the same track for a fresh address and plays it again, up to twice, and only advances if that does not work — or if the track genuinely no longer exists, in which case moving on is still right.",
+    "The retry discards the connection she resolves through before asking again. An address is only as good as the session that produced it, so asking the same session for another one just returns another bad address; this is what makes the retry worth the wait rather than a slower way to fail.",
+    "A retry says nothing in the room. It is the track everyone was already told about, continuing. Only an actual move to the next track announces itself, exactly as before."
+  ],
+  "limitations": [
+    "Two attempts, then it advances. A track whose stream is genuinely broken still gets skipped — deliberately: retrying forever would leave a room sitting in silence with no way out, which is worse than moving on, and every attempt is dead air while it happens.",
+    "Nothing is said in the room when a track is retried, so from the outside a retry looks like a short gap before the music starts. A track that is skipped after its retries are spent is announced only by the next track's own notification."
+  ]
+}
