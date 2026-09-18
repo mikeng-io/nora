@@ -153,3 +153,9 @@ on its own (`04-the-convention` §6):
    this layer will produce.
 
 Step 5 remains the last step and it is still not this one.
+
+> **Step 5 landed 2026-09-18** (`04-the-convention` §6). This section withheld
+> permission for something that has since happened; it is kept for its
+> reasoning. This node's own finding — one corpus syntax meaning two different
+> things in two drivers, found only by running both — stands unchanged
+> (`07-sdk-native` §7).

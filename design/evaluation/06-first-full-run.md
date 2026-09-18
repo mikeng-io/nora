@@ -3,7 +3,7 @@
 > **Every number on this page was produced by a harness that is being
 > replaced.** `07-sdk-native` (2026-09-18) measures that
 > `strands-agents-evals` already ships the runner, the outcome types and the
-> report — 1,037 of the layer's 2,268 lines. The SUBJECT the numbers were taken
+> report — 1,037 of the layer's 2,267 lines. The SUBJECT the numbers were taken
 > against (`nora/subject/obtain(spec)`) is unaffected and stands, so §8's
 > readings about isolation, caching and judge latency remain the operational
 > facts they describe. What does not carry over is the grading: §8.2's four

@@ -67,7 +67,14 @@ does not look at `eval_support.py`**, which is where all six divergences live.
 ## 3. Why DELETE and not refactor
 
 A refactor needs a target shape the current code is an imperfect version of.
-There are seven shapes and the target is in production. Each was a reasonable
+There are seven shapes and the target is in production.
+
+> **CORRECTED 2026-09-18 — there IS a target shape for three of the four
+> primitives, and it was pinned in `pyproject.toml` the whole time.**
+> `strands-agents-evals` ships `Case`, the runner and the outcome types. The
+> delete-not-refactor argument holds for the SUBJECT, which is the shape that
+> really is only in production. For the HARNESS the target always existed and
+> no node in this bundle mentioned it. `07-sdk-native` §2. Each was a reasonable
 local change — somebody needed to measure a thing, the existing shape did not
 fit, so they added a path beside it. Editing again is another local change
 fitting what is already there.
@@ -105,8 +112,10 @@ designed**, and that is the only thing here.
 ## 6. What survives the delete
 
 - **13 corpora** (`evals/**/*.yaml`) — cases and expectations are data.
-- **The graders** — judge, rubric, structural. What a verdict means does not
-  depend on how the subject was built.
+- **The graders** — **CORRECTED 2026-09-18:** only the confidence-weighted
+  rubric and the absence grader survive. Content grading is the SDK's
+  built-ins, and the absence grader is the one no SDK supplies
+  (`08-the-sdk-surface` §4.1, §5).
 - **Measured readings in corpus headers**, which are provenance.
 - **`subject=` in the provenance line** (#310) — the qualifier travels with the
   number into logs, where prose does not. **Caveat:** it exists at exactly one

@@ -5,8 +5,10 @@ verification each step has to pass. Work autonomously; stop only for a real
 blocker or a fact only the operator holds.
 
 **Branch:** `feat/evaluation-rebuild` (PR #334). **Repo entry point:**
-`AGENTS.md`. **Read first:** `00-overview` → `01-boundaries` → `02-the-rebuild`
-→ `04-the-convention` → `05-live-parity`.
+`AGENTS.md`. **Read first:** `07-sdk-native` → `08-the-sdk-surface` → `00-overview` →
+`01-boundaries` → `02-the-rebuild` → `04-the-convention` → `05-live-parity`.
+The first two are the correction; reading them last is how a session rebuilds
+the hand-rolled layer.
 
 ---
 
@@ -15,7 +17,9 @@ blocker or a fact only the operator holds.
 > **Different evaluation suites. Different input. One Nora.**
 
 `nora/subject/obtain(spec)` composes the graph `nora/__main__.py` runs.
-`evals/rebuilt/` drives it. The eval layer composes nothing.
+`strands_evals.Experiment` drives it through a task function over that
+`obtain()`. The eval layer composes nothing — **and, corrected 2026-09-18, it
+does not build a harness either** (`07-sdk-native` §2).
 
 ## Where it stands
 
@@ -82,6 +86,15 @@ Also: `room_label` / `room_description` reach nothing (they are parked in
 
 ## Step 4 — the over-strict and leaky readings (audit, lower priority)
 
+> **DO NOT DO STEPS 3 AND 4 AS WRITTEN.** They are a work order to FIX
+> `runner.py` and `report.py` — the two files `07-sdk-native` §2 retires,
+> 1,037 of 2,267 lines. A session working this file top to bottom repairs code
+> it is supposed to delete. What survives is Step 3's ASSERTIONS
+> (`creates`/`updates`/`anchor_date`/`must_cite`), which become `StateEquals`
+> inputs where they can — `08-the-sdk-surface` §4.5 measures that only one of
+> four translates. Check the SDK equivalent does not carry each defect below;
+> do not repair ours.
+
 - `entry.py` tag path: `if failed:` fires even when she DID reply and a second
   delivery was guard-refused. Gate on `failed and not hers`.
 - `entry.py` dreamer: `or result.samples_failed` makes 1 bad sample of 3 an
@@ -127,8 +140,8 @@ do not assume).
 - Read measurement 0 and the per-draw timing FIRST. A sub-second draw is not a
   reading — `05-live-parity` §4.1 records an unexplained spread and that check
   comes before any sample count is quoted.
-- Extend `tests/integration/test_live_parity_gate.py` to the other three entry
-  points where the old layer can be driven for comparison.
+- ~~Extend `tests/integration/test_live_parity_gate.py`~~ — that file was
+deleted with the old layer (Step 8). Parity cannot outlive one of its two arms.
 
 **Done when:** every corpus has a number, with `subject=` and `judge=` on it.
 
@@ -144,7 +157,7 @@ Three adversarial Opus reviewers ran first. Production safety came back clean;
 the other two refuted most of the first live run, and everything they found is
 fixed and falsified (`06-first-full-run` §1, `04-the-convention` §5).
 
-The delete landed: **8,218 lines** of old CLI and drivers deleted outright,
+The delete landed: **8,187 lines** of old CLI and drivers deleted outright,
 and three files RE-HOMED into `tests/` rather than removed —
 `tests/offline_pipeline.py`, `tests/offline_eval_support.py`,
 `tests/offline_eval_harness.py` (+ its evaluators).
@@ -189,7 +202,11 @@ no rebase-merge (`CONTRIBUTING.md`).
 
 ## Definition of done
 
-- `evals/*.py`, `eval_support.py`, `offline.py` gone; nothing imports them.
+- `evals/rebuilt/{runner,report,domain}.py` gone; the harness is
+  `strands_evals`. (The older form of this line — *"`evals/*.py`,
+  `eval_support.py`, `offline.py` gone"* — is both stale and wrong:
+  `offline.py` was RE-HOMED, not deleted, and that clause read as satisfied
+  while the basis was unmet.)
 - Every corpus produces a number, and each number has a stated reading.
 - `make gate` green, read by exit code.
 - Every pin falsified at least once.

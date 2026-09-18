@@ -18,9 +18,12 @@ attack, so nothing in seven nodes could have caught it.
 `pyproject.toml:47` has carried `evals = ["strands-agents-evals==1.0.3"]` the
 whole time. Both layers' only contact with it was two classes in the OLD
 `evals/judge.py` — `NoraOutputEvaluator` and `NoraTrajectoryEvaluator` —
-defined, never instantiated, never called. Measured: `git grep` over
-`origin/master` returns four hits, all inside their own definition. Their own
-docstring said so:
+defined, never instantiated, never called. Measured: on `origin/master`, `git grep -n "strands_evals" -- evals/judge.py`
+returns FIVE hits — two module-level imports, two in the module docstring, one
+in a comment — and a grep for the two class names returns four, of which one is
+the docstring. So neither is "all inside their own definition"; what is true,
+and is the point, is that **no call site instantiates either class anywhere in
+the tree**. Their own docstring said so:
 
 > *"Neither class is invoked with a live judge model in this session ... they
 > are exercised here only for importability/structure."*
@@ -61,7 +64,7 @@ Against `01-boundaries` §2's "four things, and nothing else":
 | **Outcome** | `domain.Outcome` + `report.py`, 507 lines | `EvaluationData` / `EvaluationOutput` / `EvaluationReport` |
 
 **Three of the four were re-derived from first principles against a dependency
-that already defines them.** 1,037 of the new layer's 2,268 lines are the
+that already defines them.** 1,037 of the new layer's 2,267 lines are the
 harness the SDK ships.
 
 ## 3. The three reasons this was thought impossible — two are false
@@ -83,8 +86,8 @@ evaluator takes `model: strands.models.model.Model | str`, and
 `strands.models.openai.OpenAIModel` is what **production itself** already uses
 (`nora/agent/factory.py:128`), constructed from an `AsyncOpenAI` client. The
 same seam points at OmniRoute's `nora-judge`. No new infrastructure, and the
-judge stays a different model from the subject, which `01-boundaries` §5
-requires.
+judge stays a different model from the subject, which `04-the-convention`
+§5.2 requires.
 
 ### 3.3 "`EvaluationOutput` cannot carry the confidence rubric" — HALF TRUE, and it is the only real constraint
 
@@ -102,7 +105,10 @@ twice over:
 - **Confidence is an input to the verdict, not an output of it.** The locked
   rule — `score<=0.5 & conf>=0.7 → FAIL`, `score>=0.7 & conf>=0.7 → PASS` —
   runs inside the subclass; only its result needs a field.
-- `Evaluator.__abstractmethods__` is `None`. Subclassing is unconstrained.
+- `Evaluator` is **not an ABC at all** — it has no `__abstractmethods__`
+  attribute, so subclassing is unconstrained. (An earlier draft printed
+  `__abstractmethods__ is None` as a measurement. That was a
+  `getattr(..., None)` default, not a reading.)
 
 **What IS a real constraint: `test_pass` is a `bool` and there is no third
 state.** `REVIEW` — the judge that did not answer — has nowhere to go, and
@@ -115,19 +121,23 @@ alone. That is the one place custom code is not optional, and it is small.
 
 | what a corpus asserts today | the SDK's own instrument |
 |---|---|
-| `expect: reply` on the 23 ungradable cases | `FaithfulnessEvaluator` (grounding), `RefusalEvaluator` + `HarmfulnessEvaluator` (injections), `CorrectnessEvaluator`, `InstructionFollowingEvaluator`, `StereotypingEvaluator` |
+| `expect: reply` on the 23 CONTENT-ungradable cases (a different set from the 23 once said to be REFUSED for missing seams, which is retracted — `04-the-convention` §7) | `FaithfulnessEvaluator` (grounding), `RefusalEvaluator` + `HarmfulnessEvaluator` (injections), `CorrectnessEvaluator`, `InstructionFollowingEvaluator`, `StereotypingEvaluator` |
 | `must_cite` as substrings | `Contains(value=..., case_sensitive=False)` |
 | `admitted` go / no_go | `Equals()` |
 | `creates` / `updates` / `anchor_date` — writes to the database | **`StateEquals(name=..., value=...)`**, the SDK's answer to a tool-using agent's side effects, against `Case.expected_environment_state` |
 | the ROUTING tier | `ToolCalled` (deterministic), `ToolSelectionAccuracyEvaluator`, `ToolParameterAccuracyEvaluator`, `TrajectoryEvaluator` (LLM) |
 | the confidence-weighted rubric | one `Evaluator` subclass |
 
-### 4.1 The routing tier is recoverable, and two documents say otherwise
+### 4.1 The routing tier is recoverable, and five documents say otherwise
 
-`04-the-convention` §6 and `GOAL.md` Step 8 both record the routing tier as a
-cost that *"neither is recoverable by trying harder"*, leaving **DEC-76** and
-**DEC-84** NOT ENFORCED. That is false. The SDK ships **four** instruments for
-it, in the version already pinned. Both statements are corrected in place.
+`04-the-convention` §6, `GOAL.md` Step 8 and `_index.yaml`'s own open-question
+entry all record the routing tier as a cost that *"neither is recoverable by
+trying harder"*, leaving **DEC-76** and **DEC-84** NOT ENFORCED. So does
+`docs/eval-sop.md` step 2 and the DEC-76 row of `design/09-decision-index.md`,
+which the first two CITE as their authority. That is false. The SDK ships **four** instruments for
+it, in the version already pinned. All three are corrected in place —
+`_index.yaml`'s own open-question entry carried it too, and an earlier draft of
+this node said "both", having missed the index.
 
 Live parity, the other cost named there, is genuinely gone — that one stands.
 
@@ -192,13 +202,20 @@ The locked decision was never enforceable, which is most of why it decayed
 silently. Naming it again without a gate would repeat that.
 
 1. **Dependency.** `strands-agents-evals` sits in
-   `[project.optional-dependencies]`. Not installing it is currently a
-   supported state, so the suite is allowed to exist without it. Move it.
+   `[project.optional-dependencies]`. **CORRECTED** — not installing it is NOT
+   a supported state: `tests/test_scaffold.py:10` pins the version
+   unconditionally and fails outright without it. Moving it to a core
+   dependency is still right, but it is tightening a real gate, not closing an
+   open door.
 2. **Import contract.** `lint-imports` expresses *"may not import X"* and has
    no *"must import X"*. This layer cannot carry the rule, and
-   `01-boundaries` §6.1 already measured that the import contract is the
+   `01-boundaries` §6 already measured that the import contract is the
    looser of the two gates.
-3. **Architecture test** — the binding gate, under `tests/architecture/`, by
+3. **Architecture test** — the binding gate. **CORRECTED** — this is not a
+   first: `tests/test_strands_api_contract.py:123`
+   (`test_obligation_6b_strands_evals_surface`) already asserts `Case`,
+   `Experiment`, `run_evaluations` and `to_file` exist, on `origin/master` AND
+   on HEAD. The new rule EXTENDS that file rather than opening a new one. By
    AST over `evals/`:
    - no module defines its own experiment runner or report renderer;
    - every grader is a subclass of

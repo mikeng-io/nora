@@ -71,7 +71,7 @@ write. `Experiment` is the Application layer and `EvaluationReport` the
 reporter; `Case`, `EvaluationData` and `EvaluationOutput` are the Domain. What
 belongs to this repo is the **Ports** list above — entry point, stores, model,
 clock — because those are seams into *Nora*, and the task function that closes
-them. `07-sdk-native` §2 measures the split: 1,037 of the rebuilt layer's 2,268
+them. `07-sdk-native` §2 measures the split: 1,037 of the rebuilt layer's 2,267
 lines re-implement Application and Domain.
 
 One constraint the SDK does impose and this section should carry:

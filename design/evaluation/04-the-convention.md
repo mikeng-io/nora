@@ -43,6 +43,15 @@ keeps that true — it holds that the runner reaches an entry point only through
 
 ## 3. The four things
 
+> **CORRECTED 2026-09-18 — three of these four rows point at code the SDK
+> already ships.** `strands_evals.Case`, `Experiment.run_evaluations` and
+> `EvaluationData`/`EvaluationOutput` replace `domain.py` and `runner.py`;
+> only **Subject** is ours. See `07-sdk-native` §2 and `01-boundaries` §2,
+> which carries the same correction on the same table. This file is cited as
+> normative from `Makefile`, so the uncorrected version of this table is the
+> single most misleading thing in the bundle.
+
+
 | | what it is | where |
 |---|---|---|
 | **Case** | input + expectation + entry point | `evals/rebuilt/domain.py` — pure, imports nothing from `nora` |
@@ -67,7 +76,16 @@ each was restored. A pin that has never failed is a pin nobody has checked.
 ### An input the graph cannot honour is an ERROR
 
 Not a FAIL, and never a PASS. `Outcome.meets` returns `True`, `False` or
-**`None`**, and the third answer is the whole discipline. Three places produce
+**`None`**, and the third answer is the whole discipline.
+
+> **CORRECTED 2026-09-18 — the SDK has no third state, and a grader cannot
+> restore it.** `EvaluationOutput.test_pass` is a `bool`, so `REVIEW` must ride
+> in `label` and no aggregation may read `test_pass` alone. Worse:
+> `Experiment._worker` and `_run_evaluator` write `test_pass=False, score=0` on
+> any raise **without calling any evaluator**, and `EvaluationReport` has no
+> error channel. So this rule has to be held by the task never raising plus a
+> convention the enforcement gate reads — not by a grader.
+> `08-the-sdk-surface` §4.3. Three places produce
 it today:
 
 - **Honcho `conclusions:`** — Honcho DERIVES a conclusion from messages, so
@@ -211,6 +229,22 @@ The report prints `judge=` beside `subject=`, and its loudest value is
 - **Twenty-one proactive cases and two participation cases do not run.**
   §5 says why, and both reasons are missing seams in `nora.app`, not in this
   layer.
+
+> **RETRACTED 2026-09-18 — no case is refused any more, and this claim outlived
+> its cause by two commits.** Both seams were closed: `rooms` and `standing`
+> became seedable (GOAL Step 1) and `conclude()` turned out to be production's
+> own write lane (`177301b4`, *"Honcho conclusions CAN be written — I asserted
+> otherwise"*; `nora/subject/knowledge.py` now says *"THIS WAS WRONGLY DECLARED
+> IMPOSSIBLE"*). `06-first-full-run` §8 grades `proactive_act 7/11` and
+> `proactive_decide 9/11` — **22 proactive cases ran**. The two participation
+> ERRORs are an unreachable Honcho SERVICE, not a missing seam.
+>
+> MEASURED 2026-09-18: 11 cases still carry `metadata.row`, all in
+> `proactive_act.yaml` — but the `unseeded` guard lives in the **`dreamer`**
+> entry point and those cases enter at `proactive_act`. **The guard cannot fire
+> for any case in the tree.** A fail-closed guard whose condition cannot occur
+> is not a guard; it is the shape this bundle keeps finding one layer down.
+
 
 ## 7. The seams `nora.app` does not have
 
