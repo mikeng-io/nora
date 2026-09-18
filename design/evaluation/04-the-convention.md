@@ -138,6 +138,12 @@ The report prints `judge=` beside `subject=`, and its loudest value is
 
 ## 6. What is NOT true yet
 
+> **READ `07-sdk-native` FIRST.** This section describes a convention built
+> without reference to `strands-agents-evals`, which ships three of the four
+> primitives `01-boundaries` §2 derives. The costs recorded below are real but
+> one of them — the routing tier — is not permanent, and the correction is
+> inline where it is claimed.
+
 - **Step 5 is DONE.** `nora/app/eval_support.py`, `nora/app/offline.py` and
   every old `evals/*.py` are gone from where they were. `evals/` is now
   `__init__.py`, `rebuilt/` and the corpora.
@@ -185,6 +191,15 @@ The report prints `judge=` beside `subject=`, and its loudest value is
   absorbed: a wrong route answers fluently from the wrong source, and DEC-75
   and DEC-76 both record that a reply-grader is blind to it. `docs/eval-sop.md`
   step 2 now says the step has no instrument.
+
+  **CORRECTED 2026-09-18 — "no counterpart" is FALSE.** `strands-agents-evals`,
+  pinned at `pyproject.toml:47` throughout, ships four instruments for exactly
+  this: `ToolCalled` (deterministic), `ToolSelectionAccuracyEvaluator`,
+  `ToolParameterAccuracyEvaluator` and `TrajectoryEvaluator` (LLM-judged), all
+  reading `Case.expected_trajectory`. The tier is recoverable and DEC-76 and
+  DEC-84 can be re-enforced. What was missing was never the instrument; it was
+  that no node in this bundle had looked at the dependency. See
+  `07-sdk-native` §4.1.
 
 - **Four corpora are ungradable** — `identity_grounding`, `source_scope`,
   `injections`, `being_contradicted` — because they are about what the reply

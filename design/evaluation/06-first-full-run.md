@@ -1,5 +1,18 @@
 # The first full run — 13 corpora, 150 cases, one Nora
 
+> **Every number on this page was produced by a harness that is being
+> replaced.** `07-sdk-native` (2026-09-18) measures that
+> `strands-agents-evals` already ships the runner, the outcome types and the
+> report — 1,037 of the layer's 2,268 lines. The SUBJECT the numbers were taken
+> against (`nora/subject/obtain(spec)`) is unaffected and stands, so §8's
+> readings about isolation, caching and judge latency remain the operational
+> facts they describe. What does not carry over is the grading: §8.2's four
+> vacuous corpora are vacuous because `bool(said)` was the only check
+> available, and the SDK ships `FaithfulnessEvaluator`, `RefusalEvaluator`,
+> `HarmfulnessEvaluator` and `CorrectnessEvaluator` for precisely those 23
+> cases. Re-run against the SDK harness before quoting any of this as a
+> baseline.
+
 > ## WITHDRAWN 2026-09-18, the same day, by adversarial review.
 >
 > **Every number in the table below is withdrawn.** Two reviewers attacked the

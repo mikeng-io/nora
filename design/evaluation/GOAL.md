@@ -102,6 +102,17 @@ Both layers render them as messages from a member. Production carries them as
 tool results. Decide whether the corpora model it or the difference is
 recorded, then do that.
 
+> **NOT DONE, and it was reported as done.** No decision is recorded anywhere
+> in this bundle. The commit message `Step 5 done` refers to
+> `02-the-rebuild`'s step 5 — the delete — which is a different step wearing
+> the same number. Measured 2026-09-18:
+> `grep -niE "tool_result|tool_call_log" evals/rebuilt/*.py` returns nothing,
+> so every `knows.transcript` row is still a room message.
+>
+> `07-sdk-native` §4.2 names the instrument: `ToolSimulator` models a tool
+> result AS a tool result. **Two different step fives in one bundle is the
+> mechanism** — rename one before the next session repeats this.
+
 ## Step 6 — the live run, all four entry points
 
 Tunnel: `ssh -L 20128:localhost:20128 norty`. Key from norty's
@@ -145,17 +156,30 @@ so a shared TEST helper had to live inside the application to be reachable from
 `evals/`. Once `evals/` had no harness, every consumer was under `tests/`,
 which has no contract — and the workaround was unnecessary.
 
-**What it cost, and neither is recoverable by trying harder:**
+**What it cost — one of these two is recoverable, and this list said otherwise:**
 
 1. **The routing tier.** DEC-76 and DEC-84 are marked NOT ENFORCED.
    `Outcome` carries no tool calls and no corpus is a journey, so "which tool
    did she reach for" is unmeasured. `docs/eval-sop.md` step 2 says so.
+
+   **CORRECTED 2026-09-18.** This was written as unrecoverable. It is not:
+   `strands-agents-evals` ships `ToolCalled`,
+   `ToolSelectionAccuracyEvaluator`, `ToolParameterAccuracyEvaluator` and
+   `TrajectoryEvaluator`, in the version pinned at `pyproject.toml:47` the
+   whole time. `07-sdk-native` §4.1.
 2. **Live parity.** `test_live_parity_gate.py` is gone: parity cannot outlive
    one of its two arms. The GATE was compared once and that comparison found a
    real defect (`05-live-parity` §2). The other four entry points never were,
    and now never can be against the old layer.
 
 ## Step 9 — close out
+
+> **HELD 2026-09-18. Do not merge PR #334 on this step's instruction.** The
+> operator's anchor: the suite is built on `strands-agents-evals`, and that is
+> enforced rather than restated. `07-sdk-native` is the investigation; the
+> harness half of this branch is to be replaced before merge. The branch stays
+> open — `nora/subject/` and the thirteen corpora are the base the replacement
+> builds on, and closing it would mean deriving them again.
 
 Update `04-the-convention` §6 (what is no longer untrue), `02-the-rebuild`'s
 step table, and `_index.yaml`. One release fragment. Merge PR #334 — no squash,

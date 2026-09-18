@@ -10,12 +10,19 @@ description: >
   build_dependencies, which is what the deployment runs. Nothing guards it:
   test_assembler_parity compares composition.py against offline.py, which both
   pass FirePath(36), so it is green while eval_support.py's FirePath(21) goes
-  unwatched. Hence a DELETE and rebuild rather than a refactor — there is no
-  target shape the current code is an imperfect version of. The boundary is
+  unwatched. Hence a DELETE and rebuild rather than a refactor. The boundary is
   clean-code/DDD: the eval layer depends on Nora, Nora depends on nothing in it,
   the eval layer assembles nothing, and a suite is cases. Step 0 can withdraw the
   whole bundle.
-status: implemented
+
+  CORRECTED 2026-09-18 by 07-sdk-native. This description used to end the
+  sentence above with "there is no target shape the current code is an
+  imperfect version of". There is one, it was pinned in pyproject.toml the
+  whole time, and no node in this bundle mentions it: strands-agents-evals
+  ships Case, the runner and the outcome types, so three of the four things
+  01-boundaries section 2 derives from first principles already existed. The
+  SUBJECT is the one that is ours, and it is what this bundle actually found.
+status: checkpoint
 origin: >
   Operator session 2026-09-17, opened by one question — "your measurement, what
   is it actually measuring?" — after four sessions of measurement discipline had
@@ -34,6 +41,8 @@ members:
   - 04-the-convention.md
   - 05-live-parity.md
   - 06-first-full-run.md
+  - 07-sdk-native.md
+  - 08-the-sdk-surface.md
 edges:
   - {src: 01-boundaries, dst: 00-overview, rel: depends_on, provenance: asserted}
   - {src: 02-the-rebuild, dst: 01-boundaries, rel: depends_on, provenance: asserted}
@@ -41,6 +50,9 @@ edges:
   - {src: 04-the-convention, dst: 02-the-rebuild, rel: depends_on, provenance: asserted}
   - {src: 05-live-parity, dst: 02-the-rebuild, rel: measures, provenance: measured}
   - {src: 06-first-full-run, dst: 02-the-rebuild, rel: measures, provenance: measured}
+  - {src: 07-sdk-native, dst: 01-boundaries, rel: corrects, provenance: measured}
+  - {src: 07-sdk-native, dst: 04-the-convention, rel: corrects, provenance: measured}
+  - {src: 08-the-sdk-surface, dst: 07-sdk-native, rel: extends, provenance: measured}
 external_edges:
   - {dst: "dreamer-agent-loop/35-ambient-participation", rel: relates_to, provenance: asserted}
   - {dst: "dreamer-agent-loop/36-relevance-gate", rel: relates_to, provenance: asserted}
@@ -66,6 +78,7 @@ governance:
     corpus that strips the framing it is about, which is this bundle's problem
     seen from the other side. #311 carries the findings.
 open_questions:
+  - "ANCHORED BY THE OPERATOR 2026-09-18, AND IT IS THE BUNDLE'S BIGGEST MISS — the suite is to be built on strands-agents-evals, and that is to be ENFORCED rather than restated. Measured: a grep for strands_evals across all 1,601 lines of this bundle returns ZERO hits, so the SDK was never adopted, never rejected and never reasoned about; the locked decision predates this bundle and the OLD layer never implemented it either (NoraOutputEvaluator and NoraTrajectoryEvaluator were defined and never once called, which their own docstring stated). Three of 01-boundaries section 2's four primitives already ship: Case, Experiment.run_evaluations, EvaluationData/EvaluationOutput — 1,037 of the rebuilt layer's 2,268 lines. The SUBJECT is the one that is ours. Two blocking reasons were checked and are FALSE (a task function may return a dict, so the subject need not be a Strands Agent; and evaluators take model: Model | str, so OpenAIModel against OmniRoute's nora-judge works exactly as production already does at nora/agent/factory.py:128). One is TRUE and small: EvaluationOutput.test_pass is a bool with no third state, so REVIEW must ride in label. 07-sdk-native carries the investigation, the corpus mapping and the three enforcement layers. NOTHING HAS BEEN RUN — section 8 of that node is the falsification to execute"
   - "STEP 0 — RUN 2026-09-17, refutation did NOT fire (03-step0-results). RelevanceGate: 539 vs 559 bytes, eval loses the canonical name and the media description, an image-only message reads as an empty body and its row is dropped. FirePath: three prompt blocks empty or absent from three ints defaulting to 0, and <people_in_window> is not rendered at all (fire.py:1122). ALL SEVEN now checked: four reach the model (RelevanceGate, FirePath, RegistryToolSource, build_offline_pipeline), three come back EMPTY (both DreamerRuntimes are inert because the note-candidates adaptor declares no tools and store_timeout_seconds' default equals the configured 15.0; LiveAgentRunner's missing arg is a metric sink). The empty results are the sharpest evidence: which four mattered was unknowable in advance, media_join is load-bearing in three of the four, and every answer was derived by hand"
   - "DECIDED 2026-09-17 — option 1, name the slot: a new layer above nora.app INSIDE the nora root package so the contracts can see it (01-boundaries section 6). Probed before recording: the layer holds (lint-imports 0, 6 kept) and the reverse nora.app -> it is correctly refused (1 broken). THREE edits, two found only by probing — the layers list; the 'only app and __main__ read config' contract, whose source_modules is explicit so a new package is unconstrained BY DEFAULT; and EVALS_ALLOWED_NORA_PACKAGES in tests/test_boundaries.py. The probe also established which evals gate binds: lint-imports reported KEPT while evals/ imported the new package (allow_indirect_imports, documented at pyproject.toml:268) and only the boundary TEST caught it. Working name nora.harness is OPEN and collides with two things it replaces"
   - "RUN 2026-09-17, DID NOT REFUTE — the entry point IS a port. relevance_gate (a component, no turn), participation (a turn, no gate), tag (Dispatcher.on_message) and dreamer all go through ONE runner with one Case and one Outcome, held by tests/architecture/test_the_entry_point_is_a_port.py (four pins, all falsified before being trusted). What it cost is the finding: NEITHER of the first two was reachable — RelevanceGate lived only at ParticipationTrigger._gate and FirePath only at ._speak, while every other entry point was already a field on Dependencies. Two fields close that, no new object and no behaviour change, and that they were missing is most of the mechanism behind seven assemblies"

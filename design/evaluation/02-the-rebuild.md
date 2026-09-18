@@ -65,25 +65,32 @@ Then: one function returning Nora, no caller passing collaborators.
 
 **Steps 1-4 and 6 — DONE 2026-09-17. Step 5 is the only one left.**
 
+> **SUPERSEDED IN PART 2026-09-18 by `07-sdk-native`.** Steps 2 and 5 below
+> built a runner, an outcome type and a report renderer that
+> `strands-agents-evals` already ships — 1,037 of 2,268 lines. Step 1 (the one
+> subject) is untouched by that and is the part worth keeping. Read
+> `07-sdk-native` before treating this sequence as the plan.
+
 | step | state |
 |---|---|
-| 1 — the one subject | `nora/subject/` — `obtain(spec)`, 40-field graph, 3+4 tests |
-| 2 — two entry points, one runner | §7 run; did NOT refute. 4 pins, all falsified |
-| 3 — re-home the corpora | 13 files, 149 cases, pinned field-by-field |
+| 1 — the one subject | `nora/subject/` — `obtain(spec)`, 40-field graph, 3+4 tests. **Stands** |
+| 2 — two entry points, one runner | §7 run; did NOT refute. 4 pins, all falsified. **The runner is the SDK's `Experiment`; the entry-point-as-port finding stands** |
+| 3 — re-home the corpora | 13 files, 149 cases, pinned field-by-field. Content stands; the bespoke YAML schema is `Case` data |
 | 4 — the remaining entry points | `tag` and `dreamer` added. 23 cases refused for missing seams, loudly |
-| 5 — the delete | **NOT DONE.** Waits on a live run |
+| 5 — the delete | **DONE 2026-09-18.** 8,218 lines deleted, three files re-homed into `tests/`. See `04-the-convention` §6 |
 | 6 — the convention | `04-the-convention.md` |
+| 7 — the SDK was there all along | `07-sdk-native.md`. The harness half of steps 2 and 5 is to be replaced, not re-derived |
 
-**Why Step 5 is not done, stated as a rule rather than a hesitation.** The new
-layer has never reached a model. Every measurement in this session was taken
-with the provider deliberately unreachable, which proves the fail-closed
-behaviour and proves nothing about agreement. Deleting the only instrument
-that has produced a live number, on the strength of a replacement that has
-not, is this bundle's own finding repeated one level up.
+**Why Step 5 was held, stated as a rule rather than a hesitation.** The new
+layer had never reached a model. Every measurement in the session that wrote
+this was taken with the provider deliberately unreachable, which proves the
+fail-closed behaviour and proves nothing about agreement. Deleting the only
+instrument that had produced a live number, on the strength of a replacement
+that had not, would have been this bundle's own finding repeated one level up.
 
-What Step 5 needs first: one live run of `evals/corpora/relevance_gate.yaml`
-through both layers, and the two accuracy figures compared. If they disagree,
-the disagreement is the next thing to understand — not a reason to keep both.
+It was released by the live run in `06-first-full-run` §8 — and then that run's
+own numbers were withdrawn by adversarial review, so the delete landed on a
+layer whose numbers do not stand. `07-sdk-native` §7 records what survives.
 
 ---
 

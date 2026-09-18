@@ -12,16 +12,24 @@ the evidence.
 
 ## 2. The four things, and nothing else
 
-| | what it is | where it lives |
-|---|---|---|
-| **Case** | input + the expectation it must meet + which entry point it enters at | domain — data, no behaviour, no imports |
-| **Subject** | Nora. Obtained, never built | one function, one caller |
-| **Runner** | takes a case, obtains the subject, drives it, returns an outcome | application |
-| **Outcome** | what happened, in one shape, for a grader to judge | domain |
+> **CORRECTED 2026-09-18 — three of these four already existed.** See
+> `07-sdk-native`. The table below was derived from first principles against a
+> dependency that has shipped `Case`, the runner and the outcome types since
+> before this bundle opened, and which no node in it mentions. The shapes are
+> right; deriving them was the error. The last column is the correction.
+
+| | what it is | where it lives | already shipped by `strands-agents-evals` |
+|---|---|---|---|
+| **Case** | input + the expectation it must meet + which entry point it enters at | domain — data, no behaviour, no imports | `strands_evals.Case` |
+| **Subject** | Nora. Obtained, never built | one function, one caller | **no — this one is ours**, and it is what this bundle actually found |
+| **Runner** | takes a case, obtains the subject, drives it, returns an outcome | application | `Experiment.run_evaluations` |
+| **Outcome** | what happened, in one shape, for a grader to judge | domain | `EvaluationData` / `EvaluationOutput` |
 
 **A suite is a set of cases.** It is not a module, a driver, or a function. If
 adding a suite requires code, the boundary has already leaked — that is the test
-of this design and it is mechanically checkable.
+of this design and it is mechanically checkable. **That rule survives the
+correction unchanged**, and the SDK holds it the same way: a case is `Case`
+data and a suite is a list of them.
 
 ## 3. The DDD shape
 
@@ -57,6 +65,21 @@ model, no `nora.app`. This is where "what a suite IS" lives, and it is small.
 
 **Infrastructure** — store implementations, the model client, reporters, the
 provenance line. Swappable without the domain noticing.
+
+**CORRECTED 2026-09-18.** This layering is sound and mostly is not ours to
+write. `Experiment` is the Application layer and `EvaluationReport` the
+reporter; `Case`, `EvaluationData` and `EvaluationOutput` are the Domain. What
+belongs to this repo is the **Ports** list above — entry point, stores, model,
+clock — because those are seams into *Nora*, and the task function that closes
+them. `07-sdk-native` §2 measures the split: 1,037 of the rebuilt layer's 2,268
+lines re-implement Application and Domain.
+
+One constraint the SDK does impose and this section should carry:
+`EvaluationOutput.test_pass` is a `bool`. `Verdict`'s third state — the judge
+that did not answer — has no field, so it rides in `label` and no aggregation
+may read `test_pass` alone. That is the rule 3 hole (*ERROR is not FAIL and is
+never PASS*) restated at the boundary, and it is the one place a custom grader
+is not optional.
 
 ### 3.1 Why the entry point is a port and not a taxonomy
 
