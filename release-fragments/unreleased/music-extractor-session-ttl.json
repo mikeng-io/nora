@@ -1,0 +1,13 @@
+{
+  "type": "fix",
+  "summary": "Music plays again after Nora has been up for a while. Every track was dying the instant it started — silence, then the queue draining itself — once the process had been running about a day.",
+  "details": [
+    "Nora resolves a YouTube track to a signed CDN address and hands that address to ffmpeg. The resolver is built once when she starts and was then kept for the life of the process; it carries a negotiated YouTube session, and the addresses it hands out are only valid for the session that produced them. After hours of uptime that session was stale and the CDN answered every request '403 Forbidden', so ffmpeg exited before a single second of audio and it looked, from the room, like music had simply stopped working.",
+    "Measured 2026-09-18 on the live deployment: four plays in a row, four immediate failures, no audio. At the same moment and inside the same containers, a freshly built resolver returned a working address for 6 of 6 videos and ffmpeg played it with the exact arguments production uses. Age was the only difference — the resolver in the running process was 21 hours old.",
+    "The resolver is now rebuilt every 15 minutes of use. That bound is measured rather than picked: the shortest cookie in YouTube's session lasts 30 minutes, so the replacement always arrives while the session it depends on is still valid. Restarting Nora is no longer what it takes to get music back."
+  ],
+  "limitations": [
+    "A stream that fails for any reason still advances the queue rather than retrying the track. That is why one stale address did not cost one song but the whole session: each failure moved to the next track, which failed the same way, until the queue was empty. Re-resolving a failed track before advancing is a separate change and is not in this one.",
+    "The rotation is on a timer, not on failure. If a session is rejected before its 15 minutes are up, playback still fails until the next rebuild is due."
+  ]
+}
