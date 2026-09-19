@@ -36,6 +36,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from opentelemetry import trace as _trace_api
+from opentelemetry.sdk.trace import TracerProvider as _SDKTracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from strands_evals import Case
 from strands_evals.evaluators.evaluator import Evaluator
 from strands_evals.types.evaluation import (
@@ -61,6 +65,19 @@ NORA_DELIVERY = "nora.delivery"
 #: (`09-the-backbone-measured.md` §1.1, found while re-running Step 0 against
 #: `relevance_gate`).
 NORA_ADMITTED = "nora.admitted"
+#: `nora.agent.prefill.build_prefill`'s own `nora.prefill.blocks_empty`
+#: attribute (a comma-joined list of block names whose body was empty),
+#: carried through unmapped. `StrandsInMemorySessionMapper` (what
+#: `TracedHandler` uses) drops any span whose `gen_ai.operation.name` is not
+#: `chat`/`execute_tool`/`invoke_agent` — a Nora plumbing span like
+#: `agent.prefill` never survives into a `Session`, mapped or not. So S4
+#: ("the blocks she needs were rendered non-empty",
+#: `10-the-scenario-map.md` §3) reads the raw span directly via
+#: `_prefill_capture()` rather than through the SDK's trajectory machinery —
+#: the property in question is what `build_prefill` assembled, not anything
+#: shaped like a model turn. Empty string for every entry point that never
+#: calls `build_prefill` (`gate`, `dreamer`).
+NORA_BLOCKS_EMPTY = "nora.blocks_empty"
 
 #: The three verdicts, carried in `EvaluationOutput.label`.
 #:
@@ -88,6 +105,45 @@ def scrub(text: str, secret: str) -> str:
     before any text leaves the task.
     """
     return text.replace(secret, "<dsn>") if secret else text
+
+
+_prefill_exporter: InMemorySpanExporter | None = None
+
+
+def _prefill_capture() -> InMemorySpanExporter:
+    """The in-memory exporter `_drive()` reads `agent.prefill` off.
+
+    Independent of `strands_evals.TracedHandler`/`StrandsEvalsTelemetry` on
+    purpose: those exist to produce a `Session`, and a Nora plumbing span
+    (`nora.obs.tracing.span("agent.prefill", ...)`) is dropped by
+    `StrandsInMemorySessionMapper` before a `Session` ever sees it (it isn't
+    `chat`/`execute_tool`/`invoke_agent`). This reads the RAW span instead.
+
+    OTel's global `TracerProvider` may be set only once per process
+    (`set_tracer_provider` no-ops with a warning on a second real one) — so
+    if a caller ALSO wants `TracedHandler`'s `Session` in the same process,
+    whichever sets the provider first wins and the other's signal is silently
+    absent. Not a problem `nora_task` has today (it never uses
+    `TracedHandler`), but a real constraint on ever combining the two.
+    """
+    global _prefill_exporter
+    if _prefill_exporter is None:
+        _prefill_exporter = InMemorySpanExporter()
+        provider = _trace_api.get_tracer_provider()
+        if not isinstance(provider, _SDKTracerProvider):
+            provider = _SDKTracerProvider()
+            _trace_api.set_tracer_provider(provider)
+        provider.add_span_processor(SimpleSpanProcessor(_prefill_exporter))
+    return _prefill_exporter
+
+
+def _blocks_empty(exporter: InMemorySpanExporter) -> str:
+    """`nora.prefill.blocks_empty` off the `agent.prefill` span, or `""` if
+    the entry point never called `build_prefill` (`gate`, `dreamer`)."""
+    for finished in exporter.get_finished_spans():
+        if finished.name == "agent.prefill":
+            return str((finished.attributes or {}).get("nora.prefill.blocks_empty", ""))
+    return ""
 
 
 @dataclass(frozen=True)
@@ -138,7 +194,10 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
         written = await know(
             subject, _knowledge({}), leave_room_for_arrival=port.delivers_input,
         )
+        exporter = _prefill_capture()
+        exporter.clear()
         outcome = await port.drive(subject, _as_nora_case(case, spec), now_ms=written.now_ms)
+        blocks_empty = _blocks_empty(exporter)
         return {
             "output": "\n".join(outcome.said),
             "environment_state": [
@@ -147,6 +206,7 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                 EnvironmentState(name=NORA_SAID, state=len(outcome.said)),
                 EnvironmentState(name=NORA_DELIVERY, state=outcome.delivery),
                 EnvironmentState(name=NORA_ADMITTED, state=outcome.admitted),
+                EnvironmentState(name=NORA_BLOCKS_EMPTY, state=blocks_empty),
             ],
         }
     finally:
@@ -205,6 +265,7 @@ def nora_task(spec: Spec):
                     EnvironmentState(name=NORA_SAID, state=0),
                     EnvironmentState(name=NORA_DELIVERY, state=""),
                     EnvironmentState(name=NORA_ADMITTED, state=None),
+                    EnvironmentState(name=NORA_BLOCKS_EMPTY, state=""),
                 ],
             }
 
@@ -271,6 +332,48 @@ class AbsenceGrader(Evaluator):
     @staticmethod
     def _out(verdict: str, score: float, reason: str) -> EvaluationOutput:
         # `test_pass` is set for the field's sake only. Read `label`.
+        return EvaluationOutput(
+            score=score, test_pass=(verdict == PASS), reason=reason, label=verdict,
+        )
+
+
+class ContextGrader(Evaluator):
+    """S4 — *the blocks she needs were rendered non-empty*
+    (`10-the-scenario-map.md` §3). Deterministic: no model call, reads only
+    what `build_prefill` assembled, off `NORA_BLOCKS_EMPTY`.
+
+    `Case.metadata["must_render"]` names the block(s) THIS case seeded data
+    for and therefore expects non-empty — `_BLOCKS`' own names in
+    `nora/agent/prefill.py`: `self_card`, `peer_card`, `peer_history`,
+    `people_in_window`, `notes`, `loop_decisions`, `standing`,
+    `group_transcript`. A case naming none is ungradable by this grader, not
+    a silent pass — the same rule `AbsenceGrader` follows for an `expect` it
+    does not recognise.
+    """
+
+    def evaluate(self, data: EvaluationData) -> list[EvaluationOutput]:
+        error = state_of(data, NORA_ERROR)
+        if error:
+            return [self._out(ERROR, 0.0, f"the case did not run: {error}")]
+
+        must_render = tuple((data.metadata or {}).get("must_render", ()))
+        if not must_render:
+            return [self._out(ERROR, 0.0, "case names no `must_render` block to check")]
+
+        empty_raw = state_of(data, NORA_BLOCKS_EMPTY) or ""
+        empty = {name for name in str(empty_raw).split(",") if name}
+        missing = [name for name in must_render if name in empty]
+        if missing:
+            return [self._out(
+                FAIL, 0.0, f"expected non-empty and got empty: {', '.join(missing)}",
+            )]
+        return [self._out(PASS, 1.0, f"all of {must_render} rendered non-empty")]
+
+    async def evaluate_async(self, data: EvaluationData) -> list[EvaluationOutput]:
+        return self.evaluate(data)
+
+    @staticmethod
+    def _out(verdict: str, score: float, reason: str) -> EvaluationOutput:
         return EvaluationOutput(
             score=score, test_pass=(verdict == PASS), reason=reason, label=verdict,
         )

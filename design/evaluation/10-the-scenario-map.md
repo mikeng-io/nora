@@ -154,3 +154,29 @@ and the corpora were tracking reality all along.
 
 The classification in §2 was done by hand over one pass of the issue list, and
 it is the weakest thing here.
+
+## 9. S4 — built, 2026-09-19
+
+`evals/backbone.py` gained `NORA_BLOCKS_EMPTY` and `ContextGrader`. It reads
+`nora.agent.prefill.build_prefill`'s own `nora.prefill.blocks_empty` span
+attribute — already computed and annotated in production, not a new
+instrument — via a small independent OTel exporter (`_prefill_capture`),
+because `StrandsInMemorySessionMapper` (what `TracedHandler` would give you)
+drops any span that is not `chat`/`execute_tool`/`invoke_agent`, and
+`agent.prefill` is Nora's own plumbing span, not a model-invoke one.
+
+Verified against the real `build_prefill()` directly (a `TagContext`, no
+DB/network — it is a pure function): a seeded-empty block reads empty, a
+seeded-non-empty one does not. `tests/unit/test_eval_backbone.py` pins
+`ContextGrader`'s grading logic in isolation.
+
+**One inherited claim corrected along the way**: `03-step0-results.md`'s
+"`<people_in_window>` is not rendered at all (`fire.py:1122`)" is stale —
+that line is a threshold guard today (`_window_speakers`), and
+`_people_in_window_block`/`FirePath._recall_people` both cite issue #210 as
+already fixed. Not re-litigated here since `10-the-scenario-map.md` §2 never
+repeated the claim, only `03-step0-results.md` did.
+
+Not done: actual `must_render` cases (hand-written `Case` objects per entry
+point, per `GOAL-2-backbone.md`'s "no corpus format work" rule) — the
+grader and signal exist, the cases are the next piece.
