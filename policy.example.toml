@@ -42,10 +42,10 @@ persons = ["miles"]        # [] means Nora accepts no DMs at all.
 #      discord   "<guild_id>/<channel_id>" — the adapter flattens the hierarchy
 #      whatsapp  group JID, ...@g.us
 
-#    `workspace` is the SOCIAL UNIT a room belongs to (DEC-105) — the same
+#    `unit` is the SOCIAL UNIT a room belongs to (DEC-105) — the same
 #    people reachable in more than one place. It is the boundary `send_to`
 #    may never cross: "tell the Signal lot" from Discord resolves to the
-#    Signal room of THIS workspace and nothing else. A workspace holds at
+#    Signal room of THIS unit and nothing else. A unit holds at
 #    most one room per platform, which is what makes naming the platform a
 #    usable address; two would refuse rather than guess. Defaults to "nora",
 #    so a single-group deployment needs nothing here.
@@ -53,7 +53,7 @@ persons = ["miles"]        # [] means Nora accepts no DMs at all.
 [[conversations]]
 platform  = "signal"
 id        = "Q2hhdEdyb3VwSWRFeGFtcGxlQmFzZTY0PT0="
-workspace = "family"         # paired with the Discord room below
+unit = "family"         # paired with the Discord room below
 label     = "Family"          # for humans reading this file. NEVER matched on —
                              # group names are not unique and are trivially
                              # changed by anyone in the group.
@@ -74,11 +74,11 @@ tools    = []                # MCP servers this room may use, e.g. ["pulse"].
                              # roster, she still refuses. Trust overrules what a roster
                              # says, never the absence of one.
 # home_room = true             # (default false) THIS room is where Nora stands when she acts
-                             # for the workspace with nobody asking (design/dreamer-agent-loop/
+                             # for the unit with nobody asking (design/dreamer-agent-loop/
                              # 39 D2): the proactive adaptor's roster-gated reads (`where_is`,
                              # `about`, `ask_memory`, `group_members`) resolve through this
                              # room, its `location` flag applies exactly as on a tag, and the
-                             # rows it writes fire into this room. Exactly one per workspace;
+                             # rows it writes fire into this room. Exactly one per unit;
                              # a second is a startup error. No home room, no proactive pass.
 # proactive = true             # (default false) a `kind="proactive"` row may FIRE here (39
                              # D5). Those rows are owned by Nora's own ai_peer id, which is
@@ -100,7 +100,7 @@ tools    = []                # MCP servers this room may use, e.g. ["pulse"].
 [[conversations]]
 platform  = "discord"
 id        = "100000000000000203/100000000000000204"
-workspace = "family"         # the same humans as the Signal group above
+unit = "family"         # the same humans as the Signal group above
 label     = "Zone 42 #general"
 persons  = ["miles", "ada"]
 # voice = true               # (optional, default false) EVERY VOICE CHANNEL IN THIS
@@ -113,7 +113,7 @@ persons  = ["miles", "ada"]
                              # (design/voice-channel/07 §12.2, reversed 2026-09-17). Phase 1
                              # allowlisted one voice channel and gave it its own id; a real
                              # server has 10+ voice channels and gains more, so that list
-                             # could not be kept true — and N voice rooms in one workspace
+                             # could not be kept true — and N voice rooms in one unit
                              # would breach DEC-105 N times over. The GUILD is matched; the
                              # channel is recorded as provenance only.
                              #
@@ -149,7 +149,7 @@ description = "a games room; 2200 is when people log on, not an appointment"
 # [[conversations]]
 # platform  = "whatsapp"
 # id        = "176569000000000000@g.us"
-# workspace = "family"         # same humans again — the workspace is the unit
+# unit = "family"         # same humans again — the unit is the boundary
 # persons  = ["miles", "ada"]
 # tools/location stay omitted here: deny-by-default, same as every new room.
 

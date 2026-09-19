@@ -16,7 +16,7 @@ the difference is the whole design of this file. The first cut asserted that
 every declared stage was one of the four this branch added, which would have
 gone red the moment somebody documented one of the ten other fail-soft stages
 that have exactly the same property (`fire_peer_card`, `fire_notes`,
-`fire_standing`, `fire_workspace`, `fire_context`, `tagger_card`, `self_card`,
+`fire_standing`, `fire_unit`, `fire_context`, `tagger_card`, `self_card`,
 `proactive_self_card`, `proactive_standing`, `fire_feedback`). A gate that
 forbids the fix for the lesson it cites is inverted, and an Opus review caught
 it before it landed. What the reverse check asks instead is that a declared

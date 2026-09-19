@@ -15,12 +15,12 @@ Design detail lives in `design/dreamer-agent-loop/33-note-dreamer-schedule.md` (
 
 | Layer | State |
 |---|---|
-| **Spec** | `2026-08-21-note-tier-design.md` (accepted) — a note is `(anchor, uncertainty, closing condition, body)`, workspace-scoped, index injected on every tag |
+| **Spec** | `2026-08-21-note-tier-design.md` (accepted) — a note is `(anchor, uncertainty, closing condition, body)`, unit-scoped, index injected on every tag |
 | **Tools** | `note_create` / `note_update` / `note_read` / `note_search` exist on the tag path, gated by R-55 (read-before-write latch) |
 | **Cold start** | Measured 2026-08-27: **one** note-tool call in the tier's life (a `note_search` miss). Zero creates, zero updates, ever. The create path is not broken — it has never been called |
 | **Curator** | Built 2026-08-28 — merge + retire only. "You are NOT writing anything." |
 | **Revisitor** | Built 2026-08-28 — retirement half only. Reaches a person only via `schedule_reminder` |
-| **Candidate table** | `note_candidate` is a **miss cache** (`(workspace, probe)`, occurrence count) — the wrong shape for a create queue |
+| **Candidate table** | `note_candidate` is a **miss cache** (`(unit, probe)`, occurrence count) — the wrong shape for a create queue |
 | **Scheduling** | `dream_loop` runs a flat list; note adaptors inherit the shared `[language]` fire condition (30 min of quiet) |
 | **Discharge** | Event promotion exists in the spec (§7.3) but is not built. No general discharge pipeline exists |
 
@@ -44,7 +44,7 @@ No ordering, no cadence, no per-adaptor rhythm. Note work does not need 5-minute
 - The discriminator survives, widened — it still stops the tier swallowing facts/memory/standing.
 
 ### C2 — A create path: the `note-candidates` adaptor (fact tier's Phase A shape)
-- Scope-keyed, watermarked, tool-free — reads a room's message batch **plus the workspace's note index**.
+- Scope-keyed, watermarked, tool-free — reads a room's message batch **plus the unit's note index**.
 - Proposes a **full note** (title, description, body, anchor, closing condition, message_ids).
 - Read-only awareness only (see C2.1) — never delivery verbs
 - **Code decides** create vs update vs nothing (dedupe against the standing index; update only if the proposal adds something).
@@ -59,7 +59,7 @@ No ordering, no cadence, no per-adaptor rhythm. Note work does not need 5-minute
 ### C3 — `note_candidate` table gains a create shape
 - Add `kind` (`miss` | `create`); existing rows are all `miss`, no backfill.
 - Create candidates carry the full proposal + attribution + status (`pending`/`created`/`refused`) + attempts.
-- Miss cache keeps its `(workspace, probe)` key; create candidates key on `(workspace, title)`.
+- Miss cache keeps its `(unit, probe)` key; create candidates key on `(unit, title)`.
 
 ### C4 — Per-adaptor schedule (following the fact tier's cadence change)
 | Adaptor | Cadence | Mechanism |

@@ -95,7 +95,7 @@ superseded_at / superseded_by   ← transaction time
 An entity-to-entity edge, bitemporal, with a warrant vocabulary and an epistemic
 status. The store-choice spec verified the correspondence to a mature graph
 engine's own edge type — *"a verified correspondence rather than a hope"* — and
-found its scoping key maps 1:1 onto `workspace`.
+found its scoping key maps 1:1 onto `unit`.
 
 **That is a knowledge graph.** It is in the schema, on `master`, today.
 
@@ -178,7 +178,7 @@ The same section called hybrid retrieval *"inert at this tier's expected size."*
 That was a size argument, and the size assumption has been challenged: **notes
 are bounded by design** — each carries a closing condition, so a large notebook
 is a curator defect — while **facts are unbounded by design**, each carrying a
-warrant and no reason to close. A thousand-plus edges in one workspace is the
+warrant and no reason to close. A thousand-plus edges in one unit is the
 expected steady state, not a stretch.
 
 So the derivable rule, and it is why the two tiers need different treatment:

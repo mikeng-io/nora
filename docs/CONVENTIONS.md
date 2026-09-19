@@ -460,7 +460,7 @@ instances landed in one night, each inside code written to honour it:
 
 - **A wiring gap counted as a model fault.** The revisitor's `_asked` map was a
   bare attribute; `dream_loop`'s running lock is per-`(adaptor, key)` and the
-  live `policy.toml` has two workspaces, so a sibling tick wiped the map
+  live `policy.toml` has two units, so a sibling tick wiped the map
   mid-flight and a grounded verdict was dropped as `reason="unknown_note"` — a
   model answering about a note it was never shown. It was a lock scope.
   (`b661f83` F3, branch `worktree-note-revisitor`.)

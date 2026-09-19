@@ -536,7 +536,7 @@ class EngagementPipeline:
                 store=wiring.store,
             store_verdict=wiring.store_verdict,
             notes_sink=wiring.notes_sink,
-            workspace_of=wiring.workspace_of,
+            unit_of=wiring.unit_of,
                 client=wiring.client,
                 objective=wiring.objective,
                 metrics=self._metrics,

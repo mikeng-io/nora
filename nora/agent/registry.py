@@ -166,8 +166,8 @@ class ToolRegistry:
         reminder_caps: ReminderCaps | None = None,
         events: EventsCollaborator | None = None,
         notes: NoteCollaborator | None = None,
-        note_workspace: Callable[[str, str], str | None] | None = None,
-        workspace_for: Callable[[str, str], str | None] | None = None,
+        note_unit: Callable[[str, str], str | None] | None = None,
+        unit_for: Callable[[str, str], str | None] | None = None,
         compute_backend: ComputeBackend | None = None,
         compute_jobs: ComputeJobStore | None = None,
         tool_call_log_store: ToolCallLogStore | None = None,
@@ -322,26 +322,26 @@ class ToolRegistry:
         # this None and the six event tools answer `unavailable` (R-5).
         self._events = events
         # The note tier's pair (note-tier spec §5.2/§6), wired the identical
-        # honest way `events` is — no store, no workspace, or neither, and the
+        # honest way `events` is — no store, no unit, or neither, and the
         # four note verbs answer `unavailable` (R-5) rather than crash or
         # report an unconsulted notebook as an empty one.
         #
-        # `note_workspace` is a registry field because the RESOLVER is
-        # process-lifetime; the workspace it returns is not. It was first
+        # `note_unit` is a registry field because the RESOLVER is
+        # process-lifetime; the unit it returns is not. It was first
         # written as a plain `str` on the reasoning that the seam is fixed by
-        # the deployment — false the moment a deployment has two workspaces,
+        # the deployment — false the moment a deployment has two units,
         # and this one has had two all along (`ridgeline` and `friends`,
         # `policy.toml`, deliberately never paired). A constant would hand one
-        # room the other's notebook, which is a cross-workspace read AND write
+        # room the other's notebook, which is a cross-unit read AND write
         # past the boundary spec §3 and DEC-105/R-49 both rest on. It takes
         # `(platform, conversation_id)` and may answer `None`.
         self._notes = notes
-        self._note_workspace = note_workspace
-        # ONE resolver for every workspace-keyed tool. `note_workspace` is its
-        # older name and still works; `workspace_for` is what a tier outside
+        self._note_unit = note_unit
+        # ONE resolver for every unit-keyed tool. `note_unit` is its
+        # older name and still works; `unit_for` is what a tier outside
         # the note tier passes, so it does not have to read the NOTE tier's
         # parameter and thereby depend on the note tier being wired.
-        self._workspace_for = workspace_for
+        self._unit_for = unit_for
         # `make_artifact`'s pair (Nora Compute spec §4), wired the same honest
         # way `reminders` is: NOT default-constructed — there is no backendless
         # or storeless default — so every composition that has not wired Nora
@@ -706,7 +706,7 @@ class ToolRegistry:
         fire_turn: bool = False,
         location_trusted: bool = False,
         links: LinkCarry | None = None,
-        supplied_workspace: str | None = None,
+        supplied_unit: str | None = None,
         dream_adaptor: str = "",
         online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
         origin_rooms: Mapping[str, OriginRoom] | None = None,
@@ -746,13 +746,13 @@ class ToolRegistry:
         `nora.engagement.stages.deliver.build`'s `DeliveryHandle`, which is also
         where the `Deliverer` that consumes it is built.
 
-        `supplied_workspace` is per-CALL for the same reason, from exactly one
-        caller: `nora.agent.dreamer.RegistryToolSource`, whose workspace-keyed
-        adaptors ARE keyed on the workspace and must SUPPLY it rather than let
+        `supplied_unit` is per-CALL for the same reason, from exactly one
+        caller: `nora.agent.dreamer.RegistryToolSource`, whose unit-keyed
+        adaptors ARE keyed on the unit and must SUPPLY it rather than let
         the tool layer derive it from a room they do not have
         (design/dreamer-agent-loop/32 §3.4, `08-state.md` §10). It must not
-        become a registry field either: a workspace fixed for the life of the
-        process is the cross-workspace read `note_workspace`'s own comment
+        become a registry field either: a unit fixed for the life of the
+        process is the cross-unit read `note_unit`'s own comment
         (above, in `__init__`) exists to prevent. Every tag-path caller leaves
         it None and the resolver answers as before.
 
@@ -762,7 +762,7 @@ class ToolRegistry:
         every tag and every fire turn. `remind` reads it to stamp a proactive
         row in code rather than from a tagger it does not have.
 
-        `online_scope` is per-CALL for the same reason `supplied_workspace`
+        `online_scope` is per-CALL for the same reason `supplied_unit`
         is, from that same caller: `RegistryToolSource` supplies it only for
         a home-room decide turn, resolving `online_now`'s input domain to the
         home roster unioned with the note's established-in subjects
@@ -796,9 +796,9 @@ class ToolRegistry:
             ai_peer=self._ai_peer, fire_turn=fire_turn, dream_adaptor=dream_adaptor,
             reminders=self._reminders, reminder_caps=self._caps, clock=self._clock,
             events=self._events,
-            notes=self._notes, note_workspace=self._note_workspace,
-            workspace_for=self._workspace_for,
-            supplied_workspace=supplied_workspace,
+            notes=self._notes, note_unit=self._note_unit,
+            unit_for=self._unit_for,
+            supplied_unit=supplied_unit,
             links=links,
             relay=self._relay,
             versions=self._versions,
@@ -833,7 +833,7 @@ class ToolRegistry:
         allowed_mcp: frozenset[str] = frozenset(),
         location_trusted: bool = False,
         links: LinkCarry | None = None,
-        supplied_workspace: str | None = None,
+        supplied_unit: str | None = None,
         dream_adaptor: str = "",
         online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
         origin_rooms: Mapping[str, OriginRoom] | None = None,
@@ -854,8 +854,8 @@ class ToolRegistry:
         codebase has no per-conversation gating for them today, and this
         change does not add one.
 
-        `supplied_workspace` passes straight through to `specs()` — see that
-        method's docstring; it exists for the Dreamer's workspace-keyed build
+        `supplied_unit` passes straight through to `specs()` — see that
+        method's docstring; it exists for the Dreamer's unit-keyed build
         and every other caller leaves it None. `online_scope` is the same
         pass-through, for the same caller's home-room decide turn."""
         specs = self.specs(
@@ -864,7 +864,7 @@ class ToolRegistry:
             room=room, question=question, context_window=context_window,
             transcript=transcript,
             fire_turn=fire_turn, location_trusted=location_trusted, links=links,
-            supplied_workspace=supplied_workspace, dream_adaptor=dream_adaptor,
+            supplied_unit=supplied_unit, dream_adaptor=dream_adaptor,
             online_scope=online_scope, origin_rooms=origin_rooms,
         )
         tools = [adapt(spec) for spec in specs]

@@ -109,8 +109,8 @@ async def test_a_second_fire_replaces_the_first(clock):
 
 
 async def test_two_keys_of_one_adaptor_do_not_share_a_clock(clock):
-    """Every workspace runs the tier on its own schedule. One shared row would
-    make a quiet workspace's fire satisfy a busy one's slot."""
+    """Every unit runs the tier on its own schedule. One shared row would
+    make a quiet unit's fire satisfy a busy one's slot."""
     await clock.record_fire(
         adaptor_name="fact-adjudication", key="friends", at_ms=NOW)
     assert await clock.last_fired(
@@ -119,8 +119,8 @@ async def test_two_keys_of_one_adaptor_do_not_share_a_clock(clock):
 
 async def test_two_adaptors_on_one_key_do_not_share_a_clock(clock):
     """The phase offset depends on this. `fact-adjudication` and
-    `fact-entity-resolution` run over the SAME workspace an hour apart, so a
-    clock keyed on the workspace alone would let the first one's fire consume
+    `fact-entity-resolution` run over the SAME unit an hour apart, so a
+    clock keyed on the unit alone would let the first one's fire consume
     the second one's slot — the two would collapse back onto one pass, which
     is exactly the concurrency the offsets exist to separate."""
     await clock.record_fire(

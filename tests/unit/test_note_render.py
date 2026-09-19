@@ -31,7 +31,7 @@ def _note(
     **kwargs,
 ) -> Note:
     return Note(
-        id=note_id, workspace="nora", title=title, description=description,
+        id=note_id, unit="nora", title=title, description=description,
         uncertainty=uncertainty, closing_condition=closing_condition,
         established_in="g1", created_at=1, head_revision_id=f"{note_id}-r1",
         anchor_date=20260909, **kwargs,
@@ -69,8 +69,8 @@ def test_the_body_is_not_in_the_index():
 
 def test_the_note_does_not_claim_the_room_produced_this():
     """`ROOM_BLOCK_NOTE` says «distilled from this room's own messages», which
-    is FALSE for a workspace-keyed block — a note may have been established in
-    a different room of the same workspace (`Note.established_in` is a routing
+    is FALSE for a unit-keyed block — a note may have been established in
+    a different room of the same unit (`Note.established_in` is a routing
     key, never a filter). It would be false in the one place the model is being
     asked to trust a sentence."""
     assert "this room's own messages" not in NOTES_BLOCK_NOTE

@@ -92,7 +92,7 @@ answers two findings at once:
 
 - **A false positive is now survivable.** Under suppression, one message from
   one member removed a true row from every future turn, for everyone in the
-  workspace, with no TTL (§7), no clear path while the Dreamer is off, and
+  unit, with no TTL (§7), no clear path while the Dreamer is off, and
   `already_disputed` making a second member's honest dispute a no-op. That is a
   **memory denial-of-service available to anyone in the room**, and
   [30](30-review-response.md) §2.3 says abuse is a design input. Marking has no
@@ -128,7 +128,7 @@ rendered_claim(
   kind             text        not null,   -- 'fact' | 'lexeme'
   row_key          text        not null,   -- see §3.0
   surface          text        not null,   -- fact.subject_id / lexeme.canonical_form
-  workspace        text,                   -- facts only; NULL for a lexeme (§3.0)
+  unit        text,                   -- facts only; NULL for a lexeme (§3.0)
   last_tag_id      text        not null,   -- provenance, not a key
   last_rendered_at timestamptz not null,
   primary key (conversation_id, kind, row_key)
@@ -159,10 +159,10 @@ Three consequences, all of them work, none of them optional:
 2. **The lexeme render site must be able to name its rows.** `RoomLexeme` gains
    its key, or the ledger write moves up a level to where `RoomLanguage` holds
    `scope_id`. Either way this is a change *before* recognition, not during it.
-3. **Facts are workspace-keyed; lexemes are conversation-keyed.** `fact` is
-   scoped on `workspace`, `room_lexeme` on `scope_id`, and `scope_id` **is** the
+3. **Facts are unit-keyed; lexemes are conversation-keyed.** `fact` is
+   scoped on `unit`, `room_lexeme` on `scope_id`, and `scope_id` **is** the
    conversation id. The ledger is conversation-keyed because that is the axis a
-   message arrives on; `workspace` rides along on fact rows so the cross-room
+   message arrives on; `unit` rides along on fact rows so the cross-room
    consequence in §6.1 is expressible rather than latent.
 
 ### 3.1 Retention
@@ -320,7 +320,7 @@ and a correct answer is compatible with any cost.
 | tier | what puts a row in scope | effect |
 |---|---|---|
 | **direct** | rendered in this conversation inside the window | **marked disputed**, priority adjudication |
-| **latent** | standing in this workspace, surface-matched, not recently rendered | a **priority candidate only**; the row is untouched |
+| **latent** | standing in this unit, surface-matched, not recently rendered | a **priority candidate only**; the row is untouched |
 
 The cut is the step's own wording. *"A claim Nora just rendered"* is the thing a
 member can be reacting to; a row she has never said is a row nobody knows she
@@ -500,10 +500,10 @@ under the lock re-enumerates once, then gives up and counts.
 
 ### 6.1 The cross-room consequence, stated
 
-A fact is **workspace**-scoped, so a dispute raised in room A marks a row that
-renders in room B of the same workspace, where nobody said anything. That is
+A fact is **unit**-scoped, so a dispute raised in room A marks a row that
+renders in room B of the same unit, where nobody said anything. That is
 consistent with [19](19-between-tiers.md) §6 and `fact_render`'s own note — a
-fact *"may have been established in a different room of the same workspace"* —
+fact *"may have been established in a different room of the same unit"* —
 but it is a blast-radius property, so it is stated rather than left to be
 discovered. A lexeme is conversation-scoped and does not cross.
 

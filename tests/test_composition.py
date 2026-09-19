@@ -30,10 +30,10 @@ ROOT = Path(__file__).resolve().parents[1]
 _HOME_POLICY = (
     'default = "deny"\n'
     '[[conversations]]\nplatform = "signal"\nid = "g1"\npersons = "*"\n'
-    'workspace = "friends"\nlabel = "Friends"\nhome_room = true\nproactive = true\n'
+    'unit = "friends"\nlabel = "Friends"\nhome_room = true\nproactive = true\n'
     'location = true\n'
     '[[conversations]]\nplatform = "signal"\nid = "g2"\npersons = "*"\n'
-    'workspace = "wedding"\nlabel = "Wedding"\n'
+    'unit = "wedding"\nlabel = "Wedding"\n'
 )
 
 
@@ -1010,27 +1010,27 @@ async def test_every_wired_adaptor_stays_inside_the_read_only_ceiling(cfg, tmp_p
         ), adaptor.name
 
 
-async def test_workspace_scopes_are_the_allowlists_workspaces_deduplicated(cfg):
-    """Two rooms of one workspace are ONE unit of work, not two — which is the
-    whole reason a workspace-keyed adaptor could not ride the per-scope
+async def test_unit_scopes_are_the_allowlists_units_deduplicated(cfg):
+    """Two rooms of one unit are ONE unit of work, not two — which is the
+    whole reason a unit-keyed adaptor could not ride the per-scope
     schedule, and the reason this closure exists beside `language_scopes`.
 
     Sorted, so the tick order is stable between runs of the same build; a set
-    would make «did adaptor X run for workspace Y this tick» unanswerable from
+    would make «did adaptor X run for unit Y this tick» unanswerable from
     a log.
 
     Asserted against the loaded allowlist rather than a hand-built one, so it
-    fails if `Conversation.workspace`'s default ever stops being honoured."""
+    fails if `Conversation.unit`'s default ever stops being honoured."""
     deps = await build_dependencies(cfg)
 
-    workspaces = deps.workspace_scopes()
+    units = deps.unit_scopes()
 
-    assert workspaces == tuple(sorted(set(workspaces)))
-    assert workspaces, "a deployment with allowed conversations has a workspace"
+    assert units == tuple(sorted(set(units)))
+    assert units, "a deployment with allowed conversations has a unit"
     # NARROWER than the per-scope population, or the distinction this closure
     # exists for would be untestable here: DEC-105 defaults every conversation
-    # to one workspace, so several rooms collapse to one key.
-    assert len(workspaces) <= len(deps.language_scopes())
+    # to one unit, so several rooms collapse to one key.
+    assert len(units) <= len(deps.language_scopes())
 
 
 
@@ -1177,11 +1177,11 @@ async def test_all_three_gates_on_builds_the_curator(cfg):
     curator = next(
         a for a in deps.dream_adaptors if a.name == "note-curation"
     )
-    # Workspace-keyed and watermark-free: the notebook is workspace-scoped, and
+    # Unit-keyed and watermark-free: the notebook is unit-scoped, and
     # the questions it asks (what collides, what has expired, what is due) have
     # no "since when" — a duplicate is a duplicate however long it has been
     # one.
-    assert curator.key_kind == "workspace"
+    assert curator.key_kind == "unit"
     assert curator.uses_watermark is False
     assert curator.tools == frozenset(), "the curator has nothing to look up"
     assert curator.objective == "note-curation"
@@ -1319,8 +1319,8 @@ async def test_all_three_gates_on_builds_note_candidates(cfg):
     assert schedule.min_interval_seconds == 3600, "hourly (design 33 §5)"
 
 
-async def test_note_candidates_builds_its_own_workspace_resolver(cfg):
-    """`workspace_for` is built fresh under the notes gate rather than reused
+async def test_note_candidates_builds_its_own_unit_resolver(cfg):
+    """`unit_for` is built fresh under the notes gate rather than reused
     from another tier's block — this must not depend on any other tier having
     run at all."""
     deps = await build_dependencies(override_config(cfg, {
@@ -1537,7 +1537,7 @@ async def test_the_culture_adaptor_is_wired_with_its_grant_and_its_OWN_room(
     every counter stays green.
 
     `home_rooms` is asserted NOT to be the resolution path: culture is
-    scope-keyed and `DreamerRuntime.run` supplies `workspace=None` for it, so a
+    scope-keyed and `DreamerRuntime.run` supplies `unit=None` for it, so a
     resolution through `home_rooms` would look up `""` and find nothing — which
     is exactly the branch this change replaces."""
     from nora.agent.dreamer import culture_grant
@@ -1556,7 +1556,7 @@ async def test_the_culture_adaptor_is_wired_with_its_grant_and_its_OWN_room(
     assert set(source._scope_rooms) == {"g1", "g2"}
     room = source._scope_rooms["g1"]
     assert (room.platform, room.conversation_id) == ("signal", "g1")
-    assert room.location_trusted is True and room.workspace == "friends"
+    assert room.location_trusted is True and room.unit == "friends"
     assert "g1" not in source._home_rooms
 
 
@@ -1594,7 +1594,7 @@ async def test_the_granted_verbs_are_actually_BUILT_for_a_culture_key(cfg, tmp_p
     source._registry.build = _spy
     try:
         built = source.build(
-            key="g1", names=frozenset(culture.tools), workspace=None,
+            key="g1", names=frozenset(culture.tools), unit=None,
             adaptor="culture", grant=deps.dreamer_runtime.grant_for("culture"),
         )
     finally:
@@ -1610,7 +1610,7 @@ async def test_the_granted_verbs_are_actually_BUILT_for_a_culture_key(cfg, tmp_p
     assert room._roster_source is not None, "no roster: every verb is unavailable"
     assert captured["conversation_id"] == "g1"
     assert captured["location_trusted"] is True
-    assert captured["supplied_workspace"] is None
+    assert captured["supplied_unit"] is None
 
 
 async def test_no_home_room_wires_no_proactive_adaptor(cfg):

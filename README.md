@@ -115,11 +115,11 @@ compute job, a relay, and two that the operator grants per room:
   **Relevance Gate** (design 36, `[relevance_gate]`) — a cheap model that
   decides whether the room is asking before a full turn is spent.
 - **proactive** (design/dreamer-agent-loop/39, DEC-162): the Dreamer's
-  proactive adaptor reads a workspace's open notes, each room's standing and
+  proactive adaptor reads a unit's open notes, each room's standing and
   its own past decisions, and may set ITSELF a reminder for a chosen hour; at
   that hour a fire turn reads the room again and speaks — or declines, which
   is recorded as `silent`, a success. Two per-room flags in `policy.toml`:
-  `home_room = true` names the one room of a workspace she stands in (her
+  `home_room = true` names the one room of a unit she stands in (her
   roster-gated reads resolve through it), `proactive = true` lets such a row
   fire there. No home room, no proactive pass.
 
@@ -177,7 +177,7 @@ Notable knobs:
 
 Who may talk to her, and where, lives in `policy.toml` (see
 `policy.example.toml`): deny-by-default, one `[[conversations]]` block per room,
-each with its `persons`, its `workspace` (the social unit a room belongs to —
+each with its `persons`, its `unit` (the social unit a room belongs to —
 rooms sharing one are the same people reachable in more than one place, and
 notes and relays are scoped to it), and the per-room grants: `location` (may
 `where_is` disclose here), `relevance_gate`, `participation`, `home_room` and

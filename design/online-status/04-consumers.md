@@ -13,7 +13,7 @@ edges:
 ## Primary consumer — the proactive decide turn
 
 The failure that started this (#248, filed 2026-09-15): the proactive
-adaptor read a friends-workspace note that said "Blake sick, wants the
+adaptor read a friends-unit note that said "Blake sick, wants the
 night off" and spoke an answer into the Signal home room — while the group
 was mid-game in Discord. The note was born in Zone 42
 (`note.established_in`, verified in the DB), the delivery used the home
@@ -44,7 +44,7 @@ other. The proactive turn gets the tool through the same grant machinery
 that already hands it `note_read` — eligibility does not require a new
 occasion, and `verify_tool_subsets` must stay green with the tool granted
 to proactive but NOT (in v1) to the Dreamer background loops
-(`WORKSPACE_SAFE_TOOLS` eligibility is not a grant — same rule as
+(`UNIT_SAFE_TOOLS` eligibility is not a grant — same rule as
 `where_been`).
 
 ## NOT a participation consumer

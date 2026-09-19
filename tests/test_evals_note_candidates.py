@@ -129,7 +129,7 @@ def test_the_relative_date_case_is_anchored_to_its_own_timestamp():
 ])
 def test_an_ungradable_case_is_refused_at_load(bad, message):
     raw = {
-        "name": "x", "expect": "create", "workspace": "friends",
+        "name": "x", "expect": "create", "unit": "friends",
         "anchor_date": 20260919, "must_cite": [1],
         "batch": [{"id": 1, "ts": "2026-09-07T12:00:00Z", "person": "ada",
                    "name": "Ada", "body": "19號食飯？"}],
@@ -148,7 +148,7 @@ def test_an_ungradable_case_is_refused_at_load(bad, message):
 
 def _case(expect="create", **over) -> NoteCandidatesCase:
     raw = {
-        "name": "t", "expect": expect, "workspace": "friends",
+        "name": "t", "expect": expect, "unit": "friends",
         "batch": [{"id": 1, "ts": "2026-09-07T12:00:00Z", "person": "ada",
                    "name": "Ada", "body": "19號食飯？"}],
     }
@@ -284,7 +284,7 @@ def _drive(monkeypatch, cfg, case: NoteCandidatesCase, raw: str):
     )
     assert "/" in label
     return asyncio.run(run_note_candidates_case(
-        runtime, cfg=cfg, workspace=case.workspace, scope="eval:t",
+        runtime, cfg=cfg, unit=case.unit, scope="eval:t",
         batch=[dataclasses.asdict(m) for m in case.batch],
         notebook=[dataclasses.asdict(n) for n in case.notebook],
         now_ms=case.batch[-1].ts_ms + 60_000,

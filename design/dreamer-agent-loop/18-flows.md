@@ -112,7 +112,7 @@ on cost.
 
 ```
 new messages ──▶ [watermark]                    ┌── candidates pending? ──┐
-       │  A: EXTRACT (scope, cheap)             │  B: ADJUDICATE (workspace)
+       │  A: EXTRACT (scope, cheap)             │  B: ADJUDICATE (unit)
        ▼                                        ▼
   batch as `id: body`, no speaker          pending claims
        │                                        + standing facts for them
@@ -136,7 +136,7 @@ new messages ──▶ [watermark]                    ┌── candidates pendi
    unanswerable ([03](03-no-agent-loop.md) §4).
 4. **Model gets** — doctrine sized for a tool-less extraction pass, the
    objective, the threaded batch, **and a stated expected output size**.
-5. **May call** — the workspace **vocabulary** (what do we already call this?)
+5. **May call** — the unit **vocabulary** (what do we already call this?)
    and the **negative cache** (did we already try and fail to settle this?).
    **Not** a dedup check — suppressing a repeat destroys the recurrence signal
    the filter ranks on ([08](08-state.md) §9, and it is the easiest thing here
@@ -149,7 +149,7 @@ new messages ──▶ [watermark]                    ┌── candidates pendi
 10. **Read back by** — candidates written per run, and the ratio of extracted to
     adjudicated.
 
-**Phase B — adjudicate** *(workspace-keyed, no watermark)*
+**Phase B — adjudicate** *(unit-keyed, no watermark)*
 
 1. **Fires when** — pending candidates exist. This is a **work queue**, not a
    clock, and it is content-addressed: a claim that can never be settled stays
@@ -220,7 +220,7 @@ genuinely different shapes.
 10. **Read back by** — writes by kind; and a search miss is recorded as a
     candidate, which is how the tier earns its next capability.
 
-**Background half — curator** *(workspace-keyed, cursor-shaped, shipped
+**Background half — curator** *(unit-keyed, cursor-shaped, shipped
 2026-08-28)*
 
 1. **Fires when** — lag over a revision watermark, or lag plus quiet, or age.

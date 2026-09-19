@@ -108,7 +108,7 @@ what the relational store has to do explicitly.
 
 **Atomicity is not a separate question.** One transaction, or the store can hold
 an edge whose endpoints do not exist and an entity nothing references. The
-`UNIQUE (workspace, canonical_name)` constraint makes the upsert safe under
+`UNIQUE (unit, canonical_name)` constraint makes the upsert safe under
 concurrent proposals from two adaptors — which will happen, because
 [19-between-tiers.md](19-between-tiers.md) routes writes from more than one tier
 at the same entity.
@@ -157,12 +157,12 @@ Nothing chooses at write time — not the model, not the sink, not the author.
 
 ### 6.1 The promotion rule
 
-An object string is promoted to an entity in a workspace **iff**:
+An object string is promoted to an entity in a unit **iff**:
 
 - it survives a **literal veto** — it does not parse as a date, quantity, price,
   duration or time-of-day (including spelled-out numerals), does not begin with a
   negation, is not a URL, and is under a length cap; **and**
-- **it appears in at least one other edge position in that workspace** — as some
+- **it appears in at least one other edge position in that unit** — as some
   standing fact's subject, or as another standing fact's object.
 
 Counted over standing facts only, never candidates: unadjudicated noise must not
@@ -391,7 +391,7 @@ thing that makes a free predicate dangerous elsewhere **is not present here**.
 
 Verified rather than assumed: `predicate` appears in the fact store only when
 reading a row into a model and when writing one — **never in a `WHERE`
-clause**. The sole index is `(workspace, subject_id)`, partial on standing rows.
+clause**. The sole index is `(unit, subject_id)`, partial on standing rows.
 There is no entailment regime, no property hierarchy, no inference over
 predicates anywhere in the codebase.
 
@@ -430,7 +430,7 @@ that guides the model without rejecting it gets the consistency without the
 brittleness, and the count tells you when to close.
 
 **Count.** There is no instrument for predicate growth, and a distinct-predicate
-count per workspace is what turns *"is this fragmenting?"* from an opinion into a
+count per unit is what turns *"is this fragmenting?"* from an opinion into a
 reading — which is [09-measurement.md](09-measurement.md)'s rule applied to this
 seam. Without it §8.1's condition cannot be evaluated.
 

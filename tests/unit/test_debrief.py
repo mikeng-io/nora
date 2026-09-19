@@ -120,7 +120,7 @@ async def _run(*, store=None, store_verdict=_UNSET, client=None, metrics=None,
                max_chars=1200, timeout_seconds=5.0, store_timeout_seconds=5.0,
                rebuild_after_folds=20, notes_read=frozenset(),
                now_ms_override=None, notes_sink=_UNSET,
-               workspace_of=None, trace=None, record_store=None,
+               unit_of=None, trace=None, record_store=None,
                fold_batch=200) -> tuple:
     store = store if store is not None else InMemoryStandingStore()
     # `_UNSET`, not `None`: `None` is a REAL state the stage documents as
@@ -140,7 +140,7 @@ async def _run(*, store=None, store_verdict=_UNSET, client=None, metrics=None,
         store_timeout_seconds=store_timeout_seconds,
         rebuild_after_folds=rebuild_after_folds, notes_read=notes_read,
         notes_sink=(_FakeSink() if notes_sink is _UNSET else notes_sink),
-        workspace_of=workspace_of or (lambda p, c: "ws"),
+        unit_of=unit_of or (lambda p, c: "ws"),
         now_ms=now_ms_override if now_ms_override is not None else 1_756_000_931_000,
     )
     return store, metrics, store_verdict
@@ -1809,9 +1809,9 @@ async def test_a_missing_note_field_is_still_the_domain_types_refusal():
                     outcome="malformed") == 0
 
 
-async def test_no_workspace_means_no_proposal_never_a_guessed_one():
-    """`workspace_of` answers None when policy.toml cannot name the room's
-    workspace. Filing one social unit's notes into another's is not recoverable
+async def test_no_unit_means_no_proposal_never_a_guessed_one():
+    """`unit_of` answers None when policy.toml cannot name the room's
+    unit. Filing one social unit's notes into another's is not recoverable
     by looking at the index, so this refuses rather than guessing.
 
     **`sink.batches == []` is not enough on its own and used to be the whole
@@ -1826,10 +1826,10 @@ async def test_no_workspace_means_no_proposal_never_a_guessed_one():
     sink = _FakeSink()
     store, metrics, _ = await _run(
         client=_Client(_with_notes(_NOTE)), notes_sink=sink,
-        workspace_of=lambda p, c: None)
+        unit_of=lambda p, c: None)
     assert sink.batches == []
     assert _counter(metrics, "nora_debrief_note_proposals_total",
-                    outcome="no_workspace") == 1, (
+                    outcome="no_unit") == 1, (
         "an unmapped room disabled proposals silently"
     )
     # and the position still lands — a room policy cannot name is not a fold
@@ -1839,14 +1839,14 @@ async def test_no_workspace_means_no_proposal_never_a_guessed_one():
 
 
 async def test_a_resolver_that_raises_never_costs_the_position():
-    """**`workspace_of` is an INJECTED callable and it was on the position's
+    """**`unit_of` is an INJECTED callable and it was on the position's
     critical path.** It ran before the overflow gate, before the screen, before
     `store.write`, outside any `try` of its own — and even when `notes_sink is
     None`, so a broken resolver cost the position on deployments that could not
     propose at all. This stage states twice that a proposal failure must never
     cost the position; the resolver was the exception nobody had written down.
 
-    Falsification: move the `workspace_of` call back above `store.write` and
+    Falsification: move the `unit_of` call back above `store.write` and
     the position is `None` here.
     """
     sink = _FakeSink()
@@ -1856,18 +1856,18 @@ async def test_a_resolver_that_raises_never_costs_the_position():
 
     store, metrics, _ = await _run(
         client=_Client(_with_notes(_NOTE)), notes_sink=sink,
-        workspace_of=_explodes)
+        unit_of=_explodes)
 
     row = await store.read(platform="signal", conversation_id="g1")
-    assert row is not None, "a broken workspace resolver cost the position"
+    assert row is not None, "a broken unit resolver cost the position"
     assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
     assert sink.batches == []
     # A FAULT, not a policy decision, and they get different labels: one is a
     # room deliberately unmapped, the other is a resolver that needs fixing.
     assert _counter(metrics, "nora_debrief_note_proposals_total",
-                    outcome="no_workspace_unavailable") == 1
+                    outcome="no_unit_unavailable") == 1
     assert _counter(metrics, "nora_debrief_note_proposals_total",
-                    outcome="no_workspace") == 0
+                    outcome="no_unit") == 0
 
 
 async def test_the_resolver_is_not_called_at_all_when_notes_are_off():
@@ -1882,13 +1882,13 @@ async def test_the_resolver_is_not_called_at_all_when_notes_are_off():
 
     store, metrics, _ = await _run(
         client=_Client(_with_notes(_NOTE)), notes_sink=None,
-        workspace_of=_counting)
+        unit_of=_counting)
     # POSITIVE CONTROL: `calls == []` is also what a fold that never ran
     # produces, so the fold has to be shown to have happened first.
     assert _counter(metrics, "nora_debrief_total", outcome="written") == 1
     assert await store.read(platform="signal", conversation_id="g1") is not None
     assert calls == [], (
-        "the workspace resolver ran on a deployment that cannot propose"
+        "the unit resolver ran on a deployment that cannot propose"
     )
 
 
@@ -2204,7 +2204,7 @@ async def test_r81_a_quote_is_grounded_only_against_the_person_who_said_it():
         record_store=FakeRecordStore(), fold_batch=200,
         timeout_seconds=5.0, store_timeout_seconds=5.0,
         rebuild_after_folds=20, notes_read=frozenset(), notes_sink=_FakeSink(),
-        workspace_of=lambda p, c: "ws", now_ms=1_756_398_902_000,
+        unit_of=lambda p, c: "ws", now_ms=1_756_398_902_000,
     )
     # The positive control: every assertion below is read off a prompt, and a
     # stage that raised before building one produces no prompt at all.

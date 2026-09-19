@@ -1100,7 +1100,7 @@ async def _fire_path_with_tiers(
     """`fire_path`'s own builder plus the tier collaborators — same
     model-side-collaborators-are-None shape, for the same reason: these tests
     call `build_context` only. `policy="permissive"` resolves every room to
-    the `nora` workspace, matching where the seeds below are keyed."""
+    the `nora` unit, matching where the seeds below are keyed."""
     return FirePath(
         persons=persons, records=record_store, memory=memory_store,
         doctrine_store=doctrine_store, metrics=metrics,
@@ -1116,7 +1116,7 @@ async def _fire_path_with_tiers(
 def _seeded_note_store() -> InMemoryNoteStore:
     store = InMemoryNoteStore()
     store.notes["11111111-0000-4000-8000-000000000001"] = Note(
-        id="11111111-0000-4000-8000-000000000001", workspace="nora",
+        id="11111111-0000-4000-8000-000000000001", unit="nora",
         title="Raft roadmap", description="when the next Raft update ships",
         uncertainty="no date announced", closing_condition="Raft announces a date",
         established_in="conv-1", created_at=1,
@@ -1136,7 +1136,7 @@ async def test_the_fire_path_reads_the_note_index(
     persons, record_store, memory_store, doctrine_store, metrics,
 ) -> None:
     """The determination's `<notes>` block: the standing index for the room's
-    WORKSPACE, not the room — DEC-105's keying, mirrored from
+    UNIT, not the room — DEC-105's keying, mirrored from
     `TranscriptInjection._notes`."""
     fire = await _fire_path_with_tiers(
         persons, record_store, memory_store, doctrine_store, metrics,
@@ -1154,7 +1154,7 @@ async def test_a_failed_note_read_is_counted_not_silent(
     """R-27 on this path: an index that exists but could not be read is
     `unavailable` (counted), never folded silently into «there are none»."""
     class _Down:
-        async def standing(self, *, workspace: str):
+        async def standing(self, *, unit: str):
             raise RuntimeError("db down")
 
     fire = await _fire_path_with_tiers(
@@ -1172,7 +1172,7 @@ async def test_a_wired_tier_without_a_policy_is_a_counted_wiring_gap(
     persons, record_store, memory_store, doctrine_store, metrics,
 ) -> None:
     """A store wired but no `Policy` to scope it by: the tier defaults safely
-    AND the gap is counted ONCE for the turn — guessing a workspace would
+    AND the gap is counted ONCE for the turn — guessing a unit would
     render another social unit's notes into this room (DEC-105)."""
     fire = await _fire_path_with_tiers(
         persons, record_store, memory_store, doctrine_store, metrics,
@@ -1182,7 +1182,7 @@ async def test_a_wired_tier_without_a_policy_is_a_counted_wiring_gap(
     ctx = await fire.build_context(reminder_occasion([_reminder()]))
 
     assert ctx.notes == ()
-    assert metrics.get("nora_errors_total", stage="fire_workspace") == 1
+    assert metrics.get("nora_errors_total", stage="fire_unit") == 1
 
 
 async def test_the_dormant_default_reads_nothing_and_counts_nothing(
@@ -1194,7 +1194,7 @@ async def test_the_dormant_default_reads_nothing_and_counts_nothing(
     ctx = await fire_path.build_context(reminder_occasion([_reminder()]))
 
     assert ctx.notes == ()
-    assert metrics.get("nora_errors_total", stage="fire_workspace") == 0
+    assert metrics.get("nora_errors_total", stage="fire_unit") == 0
 
 
 # ---------------------------------------------------------------------------
@@ -2371,7 +2371,7 @@ def test_the_proactive_doctrine_audience_carries_the_may_speak_rule(doctrine_sto
 # --- the shared decision log (issue #199) ---------------------------------
 
 
-def _decision_recorder(store=None, *, metrics=None, workspace_of=None):
+def _decision_recorder(store=None, *, metrics=None, unit_of=None):
     """A real `DecisionLogRecorder` over the SHARED in-memory store, which
     `tests/contract/test_decision_log_store_contract.py` judges against
     Postgres. The clock is `T0`, the same instant `_fire_path` runs at."""
@@ -2379,7 +2379,7 @@ def _decision_recorder(store=None, *, metrics=None, workspace_of=None):
         store=store if store is not None else InMemoryDecisionLogStore(),
         metrics=metrics if metrics is not None else Metrics(),
         clock=lambda: T0,
-        workspace_of=workspace_of,
+        unit_of=unit_of,
     )
 
 
@@ -2518,7 +2518,7 @@ async def test_a_participation_turn_sees_what_she_already_raised_in_this_room(
         id="r1", writer="proactive_decide", platform="discord",
         # The HOME room, on the other platform — the shape of issue #199's own
         # incident. A room-scoped read would answer nothing here.
-        conversation_id="home-1", workspace="friends", note_id="n-1",
+        conversation_id="home-1", unit="friends", note_id="n-1",
         verdict="remind", reason="",
         ts=int(T0.timestamp() * 1000) - 7_200_000,
     ))
@@ -2561,7 +2561,7 @@ async def test_a_proactive_act_turn_sees_the_raise_its_sibling_row_just_made(
     store = InMemoryDecisionLogStore()
     await store.append(row=DecisionRow(
         id="r1", writer="proactive_act", platform="signal",
-        conversation_id="conv-1", workspace="friends", note_id=None,
+        conversation_id="conv-1", unit="friends", note_id=None,
         verdict="spoke", reason="spoke",
         ts=int(T0.timestamp() * 1000) - 31 * 60_000,
     ))
@@ -2606,7 +2606,7 @@ async def test_a_participation_turn_never_reads_back_its_own_rows(
     ):
         await store.append(row=DecisionRow(
             id=row_id, writer=writer, platform="signal",
-            conversation_id="conv-1", workspace="friends", note_id=None,
+            conversation_id="conv-1", unit="friends", note_id=None,
             verdict=verdict, reason=reason, ts=ts,
         ))
     path = _fire_path(
@@ -2641,7 +2641,7 @@ async def test_only_the_floor_weighing_occasions_read_the_decision_log(
     store = InMemoryDecisionLogStore()
     await store.append(row=DecisionRow(
         id="r1", writer="proactive_act", platform="signal",
-        conversation_id="conv-1", workspace="friends", note_id=None,
+        conversation_id="conv-1", unit="friends", note_id=None,
         verdict="spoke", reason="spoke", ts=int(T0.timestamp() * 1000),
     ))
     path = _fire_path(
@@ -2688,7 +2688,7 @@ async def test_the_proactive_act_turn_reads_its_siblings_and_not_its_own_decide_
     ):
         await store.append(row=DecisionRow(
             id=row_id, writer=writer, platform="signal",
-            conversation_id="conv-1", workspace="friends", note_id=None,
+            conversation_id="conv-1", unit="friends", note_id=None,
             verdict=verdict, reason=reason, ts=ts,
         ))
     path = _fire_path(
@@ -2707,22 +2707,22 @@ async def test_the_proactive_act_turn_reads_its_siblings_and_not_its_own_decide_
 
 
 def _decision_policy() -> Policy:
-    """A two-room workspace: the Signal room the window closed in, and the
+    """A two-room unit: the Signal room the window closed in, and the
     Discord HOME room a proactive row fires into.
 
     A REAL `Policy`, not a stub, because the shape under test is issue #199's
     own: the decision was made in the other room on the other platform, and a
     room-scoped read would answer nothing. `permissive_policy` cannot stand in
-    — it holds no conversations, so it resolves no workspace and no label.
+    — it holds no conversations, so it resolves no unit and no label.
     """
     rooms = (
         Conversation(
             platform="signal", ids=frozenset({"conv-1"}), persons=None,
-            label="Friends", primary_id="conv-1", workspace="friends",
+            label="Friends", primary_id="conv-1", unit="friends",
         ),
         Conversation(
             platform="discord", ids=frozenset({"home-1"}), persons=None,
-            label="Friends HQ", primary_id="home-1", workspace="friends",
+            label="Friends HQ", primary_id="home-1", unit="friends",
             home_room=True,
         ),
     )

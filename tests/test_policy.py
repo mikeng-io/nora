@@ -290,7 +290,7 @@ default = "deny"
 [[conversations]]
 platform  = "signal"
 id        = "{GROUP}"
-workspace = "friends"
+unit = "friends"
 label     = "Friends"
 persons   = ["miles", "ada"]
 home_room = true
@@ -300,14 +300,14 @@ location  = true
 [[conversations]]
 platform  = "discord"
 id        = "1/2"
-workspace = "friends"
+unit = "friends"
 label     = "Friends discord"
 persons   = ["miles", "ada"]
 
 [[conversations]]
 platform  = "signal"
 id        = "wedding-room"
-workspace = "wedding"
+unit = "wedding"
 label     = "Wedding"
 persons   = ["miles"]
 """
@@ -324,7 +324,7 @@ def test_both_flags_default_false(policy):
     assert policy.proactive_allowed(platform="signal", conversation_id=GROUP) is False
 
 
-def test_the_home_room_is_keyed_by_workspace(tmp_path):
+def test_the_home_room_is_keyed_by_unit(tmp_path):
     policy = load_policy(_write(tmp_path, HOME_TOML))
 
     homes = policy.home_rooms()
@@ -349,7 +349,7 @@ def test_proactive_is_checked_on_the_room_not_on_a_person(tmp_path):
     assert _allowed(policy, GROUP, "nora") is False
 
 
-def test_two_home_rooms_in_one_workspace_refuse_to_start(tmp_path):
+def test_two_home_rooms_in_one_unit_refuse_to_start(tmp_path):
     """Two would make the room the adaptor stands in a guess, and a guessed
     room is an R-31 disclosure decision nobody made."""
     body = HOME_TOML.replace(
@@ -362,7 +362,7 @@ def test_two_home_rooms_in_one_workspace_refuse_to_start(tmp_path):
 
 def test_the_permissive_policy_names_no_home_room():
     """The offline/eval harness policy allows every room; it must not thereby
-    invent a home room, or a workspace-keyed harness run would stand in a
+    invent a home room, or a unit-keyed harness run would stand in a
     room that does not exist."""
     assert permissive_policy().home_rooms() == {}
 
@@ -397,7 +397,7 @@ def test_a_guilds_voice_resolves_to_the_room_that_claims_it(tmp_path):
     assert room is not None
     assert room.primary_id == VOICE_ROOM
     assert room.voice is True
-    # It is the ROOM's own persons list and workspace that speech inherits —
+    # It is the ROOM's own persons list and unit that speech inherits —
     # that is the whole point of folding voice into an existing room rather
     # than giving it one of its own.
     assert room.persons == frozenset({"miles"})

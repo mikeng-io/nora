@@ -33,7 +33,7 @@ import pytest
 from nora.agent import dreamer, factory
 from nora.agent.dreamer import (
     MAX_ITEMS,
-    WORKSPACE_SAFE_TOOLS,
+    UNIT_SAFE_TOOLS,
     AdaptorBudget,
     AdaptorGrant,
     AdaptorSchedule,
@@ -105,10 +105,10 @@ class _ToolSource:
         return self._ceiling
 
     def build(
-        self, *, key: str, names: frozenset[str], workspace: str | None = None,
+        self, *, key: str, names: frozenset[str], unit: str | None = None,
         adaptor: str = "", grant: Any = None,
     ) -> list[Any]:
-        self.built.append((key, names, workspace))
+        self.built.append((key, names, unit))
         if grant is not None and (grant.acts or grant.home_room):
             self.grants.append((adaptor, grant))
         return []
@@ -667,18 +667,18 @@ async def test_the_adaptors_declared_names_are_what_gets_built(monkeypatch):
     assert tools.built == [("g1", frozenset({"now", "web_search"}), None)]
 
 
-async def test_a_workspace_keyed_adaptor_supplies_its_key_as_the_workspace(
+async def test_a_unit_keyed_adaptor_supplies_its_key_as_the_unit(
     monkeypatch,
 ):
     """The key-path fix (design/dreamer-agent-loop/32 §3.4), pinned at the
-    seam it crosses: a workspace-keyed adaptor's key IS the workspace, so the
+    seam it crosses: a unit-keyed adaptor's key IS the unit, so the
     runtime SUPPLIES it to the tool source rather than letting the tool layer
     derive one from a room that does not exist (`08-state.md` §10's trap —
     «the seam looking like it works while every call fails closed»)."""
     tools = _ToolSource(ceiling=frozenset({"now", "web_search"}))
     sink = _Sink()
     adaptor = _Adaptor(sink=sink, tools=frozenset({"now"}))
-    adaptor.key_kind = "workspace"
+    adaptor.key_kind = "unit"
     runtime, _ = _runtime(monkeypatch, raw='{"observations": []}', tools=tools)
 
     await runtime.run(adaptor=adaptor, key="ridgeline", batch=())
@@ -686,9 +686,9 @@ async def test_a_workspace_keyed_adaptor_supplies_its_key_as_the_workspace(
     assert tools.built == [("ridgeline", frozenset({"now"}), "ridgeline")]
 
 
-async def test_a_scope_keyed_adaptor_supplies_no_workspace(monkeypatch):
+async def test_a_scope_keyed_adaptor_supplies_no_unit(monkeypatch):
     """The other half: a scope key is a conversation id, and handing it to
-    the workspace slot would make every workspace-scoped verb read the wrong
+    the unit slot would make every unit-scoped verb read the wrong
     store. `None` keeps the resolver path — the room answers as before."""
     tools = _ToolSource()
     sink = _Sink()
@@ -704,15 +704,15 @@ async def test_a_scope_keyed_adaptor_supplies_no_workspace(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_the_workspace_safe_set_is_a_subset_of_the_read_only_ceiling():
-    """A workspace-safe tool that is not read-only would be an act verb granted
+def test_the_unit_safe_set_is_a_subset_of_the_read_only_ceiling():
+    """A unit-safe tool that is not read-only would be an act verb granted
     to a background loop through the back door."""
     from nora.agent.registry import ToolRegistry
 
-    assert ToolRegistry().read_only_tools() >= WORKSPACE_SAFE_TOOLS
+    assert ToolRegistry().read_only_tools() >= UNIT_SAFE_TOOLS
 
 
-def test_every_read_only_tool_is_classified_workspace_safe_or_room_scoped():
+def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
     """The test that keeps the hand-list from going stale, and it is the whole
     reason a hand-list is acceptable here.
 
@@ -730,17 +730,17 @@ def test_every_read_only_tool_is_classified_workspace_safe_or_room_scoped():
         "transit", "route", "where_is", "place_info", "saved_places",
         # `where_been` (DEC-155) answers from the derived substrate but is
         # gated by the SAME R-31 room/circle seam as `where_is` — the guard is
-        # the room, which a workspace-keyed Dreamer tick does not have, so
+        # the room, which a unit-keyed Dreamer tick does not have, so
         # room-scoped is the fail-closed side and the correct one. (It is
-        # deliberately NOT in WORKSPACE_SAFE_TOOLS: spec §7.4 records the
+        # deliberately NOT in UNIT_SAFE_TOOLS: spec §7.4 records the
         # grant was NOT made.)
         "where_been",
         # `online_now` (design/online-status/) answers about the ROOM's own
         # members — the invoking conversation's roster is its input domain
-        # (03-guards), which a workspace-keyed Dreamer tick does not have.
+        # (03-guards), which a unit-keyed Dreamer tick does not have.
         # The PROACTIVE decide turn reaches it through the home-room grant
         # with its per-build input-domain override, never through
-        # `WORKSPACE_SAFE_TOOLS` — the same fail-closed side as `where_been`.
+        # `UNIT_SAFE_TOOLS` — the same fail-closed side as `where_been`.
         "online_now",
         # `reverse_geocode` (DEC-156) is a pure coordinate -> address lookup
         # with no room state in its ARGUMENTS, which is exactly why it must be
@@ -749,7 +749,7 @@ def test_every_read_only_tool_is_classified_workspace_safe_or_room_scoped():
         # disclosed set `route` screens against. The coordinate it is handed
         # comes from a live fix, and everything that gates a live fix —
         # R-31's roster seam, `location_trusted` — is a property of the ROOM,
-        # which a workspace-keyed Dreamer tick does not have. Granting it would
+        # which a unit-keyed Dreamer tick does not have. Granting it would
         # let a tick turn a person's live position into a street address with
         # no such gate anywhere in the path. Same argument as `where_been`
         # above, and the same fail-closed answer.
@@ -757,7 +757,7 @@ def test_every_read_only_tool_is_classified_workspace_safe_or_room_scoped():
         # The two parking verbs (2026-08-31), classified with the live-location
         # family they belong to (`transit`/`route`/`place_info` sit here too).
         # `find_parking` can even read the asker's PRESENCE when called with no
-        # place — a room-shaped input a workspace-keyed tick does not have — so
+        # place — a room-shaped input a unit-keyed tick does not have — so
         # the fail-closed side is the honest one: no Dreamer adaptor has been
         # granted a parking lookup, and this keeps it that way by name.
         "parking_status", "find_parking",
@@ -773,33 +773,33 @@ def test_every_read_only_tool_is_classified_workspace_safe_or_room_scoped():
         # `music_status` (design/discord-music/07-agent-tool.md) reports on
         # ONE Discord conversation's voice session — the exact shape
         # `load_transcript`/`where_is` are room-scoped for, not a
-        # workspace-wide fact like `weather`. It also refuses on
+        # unit-wide fact like `weather`. It also refuses on
         # `room.platform != "discord"`, which the Dreamer's synthetic room
         # (`RegistryToolSource`) never satisfies today — classified here,
         # fail-closed, the same "not yet actually reachable" reasoning
         # `note_read`/`note_search` were.
         "music_status",
     }
-    # The workspace-safe half is `WORKSPACE_SAFE_TOOLS` itself, read from the
+    # The unit-safe half is `UNIT_SAFE_TOOLS` itself, read from the
     # module. Since design/dreamer-agent-loop/32 §3.4 that set includes the
-    # workspace-scoped reads this test used to hold HERE, fail-closed:
-    # `note_read`/`note_search` resolved their workspace THROUGH THE ROOM and
+    # unit-scoped reads this test used to hold HERE, fail-closed:
+    # `note_read`/`note_search` resolved their unit THROUGH THE ROOM and
     # the Dreamer's synthetic room could never answer that, and
     # `search_memory_workspace` shipped WITH the fix. They moved when the key
-    # path became SUPPLIED — `DreamerRuntime.run` hands a workspace-keyed
-    # adaptor's key to the tool layer AS the workspace — which is exactly the
+    # path became SUPPLIED — `DreamerRuntime.run` hands a unit-keyed
+    # adaptor's key to the tool layer AS the unit — which is exactly the
     # move these entries' own comments said to make. The knowledge tier's five
     # verbs were here too and went with that tier.
-    workspace_scoped = {
+    unit_scoped = {
         "note_read", "note_search", "search_memory_workspace",
     }
-    assert workspace_scoped <= WORKSPACE_SAFE_TOOLS, (
-        "a workspace-scoped read fell out of WORKSPACE_SAFE_TOOLS — 32 §3.4 "
+    assert unit_scoped <= UNIT_SAFE_TOOLS, (
+        "a unit-scoped read fell out of UNIT_SAFE_TOOLS — 32 §3.4 "
         "grants these only with the supplied key path"
     )
-    unclassified = ToolRegistry().read_only_tools() - WORKSPACE_SAFE_TOOLS - room_scoped
+    unclassified = ToolRegistry().read_only_tools() - UNIT_SAFE_TOOLS - room_scoped
     assert unclassified == set(), (
-        "read-only tool(s) classified neither workspace-safe nor room-scoped: "
+        "read-only tool(s) classified neither unit-safe nor room-scoped: "
         + ", ".join(sorted(unclassified))
     )
 
@@ -820,19 +820,19 @@ def test_the_tool_source_never_builds_a_tool_outside_the_ceiling():
         registry=ToolRegistry(), store=None, persons=None, honcho=None,
         metrics=Metrics(),
         home_rooms={"friends": HomeRoom(
-            workspace="friends", platform="signal", conversation_id="g1",
+            unit="friends", platform="signal", conversation_id="g1",
         )},
     )
     asked = frozenset({"send_reply", "make_artifact", "remind", "now"})
 
     # No grant: the whole pre-DEC-162 ceiling. `now` is read-only and builds;
     # the three act verbs do not, `remind` included.
-    ungranted = _names(source.build(key="friends", names=asked, workspace="friends"))
+    ungranted = _names(source.build(key="friends", names=asked, unit="friends"))
     assert ungranted == {"now"}
 
     # The proactive grant: `remind` and only `remind` joins the read set.
     granted = _names(source.build(
-        key="friends", names=asked, workspace="friends", adaptor="proactive",
+        key="friends", names=asked, unit="friends", adaptor="proactive",
         grant=proactive_grant(),
     ))
     assert granted == {"now", "remind"}
@@ -866,7 +866,7 @@ def test_a_home_room_grant_builds_the_room_the_operator_named():
     is skipped rather than counted `unnamed`, and `location_trusted` from
     the home room's `location` flag — both of which the pre-DEC-162 build
     left at their defaults, so `where_is` refused in every configuration.
-    Plus the destination: the home room's conversation, never the workspace
+    Plus the destination: the home room's conversation, never the unit
     NAME the key carries (39 D3)."""
     registry = _RecordingRegistry()
     roster = object()
@@ -874,7 +874,7 @@ def test_a_home_room_grant_builds_the_room_the_operator_named():
         registry=registry, store=None, persons=None, honcho=None,
         metrics=Metrics(),
         home_rooms={"friends": HomeRoom(
-            workspace="friends", platform="signal", conversation_id="g1",
+            unit="friends", platform="signal", conversation_id="g1",
             location_trusted=True,
         )},
         rosters={"signal": roster},
@@ -882,7 +882,7 @@ def test_a_home_room_grant_builds_the_room_the_operator_named():
     )
 
     source.build(
-        key="friends", names=frozenset({"where_is"}), workspace="friends",
+        key="friends", names=frozenset({"where_is"}), unit="friends",
         adaptor="proactive", grant=proactive_grant(),
     )
 
@@ -890,7 +890,7 @@ def test_a_home_room_grant_builds_the_room_the_operator_named():
     assert call["conversation_id"] == "g1"
     assert call["conversation_type"] == "group"
     assert call["location_trusted"] is True
-    assert call["supplied_workspace"] == "friends"
+    assert call["supplied_unit"] == "friends"
     assert call["dream_adaptor"] == "proactive"
     assert call["deliverer"] is None
     room = call["room"]
@@ -901,7 +901,7 @@ def test_a_home_room_grant_builds_the_room_the_operator_named():
 
 
 def test_a_home_room_grant_with_no_home_room_falls_back_closed():
-    """The grant said «stand in the home room» and the workspace names none:
+    """The grant said «stand in the home room» and the unit names none:
     no acts, the synthetic empty room, the key as the conversation — exactly
     the pre-DEC-162 build — and never a guessed room."""
     registry = _RecordingRegistry()
@@ -911,7 +911,7 @@ def test_a_home_room_grant_with_no_home_room_falls_back_closed():
     )
 
     source.build(
-        key="wedding", names=frozenset({"where_is", "remind"}), workspace="wedding",
+        key="wedding", names=frozenset({"where_is", "remind"}), unit="wedding",
         adaptor="proactive", grant=proactive_grant(),
     )
 
@@ -925,8 +925,8 @@ def test_a_home_room_grant_with_no_home_room_falls_back_closed():
 def test_a_SCOPE_keyed_grant_resolves_the_adaptors_OWN_room():
     """**The wiring defect this closes** (design/culture-tier `03-decisions`
     correction 14, `03-no-agent-loop §7.4`). `build` resolved every home room
-    through `home_rooms[workspace or ""]`, and `DreamerRuntime.run` supplies
-    `workspace=None` for a scope-keyed adaptor — so a scope-keyed grant looked
+    through `home_rooms[unit or ""]`, and `DreamerRuntime.run` supplies
+    `unit=None` for a scope-keyed adaptor — so a scope-keyed grant looked
     up `home_rooms[""]`, found nothing, and took the loud CLOSED branch. Every
     room-scoped verb then answered `unavailable` forever while the grant read
     as honoured, which is the state that closed PR #237 on a false premise.
@@ -942,7 +942,7 @@ def test_a_SCOPE_keyed_grant_resolves_the_adaptors_OWN_room():
         metrics=Metrics(),
         home_rooms={},
         scope_rooms={"g1": HomeRoom(
-            workspace="friends", platform="discord", conversation_id="g1",
+            unit="friends", platform="discord", conversation_id="g1",
             location_trusted=True,
         )},
         rosters={"discord": roster},
@@ -950,16 +950,16 @@ def test_a_SCOPE_keyed_grant_resolves_the_adaptors_OWN_room():
     )
 
     source.build(
-        key="g1", names=frozenset({"where_is"}), workspace=None,
+        key="g1", names=frozenset({"where_is"}), unit=None,
         adaptor="culture", grant=AdaptorGrant(home_room=True),
     )
 
     (call,) = registry.calls
     assert call["conversation_id"] == "g1"
     assert call["location_trusted"] is True
-    # STILL `None`: the key is a conversation, not a workspace, and the
-    # workspace-scoped verbs must keep resolving through the room (32 §3.4).
-    assert call["supplied_workspace"] is None
+    # STILL `None`: the key is a conversation, not a unit, and the
+    # unit-scoped verbs must keep resolving through the room (32 §3.4).
+    assert call["supplied_unit"] is None
     room = call["room"]
     assert room.platform == "discord"
     assert room._roster_source is roster
@@ -972,20 +972,20 @@ def test_a_scope_keyed_build_never_gets_the_widened_online_domain():
     one occasion Nora may answer about people outside the room she stands in.
     A background scope-keyed pass keeps the TAG-PATH domain — its own room's
     roster — so the union can never leak into one. The resolver is keyed by
-    workspace and a scope-keyed build has none, so passing `""` would have
-    resolved a domain for no workspace at all."""
+    unit and a scope-keyed build has none, so passing `""` would have
+    resolved a domain for no unit at all."""
     registry = _RecordingRegistry()
     source = RegistryToolSource(
         registry=registry, store=None, persons=None, honcho=None,
         metrics=Metrics(),
         scope_rooms={"g1": HomeRoom(
-            workspace="friends", platform="discord", conversation_id="g1",
+            unit="friends", platform="discord", conversation_id="g1",
         )},
         online_scope_for=lambda _ws: None,  # type: ignore[arg-type,return-value]
     )
 
     source.build(
-        key="g1", names=frozenset({"where_is"}), workspace=None,
+        key="g1", names=frozenset({"where_is"}), unit=None,
         adaptor="culture", grant=AdaptorGrant(home_room=True),
     )
 
@@ -997,8 +997,8 @@ def test_a_scope_keyed_grant_for_an_unknown_room_falls_back_closed_and_says_so(
 ):
     """The grant said «stand in a real room» and the key names no policy
     conversation: the empty room, no acts, and a LOUD line naming the SCOPE —
-    not the workspace, which is `None` here and would have read as the config
-    fault the workspace branch describes."""
+    not the unit, which is `None` here and would have read as the config
+    fault the unit branch describes."""
     metrics = Metrics()
     source = RegistryToolSource(
         registry=_RecordingRegistry(), store=None, persons=None, honcho=None,
@@ -1007,20 +1007,20 @@ def test_a_scope_keyed_grant_for_an_unknown_room_falls_back_closed_and_says_so(
 
     with caplog.at_level(logging.ERROR, logger="nora.dreamer"):
         source.build(
-            key="g-unknown", names=frozenset({"where_is"}), workspace=None,
+            key="g-unknown", names=frozenset({"where_is"}), unit=None,
             adaptor="culture", grant=AdaptorGrant(home_room=True),
         )
 
     assert metrics.get(
-        "nora_dream_home_room_missing_total", adaptor="culture", workspace="",
+        "nora_dream_home_room_missing_total", adaptor="culture", unit="",
     ) == 1
     said = [r.getMessage() for r in caplog.records]
     assert any("'g-unknown'" in m and "scope" in m for m in said), said
 
 
 def test_two_broken_scopes_are_logged_SEPARATELY_not_collapsed_onto_one():
-    """The dedupe key was `(adaptor, workspace or "")`, and every scope-keyed
-    miss carries `workspace=None` — so all of them would collapse onto one
+    """The dedupe key was `(adaptor, unit or "")`, and every scope-keyed
+    miss carries `unit=None` — so all of them would collapse onto one
     entry and the first broken room would be reported as though it were the
     only one."""
     source = RegistryToolSource(
@@ -1031,7 +1031,7 @@ def test_two_broken_scopes_are_logged_SEPARATELY_not_collapsed_onto_one():
     with caplog_at_error() as records:
         for key in ("g1", "g2", "g1"):
             source.build(
-                key=key, names=frozenset({"where_is"}), workspace=None,
+                key=key, names=frozenset({"where_is"}), unit=None,
                 adaptor="culture", grant=AdaptorGrant(home_room=True),
             )
 
@@ -1064,7 +1064,7 @@ def test_the_missing_home_room_is_counted_every_pass_and_logged_once(caplog):
     """A CONFIG state, not an incident: true on every dream until somebody
     edits policy.toml.
 
-    Live it filed the same Sentry issue on every pass, once per workspace
+    Live it filed the same Sentry issue on every pass, once per unit
     without a home room (NORA-2 — `wedding` and `friends`). Deduplicating the
     log alone would have traded a stream of identical errors for no signal at
     all, so the counter carries the standing reading and the log carries the
@@ -1080,22 +1080,22 @@ def test_the_missing_home_room_is_counted_every_pass_and_logged_once(caplog):
     with caplog.at_level(logging.ERROR, logger="nora.dreamer"):
         for _ in range(3):
             source.build(
-                key="wedding", names=frozenset({"where_is"}), workspace="wedding",
+                key="wedding", names=frozenset({"where_is"}), unit="wedding",
                 adaptor="proactive", grant=proactive_grant(),
             )
         source.build(
-            key="friends", names=frozenset({"where_is"}), workspace="friends",
+            key="friends", names=frozenset({"where_is"}), unit="friends",
             adaptor="proactive", grant=proactive_grant(),
         )
 
     assert metrics.get(
-        "nora_dream_home_room_missing_total", adaptor="proactive", workspace="wedding",
+        "nora_dream_home_room_missing_total", adaptor="proactive", unit="wedding",
     ) == 3
     assert metrics.get(
-        "nora_dream_home_room_missing_total", adaptor="proactive", workspace="friends",
+        "nora_dream_home_room_missing_total", adaptor="proactive", unit="friends",
     ) == 1
     said = [r.getMessage() for r in caplog.records if "names none" in r.getMessage()]
-    assert len(said) == 2, "once per workspace, not once per pass"
+    assert len(said) == 2, "once per unit, not once per pass"
     assert any("'wedding'" in m for m in said)
     assert any("'friends'" in m for m in said)
 
@@ -1109,12 +1109,12 @@ def test_without_a_grant_the_build_is_byte_for_byte_the_old_one():
         registry=registry, store=None, persons=None, honcho=None,
         metrics=Metrics(),
         home_rooms={"friends": HomeRoom(
-            workspace="friends", platform="signal", conversation_id="g1",
+            unit="friends", platform="signal", conversation_id="g1",
             location_trusted=True,
         )},
     )
 
-    source.build(key="friends", names=frozenset({"now"}), workspace="friends")
+    source.build(key="friends", names=frozenset({"now"}), unit="friends")
 
     (call,) = registry.calls
     assert call["conversation_id"] == "friends"
@@ -1132,8 +1132,8 @@ def test_without_a_grant_a_SCOPE_keyed_build_is_the_closed_empty_room():
     — the grant ignored, every scope-keyed adaptor standing in a real room —
     and the WHOLE suite stayed green. It was equivalent only by accident:
     `test_without_a_grant_the_build_is_byte_for_byte_the_old_one` passes
-    `workspace="friends"` and populates `home_rooms`, so it exercises the
-    workspace branch only, and the one ungranted scope-keyed adaptor shipped
+    `unit="friends"` and populates `home_rooms`, so it exercises the
+    unit branch only, and the one ungranted scope-keyed adaptor shipped
     (`NoteCandidateAdaptor`) declares `tools = frozenset()`, so `build`
     returns at the `if not wanted` guard before any room is constructed.
 
@@ -1146,7 +1146,7 @@ def test_without_a_grant_a_SCOPE_keyed_build_is_the_closed_empty_room():
         registry=registry, store=None, persons=None, honcho=None,
         metrics=Metrics(),
         scope_rooms={"g1": HomeRoom(
-            workspace="friends", platform="discord", conversation_id="g1",
+            unit="friends", platform="discord", conversation_id="g1",
             location_trusted=True,
         )},
         rosters={"discord": object()},  # type: ignore[dict-item]
@@ -1154,7 +1154,7 @@ def test_without_a_grant_a_SCOPE_keyed_build_is_the_closed_empty_room():
 
     # NO `grant=`, and a tool asked for: the ungranted scope-keyed adaptor of
     # tomorrow, not the tool-free one of today.
-    source.build(key="g1", names=frozenset({"where_is"}), workspace=None)
+    source.build(key="g1", names=frozenset({"where_is"}), unit=None)
 
     (call,) = registry.calls
     room = call["room"]
@@ -1163,10 +1163,10 @@ def test_without_a_grant_a_SCOPE_keyed_build_is_the_closed_empty_room():
     assert room._self_ids == frozenset()
     assert call["location_trusted"] is False, "the strict gate, never the room's flag"
     assert call["conversation_id"] == "g1"
-    assert call["supplied_workspace"] is None
+    assert call["supplied_unit"] is None
 
 
-def test_the_tool_source_builds_the_workspace_safe_tools():
+def test_the_tool_source_builds_the_unit_safe_tools():
     from nora.agent.registry import ToolRegistry
 
     source = RegistryToolSource(
@@ -1196,35 +1196,35 @@ def test_asking_for_nothing_builds_nothing_and_touches_no_collaborator():
     assert source.build(key="nora", names=frozenset()) == []
 
 
-# ---- the second axis: room-scoped vs workspace-safe -----------------------
+# ---- the second axis: room-scoped vs unit-safe -----------------------
 
 
-def test_a_workspace_keyed_adaptor_is_refused_a_room_scoped_tool():
+def test_a_unit_keyed_adaptor_is_refused_a_room_scoped_tool():
     """The protection three documents claimed and nothing applied — and,
     since DEC-162, the one adaptor it does not bind.
 
     `RegistryToolSource`'s docstring, `verify_tool_subsets`' docstring, DEC-133
-    and the release fragment all asserted that a workspace-keyed adaptor is
-    restricted to `WORKSPACE_SAFE_TOOLS`. A review probe built
-    `about`/`load_transcript`/`search_memory` for a workspace key with no
+    and the release fragment all asserted that a unit-keyed adaptor is
+    restricted to `UNIT_SAFE_TOOLS`. A review probe built
+    `about`/`load_transcript`/`search_memory` for a unit key with no
     complaint — nothing checked `key_kind` anywhere.
 
     **The failure it would have caused is worse than a missing tool.** A
-    workspace name is not a conversation id, so `load_transcript` against one
+    unit name is not a conversation id, so `load_transcript` against one
     does not raise — it returns `{"messages": []}`. That is «I could not
     check» reported as «there was nothing», the one substitution R-27 exists to
     forbid, arriving in the tier whose whole purpose is to keep those two
     apart.
 
     REWRITTEN ON PURPOSE (design/dreamer-agent-loop/39 D2): the refusal
-    stands for every workspace-keyed adaptor WITHOUT a home-room grant, and
+    stands for every unit-keyed adaptor WITHOUT a home-room grant, and
     is lifted for the one with it — the home room is the disclosure
-    decision `WORKSPACE_SAFE_TOOLS`' own comment said nobody had made,
+    decision `UNIT_SAFE_TOOLS`' own comment said nobody had made,
     made by the operator in `policy.toml`."""
     adaptor = _Adaptor(
         sink=_Sink(), tools=frozenset({"web_search", "load_transcript"}),
     )
-    adaptor.key_kind = "workspace"
+    adaptor.key_kind = "unit"
     source = _ToolSource(ceiling=frozenset({"web_search", "load_transcript", "now"}))
 
     with pytest.raises(AdaptorToolError) as exc:
@@ -1233,7 +1233,7 @@ def test_a_workspace_keyed_adaptor_is_refused_a_room_scoped_tool():
     # The safe one is not BLAMED — it still appears further down, in the
     # message's list of what IS allowed, which is the useful half of a refusal.
     assert "declares room-scoped tools: load_transcript." in str(exc.value)
-    assert "Workspace-safe tools are:" in str(exc.value)
+    assert "Unit-safe tools are:" in str(exc.value)
 
     # The SAME adaptor, granted a home room: not refused. `verify_tool_subsets`
     # and `tool_subset_faults` read one grant, so the exemption is measured
@@ -1277,7 +1277,7 @@ async def test_the_per_run_check_honours_the_same_grant_the_startup_check_does(
     the third place."""
     sink = _Sink()
     adaptor = _Adaptor(sink=sink, tools=frozenset({"remind", "load_transcript"}))
-    adaptor.key_kind = "workspace"
+    adaptor.key_kind = "unit"
     tools = _ToolSource(ceiling=frozenset({"load_transcript", "now"}))
     granted, _ = _runtime(
         monkeypatch, raw='{"observations": []}', tools=tools,
@@ -1303,7 +1303,7 @@ def test_a_scope_keyed_adaptor_may_hold_a_room_scoped_tool():
     """The other direction, and the reason the rule is on `key_kind` rather
     than on the tool: a room-scoped tool is exactly right for an adaptor whose
     key IS a room. The candidate extractor reads its room; only the
-    adjudicator, keyed on a workspace, has no room to bind one to."""
+    adjudicator, keyed on a unit, has no room to bind one to."""
     adaptor = _Adaptor(
         sink=_Sink(), tools=frozenset({"load_transcript"}),
     )
@@ -1322,7 +1322,7 @@ async def test_the_per_run_check_refuses_the_same_thing_the_startup_check_does(
     trust, and the corpus it validates against hot-reloads."""
     sink = _Sink()
     adaptor = _Adaptor(sink=sink, tools=frozenset({"load_transcript"}))
-    adaptor.key_kind = "workspace"
+    adaptor.key_kind = "unit"
     runtime, _ = _runtime(
         monkeypatch, raw='{"observations": [{"term": "a"}]}',
         tools=_ToolSource(ceiling=frozenset({"load_transcript", "now"})),
@@ -1341,7 +1341,7 @@ async def test_a_blank_prompt_skips_the_model_and_still_commits(monkeypatch):
     An adaptor with `uses_watermark = False` gets no lag, quiet or age
     condition — the loop dispatches it on EVERY tick. Without this, the fact
     adjudicator would spend a full `web_search`/`web_fetch` research loop 288
-    times a day per workspace on a prompt that says «Claims to settle: (none)».
+    times a day per unit on a prompt that says «Claims to settle: (none)».
 
     `commit(key, ())` is still called, so the decay contract survives: a
     watermarked adaptor over a quiet room renders a blank prompt too, and a
@@ -1582,7 +1582,7 @@ def test_an_override_naming_a_tool_the_adaptor_lacks_grants_nothing():
     """A name present in `budgets` is what turns `DreamGuard`'s default-deny
     into permission. `[llm.budgets]` is deployment-wide and names tools this
     adaptor was never given, so folding one in unconditionally would hand a
-    workspace-keyed research loop a verb nobody granted it — the exact shape
+    unit-keyed research loop a verb nobody granted it — the exact shape
     `_tool_budgets`' own docstring refuses by reading BUILT tools."""
     from nora.agent.dreamer import _tool_budgets
 

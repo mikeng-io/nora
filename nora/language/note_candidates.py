@@ -42,7 +42,7 @@ which the model is asked about:
 note's arrangement spans days of conversation, not one turn — the operator's
 own case, design 33 §4: "呢啲 conversation...可能 cross 一個禮拜去做". A
 per-room watermark is the only way this adaptor sees the whole exchange
-rather than a five-minute slice, and being scope-keyed (not workspace-keyed)
+rather than a five-minute slice, and being scope-keyed (not unit-keyed)
 is what lets `nora.app.runtime._dream_adaptor_once`'s existing
 `AdaptorSchedule` mechanism apply unchanged (design 33 §5, finding N1): the
 mechanism is watermark-bound, and this is now the only adaptor that is
@@ -51,7 +51,7 @@ first, and is gone).
 
 **Why it reads the note index too.** Unlike a claim extractor — new claims,
 with dedupe left to adjudication — a note proposal must not duplicate a note
-that already exists in the workspace's standing notebook. `inputs` renders
+that already exists in the unit's standing notebook. `inputs` renders
 `render_notes`' own projection (`nora.language.note_render`, the SAME one the
 tag path's `<notes>` block gets: title + description only, never a body) so
 the model can be told: *if this arrangement is already written down, propose
@@ -147,13 +147,13 @@ was removed on 2026-09-08 and nothing mints entities today.
 nothing else (#228).** It was the gate's whole match key from 2026-09-08,
 the deliberately looser reading: two arrangements on one day became one note
 rather than two. The reversal condition this docstring wrote for that choice
-— *"two genuinely different occasions on one date in one workspace, updated
+— *"two genuinely different occasions on one date in one unit, updated
 into each other"* — was MET in production on 2026-09-13. The update arm had
 fired exactly twice since the tier shipped and both times it merged two
 genuinely different occasions: a sign-up deadline and a games thread that
 shared nothing but a calendar day, and a gathering note overwritten forty
-minutes later by an unrelated room's pass (notes are workspace-keyed, so
-every room in a workspace wrote onto whichever note shared the date). Two
+minutes later by an unrelated room's pass (notes are unit-keyed, so
+every room in a unit wrote onto whichever note shared the date). Two
 firings, two collisions, is not a rate to tune — it is a key that is wrong.
 
 So the date is out of the key entirely, and `_find_anchor_match` is
@@ -174,7 +174,7 @@ optional `updates` — the title of the standing note it revises, *exactly as
 the index showed it* — the same contract the tag path's `note_update` uses
 for its own `title` argument, resolved through the same
 `nora.domain.notes.note_handle` normalisation so the two cannot drift apart.
-`commit` resolves it against the workspace's standing notes:
+`commit` resolves it against the unit's standing notes:
 
 - exactly one match -> REVISION (appended, still gated by `_adds_information`
   and the `full` ceiling check);
@@ -205,7 +205,7 @@ a code-side guess at which note the model meant.
 
 **A re-observation that lands on a SETTLED staging row is counted too, and
 which kind it is matters (#235).** `note_candidate`'s uniqueness is
-`(workspace, anchor_date, anchor_entity_ids, lower(btrim(title)))`, so a
+`(unit, anchor_date, anchor_entity_ids, lower(btrim(title)))`, so a
 candidate can be handed back a row an earlier candidate already settled and
 returns before the gate ever sees it. Two very different things reached that
 branch — the same occasion observed again (a benign no-op) and a DIFFERENT
@@ -220,7 +220,7 @@ reports them as `nora_note_candidate_staging_total{outcome}`
 The entity list was supposed to separate two arrangements on one day, and was
 measured not to — a candidate naming two people was destroyed by a same-day
 row naming the same two, because in a fixed-membership room the cast is a
-constant and the key degenerated to `(workspace, anchor_date)`. M10 is upheld
+constant and the key degenerated to `(unit, anchor_date)`. M10 is upheld
 for the NOTE (a note stays findable by one name across revisions) and
 reversed for the staging row, which is a one-shot dedupe slot for one
 sighting rather than an identity. What that buys is a silent, subtractive
@@ -364,7 +364,7 @@ GATE_ACTIONS: frozenset[str] = frozenset({
 #: cover: nothing is decided there, because the decision already happened.
 #:
 #: **Both values exist so that neither is silence.** `note_candidate`'s
-#: uniqueness was `(workspace, anchor_date, anchor_entity_ids)` until
+#: uniqueness was `(unit, anchor_date, anchor_entity_ids)` until
 #: 2026-09-16, so a candidate that shared a day with an already-settled one —
 #: and named no people, which was the default — was handed back that settled
 #: row and returned before the gate. Two different events reach that branch and
@@ -374,7 +374,7 @@ GATE_ACTIONS: frozenset[str] = frozenset({
 #: `unavailable`-as-`nothing_found` one layer down. Splitting them is what made
 #: the drop readable.
 #:
-#: **#235 then removed the drop**: the key is now `(workspace, anchor_date,
+#: **#235 then removed the drop**: the key is now `(unit, anchor_date,
 #: anchor_entity_ids, lower(btrim(title)))`, so two arrangements on one day are
 #: two staged rows and the second reaches the gate. `displaced` is KEPT, with
 #: its branch, and is expected to read zero — the key normalises with Postgres
@@ -423,10 +423,10 @@ class _NoteStore(DreamSink, Protocol):
     `standing` for the note index AND the gate's own comparison, `read` for
     the matched note's current head body and CAS parent."""
 
-    async def standing(self, *, workspace: str) -> tuple[Note, ...]: ...
+    async def standing(self, *, unit: str) -> tuple[Note, ...]: ...
 
     async def read(
-        self, *, workspace: str, note_id: str,
+        self, *, unit: str, note_id: str,
     ) -> tuple[Note, NoteRevision] | None: ...
 
 
@@ -437,14 +437,14 @@ class _CandidateStore(Protocol):
     is not a port: nothing else consumes it."""
 
     async def record_create_candidate(
-        self, *, workspace: str, title: str, description: str, body: str,
+        self, *, unit: str, title: str, description: str, body: str,
         closing_condition: str, anchor_date: int,
         anchor_entity_ids: Sequence[str], message_ids: Sequence[int],
         now_ms: int,
     ) -> NoteCreateCandidate: ...
 
     async def set_create_candidate_status(
-        self, *, workspace: str, candidate_id: str, status: str, now_ms: int,
+        self, *, unit: str, candidate_id: str, status: str, now_ms: int,
     ) -> int: ...
 
 
@@ -466,7 +466,7 @@ class _CreateCandidate:
     #:
     #: **Not staged.** `record_create_candidate` never sees it, and that is
     #: deliberate rather than an omission: `note_candidate` records the
-    #: OCCASION (its key is `(workspace, anchor_date, anchor_entity_ids,
+    #: OCCASION (its key is `(unit, anchor_date, anchor_entity_ids,
     #: lower(btrim(title)))`),
     #: while this is a routing decision about THIS sighting of it. Staging it
     #: would need a migration to store a value the gate reads once and never
@@ -616,7 +616,7 @@ def _media_placeholder(row: TranscriptRow) -> str:
 #: place the model reads before the prose, that it is a description of what it
 #: is about to read and not a task.
 
-#: The room's name when the allowlist gives neither a label nor a workspace.
+#: The room's name when the allowlist gives neither a label nor a unit.
 #: NOT the conversation id, which is what this rendered before issue #161 and
 #: is exactly the shape R-18/R-28 keep off a wire: a room's identifier is not
 #: its name, and a model told to attribute an arrangement to a room has no use
@@ -629,8 +629,8 @@ def _room_block(*, room: str, description: str | None) -> str:
     the batch, once, never per line.
 
     **Why it exists** (issue #161). The batch lines have always carried a room
-    per line, and until this block they carried the WORKSPACE's name instead:
-    on a workspace holding a Signal group, a WhatsApp group and a Discord
+    per line, and until this block they carried the UNIT's name instead:
+    on a unit holding a Signal group, a WhatsApp group and a Discord
     games channel, every line of every batch read `(friends)`, so the model
     could not tell the three rooms apart and nothing in the prompt said what
     kind of room it was reading. It wrote «Bath gathering» twice out of a
@@ -706,7 +706,7 @@ def _render_line(row: TranscriptRow, *, room: str, tz: _dt.tzinfo) -> str:
 
     `room` is the ROOM's own name, which this docstring promised and did not
     get for the first five weeks of the adaptor's life: the caller handed it
-    the WORKSPACE, so every room of a workspace rendered the same string and
+    the UNIT, so every room of a unit rendered the same string and
     the promise above was false (issue #161). It is never a conversation id —
     `inputs` resolves it, and `UNNAMED_ROOM` is the floor.
 
@@ -823,7 +823,7 @@ def _appended(existing_body: str, new_body: str) -> str:
       the tier came to be looked at at all.
     - one gathering note was created from one room's pass and overwritten
       forty minutes later by another room's, on an unrelated subject. Notes
-      are workspace-keyed, so under the date key every room in a workspace
+      are unit-keyed, so under the date key every room in a unit
       wrote onto whichever note shared the date.
 
     Appending keeps a collision non-destructive: the note is a conflation of
@@ -876,10 +876,10 @@ class NoteCandidateAdaptor:
         *,
         notes: _NoteStore,
         candidates: _CandidateStore,
-        workspace_for: Callable[[str], str | None],
-        # THE ROOM, not the workspace (issue #161). `key` is already the
+        unit_for: Callable[[str], str | None],
+        # THE ROOM, not the unit (issue #161). `key` is already the
         # room's conversation id, so both of these are the same `.get` over
-        # the allowlist that `workspace_for` is — the composition root builds
+        # the allowlist that `unit_for` is — the composition root builds
         # all three off `conv.primary_id` in one place, so they cannot
         # disagree about which room a key names.
         #
@@ -901,7 +901,7 @@ class NoteCandidateAdaptor:
     ) -> None:
         self._notes = notes
         self._candidates = candidates
-        self._workspace_for = workspace_for
+        self._unit_for = unit_for
         self._label_for = label_for
         self._description_for = description_for
         self._metrics = metrics
@@ -931,7 +931,7 @@ class NoteCandidateAdaptor:
 
     async def inputs(self, *, key: str, batch: Sequence[TranscriptRow]) -> str:
         """The `<room>` block, the room's message batch attributed to that
-        same room, and the workspace's standing note index — so the model can
+        same room, and the unit's standing note index — so the model can
         propose "not written down yet" and decline to repeat what already is
         (§4: "if this arrangement is already written down, propose an update
         instead, or nothing").
@@ -949,14 +949,14 @@ class NoteCandidateAdaptor:
         self._message_ids[key] = frozenset(row.id for row in batch)
         if not batch:
             return ""
-        workspace = self._workspace_for(key)
+        unit = self._unit_for(key)
         # THE ROOM (issue #161). `key` IS the room's conversation id, so the
-        # room was always knowable here; `room = workspace or key` threw it
-        # away and attributed every line of every room of a workspace to the
-        # workspace. Label first (what the room is called), workspace only as
+        # room was always knowable here; `room = unit or key` threw it
+        # away and attributed every line of every room of a unit to the
+        # unit. Label first (what the room is called), unit only as
         # a fallback for a room the operator left unlabelled, and the
         # conversation id NEVER — see `UNNAMED_ROOM`.
-        room = self._label_for(key) or workspace or UNNAMED_ROOM
+        room = self._label_for(key) or unit or UNNAMED_ROOM
         lines = [
             _render_line(row, room=room, tz=self._tz)
             for row in batch[:MAX_RENDERED_MESSAGES]
@@ -983,7 +983,7 @@ class NoteCandidateAdaptor:
                 body="\n".join(lines),
             ).render(),
         ]
-        if workspace is not None:
+        if unit is not None:
             # THE INDEX IS THE BALLOT. Since 2026-09-13 the gate resolves the
             # TITLE the model names in `updates` (#228), so every title it may
             # legitimately name is a line of this block and nowhere else — a
@@ -1005,7 +1005,7 @@ class NoteCandidateAdaptor:
             # relative-date resolution reads from, so «today» in the index and
             # «today» in the transcript cannot disagree.
             index = render_notes(
-                await self._notes.standing(workspace=workspace),
+                await self._notes.standing(unit=unit),
                 today=_batch_day(batch, tz=self._tz),
             )
             if index is not None:
@@ -1047,16 +1047,16 @@ class NoteCandidateAdaptor:
     ) -> int:
         """Stage, gate, materialize — see the module docstring for the three
         steps. `key` is a SCOPE and both the candidate table and the note
-        store are keyed on the WORKSPACE (DEC-105), so it is translated —
+        store are keyed on the UNIT (DEC-105), so it is translated —
         and an unresolvable scope RAISES rather than guessing, because filing a
-        candidate under the scope id would hide it from every workspace-level
-        read, and filing it under a guessed workspace lets one social unit's
+        candidate under the scope id would hide it from every unit-level
+        read, and filing it under a guessed unit lets one social unit's
         proposal enter another's notebook.
         """
-        workspace = self._workspace_for(key)
-        if workspace is None:
+        unit = self._unit_for(key)
+        if unit is None:
             raise LookupError(
-                f"note-candidates: scope {key!r} resolves to no workspace, "
+                f"note-candidates: scope {key!r} resolves to no unit, "
                 f"so there is no key to file its candidates under."
             )
         written = 0
@@ -1068,24 +1068,24 @@ class NoteCandidateAdaptor:
                     f"_CreateCandidate payload, got {type(candidate).__name__}"
                 )
             written += await self._settle(
-                workspace=workspace, established_in=key, candidate=candidate,
+                unit=unit, established_in=key, candidate=candidate,
                 proposal=proposal, now_ms=now_ms,
             )
         return written
 
     async def _settle(
-        self, *, workspace: str, established_in: str,
+        self, *, unit: str, established_in: str,
         candidate: _CreateCandidate, proposal: Proposal, now_ms: int,
     ) -> int:
         row = await self._candidates.record_create_candidate(
-            workspace=workspace, title=candidate.title,
+            unit=unit, title=candidate.title,
             description=candidate.description, body=candidate.body,
             closing_condition=candidate.closing_condition,
             anchor_date=candidate.anchor_date,
             anchor_entity_ids=candidate.anchor_entity_ids,
             message_ids=candidate.message_ids, now_ms=now_ms,
         )
-        # A NEW sighting of this occasion, whichever workspace-record trigger
+        # A NEW sighting of this occasion, whichever unit-record trigger
         # counts staging (see `nora.obs.metric_specs`'s `trigger="create"`).
         # `attempts == 0` is the store's own tell for "freshly inserted, not
         # a re-observation" (`record_create_candidate`'s own contract).
@@ -1128,17 +1128,17 @@ class NoteCandidateAdaptor:
                 log.warning(
                     "note-candidates: %r was dropped before the gate — the "
                     "staging key (anchor_date=%s, %d entities) already holds "
-                    "%r, settled as %s (workspace=%s, issue #235)",
+                    "%r, settled as %s (unit=%s, issue #235)",
                     candidate.title, row.anchor_date,
                     len(row.anchor_entity_ids), row.title, row.status,
-                    workspace,
+                    unit,
                 )
             self._inc(
                 "nora_note_candidate_staging_total", outcome=outcome,
             )
             return 0
 
-        standing = await self._notes.standing(workspace=workspace)
+        standing = await self._notes.standing(unit=unit)
         # The MODEL's answer, resolved. `candidate.updates` and not
         # `row.updates`: the staged row records the occasion, this records
         # which note THIS sighting says it belongs to (see `_CreateCandidate`).
@@ -1147,7 +1147,7 @@ class NoteCandidateAdaptor:
         )
         if len(matches) == 1:
             return await self._update(
-                workspace=workspace, row=row, match=matches[0],
+                unit=unit, row=row, match=matches[0],
                 proposal=proposal, now_ms=now_ms,
             )
         if len(matches) > 1:
@@ -1160,11 +1160,11 @@ class NoteCandidateAdaptor:
             # `created`, so the rate is readable.
             log.info(
                 "note-candidates: %r answers to %d standing notes; created "
-                "rather than guessed (workspace=%s)",
-                candidate.updates, len(matches), workspace,
+                "rather than guessed (unit=%s)",
+                candidate.updates, len(matches), unit,
             )
             return await self._create(
-                workspace=workspace, established_in=established_in, row=row,
+                unit=unit, established_in=established_in, row=row,
                 proposal=proposal, now_ms=now_ms, action="ambiguous",
             )
         if candidate.updates is not None:
@@ -1179,19 +1179,19 @@ class NoteCandidateAdaptor:
             # matching anything the index actually showed it.
             log.info(
                 "note-candidates: %r answers to no standing note; created as "
-                "new (workspace=%s)", candidate.updates, workspace,
+                "new (unit=%s)", candidate.updates, unit,
             )
             return await self._create(
-                workspace=workspace, established_in=established_in, row=row,
+                unit=unit, established_in=established_in, row=row,
                 proposal=proposal, now_ms=now_ms, action="unresolved",
             )
         return await self._create(
-            workspace=workspace, established_in=established_in, row=row,
+            unit=unit, established_in=established_in, row=row,
             proposal=proposal, now_ms=now_ms,
         )
 
     async def _create(
-        self, *, workspace: str, established_in: str, row: NoteCreateCandidate,
+        self, *, unit: str, established_in: str, row: NoteCreateCandidate,
         proposal: Proposal, now_ms: int, action: str = "created",
     ) -> int:
         """`action` is what a SUCCESSFUL create is counted as. `"created"` is
@@ -1225,17 +1225,17 @@ class NoteCandidateAdaptor:
         except ValueError:
             log.warning(
                 "note-candidates: refused a malformed create candidate "
-                "(workspace=%s)", workspace,
+                "(unit=%s)", unit,
             )
             await self._candidates.set_create_candidate_status(
-                workspace=workspace, candidate_id=row.id,
+                unit=unit, candidate_id=row.id,
                 status=CANDIDATE_REFUSED, now_ms=now_ms,
             )
             self._inc("nora_note_candidate_gate_total", action="refused")
             return 0
         try:
             ids = await self._notes.propose(
-                key=workspace,
+                key=unit,
                 proposals=(
                     Proposal(
                         payload=payload,
@@ -1252,29 +1252,29 @@ class NoteCandidateAdaptor:
             # because the candidate table is live state rather than a
             # cursor.
             log.exception(
-                "note-candidates: create failed (workspace=%s)", workspace,
+                "note-candidates: create failed (unit=%s)", unit,
             )
             self._inc("nora_note_candidate_gate_total", action="deferred")
             return 0
         await self._candidates.set_create_candidate_status(
-            workspace=workspace, candidate_id=row.id,
+            unit=unit, candidate_id=row.id,
             status=CANDIDATE_CREATED, now_ms=now_ms,
         )
         self._inc("nora_note_candidate_gate_total", action=action)
         return len(ids)
 
     async def _update(
-        self, *, workspace: str, row: NoteCreateCandidate, match: Note,
+        self, *, unit: str, row: NoteCreateCandidate, match: Note,
         proposal: Proposal, now_ms: int,
     ) -> int:
-        current = await self._notes.read(workspace=workspace, note_id=match.id)
+        current = await self._notes.read(unit=unit, note_id=match.id)
         if current is None:
             # The matched note retired or moved out of reach between the
             # gate's read and this one. Left pending: the next tick's
             # `standing()` read reflects whatever is true then.
             log.info(
                 "note-candidates: matched note %s vanished before the "
-                "update landed (workspace=%s)", match.id, workspace,
+                "update landed (unit=%s)", match.id, unit,
             )
             self._inc("nora_note_candidate_gate_total", action="deferred")
             return 0
@@ -1296,11 +1296,11 @@ class NoteCandidateAdaptor:
             if action == "full":
                 log.warning(
                     "note-candidates: note %s is at the body ceiling; the "
-                    "revision was refused rather than truncated (workspace=%s)",
-                    match.id, workspace,
+                    "revision was refused rather than truncated (unit=%s)",
+                    match.id, unit,
                 )
             await self._candidates.set_create_candidate_status(
-                workspace=workspace, candidate_id=row.id,
+                unit=unit, candidate_id=row.id,
                 status=CANDIDATE_REFUSED, now_ms=now_ms,
             )
             self._inc("nora_note_candidate_gate_total", action=action)
@@ -1312,7 +1312,7 @@ class NoteCandidateAdaptor:
         )
         try:
             ids = await self._notes.propose(
-                key=workspace,
+                key=unit,
                 proposals=(
                     Proposal(
                         payload=payload,
@@ -1329,20 +1329,20 @@ class NoteCandidateAdaptor:
             # the same reading `NoteCuratorAdaptor.commit` gives a lost CAS
             # on a merge — left pending for the next tick.
             log.info(
-                "note-candidates: update raced the note's head (workspace=%s, "
-                "note=%s)", workspace, match.id,
+                "note-candidates: update raced the note's head (unit=%s, "
+                "note=%s)", unit, match.id,
             )
             self._inc("nora_note_candidate_gate_total", action="deferred")
             return 0
         except Exception:
             log.exception(
-                "note-candidates: update failed (workspace=%s, note=%s)",
-                workspace, match.id,
+                "note-candidates: update failed (unit=%s, note=%s)",
+                unit, match.id,
             )
             self._inc("nora_note_candidate_gate_total", action="deferred")
             return 0
         await self._candidates.set_create_candidate_status(
-            workspace=workspace, candidate_id=row.id,
+            unit=unit, candidate_id=row.id,
             status=CANDIDATE_CREATED, now_ms=now_ms,
         )
         self._inc("nora_note_candidate_gate_total", action="updated")

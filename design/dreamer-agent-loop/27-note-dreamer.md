@@ -255,7 +255,7 @@ same sentence is true of the index block:**
 > first one.**
 
 The lone `note_search` is the counter-evidence that matters: the tools ARE
-reachable and the workspace DOES resolve. She reached for one unprompted, once,
+reachable and the unit DOES resolve. She reached for one unprompted, once,
 and found nothing — which is the tier working exactly as built, and never
 starting.
 
@@ -310,7 +310,7 @@ rather than a topic. Procedure stays where §5.3 put it: in the tool description
 and in the latch's own veto.
 
 **It is falsifiable now, which it was not before §6.1.**
-`nora_note_index_entries{workspace}` leaving `0` is the fix working. Staying at
+`nora_note_index_entries{unit}` leaving `0` is the fix working. Staying at
 `0` while `nora_note_candidates_total` climbs is *she recognises and does not
 act* — the inert-skill failure, visible for the first time. If the line does not
 move the gauge, the empty-state block becomes the SECOND experiment rather than
@@ -378,11 +378,11 @@ branches were appending to the same numbered list.)
 |---|---|
 | `nora_note_candidates_total{trigger}` | `nora.agent.tools`, inside `record_miss`'s `else` — it counts a miss that was **written**, so the series reconciles against `note_candidate`'s row count instead of attesting to itself |
 | `nora_note_update_refused_total{reason}` | `nora.agent.guards` (`not_read`) and `nora.agent.tools` (`title_moved`, `stale_head`) |
-| `nora_note_index_entries{workspace}` | `nora.engagement.context::TranscriptInjection._notes` |
+| `nora_note_index_entries{unit}` | `nora.engagement.context::TranscriptInjection._notes` |
 
 **Two things the spec named but did not decide.**
 
-**The gauge is labelled by WORKSPACE.** The spec's name is unlabelled, and on
+**The gauge is labelled by UNIT.** The spec's name is unlabelled, and on
 this deployment that makes it meaningless: `friends` and `ridgeline` are separate
 notebooks (§3/DEC-105), so whichever room tagged last would own the reading and
 the exported number would mean *"the size of whichever notebook was consulted
@@ -458,7 +458,7 @@ exist.
 ## 11. The revisitor, built — retirement half only
 
 **2026-08-28.** The adaptor is `nora.language.note_revisitor.NoteRevisitor`,
-workspace-keyed, watermark-free, and it holds **no tools at all**.
+unit-keyed, watermark-free, and it holds **no tools at all**.
 
 ### 11.1 The asymmetry the whole module is arranged around
 
@@ -553,11 +553,11 @@ pass the membership check, and pointing at the wrong thing.
 
 ### 11.3 Evidence is assembled in CODE, not fetched by a tool
 
-A workspace has no single room, so no room-scoped tool can be granted (§4.2,
+A unit has no single room, so no room-scoped tool can be granted (§4.2,
 and `tool_subset_faults`' second axis). The evidence is therefore selected here:
 the note's own `established_in`, capped, filtered to messages that POSTDATE the
 note — a closing condition cannot have been met before the note existed.
-`established_in` is a routing key and the workspace is already the disclosure
+`established_in` is a routing key and the unit is already the disclosure
 boundary (DEC-105/R-49), so reading the room a note was born in to judge that
 note stays inside the boundary the note already sits in.
 
@@ -619,9 +619,9 @@ one counter for both is `unavailable` wearing `nothing_found`.
 `dream_loop` dispatches one task per `(adaptor, key)` and its `running` lock is
 **per-unit**: one key's `inputs`/`accept` pair is non-overlapping, and nothing
 makes two DIFFERENT keys' pairs non-overlapping. The live `policy.toml` has two
-workspaces, so this is a deployed configuration.
+units, so this is a deployed configuration.
 
-With a bare attribute, workspace B's `inputs` wipes workspace A's map, and A's
+With a bare attribute, unit B's `inputs` wipes unit A's map, and A's
 grounded, correct verdict is dropped and counted `reason="unknown_note"` — the
 label whose own spec text reads *"one hallucinated identifier away"*. **A
 wiring gap reported as a model fault**, inside the instrument built to refuse
@@ -869,7 +869,7 @@ hold one that DELIVERS — but **that amendment is in this document and not in
 `nora.agent.dreamer.tool_subset_faults`**, which still refuses every tool
 outside the read-only ceiling. Building it would mean widening what *every*
 background adaptor may hold: a security-relevant change to a shared rule, and
-not needed to retire a note. An empty tool set also makes the workspace-safe
+not needed to retire a note. An empty tool set also makes the unit-safe
 restriction moot rather than argued around.
 
 ### 11.5 The instrument, and the gap it exists to close
@@ -910,7 +910,7 @@ unfixable by accident.
 ## 12. The curator, built — and the guard that was decoration
 
 **2026-08-28.** `nora.language.note_curator.NoteCuratorAdaptor`,
-workspace-keyed, no tools, behind a third gate of its own.
+unit-keyed, no tools, behind a third gate of its own.
 
 ### 12.1 `uses_watermark = False`, and it is not an omission
 

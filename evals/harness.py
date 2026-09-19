@@ -204,7 +204,7 @@ class Case:
     # ParticipationVerdict` for why `sent`, not `tool_calls`). `seed` is the
     # per-case seed MAPPING (transcript + standing/notes), built into a
     # `ProductionSeed` by `nora.app.eval_support.seed_from_dict` inside
-    # `run_case` — everything in it is keyed to the eval workspace there, so
+    # `run_case` — everything in it is keyed to the eval unit there, so
     # a case author cannot accidentally seed rows the eval room never reads.
     expect: str | None = None
     seed: dict | None = None
@@ -479,7 +479,7 @@ async def run_case(
     now_ms = int(datetime.now(UTC).timestamp() * 1000)
     if case.seed is not None:
         # Per-case seed (§9 gap 2) — built nora-side so every tier row lands in
-        # the eval workspace (the footgun: workspace-keyed rows seeded anywhere
+        # the eval unit (the footgun: unit-keyed rows seeded anywhere
         # else silently never render).
         seed = seed_from_dict(case.seed, now_ms=now_ms)
 

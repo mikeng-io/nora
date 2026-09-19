@@ -78,7 +78,7 @@ engine solves it*, not as a build instruction.
 |---|---|---|
 | **lexical** | `pg_trgm` + `word_similarity`, GIN index per searchable column | **shared** — one expression, every tier |
 | **embedder** | a port: text in, vectors out. Model identity, prefixes, batching, the executor offload, the fingerprint | **shared** — exactly one implementation |
-| **vector store** | one table keyed `(workspace, kind, row_id, seq)` carrying vector + fingerprint; `kind` discriminates the tier | **shared** |
+| **vector store** | one table keyed `(unit, kind, row_id, seq)` carrying vector + fingerprint; `kind` discriminates the tier | **shared** |
 | **fusion** | reciprocal rank over whatever channels a tier supplies | **shared**, arithmetic |
 
 **One embedder means one dimension**, which is what makes a single vector table
@@ -133,7 +133,7 @@ merges, retires or promotes a note… The notebook only grows for now."*
 So a tier the design calls bounded is, in the deployment, unbounded. The
 instrument that comment names as the tell — `nora_note_index_entries` — had
 **zero call sites** when this was written; it gained one on 2026-08-27
-([27](27-note-dreamer.md) §6.1), labelled by workspace so two notebooks do not
+([27](27-note-dreamer.md) §6.1), labelled by unit so two notebooks do not
 overwrite each other's reading. **The growth is now counted; it is still
 nobody's to bound until the curator exists**, which is what makes the threshold
 below readable rather than hypothetical.

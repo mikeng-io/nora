@@ -136,7 +136,7 @@ _TOOL_RESULT_CAPS: Mapping[str, int] = {
     "web_fetch": MAX_TOOL_RESULT_CHARS,
     "web_search": MAX_TOOL_RESULT_CHARS,
     "search_memory": MAX_MEMORY_RESULT_CHARS,
-    # The workspace variant (32 §3.4) is the same verb at a wider scope —
+    # The unit variant (32 §3.4) is the same verb at a wider scope —
     # same tighter number, same reason: summaries to reason over, not pages
     # to quote.
     "search_memory_workspace": MAX_MEMORY_RESULT_CHARS,
@@ -179,7 +179,7 @@ _TOOL_RESULT_CAPS: Mapping[str, int] = {
 #:
 #: NOT `_TOOL_RESULT_CAPS`' keys, which is a different question about the same
 #: verbs (how big may one answer be, not how many answers may a pass have) and
-#: includes `search_memory`, the room-scoped sibling no workspace-keyed adaptor
+#: includes `search_memory`, the room-scoped sibling no unit-keyed adaptor
 #: holds.
 MEMORY_TOOLS: frozenset[str] = frozenset({
     "about", "ask_memory", "search_memory_workspace", "lookup_person",
@@ -395,18 +395,18 @@ class HomeRoom:
 
     **WHICH room that is depends on the adaptor's `key_kind`, and this type
     serves both** (`RegistryToolSource.build`, and
-    `design/dreamer-agent-loop/03-no-agent-loop §7.4`). A WORKSPACE-keyed
+    `design/dreamer-agent-loop/03-no-agent-loop §7.4`). A UNIT-keyed
     adaptor has no room of its own, so the operator CHOOSES one per
-    workspace in `policy.toml` — that choice is the disclosure decision
-    `WORKSPACE_SAFE_TOOLS` records. A SCOPE-keyed adaptor's key already IS a
+    unit in `policy.toml` — that choice is the disclosure decision
+    `UNIT_SAFE_TOOLS` records. A SCOPE-keyed adaptor's key already IS a
     conversation, so its room is an IDENTITY rather than a choice: the
     composition root builds one of these per policy conversation id and the
-    tool source looks it up by key. `workspace` is which social unit the
+    tool source looks it up by key. `unit` is which social unit the
     room belongs to either way — the map's key for the first, the room's own
-    `Conversation.workspace` for the second.
+    `Conversation.unit` for the second.
     """
 
-    workspace: str
+    unit: str
     platform: str
     conversation_id: str
     conversation_type: str = "group"
@@ -431,14 +431,14 @@ class AdaptorGrant:
 
     `home_room` says the adaptor's `Room` is built from a REAL room — a real
     roster source, `self_ids` and `location_trusted` — rather than from the
-    empty one, and that `WORKSPACE_SAFE_TOOLS` does not apply to it.
+    empty one, and that `UNIT_SAFE_TOOLS` does not apply to it.
 
     **Which room, and how the disclosure question is answered, differs by
     `key_kind`** (`RegistryToolSource.build`):
 
-    - **Workspace-keyed.** A workspace has no room, so one is CHOSEN. The
-      refusal `WORKSPACE_SAFE_TOOLS` records («binding one to an arbitrary
-      room of that workspace would be a disclosure decision nobody has
+    - **Unit-keyed.** A unit has no room, so one is CHOSEN. The
+      refusal `UNIT_SAFE_TOOLS` records («binding one to an arbitrary
+      room of that unit would be a disclosure decision nobody has
       made») is answered by the operator naming the room in `policy.toml`.
     - **Scope-keyed.** The key already IS a conversation, so there is
       nothing arbitrary to bind and nothing for the operator to choose: the
@@ -524,46 +524,46 @@ class DreamToolSource(Protocol):
     def read_only(self) -> frozenset[str]: ...
 
     def build(
-        self, *, key: str, names: frozenset[str], workspace: str | None = None,
+        self, *, key: str, names: frozenset[str], unit: str | None = None,
         adaptor: str = "", grant: AdaptorGrant | None = None,
     ) -> list[Any]: ...
 
 
-# The read-only tools a WORKSPACE-keyed adaptor may hold, and the reason the
+# The read-only tools a UNIT-keyed adaptor may hold, and the reason the
 # set is exactly this.
 #
 # Every ROOM-scoped read tool stays refused here — `load_transcript` reads one
 # room's record, `group_members`/`lookup_person`/`about`/`ask_memory`/
 # `search_memory` all answer against one room's live roster, and
-# `recall_lookups`/`media_fetch` replay one room's own calls. A workspace has no
+# `recall_lookups`/`media_fetch` replay one room's own calls. A unit has no
 # single room to bind them to, and binding one to an arbitrary room of that
-# workspace would be a disclosure decision (R-31) nobody has made.
+# unit would be a disclosure decision (R-31) nobody has made.
 #
-# The WORKSPACE-scoped read tools are here, and they are here because the key
-# path is now SUPPLIED (design/dreamer-agent-loop/32 §3.4): a workspace-keyed
-# adaptor's key IS the workspace, and `DreamerRuntime.run` hands it through
-# `RegistryToolSource.build(workspace=...)` to `build_tool_specs`, where
-# `_workspace()` returns it directly instead of deriving it from the room.
+# The UNIT-scoped read tools are here, and they are here because the key
+# path is now SUPPLIED (design/dreamer-agent-loop/32 §3.4): a unit-keyed
+# adaptor's key IS the unit, and `DreamerRuntime.run` hands it through
+# `RegistryToolSource.build(unit=...)` to `build_tool_specs`, where
+# `_unit()` returns it directly instead of deriving it from the room.
 # Before that fix this set deliberately EXCLUDED the note verbs: they resolve
-# their workspace through the ROOM — `workspace_for(
+# their unit through the ROOM — `unit_for(
 # room.platform, conversation_id)` — and `RegistryToolSource.build` hands a
-# workspace-keyed adaptor a `Room` with no platform and the workspace in the
+# unit-keyed adaptor a `Room` with no platform and the unit in the
 # conversation slot, so policy could never name it and every call answered
 # `unavailable` forever. That is `08-state.md` §10's stated trap: a tier read
-# tool for a workspace-keyed adaptor needs a key path that does not route
-# through the room at all, because the Dreamer's key already IS the workspace
+# tool for a unit-keyed adaptor needs a key path that does not route
+# through the room at all, because the Dreamer's key already IS the unit
 # and must be SUPPLIED rather than derived — "the difference between the seam
 # working and the seam looking like it works while every call fails closed".
 #
-# The trap still binds for SCOPE-keyed adaptors: they get `workspace=None`,
-# `_workspace()` falls back to the resolver, and the resolver reads the real
+# The trap still binds for SCOPE-keyed adaptors: they get `unit=None`,
+# `_unit()` falls back to the resolver, and the resolver reads the real
 # room as before. Nothing about the tag path changes — the supplied value
 # only ever WINS when a caller supplies one, and only the Dreamer does.
 #
 # An adaptor whose `AdaptorGrant.home_room` is set is EXEMPT from this set
 # (39 D2/D3): the home room is the disclosure decision the first paragraph
-# says nobody has made, and it is made per workspace in `policy.toml`. Every
-# other workspace-keyed adaptor stays bound to it.
+# says nobody has made, and it is made per unit in `policy.toml`. Every
+# other unit-keyed adaptor stays bound to it.
 #
 # Hand-listed HERE and pinned by a test that measures it against
 # `read_only_tools()`, so a read tool added tomorrow is UNCLASSIFIED and turns
@@ -571,7 +571,7 @@ class DreamToolSource(Protocol):
 # same structure `ACT_VERBS` uses in `tests/unit/test_tool_registry.py`, and it
 # is what keeps a hand-list from going stale the way the pre-DEC-29 catalogue
 # did.
-WORKSPACE_SAFE_TOOLS: frozenset[str] = frozenset({
+UNIT_SAFE_TOOLS: frozenset[str] = frozenset({
     "web_search", "web_fetch", "now", "calculate", "weather", "version",
     # `social_fetch` (DEC-151): reads the open internet (public X/Instagram
     # content) with no room state anywhere in the answer — the same shape as
@@ -582,11 +582,17 @@ WORKSPACE_SAFE_TOOLS: frozenset[str] = frozenset({
     # but a lookup is a global search of her own creations, never
     # conversation-scoped like `load_transcript`).
     "media_search",
-    # The workspace-scoped reads, admitted with the supplied key path
-    # (32 §3.4): the note tier's two read verbs and the workspace-wide memory
-    # variant of `search_memory`. Each resolves its workspace from the
-    # SUPPLIED key rather than from a room a workspace-keyed adaptor does
-    # not have.
+    # Admitted with the supplied key path (32 §3.4): the note tier's two
+    # read verbs, which resolve their unit from the SUPPLIED key rather than
+    # from a room a unit-keyed adaptor does not have — and the memory search
+    # variant, which resolves NO unit at all.
+    #
+    # That last one is a gap in this gate, not a member of the set. The
+    # question here is «does this verb need a room?», and
+    # `search_memory_workspace` answers no for the WRONG reason: it is
+    # deployment-scoped, not unit-scoped, and reads across every unit at once
+    # (see its own body). It passes because this gate has two axes — read vs
+    # act, room-scoped vs unit-safe — and no axis for scope ABOVE a unit.
     "note_read", "note_search",
     "search_memory_workspace",
 })
@@ -666,11 +672,11 @@ def tool_subset_faults(
        background loop may hold one — except the verbs `grant.acts` names
        for THIS adaptor (39 D3: the proactive adaptor's `remind`, and
        nothing else today).
-    2. **room-scoped vs workspace-safe.** A WORKSPACE-keyed adaptor gets a
-       workspace name as its `key`, which is not a conversation id. Every
+    2. **room-scoped vs unit-safe.** A UNIT-keyed adaptor gets a
+       unit name as its `key`, which is not a conversation id. Every
        room-scoped read tool is bound to one — `load_transcript` reads one
        room's record, `about`/`ask_memory`/`search_memory`/`group_members`
-       answer against one room's live roster — so handing it a workspace does
+       answer against one room's live roster — so handing it a unit does
        not fail loudly, it returns EMPTY. `load_transcript` on an unknown
        conversation returns `{"messages": []}`, which is `unavailable`
        reported as `nothing_found`: the one substitution R-27 forbids.
@@ -685,7 +691,7 @@ def tool_subset_faults(
     **The second axis was documented and unenforced until 2026-08-21.** This
     function's docstring, `RegistryToolSource`'s, DEC-133 and the release
     fragment all asserted the restriction; nothing applied it, and a review
-    probe built `about`/`load_transcript`/`search_memory` for a workspace key
+    probe built `about`/`load_transcript`/`search_memory` for a unit key
     with no complaint. A protection three documents claim exists is worse than
     one nobody claims, because the next reader trusts it.
     """
@@ -701,16 +707,16 @@ def tool_subset_faults(
             f"NativeTool row says read_only=True, or an AdaptorGrant names "
             f"it for this adaptor (39 D3)."
         )
-    if adaptor.key_kind == "workspace" and not allowance.home_room:
-        room_scoped = declared - WORKSPACE_SAFE_TOOLS
+    if adaptor.key_kind == "unit" and not allowance.home_room:
+        room_scoped = declared - UNIT_SAFE_TOOLS
         if room_scoped:
             faults.append(
-                f"Dreamer adaptor {adaptor.name!r} is keyed on a WORKSPACE and "
+                f"Dreamer adaptor {adaptor.name!r} is keyed on a UNIT and "
                 f"declares room-scoped tools: {', '.join(sorted(room_scoped))}. "
-                f"A workspace is not a conversation, so these would answer "
+                f"A unit is not a conversation, so these would answer "
                 f"EMPTY rather than fail — «I could not check» reported as "
-                f"«there was nothing». Workspace-safe tools are: "
-                f"{', '.join(sorted(WORKSPACE_SAFE_TOOLS))}."
+                f"«there was nothing». Unit-safe tools are: "
+                f"{', '.join(sorted(UNIT_SAFE_TOOLS))}."
             )
     return tuple(faults)
 
@@ -898,8 +904,8 @@ class RegistryToolSource:
        DATA-level fail-closed guard behind the name-level one, because the
        name-level one is a list and lists are the thing that go stale.
 
-    A workspace-keyed adaptor is additionally restricted to
-    `WORKSPACE_SAFE_TOOLS` (see that constant), because a workspace has no room
+    A unit-keyed adaptor is additionally restricted to
+    `UNIT_SAFE_TOOLS` (see that constant), because a unit has no room
     at all — `key` is not a conversation id there, and passing it as one would
     quietly ask a room-scoped tool about a conversation that does not exist.
 
@@ -911,22 +917,22 @@ class RegistryToolSource:
     its siblings run the disclosure guard exactly as on a tag; and its
     `grant.acts` are admitted past `read_only()`. Everything about the
     build that is not the room or the acts is unchanged: `deliverer=None`,
-    and the workspace is still SUPPLIED. A home-room grant that resolves no
+    and the unit is still SUPPLIED. A home-room grant that resolves no
     room falls back to the closed shape above and says so — never a guessed
     room.
 
     **The grant resolves through TWO maps, one per `key_kind`, and the
-    difference is what the key already names.** A workspace-keyed adaptor's
-    key is a workspace NAME, so the room is looked up in `home_rooms` — the
+    difference is what the key already names.** A unit-keyed adaptor's
+    key is a unit NAME, so the room is looked up in `home_rooms` — the
     operator's choice, per `policy.toml`'s `home_room = true`. A scope-keyed
     adaptor's key is a CONVERSATION id, so there is nothing to choose: the
     room is looked up in `scope_rooms` by that same key, which is why the
     lookup is an identity rather than a decision and why
-    `WORKSPACE_SAFE_TOOLS`' disclosure argument has no purchase on it (the
+    `UNIT_SAFE_TOOLS`' disclosure argument has no purchase on it (the
     adaptor is already running FOR that room and was already handed its whole
     message batch). Until 2026-09-17 the second half did not exist: `build`
-    resolved `home_rooms[workspace or ""]` and `DreamerRuntime.run` supplies
-    `workspace=None` for a scope-keyed adaptor, so a scope-keyed grant looked
+    resolved `home_rooms[unit or ""]` and `DreamerRuntime.run` supplies
+    `unit=None` for a scope-keyed adaptor, so a scope-keyed grant looked
     up `home_rooms[""]`, found nothing, and took the loud closed branch —
     every room-scoped verb `unavailable`, with the grant reading as honoured
     (`design/culture-tier 03-decisions` correction 14,
@@ -949,7 +955,7 @@ class RegistryToolSource:
         self._honcho = honcho
         self._metrics = metrics
         self._ai_peer = ai_peer
-        # Workspace -> home room, from `Policy.home_rooms()` (39 D2). Empty
+        # Unit -> home room, from `Policy.home_rooms()` (39 D2). Empty
         # for every composition that names none, which builds exactly what
         # it built before.
         self._home_rooms = dict(home_rooms or {})
@@ -957,7 +963,7 @@ class RegistryToolSource:
         # grant. The same value type as `home_rooms` because it answers the
         # same question — which room do the room-scoped verbs resolve
         # through — and a different MAP because the key is a different thing:
-        # a conversation id the runtime already holds, not a workspace name
+        # a conversation id the runtime already holds, not a unit name
         # the operator had to pair with a room. Keyed by every id form a
         # conversation answers to (`Conversation.ids`), so a room that gained
         # an `also_ids` form still resolves; empty for every composition that
@@ -967,23 +973,23 @@ class RegistryToolSource:
         # Conversation id -> origin room (design/dreamer-agent-loop/40, #248).
         # Built by the composition root from `Policy.conversations`; empty for
         # every composition that names none, which keeps the home-room
-        # destination unchanged for tag paths and unwired workspaces.
+        # destination unchanged for tag paths and unwired units.
         self._origin_rooms = dict(origin_rooms or {})
         # Platform -> roster source, the same map `FirePath` holds: a home
         # room on a platform with no roster answers `available=False`, the
         # honest state, never an empty room.
         self._rosters = dict(rosters or {})
         self._self_ids = frozenset(self_ids)
-        # (adaptor, workspace) pairs already reported for the missing-home-room
+        # (adaptor, unit) pairs already reported for the missing-home-room
         # branch below. The condition is a CONFIG state — true on every pass
         # until policy.toml changes — so an error per pass is a stream of
         # identical lines that says nothing the first one didn't, and on this
         # deployment it filed the same Sentry issue every dream (NORA-2, two
-        # workspaces). The COUNTER carries the ongoing reading; the log carries
+        # units). The COUNTER carries the ongoing reading; the log carries
         # the news.
         self._home_room_reported: set[tuple[str, str]] = set()
         # `online_now`'s input-domain resolver (design/online-status/03):
-        # workspace -> the home roster unioned with the note subjects. Bound
+        # unit -> the home roster unioned with the note subjects. Bound
         # per BUILD below, and ONLY when a home-room grant resolved — the
         # decide turn is the one occasion that may answer about people
         # outside the room it stands in, and a background loop never gets
@@ -995,24 +1001,24 @@ class RegistryToolSource:
         return self._registry.read_only_tools()
 
     def build(
-        self, *, key: str, names: frozenset[str], workspace: str | None = None,
+        self, *, key: str, names: frozenset[str], unit: str | None = None,
         adaptor: str = "", grant: AdaptorGrant | None = None,
     ) -> list[Any]:
         from .room import Room
 
         allowance = grant if grant is not None else AdaptorGrant()
-        # WHICH MAP, and it follows from what `workspace` says about the
+        # WHICH MAP, and it follows from what `unit` says about the
         # caller rather than from a second parameter nobody could forget to
-        # pass: `DreamerRuntime.run` supplies the workspace for a
-        # workspace-keyed adaptor and `None` for a scope-keyed one, so `None`
+        # pass: `DreamerRuntime.run` supplies the unit for a
+        # unit-keyed adaptor and `None` for a scope-keyed one, so `None`
         # here IS «the key is a conversation». See the class docstring for
         # why the scope side is an identity and not a disclosure decision.
         if not allowance.home_room:
             home = None
-        elif workspace is None:
+        elif unit is None:
             home = self._scope_rooms.get(key)
         else:
-            home = self._home_rooms.get(workspace)
+            home = self._home_rooms.get(unit)
         if allowance.home_room and home is None:
             # Loud, and CLOSED: the grant said «stand in a real room» and
             # none resolved. Building the room-scoped tools against a
@@ -1022,20 +1028,20 @@ class RegistryToolSource:
             # with the room.
             self._metrics.inc(
                 "nora_dream_home_room_missing_total",
-                adaptor=adaptor, workspace=workspace or "",
+                adaptor=adaptor, unit=unit or "",
             )
-            # Once per (adaptor, room-or-workspace), not once per pass: the
+            # Once per (adaptor, room-or-unit), not once per pass: the
             # counter above is the continuous reading, and repeating an
             # unchanging config fault at `error` on every dream buries the
             # passes that DID change something. The second half of the key is
-            # whatever failed to resolve — the workspace for a workspace-keyed
+            # whatever failed to resolve — the unit for a unit-keyed
             # adaptor, the KEY for a scope-keyed one, whose misses would
             # otherwise all collapse onto `""` and report the first broken
             # room as though it were the only one.
-            seen = (adaptor, workspace if workspace is not None else key)
+            seen = (adaptor, unit if unit is not None else key)
             if seen not in self._home_room_reported:
                 self._home_room_reported.add(seen)
-                if workspace is None:
+                if unit is None:
                     log.error(
                         "dream adaptor %r is granted a home room but scope %r "
                         "is not a conversation in policy.toml; building "
@@ -1043,9 +1049,9 @@ class RegistryToolSource:
                     )
                 else:
                     log.error(
-                        "dream adaptor %r is granted a home room but workspace "
+                        "dream adaptor %r is granted a home room but unit "
                         "%r names none in policy.toml; building without acts "
-                        "or a room", adaptor, workspace,
+                        "or a room", adaptor, unit,
                     )
         acts = allowance.acts if home is not None else frozenset()
         wanted = frozenset(names) & (self.read_only() | acts)
@@ -1061,18 +1067,18 @@ class RegistryToolSource:
         # call safe.
         online_scope_for = self._online_scope_for
         online_scope = (
-            (lambda: online_scope_for(workspace))
-            # `workspace is not None` is the third clause and it is not
-            # tidiness: the resolver is keyed by WORKSPACE, and a scope-keyed
+            (lambda: online_scope_for(unit))
+            # `unit is not None` is the third clause and it is not
+            # tidiness: the resolver is keyed by UNIT, and a scope-keyed
             # home-room build has none. Passing `""` would resolve the union
-            # for no workspace — an empty domain at best, and at worst the
+            # for no unit — an empty domain at best, and at worst the
             # widened decide-turn domain reaching a background pass it was
             # never meant to. A scope-keyed adaptor keeps the tag-path
             # domain: `online_now` answers about ITS OWN room's roster, which
             # is the only question it has.
             if home is not None
             and online_scope_for is not None
-            and workspace is not None
+            and unit is not None
             else None
         )
         if home is not None:
@@ -1094,8 +1100,8 @@ class RegistryToolSource:
         built = self._registry.build(
             store=self._store,
             # The HOME ROOM's conversation, not the key, when there is one
-            # (39 D3): for a workspace-keyed adaptor the key is the
-            # workspace NAME, and a reminder row bound to it would die
+            # (39 D3): for a unit-keyed adaptor the key is the
+            # unit NAME, and a reminder row bound to it would die
             # `failed_policy` at every fire.
             conversation_id=home.conversation_id if home is not None else key,
             conversation_type=home.conversation_type if home is not None else "group",
@@ -1117,15 +1123,15 @@ class RegistryToolSource:
             # (39 D3) instead of reading a tagger it does not have.
             dream_adaptor=adaptor,
             # The key-path fix (design/dreamer-agent-loop/32 §3.4): for a
-            # WORKSPACE-keyed adaptor `key` IS the workspace, so the runtime
-            # SUPPLIES it and the workspace-scoped verbs (the note reads,
+            # UNIT-keyed adaptor `key` IS the unit, so the runtime
+            # SUPPLIES it and the unit-scoped verbs (the note reads,
             # `search_memory_workspace`) read it directly
             # rather than deriving one from the synthetic room above — where
-            # `workspace_for("", key)` can only answer `None`. `None` for a
+            # `unit_for("", key)` can only answer `None`. `None` for a
             # scope-keyed adaptor, whose key is a real conversation id and
             # whose tools resolve through the room — the EMPTY room without a
             # home-room grant, and the room the key names with one.
-            supplied_workspace=workspace,
+            supplied_unit=unit,
             # Bound above, where the home-room grant was resolved.
             online_scope=online_scope,
             # Proactive destination map (design/dreamer-agent-loop/40, #248):
@@ -1206,7 +1212,7 @@ class DreamerRuntime:
         # int on the adaptors.
         self._tool_budget_overrides = dict(tool_budget_overrides or {})
         # Name -> `AdaptorGrant` (39 D2/D3): the ONE allowance past the
-        # read-only ceiling and past `WORKSPACE_SAFE_TOOLS`, per adaptor, by
+        # read-only ceiling and past `UNIT_SAFE_TOOLS`, per adaptor, by
         # name. The same mapping the composition root hands
         # `verify_tool_subsets`, so the startup check and the per-run
         # re-check below cannot disagree about who holds what. Empty by
@@ -1392,7 +1398,7 @@ class DreamerRuntime:
 
             # `inputs` BEFORE `build` (audit 2026-09-09): a blank prompt is
             # the fire condition, and building a whole tool registry — with
-            # its roster source and, for a home-room grant on a workspace
+            # its roster source and, for a home-room grant on a unit
             # that names none, a daily ERROR line — for a run that is about
             # to be skipped is cost with nothing to show for it. Nothing
             # below the blank check reads `tools`, and nothing in `inputs`
@@ -1417,7 +1423,7 @@ class DreamerRuntime:
                 # It matters most for an adaptor with `uses_watermark = False`,
                 # which gets no lag/quiet/age conditions at all and would
                 # otherwise fire on EVERY tick: at the shipped 300s cadence
-                # that is 288 full `web_search`/`web_fetch` loops per workspace
+                # that is 288 full `web_search`/`web_fetch` loops per unit
                 # per day with nothing pending. The port's own docstring says
                 # such an adaptor "must carry its own fire condition", and this
                 # is where the runtime lets it: the shipped curator's is a
@@ -1442,12 +1448,12 @@ class DreamerRuntime:
                 )
             tools = self._tools.build(
                 key=key, names=frozenset(adaptor.tools),
-                # A workspace-keyed adaptor's key IS the workspace (32 §3.4):
-                # supply it so the workspace-scoped verbs resolve it directly
-                # instead of asking `workspace_for` to name a room that does
+                # A unit-keyed adaptor's key IS the unit (32 §3.4):
+                # supply it so the unit-scoped verbs resolve it directly
+                # instead of asking `unit_for` to name a room that does
                 # not exist. A scope-keyed adaptor supplies nothing and its
                 # tools resolve through the room, unchanged.
-                workspace=key if adaptor.key_kind == "workspace" else None,
+                unit=key if adaptor.key_kind == "unit" else None,
                 adaptor=adaptor.name, grant=grant,
             )
             # The BUDGETS, not the guard. A `DreamGuard` owns a
@@ -1652,7 +1658,7 @@ class DreamerRuntime:
         what sampling means. **`max_memory_calls` inherits that**, which is
         what makes it a per-PASS ceiling rather than a per-adaptor-lifetime
         one: a guard built here cannot carry yesterday's reads, or the
-        previous workspace's, or the previous sample's.
+        previous unit's, or the previous sample's.
         """
         guard = DreamGuard(
             adaptor=adaptor.name,

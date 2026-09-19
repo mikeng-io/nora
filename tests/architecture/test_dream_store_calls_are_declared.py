@@ -511,8 +511,8 @@ class _EscapeShapes:
     async def inputs(self, *, key, batch):
         import asyncio
         a, b = await asyncio.gather(
-            self._notes.standing(workspace=key),
-            self._db.pending(workspace=key),
+            self._notes.standing(unit=key),
+            self._db.pending(unit=key),
         )
         async for _row in self._record.stream(key):
             break

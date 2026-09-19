@@ -943,7 +943,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # exactly as `remind` is.
     #
     # `cacheable=False` on all four, by default and on purpose: a note is
-    # workspace-scoped state that the curator and a parallel turn in another
+    # unit-scoped state that the curator and a parallel turn in another
     # room may both move, so a replayed answer would be a body that is no
     # longer the head — the "true-in-the-past returned as current" error the
     # whole tier is written to avoid.
@@ -956,7 +956,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                               side_effect_state="none", idempotency="idempotent", retry="safe",
                               output_contract="three_state"),
     # 4 like its room-scoped sibling `search_memory`: it IS that verb with
-    # the scope widened to the workspace (32 §5 closed decision 1), sized by
+    # the scope widened to the unit (32 §5 closed decision 1), sized by
     # the same "search, then refine once or twice" reasoning.
     "search_memory_workspace": NativeTool(4,
                                           source_tier="remembered", read_only=True,
@@ -1275,7 +1275,7 @@ RECALL_LOOKUPS_MAX_CHARS = 8000
 # How many notes one `note_search` hands back, and it is NOT a model-supplied
 # parameter on purpose (DEC-24's rule: a parameter is a value the model must
 # invent on every call, so each one buys a way to get the call wrong). A
-# workspace holds tens of notes and the curator's retirement pass is what keeps
+# unit holds tens of notes and the curator's retirement pass is what keeps
 # it that way, so a query matching more than five bodies is a query too vague
 # to act on — the answer to that is a better query, not a longer list. Each hit
 # carries a whole head body, and a tool result is re-sent on every subsequent
@@ -1469,9 +1469,9 @@ class OriginRoom:
     """One policy room, keyed by its conversation ids, for a note-linked
     proactive row's DESTINATION (design/dreamer-agent-loop/40, issue #248).
 
-    A workspace-keyed adaptor is handed its home room at `build` time, and
+    A unit-keyed adaptor is handed its home room at `build` time, and
     under Dreamer provenance `remind` stamps every row into it. A note can
-    be born in ANY room of the workspace — Zone 42 on Discord, say, while
+    be born in ANY room of the unit — Zone 42 on Discord, say, while
     the home room is the Signal group — so a note-linked row's destination
     is the room the note carries (`Note.established_in`), read through this
     map, not the home room. Same policy-independence seam as `home_rooms`:
@@ -1489,11 +1489,11 @@ class OriginRoom:
     conversation_id: str
     conversation_type: str = "group"
     proactive: bool = False
-    # The workspace this room belongs to, from policy.toml at load time. Kept
+    # The unit this room belongs to, from policy.toml at load time. Kept
     # so a row can be refused when the note's origin room drifted into a
-    # DIFFERENT social unit since the note was born — cross-workspace speech
-    # is the one thing the workspace boundary exists to prevent.
-    workspace: str = ""
+    # DIFFERENT social unit since the note was born — cross-unit speech
+    # is the one thing the unit boundary exists to prevent.
+    unit: str = ""
 
 
 def _parse_when(raw: str) -> datetime | None:
@@ -1984,10 +1984,10 @@ def _memory_hits_result(
 
     Factored OUT of `search_memory` when `search_memory_workspace` landed,
     because a second copy of this filter is how the room path and the
-    workspace path drift into two different disclosure decisions. What the
+    unit path drift into two different disclosure decisions. What the
     callers do NOT share stays with them: the room verb keeps
     `nora_room_lookups_total` (its `record`), its roster comes from the
-    room's live view, and it carries `partial_view`; the workspace verb
+    room's live view, and it carries `partial_view`; the unit verb
     counts on `nora_tool_calls_total`, builds its roster from
     `persons.by_person`, and has no room view to degrade.
 
@@ -2060,8 +2060,8 @@ def _memory_hits_result(
     record("ok", results=len(kept))
     result: dict = {"status": "ok", "results": kept}
     # `partial_view` is present only on the ROOM verb (a degraded roster is a
-    # property of a room's live view; the workspace verb has no view to
-    # degrade) — omitted entirely rather than nulled, so the workspace
+    # property of a room's live view; the unit verb has no view to
+    # degrade) — omitted entirely rather than nulled, so the unit
     # result's shape does not carry a key that could only ever be one value.
     if partial_view is not None:
         result["partial_view"] = partial_view
@@ -2406,30 +2406,30 @@ class NoteCollaborator(Protocol):
     to be importable from every layer that catches it.
     """
 
-    async def standing(self, *, workspace: str) -> tuple[Note, ...]: ...
+    async def standing(self, *, unit: str) -> tuple[Note, ...]: ...
 
     async def read(
-        self, *, workspace: str, note_id: str,
+        self, *, unit: str, note_id: str,
     ) -> tuple[Note, NoteRevision] | None: ...
 
     async def search(
-        self, *, workspace: str, query: str, limit: int,
+        self, *, unit: str, query: str, limit: int,
     ) -> tuple[tuple[Note, str], ...]: ...
 
     async def create(
-        self, *, workspace: str, title: str, description: str, uncertainty: str,
+        self, *, unit: str, title: str, description: str, uncertainty: str,
         closing_condition: str, established_in: str, body: str,
         established_by: str, now_ms: int, anchor_date: int | None = None,
         anchor_entity_ids: tuple[str, ...] = (),
     ) -> Note: ...
 
     async def append_revision(
-        self, *, workspace: str, note_id: str, body: str,
+        self, *, unit: str, note_id: str, body: str,
         parent_revision_id: str, established_by: str, now_ms: int,
     ) -> NoteRevision: ...
 
     async def record_miss(
-        self, *, workspace: str, probe: str, conversation_id: str, now_ms: int,
+        self, *, unit: str, probe: str, conversation_id: str, now_ms: int,
     ) -> int: ...
 
 
@@ -2504,9 +2504,9 @@ def build_tool_specs(
     relay: Relay | None = None,
     events: EventsCollaborator | None = None,
     notes: NoteCollaborator | None = None,
-    note_workspace: Callable[[str, str], str | None] | None = None,
-    workspace_for: Callable[[str, str], str | None] | None = None,
-    supplied_workspace: str | None = None,
+    note_unit: Callable[[str, str], str | None] | None = None,
+    unit_for: Callable[[str, str], str | None] | None = None,
+    supplied_unit: str | None = None,
     music: MusicToolBridge | None = None,
     online_source: SteamPresenceProvider | None = None,
     voice_source: VoicePresenceSource | None = None,
@@ -2521,7 +2521,7 @@ def build_tool_specs(
     # (`RegistryToolSource` -> `build_tool_specs`). `remind` under `dream_adaptor`
     # provenance reads a linked note's `established_in` through it to stamp a
     # row into the room the note was born in instead of the home room. `None`
-    # (every tag-path caller, and a workspace with no proactive wiring) keeps
+    # (every tag-path caller, and a unit with no proactive wiring) keeps
     # the home-room behaviour — the honest, unchanged default.
     origin_rooms: Mapping[str, OriginRoom] | None = None,
 ) -> tuple[ToolSpec, ...]:
@@ -2583,19 +2583,19 @@ def build_tool_specs(
     disclosure side (`room`, `presence_circles`, `location_trusted`) is the
     SAME seam `where_is` speaks through; only the read is new.
 
-    `notes`/`note_workspace` are the note tier's pair, and they are ONE piece of
+    `notes`/`note_unit` are the note tier's pair, and they are ONE piece of
     wiring in two arguments rather than two independent ones: a note is keyed on
-    the workspace (spec §3), so a store with no workspace to read is as unusable
+    the unit (spec §3), so a store with no unit to read is as unusable
     as no store, and both states answer `unavailable` — never `nothing_found`,
     which would report an unconsulted notebook as an empty one.
 
-    **`note_workspace` RESOLVES a room to its workspace; it is not a constant.**
+    **`note_unit` RESOLVES a room to its unit; it is not a constant.**
     It was written as a per-process string, on the reasoning that the
-    conversation→workspace seam is fixed by the deployment. That is false for
-    every deployment with more than one workspace, and this one has two:
+    conversation→unit seam is fixed by the deployment. That is false for
+    every deployment with more than one unit, and this one has two:
     `policy.toml` puts the operator's own rooms in `ridgeline` and the group in
     `friends`, deliberately never paired. A single string would hand one room
-    the OTHER's notebook — a cross-workspace read and write, which is the exact
+    the OTHER's notebook — a cross-unit read and write, which is the exact
     boundary §3's scope decision exists to hold, and DEC-105/R-49 hold for
     `send_to`. So it takes `(platform, conversation_id)` and answers `None` for
     a room policy cannot name, which is `unavailable` rather than a guess.
@@ -2644,16 +2644,16 @@ def build_tool_specs(
     invoking room's own roster. When supplied it WINS and `room.scope()` is
     never queried; when it raises, the call answers `unavailable`, never a
     narrowed guess. It must never become a registry field — it is bound to
-    exactly one decide turn, the way `supplied_workspace` below is.
+    exactly one decide turn, the way `supplied_unit` below is.
 
-    `supplied_workspace` is the Dreamer's half of the key-path fix (32 §3.4,
-    and `08-state.md` §10's named trap): a WORKSPACE-keyed adaptor's key IS
-    the workspace, so the runtime SUPPLIES it here rather than letting
-    `_workspace()` derive it from the room — the Dreamer's synthetic `Room`
-    has no platform and carries the workspace in its conversation slot, so
-    the derived path answers `None` and every workspace-scoped verb would
+    `supplied_unit` is the Dreamer's half of the key-path fix (32 §3.4,
+    and `08-state.md` §10's named trap): a UNIT-keyed adaptor's key IS
+    the unit, so the runtime SUPPLIES it here rather than letting
+    `_unit()` derive it from the room — the Dreamer's synthetic `Room`
+    has no platform and carries the unit in its conversation slot, so
+    the derived path answers `None` and every unit-scoped verb would
     read `unavailable` forever while looking wired. When truthy it WINS over
-    the resolver; `None` (every tag-path caller) leaves `_workspace()`
+    the resolver; `None` (every tag-path caller) leaves `_unit()`
     exactly as it was.
     """
     caps = reminder_caps or ReminderCaps()
@@ -3107,7 +3107,7 @@ cannot tell you about anyone outside it."""
                 # what NORA has come to understand about them from messages she
                 # witnessed — her own model — NOT the person's self-description.
                 # The pair only exists because Nora joins every session with
-                # observe_others=True (proven live 2026-08-07). Workspace-wide by
+                # observe_others=True (proven live 2026-08-07). Unit-wide by
                 # design: her model blends every conversation she shares with them;
                 # the room roster above already gated WHO she may recall.
                 peer_id=ai_peer,
@@ -6896,7 +6896,7 @@ when somebody asks what song is on.
             _record_created(metrics, "unavailable")
             return {
                 "status": "unavailable",
-                "note": "There is no room for this workspace to hold a "
+                "note": "There is no room for this unit to hold a "
                         "reminder in. Decline rather than promise.",
             }
         # §12: only a MAPPED person may own a row. `requester_person_id` is what
@@ -7069,12 +7069,12 @@ when somebody asks what song is on.
                         "Leave it rather than promise."
                     ),
                 }
-            if origin.workspace != (supplied_workspace or _workspace()):
-                _record_created(metrics, "refused_origin_wrong_workspace")
+            if origin.unit != (supplied_unit or _unit()):
+                _record_created(metrics, "refused_origin_wrong_unit")
                 return {
                     "status": "refused",
                     "note": (
-                        "That note's room drifted outside this workspace — I "
+                        "That note's room drifted outside this unit — I "
                         "won't speak across the boundary. Leave it."
                     ),
                 }
@@ -7740,51 +7740,51 @@ Args:
     def _notebook() -> NoteCollaborator | None:
         """The wired store, or None — BOTH halves of the wiring checked as one.
 
-        A store with no workspace is as unusable as no store at all (a note is
-        workspace-keyed, §3), and answering «nothing found» from either state
+        A store with no unit is as unusable as no store at all (a note is
+        unit-keyed, §3), and answering «nothing found» from either state
         is the `unavailable`-reported-as-`nothing_found` failure R-27 exists to
         prevent. Returning the store rather than a bool is what lets each tool
         bind a non-optional local, so the narrowing is the type checker's job
         rather than an `assert` restating what this function already decided.
         """
-        return notes if _workspace() else None
+        return notes if _unit() else None
 
-    def _workspace() -> str | None:
-        """This turn's workspace, or `None` when it cannot be named.
+    def _unit() -> str | None:
+        """This turn's unit, or `None` when it cannot be named.
 
-        **`supplied_workspace` WINS when set** (design/dreamer-agent-loop/32
-        §3.4): a workspace-keyed Dreamer adaptor's key IS the workspace, and
+        **`supplied_unit` WINS when set** (design/dreamer-agent-loop/32
+        §3.4): a unit-keyed Dreamer adaptor's key IS the unit, and
         the Dreamer's synthetic `Room` carries it in the conversation slot
         with no platform, so the resolver below could never name it — every
-        workspace-scoped verb answered `unavailable` on a fully-wired store,
+        unit-scoped verb answered `unavailable` on a fully-wired store,
         the `08-state.md` §10 trap of a seam that looks like it works while
-        every call fails closed. A SUPPLIED workspace is the truth about what
+        every call fails closed. A SUPPLIED unit is the truth about what
         the run is keyed on; the resolver is the fallback for the tag path,
         which has a real room and no supplier.
 
         Resolved per turn from `room.platform` and the bound conversation —
         never a process-wide constant. `None` means policy could not name the
         room, and every verb that needs one answers `unavailable` on it:
-        reading the wrong workspace's notebook is worse than reading none.
+        reading the wrong unit's notebook is worse than reading none.
 
-        **Shared by every workspace-keyed verb**, because it is one value —
-        `policy.conversation(...).workspace` — and two resolvers for it would
+        **Shared by every unit-keyed verb**, because it is one value —
+        `policy.conversation(...).unit` — and two resolvers for it would
         be two definitions of which social unit a room belongs to.
-        `workspace_for` is the parameter; `note_workspace` is its older name,
+        `unit_for` is the parameter; `note_unit` is its older name,
         still accepted so the note tier's call sites keep working. Preferring
         one over the other rather than requiring both means a verb outside the
         note tier does not silently depend on the NOTE tier being wired, which
-        it would have if it had simply read `note_workspace`.
+        it would have if it had simply read `note_unit`.
         """
-        if supplied_workspace:
-            return supplied_workspace
-        resolver = workspace_for or note_workspace
+        if supplied_unit:
+            return supplied_unit
+        resolver = unit_for or note_unit
         if resolver is None:
             return None
         try:
             return resolver(room.platform, bound_conversation_id)
         except Exception:
-            log.exception("note workspace resolution failed")
+            log.exception("note unit resolution failed")
             return None
 
     async def _resolve(book: NoteCollaborator, title: str) -> list[Note]:
@@ -7798,7 +7798,7 @@ Args:
         """
         wanted = note_handle(title)
         return [
-            n for n in await book.standing(workspace=_workspace() or "")
+            n for n in await book.standing(unit=_unit() or "")
             if note_handle(n.title) == wanted
         ]
 
@@ -7847,14 +7847,14 @@ Args:
                     "note": "There's no note by that title. Only the ones in "
                             "<notes> exist — don't describe one that isn't there.",
                 }
-            found = await book.read(workspace=_workspace() or "", note_id=candidates[0].id)
+            found = await book.read(unit=_unit() or "", note_id=candidates[0].id)
         except Exception:
             log.exception("note_read failed")
             _record(metrics, "note_read", "unavailable")
             return dict(notes_off)
         if found is None:
             # The note was standing a moment ago and is not readable now — the
-            # curator retired it out from under this call, or the workspace
+            # curator retired it out from under this call, or the unit
             # moved. «I could not read it», never «there is no such note»: the
             # index she is looking at still says there is.
             _record(metrics, "note_read", "unavailable", reason="vanished")
@@ -7909,7 +7909,7 @@ Args:
             }
         try:
             hits = await book.search(
-                workspace=_workspace() or "", query=probe, limit=NOTE_SEARCH_LIMIT,
+                unit=_unit() or "", query=probe, limit=NOTE_SEARCH_LIMIT,
             )
         except Exception:
             log.exception("note_search failed")
@@ -7923,7 +7923,7 @@ Args:
             # written must not turn a real `nothing_found` into a failure.
             try:
                 await book.record_miss(
-                    workspace=_workspace() or "", probe=probe,
+                    unit=_unit() or "", probe=probe,
                     conversation_id=bound_conversation_id, now_ms=_now_ms(),
                 )
             except Exception:
@@ -7984,19 +7984,23 @@ Args:
                         "through what was said. Say you can't check — do not "
                         "guess.",
             }
-        # The roster is the WORKSPACE's people (identity.toml), not a room's
-        # live view — 32 §5 closed decision 1: «search 六個人嘅 memory» means
-        # the whole workspace's memory. Nora's OWN peer is excluded the same
-        # way the room path drops her: her words are not the group's memory of
-        # what was said.
+        # The roster is identity.toml's WHOLE address book — not a room's
+        # live view, and not a unit's either: `PersonRef` carries no unit, so
+        # this filter CANNOT be unit-shaped. 32 §5 closed decision 1 («search
+        # 六個人嘅 memory») was written when one deployment meant one group.
+        # Nora's OWN peer is excluded the same way the room path drops her:
+        # her words are not the group's memory of what was said.
         roster = {
             ref.honcho_peer_id: ref.name
             for person_id, ref in by_person.items()
             if person_id != ai_peer
         }
         try:
-            # WORKSPACE-wide (no `conversation_id`): the client hits Honcho's
-            # workspace `/search` endpoint. The room verb's comment carries the
+            # No `conversation_id`, so the client hits Honcho's WORKSPACE
+            # `/search` — and Honcho's workspace is the whole deployment, so
+            # this reaches every unit, not just this one (design/24 §S.4 is
+            # the open question of whether it should). The room verb's
+            # comment carries the
             # audit for why IT stays session-scoped — surfacing a roster
             # member's PRIVATE DM words into a room — and that reason does not
             # bind here: this verb exists for the Dreamer, whose output is
@@ -8187,7 +8191,7 @@ Args:
             }
         try:
             note = await book.create(
-                workspace=_workspace() or "", title=title, description=description,
+                unit=_unit() or "", title=title, description=description,
                 uncertainty=uncertainty, closing_condition=closing_condition,
                 established_in=bound_conversation_id, body=body,
                 established_by=f"{TAG_PATH_PREFIX}{tagger.person_id}",
@@ -8287,7 +8291,7 @@ Args:
             }
         try:
             revision = await book.append_revision(
-                workspace=_workspace() or "", note_id=note.id, body=body,
+                unit=_unit() or "", note_id=note.id, body=body,
                 parent_revision_id=parent,
                 established_by=f"{TAG_PATH_PREFIX}{tagger.person_id}",
                 now_ms=_now_ms(),
@@ -8822,9 +8826,9 @@ def build_tools(
     ai_peer: str = "nora",
     links: LinkCarry | None = None,
     notes: NoteCollaborator | None = None,
-    note_workspace: Callable[[str, str], str | None] | None = None,
-    workspace_for: Callable[[str, str], str | None] | None = None,
-    supplied_workspace: str | None = None,
+    note_unit: Callable[[str, str], str | None] | None = None,
+    unit_for: Callable[[str, str], str | None] | None = None,
+    supplied_unit: str | None = None,
     image_generator: ImageGenerator | None = None,
     image_refs_allowed: bool = False,
     media_store: MediaObjectStore | None = None,
@@ -8856,9 +8860,9 @@ def build_tools(
         question=question, context_window=context_window, transcript=transcript,
         ai_peer=ai_peer,
         links=links, giphy_source=giphy_source,
-        notes=notes, note_workspace=note_workspace,
-        workspace_for=workspace_for,
-        supplied_workspace=supplied_workspace,
+        notes=notes, note_unit=note_unit,
+        unit_for=unit_for,
+        supplied_unit=supplied_unit,
         image_generator=image_generator, image_refs_allowed=image_refs_allowed,
         media_store=media_store,
         online_source=online_source, voice_source=voice_source,

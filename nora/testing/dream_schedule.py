@@ -12,7 +12,7 @@ distinction enforceable rather than a naming convention.
 **It keys on `(adaptor_name, key)` as a tuple, not on a joined string.** The
 SQL table has a two-column primary key; a fake keyed on `f"{name}:{key}"` would
 merge `("a:b", "c")` with `("a", "b:c")` where Postgres keeps them apart, and
-every adaptor name and workspace key in this repo is operator-supplied text
+every adaptor name and unit key in this repo is operator-supplied text
 that may contain a colon (`100000000000000201/100000000000000202` is a live
 scope id). A fake more permissive than the real store is the exact failure
 `InMemoryTurnVerdictStore`'s docstring records.

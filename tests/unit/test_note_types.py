@@ -52,7 +52,7 @@ NOW = 1_755_100_000_000
 def _note(**over) -> Note:
     kwargs: dict = {
         "id": "01930000-0000-7000-8000-000000000001",
-        "workspace": "friends",
+        "unit": "friends",
         "title": "Dinner, 9 Sept",
         "description": "Three candidate restaurants, nobody has decided yet.",
         "uncertainty": "which restaurant, and whether it happens at all",

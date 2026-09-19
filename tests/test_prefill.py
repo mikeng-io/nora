@@ -46,7 +46,7 @@ def _decisions() -> tuple[tuple[str, tuple[DecisionRow, ...]], ...]:
     """
     return (("this room", (DecisionRow(
         id="0191f2c4-0000-7000-8000-00000000000c", writer="participation",
-        platform="signal", conversation_id="g1", workspace="nora", note_id=None,
+        platform="signal", conversation_id="g1", unit="nora", note_id=None,
         verdict="spoke", reason="answered the dinner question",
         ts=1_757_000_000_000,
     ),)),)
@@ -59,7 +59,7 @@ def _standing(body="They are deciding where to eat; nobody has picked yet.") -> 
 
 def _note(title="9 Sept dinner") -> Note:
     return Note(
-        id="0191f2c4-0000-7000-8000-00000000000a", workspace="nora", title=title,
+        id="0191f2c4-0000-7000-8000-00000000000a", unit="nora", title=title,
         description="Three venues on the table; nobody has picked one.",
         uncertainty="which venue, and whether the 9th still works",
         closing_condition="a venue is booked, or the date is abandoned",
@@ -943,8 +943,8 @@ def test_the_notes_block_is_after_the_context_header():
 
 
 def test_the_notes_block_is_not_in_the_static_header():
-    """The cached prefix is `_context_header`. A workspace-keyed block put
-    there would fragment DeepSeek's prefix match across every workspace, and
+    """The cached prefix is `_context_header`. A unit-keyed block put
+    there would fragment DeepSeek's prefix match across every unit, and
     `TagContext.notes` is reassembled per tag anyway — see `_notes_block`'s
     own docstring."""
     prefill = build_prefill(_ctx(_rows("hi"), notes=(_note(),)), display_name="Nora",
@@ -964,7 +964,7 @@ def test_the_notes_block_is_absent_when_nothing_is_standing():
 
 
 def test_the_notes_block_sits_at_the_wide_end_of_the_volatile_tail():
-    """`<notes>` is the one WORKSPACE-keyed block left, so it sits at the wide
+    """`<notes>` is the one UNIT-keyed block left, so it sits at the wide
     end of the widening-scope order the volatile tail is built on — after the
     person blocks, and still ahead of the transcript that may bear on it."""
     prefill = build_prefill(

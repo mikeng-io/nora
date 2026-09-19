@@ -58,14 +58,14 @@ trigger seam concluded for the write side.
 **An extent line, and a turn-anchored neighbourhood.**
 
 The extent line answers *how much do I know* — a count of standing edges and
-distinct entities in the workspace. This is the direct fix for the defect the
+distinct entities in the unit. This is the direct fix for the defect the
 recency slice had: a slice tells Nora *"we have eight facts"* and leaves her
 blind to the rest; **an extent tells her the size of what she has not been shown,
 which is what makes reaching for the verb a reasonable act rather than a guess.**
 
 The neighbourhood answers *what do I know about what is being discussed*: resolve
 the entities named in this turn, then read their 1-hop edges — one lookup against
-`(workspace, subject_id)`, the index that already exists, partial on standing
+`(unit, subject_id)`, the index that already exists, partial on standing
 rows.
 
 **No model, no embedding, no fusion.** This is the focal-node signal
@@ -264,7 +264,7 @@ speedup nobody can measure.
 **Build an HNSW index when either reading fires**, and both are readings someone
 takes rather than a feeling:
 
-- **row count crosses 50,000 vectors** in one workspace, or
+- **row count crosses 50,000 vectors** in one unit, or
 - **p95 query latency on the dense channel exceeds 50 ms.**
 
 Whichever comes first. `CREATE INDEX … USING hnsw (embedding vector_cosine_ops)`

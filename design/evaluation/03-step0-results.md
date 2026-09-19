@@ -97,7 +97,7 @@ and it never looks at `eval_support.py`.
 is a prompt input directly; both change **what a tool answers**, which is what
 the model reads next:
 
-- `online_scope_for` resolves who is online for a workspace. Without it
+- `online_scope_for` resolves who is online for a unit. Without it
   `online_now` cannot answer. `dreamer.py:1055-1070` carries a paragraph on why
   this resolver must not be handed the wrong scope — *"the widened decide-turn
   domain reaching a background pass it was never meant to"*.

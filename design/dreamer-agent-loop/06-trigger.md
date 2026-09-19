@@ -37,7 +37,7 @@ This is not a separate problem from cadence — it is the same absence.
 **Cadence is one global clock for three different rhythms.** Extraction is
 watermark-driven and cheap; a clock suits it. Adjudication is a *work queue*
 wearing a clock's clothing — it should run when there is something in the queue,
-and today it fires every tick on every workspace until the queue drains.
+and today it fires every tick on every unit until the queue drains.
 Synthesis, when it exists, wants to run rarely. One tick serves all three.
 
 **"Did not fire" is indistinguishable from "ran and found nothing" at the
@@ -222,7 +222,7 @@ single axis serves all three, so the axis has to be the adaptor's to choose.
 A gap, recorded because it is small and silent:
 
 > *the runtime's iteration returns **conversations**; the notebook is keyed on
-> **workspace**, so both rooms would tick the same notebook … **or the pass does
+> **unit**, so both rooms would tick the same notebook … **or the pass does
 > duplicate work behind a lock.***
 
 **When the runtime's iteration domain is finer than the adaptor's key, every

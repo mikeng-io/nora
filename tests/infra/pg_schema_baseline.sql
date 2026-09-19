@@ -80,9 +80,9 @@ ADD CONSTRAINT exchange_observation_scope_id_act_message_ids_key UNIQUE (scope_i
 ADD CONSTRAINT fact_asserter_fact_id_fkey FOREIGN KEY (fact_id) REFERENCES public.fact(id) ON DELETE CASCADE;
 ADD CONSTRAINT fact_asserter_pkey PRIMARY KEY (fact_id, person_id, message_id);
 ADD CONSTRAINT fact_candidate_pkey PRIMARY KEY (id);
-ADD CONSTRAINT fact_candidate_triple_key UNIQUE (workspace, subject_id, predicate, object);
+ADD CONSTRAINT fact_candidate_triple_key UNIQUE (unit, subject_id, predicate, object);
 ADD CONSTRAINT fact_entity_pkey PRIMARY KEY (id);
-ADD CONSTRAINT fact_entity_workspace_name_key UNIQUE (workspace, canonical_name);
+ADD CONSTRAINT fact_entity_unit_name_key UNIQUE (unit, canonical_name);
 ADD CONSTRAINT fact_object_entity_id_fkey FOREIGN KEY (object_entity_id) REFERENCES public.fact_entity(id);
 ADD CONSTRAINT fact_pkey PRIMARY KEY (id);
 ADD CONSTRAINT fact_premise_fact_id_fkey FOREIGN KEY (fact_id) REFERENCES public.fact(id) ON DELETE CASCADE;
@@ -97,7 +97,7 @@ ADD CONSTRAINT messages_pkey PRIMARY KEY (id);
 ADD CONSTRAINT music_queue_pkey PRIMARY KEY (id);
 ADD CONSTRAINT music_session_pkey PRIMARY KEY (guild_id);
 ADD CONSTRAINT note_candidate_pkey PRIMARY KEY (id);
-ADD CONSTRAINT note_candidate_probe_key UNIQUE (workspace, probe);
+ADD CONSTRAINT note_candidate_probe_key UNIQUE (unit, probe);
 ADD CONSTRAINT note_entity_entity_id_fkey FOREIGN KEY (entity_id) REFERENCES public.fact_entity(id);
 ADD CONSTRAINT note_entity_note_id_fkey FOREIGN KEY (note_id) REFERENCES public.note(id);
 ADD CONSTRAINT note_entity_pkey PRIMARY KEY (note_id, entity_id);
@@ -314,22 +314,22 @@ CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 CREATE INDEX idx_compute_jobs_state ON public.compute_jobs USING btree (state);
 CREATE INDEX idx_culture_revision_key_written ON public.culture_revision USING btree (culture_key, written_at DESC, id DESC);
 CREATE INDEX idx_decision_log_conv_ts ON public.decision_log USING btree (conversation_id, ts DESC, id DESC);
-CREATE INDEX idx_decision_log_workspace_ts ON public.decision_log USING btree (workspace, ts DESC, id DESC);
+CREATE INDEX idx_decision_log_unit_ts ON public.decision_log USING btree (unit, ts DESC, id DESC);
 CREATE INDEX idx_embedding_scope ON public.embedding USING btree (kind, scope);
 CREATE INDEX idx_embedding_v1024 ON public.embedding USING hnsw (v1024 public.vector_cosine_ops);
 CREATE INDEX idx_events_conversation ON public.events USING btree (conversation_id, status);
 CREATE INDEX idx_exchange_observation_scope ON public.exchange_observation USING btree (scope_id);
-CREATE INDEX idx_fact_disputed ON public.fact USING btree (workspace) WHERE (disputed_at IS NOT NULL);
+CREATE INDEX idx_fact_disputed ON public.fact USING btree (unit) WHERE (disputed_at IS NOT NULL);
 CREATE INDEX idx_fact_premise_premise_fact_id ON public.fact_premise USING btree (premise_fact_id);
-CREATE INDEX idx_fact_standing ON public.fact USING btree (workspace, subject_id) WHERE (superseded_at IS NULL);
+CREATE INDEX idx_fact_standing ON public.fact USING btree (unit, subject_id) WHERE (superseded_at IS NULL);
 CREATE INDEX idx_language_observation_scope ON public.language_observation USING btree (scope_id);
 CREATE INDEX idx_messages_conv_ts ON public.messages USING btree (conversation_id, ts DESC);
 CREATE INDEX idx_messages_dream_lag ON public.messages USING btree (conversation_id, id) WHERE (is_nora = 0);
 CREATE INDEX idx_messages_is_nora ON public.messages USING btree (is_nora);
-CREATE INDEX idx_note_anchor ON public.note USING btree (workspace, anchor_date) WHERE (retired_at IS NULL);
+CREATE INDEX idx_note_anchor ON public.note USING btree (unit, anchor_date) WHERE (retired_at IS NULL);
 CREATE INDEX idx_note_revision_body_trgm ON public.note_revision USING gin (body public.gin_trgm_ops);
 CREATE INDEX idx_note_revision_note_id ON public.note_revision USING btree (note_id);
-CREATE INDEX idx_note_standing ON public.note USING btree (workspace) WHERE (retired_at IS NULL);
+CREATE INDEX idx_note_standing ON public.note USING btree (unit) WHERE (retired_at IS NULL);
 CREATE INDEX idx_presence_corridors_subject ON public.presence_corridors USING btree (subject_id);
 CREATE INDEX idx_presence_derived_places_subject_kind ON public.presence_derived_places USING btree (subject_id, kind);
 CREATE INDEX idx_presence_member_ts ON public.presence_fixes USING btree (circle_id, person_id, ts DESC);
@@ -392,7 +392,7 @@ CREATE TABLE public.tag_trace (
 CREATE TABLE public.tool_call_log (
 CREATE TABLE public.turn_verdict (
 CREATE TABLE public.version_announcements (
-CREATE UNIQUE INDEX note_candidate_create_anchor_key ON public.note_candidate USING btree (workspace, anchor_date, anchor_entity_ids, lower(btrim(title))) WHERE (kind = 'create'::text);
+CREATE UNIQUE INDEX note_candidate_create_anchor_key ON public.note_candidate USING btree (unit, anchor_date, anchor_entity_ids, lower(btrim(title))) WHERE (kind = 'create'::text);
 INCREMENT BY 1
 INCREMENT BY 1
 INCREMENT BY 1
@@ -854,6 +854,13 @@ ts bigint NOT NULL,
 ts bigint NOT NULL,
 ts bigint NOT NULL,
 uncertainty text NOT NULL,
+unit text DEFAULT ''::text NOT NULL,
+unit text NOT NULL,
+unit text NOT NULL,
+unit text NOT NULL,
+unit text NOT NULL,
+unit text NOT NULL,
+unit text,
 unsupported text[] DEFAULT '{}'::text[] NOT NULL,
 updated_at bigint NOT NULL,
 updated_at bigint NOT NULL,
@@ -886,13 +893,6 @@ voice_channel_id text NOT NULL,
 volume double precision NOT NULL,
 warrant_kind text DEFAULT 'source'::text NOT NULL,
 wire_state text NOT NULL,
-workspace text DEFAULT ''::text NOT NULL,
-workspace text NOT NULL,
-workspace text NOT NULL,
-workspace text NOT NULL,
-workspace text NOT NULL,
-workspace text NOT NULL,
-workspace text,
 writer text NOT NULL,
 written_at bigint NOT NULL,
 written_at bigint NOT NULL,

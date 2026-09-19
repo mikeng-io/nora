@@ -302,7 +302,7 @@ async def _note_make_proposal(
     A note revision is an APPEND. It is meaningless without the note it appends
     to and the head it was written against, so this creates a note in `key` and
     names its head — which cannot be done synchronously and cannot be done
-    without knowing the workspace. `create` rather than a fixture-level seed
+    without knowing the unit. `create` rather than a fixture-level seed
     because each call must yield a DISTINCT note: several tests propose three
     times against one key and then pair the returned ids back to what they sent,
     which three appends to one note could not support (the second would lose the
@@ -310,7 +310,7 @@ async def _note_make_proposal(
     """
     n = next(_note_seq)
     note = await sink.create(
-        workspace=key,
+        unit=key,
         title=f"contract note {n}",
         description=f"one line about note {n}",
         uncertainty=f"undecided thing {n}",
@@ -400,7 +400,7 @@ async def _note_read_row(
     records it as `REFUSED` so the suite asserts the refusal instead of
     assuming the drop.
     """
-    note = await sink.note_by_id(workspace=key, note_id=row_id)
+    note = await sink.note_by_id(unit=key, note_id=row_id)
     assert note is not None, f"{row_id} was just written and must be readable"
     revision = await sink.revision_by_id(revision_id=note.head_revision_id)
     assert revision is not None, "a note's head revision must exist"
@@ -713,7 +713,7 @@ async def test_keys_do_not_leak_into_each_other(
     sink, make_proposal, make_because, successor,
 ):
     """The key is the adaptor's own — `scope_id` for the room adaptors, a
-    workspace for the fact adaptor (DEC-105). Whatever it means, two keys are
+    unit for the fact adaptor (DEC-105). Whatever it means, two keys are
     two different units of work."""
     a = await sink.propose(key="room-a", proposals=(await make_proposal("room-a"),), now_ms=NOW)
     b = await sink.propose(key="room-b", proposals=(await make_proposal("room-b"),), now_ms=NOW)

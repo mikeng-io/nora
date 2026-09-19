@@ -1,6 +1,6 @@
 """The participation eval suite's harness pieces (design/dreamer-agent-loop/35
 §9) — the case schema's `expect`/`seed` fields, the nora-side seed builder's
-workspace keying, the `sent`-based verdict, and the offline drive path that
+unit keying, the `sent`-based verdict, and the offline drive path that
 lets a case assert speak/silence through the REAL ParticipationTrigger and
 FirePath with only the model scripted.
 
@@ -116,13 +116,13 @@ def test_a_participation_case_defaults_to_no_trigger():
     assert tag.seed is None
 
 
-# ── The seed builder's workspace keying (§9 gap 2's footgun) ────────────────
+# ── The seed builder's unit keying (§9 gap 2's footgun) ────────────────
 
 
-def test_seed_from_dict_keys_every_tier_to_the_eval_workspace():
-    """A note keyed outside workspace "nora" silently never renders in the
+def test_seed_from_dict_keys_every_tier_to_the_eval_unit():
+    """A note keyed outside unit "nora" silently never renders in the
     eval room — the twin would then "pass" for the wrong reason. Every seeded
-    row must carry the eval workspace."""
+    row must carry the eval unit."""
     seed = seed_from_dict({
         "transcript": ["hi", {"name": "Grant", "body": "yo"}],
         "standing": "the group is mid-planning",
@@ -130,7 +130,7 @@ def test_seed_from_dict_keys_every_tier_to_the_eval_workspace():
     })
     assert len(seed.recents) == 2
     assert seed.standing is not None
-    assert all(note.workspace == "nora" for note, _ in seed.notes)
+    assert all(note.unit == "nora" for note, _ in seed.notes)
 
 
 def test_seed_from_dict_is_deterministic():

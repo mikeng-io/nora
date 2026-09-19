@@ -77,7 +77,7 @@ from nora.ingest.relevance_gate import render_context
 from nora.language.culture import CultureAdaptor
 from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.language.note_curator import NoteCuratorAdaptor
-from nora.language.proactive import ProactiveAdaptor, WorkspaceRoom
+from nora.language.proactive import ProactiveAdaptor, UnitRoom
 from nora.obs.metrics import Metrics
 from nora.skills.loader import SkillStore
 from nora.testing import InMemoryNoteStore, InMemoryStandingStore
@@ -228,7 +228,7 @@ async def proactive(body: str = "去邊食", *, name: str = "Grant") -> str:
     """
     notes = InMemoryNoteStore()
     await notes.create(
-        workspace=WS, title=name, description=body, uncertainty="where",
+        unit=WS, title=name, description=body, uncertainty="where",
         closing_condition="a place is picked", established_in="sig-1",
         body="Cyberport Saturday", established_by="tag:miles",
         now_ms=NOW_MS - 86_400_000, anchor_date=20260912,
@@ -243,9 +243,9 @@ async def proactive(body: str = "去邊食", *, name: str = "Grant") -> str:
         decisions=None, notes=notes, standing=positions,
         reminders=FakeReminderStore(), memory=None,
         rooms_of=lambda key: (
-            WorkspaceRoom(platform="signal", conversation_id="sig-1",
+            UnitRoom(platform="signal", conversation_id="sig-1",
                           label="Friends", home=True),
-            WorkspaceRoom(platform="discord", conversation_id="1/2",
+            UnitRoom(platform="discord", conversation_id="1/2",
                           label="Zone 42"),
         ) if key == WS else (),
         people_of=None, roster_index_conclusions=0, roster_index_members=12,
@@ -280,7 +280,7 @@ async def curator(body: str = "去邊食", *, name: str = "Grant") -> str:
     """
     notes = InMemoryNoteStore()
     note = await notes.create(
-        workspace=WS, title="Route", description="one line",
+        unit=WS, title="Route", description="one line",
         uncertainty="undecided", closing_condition="somebody decides",
         established_in="conv-1", body="as it stands", established_by="tag:miles",
         now_ms=NOW_MS, anchor_date=20260101, anchor_entity_ids=("grant",),
@@ -299,13 +299,13 @@ async def curator(body: str = "去邊食", *, name: str = "Grant") -> str:
 async def candidates(body: str = "去邊食", *, name: str = "Ada") -> str:
     notes = InMemoryNoteStore()
     await notes.create(
-        workspace=WS, title="Wedding venue", description="Venue undecided",
+        unit=WS, title="Wedding venue", description="Venue undecided",
         uncertainty="which venue", closing_condition="a venue is booked",
         established_in="conv-0", body="two on the shortlist",
         established_by="tag:miles", now_ms=NOW_MS, anchor_date=20260919,
     )
     adaptor = NoteCandidateAdaptor(
-        notes=notes, candidates=notes, workspace_for=lambda _: WS,
+        notes=notes, candidates=notes, unit_for=lambda _: WS,
         label_for=lambda _: "Zone 42",
         description_for=lambda _: "a games room; 2200 is when people log on",
         metrics=Metrics(),
@@ -327,7 +327,7 @@ async def culture(body: str = "去邊食", *, name: str = "Ada") -> str:
     # keys keeps this builder to the blocks this file is about.
     return await CultureAdaptor(
         culture=_CultureStore(),
-        workspace_for=lambda _k: None,
+        unit_for=lambda _k: None,
         standing_key_for=lambda _k: None,
         label_for=lambda _k: "Dinner",
         description_for=lambda _k: None,

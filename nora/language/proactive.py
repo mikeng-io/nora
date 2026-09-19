@@ -3,13 +3,13 @@
 
 WHAT THIS IS
 ------------
-One `DreamAdaptor`, workspace-keyed, run once a day on the Dreamer's own
-clock. It reads a workspace's whole ORIENT state — the open notes, each
+One `DreamAdaptor`, unit-keyed, run once a day on the Dreamer's own
+clock. It reads a unit's whole ORIENT state — the open notes, each
 room's Standing with its age, the log of what it decided before and how
 that went, and its own self card — and decides whether anything is worth
 raising, and WHEN. Its only act is `remind`: under the `dream_adaptor`
 provenance the tool stamps a `kind="proactive"` reminder row owned by the
-reserved `ai_peer` id and bound to the workspace's home room (39 D3/D5), and
+reserved `ai_peer` id and bound to the unit's home room (39 D3/D5), and
 the heartbeat's fire path — the ACT turn — speaks at the decided time, or
 declines (39 D4/D12). The decision IS the tool call. The envelope this
 adaptor parses is bookkeeping: which notes it considered, what it scheduled
@@ -35,12 +35,12 @@ The index, not the depth (39 D9): note titles, anchors, revisit dates and
 strikes — `note_read` is the call for a body; Standing per room WITH its
 `updated_at`, because Standing is written only after tag turns (39 D8) and a
 quiet room's paragraph is days old; the decision log — her own rows over the
-last N days, with outcomes, joined to the workspace through policy's room
+last N days, with outcomes, joined to the unit through policy's room
 map (39 D7); the `<self_card>` block, framed as DEC-96 frames it; and
-`now`. A workspace with NO home room renders nothing (the operator has not
-said where she stands, so she does not), and so does a workspace with no
+`now`. A unit with NO home room renders nothing (the operator has not
+said where she stands, so she does not), and so does a unit with no
 open notes and no Standing — the runtime's fire condition, the curator's
-precedent, and what keeps a silent workspace from costing a research loop a
+precedent, and what keeps a silent unit from costing a research loop a
 day.
 
 WHEN A PASS RUNS AT ALL — THE DETERMINISTIC CHECK (issue #136, revising 39 D10)
@@ -49,14 +49,14 @@ The adaptor ticks hourly (`AdaptorSchedule`), and every tick is a store read
 and nothing else unless one of two things is true: the DAILY FLOOR — no pass
 has rendered yet on this Hong Kong calendar day and it is past
 `daily_hour` — or a CHANGE since the last rendered pass: a note of the
-workspace was created, revised on the tag path, or crossed its `revisit_at`,
-or a room's Standing moved — AND the workspace's HOME ROOM has been quiet
+unit was created, revised on the tag path, or crossed its `revisit_at`,
+or a room's Standing moved — AND the unit's HOME ROOM has been quiet
 for `quiet_seconds` (the room a proactive row fires into, and so the only
-one this pass can interrupt; «every room of the workspace» until
+one this pass can interrupt; «every room of the unit» until
 2026-09-10 — see `_quiet`). Anything else renders `""`, and `DreamerRuntime.run`
 makes no model call on a blank prompt. That is the same shape the note
 tier already has (a watermark that fires on lag, a curator that renders
-nothing on a tidy notebook), so a workspace where nothing moved costs one
+nothing on a tidy notebook), so a unit where nothing moved costs one
 SQL read an hour and zero tokens, and a note born at 10:00 about tonight
 is seen at the next quiet hour rather than tomorrow morning.
 
@@ -145,7 +145,7 @@ PROACTIVE_TOOLS: frozenset[str] = frozenset({
     # held no verb that answers «who is this handle?», and `group_members`
     # returns real names with no aliases beside them — so a note written in the
     # group's own nicknames had nothing to resolve against. Measured on the
-    # `friends` workspace (Langfuse d63f40f2, 2026-09-09): ten tool calls, six
+    # `friends` unit (Langfuse d63f40f2, 2026-09-09): ten tool calls, six
     # of them `search_memory_workspace`, five asking the same question — who
     # `@熱咖啡☕少奶多糖`, `@隨風而去`, `@山田花子.하나` and `@國婷永琪` are — until
     # R-7 stopped it. The searches returned only more occurrences of the same
@@ -162,13 +162,13 @@ PROACTIVE_TOOLS: frozenset[str] = frozenset({
     # the state contradicting the note. READ-ONLY, so the ceiling admits it;
     # its input domain is the home roster unioned with the note subjects,
     # supplied per build by `RegistryToolSource` — NOT in
-    # `WORKSPACE_SAFE_TOOLS` (room-roster-scoped, same rule as `where_been`).
+    # `UNIT_SAFE_TOOLS` (room-roster-scoped, same rule as `where_been`).
     "online_now",
 })
 
 #: The two `dream_schedule_state` names this adaptor keeps beside the
-#: runtime's own slot row: when a pass last RENDERED for a workspace, and when
-#: a note was last woken by it (key `<workspace>/<note_id>`).
+#: runtime's own slot row: when a pass last RENDERED for a unit, and when
+#: a note was last woken by it (key `<unit>/<note_id>`).
 PASS_CLOCK_NAME = "proactive:pass"  # noqa: S105 — a table row name, not a secret
 WAKE_CLOCK_NAME = "proactive:wake"
 
@@ -184,7 +184,7 @@ WAKE_CLOCK_NAME = "proactive:wake"
 #: render: `inputs` reads the note index, each note's last revision, the home
 #: room's quiet window, the standing position (twice — once for the block,
 #: once per changed note), her reminder log, the SHARED DECISION LOG (one
-#: `read` site, gathered across the workspace's rooms), the self card, and both
+#: `read` site, gathered across the unit's rooms), the self card, and both
 #: `dream_schedule_state` clocks; `commit` records the pass fire, one decision
 #: -log `record` per envelope item, then per woken note a read, a wake and a
 #: second fire.
@@ -218,7 +218,7 @@ PASS_REASONS: frozenset[str] = frozenset(get_args(PassReason))
 
 #: Local hour (in `timezone`) after which the daily floor may render.
 DEFAULT_DAILY_HOUR = 7
-#: How long the workspace's HOME ROOM must have been silent before a change
+#: How long the unit's HOME ROOM must have been silent before a change
 #: is acted on — `[dreamer] quiet_seconds`' meaning, threaded as a value.
 #: Every room, until 2026-09-10; the home room is the only one a proactive
 #: row can interrupt, so the rest were a proxy (`_quiet`).
@@ -228,9 +228,9 @@ DecisionAction = Literal["remind", "decline"]
 DECISION_ACTIONS: frozenset[str] = frozenset(get_args(DecisionAction))
 
 #: How far back the decision log reads (39 D7); how many rows the STORE read
-#: is bounded by (it is keyed on the ai_peer across every workspace, so the
+#: is bounded by (it is keyed on the ai_peer across every unit, so the
 #: bound is over all of them and must not bite before the room-map join);
-#: and how many of THIS workspace's rows, newest, reach the prompt.
+#: and how many of THIS unit's rows, newest, reach the prompt.
 DEFAULT_HISTORY_DAYS = 14
 DEFAULT_HISTORY_LIMIT = 400
 DEFAULT_HISTORY_SHOWN = 40
@@ -257,18 +257,18 @@ DEFAULT_ROSTER_INDEX_MEMBERS = 12
 #: How much of a Standing body reaches the prompt. Standing is capped at 1200
 #: chars by its own tier; this is a second, per-room bound so N rooms cannot
 #: crowd the notes out of the window.
-#: One ROOM per line in the workspace listing: a bullet, the room's label, and
+#: One ROOM per line in the unit listing: a bullet, the room's label, and
 #: the position. No handle to address and no clock at the head — the age rides
 #: mid-line on `suffix`, which is where this grammar puts it.
 _ROOM_STYLE = RowStyle(handle="bullet")
 
 
-def _room_body(_room: WorkspaceRoom, *, text: str) -> str:
+def _room_body(_room: UnitRoom, *, text: str) -> str:
     """The position itself, already collapsed and clipped by the caller."""
     return text
 
 
-def _room_suffix(room: WorkspaceRoom, *, age: str) -> str:
+def _room_suffix(room: UnitRoom, *, age: str) -> str:
     """The mid-line part of a room's standing line: which platform, how stale.
 
     A `functools.partial` rather than a defaulted lambda — the accessor must
@@ -310,8 +310,8 @@ class _Person(Protocol):
 
 
 @dataclass(frozen=True)
-class WorkspaceRoom:
-    """One room of a workspace as the adaptor needs to name it: where to read
+class UnitRoom:
+    """One room of a unit as the adaptor needs to name it: where to read
     Standing, and which room is HOME (39 D2). Built by the composition root
     from `Policy`; this module never reads policy."""
 
@@ -331,7 +331,7 @@ class WorkspaceRoom:
 
 @dataclass(frozen=True)
 class _Decision:
-    """One envelope item, typed. `note_id` is `None` for a workspace-level
+    """One envelope item, typed. `note_id` is `None` for a unit-level
     entry («nothing here today») — legal, and it records no wake."""
 
     note_id: str | None
@@ -363,14 +363,14 @@ class _Shown:
 
 
 class _NoteStore(Protocol):
-    async def standing(self, *, workspace: str) -> tuple[Note, ...]: ...
+    async def standing(self, *, unit: str) -> tuple[Note, ...]: ...
 
     async def read(
-        self, *, workspace: str, note_id: str,
+        self, *, unit: str, note_id: str,
     ) -> tuple[Note, NoteRevision] | None: ...
 
     async def record_wake(
-        self, *, workspace: str, note_id: str, next_revisit_at: int, now_ms: int,
+        self, *, unit: str, note_id: str, next_revisit_at: int, now_ms: int,
     ) -> WakeOutcome | None: ...
 
 
@@ -409,11 +409,11 @@ class _SelfMemory(Protocol):
 
 
 class ProactiveAdaptor:
-    """One `DreamAdaptor`: read a workspace, decide what to raise and when,
+    """One `DreamAdaptor`: read a unit, decide what to raise and when,
     through `remind`; record a wake on every note decided about."""
 
     name = PROACTIVE_ADAPTOR_NAME
-    key_kind = "workspace"
+    key_kind = "unit"
     uses_watermark = False
     objective = "proactive"
     envelope_key = "decisions"
@@ -428,7 +428,7 @@ class ProactiveAdaptor:
         standing: _StandingReader | None,
         reminders: _DecisionLog,
         memory: _SelfMemory | None,
-        rooms_of: Callable[[str], Sequence[WorkspaceRoom]],
+        rooms_of: Callable[[str], Sequence[UnitRoom]],
         # WHO IS IN THE HOME ROOM, name and the handles they are called by.
         # A callable for `rooms_of`'s reason: the roster is read through
         # `nora.agent.room`, which this layer may not import.
@@ -438,12 +438,12 @@ class ProactiveAdaptor:
         # («@熱咖啡☕少奶多糖», «@隨風而去») had nothing to resolve against, and
         # design 39 D9's «inject the index, call for depth» was implemented for
         # everything except the one thing every note is about. Measured on the
-        # `friends` workspace: six of ten tool calls in one pass were the same
+        # `friends` unit: six of ten tool calls in one pass were the same
         # memory search asking who these people were, until R-7 stopped it.
         #
         # `None` renders no block, which is the pre-2026-09-10 behaviour and
         # what a composition with no roster degrades to.
-        people_of: Callable[[WorkspaceRoom], Awaitable[Sequence[_Person]]] | None = None,
+        people_of: Callable[[UnitRoom], Awaitable[Sequence[_Person]]] | None = None,
         ai_peer: str,
         clock: Callable[[], datetime],
         timezone: ZoneInfo,
@@ -477,7 +477,7 @@ class ProactiveAdaptor:
         self._reminders = reminders
         # `None` renders no self card — DEC-96's fail-open-and-silent shape.
         self._memory = memory
-        # Workspace -> its rooms, with the home room marked. A callable
+        # Unit -> its rooms, with the home room marked. A callable
         # because policy is loaded once at startup and this is the one seam
         # through which the adaptor learns about rooms at all.
         self._rooms_of = rooms_of
@@ -519,7 +519,7 @@ class ProactiveAdaptor:
     # -- inputs -------------------------------------------------------------
 
     async def inputs(self, *, key: str, batch: Sequence[TranscriptRow]) -> str:
-        """The workspace's orient state, rendered (39 D9). `batch` is always
+        """The unit's orient state, rendered (39 D9). `batch` is always
         empty (`uses_watermark = False`) and is ignored.
 
         **Returns `""` when there is nothing to reason about, and that is
@@ -535,7 +535,7 @@ class ProactiveAdaptor:
         rooms = tuple(self._rooms_of(key))
         if not any(room.home for room in rooms):
             # COUNTED, like every other tick. An operator who never named a
-            # home room otherwise sees no series at all for this workspace,
+            # home room otherwise sees no series at all for this unit,
             # and a wiring gap that reads as silence is the one this repo has
             # already paid for: a reason nobody counts is a reason nobody
             # notices.
@@ -545,10 +545,10 @@ class ProactiveAdaptor:
         now = self._clock()
         now_ms = int(now.timestamp() * 1000)
 
-        open_notes = tuple(await self._notes.standing(workspace=key))
+        open_notes = tuple(await self._notes.standing(unit=key))
         # THE DETERMINISTIC CHECK, before anything is rendered and before any
         # model is near (issue #136): daily floor, or a change since the last
-        # rendered pass in a quiet workspace. Counted by reason, because the
+        # rendered pass in a quiet unit. Counted by reason, because the
         # reversal condition is a ratio over this series.
         reason, since_ms = await self._pass_reason(
             key, rooms, open_notes, now=now, now_ms=now_ms,
@@ -576,7 +576,7 @@ class ProactiveAdaptor:
         standing_lines = await self._standing_lines(rooms, now_ms=now_ms)
         if not open_notes and not standing_lines:
             # The tick was DUE — `daily` or `changed` — and still rendered
-            # nothing, because the workspace has no open notes and no room has
+            # nothing, because the unit has no open notes and no room has
             # written a position. Counted as what happened rather than as the
             # reason it was due: `daily` and `changed` are the series the
             # reversal condition reads as «a pass ran», and a blank render is
@@ -629,7 +629,7 @@ class ProactiveAdaptor:
             parts.append(self_card)
         return "\n\n".join(parts)
 
-    async def _people_block(self, home: WorkspaceRoom) -> str:
+    async def _people_block(self, home: UnitRoom) -> str:
         """Who is in the home room, what they are called there, and ONE LINE of
         what she remembers about each.
 
@@ -776,7 +776,7 @@ class ProactiveAdaptor:
         return index
 
     async def _pass_reason(
-        self, key: str, rooms: Sequence[WorkspaceRoom], open_notes: Sequence[Note],
+        self, key: str, rooms: Sequence[UnitRoom], open_notes: Sequence[Note],
         *, now: datetime, now_ms: int,
     ) -> tuple[PassReason, int | None]:
         """Why this tick renders, or why it does not (module docstring), and
@@ -786,7 +786,7 @@ class ProactiveAdaptor:
             return "unclocked", None
         last = await self._clock_store.last_fired(adaptor_name=PASS_CLOCK_NAME, key=key)
         if last is None:
-            # Never rendered for this workspace: the first pass is the floor.
+            # Never rendered for this unit: the first pass is the floor.
             return "daily", None
         local_now = now.astimezone(self._tz)
         local_last = datetime.fromtimestamp(last / 1000, tz=self._tz)
@@ -799,7 +799,7 @@ class ProactiveAdaptor:
         return "changed", last
 
     async def _changed_since(
-        self, key: str, rooms: Sequence[WorkspaceRoom], open_notes: Sequence[Note],
+        self, key: str, rooms: Sequence[UnitRoom], open_notes: Sequence[Note],
         *, last_ms: int, now_ms: int,
     ) -> bool:
         """Whether the ORIENT state moved since `last_ms`: a note created,
@@ -811,7 +811,7 @@ class ProactiveAdaptor:
                 return True
             if note.revisit_at is not None and last_ms < note.revisit_at <= now_ms:
                 return True
-            head = await self._notes.read(workspace=key, note_id=note.id)
+            head = await self._notes.read(unit=key, note_id=note.id)
             if head is None:
                 continue
             revision = head[1]
@@ -831,24 +831,24 @@ class ProactiveAdaptor:
                     return True
         return False
 
-    async def _quiet(self, rooms: Sequence[WorkspaceRoom], *, now_ms: int) -> bool:
+    async def _quiet(self, rooms: Sequence[UnitRoom], *, now_ms: int) -> bool:
         """The HOME ROOM silent for `quiet_seconds` — its newest row, whoever
-        wrote it. No record store wired treats the workspace as quiet; a
+        wrote it. No record store wired treats the unit as quiet; a
         failed read treats the room as not quiet (held, retried next tick),
         never as silent.
 
         THE HOME ROOM AND NOT EVERY ROOM (revised 2026-09-10 by the operator;
-        design 39 D10 said "every room of the workspace"). A proactive row
+        design 39 D10 said "every room of the unit"). A proactive row
         fires into the home room — `inputs` renders exactly one `<home_room>`
         and `policy.py` refuses a row anywhere else — so the home room is the
-        ONLY room this pass can interrupt. Every other room of the workspace
-        was a proxy for that, and on the live `friends` workspace the proxy
+        ONLY room this pass can interrupt. Every other room of the unit
+        was a proxy for that, and on the live `friends` unit the proxy
         was the whole gate: Zone 42 is a games room on Discord, the note that
         moved was raised in it, and the pass that would have spoken into the
         Signal room was held `held_quiet` on Zone 42's traffic instead.
         Measured over the 14 days to 2026-09-10, 337 hourly ticks on that
-        workspace: quiet on every room 257 (76%), quiet on the home room 313
-        (93%), and the longest unbroken workspace-busy run was 6 hours — long
+        unit: quiet on every room 257 (76%), quiet on the home room 313
+        (93%), and the longest unbroken unit-busy run was 6 hours — long
         enough to swallow a note anchored on the day it was raised, which is
         the case that produced this change.
 
@@ -857,7 +857,7 @@ class ProactiveAdaptor:
         thing she is about to raise», and the room that CHANGED is not read
         here — `_changed_since` returns a bool, not which room moved. Making
         the hold follow the changed room is the fix if that shows up; it is
-        not built on one week of one workspace.
+        not built on one week of one unit.
         """
         if self._records is None:
             return True
@@ -884,7 +884,7 @@ class ProactiveAdaptor:
         return True
 
     async def _standing_lines(
-        self, rooms: Sequence[WorkspaceRoom], *, now_ms: int,
+        self, rooms: Sequence[UnitRoom], *, now_ms: int,
     ) -> list[str]:
         if self._standing is None:
             return []
@@ -919,7 +919,7 @@ class ProactiveAdaptor:
             # two hops away. Unlike the tag prefill's `<standing>`, which is
             # tag-delimited and holds its own newlines safely, this is one line
             # per ROOM — a newline here writes a whole extra room into a
-            # workspace listing, with a label it chose.
+            # unit listing, with a label it chose.
             #
             # The AGE sits mid-line here rather than at the head, so it rides on
             # `suffix` — the same seam the note-candidate index uses for its
@@ -944,10 +944,10 @@ class ProactiveAdaptor:
         return lines
 
     async def _decision_log(
-        self, rooms: Sequence[WorkspaceRoom], *, now: datetime,
+        self, rooms: Sequence[UnitRoom], *, now: datetime,
     ) -> str:
-        """Her own rows over the window, restricted to THIS workspace's rooms
-        (39 D7): `Reminder` has no workspace column, so the join is the
+        """Her own rows over the window, restricted to THIS unit's rooms
+        (39 D7): `Reminder` has no unit column, so the join is the
         room map the composition root built from policy."""
         mine = {(room.platform, room.conversation_id) for room in rooms}
         # NOT fail-soft (audit 2026-09-09). The log is the one input that
@@ -962,8 +962,8 @@ class ProactiveAdaptor:
             requester_person_id=self._ai_peer, since=now - self._history,
             limit=self._history_limit,
         )
-        # The NEWEST of this workspace's rows: the store's bound is over every
-        # workspace, so the cut is taken after the join, from the end.
+        # The NEWEST of this unit's rows: the store's bound is over every
+        # unit, so the cut is taken after the join, from the end.
         lines = [
             _decision_line(row, tz=self._tz)
             for row in rows
@@ -987,11 +987,11 @@ class ProactiveAdaptor:
         )
 
     async def _loop_decisions(
-        self, key: str, rooms: Sequence[WorkspaceRoom],
-        home: WorkspaceRoom, *, now: datetime,
+        self, key: str, rooms: Sequence[UnitRoom],
+        home: UnitRoom, *, now: datetime,
     ) -> str:
         """`<loop_decisions>` — what the OTHER half of the loop did in each of
-        this workspace's rooms over the last 24 hours (issue #199).
+        this unit's rooms over the last 24 hours (issue #199).
 
         **Not the same block as `<decisions>` one method up, and the two names
         are load-bearing.** `<decisions>` is her REMINDER rows: what she
@@ -1022,13 +1022,13 @@ class ProactiveAdaptor:
         """
         if self._decisions is None:
             return ""
-        # ONE workspace-scoped read, not one per room. The pass is
-        # workspace-keyed, the bound is 20 rows over the whole unit rather than
-        # 20 per room, and `idx_decision_log_workspace_ts` serves it — see
-        # `DecisionLogRecorder.read_workspace` for why the room-scoped read
+        # ONE unit-scoped read, not one per room. The pass is
+        # unit-keyed, the bound is 20 rows over the whole unit rather than
+        # 20 per room, and `idx_decision_log_unit_ts` serves it — see
+        # `DecisionLogRecorder.read_unit` for why the room-scoped read
         # cannot answer this question at all.
-        rows = await self._decisions.read_workspace(
-            platform=home.platform, workspace=key,
+        rows = await self._decisions.read_unit(
+            platform=home.platform, unit=key,
             # In the QUERY. Post-filtering would let 20 rows of one busy
             # writer evict the one `participation spoke` row this pass exists
             # to see, and the block would say «nothing happened» about the
@@ -1089,7 +1089,7 @@ class ProactiveAdaptor:
         """Typed parse into `_Decision`. Drop, log — never raise, never guess.
 
         `note` is a HANDLE from this key's last `inputs`, or absent/null for a
-        workspace-level entry. An unknown handle is a malformed item: the
+        unit-level entry. An unknown handle is a malformed item: the
         model cannot decide about a note it was not shown."""
         shown = self._shown.get(key) or _Shown({}, {})
         parsed: list[object] = []
@@ -1192,7 +1192,7 @@ class ProactiveAdaptor:
             # wall clock, so a store that stops answering CANCELS this method
             # part-way — and stamped first, the pass was recorded as fired
             # with zero wakes written. The next tick then reads `last = now`,
-            # finds the workspace unchanged for the rest of the local day, and
+            # finds the unit unchanged for the rest of the local day, and
             # does not render; the `remind` rows already written inside the
             # model loop are orphaned permanently, because the reconciliation
             # window above starts at the pass clock and that clock has moved
@@ -1218,7 +1218,7 @@ class ProactiveAdaptor:
         to raise it, because X» is the one thing that stops the next pass — or
         the gate, reading the same room tomorrow — from re-deriving the same
         conclusion from scratch. A log that recorded only the raises would
-        answer «nothing has happened here» for a workspace she has considered
+        answer «nothing has happened here» for a unit she has considered
         and passed on four days running.
 
         It rides beside `nora_proactive_decisions_total{action}`, not instead
@@ -1264,7 +1264,7 @@ class ProactiveAdaptor:
             # A note this pass did not render — a row orphaned by an earlier
             # one. Read its anchor rather than revisit it as if it had none.
             try:
-                head = await self._notes.read(workspace=key, note_id=note_id)
+                head = await self._notes.read(unit=key, note_id=note_id)
             except Exception:
                 log.exception("proactive: note read failed for %s; continuing", note_id)
                 head = None
@@ -1273,7 +1273,7 @@ class ProactiveAdaptor:
         next_at = default_revisit_at(anchor_date=anchor, now_ms=now_ms)
         try:
             outcome = await self._notes.record_wake(
-                workspace=key, note_id=note_id,
+                unit=key, note_id=note_id,
                 next_revisit_at=next_at, now_ms=now_ms,
             )
         except Exception:
@@ -1292,7 +1292,7 @@ class ProactiveAdaptor:
     async def _raised_since(
         self, key: str, *, shown: _Shown, now_ms: int,
     ) -> tuple[str, ...]:
-        """The notes this workspace's PROACTIVE rows were written against over
+        """The notes this unit's PROACTIVE rows were written against over
         the reconciliation window — what `remind` actually did, read from the
         store.
 
@@ -1396,7 +1396,7 @@ class ProactiveAdaptor:
 def _open_notes_block(
     notes: Sequence[Note], *, now: datetime, tz: ZoneInfo
 ) -> str:
-    """The workspace's open notes, through the ONE index renderer (#292).
+    """The unit's open notes, through the ONE index renderer (#292).
 
     **Everything this pass needs beyond the shared row is an ATTRIBUTE now**,
     not a second grammar. `revisit` and `raised` were `; revisit in 3 h` and
@@ -1467,5 +1467,5 @@ __all__ = [
     "PROACTIVE_TOOLS",
     "WAKE_CLOCK_NAME",
     "ProactiveAdaptor",
-    "WorkspaceRoom",
+    "UnitRoom",
 ]

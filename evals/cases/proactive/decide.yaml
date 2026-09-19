@@ -1,6 +1,6 @@
 # The proactive DECIDE suite (design/dreamer-agent-loop/39 §5, DEC-162 (10)).
 #
-# Each case is ONE morning pass over ONE workspace: the open notes, where
+# Each case is ONE morning pass over ONE unit: the open notes, where
 # each room stood (with the age of that reading), what Nora decided on
 # earlier mornings and how it went, a little memory, and `now`. The REAL
 # DreamerRuntime + REAL ProactiveAdaptor run through the REAL tool source
@@ -24,7 +24,7 @@
 # after people have already eaten.
 - name: d01_dinner_note_the_day_before
   expect: remind
-  workspace: ridgeline
+  unit: ridgeline
   now: "2026-09-11T07:00:00+08:00"
   rooms:
     - {platform: signal, conversation_id: ridgeline-sig, label: Ridgeline, home: true}
@@ -42,7 +42,7 @@
 
 - name: d02_anchored_today_open_corner
   expect: remind
-  workspace: friends
+  unit: friends
   now: "2026-09-11T07:00:00+08:00"
   rooms:
     - {platform: signal, conversation_id: friends-sig, label: Friends, home: true}
@@ -59,7 +59,7 @@
 
 - name: d03_follow_up_owed_today
   expect: remind
-  workspace: friends
+  unit: friends
   now: "2026-09-11T07:00:00+08:00"
   rooms:
     - {platform: signal, conversation_id: friends-sig, label: Friends, home: true}
@@ -76,7 +76,7 @@
 
 - name: d04_already_raised_four_times
   expect: none
-  workspace: friends
+  unit: friends
   now: "2026-09-11T07:00:00+08:00"
   rooms:
     - {platform: signal, conversation_id: friends-sig, label: Friends, home: true}
@@ -94,7 +94,7 @@
 
 - name: d05_standing_says_settled
   expect: none
-  workspace: friends
+  unit: friends
   now: "2026-09-11T07:00:00+08:00"
   rooms:
     - {platform: signal, conversation_id: friends-sig, label: Friends, home: true}
@@ -108,7 +108,7 @@
 
 - name: d06_dateless_note
   expect: none
-  workspace: friends
+  unit: friends
   now: "2026-09-11T07:00:00+08:00"
   rooms:
     - {platform: signal, conversation_id: friends-sig, label: Friends, home: true}
@@ -122,7 +122,7 @@
 
 - name: d07_three_weeks_out
   expect: none
-  workspace: friends
+  unit: friends
   now: "2026-09-11T07:00:00+08:00"
   rooms:
     - {platform: signal, conversation_id: friends-sig, label: Friends, home: true}
@@ -134,9 +134,9 @@
   standing:
     - {room: Friends, body: "October hike is on; trail to be chosen the week before.", age_hours: 20}
 
-- name: d08_empty_workspace
+- name: d08_empty_unit
   expect: none
-  workspace: wedding
+  unit: wedding
   now: "2026-09-11T07:00:00+08:00"
   rooms:
     - {platform: signal, conversation_id: wedding-sig, label: Wedding, home: true}
@@ -146,7 +146,7 @@
 
 - name: d09_all_corners_closed_tomorrow
   expect: none
-  workspace: ridgeline
+  unit: ridgeline
   now: "2026-09-11T07:00:00+08:00"
   rooms:
     - {platform: signal, conversation_id: ridgeline-sig, label: Ridgeline, home: true}
@@ -160,7 +160,7 @@
 
 - name: d10_reminded_yesterday_and_it_landed
   expect: none
-  workspace: friends
+  unit: friends
   now: "2026-09-11T07:00:00+08:00"
   rooms:
     - {platform: signal, conversation_id: friends-sig, label: Friends, home: true}
@@ -185,7 +185,7 @@
 # a handle, so a pass that cannot do that either declines or burns its budget.
 - name: d11_note_written_in_the_rooms_own_handles
   expect: remind
-  workspace: friends
+  unit: friends
   now: "2026-09-11T07:00:00+08:00"
   rooms:
     - {platform: signal, conversation_id: friends-sig, label: Friends, home: true}

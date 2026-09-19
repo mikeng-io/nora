@@ -18,7 +18,7 @@ so a reader can check the promise without running the suite:
    implementation that has the defect the CAS exists to prevent, which is worse
    than having no fake at all: it converts a missing guarantee into a passing
    gate.
-2. **Every read is workspace-scoped, and a cross-workspace `read` returns
+2. **Every read is unit-scoped, and a cross-unit `read` returns
    `None`** — indistinguishable from a note that does not exist, because being
    able to tell the two apart is itself the disclosure.
 3. **`create` is atomic**, which in a dict means the note and its first
@@ -85,7 +85,7 @@ class NoteCandidate:
     dataclass. Frozen and replaced rather than mutated, so a caller holding an
     earlier read cannot watch it change underneath."""
 
-    workspace: str
+    unit: str
     probe: str
     first_seen_at: int
     last_seen_at: int
@@ -128,8 +128,8 @@ class InMemoryNoteStore:
     #: `kind='create'` rows, by id — the create path's own table (§4, issue
     #: #98), sharing NOTHING with `candidates` above beyond the table they
     #: both stand in for: that dict is the miss cache, keyed on
-    #: `(workspace, probe)`; this one has no probe at all and is looked up by
-    #: its OWN staging key, `(workspace, anchor_date, anchor_entity_ids,
+    #: `(unit, probe)`; this one has no probe at all and is looked up by
+    #: its OWN staging key, `(unit, anchor_date, anchor_entity_ids,
     #: normalised title)` (#235), in
     #: `record_create_candidate` below — a linear scan rather than a second
     #: index, which is fine at this store's scale and keeps one dict from
@@ -155,7 +155,7 @@ class InMemoryNoteStore:
     async def create(
         self,
         *,
-        workspace: str,
+        unit: str,
         title: str,
         description: str,
         uncertainty: str,
@@ -178,7 +178,7 @@ class InMemoryNoteStore:
         note_id = self._shaped_id(next(self._ids), "note")
         revision_id = self._shaped_id(next(self._ids), "rev")
         note = Note(
-            id=note_id, workspace=workspace, title=title, description=description,
+            id=note_id, unit=unit, title=title, description=description,
             uncertainty=uncertainty, closing_condition=closing_condition,
             established_in=established_in, created_at=now_ms,
             head_revision_id=revision_id, anchor_date=anchor_date,
@@ -193,7 +193,7 @@ class InMemoryNoteStore:
         self.revisions[revision_id] = revision
         return note
 
-    async def standing(self, *, workspace: str) -> tuple[Note, ...]:
+    async def standing(self, *, unit: str) -> tuple[Note, ...]:
         """Uncapped (§5.1) and ordered oldest-first, matching `SqlNoteStore`'s
         `ORDER BY created_at, id`. Dict insertion order would give the same
         answer for every test that inserts in time order, and a different one
@@ -201,26 +201,26 @@ class InMemoryNoteStore:
         two implementations agree by construction rather than by coincidence."""
         live = [
             n for n in self.notes.values()
-            if n.workspace == workspace and n.is_standing
+            if n.unit == unit and n.is_standing
         ]
         live.sort(key=lambda n: (n.created_at, n.id))
         return tuple(live)
 
     async def read(
-        self, *, workspace: str, note_id: str,
+        self, *, unit: str, note_id: str,
     ) -> tuple[Note, NoteRevision] | None:
         """The note and its HEAD revision, or `None` — including `None` for a
-        note in another workspace (module docstring (2)). Retired notes stay
+        note in another unit (module docstring (2)). Retired notes stay
         readable: retirement is a status change, not a delete (§7.4)."""
         note = self.notes.get(note_id)
-        if note is None or note.workspace != workspace:
+        if note is None or note.unit != unit:
             return None
         return note, self.revisions[note.head_revision_id]
 
     async def append_revision(
         self,
         *,
-        workspace: str,
+        unit: str,
         note_id: str,
         body: str,
         parent_revision_id: str,
@@ -232,14 +232,14 @@ class InMemoryNoteStore:
         """§6.3's compare-and-swap — the refusal in the module docstring's (1).
 
         `observed_head` is `None` when the note is absent OR in another
-        workspace, matching `SqlNoteStore`: from the caller's side those are the
+        unit, matching `SqlNoteStore`: from the caller's side those are the
         same situation with the same remedy, and reporting the real head across
-        a workspace boundary would confirm the note exists.
+        a unit boundary would confirm the note exists.
         """
         note = self.notes.get(note_id)
-        if note is None or note.workspace != workspace:
+        if note is None or note.unit != unit:
             raise StaleNoteHeadError(
-                f"note {note_id} is not in workspace {workspace!r} — "
+                f"note {note_id} is not in unit {unit!r} — "
                 f"read it again",
                 observed_head=None,
             )
@@ -261,9 +261,9 @@ class InMemoryNoteStore:
         return revision
 
     async def search(
-        self, *, workspace: str, query: str, limit: int,
+        self, *, unit: str, query: str, limit: int,
     ) -> tuple[tuple[Note, str], ...]:
-        """Head bodies only, standing only, workspace-scoped — module docstring
+        """Head bodies only, standing only, unit-scoped — module docstring
         (4). The body comes from `self.revisions[note.head_revision_id]`, never
         from a scan of `self.revisions`, because a scan would reach superseded
         bodies and the whole point of the SQL store's join is that it cannot.
@@ -274,27 +274,27 @@ class InMemoryNoteStore:
         if limit <= 0 or not query.strip():
             return ()
         hits: list[tuple[Note, str]] = []
-        for note in await self.standing(workspace=workspace):
+        for note in await self.standing(unit=unit):
             body = self.revisions[note.head_revision_id].body
             if _like_matches(body, query):
                 hits.append((note, body))
         return tuple(hits[:limit])
 
     async def revision_chain(
-        self, *, workspace: str, note_id: str,
+        self, *, unit: str, note_id: str,
     ) -> tuple[NoteRevision, ...]:
         """`SqlNoteStore.revision_chain`: every revision of one note, oldest
         first (`written_at`, then `id`); `()` when the note is not reachable
-        from `workspace`."""
+        from `unit`."""
         note = self.notes.get(note_id)
-        if note is None or note.workspace != workspace:
+        if note is None or note.unit != unit:
             return ()
         chain = [r for r in self.revisions.values() if r.note_id == note_id]
         chain.sort(key=lambda r: (r.written_at, r.id))
         return tuple(chain)
 
     async def record_wake(
-        self, *, workspace: str, note_id: str, next_revisit_at: int,
+        self, *, unit: str, note_id: str, next_revisit_at: int,
         now_ms: int,
     ) -> WakeOutcome | None:
         """`SqlNoteStore.record_wake`.
@@ -307,7 +307,7 @@ class InMemoryNoteStore:
         note = self.notes.get(note_id)
         if (
             note is None
-            or note.workspace != workspace
+            or note.unit != unit
             or note.retired_at is not None
         ):
             return None
@@ -334,13 +334,13 @@ class InMemoryNoteStore:
         return WakeOutcome(strikes=note.strikes + 1, reset=False)
 
     async def anchored_before(
-        self, *, workspace: str, day: int, limit: int,
+        self, *, unit: str, day: int, limit: int,
     ) -> tuple[tuple[Note, str], ...]:
         """`SqlNoteStore.anchored_before`."""
         if limit <= 0:
             return ()
         hits = [
-            n for n in await self.standing(workspace=workspace)
+            n for n in await self.standing(unit=unit)
             if n.anchor_date is not None and n.anchor_date < day
         ]
         hits.sort(key=lambda n: (n.anchor_date or 0, n.id))
@@ -349,7 +349,7 @@ class InMemoryNoteStore:
         )
 
     async def due_for_revisit(
-        self, *, workspace: str, now_ms: int, limit: int,
+        self, *, unit: str, now_ms: int, limit: int,
     ) -> tuple[tuple[Note, str], ...]:
         """`SqlNoteStore.due_for_revisit`: standing, `revisit_at` set and not
         in the future, oldest `revisit_at` first — NOT also "or anchor
@@ -358,7 +358,7 @@ class InMemoryNoteStore:
         if limit <= 0:
             return ()
         hits = [
-            n for n in await self.standing(workspace=workspace)
+            n for n in await self.standing(unit=unit)
             if n.revisit_at is not None and n.revisit_at <= now_ms
         ]
         hits.sort(key=lambda n: (n.revisit_at or 0, n.id))
@@ -431,7 +431,7 @@ class InMemoryNoteStore:
                 note_id = self._shaped_id(next(self._ids), "note")
                 revision_id = self._shaped_id(next(self._ids), "rev")
                 note = Note(
-                    id=note_id, workspace=key, title=payload.title,
+                    id=note_id, unit=key, title=payload.title,
                     description=payload.description,
                     uncertainty=payload.uncertainty,
                     closing_condition=payload.closing_condition,
@@ -468,7 +468,7 @@ class InMemoryNoteStore:
                 declared[payload.note_id] = payload.parent_revision_id
 
             existing = self.notes.get(payload.note_id)
-            reachable = existing is not None and existing.workspace == key
+            reachable = existing is not None and existing.unit == key
             head_now = existing.head_revision_id if existing is not None else None
             # The CAS runs only for a note this batch has NOT already revised.
             # For a later proposal the declared-parent check above has already
@@ -484,7 +484,7 @@ class InMemoryNoteStore:
             if not reachable or stale:
                 raise StaleNoteHeadError(
                     f"note {payload.note_id} changed under you or is not in "
-                    f"workspace {key!r} — read it again",
+                    f"unit {key!r} — read it again",
                     observed_head=head_now if reachable else None,
                 )
             revision = NoteRevision(
@@ -569,7 +569,7 @@ class InMemoryNoteStore:
                 f"{replaced_by!r}. A caller bug, not an absent row."
             )
         note = self.notes.get(target)
-        if note is None or note.workspace != key or note.retired_at is not None:
+        if note is None or note.unit != key or note.retired_at is not None:
             return 0
         self.notes[target] = replace(
             note, retired_at=now_ms, replaced_by=replaced_by,
@@ -578,17 +578,17 @@ class InMemoryNoteStore:
         return 1
 
     async def record_miss(
-        self, *, workspace: str, probe: str, conversation_id: str, now_ms: int,
+        self, *, unit: str, probe: str, conversation_id: str, now_ms: int,
     ) -> int:
-        """The negative cache (§4.5). Upserts on `(workspace, probe)`, keeps
+        """The negative cache (§4.5). Upserts on `(unit, probe)`, keeps
         `first_seen_at`, appends a conversation to `observed_in` only if it is
         not already there, and returns the new count — the same three decisions
         `SqlNoteStore.record_miss`'s docstring argues for."""
-        key = (workspace, probe)
+        key = (unit, probe)
         existing = self.candidates.get(key)
         if existing is None:
             self.candidates[key] = NoteCandidate(
-                workspace=workspace, probe=probe, first_seen_at=now_ms,
+                unit=unit, probe=probe, first_seen_at=now_ms,
                 last_seen_at=now_ms, occurrence_count=1,
                 observed_in=(conversation_id,),
             )
@@ -610,7 +610,7 @@ class InMemoryNoteStore:
     async def record_create_candidate(
         self,
         *,
-        workspace: str,
+        unit: str,
         title: str,
         description: str,
         body: str,
@@ -621,7 +621,7 @@ class InMemoryNoteStore:
         now_ms: int,
     ) -> NoteCreateCandidate:
         """`SqlNoteStore.record_create_candidate`'s behaviour: upserts on the
-        staging key `(workspace, anchor_date, anchor_entity_ids,
+        staging key `(unit, anchor_date, anchor_entity_ids,
         normalised title)` (#235) — the entity list sorted and de-duplicated
         HERE, exactly as the SQL store normalises it before the row reaches its
         own unique index — and the update is a no-op once the row has left
@@ -651,7 +651,7 @@ class InMemoryNoteStore:
         ids = tuple(dict.fromkeys(message_ids))
         existing = next(
             (c for c in self.create_candidates.values()
-             if c.workspace == workspace and c.anchor_date == anchor_date
+             if c.unit == unit and c.anchor_date == anchor_date
              and c.anchor_entity_ids == entities
              and c.title.strip().casefold() == title.strip().casefold()),
             None,
@@ -659,7 +659,7 @@ class InMemoryNoteStore:
         if existing is None:
             candidate = NoteCreateCandidate(
                 id=self._shaped_id(next(self._ids), "cand"),
-                workspace=workspace, title=title, description=description,
+                unit=unit, title=title, description=description,
                 body=body, closing_condition=closing_condition,
                 anchor_date=anchor_date, anchor_entity_ids=entities,
                 message_ids=ids, status=CANDIDATE_PENDING, attempts=0,
@@ -683,11 +683,11 @@ class InMemoryNoteStore:
         return updated
 
     async def set_create_candidate_status(
-        self, *, workspace: str, candidate_id: str, status: str, now_ms: int,
+        self, *, unit: str, candidate_id: str, status: str, now_ms: int,
     ) -> int:
         """`SqlNoteStore.set_create_candidate_status`'s behaviour: refuses a
         non-terminal status, and is a no-op — never a second decision — for a
-        row that is gone, in another workspace, or already terminal."""
+        row that is gone, in another unit, or already terminal."""
         if status not in (CANDIDATE_CREATED, CANDIDATE_REFUSED):
             raise ValueError(
                 f"InMemoryNoteStore.set_create_candidate_status got "
@@ -697,7 +697,7 @@ class InMemoryNoteStore:
         existing = self.create_candidates.get(candidate_id)
         if (
             existing is None
-            or existing.workspace != workspace
+            or existing.unit != unit
             or existing.status != CANDIDATE_PENDING
         ):
             return 0

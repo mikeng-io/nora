@@ -42,7 +42,7 @@ record.since(conversation_id=key, after_id=watermark)
 
 `WHERE conversation_id = :key` in our own Postgres. **Hard-scoped by
 construction**, which is the property Honcho could not give at any layer. For a
-workspace-keyed variant, the same read across that workspace's rooms — the
+unit-keyed variant, the same read across that unit's rooms — the
 boundary being DEC-105's own rather than an assumption about someone else's API.
 
 No tool registry change, no roster question, no 25s dialectic call, and no
@@ -71,7 +71,7 @@ that is **the index of open notes**, a different thing from the per-room
 
 **There is a precedent in this exact seam and it is one file over.**
 `NoteCandidateAdaptor.inputs` renders three things, not one: a `<room>` block,
-the batch, and `await self._notes.standing(workspace=workspace)`
+the batch, and `await self._notes.standing(unit=unit)`
 (`nora/language/note_candidates.py:989`). Its reason for the third is written
 beside it — *"THE INDEX IS THE BALLOT"*: without it the model cannot name what
 already exists and writes a duplicate instead. Culture's version of that
@@ -293,7 +293,7 @@ bundle mistook a pin for a prohibition.
 
 **Honcho workspace: `nora`, for every conversation.** `_workspace_for` returns
 the router's answer *"or the single default when no router is wired (today,
-every conversation)"*, and no router is wired. Nora's own policy workspaces
+every conversation)"*, and no router is wired. Nora's own policy units
 (`ridgeline` / `friends` / `wedding`, used by `note` and `decision_log`) are a
 different axis and do not select a Honcho corpus. A Honcho workspace named
 `ridgeline` exists and nothing routes to it.

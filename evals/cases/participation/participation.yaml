@@ -29,7 +29,7 @@
 # the answer is in the world.
 #
 # Seed keys are documented on `nora.app.eval_support.seed_from_dict`; all tier
-# rows land in the eval workspace ("nora") from there, never keyed by hand.
+# rows land in the eval unit ("nora") from there, never keyed by hand.
 #
 # `sample: 5` runs a case five times. It is on EVERY case, because one draw of
 # a stochastic process is not a reading of it: the 2026-09-08 audit found

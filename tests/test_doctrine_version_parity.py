@@ -92,7 +92,7 @@ DOCTRINE_DIR = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
 # bumping, and it is recorded here rather than left to look like a miss.
 PINNED: dict[str, tuple[int, str]] = {
     # v8 (2026-09-10): the group is «this group», not one named room. The same
-    # doctrine directory serves six rooms across three workspaces, and the
+    # doctrine directory serves six rooms across three units, and the
     # prompt never renders a room label — so a hard-coded name was the only
     # group identity she got, and it was wrong in five of the six.
     # v9 (2026-09-17, operator, #227): the `self-description` SKILL was retired

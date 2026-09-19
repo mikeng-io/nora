@@ -12,7 +12,7 @@ renderer produced through the resolver that has to accept it.
 That gap is not hypothetical, and the cost of losing this join is not a failed
 lookup. A title the model types back that does not match is not read as «no such
 note»: `_resolve_updates` finds nothing, so the pass CREATES a note instead of
-updating one, and the workspace grows a duplicate of an open question. It
+updating one, and the unit grows a duplicate of an open question. It
 happened for a different reason on 2026-09-13 — «two firings in production
 merged two unrelated occasions twice» (#228) — and a title that cannot round-trip
 is the same defect reached from the other side.
@@ -57,7 +57,7 @@ def parse(text: str) -> ET.Element:
 
 def note(title: str) -> Note:
     return Note(
-        id="0191f2c4-0000-7000-8000-00000000000a", workspace="nora",
+        id="0191f2c4-0000-7000-8000-00000000000a", unit="nora",
         title=title, description="Three venues on the table; nobody has picked.",
         uncertainty="which venue", closing_condition="a venue is booked",
         established_in="g1", created_at=1,

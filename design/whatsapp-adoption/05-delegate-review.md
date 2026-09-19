@@ -186,16 +186,16 @@ every WhatsApp voice note is either dropped or an undefined interaction.
 with the engagement consequence stated ("voice-note engagement does not work
 until media ingestion lands").
 
-### M3. DEC-105 is misquoted — the bundle's "one-room-per-platform-per-workspace" rule is not what DEC-105 says
+### M3. DEC-105 is misquoted — the bundle's "one-room-per-platform-per-unit" rule is not what DEC-105 says
 
 **What:** `02:108` claims reuse of `friends` "satisfies DEC-105's one-room-
-per-platform-per-workspace rule". The decision index defines DEC-105 as
+per-platform-per-unit rule". The decision index defines DEC-105 as
 something else entirely.
 
 **Evidence:** `design/09-decision-index.md:232` — "**DEC-105** | **`send_to`:
-one room may speak into another, bounded by the workspace** (operator,
-2026-08-14)." It is the relay/`send_to` bounded-by-workspace rule, not a
-room-count rule. The "one room per platform per workspace" framing lives in
+one room may speak into another, bounded by the unit** (operator,
+2026-08-14)." It is the relay/`send_to` bounded-by-unit rule, not a
+room-count rule. The "one room per platform per unit" framing lives in
 a Nora skill reference (`adding-conversation-to-policy.md`), plausibly a
 misattribution that the bundle inherited.
 
@@ -203,7 +203,7 @@ misattribution that the bundle inherited.
 cite that — or drop the DEC-105 citation. Sequencing resting on a misread
 rule is exactly the "claim not anchored to file:line" failure class. (The
 decision index also cross-references DEC-105 in DEC-129/DEC-134 §(1) as the
-workspace-scope rule — further confirmation it is not a room-count rule.)
+unit-scope rule — further confirmation it is not a room-count rule.)
 
 ---
 

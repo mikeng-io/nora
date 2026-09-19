@@ -42,7 +42,7 @@ NOW = datetime(2026, 9, 10, 23, 0, tzinfo=UTC)   # 2026-09-11 07:00 +08:00
 
 def _decide(**over) -> dict:
     raw = {
-        "name": "c", "expect": "none", "workspace": "friends",
+        "name": "c", "expect": "none", "unit": "friends",
         "now": "2026-09-11T07:00:00+08:00",
         "rooms": [{"platform": "signal", "conversation_id": "s", "label": "Friends", "home": True}],
         "notes": [{"title": "Dinner", "description": "d", "body": "b", "anchor_date": 20260912}],
@@ -416,7 +416,7 @@ def test_the_decide_corpus_loads_and_is_majority_none():
     # 39 §4's first real case is first.
     assert cases[0].name.startswith("d01_dinner")
     assert cases[0].expect == "remind"
-    assert cases[0].workspace == "ridgeline"
+    assert cases[0].unit == "ridgeline"
     assert cases[0].rows[0].note == "AI Hackathon dinner plan"
 
 
@@ -461,18 +461,18 @@ def test_the_eval_tool_source_builds_remind_for_the_grant_and_never_send_reply()
     room-scoped axis is `verify_tool_subsets`' refusal at startup, not
     `build`'s; what the home-room grant changes for it is the ROOM.)"""
     tools = EvalDreamTools()
-    home = HomeRoom(workspace="friends", platform="signal", conversation_id="s")
+    home = HomeRoom(unit="friends", platform="signal", conversation_id="s")
     tools.bind(
-        workspace="friends", home=home, notes=InMemoryNoteStore(),
+        unit="friends", home=home, notes=InMemoryNoteStore(),
         reminders=FakeReminderStore(), memory=FakeMemoryStore(), clock=lambda: NOW,
     )
     asked = frozenset({"remind", "send_reply", "now", "where_is"})
 
     granted = tools.build(
-        key="friends", names=asked, workspace="friends", adaptor="proactive",
+        key="friends", names=asked, unit="friends", adaptor="proactive",
         grant=proactive_grant(),
     )
-    ungranted = tools.build(key="friends", names=asked, workspace="friends")
+    ungranted = tools.build(key="friends", names=asked, unit="friends")
 
     def names(built):
         return {getattr(t, "tool_name", None) or getattr(t, "__name__", "") for t in built}
@@ -576,7 +576,7 @@ async def test_the_decide_drive_seeds_every_case_shape_and_binds_the_real_tools(
 
     for case in load_decide_cases(CASES / "decide.yaml"):
         drive = await run_proactive_decide_case(
-            runtime, tools=tools, workspace=case.workspace, now=case.now,
+            runtime, tools=tools, unit=case.unit, now=case.now,
             rooms=case.rooms, notes=case.notes, standing=case.standing,
             log=case.log, memory=case.memory,
         )

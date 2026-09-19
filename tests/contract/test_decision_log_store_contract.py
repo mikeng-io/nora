@@ -14,8 +14,8 @@ implementation, *including a test fake*, without a suite both pass.
     as working;
   * the window and the limit are BOTH enforced by the store, so a hung or
     chatty store cannot put an unbounded string in a prompt;
-  * `recent` is scoped to ONE conversation and `recent_for_workspace` to one
-    workspace — a leak either way puts another room's decisions in this room's
+  * `recent` is scoped to ONE conversation and `recent_for_unit` to one
+    unit — a leak either way puts another room's decisions in this room's
     prompt, which is the whole failure the block exists to fix, inverted;
   * the tie-break is deterministic, or the two implementations answer different
     rows for the same input and a contract suite cannot see it.
@@ -57,8 +57,8 @@ class _DecisionStore(Protocol):
     async def recent(
         self, *, conversation_id: str, since_ms: int, limit: int = ...,
     ) -> tuple[DecisionRow, ...]: ...
-    async def recent_for_workspace(
-        self, *, workspace: str, since_ms: int,
+    async def recent_for_unit(
+        self, *, unit: str, since_ms: int,
         writers: Any = ..., limit: int = ...,
     ) -> tuple[DecisionRow, ...]: ...
 
@@ -106,7 +106,7 @@ def _row(
     writer: Any = "participation",
     verdict: Any = "silent",
     conversation_id: str = CONV,
-    workspace: str = WS,
+    unit: str = WS,
     note_id: str | None = None,
     reason: str = "",
     ts: int = NOW,
@@ -114,7 +114,7 @@ def _row(
 ) -> DecisionRow:
     return DecisionRow(
         id=row_id, writer=writer, platform=platform,
-        conversation_id=conversation_id, workspace=workspace, note_id=note_id,
+        conversation_id=conversation_id, unit=unit, note_id=note_id,
         verdict=verdict, reason=reason, ts=ts,
     )
 
@@ -202,21 +202,21 @@ async def test_another_rooms_rows_are_never_answered(store):
     assert [r.reason for r in rows] == ["here"]
 
 
-async def test_a_workspace_read_spans_its_rooms_and_no_others(store):
-    await store.append(row=_row("a", conversation_id="g1", workspace=WS, reason="a"))
-    await store.append(row=_row("b", conversation_id="g2", workspace=WS,
+async def test_a_unit_read_spans_its_rooms_and_no_others(store):
+    await store.append(row=_row("a", conversation_id="g1", unit=WS, reason="a"))
+    await store.append(row=_row("b", conversation_id="g2", unit=WS,
                                 ts=NOW + 1, reason="b"))
-    await store.append(row=_row("c", conversation_id="g3", workspace="work",
+    await store.append(row=_row("c", conversation_id="g3", unit="work",
                                 ts=NOW + 2, reason="c"))
-    rows = await store.recent_for_workspace(workspace=WS, since_ms=0)
+    rows = await store.recent_for_unit(unit=WS, since_ms=0)
     assert [r.reason for r in rows] == ["a", "b"]
 
 
-async def test_a_workspace_read_takes_the_newest_and_honours_the_window(store):
+async def test_a_unit_read_takes_the_newest_and_honours_the_window(store):
     for i in range(6):
-        await store.append(row=_row(f"w{i}", workspace=WS, ts=NOW + i, reason=f"r{i}"))
-    await store.append(row=_row("stale", workspace=WS, ts=NOW - 5, reason="stale"))
-    rows = await store.recent_for_workspace(workspace=WS, since_ms=NOW, limit=2)
+        await store.append(row=_row(f"w{i}", unit=WS, ts=NOW + i, reason=f"r{i}"))
+    await store.append(row=_row("stale", unit=WS, ts=NOW - 5, reason="stale"))
+    rows = await store.recent_for_unit(unit=WS, since_ms=NOW, limit=2)
     assert [r.reason for r in rows] == ["r4", "r5"]
 
 
@@ -269,7 +269,7 @@ async def test_an_unknown_verdict_is_refused_by_the_store_itself(store):
         await store.append(row=row)
 
 
-async def test_a_workspace_read_narrows_by_writer_inside_the_bound(store):
+async def test_a_unit_read_narrows_by_writer_inside_the_bound(store):
     """**The property the feature's correctness rests on.** Every reader wants a
     subset — each excludes its own writer — and the bound is 20 rows. A busy
     room's dominant writer can out-produce every other writer by an order of
@@ -291,8 +291,8 @@ async def test_a_workspace_read_narrows_by_writer_inside_the_bound(store):
     for i in range(5):
         await store.append(row=_row(f"g{i}", writer="participation",
                                     verdict="silent", ts=NOW + 100 + i))
-    rows = await store.recent_for_workspace(
-        workspace=WS, since_ms=0, writers=("proactive_decide",), limit=2,
+    rows = await store.recent_for_unit(
+        unit=WS, since_ms=0, writers=("proactive_decide",), limit=2,
     )
     assert [r.id for r in rows] == ["p1"]
 
@@ -304,7 +304,7 @@ async def test_an_empty_writers_tuple_means_every_writer(store):
     would answer nothing for every unfiltered read."""
     await store.append(row=_row("a", writer="participation", verdict="silent"))
     await store.append(row=_row("b", writer="tag", verdict="replied", ts=NOW + 1))
-    rows = await store.recent_for_workspace(workspace=WS, since_ms=0, writers=())
+    rows = await store.recent_for_unit(unit=WS, since_ms=0, writers=())
     assert [r.id for r in rows] == ["a", "b"]
 
 
@@ -320,6 +320,6 @@ async def test_a_limit_of_zero_answers_nothing_on_both_implementations(store):
     for i in range(3):
         await store.append(row=_row(f"d{i}", ts=NOW + i))
     assert await store.recent(conversation_id=CONV, since_ms=0, limit=0) == ()
-    assert await store.recent_for_workspace(
-        workspace=WS, since_ms=0, limit=0,
+    assert await store.recent_for_unit(
+        unit=WS, since_ms=0, limit=0,
     ) == ()

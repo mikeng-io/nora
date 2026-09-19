@@ -51,7 +51,7 @@ Three layers, two stores, and the distinction that matters most:
 | layer | store | holds | tool |
 |---|---|---|---|
 | **hot** | PostgreSQL | last 40 messages, verbatim | *(injected, no tool)* |
-| **deeper** | **same PostgreSQL** | everything older, verbatim | `load_transcript`, `who_said`, `search_memory` (this room), `search_memory_workspace` (every room of the workspace) |
+| **deeper** | **same PostgreSQL** | everything older, verbatim | `load_transcript`, `who_said`, `search_memory` (this room), `search_memory_workspace` (every room of the unit) |
 | **derived** | Honcho | conclusions *about people*, and about herself | `about` (retrieve), `ask_memory` (reason — Honcho's dialectic, 14–19 s, budget 1), `remember` (write one conclusion) |
 
 Two more things she carries between turns are NOT memory in this sense and
@@ -114,7 +114,7 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   exactly why it never speaks. `design/dreamer-agent-loop/` is its bundle.
 
   **The three live adaptors** are `note-candidates` (hourly, per room, reads
-  the new messages and stages notes), `note-curation` (daily, per workspace,
+  the new messages and stages notes), `note-curation` (daily, per unit,
   retires notes that closed or expired — off by default) and `proactive`
   (below). Two earlier tiers — the knowledge tier (the "fact tier") and the
   language tier — were deprecated 2026-09-07 and their code deleted; a design
@@ -124,13 +124,13 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   **The deterministic check comes first.** Every adaptor's `inputs()` is a
   store read that returns `""` when there is nothing to reason about — no new
   messages for a watermark-bearing adaptor, no due note for the curator, no
-  change in a quiet workspace for proactive — and the runtime makes no model
+  change in a quiet unit for proactive — and the runtime makes no model
   call on a blank prompt. An unchanged hour costs one query and zero tokens.
 
 - **note** — one tracked uncertainty of a group: «dinner on the 12th, venue
   open», with a **title**, a **description**, a **body** (the arrangement as
   it stands), an **anchor** (the date it is about) and a **closing
-  condition**. Scoped to a **workspace**, not a room. Written by people on
+  condition**. Scoped to a **unit**, not a room. Written by people on
   the tag path (`note_create`/`note_update`) and by `note-candidates`; read
   everywhere as the `<notes>` index plus `note_read`. A note has a
   `revisit_at` and **strikes** — how many times it was raised with nobody
@@ -139,11 +139,19 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   her own rows are excluded from what the note tier reads. That is the one
   structural brake on her talking to herself (39 §1).
 
-- **workspace** — the SOCIAL UNIT a room belongs to (DEC-105): the same
+- **unit** — the SOCIAL UNIT a room belongs to (DEC-105): the same
   people reachable in more than one place (a Signal group and its Discord
   channel). Rooms sharing one share notes, memory search and relays
   (`send_to`); rooms in different ones never do, however trusted each is.
-  Set per room in `policy.toml`; defaults to one workspace.
+  Set per room in `policy.toml` (`unit = "friends"`); defaults to one unit.
+
+  **Not Honcho's `workspace`, which is a different level.** A unit is a
+  group of people inside ONE Nora; a Honcho workspace is one whole Nora
+  (`memory.workspace_id`, shipped as `"nora"`), and it holds every unit at
+  once. Both were called "workspace" until 2026-09-19, which is how a note
+  discharge came to address a Honcho tenant named after a unit. Honcho's
+  word survives only inside `nora/infra/honcho/` — anywhere else, the word
+  in this codebase is `unit`.
 
 - **Standing** — Nora's held position on where a room's conversation stands:
   one paragraph per room, what she currently thinks, distinct from what was
@@ -164,7 +172,7 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   Standing), decide, act — closed through a human; that loop is the
   **ambient loop** (below), and the proactive adaptor is one of its two
   deciders. The active half is a
-  Dreamer adaptor whose **decide turn** reads a workspace's open notes, each
+  Dreamer adaptor whose **decide turn** reads a unit's open notes, each
   room's Standing with its age, its own **decision log** (what it scheduled
   before and how each went) and its self card, asks memory about the people
   involved, and may set ITSELF a reminder for a chosen hour with `remind` —
@@ -173,18 +181,18 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   reads the room again and speaks or declines. Choosing *when* is the
   capability; a fixed daily slot would only be scheduling.
 
-- **home room** — the one room of a workspace the proactive adaptor stands
+- **home room** — the one room of a unit the proactive adaptor stands
   in (`home_room = true` in `policy.toml`, 39 D2): its roster is what
   `where_is`, `about`, `ask_memory` and `group_members` resolve through, its
-  `location` flag applies, and the rows she writes fire into it. A workspace
+  `location` flag applies, and the rows she writes fire into it. A unit
   has no conversation of its own, so a room-scoped read needs one room, and
   that room is a disclosure decision the operator makes — exactly once per
-  workspace. No home room, no proactive pass.
+  unit. No home room, no proactive pass.
 
 - **pass** — one tick of the proactive adaptor. It ticks hourly and RENDERS
   (calls the model) only on the daily floor (07:00 HK, once) or on a change
   since the last rendered pass — a note created, revised by a person, or
-  newly due, or a room's Standing rewritten — once the workspace's HOME ROOM
+  newly due, or a room's Standing rewritten — once the unit's HOME ROOM
   has been quiet for `[dreamer] quiet_seconds`. Every room, until 2026-09-10:
   a row can only fire into the home room, so the others were a proxy.
   `nora_proactive_pass_total{reason}` says which.
@@ -232,7 +240,7 @@ A capability claim in an authored file now **fails to load**.
   present when she is not. One observe–orient–decide–act loop, closed through
   a human: **Observe** is the ingest path, **Orient** is the memory layer
   (notes, Standing, Honcho), **Decide** is two deciders — **participation**
-  (this window closed: is it hers?) and **proactive** (across the workspace:
+  (this window closed: is it hers?) and **proactive** (across the unit:
   anything worth raising, and when?) — and **Act** is the fire path. The loop
   is the system's, not the proactive adaptor's; the components are its
   stages, and each seam between two of them carries a contract
@@ -368,7 +376,7 @@ storage. Four things share it in prose; two of them key stores, and they key
 them differently.
 
 - **conversation** — the unit. One `[[conversations]]` entry in `policy.toml`,
-  resolving to `nora.policy.Conversation`: one platform, one workspace, a
+  resolving to `nora.policy.Conversation`: one platform, one unit, a
   label, and **`ids: frozenset[str]`** — a SET of platform thread ids — of
   which `primary_id` is the one chosen to be stable across runs.
 - **conversation id** — one platform thread identifier. A conversation may
@@ -379,7 +387,7 @@ them differently.
   scope every room-scoped tool resolves *within*.
 - **scope** — what a Dreamer adaptor iterates over (`scopes()`,
   `key_kind = "scope"`). Today one conversation's `primary_id`. Distinct from
-  *workspace*, which is the other `key_kind`.
+  *unit*, which is the other `key_kind`.
 
 **Which key a store uses follows from WHICH SCHEDULER HANDS IT THE KEY, and is
 not a choice:**

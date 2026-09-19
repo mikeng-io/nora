@@ -139,12 +139,12 @@ Two defects, and they are halves of one thing.
 
 ### 5.1 The block is a recency slice
 
-`<facts>` calls `recent_facts(workspace, limit)` — **no subject filter.** In a
+`<facts>` calls `recent_facts(unit, limit)` — **no subject filter.** In a
 room discussing one thing, she receives the eight most recently written facts,
 relevant or not.
 
 The targeted read **already exists and is unreachable**:
-`standing_facts(workspace, subject_ids, limit)` is built, and nothing can supply
+`standing_facts(unit, subject_ids, limit)` is built, and nothing can supply
 `subject_ids`, because that needs resolution. So the tier ships its untargeted
 read and holds its targeted one in reserve.
 
@@ -278,7 +278,7 @@ is measured is the quantity that actually changed: the reads no longer hide
 under the transcript read, so their wall time IS the added cost.
 
 The fallback if this ever stops holding is the third option **with the extent
-line reporting honestly over the whole workspace** — which is what makes it a
+line reporting honestly over the whole unit** — which is what makes it a
 survivable fallback rather than the defect it would otherwise be.
 
 ## Status / Checkpoint

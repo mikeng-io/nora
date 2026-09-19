@@ -19,7 +19,7 @@ version: 1
 - The note tier has **two** Dreamer passes. `note-candidates` (per room,
   fires when a room has new messages and its watermark is an hour old; reads
   the new window plus the notes index; stages, then creates or — on a
-  matching anchor date — revises) and `note-curation` (per workspace, daily
+  matching anchor date — revises) and `note-curation` (per unit, daily
   at 16:00 UTC; selects passed anchors and due `revisit_at`s, gathers 40
   messages of evidence per note in code, asks `open / closed / expired /
   moot`, retires only what code can ground). The entity-resolution pass and
@@ -169,7 +169,7 @@ the wrong grain, and the question is better asked once the topic exists.
   peer set and the answer's length — a Honcho call a trace cannot see is a
   cost nothing measures.
 - The passes stay **tool-free judges** with inputs assembled in code.
-  `search_memory_workspace` is workspace-safe and stays out: a judge handed
+  `search_memory_workspace` is unit-safe and stays out: a judge handed
   a search tool becomes a researcher, and 33 §4.1 already paid for that.
 - Three gates, R-27 three states, provenance on every revision
   (`established_by`, instruction hash, model). A memory-enriched revision is

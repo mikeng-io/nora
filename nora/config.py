@@ -2273,7 +2273,7 @@ class NotesConfig(BaseModel):
     # `max_revisits_per_tick = 10`: how many DUE notes one pass judges. A
     # ceiling on the PROMPT as much as on the work — each candidate carries its
     # own evidence block, so this multiplies with `revisit_evidence_messages`
-    # below into the size of one model call. A workspace with more due than
+    # below into the size of one model call. A unit with more due than
     # this drains over several ticks, which is correct for a background pass
     # nobody is waiting on, and the overflow is COUNTED
     # (`nora_note_curator_deferred_total`) rather than silently truncated.

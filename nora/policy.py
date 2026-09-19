@@ -67,10 +67,10 @@ class Conversation:
     # without one breaks; `load_policy` always sets it.
     primary_id: str = ""
     # WHICH SOCIAL UNIT this room belongs to (DEC-105). Rooms sharing a
-    # workspace are the same group of people reachable in more than one place —
+    # unit are the same group of people reachable in more than one place —
     # a friend group with a Signal group AND a Discord channel — and that is
     # what makes a relay between them something other than a leak: the audience
-    # is already the same audience. Rooms in DIFFERENT workspaces are different
+    # is already the same audience. Rooms in DIFFERENT units are different
     # groups and may never be relayed between, however trusted each is on its
     # own.
     #
@@ -78,9 +78,9 @@ class Conversation:
     # required, so an existing policy.toml keeps working — but the default is
     # the LOOSE direction, so an operator who runs two real social units must
     # say so. That is why `send_to` also requires the requester to be allowed
-    # in the destination independently: the workspace bounds WHICH rooms may
+    # in the destination independently: the unit bounds WHICH rooms may
     # ever be paired, and the persons list still decides who may use the pair.
-    workspace: str = "nora"
+    unit: str = "nora"
     # UNPROMPTED-SPEECH TRUST (design/dreamer-agent-loop/36 §8, formerly /35).
     # Default False: being allowed to ANSWER this room when tagged has never
     # implied being allowed to speak in it uncalled. `relevance_gate = true` is
@@ -88,17 +88,17 @@ class Conversation:
     # traffic" — and it still does nothing while `[relevance_gate] enabled =
     # false` in config.toml (the shipped default).
     relevance_gate: bool = False
-    # THE WORKSPACE'S HOME ROOM (design/dreamer-agent-loop/39 D2, DEC-162).
-    # Default False. A workspace has no conversation of its own, and every
+    # THE UNIT'S HOME ROOM (design/dreamer-agent-loop/39 D2, DEC-162).
+    # Default False. A unit has no conversation of its own, and every
     # room-scoped read — `where_is`, `about`, `ask_memory`, `group_members` —
     # resolves through ONE room's roster. `home_room = true` is the operator
-    # saying "when Nora acts for this workspace with nobody asking, THIS is
+    # saying "when Nora acts for this unit with nobody asking, THIS is
     # the room she stands in": the proactive adaptor's `Room` is built from
     # it (with this room's `location` flag threaded exactly as on a tag), and
     # the rows it writes fire into it. That is the R-31 disclosure decision
-    # `WORKSPACE_SAFE_TOOLS` said «nobody has made», made here, per
-    # workspace, in the file where room trust already lives. At most one per
-    # workspace; a second is a startup error, not a guess.
+    # `UNIT_SAFE_TOOLS` said «nobody has made», made here, per
+    # unit, in the file where room trust already lives. At most one per
+    # unit; a second is a startup error, not a guess.
     home_room: bool = False
     # PROACTIVE-SPEECH TRUST (39 D5). Default False: a `kind="proactive"`
     # reminder row is owned by Nora's own `ai_peer` id, which is deliberately
@@ -133,14 +133,14 @@ class Conversation:
     # Phase 1 allowlisted ONE voice channel and gave its utterances their own
     # `conversation_id`. That does not survive contact with a real server: Zone
     # 67 has 10+ voice channels and gains more, so per-channel allowlisting is
-    # both unmaintainable AND would put N Discord rooms in one workspace —
-    # DEC-105 says a workspace holds at most one room per platform, and the
+    # both unmaintainable AND would put N Discord rooms in one unit —
+    # DEC-105 says a unit holds at most one room per platform, and the
     # 2026-09-17 cleanup (1953 messages, 11 notes, the whole culture table)
     # measured what breaching it costs.
     #
     # So voice is not a room. It is a SURFACE of a room: `voice = true` on a
     # guild's text room means "every voice channel in this guild speaks into
-    # HERE". One notebook, one culture, one workspace, one `persons` list —
+    # HERE". One notebook, one culture, one unit, one `persons` list —
     # a plan spoken aloud and the same plan typed land in the same place.
     # The GUILD is what is checked; the channel is provenance only.
     #
@@ -179,12 +179,12 @@ class Policy:
         return self._voice_by_guild.get((platform, guild_id))
 
     def home_rooms(self) -> dict[str, Conversation]:
-        """Workspace -> its home room (39 D2), for every workspace that named
-        one. A workspace with none is absent, never guessed: the proactive
+        """Unit -> its home room (39 D2), for every unit that named
+        one. A unit with none is absent, never guessed: the proactive
         adaptor does not run there, and its tool source builds nothing
         room-scoped for it. `load_policy` has already refused two."""
         return {
-            convo.workspace: convo
+            convo.unit: convo
             for convo in self.conversations
             if convo.home_room
         }
@@ -290,16 +290,16 @@ class _ConversationEntry(BaseModel):
     # See `Conversation.location` (DEC-74/79): relaxes `where_is`'s disclosure
     # gate for this room. Default False — the disclosure guard stays strict.
     location: bool = False
-    # See `Conversation.workspace` (DEC-105): the social unit this room belongs
+    # See `Conversation.unit` (DEC-105): the social unit this room belongs
     # to. `send_to` may only relay BETWEEN rooms that share it.
-    workspace: str = "nora"
+    unit: str = "nora"
     # See `Conversation.relevance_gate` (design/dreamer-agent-loop/36): opts
     # THIS room into the Relevance Gate's consideration of its untagged
     # traffic. Default False — the right to speak uncalled is granted per
     # room, never inherited from being answerable.
     relevance_gate: bool = False
     # See `Conversation.home_room` (design/dreamer-agent-loop/39 D2): the ONE
-    # room of this workspace the proactive adaptor stands in. Default False.
+    # room of this unit the proactive adaptor stands in. Default False.
     home_room: bool = False
     # See `Conversation.proactive` (39 D5): may a proactive row fire HERE.
     # Default False — unprompted speech is granted per room, never inherited.
@@ -382,7 +382,7 @@ def load_policy(path: Path) -> Policy:
         convo = Conversation(
             platform=entry.platform, ids=ids, persons=persons, label=entry.label,
             tools=frozenset(entry.tools), location=entry.location,
-            primary_id=entry.id, workspace=entry.workspace,
+            primary_id=entry.id, unit=entry.unit,
             relevance_gate=entry.relevance_gate,
             home_room=entry.home_room, proactive=entry.proactive,
             description=entry.description, voice=entry.voice,
@@ -398,8 +398,8 @@ def load_policy(path: Path) -> Policy:
                 )
             by_id[key] = convo
 
-    # ONE home room per workspace (39 D2). Two would make «which room does the
-    # workspace-keyed adaptor stand in» a guess, and a guessed room is a
+    # ONE home room per unit (39 D2). Two would make «which room does the
+    # unit-keyed adaptor stand in» a guess, and a guessed room is a
     # disclosure decision nobody made — the exact thing `home_room` exists to
     # have the operator make. Refused at startup, in `policy.toml`'s own
     # refuse-to-start shape (R-5), never resolved by picking the first.
@@ -407,15 +407,15 @@ def load_policy(path: Path) -> Policy:
     for convo in conversations:
         if not convo.home_room:
             continue
-        other = homes.get(convo.workspace)
+        other = homes.get(convo.unit)
         if other is not None:
             raise PolicyError(
-                f"workspace {convo.workspace!r} names two home rooms "
+                f"unit {convo.unit!r} names two home rooms "
                 f"({other.label or other.primary_id!r} and "
-                f"{convo.label or convo.primary_id!r}). A workspace has exactly "
+                f"{convo.label or convo.primary_id!r}). A unit has exactly "
                 "one room its proactive adaptor stands in; mark one."
             )
-        homes[convo.workspace] = convo
+        homes[convo.unit] = convo
 
     # ONE voice room per guild (design/voice-channel/07 §12.2, reversed
     # 2026-09-17). `voice = true` claims every voice channel in a guild, so two

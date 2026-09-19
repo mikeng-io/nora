@@ -44,7 +44,7 @@ Every piece of loop machinery is built, correct, and inert for this adaptor:
 |---|---|---|
 | `DreamGuard` R-7 default-deny | refuse an ungranted tool | budget map is empty; vetoes everything by omission |
 | the read-only ceiling | a background loop may look, not act | intersects to nothing |
-| `WORKSPACE_SAFE_TOOLS` | narrow a workspace key further | never reached |
+| `UNIT_SAFE_TOOLS` | narrow a unit key further | never reached |
 | `tool_choice="auto"` | *"a loop that is permitted to stop is a loop that can stop"* | nothing to stop calling |
 | per-tool budgets via the call ledger | bound tool spend | no tools to bound |
 | `turns` | bound loop length | never reaches turn 2 |
@@ -135,9 +135,9 @@ inventory, read off the tree at `a8cd40db`.
 | adaptor | declared | `key_kind` | `tools` | real loop |
 |---|---|---|---|---|
 | `NoteCandidateAdaptor` | `nora/language/note_candidates.py:845-855` | `scope` | **none** | no |
-| `NoteCuratorAdaptor` | `nora/language/note_curator.py:576-585` | `workspace` | **none** | no |
+| `NoteCuratorAdaptor` | `nora/language/note_curator.py:576-585` | `unit` | **none** | no |
 | `CultureAdaptor` | `nora/language/culture.py:365-390` | `scope` | 9, `CULTURE_TOOLS` | **yes** |
-| `ProactiveAdaptor` | `nora/language/proactive.py:410-415` | `workspace` | 16, `PROACTIVE_TOOLS` | **yes** |
+| `ProactiveAdaptor` | `nora/language/proactive.py:410-415` | `unit` | 16, `PROACTIVE_TOOLS` | **yes** |
 
 > **The culture row moved later the same day** and the rest of this section is
 > left as written, because what changed is exactly what §7.4 and §7.5 asked
@@ -350,14 +350,14 @@ of the verb, and closed #237 on it. `ask_memory` is one of the 35
 `if not view.available`: the dependency is a resolvable roster, not personhood.
 
 The disclosure objection is answered in the same docstring rather than by this
-node: `WORKSPACE_SAFE_TOOLS`'s refusal — *"binding one to an arbitrary room of
-that workspace would be a disclosure decision nobody has made"* — *"is answered
+node: `UNIT_SAFE_TOOLS`'s refusal — *"binding one to an arbitrary room of
+that unit would be a disclosure decision nobody has made"* — *"is answered
 by the operator naming the room in `policy.toml`"* (`dreamer.py:387`).
 
 **One thing the mechanism does not do yet, stated so nobody reads «it exists»
-as «it is wired».** `home_room` resolves through a workspace:
-`RegistryToolSource.build` does `home = self._home_rooms.get(workspace or "")`,
-and the runtime supplies `workspace=key if adaptor.key_kind == "workspace" else
+as «it is wired».** `home_room` resolves through a unit:
+`RegistryToolSource.build` does `home = self._home_rooms.get(unit or "")`,
+and the runtime supplies `unit=key if adaptor.key_kind == "unit" else
 None` (`dreamer.py:1249-1256`). A **scope**-keyed adaptor therefore looks up
 `home_rooms[""]`, finds nothing, and takes the loud closed branch — room and
 acts both withheld. For a scope-keyed adaptor the grant is conceptually an
@@ -369,7 +369,7 @@ has taken.
 > **Written 2026-09-17. ADDRESSED the same day**, and the paragraph is kept
 > because the reasoning is what the fix implemented. `RegistryToolSource.build`
 > now resolves the grant through two maps, one per `key_kind`
-> (`nora/agent/dreamer.py:842-855`): a workspace-keyed adaptor still looks the
+> (`nora/agent/dreamer.py:842-855`): a unit-keyed adaptor still looks the
 > room up in `home_rooms` — the operator's choice, per `policy.toml` — and a
 > scope-keyed one resolves its own conversation, the room whose batch the
 > runtime already handed it. `culture_grant` is the first user.

@@ -22,9 +22,9 @@ edges:
 | # | pass | key | trigger | exists? | ours or vendored |
 |---|---|---|---|---|---|
 | 1 | **extraction** | scope | watermark over new messages | **yes** | **ours** |
-| 2 | **adjudication** | workspace | work queue over pending candidates | **yes** | **ours** |
-| 3 | **promotion** | workspace | after any write to `fact` | **no** | ours, over a **vendored matcher** — §4.1 |
-| 4 | **embedding** | workspace | after promotion | **no** | ours |
+| 2 | **adjudication** | unit | work queue over pending candidates | **yes** | **ours** |
+| 3 | **promotion** | unit | after any write to `fact` | **no** | ours, over a **vendored matcher** — §4.1 |
+| 4 | **embedding** | unit | after promotion | **no** | ours |
 | 5 | **retrieval** | — | on a turn, and on a verb | **no** | ours |
 
 **Three of the five do not exist**, and the two that do have never produced a
@@ -150,7 +150,7 @@ model's input.
 
 ## 3. Pass 2 — adjudication
 
-Shipped: adaptor `fact-adjudication`, **workspace-keyed**, `uses_watermark =
+Shipped: adaptor `fact-adjudication`, **unit-keyed**, `uses_watermark =
 False` — a work queue, not a clock. Holds `web_search`, `web_fetch`, `now`,
 `calculate`. Emits `FactVerdict`:
 
@@ -169,7 +169,7 @@ is matched back"* — which is why neither pass may canonicalise
 ## 4. Pass 3 — promotion (new)
 
 Implements [21-substrate-contract.md](21-substrate-contract.md) §6.1. One
-`GROUP BY` over standing facts per workspace:
+`GROUP BY` over standing facts per unit:
 
 - **veto** dates, quantities, negations, URLs, and strings over 64 characters;
 - **promote** any surviving object string whose normalised form appears in a
@@ -289,9 +289,9 @@ query property.
 
 | bound | value | why this and not more |
 |---|---|---|
-| **depth** | **2** | On a workspace this size, hop 3 reaches most of the graph, and a filter that returns everything is not a filter. Hop 2 answers the questions worth asking — *what else did House House make*, *who else is at that wedding* |
+| **depth** | **2** | On a unit this size, hop 3 reaches most of the graph, and a filter that returns everything is not a filter. Hop 2 answers the questions worth asking — *what else did House House make*, *who else is at that wedding* |
 | **fan-out** | **8 edges per node per hop** | Bounds the worst case at 1 + 8 + 64 rows before ranking. Ordered by **the child edge's own fused score**, computed before expansion, ties broken deterministically on `(predicate, object)`. An earlier draft ordered by the *parent's* score — every edge of one parent shares it, so the sort tied and the engine returned an arbitrary eight ([30](30-review-response.md) §5) |
-| **dense-node guard** | **do not expand along a PREDICATE whose fan-out exceeds 30** | The super-node problem. A hub — a person, a recurring venue — connects to everything, so expanding through it returns the workspace. Related prior art calls a node dense at 50+ and warns the condition is not reversible; 30 is the conservative form at this scale |
+| **dense-node guard** | **do not expand along a PREDICATE whose fan-out exceeds 30** | The super-node problem. A hub — a person, a recurring venue — connects to everything, so expanding through it returns the unit. Related prior art calls a node dense at 50+ and warns the condition is not reversible; 30 is the conservative form at this scale |
 | **cycle** | visited set carried in the CTE | `A → B → A` otherwise recurs to the depth bound and returns duplicates dressed as results |
 
 ### 7.3 Distance decays, it does not gate

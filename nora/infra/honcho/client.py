@@ -215,16 +215,24 @@ def _conclusions(representation: Any) -> tuple[str, ...]:
 
 
 class WorkspaceRouter:
-    """A conversation → Honcho workspace map. The workspace is a social UNIT's
-    memory boundary (design/24 §S.1): one group of PEOPLE, whose Signal/Discord/
-    WhatsApp channels are all sessions inside it.
+    """A conversation → Honcho workspace map. A Honcho workspace is a TENANT:
+    one whole Nora, holding every `unit` at once. It is NOT a unit — that
+    equation is what design/24 §S.1 used to assert and what the 2026-09-19
+    rename undid, after `NoteCurator._discharge` spent months addressing a
+    Honcho workspace named after a unit.
 
-    `default` is the single workspace today (`cfg.memory.workspace_id`);
-    `overrides` is the per-conversation map a FUTURE identity.toml / workspaces
-    .toml populates so a second social unit gets its own workspace. With empty
-    overrides every conversation resolves to the one workspace, so wiring this in
-    changes nothing today — it is the seam the multi-unit routing lands on
-    without a client refactor (operator-approved "seam only", 2026-08-08)."""
+    **`overrides` is dead by decision, not pending (operator, 2026-09-19).**
+    One Nora is one Honcho workspace permanently; a second workspace means a
+    second Nora. Honcho is multi-tenant and would take a workspace per unit,
+    but its PEERS are workspace-scoped, so that would split one person into N
+    unrelated person-models and N self-cards, with no way to split the derived
+    history that already exists. design/24 §S.4 carries the full reversal and
+    the three follow-ups populating this map would still have needed.
+
+    Kept, rather than deleted with the decision, because `default` is the live
+    path: every conversation resolves to `cfg.memory.workspace_id` through
+    `HonchoClient._workspace_for`, and collapsing that to a bare attribute buys
+    nothing. Nothing constructs it with overrides."""
 
     def __init__(self, default: str, overrides: Mapping[str, str] | None = None) -> None:
         self._default = default

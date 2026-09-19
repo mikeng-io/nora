@@ -841,7 +841,7 @@ def test_constraints_covers_every_occasion_it_is_served_to():
 
 
 def test_no_doctrine_file_names_one_room():
-    """The same doctrine directory serves six rooms across three workspaces
+    """The same doctrine directory serves six rooms across three units
     (`policy.toml`), and the prompt never renders a room label — R-18 keeps
     ids off the wire and `_platform_line` gives her the PLATFORM only. So a
     room name written into doctrine was the only group identity she had, and

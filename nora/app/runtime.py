@@ -22,7 +22,7 @@ each other:
 - `supervise_adapter` / `start_adapters` — per-adapter restart-with-backoff,
   replacing what would otherwise be a bare `asyncio.gather`.
 - `dream_loop` — the Dreamer's clock: ticks every configured scope and
-  workspace, running each `DreamAdaptor` whose fire condition is met. A SIBLING
+  unit, running each `DreamAdaptor` whose fire condition is met. A SIBLING
   of `prune_loop`, not a copy of its shape — see `dream_loop`'s own docstring
   for the two differences that are load-bearing rather than stylistic.
 
@@ -700,7 +700,7 @@ async def _dream_adaptor_once(
             # "No entry in the mapping means every tick" is the safe default
             # for an adaptor nobody scheduled; falling back to it for one that
             # WAS scheduled is not. `fact-adjudication` on every tick is a
-            # 20-turn research loop every 5 minutes per workspace — 288 a day
+            # 20-turn research loop every 5 minutes per unit — 288 a day
             # — against a background clock nobody is watching.
             log.error(
                 "dream adaptor %s has a schedule but no clock to read; it "
@@ -854,7 +854,7 @@ async def dream_loop(
     instructions: _InstructionVersions | None = None,
     adaptors: Sequence[DreamAdaptor] = (),
     runtime: _AdaptorRunner | None = None,
-    workspaces: Callable[[], Sequence[str]] = lambda: (),
+    units: Callable[[], Sequence[str]] = lambda: (),
     schedules: Mapping[str, AdaptorSchedule] | None = None,
     schedule_clock: _ScheduleClock | None = None,
 ) -> None:
@@ -905,7 +905,7 @@ async def dream_loop(
     this function until 2026-09-07; both went with the language tier, and
     neither is in the signature. Each adaptor is
     scheduled on ITS OWN key: `scopes()` for a `key_kind == "scope"` adaptor,
-    `workspaces()` for a workspace-keyed one (`Conversation.workspace`,
+    `units()` for a unit-keyed one (`Conversation.unit`,
     DEC-105). That is not a wider or narrower batch — it is a DIFFERENT key,
     which is why the original single shared per-scope watermark could not
     host one unchanged.
@@ -973,8 +973,8 @@ async def dream_loop(
         """
         if adaptor.key_kind == "scope":
             return scopes()
-        if adaptor.key_kind == "workspace":
-            return workspaces()
+        if adaptor.key_kind == "unit":
+            return units()
         log.error(
             "dream adaptor %s declares key_kind=%r, which this loop cannot "
             "enumerate; it will not run", adaptor.name, adaptor.key_kind,

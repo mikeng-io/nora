@@ -654,8 +654,8 @@ class ReminderStore(Protocol):
         `fired_at` — which only a read that keeps the finished rows can
         answer. Keyed by requester because a proactive row's owner is the
         reserved `ai_peer` id (39 D5), so «Nora's own decisions» is one
-        predicate; the caller joins rows to a workspace through policy's
-        room map, since `Reminder` has no workspace column and adding one is
+        predicate; the caller joins rows to a unit through policy's
+        room map, since `Reminder` has no unit column and adding one is
         a schema decision this read does not make.
 
         `since` must be timezone-aware; `limit` obeys `check_limit`, for the

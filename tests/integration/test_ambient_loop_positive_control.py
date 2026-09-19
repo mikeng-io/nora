@@ -135,7 +135,7 @@ same incident, and both are about the two Decide paths not seeing each other.
 # S2 — participation already spoke; the proactive pass must HOLD.
 - name: participation_spoke_then_proactive_holds
   expect: none                       # no reminder row, no raise
-  workspace: ridgeline
+  unit: ridgeline
   now: 2026-09-11T16:00:00+08:00
   rooms:
     - {platform: signal, conversation_id: signal-thread, label: thread, home: false}
@@ -192,7 +192,7 @@ from nora.ingest.policy import RelevanceGatePolicy
 from nora.ingest.relevance_gate import Completion as GateCompletion
 from nora.ingest.relevance_gate import RelevanceGate
 from nora.language.note_candidates import NoteCandidateAdaptor
-from nora.language.proactive import PASS_CLOCK_NAME, ProactiveAdaptor, WorkspaceRoom
+from nora.language.proactive import PASS_CLOCK_NAME, ProactiveAdaptor, UnitRoom
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import load_policy
@@ -216,7 +216,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DOCTRINE_DIR = REPO_ROOT / "nora" / "doctrine"
 HKT = ZoneInfo("Asia/Hong_Kong")
 
-WORKSPACE = "ridgeline"
+UNIT = "ridgeline"
 #: The room the thread lives in — Signal in the incident, opted in to the gate.
 THREAD_ROOM = "signal-thread"
 #: The room a proactive row would fire into — Discord in the incident. Here it
@@ -245,7 +245,7 @@ T_ANSWER = _ms(16, 43, 57)
 T_TAG = _ms(16, 43, 57)
 T_DEBRIEF = _ms(16, 45, 14)
 #: The hourly proactive tick between the debrief and the one this case asserts
-#: on. The adaptor ticks hourly per workspace; 17:00 is the first tick that sees
+#: on. The adaptor ticks hourly per unit; 17:00 is the first tick that sees
 #: the debrief's write, and 18:03 — the one that actually raised it live — is
 #: the next. Stamping the pass clock here is what makes the +80-minute tick a
 #: statement about "has anything moved SINCE", which is the check the adaptor
@@ -441,10 +441,10 @@ async def _drive(tmp_path: Path) -> _Journey:
         'default = "deny"\n'
         f'[[conversations]]\nplatform = "signal"\nid = "{THREAD_ROOM}"\n'
         'persons = "*"\nrelevance_gate = true\n'
-        f'workspace = "{WORKSPACE}"\n'
+        f'unit = "{UNIT}"\n'
         f'[[conversations]]\nplatform = "signal"\nid = "{HOME_ROOM}"\n'
         'persons = "*"\n'
-        f'workspace = "{WORKSPACE}"\nhome_room = true\n'
+        f'unit = "{UNIT}"\nhome_room = true\n'
     )
     cfg = _config(tmp_path)
     persons = load_persons(tmp_path / "identity.toml")
@@ -501,7 +501,7 @@ async def _drive(tmp_path: Path) -> _Journey:
     )
     debrief_wiring = debrief.Wiring(
         store=standing_store, store_verdict=verdict_store, notes_sink=note_store,
-        workspace_of=lambda _platform, _conversation_id: WORKSPACE,
+        unit_of=lambda _platform, _conversation_id: UNIT,
         client=debrief_client, objective=shipped_objectives(), record_store=audit,
         max_chars=cfg.standing.max_chars, fold_batch=cfg.standing.fold_batch,
         timeout_seconds=cfg.standing.timeout_seconds,
@@ -603,7 +603,7 @@ async def _drive(tmp_path: Path) -> _Journey:
     )
     candidates = NoteCandidateAdaptor(
         notes=note_store, candidates=note_store,
-        workspace_for=lambda _scope: WORKSPACE, metrics=metrics,
+        unit_for=lambda _scope: UNIT, metrics=metrics,
         timezone=HKT,
         # #161 (PR #202) landed after this case was written: the adaptor now
         # requires the room's label and the operator's description, keyed the
@@ -622,10 +622,10 @@ async def _drive(tmp_path: Path) -> _Journey:
     # inside `_pass_reason`, whose daily-floor arm compares LOCAL DATES.
     clock.advance_to(T_PROACTIVE)
     rooms = (
-        WorkspaceRoom(
+        UnitRoom(
             platform="signal", conversation_id=THREAD_ROOM, label="thread",
         ),
-        WorkspaceRoom(
+        UnitRoom(
             platform="signal", conversation_id=HOME_ROOM, label="home", home=True,
         ),
     )
@@ -639,16 +639,16 @@ async def _drive(tmp_path: Path) -> _Journey:
         """
         pass_clock = InMemoryDreamScheduleClock()
         await pass_clock.record_fire(
-            adaptor_name=PASS_CLOCK_NAME, key=WORKSPACE, at_ms=last_pass_ms,
+            adaptor_name=PASS_CLOCK_NAME, key=UNIT, at_ms=last_pass_ms,
         )
         pass_metrics = Metrics()
         adaptor = ProactiveAdaptor(
             notes=note_store, standing=standing_store, reminders=reminders,
-            memory=memory, rooms_of=lambda ws: rooms if ws == WORKSPACE else (),
+            memory=memory, rooms_of=lambda ws: rooms if ws == UNIT else (),
             ai_peer=cfg.memory.ai_peer, clock=clock.now, timezone=HKT,
             clock_store=pass_clock, records=audit, metrics=pass_metrics,
         )
-        envelope = await adaptor.inputs(key=WORKSPACE, batch=())
+        envelope = await adaptor.inputs(key=UNIT, batch=())
         reasons = tuple(sorted({
             dict(labels).get("reason", "")
             for (name, labels), value in pass_metrics.snapshot().items()
@@ -657,7 +657,7 @@ async def _drive(tmp_path: Path) -> _Journey:
         return envelope, reasons
 
     journey.note_titles_at_decide = tuple(
-        note.title for note in await note_store.standing(workspace=WORKSPACE)
+        note.title for note in await note_store.standing(unit=UNIT)
     )
     # The pass this case's assertion 4 is about: the last pass ran at 17:00,
     # after the fold, so the 18:03 tick is deciding whether anything has moved
@@ -975,9 +975,9 @@ async def test_3c_no_note_is_proposed_from_a_dead_turn(journey: _Journey) -> Non
     had already been met, by her own row, 78 seconds earlier.
 
     Decidable on the notebook, not on the note's language: an `llm_error` fold
-    must leave the workspace with no new note and no staged create-candidate.
+    must leave the unit with no new note and no staged create-candidate.
     """
-    assert await journey.notes.standing(workspace=WORKSPACE) == (), (
+    assert await journey.notes.standing(unit=UNIT) == (), (
         "an llm_error fold must not create a note: "
         f"{[n.title for n in journey.notes.notes.values()]}"
     )
@@ -1002,7 +1002,7 @@ def test_3d_the_proactive_decider_is_never_shown_the_false_premise(
     This is the pass whose clock sits BEFORE the question, i.e. the first one
     that can see the fold's writes at all; it renders, so its envelope is
     readable. Decidable on the structure, not on the note's language: the
-    workspace must have no open note for the tick to carry.
+    unit must have no open note for the tick to carry.
 
     The note-candidates tick is asserted here too, and for the same reason at a
     different tier: it is the SECOND background pass shown the note index, and
@@ -1065,7 +1065,7 @@ async def test_4_the_proactive_tick_raises_nothing(journey: _Journey) -> None:
     incident's own 90-minute raise is `test_3d_*`.
 
     `unchanged` is asserted exactly, not as a disjunction with `nothing_shown`:
-    `nothing_shown` is unreachable here (the workspace has both a note and a
+    `nothing_shown` is unreachable here (the unit has both a note and a
     position), and a disjunction that can only ever take one branch reads like
     two covered cases while covering one.
     """

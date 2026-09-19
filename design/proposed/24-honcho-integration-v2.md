@@ -15,13 +15,14 @@ Named properly:
 
 | layer | what it IS | authority / scope |
 |---|---|---|
-| **workspace** | a **group of PEOPLE** — a social unit (my-friends, my-family, a team) | the MEMORY authority for that unit: everything those people say, across every app they use |
+| **workspace** | ~~a **group of PEOPLE**~~ — **REVISED 2026-09-19: one whole NORA.** Honcho's tenant, `memory.workspace_id`, shipped as `"nora"`. It holds every unit at once. | the MEMORY authority for the deployment: everything anyone says to this Nora, across every app and every unit |
+| **unit** | a **group of PEOPLE** — a social unit (my-friends, my-family, a team). DEC-105's key, from policy.toml. | the NOTE tier's scope, and the bound on `send_to`. Honcho does NOT scope to it. |
 | **session** | a **channel** that same unit uses — their Signal group, Discord group, WhatsApp group | one conversation stream (same people, different app); `conversation_id = platform group id` |
 | **peer** | a **person** (all their accounts → one person_id via identity.toml) | one identity |
 | **room / roster** | who is actually IN a given channel | the DISCLOSURE authority: what Nora may SAY here |
 
-- "group of people" = social unit = **workspace**. "platform group-chat" = channel = **session**. Never mix them.
-- You never put two social units (work team + family) in one workspace — different people, different workspaces. So cross-session blend WITHIN a workspace is safe **by construction**: it's the same humans on different apps, one social context. That resolves the only real disclosure worry.
+- "group of people" = social unit = **unit**. "platform group-chat" = channel = **session**. Never mix them — and note that the word for the first of those was `workspace` until 2026-09-19, which is what the row above records.
+- ~~You never put two social units in one workspace, so cross-session blend WITHIN a workspace is safe **by construction**.~~ **NO LONGER TRUE (2026-09-19).** One Nora is one Honcho workspace and it holds every unit, so Honcho blend crosses units and the "same humans" argument does not cover it. What still holds is the second bullet below: knowledge is workspace-wide, disclosure is channel-local, and the ROSTER is what gates whom Nora may speak about. That is now the only guard, not a construction.
 - **Two orthogonal scopes:** workspace = what Nora may *know together*; roster = whom she may *speak about*. Knowledge is workspace-wide; disclosure is channel-local (R-21/R-31).
 
 ### S.2 Recall is Nora's own model — observer/observed (resolves §7 A1)
@@ -43,12 +44,14 @@ from one observed message; empty without the observe-config.
 
 ### S.4 Resolved OPEN DECISIONS (§7)
 
-- **Granularity:** ONE workspace `cfg.memory.workspace_id="nora"`, one social unit — acceptable for alpha. **Future:** each distinct social unit gets its own `workspace_id`, declared per-group in identity.toml (which already binds people→groups/circles), graduating to a dedicated `workspaces.toml`. The code hook is `WorkspaceRouter` (a74972a) — the FEED path is fully routed today. **But populating the overrides map is NOT sufficient on its own** (seam review 2026-08-08); three follow-ups are required or overridden conversations break SILENTLY (best-effort Honcho swallows the errors):
+- **Granularity: REVERSED 2026-09-19 (operator).** One Nora is ONE Honcho workspace, permanently: every unit feeds the same `workspace_id`, and a second workspace means a second Nora, not a second unit. Honcho is multi-tenant (read back live 2026-09-19: five workspaces on the deployed instance) and peers are workspace-scoped, so a workspace per unit would split one person into N unrelated person-models and N self-cards, with no way to split the derived history that already exists. The `WorkspaceRouter` overrides map below is therefore **dead by decision**, not pending. What follows is kept as the record of what populating it would have cost.
+
+  ~~**Former plan:** each distinct social unit gets its own `workspace_id`, declared per-group in identity.toml, graduating to a dedicated `workspaces.toml`.~~ The code hook is `WorkspaceRouter` (a74972a) — the FEED path is fully routed today. **But populating the overrides map is NOT sufficient on its own** (seam review 2026-08-08); three follow-ups are required or overridden conversations break SILENTLY (best-effort Honcho swallows the errors):
   1. **Recall must route too.** `about`/`ask_memory` call `representation`/`chat` without `workspace_id`, so recall always reads the DEFAULT workspace — while feed WRITES to the override workspace. Add `workspace_id` to the `MemoryStore` port (it exists only on the concrete client today) and wire the tools to resolve it from their `conversation_id` (already in `build_tool_specs` scope) and pass it.
   2. **Override workspaces + peers must be provisioned.** `ensure_workspace`/`ensure_peer`/`_create_peer` only touch `self._ws`; a feed to an override workspace assumes Honcho get-or-creates the workspace/peer, else every feed there returns False silently. Route these by conversation too.
   3. Confirm Honcho's session-create/add-peers auto-create semantics for a not-yet-existing workspace before relying on (2).
   This is the REAL "phase 1".
-- **N4 (subagent review):** non-identifier content blends across a unit's channels — accepted, because a workspace IS one social unit, so there is no cross-context to leak.
+- **N4 (subagent review):** non-identifier content blends across a unit's channels — accepted, because a workspace IS one social unit, so there is no cross-context to leak. **The premise died 2026-09-19** (see Granularity): a workspace holds every unit, so the blend DOES cross contexts and the roster is what bounds it.
 
 ### S.5 The base64 session-id trap (live-caught, `4c9f107`)
 

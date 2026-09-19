@@ -66,27 +66,27 @@ This is R-1b's structural half. Checked: `nora/agent/dreamer.py`.
 
 ### 2.2 The tool ceiling depends on the adaptor's KEY
 
-`WORKSPACE_SAFE_TOOLS` is exactly:
+`UNIT_SAFE_TOOLS` is exactly:
 
 ```
 web_search  web_fetch  now  calculate  weather  version
 social_fetch  media_search  note_read  note_search  search_memory_workspace
 ```
 
-A workspace-keyed adaptor declaring anything else fails at startup with:
+A unit-keyed adaptor declaring anything else fails at startup with:
 
-> «Dreamer adaptor X is keyed on a WORKSPACE and declares room-scoped tools:
-> … A workspace is not a conversation, so these would answer EMPTY rather
+> «Dreamer adaptor X is keyed on a UNIT and declares room-scoped tools:
+> … A unit is not a conversation, so these would answer EMPTY rather
 > than fail — «I could not check» reported as «there was nothing».»
 
 The comment above the set states the second reason: binding a room-scoped
-tool to an arbitrary room of the workspace «would be a disclosure decision
+tool to an arbitrary room of the unit «would be a disclosure decision
 (R-31) nobody has made». Checked: `nora/agent/dreamer.py`.
 
 **Consequence for the operator's scenario, measured against the tool list
 (`nora/agent/tools.py`):**
 
-| his step | tool it needs | workspace-keyed | scope-keyed |
+| his step | tool it needs | unit-keyed | scope-keyed |
 |---|---|---|---|
 | food preferences per person | `search_memory_workspace` | available | available |
 | where each person will be | `where_is`, `where_been`, `saved_places`, `route`, `transit`, `place_info` | **refused at startup** | reachable |
@@ -171,7 +171,7 @@ writer
 
 `Note.revisit_at` is written by the create path (`default_revisit_at`, anchor
 minus `REVISIT_LEAD_DAYS = 3`, or `DATELESS_REVISIT_HORIZON_DAYS = 7` for a
-dateless note) and by `record_wake`. `due_for_revisit(workspace, now_ms,
+dateless note) and by `record_wake`. `due_for_revisit(unit, now_ms,
 limit)` exists on both `SqlNoteStore` and `InMemoryNoteStore`, and the
 curator already calls it every daily slot to decide what to judge.
 
@@ -216,7 +216,7 @@ takes**, which is the only thing proactive would borrow from it.
 
 ## 3. What is open
 
-1. **The key.** Workspace-keyed (today's other Dreamer adaptors) or
+1. **The key.** Unit-keyed (today's other Dreamer adaptors) or
    scope-keyed on `Note.established_in`. §2.2 says what each costs in tools;
    nothing here decides it.
 2. **R-31 with no asker.** §2.2. Unrun.
