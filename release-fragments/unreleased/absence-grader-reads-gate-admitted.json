@@ -1,0 +1,9 @@
+{
+  "type": "fix",
+  "summary": "evals/backbone.py's AbsenceGrader now reads the gate entry point's own admitted/refused verdict instead of the room-speech count it never produces, fixing a grader that scored every relevance_gate case as silence regardless of the actual decision.",
+  "details": [
+    "Found while re-running design/evaluation/GOAL-2-backbone.md's Step 0 falsification against relevance_gate: AbsenceGrader keyed only on NORA_SAID (len(outcome.said)), but evals.rebuilt.entry.gate() never populates outcome.said -- by design, the gate answers `admitted`, never writes room speech. So NORA_SAID was always 0 for a gate case regardless of the verdict, and every `expect: no_go` case scored a false PASS while every `expect: go` case scored a false FAIL, deterministically.",
+    "A new NORA_ADMITTED environment-state entry carries Outcome.admitted (bool for gate, None for every other entry point). AbsenceGrader now reads it when present and falls back to NORA_SAID otherwise, so participation/tag/dreamer/proactive_act grading is unaffected.",
+    "tests/unit/test_eval_backbone.py pins AbsenceGrader directly (pure, no network/DB) for both signals and both expect vocabularies; falsified by reverting (the import itself fails without the fix, confirming NORA_ADMITTED did not exist)."
+  ]
+}

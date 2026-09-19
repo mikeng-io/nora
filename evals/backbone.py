@@ -52,6 +52,15 @@ NORA_ERROR = "nora.error"
 NORA_TOKEN = "nora.outcome_token"  # noqa: S105 — an outcome token, not a credential
 NORA_SAID = "nora.said_count"
 NORA_DELIVERY = "nora.delivery"
+#: `Outcome.admitted` — `bool` for the `gate` entry point, `None` for every
+#: other one (`evals/rebuilt/domain.py`'s own docstring: "both answer *was she
+#: admitted* and *what did the room hear*, and the gate simply never reaches
+#: the second"). Carried separately from `NORA_SAID` because `gate()` never
+#: writes room speech at all — `AbsenceGrader` read only `NORA_SAID` before
+#: this existed, so it graded EVERY `gate` case as silence, verdict ignored
+#: (`09-the-backbone-measured.md` §1.1, found while re-running Step 0 against
+#: `relevance_gate`).
+NORA_ADMITTED = "nora.admitted"
 
 #: The three verdicts, carried in `EvaluationOutput.label`.
 #:
@@ -137,6 +146,7 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                 EnvironmentState(name=NORA_TOKEN, state=outcome.outcome_token),
                 EnvironmentState(name=NORA_SAID, state=len(outcome.said)),
                 EnvironmentState(name=NORA_DELIVERY, state=outcome.delivery),
+                EnvironmentState(name=NORA_ADMITTED, state=outcome.admitted),
             ],
         }
     finally:
@@ -194,6 +204,7 @@ def nora_task(spec: Spec):
                     EnvironmentState(name=NORA_TOKEN, state=""),
                     EnvironmentState(name=NORA_SAID, state=0),
                     EnvironmentState(name=NORA_DELIVERY, state=""),
+                    EnvironmentState(name=NORA_ADMITTED, state=None),
                 ],
             }
 
@@ -222,27 +233,34 @@ class AbsenceGrader(Evaluator):
         error = state_of(data, NORA_ERROR)
         expect = (data.metadata or {}).get("expect", "either")
         said = state_of(data, NORA_SAID) or 0
+        admitted = state_of(data, NORA_ADMITTED)
 
         if error:
             return [self._out(ERROR, 0.0, f"the case did not run: {error}")]
 
-        spoke = bool(said)
+        # The `gate` entry point never writes room speech at all — `admitted`
+        # IS its verdict, and `said` is permanently `0` for it. Every other
+        # entry point leaves `admitted` at `None` (never ran a gate), so
+        # `said` is still the right signal there. Reading `said` alone for a
+        # gate case graded every one of them as silence, verdict ignored.
+        spoke = bool(admitted) if admitted is not None else bool(said)
+        detail = f"admitted={admitted}" if admitted is not None else f"{said} row(s)"
         if expect in ("silence", "no_reply", "none", "no_go"):
             return [
                 self._out(PASS, 1.0, "said nothing, as the case expects")
                 if not spoke
-                else self._out(FAIL, 0.0, f"expected silence and wrote {said} row(s)")
+                else self._out(FAIL, 0.0, f"expected silence and got {detail}")
             ]
         if expect in ("speak", "reply", "go"):
             return [
-                self._out(PASS, 1.0, f"spoke, as the case expects ({said} row(s))")
+                self._out(PASS, 1.0, f"spoke, as the case expects ({detail})")
                 if spoke
                 else self._out(FAIL, 0.0, "expected a reply and said nothing")
             ]
         # `either` says both ANSWERS are acceptable; it does not say that not
         # answering is. Something must have happened, or it is ungradable.
         return [
-            self._out(PASS, 1.0, f"something happened ({said} row(s))")
+            self._out(PASS, 1.0, f"something happened ({detail})")
             if spoke
             else self._out(ERROR, 0.0, "nothing ran and nothing was said")
         ]
