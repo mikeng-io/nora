@@ -154,6 +154,49 @@ and the corpora were tracking reality all along.
 The classification in §2 was done by hand over one pass of the issue list, and
 it is the weakest thing here.
 
+**RUN, 2026-09-19/20 — this node holds.** `gh issue list --state closed
+--search "closed:>=2026-06-19"` (the last 3 months, at run time), 97 results;
+`random.seed(20260919); random.sample(d, 20)` for a reproducible draw —
+seed and full issue list are named here so this is re-runnable, not just
+re-assertable. Every issue read in full (title + body), not by title alone;
+two initial title-based guesses (#71, #100) were reclassified to N/A after
+reading the body, because both are store/background-job type-discipline
+bugs with no live turn involved, not a broken tool failing DURING a turn.
+
+| # | title | class | why |
+|---|---|---|---|
+| #248 | proactive answers a note in the home room, not the room it was born in | **S1** | the exact incident §2 already cites for S1 |
+| #160 | proactive pass reads memory 3-5x when the prompt already has the answer | **S2** | over-routing — calling a tool the input didn't need |
+| #227 | denied having a site, capitulated to a bare assertion, volunteered internal page names | **S3** | the exact incident §2 already cites for S3 |
+| #77 | a fact verdict can cite only one source, corroboration silently discarded | **S3** | an assertion's grounding silently weakened |
+| #168 | `silence.md` doctrine never reaches the `tag` occasion prompt | **S4** | context that should reach her does not |
+| #144 | the gate reasons from a hand-written capability list, not the real tool registry | **S4** | reasoning on stale/wrong context about herself |
+| #239 | `<tag_message>`/`<replying_to>` carry no `untrusted` marker | **S9** | exactly the shape S9 measures |
+| #182 | the coordinate-leak detector counts decimal literals and a re-encoding defeats it | **not S1-S9** | a disclosure/redaction-effectiveness failure — leakage FROM her, not injection INTO her; §9 does not have a slot for this |
+| #71, #100, #64, #5, #169, #10, #82, #244, #240, #314, #172, #59 | (12 issues) | **N/A** | store-type discipline, analytics pipelines, CI/tooling, docs, code organization — no live turn is involved at all |
+
+**The result, read straight: of the 8 that are turn-behavior issues at all,
+S1/S2/S3/S4/S9 each got 1-2 hits and S5/S6/S7/S8 got ZERO** — in particular
+**S7, which is 75 of the CURRENT 150 cases (half the suite), produced zero
+of eight real incidents in this sample**, while S2 and S4 — near-zero
+corpus coverage — together account for half the real incidents found. This
+is the same shape §2 already claimed, found independently by a different
+method, which is what "the distribution matches" would have needed to look
+like to refute it. It did not.
+
+**Two things this run adds rather than confirms:**
+
+1. **n=8 is small** — this is a spot-check, not a re-derivation of §2's
+   count, and a different reasonable read of the four N/A-leaning issues
+   (#71, #100, #169, #182) could move one or two of them into S8 or a new
+   class. The headline (S7 over-covered, S2/S4 under-covered) is robust to
+   that; the exact 1-2 counts per class are not.
+2. **#182 names a tenth failure shape this map has no slot for**: content
+   LEAVING her that should not (a redaction/disclosure-effectiveness gap),
+   distinct from S9's untrusted-content-ENTERING-her. Not scoped in here —
+   named so it is not silently absorbed into S9 by a future reader looking
+   for the closest fit.
+
 ## 9. S4 — built, 2026-09-19
 
 `evals/backbone.py` gained `NORA_BLOCKS_EMPTY` and `ContextGrader`. It reads
