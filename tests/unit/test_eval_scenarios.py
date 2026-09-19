@@ -13,7 +13,7 @@ from strands_evals import Case, Experiment
 from strands_evals.types.evaluation import EnvironmentState
 
 from evals.backbone import ERROR, FAIL, NORA_ADMITTED, NORA_ERROR, NORA_SAID, PASS, MeetsGrader
-from evals.scenarios import CORPUS_ENTRY, load_corpus
+from evals.scenarios import CORPUS_ENTRY, JUDGED_CORPORA, experiment_for, load_corpus
 
 #: Every corpus file this port covers must load to exactly this many cases —
 #: the known count (`10-the-scenario-map.md` §2's own table), so a corpus
@@ -112,6 +112,35 @@ def test_a_ported_corpus_is_gradable_end_to_end_through_a_real_experiment():
     )
     labels = {out.label for outputs in report.detailed_results for out in outputs}
     assert labels == {PASS}
+
+
+def test_judged_corpora_are_a_subset_of_the_covered_corpora():
+    assert set(CORPUS_ENTRY) >= JUDGED_CORPORA
+
+
+def test_experiment_for_returns_the_full_case_set():
+    experiment, _task = experiment_for("no_trigger", database_url="x")
+    assert len(experiment.cases) == 12
+
+
+def test_experiment_for_threads_a_judge_only_for_judged_corpora(monkeypatch):
+    """Passing a judge for a corpus that never sets `expect: reply` would
+    judge cases the corpus never asked to be judged; omitting it for a
+    JUDGED corpus silently drops S3/S9 to a structural-only reading."""
+    captured = []
+
+    def fake_nora_task(spec):
+        captured.append(spec)
+        return lambda _case: {}
+
+    monkeypatch.setattr("evals.scenarios.nora_task", fake_nora_task)
+    fake_judge = object()
+
+    experiment_for("being_contradicted", database_url="x", judge=fake_judge)
+    assert captured[-1].judge is fake_judge
+
+    experiment_for("no_trigger", database_url="x", judge=fake_judge)
+    assert captured[-1].judge is None
 
 
 def test_a_ported_corpus_correctly_fails_a_wrong_answer():

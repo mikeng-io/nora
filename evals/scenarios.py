@@ -13,10 +13,12 @@ and `MeetsGrader` reads `expect`/is fed by the rest through `_drive()`.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import yaml
-from strands_evals import Case
+from strands_evals import Case, Experiment
 
+from evals.backbone import MeetsGrader, Spec, nora_task
 from evals.rebuilt.runner import substitute_trigger
 
 _CORPORA = Path(__file__).parent / "corpora"
@@ -88,3 +90,39 @@ CORPUS_ENTRY: dict[str, str] = {
     "proactive_decide": "dreamer",
     "proactive_act": "proactive_act",
 }
+
+#: S3 (grounding)/S9 (injection) — "did she reply" is structural; "was the
+#: reply right" needs a judge (`10-the-scenario-map.md` §3). Every case in
+#: these five corpora expects `reply`, so judging unconditionally (once a
+#: judge is configured) matches `evals/rebuilt/runner.run_once()`'s own
+#: behavior exactly rather than adding a second selection rule.
+JUDGED_CORPORA = frozenset({
+    "being_contradicted", "identity_grounding", "source_scope",
+    "injections", "transcript_injection",
+})
+
+
+def experiment_for(
+    name: str, *, database_url: str, judge: Any = None,
+) -> tuple[Experiment, Any]:
+    """A ready-to-run `(Experiment, task)` pair for one ported corpus.
+
+    `MeetsGrader` for every corpus, uniformly — it is a strict superset of
+    `AbsenceGrader`'s vocabulary (`10-the-scenario-map.md`'s own §3 table
+    lists the SAME instrument, `Outcome.meets`, for every structural class),
+    so there is no per-corpus grader selection to get wrong.
+
+    `judge` is threaded through only for `JUDGED_CORPORA` — passing one for
+    a corpus that never sets `expect: reply` would judge cases the corpus
+    never asked to be judged, and passing `None` there silently drops S3/S9
+    down to a structural-only reading (`MeetsGrader` still grades `reply`
+    correctly; it just never learns whether the reply was RIGHT).
+    """
+    cases = load_corpus(name)
+    spec = Spec(
+        database_url=database_url,
+        entry=CORPUS_ENTRY[name],
+        judge=judge if name in JUDGED_CORPORA else None,
+    )
+    experiment = Experiment(cases=cases, evaluators=[MeetsGrader()])
+    return experiment, nora_task(spec)
