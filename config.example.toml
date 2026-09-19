@@ -709,7 +709,7 @@ budget = 5
 # REFUSES TO START without any of them rather than accepting every job and
 # failing it minutes later in front of the group:
 #   NORA_DATA_HOST_ROOT   the host-side path of the /app/data mount. It exists
-#                         because a sandbox's unit is bind-mounted by the
+#                         because a sandbox's workspace is bind-mounted by the
 #                         HOST Docker daemon, which resolves the source on the
 #                         host filesystem — an in-container path silently
 #                         resolves to an empty directory and the job produces

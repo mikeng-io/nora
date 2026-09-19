@@ -1886,7 +1886,7 @@ class ComputeConfig(BaseModel):
     # knows it, and this container cannot compute it.
     #
     # It exists because `store.data_dir` is a path INSIDE this container
-    # (`/app/data`), and `LocalDockerBackend` hands a unit path to the
+    # (`/app/data`), and `LocalDockerBackend` hands a workspace path to the
     # HOST Docker daemon as a bind-mount source. The daemon resolves it on the
     # host filesystem, where `/app/data` does not exist — so it would create an
     # empty directory there and every job would fail with nothing to read and

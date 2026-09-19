@@ -292,7 +292,7 @@ which claims were tested rather than argued.
     - `AdaptorGrant` (`nora/agent/dreamer.py:387`) is that mechanism. It is not
       hypothetical and it is not new: the proactive adaptor has held one since
       DEC-162. Its docstring also answers the disclosure objection in advance —
-      `WORKSPACE_SAFE_TOOLS`'s refusal, *"binding one to an arbitrary room of
+      `UNIT_SAFE_TOOLS`'s refusal, *"binding one to an arbitrary room of
       that workspace would be a disclosure decision nobody has made"*, *"is
       answered by the operator naming the room in `policy.toml`."*
 

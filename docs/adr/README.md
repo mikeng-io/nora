@@ -12,7 +12,7 @@ up?"* — there is no room on one line.
 
 That gap bit on 2026-08-06. Several architectural decisions had their reasoning
 only in commit messages or in a chat transcript: what Honcho is actually for,
-whether a unit binds per group, why `ContextBudget` was deferred. A commit
+whether a Honcho workspace binds per group, why `ContextBudget` was deferred. A commit
 message is not a record — nobody greps commit messages before making the
 opposite decision six weeks later.
 

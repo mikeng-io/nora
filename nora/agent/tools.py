@@ -3339,7 +3339,7 @@ cannot tell you about anyone outside it."""
         roster = {p.honcho_peer_id: p.name for p in view.people}
         try:
             # SESSION-scoped to THIS channel (Kimi audit 2026-08-08): a
-            # unit-wide search would surface a roster member's PRIVATE DM
+            # workspace-wide search would surface a roster member's PRIVATE DM
             # words into this room. `bound_conversation_id` is the tag's channel,
             # captured once (DEC-24), never a model-supplied value.
             found = await honcho.search(
@@ -7984,11 +7984,12 @@ Args:
                         "through what was said. Say you can't check — do not "
                         "guess.",
             }
-        # The roster is identity.toml's WHOLE address book, not a room's
-        # live view — 32 §5 closed decision 1: «search 六個人嘅 memory» means
-        # the whole unit's memory. Nora's OWN peer is excluded the same
-        # way the room path drops her: her words are not the group's memory of
-        # what was said.
+        # The roster is identity.toml's WHOLE address book — not a room's
+        # live view, and not a unit's either: `PersonRef` carries no unit, so
+        # this filter CANNOT be unit-shaped. 32 §5 closed decision 1 («search
+        # 六個人嘅 memory») was written when one deployment meant one group.
+        # Nora's OWN peer is excluded the same way the room path drops her:
+        # her words are not the group's memory of what was said.
         roster = {
             ref.honcho_peer_id: ref.name
             for person_id, ref in by_person.items()

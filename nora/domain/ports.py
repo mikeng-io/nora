@@ -771,7 +771,7 @@ class MemoryStore(Protocol):
     # fact about `target`, stored as `(observer=peer_id, observed=target)` —
     # the exact pair `representation` reads back, so what is written is
     # readable the moment the write lands, with no second scope in between.
-    # No conversation/session key on purpose: the read lane is unit-wide
+    # No conversation/session key on purpose: the read lane is workspace-wide
     # by design (see `representation`), so the write is too, and disclosure
     # stays the room roster's job at the tool layer. Bare best-effort `bool`
     # like `feed` — never load-bearing, never retried (see the module
@@ -785,7 +785,7 @@ class MemoryStore(Protocol):
 
     # `peer_id` is the OBSERVER, `target` the OBSERVED (design/24 §4). With
     # `target` set the recall is `(observer=peer_id, observed=target)` — Nora's
-    # model of a person, not the person's self-model. Unit-wide (no session
+    # model of a person, not the person's self-model. Workspace-wide (no session
     # scope): knowledge blends across every conversation Nora shares with them;
     # the room roster gates disclosure at the tool layer.
     async def representation(

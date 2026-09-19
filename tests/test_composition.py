@@ -768,7 +768,7 @@ async def test_compute_refuses_to_start_without_its_host_injected_values(
     Every one of these is read with a `""` default, so without the check the
     daemon starts CLEANLY and then fails every job minutes later — an empty
     bearer token on the Drop mint, an empty key handed to Smith, or a
-    unit bind-mounted from a host path that does not exist. All three
+    workspace bind-mounted from a host path that does not exist. All three
     surface in the group as «it failed», with an error string nobody can act
     on, and none of them are things a group can fix. They are operator
     problems and they belong in the operator's terminal.

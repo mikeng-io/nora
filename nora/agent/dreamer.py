@@ -582,11 +582,17 @@ UNIT_SAFE_TOOLS: frozenset[str] = frozenset({
     # but a lookup is a global search of her own creations, never
     # conversation-scoped like `load_transcript`).
     "media_search",
-    # The unit-scoped reads, admitted with the supplied key path
-    # (32 §3.4): the note tier's two read verbs and the unit-wide memory
-    # variant of `search_memory`. Each resolves its unit from the
-    # SUPPLIED key rather than from a room a unit-keyed adaptor does
-    # not have.
+    # Admitted with the supplied key path (32 §3.4): the note tier's two
+    # read verbs, which resolve their unit from the SUPPLIED key rather than
+    # from a room a unit-keyed adaptor does not have — and the memory search
+    # variant, which resolves NO unit at all.
+    #
+    # That last one is a gap in this gate, not a member of the set. The
+    # question here is «does this verb need a room?», and
+    # `search_memory_workspace` answers no for the WRONG reason: it is
+    # deployment-scoped, not unit-scoped, and reads across every unit at once
+    # (see its own body). It passes because this gate has two axes — read vs
+    # act, room-scoped vs unit-safe — and no axis for scope ABOVE a unit.
     "note_read", "note_search",
     "search_memory_workspace",
 })

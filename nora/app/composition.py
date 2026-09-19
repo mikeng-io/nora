@@ -582,7 +582,7 @@ class _DebriefModelClient:
         )
 
 
-# The one subdirectory name a compute job's unit lives under, appended to
+# The one subdirectory name a compute job's workspace lives under, appended to
 # BOTH the container-side root (`store.data_dir`) and the host-side root, so the
 # two paths handed to `LocalDockerBackend` cannot name different directories.
 COMPUTE_WORKSPACE_DIRNAME = "compute-workspaces"
@@ -693,7 +693,7 @@ def _compute_workspace_host_root(cfg: Config) -> Path:
             f"{cfg.compute.data_host_root_env} is not set — it must name the "
             f"HOST-side path bind-mounted at {cfg.store.data_dir} (docker "
             "compose sets it from the same expression as that mount), because "
-            "a sandbox unit is bind-mounted by the host Docker daemon and "
+            "a sandbox workspace is bind-mounted by the host Docker daemon and "
             "an in-container path silently resolves to an empty host directory; "
             "refusing to start"
         )
@@ -2103,7 +2103,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # `store.data_dir`, the SAME data-volume convention media custody
             # uses (`_build_media_custody` below: `store.data_dir / "media"`)
             # — not a second, unmounted absolute path. Bind-mounted at
-            # `./data:/app/data` in docker-compose.yml, so a job's unit
+            # `./data:/app/data` in docker-compose.yml, so a job's workspace
             # survives a container restart exactly as media blobs do.
             workspace_root=cfg.store.data_dir / COMPUTE_WORKSPACE_DIRNAME,
             # The SAME directory, named as the HOST sees it — the only value

@@ -41,7 +41,7 @@ on the unit**. The renderer then reads unit-recent facts into
 `<facts>` **in every room of that unit, on every tag.**
 
 The memory tool's own docstring says its session scoping exists precisely so
-that *"a unit-wide search would surface a roster member's PRIVATE DM words
+that *"a workspace-wide search would surface a roster member's PRIVATE DM words
 into this room."*
 
 > The gate was placed on the read. The leak moves to the write.

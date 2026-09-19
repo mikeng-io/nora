@@ -265,7 +265,7 @@ adjudicator.
 path (`NativeTool` rows at `tools.py:775/786`, implementations at
 `tools.py:5793/5935`). The Dreamer gets them by adding the names to its
 `tools` set and to `UNIT_SAFE_TOOLS` — the same function objects, no
-second copy. `search_memory_workspace` is a unit-scoped variant of the
+second copy. `search_memory_workspace` was INTENDED as a unit-scoped variant of the
 room-scoped `search_memory` — the existing implementation is reused with a
 different scope argument, not copied.
 
@@ -292,9 +292,12 @@ attribution is the "who said it, when" the operator asked for.
 
 ## 5. Closed decisions (operator, 2026-09-01)
 
-1. **Memory search is unit-scoped.** The Fact Dreamer is unit-keyed;
+1. **Memory search is unit-scoped.** *(Intent, 2026-08. It was never built
+   that way — the verb resolves no unit and reaches Honcho's whole workspace.
+   See `nora/agent/tools.py`'s own comment at the `honcho.search` call.)* The
+   Fact Dreamer is unit-keyed;
    "search 六個人嘅 memory" means searching the whole unit's memory. A
-   unit-scoped memory search tool is added alongside the five fact/note
+   memory search tool is added alongside the five fact/note
    tools — it searches all peers' Honcho memory in the workspace, not one
    room's history. The existing room-scoped `search_memory` stays for the tag
    path; the Dreamer gets the unit variant.

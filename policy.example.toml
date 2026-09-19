@@ -149,7 +149,7 @@ description = "a games room; 2200 is when people log on, not an appointment"
 # [[conversations]]
 # platform  = "whatsapp"
 # id        = "176569000000000000@g.us"
-# unit = "family"         # same humans again — the unit is the unit
+# unit = "family"         # same humans again — the unit is the boundary
 # persons  = ["miles", "ada"]
 # tools/location stay omitted here: deny-by-default, same as every new room.
 

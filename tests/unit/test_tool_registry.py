@@ -112,8 +112,8 @@ def test_the_registry_exposes_every_declared_tool():
         "note_read", "note_search", "note_create", "note_update",
         # The remember verb — the conclusion write lane (2026-08-30).
         "remember",
-        # The unit-wide memory variant, built for the Dreamer's
-        # unit key.
+        # The memory search variant, built for the Dreamer's unit key but
+        # reaching Honcho's whole workspace — every unit, not one.
         "search_memory_workspace",
     }
 
