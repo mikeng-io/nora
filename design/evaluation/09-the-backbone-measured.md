@@ -194,9 +194,20 @@ aggregate readable and a case verdict not.
 This is `domain.py`'s own rule (*"one draw of a stochastic process is not a
 reading of it"*) reproduced on three hand-written cases, and it lands straight
 on `08-the-sdk-surface` §4.4: **`Experiment` has no repeat parameter**, and the
-workaround — five `Case`s per case — breaks both `overall_score`'s denominator
-and `EvaluationDataStore`'s unique-name requirement. Sampling is now the
-sharpest open problem in the port, ahead of the gate's spans.
+naive workaround — five `Case`s per case, same name — breaks both
+`overall_score`'s denominator and `EvaluationDataStore`'s unique-name
+requirement.
+
+**RESOLVED, 2026-09-20.** `evals/backbone.py`'s `sampled(base, n)` draws `n`
+uniquely-named copies (`base.name#i`), sidestepping the unique-name collision;
+`sample_read(report)` groups a report's rows back to their base case (via
+`report.cases`/`report.detailed_results`, confirmed flattened per
+(case × evaluator) pair rather than per case) and reports a fourth verdict,
+`UNSTABLE`, when the draws disagree — never a majority vote, since collapsing
+disagreement is exactly what would hide the flip measured above. All-ERROR
+still reads `ERROR`. Falsified: forcing a majority-vote collapse turned the
+disagreement test red. 6 new tests, all against a real `Experiment` with fake
+evaluators, no DB/network.
 
 ### 3.2 `label` survives in exactly one place
 

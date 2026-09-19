@@ -846,3 +846,86 @@ def read(report: Any) -> Reading:
             label = getattr(out, "label", None)
             counts[label if label in counts else ERROR] += 1
     return Reading(passed=counts[PASS], failed=counts[FAIL], errored=counts[ERROR])
+
+
+#: A fourth answer, alongside `PASS`/`FAIL`/`ERROR` — see `sample_read()`.
+UNSTABLE = "UNSTABLE"
+
+
+def sampled(base: Case, n: int) -> list[Case]:
+    """`n` independently-named copies of `base`, for a case whose signal is
+    stochastic rather than reading it once.
+
+    `09-the-backbone-measured.md` §3.1 measured two model-dependent cases
+    SWAP verdicts across two runs at `sample: 1` — "the only stable verdict
+    was the ERROR." `08-the-sdk-surface.md` §4.4 found why the obvious fix
+    (run the same `Case` N times) does not work as written: `Experiment`
+    has no repeat parameter, and `EvaluationDataStore`/the SDK's own caching
+    key on `case_name`, so N draws under `base.name` unchanged would
+    silently collide rather than produce N rows. Each draw needs a name of
+    its own; `sample_read()` undoes the naming to read them back as one.
+    """
+    return [
+        base.model_copy(update={"name": f"{base.name}#{i}", "session_id": f"{base.name}#{i}"})
+        for i in range(1, n + 1)
+    ]
+
+
+def _base_name(name: str) -> str:
+    """The name `sampled()` drew FROM, undoing its `#i` suffix. A name that
+    was never run through `sampled()` returns unchanged."""
+    head, sep, tail = name.rpartition("#")
+    return head if sep and tail.isdigit() else name
+
+
+@dataclass(frozen=True)
+class SampleReading:
+    """One base case's verdict across its `sampled()` draws."""
+
+    verdict: str  # PASS | FAIL | ERROR | UNSTABLE
+    passed: int
+    failed: int
+    errored: int
+
+
+def sample_read(report: Any) -> dict[str, SampleReading]:
+    """Group a report's rows by the base name `sampled()` drew them from,
+    and read each group's stability rather than picking a winner.
+
+    **MEASURED, not assumed**: `report.cases` (a `list[dict]`) and
+    `report.detailed_results` (a `list[list[EvaluationOutput]]`) are
+    aligned 1:1 — one entry per (case, evaluator) PAIR, not one entry per
+    case, which is easy to misread from `detailed_results`'s own docstring
+    ("Attributes: cases: ... Each record carries an `evaluator` key") on a
+    first pass. `read()`'s flat tally never needed this distinction;
+    grouping draws back into their base case does, so it is written down
+    here rather than assumed a second time.
+
+    **`UNSTABLE` is a fourth answer, deliberately not a majority vote.** A
+    case only reads `PASS` or `FAIL` here when every draw agreed. Collapsing
+    disagreement into whichever verdict happened to win would hide exactly
+    the instability `09-the-backbone-measured.md` §3.1 measured — the
+    finding this bundle's own discipline says to surface, not smooth over.
+    `ERROR` is the ONE exception: if EVERY draw for a base case reads ERROR,
+    the group is `ERROR`, matching rule 3 (ERROR is not FAIL and is never
+    PASS) rather than reading a case that never once ran as merely
+    "unstable."
+    """
+    groups: dict[str, list[str]] = {}
+    for case_row, outputs in zip(report.cases, report.detailed_results, strict=True):
+        base = _base_name(case_row["name"])
+        for out in outputs:
+            label = getattr(out, "label", None)
+            groups.setdefault(base, []).append(label if label in (PASS, FAIL, ERROR) else ERROR)
+
+    readings: dict[str, SampleReading] = {}
+    for base, labels in groups.items():
+        distinct = set(labels)
+        verdict = labels[0] if len(distinct) == 1 else UNSTABLE
+        readings[base] = SampleReading(
+            verdict=verdict,
+            passed=labels.count(PASS),
+            failed=labels.count(FAIL),
+            errored=labels.count(ERROR),
+        )
+    return readings

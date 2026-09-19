@@ -19,8 +19,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from strands_evals import Case
-from strands_evals.types.evaluation import EnvironmentState, EvaluationData
+from strands_evals import Case, Experiment
+from strands_evals.evaluators.evaluator import Evaluator
+from strands_evals.types.evaluation import EnvironmentState, EvaluationData, EvaluationOutput
 from strands_evals.types.trace import Session
 
 import evals.backbone as backbone
@@ -37,12 +38,16 @@ from evals.backbone import (
     NORA_STAGED_COUNT_2,
     NORA_WRITTEN_2,
     PASS,
+    UNSTABLE,
     AbsenceGrader,
     ContextGrader,
     IdempotenceGrader,
+    SampleReading,
     Spec,
     SubstringGrader,
     render_transcript_at,
+    sample_read,
+    sampled,
     state_of,
     traced_nora_task,
 )
@@ -467,3 +472,112 @@ async def test_drive_seeds_from_the_cases_own_knows_metadata(monkeypatch):
 
     assert len(seeded_with["transcript"]) == 1
     assert seeded_with["transcript"][0].body == "今日食咩好呢"
+
+
+# `sampled()`/`sample_read()`: `09-the-backbone-measured.md` §3.1 measured two
+# model-dependent cases SWAP verdicts across two runs at `sample: 1` — the SDK
+# has no repeat parameter (`08-the-sdk-surface.md` §4.4), and `Case`/caching
+# key on `case_name`, so these tests drive a REAL `Experiment` (matching the
+# probe that found `report.cases`/`report.detailed_results` are flattened per
+# (case x evaluator) pair, not per case) rather than asserting the shape.
+
+
+_labelled_seq = iter(range(1_000_000))
+
+
+class _Labelled(Evaluator):
+    """Always answers the same label, regardless of which draw is asked."""
+
+    def __init__(self, label: str) -> None:
+        super().__init__(name=f"labelled-{label}-{next(_labelled_seq)}")
+        self._label = label
+
+    def evaluate(self, evaluation_data: EvaluationData) -> list[EvaluationOutput]:
+        test_pass = self._label == PASS
+        score = 1.0 if test_pass else 0.0
+        return [EvaluationOutput(score=score, test_pass=test_pass, label=self._label)]
+
+
+class _ByDrawName(Evaluator):
+    """Answers a label keyed by the draw's own (sampled-suffixed) name — the
+    shape a real stochastic grader takes when successive draws disagree."""
+
+    def __init__(self, labels: dict[str, str]) -> None:
+        super().__init__(name="by-draw-name")
+        self._labels = labels
+
+    def evaluate(self, evaluation_data: EvaluationData) -> list[EvaluationOutput]:
+        label = self._labels[evaluation_data.name]
+        test_pass = label == PASS
+        return [EvaluationOutput(score=1.0 if test_pass else 0.0, test_pass=test_pass, label=label)]
+
+
+def test_sampled_draws_are_uniquely_named_off_the_base_case():
+    base = Case(name="speak-1", input="x")
+    draws = sampled(base, 3)
+    assert [d.name for d in draws] == ["speak-1#1", "speak-1#2", "speak-1#3"]
+    assert [d.session_id for d in draws] == ["speak-1#1", "speak-1#2", "speak-1#3"]
+
+
+def test_base_name_reverses_a_sampled_suffix():
+    assert backbone._base_name("speak-1#1") == "speak-1"
+    assert backbone._base_name("speak-1#12") == "speak-1"
+
+
+def test_base_name_is_unchanged_for_a_name_sampled_never_drew():
+    assert backbone._base_name("speak-1") == "speak-1"
+    assert backbone._base_name("room#general") == "room#general", (
+        "a '#' not followed by a digit is not a sampled() suffix"
+    )
+
+
+def test_sample_read_all_draws_agreeing_reads_the_shared_verdict():
+    base = Case(name="speak-1", input="x")
+    cases = [*sampled(base, 2), Case(name="silence-1", input="y")]
+    experiment = Experiment(cases=cases, evaluators=[_Labelled(PASS)])
+    report = experiment.run_evaluations(task=lambda case: {})
+
+    readings = sample_read(report)
+
+    assert readings["speak-1"] == SampleReading(verdict=PASS, passed=2, failed=0, errored=0)
+    assert readings["silence-1"] == SampleReading(verdict=PASS, passed=1, failed=0, errored=0)
+
+
+def test_sample_read_disagreement_reads_unstable_not_a_majority_vote():
+    """The point of `sample_read()`: two draws splitting PASS/FAIL must never
+    collapse into whichever one happened to win — that would hide exactly the
+    instability `09-the-backbone-measured.md` §3.1 measured."""
+    base = Case(name="speak-1", input="x")
+    draws = sampled(base, 2)
+    labels = {draws[0].name: PASS, draws[1].name: FAIL}
+    experiment = Experiment(cases=draws, evaluators=[_ByDrawName(labels)])
+    report = experiment.run_evaluations(task=lambda case: {})
+
+    reading = sample_read(report)["speak-1"]
+
+    assert reading.verdict == UNSTABLE
+    assert (reading.passed, reading.failed, reading.errored) == (1, 1, 0)
+
+
+def test_sample_read_every_draw_erroring_reads_error_not_unstable():
+    """Rule 3 (ERROR is not FAIL and is never PASS): a base case whose every
+    draw errored reads ERROR, not UNSTABLE — it never once produced a verdict
+    to disagree about."""
+    base = Case(name="speak-1", input="x")
+    draws = sampled(base, 2)
+    experiment = Experiment(cases=draws, evaluators=[_Labelled(ERROR)])
+    report = experiment.run_evaluations(task=lambda case: {})
+
+    assert sample_read(report)["speak-1"].verdict == ERROR
+
+
+def test_sample_read_groups_across_multiple_evaluators_per_draw():
+    """`report.detailed_results` is flattened per (case x evaluator), not
+    per case — 2 draws x 2 evaluators must still group back to one base."""
+    base = Case(name="speak-1", input="x")
+    draws = sampled(base, 2)
+    experiment = Experiment(cases=draws, evaluators=[_Labelled(PASS), _Labelled(PASS)])
+    report = experiment.run_evaluations(task=lambda case: {})
+
+    reading = sample_read(report)["speak-1"]
+    assert reading == SampleReading(verdict=PASS, passed=4, failed=0, errored=0)
