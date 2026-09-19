@@ -103,7 +103,7 @@ JUDGED_CORPORA = frozenset({
 
 
 def experiment_for(
-    name: str, *, database_url: str, judge: Any = None,
+    name: str, *, database_url: str, judge: Any = None, sample: int = 1,
 ) -> tuple[Experiment, Any]:
     """A ready-to-run `(Experiment, task)` pair for one ported corpus.
 
@@ -117,8 +117,17 @@ def experiment_for(
     never asked to be judged, and passing `None` there silently drops S3/S9
     down to a structural-only reading (`MeetsGrader` still grades `reply`
     correctly; it just never learns whether the reply was RIGHT).
+
+    `sample > 1` draws each case `sample` times via `evals.backbone.sampled`
+    — one draw of a stochastic process is not a reading of it
+    (`09-the-backbone-measured.md` §3.1). Read the result with
+    `evals.backbone.sample_read`, not `read`, when `sample > 1`.
     """
+    from evals.backbone import sampled
+
     cases = load_corpus(name)
+    if sample > 1:
+        cases = [draw for base in cases for draw in sampled(base, sample)]
     spec = Spec(
         database_url=database_url,
         entry=CORPUS_ENTRY[name],

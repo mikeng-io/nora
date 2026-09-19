@@ -143,6 +143,23 @@ def test_experiment_for_threads_a_judge_only_for_judged_corpora(monkeypatch):
     assert captured[-1].judge is None
 
 
+def test_experiment_for_sample_draws_each_case_n_times():
+    """`--sample N`: a cheap smoke run at 1 must stay possible, and asking
+    for more must multiply the case COUNT, not just re-read the same one
+    (`09-the-backbone-measured.md` §3.1 — one draw is not a reading)."""
+    experiment, _task = experiment_for("near_miss", database_url="x", sample=3)
+    assert len(experiment.cases) == 4 * 3
+    names = {c.name for c in experiment.cases}
+    assert "near_miss_trailing_word_char#1" in names
+    assert "near_miss_trailing_word_char#3" in names
+
+
+def test_experiment_for_sample_one_is_the_untouched_corpus():
+    experiment, _task = experiment_for("near_miss", database_url="x", sample=1)
+    assert len(experiment.cases) == 4
+    assert "near_miss_trailing_word_char" in {c.name for c in experiment.cases}
+
+
 def test_a_ported_corpus_correctly_fails_a_wrong_answer():
     """Falsification of the wiring test above: a task that answers the
     OPPOSITE of what every case expects must score every one FAIL, never a
