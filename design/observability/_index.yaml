@@ -1,0 +1,46 @@
+kind: design_index
+title: "Observability — four signals, one boundary rule"
+description: >
+  Nora's observability is already built: a Prometheus/Langfuse/logs/Sentry
+  split governed by one measured rule (R-76 — a trace reaches the collector
+  when the work under it can contain a model call), a sampler and a
+  span/generation helper contract in nora/obs/tracing.py, a redaction
+  obligation forced by the layered-import contract into nora.agent.security,
+  and an alerting stack that watches for absences rather than exceptions.
+  docs/observability.md is the living how-to for all of this and is not
+  duplicated here. This bundle records why the architecture has the shape it
+  has, grounded in the measurements that forced each boundary, and holds the
+  decisions that are still open or made-but-unwired in one place, so a future
+  session does not re-derive settled tradeoffs or re-flag settled boundaries
+  as defects.
+status: checkpoint
+origin: >
+  Written 2026-09-19 after a UACP-governed TRIAGE→PROPOSE→PLAN run on this
+  same scope was fully reverted (adoption commit 0534002b, revert 7e036c12) at
+  the operator's instruction, which deleted every governance artifact the run
+  had produced. Some of that run's findings survive here because they were
+  re-verified directly against the code rather than carried over from memory:
+  the architecture-layering question (00-overview.md §4) was re-read against
+  nora/obs/tracing.py and nora/agent/security.py, and the claimed missing
+  trace_safe call sites (01-implementation.md §3) were re-checked and found not
+  to pass raw content to a span at all. Where a prior finding could not be
+  re-verified against current code, it was not reused. Grounded on reads of
+  nora/obs/tracing.py, nora/obs/errors.py, nora/obs/logging.py,
+  nora/agent/security.py, nora/ingest/relevance_gate.py,
+  nora/ingest/comprehension.py, docs/observability.md,
+  design/13-trace-content-and-redaction.md, config.example.toml, and
+  nora/__main__.py at commit 7e036c12.
+members:
+  - 00-overview.md
+  - 01-implementation.md
+  - 02-open-decisions.md
+edges:
+  - {src: 01-implementation, dst: 00-overview, rel: depends_on, provenance: asserted}
+  - {src: 02-open-decisions, dst: 01-implementation, rel: depends_on, provenance: asserted}
+external_edges:
+  - {dst: "13-trace-content-and-redaction", rel: depends_on, provenance: asserted}
+governance:
+  reviewed_by: "none — this bundle documents settled implementation and re-verified two prior-session findings against live code; it has not itself been through council review"
+open_questions:
+  - "OPERATOR — design/13: which redaction lever (B: outputs-only, one line, loses tool-result visibility; or C: collector-level masking, the only option that also reaches system_prompt). Open since 2026-08-06."
+  - "TODO, deferred — wire scripts/release.py's stamped version through setup_errors(release=...) (02-open-decisions.md §3)"
