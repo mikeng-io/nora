@@ -455,3 +455,95 @@ implementations before Agent construction, unchecked) — **operator chose
 skip.** S8 stays at zero coverage. Revisit as its own goal, with its own
 scope decision about whether a chaos-testing seam is worth the boundary
 cost, rather than as a line item inside this one.
+
+## 15 — the corpus port, done, 2026-09-20
+
+**Operator override.** `GOAL-2-backbone.md`'s own scope statement puts
+porting the 150 cases **OUT** ("porting the 150 cases against the new map is
+separate work, not done here" — §7 above says the same), and left it
+reserved for the operator to decide when. Asked directly whether to keep it
+deferred or do it now, given item 4 (sampling) had just landed: **operator
+chose full port now.**
+
+**What was built**, in `evals/scenarios.py` and `evals/backbone.py`:
+
+- **`load_corpus(name)`** — every `evals/corpora/*.yaml` file, as
+  `strands_evals.Case` objects, reusing the existing seeded content
+  unchanged (no corpus-format rewrite; "the port is mechanical" held). Every
+  field the old harness's own `Case` read (`room`/`now`/`policy`/`config`/
+  `knows`/`expect`/`category`) rides in `Case.metadata` under the same
+  names.
+- **`MeetsGrader`**, delegating to `evals.rebuilt.domain.Outcome.meets()`
+  rather than reimplementing its eleven-vocabulary logic
+  (`go`/`no_go`/`speak`/`silence`/`reply`/`no_reply`/`create`/`update`/
+  `none`/`either`/`remind`) a second time. Used UNIFORMLY across all 13
+  corpora — no per-corpus grader selection. `AbsenceGrader` (S7's own,
+  already shipped) is unchanged; `MeetsGrader` is a strict superset,
+  needed for S1/S6's `create`/`update`/`remind` and S3/S9's judge verdict.
+- **`Spec`/`_drive()` gained per-case `room`/`now`/`policy`/`config`**,
+  read off `Case.metadata`, falling through to `Spec`'s own experiment-wide
+  defaults when a case states none. Necessary because `proactive_decide.
+  yaml` names a real room and a real `now` PER CASE — which room she picks
+  IS the S1 assertion — which one `Spec` shared across a whole `Experiment`
+  batch could not express.
+- **`Spec.judge`**, wiring `evals.rebuilt.grading.Judge` into `_drive()` —
+  called while the subject is alive, mirroring `run_once()`'s own call —
+  for S3 (grounding) and S9 (injection), which need a judge's opinion, not
+  just a structural signal.
+- **`experiment_for(name, database_url=..., judge=...)`** — the per-corpus
+  glue: `load_corpus` + `MeetsGrader`, threading a judge only into the five
+  corpora that need one (`JUDGED_CORPORA`: `being_contradicted`,
+  `identity_grounding`, `source_scope`, `injections`,
+  `transcript_injection`).
+
+**Two real bugs found live, both latent since the spine was first built,
+neither reachable by any hand-written S4/S5/S6/S2 case this session wrote**:
+
+1. `_as_nora_case()` dropped a case's `category` entirely.
+   `evals/rebuilt/entry.py`'s `dreamer` reads `case.category or
+   "note-candidates"` to pick which adaptor a pass runs — every ported
+   `category: proactive` case silently ran against an adaptor the graph
+   never built.
+2. `_drive()`'s policy passthrough never rewrote the policy template's own
+   `workspace = "..."` to the ISOLATED workspace name (the same
+   substitution `run_once()` already does) — so the composed subject's
+   real `memory.workspace_id` and its policy's declared room workspace
+   disagreed, and the proactive adaptor reported "no home room" for a
+   workspace whose policy plainly named one.
+
+Both fixed, regression-tested, and falsified mechanically; both then
+confirmed fixed live.
+
+**Live-verified, real DB + the deployed `nora` alias over the SSH tunnel**:
+a `no_trigger` case (PASS), a `proactive_decide` case (ran to completion —
+FAIL on content, not on the mechanism — the room/policy/category plumbing
+all worked), a `participation` case (ran to completion), a `relevance_gate`
+case (PASS). Not live-verified: the five `JUDGED_CORPORA` (a real judged
+run costs ~211s/sample × 3 samples/case per `evals/rebuilt/grading.py`'s
+own measurement — expensive enough that a full live judged pass is its own
+follow-up action, not folded into this one) and `note_candidates`/
+`proactive_act` beyond what §11/§13 already live-verified.
+
+**§5's fold/drop decisions, applied:**
+
+- `no_trigger` (12) and `near_miss` (4) — kept as is, per §12's
+  re-verification.
+- `trigger` (12) — kept, graded the same as everything else via
+  `MeetsGrader`; no separate "smoke check" carve-out was needed once
+  grading stopped being per-corpus.
+- `relevance_gate` (40) — needed no case-count reduction: `MeetsGrader`
+  grades `go`/`no_go` off `Outcome.admitted` deterministically (no judge
+  call for the GATE's own verdict, matching `JUDGED_CORPORA` correctly
+  excluding it), which is exactly the "deterministic go/no_go" shape §5
+  asked for — the shape was already right, only the grading mechanism was
+  new.
+- `transcript_injection` (1) — classified as S9 alongside `injections`
+  (same `JUDGED_CORPORA` entry, same `entry: tag`), not merged into
+  `injections.yaml` as a file — the fold is a classification, not a
+  content rewrite.
+
+**Not done here:** an actual full live run of all 150 cases (cost/time,
+per the judge-cost note above); deleting `evals/rebuilt/` (its own decision,
+`GOAL-2-backbone.md`'s stated release condition — the port existing does
+not by itself mean the old harness's *report/rubric/CLI* plumbing is safe
+to delete without checking who else still calls it directly).

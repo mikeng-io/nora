@@ -179,4 +179,7 @@ the recommendation in, and leave it for the operator.
   **DECIDED 2026-09-19** (`10-the-scenario-map.md` §7) — adopted, on the
   strength of §2's evidence rather than on any fact only the operator held;
   porting the 150 cases against the new map is separate work, not done here.
+  **DONE 2026-09-20** (`10-the-scenario-map.md` §15, operator override) —
+  this goal's own OUT-of-scope line above is superseded for this one item;
+  everything else on it stands.
 - Anything that would change what the live deployment does.
