@@ -57,7 +57,7 @@ go/no_go) and absent where it was hard.
 | **S5 time** | that a dated question is answered against the case's clock | deterministic, on `SubjectSpec.now` for `participation`/`tag`; **`gate` has no clock seam at all** — see §9 | no |
 | **S6 idempotence** | that a second identical pass writes nothing new | custom `IdempotenceGrader`, run **twice** — see §11 | partly |
 | **S7 speech / silence** | spoke vs stayed out, and which | **`AbsenceGrader`** (`evals/backbone.py`) — no SDK built-in | **yes** |
-| **S8 failure is loud** | a broken tool produces a visible, bounded failure | **`strands_evals.chaos`** + `FailureCommunicationEvaluator`, `PartialCompletionEvaluator`, `RecoveryStrategyEvaluator` | partly |
+| **S8 failure is loud** | a broken tool produces a visible, bounded failure | **`strands_evals.chaos`** + `FailureCommunicationEvaluator`, `PartialCompletionEvaluator`, `RecoveryStrategyEvaluator` — **SKIPPED for now, operator decision 2026-09-19, see §14** | partly |
 | **S9 injection** | that untrusted text does not become instruction | `RefusalEvaluator`, `HarmfulnessEvaluator`; red teaming via `TargetSession` once probed | no |
 
 **Four of nine need no model call.** S4, S5, S6 and half of S1 are
@@ -132,7 +132,7 @@ S2, S4, S8.** Reversing that is the recommendation.
 
 **Adopted:** S1-S9 as the scenario classes; build the four deterministic
 classes first (§6); port only what §5 says earns its place; treat S8 as new
-work against `strands_evals.chaos`.
+work against `strands_evals.chaos` — **SKIPPED, see §14**.
 
 This was left reserved rather than derived, because it changes what the suite
 is for and the existing corpora represent real prior effort. But nothing
@@ -344,3 +344,32 @@ re-verified here is a REAL participation case run through
 tool call — `09-the-backbone-measured.md` §1 measured the underlying spans
 exist, once, live, before this session; nobody has re-run that specific
 combination since.
+
+## 14. S8 — SKIPPED, 2026-09-19, and this one was a real decision
+
+Checked before building, not routed around: `strands_evals.chaos.
+ChaosPlugin` only works by being passed to `Agent(plugins=[chaos])` **at
+construction time** — that is how Strands' plugin/hook system works, no
+seam around it. `grep -rn "plugins=\[" nora/` returns nothing repo-wide:
+nothing passes `plugins=` to a real `Agent` today. And `nora.subject.
+SubjectSpec` — the seam this entire bundle is built on — REFUSES to be a
+collaborator-injection point by design; its own docstring: *"NOT a seam for
+collaborators... there is no way to express `{"media_join": None}` and that
+is the point."*
+
+So building S8 as `strands_evals.chaos` designs it means adding a NEW seam
+to `nora/app/composition.py`'s real `Agent(...)` construction that lets
+something reach in and inject execution-time hooks into her tool pipeline —
+exactly what `GOAL-2-backbone.md`'s own "what would STOP this" section
+names: *"Anything that would change what the live deployment does."*
+`GOAL-2-backbone.md`'s scope statement also puts chaos explicitly **OUT**
+("OUT: ... Chaos") — this was never in the backbone goal to begin with; §4's
+recommendation to build it is this LATER node's own analysis, not something
+the backbone owed.
+
+**Presented to the operator as three options** (skip; add a narrow eval-only
+plugin-injection seam; find a lower-risk substitute by wrapping tool
+implementations before Agent construction, unchecked) — **operator chose
+skip.** S8 stays at zero coverage. Revisit as its own goal, with its own
+scope decision about whether a chaos-testing seam is worth the boundary
+cost, rather than as a line item inside this one.
