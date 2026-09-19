@@ -164,10 +164,12 @@ now runs at once with replies routed back to the platform they came from. See
   `GET /health` (non-optional) with SSE/DB/Honcho/LLM status, and a metrics endpoint
   (tags/replies/errors counters + latency histograms). See `01-ambient-ingest.md
   §Observability`.
-- **Evaluation:** `strands-agents-evals` is the framework (OutputEvaluator,
-  TrajectoryEvaluator, deterministic ToolCalled, tool simulation, red-team corpus);
-  latency SLOs (p95 ≤ 5s, p99 ≤ 15s); A/B of Honcho memory vs no-memory. See
-  `05-evaluation.md`.
+- **Evaluation:** `strands-agents-evals` is the framework, enforced rather than
+  merely cited (`design/evaluation/07-sdk-native.md`). Live design and current
+  task order: `design/evaluation/_index.yaml` → `GOAL-2-backbone.md`.
+  `05-evaluation.md` is the original 2026-08-03 plan, superseded — its CI-gate
+  shape and evaluator axes were never implemented and are replaced by the
+  scenario map (`design/evaluation/10-the-scenario-map.md`).
 
 ## External Services (unchanged, verified)
 

@@ -1,5 +1,14 @@
 # GOAL — finish the evaluation rebuild, end to end
 
+> **STATUS, 2026-09-19 — superseded by scope, not withdrawn.**
+> `GOAL-2-backbone.md` is the live task order and reads first. Its own scope
+> puts porting the thirteen corpora, the gate's span problem, red teaming,
+> simulators, chaos, and deleting `evals/rebuilt/` **out of scope** for its
+> goal — this file's remaining unexecuted steps (2-4, 6-7, 9) are that later,
+> larger work, not something to resume concurrently. Do not pick this file's
+> step order back up without checking `GOAL-2-backbone.md`'s own definition of
+> done first.
+
 Hand this to a session. It is the whole remaining job, in order, with the
 verification each step has to pass. Work autonomously; stop only for a real
 blocker or a fact only the operator holds.
@@ -24,8 +33,16 @@ does not build a harness either** (`07-sdk-native` §2).
 ## Where it stands
 
 13 corpora, 150 cases, 126 runnable across four entry points (`gate`,
-`participation`, `tag`, `dreamer`). Gate green. The OLD layer still exists and
-is still the only thing that has produced a live number.
+`participation`, `tag`, `dreamer`). Gate green.
+
+**UPDATED 2026-09-18 — the line above was never corrected after Step 8 ran.**
+Step 8's audit-and-delete landed the same day: the OLD layer
+(`nora/app/eval_support.py`, `nora/app/offline.py`, the original `evals/*.py`)
+is gone, 8,187 lines. `evals/rebuilt/` — this bundle's OWN harness, built to
+replace it — is what remains, and `07-sdk-native` found IT duplicates
+`strands-agents-evals` rather than using it. `evals/rebuilt/` has not itself
+been deleted; see `GOAL-2-backbone.md`'s scope and `08-the-sdk-surface.md`
+§2.1.
 
 ---
 
