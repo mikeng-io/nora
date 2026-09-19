@@ -298,12 +298,21 @@ both.
 `EvaluationData` built by hand) — including the exact bug S6 exists to
 catch (#236/#338: a second pass that wrote something new must FAIL, not
 silently pass) and the staged-snapshot case (nothing written, but the
-staged count moved, must still FAIL). **Not verified against a real live
-`dream()` pass** — the repeat-loop mechanism in `_drive()` itself has not
-been run end to end (that needs a live database and, for the
-`note-candidates` adaptor, a live model call), only unit-tested at the
-grader boundary. That live confirmation is the natural next check before
-trusting this in a real report, named rather than silently assumed.
+staged count moved, must still FAIL).
+
+**Verified against a real live `dream()` pass, 2026-09-20.**
+`note_candidates.yaml`'s `p1_group_dinner_date_set_venue_open` (a real
+`create` case), driven twice (`Spec(repeat=2)`) against the deployed `nora`
+alias, real local Postgres, `notes.enabled`/`notes.candidates_enabled`
+overridden on (off by default — `entry.py`'s `dreamer` config only turns on
+`[dreamer]`, not the note-candidates adaptor specifically, a gap this run
+found and worked around rather than one `IdempotenceGrader` needed to know
+about). Real result: run 1 `written=1`; run 2 `written_2=0,
+changed_count_2=0, staged_count_2=0, error_2=None` — `IdempotenceGrader`:
+**`PASS`, "the repeat pass added nothing."** Creating the same note twice
+correctly wrote it once. Combined wall time for this run and S2's above:
+~17s (see §5's own "is the suite fast enough serially" question — one real
+data point, not a measurement of it).
 
 ## 12. `no_trigger`/`near_miss` — the "four copies" finding was already fixed
 
@@ -376,17 +385,23 @@ shared provider and both receive every span. Corrected in the code comment
 directly (`evals/backbone.py`); this bundle's own "no claim without a tool
 call" rule caught its own earlier claim.
 
-**Verified mechanically, not yet live**: `traced_nora_task` was exercised
-against a deliberately unreachable database — `_drive()` raises inside
-`obtain()`, `nora_task`'s own catch turns that into the usual ERROR-shaped
-dict, and the wrap survives it (`trajectory` present, a `Session`, alongside
-`nora_task`'s own `output`/`environment_state`). `tests/unit/
-test_eval_backbone.py` pins this, falsified by reverting. What is NOT
-re-verified here is a REAL participation case run through
-`traced_nora_task` with the SDK's own `ToolCalled` actually scoring a real
-tool call — `09-the-backbone-measured.md` §1 measured the underlying spans
-exist, once, live, before this session; nobody has re-run that specific
-combination since.
+**Verified mechanically at first, then live, 2026-09-20.** `traced_nora_task`
+was exercised against a deliberately unreachable database — `_drive()`
+raises inside `obtain()`, `nora_task`'s own catch turns that into the usual
+ERROR-shaped dict, and the wrap survives it. `tests/unit/
+test_eval_backbone.py` pins this, falsified by reverting.
+
+**Then run for real**: `participation.yaml`'s `stalled-question-known`
+(real `knows.transcript`/`notes`), driven through `traced_nora_task` against
+the deployed `nora` alias over the SSH tunnel, real local Postgres. Real
+result: `traces: 1`, `spans: [InferenceSpan, ToolExecutionSpan,
+InferenceSpan, ToolExecutionSpan, InferenceSpan, ToolExecutionSpan,
+InferenceSpan, AgentInvocationSpan]` — the SAME retry-loop shape
+`09-the-backbone-measured.md` §1 measured before this bundle even had S2's
+glue code. `ToolCalled(tool_name="send_reply").evaluate(...)` on the real
+`Session`: **`test_pass=True`, "tool 'send_reply' was called"`.** S2 is
+confirmed end to end, not just wired: a real driven case, graded by the
+SDK's own unmodified evaluator, correctly.
 
 ## 14. S8 — SKIPPED, 2026-09-19, and one of the reasons given was wrong
 
