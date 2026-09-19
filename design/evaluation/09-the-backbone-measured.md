@@ -123,10 +123,17 @@ default `()`. So `NORA_SAID` is `0` for every gate case regardless of the
 verdict, and `evals/backbone.py`'s `_drive()` never carries `admitted` onto
 `environment_state` at all. Run `AbsenceGrader` against a gate case today and
 every `expect: no_go` case scores a false PASS, every `expect: go` case a
-false FAIL — deterministically, not from noise. This needs its own
-`NORA_ADMITTED` environment-state entry and an `AbsenceGrader` branch that
-reads it for `entry == "gate"`, before Step 1's spine can grade this entry
-point at all.
+false FAIL — deterministically, not from noise.
+
+**FIXED 2026-09-19.** `NORA_ADMITTED` now carries `Outcome.admitted` on
+`environment_state` (`bool` for `gate`, `None` for every other entry point,
+matching `Outcome`'s own field), and `AbsenceGrader` reads it when present,
+falling back to `NORA_SAID` otherwise — no `entry`-name branch needed, since
+`admitted is None` already means "this entry point never ran a gate."
+`tests/unit/test_eval_backbone.py` pins both signals directly (pure, no
+network or database), falsified by reverting before landing. Step 1's spine
+can now grade a `gate` case; whether the SDK's own evaluators can (§1.1,
+just above) is the separate, already-answered question.
 
 ## 2. What the first attempt got wrong, and it is the node's own subject
 

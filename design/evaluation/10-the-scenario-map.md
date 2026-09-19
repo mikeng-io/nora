@@ -108,9 +108,10 @@ Whether she should join an ongoing exchange depends on what happens next, and
   is decided" is still the right call — the span problem is now decided, and
   the answer is that trace-shaped grading was never going to reach the gate.**
   Only `actual_output`-reading grading (an `OutputEvaluator`-style rubric, or
-  this bundle's own `AbsenceGrader`) can grade a gate case, and
-  `AbsenceGrader` itself needs a fix first — see the same §1.1 for why it
-  currently misgrades every gate case regardless of the SDK question.
+  this bundle's own `AbsenceGrader`) can grade a gate case. `AbsenceGrader`
+  itself needed a fix first — it read only `NORA_SAID`, which `gate` never
+  populates, and misgraded every gate case regardless of verdict — **FIXED
+  2026-09-19**, see the same §1.1.
 
 ## 6. What this implies about the shape of the suite
 
