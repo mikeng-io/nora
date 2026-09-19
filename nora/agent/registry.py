@@ -637,6 +637,13 @@ class ToolRegistry:
             deliverer=None,
             metrics=None,
             room=self._catalog_room(),
+            # The catalog is the DECLARED surface — «what can this deployment
+            # call», not «what does one room see». `_catalog_room()` already
+            # says platform="discord" so the Discord-only music verbs appear;
+            # this is the same exception for the Dreamer-only memory verb
+            # (#350). Both gates live in `build_tool_specs`, and an endpoint
+            # that dropped either would under-report what the agent can do.
+            dream_adaptor="catalog",
             question="",
             context_window=40,
             transit_source=self._transit,

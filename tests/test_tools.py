@@ -137,6 +137,9 @@ def test_every_declared_tool_is_built(wiring):
         "send_to",
         "group_members", "lookup_person", "about", "ask_memory", "search_memory",
         "recall_lookups",
+        # NOT `search_memory_workspace` — Dreamer-only since #350. Its own
+        # presence here is asserted by
+        # `test_search_memory_workspace_is_not_in_a_room_catalog` below.
         "calculate", "transit", "route",
         "place_info", "saved_places",
         "where_is",
@@ -179,7 +182,6 @@ def test_every_declared_tool_is_built(wiring):
         # The remember verb — the conclusion write lane (2026-08-30).
         "remember",
         # The unit-wide memory variant of `search_memory`.
-        "search_memory_workspace",
     }
 
 
@@ -1094,7 +1096,11 @@ def _unit_memory_tools(wiring, **over):
         metrics=over.pop("metrics", wiring["metrics"]),
         room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
         question="who is here", context_window=40,
-        unit_for=lambda *_a: "ws-main", **over,
+        # `dream_adaptor` is what SHIPS this verb at all (#350): it is
+        # Dreamer-only, and a tag-path build no longer carries it. Naming an
+        # adaptor here is not decoration — drop it and `tools` has no
+        # `search_memory_workspace` to call.
+        unit_for=lambda *_a: "ws-main", dream_adaptor="proactive", **over,
     )
     return {t.tool_name: t for t in tools}
 

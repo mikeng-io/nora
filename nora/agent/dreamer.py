@@ -587,12 +587,16 @@ UNIT_SAFE_TOOLS: frozenset[str] = frozenset({
     # from a room a unit-keyed adaptor does not have — and the memory search
     # variant, which resolves NO unit at all.
     #
-    # That last one is a gap in this gate, not a member of the set. The
-    # question here is «does this verb need a room?», and
-    # `search_memory_workspace` answers no for the WRONG reason: it is
-    # deployment-scoped, not unit-scoped, and reads across every unit at once
-    # (see its own body). It passes because this gate has two axes — read vs
-    # act, room-scoped vs unit-safe — and no axis for scope ABOVE a unit.
+    # That last one is admitted for the WRONG reason and is listed here
+    # anyway. It is deployment-scoped, not unit-scoped — it resolves no unit
+    # and reads across every unit at once — and it passes because this gate
+    # has two axes, read vs act and room-scoped vs unit-safe, with no axis for
+    # scope ABOVE a unit. Being in this set is what lets a DREAMER adaptor
+    # call it, which is intended; what used to follow from the same list was
+    # that every TAG turn carried it too, which was not. That half is closed
+    # at the catalog instead (#350, `build_tool_specs`' `dream_adaptor` gate),
+    # because the fix belongs where the audience is known. The missing axis
+    # here is still missing.
     "note_read", "note_search",
     "search_memory_workspace",
 })
@@ -1124,8 +1128,9 @@ class RegistryToolSource:
             dream_adaptor=adaptor,
             # The key-path fix (design/dreamer-agent-loop/32 §3.4): for a
             # UNIT-keyed adaptor `key` IS the unit, so the runtime
-            # SUPPLIES it and the unit-scoped verbs (the note reads,
-            # `search_memory_workspace`) read it directly
+            # SUPPLIES it and the unit-scoped verbs (the note reads —
+            # NOT `search_memory_workspace`, which resolves no unit and
+            # reaches Honcho's whole workspace) read it directly
             # rather than deriving one from the synthetic room above — where
             # `unit_for("", key)` can only answer `None`. `None` for a
             # scope-keyed adaptor, whose key is a real conversation id and
