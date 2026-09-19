@@ -115,6 +115,16 @@ NORA_STAGED_COUNT_2 = "nora.staged_count_2"
 #: own `Outcome.error` docstring: "An Outcome with an error is never
 #: graded" — `IdempotenceGrader` was violating that for the repeat half.
 NORA_ERROR_2 = "nora.error_2"
+#: `Outcome.changed`/`.judged`/`.checks_failed` — the three signals
+#: `Outcome.meets()` needs beyond `admitted`/`said`/`written` to grade
+#: `create`/`update`/`either` and a judge's verdict. Added for the corpus
+#: port (`10-the-scenario-map.md`, 2026-09-20): `MeetsGrader` reconstructs a
+#: real `Outcome` from these and delegates to the SAME, already-correct
+#: `.meets(expect)` the old harness graded 150 cases with, rather than
+#: reimplementing its eleven-vocabulary logic a second time.
+NORA_CHANGED = "nora.changed"
+NORA_JUDGED = "nora.judged"
+NORA_CHECKS_FAILED = "nora.checks_failed"
 
 #: The three verdicts, carried in `EvaluationOutput.label`.
 #:
@@ -449,6 +459,9 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                 EnvironmentState(name=NORA_WRITTEN, state=outcome.written),
                 EnvironmentState(name=NORA_CHANGED_COUNT, state=len(outcome.changed)),
                 EnvironmentState(name=NORA_STAGED_COUNT, state=len(outcome.staged)),
+                EnvironmentState(name=NORA_CHANGED, state=outcome.changed),
+                EnvironmentState(name=NORA_JUDGED, state=outcome.judged),
+                EnvironmentState(name=NORA_CHECKS_FAILED, state=outcome.checks_failed),
                 *repeat_state,
             ],
         }
@@ -513,6 +526,9 @@ def nora_task(spec: Spec):
                     EnvironmentState(name=NORA_WRITTEN_2, state=None),
                     EnvironmentState(name=NORA_CHANGED_COUNT_2, state=None),
                     EnvironmentState(name=NORA_STAGED_COUNT_2, state=None),
+                    EnvironmentState(name=NORA_CHANGED, state=()),
+                    EnvironmentState(name=NORA_JUDGED, state=""),
+                    EnvironmentState(name=NORA_CHECKS_FAILED, state=()),
                 ],
             }
 
@@ -773,6 +789,66 @@ class AbsenceGrader(Evaluator):
     @staticmethod
     def _out(verdict: str, score: float, reason: str) -> EvaluationOutput:
         # `test_pass` is set for the field's sake only. Read `label`.
+        return EvaluationOutput(
+            score=score, test_pass=(verdict == PASS), reason=reason, label=verdict,
+        )
+
+
+class MeetsGrader(Evaluator):
+    """The corpus port (`10-the-scenario-map.md`, 2026-09-20) — delegates to
+    `evals.rebuilt.domain.Outcome.meets()` rather than reimplementing its
+    eleven-vocabulary logic (`go`/`no_go`/`speak`/`silence`/`reply`/
+    `no_reply`/`create`/`update`/`none`/`either`/`remind`) a second time.
+
+    `AbsenceGrader` covers a SUBSET of this (silence/speak/go/no_go) for the
+    hand-written S4-S7 cases already shipped this session and is left as is —
+    changing an already-verified grader's internals for cases that do not
+    need the extra vocabulary is not this port's job. `MeetsGrader` is for
+    the PORTED corpora, several of which need `create`/`update`/`remind`/
+    `either`/a judge's verdict, which `AbsenceGrader` was never built to
+    read.
+
+    Reconstructs a real `Outcome` from `environment_state` rather than
+    re-deriving `.meets()`'s branches, so a future change to that method's
+    logic (or its own eleven-case test suite) covers this grader for free.
+    """
+
+    def evaluate(self, data: EvaluationData) -> list[EvaluationOutput]:
+        from evals.rebuilt.domain import Outcome
+
+        error = state_of(data, NORA_ERROR)
+        expect = (data.metadata or {}).get("expect", "either")
+        # `.meets()` only ever reads `bool(self.said)` — never an element's
+        # content or the exact count (that is `NORA_SAID`'s own job) — so a
+        # single placeholder row stands in for "she said something."
+        said = ("said",) if (state_of(data, NORA_SAID) or 0) else ()
+        outcome = Outcome(
+            admitted=state_of(data, NORA_ADMITTED),
+            said=said,
+            changed=tuple(state_of(data, NORA_CHANGED) or ()),
+            written=state_of(data, NORA_WRITTEN) or 0,
+            checks_failed=tuple(state_of(data, NORA_CHECKS_FAILED) or ()),
+            judged=state_of(data, NORA_JUDGED) or "",
+            error=error or None,
+        )
+        verdict = outcome.meets(expect)
+        if verdict is None:
+            reason = (
+                f"the case did not run: {error}" if error
+                else f"ungradable: judged={outcome.judged!r}, expect={expect!r}"
+            )
+            return [self._out(ERROR, 0.0, reason)]
+        return [
+            self._out(PASS, 1.0, f"met expect={expect!r}")
+            if verdict
+            else self._out(FAIL, 0.0, f"did not meet expect={expect!r}")
+        ]
+
+    async def evaluate_async(self, data: EvaluationData) -> list[EvaluationOutput]:
+        return self.evaluate(data)
+
+    @staticmethod
+    def _out(verdict: str, score: float, reason: str) -> EvaluationOutput:
         return EvaluationOutput(
             score=score, test_pass=(verdict == PASS), reason=reason, label=verdict,
         )

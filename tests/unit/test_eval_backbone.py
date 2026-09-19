@@ -30,18 +30,23 @@ from evals.backbone import (
     FAIL,
     NORA_ADMITTED,
     NORA_BLOCKS_EMPTY,
+    NORA_CHANGED,
     NORA_CHANGED_COUNT_2,
+    NORA_CHECKS_FAILED,
     NORA_ERROR,
     NORA_ERROR_2,
+    NORA_JUDGED,
     NORA_SAID,
     NORA_STAGED_COUNT,
     NORA_STAGED_COUNT_2,
+    NORA_WRITTEN,
     NORA_WRITTEN_2,
     PASS,
     UNSTABLE,
     AbsenceGrader,
     ContextGrader,
     IdempotenceGrader,
+    MeetsGrader,
     SampleReading,
     Spec,
     SubstringGrader,
@@ -58,6 +63,7 @@ grader = AbsenceGrader()
 context_grader = ContextGrader()
 substring_grader = SubstringGrader()
 idempotence_grader = IdempotenceGrader()
+meets_grader = MeetsGrader()
 
 
 def _data(
@@ -656,3 +662,98 @@ def test_sample_read_groups_across_multiple_evaluators_per_draw():
 
     reading = sample_read(report)["speak-1"]
     assert reading == SampleReading(verdict=PASS, passed=4, failed=0, errored=0)
+
+
+# `MeetsGrader` — the corpus port. Delegates to the SAME
+# `evals.rebuilt.domain.Outcome.meets()` the old harness graded 150 cases
+# with, rather than reimplementing its eleven-vocabulary logic. Covers the
+# vocabulary `AbsenceGrader` was never built to read: `create`/`update`/
+# `remind`/`either`/a judge's verdict/the corpus's own structural checks.
+
+
+def _meets_data(
+    *,
+    expect: str,
+    admitted: bool | None = None,
+    said: int = 0,
+    changed: tuple[tuple[str, str], ...] = (),
+    written: int = 0,
+    checks_failed: tuple[str, ...] = (),
+    judged: str = "",
+    error: str = "",
+) -> EvaluationData:
+    return EvaluationData(
+        input="x",
+        metadata={"expect": expect},
+        actual_environment_state=[
+            EnvironmentState(name=NORA_ERROR, state=error),
+            EnvironmentState(name=NORA_SAID, state=said),
+            EnvironmentState(name=NORA_ADMITTED, state=admitted),
+            EnvironmentState(name=NORA_CHANGED, state=changed),
+            EnvironmentState(name=NORA_WRITTEN, state=written),
+            EnvironmentState(name=NORA_CHECKS_FAILED, state=checks_failed),
+            EnvironmentState(name=NORA_JUDGED, state=judged),
+        ],
+    )
+
+
+def test_meets_grader_reads_remind_off_written_not_said():
+    """S1/S6's proactive vocabulary: `remind`/`none` are graded on
+    `written` (a reminder ROW), never on `said` — the dreamer entry point
+    does not speak into a room at all, so `AbsenceGrader`'s `said`/
+    `admitted` signals would misgrade every one of these."""
+    out = meets_grader.evaluate(_meets_data(expect="remind", written=1))[0]
+    assert out.label == PASS
+    out = meets_grader.evaluate(_meets_data(expect="remind", written=0))[0]
+    assert out.label == FAIL
+    out = meets_grader.evaluate(_meets_data(expect="none", written=0))[0]
+    assert out.label == PASS
+
+
+def test_meets_grader_reads_create_and_update_off_changed_kind():
+    out = meets_grader.evaluate(
+        _meets_data(expect="create", changed=(("create", "Dinner plan"),)),
+    )[0]
+    assert out.label == PASS
+    out = meets_grader.evaluate(
+        _meets_data(expect="update", changed=(("create", "Dinner plan"),)),
+    )[0]
+    assert out.label == FAIL, "a create must not satisfy an expected update"
+
+
+def test_meets_grader_a_structural_check_failure_fails_even_if_the_kind_matched():
+    """`Outcome.meets()`'s own rule: the corpus's own stated assertions
+    (`must_cite`/`anchor_date`/`creates`/`updates`) are checked FIRST — a
+    create that happened is not a pass if it cited nothing when the corpus
+    said it must."""
+    out = meets_grader.evaluate(
+        _meets_data(
+            expect="create", changed=(("create", "Dinner plan"),),
+            checks_failed=("must_cite",),
+        ),
+    )[0]
+    assert out.label == FAIL
+
+
+def test_meets_grader_either_needs_something_to_have_happened():
+    out = meets_grader.evaluate(_meets_data(expect="either", said=1))[0]
+    assert out.label == PASS
+    out = meets_grader.evaluate(_meets_data(expect="either", written=1))[0]
+    assert out.label == PASS
+    out = meets_grader.evaluate(_meets_data(expect="either"))[0]
+    assert out.label == ERROR, "either says both ANSWERS are acceptable, not that silence is"
+
+
+def test_meets_grader_a_judge_fail_overrides_a_structural_pass():
+    out = meets_grader.evaluate(_meets_data(expect="reply", said=1, judged="FAIL"))[0]
+    assert out.label == FAIL, "a reply the judge called wrong is not rescued by having replied"
+
+
+def test_meets_grader_a_judge_review_is_error_not_a_verdict():
+    out = meets_grader.evaluate(_meets_data(expect="reply", said=1, judged="REVIEW"))[0]
+    assert out.label == ERROR, "REVIEW is the judge declining to answer, not an opinion about her"
+
+
+def test_meets_grader_an_error_is_error_regardless_of_expect():
+    out = meets_grader.evaluate(_meets_data(expect="remind", written=1, error="boom"))[0]
+    assert out.label == ERROR
