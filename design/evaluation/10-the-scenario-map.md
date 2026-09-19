@@ -84,11 +84,10 @@ Whether she should join an ongoing exchange depends on what happens next, and
 ## 5. What does not earn its place
 
 - **`no_trigger` (12) and `near_miss` (4)** — `06-first-full-run` §1 measured
-  **8 of these 16 inert**: they passed with both of `nora/tag.py`'s matching
-  rules deleted, and four contained no trigger at all, being copies of
-  `plain_no_mention` wearing four rule names. A case that passes against
-  deleted code measures nothing. **Drop the four copies; re-derive the rest
-  against the rules they name.**
+  **8 of these 16 inert** as of the run it describes, four of them copies of
+  `plain_no_mention` wearing four rule names. **RE-VERIFIED 2026-09-19,
+  AGAINST THE CURRENT FILES, AND THE DEFECT IS ALREADY FIXED** — see §12.
+  Nothing to drop.
 - **`transcript_injection` (1)** — one case is not a corpus. Fold into S9.
 - **`trigger` (12), all `expect: reply`** — these measure *that she answered a
   mention*, which is S7 and is already 75 cases. Keep as a smoke check, not as
@@ -262,3 +261,49 @@ been run end to end (that needs a live database and, for the
 `note-candidates` adaptor, a live model call), only unit-tested at the
 grader boundary. That live confirmation is the natural next check before
 trusting this in a real report, named rather than silently assumed.
+
+## 12. `no_trigger`/`near_miss` — the "four copies" finding was already fixed
+
+Re-verified 2026-09-19 against the actual current corpus files and the real
+`nora.tag.is_tagged`/`strip_code_spans`/word-boundary logic (pure string
+functions, no network/DB): loaded both YAML files, substituted `{trigger}`/
+`{trigger_split}` exactly as `evals/rebuilt/runner.substitute_trigger` does,
+and for each case checked whether disabling EITHER the word-boundary rule or
+the code-span-strip rule alone would flip it from silent to tagged.
+
+**Every one of the 16 depends on a real, distinct mechanism today:**
+
+| case | depends on |
+|---|---|
+| `leading_word_char_glued`, `trailing_word_char_glued`, `underscore_glued_both_sides`, `trailing_digit_glued`, `name_inside_a_longer_word`, `near_miss_trailing_word_char`, `near_miss_leading_word_char` | the word-boundary rule |
+| `inside_a_code_span`, `inline_code_span`, `fenced_code_block`, `near_miss_code_span` | the code-span-strip rule |
+| `not_the_trigger_underscore_variant`, `missing_dot_typo`, `space_inside_token_mid_word`, `near_miss_broken_spacing` | neither special rule — these are LITERAL, documented in-file as deliberately not templated (a misspelling/whitespace-break of the trigger's own shape, which cannot be expressed as `{trigger}` substitution without producing nonsense — the files' own comments name this exactly) |
+| `plain_no_mention` | nothing — the intentional trivial control, not a rule case |
+
+The four cases the withdrawn `06-first-full-run` measurement named
+(`norax`, `nora1`, `` `nora` ``, `Sonora`) do not exist under those names
+today. `no_trigger.yaml`'s own header dates the fix: the **2026-09-18
+`{trigger}` SUBSTITUTION** rewrote the corpus from hardcoded literals (where
+four cases silently lost their trigger content) to rendering against the
+CONFIGURED trigger, and that fix evidently landed before this bundle's own
+§5 was written, which cited the pre-fix measurement without re-checking it —
+exactly the "late reversal not landed until every quoting file changes"
+failure mode, this time on the READING side rather than the code side.
+
+**Better than a one-off probe: this is already a standing CI guard.**
+`tests/architecture/test_the_near_miss_corpora_exercise_their_rules.py`
+pins exactly this property — deletes each matching rule in turn from a live
+copy of `nora/tag.py`'s source and re-scores, with the identical exemption
+list this section derived independently (`plain_no_mention`,
+`space_inside_token_mid_word`, `near_miss_broken_spacing`,
+`not_the_trigger_underscore_variant`, `missing_dot_typo`). Green today (4
+passed). §5's "drop the four copies" instruction predates knowing this test
+existed and already covered the case.
+
+`inside_a_code_span` and `inline_code_span` ARE a real, live redundancy
+worth naming even though neither is a bug: both are structurally the same
+near-miss (trigger wrapped in a single-backtick inline span), differing only
+in their trailing sentence. Not touched here — a call about which one (if
+either) to drop belongs with whoever next touches this corpus for content
+reasons, not as a side effect of re-verifying a different, now-closed
+finding.
