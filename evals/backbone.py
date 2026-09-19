@@ -357,6 +357,14 @@ class Spec:
     #: first's — no re-`obtain()` between runs, unlike every other case,
     #: because idempotence needs run 2 to see what run 1 actually left.
     repeat: int = 1
+    #: S3/S9 (`10-the-scenario-map.md` §3): "did she reply" is structural;
+    #: "was the reply right" needs a model that did not produce it —
+    #: `evals.rebuilt.grading.Judge`, built ONCE per experiment batch (its
+    #: own docstring), not per case. `None` skips judging, matching
+    #: `run_once()`'s own default. Typed `Any` to avoid importing
+    #: `evals.rebuilt.grading` (and its `openai` dependency) at module load
+    #: for every caller that never judges.
+    judge: Any = None
 
 
 async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
@@ -440,6 +448,25 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
         nora_case = _as_nora_case(case, spec)
         outcome = await port.drive(subject, nora_case, now_ms=seeded.now_ms)
         blocks_empty = _blocks_empty(exporter)
+
+        # S3/S9 (`10-the-scenario-map.md` §3) — judged HERE, while the
+        # subject is alive, because the judge needs the doctrine she
+        # actually ran ON, not a copy read off disk
+        # (`evals/rebuilt/runner.run_once`'s own reasoning, mirrored here).
+        if spec.judge is not None and outcome.said and outcome.error is None:
+            from dataclasses import replace as _replace
+
+            from evals.rebuilt.grading import criteria_for
+            from evals.rebuilt.runner import _source
+
+            judgement = await spec.judge.grade(
+                said="\n".join(outcome.said),
+                asked=case.input,
+                doctrine=subject.deps.doctrine.doctrine_text,
+                source=_source(nora_case),
+                extra=criteria_for(tuple(md.get("criteria") or ())),
+            )
+            outcome = _replace(outcome, judged=judgement.verdict, error=judgement.error)
 
         repeat_state = []
         if spec.repeat > 1:
