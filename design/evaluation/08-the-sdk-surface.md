@@ -258,13 +258,26 @@ overlapping trace, not fixing the mapper problem) was removed in the same
 session — so debrief/standing-event should now match the "already holds"
 shape §4.2 describes below for `participation`/`tag`/`dreamer`/
 `proactive_act`, though this was not verified by re-running the eval
-mapper against a live case. **Whether this actually moves any of the 40
-gate cases (or the debrief/standing-event ones under "wider than the
-gate," below) from `score=0` to a real trajectory is unmeasured** — that
-verification belongs to a session working the evaluation suite itself, not
-this tracing-focused one. The paragraphs below are left as originally
-written (the historical record of the fork, still accurate as of when it
-was measured); this note is the only correction.
+mapper against a live case.
+
+**RESOLVED 2026-09-19 — the 40 gate cases do NOT move.**
+`09-the-backbone-measured` §1.1 re-ran this section's own probe against the
+REAL production span functions: the gate's trace now maps to a real
+`InferenceSpan` with real messages (`mapped traces: 1`, not `0` — this
+section's shape below is genuinely fixed), but `Evaluator._get_last_turn`
+**still raises**, for a different reason than the one this section documents.
+It no longer raises because the trace is empty; it raises because
+`TraceExtractor` — at all three evaluation levels — requires an
+`AgentInvocationSpan` to extract anything at all, and the gate deliberately
+never produces one (`tests/architecture/test_the_gate_does_not_form_its_
+verdict_through_the_sdk.py` pins exactly the design choice that makes this
+so). So the case still scores `test_pass=False, score=0` via
+`Experiment._run_evaluator`'s catch — same observable outcome as before the
+tracing fix, for a structurally different reason. The paragraphs below are
+left as originally written (the historical record of the fork, still
+accurate as of when it was measured, and the mechanism it describes — no
+span events at all — genuinely no longer applies); this note plus
+`09-the-backbone-measured` §1.1 are the corrections.
 
 The first draft called this OPEN. It is not.
 

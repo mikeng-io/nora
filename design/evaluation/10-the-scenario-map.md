@@ -95,16 +95,22 @@ Whether she should join an ongoing exchange depends on what happens next, and
   a twelfth of the suite.
 - **`relevance_gate` (40)** — the largest corpus, and `08-the-sdk-surface` §4.2
   measured that **none of it could be graded through the SDK as of 2026-09-18**,
-  because the gate emitted no mappable spans. **STATUS UPDATE, 2026-09-19**: an
-  unrelated tracing-replacement session moved the gate's raw call onto
-  `strands.telemetry`, which does emit mappable `gen_ai.*` span events (see
-  `08-the-sdk-surface` §4.2's own status note and `09-the-backbone-measured`
-  §1's). Whether the SDK can now actually grade these 40 cases is
-  **unmeasured** — the "reduce to deterministic go/no_go until the span
-  problem is decided" recommendation below may no longer be the right call,
-  but re-deciding it needs the same Step-0-style falsification
-  `09-the-backbone-measured` ran for `participation`, run against
-  `relevance_gate` instead, before this bullet is rewritten either way.
+  because the gate emitted no mappable spans. **RESOLVED 2026-09-19, and the
+  recommendation below STANDS.** An unrelated tracing-replacement session moved
+  the gate's raw call onto `strands.telemetry`, which does emit mappable
+  `gen_ai.*` span events — but `09-the-backbone-measured` §1.1's re-run found
+  every one of the SDK's TRACE_LEVEL/TOOL_LEVEL/SESSION_LEVEL evaluators
+  requires an `AgentInvocationSpan` to read a trace at all, and the gate,
+  deliberately, never produces one (it stays off the Agent SDK for its
+  verdict-formation, `tests/architecture/test_the_gate_does_not_form_its_
+  verdict_through_the_sdk.py`). So the span fix is real but does not reach
+  these 40 cases: **"reduce to deterministic go/no_go until the span problem
+  is decided" is still the right call — the span problem is now decided, and
+  the answer is that trace-shaped grading was never going to reach the gate.**
+  Only `actual_output`-reading grading (an `OutputEvaluator`-style rubric, or
+  this bundle's own `AbsenceGrader`) can grade a gate case, and
+  `AbsenceGrader` itself needs a fix first — see the same §1.1 for why it
+  currently misgrades every gate case regardless of the SDK question.
 
 ## 6. What this implies about the shape of the suite
 

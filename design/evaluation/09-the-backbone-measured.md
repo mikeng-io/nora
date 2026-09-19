@@ -61,6 +61,73 @@ node's own Step 0 probe against `relevance_gate` the way it was run against
 measurement — is the next falsification a backbone session should do before
 assuming the gap is closed.
 
+### 1.1 The re-run — RESOLVED 2026-09-19, and the answer is NO
+
+Re-run per `GOAL-2-backbone.md`'s own instruction, against the REAL
+production functions `nora.agent.telemetry.start_raw_model_span`/
+`end_raw_model_span` — the exact pair
+`nora.app.composition._RelevanceGateModelClient.complete()` calls — fed
+through a real `TracedHandler` and the real `strands_evals` mapper/extractor.
+No live model call: the question is structural (does the span SHAPE satisfy
+the extractor), not content-dependent, so calling the production span
+functions directly against synthetic content is the grounded measurement —
+a live call would add network variance without changing what the mapper does
+with the shape it is handed.
+
+    span opened: True
+    traces: 1
+      trace ...: 1 span(s)
+        InferenceSpan messages=2
+          UserMessage: '<transcript>...'
+          AssistantMessage: '{"admits": true, "reason": "..."}'
+
+    TraceExtractor(TRACE_LEVEL).extract(session)   -> 0 turns
+    TraceExtractor(TOOL_LEVEL).extract(session)    -> 0 turns
+    TraceExtractor(SESSION_LEVEL).extract(session) -> raises
+      ValueError: No AgentInvocationSpan found in session
+
+**The Session IS populated** — the tracing replacement's half of the fix
+holds, exactly as the STATUS UPDATE above says. **But it is ungradable
+anyway.** `strands_evals.extractors.trace_extractor.TraceExtractor`
+hard-anchors all three evaluation levels on finding an `AgentInvocationSpan`
+in the trace: `_extract_trace_level`/`_extract_tool_level` skip any span that
+is not one, `_extract_session_level` raises outright when none exists. The
+gate, deliberately, never produces one — `_RelevanceGateModelClient.
+complete()` stays off the Agent SDK
+(`tests/architecture/test_the_gate_does_not_form_its_verdict_through_the_
+sdk.py`), so it calls `start_raw_model_span`/`end_raw_model_span` directly
+and the resulting trace is an `InferenceSpan` alone. Every one of the ten
+`TRACE_LEVEL` evaluators §1 above found reachable, and `ToolCalled`/
+`ToolSelectionAccuracyEvaluator`/`ToolParameterAccuracyEvaluator`/
+`TrajectoryEvaluator` beside them, calls `Evaluator._get_last_turn()` ->
+`TraceExtractor(...).extract()`; an empty result raises `ValueError("No
+turn-level inputs could be parsed from the trajectory... Ensure
+actual_trajectory is a Session with at least one AgentInvocationSpan.")`.
+
+**This is Step 0's own fallback, just not by way of an empty Session.**
+`GOAL-2-backbone.md`'s Step 0 says: *"If the Session is empty... only
+`OutputEvaluator`-shaped grading on a string remains, and that is the
+finding."* The gate's Session is not syntactically empty, but it is
+operationally equivalent for every trace/tool/session-level built-in: the 40
+gate cases can only be graded by something that reads `actual_output`
+directly — an `OutputEvaluator`-style content grader, or this bundle's own
+`AbsenceGrader` — never by anything that reads `actual_trajectory`.
+
+**And `AbsenceGrader` itself cannot grade a gate case as written, for an
+unrelated, second reason, found while checking the first.** It reads
+`NORA_SAID` (`len(outcome.said)`) off `environment_state`.
+`evals.rebuilt.entry.gate()` — correctly, by `Outcome`'s own docstring
+("both answer *was she admitted* and *what did the room hear*, and the gate
+simply never reaches the second") — sets `admitted` and leaves `said` at its
+default `()`. So `NORA_SAID` is `0` for every gate case regardless of the
+verdict, and `evals/backbone.py`'s `_drive()` never carries `admitted` onto
+`environment_state` at all. Run `AbsenceGrader` against a gate case today and
+every `expect: no_go` case scores a false PASS, every `expect: go` case a
+false FAIL — deterministically, not from noise. This needs its own
+`NORA_ADMITTED` environment-state entry and an `AbsenceGrader` branch that
+reads it for `entry == "gate"`, before Step 1's spine can grade this entry
+point at all.
+
 ## 2. What the first attempt got wrong, and it is the node's own subject
 
 **The task's `metadata` is silently dropped.** The first probe returned the
