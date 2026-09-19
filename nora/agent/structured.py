@@ -63,6 +63,7 @@ from opentelemetry.util.types import AttributeValue
 from pydantic import BaseModel
 from strands import Agent
 from strands.models.openai import OpenAIModel
+from strands.types.exceptions import MaxTokensReachedException
 
 from .tool_choice import FIRST_CALL
 
@@ -209,13 +210,44 @@ async def ask_text(
     lets `tag_id`/`conversation_id` land on the actual model-call span now
     that the caller no longer wraps this call in its own hand-rolled span to
     stamp them onto — see `nora.engagement.stages.debrief`.
+
+    **`MaxTokensReachedException` is caught here, matching `nora.agent.
+    factory.invoke`'s own catch for the tag turn's Agent invocation.**
+    Strands' event loop raises it unconditionally on `stop_reason ==
+    "max_tokens"` (`event_loop.py:304-311`) rather than returning normally —
+    so the `stop == "max_tokens"` branch below, on its own, can never fire for
+    a genuine cutoff. Without this catch a debrief/standing-fold call that
+    hits the token ceiling raised past this function into its caller's outer
+    exception handling and counted as a hard error rather than the
+    `finish_reason="length"` outcome `nora.engagement.stages.debrief._check`
+    already exists to refuse cleanly. The partial text is recovered from
+    `agent.messages` the same way `factory.invoke` does (Strands appends it
+    before raising), with the same exclusion for the SDK's canned
+    tool-recovery notice — moot here since `ask_text` never grants tools, kept
+    for parity with the one other place this extraction is written.
     """
     agent = Agent(model=model, tools=[], callback_handler=None,
                   system_prompt=system_prompt, name=agent_name,
                   trace_attributes=trace_attributes)
-    result = await asyncio.wait_for(
-        agent.invoke_async(prompt), timeout=timeout_seconds,
-    )
+    try:
+        result = await asyncio.wait_for(
+            agent.invoke_async(prompt), timeout=timeout_seconds,
+        )
+    except MaxTokensReachedException:
+        partial = ""
+        if agent.messages:
+            last = agent.messages[-1]
+            content = last.get("content") if isinstance(last, dict) else None
+            if isinstance(content, list):
+                parts = [
+                    block["text"] for block in content
+                    if isinstance(block, dict) and isinstance(block.get("text"), str)
+                    and not block["text"].startswith("The selected tool ")
+                    and "tool use was incomplete due to maximum token limits "
+                    "being reached" not in block["text"]
+                ]
+                partial = "\n".join(p for p in parts if p.strip()).strip()
+        return StructuredResult(content=partial, finish_reason="length", usage=None)
     accumulated = getattr(getattr(result, "metrics", None), "accumulated_usage", None)
     usage = (
         (

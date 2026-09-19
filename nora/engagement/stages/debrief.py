@@ -83,29 +83,25 @@ correct arguments, not a stale sentence to quietly delete: the "no tool, no
 Agent" rule above is still right on its own terms, and the move happened for
 a reason orthogonal to it.
 
-**`finish_reason` is checked explicitly in `_check`, and the check itself is
-still right — but whether it is ever REACHED on a genuine cut-off is now an
-open question, not the settled property this paragraph used to describe.**
-`ask_text` does translate a NORMALLY-RETURNED Strands `stop_reason` back into
-the raw-completion vocabulary (`"max_tokens"` → `"length"`) so `_check` sees
-what it always checked for. But Strands' event loop does not always return
-normally on a cut-off — verified against the installed SDK
-(`strands/event_loop/event_loop.py:304-311`): `stop_reason == "max_tokens"`
-RAISES `MaxTokensReachedException` unconditionally, and `ask_text`
-(`nora/agent/structured.py`) has **no catch for it**, unlike the tag turn's
-own Agent invocation, which `nora/agent/factory.py`'s `run_turn` explicitly
-catches for exactly this reason (measured incident, 2026-09-02: an uncaught
-`MaxTokensReachedException` there read as a generic silent failure and
-dropped a recoverable partial reply). Whether `ask_text`'s own
-`getattr(result, "stop_reason", "")` line is ever reachable for a real
-max-tokens cutoff, or whether every such cutoff instead raises past `ask_text`
-into `_complete`/`run`'s outer `except BaseException` and is counted as
-`nora_debrief_total{outcome="error"}` rather than the `unavailable` this
-paragraph describes, has not been verified live and is not this session's to
-fix (it predates the tracing replacement — `4448c737` moved the debrief onto
-`ask_text` without wiring the same catch `factory.py` has). Flagged rather
-than silently asserted as working; see the operator report for this session
-for the decision on whether to fix or file it.
+**`finish_reason` is checked explicitly in `_check`, and it is now genuinely
+reachable on a real cut-off.** `ask_text` does translate a NORMALLY-RETURNED
+Strands `stop_reason` back into the raw-completion vocabulary
+(`"max_tokens"` → `"length"`), but Strands' event loop does not always
+return normally on a cut-off: `stop_reason == "max_tokens"` RAISES
+`MaxTokensReachedException` unconditionally
+(`strands/event_loop/event_loop.py:304-311`), so that translation alone could
+never fire for a genuine cutoff. **FIXED 2026-09-19** — `ask_text`
+(`nora/agent/structured.py`) now catches it the same way
+`nora/agent/factory.py`'s `invoke` already does for the tag turn's Agent
+invocation (measured incident, 2026-09-02, that motivated `factory.py`'s
+catch: an uncaught `MaxTokensReachedException` there read as a generic
+silent failure and dropped a recoverable partial reply), recovering the
+partial text from `agent.messages` and returning
+`StructuredResult(finish_reason="length", ...)` instead of letting the raise
+reach `_complete`/`run`'s outer `except BaseException`, where it would have
+counted as `nora_debrief_total{outcome="error"}` rather than the
+`unavailable` this paragraph describes. `tests/unit/test_structured.py`
+pins the catch, falsified by reverting it.
 
 **The fold reads the current Standing before writing the next. This is the
 non-negotiable** (§4), and it is the one requirement with live evidence behind
