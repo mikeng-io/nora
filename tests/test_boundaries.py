@@ -165,7 +165,14 @@ EVALS_DIR = ROOT / "evals"
 #: imports a package its own name forbids, because `allow_indirect_imports` is
 #: load-bearing there (pyproject.toml, that contract's own comment). Measured
 #: 2026-09-17 while choosing the layer.
-EVALS_ALLOWED_NORA_PACKAGES = {"app", "testing", "subject"}
+#:
+#: `domain` joined 2026-09-19 (design/evaluation, S5 — `evals/backbone.py`'s
+#: `render_transcript_at` calls `nora.domain.blocks.render_messages` directly):
+#: `nora/domain/__init__.py`'s own docstring is "framework-free contracts,
+#: imports only the standard library" — pure types and pure functions, not a
+#: collaborator or an assembly seam, so it does not reopen the "no caller
+#: assembles a Nora" property `subject` exists to hold.
+EVALS_ALLOWED_NORA_PACKAGES = {"app", "testing", "subject", "domain"}
 
 
 def _evals_files():

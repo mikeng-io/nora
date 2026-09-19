@@ -269,7 +269,7 @@ forbidden_modules = ["nora.config"]
 as_packages = false
 
 [[tool.importlinter.contracts]]
-name = "evals may only reach nora.app, nora.testing and nora.subject"
+name = "evals may only reach nora.app, nora.testing, nora.subject and nora.domain"
 type = "forbidden"
 # Positive framing ("evals may import nora.app and nora.testing — nothing else",
 # spec §4.1) expressed as its complement, the same shape contract 3 already uses:
@@ -277,6 +277,12 @@ type = "forbidden"
 # stopped importing tests/, this is what keeps it stopped). A new nora subpackage
 # added later needs a line here too; `tests/test_boundaries.py`'s AST-based sibling
 # check is the allowlist-style backstop that does not need updating for that case.
+#
+# `nora.domain` joined 2026-09-19 (design/evaluation, S5): it is "framework-free
+# contracts, imports only the standard library" (nora/domain/__init__.py's own
+# docstring) — pure types and pure functions, not a collaborator or an assembly
+# seam, which is what this contract exists to keep out. Unlike `nora.agent`/
+# `nora.ingest`/etc., depending on it cannot let `evals/` build a Nora of its own.
 #
 # allow_indirect_imports = "True" is load-bearing, not cosmetic: `nora.app` (the
 # composition root) legitimately imports nora.agent/nora.doctrine/nora.tag/etc.
@@ -287,7 +293,7 @@ type = "forbidden"
 # statements; nora.app's freedom to import whatever it needs is contract 2's concern.
 source_modules = ["evals"]
 forbidden_modules = [
-    "nora.agent", "nora.config", "nora.domain", "nora.engagement",
+    "nora.agent", "nora.config", "nora.engagement",
     "nora.infra", "nora.ingest", "nora.obs", "nora.doctrine", "nora.persons",
     "nora.platform", "nora.tag", "nora.skills", "nora.presence", "nora.analytics",
     "nora.instructions", "tests",
