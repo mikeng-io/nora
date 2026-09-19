@@ -1,0 +1,9 @@
+{
+  "type": "feature",
+  "summary": "evals/backbone.py gains S5 (\"a dated question is answered against the case's clock\") for participation/tag, and found that RelevanceGate has no clock seam at all so the same check cannot be driven through the gate entry point.",
+  "details": [
+    "Added render_transcript_at (a pure task calling nora.domain.blocks.render_messages/nora.domain.prompt.age directly -- no Subject, no database, no network, since the computation is a pure function of rows and a clock) and SubstringGrader (a per-case Contains: the SDK's own Contains fixes one value at construction and cannot vary the expected age string per case).",
+    "Verified against the real functions: a row 181 minutes old renders age=\"3h ago\", one minute old renders age=\"just now\" -- age()'s own boundaries. tests/unit/test_eval_backbone.py pins both, plus a deliberately wrong expectation failing rather than passing silently.",
+    "Found and documented rather than routed around: RelevanceGate.decide() calls render_context() with no now= argument, so it always falls through to the real wall clock regardless of a case's stated SubjectSpec.now -- FirePath (participation/tag) is one of build_dependencies' nine clock-consuming components, RelevanceGate is not. design/evaluation/10-the-scenario-map.md §3's \"deterministic, on SubjectSpec.now\" was true for participation/tag and false for gate; corrected there. Giving the gate a clock seam is a real gap but a testability-only one -- production has no live need for a frozen clock -- and is not fixed here."
+  ]
+}

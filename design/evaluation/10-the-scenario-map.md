@@ -54,7 +54,7 @@ go/no_go) and absent where it was hard.
 | **S2 routing** | which tool, with what arguments, in what order | `ToolCalled`, `ToolSelectionAccuracyEvaluator`, `ToolParameterAccuracyEvaluator`, `TrajectoryEvaluator` — **all reachable**, `09-the-backbone-measured` §1 found `ToolExecutionSpan` in the trace | no |
 | **S3 grounding** | whether a claim is supported by what she read | `FaithfulnessEvaluator`, `CorrectnessEvaluator` + the confidence rubric | no |
 | **S4 context reaching her** | that the blocks she needs were rendered non-empty | deterministic, on the prompt — **not a model call**, and cheaper than one | no |
-| **S5 time** | that a dated question is answered against the case's clock | deterministic, on `SubjectSpec.now` | no |
+| **S5 time** | that a dated question is answered against the case's clock | deterministic, on `SubjectSpec.now` for `participation`/`tag`; **`gate` has no clock seam at all** — see §9 | no |
 | **S6 idempotence** | that a second identical pass writes nothing new | `StateEquals` on counts, run **twice** | partly |
 | **S7 speech / silence** | spoke vs stayed out, and which | **`AbsenceGrader`** (`evals/backbone.py`) — no SDK built-in | **yes** |
 | **S8 failure is loud** | a broken tool produces a visible, bounded failure | **`strands_evals.chaos`** + `FailureCommunicationEvaluator`, `PartialCompletionEvaluator`, `RecoveryStrategyEvaluator` | partly |
@@ -180,3 +180,42 @@ repeated the claim, only `03-step0-results.md` did.
 Not done: actual `must_render` cases (hand-written `Case` objects per entry
 point, per `GOAL-2-backbone.md`'s "no corpus format work" rule) — the
 grader and signal exist, the cases are the next piece.
+
+## 10. S5 — built, 2026-09-19, and the `gate` premise was false
+
+**`RelevanceGate` has no clock seam at all.** `SubjectSpec.now` threads into
+nine `build_dependencies` components — `FirePath` among them, confirmed:
+`fire.py` reads `self._clock().astimezone()` and passes it into
+`build_prefill(now=...)`, which reaches `_transcript_block`'s
+`render_messages(..., now=clock)`. `RelevanceGate.decide()` is not one of
+the nine: it calls `render_context(transcript, standing, window=...)` with
+no `now=` argument, so `render_context` falls through to
+`datetime.now(UTC)` — the real wall clock, always, regardless of what a
+case's `SubjectSpec.now` states. So §3's "deterministic, on `SubjectSpec.
+now`" was true for `participation`/`tag` and false for `gate` — this table
+row is now corrected rather than routed around, per this bundle's own rule
+for a refuted premise.
+
+**Built for the entry points where the premise holds.** `evals/backbone.py`
+gained `render_transcript_at` (a pure task calling the REAL
+`nora.domain.blocks.render_messages`/`nora.domain.prompt.age` directly — no
+`Subject`, no database, no network, since the computation itself is a pure
+function of rows and a clock) and `SubstringGrader` (a per-case `Contains`:
+the SDK's own `Contains` fixes one `value` at construction, so it cannot
+vary the expected age string across a suite of cases that each expect a
+different one; `Case.expected_output` carries it instead).
+
+Verified against the real functions: a row 181 minutes old renders
+`age="3h ago"`, one minute old renders `age="just now"` — `nora.domain.
+prompt.age`'s own boundaries (`< 90s` "just now", `< 5400s` minutes,
+`< 172800s` hours, else days). `tests/unit/test_eval_backbone.py` pins both,
+plus a deliberately wrong expectation failing rather than passing silently.
+
+**Not done, and it is a real gap rather than an eval-harness one**: giving
+`RelevanceGate` a clock seam so it CAN be driven with a frozen `now` (which
+would let S5 — and any case needing a reproducible transcript age — run
+through the actual `gate` entry point rather than only through
+`render_messages` directly). Production has no live need for this (real
+deployment's "now" is always the wall clock), so it is purely a
+testability gap, not a bug — naming it rather than silently building around
+it, per this bundle's own discipline.

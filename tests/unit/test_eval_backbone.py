@@ -8,10 +8,15 @@ case as silence regardless of the actual verdict. `NORA_ADMITTED` fixes it.
 
 `ContextGrader`: S4 (`10-the-scenario-map.md` §3) — deterministic, on
 `NORA_BLOCKS_EMPTY`.
+
+`render_transcript_at`/`SubstringGrader`: S5 — deterministic, calling the
+REAL `nora.domain.blocks.render_messages`/`nora.domain.prompt.age` directly
+(pure functions, no `Subject`/database/network).
 """
 
 from __future__ import annotations
 
+from strands_evals import Case
 from strands_evals.types.evaluation import EnvironmentState, EvaluationData
 
 from evals.backbone import (
@@ -24,10 +29,13 @@ from evals.backbone import (
     PASS,
     AbsenceGrader,
     ContextGrader,
+    SubstringGrader,
+    render_transcript_at,
 )
 
 grader = AbsenceGrader()
 context_grader = ContextGrader()
+substring_grader = SubstringGrader()
 
 
 def _data(
@@ -119,4 +127,50 @@ def test_a_context_error_is_never_a_pass():
     out = context_grader.evaluate(
         _context_data(must_render=("standing",), blocks_empty="", error="boom"),
     )[0]
+    assert out.label == ERROR
+
+
+def _time_case(*, minutes_ago: int, expect_age: str) -> Case:
+    return Case(
+        name="s5",
+        input="x",
+        expected_output=f'age="{expect_age}"',
+        metadata={
+            "now": "2026-09-19T12:00:00+00:00",
+            "rows": [{"body": "去邊食", "name": "Grant", "minutes_ago": minutes_ago}],
+        },
+    )
+
+
+class _RenderedData:
+    def __init__(self, output: str, expected: str):
+        self.actual_output = output
+        self.expected_output = expected
+
+
+def _rendered(case: Case) -> _RenderedData:
+    return _RenderedData(render_transcript_at(case)["output"], case.expected_output)
+
+
+def test_a_row_181_minutes_old_renders_3h_ago():
+    """The real `nora.domain.prompt.age` boundary: `seconds < 5400` (90 min)
+    is minutes, `< 172800` (48h) is hours. 181 minutes = 10860s, hours."""
+    out = substring_grader.evaluate(_rendered(_time_case(minutes_ago=181, expect_age="3h ago")))[0]
+    assert out.label == PASS
+
+
+def test_a_row_1_minute_old_renders_just_now():
+    out = substring_grader.evaluate(_rendered(_time_case(minutes_ago=1, expect_age="just now")))[0]
+    assert out.label == PASS
+
+
+def test_the_wrong_expected_age_fails_rather_than_passing_silently():
+    """Falsification: a substring check that always passes would be
+    decoration. A deliberately wrong expectation must FAIL."""
+    out = substring_grader.evaluate(_rendered(_time_case(minutes_ago=181, expect_age="5h ago")))[0]
+    assert out.label == FAIL
+
+
+def test_a_case_with_no_expected_output_is_ungradable():
+    out = substring_grader.evaluate(_RenderedData("<m age=\"3h ago\">x</m>", ""))[0]
     assert out.label == ERROR

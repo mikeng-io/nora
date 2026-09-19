@@ -32,7 +32,7 @@ import asyncio
 import shutil
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -270,6 +270,71 @@ def nora_task(spec: Spec):
             }
 
     return task
+
+
+def render_transcript_at(case: Case) -> dict[str, Any]:
+    """S5 — *a dated question is answered against the case's clock*
+    (`10-the-scenario-map.md` §3). Pure, no `Subject`, no database, no
+    network: `RelevanceGate` has no clock seam at all (`SubjectSpec.now` has
+    zero effect on what it renders — a genuine gap, not routed around here),
+    and `participation`/`tag` DO (`FirePath` calls `self._clock()` and
+    threads it into `build_prefill(now=...)`), but a full driven case pays
+    for a `Subject`/database to exercise a computation that is a pure
+    function of rows and a clock: `nora.domain.blocks.render_messages`, the
+    same one `_transcript_block` calls, and `nora.domain.prompt.age`
+    underneath it.
+
+    `case.metadata`: `now` (an ISO timestamp) and `rows`, a list of
+    `{body, name, minutes_ago}`. Returns the rendered `<m ...>` elements as
+    `output`, for a grader to search (`SubstringGrader`, `case.
+    expected_output` naming the exact `age="..."` attribute expected).
+    """
+    from nora.domain.blocks import render_messages
+    from nora.domain.models import DeliveryStatus, TranscriptRow
+
+    md = case.metadata or {}
+    now = datetime.fromisoformat(md["now"])
+    rows = tuple(
+        TranscriptRow(
+            id=i, sender_id="+000", sender_name=r["name"],
+            ts=int((now - timedelta(minutes=r["minutes_ago"])).timestamp() * 1000),
+            body=r["body"], is_nora=False, delivery_status=DeliveryStatus.SENT,
+            raw_json=None, person_name=r["name"],
+        )
+        for i, r in enumerate(md.get("rows", ()), 1)
+    )
+    rendered = render_messages(
+        rows, speaker=lambda row: row.sender_name or "?",
+        body=lambda row: row.body, timestamp=lambda row: row.ts, now=now,
+    )
+    return {"output": rendered}
+
+
+class SubstringGrader(Evaluator):
+    """A per-case `Contains`. `strands_evals.evaluators.deterministic.
+    Contains` takes one fixed `value` at construction, so one instance
+    cannot check a different expected substring for each case in a suite —
+    which S5 needs, since every case expects a different rendered age.
+    `Case.expected_output` carries it instead.
+    """
+
+    def evaluate(self, data: EvaluationData) -> list[EvaluationOutput]:
+        expected = str(data.expected_output or "")
+        actual = str(data.actual_output or "")
+        if not expected:
+            return [EvaluationOutput(
+                score=0.0, test_pass=False, reason="case names no expected_output to find",
+                label=ERROR,
+            )]
+        found = expected in actual
+        return [EvaluationOutput(
+            score=1.0 if found else 0.0, test_pass=found,
+            reason=f"{expected!r} {'found' if found else 'NOT found'} in the rendered transcript",
+            label=PASS if found else FAIL,
+        )]
+
+    async def evaluate_async(self, data: EvaluationData) -> list[EvaluationOutput]:
+        return self.evaluate(data)
 
 
 class AbsenceGrader(Evaluator):
