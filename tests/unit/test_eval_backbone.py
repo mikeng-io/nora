@@ -474,6 +474,81 @@ async def test_drive_seeds_from_the_cases_own_knows_metadata(monkeypatch):
     assert seeded_with["transcript"][0].body == "今日食咩好呢"
 
 
+async def test_drive_reads_room_now_policy_config_from_case_metadata(monkeypatch):
+    """The port (`10-the-scenario-map.md`, 2026-09-20): `proactive_decide.yaml`
+    names a real room/policy/now PER CASE — which room she picks IS the
+    assertion, and whether a note is due IS about time — which one `Spec`
+    shared across a whole `Experiment` batch cannot express. A ported case
+    states these in `metadata`; `_drive()` must read them, falling through
+    to `Spec`'s own defaults for a case that states none (every S4/S5/S6/S2
+    case above)."""
+    captured: dict[str, Any] = {}
+
+    async def capturing_obtain(spec: Any) -> _FakeSubject:
+        captured["spec"] = spec
+        return _FakeSubject()
+
+    async def fake_drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
+        return Outcome(admitted=None)
+
+    monkeypatch.setitem(ENTRY_POINTS, "dreamer", EntryPoint(drive=fake_drive))
+    monkeypatch.setattr(backbone, "obtain", capturing_obtain)
+    monkeypatch.setattr(backbone, "know", _fake_know)
+
+    case = Case(
+        name="d01_dinner_note_the_day_before",
+        input="x",
+        metadata={
+            "room": ["signal", "ridgeline-sig"],
+            "now": "2026-09-11T07:00:00+08:00",
+            "config": {"memory.workspace_id": "ridgeline", "notes.enabled": True},
+            "policy": (
+                'default = "deny"\n\n[[conversations]]\nplatform = "{platform}"\n'
+                'id = "{room}"\npersons = "*"\nworkspace = "ridgeline"\n'
+                "proactive = true\nhome_room = true\n"
+            ),
+        },
+    )
+    await backbone._drive(case, Spec(database_url="x", entry="dreamer"))
+
+    spec = captured["spec"]
+    assert spec.room == ("signal", "ridgeline-sig")
+    assert spec.now.isoformat() == "2026-09-11T07:00:00+08:00"
+    assert spec.overrides["notes.enabled"] is True
+    assert 'id = "ridgeline-sig"' in spec.policy
+    assert 'platform = "signal"' in spec.policy
+    # the isolated workspace, not the case's own stated "ridgeline" literally —
+    # `workspace_for` derives a unique name so cases sharing a database do
+    # not accumulate notes in each other's workspace.
+    assert spec.overrides["memory.workspace_id"] != "ridgeline"
+
+
+async def test_drive_falls_through_to_spec_when_a_case_states_no_room_or_now(monkeypatch):
+    """A case that states none of `room`/`now`/`policy`/`config` (every
+    hand-written S4/S5/S6/S2 case above) must be unaffected by the port."""
+    captured: dict[str, Any] = {}
+
+    async def capturing_obtain(spec: Any) -> _FakeSubject:
+        captured["spec"] = spec
+        return _FakeSubject()
+
+    async def fake_drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
+        return Outcome(admitted=None)
+
+    monkeypatch.setitem(ENTRY_POINTS, "dreamer", EntryPoint(drive=fake_drive))
+    monkeypatch.setattr(backbone, "obtain", capturing_obtain)
+    monkeypatch.setattr(backbone, "know", _fake_know)
+
+    case = Case(name="plain-case", input="x")
+    spec_in = Spec(database_url="x", entry="dreamer", room=("signal", "fixed-room"))
+    await backbone._drive(case, spec_in)
+
+    spec = captured["spec"]
+    assert spec.room == ("signal", "fixed-room")
+    assert spec.now is None
+    assert spec.policy == ""
+
+
 # `sampled()`/`sample_read()`: `09-the-backbone-measured.md` §3.1 measured two
 # model-dependent cases SWAP verdicts across two runs at `sample: 1` — the SDK
 # has no repeat parameter (`08-the-sdk-surface.md` §4.4), and `Case`/caching

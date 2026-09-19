@@ -368,8 +368,22 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
             "only makes sense for an entry point that does not re-deliver "
             "input on each drive, like `dreamer`"
         )
-    room = spec.room or room_for(case.name or "unnamed")
-    workspace = workspace_for(case.name or "unnamed", spec.workspace)
+    # A PORTED case (`10-the-scenario-map.md` port, 2026-09-20) carries its
+    # OWN room/now/policy/config in `metadata` — a corpus like
+    # `proactive_decide.yaml` names a real room per case (which room she
+    # picks IS the assertion) and a real `now` (whether a note is due IS
+    # about time), which one `Spec` shared across a whole `Experiment` batch
+    # cannot express. Falls through to `Spec`'s experiment-wide defaults
+    # when a case states none of these, so every hand-written S4/S5/S6/S2
+    # case above is unchanged.
+    md = case.metadata or {}
+    md_room = tuple(md.get("room") or ())
+    room = md_room if len(md_room) == 2 else (spec.room or room_for(case.name or "unnamed"))
+    md_config = dict(md.get("config") or {})
+    stated_workspace = str(md_config.get("memory.workspace_id") or spec.workspace)
+    workspace = workspace_for(case.name or "unnamed", stated_workspace)
+    now = md.get("now") or spec.now
+    policy_template = str(md.get("policy") or "")
     workdir = Path(tempfile.mkdtemp(prefix="nora-case-"))
     subject = None
     try:
@@ -380,10 +394,15 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                 room=room,
                 overrides={
                     **port.config,
-                    "memory.workspace_id": workspace,
+                    **md_config,
                     **(spec.overrides or {}),
+                    "memory.workspace_id": workspace,
                 },
-                **({"now": datetime.fromisoformat(spec.now)} if spec.now else {}),
+                policy=(
+                    policy_template.format(platform=room[0], room=room[1])
+                    if policy_template else ""
+                ),
+                now=datetime.fromisoformat(now) if now else None,
             )
         )
         # Found by review, 2026-09-20: this hardcoded `{}`, ignoring
