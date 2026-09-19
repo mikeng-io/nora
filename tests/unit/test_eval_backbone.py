@@ -16,10 +16,13 @@ REAL `nora.domain.blocks.render_messages`/`nora.domain.prompt.age` directly
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from strands_evals import Case
 from strands_evals.types.evaluation import EnvironmentState, EvaluationData
 from strands_evals.types.trace import Session
 
+import evals.backbone as backbone
 from evals.backbone import (
     ERROR,
     FAIL,
@@ -27,6 +30,7 @@ from evals.backbone import (
     NORA_BLOCKS_EMPTY,
     NORA_CHANGED_COUNT_2,
     NORA_ERROR,
+    NORA_ERROR_2,
     NORA_SAID,
     NORA_STAGED_COUNT,
     NORA_STAGED_COUNT_2,
@@ -41,6 +45,8 @@ from evals.backbone import (
     state_of,
     traced_nora_task,
 )
+from evals.rebuilt.domain import Outcome
+from evals.rebuilt.entry import ENTRY_POINTS, EntryPoint
 
 grader = AbsenceGrader()
 context_grader = ContextGrader()
@@ -100,8 +106,20 @@ def test_an_error_is_never_a_pass_regardless_of_the_admitted_signal():
     assert out.label == ERROR
 
 
+def test_a_gate_case_under_either_passes_on_either_verdict():
+    """M1 (audit): the `either` branch was fixed for `silence`/`speak` in
+    `747348bd` but not for itself — a gate case with `expect: either` and
+    `admitted=False` (a correct, successful refusal) fell through to "not
+    spoke" and scored ERROR, "nothing ran and nothing was said", when the
+    gate had in fact run and decided. Both verdicts are real answers for a
+    gate; only the absence of `NORA_ERROR` distinguishes a real refusal from
+    nothing having happened, and that is checked first."""
+    assert grader.evaluate(_data(expect="either", admitted=True))[0].label == PASS
+    assert grader.evaluate(_data(expect="either", admitted=False))[0].label == PASS
+
+
 def _context_data(
-    *, must_render: tuple[str, ...], blocks_empty: str = "", error: str = "",
+    *, must_render: tuple[str, ...], blocks_empty: str | None = "", error: str = "",
 ) -> EvaluationData:
     return EvaluationData(
         input="x",
@@ -140,6 +158,19 @@ def test_a_context_error_is_never_a_pass():
     assert out.label == ERROR
 
 
+def test_no_prefill_span_captured_is_an_error_not_a_pass():
+    """H1, found by BOTH independent reviews: `None` (no `agent.prefill` span
+    seen at all — the entry point never calls `build_prefill`, or the
+    capture itself failed) and `""` (a span WAS seen and nothing was empty)
+    collapsed to the same value before this fix, so a `gate`/`dreamer` case
+    mistakenly given `must_render`, or any capture failure, scored a clean
+    PASS with a positively-worded reason."""
+    out = context_grader.evaluate(
+        _context_data(must_render=("standing",), blocks_empty=None),
+    )[0]
+    assert out.label == ERROR
+
+
 def _time_case(*, minutes_ago: int, expect_age: str) -> Case:
     return Case(
         name="s5",
@@ -152,14 +183,21 @@ def _time_case(*, minutes_ago: int, expect_age: str) -> Case:
     )
 
 
-class _RenderedData:
-    def __init__(self, output: str, expected: str):
-        self.actual_output = output
-        self.expected_output = expected
-
-
-def _rendered(case: Case) -> _RenderedData:
-    return _RenderedData(render_transcript_at(case)["output"], case.expected_output)
+def _rendered(case: Case) -> EvaluationData:
+    """Drive the REAL `render_transcript_at`, then wrap its actual returned
+    dict — output-only on success, `environment_state` on a caught error —
+    into a real `EvaluationData` (review, 2026-09-19: the earlier hand-rolled
+    stub here had no `actual_environment_state` attribute at all, so an
+    SDK/grader change checking for one would not have reddened this file —
+    it silently AttributeErrored the moment `SubstringGrader` gained an
+    error check, which is exactly the kind of gap L14 named)."""
+    result = render_transcript_at(case)
+    return EvaluationData(
+        input=case.input,
+        actual_output=result.get("output"),
+        expected_output=case.expected_output,
+        actual_environment_state=result.get("environment_state"),
+    )
 
 
 def test_a_row_181_minutes_old_renders_3h_ago():
@@ -182,7 +220,22 @@ def test_the_wrong_expected_age_fails_rather_than_passing_silently():
 
 
 def test_a_case_with_no_expected_output_is_ungradable():
-    out = substring_grader.evaluate(_RenderedData("<m age=\"3h ago\">x</m>", ""))[0]
+    case = _time_case(minutes_ago=181, expect_age="3h ago")
+    case.expected_output = ""
+    out = substring_grader.evaluate(_rendered(case))[0]
+    assert out.label == ERROR
+
+
+def test_render_transcript_at_never_raises_on_a_malformed_case():
+    """H2 (review): this task raised on a malformed case before — missing
+    `now`, an unparseable timestamp, a row missing a key — and
+    `Experiment._worker` (module docstring) turns a raising task into
+    `test_pass=False, score=0` for every evaluator WITHOUT writing a row to
+    `detailed_results`, so the case vanishes from `read()`'s count rather
+    than landing in it as a FAIL. `render_transcript_at` must catch it and
+    report an ERROR instead."""
+    case = Case(name="malformed", input="x", expected_output="x", metadata={})  # no `now`
+    out = substring_grader.evaluate(_rendered(case))[0]
     assert out.label == ERROR
 
 
@@ -258,3 +311,127 @@ def test_traced_nora_task_adds_a_trajectory_onto_nora_tasks_own_shape():
         EvaluationData(input="x", actual_environment_state=result["environment_state"]),
         NORA_ERROR,
     )
+
+
+# --- `_drive()`'s own mechanisms — found by review, 2026-09-19, to have
+# ZERO test coverage: gutting `_prefill_capture()` or disabling
+# `Spec.repeat`'s loop entirely left every test above green, because they
+# all exercise the GRADERS on hand-built `EvaluationData`, never `_drive()`
+# itself. These use fake ports/obtain/know to exercise the real `_drive()`
+# without a live database. -----------------------------------------------
+
+
+class _FakeAwaitable:
+    async def cancel_all(self) -> None: ...
+    async def aclose(self) -> None: ...
+    async def close(self) -> None: ...
+
+
+class _FakeDeps:
+    background = _FakeAwaitable()
+    audit = _FakeAwaitable()
+    client = _FakeAwaitable()
+
+
+class _FakeSubject:
+    deps = _FakeDeps()
+    room = ("signal", "g1")
+
+
+async def _fake_obtain(_spec: object) -> _FakeSubject:
+    return _FakeSubject()
+
+
+async def _fake_know(*_args: object, **_kwargs: object) -> SimpleNamespace:
+    return SimpleNamespace(now_ms=1_700_000_000_000)
+
+
+async def test_drive_calls_port_drive_repeat_times(monkeypatch):
+    """The bug the audit found by disabling `if spec.repeat > 1:` entirely:
+    every existing test stayed green. This drives `_drive()` for real, with
+    a fake port counting its own calls."""
+    calls: list[int] = []
+
+    async def fake_drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
+        calls.append(now_ms)
+        return Outcome(admitted=None, written=len(calls), changed=(), staged=())
+
+    monkeypatch.setitem(ENTRY_POINTS, "dreamer", EntryPoint(drive=fake_drive))
+    monkeypatch.setattr(backbone, "obtain", _fake_obtain)
+    monkeypatch.setattr(backbone, "know", _fake_know)
+
+    case = Case(name="repeat-probe", input="x")
+    result = await backbone._drive(case, Spec(database_url="x", entry="dreamer", repeat=3))
+
+    assert len(calls) == 3, "port.drive must run once, then twice more for repeat=3"
+    data = EvaluationData(input="x", actual_environment_state=result["environment_state"])
+    assert state_of(data, NORA_WRITTEN_2) == 3, "the LAST run's Outcome, not the first's"
+
+
+async def test_drive_refuses_repeat_for_an_entry_point_that_delivers_input(monkeypatch):
+    async def fake_drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
+        return Outcome(admitted=None)
+
+    monkeypatch.setitem(
+        ENTRY_POINTS, "tag", EntryPoint(drive=fake_drive, delivers_input=True),
+    )
+    monkeypatch.setattr(backbone, "obtain", _fake_obtain)
+    monkeypatch.setattr(backbone, "know", _fake_know)
+
+    case = Case(name="repeat-tag-probe", input="x")
+    try:
+        await backbone._drive(case, Spec(database_url="x", entry="tag", repeat=2))
+    except ValueError as exc:
+        assert "re-deliver" in str(exc)
+    else:
+        raise AssertionError("repeat>1 on a delivers_input entry point must refuse loudly")
+
+
+async def test_drive_captures_a_real_prefill_span_emitted_during_the_drive(monkeypatch):
+    """The audit's other zero-coverage finding: swapping `_prefill_capture()`
+    for a fresh, unattached exporter also left every test green. This drives
+    `_drive()` for real and has the fake port open a genuine
+    `nora.obs.tracing.span("agent.prefill", ...)` the way `build_prefill`
+    does, checking `_drive()` actually reads it back."""
+    from nora.obs.tracing import annotate, span
+
+    async def fake_drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
+        with span("agent.prefill"):
+            annotate(**{"nora.prefill.blocks_empty": "notes,standing"})
+        return Outcome(admitted=None, said=("hi",))
+
+    monkeypatch.setitem(
+        ENTRY_POINTS, "participation", EntryPoint(drive=fake_drive, delivers_input=True),
+    )
+    monkeypatch.setattr(backbone, "obtain", _fake_obtain)
+    monkeypatch.setattr(backbone, "know", _fake_know)
+
+    case = Case(name="prefill-probe", input="x")
+    result = await backbone._drive(case, Spec(database_url="x", entry="participation"))
+
+    data = EvaluationData(input="x", actual_environment_state=result["environment_state"])
+    assert state_of(data, NORA_BLOCKS_EMPTY) == "notes,standing"
+
+
+async def test_idempotence_grader_reads_the_repeat_runs_own_error(monkeypatch):
+    """H3 (review): the repeat run's OWN error was never carried, so a repeat
+    that failed closed (written=0) could score PASS as 'added nothing'."""
+    calls = {"n": 0}
+
+    async def fake_drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return Outcome(admitted=None, written=1, changed=(("create", "x"),))
+        return Outcome(admitted=None, error="fail_closed: no provider reachable")
+
+    monkeypatch.setitem(ENTRY_POINTS, "dreamer", EntryPoint(drive=fake_drive))
+    monkeypatch.setattr(backbone, "obtain", _fake_obtain)
+    monkeypatch.setattr(backbone, "know", _fake_know)
+
+    case = Case(name="repeat-error-probe", input="x")
+    result = await backbone._drive(case, Spec(database_url="x", entry="dreamer", repeat=2))
+
+    data = EvaluationData(input="x", actual_environment_state=result["environment_state"])
+    assert state_of(data, NORA_ERROR_2)
+    out = IdempotenceGrader().evaluate(data)[0]
+    assert out.label == ERROR, "a repeat run that broke must never read as idempotent"

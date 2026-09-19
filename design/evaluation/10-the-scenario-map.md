@@ -345,27 +345,51 @@ tool call — `09-the-backbone-measured.md` §1 measured the underlying spans
 exist, once, live, before this session; nobody has re-run that specific
 combination since.
 
-## 14. S8 — SKIPPED, 2026-09-19, and this one was a real decision
+## 14. S8 — SKIPPED, 2026-09-19, and one of the reasons given was wrong
 
 Checked before building, not routed around: `strands_evals.chaos.
 ChaosPlugin` only works by being passed to `Agent(plugins=[chaos])` **at
 construction time** — that is how Strands' plugin/hook system works, no
-seam around it. `grep -rn "plugins=\[" nora/` returns nothing repo-wide:
-nothing passes `plugins=` to a real `Agent` today. And `nora.subject.
-SubjectSpec` — the seam this entire bundle is built on — REFUSES to be a
-collaborator-injection point by design; its own docstring: *"NOT a seam for
-collaborators... there is no way to express `{"media_join": None}` and that
-is the point."*
+seam around it.
 
-So building S8 as `strands_evals.chaos` designs it means adding a NEW seam
-to `nora/app/composition.py`'s real `Agent(...)` construction that lets
-something reach in and inject execution-time hooks into her tool pipeline —
-exactly what `GOAL-2-backbone.md`'s own "what would STOP this" section
-names: *"Anything that would change what the live deployment does."*
-`GOAL-2-backbone.md`'s scope statement also puts chaos explicitly **OUT**
-("OUT: ... Chaos") — this was never in the backbone goal to begin with; §4's
-recommendation to build it is this LATER node's own analysis, not something
-the backbone owed.
+**CORRECTED 2026-09-19, by the adversarial audit that reviewed this
+decision.** This section originally claimed `grep -rn "plugins=\[" nora/`
+returns nothing repo-wide, and concluded nothing passes `plugins=` to a real
+`Agent` today. **The grep is accurate; the conclusion drawn from it is
+false** — `nora/agent/factory.py`'s `create_agent` (the production tag-turn
+agent, `nora/app/agent_runner.py`'s own caller) builds
+`plugins: list[Plugin] = [AgentSkills(...)] if skills_dir is not None else
+[]` and passes `Agent(model=model, plugins=plugins, ...)`. The grep pattern
+missed it purely because the list is bound to a variable first — a grep
+standing in for "does the property hold" is not a measurement of it, the
+exact substitution this bundle's own discipline exists to catch, caught
+here by someone else checking rather than by writing this section.
+
+**What actually holds, checked properly:** `create_agent` already has a
+live `plugins=` parameter and a real one flowing through it — but it is
+hardcoded to build exactly one kind, `AgentSkills`, from `skills_dir`. There
+is no seam for an EXTERNALLY-SUPPLIED plugin like `ChaosPlugin` to reach it
+without changing `create_agent`'s own signature and its caller in
+`nora/app/composition.py`. And `nora.subject.SubjectSpec` — the seam this
+entire bundle is built on — still REFUSES to be a collaborator-injection
+point by design; its own docstring: *"NOT a seam for collaborators... there
+is no way to express `{"media_join": None}` and that is the point."*
+`overrides` does already give indirect influence over which plugin gets
+built (`cfg.doctrine.dir` decides `skills_dir`), which is a real caveat on
+"no seam at all" worth naming even though it does not amount to arbitrary
+injection.
+
+So building S8 as `strands_evals.chaos` designs it still means adding a NEW
+parameter to `create_agent`/`composition.py` that lets something reach in
+and inject an ARBITRARY execution-time hook into her tool pipeline — a
+different, larger thing than the one hardcoded plugin that already exists —
+and that is still exactly what `GOAL-2-backbone.md`'s own "what would STOP
+this" section names: *"Anything that would change what the live deployment
+does."* `GOAL-2-backbone.md`'s scope statement also puts chaos explicitly
+**OUT** ("OUT: ... Chaos") — this was never in the backbone goal to begin
+with; §4's recommendation to build it is this LATER node's own analysis, not
+something the backbone owed. The skip decision survives the correction; the
+reasoning it was made on did not, until now.
 
 **Presented to the operator as three options** (skip; add a narrow eval-only
 plugin-injection seam; find a lower-risk substitute by wrapping tool

@@ -94,6 +94,15 @@ NORA_STAGED_COUNT = "nora.staged_count"
 NORA_WRITTEN_2 = "nora.written_2"
 NORA_CHANGED_COUNT_2 = "nora.changed_count_2"
 NORA_STAGED_COUNT_2 = "nora.staged_count_2"
+#: The repeat run's OWN `Outcome.error` — found missing by review, 2026-09-19.
+#: Entry points return `Outcome(error=...)` rather than raising
+#: (`evals/rebuilt/entry.py`'s fail-closed branches), so a repeat run that
+#: failed closed comes back with `written=0, changed=(), staged=()` and no
+#: exception at all — indistinguishable from "ran cleanly and added
+#: nothing" unless this is carried and checked. `evals/rebuilt/domain.py`'s
+#: own `Outcome.error` docstring: "An Outcome with an error is never
+#: graded" — `IdempotenceGrader` was violating that for the repeat half.
+NORA_ERROR_2 = "nora.error_2"
 
 #: The three verdicts, carried in `EvaluationOutput.label`.
 #:
@@ -158,13 +167,24 @@ def _prefill_capture() -> InMemorySpanExporter:
     return _prefill_exporter
 
 
-def _blocks_empty(exporter: InMemorySpanExporter) -> str:
-    """`nora.prefill.blocks_empty` off the `agent.prefill` span, or `""` if
-    the entry point never called `build_prefill` (`gate`, `dreamer`)."""
+def _blocks_empty(exporter: InMemorySpanExporter) -> str | None:
+    """`nora.prefill.blocks_empty` off the `agent.prefill` span, or `None` if
+    no such span was captured at all.
+
+    **`None` and `""` are different facts, and collapsing them was a bug**
+    (found by review, 2026-09-19): `""` means "a span was captured and no
+    block was empty" — a real PASS-worthy fact. No span at all means
+    `build_prefill` never ran, OR ran but the span was lost (provider
+    ordering, a sampler, the entry point never calls it at all —
+    `gate`/`dreamer`) — an ungradable fact. `ContextGrader` reading both as
+    "nothing was empty" turned every one of those failure modes into a
+    silent PASS, exactly the ERROR-as-PASS substitution this whole bundle
+    exists to refuse.
+    """
     for finished in exporter.get_finished_spans():
         if finished.name == "agent.prefill":
             return str((finished.attributes or {}).get("nora.prefill.blocks_empty", ""))
-    return ""
+    return None
 
 
 @dataclass(frozen=True)
@@ -200,6 +220,20 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
     # layer 1 and is to be deleted. They have to move before that happens, and
     # this import is the marker.
     port = ENTRY_POINTS[spec.entry]
+    if spec.repeat > 1 and port.delivers_input:
+        # Found by review, 2026-09-19: `port.delivers_input` means a line
+        # ARRIVES after the window (`entry.py`'s own `EntryPoint.
+        # delivers_input` docstring) — driving the SAME case a second time
+        # delivers a SECOND copy of that line, so run 2 is not "the same
+        # pass again", it is a different pass with an extra message in it.
+        # Loud rather than silent: idempotence is only meaningful for entry
+        # points that read state without re-delivering input (`dreamer`).
+        raise ValueError(
+            f"Spec.repeat={spec.repeat} would re-deliver the case's message "
+            f"for entry={spec.entry!r} (delivers_input=True) — idempotence "
+            "only makes sense for an entry point that does not re-deliver "
+            "input on each drive, like `dreamer`"
+        )
     room = spec.room or room_for(case.name or "unnamed")
     workspace = workspace_for(case.name or "unnamed", spec.workspace)
     workdir = Path(tempfile.mkdtemp(prefix="nora-case-"))
@@ -229,12 +263,16 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
 
         repeat_state = []
         if spec.repeat > 1:
+            # SAME subject, SAME case, SAME now_ms — no re-`obtain()`.
+            # Idempotence needs run 2 to see exactly what run 1 left.
+            # `spec.repeat > 1` guarantees the loop runs at least once, so
+            # this initial value is never read — kept only so a static
+            # checker does not have to prove that.
             repeat_outcome = outcome
             for _ in range(spec.repeat - 1):
-                # SAME subject, SAME case, SAME now_ms — no re-`obtain()`.
-                # Idempotence needs run 2 to see exactly what run 1 left.
                 repeat_outcome = await port.drive(subject, nora_case, now_ms=seeded.now_ms)
             repeat_state = [
+                EnvironmentState(name=NORA_ERROR_2, state=repeat_outcome.error),
                 EnvironmentState(name=NORA_WRITTEN_2, state=repeat_outcome.written),
                 EnvironmentState(name=NORA_CHANGED_COUNT_2, state=len(repeat_outcome.changed)),
                 EnvironmentState(name=NORA_STAGED_COUNT_2, state=len(repeat_outcome.staged)),
@@ -311,7 +349,7 @@ def nora_task(spec: Spec):
                     EnvironmentState(name=NORA_SAID, state=0),
                     EnvironmentState(name=NORA_DELIVERY, state=""),
                     EnvironmentState(name=NORA_ADMITTED, state=None),
-                    EnvironmentState(name=NORA_BLOCKS_EMPTY, state=""),
+                    EnvironmentState(name=NORA_BLOCKS_EMPTY, state=None),
                     EnvironmentState(name=NORA_WRITTEN, state=None),
                     EnvironmentState(name=NORA_CHANGED_COUNT, state=None),
                     EnvironmentState(name=NORA_STAGED_COUNT, state=None),
@@ -368,26 +406,45 @@ def render_transcript_at(case: Case) -> dict[str, Any]:
     `{body, name, minutes_ago}`. Returns the rendered `<m ...>` elements as
     `output`, for a grader to search (`SubstringGrader`, `case.
     expected_output` naming the exact `age="..."` attribute expected).
+
+    **Never raises** (found missing by review, 2026-09-19) — this module's
+    own docstring states the rule and every other task follows it, but this
+    one did not: a malformed case (`now` missing, an unparseable timestamp, a
+    row missing `name`) raised straight out, and `Experiment._worker`'s own
+    `except Exception` (see module docstring) turns that into
+    `test_pass=False, score=0` for EVERY evaluator **without writing a row to
+    `detailed_results` at all** — worse than the ERROR-as-FAIL substitution
+    the module docstring warns about, because the case does not even survive
+    into `read()`'s count. It disappears from the denominator rather than
+    landing in it.
     """
     from nora.domain.blocks import render_messages
     from nora.domain.models import DeliveryStatus, TranscriptRow
 
-    md = case.metadata or {}
-    now = datetime.fromisoformat(md["now"])
-    rows = tuple(
-        TranscriptRow(
-            id=i, sender_id="+000", sender_name=r["name"],
-            ts=int((now - timedelta(minutes=r["minutes_ago"])).timestamp() * 1000),
-            body=r["body"], is_nora=False, delivery_status=DeliveryStatus.SENT,
-            raw_json=None, person_name=r["name"],
+    try:
+        md = case.metadata or {}
+        now = datetime.fromisoformat(md["now"])
+        rows = tuple(
+            TranscriptRow(
+                id=i, sender_id="+000", sender_name=r["name"],
+                ts=int((now - timedelta(minutes=r["minutes_ago"])).timestamp() * 1000),
+                body=r["body"], is_nora=False, delivery_status=DeliveryStatus.SENT,
+                raw_json=None, person_name=r["name"],
+            )
+            for i, r in enumerate(md.get("rows", ()), 1)
         )
-        for i, r in enumerate(md.get("rows", ()), 1)
-    )
-    rendered = render_messages(
-        rows, speaker=lambda row: row.sender_name or "?",
-        body=lambda row: row.body, timestamp=lambda row: row.ts, now=now,
-    )
-    return {"output": rendered}
+        rendered = render_messages(
+            rows, speaker=lambda row: row.sender_name or "?",
+            body=lambda row: row.body, timestamp=lambda row: row.ts, now=now,
+        )
+        return {"output": rendered}
+    except Exception as exc:                          # noqa: BLE001 — see module docstring
+        return {
+            "output": "",
+            "environment_state": [
+                EnvironmentState(name=NORA_ERROR, state=f"{type(exc).__name__}: {exc}"),
+            ],
+        }
 
 
 class SubstringGrader(Evaluator):
@@ -399,6 +456,12 @@ class SubstringGrader(Evaluator):
     """
 
     def evaluate(self, data: EvaluationData) -> list[EvaluationOutput]:
+        error = state_of(data, NORA_ERROR)
+        if error:
+            return [EvaluationOutput(
+                score=0.0, test_pass=False, reason=f"the case did not run: {error}",
+                label=ERROR,
+            )]
         expected = str(data.expected_output or "")
         actual = str(data.actual_output or "")
         if not expected:
@@ -428,6 +491,13 @@ class IdempotenceGrader(Evaluator):
     notebook `before`/`after`), so the repeat run's own values ARE the
     answer for those two. `staged` is an absolute snapshot, not a diff, so
     it needs both runs' counts compared.
+
+    **Scoped to notes/staging, not room speech** (review, 2026-09-19): this
+    reads `written`/`changed`/`staged` only. `dreamer()`
+    (`evals/rebuilt/entry.py`) never populates `Outcome.said` at all — the
+    decide pass writes notes and reminders, not room messages — so there is
+    no `said` signal here to check, and "writes nothing new" means exactly
+    the notes/staging surface, not a broader claim about speech.
     """
 
     def evaluate(self, data: EvaluationData) -> list[EvaluationOutput]:
@@ -438,6 +508,16 @@ class IdempotenceGrader(Evaluator):
         written_2 = state_of(data, NORA_WRITTEN_2)
         if written_2 is None:
             return [self._out(ERROR, 0.0, "no repeat run — Spec.repeat must be > 1")]
+
+        # Found by review, 2026-09-19: the repeat run's OWN error was never
+        # checked. Entry points fail closed by returning `Outcome(error=...)`
+        # rather than raising, so a repeat run that broke comes back with
+        # written=0/changed=()/staged=() and no exception — indistinguishable
+        # from a clean, idempotent no-op unless this is checked separately
+        # from the first run's `NORA_ERROR`.
+        error_2 = state_of(data, NORA_ERROR_2)
+        if error_2:
+            return [self._out(ERROR, 0.0, f"the repeat run did not run cleanly: {error_2}")]
 
         changed_2 = state_of(data, NORA_CHANGED_COUNT_2) or 0
         staged_1 = state_of(data, NORA_STAGED_COUNT) or 0
@@ -512,7 +592,18 @@ class AbsenceGrader(Evaluator):
                 else self._out(FAIL, 0.0, "expected a reply and said nothing")
             ]
         # `either` says both ANSWERS are acceptable; it does not say that not
-        # answering is. Something must have happened, or it is ungradable.
+        # answering is. Something must have happened, or it is ungradable —
+        # EXCEPT for a gate, where `admitted=False` already IS an answer.
+        #
+        # Found by review, 2026-09-19, one branch over from the fix
+        # `747348bd` made: for a gate case (`admitted is not None`), both
+        # `True` and `False` are the gate having run and decided — there is
+        # no third "nothing happened" reading distinct from those two,
+        # because a gate that truly failed to run reports through
+        # `NORA_ERROR`, already checked above. Reading `spoke=False` here as
+        # "ungradable" scored a correct, successful refusal as ERROR.
+        if admitted is not None:
+            return [self._out(PASS, 1.0, f"the gate decided ({detail})")]
         return [
             self._out(PASS, 1.0, f"something happened ({detail})")
             if spoke
@@ -553,7 +644,13 @@ class ContextGrader(Evaluator):
         if not must_render:
             return [self._out(ERROR, 0.0, "case names no `must_render` block to check")]
 
-        empty_raw = state_of(data, NORA_BLOCKS_EMPTY) or ""
+        empty_raw = state_of(data, NORA_BLOCKS_EMPTY)
+        if empty_raw is None:
+            return [self._out(
+                ERROR, 0.0,
+                "no agent.prefill span was captured — the entry point may never "
+                "call build_prefill (gate, dreamer), or the capture itself failed",
+            )]
         empty = {name for name in str(empty_raw).split(",") if name}
         missing = [name for name in must_render if name in empty]
         if missing:

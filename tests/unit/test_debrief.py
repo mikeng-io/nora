@@ -422,8 +422,11 @@ async def test_a_fold_exactly_at_the_cap_is_written():
 
 async def test_a_truncated_body_is_never_parsed():
     """The price of admission for a raw `chat.completions.create`. A Strands
-    agent RAISES `MaxTokensReachedException` on a cut-off; this returns
-    `finish_reason="length"` with a silently truncated body — and a truncated
+    agent RAISES `MaxTokensReachedException` on a cut-off — and, since
+    `ask_text` now catches it too (2026-09-19), the debrief's real production
+    client also arrives here with `finish_reason="length"`, not just this
+    test's fake. Either way, this checks the CONSUMING side: a
+    `finish_reason="length"` body must never be parsed, and a truncated
     JSON document can parse into something shorter and wrong. That is R-27's
     substitution one layer down: an ERROR reported as a PASS.
 
