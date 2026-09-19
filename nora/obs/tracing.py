@@ -276,7 +276,7 @@ def generation(
     ingest path that is itself plumbing, or spawned work that has detached with
     `attached(None)`.
 
-    **`prompt`/`completion` must ALREADY BE SCREENED** — `nora.agent.egress`'s
+    **`prompt`/`completion` must ALREADY BE SCREENED** — `nora.agent.security`'s
     `trace_safe` is the screen, and it cannot be applied here: `nora.obs` sits
     BELOW `nora.agent` in the import contract (`pyproject.toml`, "layered
     architecture"), so this module cannot reach the egress predicates and must
