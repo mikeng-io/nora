@@ -408,8 +408,19 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                     **(spec.overrides or {}),
                     "memory.workspace_id": workspace,
                 },
+                # Same reason `memory.workspace_id` above is the ISOLATED
+                # value, not `stated_workspace`: a policy that still says
+                # `workspace = "friends"` while the subject's own config
+                # says `friends-<isolated>` means the proactive adaptor's
+                # home-room lookup finds no room for the workspace it is
+                # actually composed with, and reports "no home room" —
+                # found live, 2026-09-20, porting `proactive_decide.yaml`
+                # (`evals/rebuilt/runner.run_once`'s own `case_policy =
+                # case.policy.replace(...)` step, not carried over here).
                 policy=(
-                    policy_template.format(platform=room[0], room=room[1])
+                    policy_template.replace(
+                        f'workspace = "{stated_workspace}"', f'workspace = "{workspace}"',
+                    ).format(platform=room[0], room=room[1])
                     if policy_template else ""
                 ),
                 now=datetime.fromisoformat(now) if now else None,
@@ -484,6 +495,15 @@ def _as_nora_case(case: Case, spec: Spec) -> Any:
         expect=md.get("expect", "either"),
         input=str(case.input),
         knows=md.get("knows", {}),
+        # Found live, 2026-09-20, porting `proactive_decide.yaml`:
+        # `evals/rebuilt/entry.py`'s `dreamer` reads `case.category or
+        # "note-candidates"` to pick WHICH adaptor a `dreamer` pass runs —
+        # dropping it here silently ran every ported `category: proactive`
+        # case against an adaptor the graph never built (`no adaptor
+        # 'note-candidates' on the graph; built: ('proactive',)`). Every
+        # hand-written S4/S5/S6 case this session wrote left `category`
+        # unset, so the drop stayed latent until a corpus case set it.
+        category=str(md.get("category") or ""),
     )
 
 

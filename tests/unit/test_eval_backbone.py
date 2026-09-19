@@ -480,6 +480,17 @@ async def test_drive_seeds_from_the_cases_own_knows_metadata(monkeypatch):
     assert seeded_with["transcript"][0].body == "今日食咩好呢"
 
 
+def test_as_nora_case_carries_category_through():
+    """`evals/rebuilt/entry.py`'s `dreamer` reads `case.category or
+    "note-candidates"` to pick which adaptor a pass runs. Found live,
+    2026-09-20, porting `proactive_decide.yaml` (`category: proactive`):
+    dropping it here silently ran every ported proactive case against an
+    adaptor the graph never built."""
+    case = Case(name="x", input="", metadata={"category": "proactive"})
+    nora_case = backbone._as_nora_case(case, Spec(database_url="x", entry="dreamer"))
+    assert nora_case.category == "proactive"
+
+
 async def test_drive_reads_room_now_policy_config_from_case_metadata(monkeypatch):
     """The port (`10-the-scenario-map.md`, 2026-09-20): `proactive_decide.yaml`
     names a real room/policy/now PER CASE — which room she picks IS the
@@ -527,6 +538,13 @@ async def test_drive_reads_room_now_policy_config_from_case_metadata(monkeypatch
     # `workspace_for` derives a unique name so cases sharing a database do
     # not accumulate notes in each other's workspace.
     assert spec.overrides["memory.workspace_id"] != "ridgeline"
+    # Found live, 2026-09-20: the POLICY's own `workspace = "..."` must be
+    # rewritten to the SAME isolated name, or the composed subject's real
+    # `memory.workspace_id` and its policy's declared room workspace
+    # disagree, and the proactive adaptor reports "no home room" for a
+    # workspace whose policy plainly names one.
+    assert f'workspace = "{spec.overrides["memory.workspace_id"]}"' in spec.policy
+    assert 'workspace = "ridgeline"' not in spec.policy
 
 
 async def test_drive_falls_through_to_spec_when_a_case_states_no_room_or_now(monkeypatch):
