@@ -1,7 +1,0 @@
-{
-  "type": "none",
-  "summary": "Observability now has a design/ bundle recording the settled architecture and the decisions still open.",
-  "details": [],
-  "limitations": [],
-  "reason": "Documentation only; nothing Nora does in a room changes. design/observability/ records why the existing sampler/redaction/error-reporting architecture has the shape it has (docs/observability.md stays the living how-to, not duplicated), and re-verifies two findings from a since-reverted UACP governance run against current code before deciding which survived. The one code change from this pass (Sentry frame-locals) ships in its own fragment."
-}
