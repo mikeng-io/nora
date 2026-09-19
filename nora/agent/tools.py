@@ -8004,7 +8004,11 @@ Args:
             # audit for why IT stays session-scoped — surfacing a roster
             # member's PRIVATE DM words into a room — and that reason does not
             # bind here: this verb exists for the Dreamer, whose output is
-            # verdicts, never a quote into any room.
+            # verdicts, never a quote into any room. **That is now enforced
+            # rather than asserted** (#350): the catalog gate in
+            # `build_tool_specs` only ships this verb under `dream_adaptor`.
+            # It sat in the unconditional list until 2026-09-19, so the
+            # sentence above was false for as long as it had been written.
             found = await honcho.search(query=query[:500])
         except Exception:
             # Belt-and-braces, exactly as on the room path: the adapter catches
@@ -8713,6 +8717,34 @@ Args:
     # (a caller asking "what is declared" wants everything, not one room's
     # catalog). The web catalog's full table comes from _catalog_room()
     # returning platform="discord", not from None.
+    # `search_memory_workspace` is DREAMER-ONLY, and now actually is (#350).
+    # Its own body says why — "this verb exists for the Dreamer, whose output
+    # is verdicts, never a quote into any room" — and that sentence was false:
+    # it sat in the unconditional list, so every tag and every fire turn
+    # carried it, in every room. What it returns there is VERBATIM lines,
+    # attributed by name, from Honcho's WORKSPACE `/search`: the whole
+    # deployment, every unit. The only filter is identity.toml's entire
+    # address book (`PersonRef` has no unit, so that filter cannot be
+    # unit-shaped). A room whose policy entry names one unit could surface
+    # words said by people who are in none of its units — the crossing
+    # `send_to` refuses outright (R-49), and R-21 exists because she once
+    # listed people who had never been members.
+    #
+    # Gated on `dream_adaptor` rather than a new flag: it is already the
+    # provenance meaning "`RegistryToolSource` built this set", `""` for every
+    # tag and every fire turn. `room is None` keeps the REGISTRY-TABLE
+    # caller's full table for the same reason the music block below does — a
+    # caller asking "what is DECLARED" wants everything, not one room's
+    # catalog.
+    #
+    # Measured before removing it (Langfuse, 2026-09-03..18): 49 calls over 17
+    # traces, 44 of them Dreamer, 5 across 3 `engagement` traces. The tag path
+    # loses roughly three turns a fortnight.
+    unit_memory_specs: tuple[ToolSpec, ...] = ()
+    if dream_adaptor or room is None:
+        unit_memory_specs = (
+            _spec("search_memory_workspace", search_memory_workspace),
+        )
     music_specs: tuple[ToolSpec, ...] = ()
     if room is not None and room.platform == "discord":
         music_specs = (
@@ -8762,7 +8794,7 @@ Args:
         _spec("rsvp_event", rsvp_event),
         _spec("cancel_event", cancel_event),
         _spec("suggest_venue", suggest_venue),
-        _spec("search_memory_workspace", search_memory_workspace),
+        *unit_memory_specs,
         _spec("note_read", note_read),
         _spec("note_search", note_search),
         _spec("note_create", note_create),
@@ -8829,6 +8861,10 @@ def build_tools(
     note_unit: Callable[[str, str], str | None] | None = None,
     unit_for: Callable[[str, str], str | None] | None = None,
     supplied_unit: str | None = None,
+    # Forwarded, not defaulted away: `build_tool_specs` gates
+    # `search_memory_workspace` on it (#350), so a wrapper that dropped it
+    # would silently build the tag catalog for a Dreamer caller.
+    dream_adaptor: str = "",
     image_generator: ImageGenerator | None = None,
     image_refs_allowed: bool = False,
     media_store: MediaObjectStore | None = None,
@@ -8863,6 +8899,7 @@ def build_tools(
         notes=notes, note_unit=note_unit,
         unit_for=unit_for,
         supplied_unit=supplied_unit,
+        dream_adaptor=dream_adaptor,
         image_generator=image_generator, image_refs_allowed=image_refs_allowed,
         media_store=media_store,
         online_source=online_source, voice_source=voice_source,
