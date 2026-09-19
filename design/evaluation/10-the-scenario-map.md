@@ -129,15 +129,21 @@ Not a recommendation about which cases to write. A recommendation about
 **The current suite spends its model budget on S7 and S3 and buys nothing for
 S2, S4, S8.** Reversing that is the recommendation.
 
-## 7. DECISION RESERVED
+## 7. DECIDED 2026-09-19
 
-**Proposed:** adopt S1-S9 as the scenario classes; build the four deterministic
-classes first; port only what §5 says earns its place; treat S8 as new work
-against `strands_evals.chaos`.
+**Adopted:** S1-S9 as the scenario classes; build the four deterministic
+classes first (§6); port only what §5 says earns its place; treat S8 as new
+work against `strands_evals.chaos`.
 
-**Not taken here.** It changes what the suite is for, the existing corpora are
-the operator's, and the numbers in §2's last column are a count of cases rather
-than a judgement of them.
+This was left reserved rather than derived, because it changes what the suite
+is for and the existing corpora represent real prior effort. But nothing
+about WHICH way to decide it needed a fact only the operator holds — §2's
+evidence (four live-incident classes near-zero-covered, 75+23 of 150 cases
+spent on the two classes that were cheapest to grade) points one way
+regardless of who reads it, and the recommendation in §6 already followed
+from it. Adopted on that basis; not executed here — porting/rewriting the
+150 cases against this map is separate, larger work, and is the next
+concrete action this bundle owes.
 
 ## 8. The reading that would refute this node
 

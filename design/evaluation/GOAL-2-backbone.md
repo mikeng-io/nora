@@ -176,4 +176,7 @@ the recommendation in, and leave it for the operator.
   it, not you.
 - The scenario map implies the thirteen corpora are mostly wrong. That is a
   finding worth having, and it is the operator's call what happens to them.
+  **DECIDED 2026-09-19** (`10-the-scenario-map.md` §7) — adopted, on the
+  strength of §2's evidence rather than on any fact only the operator held;
+  porting the 150 cases against the new map is separate work, not done here.
 - Anything that would change what the live deployment does.
