@@ -1,0 +1,9 @@
+{
+  "type": "fix",
+  "summary": "Sentry no longer captures a stack frame's local variable values — they were shipping unredacted, regardless of send_default_pii.",
+  "details": [
+    "nora/obs/errors.py's sentry_sdk.init call set send_default_pii=False and a comment argued that kept a frame's local variable values off the wire. Checked against the installed SDK (sentry-sdk==2.44.0, consts.py): include_local_variables defaults to True and is independent of send_default_pii, which only gates broader request/user PII. So an ACI or a phone number sitting in a local variable when an exception fired was reaching Sentry the whole time, unredacted by the flag that was believed to cover it.",
+    "include_local_variables=False is now passed explicitly. tests/unit/test_errors_reporting.py's single send_default_pii assertion is split into two, one per flag, so each is pinned independently."
+  ],
+  "limitations": []
+}

@@ -107,8 +107,14 @@ def test_it_reports_errors_without_starting_a_second_tracing_pipeline(monkeypatc
         "Sentry is sampling traces — a second tracing pipeline alongside "
         "nora.obs.tracing writes two trace ids for one turn"
     )
+    assert captured["include_local_variables"] is False, (
+        "a frame's local variable VALUES ship regardless of send_default_pii "
+        "(verified against sentry-sdk's own default) — an ACI or a phone "
+        "number sitting in a local is the same identifier R-18 keeps off "
+        "every other exit"
+    )
     assert captured["send_default_pii"] is False, (
-        "send_default_pii would put identifiers from a frame's locals on a "
+        "send_default_pii would put broader request/user PII on a "
         "third-party wire — the same class R-18 keeps off every other exit"
     )
     assert captured["environment"] == "test-env"

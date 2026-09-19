@@ -114,12 +114,15 @@ def setup_errors(
             # atexit, stdlib) and are what make an unhandled exception an
             # event at all.
             auto_enabling_integrations=False,
-            # A stack trace is worth little without the values in it, and this
-            # is a single-operator deployment reading its own errors. The
-            # redaction floor still applies at the LOG boundary; what reaches
-            # Sentry from a frame is a separate exit, so `send_default_pii`
-            # stays OFF — an ACI or a phone number in a local variable is the
-            # same identifier R-18 keeps off every other wire.
+            # `send_default_pii=False` does NOT keep a frame's local variable
+            # VALUES off the wire — verified against the installed SDK
+            # (sentry-sdk==2.44.0, `consts.py`): `include_local_variables`
+            # defaults to `True` independently of `send_default_pii`, which
+            # only gates broader request/user PII. An ACI or a phone number
+            # sitting in a local when an exception fires is the same
+            # identifier R-18 keeps off every other exit, so it is turned off
+            # explicitly rather than assumed covered by the flag above.
+            include_local_variables=False,
             send_default_pii=False,
             attach_stacktrace=True,
         )
