@@ -33,8 +33,13 @@ If you find yourself writing a runner, a report renderer or an outcome type,
 ## Scope. Two deliverables, and a hard edge.
 
 **IN:** one entry point, end to end, SDK-native. The scenario decision.
-**OUT:** porting thirteen corpora. Fixing the gate's span problem. Red teaming.
-Simulators. Chaos. The judge's latency. Deleting `evals/rebuilt/`.
+**OUT:** porting thirteen corpora. Fixing the gate's span problem (STATUS,
+2026-09-19: an unrelated tracing-replacement session may have closed this
+incidentally — `08-the-sdk-surface` §4.2 and `09-the-backbone-measured` §1
+both carry the correction and both say it is unmeasured; still out of scope
+for THIS goal either way, but do not assume it still needs its own fix
+without checking first). Red teaming. Simulators. Chaos. The judge's
+latency. Deleting `evals/rebuilt/`.
 
 A backbone that works for one entry point and one corpus is the deliverable. If
 it works, the port is mechanical and is somebody else's day. If it does not,

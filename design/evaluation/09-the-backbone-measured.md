@@ -47,6 +47,20 @@ the `ToolResultContent(content='refused')` that came back.
 `08-the-sdk-surface` §4.2's other half stands untouched: the GATE emits no
 mappable spans, and its 40 cases remain broken.
 
+**STATUS UPDATE, 2026-09-19 — no longer true; see `08-the-sdk-surface` §4.2's
+own status note.** An unrelated tracing-replacement session (adopting
+`strands.telemetry` in place of the hand-rolled `nora.obs.tracing.
+generation()` this bundle was written against) moved the gate's raw call
+onto `nora.agent.telemetry.start_raw_model_span`/`end_raw_model_span`,
+which DOES emit mappable `gen_ai.system.message`/`.user.message`/`.choice`
+span events — the same shape `participation`'s `AgentInvocationSpan`/
+`InferenceSpan` case above is read against. Whether the gate's 40 cases
+actually score correctly now is **unmeasured**: nobody has re-run this
+node's own Step 0 probe against `relevance_gate` the way it was run against
+`participation` above. That re-run — not a repeat of this node's existing
+measurement — is the next falsification a backbone session should do before
+assuming the gap is closed.
+
 ## 2. What the first attempt got wrong, and it is the node's own subject
 
 **The task's `metadata` is silently dropped.** The first probe returned the

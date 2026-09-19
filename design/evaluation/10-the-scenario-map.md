@@ -94,10 +94,17 @@ Whether she should join an ongoing exchange depends on what happens next, and
   mention*, which is S7 and is already 75 cases. Keep as a smoke check, not as
   a twelfth of the suite.
 - **`relevance_gate` (40)** — the largest corpus, and `08-the-sdk-surface` §4.2
-  measured that **none of it can be graded through the SDK today**, because the
-  gate emits no mappable spans. Its go/no_go verdict is still readable
-  deterministically; that is what it should be reduced to until the span
-  problem is decided.
+  measured that **none of it could be graded through the SDK as of 2026-09-18**,
+  because the gate emitted no mappable spans. **STATUS UPDATE, 2026-09-19**: an
+  unrelated tracing-replacement session moved the gate's raw call onto
+  `strands.telemetry`, which does emit mappable `gen_ai.*` span events (see
+  `08-the-sdk-surface` §4.2's own status note and `09-the-backbone-measured`
+  §1's). Whether the SDK can now actually grade these 40 cases is
+  **unmeasured** — the "reduce to deterministic go/no_go until the span
+  problem is decided" recommendation below may no longer be the right call,
+  but re-deciding it needs the same Step-0-style falsification
+  `09-the-backbone-measured` ran for `participation`, run against
+  `relevance_gate` instead, before this bullet is rewritten either way.
 
 ## 6. What this implies about the shape of the suite
 
