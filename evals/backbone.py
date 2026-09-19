@@ -29,8 +29,10 @@ caught here, scrubbed, and returned as data.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import shutil
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -48,7 +50,17 @@ from strands_evals.types.evaluation import (
     EvaluationOutput,
 )
 
-from nora.subject import SubjectSpec, know, obtain
+from nora.subject import (
+    Knowledge,
+    Message,
+    NoteSeed,
+    RoomSeed,
+    SubjectSpec,
+    know,
+    obtain,
+    room_for,
+    workspace_for,
+)
 
 #: Names carried on `environment_state`. A reader must key on these, never on
 #: `test_pass`, which is a `bool` and cannot hold the third answer.
@@ -132,6 +144,134 @@ def scrub(text: str, secret: str) -> str:
     return text.replace(secret, "<dsn>") if secret else text
 
 
+#: What a case's `knows:` mapping may state, and what one transcript ROW
+#: inside it may state. Same fail-closed rule, one level in.
+_KNOWABLE = {
+    "transcript", "standing", "standing_age_hours", "notes",
+    "spacing_seconds", "rooms", "conclusions",
+}
+_MESSAGE_KEYS = {"body", "name", "person", "id", "ts", "is_nora", "media"}
+
+
+def _ms(ts: Any) -> int | None:
+    """An ISO-8601 instant as ms, or `None`.
+
+    Corpora that state their own timestamps do so in ISO. They are kept as
+    STATED rather than shifted onto a recent base: cases that assert an
+    `anchor_date` derived from the messages would have that assertion moved
+    if this did. Every other corpus leaves `ts` out and gets the recent-base
+    rule, which is what an age-rendering prompt needs.
+    """
+    if ts is None:
+        return None
+    if isinstance(ts, (int, float)):
+        return int(ts)
+    return int(datetime.fromisoformat(str(ts).replace("Z", "+00:00")).timestamp() * 1000)
+
+
+def _knowledge(raw: Mapping[str, Any]) -> Knowledge:
+    """A case's `knows:` mapping, as the subject's own type.
+
+    **Moved here from `evals/rebuilt/runner.py`, 2026-09-20** — layer 3
+    (case isolation and seeding, which no SDK supplies) living in layer 1
+    (the old harness, to be deleted) was `_drive()`'s own long-standing
+    marker for exactly this move. `evals/rebuilt/runner.py` now imports this
+    back, since its own (older, still-live) harness needs the identical
+    translation — the dependency direction is now correct: the layer being
+    replaced depends on the layer that survives it, not the other way round.
+
+    The translation lives HERE and not in `evals.rebuilt.domain`, which
+    imports nothing from `nora`, and not in `nora.subject`, which knows
+    nothing about this YAML/dict shape.
+    """
+    unknown = set(raw) - _KNOWABLE
+    if unknown:
+        raise ValueError(
+            f"cannot seed {sorted(unknown)} into a real store; "
+            f"knowable: {sorted(_KNOWABLE)}"
+        )
+    transcript = []
+    for entry in raw.get("transcript") or []:
+        if isinstance(entry, str):
+            transcript.append(Message(body=entry))
+            continue
+        unknown = set(entry) - _MESSAGE_KEYS
+        if unknown:
+            # FAIL-CLOSED ON A TRANSCRIPT ROW TOO. Top-level `knows` keys were
+            # already checked; row keys were not, and that asymmetry is how
+            # `media: true` was dropped from five rows with nothing reporting
+            # it. A corpus stating something the runner ignores is a corpus
+            # asserting more than is measured.
+            raise ValueError(
+                f"cannot seed transcript keys {sorted(unknown)}; "
+                f"knowable: {sorted(_MESSAGE_KEYS)}"
+            )
+        transcript.append(Message(
+            body=entry["body"],
+            name=entry.get("name", "Miles"),
+            person=entry.get("person", ""),
+            label=entry.get("id"),
+            at_ms=_ms(entry.get("ts")),
+            is_nora=bool(entry.get("is_nora", False)),
+            media=bool(entry.get("media", False)),
+        ))
+    notes = tuple(
+        NoteSeed(
+            title=n["title"],
+            description=n["description"],
+            body=n["body"],
+            uncertainty=n.get("uncertainty", "open"),
+            closing_condition=n.get("closing_condition", "the room settles it"),
+            anchor_date=n.get("anchor_date", 20260901),
+        )
+        for n in (raw.get("notes") or [])
+    )
+    rooms = tuple(
+        RoomSeed(
+            conversation_id=str(r["conversation_id"]),
+            platform=str(r.get("platform", "signal")),
+            label=str(r.get("label", "")),
+            home=bool(r.get("home", False)),
+            transcript=tuple(
+                Message(body=m["body"], name=m.get("name", "Miles"))
+                if isinstance(m, dict) else Message(body=m)
+                for m in (r.get("transcript") or ())
+            ),
+            standing=r.get("standing"),
+            standing_age_hours=r.get("standing_age_hours"),
+        )
+        for r in (raw.get("rooms") or ())
+    )
+    return Knowledge(
+        conclusions={
+            str(peer): tuple(str(x) for x in (lines or ()))
+            for peer, lines in (raw.get("conclusions") or {}).items()
+        },
+        transcript=tuple(transcript),
+        standing=raw.get("standing"),
+        standing_age_hours=raw.get("standing_age_hours"),
+        notes=notes,
+        rooms=rooms,
+        spacing_seconds=int(raw.get("spacing_seconds", 60)),
+    )
+
+
+async def _close(subject: Any) -> None:
+    """Best-effort teardown. Never raises: a case's RESULT must not depend on
+    whether its cleanup worked, and a teardown error is not a reading.
+
+    **Moved here from `evals/rebuilt/runner.py`, 2026-09-20**, same reason
+    as `_knowledge` above.
+    """
+    for shut in (
+        subject.deps.background.cancel_all(),
+        subject.deps.audit.aclose(),
+        subject.deps.client.close(),
+    ):
+        with contextlib.suppress(Exception):
+            await shut
+
+
 _prefill_exporter: InMemorySpanExporter | None = None
 
 
@@ -212,13 +352,7 @@ class Spec:
 async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
     """Obtain, isolate, seed, drive, tear down. Raises; `nora_task` catches."""
     from evals.rebuilt.entry import ENTRY_POINTS
-    from evals.rebuilt.runner import _knowledge, room_for, workspace_for
 
-    # NOTE, and it is a finding rather than an import: `room_for`,
-    # `workspace_for` and `_knowledge` are LAYER 3 — case isolation and
-    # seeding, which no SDK supplies — but they live in `runner.py`, which is
-    # layer 1 and is to be deleted. They have to move before that happens, and
-    # this import is the marker.
     port = ENTRY_POINTS[spec.entry]
     if spec.repeat > 1 and port.delivers_input:
         # Found by review, 2026-09-19: `port.delivers_input` means a line
@@ -252,8 +386,14 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                 **({"now": datetime.fromisoformat(spec.now)} if spec.now else {}),
             )
         )
+        # Found by review, 2026-09-20: this hardcoded `{}`, ignoring
+        # whatever a case's own `knows:` metadata stated — every S4/S5/S6
+        # case this session wrote happened to seed nothing, so the bug
+        # never showed. A future case that seeds a transcript/notes/rooms
+        # via `metadata={"knows": {...}}` needs this read for real.
         seeded = await know(
-            subject, _knowledge({}), leave_room_for_arrival=port.delivers_input,
+            subject, _knowledge((case.metadata or {}).get("knows", {})),
+            leave_room_for_arrival=port.delivers_input,
         )
         exporter = _prefill_capture()
         exporter.clear()
@@ -298,8 +438,6 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
         # own hooks are SYNC and `_close()` is not, so teardown cannot live
         # there and lives here.
         if subject is not None:
-            from evals.rebuilt.runner import _close
-
             await _close(subject)
         shutil.rmtree(workdir, ignore_errors=True)
 

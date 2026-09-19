@@ -17,6 +17,7 @@ REAL `nora.domain.blocks.render_messages`/`nora.domain.prompt.age` directly
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 
 from strands_evals import Case
 from strands_evals.types.evaluation import EnvironmentState, EvaluationData
@@ -435,3 +436,34 @@ async def test_idempotence_grader_reads_the_repeat_runs_own_error(monkeypatch):
     assert state_of(data, NORA_ERROR_2)
     out = IdempotenceGrader().evaluate(data)[0]
     assert out.label == ERROR, "a repeat run that broke must never read as idempotent"
+
+
+async def test_drive_seeds_from_the_cases_own_knows_metadata(monkeypatch):
+    """Found while moving `_knowledge`/`_close` out of `evals/rebuilt/runner.py`
+    (2026-09-20): `_drive()` called `_knowledge({})` unconditionally, ignoring
+    whatever a case's own `metadata["knows"]` stated. Every S4/S5/S6 case this
+    session wrote happened to seed nothing, so the bug never showed. A future
+    case that seeds a transcript needs this read for real."""
+    seeded_with: dict[str, Any] = {}
+
+    async def fake_drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
+        return Outcome(admitted=None)
+
+    async def capturing_know(
+        _subject: object, knowledge: object, **_kwargs: object,
+    ) -> SimpleNamespace:
+        seeded_with["transcript"] = knowledge.transcript
+        return SimpleNamespace(now_ms=1_700_000_000_000)
+
+    monkeypatch.setitem(ENTRY_POINTS, "dreamer", EntryPoint(drive=fake_drive))
+    monkeypatch.setattr(backbone, "obtain", _fake_obtain)
+    monkeypatch.setattr(backbone, "know", capturing_know)
+
+    case = Case(
+        name="knows-probe", input="x",
+        metadata={"knows": {"transcript": ["今日食咩好呢"]}},
+    )
+    await backbone._drive(case, Spec(database_url="x", entry="dreamer"))
+
+    assert len(seeded_with["transcript"]) == 1
+    assert seeded_with["transcript"][0].body == "今日食咩好呢"

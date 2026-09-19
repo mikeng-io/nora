@@ -15,7 +15,6 @@ nothing is shared between two of them.
 
 from __future__ import annotations
 
-import contextlib
 import dataclasses
 import shutil
 import tempfile
@@ -27,17 +26,8 @@ from typing import Any
 
 import yaml
 
-from nora.subject import (
-    Knowledge,
-    Message,
-    NoteSeed,
-    RoomSeed,
-    SubjectSpec,
-    know,
-    obtain,
-    room_for,
-    workspace_for,
-)
+from evals.backbone import _close, _knowledge
+from nora.subject import SubjectSpec, know, obtain, room_for, workspace_for
 
 from .domain import Case, Outcome, Verdict
 from .entry import ENTRY_POINTS
@@ -126,120 +116,13 @@ def _case(
     )
 
 
-#: What `nora.subject.Knowledge` can write into a real store.
-#:
-#: Fail-closed rather than ignore-unknown, because ignoring is much the worse
-#: of the two: a dropped `conclusions` turns a `-known` case into its own
-#: `-unknown` twin, so the pair reports "the knowledge cut works" having cut
-#: nothing. That is `seed_from_dict`'s own documented footgun.
-#:
-#: `conclusions` was on the WRONG side of this list for half a day, refused on
-#: the claim that Honcho only derives conclusions and cannot be told one. That
-#: was an absence asserted without reading
-#: `nora/infra/honcho/client.py:489` — `conclude()` is production's own write
-#: lane, the one the `remember` tool uses, and it has existed since that tool
-#: was built.
-_KNOWABLE = {
-    "transcript", "standing", "standing_age_hours", "notes",
-    "spacing_seconds", "rooms", "conclusions",
-}
-
-#: What one transcript ROW may state. Same fail-closed rule, one level in.
-_MESSAGE_KEYS = {"body", "name", "person", "id", "ts", "is_nora", "media"}
-
-
-def _ms(ts: Any) -> int | None:
-    """An ISO-8601 instant as ms, or `None`.
-
-    Corpora that state their own timestamps do so in ISO. They are kept as
-    STATED rather than shifted onto a recent base: these cases assert an
-    `anchor_date` derived from the messages, so moving them would move the
-    thing being asserted. Every other corpus leaves `ts` out and gets the
-    recent-base rule, which is what an age-rendering prompt needs.
-    """
-    if ts is None:
-        return None
-    if isinstance(ts, (int, float)):
-        return int(ts)
-    return int(datetime.fromisoformat(str(ts).replace("Z", "+00:00")).timestamp() * 1000)
-
-
-def _knowledge(raw: Mapping[str, Any]) -> Knowledge:
-    """A case's `knows:` mapping, as the subject's own type.
-
-    The translation lives HERE and not in the domain, which imports nothing
-    from `nora`, and not in `nora.subject`, which knows nothing about YAML.
-    """
-    unknown = set(raw) - _KNOWABLE
-    if unknown:
-        raise ValueError(
-            f"cannot seed {sorted(unknown)} into a real store; "
-            f"knowable: {sorted(_KNOWABLE)}"
-        )
-    transcript = []
-    for entry in raw.get("transcript") or []:
-        if isinstance(entry, str):
-            transcript.append(Message(body=entry))
-            continue
-        unknown = set(entry) - _MESSAGE_KEYS
-        if unknown:
-            # FAIL-CLOSED ON A TRANSCRIPT ROW TOO. Top-level `knows` keys were
-            # already checked; row keys were not, and that asymmetry is how
-            # `media: true` was dropped from five rows with nothing reporting
-            # it. A corpus stating something the runner ignores is a corpus
-            # asserting more than is measured.
-            raise ValueError(
-                f"cannot seed transcript keys {sorted(unknown)}; "
-                f"knowable: {sorted(_MESSAGE_KEYS)}"
-            )
-        transcript.append(Message(
-            body=entry["body"],
-            name=entry.get("name", "Miles"),
-            person=entry.get("person", ""),
-            label=entry.get("id"),
-            at_ms=_ms(entry.get("ts")),
-            is_nora=bool(entry.get("is_nora", False)),
-            media=bool(entry.get("media", False)),
-        ))
-    notes = tuple(
-        NoteSeed(
-            title=n["title"],
-            description=n["description"],
-            body=n["body"],
-            uncertainty=n.get("uncertainty", "open"),
-            closing_condition=n.get("closing_condition", "the room settles it"),
-            anchor_date=n.get("anchor_date", 20260901),
-        )
-        for n in (raw.get("notes") or [])
-    )
-    rooms = tuple(
-        RoomSeed(
-            conversation_id=str(r["conversation_id"]),
-            platform=str(r.get("platform", "signal")),
-            label=str(r.get("label", "")),
-            home=bool(r.get("home", False)),
-            transcript=tuple(
-                Message(body=m["body"], name=m.get("name", "Miles"))
-                if isinstance(m, dict) else Message(body=m)
-                for m in (r.get("transcript") or ())
-            ),
-            standing=r.get("standing"),
-            standing_age_hours=r.get("standing_age_hours"),
-        )
-        for r in (raw.get("rooms") or ())
-    )
-    return Knowledge(
-        conclusions={
-            str(peer): tuple(str(x) for x in (lines or ()))
-            for peer, lines in (raw.get("conclusions") or {}).items()
-        },
-        transcript=tuple(transcript),
-        standing=raw.get("standing"),
-        standing_age_hours=raw.get("standing_age_hours"),
-        notes=notes,
-        rooms=rooms,
-        spacing_seconds=int(raw.get("spacing_seconds", 60)),
-    )
+#: `_knowledge` (a case's `knows:` mapping, as `nora.subject.Knowledge`) and
+#: `_close` (best-effort subject teardown) MOVED to `evals.backbone`,
+#: 2026-09-20 — they are layer 3 (case isolation and seeding, which no SDK
+#: supplies), and this module is layer 1, on its way to being deleted once
+#: the corpora are ported onto the new spine (`GOAL-2-backbone.md`). The
+#: dependency now runs the direction that survives the delete: this OLD
+#: harness imports from the NEW one, not the other way round.
 
 
 async def run_once(
@@ -368,18 +251,6 @@ async def run_once(
         # arrives as case errors rather than as an instrument fault.
         await _close(subject)
         shutil.rmtree(workdir, ignore_errors=True)
-
-
-async def _close(subject: Any) -> None:
-    """Best-effort teardown. Never raises: a case's RESULT must not depend on
-    whether its cleanup worked, and a teardown error is not a reading."""
-    for shut in (
-        subject.deps.background.cancel_all(),
-        subject.deps.audit.aclose(),
-        subject.deps.client.close(),
-    ):
-        with contextlib.suppress(Exception):
-            await shut
 
 
 def _scrubbed(exc: BaseException, database_url: str) -> str:

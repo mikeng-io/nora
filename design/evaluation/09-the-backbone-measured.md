@@ -229,7 +229,16 @@ operator's, not this node's.
 - **`room_for`, `workspace_for`, `_knowledge` and `_close` are layer 3 living
   in `runner.py`, which is layer 1 and is to be deleted.** `backbone.py`
   imports them with a comment saying so. They must move before the delete, and
-  that import is the marker.
+  that import is the marker. **DONE, 2026-09-20.** `room_for`/`workspace_for`
+  were already in `nora.subject` — `backbone.py` now imports them directly
+  rather than through `runner.py`. `_knowledge`/`_close` (the two that
+  actually lived in `runner.py`) moved into `evals/backbone.py`, and
+  `runner.py` now imports them BACK, since its own still-live harness needs
+  the identical translation — the dependency now runs the direction that
+  survives the delete. Found and fixed along the way: `_drive()` called
+  `_knowledge({})` unconditionally, ignoring a case's own `knows:` metadata
+  entirely; every case this bundle had hand-written so far happened to seed
+  nothing, so the bug never showed.
 - The two model-dependent cases are not stable at one draw (§3.1). A bare
   subject has neither memory nor group context — in the Step 0 run she said so
   herself: *"查唔到嘢——memory 同 group 都 read 唔到"* — so what these two cases
