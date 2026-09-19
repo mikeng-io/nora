@@ -74,7 +74,7 @@ from nora.domain.ports import (
     MediaObjectStore,
     MemoryStore,
 )
-from nora.obs.tracing import annotate, annotate_generation, attached, generation
+from nora.obs.tracing import TRACE_KIND, annotate, attached, span
 
 log = logging.getLogger("nora.ingest.comprehension")
 
@@ -241,13 +241,15 @@ class MediaComprehension:
             # 2026-09-09) while `nora_media_comprehension_total{status="ok"}`
             # counted the reads happening. `root=True` keeps it its OWN trace —
             # it still does not hold `ingest.media` open.
-            with attached(None), generation(
+            with attached(None), span(
                 "comprehend",
-                root=True,
-                attributes={"nora.platform": platform,
-                   "nora.conversation_id": conversation_id,
-                   "nora.media_label": subject.label,
-                   "nora.media_handle": subject.blob.handle},
+                **{
+                    TRACE_KIND: "generation",
+                    "nora.platform": platform,
+                    "nora.conversation_id": conversation_id,
+                    "nora.media_label": subject.label,
+                    "nora.media_handle": subject.blob.handle,
+                },
             ):
                 await self._comprehend(
                     subject=subject, platform=platform,
@@ -357,7 +359,20 @@ class MediaComprehension:
         # ABOUT somebody's photo, and the row plus `nora.media_handle` already
         # re-derives it — the same reasoning `nora/ingest/relevance_gate.py`
         # gives for keeping a room's own words off its span.
-        annotate_generation(model=model)
+        # Plain `annotate()`, not `annotate_generation()`: this span stopped
+        # being a "generation"-shaped span itself when that helper was
+        # retired (nora.obs.tracing, replaced by nora.agent.telemetry) — it
+        # is still the R-76 root a model call can happen under, just no
+        # longer decorated with the GenAI dialect the helper used to add.
+        # There is still no child span for the describe call itself: neither
+        # this module (`nora.ingest`) nor `nora.infra.vision.client` may
+        # import `nora.agent` for one (the layered-import contract has
+        # `nora.agent` above both), and threading a span handle through
+        # `MediaInterpreter.describe`'s return would widen a port for a
+        # value only the collector reads — the same argument this file
+        # already makes for keeping usage off `MediaDescription`. Recorded,
+        # not fixed, in `nora.agent.telemetry`'s own module docstring.
+        annotate(**{"nora.media_describe_model": model})
         stored = await self._store.comprehend(
             sha256=blob.sha256, title=result.title, description=result.text,
             content=content, model=model,

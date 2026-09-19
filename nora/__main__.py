@@ -19,13 +19,14 @@ import time
 from pathlib import Path
 
 from . import config
+from .agent.telemetry import setup_agent_tracing
 from .app import adoption, cli, runtime
 from .app.composition import Dependencies, StartupError, build_dependencies
 from .config import ConfigError
 from .obs.errors import setup_errors
 from .obs.health import build_health_app, serve
 from .obs.logging import heartbeat, setup_logging
-from .obs.tracing import setup_tracing
+from .obs.tracing import build_sampler
 from .web.api import register_web_routes
 from .web.voice import register_voice
 
@@ -74,12 +75,21 @@ async def build_app(config_path: Path) -> App:
         # (`scripts/release.py`) does stamp the image, and wiring that value
         # through is the follow-up that makes regression tracking real.
     )
-    setup_tracing(
-        enabled=cfg.obs.tracing.enabled,
-        exporter=cfg.obs.tracing.exporter,
-        endpoint=cfg.obs.tracing.endpoint,
-        headers_env=cfg.obs.tracing.headers_env,
-    )
+    if cfg.obs.tracing.enabled:
+        try:
+            setup_agent_tracing(
+                sampler=build_sampler(), service_name="nora",
+                exporter=cfg.obs.tracing.exporter,
+                endpoint=cfg.obs.tracing.endpoint,
+                headers_env=cfg.obs.tracing.headers_env,
+            )
+        except Exception:
+            # Tracing is never load-bearing (nora.obs.tracing.span's own
+            # rule) — a bad endpoint or an unreachable collector must never
+            # take the app down. This was setup_tracing's own guard before it
+            # moved to nora.agent.telemetry.setup_agent_tracing (nora.obs may
+            # not import nora.agent — see that module's docstring).
+            log.warning("tracing setup failed; continuing without tracing", exc_info=True)
 
     deps = await build_dependencies(cfg)
     return App(cfg=cfg, deps=deps)

@@ -96,7 +96,7 @@ are a second stage that this repo does not own and cannot see:
   Langfuse; infrastructure spans go to Jaeger.** A span is not in both.
 
 That second filter is why "it is not in Jaeger" is *not* evidence a generation
-was dropped, and why routing a span through `generation()` removes it from
+was dropped, and why a span carrying `gen_ai.operation.name` is removed from
 Jaeger by design.
 
 The deployed endpoint is `http://host.docker.internal:4318/v1/traces`. The
@@ -111,79 +111,104 @@ and auto-appends, which is why Langfuse there is configured with
 
 ## Instrumenting a model call
 
-**Use `nora.obs.tracing.generation`. Never write the attributes by hand.**
+**As of 2026-09-19, Nora no longer hand-spells the GenAI/Langfuse dialect.**
+There are two paths, and which one a call site uses depends on whether it goes
+through the Strands Agent SDK at all:
+
+**Agent-backed calls** (the tag turn, the debrief fold, the standing fold —
+all three via `nora.agent.structured.ask_text`/`ask_structured`, since
+`4448c737`) need **no instrumentation code at all**. Strands' own `Agent`
+instruments itself: an `invoke_agent {name}` span plus a `chat` model-invoke
+span underneath it, both carrying the OTel GenAI semantic conventions and
+Strands' own redaction lever (see "The open redaction question" below). A
+caller that wants extra structured fields on those spans (`nora.tag_id`,
+`nora.conversation_id`, a call label) passes them as `Agent(trace_attributes=
+{...})` — `ask_text`'s own `trace_attributes` parameter threads this through:
 
 ```python
-from nora.agent.security import trace_safe
-from nora.obs.tracing import annotate_generation, generation
-
-body, withheld = trace_safe(prompt)          # a trace is an egress — see below
-with generation(
-    "engagement.debrief.fold",
-    model=client.model,
-    prompt=body,
-    attributes={"nora.tag_id": tag_id, "nora.debrief.prompt_withheld": withheld},
-):
-    reply = await client.complete(prompt=prompt)
-    annotate_generation(
-        completion=trace_safe(reply.content)[0],
-        finish_reason=reply.finish_reason,
-        input_tokens=usage.prompt_tokens,
-        output_tokens=usage.completion_tokens,
-        total_tokens=usage.total_tokens,
-    )
+got = await ask_text(
+    model=provider, prompt=prompt, timeout_seconds=timeout, system_prompt=system,
+    agent_name="debrief",
+    trace_attributes={"nora.tag_id": tag_id, "nora.conversation_id": conversation_id},
+)
 ```
 
-`tests/architecture/test_generation_spans_use_the_helper.py` enforces this: no
-module outside `nora/obs/tracing.py` may write a `gen_ai.*` or
-`langfuse.observation.*` literal, and it derives that forbidden vocabulary from
-`GENERATION_ATTRIBUTES` rather than repeating it, so a new key added to the
-helper is guarded the moment it is added.
+Do **not** additionally wrap an `ask_text`/`ask_structured` call in a span of
+your own — the Agent already opens one, and a second span around it produces
+two overlapping traces for one model call (exactly the defect this replaced;
+see `nora/engagement/stages/debrief.py::_complete`'s own docstring for the
+incident).
 
-**Why a helper at all.** The spelling was hand-rolled at two call sites and
-absent from every other, and by the time there were two they had already
-diverged: one carried input and output, the other neither, and *no* raw client
-carried token usage — so every gate and debrief call in the collector was priced
-at zero. Read back 2026-09-09: 1041 live traces, four dialects for one fact.
+**Raw `chat.completions.create` calls** (the relevance gate, the vision
+describer — the two that must stay off the Agent SDK; see "What counts as a
+generation" below for why) instrument through
+`nora.agent.telemetry.start_raw_model_span`/`end_raw_model_span`, thin
+wrappers around Strands' own `Tracer.start_model_invoke_span`/
+`end_model_invoke_span` — the same span shape and vocabulary a real Agent
+invocation produces, without needing one:
 
-### Four rules that are not obvious
+```python
+from nora.agent.telemetry import end_raw_model_span, start_raw_model_span
 
-**1. `root=True` only for a span that genuinely opens its own trace.** It is
-what puts `nora.trace_kind` on the span. On a child it is inert (see above).
-Pass it for work reached off a path that is itself plumbing, or for spawned work
-that has detached with `attached(None)`.
+span = start_raw_model_span(
+    messages=[{"role": "user", "content": [{"text": prompt}]}],
+    model_id=model, system_prompt=system,
+)
+response = await client.chat.completions.create(...)
+end_raw_model_span(
+    span=span, content=content, finish_reason=finish_reason,
+    input_tokens=usage.prompt_tokens, output_tokens=usage.completion_tokens,
+    total_tokens=usage.total_tokens,
+)
+```
 
-**2. Spawned work does not inherit what you think.** `asyncio.create_task`
-**copies** the caller's contextvars, so a span opened inside a spawned job is a
-*child* of whatever was current at `create_task` time — often a completely
-unrelated turn. `attached(None)` detaches; `capture_context()` /
-`attached(carrier)` re-attaches deliberately.
+`nora.infra.vision.client`'s raw call is the one exception that instruments
+neither way — see "Known gaps" below.
 
-**Detaching and dropping are two decisions.** Conflating them is what hid the
-media read for two weeks: `comprehend` correctly detached from the ingest trace
-*and* declared `plumbing`, so it never reached any collector while its counter
-happily recorded reads. Detach to avoid holding a trace open; declare
-`generation` because there is a model call under it. Both, independently.
+**Enforced, in the narrower sense that survives the migration**:
+`tests/architecture/test_raw_model_calls_use_strands_telemetry.py` still scans
+for a hand-typed `gen_ai.*`/`langfuse.observation.*` string literal outside
+`nora/agent/telemetry.py`, so a call site cannot reinvent a THIRD dialect
+alongside Strands' own. It does **not** — and, given `nora.obs` may not import
+`nora.agent`, cannot — bind `trace_safe` (or any redaction) to a call site the
+way the old `generation()` docstring implied; see the redaction section below.
 
-**3. A trace is an egress.** The collector is a third party over the network, so
-prompt and completion text must pass `nora.agent.security.trace_safe` first —
-the same identifier and coordinate floor that guards every other exit. It fails
-closed at whole-text granularity and names the pattern that fired, because "the
-trace shows nothing" and "the trace refused to show it" are different readings
-and only one is a bug.
+**Why this replaced the old helper.** `nora.obs.tracing.generation`/
+`annotate_generation` were a hand-rolled `langfuse.observation.*` + `gen_ai.*`
+dialect that two call sites had already spelled two different ways before the
+helper existed (read back 2026-09-09: 1041 live traces, four dialects, one
+modality invisible) — and Strands' own `Tracer` already implements the same
+convention, upstream-maintained, for the SDK path. Keeping a second,
+hand-rolled copy of that convention for the four raw/hand-instrumented call
+sites meant maintaining two things that had to agree with each other and with
+Strands' own spelling; adopting Strands' vocabulary for the raw path too
+removes the second copy. It also fixed a live bug the old design carried
+silently: the debrief/standing fold moved onto a real Strands `Agent` in
+`4448c737`, but nothing removed the OLD hand-rolled `generation()` wrapper
+still sitting around that call — so every fold, consolidate, and verdict call
+produced two nested, overlapping traces (the hand-rolled span AND Strands' own
+agent/model-invoke spans underneath it) for one model call, which is the
+concrete shape behind "10+ separate traces per message" in Langfuse.
 
-It cannot live beside the span helper: **`nora.obs` sits BELOW `nora.agent` in
-the import contract** (`pyproject.toml`, "layered architecture"), so
-`generation` cannot reach the egress predicates and does not pretend to. Its
-`prompt`/`completion` parameters take *already screened* text.
+### The open redaction question
 
-**4. Not every model call may carry its text.** Screening decides whether text
-*can* go; whose words they are decides whether it *should*. The debrief puts its
-prompt on the span because it runs on a turn Nora was tagged in. The relevance
-gate does not, and that is deliberate rather than an omission — it reads
-**every** room, including rooms Nora does not serve, so only a digest goes on
-the wire and the retained transcript re-derives the rest. The media
-comprehension does the same for a description of somebody's photo.
+Strands' own `Tracer` has a **native redaction lever**
+(`OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_unredacted_attributes=<list>`), which is
+what `design/13-trace-content-and-redaction.md` (still `status: open-decision`)
+investigates. It is **off by default**, meaning every Agent-backed model call
+— including the tag turn's own — sends its real content to the collector
+unredacted today. That is a config surface, not a per-call-site obligation:
+there is no `trace_safe`-style call a debrief/standing-fold caller makes
+anymore, because there is no seam left to intercept Strands' own automatic
+event recording (`Tracer._add_event_messages` writes the real messages
+directly). `nora.agent.security.trace_safe` still exists — its identifier/
+coordinate screen is unrelated to Agent-backed spans and still guards every
+other exit it always did (dream-screened replies, place lookups) — but no
+current call site uses it to pre-screen content bound for a trace: the two
+raw call sites below never send real content in the first place (see "What a
+raw call owes", above), so there is nothing left for it to screen there
+either. For anything Agent-backed, `design/13`'s lever is the only mechanism,
+and it is not yet turned on.
 
 ---
 
@@ -193,9 +218,9 @@ comprehension does the same for a description of somebody's photo.
 
 | call | generation? | why |
 |---|---|---|
-| the tag turn (Strands) | yes | instrumented by the SDK itself |
-| the relevance gate, the debrief, the standing fold | yes | raw `chat.completions.create`, instrumented by hand through the helper |
-| the media comprehension (`comprehend`) | yes | a describer or a summarizer under every branch |
+| the tag turn, the debrief fold, the standing fold (Strands) | yes | instrumented by the SDK itself — a real `Agent` invocation since `4448c737` |
+| the relevance gate | yes | raw `chat.completions.create`, instrumented through `nora.agent.telemetry.start_raw_model_span`/`end_raw_model_span` (must stay off the Agent SDK — see `nora.agent.structured`'s own docstring for the measured safety reason) |
+| the media comprehension (`comprehend`) | yes | a describer or a summarizer under every branch, though the describer's own raw call has no model-invoke span of its own (Known gaps, below) |
 | the STT service (`deploy/stt`) | **no** | local ASR on Nora's own private network, not an LLM |
 
 The STT line is the one that needs saying out loud, because its absence looks
@@ -205,12 +230,16 @@ produces *do* reach a trace, through the summary pass over the transcript, which
 runs under `comprehend`. Putting local ASR in an LLM-observability tool is a
 small version of the 97%-plumbing mistake.
 
-**A raw model call owes more than a span.** Four paths bypass the agent SDK
-deliberately, and what such a client must carry itself — a bound, a
-`finish_reason` read, a usage annotation — is enforced separately by
-`tests/architecture/test_raw_model_calls_carry_their_own_machinery.py`. That
-gate and the dialect gate above are complementary: one is about what the *client*
-does, the other about how the *span* is spelled.
+**A raw model call owes more than a span.** Two paths bypass the agent SDK
+deliberately (the relevance gate and the vision describer — down from four
+before `4448c737` moved the debrief and standing fold onto the SDK
+transport), and what such a client must carry itself — a bound, a
+`finish_reason` read, a usage annotation where the layering allows it — is
+enforced separately by `tests/architecture/
+test_raw_model_calls_carry_their_own_machinery.py`. That gate and the dialect
+gate above (`test_raw_model_calls_use_strands_telemetry.py`) are
+complementary: one is about what the *client* does, the other about how the
+*span* is spelled.
 
 ---
 
@@ -461,3 +490,36 @@ Recorded here so they are findings rather than surprises.
 - **Debug spans from probes share the production Langfuse project.**
   `probe2`, `in-container-probe`, `nora-plain-span`, `fanout-test-span-2` and
   others are still in it (counted 2026-09-09).
+- **The debrief/standing fold lost a redaction guarantee they used to have,
+  moving onto strands.telemetry (2026-09-19).** Before this, the hand-rolled
+  wrapper around those calls ran `nora.agent.security.trace_safe` on the
+  prompt/completion before putting either on a span — a whole-text identifier/
+  coordinate screen, independent of `design/13`'s native-lever question. Now
+  that the call runs through a real Strands `Agent`, its content reaches the
+  collector however Strands' own event recording writes it, with no seam left
+  to substitute pre-screened text — so this content is exactly as unredacted
+  as the tag turn's own Agent-backed content already was (consistent with the
+  existing precedent, not a new exposure class, but a real guarantee this
+  specific call site used to have and no longer does). `design/13`'s native
+  lever is the only mechanism left that could restore it, for every
+  Agent-backed call at once, and it is off by default.
+- **The relevance gate's prompt (every room's transcript, including rooms
+  Nora does not serve) now reaches the collector too — an OPERATOR DECISION,
+  not a side effect discovered after the fact.** Moving the gate's raw call
+  onto `nora.agent.telemetry.start_raw_model_span`/`end_raw_model_span`
+  (2026-09-19) means Strands' `Tracer` records `gen_ai.system.message`/
+  `.user.message` span events unconditionally — the same mechanism that
+  carries real content for every Agent-backed call, which this raw call
+  never went through before. Before this change, the gate's span carried
+  only its own safe verdict JSON; the comment in `nora/ingest/
+  relevance_gate.py` that said the prompt was never put on the wire was true
+  until this date. `design/evaluation/08-the-sdk-surface.md` §4.2 had
+  already named this exact fork — "either unscreened model text goes on the
+  collector wire, or a second gate-specific mapper is written… 40 of 150
+  [eval] cases wait on it" — one day before the session that resolved it.
+  The operator was asked directly and chose to accept it, specifically to
+  unblock that eval-suite gap; this was not verified by re-running the eval
+  mapper against a live case and should be confirmed by whoever picks that
+  up next. `design/13`'s native redaction lever governs this content too
+  (`Tracer._redact` runs on both the Agent path and this raw-span path), so
+  turning it on would cover both at once.

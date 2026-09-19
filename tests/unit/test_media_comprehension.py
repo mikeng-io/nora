@@ -576,9 +576,11 @@ async def test_the_read_is_its_own_trace_and_reaches_the_collector(
         "held open for as long as a video read takes"
     )
     assert spans["comprehend"].parent is None, "the comprehension span is not a root"
-    # And it is spelled the one way Langfuse renders a generation from — the
-    # whole point of routing it through `nora.obs.tracing.generation`.
-    assert spans["comprehend"].attributes["langfuse.observation.type"] == "generation"
+    # The R-76 root declaration — no `langfuse.observation.type` spelling on
+    # this span anymore: `generation()` (which set both) is retired, and this
+    # span is not itself a model-invoke span (there is no child one for the
+    # vision call either, a known gap — see `nora.agent.telemetry`'s own
+    # module docstring), only the root a model call CAN happen under.
     assert spans["comprehend"].attributes[TRACE_KIND] == "generation"
 
 

@@ -55,9 +55,11 @@ exact line this module draws.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
+from opentelemetry.util.types import AttributeValue
 from pydantic import BaseModel
 from strands import Agent
 from strands.models.openai import OpenAIModel
@@ -185,6 +187,7 @@ async def ask_text(
     *, model: OpenAIModel, prompt: str, timeout_seconds: float,
     system_prompt: str | None = None,
     agent_name: str = DEFAULT_STRUCTURED_AGENT_NAME,
+    trace_attributes: Mapping[str, AttributeValue] | None = None,
 ) -> StructuredResult:
     """One call returning TEXT, through the SDK, with no loop and no tools.
 
@@ -198,9 +201,18 @@ async def ask_text(
     traces under, so the debrief's fold/verdict calls are distinguishable
     from the event fold's in Langfuse instead of all reading
     `invoke_agent Strands Agents`.
+
+    `trace_attributes` rides `Agent`'s own `trace_attributes` kwarg, which the
+    SDK's event loop copies onto both the agent span and the `chat`
+    model-invoke span underneath it (`strands/event_loop/event_loop.py`,
+    `custom_trace_attributes=agent.trace_attributes` on both). This is what
+    lets `tag_id`/`conversation_id` land on the actual model-call span now
+    that the caller no longer wraps this call in its own hand-rolled span to
+    stamp them onto — see `nora.engagement.stages.debrief`.
     """
     agent = Agent(model=model, tools=[], callback_handler=None,
-                  system_prompt=system_prompt, name=agent_name)
+                  system_prompt=system_prompt, name=agent_name,
+                  trace_attributes=trace_attributes)
     result = await asyncio.wait_for(
         agent.invoke_async(prompt), timeout=timeout_seconds,
     )

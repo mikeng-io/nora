@@ -30,6 +30,7 @@ from zoneinfo import ZoneInfo
 import boto3
 from openai import AsyncOpenAI
 from openai.types.shared.reasoning_effort import ReasoningEffort
+from opentelemetry.util.types import AttributeValue
 
 from nora.agent import factory, tool_choice
 from nora.agent.dreamer import (
@@ -49,6 +50,12 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.relay import Relay
 from nora.agent.room import Room
 from nora.agent.structured import ask_text, build_structured_model
+from nora.agent.telemetry import (
+    end_raw_model_span,
+    end_raw_model_span_with_error,
+    start_raw_model_span,
+)
+from nora.agent.telemetry import timed as telemetry_timed
 from nora.agent.tools import OriginRoom
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.app.voice_events import VoiceEventConsumer
@@ -140,7 +147,6 @@ from nora.language.proactive import (
 )
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
-from nora.obs.tracing import annotate_generation
 from nora.persons import Persons, PersonsError, load_persons
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.media import DiscordMediaSource
@@ -333,60 +339,6 @@ def _adaptor_budget(b: DreamBudgetConfig) -> AdaptorBudget:
     )
 
 
-def _annotate_usage_triple(usage: tuple[int, int, int] | None) -> None:
-    """The SDK's accumulated `(prompt, completion, total)` onto the current
-    generation span.
-
-    Through `annotate_generation`, not a hand-spelled `annotate`: that helper
-    exists so a call site cannot invent a third spelling of the token names,
-    and this one was written before it landed.
-
-    ACCUMULATED across the exchange's turns, which is the honest number for a
-    structured call — the tool round-trip is what it cost to get one verdict.
-    A provider that reported nothing records NOTHING rather than zero; writing
-    0 would assert the call was free, and a generation reporting zero tokens
-    is exactly what Langfuse showed for the gate, the debrief and the standing
-    fold until 2026-09-08."""
-    if usage is None:
-        return
-    prompt, completion, total = usage
-    annotate_generation(
-        input_tokens=prompt, output_tokens=completion, total_tokens=total,
-    )
-
-
-def _annotate_usage(response: Any) -> None:
-    """Put a raw completion's token counts on the span that is current.
-
-    Strands emits `gen_ai.usage.*` itself; a raw `chat.completions.create`
-    emits nothing, so every raw client has to do this or its call exports to
-    Langfuse as a generation that cost zero. Measured 2026-09-08: the gate and
-    the debrief both did exactly that, and the debrief has since it shipped.
-
-    ON THE SPAN, never in the return type. Usage is the provider's fact and no
-    caller's verdict depends on it; widening a port to carry a number only the
-    collector reads would be the measurement changing the thing it measures.
-
-    A provider that omits usage records NOTHING rather than zero — writing 0
-    would assert the call was free, the same argument `finish_reason=... or ""`
-    makes one field over.
-
-    `tests/architecture/test_raw_model_calls_carry_their_own_machinery.py` is
-    what keeps a fifth raw client from forgetting this.
-    """
-    usage = getattr(response, "usage", None)
-    if usage is None:
-        return
-    # The SPELLING is `annotate_generation`'s, not this function's: the five
-    # attribute names for these three numbers live once, beside every other
-    # name that makes a span a generation, so a sixth raw client cannot invent
-    # a sixth spelling. What stays here is the only part that is the
-    # PROVIDER's: which fields an OpenAI-shaped response calls them.
-    annotate_generation(
-        input_tokens=usage.prompt_tokens,
-        output_tokens=usage.completion_tokens,
-        total_tokens=usage.total_tokens,
-    )
 
 
 class _RelevanceGateModelClient:
@@ -499,41 +451,64 @@ class _RelevanceGateModelClient:
         return self._model
 
     async def complete(self, *, system: str, prompt: str) -> GateCompletion:
-        response = await asyncio.wait_for(
-            self._client.chat.completions.create(
-                model=self._model,
-                messages=[
-                    # The instruction in the SYSTEM role, the room in the USER
-                    # role. Concatenated into one user string — which this
-                    # never was — a member typing `[assistant]:` would sit in
-                    # exactly the role the operator's rules occupy, and nothing
-                    # downstream could tell them apart.
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": prompt},
-                ],
-                response_format={"type": "json_object"},
-                max_tokens=self._max_tokens,
-                temperature=self._temperature,
-                reasoning_effort=self._reasoning_effort,
-            ),
-            timeout=self._timeout_seconds,
+        # A span of its own — `start_raw_model_span`/`end_raw_model_span`
+        # (`nora.agent.telemetry`, thin wrappers around Strands'
+        # `Tracer.start_model_invoke_span`/`end_model_invoke_span`) — nested
+        # under whatever `nora.ingest.relevance_gate.decide` has open
+        # (a plain `span()`, not a `generation()`: the decision procedure
+        # itself is not one model call, so it no longer pretends to be the
+        # generation span too). This is the ONLY thing that changed about
+        # this call: `messages`/`response_format`/`reasoning_effort` below
+        # are byte-for-byte what `4448c737`/#186 measured 6/6 safe — the
+        # docstring's caveats bind exactly as much as before.
+        span = start_raw_model_span(
+            messages=[{"role": "user", "content": [{"text": prompt}]}],
+            model_id=self._model, system_prompt=system,
         )
-        # Token cost, onto the gate's OWN span rather than into
-        # `GateCompletion`. The gate has no use for usage — its verdict does
-        # not depend on it — and widening the port's return type to carry a
-        # number only the collector reads would be the measurement changing
-        # the thing it measures. `annotate_generation` writes to the span that
-        # is current right now, and that is `relevance_gate`'s, because
-        # `decide` opens it around this call.
-        _annotate_usage(response)
+        with telemetry_timed() as elapsed:
+            try:
+                response = await asyncio.wait_for(
+                    self._client.chat.completions.create(
+                        model=self._model,
+                        messages=[
+                            # The instruction in the SYSTEM role, the room in
+                            # the USER role. Concatenated into one user
+                            # string — which this never was — a member typing
+                            # `[assistant]:` would sit in exactly the role the
+                            # operator's rules occupy, and nothing downstream
+                            # could tell them apart.
+                            {"role": "system", "content": system},
+                            {"role": "user", "content": prompt},
+                        ],
+                        response_format={"type": "json_object"},
+                        max_tokens=self._max_tokens,
+                        temperature=self._temperature,
+                        reasoning_effort=self._reasoning_effort,
+                    ),
+                    timeout=self._timeout_seconds,
+                )
+            except Exception as exc:
+                end_raw_model_span_with_error(
+                    span=span, error_message=str(exc) or type(exc).__name__,
+                    exception=exc,
+                )
+                raise
+            latency_seconds = elapsed()
         choice = response.choices[0]
-        return GateCompletion(
-            content=(choice.message.content or "").strip(),
-            # `or ""` and not a `"stop"` default: a provider that omits the
-            # field has told us nothing, and inventing `"stop"` would assert
-            # the call completed.
-            finish_reason=choice.finish_reason or "",
+        content = (choice.message.content or "").strip()
+        # `or ""` and not a `"stop"` default: a provider that omits the
+        # field has told us nothing, and inventing `"stop"` would assert
+        # the call completed.
+        finish_reason = choice.finish_reason or ""
+        usage = getattr(response, "usage", None)
+        end_raw_model_span(
+            span=span, content=content, finish_reason=finish_reason,
+            input_tokens=getattr(usage, "prompt_tokens", None),
+            output_tokens=getattr(usage, "completion_tokens", None),
+            total_tokens=getattr(usage, "total_tokens", None),
+            latency_seconds=latency_seconds,
         )
+        return GateCompletion(content=content, finish_reason=finish_reason)
 
 
 class _DebriefModelClient:
@@ -591,13 +566,20 @@ class _DebriefModelClient:
     def model(self) -> str:
         return self._model_id
 
-    async def complete(self, *, system: str, prompt: str) -> DebriefCompletion:
+    async def complete(
+        self, *, system: str, prompt: str,
+        trace_attributes: Mapping[str, AttributeValue] | None = None,
+    ) -> DebriefCompletion:
         got = await ask_text(
             model=self._provider, prompt=prompt,
             timeout_seconds=self._timeout_seconds, system_prompt=system,
-            agent_name=self._agent_name,
+            agent_name=self._agent_name, trace_attributes=trace_attributes,
         )
-        _annotate_usage_triple(got.usage)
+        # No usage annotation here anymore: this is a real Strands `Agent`
+        # invocation (`ask_text`), and Strands emits `gen_ai.usage.*` on its
+        # own model-invoke span itself — the old `_annotate_usage_triple` was
+        # written for the hand-rolled span this call used to run inside,
+        # which is gone (see `nora.engagement.stages.debrief._complete`).
         return DebriefCompletion(
             content=got.content, finish_reason=got.finish_reason,
         )

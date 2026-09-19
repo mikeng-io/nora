@@ -237,6 +237,35 @@ behaviour.
 
 ### 4.2 The gate's 40 cases are measured BROKEN, not open
 
+**STATUS UPDATE, 2026-09-19 — the fork this section names was resolved,
+in the "unscreened content on the wire" direction, by an unrelated
+tracing-replacement session (adopting `strands.telemetry` in place of the
+hand-rolled `nora.obs.tracing.generation()` this section is written
+against).** `nora/ingest/relevance_gate.py`'s raw call now opens/closes
+through `nora.agent.telemetry.start_raw_model_span`/`end_raw_model_span`,
+thin wrappers around Strands' own `Tracer.start_model_invoke_span`/
+`end_model_invoke_span` — which DOES emit `gen_ai.system.message`/
+`gen_ai.user.message`/`gen_ai.choice` span events, carrying the room's real
+transcript and the operator's real instruction text unscreened (verified:
+`Tracer._add_event_messages`/`_add_system_prompt_event` record them
+unconditionally). The operator confirmed this tradeoff explicitly, told the
+exposure this paragraph already named, choosing to accept it rather than
+strip the content or add a gate-specific screen. The debrief/standing-event
+pass's model calls independently moved onto a real Strands `Agent`
+invocation earlier (`4448c737`), and the hand-rolled wrapper span that had
+been sitting on top of that Agent invocation (producing a redundant,
+overlapping trace, not fixing the mapper problem) was removed in the same
+session — so debrief/standing-event should now match the "already holds"
+shape §4.2 describes below for `participation`/`tag`/`dreamer`/
+`proactive_act`, though this was not verified by re-running the eval
+mapper against a live case. **Whether this actually moves any of the 40
+gate cases (or the debrief/standing-event ones under "wider than the
+gate," below) from `score=0` to a real trajectory is unmeasured** — that
+verification belongs to a session working the evaluation suite itself, not
+this tracing-focused one. The paragraphs below are left as originally
+written (the historical record of the fork, still accurate as of when it
+was measured); this note is the only correction.
+
 The first draft called this OPEN. It is not.
 
 - `nora/ingest/relevance_gate.py` — the class docstring says *"never constructs

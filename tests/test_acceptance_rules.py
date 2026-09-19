@@ -458,11 +458,16 @@ RULE_TESTS = {
     # order backwards is the failure that silently corrupts §6's own reading of
     # whether the trigger has degraded into a clock.
     "R-72": "test_ungrounded_wins_when_both_conditions_hold",
-    # R-73 names the IDENTIFIER test rather than the coordinate one: both are
-    # in the index row, but a phone number reaching a third-party collector is
-    # the exposure `nora.agent.egress` exists for, and the prompt side is the
-    # half that carries the turn's raw tool results.
-    "R-73": "test_an_identifier_never_reaches_the_collector",
+    # R-73's debrief/standing-fold enforcement (this repo's own
+    # `test_an_identifier_never_reaches_the_collector` /
+    # `test_a_coordinate_in_the_answer_never_reaches_the_collector`) was
+    # DELETED 2026-09-19, moving the fold onto strands.telemetry — see
+    # `design/09-decision-index.md`'s R-73 row for the narrowing note and
+    # `docs/observability.md`'s "Known gaps" for the disclosed consequence.
+    # The PRINCIPLE still holds and is still enforced elsewhere; this points
+    # at `who_said`'s enforcement instead, which the decision index's own
+    # R-73 row already cited as a second satisfying test.
+    "R-73": "test_neither_the_words_nor_a_line_reaches_the_collector",
     # R-74 names the no-evidence refusal rather than the citation check,
     # because it is the clause a future change is most likely to "simplify":
     # a passed anchor date LOOKS sufficient for expiry, and treating it as
@@ -1012,7 +1017,9 @@ async def test_r87_the_standing_fold_reads_since_a_row_id_watermark():
         def model(self) -> str:
             return "test-model"
 
-        async def complete(self, *, system: str, prompt: str) -> debrief.Completion:
+        async def complete(
+            self, *, system: str, prompt: str, trace_attributes=None,
+        ) -> debrief.Completion:
             self.prompts.append(f"{system}\n\n{prompt}")
             return debrief.Completion(
                 json.dumps({"standing": "the revised position"}), "stop")

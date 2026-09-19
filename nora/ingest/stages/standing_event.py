@@ -240,10 +240,12 @@ async def _event_fold(*, key: Key, wiring: Wiring, metrics: Metrics) -> None:
     path's own `plumbing` root (`_check`, dropped at the sampler — R-76), and
     `ConversationSlots.release_and_dispatch`'s `finally`, which may run with
     no span in context at all or with some unrelated turn's span current.
-    Either way the fold's two model calls (`engagement.debrief.fold` and
-    `.verdict`, via `debrief._complete`) must reach the collector under a
-    trace named for what they are, not vanish under a dropped root or surface
-    as an unnamed child of somebody else's turn.
+    Either way the fold's two model calls (via `debrief._complete`, labelled
+    `nora.debrief.call=fold`/`=verdict` on the Strands-produced span since
+    2026-09-19 — no longer separately-named `engagement.debrief.fold`/
+    `.verdict` spans, see `_standing`'s own comment below) must reach the
+    collector under a trace that is theirs, not vanish under a dropped root
+    or surface as an unnamed child of somebody else's turn.
     """
     platform, conversation_id = key
     try:
@@ -357,11 +359,11 @@ async def _fold_batch(
         system, user = _debrief_prompt(
             instructions=instructions, rendered=rendered, max_chars=wiring.max_chars,
         )
-        # Through `debrief._complete` (issue #209), the same GENERATION
-        # wrapper the tag path's fold call uses, so this renders as
-        # `engagement.debrief.fold` with a model, a prompt digest and a
-        # `finish_reason` instead of an unwrapped `client.complete`. No tag
-        # exists on this path, so `tag_id=""` — the honest value, not a
+        # Through `debrief._complete` (issue #209) — the same delegation the
+        # tag path's fold call uses, so this reaches the collector labelled
+        # `nora.debrief.call=fold` on whatever span `client.complete`
+        # produces, instead of an unwrapped, untraced `client.complete`. No
+        # tag exists on this path, so `tag_id=""` — the honest value, not a
         # borrowed or fabricated one.
         reply = await _debrief_complete(
             wiring.client, call="fold", tag_id="", conversation_id=conversation_id,

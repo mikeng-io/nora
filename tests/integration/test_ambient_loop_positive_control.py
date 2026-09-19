@@ -326,7 +326,9 @@ class _ScriptedDebriefClient:
     def model(self) -> str:
         return "scripted-debrief"
 
-    async def complete(self, *, system: str, prompt: str) -> debrief.Completion:
+    async def complete(
+        self, *, system: str, prompt: str, trace_attributes=None,
+    ) -> debrief.Completion:
         if system.startswith(self._standing_objective):
             self.standing_calls.append(prompt)
             return debrief.Completion(

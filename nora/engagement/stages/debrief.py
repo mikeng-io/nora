@@ -65,22 +65,47 @@ by changing what it measures, which is a broken gate wearing a passing number.
 
 ## The fold
 
-**A plain `chat.completions.create`, never a tools-less Strands `Agent`.** A
-tools-less adaptor is a completion wearing an agent's construction
-(`03-no-agent-loop.md`): it inherits the loop machinery's failure modes for none
-of its benefits. The rule that decides it is general — *if the selection is
-knowable before the call it is an input; if it depends on what the model
-concludes mid-reasoning it must be a tool* — and the debrief's whole input set
-(the prior position, this turn's trace, the transcript) is knowable in advance.
-There is no tool here, full stop.
+**Was a plain `chat.completions.create`, never a tools-less Strands `Agent`,
+until `4448c737` moved it onto one anyway.** The argument below was written
+against exactly what this stage now does — `client.complete` (production:
+`_DebriefModelClient`) calls `nora.agent.structured.ask_text`, which builds
+`Agent(model=model, tools=[], callback_handler=None, ...)`: a tools-less
+adaptor, the shape this paragraph's own rule (`03-no-agent-loop.md` — *if the
+selection is knowable before the call it is an input; if it depends on what
+the model concludes mid-reasoning it must be a tool*, and the debrief's whole
+input set is knowable in advance) argues has nothing to gain from being an
+Agent. It moved anyway, for the tracing benefit `4448c737`/this stage's own
+`_complete` docstring records — Strands' own `Tracer` instruments an Agent
+invocation for free, which is what let the hand-rolled `generation()` span
+this file used to wrap the call in be deleted (2026-09-19) rather than kept
+as the only thing tracing it. This is a live, unresolved tension between two
+correct arguments, not a stale sentence to quietly delete: the "no tool, no
+Agent" rule above is still right on its own terms, and the move happened for
+a reason orthogonal to it.
 
-**`finish_reason` is checked explicitly**, and that is the raw call's price of
-admission. A Strands agent raises `MaxTokensReachedException` on a cut-off; a
-raw completion does not — it returns `finish_reason="length"` and a **silently
-truncated body**. Letting that reach a JSON parser is the R-27 substitution this
-architecture exists to prevent, one layer down: a partial parse that happens to
-succeed is an ERROR reported as a PASS. A `"length"` finish is `unavailable`,
-never a fold.
+**`finish_reason` is checked explicitly in `_check`, and the check itself is
+still right — but whether it is ever REACHED on a genuine cut-off is now an
+open question, not the settled property this paragraph used to describe.**
+`ask_text` does translate a NORMALLY-RETURNED Strands `stop_reason` back into
+the raw-completion vocabulary (`"max_tokens"` → `"length"`) so `_check` sees
+what it always checked for. But Strands' event loop does not always return
+normally on a cut-off — verified against the installed SDK
+(`strands/event_loop/event_loop.py:304-311`): `stop_reason == "max_tokens"`
+RAISES `MaxTokensReachedException` unconditionally, and `ask_text`
+(`nora/agent/structured.py`) has **no catch for it**, unlike the tag turn's
+own Agent invocation, which `nora/agent/factory.py`'s `run_turn` explicitly
+catches for exactly this reason (measured incident, 2026-09-02: an uncaught
+`MaxTokensReachedException` there read as a generic silent failure and
+dropped a recoverable partial reply). Whether `ask_text`'s own
+`getattr(result, "stop_reason", "")` line is ever reachable for a real
+max-tokens cutoff, or whether every such cutoff instead raises past `ask_text`
+into `_complete`/`run`'s outer `except BaseException` and is counted as
+`nora_debrief_total{outcome="error"}` rather than the `unavailable` this
+paragraph describes, has not been verified live and is not this session's to
+fix (it predates the tracing replacement — `4448c737` moved the debrief onto
+`ask_text` without wiring the same catch `factory.py` has). Flagged rather
+than silently asserted as working; see the operator report for this session
+for the decision on whether to fix or file it.
 
 **The fold reads the current Standing before writing the next. This is the
 non-negotiable** (§4), and it is the one requirement with live evidence behind
@@ -138,8 +163,9 @@ from dataclasses import dataclass
 from datetime import datetime, tzinfo
 from typing import Any, NamedTuple, Protocol
 
+from opentelemetry.util.types import AttributeValue
+
 from nora.agent.dream_screen import screen
-from nora.agent.security import trace_safe
 from nora.agent.tools import note_handle
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import DeliveryStatus, TranscriptRow
@@ -156,7 +182,7 @@ from nora.domain.standing import STANDING_STORE_CALLS_PER_FOLD, Standing
 from nora.domain.tag_trace import TagTrace
 from nora.domain.turn_verdict import UNSUPPORTED_MAX_ITEMS, TurnVerdict
 from nora.obs.metrics import Metrics
-from nora.obs.tracing import annotate, annotate_generation, generation
+from nora.obs.tracing import annotate
 
 from ..debrief_render import render_debrief_input, render_verdict_input
 
@@ -198,7 +224,10 @@ class ModelClient(Protocol):
     @property
     def model(self) -> str: ...
 
-    async def complete(self, *, system: str, prompt: str) -> Completion: ...
+    async def complete(
+        self, *, system: str, prompt: str,
+        trace_attributes: Mapping[str, AttributeValue] | None = None,
+    ) -> Completion: ...
 
 
 class ObjectiveSource(Protocol):
@@ -261,79 +290,42 @@ async def _complete(
     client: ModelClient, *, prompt: tuple[str, str], call: str,
     tag_id: str, conversation_id: str,
 ) -> Completion:
-    """The fold's model call, as a GENERATION span (issue #64).
+    """The fold's model call.
 
-    Until this existed the Standing fold was the only model call in the process
-    with no instrumentation at all: Strands traces the tag path's agent loop
-    from the inside, and the debrief is deliberately NOT a Strands agent (this
-    module's docstring says why), so nothing wrote a span for it. Counters said
-    a fold took three seconds; nothing said what it read or what it answered —
-    on the one tier whose output is injected into every later turn.
+    **No hand-rolled span here anymore (was issue #64's GENERATION span;
+    removed as part of the strands.telemetry replacement).** `client.complete`
+    is `_DebriefModelClient.complete` in production, which calls
+    `nora.agent.structured.ask_text` — a real Strands `Agent` invocation since
+    `4448c737` moved the fold and the standing tier onto the SDK transport.
+    Strands instruments that itself: an agent span plus a `chat` model-invoke
+    span underneath it, both carrying the SDK's own GenAI semconv and its
+    native redaction lever (`design/13-trace-content-and-redaction.md`) — the
+    same mechanism the tag path's own agent loop already relies on.
 
-    **Hand-written rather than an OpenAI auto-instrumentor**, and the reason is
-    this function's own body. An instrumentor hooks the SDK, so it would trace
-    every `AsyncOpenAI` call in the process — the language observers, the media
-    describers — and it would put the raw prompt on the wire with no screen in
-    front of it. Both halves of that are wrong for this repo: the widening is
-    unasked for, and the egress floor above is not optional.
+    Wrapping that in a SECOND, hand-rolled span (as this function used to)
+    produced a redundant parent around Strands' own agent span for every
+    fold/consolidate/verdict call — two nested, overlapping traces for one
+    model call. That double instrumentation predates the SDK-transport move
+    (this span existed when the debrief's model call genuinely had nothing
+    else tracing it) and was never removed once the move made it redundant.
 
-    Both the OTel GenAI conventions and Langfuse's own attribute names are set.
-    They are two spellings of one fact and neither is guessed: the conventions
-    are what a future collector reads, `langfuse.observation.*` is what today's
-    one renders a generation from.
-
-    It is a CHILD of `engagement.debrief` by context, not by wiring — the
-    pipeline opens that span around `debrief.run`, and `asyncio.wait_for` keeps
-    the context whether it awaits in place or wraps a task.
-
-    **`tag_id`/`conversation_id`, not a `TagTrace`** (issue #209). The tag
-    path's three call sites have a whole `TagTrace` in hand and the event fold
-    (`nora.ingest.stages.standing_event`) has neither a tag nor the messages/
-    transcript/outcome a `TagTrace` requires — it folds a row-id watermark
-    batch, not a turn. Taking only the two attributes this function actually
-    reads is the honest surface for both callers: the tag path passes
-    `trace.tag_id`/`trace.conversation_id`, and the event fold passes its
-    conversation id with `tag_id=""` — an empty tag id being the true
-    statement, not a fabricated one.
+    `tag_id`/`conversation_id`/`call` still need to reach the resulting span,
+    so they ride as `trace_attributes` — `ask_text`'s own parameter, which the
+    SDK's event loop copies onto the agent span AND the model-invoke span
+    underneath it (`strands/event_loop/event_loop.py`). `call` distinguishes
+    fold/consolidate/verdict without a per-call span name — the same
+    information issue #209's `f"engagement.debrief.{call}"` name used to
+    carry, now a filterable attribute instead of a string to parse.
     """
     system, user = prompt
-    # Both halves on the trace, joined, so the digest still reconstructs the
-    # WHOLE input. Hashing only the user half would make two folds with
-    # different objectives collide.
-    body, withheld = trace_safe(f"{system}\n\n{user}")
-    with generation(
-        f"engagement.debrief.{call}",
-        model=client.model,
-        # NOT `root=True`: this hangs under `engagement.debrief` on the tag
-        # path, or under `standing.event_fold` on the event path — both hang
-        # under a root that already declared `nora.trace_kind`, and it is
-        # inert on a non-root under `ParentBased`.
-        prompt=body,
-        attributes={
+    return await client.complete(
+        system=system, prompt=user,
+        trace_attributes={
             "nora.tag_id": tag_id,
             "nora.conversation_id": conversation_id,
-            # The reference the withheld case still re-derives from: this digest
-            # plus the retained `TagTrace` for `nora.tag_id` reconstructs the
-            # exact prompt without the trace ever having carried it.
-            "nora.debrief.prompt_sha256": instruction_sha256(f"{system}\n\n{user}"),
-            "nora.debrief.prompt_withheld": withheld,
+            "nora.debrief.call": call,
         },
-    ):
-        reply = await client.complete(system=system, prompt=user)
-        out, out_withheld = trace_safe(reply.content)
-        # `finish_reason` on the span rather than only in `_check`'s branch: a
-        # `"length"` finish is the R-27 substitution this stage exists to
-        # refuse, and reading it off the trace is how an operator tells «the
-        # model answered badly» from «the answer was cut off» without a log.
-        annotate_generation(
-            completion=out,
-            finish_reason=reply.finish_reason,
-            attributes={
-                "nora.debrief.output_sha256": instruction_sha256(reply.content),
-                "nora.debrief.output_withheld": out_withheld,
-            },
-        )
-        return reply
+    )
 
 
 def _prompt(
