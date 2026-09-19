@@ -33,7 +33,7 @@ WHO WRITES AND WHO READS — AND WHY THE GATE DOES NEITHER
 outcome: calling it `failed` would make a working turn read as a broken one to
 whatever renders the block next.
 
-Three readers, all scoped to the WORKSPACE, and each one excludes the writer
+Three readers, all scoped to the UNIT, and each one excludes the writer
 that answers ITS OWN recurring question — a decider reading back its own last
 verdict is a decider agreeing with itself, which is not evidence about
 anything. `PARTICIPATION_DECISION_WRITERS`, `PROACTIVE_DECISION_WRITERS` and
@@ -238,9 +238,9 @@ class DecisionRow:
     """One decision, as the next decider needs to read it.
 
     `note_id` is nullable because only the proactive decide turn decides ABOUT
-    a note; every other writer decides about a room. `workspace` may be empty
-    for the same shape of reason `FirePath._workspace_for` returns `None` — a
-    room with no policy entry is a wiring gap, and guessing a workspace would
+    a note; every other writer decides about a room. `unit` may be empty
+    for the same shape of reason `FirePath._unit_for` returns `None` — a
+    room with no policy entry is a wiring gap, and guessing a unit would
     put one social unit's decisions in another's prompt.
     """
 
@@ -248,7 +248,7 @@ class DecisionRow:
     writer: DecisionWriter
     platform: str
     conversation_id: str
-    workspace: str
+    unit: str
     note_id: str | None
     verdict: DecisionVerdict
     #: A CODE-DERIVED label and never model text: a determination's
@@ -307,8 +307,8 @@ class _Store(Protocol):
         self, *, conversation_id: str, since_ms: int, limit: int = ...,
     ) -> Sequence[DecisionRow]: ...
 
-    async def recent_for_workspace(
-        self, *, workspace: str, since_ms: int,
+    async def recent_for_unit(
+        self, *, unit: str, since_ms: int,
         writers: Sequence[str] = ..., limit: int = ...,
     ) -> Sequence[DecisionRow]: ...
 
@@ -334,9 +334,9 @@ class DecisionLogRecorder:
     result: the write either happened or is counted as not having happened, and
     nothing in between reaches the path being logged.
 
-    `workspace_of` is how a row gets its workspace without four call sites each
+    `unit_of` is how a row gets its unit without four call sites each
     growing a `Policy` read. `None`, or a lookup that raises or answers `None`,
-    leaves the column empty — the wiring gap `FirePath._workspace_for` already
+    leaves the column empty — the wiring gap `FirePath._unit_for` already
     refuses to guess past.
     """
 
@@ -346,7 +346,7 @@ class DecisionLogRecorder:
         store: _Store,
         metrics: DecisionLogMetrics,
         clock: Callable[[], datetime],
-        workspace_of: Callable[[str, str], str | None] | None = None,
+        unit_of: Callable[[str, str], str | None] | None = None,
         timeout_seconds: float = 2.0,
         limit: int = RECENT_LIMIT,
         window_ms: int = RECENT_WINDOW_MS,
@@ -354,7 +354,7 @@ class DecisionLogRecorder:
         self._store = store
         self._metrics = metrics
         self._clock = clock
-        self._workspace_of = workspace_of
+        self._unit_of = unit_of
         self._timeout_seconds = timeout_seconds
         self._limit = limit
         self._window_ms = window_ms
@@ -418,7 +418,7 @@ class DecisionLogRecorder:
                 writer=writer,
                 platform=platform,
                 conversation_id=conversation_id,
-                workspace=self._workspace(platform, conversation_id),
+                unit=self._unit(platform, conversation_id),
                 note_id=note_id,
                 verdict=verdict,
                 # Truncated HERE, so `DecisionRow` can refuse an over-long one
@@ -446,15 +446,15 @@ class DecisionLogRecorder:
             return None
         return row
 
-    async def read_workspace(
-        self, *, platform: str, workspace: str,
+    async def read_unit(
+        self, *, platform: str, unit: str,
         writers: Sequence[DecisionWriter] = (),
     ) -> tuple[DecisionRow, ...]:
-        """**The primary read**: every room of one workspace, over the window,
+        """**The primary read**: every room of one unit, over the window,
         newest-LAST. `()` on any failure.
 
-        **Workspace and not room, and that is what makes the log answer issue
-        #199 at all.** A `kind="proactive"` row fires into the workspace's HOME
+        **Unit and not room, and that is what makes the log answer issue
+        #199 at all.** A `kind="proactive"` row fires into the unit's HOME
         room and nowhere else (39 D2/D3), and the home room is one platform;
         the thread it is about runs wherever the group happens to be talking.
         In the measured incident those were different rooms on different
@@ -485,19 +485,19 @@ class DecisionLogRecorder:
         writer, which is what a caller with no filter means.
 
         `platform` is the metric label only — a read failure has to be counted
-        somewhere, and a workspace is not a platform.
+        somewhere, and a unit is not a platform.
 
-        **A blank `workspace` answers nothing, fail-closed.** An unmapped room
-        writes `workspace=""` deliberately (the wiring gap this module refuses
-        to guess past), so `""` is not a workspace — it is the POOL of every
+        **A blank `unit` answers nothing, fail-closed.** An unmapped room
+        writes `unit=""` deliberately (the wiring gap this module refuses
+        to guess past), so `""` is not a unit — it is the POOL of every
         unmapped room in every social unit, and answering it would be the
-        cross-workspace leak this module's own argument forbids.
+        cross-unit leak this module's own argument forbids.
         """
-        if not workspace:
+        if not unit:
             return ()
         return await self._read(
-            lambda since: self._store.recent_for_workspace(
-                workspace=workspace, since_ms=since,
+            lambda since: self._store.recent_for_unit(
+                unit=unit, since_ms=since,
                 writers=tuple(writers), limit=self._limit,
             ),
             platform=platform,
@@ -522,34 +522,34 @@ class DecisionLogRecorder:
             return ()
         return tuple(rows)
 
-    def _workspace(self, platform: str, conversation_id: str) -> str:
-        if self._workspace_of is None:
+    def _unit(self, platform: str, conversation_id: str) -> str:
+        if self._unit_of is None:
             return ""
         try:
-            workspace = self._workspace_of(platform, conversation_id) or ""
+            unit = self._unit_of(platform, conversation_id) or ""
         except Exception:
             log.exception(
                 "decision log: policy read failed for %s; leaving the "
-                "workspace empty rather than guessing", platform,
+                "unit empty rather than guessing", platform,
             )
-            self._count("decision_log_workspace", platform)
+            self._count("decision_log_unit", platform)
             return ""
-        if not workspace:
-            # COUNTED, not just left empty. Every read is workspace-keyed and
-            # `read_workspace("")` answers nothing by design, so a row written
-            # with no workspace is a row NOTHING WILL EVER READ — the wiring
+        if not unit:
+            # COUNTED, not just left empty. Every read is unit-keyed and
+            # `read_unit("")` answers nothing by design, so a row written
+            # with no unit is a row NOTHING WILL EVER READ — the wiring
             # gap degrades to a feature that is silently, permanently dark in
-            # that room. `FirePath._workspace_for` counts the same gap for the
+            # that room. `FirePath._unit_for` counts the same gap for the
             # same reason: «a block missing for the life of a deployment with
             # nothing saying so» is how `nora_peer_card_empty_total`'s lesson
             # was bought.
             log.warning(
-                "decision log: no policy workspace for %s/%s — the row is "
+                "decision log: no policy unit for %s/%s — the row is "
                 "written but no reader will ever see it",
                 platform, conversation_id,
             )
-            self._count("decision_log_workspace", platform)
-        return workspace
+            self._count("decision_log_unit", platform)
+        return unit
 
     def _count(self, stage: str, platform: str) -> None:
         try:
@@ -603,7 +603,7 @@ def decision_line(
     id at all.
 
     `label` is the operator-authored policy label for the room, never an id
-    (R-18/R-28). It is how a workspace-scoped block stays readable: the row
+    (R-18/R-28). It is how a unit-scoped block stays readable: the row
     that matters is often from the OTHER room.
 
     `reason` is a code-derived label — a fail-closed error kind or a

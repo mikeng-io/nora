@@ -207,7 +207,7 @@ class App:
                 # unreachable and a scope the source never covered stays at 0.
                 schedules=deps.dream_schedules,
                 keys=lambda a: (
-                    deps.workspace_scopes() if a.key_kind == "workspace"
+                    deps.unit_scopes() if a.key_kind == "unit"
                     else deps.language_scopes()
                 ),
             )
@@ -227,7 +227,7 @@ class App:
                 instructions=deps.dreamer_instructions,
                 adaptors=deps.dream_adaptors,
                 runtime=deps.dreamer_runtime,
-                workspaces=deps.workspace_scopes,
+                units=deps.unit_scopes,
                 # Per-adaptor clocks (design/dreamer-agent-loop/32 §3.1) — a
                 # cron-shaped adaptor's own interval and batch live here, not
                 # in `[dreamer]`'s shared numbers.

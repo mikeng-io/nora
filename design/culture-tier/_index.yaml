@@ -20,7 +20,7 @@ origin: >
   Working session with miles, 2026-09-12/13, opened by a finding written against
   Ora's copy of `participation.md`. Three corrections shaped the result: the
   operator caught the first draft re-inventing the memory system at room and
-  workspace scope; caught it importing `standing`'s retirement lifecycle into a
+  unit scope; caught it importing `standing`'s retirement lifecycle into a
   thing that evolves rather than sunsets; and named the distinction the whole
   design turns on - a chronicle of what happened is not a culture. A live probe
   then falsified the first draft's own headline numbers. Every measurement in
@@ -77,7 +77,7 @@ open_questions:
   - "CLOSED 2026-09-16 - #216 (PR #262, R-97) and #210 (PR #215). Both were cited here as open; both are marked in place. Neither was re-measured"
   - "SETTLED 2026-09-13 - the block is `placement=turn`, `key=room`. #219/#220 added `key` after this bundle asked the question; the rule it encodes is that anything keyed narrower than `global` belongs in `turn`, whatever its cadence"
   - "PHASE 2 - 04-phase-two-note is not executable and waits on Phase 1's instruments. Its #210 dependency landed 2026-09-15 and is unobserved in production"
-  - "DECIDED 2026-09-17 - 00-overview §4.2's operator question is taken: synthesise across the stores, INCLUDING memory. Per-room Honcho workspaces stay unrouted; DEC-182 is narrowed to the cache shape it actually killed"
+  - "DECIDED 2026-09-17 - 00-overview §4.2's operator question is taken: synthesise across the stores, INCLUDING memory. Per-room Honcho units stay unrouted; DEC-182 is narrowed to the cache shape it actually killed"
   - "OPEN 2026-09-17 - whether `standing` and the note index reach the fold as rendered INPUTS (the `note_candidates` precedent, no grant) or as TOOLS through an `AdaptorGrant` (correction 14). Inputs first; 01-the-adaptor §1.2 carries the sequencing and 02-measurement §5 owns the order"
-  - "NOT WIRED 2026-09-17 - `AdaptorGrant.home_room` resolves through `home_rooms[workspace]` and the runtime passes `workspace=None` for a scope-keyed adaptor, so a home-room grant for culture takes the loud closed branch today. The mechanism exists; the scope-keyed resolution does not. Correction 14"
+  - "NOT WIRED 2026-09-17 - `AdaptorGrant.home_room` resolves through `home_rooms[unit]` and the runtime passes `unit=None` for a scope-keyed adaptor, so a home-room grant for culture takes the loud closed branch today. The mechanism exists; the scope-keyed resolution does not. Correction 14"
   - "STALE 2026-09-17 - `nora/language/culture.py`'s module docstring still says the tier `asks nothing of the memory system (DEC-182)`, which is the pre-narrowing reading. Design-only change; the docstring is not touched here"

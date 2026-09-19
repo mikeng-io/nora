@@ -48,7 +48,7 @@ which the same document's §4 grants, ten lines above.
 Under the rule above, the two cases separate cleanly and for a reason that
 holds:
 
-- **Pending candidates for this workspace** — knowable before the call, capped,
+- **Pending candidates for this unit** — knowable before the call, capped,
   countable, and the cap *is* the cost decision. **Input.** Unchanged.
 - **"What do we already call this thing?"** — not answerable until the model
   has read the batch and formed a hypothesis about what "this thing" is. No
@@ -78,7 +78,7 @@ input is one question, asked before the model has seen anything.
 
 | need | knowable before? | verdict |
 |---|---|---|
-| the pending candidate set for this workspace | yes, and the cap is the cost decision | **input** (unchanged) |
+| the pending candidate set for this unit | yes, and the cap is the cost decision | **input** (unchanged) |
 | the standing facts for those candidates' literal subjects | yes | **input**, but insufficient alone — see below |
 | "is this the same thing under a different name?" | no | **tool** |
 | "have we already tried and failed to settle this?" | no | **tool** |
@@ -170,9 +170,9 @@ and the classification test is the arbiter
 | room exchange | scope | ✅ own patterns | ✅ | ✅ | — | — |
 | room portrait | scope | — | — | — | — | — |
 | fact extraction (Phase A) | scope | ✅ vocabulary + negative cache | ✅ | ✅ | ✅ | — |
-| fact adjudication (Phase B) | workspace | ✅ | **blocked** | **blocked** | ✅ | ✅ |
-| note curator | workspace | ✅ own notebook | — | — | ✅ | — |
-| note revisitor | workspace | ✅ | — | ⚠️ **contingent** | ✅ | ✅ |
+| fact adjudication (Phase B) | unit | ✅ | **blocked** | **blocked** | ✅ | ✅ |
+| note curator | unit | ✅ own notebook | — | — | ✅ | — |
+| note revisitor | unit | ✅ | — | ⚠️ **contingent** | ✅ | ✅ |
 
 Three things to read off it:
 
@@ -212,8 +212,8 @@ and could not settle this" — not for dedup. This is the sharpest constraint on
 the grant and the easiest to get wrong.
 
 **The revisitor's memory column is contingent, not granted.** Memory-derived
-content about a person, written into a workspace-keyed note body that renders in
-every room of that workspace, is the same carry
+content about a person, written into a unit-keyed note body that renders in
+every room of that unit, is the same carry
 [11-disclosure.md](11-disclosure.md) §4.3 blocks — arriving through memory rather
 than through a room read. It waits on the same condition.
 
@@ -249,15 +249,15 @@ Three properties make it the right seam rather than merely an available one:
 
 **The one part that does not transfer unchanged is the key, and it is the part
 most easily got wrong.** The note verbs take a *title* or a *query*, never a
-workspace — they **derive** the workspace from `(platform, conversation_id)`,
+unit — they **derive** the unit from `(platform, conversation_id)`,
 which means they need a room. Under the Dreamer those are an empty platform and
-a workspace name, the resolution returns nothing, and the verbs answer
+a unit name, the resolution returns nothing, and the verbs answer
 `unavailable`.
 
-So the existing verbs are **not** a worked example of a workspace-keyed read
-tool; the *store port* beneath them is. A tier read tool for a workspace-keyed
+So the existing verbs are **not** a worked example of a unit-keyed read
+tool; the *store port* beneath them is. A tier read tool for a unit-keyed
 adaptor needs a key path that does not route through the room at all — the
-Dreamer's key already *is* the workspace, so it must be supplied rather than
+Dreamer's key already *is* the unit, so it must be supplied rather than
 derived. That is a small change to how the tool layer receives its key, and it
 is the difference between the seam working and every call failing closed while
 looking wired.
@@ -268,7 +268,7 @@ works while every call fails closed.
 
 ## 11. What renders, and the read-time half
 
-`<facts>` currently renders the workspace's most recent standing facts with
+`<facts>` currently renders the unit's most recent standing facts with
 **no subject filter** — its own port docstring calls this a deliberate first cut
 pending entity resolution. In a room discussing one topic, Nora receives
 whatever was most recently written.

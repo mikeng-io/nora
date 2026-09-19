@@ -29,7 +29,7 @@ from nora.language.proactive import (
     PROACTIVE_TOOLS,
     WAKE_CLOCK_NAME,
     ProactiveAdaptor,
-    WorkspaceRoom,
+    UnitRoom,
 )
 from nora.obs.metrics import Metrics
 from nora.testing import (
@@ -47,8 +47,8 @@ NOW = datetime(2026, 9, 8, 23, 0, tzinfo=UTC)
 NOW_MS = int(NOW.timestamp() * 1000)
 WS = "friends"
 ROOMS = (
-    WorkspaceRoom(platform="signal", conversation_id="sig-1", label="Friends", home=True),
-    WorkspaceRoom(platform="discord", conversation_id="1/2", label="Zone 42"),
+    UnitRoom(platform="signal", conversation_id="sig-1", label="Friends", home=True),
+    UnitRoom(platform="discord", conversation_id="1/2", label="Zone 42"),
 )
 
 
@@ -101,7 +101,7 @@ async def _note(
     now_ms=NOW_MS - 86_400_000, **kw,
 ):
     return await store.create(
-        workspace=WS, title=title, description="where to eat is open",
+        unit=WS, title=title, description="where to eat is open",
         uncertainty="where", closing_condition="a place is picked",
         established_in="sig-1", body="Cyberport Saturday; venue open.",
         established_by="tag:miles", now_ms=now_ms, anchor_date=anchor,
@@ -112,7 +112,7 @@ async def _note(
 def test_the_declared_shape_is_the_designs():
     adaptor = _adaptor()
     assert isinstance(adaptor, DreamAdaptor)
-    assert adaptor.key_kind == "workspace"
+    assert adaptor.key_kind == "unit"
     assert adaptor.uses_watermark is False
     assert adaptor.envelope_key == "decisions"
     # 39 D3's list, exactly, spelled out here rather than compared to the
@@ -137,7 +137,7 @@ def test_the_declared_shape_is_the_designs():
         # night off" was spoken while the group was mid-game, because the
         # decide turn held no verb that could observe the state contradicting
         # the note. Its input domain is the home roster unioned with the note
-        # subjects, supplied per build — NOT `WORKSPACE_SAFE_TOOLS`.
+        # subjects, supplied per build — NOT `UNIT_SAFE_TOOLS`.
         "online_now",
     })
     assert adaptor.tools == PROACTIVE_TOOLS
@@ -161,7 +161,7 @@ def test_the_adaptor_can_resolve_a_nickname_without_searching_memory_for_it():
     assert "lookup_person" in PROACTIVE_TOOLS, "and this is the depth under it"
 
 
-async def test_a_workspace_with_no_home_room_renders_nothing():
+async def test_a_unit_with_no_home_room_renders_nothing():
     """39 D2: the home room IS the operator's opt-in. No room, no pass — and
     no model call, which is what a blank `inputs` buys."""
     notes = InMemoryNoteStore()
@@ -179,7 +179,7 @@ async def test_nothing_open_and_no_position_renders_nothing():
 async def test_inputs_renders_the_index_the_rooms_the_log_and_the_self_card():
     """39 D9's table: the notes as an INDEX (handle, title, anchor, revisit,
     strikes — no body, no id), Standing per room with its age (D8), the
-    decision log restricted to this workspace's rooms with outcomes (D7),
+    decision log restricted to this unit's rooms with outcomes (D7),
     and the self card framed as DEC-96 frames it."""
     notes = InMemoryNoteStore()
     note = await _note(notes)
@@ -198,7 +198,7 @@ async def test_inputs_renders_the_index_the_rooms_the_log_and_the_self_card():
         fired_at=NOW - timedelta(hours=17), outcome="silent", kind="proactive",
         payload={"note_id": note.id, "note_title": note.title, "intent": "nudge"},
     ))
-    # Another workspace's row: joined OUT through the room map.
+    # Another unit's row: joined OUT through the room map.
     await log.create(Reminder(
         id=uuid.uuid4(), requester_person_id="nora", platform="signal",
         conversation_id="wedding-room", conversation_type="group",
@@ -234,7 +234,7 @@ async def test_the_home_room_block_carries_the_operators_description():
     only they can state it. The SAME field the note-candidates pass reads, so
     the two passes cannot hold two ideas of what a room is."""
     rooms = (
-        WorkspaceRoom(
+        UnitRoom(
             platform="signal", conversation_id="sig-1", label="Zone 42",
             home=True,
             description="a games room; 2200 is when people log on, not an appointment",
@@ -278,7 +278,7 @@ async def test_strikes_and_a_due_revisit_are_said_on_the_line():
     note = await _note(notes)
     for at in (NOW_MS - 2, NOW_MS - 1):
         await notes.record_wake(
-            workspace=WS, note_id=note.id, next_revisit_at=NOW_MS - 1, now_ms=at,
+            unit=WS, note_id=note.id, next_revisit_at=NOW_MS - 1, now_ms=at,
         )
     adaptor = _adaptor(notes=notes)
 
@@ -337,7 +337,7 @@ async def test_commit_records_one_wake_per_note_it_decided_to_raise():
     """39 D6: bookkeeping is not read-only — a wake per note RAISED, once
     even when two items name it; a decline is not a raise and wakes nothing
     (a strike is «raised and nobody replied», not «looked at»); a
-    workspace-level item wakes nothing. Returns wakes recorded, and every
+    unit-level item wakes nothing. Returns wakes recorded, and every
     decision is counted."""
     notes = InMemoryNoteStore()
     first = await _note(notes)
@@ -359,7 +359,7 @@ async def test_commit_records_one_wake_per_note_it_decided_to_raise():
     written = await adaptor.commit(key=WS, proposals=proposals, now_ms=NOW_MS)
 
     assert written == 1
-    woken = {n.id: n for n in await notes.standing(workspace=WS)}
+    woken = {n.id: n for n in await notes.standing(unit=WS)}
     assert woken[first.id].last_wake_revision_id == first.head_revision_id
     assert woken[second.id].last_wake_revision_id is None
     assert woken[first.id].revisit_at is not None
@@ -374,7 +374,7 @@ async def test_an_empty_commit_records_nothing():
     await adaptor.inputs(key=WS, batch=())
 
     assert await adaptor.commit(key=WS, proposals=(), now_ms=NOW_MS) == 0
-    (unwoken,) = await notes.standing(workspace=WS)
+    (unwoken,) = await notes.standing(unit=WS)
     assert unwoken.id == note.id and unwoken.last_wake_revision_id is None
 
 
@@ -448,7 +448,7 @@ async def test_the_first_pass_renders_and_stamps_the_pass_clock():
     assert metrics.get("nora_proactive_pass_total", reason="daily") == 1
 
 
-async def test_an_unchanged_workspace_renders_nothing_the_same_day():
+async def test_an_unchanged_unit_renders_nothing_the_same_day():
     """The deterministic check: nothing moved since the rendered pass, same
     HK day → `""`, so the runtime makes no model call. A blank tick does
     not touch the pass clock."""
@@ -478,7 +478,7 @@ async def test_a_tag_path_revision_in_a_quiet_room_renders_and_a_background_one_
     t1_ms = int(t1.timestamp() * 1000)
 
     background = await notes.append_revision(
-        workspace=WS, note_id=note.id, body="still open", parent_revision_id=note.head_revision_id,
+        unit=WS, note_id=note.id, body="still open", parent_revision_id=note.head_revision_id,
         established_by="dream:note-curation:friends:1", now_ms=t1_ms - 60_000,
     )
     quiet_rooms = _Records({"sig-1": t1_ms - 3_600_000, "1/2": t1_ms - 3_600_000})
@@ -488,7 +488,7 @@ async def test_a_tag_path_revision_in_a_quiet_room_renders_and_a_background_one_
     assert metrics.get("nora_proactive_pass_total", reason="unchanged") == 1
 
     await notes.append_revision(
-        workspace=WS, note_id=note.id, body="Ada booked", parent_revision_id=background.id,
+        unit=WS, note_id=note.id, body="Ada booked", parent_revision_id=background.id,
         established_by="tag:ada", now_ms=t1_ms - 30_000,
     )
     text = await _adaptor(
@@ -500,13 +500,13 @@ async def test_a_tag_path_revision_in_a_quiet_room_renders_and_a_background_one_
 
 
 async def _changed_note(notes, clock, *, at_ms):
-    """A workspace whose ORIENT state has MOVED since the last rendered pass:
+    """A unit whose ORIENT state has MOVED since the last rendered pass:
     one note revised on the tag path. Everything after it turns on the quiet
     condition alone."""
     note = await _note(notes)
     await _rendered_once(_adaptor(notes=notes, clock_store=clock), clock, at_ms=NOW_MS)
     await notes.append_revision(
-        workspace=WS, note_id=note.id, body="moved", parent_revision_id=note.head_revision_id,
+        unit=WS, note_id=note.id, body="moved", parent_revision_id=note.head_revision_id,
         established_by="tag:miles", now_ms=at_ms - 30_000,
     )
 
@@ -550,7 +550,7 @@ async def test_a_home_room_the_quiet_check_cannot_see_is_not_read_as_quiet():
 async def test_a_change_is_not_held_by_a_sibling_room_still_talking():
     """The live defect this rule was changed for (2026-09-10, design 39 D10).
     A proactive row fires into the HOME room, so a sibling room's traffic
-    cannot be what stops her speaking there — on the `friends` workspace the
+    cannot be what stops her speaking there — on the `friends` unit the
     sibling was Zone 42, a games room, and it held four consecutive hourly
     ticks on a note anchored that same day."""
     notes = InMemoryNoteStore()
@@ -587,7 +587,7 @@ async def test_a_new_note_a_due_revisit_and_a_standing_move_each_count_as_change
     t2 = t1 + timedelta(hours=1)
     t2_ms = int(t2.timestamp() * 1000)
     await notes.record_wake(
-        workspace=WS, note_id=first.id, next_revisit_at=t2_ms - 1, now_ms=t1_ms + 1,
+        unit=WS, note_id=first.id, next_revisit_at=t2_ms - 1, now_ms=t1_ms + 1,
     )
     assert await _adaptor(notes=notes, clock_store=clock, now=t2).inputs(key=WS, batch=())
     await clock.record_fire(adaptor_name=PASS_CLOCK_NAME, key=WS, at_ms=t2_ms)
@@ -661,9 +661,9 @@ async def test_a_note_is_woken_at_most_once_per_day_across_passes():
         return await adaptor.commit(key=WS, proposals=proposals, now_ms=int(at.timestamp() * 1000))
 
     assert await _decide(NOW) == 1                                  # the floor
-    head = (await notes.read(workspace=WS, note_id=note.id))[1]
+    head = (await notes.read(unit=WS, note_id=note.id))[1]
     await notes.append_revision(
-        workspace=WS, note_id=note.id, body="moved", parent_revision_id=head.id,
+        unit=WS, note_id=note.id, body="moved", parent_revision_id=head.id,
         established_by="tag:miles", now_ms=NOW_MS + 3 * 3_600_000,
     )
     assert await _decide(NOW + timedelta(hours=4)) == 0             # changed, same day
@@ -758,7 +758,7 @@ async def test_reconcile_never_double_charges_what_the_envelope_reported():
     assert metrics.get("nora_proactive_reconciled_total") == 0
 
 
-async def test_reconcile_joins_rows_to_the_workspace_and_ignores_plain_reminders():
+async def test_reconcile_joins_rows_to_the_unit_and_ignores_plain_reminders():
     notes = InMemoryNoteStore()
     note = await _note(notes)
     log = FakeReminderStore()
@@ -766,7 +766,7 @@ async def test_reconcile_joins_rows_to_the_workspace_and_ignores_plain_reminders
     adaptor = _adaptor(notes=notes, reminders=log, clock_store=clock_store)
 
     await adaptor.inputs(key=WS, batch=())
-    # Another workspace's room, and a tag-path row in this one: neither is a
+    # Another unit's room, and a tag-path row in this one: neither is a
     # decision this pass made.
     await _proactive_row(log, note.id, created_at=NOW, conversation_id="wedding-room")
     await log.create(Reminder(
@@ -795,7 +795,7 @@ async def test_a_blank_tick_reconciles_nothing():
 
 
 async def test_a_due_tick_that_renders_nothing_is_not_counted_as_a_pass():
-    """`daily`/`changed` are the series «a pass ran» is read off. A workspace
+    """`daily`/`changed` are the series «a pass ran» is read off. A unit
     with no open notes and no Standing is due and renders nothing, and
     counting that as a pass would inflate the denominator with blank ticks."""
     metrics = Metrics()
@@ -807,7 +807,7 @@ async def test_a_due_tick_that_renders_nothing_is_not_counted_as_a_pass():
     assert metrics.get("nora_proactive_pass_total", reason="unclocked") == 0
 
 
-async def test_a_workspace_with_no_home_room_is_counted_rather_than_silent():
+async def test_a_unit_with_no_home_room_is_counted_rather_than_silent():
     """An operator who never named a home room otherwise sees no series at
     all — a wiring gap reading as quiet."""
     metrics = Metrics()
@@ -815,7 +815,7 @@ async def test_a_workspace_with_no_home_room_is_counted_rather_than_silent():
     await _note(notes)
     adaptor = _adaptor(
         notes=notes, metrics=metrics,
-        rooms=(WorkspaceRoom(
+        rooms=(UnitRoom(
             platform="signal", conversation_id="sig-1", label="Friends",
         ),),
     )
@@ -856,7 +856,7 @@ async def test_a_cancelled_commit_leaves_the_pass_slot_open():
     `DreamerRuntime` now runs `commit` under a wall clock, so a store that
     stops answering CANCELS this method part-way through. Stamped FIRST — as
     it was — the pass was recorded as fired with zero wakes written: the next
-    tick reads `last = now`, finds the workspace unchanged for the rest of the
+    tick reads `last = now`, finds the unit unchanged for the rest of the
     local day, and does not render, while the `remind` rows already written
     inside the model loop are orphaned forever because `_raised_since`'s
     window starts at that same clock and has moved past them.
@@ -917,7 +917,7 @@ def _other_decision(
 ):
     return DecisionRow(
         id=row_id, writer=writer, platform=platform,
-        conversation_id=conversation_id, workspace=WS, note_id=None,
+        conversation_id=conversation_id, unit=WS, note_id=None,
         verdict=verdict, reason=reason, ts=NOW_MS - ago_ms,
     )
 
@@ -971,7 +971,7 @@ async def test_the_decide_turn_logs_every_decision_including_the_declines():
 async def test_the_decide_turns_rows_land_in_the_home_room():
     """A proactive row fires into the home room (39 D2/D3), so that is the room
     a later decider has to weigh the decision against. Logging it against the
-    workspace's other room would put the decision where it will never fire."""
+    unit's other room would put the decision where it will never fire."""
     notes = InMemoryNoteStore()
     await _note(notes)
     store = InMemoryDecisionLogStore()
@@ -1025,7 +1025,7 @@ async def test_a_decision_log_that_is_down_never_fails_a_pass():
         now_ms=NOW_MS,
     )
     assert wakes == 1
-    head = await notes.read(workspace=WS, note_id=note.id)
+    head = await notes.read(unit=WS, note_id=note.id)
     assert head is not None
     assert 'stage="decision_log_write"' in metrics.render()
 

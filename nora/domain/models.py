@@ -312,7 +312,7 @@ class TagContext:
     # fetching it again.
     tagger_card: tuple[str, ...] = ()
     # The note tier (2026-08-21 note-tier design), §5.1 — the INDEX of tracked
-    # uncertainties, workspace-keyed and unlike every block before it.
+    # uncertainties, unit-keyed and unlike every block before it.
     # Defaulted empty for the same reason its siblings are: the existing
     # construction sites keep working, and
     # `nora.language.note_render.render_notes` renders no block
@@ -329,8 +329,8 @@ class TagContext:
     # naming here, because each one is a rule somewhere else. It is the only
     # one that is Nora's own output rather than a distillation of other
     # people's (§8 — a position, not a record). It is the only one keyed on the
-    # CONVERSATION where `notes` is keyed on the workspace, and unlike
-    # it is not shared across a workspace's rooms at all: a position held
+    # CONVERSATION where `notes` is keyed on the unit, and unlike
+    # it is not shared across a unit's rooms at all: a position held
     # in one room is not a position held in another. And it is the only block
     # in the prompt that is REVISED IN PLACE rather than rebuilt from the store
     # each turn, which is why `nora.language.standing_render` still makes it
@@ -346,9 +346,9 @@ class TagContext:
     # `None` on every turn.
     standing: Standing | None = None
     # The shared decision log (issue #199) — what NORA'S OWN LOOP already did
-    # across this WORKSPACE, as `<loop_decisions>`. `(room label, rows)` per
+    # across this UNIT, as `<loop_decisions>`. `(room label, rows)` per
     # group, because the row that matters is usually from the OTHER room: a
-    # `kind="proactive"` row fires into the workspace's home room and nowhere
+    # `kind="proactive"` row fires into the unit's home room and nowhere
     # else, while the thread it is about runs wherever the group is talking,
     # and in the measured incident those were different rooms on different
     # platforms. A room-scoped block would have seen nothing.
@@ -364,7 +364,7 @@ class TagContext:
     #
     # It is NOT a sixth context block on the same axis as its neighbours. Every
     # block above is a distillation of the WORLD — what people said, what they
-    # are like, what the workspace has not settled. This is a record of her own
+    # are like, what the unit has not settled. This is a record of her own
     # turns, which is why it says so and carries an age per row rather than
     # reading as state.
     #

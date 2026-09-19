@@ -596,12 +596,12 @@ class Wiring:
     # parses no proposals and raises none, the same inert shape
     # `store_verdict` uses.
     notes_sink: DreamSink | None
-    # WORKSPACE resolver, not a constant: `propose`'s key is the workspace
+    # UNIT resolver, not a constant: `propose`'s key is the unit
     # (§3/DEC-105) and this deployment has two that policy.toml says are
     # never paired, so a fixed string would file one room's notes in the
     # other's notebook. `None` for a room policy cannot name — which is a
-    # refusal to propose, never a guessed workspace.
-    workspace_of: Callable[[str, str], str | None]
+    # refusal to propose, never a guessed unit.
+    unit_of: Callable[[str, str], str | None]
     client: ModelClient
     objective: ObjectiveSource
     # The RECORD store, for the fold's watermark read: the tag fold reads
@@ -1079,7 +1079,7 @@ async def run(
     store: StandingStore,
     store_verdict: TurnVerdictStore | None,
     notes_sink: DreamSink | None,
-    workspace_of: Callable[[str, str], str | None],
+    unit_of: Callable[[str, str], str | None],
     client: ModelClient,
     objective: ObjectiveSource,
     metrics: Metrics,
@@ -1627,7 +1627,7 @@ async def run(
         # It used to sit up beside the verdict parse, above the overflow gate
         # and the screen. Three consequences, none of them intended:
         #
-        # 1. `workspace_of` is an INJECTED callable and it ran on the
+        # 1. `unit_of` is an INJECTED callable and it ran on the
         #    position's critical path — before the gates, before `store.write`,
         #    outside any `try` of its own, and even when `notes_sink is None`
         #    and no proposal could happen at all. A raise from someone else's
@@ -1639,7 +1639,7 @@ async def run(
         #    were about to be refused for overflow or screened out still
         #    incremented `already_read` and `over_cap`. Those series then
         #    describe proposals that could never have been made.
-        # 3. The no-workspace refusal was SILENT — no counter, no log. A
+        # 3. The no-unit refusal was SILENT — no counter, no log. A
         #    `policy.toml` edit that stops naming a room disables note
         #    proposals with zero signal, and a flat `proposed` series is
         #    indistinguishable from a model that simply had nothing to raise.
@@ -1648,7 +1648,7 @@ async def run(
         # so nothing here can cost it; the counters only describe folds that
         # actually reached this point; and the refusal is named (cold review,
         # 2026-08-28).
-        workspace: str | None = None
+        unit: str | None = None
         proposals: list[NoteCreationProposal] = []
         if notes_sink is not None and trace.outcome in _BROKEN_TURN_OUTCOMES:
             # **A DEAD TURN DOES NOT RAISE NOTES** (issue #199). The turn that
@@ -1669,7 +1669,7 @@ async def run(
             # fact only this one producer has. The gate would then have to
             # decide what a missing outcome means, which is a third state
             # nobody wants. This is one guard in the one stage that already
-            # owns «may this fold propose at all», beside the workspace
+            # owns «may this fold propose at all», beside the unit
             # refusal that answers the same question for a different reason.
             #
             # **The position is still revised**, and that asymmetry is
@@ -1697,23 +1697,23 @@ async def run(
             # Three outcomes, three labels, and the split is the point. `None`
             # is a room policy deliberately does not name — a refusal. A raise
             # is a resolver that needs fixing — a fault. Counting both as
-            # `no_workspace` would report a broken resolver as a policy
+            # `no_unit` would report a broken resolver as a policy
             # decision on the one series an operator reads to tell them apart,
             # which is the R-27 substitution this file argues against
             # everywhere else.
             try:
-                workspace = workspace_of(platform, trace.conversation_id)
+                unit = unit_of(platform, trace.conversation_id)
             except Exception:
                 log.exception(
-                    "debrief: the workspace resolver failed (tag=%s); no "
+                    "debrief: the unit resolver failed (tag=%s); no "
                     "proposals this turn, the position is unaffected",
                     trace.tag_id,
                 )
                 metrics.inc("nora_debrief_note_proposals_total",
-                            outcome="no_workspace_unavailable")
-                workspace = None
+                            outcome="no_unit_unavailable")
+                unit = None
             else:
-                if workspace:
+                if unit:
                     proposals = _note_proposals(
                         raw, conversation_id=trace.conversation_id,
                         tag_id=trace.tag_id, notes_read=notes_read,
@@ -1727,18 +1727,18 @@ async def run(
                     # `policy.toml` edit could disable note proposals with no
                     # signal at all.
                     metrics.inc("nora_debrief_note_proposals_total",
-                                outcome="no_workspace")
+                                outcome="no_unit")
 
         # DEC-128: the digest of what was ACTUALLY SENT, read per run and never
         # cached — the objective hot-reloads on mtime, so a digest captured at
         # construction would stop naming the text the model saw.
         sent_sha256 = instruction_sha256(instructions)
 
-        if notes_sink is not None and proposals and workspace:
+        if notes_sink is not None and proposals and unit:
             try:
                 written = await asyncio.wait_for(
                     notes_sink.propose(
-                        key=workspace, proposals=[
+                        key=unit, proposals=[
                             Proposal(
                                 payload=payload,
                                 instruction_sha256=sent_sha256,

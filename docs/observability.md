@@ -87,7 +87,7 @@ Two consequences worth holding on to:
   attributes as arguments for exactly this reason; an attribute added by
   `annotate()` one line later is one the sampling decision was made without.
 
-**② The collector filters** (`workspace/otel-collector/config.yaml` on norty)
+**② The collector filters** (`unit/otel-collector/config.yaml` on norty)
 are a second stage that this repo does not own and cannot see:
 
 * the Langfuse pipeline keeps only `service.name == "nora"`;
@@ -221,7 +221,7 @@ stores are reachable **directly from a dev machine on the LAN** — no tunnel.
 
 **Langfuse.** Credentials are the base64 blob inside `LANGFUSE_OTLP_HEADERS` in
 `/home/norty/workspace/nora/.env`; decode it to `pk-lf-…:sk-lf-…` and use it as
-HTTP Basic auth. Other `workspace/*/.env` files hold keys for *different*
+HTTP Basic auth. Other `unit/*/.env` files hold keys for *different*
 Langfuse projects and will 401 against Nora's.
 
 ```bash

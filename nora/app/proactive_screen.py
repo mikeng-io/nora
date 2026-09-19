@@ -31,8 +31,8 @@ No model is called for a refused row; the heartbeat resolves it and moves
 on. A row with no note in its payload is screened on the flag alone.
 
 FAIL-CLOSED, and the three states are kept apart. A note store that is not
-wired, a note that cannot be read, a note the row's workspace cannot reach,
-or a policy that cannot name the room's workspace is «I could not check»,
+wired, a note that cannot be read, a note the row's unit cannot reach,
+or a policy that cannot name the room's unit is «I could not check»,
 and a row that cannot be screened does not fire: `FAILED` / `failed_error`,
 logged, never `cancelled` (which would claim the note moved or was retired)
 and never admitted (which would speak on a premise nobody verified).
@@ -79,11 +79,11 @@ class _Notes(Protocol):
     """The two note-store reads this screen makes."""
 
     async def read(
-        self, *, workspace: str, note_id: str,
+        self, *, unit: str, note_id: str,
     ) -> tuple[Note, NoteRevision] | None: ...
 
     async def revision_chain(
-        self, *, workspace: str, note_id: str,
+        self, *, unit: str, note_id: str,
     ) -> tuple[NoteRevision, ...]: ...
 
 
@@ -121,9 +121,9 @@ class ProactiveScreen:
             # wiring gap it is, not as a moved note.
             return ReminderState.FAILED, FAILED_ERROR
         try:
-            current = await self._notes.read(workspace=convo.workspace, note_id=note_id)
+            current = await self._notes.read(unit=convo.unit, note_id=note_id)
             chain = () if current is None else await self._notes.revision_chain(
-                workspace=convo.workspace, note_id=note_id,
+                unit=convo.unit, note_id=note_id,
             )
         except Exception:
             log.exception(
@@ -132,16 +132,16 @@ class ProactiveScreen:
             )
             return ReminderState.FAILED, FAILED_ERROR
         if current is None:
-            # `read` answers None for absent, for another workspace, and for
+            # `read` answers None for absent, for another unit, and for
             # an id that is not UUID-shaped — «not reachable from here», which
-            # is not «retired». A workspace renamed in policy.toml between
+            # is not «retired». A unit renamed in policy.toml between
             # decide and fire lands here; claiming the note was retired would
             # be a fact about the note nobody checked. Not fired, not
             # cancelled: `failed_error`, the wiring-gap outcome.
             log.error(
-                "proactive reminder %s names note %s, which workspace %r cannot "
+                "proactive reminder %s names note %s, which unit %r cannot "
                 "reach; not firing on an unverified premise",
-                row.id, note_id, convo.workspace,
+                row.id, note_id, convo.unit,
             )
             return ReminderState.FAILED, FAILED_ERROR
         if current[0].retired_at is not None:

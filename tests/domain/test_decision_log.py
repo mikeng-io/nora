@@ -59,7 +59,7 @@ def _recorder(store=None, *, metrics=None, **kw):
 def _row(**kw):
     base = {
         "id": "r1", "writer": "participation", "platform": "signal",
-        "conversation_id": "g1", "workspace": "friends", "note_id": None,
+        "conversation_id": "g1", "unit": "friends", "note_id": None,
         "verdict": "silent", "reason": "", "ts": NOW_MS,
     }
     base.update(kw)
@@ -77,8 +77,8 @@ class _Broken:
     async def append(self, *, row):
         raise RuntimeError("decision log down")
 
-    async def recent_for_workspace(
-        self, *, workspace, since_ms, writers=(), limit=RECENT_LIMIT,
+    async def recent_for_unit(
+        self, *, unit, since_ms, writers=(), limit=RECENT_LIMIT,
     ):
         raise RuntimeError("decision log down")
 
@@ -112,8 +112,8 @@ async def test_a_failing_read_answers_no_rows_and_is_counted_separately():
     would tell them apart."""
     metrics = Metrics()
     recorder = _recorder(_Broken(), metrics=metrics)
-    assert await recorder.read_workspace(
-        platform="signal", workspace="friends",
+    assert await recorder.read_unit(
+        platform="signal", unit="friends",
     ) == ()
     assert metrics.get(
         "nora_errors_total", stage="decision_log_read", platform="signal",
@@ -134,8 +134,8 @@ async def test_a_store_that_hangs_costs_the_timeout_and_nothing_more():
         async def append(self, *, row):
             await asyncio.sleep(5)
 
-        async def recent_for_workspace(
-            self, *, workspace, since_ms, writers=(), limit=RECENT_LIMIT,
+        async def recent_for_unit(
+            self, *, unit, since_ms, writers=(), limit=RECENT_LIMIT,
         ):
             await asyncio.sleep(5)
 
@@ -149,8 +149,8 @@ async def test_a_store_that_hangs_costs_the_timeout_and_nothing_more():
         writer="participation", platform="signal", conversation_id="g1",
         verdict="spoke",
     ) is None
-    assert await recorder.read_workspace(
-        platform="signal", workspace="friends",
+    assert await recorder.read_unit(
+        platform="signal", unit="friends",
     ) == ()
 
 
@@ -199,20 +199,20 @@ async def test_two_decisions_in_one_millisecond_keep_their_insertion_order():
     assert [r.reason for r in rows] == [f"r{i}" for i in range(8)]
 
 
-async def test_the_workspace_comes_from_policy_and_is_never_guessed():
+async def test_the_unit_comes_from_policy_and_is_never_guessed():
     store = InMemoryDecisionLogStore()
-    recorder = _recorder(store, workspace_of=lambda p, c: "friends")
+    recorder = _recorder(store, unit_of=lambda p, c: "friends")
     await recorder.record(
         writer="participation", platform="signal", conversation_id="g1",
         verdict="spoke",
     )
-    assert (await store.recent(conversation_id="g1", since_ms=0))[0].workspace == "friends"
+    assert (await store.recent(conversation_id="g1", since_ms=0))[0].unit == "friends"
 
 
-async def test_an_unknown_or_unreadable_room_leaves_the_workspace_empty():
-    """A room with no policy entry is a WIRING GAP, and guessing a workspace
+async def test_an_unknown_or_unreadable_room_leaves_the_unit_empty():
+    """A room with no policy entry is a WIRING GAP, and guessing a unit
     would put one social unit's decisions in another's prompt —
-    `FirePath._workspace_for`'s refusal, one layer down. A lookup that RAISES
+    `FirePath._unit_for`'s refusal, one layer down. A lookup that RAISES
     is the same answer plus a counter."""
     metrics = Metrics()
     store = InMemoryDecisionLogStore()
@@ -220,18 +220,18 @@ async def test_an_unknown_or_unreadable_room_leaves_the_workspace_empty():
     def _boom(platform, conversation_id):
         raise RuntimeError("policy read failed")
 
-    await _recorder(store, workspace_of=lambda p, c: None).record(
+    await _recorder(store, unit_of=lambda p, c: None).record(
         writer="participation", platform="signal", conversation_id="g1",
         verdict="spoke",
     )
-    await _recorder(store, metrics=metrics, workspace_of=_boom).record(
+    await _recorder(store, metrics=metrics, unit_of=_boom).record(
         writer="participation", platform="signal", conversation_id="g2",
         verdict="spoke",
     )
-    assert (await store.recent(conversation_id="g1", since_ms=0))[0].workspace == ""
-    assert (await store.recent(conversation_id="g2", since_ms=0))[0].workspace == ""
+    assert (await store.recent(conversation_id="g1", since_ms=0))[0].unit == ""
+    assert (await store.recent(conversation_id="g2", since_ms=0))[0].unit == ""
     assert metrics.get(
-        "nora_errors_total", stage="decision_log_workspace", platform="signal",
+        "nora_errors_total", stage="decision_log_unit", platform="signal",
     ) == 1
 
 
@@ -243,8 +243,8 @@ async def test_the_read_window_is_24_hours_and_the_recorder_applies_it():
     await store.append(row=_row(id="old", ts=NOW_MS - RECENT_WINDOW_MS - 1,
                                 reason="yesterday"))
     await store.append(row=_row(id="new", ts=NOW_MS - 1000, reason="today"))
-    rows = await _recorder(store).read_workspace(
-        platform="signal", workspace="friends",
+    rows = await _recorder(store).read_unit(
+        platform="signal", unit="friends",
     )
     assert [r.reason for r in rows] == ["today"]
 
@@ -363,7 +363,7 @@ async def test_the_writer_filter_is_applied_before_the_bound():
     followed by 25 rows from a high-volume writer — the participation reader
     kept 0 of 20.
 
-    Falsification: drop `writers=` from `DecisionLogRecorder.read_workspace`
+    Falsification: drop `writers=` from `DecisionLogRecorder.read_unit`
     (or from either store's query) and this goes red.
     """
     store = InMemoryDecisionLogStore()
@@ -372,26 +372,26 @@ async def test_the_writer_filter_is_applied_before_the_bound():
     for i in range(25):
         await store.append(row=_row(id=f"busy-{i:02d}", writer="participation",
                                     verdict="silent", ts=NOW_MS - 60_000 + i))
-    rows = await _recorder(store).read_workspace(
-        platform="signal", workspace="friends",
+    rows = await _recorder(store).read_unit(
+        platform="signal", unit="friends",
         writers=("proactive_decide", "proactive_act"),
     )
     assert [r.id for r in rows] == ["old-proactive"]
 
 
-async def test_a_blank_workspace_answers_nothing():
-    """An unmapped room writes `workspace=""` deliberately — the wiring gap this
-    module refuses to guess past. So `""` is not a workspace, it is the POOL of
+async def test_a_blank_unit_answers_nothing():
+    """An unmapped room writes `unit=""` deliberately — the wiring gap this
+    module refuses to guess past. So `""` is not a unit, it is the POOL of
     every unmapped room in every social unit, and answering it would be the
-    cross-workspace leak the module's own argument forbids.
+    cross-unit leak the module's own argument forbids.
 
-    Falsification: drop the `if not workspace: return ()` guard in
-    `read_workspace`.
+    Falsification: drop the `if not unit: return ()` guard in
+    `read_unit`.
     """
     store = InMemoryDecisionLogStore()
-    await store.append(row=_row(id="orphan", workspace="", reason="unmapped"))
-    assert await _recorder(store).read_workspace(
-        platform="signal", workspace="",
+    await store.append(row=_row(id="orphan", unit="", reason="unmapped"))
+    assert await _recorder(store).read_unit(
+        platform="signal", unit="",
     ) == ()
 
 

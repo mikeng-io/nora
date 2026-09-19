@@ -37,11 +37,11 @@ arguments or tool results at all — only the model's final restatement of them.
 **The concrete path.** A memory search returns the words somebody actually said
 in room A. The model restates them into a claim's object or source excerpt. The
 screen passes them — no phone number, no UUID. The result is persisted **keyed
-on the workspace**. The renderer then reads workspace-recent facts into
-`<facts>` **in every room of that workspace, on every tag.**
+on the unit**. The renderer then reads unit-recent facts into
+`<facts>` **in every room of that unit, on every tag.**
 
 The memory tool's own docstring says its session scoping exists precisely so
-that *"a workspace-wide search would surface a roster member's PRIVATE DM words
+that *"a unit-wide search would surface a roster member's PRIVATE DM words
 into this room."*
 
 > The gate was placed on the read. The leak moves to the write.
@@ -59,7 +59,7 @@ protection.
 
 The governing rule is **R-49/DEC-105**, and it has **two** conditions:
 
-> *the workspace bounds which rooms may be **paired**, the persons list decides
+> *the unit bounds which rooms may be **paired**, the persons list decides
 > who may **use** the pair*
 
 The fact path implements the first and has **no analogue for the second
@@ -67,22 +67,22 @@ anywhere**. Nothing on that path examines the destination room's person list.
 
 Three facts make this a live gap rather than a theoretical one:
 
-- a room's person list is **per room**, and two rooms of one workspace may
+- a room's person list is **per room**, and two rooms of one unit may
   carry different ones;
 - a person list of `"*"` admits **unmapped** senders;
-- **nothing validates** that rooms sharing a workspace share a person list.
+- **nothing validates** that rooms sharing a unit share a person list.
 
 Both files on the fact path already admit they are borrowing the sanction
 rather than enforcing it — one says the honesty is *"structural, not a checked
 guard"*, the other that *"that argument is borrowed, and it is only as strong
-as the workspace configuration is honest."*
+as the unit configuration is honest."*
 
 ## 3. The content class is what changes
 
 This is the crux, and it is why the existing sanction does not stretch.
 
 Today `<facts>` carries claims about **the world**, because the only tools that
-feed it are web tools. A world-claim crossing rooms within a workspace is what
+feed it are web tools. A world-claim crossing rooms within a unit is what
 R-49's first condition contemplates.
 
 Room reads change the content class to claims about **the people in room A** —
@@ -90,12 +90,12 @@ carried automatically, durably, and unattended into room B, by a loop with
 nobody watching it.
 
 **Contract:** before any room-scoped read is granted to an adaptor whose sink
-is workspace-keyed, R-49's second condition must have a mechanism on the fact
+is unit-keyed, R-49's second condition must have a mechanism on the fact
 path. It does not today. This is why
 [10-room-access.md](10-room-access.md) blocks Path B.
 
 For a **scope**-keyed adaptor the question is narrower but not absent: the
-adaptor reads room A and writes to a workspace-keyed store, so the carry still
+adaptor reads room A and writes to a unit-keyed store, so the carry still
 happens one step later. The mitigation available today is that extraction
 proposes *claims about the world* by objective, and the screen plus the typed
 parse discard anything else. That is weaker than a checked guard and should be
@@ -132,7 +132,7 @@ and reclassifies would hand a background loop a write.
 the miss-recording moves out of the read path, or the tool is an act verb. It
 cannot be both. Under the Dreamer's key it would also corrupt the evidence it
 records — the array answers *"in how many different rooms was this asked"*, and
-a workspace name written in as a room makes one background loop look like an
+a unit name written in as a room makes one background loop look like an
 extra room.
 ### 4.1 The same defect, larger, in a spec rather than a test
 
@@ -167,14 +167,14 @@ implementation."*
 
 ### 4.3 The same leak, one tier over, through memory rather than a room
 
-The note tier defends workspace-scoped rendering on the grounds that rooms
-sharing a workspace *"are one social unit"*, so a note established in one room
+The note tier defends unit-scoped rendering on the grounds that rooms
+sharing a unit *"are one social unit"*, so a note established in one room
 rendering into another crosses no boundary.
 
 **That argument was made about notes written on the tag path, from what was said
 in the room.** The revisit adaptor is granted memory reads, and its output is a
-note revision — workspace-keyed, whose title and description render in **every**
-tag, and whose body is one read verb away in any room of the workspace.
+note revision — unit-keyed, whose title and description render in **every**
+tag, and whose body is one read verb away in any room of the unit.
 
 So §1's finding arrives again, with a shorter fuse. A fact carries a *screened
 restatement*; a note body is **model-authored prose whose whole purpose is to
@@ -191,7 +191,7 @@ mechanism for R-49's second condition, or the adaptor's memory column comes off.
 ### 4.4 A refusal message is an information channel
 
 A stale-write refusal distinguishes *"not there"* from *"not there **from your
-workspace**"* — deliberately not distinguishable, *"so a cross-workspace probe
+unit**"* — deliberately not distinguishable, *"so a cross-unit probe
 cannot confirm a note exists."*
 
 **Every refusal a concurrency guard emits is observable by the model, and a guard

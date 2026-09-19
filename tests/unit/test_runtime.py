@@ -807,19 +807,19 @@ async def test_an_adaptor_is_ticked_over_the_scopes_when_it_is_scope_keyed():
     assert {(a, k) for a, k, _ in runner.calls} == {("lexemes", "g1"), ("lexemes", "g2")}
 
 
-async def test_a_workspace_keyed_adaptor_is_ticked_once_per_workspace():
+async def test_a_unit_keyed_adaptor_is_ticked_once_per_unit():
     """Not a wider or narrower batch — a DIFFERENT key. Two rooms of one
-    workspace must produce ONE tick, or the fact tier adjudicates the same
+    unit must produce ONE tick, or the fact tier adjudicates the same
     claim once per room and calls it corroboration."""
     language = _KeyedLanguage()
     runner = _RecordingRunner()
 
     await _tick(dream_loop(
         _FakeRecord({}), language, Metrics(),
-        scopes=lambda: ["g1", "g2"], workspaces=lambda: ["nora"],
+        scopes=lambda: ["g1", "g2"], units=lambda: ["nora"],
         tick_seconds=0.01, safety_lag=0, quiet_seconds=0.0,
         max_age_seconds=1e9, batch_limit=10,
-        adaptors=[_StubAdaptor("facts", key_kind="workspace", uses_watermark=False)],
+        adaptors=[_StubAdaptor("facts", key_kind="unit", uses_watermark=False)],
         runtime=runner,
     ))
 
@@ -1042,7 +1042,7 @@ async def test_a_scheduled_watermark_bearing_adaptor_still_needs_backlog_and_age
 
 
 async def test_a_scheduled_watermark_free_adaptor_tracks_last_fired_per_key():
-    """The clock is keyed `(adaptor.name, key)` (33 §5 N1a) — one workspace's
+    """The clock is keyed `(adaptor.name, key)` (33 §5 N1a) — one unit's
     curator firing must never hold back or advance another's. Both scopes fire
     on the first tick (nothing has fired yet for either key), and neither
     refires inside the interval."""
@@ -1188,7 +1188,7 @@ async def test_a_schedule_hold_is_counted():
 
 async def test_two_adaptors_sharing_an_interval_can_hold_different_phases():
     """The fact tier's ordering. `fact-adjudication` and
-    `fact-entity-resolution` share a daily interval over the SAME workspace;
+    `fact-entity-resolution` share a daily interval over the SAME unit;
     what separates them is the phase, and the slot is what carries it.
 
     Same instant, same interval, offsets an hour apart — the two must land in

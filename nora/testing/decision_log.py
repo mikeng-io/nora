@@ -72,8 +72,8 @@ class InMemoryDecisionLogStore:
             since_ms=since_ms, limit=limit,
         )
 
-    async def recent_for_workspace(
-        self, *, workspace: str, since_ms: int,
+    async def recent_for_unit(
+        self, *, unit: str, since_ms: int,
         writers: Sequence[str] = (), limit: int = RECENT_LIMIT,
     ) -> tuple[DecisionRow, ...]:
         # The `writers` narrowing happens BEFORE `_window`, matching the SQL
@@ -83,7 +83,7 @@ class InMemoryDecisionLogStore:
         return self._window(
             [
                 r for r in self._rows.values()
-                if r.workspace == workspace
+                if r.unit == unit
                 and (not writers or r.writer in writers)
             ],
             since_ms=since_ms, limit=limit,

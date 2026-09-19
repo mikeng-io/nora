@@ -506,7 +506,7 @@ audio-controller's one allowed decision, documented here and nowhere in nora's d
    allow-list is one nobody can keep true, and an allow-list that drifts is
    quietly wrong rather than loudly wrong. Worse, per-channel identity would
    have given each voice channel its own `conversation_id` and therefore its
-   own room — N Discord rooms in one workspace, breaching DEC-105 N times
+   own room — N Discord rooms in one unit, breaching DEC-105 N times
    over. The 2026-09-17 cleanup measured what ONE such breach costs: 1953
    messages, 11 fabricated notes, and the entire `culture` table.
 

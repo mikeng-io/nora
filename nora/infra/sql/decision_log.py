@@ -34,7 +34,7 @@ def _row(record: sa.Row[tuple[Any, ...]]) -> DecisionRow:
         writer=record.writer,
         platform=record.platform,
         conversation_id=record.conversation_id,
-        workspace=record.workspace,
+        unit=record.unit,
         note_id=record.note_id,
         verdict=record.verdict,
         reason=record.reason,
@@ -53,7 +53,7 @@ class SqlDecisionLogStore:
                 writer=row.writer,
                 platform=row.platform,
                 conversation_id=row.conversation_id,
-                workspace=row.workspace,
+                unit=row.unit,
                 note_id=row.note_id,
                 verdict=row.verdict,
                 reason=row.reason,
@@ -81,12 +81,12 @@ class SqlDecisionLogStore:
         return await self._read(DECISION_LOG.c.conversation_id == conversation_id,
                                 since_ms=since_ms, limit=limit)
 
-    async def recent_for_workspace(
-        self, *, workspace: str, since_ms: int,
+    async def recent_for_unit(
+        self, *, unit: str, since_ms: int,
         writers: Sequence[str] = (), limit: int = RECENT_LIMIT,
     ) -> tuple[DecisionRow, ...]:
-        """The same read across every room of one workspace, served by
-        `idx_decision_log_workspace_ts`.
+        """The same read across every room of one unit, served by
+        `idx_decision_log_unit_ts`.
 
         **`writers` narrows in the WHERE, so `LIMIT` counts rows the caller can
         actually use.** Every reader excludes its own writer, and a busy room's
@@ -94,11 +94,11 @@ class SqlDecisionLogStore:
         filtered after the read, its rows fill the bound and the caller gets
         nothing. Empty means every writer.
 
-        The `IN` sits after `workspace` in the predicate and before the sort, so
-        `idx_decision_log_workspace_ts` still drives the scan; `writer` is a
+        The `IN` sits after `unit` in the predicate and before the sort, so
+        `idx_decision_log_unit_ts` still drives the scan; `writer` is a
         low-cardinality filter over what that index already ordered.
         """
-        return await self._read(DECISION_LOG.c.workspace == workspace,
+        return await self._read(DECISION_LOG.c.unit == unit,
                                 since_ms=since_ms, limit=limit, writers=writers)
 
     async def _read(

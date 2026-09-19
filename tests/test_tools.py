@@ -70,11 +70,11 @@ def wiring_with(wiring):
             metrics=wiring["metrics"], room=wiring["room"],
             transit_source=UNREACHABLE_TRANSIT,
             question="who is here", context_window=40,
-            # Several verbs are workspace-scoped, so a fixture that did not
-            # name one would exercise only the no-workspace refusal — which is
+            # Several verbs are unit-scoped, so a fixture that did not
+            # name one would exercise only the no-unit refusal — which is
             # a real path with its own test, and is not the path any of these
             # are about.
-            **{"workspace_for": lambda *_a: "ws-main", **extra},
+            **{"unit_for": lambda *_a: "ws-main", **extra},
         )
         return {t.tool_name: t for t in tools}
 
@@ -178,7 +178,7 @@ def test_every_declared_tool_is_built(wiring):
         "note_read", "note_search", "note_create", "note_update",
         # The remember verb — the conclusion write lane (2026-08-30).
         "remember",
-        # The workspace-wide memory variant of `search_memory`.
+        # The unit-wide memory variant of `search_memory`.
         "search_memory_workspace",
     }
 
@@ -1081,7 +1081,7 @@ class _RecordingHoncho:
         return MessageHits(reachable=self._reachable, hits=self._hits)
 
 
-def _workspace_memory_tools(wiring, **over):
+def _unit_memory_tools(wiring, **over):
     """`build_tools` over the `wiring` fixture's collaborators, with any of
     them swapped out — `wiring_with` cannot do this (it passes `honcho`,
     `persons` and `metrics` itself), and the roster/source ARE the thing
@@ -1094,13 +1094,13 @@ def _workspace_memory_tools(wiring, **over):
         metrics=over.pop("metrics", wiring["metrics"]),
         room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
         question="who is here", context_window=40,
-        workspace_for=lambda *_a: "ws-main", **over,
+        unit_for=lambda *_a: "ws-main", **over,
     )
     return {t.tool_name: t for t in tools}
 
 
-async def test_search_memory_workspace_filters_by_the_workspace_roster(wiring):
-    """32 §5 closed decision 1: the roster is the WORKSPACE's people
+async def test_search_memory_workspace_filters_by_the_unit_roster(wiring):
+    """32 §5 closed decision 1: the roster is the UNIT's people
     (`persons.by_person`), not one room's live view — and the per-message
     guard is unchanged: a peer nobody can name never comes back, and neither
     does Nora's own."""
@@ -1109,13 +1109,13 @@ async def test_search_memory_workspace_filters_by_the_workspace_roster(wiring):
         ("a_peer_nobody_mapped", "should never surface"),
         ("nora", "her own words are not the group's memory"),
     ))
-    tools = _workspace_memory_tools(wiring, honcho=honcho)
+    tools = _unit_memory_tools(wiring, honcho=honcho)
 
     out = await tools["search_memory_workspace"]("big walk")
 
     assert out["status"] == "ok"
     assert out["results"] == [{"who": "Miles", "said": "big walk 聽日朝早"}]
-    # No room to scope to and none passed — the workspace-wide endpoint.
+    # No room to scope to and none passed — the unit-wide endpoint.
     assert honcho.calls[0]["conversation_id"] is None
     # The room verb's marker of a DEGRADED view has no meaning here: there is
     # no room view to degrade, so the key is absent rather than False.
@@ -1131,7 +1131,7 @@ async def test_search_memory_workspace_withholds_what_she_may_not_repeat(
     honcho = _RecordingHoncho(
         hits=(("miles", "個 script 我 send 咗俾 +85290000101 呀"),))
     metrics = Metrics()
-    tools = _workspace_memory_tools(wiring, honcho=honcho, metrics=metrics)
+    tools = _unit_memory_tools(wiring, honcho=honcho, metrics=metrics)
 
     out = await tools["search_memory_workspace"]("script")
 
@@ -1147,7 +1147,7 @@ async def test_search_memory_workspace_withholds_what_she_may_not_repeat(
 async def test_search_memory_workspace_an_outage_is_unavailable(wiring):
     """`reachable=False` is the adapter's own signal that nothing ran — the
     outage must not read as «nothing was said»."""
-    tools = _workspace_memory_tools(wiring, honcho=_RecordingHoncho(reachable=False))
+    tools = _unit_memory_tools(wiring, honcho=_RecordingHoncho(reachable=False))
 
     out = await tools["search_memory_workspace"]("big walk")
 
@@ -1158,7 +1158,7 @@ async def test_search_memory_workspace_without_a_roster_is_unavailable(wiring):
     """No persons wired at all is a WIRING gap, not an empty address book:
     an empty one legitimately filters every hit, a missing one means «I
     could not check» — and the two never share a status."""
-    tools = _workspace_memory_tools(
+    tools = _unit_memory_tools(
         wiring, honcho=_RecordingHoncho(hits=(("miles", "big walk"),)),
         persons=None,
     )
@@ -1205,7 +1205,7 @@ def _held_tools(wiring):
         persons=wiring["persons"], honcho=wiring["honcho"], deliverer=held,
         metrics=Metrics(), room=wiring["room"],
         transit_source=UNREACHABLE_TRANSIT, question="who is here",
-        context_window=40, workspace_for=lambda *_a: "ws-main",
+        context_window=40, unit_for=lambda *_a: "ws-main",
     )
     return {t.tool_name: t for t in tools}, held
 
@@ -1237,7 +1237,7 @@ async def test_send_reply_still_says_refused_when_a_guard_stops_it(wiring):
         persons=wiring["persons"], honcho=wiring["honcho"], deliverer=capped,
         metrics=Metrics(), room=wiring["room"],
         transit_source=UNREACHABLE_TRANSIT, question="who is here",
-        context_window=40, workspace_for=lambda *_a: "ws-main",
+        context_window=40, unit_for=lambda *_a: "ws-main",
     )}
 
     assert await _call(tools["send_reply"], text="first") == "sent"

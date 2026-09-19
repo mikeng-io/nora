@@ -60,9 +60,9 @@ mechanism as every Nora room, per `design/10-identity-and-policy-schema.md`:
   silently served a stale policy.toml twice on 2026-08-08
   (`nora/obs/health.py:14-21` — "a recreate is needed, not a restart").
 - `tools` / `location` stay omitted (deny-by-default), honoring the
-  one-room-per-platform-per-workspace convention from the
+  one-room-per-platform-per-unit convention from the
   adding-conversation-to-policy reference. (DEC-105 is the `send_to` relay
-  rule — "one room may speak into another, bounded by the workspace",
+  rule — "one room may speak into another, bounded by the unit",
   `design/09-decision-index.md:232` — not a room-count rule; do not cite it
   as one.)
 
@@ -159,9 +159,9 @@ calendar note, not infrastructure.
    transport and applies general room rules until that session lands.
    Discord v1 deliberately excluded 1:1 DMs (roster semantics absent) — the
    DM-study session owns whether WhatsApp changes that posture.
-3. **Workspace mapping — DECIDED: reuse `friends`** (operator 2026-09-04).
-   WhatsApp chats join the existing `friends` workspace — same roster, second
+3. **Unit mapping — DECIDED: reuse `friends`** (operator 2026-09-04).
+   WhatsApp chats join the existing `friends` unit — same roster, second
    ingress. WhatsApp becomes the friends room's WhatsApp surface, parallel
    to its Signal group (and existing Discord rooms). (DEC-105 is the
-   `send_to` relay rule, not a room-count rule — the workspace decision
+   `send_to` relay rule, not a room-count rule — the unit decision
    stands on the operator's explicit call.)

@@ -2,13 +2,13 @@
 
 **Why this does not reuse the room block's note.** The room-language block
 said «distilled from this room's own messages», and a note is keyed on the
-WORKSPACE. (That constant lived in `nora.language.render`, deleted with the
+UNIT. (That constant lived in `nora.language.render`, deleted with the
 language tier on 2026-09-07 — the argument survives it, and this is now the
 only block making it.) `Note.established_in`
 records the room it was born in but is a routing key, never a filter (spec §3) —
 it decides where a promoted `Event` lands, not who may see the note — so a note
 established in one room renders unchanged in every other room of the same
-workspace. Reusing that sentence here would make it FALSE in the one place the
+unit. Reusing that sentence here would make it FALSE in the one place the
 model is being asked to trust a sentence. Everything else is its siblings'
 convention: escaped, saying what it is from its own type
 (`nora.domain.block_types`), and no block at all when nothing is standing.
@@ -52,7 +52,7 @@ question, and §6.2 requires a `note_read` before any revision anyway.
 
 **This tier is LIVE.** `TagContext.notes` still defaults to `()` — an
 unwired caller renders nothing rather than raising — but
-`nora.engagement.context` populates it from the workspace's standing notes,
+`nora.engagement.context` populates it from the unit's standing notes,
 and the note-candidates pass (#98) writes them, so this index is on the
 prompt in production. The paragraph here said the opposite until 2026-09-13,
 which is the ordinary cost of a "not yet" written beside a switch somebody

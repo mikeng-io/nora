@@ -3,7 +3,7 @@
 
 **Two suites, because the loop has two turns.** The DECIDE suite measures
 WHEN — the thing that makes the adaptor proactive rather than scheduled: a
-workspace's open notes, per-room Standing, the decision log and memory go
+unit's open notes, per-room Standing, the decision log and memory go
 in; the reminder rows the real runtime + real adaptor left behind come out,
 and PASS is exactly the expected rows, each inside its `due_between`
 window, owner `nora`, kind `proactive`. The ACT suite measures the fire
@@ -89,7 +89,7 @@ class ExpectedRow:
 class DecideCase:
     name: str
     expect: str
-    workspace: str
+    unit: str
     now: datetime
     rooms: tuple[dict[str, Any], ...]
     notes: tuple[dict[str, Any], ...] = ()
@@ -110,7 +110,7 @@ class DecideCase:
     def from_dict(cls, raw: dict[str, Any]) -> DecideCase:
         case = cls(
             name=str(raw["name"]), expect=str(raw["expect"]),
-            workspace=str(raw["workspace"]), now=_iso(raw["now"]),
+            unit=str(raw["unit"]), now=_iso(raw["now"]),
             rooms=tuple(dict(r) for r in raw["rooms"]),
             notes=tuple(dict(n) for n in raw.get("notes", ())),
             standing=tuple(dict(s) for s in raw.get("standing", ())),

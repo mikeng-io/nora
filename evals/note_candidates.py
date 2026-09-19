@@ -89,7 +89,7 @@ def _opt_str(value: Any) -> str | None:
 class NoteCandidatesCase:
     name: str
     expect: str
-    workspace: str
+    unit: str
     batch: tuple[BatchMessage, ...]
     notebook: tuple[NotebookEntry, ...] = ()
     anchor_date: int | None = None
@@ -129,7 +129,7 @@ class NoteCandidatesCase:
         )
         case = cls(
             name=str(raw["name"]), expect=str(raw["expect"]),
-            workspace=str(raw["workspace"]), batch=batch, notebook=notebook,
+            unit=str(raw["unit"]), batch=batch, notebook=notebook,
             anchor_date=(int(raw["anchor_date"]) if raw.get("anchor_date") is not None else None),
             must_cite=tuple(int(i) for i in raw.get("must_cite", ())),
             updates=raw.get("updates"),

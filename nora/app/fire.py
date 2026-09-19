@@ -832,9 +832,9 @@ class FirePath:
         # until an operator enables it.
         #
         # `policy` is here for exactly one read: the tier is keyed on
-        # `Conversation.workspace` (DEC-105), so scoping it needs the same
+        # `Conversation.unit` (DEC-105), so scoping it needs the same
         # `Policy` instance the assembler holds — a fire path with its own
-        # idea of a room's workspace would render another social unit's notes
+        # idea of a room's unit would render another social unit's notes
         # into this one. `None` keeps the tier inert, the pre-wiring shape
         # every test construction site has.
         self._notes = notes
@@ -1037,17 +1037,17 @@ class FirePath:
                     "nora_errors_total", stage="fire_peer_card", platform=occasion.platform,
                 )
 
-        # The workspace-keyed tier resolves the workspace ONCE per turn, and
+        # The unit-keyed tier resolves the unit ONCE per turn, and
         # the read is skipped entirely when it is not wired (the dormant
         # default must not count a gap it does not have).
         # Resolved ONCE per turn and now read by two tiers, so the `notes`
         # guard is no longer the whole condition: the decision log is
-        # workspace-scoped too (issue #199), and a turn that skipped the
+        # unit-scoped too (issue #199), and a turn that skipped the
         # lookup because the note tier was off would render no decisions block
         # for a reason unrelated to decisions.
-        workspace: str | None = None
+        unit: str | None = None
         if self._notes is not None or self._decisions is not None:
-            workspace = self._workspace_for(occasion)
+            unit = self._unit_for(occasion)
 
         # Issue #210 — read AFTER the transcript, because both reads are
         # curated to the window's own text and keyed on the people in it.
@@ -1063,8 +1063,8 @@ class FirePath:
             self_card=self_card,
             people_in_window=people,
             standing=await self._read_standing(occasion),
-            notes=await self._read_notes(occasion, workspace),
-            decisions=await self._read_decisions(occasion, workspace),
+            notes=await self._read_notes(occasion, unit),
+            decisions=await self._read_decisions(occasion, unit),
         )
 
     async def _read_memory(
@@ -1259,15 +1259,15 @@ class FirePath:
         return tuple(rows)
 
     async def _read_decisions(
-        self, occasion: Event, workspace: str | None,
+        self, occasion: Event, unit: str | None,
     ) -> tuple[tuple[str, tuple[DecisionRow, ...]], ...]:
-        """What her AMBIENT LOOP already did across this WORKSPACE, for the two
+        """What her AMBIENT LOOP already did across this UNIT, for the two
         occasions that decide whether to take a floor nobody offered them
         (issue #199; the proactive act turn added 2026-09-17). `(room label,
         rows)` groups.
 
-        **Workspace-scoped, and «this room» would have missed the incident it
-        exists for.** A `kind="proactive"` row fires into the workspace's home
+        **Unit-scoped, and «this room» would have missed the incident it
+        exists for.** A `kind="proactive"` row fires into the unit's home
         room and nowhere else (39 D2/D3); on 2026-09-10 that was a Discord
         room while the thread was on Signal. A participation turn in the
         Signal room reading «this room, last 24 hours» sees nothing and speaks
@@ -1301,12 +1301,12 @@ class FirePath:
         Neither reads `tag`: a tag is somebody asking, so what it answered
         belongs in the transcript underneath, where it already is.
 
-        **A turn with no workspace renders NO block, rather than falling back
-        to this room.** No workspace is the wiring gap `_workspace_for` already
+        **A turn with no unit renders NO block, rather than falling back
+        to this room.** No unit is the wiring gap `_unit_for` already
         refuses to guess past, and a narrower read presented under a block that
         says «across this group» would be a claim the rows cannot support.
 
-        Fail-soft with no `except` here — `DecisionLogRecorder.read_workspace`
+        Fail-soft with no `except` here — `DecisionLogRecorder.read_unit`
         answers `()` on every failure and counts it. `None` is the dormant
         default.
         """
@@ -1315,10 +1315,10 @@ class FirePath:
         # «this occasion does not read the log» and «this occasion reads it
         # with these writers» one statement instead of two that can disagree.
         writers = _DECISION_WRITERS_BY_KIND.get(occasion.kind)
-        if self._decisions is None or writers is None or not workspace:
+        if self._decisions is None or writers is None or not unit:
             return ()
-        rows = await self._decisions.read_workspace(
-            platform=occasion.platform, workspace=workspace,
+        rows = await self._decisions.read_unit(
+            platform=occasion.platform, unit=unit,
             # In the QUERY, never a filter over what came back. The bound is 20
             # rows, so a post-filter could let one busy writer's rows evict
             # every other decider's — silently, in exactly the busy room where
@@ -1343,17 +1343,17 @@ class FirePath:
             return ""
         return convo.label if convo is not None else ""
 
-    def _workspace_for(self, occasion: Event) -> str | None:
-        """The workspace this occasion's room belongs to, or `None`.
+    def _unit_for(self, occasion: Event) -> str | None:
+        """The unit this occasion's room belongs to, or `None`.
 
-        The workspace-keyed tier scopes through the SAME `Policy` read the
+        The unit-keyed tier scopes through the SAME `Policy` read the
         tag path's own note prefill uses (`nora.engagement.context.
         TranscriptInjection._notes`, DEC-105): two readers each carrying
-        their own idea of a room's workspace disagree the first time a
+        their own idea of a room's unit disagree the first time a
         deployment runs two social units.
 
         `None` — a store wired but no `Policy` or no `Conversation` for the
-        room — is a WIRING GAP, not an empty tier: guessing a workspace would
+        room — is a WIRING GAP, not an empty tier: guessing a unit would
         render another unit's notes into this room. Counted, because a
         block missing for the life of a deployment with nothing saying so is
         how `_peer_card`'s `nora_peer_card_empty_total` lesson was bought.
@@ -1373,43 +1373,43 @@ class FirePath:
             # `_peer_card`'s `nora_peer_card_empty_total` lesson was bought.
             log.exception(
                 "policy conversation read failed for %s/%s — the note "
-                "tier cannot be scoped to a workspace; continuing without it",
+                "tier cannot be scoped to a unit; continuing without it",
                 occasion.platform, occasion.conversation_id,
             )
             self._metrics.inc(
-                "nora_errors_total", stage="fire_workspace",
+                "nora_errors_total", stage="fire_unit",
                 platform=occasion.platform,
             )
             return None
         if convo is None:
             log.warning(
                 "no policy conversation for %s/%s — the note tier cannot "
-                "be scoped to a workspace; continuing without it",
+                "be scoped to a unit; continuing without it",
                 occasion.platform, occasion.conversation_id,
             )
             self._metrics.inc(
-                "nora_errors_total", stage="fire_workspace",
+                "nora_errors_total", stage="fire_unit",
                 platform=occasion.platform,
             )
             return None
-        return convo.workspace
+        return convo.unit
 
     async def _read_notes(
-        self, occasion: Event, workspace: str | None,
+        self, occasion: Event, unit: str | None,
     ) -> tuple[Note, ...]:
         """The standing note index, `TranscriptInjection._notes` mirrored.
 
         Fail-SOFT and COUNTED, the same three states: no store is the dormant
-        default (not an error, not counted); no workspace is the wiring gap
+        default (not an error, not counted); no unit is the wiring gap
         above (counted there, once); a FAILED read is neither — a thinner
         prompt beats a reminder that does not fire, but a note index that
         exists and could not be fetched reported as «there are none» is the
         `unavailable`-as-`nothing_found` substitution R-27 exists to prevent.
         """
-        if self._notes is None or workspace is None:
+        if self._notes is None or unit is None:
             return ()
         try:
-            return tuple(await self._notes.standing(workspace=workspace))
+            return tuple(await self._notes.standing(unit=unit))
         except Exception:
             log.exception("fire note-index read failed; continuing without it")
             self._metrics.inc(

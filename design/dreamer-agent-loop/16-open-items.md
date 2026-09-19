@@ -1,7 +1,7 @@
 ---
 type: analysis
 title: "Open Items — All Closed, With What Would Reopen Each"
-description: "What this bundle does not answer, ranked by what blocks what. The gateway probe blocks all budget sizing; the disclosure question blocks workspace room access."
+description: "What this bundle does not answer, ranked by what blocks what. The gateway probe blocks all budget sizing; the disclosure question blocks unit room access."
 tags: [nora, dreamer, open-questions, backlog]
 timestamp: '2026-08-22'
 edges:
@@ -63,24 +63,24 @@ on.
 
 **2. R-49's second condition on the fact path.**
 
-The workspace bounds which rooms may be paired; the persons list decides who
+The unit bounds which rooms may be paired; the persons list decides who
 may use the pair. The fact path implements the first and has no mechanism for
 the second. Until it does, Path B in [10-room-access.md](10-room-access.md) is
 blocked and the content-class change in [11-disclosure.md](11-disclosure.md) is
 unsanctioned.
 
 **It is not unanswered — it is answered twice, incompatibly.** One spec holds
-that a fact has *no* second gate and therefore the workspace must be **stated**,
+that a fact has *no* second gate and therefore the unit must be **stated**,
 in the refuse-to-start shape, with a named test. Another withdraws its own
-room-gate on the opposite reading: *"the workspace key already **is** the
+room-gate on the opposite reading: *"the unit key already **is** the
 gate."* The startup check the first implies was cut.
 
 **DECIDED (2026-08-23): the startup check, in the refuse-to-start shape.**
 
-The two readings are *"a fact has no second gate, so the workspace must be
-stated"* and *"the workspace key already **is** the gate."* The second borrows
+The two readings are *"a fact has no second gate, so the unit must be
+stated"* and *"the unit key already **is** the gate."* The second borrows
 its safety from a key's shape; the first turns it into a guard. This tier
-**refuses to start** when a workspace's person set is not stated — the same
+**refuses to start** when a unit's person set is not stated — the same
 shape `policy.toml` already uses, and the reading with a test already written
 for it.
 

@@ -265,8 +265,8 @@ RULE_TESTS = {
     # decision (Discord routing).
     "R-48": "test_a_non_cacheable_tool_is_never_logged",
     # R-49 (DEC-105): a relay crosses into another room only within one
-    # workspace, only for somebody allowed in both, and only under their name.
-    "R-49": "test_a_room_in_another_workspace_is_refused",
+    # unit, only for somebody allowed in both, and only under their name.
+    "R-49": "test_a_room_in_another_unit_is_refused",
     # R-50 (DEC-106): her memory OF THE TAGGER rides in the prefill, and the
     # tool that would fetch it again points at the block instead. The duplicate
     # is the whole risk the block carries, so the guard is the named rule.
@@ -1039,7 +1039,7 @@ async def test_r87_the_standing_fold_reads_since_a_row_id_watermark():
     )
     await debrief.run(
         trace=trace, platform="signal", store=store,
-        store_verdict=None, notes_sink=None, workspace_of=lambda p, c: "ws",
+        store_verdict=None, notes_sink=None, unit_of=lambda p, c: "ws",
         client=client, objective=_Objective(), metrics=Metrics(),
         display_name="Nora", record_store=record, max_chars=1200, fold_batch=200,
         timeout_seconds=5.0, store_timeout_seconds=5.0,

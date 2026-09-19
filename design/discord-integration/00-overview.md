@@ -16,7 +16,7 @@ Nora's platform layer already anticipates more than one adapter:
 `nora/platform/registry.py::AdapterRegistry` builds and health-checks every
 enabled adapter at startup. Only `SignalAdapter` exists today. Discord is the
 first realization of that extension point, and simultaneously the first real
-exercise of the workspace concept sketched in
+exercise of the unit concept sketched in
 `design/proposed/24-honcho-integration-v2.md` — a social unit (a friend group)
 spanning more than one platform, where the same person's Signal and Discord
 accounts must resolve to one `person_id` / one Honcho peer.

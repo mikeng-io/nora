@@ -304,9 +304,9 @@ def holding_refusals(
     she owes a room — so the standing arm IS the interesting half, and it is
     the half that is missing. Reported wherever this number is reported.
 
-    **Held FOR R means born in R.** A note is workspace-scoped and
+    **Held FOR R means born in R.** A note is unit-scoped and
     `established_in` is a routing key rather than a filter, so in principle
-    every room in the workspace shares it. The narrower reading is used because
+    every room in the unit shares it. The narrower reading is used because
     #248 is what the wider one looks like in production: a note answered in a
     room it was not born in, on a different platform. Where she would raise it
     is where she can be said to be holding it.

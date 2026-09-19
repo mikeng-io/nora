@@ -68,11 +68,11 @@ Three complaints, all confirmed against the design corpus and the live system:
 | Claim | Where | Status |
 |---|---|---|
 | Per-adaptor schedule is designed AND wired | [32](32-fact-dreamer-schedule.md) §3.1 — `AdaptorSchedule(min_interval_seconds, batch_limit, max_items)`, name-keyed mapping, no Protocol change. Merged into master (`3ca43b83`); composition wires `dream_schedules` (`composition.py:2415`) for `fact-candidates` ONLY — see §5 N1 for why the note curator cannot use it as-is | ✅ designed + wired (fact only) |
-| The note tier has two adaptors, neither creates | `NoteRevisitor` (`nora/language/note_revisitor.py:485`, `name="note-revisit"`, workspace-keyed, watermark-free) and `NoteCuratorAdaptor` (`nora/language/note_curator.py:227`, `name="note-curation"`, workspace-keyed, watermark-free) | ✅ both built, both read-only |
+| The note tier has two adaptors, neither creates | `NoteRevisitor` (`nora/language/note_revisitor.py:485`, `name="note-revisit"`, unit-keyed, watermark-free) and `NoteCuratorAdaptor` (`nora/language/note_curator.py:227`, `name="note-curation"`, unit-keyed, watermark-free) | ✅ both built, both read-only |
 | The tag path has create/update tools | `note_create`/`note_update` (`nora/agent/tools.py`), gated by R-55 read-before-write latch | ✅ exists, never fired |
-| `note_candidate` is a MISS CACHE, not a create queue | `nora/infra/sql/schema.py:1821` — `(workspace, probe)` unique key, `occurrence_count`, `observed_in`; written by `record_miss` (`nora/agent/tools.py:2000`) | ✅ the only candidate table, wrong shape for create |
+| `note_candidate` is a MISS CACHE, not a create queue | `nora/infra/sql/schema.py:1821` — `(unit, probe)` unique key, `occurrence_count`, `observed_in`; written by `record_miss` (`nora/agent/tools.py:2000`) | ✅ the only candidate table, wrong shape for create |
 | The fact tier's Phase A/B split is the pattern to copy | `FactCandidateAdaptor` (`nora/language/fact_adaptor.py:201`, scope-keyed, watermarked, tool-free) → `fact_candidate` table → `FactAdaptor` (Phase B adjudication) | ✅ proven |
-| The Dreamer has no write tools | `WORKSPACE_SAFE_TOOLS` + `read_only_tools()` ceiling | ✅ structural |
+| The Dreamer has no write tools | `UNIT_SAFE_TOOLS` + `read_only_tools()` ceiling | ✅ structural |
 | The note tier's adaptors have no schedule of their own | `composition.py:2457/2489` — both built under `[notes]` gates, no `AdaptorSchedule` wired | ❌ to add |
 
 ## 3. The reframe — a note is a notebook entry, not an uncertainty
@@ -138,7 +138,7 @@ a message batch and proposes notes, with code deciding create.**
 | | fact-candidates (proven) | note-candidates (new) |
 |---|---|---|
 | key | scope (per-room watermark) | scope (per-room watermark) |
-| reads | message batch | message batch + the workspace's note index (title/description) |
+| reads | message batch | message batch + the unit's note index (title/description) |
 | writes | `fact_candidate` rows | `note_candidate` rows, `kind='create'` |
 | tools | none — one cheap call | **read-only awareness only** — see §4.1 |
 | output | `(subject, predicate, object, message_ids)` | a full note proposal: `(title, description, body, anchor, closing_condition, message_ids)` |
@@ -153,20 +153,20 @@ messages is the only way the adaptor sees the whole exchange, not a
 **Why it needs the note index:** unlike fact candidates (new claims, no
 dedupe against existing facts — that is adjudication's job), a note proposal
 must not duplicate a note that already exists. The adaptor sees the
-workspace's standing index (title + description, the same projection the tag
+unit's standing index (title + description, the same projection the tag
 path gets) and is told: *if this arrangement is already written down, do not
 propose it again — propose an update instead, or nothing.*
 
 **The candidate table needs a shape change.** `note_candidate` today is a miss
-cache — `(workspace, probe)`, `occurrence_count`, `observed_in`. It is the
+cache — `(unit, probe)`, `occurrence_count`, `observed_in`. It is the
 wrong shape for a create queue. The design:
 
 - Add `kind` (`miss` | `create`) — existing rows are all `miss`, no backfill.
 - For `kind='create'`: `title`, `description`, `body`, `anchor_date`,
   `closing_condition`, `message_ids` (attribution), `status`
   (`pending` | `created` | `refused`), `attempts`.
-- The miss cache keeps its `(workspace, probe)` unique key. Create candidates
-  dedupe on the **anchor key** (`workspace, anchor_date, entity_set` — the
+- The miss cache keeps its `(unit, probe)` unique key. Create candidates
+  dedupe on the **anchor key** (`unit, anchor_date, entity_set` — the
   same `group_on_anchor_key` the curator uses), not on title: a proposal for
   an anchor that already has a standing note is an update proposal, not a
   duplicate (Kimi review finding M10).
@@ -176,7 +176,7 @@ wrong shape for a create queue. The design:
   writing meaningful values — the migration must make `probe` nullable for
   `kind='create'` rows (or give it a sentinel default) and treat
   `first_seen_at`/`last_seen_at` as the proposal's sighting timestamps.
-  The `(workspace, title)` create-key and the existing `(workspace, probe)`
+  The `(unit, title)` create-key and the existing `(unit, probe)`
   miss-key are two different uniqueness domains, not one: the upsert for a
   re-sighting of a create candidate needs its own `ON CONFLICT` behaviour.
 
@@ -207,18 +207,18 @@ while they consolidate — and none of the delivery or write verbs (`remind`,
 **Kimi review finding M1 — the grant is constrained by tool_subset_faults.**
 `tool_subset_faults` (`dreamer.py:325`) refuses, at startup AND per-run, any
 tool outside the read-only ceiling, and any ROOM-scoped tool on a
-WORKSPACE-keyed adaptor (a workspace is not a conversation id; room-scoped
+UNIT-keyed adaptor (a unit is not a conversation id; room-scoped
 tools would answer EMPTY — `unavailable` reported as `nothing_found`, the
-one substitution R-27 forbids). So the workspace-keyed curator can only
-hold tools in `WORKSPACE_SAFE_TOOLS` (`dreamer.py:259`) — which today is:
+one substitution R-27 forbids). So the unit-keyed curator can only
+hold tools in `UNIT_SAFE_TOOLS` (`dreamer.py:259`) — which today is:
 `search_knowledge`/`get_knowledge`/`knowledge_premises`/`knowledge_asserters`/
 `knowledge_entity`, `note_read`/`note_search`, `search_memory_workspace`,
 `web_search`/`web_fetch`, `now`, `calculate`, `weather`, `version`,
 `social_fetch`, `media_search`. **`list_reminders`, `list_events`,
 `create_event` etc. are NOT in that set** — they are room-scoped
-(conversation-bound), so they cannot be granted to a workspace-keyed adaptor
-without either (a) making them workspace-safe with the same supplied-key path
-32 §3.4 used for the knowledge tools (their tables are workspace-keyed
+(conversation-bound), so they cannot be granted to a unit-keyed adaptor
+without either (a) making them unit-safe with the same supplied-key path
+32 §3.4 used for the knowledge tools (their tables are unit-keyed
 already), or (b) accepting that the curator's awareness excludes reminders and
 events until the proactive adapter reads them. This node records the
 constraint; the exact grant list is an implementation decision under it.
@@ -281,7 +281,7 @@ whether or not the room speaks), so it must fire even with ZERO new data —
   `""` on the overwhelming majority of ticks (nothing expired, no merge
   groups), and the runtime skips the model call (`dreamer.py:702-711`). It
   is functionally correct (the calendar check runs every tick) but pays a
-  cheap SQL round per workspace per 300s tick forever. It is the fallback
+  cheap SQL round per unit per 300s tick forever. It is the fallback
   while (a) is unbuilt, not the design.
 
 **N2 (MINOR) — there is no `[dreamer.schedules.*]` TOML surface.**
@@ -385,7 +385,7 @@ the create path exists — a note must exist before it can be discharged.
 
 ## 8. The proactive adapter — deferred, and why it is not this tier's
 
-> **REVISED 2026-09-09 by [39-proactive-ooda-loop.md](39-proactive-ooda-loop.md).** The adaptor is decided there: a Dreamer adaptor, workspace-keyed through a home room, whose one act verb is her own `remind`, stamped by Dreamer provenance to write a proactive reminder row, and whose decision IS the tool call — so «model-proposes / code-disposes» below does not describe it (39 D4). The boundary rule below stands. The «knowledge and language tiers» named as inputs were deleted 2026-09-07 (issue #115) and are historical here.
+> **REVISED 2026-09-09 by [39-proactive-ooda-loop.md](39-proactive-ooda-loop.md).** The adaptor is decided there: a Dreamer adaptor, unit-keyed through a home room, whose one act verb is her own `remind`, stamped by Dreamer provenance to write a proactive reminder row, and whose decision IS the tool call — so «model-proposes / code-disposes» below does not describe it (39 D4). The boundary rule below stands. The «knowledge and language tiers» named as inputs were deleted 2026-09-07 (issue #115) and are historical here.
 
 Confirmed with the operator 2026-09-03, recorded here so the boundary stays
 visible: **Nora should move from passive to active** — initiative derived
@@ -445,7 +445,7 @@ the revisitor's reaching-a-person half belongs to the proactive adapter,
 not to a widened `tool_subset_faults` here.
 
 **(3) Kimi external audit fixes folded in** (independent model, 2026-09-03):
-M1 (tool grant constrained by `tool_subset_faults` / workspace-safe set,
+M1 (tool grant constrained by `tool_subset_faults` / unit-safe set,
 §4.1 now records it), M3 (§1 factual fix — watermark-free adaptors have NO
 fire condition, they run every tick), M5 (`note_candidate` migration
 nullable constraints + two uniqueness domains, §4 now records it), M6

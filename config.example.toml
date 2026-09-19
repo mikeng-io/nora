@@ -709,7 +709,7 @@ budget = 5
 # REFUSES TO START without any of them rather than accepting every job and
 # failing it minutes later in front of the group:
 #   NORA_DATA_HOST_ROOT   the host-side path of the /app/data mount. It exists
-#                         because a sandbox's workspace is bind-mounted by the
+#                         because a sandbox's unit is bind-mounted by the
 #                         HOST Docker daemon, which resolves the source on the
 #                         host filesystem — an in-container path silently
 #                         resolves to an empty directory and the job produces
@@ -1144,8 +1144,8 @@ timezone = "Asia/Hong_Kong"   # the wall clock a recurrence KEEPS. An IANA zone
 
 [notes]
 # The note tier's gate (docs/superpowers/specs/2026-08-21-note-tier-design.md).
-# ON, every tag reads the standing note index for the room's WORKSPACE — not
-# its conversation (§3/DEC-105: rooms sharing a workspace are one social unit)
+# ON, every tag reads the standing note index for the room's UNIT — not
+# its conversation (§3/DEC-105: rooms sharing a unit are one social unit)
 # — and renders it as <notes>. OFF, no store is built, no query runs, and the
 # block never appears.
 #
@@ -1181,7 +1181,7 @@ enabled = false
 # tier that REMOVES something from her index. An operator turning notes on has
 # not thereby asked for a background pass that reorganises them.
 #
-# What it does when on, on the schedule below, per workspace:
+# What it does when on, on the schedule below, per unit:
 #
 #   (MERGE was here until 2026-09-08 — notes sharing an anchor date AND the
 #             same RESOLVED people were one occasion written twice. The
@@ -1235,7 +1235,7 @@ curator_enabled = false
 # process creating notes on her behalf.
 #
 # ON, a scope-keyed, hourly, tool-free Dreamer pass reads each room's message
-# batch and the workspace's standing note index, proposes full notes for
+# batch and the unit's standing note index, proposes full notes for
 # anything not yet tracked, and a DETERMINISTIC gate — never the model —
 # decides whether that becomes a new note, a revision to one that already
 # covers the same occasion, or nothing. The model never writes a note
@@ -1663,13 +1663,13 @@ max_tokens = 6000
 # the defaults: 6 turns, 40000 total tokens, 4000 output tokens, 120 s, and 2
 # memory reads per pass). The
 # proactive adaptor (design/dreamer-agent-loop/39 D1, revised by issue #136)
-# ticks hourly per workspace but RENDERS — pays a model call — only on a daily
-# floor or a change in a quiet workspace, and researches with real tools —
+# ticks hourly per unit but RENDERS — pays a model call — only on a daily
+# floor or a change in a quiet unit, and researches with real tools —
 # where_is, route, note_read, memory, the web — so it can afford more than a
 # tag turn's fixed budgets. Uncomment to
 # widen it; the two proactive eval suites (39 §5) are what say whether the
 # extra turns buy anything. It is wired only when policy.toml names a
-# `home_room = true` for a workspace — there is no [dreamer] flag for it.
+# `home_room = true` for a unit — there is no [dreamer] flag for it.
 # OPENED 2026-09-10, and these are the numbers the deployment runs. They are
 # NOT a measurement — they are room to take one, and the block is uncommented
 # so that the `proactive_decide` suite measures the configuration production
@@ -1681,7 +1681,7 @@ max_tokens = 6000
 # turn RE-SENDS it, so the loop's running total is roughly context x turns and
 # 40,000 bought four turns. The decide turn had not finished researching by
 # then, and R-7 was already vetoing a fifth `search_memory_workspace`. The cost
-# scales with the workspace's roster: a one-person room finished in 19-28k, a
+# scales with the unit's roster: a one-person room finished in 19-28k, a
 # real one did not finish at all.
 #
 # So `turns` is the REAL budget here and `total_tokens` is a safety net, which
@@ -1722,7 +1722,7 @@ timeout_seconds = 240.0
 # NATIVE_TOOLS table) bound each verb on its own, which is exactly what a pass
 # spends by asking four different verbs the same question.
 #
-# The measurement that put it here: a decide turn on the `friends` workspace
+# The measurement that put it here: a decide turn on the `friends` unit
 # (Langfuse 340373cd, 2026-09-10 18:03 HKT) made `note_read` three times,
 # `about`, `search_memory_workspace` and `ask_memory` — six held-state reads
 # for TWO notes whose two handles its own `<people>` block already carried.
@@ -1735,7 +1735,7 @@ timeout_seconds = 240.0
 # The (N+1)th read is ANSWERED — R-27 `unavailable` with a reason the model can
 # read — never an error, never a silent empty. 2 is `d11`'s grading budget: the
 # one read the objective requires before any `remind`, plus one. Raise it for a
-# workspace whose notes genuinely involve more people than the index can settle;
+# unit whose notes genuinely involve more people than the index can settle;
 # the reading that says so is the decide suite losing recall at 2 that it keeps
 # at 3. Omit the key and every adaptor gets 2 by default — a ceiling by
 # omission, never an unbounded pass.

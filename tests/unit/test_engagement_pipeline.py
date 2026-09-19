@@ -2197,7 +2197,7 @@ def _wiring() -> object:
                   objective=object(), record_store=object(),
                   max_chars=1200, fold_batch=200, timeout_seconds=5.0,
                   store_timeout_seconds=5.0, rebuild_after_folds=20,
-                  notes_sink=None, workspace_of=lambda p, c: "ws")
+                  notes_sink=None, unit_of=lambda p, c: "ws")
 
 
 def _patch_debrief(monkeypatch, spy) -> None:

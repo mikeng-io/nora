@@ -5,7 +5,7 @@ a testcontainer, and `nora.testing.InMemoryNoteStore` built from
 `nora.domain.notes` alone. CLAUDE.md's rule is why this file exists at all — a
 port never gains a second implementation, *including a test fake*, without a
 suite both pass. It is also why `InMemoryNoteStore` is not a dict that says yes:
-the compare-and-swap refusal, the workspace scoping and the head-only search are
+the compare-and-swap refusal, the unit scoping and the head-only search are
 asserted HERE, against both, so a fake that accepted a stale parent would be red
 rather than convenient.
 
@@ -67,8 +67,8 @@ from nora.infra.sql.schema import (
 from nora.testing import InMemoryNoteStore
 
 NOW = 1_755_200_000_000
-WS = "workspace-alpha"
-OTHER_WS = "workspace-beta"
+WS = "unit-alpha"
+OTHER_WS = "unit-beta"
 
 
 class _NoteStore(Protocol):
@@ -78,36 +78,36 @@ class _NoteStore(Protocol):
     fake drifting off it."""
 
     async def create(
-        self, *, workspace: str, title: str, description: str, uncertainty: str,
+        self, *, unit: str, title: str, description: str, uncertainty: str,
         closing_condition: str, established_in: str, body: str,
         established_by: str, now_ms: int, anchor_date: int | None = ...,
         anchor_entity_ids: tuple[str, ...] = ...,
     ) -> Note: ...
-    async def standing(self, *, workspace: str) -> tuple[Note, ...]: ...
+    async def standing(self, *, unit: str) -> tuple[Note, ...]: ...
     async def read(
-        self, *, workspace: str, note_id: str,
+        self, *, unit: str, note_id: str,
     ) -> tuple[Note, NoteRevision] | None: ...
     async def append_revision(
-        self, *, workspace: str, note_id: str, body: str,
+        self, *, unit: str, note_id: str, body: str,
         parent_revision_id: str, established_by: str, now_ms: int,
     ) -> NoteRevision: ...
     async def search(
-        self, *, workspace: str, query: str, limit: int,
+        self, *, unit: str, query: str, limit: int,
     ) -> tuple[tuple[Note, str], ...]: ...
     async def revision_chain(
-        self, *, workspace: str, note_id: str,
+        self, *, unit: str, note_id: str,
     ) -> tuple[NoteRevision, ...]: ...
     async def record_miss(
-        self, *, workspace: str, probe: str, conversation_id: str, now_ms: int,
+        self, *, unit: str, probe: str, conversation_id: str, now_ms: int,
     ) -> int: ...
     async def record_create_candidate(
-        self, *, workspace: str, title: str, description: str, body: str,
+        self, *, unit: str, title: str, description: str, body: str,
         closing_condition: str, anchor_date: int,
         anchor_entity_ids: tuple[str, ...], message_ids: tuple[int, ...],
         now_ms: int,
     ) -> NoteCreateCandidate: ...
     async def set_create_candidate_status(
-        self, *, workspace: str, candidate_id: str, status: str, now_ms: int,
+        self, *, unit: str, candidate_id: str, status: str, now_ms: int,
     ) -> int: ...
 
 
@@ -186,8 +186,8 @@ async def notes(request: Any) -> AsyncIterator[_Harness]:
         async def _retire_mem(note_id: str, now_ms: int) -> None:
             memory.notes[note_id] = replace(memory.notes[note_id], retired_at=now_ms)
 
-        async def _candidate_mem(workspace: str, probe: str) -> _Candidate | None:
-            row = memory.candidates.get((workspace, probe))
+        async def _candidate_mem(unit: str, probe: str) -> _Candidate | None:
+            row = memory.candidates.get((unit, probe))
             if row is None:
                 return None
             return _Candidate(
@@ -217,12 +217,12 @@ async def notes(request: Any) -> AsyncIterator[_Harness]:
                 sa.update(NOTE).where(NOTE.c.id == note_id).values(retired_at=now_ms)
             )
 
-    async def _candidate_sql(workspace: str, probe: str) -> _Candidate | None:
+    async def _candidate_sql(unit: str, probe: str) -> _Candidate | None:
         async with engine.connect() as conn:
             row = (
                 await conn.execute(
                     sa.select(NOTE_CANDIDATE).where(
-                        NOTE_CANDIDATE.c.workspace == workspace,
+                        NOTE_CANDIDATE.c.unit == unit,
                         NOTE_CANDIDATE.c.probe == probe,
                     )
                 )
@@ -249,7 +249,7 @@ async def notes(request: Any) -> AsyncIterator[_Harness]:
         if row is None:
             return None
         return NoteCreateCandidate(
-            id=row.id, workspace=row.workspace, title=row.title,
+            id=row.id, unit=row.unit, title=row.title,
             description=row.description, body=row.body,
             closing_condition=row.closing_condition,
             anchor_date=row.anchor_date,
@@ -280,7 +280,7 @@ async def notes(request: Any) -> AsyncIterator[_Harness]:
 async def _make(
     store: _NoteStore,
     *,
-    workspace: str = WS,
+    unit: str = WS,
     title: str = "Wedding venue",
     description: str = "Where the September wedding is held is still open.",
     body: str = "Two venues on the shortlist. Nobody has called either.",
@@ -289,7 +289,7 @@ async def _make(
     anchor_entity_ids: tuple[str, ...] = (),
 ) -> Note:
     return await store.create(
-        workspace=workspace,
+        unit=unit,
         title=title,
         description=description,
         uncertainty="which venue, and whether the date holds",
@@ -313,7 +313,7 @@ async def test_create_leaves_a_readable_head(notes: _Harness) -> None:
     rows in one transaction."""
     note = await _make(notes.store)
 
-    got = await notes.store.read(workspace=WS, note_id=note.id)
+    got = await notes.store.read(unit=WS, note_id=note.id)
 
     assert got is not None
     read_note, head = got
@@ -332,7 +332,7 @@ async def test_create_returns_a_note_carrying_what_it_was_given(
 ) -> None:
     note = await _make(notes.store, anchor_entity_ids=("e-1", "e-2"))
 
-    assert note.workspace == WS
+    assert note.unit == WS
     assert note.title == "Wedding venue"
     assert note.anchor_date == 20260919
     assert set(note.anchor_entity_ids) == {"e-1", "e-2"}
@@ -349,7 +349,7 @@ async def test_create_refuses_a_note_with_no_anchor(notes: _Harness) -> None:
     with pytest.raises(ValueError, match="anchor"):
         await _make(notes.store, anchor_date=None, anchor_entity_ids=())
 
-    assert await notes.store.standing(workspace=WS) == ()
+    assert await notes.store.standing(unit=WS) == ()
 
 
 # --- compare-and-swap (spec §6.3) -------------------------------------------
@@ -361,7 +361,7 @@ async def test_append_revision_accepts_the_current_head_and_moves_it(
     note = await _make(notes.store)
 
     rev = await notes.store.append_revision(
-        workspace=WS,
+        unit=WS,
         note_id=note.id,
         body="Called both. The Central one is held until Friday.",
         parent_revision_id=note.head_revision_id,
@@ -372,7 +372,7 @@ async def test_append_revision_accepts_the_current_head_and_moves_it(
     assert rev.parent_revision_id == note.head_revision_id
     assert rev.id != note.head_revision_id
     assert rev.written_at == NOW + 1000
-    got = await notes.store.read(workspace=WS, note_id=note.id)
+    got = await notes.store.read(unit=WS, note_id=note.id)
     assert got is not None
     read_note, head = got
     assert read_note.head_revision_id == rev.id, "the head moved"
@@ -389,45 +389,45 @@ async def test_append_revision_refuses_a_stale_parent_and_writes_nothing(
     note = await _make(notes.store)
     stale_parent = note.head_revision_id
     first = await notes.store.append_revision(
-        workspace=WS, note_id=note.id, body="the first writer's arrangement",
+        unit=WS, note_id=note.id, body="the first writer's arrangement",
         parent_revision_id=stale_parent, established_by="tag:turn-2",
         now_ms=NOW + 1000,
     )
 
     with pytest.raises(StaleNoteHeadError) as excinfo:
         await notes.store.append_revision(
-            workspace=WS, note_id=note.id, body="the second writer's overwrite",
+            unit=WS, note_id=note.id, body="the second writer's overwrite",
             parent_revision_id=stale_parent, established_by="tag:turn-3",
             now_ms=NOW + 2000,
         )
 
     assert excinfo.value.observed_head == first.id
-    got = await notes.store.read(workspace=WS, note_id=note.id)
+    got = await notes.store.read(unit=WS, note_id=note.id)
     assert got is not None
     read_note, head = got
     assert read_note.head_revision_id == first.id, "the head did not move"
     assert head.body == "the first writer's arrangement", "nothing was written"
 
 
-async def test_append_revision_refuses_a_note_in_another_workspace(
+async def test_append_revision_refuses_a_note_in_another_unit(
     notes: _Harness,
 ) -> None:
-    """A CAS whose `WHERE` omitted the workspace would let a caller holding a
-    head id write into a workspace it may not read — worse than a leak, because
+    """A CAS whose `WHERE` omitted the unit would let a caller holding a
+    head id write into a unit it may not read — worse than a leak, because
     the write is then invisible from the side that made it."""
     note = await _make(notes.store)
 
     with pytest.raises(StaleNoteHeadError) as excinfo:
         await notes.store.append_revision(
-            workspace=OTHER_WS, note_id=note.id, body="a cross-workspace write",
+            unit=OTHER_WS, note_id=note.id, body="a cross-unit write",
             parent_revision_id=note.head_revision_id,
             established_by="tag:turn-2", now_ms=NOW + 1000,
         )
 
     assert excinfo.value.observed_head is None, (
-        "from the other workspace the note does not exist at all"
+        "from the other unit the note does not exist at all"
     )
-    got = await notes.store.read(workspace=WS, note_id=note.id)
+    got = await notes.store.read(unit=WS, note_id=note.id)
     assert got is not None
     assert got[1].body == "Two venues on the shortlist. Nobody has called either."
 
@@ -435,7 +435,7 @@ async def test_append_revision_refuses_a_note_in_another_workspace(
 async def test_append_revision_on_an_unknown_note_refuses(notes: _Harness) -> None:
     with pytest.raises(StaleNoteHeadError) as excinfo:
         await notes.store.append_revision(
-            workspace=WS, note_id=str(uuid4()), body="into the void",
+            unit=WS, note_id=str(uuid4()), body="into the void",
             parent_revision_id=str(uuid4()), established_by="tag:turn-2",
             now_ms=NOW + 1000,
         )
@@ -452,7 +452,7 @@ async def test_append_revision_on_a_malformed_id_refuses_rather_than_raising_a_t
     remedy («read it again») is right for both."""
     with pytest.raises(StaleNoteHeadError):
         await notes.store.append_revision(
-            workspace=WS, note_id="not-a-uuid", body="into the void",
+            unit=WS, note_id="not-a-uuid", body="into the void",
             parent_revision_id=str(uuid4()), established_by="tag:turn-2",
             now_ms=NOW + 1000,
         )
@@ -469,16 +469,16 @@ async def test_standing_excludes_retired_notes(notes: _Harness) -> None:
     dead = await _make(notes.store, title="Already settled")
     await notes.retire(dead.id, NOW + 5000)
 
-    standing = await notes.store.standing(workspace=WS)
+    standing = await notes.store.standing(unit=WS)
 
     assert [n.id for n in standing] == [live.id]
 
 
-async def test_standing_excludes_other_workspaces(notes: _Harness) -> None:
-    mine = await _make(notes.store, workspace=WS, title="Mine")
-    await _make(notes.store, workspace=OTHER_WS, title="Not mine")
+async def test_standing_excludes_other_units(notes: _Harness) -> None:
+    mine = await _make(notes.store, unit=WS, title="Mine")
+    await _make(notes.store, unit=OTHER_WS, title="Not mine")
 
-    standing = await notes.store.standing(workspace=WS)
+    standing = await notes.store.standing(unit=WS)
 
     assert [n.id for n in standing] == [mine.id]
 
@@ -490,12 +490,12 @@ async def test_standing_carries_the_head_id_a_revision_must_echo(
     §6.2's read-before-write latch and §6.3's CAS both name."""
     note = await _make(notes.store)
     rev = await notes.store.append_revision(
-        workspace=WS, note_id=note.id, body="moved once",
+        unit=WS, note_id=note.id, body="moved once",
         parent_revision_id=note.head_revision_id, established_by="tag:turn-2",
         now_ms=NOW + 1000,
     )
 
-    (only,) = await notes.store.standing(workspace=WS)
+    (only,) = await notes.store.standing(unit=WS)
 
     assert only.head_revision_id == rev.id
 
@@ -510,32 +510,32 @@ async def test_standing_is_ordered_oldest_first_and_deterministic(
     second = await _make(notes.store, title="Second", now_ms=NOW + 1)
     third = await _make(notes.store, title="Third", now_ms=NOW + 2)
 
-    standing = await notes.store.standing(workspace=WS)
+    standing = await notes.store.standing(unit=WS)
 
     assert [n.id for n in standing] == [first.id, second.id, third.id]
 
 
 async def test_standing_is_empty_when_nothing_is_standing(notes: _Harness) -> None:
-    assert await notes.store.standing(workspace=WS) == ()
+    assert await notes.store.standing(unit=WS) == ()
 
 
 # --- read -------------------------------------------------------------------
 
 
-async def test_read_returns_none_across_a_workspace_boundary(
+async def test_read_returns_none_across_a_unit_boundary(
     notes: _Harness,
 ) -> None:
-    """Unreachable, not merely unrendered: a note from another workspace must
+    """Unreachable, not merely unrendered: a note from another unit must
     answer exactly as if it did not exist. Anything else lets a caller confirm
     the existence of a note it may not read."""
-    note = await _make(notes.store, workspace=OTHER_WS)
+    note = await _make(notes.store, unit=OTHER_WS)
 
-    assert await notes.store.read(workspace=WS, note_id=note.id) is None
-    assert await notes.store.read(workspace=OTHER_WS, note_id=note.id) is not None
+    assert await notes.store.read(unit=WS, note_id=note.id) is None
+    assert await notes.store.read(unit=OTHER_WS, note_id=note.id) is not None
 
 
 async def test_read_returns_none_for_an_unknown_id(notes: _Harness) -> None:
-    assert await notes.store.read(workspace=WS, note_id=str(uuid4())) is None
+    assert await notes.store.read(unit=WS, note_id=str(uuid4())) is None
 
 
 async def test_read_returns_none_for_a_malformed_id_rather_than_raising(
@@ -544,7 +544,7 @@ async def test_read_returns_none_for_a_malformed_id_rather_than_raising(
     """`note.id` is `pg.UUID`, so a non-UUID string would otherwise reach
     asyncpg as a raw type error instead of the ordinary "no such note" outcome.
     A store that raises here turns a bad tool argument into a dead turn."""
-    assert await notes.store.read(workspace=WS, note_id="not-a-uuid") is None
+    assert await notes.store.read(unit=WS, note_id="not-a-uuid") is None
 
 
 async def test_read_still_works_on_a_retired_note(notes: _Harness) -> None:
@@ -553,7 +553,7 @@ async def test_read_still_works_on_a_retired_note(notes: _Harness) -> None:
     note = await _make(notes.store)
     await notes.retire(note.id, NOW + 5000)
 
-    got = await notes.store.read(workspace=WS, note_id=note.id)
+    got = await notes.store.read(unit=WS, note_id=note.id)
 
     assert got is not None
     assert got[0].retired_at == NOW + 5000
@@ -570,14 +570,14 @@ async def test_search_never_returns_a_superseded_body(notes: _Harness) -> None:
     returns something true-in-the-past as though it were current."""
     note = await _make(notes.store, body="Booked at the Peninsula, deposit paid.")
     await notes.store.append_revision(
-        workspace=WS, note_id=note.id,
+        unit=WS, note_id=note.id,
         body="Cancelled the Peninsula. Looking at the Upper House instead.",
         parent_revision_id=note.head_revision_id, established_by="tag:turn-2",
         now_ms=NOW + 1000,
     )
 
-    assert await notes.store.search(workspace=WS, query="deposit paid", limit=10) == ()
-    hits = await notes.store.search(workspace=WS, query="Upper House", limit=10)
+    assert await notes.store.search(unit=WS, query="deposit paid", limit=10) == ()
+    hits = await notes.store.search(unit=WS, query="Upper House", limit=10)
     assert [n.id for n, _ in hits] == [note.id]
     assert hits[0][1] == "Cancelled the Peninsula. Looking at the Upper House instead."
 
@@ -595,7 +595,7 @@ async def test_search_matches_cantonese(notes: _Harness) -> None:
         body="婚禮嘅場地仲未定，可能係中環嗰間酒店，但係未問過價錢。",
     )
 
-    hits = await notes.store.search(workspace=WS, query="酒店", limit=10)
+    hits = await notes.store.search(unit=WS, query="酒店", limit=10)
 
     assert [n.id for n, _ in hits] == [note.id]
     assert "酒店" in hits[0][1]
@@ -606,7 +606,7 @@ async def test_search_is_case_insensitive(notes: _Harness) -> None:
     that opened its sentence with «Hotel»."""
     note = await _make(notes.store, body="Hotel shortlist: two left.")
 
-    hits = await notes.store.search(workspace=WS, query="hotel", limit=10)
+    hits = await notes.store.search(unit=WS, query="hotel", limit=10)
 
     assert [n.id for n, _ in hits] == [note.id]
 
@@ -622,13 +622,13 @@ async def test_search_searches_bodies_never_titles(notes: _Harness) -> None:
         body="Two left after Tuesday's call.",
     )
 
-    assert await notes.store.search(workspace=WS, query="hotel", limit=10) == ()
+    assert await notes.store.search(unit=WS, query="hotel", limit=10) == ()
 
 
-async def test_search_is_scoped_to_the_workspace(notes: _Harness) -> None:
-    await _make(notes.store, workspace=OTHER_WS, body="a hotel in the other room")
+async def test_search_is_scoped_to_the_unit(notes: _Harness) -> None:
+    await _make(notes.store, unit=OTHER_WS, body="a hotel in the other room")
 
-    assert await notes.store.search(workspace=WS, query="hotel", limit=10) == ()
+    assert await notes.store.search(unit=WS, query="hotel", limit=10) == ()
 
 
 async def test_search_excludes_retired_notes(notes: _Harness) -> None:
@@ -638,14 +638,14 @@ async def test_search_excludes_retired_notes(notes: _Harness) -> None:
     note = await _make(notes.store, body="the shortlist mentioned a hotel")
     await notes.retire(note.id, NOW + 5000)
 
-    assert await notes.store.search(workspace=WS, query="hotel", limit=10) == ()
+    assert await notes.store.search(unit=WS, query="hotel", limit=10) == ()
 
 
 async def test_search_respects_its_limit(notes: _Harness) -> None:
     for i in range(3):
         await _make(notes.store, body=f"hotel option {i}", now_ms=NOW + i)
 
-    assert len(await notes.store.search(workspace=WS, query="hotel", limit=2)) == 2
+    assert len(await notes.store.search(unit=WS, query="hotel", limit=2)) == 2
 
 
 async def test_search_returns_nothing_for_a_blank_query(notes: _Harness) -> None:
@@ -654,21 +654,21 @@ async def test_search_returns_nothing_for_a_blank_query(notes: _Harness) -> None
     body length, unasked for."""
     await _make(notes.store)
 
-    assert await notes.store.search(workspace=WS, query="   ", limit=10) == ()
-    assert await notes.store.search(workspace=WS, query="", limit=10) == ()
+    assert await notes.store.search(unit=WS, query="   ", limit=10) == ()
+    assert await notes.store.search(unit=WS, query="", limit=10) == ()
 
 
 async def test_search_treats_wildcards_as_literal_text(notes: _Harness) -> None:
     """An unescaped `%` in a caller's query is `ilike`'s own wildcard, so
-    searching for `100%` would return every note in the workspace. The query is
+    searching for `100%` would return every note in the unit. The query is
     data, and the in-memory implementation must escape it the same way rather
     than getting the right answer by using `in` and never meeting the
     question."""
     await _make(notes.store, body="the deposit is refundable")
 
-    assert await notes.store.search(workspace=WS, query="%", limit=10) == ()
-    assert await notes.store.search(workspace=WS, query="_", limit=10) == ()
-    assert await notes.store.search(workspace=WS, query="depos%able", limit=10) == ()
+    assert await notes.store.search(unit=WS, query="%", limit=10) == ()
+    assert await notes.store.search(unit=WS, query="_", limit=10) == ()
+    assert await notes.store.search(unit=WS, query="depos%able", limit=10) == ()
 
 
 async def test_search_clamps_a_non_positive_limit(notes: _Harness) -> None:
@@ -678,8 +678,8 @@ async def test_search_clamps_a_non_positive_limit(notes: _Harness) -> None:
     (2026-08-21 review)."""
     await _make(notes.store, body="a hotel")
 
-    assert await notes.store.search(workspace=WS, query="hotel", limit=0) == ()
-    assert await notes.store.search(workspace=WS, query="hotel", limit=-1) == ()
+    assert await notes.store.search(unit=WS, query="hotel", limit=0) == ()
+    assert await notes.store.search(unit=WS, query="hotel", limit=-1) == ()
 
 
 # --- record_miss (the negative cache, spec §4.5) ----------------------------
@@ -692,10 +692,10 @@ async def test_record_miss_accumulates_rather_than_duplicating(
     ground is evidence rather than a guess. An insert-per-miss would make one
     gap look like N unrelated gaps and nothing would ever cross a threshold."""
     first = await notes.store.record_miss(
-        workspace=WS, probe="who is driving", conversation_id="conv-1", now_ms=NOW,
+        unit=WS, probe="who is driving", conversation_id="conv-1", now_ms=NOW,
     )
     second = await notes.store.record_miss(
-        workspace=WS, probe="who is driving", conversation_id="conv-2",
+        unit=WS, probe="who is driving", conversation_id="conv-2",
         now_ms=NOW + 1000,
     )
 
@@ -716,10 +716,10 @@ async def test_record_miss_does_not_repeat_a_conversation_in_observed_in(
     Appending unconditionally turns one chatty room into a false consensus, and
     grows the array without bound."""
     await notes.store.record_miss(
-        workspace=WS, probe="who is driving", conversation_id="conv-1", now_ms=NOW,
+        unit=WS, probe="who is driving", conversation_id="conv-1", now_ms=NOW,
     )
     count = await notes.store.record_miss(
-        workspace=WS, probe="who is driving", conversation_id="conv-1",
+        unit=WS, probe="who is driving", conversation_id="conv-1",
         now_ms=NOW + 1000,
     )
 
@@ -729,19 +729,19 @@ async def test_record_miss_does_not_repeat_a_conversation_in_observed_in(
     assert row.observed_in == ("conv-1",)
 
 
-async def test_record_miss_keys_on_workspace_as_well_as_probe(
+async def test_record_miss_keys_on_unit_as_well_as_probe(
     notes: _Harness,
 ) -> None:
     mine_count = await notes.store.record_miss(
-        workspace=WS, probe="who is driving", conversation_id="conv-1", now_ms=NOW,
+        unit=WS, probe="who is driving", conversation_id="conv-1", now_ms=NOW,
     )
     theirs_count = await notes.store.record_miss(
-        workspace=OTHER_WS, probe="who is driving", conversation_id="conv-9",
+        unit=OTHER_WS, probe="who is driving", conversation_id="conv-9",
         now_ms=NOW + 1,
     )
 
     assert (mine_count, theirs_count) == (1, 1), (
-        "another workspace's miss is not this workspace's evidence"
+        "another unit's miss is not this unit's evidence"
     )
     mine = await notes.read_candidate(WS, "who is driving")
     theirs = await notes.read_candidate(OTHER_WS, "who is driving")
@@ -752,10 +752,10 @@ async def test_record_miss_keys_on_workspace_as_well_as_probe(
 
 async def test_record_miss_distinguishes_two_probes(notes: _Harness) -> None:
     assert await notes.store.record_miss(
-        workspace=WS, probe="who is driving", conversation_id="conv-1", now_ms=NOW,
+        unit=WS, probe="who is driving", conversation_id="conv-1", now_ms=NOW,
     ) == 1
     assert await notes.store.record_miss(
-        workspace=WS, probe="where are we eating", conversation_id="conv-1",
+        unit=WS, probe="where are we eating", conversation_id="conv-1",
         now_ms=NOW + 1,
     ) == 1
 
@@ -765,7 +765,7 @@ async def test_record_miss_distinguishes_two_probes(notes: _Harness) -> None:
 
 def _candidate_kwargs(**overrides: object) -> dict[str, object]:
     base: dict[str, object] = {
-        "workspace": WS, "title": "Wedding venue",
+        "unit": WS, "title": "Wedding venue",
         "description": "Where the September wedding is held is still open.",
         "body": "Two venues on the shortlist. Nobody has called either.",
         "closing_condition": "a venue is booked and confirmed",
@@ -797,7 +797,7 @@ async def test_record_create_candidate_separates_two_titles_on_one_anchor(
     Two arrangements the model described on one day, naming the same people,
     are two occasions: the second must reach the gate rather than be handed
     the first's settled row. Measured 2026-09-16: a two-entity collision in
-    workspace `ridgeline` destroyed 'Voice audio controller architecture'
+    unit `ridgeline` destroyed 'Voice audio controller architecture'
     before the gate ever saw it.
 
     This test REPLACES `..._dedupes_on_the_anchor_key_not_title`, which
@@ -860,16 +860,16 @@ async def test_record_create_candidate_distinguishes_two_anchor_dates(
     assert same_day.id != other_day.id
 
 
-async def test_record_create_candidate_keys_on_workspace_as_well_as_anchor(
+async def test_record_create_candidate_keys_on_unit_as_well_as_anchor(
     notes: _Harness,
 ) -> None:
     mine = await notes.store.record_create_candidate(**_candidate_kwargs())
     theirs = await notes.store.record_create_candidate(
-        **_candidate_kwargs(workspace=OTHER_WS),
+        **_candidate_kwargs(unit=OTHER_WS),
     )
 
     assert mine.id != theirs.id, (
-        "another workspace's candidate is not this workspace's occasion"
+        "another unit's candidate is not this unit's occasion"
     )
 
 
@@ -899,7 +899,7 @@ async def test_set_create_candidate_status_settles_the_row(
     row = await notes.store.record_create_candidate(**_candidate_kwargs())
 
     affected = await notes.store.set_create_candidate_status(
-        workspace=WS, candidate_id=row.id, status="created", now_ms=NOW + 1,
+        unit=WS, candidate_id=row.id, status="created", now_ms=NOW + 1,
     )
 
     assert affected == 1
@@ -916,11 +916,11 @@ async def test_set_create_candidate_status_refuses_a_second_decision(
     candidate ONCE."""
     row = await notes.store.record_create_candidate(**_candidate_kwargs())
     await notes.store.set_create_candidate_status(
-        workspace=WS, candidate_id=row.id, status="refused", now_ms=NOW + 1,
+        unit=WS, candidate_id=row.id, status="refused", now_ms=NOW + 1,
     )
 
     second = await notes.store.set_create_candidate_status(
-        workspace=WS, candidate_id=row.id, status="created", now_ms=NOW + 2,
+        unit=WS, candidate_id=row.id, status="created", now_ms=NOW + 2,
     )
 
     assert second == 0
@@ -947,7 +947,7 @@ async def test_record_create_candidate_does_not_reopen_a_settled_row(
     thing the key normalises away."""
     row = await notes.store.record_create_candidate(**_candidate_kwargs())
     await notes.store.set_create_candidate_status(
-        workspace=WS, candidate_id=row.id, status="refused", now_ms=NOW + 1,
+        unit=WS, candidate_id=row.id, status="refused", now_ms=NOW + 1,
     )
 
     reobserved = await notes.store.record_create_candidate(
@@ -971,7 +971,7 @@ async def test_a_settled_row_is_read_back_past_a_sibling_on_the_same_anchor(
     notes: _Harness,
 ) -> None:
     """**The sharpest edge in #235, and the one the DDL does not cover.**
-    Narrowing the key made it legal for two rows to share `(workspace,
+    Narrowing the key made it legal for two rows to share `(unit,
     anchor_date, anchor_entity_ids)`. The SQL store's settled-row read-back —
     the hand-written SELECT that runs when the upsert's `where status =
     'pending'` guard blocks the update — has to carry the title too, or it
@@ -992,7 +992,7 @@ async def test_a_settled_row_is_read_back_past_a_sibling_on_the_same_anchor(
     )
     assert sibling.id != first.id, "the premise: two rows on one anchor"
     await notes.store.set_create_candidate_status(
-        workspace=WS, candidate_id=first.id, status="created", now_ms=NOW + 2,
+        unit=WS, candidate_id=first.id, status="created", now_ms=NOW + 2,
     )
 
     reobserved = await notes.store.record_create_candidate(
@@ -1015,7 +1015,7 @@ async def test_set_create_candidate_status_refuses_a_non_terminal_status(
 
     with pytest.raises(ValueError):
         await notes.store.set_create_candidate_status(
-            workspace=WS, candidate_id=row.id, status="pending", now_ms=NOW,
+            unit=WS, candidate_id=row.id, status="pending", now_ms=NOW,
         )
 
 
@@ -1053,7 +1053,7 @@ async def test_propose_writes_a_revision_and_returns_the_note_id(
     )
 
     assert ids == (note.id,)
-    found = await notes.store.read(workspace=WS, note_id=note.id)
+    found = await notes.store.read(unit=WS, note_id=note.id)
     assert found is not None
     assert found[1].body == "the curator's tidier arrangement"
     # The provenance the tag path cannot supply, on the one writer that can.
@@ -1097,7 +1097,7 @@ async def test_supersede_accepts_a_retirement_with_no_successor(
     )
 
     assert affected == 1
-    assert await notes.store.standing(workspace=WS) == ()
+    assert await notes.store.standing(unit=WS) == ()
 
 
 async def test_supersede_records_the_successor_and_the_reason(
@@ -1112,7 +1112,7 @@ async def test_supersede_records_the_successor_and_the_reason(
     )
 
     assert affected == 1
-    standing = await notes.store.standing(workspace=WS)
+    standing = await notes.store.standing(unit=WS)
     assert [n.id for n in standing] == [survivor.id]
     # READ THE REASON BACK. Until 2026-08-27 this test named the reason in its
     # own title and never asserted it: `retire_reason` was read only by the
@@ -1120,7 +1120,7 @@ async def test_supersede_records_the_successor_and_the_reason(
     # deleting `retire_reason=because` from the double left the whole suite
     # green. A field written by both implementations and asserted for one is
     # not under contract.
-    retired = await notes.store.read(workspace=WS, note_id=duplicate.id)
+    retired = await notes.store.read(unit=WS, note_id=duplicate.id)
     assert retired is not None
     assert retired[0].retire_reason == NoteSupersedeReason.RETIRED_CLOSED
     assert retired[0].replaced_by == survivor.id
@@ -1174,16 +1174,16 @@ async def test_superseding_an_unknown_note_reports_zero_rather_than_raising(
     ) == 0
 
 
-async def test_supersede_cannot_reach_another_workspaces_note(
+async def test_supersede_cannot_reach_another_units_note(
     notes: _Harness,
 ) -> None:
     note = await _make(notes.store)
 
     assert await notes.store.supersede(
-        key="someone-elses-workspace", target=note.id, replaced_by=None,
+        key="someone-elses-unit", target=note.id, replaced_by=None,
         because=NoteSupersedeReason.RETIRED_EXPIRED, source=None, now_ms=NOW,
     ) == 0
-    assert [n.id for n in await notes.store.standing(workspace=WS)] == [note.id]
+    assert [n.id for n in await notes.store.standing(unit=WS)] == [note.id]
 
 
 async def test_two_proposals_against_one_note_chain_within_the_tick(
@@ -1224,7 +1224,7 @@ async def test_two_proposals_against_one_note_chain_within_the_tick(
         "both proposals revised the same note, so both return its id — the "
         "port says 'in order', not 'distinct'"
     )
-    found = await notes.store.read(workspace=WS, note_id=note.id)
+    found = await notes.store.read(unit=WS, note_id=note.id)
     assert found is not None
     assert found[1].body == "second", "the second revision is the head"
     assert found[1].parent_revision_id != note.head_revision_id, (
@@ -1281,7 +1281,7 @@ async def test_a_stale_head_writes_nothing_at_all(notes: _Harness) -> None:
             now_ms=NOW + 5,
         )
 
-    found = await notes.store.read(workspace=WS, note_id=good.id)
+    found = await notes.store.read(unit=WS, note_id=good.id)
     assert found is not None
     assert found[1].body != "a revision that must not survive", (
         "a failed batch leaves nothing behind — Postgres by rollback, the "
@@ -1318,7 +1318,7 @@ async def test_a_foreign_payload_is_refused_before_anything_is_written(
             now_ms=NOW,
         )
 
-    found = await notes.store.read(workspace=WS, note_id=note.id)
+    found = await notes.store.read(unit=WS, note_id=note.id)
     assert found is not None
     assert found[1].body != "must not be written"
 
@@ -1353,7 +1353,7 @@ async def test_propose_can_start_a_note_that_does_not_exist_yet(
     ids = await notes.store.propose(key=WS, proposals=(_creation(),), now_ms=NOW)
 
     assert len(ids) == 1
-    found = await notes.store.read(workspace=WS, note_id=ids[0])
+    found = await notes.store.read(unit=WS, note_id=ids[0])
     assert found is not None
     note, head = found
     assert note.title == "Dinner, 9 Sept"
@@ -1377,7 +1377,7 @@ async def test_propose_writes_an_explicit_revisit_at_when_the_payload_carries_on
         key=WS, proposals=(_creation(revisit_at=NOW + 1000),), now_ms=NOW,
     )
 
-    found = await notes.store.read(workspace=WS, note_id=ids[0])
+    found = await notes.store.read(unit=WS, note_id=ids[0])
     assert found is not None
     assert found[0].revisit_at == NOW + 1000
 
@@ -1390,7 +1390,7 @@ async def test_propose_leaves_revisit_at_null_when_the_payload_does_not_carry_on
     does not require it) must not have a value invented for it."""
     ids = await notes.store.propose(key=WS, proposals=(_creation(),), now_ms=NOW)
 
-    found = await notes.store.read(workspace=WS, note_id=ids[0])
+    found = await notes.store.read(unit=WS, note_id=ids[0])
     assert found is not None
     assert found[0].revisit_at is None
 
@@ -1404,7 +1404,7 @@ async def test_the_two_payload_shapes_are_discriminated_not_coerced(
     as success."""
     ids = await notes.store.propose(key=WS, proposals=(_creation(),), now_ms=NOW)
     created = ids[0]
-    note = await notes.store.read(workspace=WS, note_id=created)
+    note = await notes.store.read(unit=WS, note_id=created)
     assert note is not None
 
     both = await notes.store.propose(
@@ -1426,7 +1426,7 @@ async def test_the_two_payload_shapes_are_discriminated_not_coerced(
 
     assert both[1] == created, "the revision must return the note it revised"
     assert both[0] != created, "the creation must be a different note"
-    revised = await notes.store.read(workspace=WS, note_id=created)
+    revised = await notes.store.read(unit=WS, note_id=created)
     assert revised is not None
     assert revised[1].body == "Ada called Sai Kung. Still no table."
 
@@ -1449,7 +1449,7 @@ async def test_a_creation_naming_an_existing_occasion_is_not_silently_merged(
     )
 
     assert first[0] != second[0]
-    assert len(await notes.store.standing(workspace=WS)) == 2
+    assert len(await notes.store.standing(unit=WS)) == 2
 
 
 async def test_a_creation_with_no_anchor_is_refused_at_the_type(
@@ -1483,13 +1483,13 @@ async def test_anchored_before_selects_expired_notes_with_their_bodies(
     )
     await _make(notes.store, title="Wedding", anchor_date=20271231)
 
-    hits = await notes.store.anchored_before(workspace=WS, day=20261001, limit=10)
+    hits = await notes.store.anchored_before(unit=WS, day=20261001, limit=10)
 
     assert [n.id for n, _ in hits] == [past.id]
     assert hits[0][1] == "Nobody booked anything."
 
 
-async def test_anchored_before_is_strict_and_workspace_scoped(
+async def test_anchored_before_is_strict_and_unit_scoped(
     notes: _Harness,
 ) -> None:
     """Strict: a note anchored to TODAY is not expired — the occasion has not
@@ -1497,10 +1497,10 @@ async def test_anchored_before_is_strict_and_workspace_scoped(
     await _make(notes.store, anchor_date=20260909)
 
     assert await notes.store.anchored_before(
-        workspace=WS, day=20260909, limit=10,
+        unit=WS, day=20260909, limit=10,
     ) == ()
     assert await notes.store.anchored_before(
-        workspace="another-workspace", day=20270101, limit=10,
+        unit="another-unit", day=20270101, limit=10,
     ) == ()
 
 
@@ -1521,10 +1521,10 @@ async def test_due_for_revisit_selects_a_note_whose_revisit_at_has_arrived(
     # finds tag-path progress (the note's only revision), so this sets
     # `revisit_at` to `NOW - 1000` via the real production writer.
     await notes.store.record_wake(
-        workspace=WS, note_id=due.id, next_revisit_at=NOW - 1000, now_ms=NOW,
+        unit=WS, note_id=due.id, next_revisit_at=NOW - 1000, now_ms=NOW,
     )
 
-    hits = await notes.store.due_for_revisit(workspace=WS, now_ms=NOW, limit=10)
+    hits = await notes.store.due_for_revisit(unit=WS, now_ms=NOW, limit=10)
 
     assert [n.id for n, _ in hits] == [due.id]
     assert not_due.id not in {n.id for n, _ in hits}
@@ -1541,26 +1541,26 @@ async def test_due_for_revisit_excludes_a_note_with_no_revisit_at(
                anchor_entity_ids=("ada",))
 
     assert await notes.store.due_for_revisit(
-        workspace=WS, now_ms=NOW, limit=10,
+        unit=WS, now_ms=NOW, limit=10,
     ) == ()
 
 
-async def test_due_for_revisit_is_strict_and_workspace_scoped(
+async def test_due_for_revisit_is_strict_and_unit_scoped(
     notes: _Harness,
 ) -> None:
     note = await _make(notes.store, title="Due", anchor_date=None,
                        anchor_entity_ids=("ada",))
     await notes.store.record_wake(
-        workspace=WS, note_id=note.id, next_revisit_at=NOW + 1000, now_ms=NOW,
+        unit=WS, note_id=note.id, next_revisit_at=NOW + 1000, now_ms=NOW,
     )
 
     # Strict: `revisit_at` in the future is not yet due.
     assert await notes.store.due_for_revisit(
-        workspace=WS, now_ms=NOW, limit=10,
+        unit=WS, now_ms=NOW, limit=10,
     ) == ()
-    # Workspace-scoped: a note revisit-due in one workspace does not leak.
+    # Unit-scoped: a note revisit-due in one unit does not leak.
     assert await notes.store.due_for_revisit(
-        workspace="another-workspace", now_ms=NOW + 2000, limit=10,
+        unit="another-unit", now_ms=NOW + 2000, limit=10,
     ) == ()
 
 
@@ -1570,12 +1570,12 @@ async def test_due_for_revisit_does_not_select_a_retired_note(
     note = await _make(notes.store, title="Due", anchor_date=None,
                        anchor_entity_ids=("ada",))
     await notes.store.record_wake(
-        workspace=WS, note_id=note.id, next_revisit_at=NOW - 1000, now_ms=NOW,
+        unit=WS, note_id=note.id, next_revisit_at=NOW - 1000, now_ms=NOW,
     )
     await notes.retire(note.id, NOW + 1)
 
     assert await notes.store.due_for_revisit(
-        workspace=WS, now_ms=NOW + 2, limit=10,
+        unit=WS, now_ms=NOW + 2, limit=10,
     ) == ()
 
 
@@ -1621,7 +1621,7 @@ async def test_a_second_proposal_may_not_redeclare_a_different_parent(
             now_ms=NOW + 5,
         )
 
-    found = await notes.store.read(workspace=WS, note_id=note.id)
+    found = await notes.store.read(unit=WS, note_id=note.id)
     assert found is not None
     assert found[1].body not in {"first", "second"}, (
         "the refusal is decided before anything is written"
@@ -1646,18 +1646,18 @@ async def test_a_wake_on_an_unchanged_note_takes_a_strike_and_does_not_reschedul
     note = await _make(notes.store)
     # A first wake establishes the baseline, so the second sees an unmoved head.
     await notes.store.record_wake(
-        workspace=WS, note_id=note.id, next_revisit_at=NOW + 1000, now_ms=NOW,
+        unit=WS, note_id=note.id, next_revisit_at=NOW + 1000, now_ms=NOW,
     )
 
     outcome = await notes.store.record_wake(
-        workspace=WS, note_id=note.id, next_revisit_at=NOW + 9999,
+        unit=WS, note_id=note.id, next_revisit_at=NOW + 9999,
         now_ms=NOW + 1,
     )
 
     assert outcome is not None
     assert outcome.reset is False
     assert outcome.strikes == 1
-    after = await notes.store.read(workspace=WS, note_id=note.id)
+    after = await notes.store.read(unit=WS, note_id=note.id)
     assert after is not None
     assert after[0].revisit_at == NOW + 1000, (
         "the schedule is NOT advanced by a wake that found no progress"
@@ -1669,60 +1669,60 @@ async def test_a_tag_path_revision_resets_the_strike_and_reschedules(
 ) -> None:
     note = await _make(notes.store)
     await notes.store.record_wake(
-        workspace=WS, note_id=note.id, next_revisit_at=NOW + 1000, now_ms=NOW,
+        unit=WS, note_id=note.id, next_revisit_at=NOW + 1000, now_ms=NOW,
     )
     await notes.store.record_wake(
-        workspace=WS, note_id=note.id, next_revisit_at=NOW + 1000,
+        unit=WS, note_id=note.id, next_revisit_at=NOW + 1000,
         now_ms=NOW + 1,
     )  # strikes -> 1
 
     moved = await notes.store.append_revision(
-        workspace=WS, note_id=note.id, body="Ada booked Sai Kung.",
+        unit=WS, note_id=note.id, body="Ada booked Sai Kung.",
         parent_revision_id=note.head_revision_id,
         established_by="tag:miles", now_ms=NOW + 2,
     )
     outcome = await notes.store.record_wake(
-        workspace=WS, note_id=note.id, next_revisit_at=NOW + 5000,
+        unit=WS, note_id=note.id, next_revisit_at=NOW + 5000,
         now_ms=NOW + 3,
     )
 
     assert outcome is not None
     assert outcome.reset is True
     assert outcome.strikes == 0
-    after = await notes.store.read(workspace=WS, note_id=note.id)
+    after = await notes.store.read(unit=WS, note_id=note.id)
     assert after is not None
     assert after[0].last_wake_revision_id == moved.id
     assert after[0].revisit_at == NOW + 5000
 
 
-async def test_the_revision_chain_is_readable_oldest_first_and_workspace_scoped(
+async def test_the_revision_chain_is_readable_oldest_first_and_unit_scoped(
     notes: _Harness,
 ) -> None:
     """The chain `record_wake` walks, as a READ (design/dreamer-agent-loop/39
     D11): a caller that linked something to a revision earlier can ask
     whether the tag path has moved the note since. Oldest first, so the
     walk from a known revision forward is a slice, and `()` — never a
-    partial chain — across a workspace boundary."""
+    partial chain — across a unit boundary."""
     note = await _make(notes.store)
     second = await notes.store.append_revision(
-        workspace=WS, note_id=note.id, body="Two venues, one call made.",
+        unit=WS, note_id=note.id, body="Two venues, one call made.",
         parent_revision_id=note.head_revision_id,
         established_by="dream:note-curation:ws:1", now_ms=NOW + 1,
     )
     third = await notes.store.append_revision(
-        workspace=WS, note_id=note.id, body="Ada booked Sai Kung.",
+        unit=WS, note_id=note.id, body="Ada booked Sai Kung.",
         parent_revision_id=second.id, established_by="tag:miles", now_ms=NOW + 2,
     )
 
-    chain = await notes.store.revision_chain(workspace=WS, note_id=note.id)
+    chain = await notes.store.revision_chain(unit=WS, note_id=note.id)
 
     assert [r.id for r in chain] == [note.head_revision_id, second.id, third.id]
     assert [r.established_by for r in chain][1:] == [
         "dream:note-curation:ws:1", "tag:miles",
     ]
     assert chain[1].parent_revision_id == note.head_revision_id
-    assert await notes.store.revision_chain(workspace=OTHER_WS, note_id=note.id) == ()
-    assert await notes.store.revision_chain(workspace=WS, note_id="not-a-uuid") == ()
+    assert await notes.store.revision_chain(unit=OTHER_WS, note_id=note.id) == ()
+    assert await notes.store.revision_chain(unit=WS, note_id="not-a-uuid") == ()
 
 
 async def test_a_background_passes_own_write_does_not_reset_the_strike(
@@ -1738,17 +1738,17 @@ async def test_a_background_passes_own_write_does_not_reset_the_strike(
     forever with it missing"*, which is exactly what this asserts."""
     note = await _make(notes.store)
     await notes.store.record_wake(
-        workspace=WS, note_id=note.id, next_revisit_at=NOW + 1000, now_ms=NOW,
+        unit=WS, note_id=note.id, next_revisit_at=NOW + 1000, now_ms=NOW,
     )
 
     # The curator revises it — a run id, not a person.
     await notes.store.append_revision(
-        workspace=WS, note_id=note.id, body="tidied by the curator",
+        unit=WS, note_id=note.id, body="tidied by the curator",
         parent_revision_id=note.head_revision_id,
         established_by="run-curator-1", now_ms=NOW + 2,
     )
     outcome = await notes.store.record_wake(
-        workspace=WS, note_id=note.id, next_revisit_at=NOW + 5000,
+        unit=WS, note_id=note.id, next_revisit_at=NOW + 5000,
         now_ms=NOW + 3,
     )
 
@@ -1758,7 +1758,7 @@ async def test_a_background_passes_own_write_does_not_reset_the_strike(
         "note reset its own strike forever"
     )
     assert outcome.strikes == 1
-    after = await notes.store.read(workspace=WS, note_id=note.id)
+    after = await notes.store.read(unit=WS, note_id=note.id)
     assert after is not None
     assert after[0].revisit_at == NOW + 1000, "and it does not reschedule"
 
@@ -1785,26 +1785,26 @@ async def test_a_room_revision_the_curator_wrote_over_still_resets_the_strike(
     """
     note = await _make(notes.store)
     await notes.store.record_wake(
-        workspace=WS, note_id=note.id, next_revisit_at=NOW + 1000, now_ms=NOW,
+        unit=WS, note_id=note.id, next_revisit_at=NOW + 1000, now_ms=NOW,
     )
     await notes.store.record_wake(
-        workspace=WS, note_id=note.id, next_revisit_at=NOW + 1000,
+        unit=WS, note_id=note.id, next_revisit_at=NOW + 1000,
         now_ms=NOW + 1,
     )  # strikes -> 1
 
     room = await notes.store.append_revision(
-        workspace=WS, note_id=note.id, body="Ada booked Sai Kung.",
+        unit=WS, note_id=note.id, body="Ada booked Sai Kung.",
         parent_revision_id=note.head_revision_id,
         established_by="tag:miles", now_ms=NOW + 2,
     )
     background = await notes.store.append_revision(
-        workspace=WS, note_id=note.id, body="Ada booked Sai Kung. Tidied.",
+        unit=WS, note_id=note.id, body="Ada booked Sai Kung. Tidied.",
         parent_revision_id=room.id,
         established_by="run-curator-1", now_ms=NOW + 3,
     )
 
     outcome = await notes.store.record_wake(
-        workspace=WS, note_id=note.id, next_revisit_at=NOW + 5000,
+        unit=WS, note_id=note.id, next_revisit_at=NOW + 5000,
         now_ms=NOW + 4,
     )
 
@@ -1814,7 +1814,7 @@ async def test_a_room_revision_the_curator_wrote_over_still_resets_the_strike(
         "them does not un-engage it"
     )
     assert outcome.strikes == 0
-    after = await notes.store.read(workspace=WS, note_id=note.id)
+    after = await notes.store.read(unit=WS, note_id=note.id)
     assert after is not None
     assert after[0].last_wake_revision_id == background.id, (
         "the watermark moves to the HEAD, so the same room revision cannot be "
@@ -1832,26 +1832,26 @@ async def test_a_second_wake_after_the_reset_takes_a_strike_again(
     would never age — which is the same broken breaker from the other side."""
     note = await _make(notes.store)
     await notes.store.record_wake(
-        workspace=WS, note_id=note.id, next_revisit_at=NOW + 1000, now_ms=NOW,
+        unit=WS, note_id=note.id, next_revisit_at=NOW + 1000, now_ms=NOW,
     )
     room = await notes.store.append_revision(
-        workspace=WS, note_id=note.id, body="Ada booked Sai Kung.",
+        unit=WS, note_id=note.id, body="Ada booked Sai Kung.",
         parent_revision_id=note.head_revision_id,
         established_by="tag:miles", now_ms=NOW + 2,
     )
     await notes.store.append_revision(
-        workspace=WS, note_id=note.id, body="Ada booked Sai Kung. Tidied.",
+        unit=WS, note_id=note.id, body="Ada booked Sai Kung. Tidied.",
         parent_revision_id=room.id,
         established_by="run-curator-1", now_ms=NOW + 3,
     )
     first = await notes.store.record_wake(
-        workspace=WS, note_id=note.id, next_revisit_at=NOW + 5000,
+        unit=WS, note_id=note.id, next_revisit_at=NOW + 5000,
         now_ms=NOW + 4,
     )
     assert first is not None and first.reset is True
 
     second = await notes.store.record_wake(
-        workspace=WS, note_id=note.id, next_revisit_at=NOW + 9000,
+        unit=WS, note_id=note.id, next_revisit_at=NOW + 9000,
         now_ms=NOW + 5,
     )
 
@@ -1866,7 +1866,7 @@ async def test_strikes_accumulate_across_wakes(notes: _Harness) -> None:
     note = await _make(notes.store)
     seen = [
         (await notes.store.record_wake(
-            workspace=WS, note_id=note.id, next_revisit_at=NOW + 1000,
+            unit=WS, note_id=note.id, next_revisit_at=NOW + 1000,
             now_ms=NOW + n,
         )).strikes
         for n in range(4)
@@ -1877,16 +1877,16 @@ async def test_strikes_accumulate_across_wakes(notes: _Harness) -> None:
     )
 
 
-async def test_a_wake_cannot_reach_another_workspaces_note(
+async def test_a_wake_cannot_reach_another_units_note(
     notes: _Harness,
 ) -> None:
     note = await _make(notes.store)
 
     assert await notes.store.record_wake(
-        workspace="another-workspace", note_id=note.id,
+        unit="another-unit", note_id=note.id,
         next_revisit_at=NOW + 1000, now_ms=NOW,
     ) is None
-    after = await notes.store.read(workspace=WS, note_id=note.id)
+    after = await notes.store.read(unit=WS, note_id=note.id)
     assert after is not None
     assert after[0].strikes == 0, "and it wrote nothing"
 
@@ -1897,11 +1897,11 @@ async def test_a_wake_on_an_unknown_or_retired_note_reports_none(
     """`None`, never a raise and never a fabricated outcome — a background pass
     that raises on a row it does not recognise takes the whole tick down."""
     assert await notes.store.record_wake(
-        workspace=WS, note_id="00000000-0000-0000-0000-0000000000ff",
+        unit=WS, note_id="00000000-0000-0000-0000-0000000000ff",
         next_revisit_at=NOW, now_ms=NOW,
     ) is None
     assert await notes.store.record_wake(
-        workspace=WS, note_id="not-a-uuid", next_revisit_at=NOW, now_ms=NOW,
+        unit=WS, note_id="not-a-uuid", next_revisit_at=NOW, now_ms=NOW,
     ) is None
 
     note = await _make(notes.store)
@@ -1910,7 +1910,7 @@ async def test_a_wake_on_an_unknown_or_retired_note_reports_none(
         because=NoteSupersedeReason.RETIRED_EXPIRED, source=None, now_ms=NOW,
     )
     assert await notes.store.record_wake(
-        workspace=WS, note_id=note.id, next_revisit_at=NOW, now_ms=NOW,
+        unit=WS, note_id=note.id, next_revisit_at=NOW, now_ms=NOW,
     ) is None, "a retired note does not wake"
 
 
@@ -1935,7 +1935,7 @@ async def test_the_database_refuses_a_body_over_the_ceiling(_notes_db) -> None:
         rev_id = str(uuid4())
         async with engine.begin() as conn:
             await conn.execute(sa.insert(NOTE).values(
-                id=note_id, workspace="ceiling-probe", title="t",
+                id=note_id, unit="ceiling-probe", title="t",
                 description="d", uncertainty="u", closing_condition="c",
                 established_in="conv-1", created_at=NOW,
                 head_revision_id=rev_id, anchor_date=20261011,
@@ -1974,7 +1974,7 @@ async def test_the_database_accepts_a_body_between_the_two_numbers(
         rev_id = str(uuid4())
         async with engine.begin() as conn:
             await conn.execute(sa.insert(NOTE).values(
-                id=note_id, workspace="ceiling-probe-2", title="t",
+                id=note_id, unit="ceiling-probe-2", title="t",
                 description="d", uncertainty="u", closing_condition="c",
                 established_in="conv-1", created_at=NOW,
                 head_revision_id=rev_id, anchor_date=20261011,

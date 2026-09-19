@@ -334,7 +334,7 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
     # -- what the group has left open ----------------------------------------
     _t("notes",
        "questions this group has left open, carried across every conversation "
-       "in this workspace — your own notes, in your own words, written by you "
+       "in this unit — your own notes, in your own words, written by you "
        "for yourself: not anything this room said, and not a record of what "
        "happened. Raise what one of them is about whenever it would help, in "
        "your own words and from what the room actually did; each entry carries "

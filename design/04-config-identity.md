@@ -139,7 +139,7 @@ inconsistent; substring matching on a distinctive token is the robust primitive.
 
 ## Honcho Workspace
 
-One workspace per Nora instance (`workspace_id: "nora"`), created idempotently at
+One Honcho workspace per Nora instance (`workspace_id: "nora"`), created idempotently at
 startup. Peers are created idempotently on first sighting **using the mapped
 `honcho_peer_id` only** (audit 2nd-pass F10/F19): unmapped senders do not get a
 Honcho peer — their ambient messages are SQLite-only, and the tagging path simply

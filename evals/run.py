@@ -1304,7 +1304,7 @@ async def _run_note_candidates_live(
                 tally = CaseTally(name=case.name, expect=case.expect)
                 for _ in range(samples):
                     drive = await run_note_candidates_case(
-                        runtime, cfg=cfg, workspace=case.workspace,
+                        runtime, cfg=cfg, unit=case.unit,
                         scope=f"eval:{case.name}",
                         batch=[dataclasses.asdict(m) for m in case.batch],
                         notebook=[dataclasses.asdict(n) for n in case.notebook],
@@ -1452,7 +1452,7 @@ async def _run_proactive_decide_live(
                 tally = ProactiveTally(name=case.name, expect=case.expect)
                 for _ in range(samples):
                     drive = await run_proactive_decide_case(
-                        runtime, tools=tools, workspace=case.workspace, now=case.now,
+                        runtime, tools=tools, unit=case.unit, now=case.now,
                         rooms=case.rooms, notes=case.notes, standing=case.standing,
                         log=case.log, memory=case.memory,
                     )

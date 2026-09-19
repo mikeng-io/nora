@@ -2,7 +2,7 @@
 read-before-write latch (§6.2), from the tool layer's side.
 
 The STORE is already contract-tested (`tests/contract/test_note_store_contract.py`)
-against both implementations, so nothing here re-asserts CAS or workspace
+against both implementations, so nothing here re-asserts CAS or unit
 scoping at the store. What this file tests is the layer above: title
 resolution (§16.1 — the index carries no id, so the title is the handle),
 the three-state R-27 answers each tool owes, and the latch, which is the one
@@ -25,7 +25,7 @@ from tests.fakes import SinkSender
 
 MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
 GROUP = "signal:group-1"
-WORKSPACE = "household"
+UNIT = "household"
 NOW = 1_770_000_000_000
 
 
@@ -51,21 +51,21 @@ def _room(*, tagger: PersonRef | None = MILES, conversation_id: str = GROUP) -> 
 
 
 def _tools(
-    *, notes: InMemoryNoteStore | None, workspace: str | None = WORKSPACE,
+    *, notes: InMemoryNoteStore | None, unit: str | None = UNIT,
     metrics: Metrics | None = None, tagger: PersonRef | None = MILES,
     conversation_id: str = GROUP, rooms: dict[str, str] | None = None,
 ) -> dict:
-    # `note_workspace` RESOLVES a room to its workspace rather than naming one.
+    # `note_unit` RESOLVES a room to its unit rather than naming one.
     # The resolver here READS its arguments — a lambda ignoring them would make
     # every test below pass whether or not the tool consults the room, which is
     # exactly the decorative test CLAUDE.md names. `rooms` maps
-    # conversation_id -> workspace, the shape `policy.toml` actually has.
-    book = rooms if rooms is not None else {conversation_id: workspace}
+    # conversation_id -> unit, the shape `policy.toml` actually has.
+    book = rooms if rooms is not None else {conversation_id: unit}
 
     def _resolve(_platform: str, cid: str) -> str | None:
         return book.get(cid)
 
-    registry = ToolRegistry(notes=notes, note_workspace=_resolve)
+    registry = ToolRegistry(notes=notes, note_unit=_resolve)
     specs = registry.specs(
         store=_NullStore(), conversation_id=conversation_id,
         conversation_type="group",
@@ -78,10 +78,10 @@ def _tools(
 
 async def _seed(
     store: InMemoryNoteStore, *, title: str, body: str,
-    workspace: str = WORKSPACE, description: str = "one line about it",
+    unit: str = UNIT, description: str = "one line about it",
 ):
     return await store.create(
-        workspace=workspace, title=title, description=description,
+        unit=unit, title=title, description=description,
         uncertainty="not settled yet", closing_condition="somebody decides",
         established_in=GROUP, body=body, established_by="tag:miles", now_ms=NOW,
         anchor_date=20261011,
@@ -124,11 +124,11 @@ async def test_every_note_tool_answers_unavailable_when_no_store_is_wired():
         assert (await tools[name](**kwargs))["status"] == "unavailable", name
 
 
-async def test_a_store_with_no_workspace_is_unavailable_not_empty():
+async def test_a_store_with_no_unit_is_unavailable_not_empty():
     """The other half of the same wiring gap: a store wired without the
-    workspace it is keyed on cannot answer, and «there is no such note» would
+    unit it is keyed on cannot answer, and «there is no such note» would
     be a lie about a notebook that was never consulted."""
-    tools = _tools(notes=InMemoryNoteStore(), workspace="")
+    tools = _tools(notes=InMemoryNoteStore(), unit="")
     assert (await tools["note_read"](title="Dinner"))["status"] == "unavailable"
     assert (await tools["note_search"](query="hotel"))["status"] == "unavailable"
 
@@ -151,7 +151,7 @@ async def test_note_read_resolves_the_title_the_index_shows_and_returns_the_body
 
 
 async def test_note_read_matches_a_title_case_insensitively():
-    """`(workspace, lower(title))` is what the partial unique index is on, so
+    """`(unit, lower(title))` is what the partial unique index is on, so
     case is not part of a note's identity — and 「dinner」 typed back at the
     index's 「Dinner, 9 Sept」 must not be a miss."""
     store = InMemoryNoteStore()
@@ -186,9 +186,9 @@ async def test_note_read_refuses_an_ambiguous_title_and_names_both():
     assert sorted(out["candidates"]) == ["Wedding", "wedding"]
 
 
-async def test_note_read_cannot_reach_another_workspaces_note():
+async def test_note_read_cannot_reach_another_units_note():
     store = InMemoryNoteStore()
-    await _seed(store, title="Dinner, 9 Sept", body="b", workspace="somebody-else")
+    await _seed(store, title="Dinner, 9 Sept", body="b", unit="somebody-else")
     tools = _tools(notes=store)
     assert (await tools["note_read"](title="Dinner, 9 Sept"))["status"] == "nothing_found"
 
@@ -228,7 +228,7 @@ async def test_a_search_that_finds_nothing_is_recorded_as_a_candidate():
     assert (await tools["note_search"](query="酒店"))["status"] == "nothing_found"
     assert (await tools["note_search"](query="酒店"))["status"] == "nothing_found"
 
-    candidate = store.candidates[(WORKSPACE, "酒店")]
+    candidate = store.candidates[(UNIT, "酒店")]
     assert candidate.occurrence_count == 2
     assert candidate.observed_in == (GROUP,)
 
@@ -258,7 +258,7 @@ async def test_a_recorded_miss_is_counted_as_a_candidate():
     # the row it claims to describe have to agree, or the metric is attesting
     # to itself.
     assert metrics.get("nora_note_candidates_total", trigger="miss") == 2
-    assert store.candidates[(WORKSPACE, "酒店")].occurrence_count == 2
+    assert store.candidates[(UNIT, "酒店")].occurrence_count == 2
 
 
 async def test_a_search_that_hits_counts_no_candidate():
@@ -291,7 +291,7 @@ async def test_note_create_writes_the_note_and_its_first_revision():
 
     assert out["status"] == "ok"
     assert out["title"] == "Grant's wedding"
-    (note,) = await store.standing(workspace=WORKSPACE)
+    (note,) = await store.standing(unit=UNIT)
     assert note.anchor_date == 20261011
     assert note.anchor_entity_ids == ("grant",)
     assert note.established_in == GROUP
@@ -323,7 +323,7 @@ async def test_note_create_surfaces_the_domain_refusal_instead_of_swallowing_it(
     assert long_title["status"] == "refused"
     assert "60 characters" in long_title["note"]
 
-    assert await store.standing(workspace=WORKSPACE) == ()
+    assert await store.standing(unit=UNIT) == ()
 
 
 async def test_note_create_refuses_when_it_does_not_know_who_is_asking():
@@ -383,9 +383,9 @@ async def test_a_head_that_moved_under_her_is_unavailable_never_applied_on_top()
     await tools["note_read"](title="Dinner, 9 Sept")
 
     # The note-candidates gate appends to it mid-turn, or a parallel turn in
-    # the other room of the same workspace revises it.
+    # the other room of the same unit revises it.
     moved = await store.append_revision(
-        workspace=WORKSPACE, note_id=note.id, body="Ada booked it.",
+        unit=UNIT, note_id=note.id, body="Ada booked it.",
         parent_revision_id=note.head_revision_id, established_by="curator",
         now_ms=NOW + 1,
     )
@@ -446,7 +446,7 @@ async def test_a_stale_head_is_counted_as_a_refusal_with_its_own_reason():
     tools = _tools(notes=store, metrics=metrics)
     await tools["note_read"](title="Dinner, 9 Sept")
     await store.append_revision(
-        workspace=WORKSPACE, note_id=note.id, body="Ada booked it.",
+        unit=UNIT, note_id=note.id, body="Ada booked it.",
         parent_revision_id=note.head_revision_id, established_by="curator",
         now_ms=NOW + 1,
     )
@@ -644,24 +644,24 @@ def test_a_vetoed_revision_does_not_spend_its_budget():
     assert guard.evaluate("note_update", {"title": "D", "body": "x"}) is None
 
 
-async def test_two_rooms_in_different_workspaces_see_different_notebooks():
-    """The leak this resolver exists to prevent, and it fails if the workspace
+async def test_two_rooms_in_different_units_see_different_notebooks():
+    """The leak this resolver exists to prevent, and it fails if the unit
     stops being read from the ROOM.
 
     `policy.toml` puts the operator's own rooms in `ridgeline` and the group in
-    `friends`, deliberately never paired (DEC-105/R-49 — a workspace is the
-    boundary `send_to` may not cross). A process-wide workspace string hands
+    `friends`, deliberately never paired (DEC-105/R-49 — a unit is the
+    boundary `send_to` may not cross). A process-wide unit string hands
     one room the OTHER's notebook: `note_read` answers from it, `note_update`
     writes into it, past the boundary spec §3's scope decision rests on.
 
     Both calls below go through the SAME resolver and the same store; only the
     room differs. That is what makes this red when the tool stops consulting
-    the room — with one workspace configured, every other test in this file
+    the room — with one unit configured, every other test in this file
     passes either way.
     """
     store = InMemoryNoteStore()
     await store.create(
-        workspace="friends", title="Group dinner", description="undecided",
+        unit="friends", title="Group dinner", description="undecided",
         uncertainty="where", closing_condition="somebody picks",
         established_in="signal:friends-room", body="three places",
         established_by="miles", now_ms=1, anchor_date=20260909,
@@ -681,7 +681,7 @@ async def test_two_rooms_in_different_workspaces_see_different_notebooks():
 
 
 async def test_a_room_policy_cannot_name_gets_unavailable_never_a_guess():
-    """An unlisted room has no workspace, and the verbs must say so.
+    """An unlisted room has no unit, and the verbs must say so.
 
     Defaulting to any particular notebook would write a note into one the room
     is not part of — and `standing` would then render it to people who never
@@ -689,5 +689,5 @@ async def test_a_room_policy_cannot_name_gets_unavailable_never_a_guess():
     `nothing_found` would be the lie.
     """
     store = InMemoryNoteStore()
-    out = await _tools(notes=store, workspace=None)["note_read"](title="anything")
+    out = await _tools(notes=store, unit=None)["note_read"](title="anything")
     assert out["status"] == "unavailable"

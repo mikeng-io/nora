@@ -85,7 +85,7 @@ timestamp — the extractor never once reached the advance. See
 returning prose instead of JSON. It has not run since. Whether it worked is
 unknown, and cannot be known while the flag is off.
 
-**Structure:** nine tasks, all done, with one item cut (an ambiguous-workspace
+**Structure:** nine tasks, all done, with one item cut (an ambiguous-unit
 startup check).
 
 ## 3. Note tier
@@ -331,7 +331,7 @@ leaving them out has been hiding a real boundary.
 
 | | facts, notes, lexemes | events, reminders |
 |---|---|---|
-| scope | **workspace** | **conversation** |
+| scope | **unit** | **conversation** |
 | audience | the model, through injected blocks | **a person**, through the delivery path |
 | shape | claims, questions, meanings | a thing that happens at a time |
 
@@ -446,7 +446,7 @@ gateway ceiling probe  (NOT RUN)
    → all budget sizing                        (13-open-items §1)
 
 R-49's second condition  (OPEN)
-   → workspace-keyed room access, Path B      (07, 08)
+   → unit-keyed room access, Path B      (07, 08)
 
 global concurrency bound  (NOT CHOSEN)
    → the Phase 3 migration landing            (12 §1)

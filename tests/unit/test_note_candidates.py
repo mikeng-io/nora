@@ -35,7 +35,7 @@ from nora.testing.note_store import InMemoryNoteStore
 
 WS = "friends"
 SCOPE = "signal:g1"
-# The workspace `friends` holds three rooms; these are two of them, and the
+# The unit `friends` holds three rooms; these are two of them, and the
 # whole of issue #161 is that the pass could not tell them apart.
 LABEL = "Friends"
 GAMES_SCOPE = "discord:g1/c1"
@@ -76,13 +76,13 @@ def _item(**overrides: object) -> dict[str, object]:
 
 def _adaptor(
     *, notes: InMemoryNoteStore | None = None, metrics: Metrics | None = None,
-    workspace_for=lambda _: WS,
+    unit_for=lambda _: WS,
     label_for=lambda _: LABEL,
     description_for=lambda _: None,
 ) -> tuple[NoteCandidateAdaptor, InMemoryNoteStore]:
     store = notes if notes is not None else InMemoryNoteStore()
     adaptor = NoteCandidateAdaptor(
-        notes=store, candidates=store, workspace_for=workspace_for,
+        notes=store, candidates=store, unit_for=unit_for,
         label_for=label_for, description_for=description_for,
         metrics=metrics or Metrics(),
     )
@@ -95,10 +95,10 @@ class _ExplodingStore:
     COULD NOT CHECK must propagate as `unavailable`, never degrade to an
     empty prompt or a silent `nothing_found`."""
 
-    async def standing(self, *, workspace: str) -> Sequence[object]:
+    async def standing(self, *, unit: str) -> Sequence[object]:
         raise ConnectionError("the notes database is unreachable")
 
-    async def read(self, *, workspace: str, note_id: str):
+    async def read(self, *, unit: str, note_id: str):
         raise ConnectionError("the notes database is unreachable")
 
     async def propose(self, *, key: str, proposals, now_ms: int):
@@ -119,7 +119,7 @@ class _ExplodingStandingStore(InMemoryNoteStore):
     `commit`'s gate READ (as opposed to the staging write, which succeeds
     normally) so the R-27 propagation can be pinned to that one call."""
 
-    async def standing(self, *, workspace: str) -> Sequence[object]:
+    async def standing(self, *, unit: str) -> Sequence[object]:
         raise ConnectionError("the notes database is unreachable")
 
 
@@ -180,7 +180,7 @@ async def test_inputs_is_blank_for_an_empty_batch():
 async def test_inputs_renders_the_batch_and_the_standing_note_index():
     adaptor, store = _adaptor()
     await store.create(
-        workspace=WS, title="Wedding venue", description="Venue undecided",
+        unit=WS, title="Wedding venue", description="Venue undecided",
         uncertainty="which venue", closing_condition="a venue is booked",
         established_in="conv-0", body="two on the shortlist",
         established_by="tag:miles", now_ms=NOW, anchor_date=20260919,
@@ -200,20 +200,20 @@ async def test_inputs_renders_the_batch_and_the_standing_note_index():
 # ---------------------------------------------------------------------------
 
 
-async def test_every_batch_line_is_attributed_to_the_room_not_the_workspace():
+async def test_every_batch_line_is_attributed_to_the_room_not_the_unit():
     """Issue #161's bug, in one assertion.
 
     `_render_line`'s docstring promises the line names A ROOM. It was handed
-    the WORKSPACE, so on `friends` — a Signal group, a WhatsApp group and a
+    the UNIT, so on `friends` — a Signal group, a WhatsApp group and a
     Discord games channel — every line of every batch read `(friends)`, and
     the model had no way to tell a games room's 「2200」 from an arrangement.
 
-    Two rooms of ONE workspace, the same batch: the rendered attribution must
-    differ, and the workspace's own name must not be the thing rendered.
+    Two rooms of ONE unit, the same batch: the rendered attribution must
+    differ, and the unit's own name must not be the thing rendered.
     """
     rooms = {SCOPE: LABEL, GAMES_SCOPE: GAMES_LABEL}
     adaptor, _ = _adaptor(
-        workspace_for=lambda _: WS, label_for=rooms.get,
+        unit_for=lambda _: WS, label_for=rooms.get,
     )
     batch = (_row(41, "2200"), _row(42, "ap or cs"))
 
@@ -222,7 +222,7 @@ async def test_every_batch_line_is_attributed_to_the_room_not_the_workspace():
 
     assert f'room="{GAMES_LABEL}"' in games, games
     assert f'room="{LABEL}"' in signal, signal
-    # The defect itself: the workspace name attributed to a line.
+    # The defect itself: the unit name attributed to a line.
     assert f'room="{WS}"' not in games, games
     assert f'room="{WS}"' not in signal, signal
 
@@ -293,10 +293,10 @@ async def test_a_room_without_a_description_renders_the_block_anyway():
 
 async def test_no_conversation_id_is_rendered_when_the_room_has_no_name():
     """R-18/R-28's floor, applied to a prompt. `key` IS a conversation id, and
-    `room = workspace or key` rendered it on every line of any room whose
-    workspace could not be resolved. A room's identifier is not its name."""
+    `room = unit or key` rendered it on every line of any room whose
+    unit could not be resolved. A room's identifier is not its name."""
     adaptor, _ = _adaptor(
-        workspace_for=lambda _: None, label_for=lambda _: None,
+        unit_for=lambda _: None, label_for=lambda _: None,
     )
 
     rendered = await adaptor.inputs(key=GAMES_SCOPE, batch=(_row(41, "2200"),))
@@ -492,7 +492,7 @@ def _note(**overrides):
     from nora.domain.notes import Note
 
     base = {
-        "id": "n1", "workspace": WS, "title": "Wedding venue",
+        "id": "n1", "unit": WS, "title": "Wedding venue",
         "description": "d", "uncertainty": "u", "closing_condition": "c",
         "established_in": "conv-1", "created_at": NOW,
         "head_revision_id": "r1", "anchor_date": 20260919,
@@ -606,7 +606,7 @@ async def test_commit_creates_a_new_note_when_nothing_shares_its_anchor():
     )
 
     assert written == 1
-    standing = await store.standing(workspace=WS)
+    standing = await store.standing(unit=WS)
     assert len(standing) == 1
     assert standing[0].title == "Wedding venue"
     assert standing[0].uncertainty == standing[0].description, (
@@ -643,7 +643,7 @@ async def test_a_created_note_carries_an_explicit_revisit_at():
         now_ms=NOW,
     )
 
-    [note] = await store.standing(workspace=WS)
+    [note] = await store.standing(unit=WS)
     assert note.revisit_at == default_revisit_at(anchor_date=20260919, now_ms=NOW)
     assert note.revisit_at is not None
 
@@ -675,7 +675,7 @@ async def test_commit_updates_the_standing_note_the_model_named():
     metrics = Metrics()
     adaptor, store = _adaptor(metrics=metrics)
     await store.create(
-        workspace=WS, title="Wedding venue", description="d",
+        unit=WS, title="Wedding venue", description="d",
         uncertainty="u", closing_condition="c", established_in="conv-1",
         body="original arrangement", established_by="tag:miles", now_ms=NOW,
         anchor_date=20260919,
@@ -694,10 +694,10 @@ async def test_commit_updates_the_standing_note_the_model_named():
     )
 
     assert written == 1
-    standing = await store.standing(workspace=WS)
+    standing = await store.standing(unit=WS)
     assert len(standing) == 1, "the named note -> a revision, never a second note"
     [note] = standing
-    head = await store.read(workspace=WS, note_id=note.id)
+    head = await store.read(unit=WS, note_id=note.id)
     assert head is not None
     assert head[1].body == (
         "original arrangement\n\na second sighting of the same arrangement"
@@ -714,13 +714,13 @@ async def test_the_named_note_wins_over_a_note_sharing_the_date():
     took the first; this one takes the second."""
     adaptor, store = _adaptor()
     await store.create(
-        workspace=WS, title="Sign-up deadline", description="d",
+        unit=WS, title="Sign-up deadline", description="d",
         uncertainty="u", closing_condition="c", established_in="conv-1",
         body="the deadline half", established_by="tag:miles", now_ms=NOW,
         anchor_date=20260911,
     )
     await store.create(
-        workspace=WS, title="Hiking on the 20th", description="d",
+        unit=WS, title="Hiking on the 20th", description="d",
         uncertainty="u", closing_condition="c", established_in="conv-1",
         body="the hiking half", established_by="tag:miles", now_ms=NOW + 1,
         anchor_date=20260920,
@@ -738,10 +738,10 @@ async def test_the_named_note_wins_over_a_note_sharing_the_date():
         now_ms=NOW + 2,
     )
 
-    notes = {n.title: n for n in await store.standing(workspace=WS)}
+    notes = {n.title: n for n in await store.standing(unit=WS)}
     assert len(notes) == 2, "no third note; no note lost"
-    hiking = await store.read(workspace=WS, note_id=notes["Hiking on the 20th"].id)
-    deadline = await store.read(workspace=WS, note_id=notes["Sign-up deadline"].id)
+    hiking = await store.read(unit=WS, note_id=notes["Hiking on the 20th"].id)
+    deadline = await store.read(unit=WS, note_id=notes["Sign-up deadline"].id)
     assert hiking is not None and deadline is not None
     assert hiking[1].body == "the hiking half\n\na car is booked for four"
     assert deadline[1].body == "the deadline half", (
@@ -757,7 +757,7 @@ async def test_two_unrelated_arrangements_on_one_date_become_two_notes():
     different occasions both times it ever fired."""
     adaptor, store = _adaptor()
     await store.create(
-        workspace=WS, title="Sign-up deadline", description="d",
+        unit=WS, title="Sign-up deadline", description="d",
         uncertainty="u", closing_condition="c", established_in="conv-1",
         body="one of them answered; nobody has committed to going",
         established_by="tag:miles", now_ms=NOW, anchor_date=20260911,
@@ -776,12 +776,12 @@ async def test_two_unrelated_arrangements_on_one_date_become_two_notes():
     )
 
     assert written == 1
-    standing = await store.standing(workspace=WS)
+    standing = await store.standing(unit=WS)
     assert sorted(n.title for n in standing) == [
         "Sign-up deadline", "Which night the game session is",
     ], "two unrelated arrangements on one date are two notes"
     deadline = next(n for n in standing if n.title == "Sign-up deadline")
-    head = await store.read(workspace=WS, note_id=deadline.id)
+    head = await store.read(unit=WS, note_id=deadline.id)
     assert head is not None
     assert head[1].body == "one of them answered; nobody has committed to going", (
         "the untouched note must not have gained a word"
@@ -790,7 +790,7 @@ async def test_two_unrelated_arrangements_on_one_date_become_two_notes():
 
 async def test_two_same_day_candidates_are_kept_apart_by_their_entity_lists():
     """The path the eval corpus's two-arrangements case rides on. The gate
-    decides both are new; the STAGING key — `(workspace, anchor_date,
+    decides both are new; the STAGING key — `(unit, anchor_date,
     anchor_entity_ids)`, unchanged by #228 — keeps them as two rows because
     the entity lists differ, and two rows are two notes."""
     adaptor, store = _adaptor()
@@ -814,7 +814,7 @@ async def test_two_same_day_candidates_are_kept_apart_by_their_entity_lists():
     )
 
     assert written == 2
-    assert sorted(n.title for n in await store.standing(workspace=WS)) == [
+    assert sorted(n.title for n in await store.standing(unit=WS)) == [
         "Sign-up deadline", "Which night the game session is",
     ]
 
@@ -826,7 +826,7 @@ async def test_two_same_day_candidates_with_no_entities_are_kept_apart_by_title(
     its own docstring saying that when the bound was lifted this was the test
     to invert deliberately. It is lifted, and this is that inversion.
 
-    `note_candidate`'s uniqueness is now `(workspace, anchor_date,
+    `note_candidate`'s uniqueness is now `(unit, anchor_date,
     anchor_entity_ids, lower(btrim(title)))`. The entity list was measured on
     2026-09-16 to be a constant in a fixed-membership room — a candidate
     naming two people was destroyed by a same-day row naming the same two — so
@@ -860,7 +860,7 @@ async def test_two_same_day_candidates_with_no_entities_are_kept_apart_by_title(
     )
 
     assert written == 2, "two arrangements on one day are two notes"
-    assert sorted(n.title for n in await store.standing(workspace=WS)) == [
+    assert sorted(n.title for n in await store.standing(unit=WS)) == [
         "Sign-up deadline", "Which night the game session is",
     ]
     assert len(store.create_candidates) == 2, (
@@ -891,12 +891,12 @@ async def test_an_ambiguous_title_creates_rather_than_guessing():
         (("Dinner", 20260919), ("dinner ", 20261225))
     ):
         await store.create(
-            workspace=WS, title=stored, description="d",
+            unit=WS, title=stored, description="d",
             uncertainty="u", closing_condition="c", established_in="conv-1",
             body=f"body {i}", established_by="tag:miles", now_ms=NOW + i,
             anchor_date=anchor,
         )
-    assert len({n.title for n in await store.standing(workspace=WS)}) == 2
+    assert len({n.title for n in await store.standing(unit=WS)}) == 2
 
     written = await adaptor.commit(
         key=SCOPE,
@@ -911,14 +911,14 @@ async def test_an_ambiguous_title_creates_rather_than_guessing():
     )
 
     assert written == 1
-    standing = await store.standing(workspace=WS)
+    standing = await store.standing(unit=WS)
     assert len(standing) == 3, (
         "a third note, never a guess at which of the two was meant"
     )
     for note in standing:
         if note.title == "Dinner somewhere new":
             continue
-        head = await store.read(workspace=WS, note_id=note.id)
+        head = await store.read(unit=WS, note_id=note.id)
         assert head is not None
         assert "a third thing entirely" not in head[1].body, (
             "nothing standing may be appended to on an ambiguous name"
@@ -944,7 +944,7 @@ async def test_a_title_that_answers_to_nothing_is_counted_apart_from_a_create():
     metrics = Metrics()
     adaptor, store = _adaptor(metrics=metrics)
     await store.create(
-        workspace=WS, title="Wedding venue", description="d", uncertainty="u",
+        unit=WS, title="Wedding venue", description="d", uncertainty="u",
         closing_condition="c", established_in="conv-1", body="b",
         established_by="tag:miles", now_ms=NOW, anchor_date=20260919,
     )
@@ -961,7 +961,7 @@ async def test_a_title_that_answers_to_nothing_is_counted_apart_from_a_create():
     )
 
     assert written == 1
-    assert len(await store.standing(workspace=WS)) == 2, (
+    assert len(await store.standing(unit=WS)) == 2, (
         "a mistyped title still creates; guessing at what was meant is the "
         "thing #228 removed"
     )
@@ -1052,12 +1052,12 @@ async def test_a_re_observation_is_not_counted_as_a_destroyed_proposal():
     # now; one occasion re-observed is still one of each. Without this a build
     # that had simply stopped writing notes would pass the counter assertions
     # below.
-    assert len(await lost_store.standing(workspace=WS)) == 2
+    assert len(await lost_store.standing(unit=WS)) == 2
     assert sum(
         lost_metrics.get("nora_note_candidate_gate_total", action=a)
         for a in GATE_ACTIONS
     ) == 2
-    assert len(await benign_store.standing(workspace=WS)) == 1
+    assert len(await benign_store.standing(unit=WS)) == 1
     assert sum(
         benign_metrics.get("nora_note_candidate_gate_total", action=a)
         for a in GATE_ACTIONS
@@ -1103,7 +1103,7 @@ async def test_an_unrelated_candidate_on_the_same_date_cannot_destroy_the_head()
     """
     adaptor, store = _adaptor()
     await store.create(
-        workspace=WS, title="Sign-up deadline", description="d",
+        unit=WS, title="Sign-up deadline", description="d",
         uncertainty="u", closing_condition="c", established_in="conv-1",
         body="one of them answered; nobody has committed to going",
         established_by="tag:miles", now_ms=NOW, anchor_date=20260911,
@@ -1123,8 +1123,8 @@ async def test_an_unrelated_candidate_on_the_same_date_cannot_destroy_the_head()
     )
 
     assert written == 1
-    [note] = await store.standing(workspace=WS)
-    head = await store.read(workspace=WS, note_id=note.id)
+    [note] = await store.standing(unit=WS)
+    head = await store.read(unit=WS, note_id=note.id)
     assert head is not None
     assert "nobody has committed to going" in head[1].body, (
         "the arrangement that was already written down was destroyed"
@@ -1141,7 +1141,7 @@ async def test_a_revision_past_the_body_ceiling_is_refused_not_truncated():
     """
     adaptor, store = _adaptor()
     await store.create(
-        workspace=WS, title="Wedding venue", description="d",
+        unit=WS, title="Wedding venue", description="d",
         uncertainty="u", closing_condition="c", established_in="conv-1",
         body="x" * (BODY_MAX_CHARS - 4), established_by="tag:miles",
         now_ms=NOW, anchor_date=20260919,
@@ -1160,8 +1160,8 @@ async def test_a_revision_past_the_body_ceiling_is_refused_not_truncated():
     )
 
     assert written == 0
-    [note] = await store.standing(workspace=WS)
-    head = await store.read(workspace=WS, note_id=note.id)
+    [note] = await store.standing(unit=WS)
+    head = await store.read(unit=WS, note_id=note.id)
     assert head is not None
     assert head[1].body == "x" * (BODY_MAX_CHARS - 4), "the head moved"
     [row] = store.create_candidates.values()
@@ -1173,7 +1173,7 @@ def test_appended_keeps_both_bodies_and_separates_them_with_a_blank_line():
 
 
 async def test_commit_raises_for_an_unresolvable_scope():
-    adaptor, _ = _adaptor(workspace_for=lambda _: None)
+    adaptor, _ = _adaptor(unit_for=lambda _: None)
 
     with pytest.raises(LookupError):
         await adaptor.commit(
@@ -1249,7 +1249,7 @@ async def test_commit_settles_a_reobserved_candidate_only_once():
     )
 
     assert (first, second) == (1, 0)
-    assert len(await store.standing(workspace=WS)) == 1
+    assert len(await store.standing(unit=WS)) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -1356,12 +1356,12 @@ async def test_inputs_renders_moments_in_the_adaptors_zone():
     store = InMemoryNoteStore()
     row = _row(7, "食飯？", ts=1_788_804_803_000)
     ahead = NoteCandidateAdaptor(
-        notes=store, candidates=store, workspace_for=lambda _: WS,
+        notes=store, candidates=store, unit_for=lambda _: WS,
         label_for=lambda _: LABEL, description_for=lambda _: None,
         timezone=ZoneInfo("Pacific/Kiritimati"),
     )
     behind = NoteCandidateAdaptor(
-        notes=store, candidates=store, workspace_for=lambda _: WS,
+        notes=store, candidates=store, unit_for=lambda _: WS,
         label_for=lambda _: LABEL, description_for=lambda _: None,
         timezone=ZoneInfo("Pacific/Niue"),
     )

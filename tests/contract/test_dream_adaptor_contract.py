@@ -69,7 +69,7 @@ from nora.domain.notes import anchor_bounds_ms
 from nora.domain.ports import DreamAdaptor, Proposal
 from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.language.note_curator import NoteCuratorAdaptor
-from nora.language.proactive import ProactiveAdaptor, WorkspaceRoom
+from nora.language.proactive import ProactiveAdaptor, UnitRoom
 from nora.obs.metrics import Metrics
 from nora.testing import InMemoryNoteStore
 from nora.testing.fakes import FakeRecordStore
@@ -240,7 +240,7 @@ def _build_proactive() -> tuple[ProactiveAdaptor, InMemoryNoteStore]:
     adaptor = ProactiveAdaptor(
         notes=notes, standing=None, reminders=FakeReminderStore(), memory=None,
         rooms_of=lambda ws: (
-            WorkspaceRoom(platform="signal", conversation_id="g1", label="G1", home=True),
+            UnitRoom(platform="signal", conversation_id="g1", label="G1", home=True),
         ) if ws == _PROACTIVE_WS else (),
         ai_peer="nora", clock=lambda: datetime(2026, 9, 9, 0, 0, tzinfo=UTC),
         timezone=ZoneInfo("Asia/Hong_Kong"),
@@ -254,7 +254,7 @@ async def _prepare_proactive(adaptor: object) -> None:
     assert isinstance(notes, InMemoryNoteStore)
     for n, title in enumerate(("Dinner venue", "Taipei trip")):
         await notes.create(
-            workspace=_PROACTIVE_WS, title=title, description="open",
+            unit=_PROACTIVE_WS, title=title, description="open",
             uncertainty="where", closing_condition="settled", established_in="g1",
             body="open corner", established_by="tag:miles", now_ms=1_000 + n,
             anchor_date=20260912,
@@ -286,9 +286,9 @@ def _proactive_written(_adaptor: object, notes: object) -> int:
 # properties an adaptor is most likely to get wrong — the handle scheme and the
 # egress screen — are exactly the ones a fake cannot have.
 #
-# Both are keyed on `KEY` so the workspace an entry seeds is the workspace the
+# Both are keyed on `KEY` so the unit an entry seeds is the unit the
 # shared tests tick. `NoteCandidateAdaptor` is scope-keyed and translates
-# through `workspace_for`; `NoteCuratorAdaptor` is workspace-keyed and the two
+# through `unit_for`; `NoteCuratorAdaptor` is unit-keyed and the two
 # are the same string here, which is legal and keeps the fixtures readable.
 
 _NOTE_WS = KEY
@@ -328,7 +328,7 @@ def _build_note_candidates() -> tuple[NoteCandidateAdaptor, InMemoryNoteStore]:
     return (
         NoteCandidateAdaptor(
             notes=store, candidates=store,
-            workspace_for=lambda scope: _NOTE_WS if scope == KEY else None,
+            unit_for=lambda scope: _NOTE_WS if scope == KEY else None,
             label_for=lambda scope: "Zone 42" if scope == KEY else None,
             description_for=lambda _scope: None,
             metrics=Metrics(),
@@ -435,7 +435,7 @@ async def _prepare_note_curator(adaptor: object) -> None:
     assert isinstance(notes, InMemoryNoteStore)
     for n, title in enumerate(("Dinner, 1 Jan", "Wedding venue")):
         await notes.create(
-            workspace=_NOTE_WS, title=title, description="one line",
+            unit=_NOTE_WS, title=title, description="one line",
             uncertainty="undecided", closing_condition="somebody decides",
             established_in=_NOTE_ROOM, body="as it stands",
             established_by="tag:miles", now_ms=1_000 + n,
@@ -486,7 +486,7 @@ IMPLEMENTATIONS: dict[str, _Impl] = {
         make_malformed_item=_note_candidate_malformed_item,
         written=_note_candidate_written,
         # `commit` over an empty batch reaches no sink at all: it resolves the
-        # workspace and loops over nothing. The decay argument the field
+        # unit and loops over nothing. The decay argument the field
         # documents does not apply — this tier's time-driven work is the
         # curator's, not this one's.
         empty_commits=None,
@@ -562,10 +562,10 @@ def test_an_implementation_satisfies_the_protocol(adaptor):
 
 def test_the_key_kind_is_one_the_loop_can_enumerate(adaptor):
     """`dream_loop` resolves a population per `key_kind` — `scopes()` for a
-    room adaptor, `workspace_scopes()` for a workspace-keyed one. A third
+    room adaptor, `unit_scopes()` for a unit-keyed one. A third
     value would leave the loop with an adaptor it cannot tick, so it is
     refused here rather than discovered as a scheduling no-op."""
-    assert adaptor.key_kind in {"scope", "workspace"}
+    assert adaptor.key_kind in {"scope", "unit"}
 
 
 def test_the_tool_subset_narrows_the_read_only_ceiling(adaptor, impl):

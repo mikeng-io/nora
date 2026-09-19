@@ -79,14 +79,14 @@ class _StandingStore:
 
 
 class _Notes:
-    """The note tier's index, keyed by WORKSPACE (DEC-105)."""
+    """The note tier's index, keyed by UNIT (DEC-105)."""
 
     def __init__(self, notes: tuple[Note, ...] = ()) -> None:
         self._notes = notes
         self.reads: list[str] = []
 
-    async def standing(self, *, workspace: str) -> tuple[Note, ...]:
-        self.reads.append(workspace)
+    async def standing(self, *, unit: str) -> tuple[Note, ...]:
+        self.reads.append(unit)
         return self._notes
 
 
@@ -99,7 +99,7 @@ def _standing(body: str = "they ask me for routes and nothing else") -> Standing
 
 def _note(title: str = "dinner on the 20th") -> Note:
     return Note(
-        id="n1", workspace="friends", title=title,
+        id="n1", unit="friends", title=title,
         description="where, still open", uncertainty="where, still open",
         closing_condition="somebody books it", established_in="discord/g1",
         created_at=T0, head_revision_id="nr1", anchor_date=20260920,
@@ -114,12 +114,12 @@ def _adaptor(
     notes: _Notes | None = None,
     label: str | None = "Zone 42",
     description: str | None = "the games channel",
-    workspace: str | None = "friends",
+    unit: str | None = "friends",
     standing_key: tuple[str, str] | None = ("discord", "g1"),
 ) -> CultureAdaptor:
     return CultureAdaptor(
         culture=store, standing=standing, notes=notes, metrics=metrics,
-        workspace_for=lambda _k: workspace,
+        unit_for=lambda _k: unit,
         standing_key_for=lambda _k: standing_key,
         label_for=lambda _k: label,
         description_for=lambda _k: description,
@@ -252,8 +252,8 @@ async def test_the_standing_read_uses_the_key_the_POLICY_resolves():
     assert store.reads == [("signal", "+8520000")]
 
 
-async def test_what_the_room_has_OPEN_reaches_the_fold_at_the_WORKSPACE_key():
-    """The note index is a WORKSPACE store (DEC-105), so the scope key is
+async def test_what_the_room_has_OPEN_reaches_the_fold_at_the_UNIT_key():
+    """The note index is a UNIT store (DEC-105), so the scope key is
     translated — `NoteCandidateAdaptor`'s own read, same verb, same
     translation."""
     notes = _Notes((_note(),))
@@ -271,7 +271,7 @@ async def test_a_scope_that_names_no_policy_conversation_is_LOGGED(caplog):
     with caplog.at_level(logging.WARNING, logger="nora.language.culture"):
         out = await _adaptor(
             _Store(), standing=_StandingStore(), notes=_Notes((_note(),)),
-            workspace=None, standing_key=None,
+            unit=None, standing_key=None,
         ).inputs(key=KEY, batch=[_row("hi")])
 
     assert "<standing" not in out and "<notes" not in out

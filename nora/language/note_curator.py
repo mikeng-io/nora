@@ -79,7 +79,7 @@ model is only ever asked about what the SQL selected, capped by
 `max_expired_per_tick` + `max_revisits_per_tick`.
 
 **Every selected note carries an evidence block**, gathered in code from its
-own `established_in` (a workspace-keyed adaptor has no room-scoped TOOL to do
+own `established_in` (a unit-keyed adaptor has no room-scoped TOOL to do
 this with; §4.2's argument, inherited from the revisitor) — the
 citation/`_covers` grounding applies to every note this pass judges. (Until
 2026-09-08 a merge-group member was the one exception, rendered without
@@ -120,7 +120,7 @@ platform sender — is the one real, ungrounded-nothing fact this tier has about
 "who is behind this note closing", and it is what stands in for a
 `requester_person_id`/Honcho `target` no name-resolution machinery in this
 tier can otherwise produce (`nora.persons` has no name -> person lookup a
-workspace-scoped background pass can reach). This is a real narrowing —
+unit-scoped background pass can reach). This is a real narrowing —
 "Miles likes Yardbird for the jazz" only discharges when MILES's own message is
 what closed the note, not when someone else's does — recorded here rather
 than hidden. *The reading that would reopen this:* a name -> person resolver
@@ -346,18 +346,18 @@ def _now_ms() -> int:
 
 
 class _NoteStore(Protocol):
-    async def standing(self, *, workspace: str) -> tuple[Note, ...]: ...
+    async def standing(self, *, unit: str) -> tuple[Note, ...]: ...
 
     async def anchored_before(
-        self, *, workspace: str, day: int, limit: int,
+        self, *, unit: str, day: int, limit: int,
     ) -> tuple[tuple[Note, str], ...]: ...
 
     async def due_for_revisit(
-        self, *, workspace: str, now_ms: int, limit: int,
+        self, *, unit: str, now_ms: int, limit: int,
     ) -> tuple[tuple[Note, str], ...]: ...
 
     async def read(
-        self, *, workspace: str, note_id: str,
+        self, *, unit: str, note_id: str,
     ) -> tuple[Note, Any] | None: ...
 
     async def supersede(
@@ -366,7 +366,7 @@ class _NoteStore(Protocol):
     ) -> int: ...
 
     async def record_wake(
-        self, *, workspace: str, note_id: str, next_revisit_at: int,
+        self, *, unit: str, note_id: str, next_revisit_at: int,
         now_ms: int,
     ) -> Any: ...
 
@@ -551,12 +551,12 @@ class _Shown:
 
 
 class NoteCuratorAdaptor:
-    """One `DreamAdaptor`: read a workspace's notebook, decide what has closed
+    """One `DreamAdaptor`: read a unit's notebook, decide what has closed
     or expired, and write retirements.
 
-    `key_kind = "workspace"` — the notebook is workspace-scoped (§3/DEC-105),
+    `key_kind = "unit"` — the notebook is unit-scoped (§3/DEC-105),
     so both `friends` rooms tick ONE notebook rather than two. That is what
-    `Dependencies.workspace_scopes` exists for.
+    `Dependencies.unit_scopes` exists for.
 
     `uses_watermark = False`, and this is the interesting one. The other
     adaptors read an append-only log through a cursor. This one reads LIVE
@@ -575,7 +575,7 @@ class NoteCuratorAdaptor:
     """
 
     name = "note-curation"
-    key_kind = "workspace"
+    key_kind = "unit"
     uses_watermark = False
     objective = "note-curation"
     envelope_key = "verdicts"
@@ -796,11 +796,11 @@ class NoteCuratorAdaptor:
         `DreamAdaptor` has no `should_fire` verb; the runtime's fire condition
         is "did `inputs` render anything to reason about", so an adaptor that
         renders a polite empty form instead of nothing buys a model call every
-        tick per workspace forever.
+        tick per unit forever.
         """
         now_ms = self._clock()
         expired_all = await self._notes.anchored_before(
-            workspace=key, day=self._today(), limit=self._max_expired,
+            unit=key, day=self._today(), limit=self._max_expired,
         )
         # OVER-FETCH BY ONE (nora.domain.bounds' own convention): a plain
         # `LIMIT max_revisits` cannot tell "exactly that many were due" from
@@ -811,12 +811,12 @@ class NoteCuratorAdaptor:
         # the adaptor does it, on `anchored_before`'s own precedent of leaving
         # per-tick bookkeeping to the caller.
         due_over = await self._notes.due_for_revisit(
-            workspace=key, now_ms=now_ms, limit=over_fetch(self._max_revisits),
+            unit=key, now_ms=now_ms, limit=over_fetch(self._max_revisits),
         )
         if len(due_over) > self._max_revisits:
             log.info(
                 "note curator: more than %d notes due for revisit in "
-                "workspace %s this tick; judging %d and deferring the rest",
+                "unit %s this tick; judging %d and deferring the rest",
                 self._max_revisits, key, self._max_revisits,
             )
             self._inc("nora_note_curator_deferred_total")
@@ -832,16 +832,16 @@ class NoteCuratorAdaptor:
             if note.id not in expired_ids
         )
 
-        standing_count = len(await self._notes.standing(workspace=key))
+        standing_count = len(await self._notes.standing(unit=key))
         # PUBLISHED UNCONDITIONALLY, INCLUDING ZERO, and BEFORE the early
         # return — an idle tick that never wrote these would leave the gauges
         # at whatever the last busy tick reported, which is a high-water mark
         # wearing a level's help text.
-        self._gauge("nora_note_curator_standing", float(standing_count), workspace=key)
+        self._gauge("nora_note_curator_standing", float(standing_count), unit=key)
         self._gauge(
             "nora_note_curator_bodies_read",
             float(len(expired_all) + len(due_over)),
-            workspace=key,
+            unit=key,
         )
 
         # ORDINAL HANDLES, NOT IDS — see the pre-merge module's own war story:
@@ -1150,7 +1150,7 @@ class NoteCuratorAdaptor:
             )
             try:
                 current = await self._notes.read(
-                    workspace=key, note_id=note_id)
+                    unit=key, note_id=note_id)
             except Exception:
                 log.exception(
                     "note curator could not re-read a note before retiring "
@@ -1267,7 +1267,7 @@ class NoteCuratorAdaptor:
             next_at = default_revisit_at(anchor_date=anchor_date, now_ms=now_ms)
             try:
                 outcome = await self._notes.record_wake(
-                    workspace=key, note_id=note_id, next_revisit_at=next_at,
+                    unit=key, note_id=note_id, next_revisit_at=next_at,
                     now_ms=now_ms,
                 )
             except Exception:
@@ -1277,7 +1277,7 @@ class NoteCuratorAdaptor:
                 )
                 continue
             if outcome is None:
-                # Not reachable from this workspace any more — retired by
+                # Not reachable from this unit any more — retired by
                 # something else between `inputs` and here, or gone.
                 continue
             if anchor_date is None and outcome.strikes > MAX_DATELESS_STRIKES:
@@ -1378,7 +1378,7 @@ class NoteCuratorAdaptor:
         **`when=None`, deliberately.** The note's own `anchor_date` already
         names the commitment's day, but setting `Gathering.when` from it
         would trigger `GatheringService._link_reminder`, which needs a REAL
-        delivery `platform` for the conversation — this workspace-scoped
+        delivery `platform` for the conversation — this unit-scoped
         background pass has no honest way to produce one without a
         conversation -> platform lookup this tier does not have (unlike
         `note.established_in`, which the Gathering service already treats as
@@ -1473,9 +1473,17 @@ class NoteCuratorAdaptor:
             )
             return
         try:
+            # NO `workspace_id`. `conclude`'s is HONCHO's workspace, and a
+            # unit is not one: passing `note.unit` addressed a Honcho
+            # workspace named after the unit — on this deployment `friends`
+            # and `wedding`, which do not exist, and `ridgeline`, which exists
+            # and belongs to something else entirely. Either way recall never
+            # reads there: `representation`/`chat` take the default. One Nora
+            # is one Honcho workspace (operator, 2026-09-19); the unit scopes
+            # the NOTE tier, and nothing else.
             written = await self._conclusions.conclude(
                 peer_id=self._ai_peer, target=cited_row.person_id,
-                content=claim.content, workspace_id=note.workspace,
+                content=claim.content,
             )
         except Exception:
             # Belt-and-braces only, `remember`'s own shape: `conclude`'s

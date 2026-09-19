@@ -112,8 +112,8 @@ def test_the_registry_exposes_every_declared_tool():
         "note_read", "note_search", "note_create", "note_update",
         # The remember verb — the conclusion write lane (2026-08-30).
         "remember",
-        # The workspace-wide memory variant, built for the Dreamer's
-        # workspace key.
+        # The unit-wide memory variant, built for the Dreamer's
+        # unit key.
         "search_memory_workspace",
     }
 
@@ -662,7 +662,7 @@ READ_ONLY = frozenset({
     # one batched Steam GetPlayerSummaries call and the Discord gateway's
     # voice cache, no writes anywhere. Dreamer-ELIGIBLE (the proactive
     # decide turn holds it — the #248 cross-check) but NOT in
-    # `WORKSPACE_SAFE_TOOLS`: it is room-roster-scoped, same as where_been.
+    # `UNIT_SAFE_TOOLS`: it is room-roster-scoped, same as where_been.
     "online_now",
     "saved_places", "who_said", "load_transcript", "group_members", "lookup_person",
     "about", "ask_memory", "search_memory", "recall_lookups", "media_fetch",
@@ -673,9 +673,9 @@ READ_ONLY = frozenset({
     # vacancy lookups and nearby discovery, no writes anywhere.
     "parking_status", "find_parking",
     "note_read", "note_search",
-    # The workspace-wide memory variant — a pure read of a store the tag path
-    # already trusts, granted to a workspace-keyed adaptor through
-    # `WORKSPACE_SAFE_TOOLS`.
+    # The unit-wide memory variant — a pure read of a store the tag path
+    # already trusts, granted to a unit-keyed adaptor through
+    # `UNIT_SAFE_TOOLS`.
     "search_memory_workspace",
     "music_status",
     # DEC-151: social_fetch is a pure read at all three layers — the tool's

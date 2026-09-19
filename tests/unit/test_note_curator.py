@@ -88,7 +88,7 @@ async def _seed(store: InMemoryNoteStore, *, title: str, anchor: int | None,
     trigger the note-curator merge gives a writer.
     """
     note = await store.create(
-        workspace=WS, title=title, description="one line",
+        unit=WS, title=title, description="one line",
         uncertainty="undecided", closing_condition="somebody decides",
         established_in="conv-1", body=body, established_by="tag:miles",
         now_ms=NOW, anchor_date=anchor, anchor_entity_ids=entities,
@@ -161,7 +161,7 @@ async def test_inputs_is_blank_when_the_notebook_is_tidy():
     """The runtime's fire condition is "did `inputs` render anything", and a
     curator has nothing to do on the overwhelming majority of ticks. Rendering
     a polite empty form instead of nothing buys a model call every 300s per
-    workspace forever — observed live on the fact adaptor 2026-08-21."""
+    unit forever — observed live on the fact adaptor 2026-08-21."""
     store = InMemoryNoteStore()
     await _seed(store, title="Wedding", anchor=20271231)
 
@@ -241,7 +241,7 @@ async def test_open_is_the_common_answer_and_writes_nothing():
     )
 
     assert written == 0
-    assert len(await store.standing(workspace=WS)) == 1
+    assert len(await store.standing(unit=WS)) == 1
 
 
 async def test_a_closed_note_is_retired_with_the_closed_reason():
@@ -267,15 +267,15 @@ async def test_a_closed_note_is_retired_with_the_closed_reason():
     )
 
     assert written == 1
-    assert await store.standing(workspace=WS) == ()
-    gone = await store.read(workspace=WS, note_id=note.id)
+    assert await store.standing(unit=WS) == ()
+    gone = await store.read(unit=WS, note_id=note.id)
     assert gone is not None
     assert gone[0].retire_reason == NoteSupersedeReason.RETIRED_CLOSED
     assert gone[0].replaced_by is None, "a closed note is replaced by nothing"
     assert metrics.get("nora_note_curator_total", action="closed") == 1
 
 
-async def test_bodies_read_is_published_as_a_level_per_workspace():
+async def test_bodies_read_is_published_as_a_level_per_unit():
     store = InMemoryNoteStore()
     await _seed(store, title="Dinner, 1 Jan", anchor=20260101)
     await _seed(store, title="Drinks, 2 Jan", anchor=20260102)
@@ -283,7 +283,7 @@ async def test_bodies_read_is_published_as_a_level_per_workspace():
 
     await _curator(store, metrics).inputs(key=WS, batch=())
 
-    assert metrics.get("nora_note_curator_bodies_read", workspace=WS) == 2
+    assert metrics.get("nora_note_curator_bodies_read", unit=WS) == 2
 
 
 async def test_bodies_read_is_published_as_zero_on_an_idle_tick():
@@ -303,9 +303,9 @@ async def test_bodies_read_is_published_as_zero_on_an_idle_tick():
 
     await _curator(store, metrics).inputs(key=WS, batch=())
 
-    assert ("nora_note_curator_bodies_read", (("workspace", WS),)) \
+    assert ("nora_note_curator_bodies_read", (("unit", WS),)) \
         in metrics.snapshot(), "an idle tick still says what it spent"
-    assert metrics.get("nora_note_curator_bodies_read", workspace=WS) == 0
+    assert metrics.get("nora_note_curator_bodies_read", unit=WS) == 0
 
 
 async def test_bodies_read_counts_what_the_store_fetched_not_what_was_shown():
@@ -333,7 +333,7 @@ async def test_bodies_read_counts_what_the_store_fetched_not_what_was_shown():
 
     await curator.inputs(key=WS, batch=())
 
-    assert metrics.get("nora_note_curator_bodies_read", workspace=WS) == 2, (
+    assert metrics.get("nora_note_curator_bodies_read", unit=WS) == 2, (
         "the expired cap bound at 2 and the gauge is what says so"
     )
 
@@ -375,7 +375,7 @@ async def test_contradictory_verdicts_leave_the_note_standing():
     ))
 
     assert written == 0
-    assert [n.id for n in await store.standing(workspace=WS)] == [note.id]
+    assert [n.id for n in await store.standing(unit=WS)] == [note.id]
     assert metrics.get(
         "nora_note_curator_dropped_total", reason="conflicting_verdict") == 1
 
@@ -451,7 +451,7 @@ async def test_a_note_that_moved_since_inputs_is_not_retired():
 
     # The room speaks between inputs and commit.
     moved = await store.append_revision(
-        workspace=WS, note_id=note.id,
+        unit=WS, note_id=note.id,
         body="Moved to the 16th. Still nobody has booked.",
         parent_revision_id=note.head_revision_id,
         established_by="tag:miles", now_ms=NOW + 1,
@@ -467,7 +467,7 @@ async def test_a_note_that_moved_since_inputs_is_not_retired():
     )
 
     assert written == 0
-    assert [n.id for n in await store.standing(workspace=WS)] == [note.id]
+    assert [n.id for n in await store.standing(unit=WS)] == [note.id]
     assert metrics.get("nora_note_curator_total", action="retire_stale") == 1
     assert moved.id  # the room's revision stands
 
@@ -481,10 +481,10 @@ class _ReadRaises(InMemoryNoteStore):
         super().__init__()
         self.doomed = doomed
 
-    async def read(self, *, workspace, note_id):  # type: ignore[override]
+    async def read(self, *, unit, note_id):  # type: ignore[override]
         if note_id == self.doomed:
             raise RuntimeError("the connection went away")
-        return await super().read(workspace=workspace, note_id=note_id)
+        return await super().read(unit=unit, note_id=note_id)
 
 
 async def test_a_failed_read_before_retiring_does_not_discard_the_ticks_retirements():
@@ -528,7 +528,7 @@ async def test_a_failed_read_before_retiring_does_not_discard_the_ticks_retireme
         "here is `ok` wearing `unavailable`'s clothes"
     )
     assert metrics.get("nora_note_curator_total", action="retire_failed") == 1
-    standing = {n.id for n in await store.standing(workspace=WS)}
+    standing = {n.id for n in await store.standing(unit=WS)}
     assert standing == {doomed.id}
 
 
@@ -691,7 +691,7 @@ async def test_items_survive_the_real_dream_screen_in_the_runtimes_order():
         now_ms=NOW + 5,
     )
     assert written == 1, "one retirement"
-    assert [n.id for n in await store.standing(workspace=WS)] == [standing.id]
+    assert [n.id for n in await store.standing(unit=WS)] == [standing.id]
 
 
 # --- P5: two notes on one passed date are two expired notes ----------------
@@ -718,7 +718,7 @@ async def test_two_notes_on_one_passed_date_are_both_rendered_as_expired():
     assert rendered.count("BBB Ben found Sheung Wan.") == 1
     assert "CCC Nobody booked." in rendered
     assert rendered.count("evidence") == 3, "every rendered note carries evidence"
-    assert metrics.get("nora_note_curator_bodies_read", workspace=WS) == 3
+    assert metrics.get("nora_note_curator_bodies_read", unit=WS) == 3
     assert a.id and lone.id  # positive control: the seeds really happened
 
 
@@ -1340,7 +1340,7 @@ async def test_a_tag_path_revision_resets_strikes_and_advances_revisit_at():
     note = await _seed(store, title="What next", anchor=None,
                        entities=("ada",), revisit_at=NOW - 1)
     await store.append_revision(
-        workspace=WS, note_id=note.id, body="Ben suggested chess",
+        unit=WS, note_id=note.id, body="Ben suggested chess",
         parent_revision_id=note.head_revision_id, established_by="tag:miles",
         now_ms=NOW + 1,
     )
@@ -1371,7 +1371,7 @@ async def test_a_dateless_notes_next_revisit_at_is_the_horizon_ahead():
     note = await _seed(store, title="What next", anchor=None,
                        entities=("ada",), revisit_at=NOW - 1)
     await store.append_revision(
-        workspace=WS, note_id=note.id, body="progress",
+        unit=WS, note_id=note.id, body="progress",
         parent_revision_id=note.head_revision_id, established_by="tag:miles",
         now_ms=NOW + 1,
     )
@@ -1401,7 +1401,7 @@ async def test_an_anchored_notes_next_revisit_at_is_the_anchor_minus_the_lead_wi
     note = await _seed(store, title="Dinner", anchor=FUTURE_ANCHOR,
                        entities=("ada",), revisit_at=NOW - 1)
     await store.append_revision(
-        workspace=WS, note_id=note.id, body="progress",
+        unit=WS, note_id=note.id, body="progress",
         parent_revision_id=note.head_revision_id, established_by="tag:miles",
         now_ms=NOW + 1,
     )
@@ -1444,7 +1444,7 @@ async def test_record_wake_is_not_called_for_a_retired_note():
         ), now_ms=NOW + 5,
     )
 
-    retired = await store.read(workspace=WS, note_id=note.id)
+    retired = await store.read(unit=WS, note_id=note.id)
     assert retired is not None
     assert retired[0].retired_at is not None
     # `strikes` untouched — record_wake was never called for this note.
@@ -1501,14 +1501,14 @@ async def test_a_dateless_note_past_the_strike_ceiling_is_observed_not_retired()
 # ---------------------------------------------------------------------------
 
 
-async def test_standing_is_published_per_workspace():
+async def test_standing_is_published_per_unit():
     store = InMemoryNoteStore()
     await _seed(store, title="Dinner", anchor=20260909, entities=("ada",))
     metrics = Metrics()
 
     await _curator(store, metrics).inputs(key=WS, batch=())
 
-    assert metrics.get("nora_note_curator_standing", workspace=WS) == 1
+    assert metrics.get("nora_note_curator_standing", unit=WS) == 1
 
 
 async def test_standing_is_published_as_zero_on_an_idle_tick():
@@ -1517,9 +1517,9 @@ async def test_standing_is_published_as_zero_on_an_idle_tick():
 
     await _curator(store, metrics).inputs(key=WS, batch=())
 
-    assert ("nora_note_curator_standing", (("workspace", WS),)) \
+    assert ("nora_note_curator_standing", (("unit", WS),)) \
         in metrics.snapshot()
-    assert metrics.get("nora_note_curator_standing", workspace=WS) == 0
+    assert metrics.get("nora_note_curator_standing", unit=WS) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -1659,15 +1659,15 @@ async def test_the_due_notes_evidence_is_rendered_oldest_first():
     )
 
 
-async def test_a_sibling_workspace_cannot_wipe_what_this_one_asked():
+async def test_a_sibling_unit_cannot_wipe_what_this_one_asked():
     """`dream_loop` dispatches one task per (adaptor, key) and its `running`
     lock is PER-UNIT: one key's inputs/accept pair is non-overlapping, and
     nothing makes two DIFFERENT keys' pairs non-overlapping. The live
-    `policy.toml` has two workspaces, so this is a deployed configuration, not
+    `policy.toml` has two units, so this is a deployed configuration, not
     a hypothetical.
 
-    With a bare per-adaptor attribute instead of one keyed by workspace,
-    workspace B's `inputs` would wipe workspace A's map, and A's grounded,
+    With a bare per-adaptor attribute instead of one keyed by unit,
+    unit B's `inputs` would wipe unit A's map, and A's grounded,
     correct verdict would be dropped and counted `unknown_note` — a WIRING GAP
     reported as a MODEL FAULT. Interleaved in the order the loop can actually
     produce: A.inputs, B.inputs, A.accept, B.accept."""
@@ -1677,11 +1677,11 @@ async def test_a_sibling_workspace_cannot_wipe_what_this_one_asked():
     note_b = await _seed(store, title="B", anchor=None, entities=("ben",),
                          revisit_at=NOW - 1)
 
-    class _PerWorkspace(InMemoryNoteStore):
-        async def standing(self, *, workspace):  # type: ignore[override]
-            return (note_a,) if workspace == "ws-a" else (note_b,)
+    class _PerUnit(InMemoryNoteStore):
+        async def standing(self, *, unit):  # type: ignore[override]
+            return (note_a,) if unit == "ws-a" else (note_b,)
 
-    per_ws = _PerWorkspace(notes=store.notes, revisions=store.revisions)
+    per_ws = _PerUnit(notes=store.notes, revisions=store.revisions)
     record = FakeRecordStore()
     record.rows.append(_row(7, "booked it"))
     metrics = Metrics()
@@ -1700,7 +1700,7 @@ async def test_a_sibling_workspace_cannot_wipe_what_this_one_asked():
          "cited_message_id": 7},
     ))
 
-    assert [v.note_id for v in a_out] == [note_a.id], "workspace A's verdict was lost"
+    assert [v.note_id for v in a_out] == [note_a.id], "unit A's verdict was lost"
     assert [v.note_id for v in b_out] == [note_b.id]
     assert metrics.get(
         "nora_note_curator_dropped_total", reason="unknown_note") == 0
@@ -1803,7 +1803,7 @@ async def test_discharge_commitment_writes_a_real_event():
     )
 
     assert written == 1
-    assert await store.standing(workspace=WS) == (), "the note itself still retires"
+    assert await store.standing(unit=WS) == (), "the note itself still retires"
     assert len(events.calls) == 1
     call = events.calls[0]
     assert call["conversation_id"] == "conv-1"
@@ -1850,7 +1850,10 @@ async def test_discharge_person_claim_reaches_the_honcho_integration_point():
         "self-report, per the module docstring's grounding section"
     )
     assert call["content"] == "Miles likes Yardbird for the jazz"
-    assert call["workspace_id"] == note.workspace
+    assert call["workspace_id"] is None, (
+        "a discharge writes into the ONE Honcho workspace, never one named "
+        "after the unit — see the call site"
+    )
     assert metrics.get(
         "nora_note_discharge_total", kind="person_claim", outcome="written") == 1
 
@@ -1874,7 +1877,7 @@ async def test_a_note_with_nothing_to_discharge_retires_with_no_writes():
     written = await _close_with_discharge(curator, note, discharge_item=None)
 
     assert written == 1
-    assert await store.standing(workspace=WS) == ()
+    assert await store.standing(unit=WS) == ()
     assert events.calls == []
     assert conclusions.calls == []
     assert metrics.get("nora_note_discharge_notes_total", result="empty") == 1
@@ -2060,7 +2063,7 @@ async def test_a_cancelled_discharge_counts_the_loss_on_the_retired_note():
             timeout=0.05,
         )
 
-    assert await store.standing(workspace=WS) == (), (
+    assert await store.standing(unit=WS) == (), (
         "the premise: the note is already retired when discharge is cut off"
     )
     assert metrics.get(
@@ -2196,7 +2199,7 @@ async def test_discharge_never_runs_for_an_expired_verdict():
 
 def _forgeable_note(**over) -> Note:
     base = {
-        "id": "n1", "workspace": "ws", "title": "Dinner",
+        "id": "n1", "unit": "ws", "title": "Dinner",
         "description": "d", "uncertainty": "u", "closing_condition": "c",
         "established_in": "signal/g1", "created_at": 0,
         "head_revision_id": "r1",

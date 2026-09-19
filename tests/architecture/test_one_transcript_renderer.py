@@ -79,8 +79,8 @@ UNCONVERTED: dict[str, str] = {}
 #: happening. Inverted, a new caller appears in the discovered set and has to be
 #: classified — converted, or exempted here with a sentence.
 _NOT_A_TRANSCRIPT = {
-    # ONE ROOM, ONE LINE. The proactive pass renders `WorkspaceRoom` rows — a
-    # workspace's rooms and where her own fold left each one — never a member's
+    # ONE ROOM, ONE LINE. The proactive pass renders `UnitRoom` rows — a
+    # unit's rooms and where her own fold left each one — never a member's
     # message. Design 39 §1 keeps `load_transcript` out of that pass on
     # purpose, which is the same reason `test_media_join_reaches_every_
     # transcript` exempts this module.

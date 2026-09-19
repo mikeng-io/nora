@@ -46,7 +46,7 @@ from nora.domain.prompt import age, escape, escape_attr, one_line
 
 #: The record being rendered. A TypeVar rather than a Protocol bound because
 #: the nine renderers read three unrelated dataclasses — `TranscriptRow`, the
-#: proactive index's `WorkspaceRoom`, and the mirror's `WindowRow` — and one of
+#: proactive index's `UnitRoom`, and the mirror's `WindowRow` — and one of
 #: them cannot be named here at all: `nora.obs.determination` is gated on
 #: importing no `nora.*`, so it can never hand this module its own type. Every
 #: field is reached through an accessor the caller supplies, so no shape is
@@ -72,8 +72,8 @@ Row = TypeVar("Row")
 #:
 #: `_notes_block`'s docstring is the worked example and the reason this field
 #: exists: it is kept OUT of the static head even though it changes slowly,
-#: because «a workspace-wide block in the cached head would fragment the prefix
-#: across every workspace instead of every room». A `room`-keyed block in
+#: because «a unit-wide block in the cached head would fragment the prefix
+#: across every unit instead of every room». A `room`-keyed block in
 #: `header` fragments it per room, permanently — which costs far more than any
 #: slow-changing block saves, however rarely it is rewritten.
 #:
@@ -81,7 +81,7 @@ Row = TypeVar("Row")
 #: `turn`, whatever its rewrite frequency. Raised by the culture-tier session
 #: 2026-09-13, which reached for `header` on the grounds that its block changes
 #: only daily — true, and not the axis that matters.
-BlockKey = Literal["global", "workspace", "room", "person", "turn"]
+BlockKey = Literal["global", "unit", "room", "person", "turn"]
 
 #: How the handle at the head of a line is written, or that there is none.
 #:
@@ -218,7 +218,7 @@ class ContextBlock:
     #: transcript through `render_messages`, a fact list through `escape`.
     body: str
     #: Ascending. The tag prompt's order is an argument its own docstring makes
-    #: (her past, then theirs, then the workspace's open questions, then the
+    #: (her past, then theirs, then the unit's open questions, then the
     #: room), and it is data here rather than the order of `+` operators in one
     #: expression.
     order: int = 0
@@ -518,7 +518,7 @@ def render_rows(
 
     The accessors are callables rather than attribute names because the rows are
     three different dataclasses across the nine renderers (`TranscriptRow`, the
-    proactive index's `WorkspaceRoom`, and the mirror's `WindowRow`) and one of
+    proactive index's `UnitRoom`, and the mirror's `WindowRow`) and one of
     them is deliberately structural — `nora.obs.determination` may import no
     `nora.*` at all, so it can never hand this module its own type.
     """

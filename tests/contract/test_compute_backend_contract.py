@@ -114,7 +114,7 @@ class _DockerCase:
     """`LocalDockerBackend` held in flight by blocking its container's `wait`
     on a real `threading.Event` (it runs inside `asyncio.to_thread`, so
     blocking it does not block the event loop). Releasing it after writing —
-    or not writing — the workspace's `url.txt`/`summary.txt` is what makes the
+    or not writing — the unit's `url.txt`/`summary.txt` is what makes the
     same job end SUCCEEDED or FAILED, which is how the real sandbox reports
     its own outcome (spec §2)."""
 
@@ -145,9 +145,9 @@ class _DockerCase:
         return job_id
 
     async def release_succeeding(self, job_id: str) -> None:
-        workspace = self.workspace_root / job_id
-        (workspace / "url.txt").write_text(URL)
-        (workspace / "summary.txt").write_text(SUMMARY)
+        unit = self.workspace_root / job_id
+        (unit / "url.txt").write_text(URL)
+        (unit / "summary.txt").write_text(SUMMARY)
         self._release.set()
 
     async def release_failing(self, job_id: str) -> None:
