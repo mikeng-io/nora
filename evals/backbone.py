@@ -78,6 +78,22 @@ NORA_ADMITTED = "nora.admitted"
 #: shaped like a model turn. Empty string for every entry point that never
 #: calls `build_prefill` (`gate`, `dreamer`).
 NORA_BLOCKS_EMPTY = "nora.blocks_empty"
+#: `Outcome.written`/`len(.changed)`/`len(.staged)` off the FIRST drive —
+#: never surfaced to a grader before this (S6, `10-the-scenario-map.md` §3).
+#: `dream()`'s own `written`/`changed` are already PER-CALL DELTAS (it
+#: diffs the notebook `before`/`after` inside one call), so a second call on
+#: the SAME subject naturally reports "what run 2 added", not a cumulative
+#: count. `staged` is the one exception — an ABSOLUTE snapshot of every
+#: `NOTE_CANDIDATE` row for the workspace, not a diff — so idempotence on it
+#: needs both runs' counts compared, not run 2's alone.
+NORA_WRITTEN = "nora.written"
+NORA_CHANGED_COUNT = "nora.changed_count"
+NORA_STAGED_COUNT = "nora.staged_count"
+#: The REPEAT run's equivalents (`Spec.repeat > 1`), `None` when there was no
+#: repeat run.
+NORA_WRITTEN_2 = "nora.written_2"
+NORA_CHANGED_COUNT_2 = "nora.changed_count_2"
+NORA_STAGED_COUNT_2 = "nora.staged_count_2"
 
 #: The three verdicts, carried in `EvaluationOutput.label`.
 #:
@@ -160,6 +176,12 @@ class Spec:
     overrides: dict[str, Any] | None = None
     #: When the case happens. Empty means the wall clock.
     now: str = ""
+    #: S6 idempotence (`10-the-scenario-map.md` §3): drive the SAME subject
+    #: through the SAME case `repeat` times, at the SAME `now_ms`, and carry
+    #: the LAST run's `written`/`changed`/`staged` separately from the
+    #: first's — no re-`obtain()` between runs, unlike every other case,
+    #: because idempotence needs run 2 to see what run 1 actually left.
+    repeat: int = 1
 
 
 async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
@@ -191,13 +213,28 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                 **({"now": datetime.fromisoformat(spec.now)} if spec.now else {}),
             )
         )
-        written = await know(
+        seeded = await know(
             subject, _knowledge({}), leave_room_for_arrival=port.delivers_input,
         )
         exporter = _prefill_capture()
         exporter.clear()
-        outcome = await port.drive(subject, _as_nora_case(case, spec), now_ms=written.now_ms)
+        nora_case = _as_nora_case(case, spec)
+        outcome = await port.drive(subject, nora_case, now_ms=seeded.now_ms)
         blocks_empty = _blocks_empty(exporter)
+
+        repeat_state = []
+        if spec.repeat > 1:
+            repeat_outcome = outcome
+            for _ in range(spec.repeat - 1):
+                # SAME subject, SAME case, SAME now_ms — no re-`obtain()`.
+                # Idempotence needs run 2 to see exactly what run 1 left.
+                repeat_outcome = await port.drive(subject, nora_case, now_ms=seeded.now_ms)
+            repeat_state = [
+                EnvironmentState(name=NORA_WRITTEN_2, state=repeat_outcome.written),
+                EnvironmentState(name=NORA_CHANGED_COUNT_2, state=len(repeat_outcome.changed)),
+                EnvironmentState(name=NORA_STAGED_COUNT_2, state=len(repeat_outcome.staged)),
+            ]
+
         return {
             "output": "\n".join(outcome.said),
             "environment_state": [
@@ -207,6 +244,10 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                 EnvironmentState(name=NORA_DELIVERY, state=outcome.delivery),
                 EnvironmentState(name=NORA_ADMITTED, state=outcome.admitted),
                 EnvironmentState(name=NORA_BLOCKS_EMPTY, state=blocks_empty),
+                EnvironmentState(name=NORA_WRITTEN, state=outcome.written),
+                EnvironmentState(name=NORA_CHANGED_COUNT, state=len(outcome.changed)),
+                EnvironmentState(name=NORA_STAGED_COUNT, state=len(outcome.staged)),
+                *repeat_state,
             ],
         }
     finally:
@@ -266,6 +307,12 @@ def nora_task(spec: Spec):
                     EnvironmentState(name=NORA_DELIVERY, state=""),
                     EnvironmentState(name=NORA_ADMITTED, state=None),
                     EnvironmentState(name=NORA_BLOCKS_EMPTY, state=""),
+                    EnvironmentState(name=NORA_WRITTEN, state=None),
+                    EnvironmentState(name=NORA_CHANGED_COUNT, state=None),
+                    EnvironmentState(name=NORA_STAGED_COUNT, state=None),
+                    EnvironmentState(name=NORA_WRITTEN_2, state=None),
+                    EnvironmentState(name=NORA_CHANGED_COUNT_2, state=None),
+                    EnvironmentState(name=NORA_STAGED_COUNT_2, state=None),
                 ],
             }
 
@@ -335,6 +382,54 @@ class SubstringGrader(Evaluator):
 
     async def evaluate_async(self, data: EvaluationData) -> list[EvaluationOutput]:
         return self.evaluate(data)
+
+
+class IdempotenceGrader(Evaluator):
+    """S6 — *a second identical pass writes nothing new*
+    (`10-the-scenario-map.md` §3). Only meaningful with `Spec.repeat > 1` —
+    a case run without a repeat carries no `_2` signals at all and is
+    ungradable here, the same rule every other grader in this module follows
+    for a signal it cannot find.
+
+    `written`/`changed` are already per-call deltas (`dream()` diffs its own
+    notebook `before`/`after`), so the repeat run's own values ARE the
+    answer for those two. `staged` is an absolute snapshot, not a diff, so
+    it needs both runs' counts compared.
+    """
+
+    def evaluate(self, data: EvaluationData) -> list[EvaluationOutput]:
+        error = state_of(data, NORA_ERROR)
+        if error:
+            return [self._out(ERROR, 0.0, f"the case did not run: {error}")]
+
+        written_2 = state_of(data, NORA_WRITTEN_2)
+        if written_2 is None:
+            return [self._out(ERROR, 0.0, "no repeat run — Spec.repeat must be > 1")]
+
+        changed_2 = state_of(data, NORA_CHANGED_COUNT_2) or 0
+        staged_1 = state_of(data, NORA_STAGED_COUNT) or 0
+        staged_2 = state_of(data, NORA_STAGED_COUNT_2) or 0
+
+        problems = []
+        if written_2:
+            problems.append(f"wrote {written_2} row(s) on the repeat")
+        if changed_2:
+            problems.append(f"changed {changed_2} note(s) on the repeat")
+        if staged_2 != staged_1:
+            problems.append(f"staged count moved {staged_1} -> {staged_2}")
+
+        if problems:
+            return [self._out(FAIL, 0.0, "; ".join(problems))]
+        return [self._out(PASS, 1.0, "the repeat pass added nothing")]
+
+    async def evaluate_async(self, data: EvaluationData) -> list[EvaluationOutput]:
+        return self.evaluate(data)
+
+    @staticmethod
+    def _out(verdict: str, score: float, reason: str) -> EvaluationOutput:
+        return EvaluationOutput(
+            score=score, test_pass=(verdict == PASS), reason=reason, label=verdict,
+        )
 
 
 class AbsenceGrader(Evaluator):

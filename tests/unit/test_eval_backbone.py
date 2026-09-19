@@ -24,11 +24,16 @@ from evals.backbone import (
     FAIL,
     NORA_ADMITTED,
     NORA_BLOCKS_EMPTY,
+    NORA_CHANGED_COUNT_2,
     NORA_ERROR,
     NORA_SAID,
+    NORA_STAGED_COUNT,
+    NORA_STAGED_COUNT_2,
+    NORA_WRITTEN_2,
     PASS,
     AbsenceGrader,
     ContextGrader,
+    IdempotenceGrader,
     SubstringGrader,
     render_transcript_at,
 )
@@ -36,6 +41,7 @@ from evals.backbone import (
 grader = AbsenceGrader()
 context_grader = ContextGrader()
 substring_grader = SubstringGrader()
+idempotence_grader = IdempotenceGrader()
 
 
 def _data(
@@ -173,4 +179,54 @@ def test_the_wrong_expected_age_fails_rather_than_passing_silently():
 
 def test_a_case_with_no_expected_output_is_ungradable():
     out = substring_grader.evaluate(_RenderedData("<m age=\"3h ago\">x</m>", ""))[0]
+    assert out.label == ERROR
+
+
+def _idempotence_data(
+    *, written_2: int | None, changed_2: int = 0, staged_1: int = 0, staged_2: int = 0,
+    error: str = "",
+) -> EvaluationData:
+    return EvaluationData(
+        input="x",
+        actual_environment_state=[
+            EnvironmentState(name=NORA_ERROR, state=error),
+            EnvironmentState(name=NORA_WRITTEN_2, state=written_2),
+            EnvironmentState(name=NORA_CHANGED_COUNT_2, state=changed_2),
+            EnvironmentState(name=NORA_STAGED_COUNT, state=staged_1),
+            EnvironmentState(name=NORA_STAGED_COUNT_2, state=staged_2),
+        ],
+    )
+
+
+def test_no_repeat_run_is_ungradable():
+    out = idempotence_grader.evaluate(_idempotence_data(written_2=None))[0]
+    assert out.label == ERROR
+
+
+def test_a_second_pass_that_wrote_nothing_new_passes():
+    out = idempotence_grader.evaluate(
+        _idempotence_data(written_2=0, changed_2=0, staged_1=3, staged_2=3),
+    )[0]
+    assert out.label == PASS
+
+
+def test_a_second_pass_that_wrote_something_new_fails():
+    """THE BUG S6 exists to catch: #236/#338, nothing bounds a duplicate
+    standing note or reminder."""
+    out = idempotence_grader.evaluate(
+        _idempotence_data(written_2=1, changed_2=0, staged_1=3, staged_2=3),
+    )[0]
+    assert out.label == FAIL
+
+
+def test_a_staged_count_that_moved_fails_even_with_nothing_written():
+    """`staged` is a snapshot, not a diff — written_2=0 alone cannot clear it."""
+    out = idempotence_grader.evaluate(
+        _idempotence_data(written_2=0, changed_2=0, staged_1=3, staged_2=4),
+    )[0]
+    assert out.label == FAIL
+
+
+def test_an_idempotence_error_is_never_a_pass():
+    out = idempotence_grader.evaluate(_idempotence_data(written_2=0, error="boom"))[0]
     assert out.label == ERROR

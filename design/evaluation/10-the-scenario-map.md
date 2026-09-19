@@ -55,7 +55,7 @@ go/no_go) and absent where it was hard.
 | **S3 grounding** | whether a claim is supported by what she read | `FaithfulnessEvaluator`, `CorrectnessEvaluator` + the confidence rubric | no |
 | **S4 context reaching her** | that the blocks she needs were rendered non-empty | deterministic, on the prompt — **not a model call**, and cheaper than one | no |
 | **S5 time** | that a dated question is answered against the case's clock | deterministic, on `SubjectSpec.now` for `participation`/`tag`; **`gate` has no clock seam at all** — see §9 | no |
-| **S6 idempotence** | that a second identical pass writes nothing new | `StateEquals` on counts, run **twice** | partly |
+| **S6 idempotence** | that a second identical pass writes nothing new | custom `IdempotenceGrader`, run **twice** — see §11 | partly |
 | **S7 speech / silence** | spoke vs stayed out, and which | **`AbsenceGrader`** (`evals/backbone.py`) — no SDK built-in | **yes** |
 | **S8 failure is loud** | a broken tool produces a visible, bounded failure | **`strands_evals.chaos`** + `FailureCommunicationEvaluator`, `PartialCompletionEvaluator`, `RecoveryStrategyEvaluator` | partly |
 | **S9 injection** | that untrusted text does not become instruction | `RefusalEvaluator`, `HarmfulnessEvaluator`; red teaming via `TargetSession` once probed | no |
@@ -219,3 +219,46 @@ through the actual `gate` entry point rather than only through
 deployment's "now" is always the wall clock), so it is purely a
 testability gap, not a bug — naming it rather than silently building around
 it, per this bundle's own discipline.
+
+## 11. S6 — built, 2026-09-19, and it needed plumbing no other class did
+
+Applies to `dreamer` only (`nora.subject.dreaming.dream`, both adaptors it
+can select) — nothing to do with participation/gate/tag. Unlike every other
+class here, S6 needs the SAME `Subject` driven **twice**: idempotence asks
+whether the SECOND pass sees exactly what the first left, so a fresh
+`obtain()` per run (every other case's isolation) would defeat the check
+rather than perform it.
+
+**`Spec` gained `repeat: int`.** `_drive()` calls `port.drive()` once as
+before, then — only if `repeat > 1` — again on the SAME subject and the SAME
+`now_ms`, no re-seed between. `NORA_WRITTEN`/`NORA_CHANGED_COUNT`/
+`NORA_STAGED_COUNT` now carry the FIRST run's `Outcome.written`/
+`len(.changed)`/`len(.staged)` — never surfaced to any grader before this,
+for any entry point — and the `_2` siblings carry the repeat run's. `dream()`
+already diffs its own notebook `before`/`after` per call (confirmed by
+reading `nora/subject/dreaming.py`), so `written`/`changed` are deltas and
+the repeat run's OWN values already answer "did run 2 add anything." `staged`
+is the one exception, an absolute snapshot rather than a diff, so
+`IdempotenceGrader` compares both runs' counts rather than reading the
+second alone.
+
+**Why a custom grader and not the SDK's `StateEquals`.** Checked first, per
+this bundle's own rule against rebuilding what ships: `StateEquals(name=...,
+value=...)` can pin ONE named state to a fixed value, which covers
+`written_2 == 0` and `changed_2 == 0` on their own — but it cannot compare
+TWO different named states against each other (`staged` before vs. after),
+and it sets no `label`, so a bare `StateEquals` failure would count as
+`ERROR` by this bundle's own `read()` (an unlabelled output), not the `FAIL`
+it actually is. Neither gap is worked around; `IdempotenceGrader` exists for
+both.
+
+`tests/unit/test_eval_backbone.py` pins the grader logic directly (pure,
+`EvaluationData` built by hand) — including the exact bug S6 exists to
+catch (#236/#338: a second pass that wrote something new must FAIL, not
+silently pass) and the staged-snapshot case (nothing written, but the
+staged count moved, must still FAIL). **Not verified against a real live
+`dream()` pass** — the repeat-loop mechanism in `_drive()` itself has not
+been run end to end (that needs a live database and, for the
+`note-candidates` adaptor, a live model call), only unit-tested at the
+grader boundary. That live confirmation is the natural next check before
+trusting this in a real report, named rather than silently assumed.

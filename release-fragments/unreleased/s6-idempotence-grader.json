@@ -1,0 +1,11 @@
+{
+  "type": "feature",
+  "summary": "evals/backbone.py gains S6 (\"a second identical pass writes nothing new\") for the dreamer entry point -- the first scenario class needing the same Subject driven twice.",
+  "details": [
+    "Spec gained repeat: int. _drive() now calls port.drive() a second time on the SAME subject and now_ms (no re-seed) when repeat > 1, and surfaces Outcome.written/len(.changed)/len(.staged) to a grader for the first time for ANY entry point via NORA_WRITTEN/NORA_CHANGED_COUNT/NORA_STAGED_COUNT plus their _2 (repeat-run) siblings.",
+    "dream() already diffs its own notebook before/after per call, so written/changed are per-call deltas and the repeat run's own values already answer the idempotence question; staged is an absolute snapshot rather than a diff, so IdempotenceGrader compares both runs' counts.",
+    "Checked strands_evals' own StateEquals first, per this bundle's rule against rebuilding what ships: it can pin one named state to a fixed value (covers written_2==0, changed_2==0) but cannot compare two different named states against each other (the staged-before-vs-after check), and sets no label, so a bare failure would misclassify as ERROR under this bundle's own read(). IdempotenceGrader exists for both gaps.",
+    "tests/unit/test_eval_backbone.py pins the grader logic directly (pure, hand-built EvaluationData), including the exact bug S6 targets (#236/#338: a second pass that wrote something new must FAIL) and the staged-snapshot case (nothing written but staged count moved must still FAIL). Falsified by reverting before landing.",
+    "NOT verified against a real live dream() pass -- the repeat-loop mechanism in _drive() itself has not been run end to end (needs a live database and, for note-candidates, a live model call), only unit-tested at the grader boundary. Named as the next check before trusting this in a real report."
+  ]
+}
