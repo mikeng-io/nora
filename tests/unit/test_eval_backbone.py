@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from strands_evals import Case
 from strands_evals.types.evaluation import EnvironmentState, EvaluationData
+from strands_evals.types.trace import Session
 
 from evals.backbone import (
     ERROR,
@@ -34,8 +35,11 @@ from evals.backbone import (
     AbsenceGrader,
     ContextGrader,
     IdempotenceGrader,
+    Spec,
     SubstringGrader,
     render_transcript_at,
+    state_of,
+    traced_nora_task,
 )
 
 grader = AbsenceGrader()
@@ -230,3 +234,27 @@ def test_a_staged_count_that_moved_fails_even_with_nothing_written():
 def test_an_idempotence_error_is_never_a_pass():
     out = idempotence_grader.evaluate(_idempotence_data(written_2=0, error="boom"))[0]
     assert out.label == ERROR
+
+
+def test_traced_nora_task_adds_a_trajectory_onto_nora_tasks_own_shape():
+    """S2's whole build: `eval_task(TracedHandler())(nora_task(spec))` must
+    add `trajectory` without disturbing `nora_task`'s own `output`/
+    `environment_state` keys. A bad database_url exercises the full
+    before/after wrap without needing a live database — `_drive()` raises
+    inside `obtain()`, `nora_task`'s own catch turns that into the usual
+    ERROR-shaped dict, and this only checks that the WRAPPING survives it.
+    """
+    spec = Spec(database_url="postgresql://nope:nope@localhost:1/nope", entry="participation")
+    task, _handler = traced_nora_task(spec)
+
+    case = Case(name="wiring-probe", input="x", session_id="wiring-probe")
+    result = task(case)
+
+    assert "trajectory" in result
+    assert isinstance(result["trajectory"], Session)
+    assert "output" in result
+    assert "environment_state" in result
+    assert state_of(
+        EvaluationData(input="x", actual_environment_state=result["environment_state"]),
+        NORA_ERROR,
+    )

@@ -40,7 +40,7 @@ from opentelemetry import trace as _trace_api
 from opentelemetry.sdk.trace import TracerProvider as _SDKTracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from strands_evals import Case
+from strands_evals import Case, TracedHandler, eval_task
 from strands_evals.evaluators.evaluator import Evaluator
 from strands_evals.types.evaluation import (
     EnvironmentState,
@@ -136,11 +136,16 @@ def _prefill_capture() -> InMemorySpanExporter:
     `chat`/`execute_tool`/`invoke_agent`). This reads the RAW span instead.
 
     OTel's global `TracerProvider` may be set only once per process
-    (`set_tracer_provider` no-ops with a warning on a second real one) — so
-    if a caller ALSO wants `TracedHandler`'s `Session` in the same process,
-    whichever sets the provider first wins and the other's signal is silently
-    absent. Not a problem `nora_task` has today (it never uses
-    `TracedHandler`), but a real constraint on ever combining the two.
+    (`set_tracer_provider` no-ops with a warning on a second real one) — but
+    this DOES coexist with `TracedHandler` in the same process, in either
+    construction order: whichever runs first keeps the real provider,
+    `add_span_processor` is additive rather than replacing, and
+    `StrandsEvalsTelemetry.__init__` falls back to
+    `trace_api.get_tracer_provider()` when its own `set_tracer_provider`
+    call is refused — so both exporters end up attached to the ONE shared
+    provider and both receive every span. Verified empirically both ways
+    (`_prefill_capture()` first and `TracedHandler()` first); an earlier
+    version of this docstring claimed the opposite without checking.
     """
     global _prefill_exporter
     if _prefill_exporter is None:
@@ -317,6 +322,34 @@ def nora_task(spec: Spec):
             }
 
     return task
+
+
+def traced_nora_task(spec: Spec) -> tuple[Any, TracedHandler]:
+    """S2 — *tool routing* (`10-the-scenario-map.md` §3), and it needs no new
+    grader at all. `ToolCalled`/`ToolSelectionAccuracyEvaluator`/
+    `ToolParameterAccuracyEvaluator`/`TrajectoryEvaluator` all read
+    `actual_trajectory`, and `09-the-backbone-measured.md` §1 already
+    measured that a real `participation` case's `Session` carries a genuine
+    `ToolExecutionSpan` — so the only thing missing was a `Session` at all,
+    which `nora_task(spec)` alone never produces.
+
+    `eval_task(TracedHandler())(nora_task(spec))` is the whole of it:
+    `TracedHandler.after()` does `processed.setdefault("trajectory",
+    session)`, and `nora_task`'s dict never sets that key, so this ADDS a
+    trajectory onto the exact same `output`/`environment_state` shape every
+    other grader in this module already reads — S2 and S7 (`AbsenceGrader`)
+    can grade the SAME case.
+
+    Returns `(task, handler)` — the caller must hold `handler` for the run's
+    lifetime (one shared exporter) and pass `max_workers=1`, the same
+    constraint `nora_task`'s own docstring already states for the reason
+    `TracedHandler` itself gives (serial-only). Coexists with
+    `_prefill_capture()` in the same process (verified both construction
+    orders — see its docstring); does NOT coexist with a SECOND
+    `TracedHandler` instance run concurrently in the same process.
+    """
+    handler = TracedHandler()
+    return eval_task(handler)(nora_task(spec)), handler
 
 
 def render_transcript_at(case: Case) -> dict[str, Any]:

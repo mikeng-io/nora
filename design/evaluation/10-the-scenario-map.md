@@ -51,7 +51,7 @@ go/no_go) and absent where it was hard.
 | class | measures | instrument | absence? |
 |---|---|---|---|
 | **S1 room & target** | the room she spoke into, and whom she addressed | `StateEquals` on the room id the row landed in; a custom check on the mention | no |
-| **S2 routing** | which tool, with what arguments, in what order | `ToolCalled`, `ToolSelectionAccuracyEvaluator`, `ToolParameterAccuracyEvaluator`, `TrajectoryEvaluator` — **all reachable**, `09-the-backbone-measured` §1 found `ToolExecutionSpan` in the trace | no |
+| **S2 routing** | which tool, with what arguments, in what order | `ToolCalled`, `ToolSelectionAccuracyEvaluator`, `ToolParameterAccuracyEvaluator`, `TrajectoryEvaluator` — **all reachable**, `09-the-backbone-measured` §1 found `ToolExecutionSpan` in the trace; glue built — see §13 | no |
 | **S3 grounding** | whether a claim is supported by what she read | `FaithfulnessEvaluator`, `CorrectnessEvaluator` + the confidence rubric | no |
 | **S4 context reaching her** | that the blocks she needs were rendered non-empty | deterministic, on the prompt — **not a model call**, and cheaper than one | no |
 | **S5 time** | that a dated question is answered against the case's clock | deterministic, on `SubjectSpec.now` for `participation`/`tag`; **`gate` has no clock seam at all** — see §9 | no |
@@ -307,3 +307,40 @@ in their trailing sentence. Not touched here — a call about which one (if
 either) to drop belongs with whoever next touches this corpus for content
 reasons, not as a side effect of re-verifying a different, now-closed
 finding.
+
+## 13. S2 — built, 2026-09-19, and it needed no new grader at all
+
+`evals/backbone.py` gained `traced_nora_task(spec)`, the whole of it:
+`eval_task(TracedHandler())(nora_task(spec))`. `TracedHandler.after()` does
+`processed.setdefault("trajectory", session)`, and `nora_task`'s dict never
+sets that key, so this ADDS a `Session` onto the exact same `output`/
+`environment_state` shape every other grader in this module reads — S2 and
+S7 (`AbsenceGrader`) can grade the SAME driven case. No custom evaluator:
+`ToolCalled`/`ToolSelectionAccuracyEvaluator`/`ToolParameterAccuracyEvaluator`/
+`TrajectoryEvaluator` ship in the SDK and read `actual_trajectory` directly,
+and `09-the-backbone-measured` §1 already measured a real `ToolExecutionSpan`
+in a real `participation` case's trace.
+
+**One thing checked and corrected along the way, not left standing wrong**:
+`_prefill_capture()`'s own docstring (§9, S4) claimed it could not coexist
+with `TracedHandler` in the same process — OTel's `TracerProvider` can only
+be SET once, and the assumption was that whichever helper set it first would
+own it exclusively. Verified empirically, both construction orders: it was
+wrong. `add_span_processor` is additive, and `StrandsEvalsTelemetry.
+__init__` falls back to reading the already-registered provider when its own
+`set_tracer_provider` call is refused, so both exporters end up on the ONE
+shared provider and both receive every span. Corrected in the code comment
+directly (`evals/backbone.py`); this bundle's own "no claim without a tool
+call" rule caught its own earlier claim.
+
+**Verified mechanically, not yet live**: `traced_nora_task` was exercised
+against a deliberately unreachable database — `_drive()` raises inside
+`obtain()`, `nora_task`'s own catch turns that into the usual ERROR-shaped
+dict, and the wrap survives it (`trajectory` present, a `Session`, alongside
+`nora_task`'s own `output`/`environment_state`). `tests/unit/
+test_eval_backbone.py` pins this, falsified by reverting. What is NOT
+re-verified here is a REAL participation case run through
+`traced_nora_task` with the SDK's own `ToolCalled` actually scoring a real
+tool call — `09-the-backbone-measured.md` §1 measured the underlying spans
+exist, once, live, before this session; nobody has re-run that specific
+combination since.
