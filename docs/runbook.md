@@ -616,11 +616,14 @@ place** rather than duplicating — ids are deterministic UUID5 over
 Langfuse still prints its verdict and exits with the same code. That independence
 is deliberate — an observability store must not be able to break CI.
 
-**SUPERSEDED 2026-09-18.** `--suite all` and the whole `python -m evals.run`
-CLI are gone (`design/evaluation/` Step 5). The suite is now
-`python -m evals.rebuilt evals/corpora/<name>.yaml`, one corpus per file, and
+**SUPERSEDED 2026-09-18, then again 2026-09-20.** `--suite all` and the whole
+`python -m evals.run` CLI are gone (`design/evaluation/` Step 5). The old
+`python -m evals.rebuilt evals/corpora/<name>.yaml` CLI that replaced it is
+ALSO gone (`design/evaluation/10-the-scenario-map.md` §15/16, the corpus
+port) — the suite is now `python -m evals <name>` (a corpus NAME, not a file
+path; `--list` shows every one, `--class`/`--all` select more than one), and
 `make eval-participation` / `eval-note-candidates` / `eval-gate` /
-`eval-adversarial-corpora` are the wrappers. Read
+`eval-adversarial-corpora` are the wrappers, updated to match. Read
 `design/evaluation/06-first-full-run.md` before quoting any number from it —
 four corpora are currently ungradable without a judge, and the judge is too
 slow to run at corpus scale. The paragraph below is kept as history. The export is

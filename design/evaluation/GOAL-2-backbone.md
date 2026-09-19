@@ -41,6 +41,15 @@ for THIS goal either way, but do not assume it still needs its own fix
 without checking first). Red teaming. Simulators. Chaos. The judge's
 latency. Deleting `evals/rebuilt/`.
 
+**CORRECTED 2026-09-20** (`10-the-scenario-map.md` §16): "deleting
+`evals/rebuilt/`" was never a real, monolithic thing to defer — the package
+holds `domain.py`/`entry.py`/`grading.py`/`judge.py`/`rubric.py`, which the
+SDK-native spine imports directly and are not going anywhere. What was
+actually old (the driver/report/CLI: `run_once`'s old callers, `report.py`,
+`__main__.py`) has been trimmed as the port reached them, not deleted
+wholesale on some future day. There is no longer a "delete the package"
+release condition left to satisfy.
+
 A backbone that works for one entry point and one corpus is the deliverable. If
 it works, the port is mechanical and is somebody else's day. If it does not,
 you have saved that day.

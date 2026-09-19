@@ -243,7 +243,8 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     # The OPERATOR-facing docs were fixed instead, because those tell somebody
     # to run a command: `docs/runbook.md`, `docs/eval-sop.md`,
     # `docs/CONVENTIONS.md` and the `make eval-*` targets now name
-    # `python -m evals.rebuilt`.
+    # `python -m evals` (2026-09-20, `10-the-scenario-map.md` §15/16 — the
+    # corpus port superseded `python -m evals.rebuilt` in turn).
     **{
         (doc, "evals/run.py"): (
             "the old eval CLI, deleted 2026-09-18; this line records what was "

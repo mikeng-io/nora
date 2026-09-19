@@ -547,3 +547,63 @@ per the judge-cost note above); deleting `evals/rebuilt/` (its own decision,
 `GOAL-2-backbone.md`'s stated release condition — the port existing does
 not by itself mean the old harness's *report/rubric/CLI* plumbing is safe
 to delete without checking who else still calls it directly).
+
+## 16 — `evals/rebuilt/`'s trim, 2026-09-20, and the premise was wrong
+
+**The premise, corrected before acting on it.** "Delete `evals/rebuilt/`"
+(GOAL-2's own release condition) reads as "delete the package once the port
+replaces it." Checked against the actual import graph before touching
+anything: `evals/backbone.py` and `evals/scenarios.py` import
+`entry.py`/`domain.py`/`grading.py`/`judge.py`/`rubric.py` from this package
+DIRECTLY — `MeetsGrader` delegates to `domain.Outcome.meets()`, `_drive()`
+routes through `entry.ENTRY_POINTS`, `Spec.judge` wires `grading.Judge`. None
+of that is "old," all of it is load-bearing for the spine this session just
+finished. Deleting the package would have broken the port on the same
+commit that finished it.
+
+**What was actually dead**, checked by grep against every caller (tests
+included) before removing anything, not assumed from the file's name:
+
+- `evals/rebuilt/__main__.py` (the old CLI) and `evals/rebuilt/report.py`
+  (its renderer) — nothing outside each other referenced them once
+  `python -m evals` existed. Deleted.
+- `runner.py`'s `run_once`/`run`/`load`/`_case`/`_check_the_corpus_
+  assertions`/`_scrubbed`/`substitute_trigger`/`_source` — **NOT deleted**:
+  `tests/integration/test_two_entry_points_one_runner.py`,
+  `tests/unit/test_the_judge_can_remove_a_pass.py`, and
+  `tests/architecture/test_the_near_miss_corpora_exercise_their_rules.py`
+  all drive these directly, on purpose, to test properties the new spine's
+  own unit tests do not cover the same way (an architecture-level generality
+  claim, a corpus-assertion function's own edge cases, DSN-scrubbing). A
+  function with a real caller is not dead code because its package's name
+  says "rebuilt."
+- `tests/integration/test_the_rebuilt_suite_runs.py` — one of its five tests
+  (`test_a_run_with_no_model_reports_incomplete_and_fails`) called the now-
+  deleted `render()` to check the run's OVERALL pass/fail text; its
+  substantive assertions (per-entry-point `gradable`/`errors`/`hits`) never
+  needed `render()` at all and are unchanged. `test_every_corpus_loads` was
+  dropped as redundant with `evals.scenarios`'s own count test. The other
+  three tests (proactive-path induced-failure guards) needed no change —
+  they never touched `report.py`.
+- `Makefile`'s four `eval-*` targets — migrated from
+  `python -m evals.rebuilt evals/corpora/<name>.yaml` to
+  `python -m evals <name>`. Found and dropped along the way:
+  `eval-note-candidates`'s `DREAMER_DIR`/`EFFORT`/`PER_FIRE` conditional
+  flags named CLI options that do not exist in EITHER the old or the new
+  `__main__` — a pre-existing, unrelated drift, not something this port
+  introduced or broke.
+- `docs/runbook.md`'s operator-facing CLI example — updated to
+  `python -m evals`. `docs/eval-sop.md` was found to already be stale from
+  an EARLIER supersession (it still shows `python -m evals.run --suite`,
+  deleted 2026-09-18, predating even `evals.rebuilt`) — out of scope for
+  this trim, not touched.
+
+**`evals/rebuilt/__init__.py`'s own docstring corrected** to match: six
+modules, not four; no "lives beside the old one until Step 5" framing (this
+package IS the surviving one now).
+
+**What this means for GOAL-2's release condition**: there is no longer a
+"delete the package" condition to satisfy, because that was never the right
+description of what needed to happen. The condition is closed by this trim,
+not deferred further. Full suite: 7967 passed (one fewer than before this
+node — the one redundant test dropped).

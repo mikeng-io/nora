@@ -74,27 +74,27 @@ test-affected:
 		uv run pytest -q -n 8 $$targets; \
 	fi
 
-# --- eval gates (evals/rebuilt; the live ones need the LLM key env set) ---
+# --- eval gates (evals/scenarios, the SDK-native spine; the live ones need
+# the LLM key env set) ---
 #
-# A SUITE IS A CORPUS FILE (`design/evaluation/04-the-convention.md` §2), so
-# these targets name files rather than a `--suite` vocabulary. Adding a suite
-# adds a file and no target.
+# `python -m evals` runs a NAMED corpus (or `--class`, or `--all`) rather than
+# a file path — `design/evaluation/10-the-scenario-map.md` §15's port put the
+# 150 corpus cases behind `evals.scenarios.experiment_for()`, and adding a
+# corpus adds a dict entry there, not a target here.
 
 # The ambient-participation flip gate (design/dreamer-agent-loop/35 §9): all
 # 15 cases must reach their expected verdict — zero false-speaks on the
 # knowledge-cut twins, zero speaks on the pure-No five.
 eval-participation:
-	uv run python -m evals.rebuilt evals/corpora/participation.yaml
+	uv run python -m evals participation
 
 # The note-candidates scenario suite (design/dreamer-agent-loop/37 §7, issue
 # #118): 18 batches through the real Dreamer runtime + adaptor, N samples
-# each, graded on the notebook. `make eval-note-candidates SAMPLES=5
-# DREAMER_DIR=/path/to/variant` measures a prompt variant held as files.
+# each, graded on the notebook. `make eval-note-candidates SAMPLES=5`
+# measures with that many draws per case.
 SAMPLES ?= 3
 eval-note-candidates:
-	uv run python -m evals.rebuilt evals/corpora/note_candidates.yaml --sample $(SAMPLES) \
-		$(if $(DREAMER_DIR),--dreamer-dir $(DREAMER_DIR),) $(if $(EFFORT),--effort $(EFFORT),) \
-		$(if $(MODEL),--model $(MODEL),) $(if $(PER_FIRE),--samples-per-fire $(PER_FIRE),)
+	uv run python -m evals note_candidates --sample $(SAMPLES)
 
 # --- release fragments ---
 
@@ -177,10 +177,8 @@ schema-parity:
 # NOT ENFORCED). This target now runs the corpora that DO exist, so it is not a
 # command that lies about what it measures.
 eval-adversarial-corpora:
-	uv run python -m evals.rebuilt evals/corpora/injections.yaml \
-	  evals/corpora/near_miss.yaml evals/corpora/transcript_injection.yaml \
-	  evals/corpora/identity_grounding.yaml evals/corpora/source_scope.yaml \
-	  evals/corpora/being_contradicted.yaml --judge
+	uv run python -m evals injections near_miss transcript_injection \
+	  identity_grounding source_scope being_contradicted --judge
 
 eval-gate:
-	uv run python -m evals.rebuilt evals/corpora/relevance_gate.yaml
+	uv run python -m evals relevance_gate
