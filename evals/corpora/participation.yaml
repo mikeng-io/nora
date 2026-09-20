@@ -148,54 +148,94 @@
       body: 我星期六要返工
     - 咁即係得星期日或者平日
 
+
+# --- FIVE PURE-NO CASES CONVERTED TO REAL MOMENTS 2026-09-21 ---------------
+#
+# `knows:` -> `snapshot:` for the five below. Each names a REAL room's REAL
+# instant whose actual trailing rhythm is the same SHAPE the authored `input`
+# already was (a link drop, a private aside, a bare ack, a laugh at a meme, a
+# service line) — untagged banter with no address to Nora and nothing that
+# should pull her in. `input` is UNCHANGED, deliberately: it is not read back
+# out of the room (the match report already established none of these
+# authored lines exist verbatim in production), it is the thing arriving on
+# TOP of the real window, and the real window is what makes silence the
+# genuinely right call rather than an assertion about it. `transcript_limit:
+# 40` mirrors the window size a real participation turn actually reads
+# (`nora.subject.obtain.room_for`'s own docstring cites `recent(limit=40)`).
+#
+# The ten twin pairs below (S1-S5's `-known`/`-unknown` halves) are NOT
+# converted — see the corpus-wide note above this block's own reasoning
+# doesn't repeat: a twin pair's whole point is one transcript, only the
+# grounding cut between the two halves, and a real room either held a note at
+# an instant or it did not. There is no real counterfactual "the same
+# instant, minus the note" to anchor the `-unknown` half against, so
+# converting only the `-known` half would compare two different rooms, not
+# read one room with and without its own grounding. Left hand-authored.
+
 - name: status-update
   entry: participation
   expect: silence
   sample: 5
   input: check this out 👉 https://example.com/that-thing
-  knows:
-    transcript:
-    - 你哋睇咗尋晚嗰場波未
-    - 睇咗 勁
+  snapshot:
+    platform: signal
+    conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    before_ms: 1787631425110
+    culture_key: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    unit: friends
+    transcript_limit: 40
 
 - name: private-exchange
   entry: participation
   expect: silence
   sample: 5
   input: 3ish
-  knows:
-    transcript:
-    - name: Grant
-      body: what time Saturday?
+  snapshot:
+    platform: signal
+    conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    before_ms: 1787132628710
+    culture_key: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    unit: friends
+    transcript_limit: 40
 
 - name: acknowledgment
   entry: participation
   expect: silence
   sample: 5
   input: 👍
-  knows:
-    transcript:
-    - done! thanks 🙏
+  snapshot:
+    platform: signal
+    conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    before_ms: 1789122798961
+    culture_key: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    unit: friends
+    transcript_limit: 40
 
 - name: inside-joke
   entry: participation
   expect: silence
   sample: 5
   input: AGAIN 😂😂 佢又嚟
-  knows:
-    transcript:
-    - name: Grant
-      body: 唔該睇下呢個 meme
-    - 哈哈哈哈哈 邊個整嘅
+  snapshot:
+    platform: signal
+    conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    before_ms: 1787631403121
+    culture_key: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    unit: friends
+    transcript_limit: 40
 
 - name: other-service-command
   entry: participation
   expect: silence
   sample: 5
   input: /weather tomorrow
-  knows:
-    transcript:
-    - 聽日會唔會落雨
+  snapshot:
+    platform: discord
+    conversation_id: "100000000000000201/100000000000000202"
+    before_ms: 1788534739325
+    culture_key: "100000000000000201/100000000000000202"
+    unit: friends
+    transcript_limit: 40
 
 - name: admin-joke-known
   entry: participation
