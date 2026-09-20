@@ -60,6 +60,7 @@
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -122,6 +123,7 @@ ADD CONSTRAINT room_exchange_pkey PRIMARY KEY (scope_id, act, participants);
 ADD CONSTRAINT room_lexeme_pkey PRIMARY KEY (scope_id, canonical_form, sense);
 ADD CONSTRAINT room_portrait_pkey PRIMARY KEY (scope_id);
 ADD CONSTRAINT standing_pkey PRIMARY KEY (platform, conversation_id);
+ADD CONSTRAINT standing_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT sticker_index_pkey PRIMARY KEY (platform, fetch_token);
 ADD CONSTRAINT tag_debounce_state_pkey PRIMARY KEY (platform, conversation_id);
 ADD CONSTRAINT tag_trace_pkey PRIMARY KEY (id);
@@ -194,6 +196,7 @@ ALTER TABLE ONLY public.room_exchange
 ALTER TABLE ONLY public.room_lexeme
 ALTER TABLE ONLY public.room_portrait
 ALTER TABLE ONLY public.standing
+ALTER TABLE ONLY public.standing_revision
 ALTER TABLE ONLY public.sticker_index
 ALTER TABLE ONLY public.tag_debounce_state
 ALTER TABLE ONLY public.tag_trace
@@ -306,6 +309,8 @@ CONSTRAINT room_lexeme_model_check CHECK (((model IS NULL) OR (length(btrim(mode
 CONSTRAINT room_lexeme_state_check CHECK ((state = ANY (ARRAY['live'::text, 'fading'::text, 'stale'::text])))
 CONSTRAINT standing_body_fits_the_ceiling_check CHECK (((length(btrim(body)) > 0) AND (length(body) <= 4000))),
 CONSTRAINT standing_fold_count_is_not_negative_check CHECK ((fold_count >= 0))
+CONSTRAINT standing_revision_body_fits_the_ceiling_check CHECK (((length(btrim(body)) > 0) AND (length(body) <= 4000))),
+CONSTRAINT standing_revision_fold_count_is_not_negative_check CHECK ((fold_count >= 0))
 CONSTRAINT tag_trace_outcome_check CHECK ((outcome = ANY (ARRAY['send_reply'::text, 'recovered'::text, 'silent'::text, 'vetoed'::text, 'timeout'::text, 'llm_error'::text])))
 CONSTRAINT turn_verdict_grounded_has_no_unsupported_check CHECK ((NOT (grounded AND (cardinality(unsupported) > 0)))),
 CONSTRAINT turn_verdict_unsupported_fits_the_list_check CHECK ((cardinality(unsupported) <= 10))
@@ -338,6 +343,7 @@ CREATE INDEX idx_presence_trips_subject_started ON public.presence_trips USING b
 CREATE INDEX idx_reasoning_strip_log_path_ts ON public.reasoning_strip_log USING btree (path, created_at);
 CREATE INDEX idx_reminders_due ON public.reminders USING btree (state, due_at);
 CREATE INDEX idx_rendered_claim_window ON public.rendered_claim USING btree (conversation_id, last_rendered_at DESC);
+CREATE INDEX idx_standing_revision_room_updated ON public.standing_revision USING btree (platform, conversation_id, updated_at DESC, id DESC);
 CREATE INDEX idx_tag_trace_conversation_created ON public.tag_trace USING btree (conversation_id, created_at);
 CREATE INDEX idx_tool_call_log_conv_ts ON public.tool_call_log USING btree (conversation_id, created_at DESC);
 CREATE INDEX idx_turn_verdict_ungrounded ON public.turn_verdict USING btree (conversation_id, created_at) WHERE (grounded = false);
@@ -386,6 +392,7 @@ CREATE TABLE public.room_exchange (
 CREATE TABLE public.room_lexeme (
 CREATE TABLE public.room_portrait (
 CREATE TABLE public.standing (
+CREATE TABLE public.standing_revision (
 CREATE TABLE public.sticker_index (
 CREATE TABLE public.tag_debounce_state (
 CREATE TABLE public.tag_trace (
@@ -467,6 +474,7 @@ battery double precision,
 body text NOT NULL,
 body text NOT NULL,
 body text NOT NULL,
+body text NOT NULL,
 body text,
 body text,
 canonical_form text NOT NULL,
@@ -483,10 +491,12 @@ completed_at timestamp with time zone,
 confidence double precision NOT NULL,
 consolidator_name text NOT NULL,
 consumed_verdict_tag text,
+consumed_verdict_tag text,
 content text DEFAULT ''::text NOT NULL
 context text NOT NULL,
 context_sha256 text DEFAULT ''::text NOT NULL,
 continuation_calls integer NOT NULL,
+conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
@@ -577,6 +587,7 @@ first_seen_ts bigint NOT NULL,
 fix_count integer NOT NULL,
 fix_count integer NOT NULL,
 fold_count integer DEFAULT 0 NOT NULL,
+fold_count integer NOT NULL,
 grounded boolean NOT NULL,
 guild_id text NOT NULL,
 guild_id text NOT NULL,
@@ -596,6 +607,7 @@ id integer NOT NULL,
 id integer NOT NULL,
 id text NOT NULL,
 id text NOT NULL,
+id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -632,6 +644,7 @@ last_allowed_at bigint NOT NULL,
 last_cluster_id integer DEFAULT 0 NOT NULL,
 last_fired_at bigint NOT NULL,
 last_fix_id integer DEFAULT 0 NOT NULL,
+last_folded_row_id bigint,
 last_folded_row_id bigint,
 last_message_id integer DEFAULT 0 NOT NULL,
 last_played_locator text,
@@ -727,6 +740,7 @@ place_id integer
 place_id integer NOT NULL,
 place_id integer NOT NULL,
 place_id text NOT NULL,
+platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
 platform text NOT NULL,
@@ -862,6 +876,7 @@ unit text NOT NULL,
 unit text NOT NULL,
 unit text,
 unsupported text[] DEFAULT '{}'::text[] NOT NULL,
+updated_at bigint NOT NULL,
 updated_at bigint NOT NULL,
 updated_at bigint NOT NULL,
 updated_at timestamp with time zone DEFAULT now() NOT NULL

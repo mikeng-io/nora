@@ -20,16 +20,47 @@ prior it just read and computes `prior.fold_count + 1` there, because the
 re-derivation path also has to be able to RESET it to zero, and a store that
 only knows how to increment cannot express that. Arithmetic in the sink, not in
 the statement.
+
+**The upsert now carries an APPEND beside it, in the same transaction.** The
+head keeps its shape, its semantics and its statement exactly — nothing about
+`read`/`write` changed for any existing caller — and `standing_revision` records
+what the head was set to each time it moved. Both statements are inside the one
+`engine.begin()` block, so «the head moved and nothing recorded it» and «a
+revision exists for a position the head never took» are both states this class
+cannot produce, rather than states it merely does not intend. That matters
+because a refused write must advance NEITHER: the body ceiling is checked on
+both tables, so a body over it rolls the pair back together.
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.standing import Standing
-from nora.infra.sql.schema import STANDING
+from nora.infra.sql.schema import STANDING, STANDING_REVISION
+
+
+def _standing(row: sa.Row[Any]) -> Standing:
+    """The shared row -> `Standing` mapping for `read` and `read_as_of`.
+
+    One mapping rather than two, because the two tables carry the same seven
+    values by construction — `write` copies them across in one transaction — and
+    a second mapping is a second place for a column to be dropped. `audit.py`'s
+    `_row` is the same argument for the same reason.
+    """
+    return Standing(
+        platform=row.platform,
+        conversation_id=row.conversation_id,
+        body=row.body,
+        fold_count=row.fold_count,
+        updated_at=row.updated_at,
+        consumed_verdict_tag=row.consumed_verdict_tag,
+        last_folded_row_id=row.last_folded_row_id,
+    )
 
 
 class SqlStandingStore:
@@ -47,15 +78,77 @@ class SqlStandingStore:
             row = (await conn.execute(stmt)).one_or_none()
         if row is None:
             return None
-        return Standing(
-            platform=row.platform,
-            conversation_id=row.conversation_id,
-            body=row.body,
-            fold_count=row.fold_count,
-            updated_at=row.updated_at,
-            consumed_verdict_tag=row.consumed_verdict_tag,
-            last_folded_row_id=row.last_folded_row_id,
+        return _standing(row)
+
+    async def read_as_of(
+        self, *, platform: str, conversation_id: str, before_ms: int
+    ) -> Standing | None:
+        """The position this room held at `before_ms` — the newest revision
+        whose own `updated_at` is at or before it, or `None`.
+
+        **`None` is the room's cold start, and it is the SAME meaning
+        `last_folded_row_id is null` already carries on the head**: at that
+        instant no fold had happened here yet, so there was no position. It is
+        never «the history is missing» — this table is append-only and written
+        in the fold's own transaction, so an absent revision at time T means a
+        fold had not run by T. (The one case where those two come apart is a
+        room whose chain predates this table, which `0059_standing_revision`
+        deliberately did not backfill and says why.)
+
+        **At or before, not strictly before.** A fold that landed exactly at
+        `before_ms` is part of what she knew at `before_ms`: the timestamp is
+        the instant the position was TAKEN, so excluding it would return the
+        position it replaced and call that the state at a moment it was no
+        longer the state. The boundary is worth stating because both readings
+        look reasonable and only one of them reconstructs anything.
+
+        **`fold_count DESC` is the tie-break, NOT `id DESC`** — measured, and
+        the first draft had it the other way round. `id` is
+        `gen_random_uuid()`: it carries no relationship to which fold was
+        written first, so two folds of one room sharing a millisecond resolved
+        to whichever uuid happened to sort higher. Over twelve trials that
+        returned the EARLIER of the two positions seven times — deterministic
+        for a fixed set of rows, and uncorrelated with the question being asked.
+        `fold_count` is the fold path's own counter (`prior.fold_count + 1`), so
+        ordering on it picks the later fold rather than the luckier uuid.
+
+        **Where `fold_count` is not enough, stated rather than left to be
+        found.** It is not strictly increasing: a rebuild resets it to 1
+        (`debrief`), and a rollup fold carries the prior's value forward
+        unchanged (`standing_event`). So two revisions that share BOTH a
+        millisecond and a `fold_count` are still a tie, and a rebuild landing in
+        the same millisecond as the fold it replaces sorts below it. `id DESC`
+        stays on as the final key purely to make the ordering TOTAL — with two
+        keys the planner would be free to return either row of such a tie, and
+        a total order at least answers one way. Sub-millisecond ties are not
+        reachable on the fold path in practice (one fold per turn, per room);
+        the ordering is written for the case that is, and says what it does not
+        cover.
+
+        The `(platform, conversation_id, updated_at DESC)` prefix of
+        `idx_standing_revision_room_updated` still serves the filter and the
+        descending scan; only the tie-break now sorts, over the handful of rows
+        that share the bound millisecond.
+        """
+        stmt = (
+            sa.select(STANDING_REVISION)
+            .where(
+                STANDING_REVISION.c.platform == platform,
+                STANDING_REVISION.c.conversation_id == conversation_id,
+                STANDING_REVISION.c.updated_at <= before_ms,
+            )
+            .order_by(
+                STANDING_REVISION.c.updated_at.desc(),
+                STANDING_REVISION.c.fold_count.desc(),
+                STANDING_REVISION.c.id.desc(),
+            )
+            .limit(1)
         )
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(stmt)).one_or_none()
+        if row is None:
+            return None
+        return _standing(row)
 
     async def write(self, *, standing: Standing) -> None:
         stmt = pg_insert(STANDING).values(
@@ -92,5 +185,27 @@ class SqlStandingStore:
                 "last_folded_row_id": stmt.excluded.last_folded_row_id,
             },
         )
+        # The APPEND, beside the upsert and inside the same transaction. Same
+        # values, no derivation: whatever the head was set to is what history
+        # records, so there is no arithmetic here that could disagree with the
+        # statement above. It is a plain `INSERT` with no `ON CONFLICT` for
+        # `SqlTurnVerdictStore.save`'s reason — there is no update path to take,
+        # and `id` defaults to a fresh uuid, so two folds that agree in every
+        # other column are two rows rather than one silently replaced.
+        #
+        # NOT a trigger on `standing`. A trigger would be invisible from this
+        # module and from the store contract, and the property worth holding is
+        # that the reader and the writer of this chain are one class somebody
+        # can read end to end.
+        revision = sa.insert(STANDING_REVISION).values(
+            platform=standing.platform,
+            conversation_id=standing.conversation_id,
+            body=standing.body,
+            fold_count=standing.fold_count,
+            updated_at=standing.updated_at,
+            consumed_verdict_tag=standing.consumed_verdict_tag,
+            last_folded_row_id=standing.last_folded_row_id,
+        )
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
+            await conn.execute(revision)
