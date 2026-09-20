@@ -51,6 +51,27 @@ def load_corpus(name: str, *, default_trigger: str = _DEFAULT_TRIGGER) -> list[C
                 raise ValueError(f"{name}: case is missing {key!r}: {row!r}")
         merged_config = {**top_config, **(row.get("config") or {})}
         trigger = str(merged_config.get("engagement.trigger.text") or default_trigger)
+        snapshot = dict(row.get("snapshot") or {})
+        if snapshot and row.get("knows"):
+            raise ValueError(
+                f"{name}: case {row['name']!r} states BOTH `snapshot:` and "
+                "`knows:`. They are two ways to say the same thing — what she "
+                "knew when the case starts — and a case stating both says it "
+                "twice with nothing making the two agree. State one."
+            )
+        if snapshot:
+            missing = sorted(
+                {"platform", "conversation_id", "before_ms", "culture_key", "unit"}
+                - set(snapshot)
+            )
+            if missing:
+                raise ValueError(
+                    f"{name}: case {row['name']!r}'s `snapshot:` is missing "
+                    f"{missing} — `culture_key` and `unit` in particular are "
+                    "NOT derivable from the room (`nora.infra.sql.snapshot` "
+                    "refuses to guess them), and a wrong one reads exactly "
+                    "like a room that had no culture and no notebook."
+                )
         cases.append(
             Case(
                 name=str(row["name"]),
@@ -60,6 +81,12 @@ def load_corpus(name: str, *, default_trigger: str = _DEFAULT_TRIGGER) -> list[C
                     **(row.get("metadata") or {}),
                     "expect": row["expect"],
                     "knows": row.get("knows") or {},
+                    # A REAL room at a REAL instant, seeded through
+                    # `nora.subject.sandbox.sandbox_from_snapshot` instead of
+                    # `knows:`'s hand-authored `Knowledge`. Mutually exclusive
+                    # with `knows:` (checked above); empty means this case is
+                    # still hand-authored.
+                    "snapshot": snapshot,
                     "room": list(row.get("room") or []),
                     "now": str(row.get("now") or ""),
                     "policy": str(row.get("policy") or top_policy),

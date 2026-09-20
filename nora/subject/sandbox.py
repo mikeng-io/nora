@@ -173,6 +173,7 @@ async def sandbox_from_snapshot(
     unit: str,
     transcript_limit: int | None = None,
     now_ms: int | None = None,
+    leave_room_for_arrival: bool = True,
 ) -> Written:
     """Seed an isolated eval subject with what Nora actually knew about a REAL
     room at a REAL historical moment, read once and copied.
@@ -198,6 +199,16 @@ async def sandbox_from_snapshot(
     `snapshot()` refuses to derive them and this is not the layer that has
     earned the right to. They come from the REAL room's `policy.toml`; the keys
     the copy is WRITTEN under are the subject's own and are not settable.
+
+    `leave_room_for_arrival` is `know()`'s own, forwarded rather than
+    defaulted, because it decides whether the copied window ends one step
+    BEFORE `now_ms` or AT it — and that is per ENTRY POINT, not per seeding
+    style. `evals.backbone._drive` passes `port.delivers_input`: `False` for
+    the gate, whose window IS the input and whose newest line must therefore
+    land at `now_ms` rather than a step before it. Defaulting it here would
+    give a snapshot-backed gate case a different window than the same case
+    hand-authored — the one divergence between the two seeding paths that
+    would not be visible in either file.
 
     Returns what `know()` returned, so `Written.rows` maps each historical row
     id onto the id the sandbox's store assigned it.
@@ -269,4 +280,7 @@ async def sandbox_from_snapshot(
         await engine.dispose()
     if now_ms is None:
         now_ms = int(datetime.now(UTC).timestamp() * 1000)
-    return await know(subject, as_knowledge(shot, now_ms=now_ms), now_ms=now_ms)
+    return await know(
+        subject, as_knowledge(shot, now_ms=now_ms), now_ms=now_ms,
+        leave_room_for_arrival=leave_room_for_arrival,
+    )

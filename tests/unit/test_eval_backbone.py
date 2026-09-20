@@ -16,6 +16,7 @@ REAL `nora.domain.blocks.render_messages`/`nora.domain.prompt.age` directly
 
 from __future__ import annotations
 
+from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -866,3 +867,130 @@ def test_meets_grader_a_judge_review_is_error_not_a_verdict():
 def test_meets_grader_an_error_is_error_regardless_of_expect():
     out = meets_grader.evaluate(_meets_data(expect="remind", written=1, error="boom"))[0]
     assert out.label == ERROR
+
+
+# --- `snapshot:` routing — a case seeded from a REAL room at a REAL instant --
+
+
+async def test_drive_seeds_a_snapshot_case_through_the_sandbox(monkeypatch):
+    """A case stating `snapshot:` must reach `sandbox_from_snapshot`, not
+    `know()` with an empty `Knowledge` — which is what it would silently get
+    if the branch were missing, seeding NOTHING and grading her on an empty
+    room that the case never described."""
+    seeded: dict[str, object] = {}
+
+    async def fake_sandbox(_subject: object, **kwargs: object) -> SimpleNamespace:
+        seeded.update(kwargs)
+        return SimpleNamespace(now_ms=1_700_000_000_000)
+
+    async def refuse_know(*_a: object, **_k: object) -> SimpleNamespace:
+        raise AssertionError("a snapshot case must not seed through know() directly")
+
+    async def fake_drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
+        return Outcome(admitted=None)
+
+    monkeypatch.setitem(ENTRY_POINTS, "dreamer", EntryPoint(drive=fake_drive))
+    monkeypatch.setattr(backbone, "obtain", _fake_obtain)
+    monkeypatch.setattr(backbone, "know", refuse_know)
+    monkeypatch.setattr(backbone, "sandbox_from_snapshot", fake_sandbox)
+
+    case = Case(
+        name="snapshot-probe",
+        input="x",
+        metadata={
+            "now": "2026-09-11T07:00:00+08:00",
+            "snapshot": {
+                "platform": "signal",
+                "conversation_id": "the-real-group",
+                "before_ms": 1_752_000_000_000,
+                "culture_key": "the-real-group",
+                "unit": "friends",
+            },
+        },
+    )
+    await backbone._drive(case, Spec(database_url="x", entry="dreamer"))
+
+    assert seeded["platform"] == "signal"
+    assert seeded["conversation_id"] == "the-real-group"
+    assert seeded["before_ms"] == 1_752_000_000_000
+    assert seeded["culture_key"] == "the-real-group"
+    assert seeded["unit"] == "friends"
+
+
+async def test_drive_hands_the_sandbox_the_cases_own_instant_not_the_wall_clock(
+    monkeypatch,
+):
+    """`SubjectSpec.now` freezes her clock at the case's own instant, so the
+    copy has to be shifted to the SAME instant. Shifted to the wall clock
+    instead, the transcript would say one thing and `nora.agent.prefill._age`
+    would compute another — every rendered age wrong by the gap between the
+    case's `now` and today."""
+    seeded: dict[str, object] = {}
+
+    async def fake_sandbox(_subject: object, **kwargs: object) -> SimpleNamespace:
+        seeded.update(kwargs)
+        return SimpleNamespace(now_ms=1_700_000_000_000)
+
+    async def fake_drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
+        return Outcome(admitted=None)
+
+    monkeypatch.setitem(ENTRY_POINTS, "dreamer", EntryPoint(drive=fake_drive))
+    monkeypatch.setattr(backbone, "obtain", _fake_obtain)
+    monkeypatch.setattr(backbone, "sandbox_from_snapshot", fake_sandbox)
+
+    case = Case(
+        name="instant-probe",
+        input="x",
+        metadata={
+            "now": "2026-09-11T07:00:00+08:00",
+            "snapshot": {
+                "platform": "signal", "conversation_id": "the-real-group",
+                "before_ms": 1_752_000_000_000,
+                "culture_key": "the-real-group", "unit": "friends",
+            },
+        },
+    )
+    await backbone._drive(case, Spec(database_url="x", entry="dreamer"))
+
+    expected = int(
+        datetime.fromisoformat("2026-09-11T07:00:00+08:00").timestamp() * 1000
+    )
+    assert seeded["now_ms"] == expected
+
+
+async def test_drive_forwards_the_entry_points_own_window_rule_to_the_sandbox(
+    monkeypatch,
+):
+    """`leave_room_for_arrival` is per ENTRY POINT, not per seeding style: the
+    gate's window IS its input, so its newest line lands AT `now_ms` rather
+    than a step before it. Defaulted instead of forwarded, a snapshot-backed
+    gate case would get a different window than the same case hand-authored —
+    the one divergence between the two paths visible in neither file."""
+    seen: list[bool] = []
+
+    async def fake_sandbox(_subject: object, **kwargs: object) -> SimpleNamespace:
+        seen.append(bool(kwargs["leave_room_for_arrival"]))
+        return SimpleNamespace(now_ms=1_700_000_000_000)
+
+    async def fake_drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
+        return Outcome(admitted=None)
+
+    monkeypatch.setattr(backbone, "obtain", _fake_obtain)
+    monkeypatch.setattr(backbone, "sandbox_from_snapshot", fake_sandbox)
+    shot = {
+        "platform": "signal", "conversation_id": "the-real-group",
+        "before_ms": 1_752_000_000_000,
+        "culture_key": "the-real-group", "unit": "friends",
+    }
+
+    for entry, delivers in (("dreamer", False), ("tag", True)):
+        monkeypatch.setitem(
+            ENTRY_POINTS, entry,
+            EntryPoint(drive=fake_drive, delivers_input=delivers),
+        )
+        await backbone._drive(
+            Case(name=f"window-{entry}", input="x", metadata={"snapshot": shot}),
+            Spec(database_url="x", entry=entry),
+        )
+
+    assert seen == [False, True], "the sandbox must be told each entry point's own rule"

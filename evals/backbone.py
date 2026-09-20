@@ -59,6 +59,7 @@ from nora.subject import (
     know,
     obtain,
     room_for,
+    sandbox_from_snapshot,
     workspace_for,
 )
 
@@ -443,10 +444,42 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
         # case this session wrote happened to seed nothing, so the bug
         # never showed. A future case that seeds a transcript/notes/rooms
         # via `metadata={"knows": {...}}` needs this read for real.
-        seeded = await know(
-            subject, _knowledge((case.metadata or {}).get("knows", {})),
-            leave_room_for_arrival=port.delivers_input,
-        )
+        #
+        # A case stating `snapshot:` seeds from a REAL room at a REAL
+        # instant instead. Both paths end in the SAME `know()` — that is
+        # the point, and it is why the two are interchangeable at all:
+        # whatever a case's content came from, it is written through the
+        # same stores production writes and rendered by the same prefill
+        # production renders. `load_corpus` refuses a case stating both.
+        md_snapshot = dict((case.metadata or {}).get("snapshot") or {})
+        if md_snapshot:
+            seeded = await sandbox_from_snapshot(
+                subject,
+                platform=str(md_snapshot["platform"]),
+                conversation_id=str(md_snapshot["conversation_id"]),
+                before_ms=int(md_snapshot["before_ms"]),
+                culture_key=str(md_snapshot["culture_key"]),
+                unit=str(md_snapshot["unit"]),
+                transcript_limit=(
+                    int(md_snapshot["transcript_limit"])
+                    if md_snapshot.get("transcript_limit") is not None else None
+                ),
+                # The case's OWN instant, not the wall clock: `SubjectSpec.now`
+                # above already froze her clock there, and a copy shifted to a
+                # different `now` would render ages against a clock she is not
+                # reading. Both have to be the same instant or the transcript
+                # says one thing and `_age` computes another.
+                now_ms=(
+                    int(datetime.fromisoformat(now).timestamp() * 1000)
+                    if now else None
+                ),
+                leave_room_for_arrival=port.delivers_input,
+            )
+        else:
+            seeded = await know(
+                subject, _knowledge((case.metadata or {}).get("knows", {})),
+                leave_room_for_arrival=port.delivers_input,
+            )
         exporter = _prefill_capture()
         exporter.clear()
         nora_case = _as_nora_case(case, spec)

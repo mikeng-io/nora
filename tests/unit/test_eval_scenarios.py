@@ -9,6 +9,7 @@ friends).
 
 from __future__ import annotations
 
+import pytest
 from strands_evals import Case, Experiment
 from strands_evals.types.evaluation import EnvironmentState
 
@@ -182,3 +183,111 @@ def test_a_ported_corpus_correctly_fails_a_wrong_answer():
     labels = {out.label for outputs in report.detailed_results for out in outputs}
     assert labels == {FAIL}
     assert ERROR not in labels
+
+
+# --- `snapshot:` — a case seeded from a REAL room at a REAL instant ----------
+#
+# The shape that replaces `knows:`'s hand-authored content. Both end in the
+# same `know()` (see `evals.backbone._drive`), which is what makes them
+# interchangeable: whatever the content came from, it is written through the
+# stores production writes and rendered by the prefill production renders.
+
+
+def _corpus(tmp_path, body: str, monkeypatch) -> None:
+    """A corpus file of this test's own, so validation can be exercised
+    without a fixture case living in the real `evals/corpora/`."""
+    (tmp_path / "probe.yaml").write_text(body, encoding="utf-8")
+    monkeypatch.setattr("evals.scenarios._CORPORA", tmp_path)
+
+
+def test_a_snapshot_case_carries_its_real_room_and_instant(tmp_path, monkeypatch):
+    _corpus(tmp_path, """
+- name: from_a_real_moment
+  entry: tag
+  expect: reply
+  input: hi
+  snapshot:
+    platform: signal
+    conversation_id: the-real-group
+    before_ms: 1752000000000
+    culture_key: the-real-group
+    unit: friends
+""", monkeypatch)
+
+    shot = load_corpus("probe")[0].metadata["snapshot"]
+
+    assert shot["conversation_id"] == "the-real-group"
+    assert shot["before_ms"] == 1752000000000
+    assert shot["culture_key"] == "the-real-group"
+    assert shot["unit"] == "friends"
+
+
+def test_a_hand_authored_case_carries_an_empty_snapshot(tmp_path, monkeypatch):
+    """The two shapes are told apart by `snapshot:` being EMPTY, not by a
+    flag, so an existing case needs no edit to keep working."""
+    _corpus(tmp_path, """
+- name: still_hand_authored
+  entry: tag
+  expect: reply
+  input: hi
+  knows:
+    transcript:
+      - hello
+""", monkeypatch)
+
+    case = load_corpus("probe")[0]
+
+    assert case.metadata["snapshot"] == {}
+    assert case.metadata["knows"]["transcript"] == ["hello"]
+
+
+def test_a_case_stating_both_snapshot_and_knows_is_refused(tmp_path, monkeypatch):
+    """Two ways to say what she knew, said twice, with nothing making them
+    agree — and the one that loses is invisible in the file."""
+    _corpus(tmp_path, """
+- name: says_it_twice
+  entry: tag
+  expect: reply
+  input: hi
+  knows:
+    transcript:
+      - hello
+  snapshot:
+    platform: signal
+    conversation_id: the-real-group
+    before_ms: 1752000000000
+    culture_key: the-real-group
+    unit: friends
+""", monkeypatch)
+
+    with pytest.raises(ValueError, match="states BOTH"):
+        load_corpus("probe")
+
+
+@pytest.mark.parametrize("dropped", ["culture_key", "unit", "before_ms",
+                                     "platform", "conversation_id"])
+def test_an_incomplete_snapshot_is_refused_by_name(tmp_path, monkeypatch, dropped):
+    """`culture_key` and `unit` especially: `nora.infra.sql.snapshot` refuses
+    to derive them, and a wrong one matches no rows and reads exactly like a
+    room that had no culture and no notebook — a case that would grade a
+    prompt missing the very block it is about."""
+    stated = {
+        "platform": "signal",
+        "conversation_id": "the-real-group",
+        "before_ms": 1752000000000,
+        "culture_key": "the-real-group",
+        "unit": "friends",
+    }
+    del stated[dropped]
+    lines = "\n".join(f"    {k}: {v}" for k, v in stated.items())
+    _corpus(tmp_path, f"""
+- name: incomplete
+  entry: tag
+  expect: reply
+  input: hi
+  snapshot:
+{lines}
+""", monkeypatch)
+
+    with pytest.raises(ValueError, match=dropped):
+        load_corpus("probe")
