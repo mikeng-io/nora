@@ -55,6 +55,7 @@ from .obtain import (
     workspace_for,
 )
 from .proactive import ActPass, act, owe
+from .sandbox import as_knowledge, sandbox_from_snapshot
 
 __all__ = [
     "DEFAULT_ROOM",
@@ -70,6 +71,7 @@ __all__ = [
     "act",
     "adaptor_names",
     "arrive",
+    "as_knowledge",
     "deliver",
     "dream",
     "heard",
@@ -78,6 +80,7 @@ __all__ = [
     "obtain",
     "owe",
     "room_for",
+    "sandbox_from_snapshot",
     "settle",
     "silent_failures",
     "workspace_for",

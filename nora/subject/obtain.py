@@ -28,6 +28,7 @@ from typing import Any
 from nora.app.composition import Dependencies, build_dependencies, wall_clock
 from nora.config import Config
 from nora.config import load as _load_config
+from nora.policy import load_policy
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -116,7 +117,7 @@ _DEFAULT_IDENTITY = (
     '[persons.miles_novak]\nname = "Miles"\n'
     '[[persons.miles_novak.signal]]\nphone = "+852111"\n'
 )
-def default_policy(room: tuple[str, str]) -> str:
+def default_policy(room: tuple[str, str], *, unit: str = "nora") -> str:
     """One allowed room, `default = "deny"`, built FROM the room.
 
     Generated rather than a constant because the room is now per-case
@@ -124,12 +125,26 @@ def default_policy(room: tuple[str, str]) -> str:
     into is the quietest failure in this layer: ingest refuses admission, no
     turn runs, nothing raises, and every tag case scores a `no_reply` PASS with
     the report reading OK.
+
+    `unit` defaults to the shipped `memory.workspace_id` default and MUST be
+    passed the resolved override when a caller states one
+    (`build_config` does). Found live: a subject built with a
+    `memory.workspace_id` override and no explicit policy got a `Conversation
+    .unit` of `"nora"` regardless — `nora.policy.Conversation.unit`'s own
+    shipped default — while `memory.workspace_id` held the override. Every
+    unit-keyed read (notes: `nora.app.composition._note_unit_of`, the
+    `<notes>` prompt block) resolves through the POLICY's `unit`, never
+    through `memory.workspace_id`, so the two silently disagreeing means
+    seeded notes are invisible to a real turn, or worse, a real turn's own
+    write lands wherever the policy's default unit happens to point — findable
+    only by reading two files that agree by convention and not by construction
+    until now.
     """
     platform, conversation_id = room
     return (
         'default = "deny"\n'
         f'[[conversations]]\nplatform = "{platform}"\n'
-        f'id = "{conversation_id}"\npersons = "*"\n'
+        f'id = "{conversation_id}"\npersons = "*"\nunit = "{unit}"\n'
     )
 
 
@@ -274,18 +289,63 @@ def build_config(spec: SubjectSpec) -> Config:
     # startup, so an absent `identity.toml` is a `StartupError` rather than an
     # empty roster.
     (spec.workdir / "identity.toml").write_text(spec.identity, encoding="utf-8")
-    policy = spec.policy or default_policy(spec.room)
-    if f'id = "{spec.room[1]}"' not in policy:
-        raise ValueError(
-            f"policy does not name the subject's room {spec.room!r}; ingest "
-            "would refuse every message and nothing would raise"
-        )
-    (spec.workdir / "policy.toml").write_text(policy, encoding="utf-8")
+    # `cfg` BEFORE the policy, so the policy is checked against what
+    # `know()` will actually write notes under, not a value re-derived from
+    # `spec.overrides` by a second reading of the same dict. `nora.config
+    # .load()` does not read `policy.toml` to load `config.toml` (confirmed:
+    # it succeeds with none present), so this ordering costs nothing.
+    # Found live, fifth review pass: re-deriving `stated_unit` from
+    # `spec.overrides` with its OWN hardcoded `"nora"` fallback made the unit
+    # check pass whenever that literal happened to match `config.example
+    # .toml`'s own shipped default and `nora.policy`'s own shipped default —
+    # agreement by THREE literals in three files coinciding, exactly the
+    # "convention, not construction" this whole fix exists to close, just one
+    # layer further down than the override case pass 3/4 already tested.
     cfg_path = spec.workdir / "config.toml"
     shutil.copy(_TEMPLATE, cfg_path)
     cfg = _baseline(_load_config(cfg_path), spec.workdir)
     for path, value in (spec.overrides or {}).items():
         cfg = _with(cfg, path, value)
+    resolved_unit = cfg.memory.workspace_id
+    policy = spec.policy or default_policy(spec.room, unit=resolved_unit)
+    (spec.workdir / "policy.toml").write_text(policy, encoding="utf-8")
+    # RESOLVED, not grepped. A substring test over the raw TOML text only
+    # proves `spec.room[1]` appears as SOME conversation's `id` somewhere in
+    # the file — a hand-written multi-entry policy can satisfy that while the
+    # subject's OWN room resolves to a different entry, with a different
+    # `primary_id` and a different `unit`. Found live, fourth review pass:
+    # a policy whose OTHER entry happened to carry the room's id string
+    # composed cleanly and silently keyed culture/notes/the Dreamer's scope
+    # under a real room's identifiers instead of the subject's own — the
+    # exact quiet failure this check exists to prevent, reached through the
+    # one path that never actually asked the parser what the room resolved
+    # to. `default_policy()`'s own output always resolves correctly; this
+    # check is for the OTHER branch — a caller-stated `spec.policy` — which
+    # nothing here previously verified at all.
+    convo = load_policy(spec.workdir / "policy.toml").conversation(*spec.room)
+    if convo is None:
+        raise ValueError(
+            f"policy names no conversation for the subject's room "
+            f"{spec.room!r}; ingest would refuse every message and nothing "
+            "would raise"
+        )
+    if convo.primary_id != spec.room[1]:
+        raise ValueError(
+            f"the subject's room {spec.room!r} resolves to primary_id "
+            f"{convo.primary_id!r}, not its own conversation_id — the "
+            "policy names this room under an entry whose id is some OTHER "
+            "conversation's, so culture/notes/the Dreamer's scope would key "
+            "under the wrong room's identifiers"
+        )
+    if convo.unit != resolved_unit:
+        raise ValueError(
+            f"the subject's room {spec.room!r} resolves to unit "
+            f"{convo.unit!r}, not the composed memory.workspace_id "
+            f"{resolved_unit!r} — a note write and a note read would key "
+            "under different units, so seeded/written notes would be "
+            "invisible to the turn that wrote them or read from a real "
+            "unit instead"
+        )
     return cfg
 
 

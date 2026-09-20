@@ -28,6 +28,7 @@ from nora.domain.media import MediaBlob
 from nora.domain.models import NormalizedMessage
 from nora.domain.standing import Standing
 from nora.infra.sql import create_sql_engine
+from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.standing import SqlStandingStore
 
@@ -61,7 +62,12 @@ class Message:
     """
 
     body: str
-    name: str = _KNOWN_NAME
+    #: The display name the platform reported. `None` is a REAL value, not a
+    #: missing one — `messages.sender_name` is nullable and a sealed-sender
+    #: Signal row carries no name at all. It is spelled here because
+    #: `sandbox.py` copies real rows, and mapping a nameless sender onto
+    #: "Unknown" would invent a display name the room never saw.
+    name: str | None = _KNOWN_NAME
     #: Who this speaker resolves to. `None` means the identity does not know
     #: them; `""` means "use the default for this name".
     person: str | None = ""
@@ -206,10 +212,46 @@ class Knowledge:
     spacing_seconds: int = 60
     notes: tuple[NoteSeed, ...] = field(default_factory=tuple)
 
+    #: The room's CULTURE ACCOUNT — how this room TALKS, as one revision body.
+    #:
+    #: ONE BODY, NOT A CHAIN, and that is the whole shape of the decision. The
+    #: tier's genuine contribution is the ORDER of its revisions (DEC-183,
+    #: `nora/infra/sql/schema.py`'s `CULTURE_REVISION` note): a single account
+    #: is a snapshot of a model that had no memory of its last answer, and
+    #: `parent_revision_id` is what makes the sequence an evolution. Nothing
+    #: READS the chain on a turn, though — `CultureAdaptor.inputs` renders
+    #: `head.body` and nothing else (`nora/language/culture.py:515`) — so a
+    #: case stating a chain would be stating input no entry point can observe.
+    #: A seed is one account, written through `SqlCultureStore.append`, which
+    #: is production's own write lane and moves the head in the same
+    #: transaction.
+    #:
+    #: **Keyed on the ROOM'S `primary_id`, which for a subject IS its
+    #: `conversation_id`** — not on `(platform, conversation_id)`, which is the
+    #: mistake `nora.domain.culture.Culture` names in as many words. It is safe
+    #: to key it here rather than require it the way `snapshot()` does, because
+    #: `build_config` (obtain.py) RESOLVES the policy it writes through the real
+    #: parser and refuses unless `Conversation.primary_id == spec.room[1]` —
+    #: found NOT to hold, live, for a substring check that only proved the
+    #: room's id appeared SOMEWHERE in the file, possibly on a different
+    #: entry's conversation (fourth review pass, 2026-09-21). A key that matched
+    #: nothing, or matched the wrong room, would read exactly like a room that
+    #: had never been folded, or silently key under a real other room, which is
+    #: why this is pinned to a resolved refusal rather than to a convention.
+    culture: str | None = None
 
-def _speakers(transcript: tuple[Message, ...]) -> dict[str, tuple[str, str | None]]:
-    """name -> (sender_id, person_id), stable within one case."""
-    out: dict[str, tuple[str, str | None]] = {}
+
+def _speakers(
+    transcript: tuple[Message, ...]
+) -> dict[str | None, tuple[str, str | None]]:
+    """name -> (sender_id, person_id), stable within one case.
+
+    **The sender id is MINTED here and never copied from anywhere.** That is
+    what keeps `sandbox.py` from carrying a real member's E.164 into an eval
+    workspace: the real row's `sender_id` is not one of `Message`'s fields, so
+    there is no path by which it could.
+    """
+    out: dict[str | None, tuple[str, str | None]] = {}
     for msg in transcript:
         if msg.name in out:
             continue
@@ -561,6 +603,20 @@ async def know(
                     now_ms=now_ms + n,
                     anchor_date=note.anchor_date,
                 )
+        if knowledge.culture is not None:
+            # `established_by` is NOT NULL on `culture_revision`
+            # (`nora/infra/sql/schema.py`), so it has to be something; the
+            # other two provenance columns are nullable and are deliberately
+            # left null rather than filled with a plausible-looking digest and
+            # model name. `"case-seed"` is the same value the notes above use —
+            # one string for "this row came from a case statement, not from a
+            # fold", so one grep finds every seeded row in a shared database.
+            await SqlCultureStore(engine).append(
+                key=conversation_id,
+                body=knowledge.culture,
+                written_at=now_ms,
+                established_by="case-seed",
+            )
     finally:
         await engine.dispose()
     return Written(now_ms=now_ms, rows=rows)
