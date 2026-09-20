@@ -190,18 +190,25 @@ cases:
       unit = "ridgeline"
     
       '
-    knows:
-      transcript:
-      - body: 嚟緊今個禮拜六我會去數碼港參加 AI Thinking 嘅 Hackathon。不過都唔知有咩隊員，同埋夜晚都唔知食咩好。
-        name: Miles Novak
-        person: miles
-        id: 201
-        ts: '2026-09-07T18:13:23Z'
+    # REAL: a real single-sender `ridgeline`-unit room, before_ms=1788804863655
+    # (message ts + 60s, this corpus's own `now:` convention). The message
+    # this case names is real production row 2816 -- byte-identical body --
+    # and the notebook was empty at this instant: a matching open note was
+    # not created until roughly 48 minutes later. `must_cite` names the real
+    # row id, not a corpus-local one, per `sandbox.py`'s `as_knowledge`
+    # (`Message.label = row.id`).
+    snapshot:
+      platform: signal
+      conversation_id: Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34=
+      before_ms: 1788804863655
+      culture_key: Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34=
+      unit: ridgeline
+      transcript_limit: 1
     metadata:
       must_cite:
-      - 201
+      - 2816
       anchor_date: 20260912
-    now: '2026-09-07T18:14:23+00:00'
+    now: '2026-09-07T18:14:23.655000+00:00'
 
   - name: p3_follow_up_owed
     entry: dreamer
@@ -768,35 +775,24 @@ cases:
       unit = "friends"
     
       '
-    knows:
-      transcript:
-      - body: null
-        name: Ben
-        person: ben
-        id: 1701
-        ts: '2026-09-08T11:51:29Z'
-        media: true
-      - body: Bath
-        name: Cat
-        person: cat
-        id: 1702
-        ts: '2026-09-08T13:14:29Z'
-      - body: '2200'
-        name: Ada
-        person: ada
-        id: 1703
-        ts: '2026-09-08T13:24:15Z'
-      - body: today no?
-        name: Ada
-        person: ada
-        id: 1704
-        ts: '2026-09-08T14:00:33Z'
-      - body: I am reday
-        name: Ben
-        person: ben
-        id: 1705
-        ts: '2026-09-08T14:00:47Z'
-    now: '2026-09-08T14:01:47+00:00'
+    # REAL: a real multi-person `friends`-unit room, before_ms=1788876107288
+    # (last real message ts + 60s). Real production rows 2836-2839,
+    # byte-identical bodies; no real media row precedes them within the hour
+    # (the two nearest real rows from the same sender are link shares, not
+    # media -- the case's leading `media: true` row has no real counterpart
+    # and is dropped, which does not change the shape of the judgement). The
+    # notebook holds no open note at this instant: a matching open note was
+    # created roughly 94 seconds after this exchange -- this incident is
+    # very likely what produced it. `expect: none` asserts what SHOULD have
+    # happened.
+    snapshot:
+      platform: discord
+      conversation_id: 100000000000000201/100000000000000202
+      before_ms: 1788876107288
+      culture_key: 100000000000000201/100000000000000202
+      unit: friends
+      transcript_limit: 4
+    now: '2026-09-08T14:01:47.288000+00:00'
 
   - name: n10b_a_described_games_room_is_still_not_an_arrangement
     entry: dreamer
@@ -821,38 +817,20 @@ cases:
       description = "a games room; 2200 is when people log on, not an appointment"
     
       '
-    knows:
-      transcript:
-      - body: null
-        name: Ben
-        person: ben
-        id: 1901
-        ts: '2026-09-08T11:51:29Z'
-        media: true
-      - body: Bath
-        name: Cat
-        person: cat
-        id: 1902
-        ts: '2026-09-08T13:14:29Z'
-      - body: '2200'
-        name: Ada
-        person: ada
-        id: 1903
-        ts: '2026-09-08T13:24:15Z'
-      - body: today no?
-        name: Ada
-        person: ada
-        id: 1904
-        ts: '2026-09-08T14:00:33Z'
-      - body: I am reday
-        name: Ben
-        person: ben
-        id: 1905
-        ts: '2026-09-08T14:00:47Z'
+    # REAL: same anchor as n10 (before_ms=1788876107288) -- n10b is the
+    # described-room control variant, identical input plus the room's real
+    # policy.toml label/description. See n10's comment above.
+    snapshot:
+      platform: discord
+      conversation_id: 100000000000000201/100000000000000202
+      before_ms: 1788876107288
+      culture_key: 100000000000000201/100000000000000202
+      unit: friends
+      transcript_limit: 4
     metadata:
       room_label: Zone 42
       room_description: a games room; 2200 is when people log on, not an appointment
-    now: '2026-09-08T14:01:47+00:00'
+    now: '2026-09-08T14:01:47.288000+00:00'
 
   - name: n11_notebook_subject_is_not_a_licence_to_rewrite_it
     entry: dreamer
@@ -873,44 +851,22 @@ cases:
       unit = "friends"
     
       '
-    knows:
-      transcript:
-      - body: 今晚得番3個人？
-        name: Ben
-        person: ben
-        id: 1801
-        ts: '2026-09-10T09:27:46Z'
-      - body: ys
-        name: Cat
-        person: cat
-        id: 1802
-        ts: '2026-09-10T09:27:54Z'
-      - body: ap or cs
-        name: Cat
-        person: cat
-        id: 1803
-        ts: '2026-09-10T09:27:58Z'
-      - body: or we can play some 3player on9 game?
-        name: Cat
-        person: cat
-        id: 1804
-        ts: '2026-09-10T09:28:13Z'
-      - body: how to fish
-        name: Ben
-        person: ben
-        id: 1805
-        ts: '2026-09-10T09:28:25Z'
-      - body: '2200'
-        name: Ada
-        person: ada
-        id: 1806
-        ts: '2026-09-10T09:32:53Z'
-      notes:
-      - title: Bath gathering
-        description: Bath proposed; time 2200 mentioned; unclear which bath or if happening today.
-        body: Cat said Bath. Ada said 2200 and asked if it is today. Ben said he is ready.
-        anchor_date: 20260908
-    now: '2026-09-10T09:33:53+00:00'
+    # REAL: same room as n10, before_ms=1789032833253 (last real message ts
+    # + 60s), two days after n10's incident. Real production rows 2905-2910,
+    # byte-identical bodies and order. At this instant the notebook holds
+    # exactly ONE open note -- anchor 20260908, the note n10's incident is
+    # believed to have produced -- matching this case's single seeded note.
+    # A second, near-duplicate note on the same subject was not created
+    # until roughly 6.5 minutes after this instant, so it is correctly
+    # excluded here.
+    snapshot:
+      platform: discord
+      conversation_id: 100000000000000201/100000000000000202
+      before_ms: 1789032833253
+      culture_key: 100000000000000201/100000000000000202
+      unit: friends
+      transcript_limit: 6
+    now: '2026-09-10T09:33:53.253000+00:00'
 
   - name: n11b_a_described_games_room_does_not_rewrite_the_notebook_subject
     entry: dreamer
@@ -935,47 +891,19 @@ cases:
       description = "a games room; 2200 is when people log on, not an appointment"
     
       '
-    knows:
-      transcript:
-      - body: 今晚得番3個人？
-        name: Ben
-        person: ben
-        id: 1901801
-        ts: '2026-09-10T09:27:46Z'
-      - body: ys
-        name: Cat
-        person: cat
-        id: 1901802
-        ts: '2026-09-10T09:27:54Z'
-      - body: ap or cs
-        name: Cat
-        person: cat
-        id: 1901803
-        ts: '2026-09-10T09:27:58Z'
-      - body: or we can play some 3player on9 game?
-        name: Cat
-        person: cat
-        id: 1901804
-        ts: '2026-09-10T09:28:13Z'
-      - body: how to fish
-        name: Ben
-        person: ben
-        id: 1901805
-        ts: '2026-09-10T09:28:25Z'
-      - body: '2200'
-        name: Ada
-        person: ada
-        id: 1901806
-        ts: '2026-09-10T09:32:53Z'
-      notes:
-      - title: Bath gathering
-        description: Bath proposed; time 2200 mentioned; unclear which bath or if happening today.
-        body: Cat said Bath. Ada said 2200 and asked if it is today. Ben said he is ready.
-        anchor_date: 20260908
+    # REAL: same anchor as n11 (before_ms=1789032833253) -- n11b is the
+    # described-room control variant. See n11's comment above.
+    snapshot:
+      platform: discord
+      conversation_id: 100000000000000201/100000000000000202
+      before_ms: 1789032833253
+      culture_key: 100000000000000201/100000000000000202
+      unit: friends
+      transcript_limit: 6
     metadata:
       room_label: Zone 42
       room_description: a games room; 2200 is when people log on, not an appointment
-    now: '2026-09-10T09:33:53+00:00'
+    now: '2026-09-10T09:33:53.253000+00:00'
 
   - name: p8_two_unrelated_arrangements_on_one_date
     entry: dreamer
