@@ -152,8 +152,11 @@ async def run_once(
     stated = str((case.config or {}).get("memory.workspace_id") or "nora")
     workspace = workspace_for(case.name, stated)
     case_config = {**case.config, "memory.workspace_id": workspace}
+    # The TOML key is `unit` (`Policy.Conversation.unit`, DEC-105/`e2092ecd`)
+    # — distinct from `stated`/`workspace` above, which name Honcho's OWN
+    # `workspace_id` concept and were never part of that rename.
     case_policy = case.policy.replace(
-        f'workspace = "{stated}"', f'workspace = "{workspace}"',
+        f'unit = "{stated}"', f'unit = "{workspace}"',
     )
     workdir = Path(tempfile.mkdtemp(prefix="nora-case-"))
     started = time.monotonic()

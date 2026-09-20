@@ -241,7 +241,7 @@ def note_handle(title: str) -> str:
     guards.
 
     `casefold`, not `lower`, and `strip` before it: the database's own
-    uniqueness is `(workspace, lower(title)) WHERE retired_at IS NULL`, so case
+    uniqueness is `(unit, lower(title)) WHERE retired_at IS NULL`, so case
     is already not part of a note's identity, and a model that types the index
     line back with a trailing space has not named a different note.
 
@@ -318,11 +318,11 @@ def _required(value: str, what: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Note:
-    """One tracked uncertainty, scoped to a workspace.
+    """One tracked uncertainty, scoped to a unit.
 
     `established_in` is the conversation it was born in. It is a **routing key,
-    never a filter** (§3): the workspace already is the disclosure boundary
-    (DEC-105/R-49 — rooms sharing a workspace are one social unit), so this
+    never a filter** (§3): the unit already is the disclosure boundary
+    (DEC-105/R-49 — rooms sharing a unit are one social unit), so this
     never decides who sees a note. What it decides is where a promoted `Event`
     lands, since `Event` is conversation-scoped and a note is not (§7.3).
 
@@ -333,7 +333,7 @@ class Note:
     """
 
     id: str
-    workspace: str
+    unit: str
     title: str
     description: str
     uncertainty: str
@@ -797,7 +797,7 @@ class NoteCreateCandidate:
     """
 
     id: str
-    workspace: str
+    unit: str
     title: str
     description: str
     body: str
@@ -841,7 +841,7 @@ class StaleNoteHeadError(Exception):
     value is the *arrangement* — the writer read one body, reasoned over it, and
     is now appending prose that only makes sense against that body. If the head
     moved (the note-candidates gate appended to it mid-turn, or a parallel turn
-    in the other room of the same workspace revised it), the text being appended is an answer
+    in the other room of the same unit revised it), the text being appended is an answer
     to a question that has changed. Writing it on top destroys the intervening
     revision's arrangement with nothing recording that it happened; returning 0
     and carrying on reports «nothing to do» for what was actually «I could not
@@ -850,10 +850,10 @@ class StaleNoteHeadError(Exception):
 
     `observed_head` is what the head actually is, so the tool layer's message can
     be «this note changed under you, read it again» rather than a bare failure.
-    **`None` means the note is not there at all** *from the caller's workspace* —
-    absent, retired out of existence, or in someone else's workspace, which this
+    **`None` means the note is not there at all** *from the caller's unit* —
+    absent, retired out of existence, or in someone else's unit, which this
     store deliberately cannot tell apart (a caller must not be able to confirm a
-    note exists in a workspace it may not read). Both cases have the same remedy,
+    note exists in a unit it may not read). Both cases have the same remedy,
     which is why they are one exception rather than two: read it again.
 
     A plain `Exception` rather than `nora.domain.errors.NoraError`: `NoraError`

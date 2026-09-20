@@ -59,6 +59,7 @@
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -79,9 +80,9 @@ ADD CONSTRAINT exchange_observation_scope_id_act_message_ids_key UNIQUE (scope_i
 ADD CONSTRAINT fact_asserter_fact_id_fkey FOREIGN KEY (fact_id) REFERENCES public.fact(id) ON DELETE CASCADE;
 ADD CONSTRAINT fact_asserter_pkey PRIMARY KEY (fact_id, person_id, message_id);
 ADD CONSTRAINT fact_candidate_pkey PRIMARY KEY (id);
-ADD CONSTRAINT fact_candidate_triple_key UNIQUE (workspace, subject_id, predicate, object);
+ADD CONSTRAINT fact_candidate_triple_key UNIQUE (unit, subject_id, predicate, object);
 ADD CONSTRAINT fact_entity_pkey PRIMARY KEY (id);
-ADD CONSTRAINT fact_entity_workspace_name_key UNIQUE (workspace, canonical_name);
+ADD CONSTRAINT fact_entity_unit_name_key UNIQUE (unit, canonical_name);
 ADD CONSTRAINT fact_object_entity_id_fkey FOREIGN KEY (object_entity_id) REFERENCES public.fact_entity(id);
 ADD CONSTRAINT fact_pkey PRIMARY KEY (id);
 ADD CONSTRAINT fact_premise_fact_id_fkey FOREIGN KEY (fact_id) REFERENCES public.fact(id) ON DELETE CASCADE;
@@ -96,7 +97,7 @@ ADD CONSTRAINT messages_pkey PRIMARY KEY (id);
 ADD CONSTRAINT music_queue_pkey PRIMARY KEY (id);
 ADD CONSTRAINT music_session_pkey PRIMARY KEY (guild_id);
 ADD CONSTRAINT note_candidate_pkey PRIMARY KEY (id);
-ADD CONSTRAINT note_candidate_probe_key UNIQUE (workspace, probe);
+ADD CONSTRAINT note_candidate_probe_key UNIQUE (unit, probe);
 ADD CONSTRAINT note_entity_entity_id_fkey FOREIGN KEY (entity_id) REFERENCES public.fact_entity(id);
 ADD CONSTRAINT note_entity_note_id_fkey FOREIGN KEY (note_id) REFERENCES public.note(id);
 ADD CONSTRAINT note_entity_pkey PRIMARY KEY (note_id, entity_id);
@@ -114,6 +115,7 @@ ADD CONSTRAINT presence_place_rhythm_pkey PRIMARY KEY (subject_id, place_id);
 ADD CONSTRAINT presence_places_pkey PRIMARY KEY (circle_id, place_id);
 ADD CONSTRAINT presence_stays_pkey PRIMARY KEY (id);
 ADD CONSTRAINT presence_trips_pkey PRIMARY KEY (id);
+ADD CONSTRAINT reasoning_strip_log_pkey PRIMARY KEY (id);
 ADD CONSTRAINT reminders_pkey PRIMARY KEY (id);
 ADD CONSTRAINT rendered_claim_pkey PRIMARY KEY (conversation_id, kind, row_key);
 ADD CONSTRAINT room_exchange_pkey PRIMARY KEY (scope_id, act, participants);
@@ -185,6 +187,7 @@ ALTER TABLE ONLY public.presence_place_rhythm
 ALTER TABLE ONLY public.presence_places
 ALTER TABLE ONLY public.presence_stays
 ALTER TABLE ONLY public.presence_trips
+ALTER TABLE ONLY public.reasoning_strip_log
 ALTER TABLE ONLY public.reminders
 ALTER TABLE ONLY public.rendered_claim
 ALTER TABLE ONLY public.room_exchange
@@ -225,6 +228,8 @@ CONSTRAINT ck_events_status CHECK ((status = ANY (ARRAY['proposed'::text, 'confi
 CONSTRAINT ck_music_queue_position_non_negative CHECK (("position" >= 0))
 CONSTRAINT ck_music_session_volume_range CHECK (((volume >= (0.0)::double precision) AND (volume <= (2.0)::double precision)))
 CONSTRAINT ck_occupancy_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
+CONSTRAINT ck_reasoning_strip_log_counts CHECK (((continuation_calls >= 1) AND (continuation_calls <= model_calls) AND (strip_calls >= 0) AND (strip_calls <= continuation_calls) AND (stripped_blocks >= 0) AND ((strip_calls = 0) = (stripped_blocks = 0)))),
+CONSTRAINT ck_reasoning_strip_log_tag_id_not_empty CHECK (((tag_id IS NULL) OR (tag_id <> ''::text)))
 CONSTRAINT ck_reminders_recurrence CHECK ((((recurrence = 'none'::text) AND (recurrence_tz IS NULL) AND (recurrence_count IS NULL) AND (recurrence_until IS NULL) AND (series_id IS NULL) AND (series_anchor_at IS NULL) AND (occurrence = 0)) OR ((recurrence <> 'none'::text) AND (recurrence_tz IS NOT NULL) AND (recurrence_count >= 1) AND (series_id IS NOT NULL) AND (series_anchor_at IS NOT NULL) AND (occurrence >= 0) AND (occurrence < recurrence_count)))),
 CONSTRAINT ck_reminders_recurrence_interval CHECK ((recurrence_interval >= 1)),
 CONSTRAINT ck_reminders_recurrence_kind CHECK ((recurrence = ANY (ARRAY['none'::text, 'minutely'::text, 'hourly'::text, 'daily'::text, 'weekly'::text, 'monthly'::text, 'yearly'::text]))),
@@ -309,27 +314,28 @@ CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 CREATE INDEX idx_compute_jobs_state ON public.compute_jobs USING btree (state);
 CREATE INDEX idx_culture_revision_key_written ON public.culture_revision USING btree (culture_key, written_at DESC, id DESC);
 CREATE INDEX idx_decision_log_conv_ts ON public.decision_log USING btree (conversation_id, ts DESC, id DESC);
-CREATE INDEX idx_decision_log_workspace_ts ON public.decision_log USING btree (workspace, ts DESC, id DESC);
+CREATE INDEX idx_decision_log_unit_ts ON public.decision_log USING btree (unit, ts DESC, id DESC);
 CREATE INDEX idx_embedding_scope ON public.embedding USING btree (kind, scope);
 CREATE INDEX idx_embedding_v1024 ON public.embedding USING hnsw (v1024 public.vector_cosine_ops);
 CREATE INDEX idx_events_conversation ON public.events USING btree (conversation_id, status);
 CREATE INDEX idx_exchange_observation_scope ON public.exchange_observation USING btree (scope_id);
-CREATE INDEX idx_fact_disputed ON public.fact USING btree (workspace) WHERE (disputed_at IS NOT NULL);
+CREATE INDEX idx_fact_disputed ON public.fact USING btree (unit) WHERE (disputed_at IS NOT NULL);
 CREATE INDEX idx_fact_premise_premise_fact_id ON public.fact_premise USING btree (premise_fact_id);
-CREATE INDEX idx_fact_standing ON public.fact USING btree (workspace, subject_id) WHERE (superseded_at IS NULL);
+CREATE INDEX idx_fact_standing ON public.fact USING btree (unit, subject_id) WHERE (superseded_at IS NULL);
 CREATE INDEX idx_language_observation_scope ON public.language_observation USING btree (scope_id);
 CREATE INDEX idx_messages_conv_ts ON public.messages USING btree (conversation_id, ts DESC);
 CREATE INDEX idx_messages_dream_lag ON public.messages USING btree (conversation_id, id) WHERE (is_nora = 0);
 CREATE INDEX idx_messages_is_nora ON public.messages USING btree (is_nora);
-CREATE INDEX idx_note_anchor ON public.note USING btree (workspace, anchor_date) WHERE (retired_at IS NULL);
+CREATE INDEX idx_note_anchor ON public.note USING btree (unit, anchor_date) WHERE (retired_at IS NULL);
 CREATE INDEX idx_note_revision_body_trgm ON public.note_revision USING gin (body public.gin_trgm_ops);
 CREATE INDEX idx_note_revision_note_id ON public.note_revision USING btree (note_id);
-CREATE INDEX idx_note_standing ON public.note USING btree (workspace) WHERE (retired_at IS NULL);
+CREATE INDEX idx_note_standing ON public.note USING btree (unit) WHERE (retired_at IS NULL);
 CREATE INDEX idx_presence_corridors_subject ON public.presence_corridors USING btree (subject_id);
 CREATE INDEX idx_presence_derived_places_subject_kind ON public.presence_derived_places USING btree (subject_id, kind);
 CREATE INDEX idx_presence_member_ts ON public.presence_fixes USING btree (circle_id, person_id, ts DESC);
 CREATE INDEX idx_presence_stays_subject_ts ON public.presence_stays USING btree (subject_id, started_ts DESC);
 CREATE INDEX idx_presence_trips_subject_started ON public.presence_trips USING btree (subject_id, started_ts DESC);
+CREATE INDEX idx_reasoning_strip_log_path_ts ON public.reasoning_strip_log USING btree (path, created_at);
 CREATE INDEX idx_reminders_due ON public.reminders USING btree (state, due_at);
 CREATE INDEX idx_rendered_claim_window ON public.rendered_claim USING btree (conversation_id, last_rendered_at DESC);
 CREATE INDEX idx_tag_trace_conversation_created ON public.tag_trace USING btree (conversation_id, created_at);
@@ -373,6 +379,7 @@ CREATE TABLE public.presence_place_rhythm (
 CREATE TABLE public.presence_places (
 CREATE TABLE public.presence_stays (
 CREATE TABLE public.presence_trips (
+CREATE TABLE public.reasoning_strip_log (
 CREATE TABLE public.reminders (
 CREATE TABLE public.rendered_claim (
 CREATE TABLE public.room_exchange (
@@ -385,7 +392,7 @@ CREATE TABLE public.tag_trace (
 CREATE TABLE public.tool_call_log (
 CREATE TABLE public.turn_verdict (
 CREATE TABLE public.version_announcements (
-CREATE UNIQUE INDEX note_candidate_create_anchor_key ON public.note_candidate USING btree (workspace, anchor_date, anchor_entity_ids, lower(btrim(title))) WHERE (kind = 'create'::text);
+CREATE UNIQUE INDEX note_candidate_create_anchor_key ON public.note_candidate USING btree (unit, anchor_date, anchor_entity_ids, lower(btrim(title))) WHERE (kind = 'create'::text);
 INCREMENT BY 1
 INCREMENT BY 1
 INCREMENT BY 1
@@ -479,6 +486,7 @@ consumed_verdict_tag text,
 content text DEFAULT ''::text NOT NULL
 context text NOT NULL,
 context_sha256 text DEFAULT ''::text NOT NULL,
+continuation_calls integer NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
 conversation_id text NOT NULL,
@@ -507,6 +515,7 @@ created_at bigint NOT NULL,
 created_at bigint NOT NULL,
 created_at text DEFAULT (now())::text NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL
+created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL,
 created_at timestamp with time zone NOT NULL,
@@ -600,6 +609,7 @@ id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
+id uuid NOT NULL,
 instruction_sha256 text NOT NULL,
 instruction_sha256 text NOT NULL,
 instruction_sha256 text,
@@ -664,12 +674,14 @@ messages jsonb NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
+model text NOT NULL,
 model text,
 model text,
 model text,
 model text,
 model text,
 model text,
+model_calls integer NOT NULL,
 name text NOT NULL,
 narrative text NOT NULL,
 note_id text,
@@ -701,6 +713,7 @@ parent_revision_id uuid,
 part_of_speech text,
 participants text[] NOT NULL,
 participants text[] NOT NULL,
+path text NOT NULL,
 paused boolean NOT NULL,
 payload jsonb,
 person_id text NOT NULL,
@@ -734,6 +747,7 @@ radius_m double precision NOT NULL,
 radius_m double precision,
 raw_json text,
 reason text DEFAULT ''::text NOT NULL,
+reasoning_effort text NOT NULL,
 recognition_score double precision DEFAULT 0 NOT NULL,
 recognition_score double precision DEFAULT 0 NOT NULL,
 recorded_at bigint NOT NULL,
@@ -799,6 +813,8 @@ status text NOT NULL,
 status text NOT NULL,
 status text,
 strikes integer DEFAULT 0 NOT NULL,
+strip_calls integer NOT NULL,
+stripped_blocks integer NOT NULL,
 subject_id text NOT NULL,
 subject_id text NOT NULL,
 subject_id text NOT NULL,
@@ -819,6 +835,7 @@ synthesized_at bigint NOT NULL
 tag_id text NOT NULL,
 tag_id text NOT NULL,
 tag_id text NOT NULL,
+tag_id text,
 task text NOT NULL,
 task_sha256 text DEFAULT ''::text NOT NULL,
 text text NOT NULL,
@@ -837,6 +854,13 @@ ts bigint NOT NULL,
 ts bigint NOT NULL,
 ts bigint NOT NULL,
 uncertainty text NOT NULL,
+unit text DEFAULT ''::text NOT NULL,
+unit text NOT NULL,
+unit text NOT NULL,
+unit text NOT NULL,
+unit text NOT NULL,
+unit text NOT NULL,
+unit text,
 unsupported text[] DEFAULT '{}'::text[] NOT NULL,
 updated_at bigint NOT NULL,
 updated_at bigint NOT NULL,
@@ -869,13 +893,6 @@ voice_channel_id text NOT NULL,
 volume double precision NOT NULL,
 warrant_kind text DEFAULT 'source'::text NOT NULL,
 wire_state text NOT NULL,
-workspace text DEFAULT ''::text NOT NULL,
-workspace text NOT NULL,
-workspace text NOT NULL,
-workspace text NOT NULL,
-workspace text NOT NULL,
-workspace text NOT NULL,
-workspace text,
 writer text NOT NULL,
 written_at bigint NOT NULL,
 written_at bigint NOT NULL,

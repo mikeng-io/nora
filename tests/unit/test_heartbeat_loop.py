@@ -590,12 +590,12 @@ from nora.testing import InMemoryNoteStore  # noqa: E402
 
 class _RoomPolicy(_RecordingAllowlist):
     """`_RecordingAllowlist` plus the two reads `ProactiveScreen` makes: the
-    per-room `proactive` flag and the room's workspace."""
+    per-room `proactive` flag and the room's unit."""
 
-    def __init__(self, *, allow: bool, proactive: bool, workspace: str = "friends") -> None:
+    def __init__(self, *, allow: bool, proactive: bool, unit: str = "friends") -> None:
         super().__init__(allow=allow)
         self._proactive = proactive
-        self._workspace = workspace
+        self._unit = unit
 
     def proactive_allowed(self, *, platform: str, conversation_id: str) -> bool:
         return self._proactive
@@ -604,14 +604,14 @@ class _RoomPolicy(_RecordingAllowlist):
         from nora.policy import Conversation
         return Conversation(
             platform=platform, ids=frozenset({conversation_id}), persons=None,
-            workspace=self._workspace, primary_id=conversation_id,
+            unit=self._unit, primary_id=conversation_id,
         )
 
 
-async def _note_store(*, workspace: str = "friends"):
+async def _note_store(*, unit: str = "friends"):
     store = InMemoryNoteStore()
     note = await store.create(
-        workspace=workspace, title="Dinner", description="venue open",
+        unit=unit, title="Dinner", description="venue open",
         uncertainty="where", closing_condition="a place is picked",
         established_in="conv-1", body="Saturday; venue open.",
         established_by="tag:miles", now_ms=1_000, anchor_date=20260912,
@@ -727,7 +727,7 @@ async def test_a_tag_path_revision_since_the_link_cancels_the_row():
     await store.create(row)
     policy = _RoomPolicy(allow=True, proactive=True)
     background = await notes.append_revision(
-        workspace="friends", note_id=note.id, body="Saturday; still open.",
+        unit="friends", note_id=note.id, body="Saturday; still open.",
         parent_revision_id=note.head_revision_id,
         established_by="dream:note-curation:friends:2", now_ms=2_000,
     )
@@ -752,7 +752,7 @@ async def test_a_tag_path_revision_since_the_link_cancels_the_row():
     again = _proactive_row(note)
     await store.create(again)
     await notes.append_revision(
-        workspace="friends", note_id=note.id, body="Ada booked Sai Kung.",
+        unit="friends", note_id=note.id, body="Ada booked Sai Kung.",
         parent_revision_id=background.id, established_by="tag:ada", now_ms=3_000,
     )
     await _loop().tick()
@@ -818,17 +818,17 @@ async def test_a_proactive_row_with_no_note_is_screened_on_the_flag_alone():
     assert (await store.get(row.id)).state is ReminderState.DONE
 
 
-async def test_a_note_the_rows_workspace_cannot_reach_fails_closed():
+async def test_a_note_the_rows_unit_cannot_reach_fails_closed():
     """Audit 2026-09-09: `NoteStore.read` answers None for absent, for another
-    workspace and for a malformed id — «not reachable», which is not
-    «retired». The policy's workspace for the room moved between decide and
+    unit and for a malformed id — «not reachable», which is not
+    «retired». The policy's unit for the room moved between decide and
     fire; the row is FAILED as a wiring gap, never CANCELLED with an outcome
     claiming the note was retired, and never fired."""
     store = FakeReminderStore()
-    notes, note = await _note_store(workspace="friends")
+    notes, note = await _note_store(unit="friends")
     row = _proactive_row(note)
     await store.create(row)
-    policy = _RoomPolicy(allow=True, proactive=True, workspace="renamed")
+    policy = _RoomPolicy(allow=True, proactive=True, unit="renamed")
     loop, fired = _build(store=store, policy=policy)
     loop._proactive = ProactiveScreen(policy=policy, notes=notes)
 

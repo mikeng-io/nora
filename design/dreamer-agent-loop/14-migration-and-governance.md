@@ -24,7 +24,7 @@ The dependencies are real and mostly one-way:
 gateway probe (13-open-items)          ── blocks ──> any budget sizing
 tier read tools (06)                   ── enables ─> self-correction work (09)
 scope-keyed room access (07 Path A)    ── enables ─> the extraction loop (03 §6)
-disclosure answer (08)                 ── blocks ──> workspace room access (07 Path B)
+disclosure answer (08)                 ── blocks ──> unit room access (07 Path B)
 fixture deletion (Phase 3)             ── enables ─> editing 3 of 6 objectives (11)
 global concurrency bound (10 §7)       ── blocks ──> the migration landing
 ```
@@ -82,15 +82,15 @@ deletes them without argument is the failure they were written against.
 | test | pins | what must replace it |
 |---|---|---|
 | the extractor holds no tools at all | the tool-less cost decision, fixed as a test | a statement of the **new** cost bound, counted — the original argument was about unbounded cost, so the replacement must show the new bound |
-| a workspace-keyed adaptor is refused a room-scoped tool | asserts the literal refusal message | unchanged if Path B stays blocked, which is the recommendation |
+| a unit-keyed adaptor is refused a room-scoped tool | asserts the literal refusal message | unchanged if Path B stays blocked, which is the recommendation |
 | a scope-keyed adaptor may hold a room-scoped tool | the door already open | unchanged — this is the sanctioned direction |
 | every read-only tool is classified | a new tool is **unclassified** and fails **by name** | keep; place every new tool in exactly one bucket |
 | the startup and per-run checks refuse the same thing | one rule, two call sites | keep; both move together or neither does |
 | asking for nothing builds nothing and touches no collaborator | the tool-free path | dies when extraction gains tools; replace with the equivalent assertion for the new empty case |
-| the adjudicator's tools stay inside the workspace-safe set | non-empty **and** within the ceiling | keep |
+| the adjudicator's tools stay inside the unit-safe set | non-empty **and** within the ceiling | keep |
 
 **A new tool must be classified in three places.** The tool table, the read/act
-partition in tests, and the workspace-safe or room-scoped bucket. Miss one and
+partition in tests, and the unit-safe or room-scoped bucket. Miss one and
 a test fails by name — which is the design.
 
 **A new behavioural rule needs both** an index row and a rule-to-test entry
@@ -151,7 +151,7 @@ suite both pass. For the fact readers specifically, it must pin:
   degrade to empty; the background read raises by contract, because degrading
   it would report "nothing to do" when the truth is "I could not check";
 - **an empty subject set yields nothing, not everything** — fail-closed;
-- **workspace isolation**, and that a by-id read returns absent rather than
+- **unit isolation**, and that a by-id read returns absent rather than
   standing in for unreachable.
 
 **Scope its database to the module and truncate between tests.** A

@@ -550,7 +550,7 @@ async def know(
             notes = SqlNoteStore(engine)
             for n, note in enumerate(knowledge.notes):
                 await notes.create(
-                    workspace=subject.cfg.memory.workspace_id,
+                    unit=subject.cfg.memory.workspace_id,
                     title=note.title,
                     description=note.description,
                     uncertainty=note.uncertainty,

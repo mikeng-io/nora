@@ -9,6 +9,7 @@
   ],
   "limitations": [
     "Inert as shipped: without `DISCORD_BOT_TOKEN` + `VOICE_GUILD_ID` + `VOICE_CHANNEL_ID` in the operator's `.env` the service is healthy-but-idle (joins nothing), and nothing consumes the forwarded stream yet — the wake gate is stage 3, separately gated on a real-audio probe.",
-    "Verified by smoke test and `docker compose config`; the container image itself was not built in this stage."
+    "Verified by smoke test and `docker compose config`; the container image itself was not built in this stage.",
+    "Superseded in part by 'voice-on-more-than-one-server' in this same unreleased set: the voice containers no longer read any server or channel id from the environment, and one of each serves every server. Read that fragment for the shipped shape."
   ]
 }

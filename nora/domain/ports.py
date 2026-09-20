@@ -1681,7 +1681,7 @@ class DreamAdaptor(Protocol):
     append-shaped**: `RoomConsolidator`'s `consolidate(scope_id, batch) -> int`
     (deleted 2026-09-07 with the language tier) said "extract, append,
     rescore, and nothing else", which is why an adaptor that INVALIDATES as
-    well as appends did not fit it, why a workspace-keyed adaptor did not fit
+    well as appends did not fit it, why a unit-keyed adaptor did not fit
     its scope key, and why a watermark-free one had to be a separate parameter
     on `dream_loop` rather than another consolidator. This port has room for
     all three, which is what makes a new tier a new adaptor rather than a new
@@ -1739,9 +1739,9 @@ class DreamAdaptor(Protocol):
     is a data migration, not a rename."""
 
     key_kind: str
-    """`"scope"` or `"workspace"` — which population the runtime ticks this
+    """`"scope"` or `"unit"` — which population the runtime ticks this
     adaptor over. Every room adaptor's unit of work is a `scope_id`; the fact
-    adaptor's is a `Conversation.workspace` (DEC-105). Not a wider or narrower
+    adaptor's is a `Conversation.unit` (DEC-105). Not a wider or narrower
     batch — a DIFFERENT key, which is why `_dream_once`'s single shared
     per-scope watermark cannot host one unchanged."""
 
@@ -1894,9 +1894,9 @@ class DreamSink(Protocol):
     "this is new" and "this replaces that" would be lost at the boundary.
 
     **The key is the adaptor's own.** Every existing adaptor's unit of work is a
-    `scope_id`; the fact adaptor's is a workspace (`Conversation.workspace`,
+    `scope_id`; the fact adaptor's is a unit (`Conversation.unit`,
     DEC-105). The port takes `key: str` and does not care which, because
-    `_dream_once`'s shared per-scope watermark cannot host a workspace-keyed
+    `_dream_once`'s shared per-scope watermark cannot host a unit-keyed
     adaptor unchanged and the port must not bake in the assumption that it can.
 
     **An empty `propose` is R-27's three states expressed in the port:**
@@ -2042,6 +2042,27 @@ class TrackSource(Protocol):
         `QueuedTrack.url` already holds for the just-finished track) —
         never a raw search query; recommending from an unresolved guess
         would compound one uncertain match into another."""
+        ...
+
+    async def refresh_session(self) -> None:
+        """Throw away whatever per-source session state the implementation
+        holds, so the NEXT `resolve` negotiates a new one. Called when a
+        stream this source resolved turned out to be unplayable, before the
+        retry re-resolves it.
+
+        **A locator is only as good as the session that signed it.**
+        Measured 2026-09-18: a `YoutubeDL` kept for the life of the process
+        handed out CDN addresses that were answered `403 Forbidden` — every
+        one, for 21 hours — because `videoplayback` addresses are bound to
+        the visitor session that produced them. Re-resolving through that
+        same session reproduces the failure exactly. Without this hook a
+        bounded retry is decoration: it spends a network round-trip asking
+        the broken thing for another broken answer.
+
+        A source holding no such state satisfies this by doing nothing.
+        NEVER raises, same discipline as `resolve` — a source that cannot
+        refresh has simply not improved the retry's odds, which is not an
+        error the caller can act on."""
         ...
 
 
@@ -2399,15 +2420,15 @@ class DecisionLogStore(Protocol):
     key, so a duplicate is a caller reusing an id rather than a second decision,
     and Postgres says so.
 
-    **Two reads, and `recent_for_workspace` is the PRIMARY one.** A
-    `kind="proactive"` row fires into the workspace's home room and nowhere
+    **Two reads, and `recent_for_unit` is the PRIMARY one.** A
+    `kind="proactive"` row fires into the unit's home room and nowhere
     else (39 D2/D3); the thread it is about runs wherever the group is
     talking, which in the measured incident was a different room on a different
     platform. So a reader scoped to one room sees nothing and the duplicate it
     exists to prevent goes through anyway. `recent` — one room — is the narrow
     read, kept for a caller that genuinely means one room. They are two reads
     and not one filter because they need two indexes: collapsing them would
-    make the workspace case an unindexed scan, and AGENTS.md's rule is that
+    make the unit case an unindexed scan, and AGENTS.md's rule is that
     something must measure the COST, not just the answer.
 
     **Both reads are bounded by the store, twice** — `since_ms` and `limit` —
@@ -2461,11 +2482,11 @@ class DecisionLogStore(Protocol):
         """
         ...
 
-    async def recent_for_workspace(
-        self, *, workspace: str, since_ms: int,
+    async def recent_for_unit(
+        self, *, unit: str, since_ms: int,
         writers: Sequence[str] = ..., limit: int = ...,
     ) -> Sequence[DecisionRow]:
-        """The same read across every room of one workspace, narrowed to
+        """The same read across every room of one unit, narrowed to
         `writers`. Same bounds, same order, same tie-break.
 
         **`writers` is on the QUERY and not a filter the caller applies after,

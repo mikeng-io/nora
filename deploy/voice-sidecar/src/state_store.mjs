@@ -39,3 +39,29 @@ export function createStateStore({ path: filePath }) {
 
   return { read, write, path: filePath };
 }
+
+// Which of a state directory's files name a guild, and which do not.
+// Lives HERE, not in service.mjs, so it can be TESTED: service.mjs imports
+// discord.js at module scope, and a falsification probe that re-adopted junk
+// filenames reddened nothing because nothing could import it. Same trap the
+// codec and the pump were in.
+//
+// Only a Discord snowflake names a guild's state. Before multi-guild this
+// directory held a single `desired_state.json`, and globbing `*.json` adopted
+// it as a guild literally called "desired_state" — every boot tried
+// `guilds.fetch("desired_state")`, failed, and left a junk core in the map
+// and in /health, while the REAL guild's connection was never restored.
+//
+// Skipped rather than migrated: the old file records a channel for a guild it
+// does not name, so there is nothing to migrate it to.
+export function guildsFromStateFiles(files) {
+  const guilds = [];
+  const skipped = [];
+  for (const file of files) {
+    if (!file.endsWith('.json')) continue;
+    const guildId = file.slice(0, -'.json'.length);
+    if (/^[0-9]{15,25}$/.test(guildId)) guilds.push(guildId);
+    else skipped.push(file);
+  }
+  return { guilds, skipped };
+}

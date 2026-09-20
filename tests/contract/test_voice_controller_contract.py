@@ -58,8 +58,8 @@ async def test_a_second_play_replaces_the_first(controller):
     fake, client, _ = controller
     generation = await _join(client)
 
-    first = await client.play(generation, "https://cdn.example/a", request_id="r1")
-    second = await client.play(generation, "https://cdn.example/b", request_id="r2")
+    first = await client.play(generation, "https://cdn.example/a", guild_id=GUILD, request_id="r1")
+    second = await client.play(generation, "https://cdn.example/b", guild_id=GUILD, request_id="r2")
 
     assert first["playback_id"] != second["playback_id"]
     assert [p["stream_url"] for p in fake.plays] == [
@@ -75,8 +75,11 @@ async def test_play_accepts_the_optional_resumable_flag(controller):
     fake, client, _ = controller
     generation = await _join(client)
 
-    await client.play(generation, "https://cdn.example/live", resumable=False, request_id="r1")
-    await client.play(generation, "https://cdn.example/vod", request_id="r2")
+    await client.play(
+        generation, "https://cdn.example/live",
+        resumable=False, guild_id=GUILD, request_id="r1",
+    )
+    await client.play(generation, "https://cdn.example/vod", guild_id=GUILD, request_id="r2")
 
     assert fake.plays[0]["resumable"] is False
     assert "resumable" not in fake.plays[1], (
@@ -156,13 +159,13 @@ async def test_music_stop_keeps_the_connection(controller):
     generation still succeeds."""
     fake, client, _ = controller
     generation = await _join(client)
-    await client.play(generation, "https://cdn.example/a", request_id="r1")
+    await client.play(generation, "https://cdn.example/a", guild_id=GUILD, request_id="r1")
 
-    state = await client.stop_music(generation, request_id="r2")
+    state = await client.stop_music(generation, guild_id=GUILD, request_id="r2")
 
     assert state["voice"] == "connected"
     assert fake.voice == "connected"
-    again = await client.play(generation, "https://cdn.example/b", request_id="r3")
+    again = await client.play(generation, "https://cdn.example/b", guild_id=GUILD, request_id="r3")
     assert again["playback_id"] is not None
 
 
@@ -170,7 +173,7 @@ async def test_music_stop_when_idle_is_a_noop_200(controller):
     _fake, client, _ = controller
     generation = await _join(client)
 
-    state = await client.stop_music(generation, request_id="r")
+    state = await client.stop_music(generation, guild_id=GUILD, request_id="r")
 
     assert state["voice"] == "connected"
     assert state["player"]["status"] == "idle"
@@ -182,12 +185,12 @@ async def test_exit_invalidates_the_generation(controller):
     fake, client, _ = controller
     generation = await _join(client)
 
-    state = await client.exit(generation, request_id="r-exit")
+    state = await client.exit(generation, guild_id=GUILD, request_id="r-exit")
 
     assert state["voice"] == "idle"
     assert fake.generation is None
     with pytest.raises(GenerationConflict):
-        await client.play(generation, "https://cdn.example/a", request_id="r")
+        await client.play(generation, "https://cdn.example/a", guild_id=GUILD, request_id="r")
     rejoined = await _join(client)
     assert rejoined != generation
 
@@ -195,22 +198,25 @@ async def test_exit_invalidates_the_generation(controller):
 async def test_every_generation_scoped_verb_rejects_a_stale_generation(controller):
     _fake, client, _ = controller
     generation = await _join(client)
-    await client.exit(generation, request_id="r-exit")
+    await client.exit(generation, guild_id=GUILD, request_id="r-exit")
 
     with pytest.raises(GenerationConflict):
-        await client.exit(generation, request_id="r")
+        await client.exit(generation, guild_id=GUILD, request_id="r")
     with pytest.raises(GenerationConflict):
-        await client.play(generation, "https://cdn.example/a", request_id="r")
+        await client.play(generation, "https://cdn.example/a", guild_id=GUILD, request_id="r")
     with pytest.raises(GenerationConflict):
-        await client.stop_music(generation, request_id="r")
+        await client.stop_music(generation, guild_id=GUILD, request_id="r")
     with pytest.raises(GenerationConflict):
-        await client.pause(generation, request_id="r")
+        await client.pause(generation, guild_id=GUILD, request_id="r")
     with pytest.raises(GenerationConflict):
-        await client.resume(generation, request_id="r")
+        await client.resume(generation, guild_id=GUILD, request_id="r")
     with pytest.raises(GenerationConflict):
-        await client.set_volume(generation, 100, request_id="r")
+        await client.set_volume(generation, 100, guild_id=GUILD, request_id="r")
     with pytest.raises(GenerationConflict):
-        await client.stream(generation, b"mp3", media_type="audio/mpeg", request_id="r")
+        await client.stream(
+            generation, b"mp3", media_type="audio/mpeg",
+            guild_id=GUILD, request_id="r",
+        )
 
 
 async def test_a_wrong_guild_is_rejected(controller):
@@ -228,7 +234,7 @@ async def test_a_volume_out_of_range_is_rejected(controller):
     generation = await _join(client)
 
     with pytest.raises(VoiceControllerRejected) as excinfo:
-        await client.set_volume(generation, 201, request_id="r")
+        await client.set_volume(generation, 201, guild_id=GUILD, request_id="r")
     assert excinfo.value.reason == "percent_out_of_range"
 
 
@@ -238,22 +244,22 @@ async def test_resume_during_speech_is_a_409(controller):
     `GenerationConflict` carrying `pause_during_speech`, never applied."""
     fake, client, _ = controller
     generation = await _join(client)
-    await client.play(generation, "https://cdn.example/a", request_id="r1")
+    await client.play(generation, "https://cdn.example/a", guild_id=GUILD, request_id="r1")
     await client.stream(
-        generation, b"speech-bytes", media_type="audio/mpeg", request_id="r2",
+        generation, b"speech-bytes", media_type="audio/mpeg", guild_id=GUILD, request_id="r2",
     )
 
     with pytest.raises(GenerationConflict) as excinfo:
-        await client.resume(generation, request_id="r3")
+        await client.resume(generation, guild_id=GUILD, request_id="r3")
     assert excinfo.value.reason == "pause_during_speech"
     with pytest.raises(GenerationConflict) as excinfo:
-        await client.pause(generation, request_id="r4")
+        await client.pause(generation, guild_id=GUILD, request_id="r4")
     assert excinfo.value.reason == "pause_during_speech"
 
     # Once speech drains, the verbs work again.
     fake.finish_speech()
-    await client.pause(generation, request_id="r5")
-    await client.resume(generation, request_id="r6")
+    await client.pause(generation, guild_id=GUILD, request_id="r5")
+    await client.resume(generation, guild_id=GUILD, request_id="r6")
 
 
 async def test_status_carries_the_reconciliation_fields(controller):
@@ -263,9 +269,9 @@ async def test_status_carries_the_reconciliation_fields(controller):
     `position_policy` (approximate-seek posture: a revive seeks to the cut)."""
     _fake, client, _ = controller
     generation = await _join(client)
-    await client.play(generation, "https://cdn.example/a", request_id="r1")
+    await client.play(generation, "https://cdn.example/a", guild_id=GUILD, request_id="r1")
 
-    status = await client.status()
+    status = await client.status(GUILD)
 
     assert status["generation"] == generation
     assert status["playback_id"] is not None
@@ -279,7 +285,7 @@ async def test_stream_speech_encodes_the_audio(controller):
     generation = await _join(client)
 
     await client.stream(
-        generation, b"mp3-bytes", media_type="audio/mpeg", request_id="r",
+        generation, b"mp3-bytes", media_type="audio/mpeg", guild_id=GUILD, request_id="r",
     )
 
     assert fake.speech_active is True
@@ -298,11 +304,14 @@ async def test_stream_rejects_with_unavailable_once_the_speech_queue_is_full(aio
     generation = await _join(client)
 
     # First call becomes the active stream.
-    await client.stream(generation, b"active", media_type="audio/mpeg", request_id="r0")
+    await client.stream(
+        generation, b"active", media_type="audio/mpeg",
+        guild_id=GUILD, request_id="r0",
+    )
     # The next `speech_queue_max` calls queue behind it.
     for i in range(speech_queue_max):
         await client.stream(
-            generation, b"queued", media_type="audio/mpeg", request_id=f"r{i + 1}",
+            generation, b"queued", media_type="audio/mpeg", guild_id=GUILD, request_id=f"r{i + 1}",
         )
     assert fake.speech_queue == speech_queue_max
 
@@ -310,9 +319,13 @@ async def test_stream_rejects_with_unavailable_once_the_speech_queue_is_full(aio
     # `VoiceControllerUnavailable`.
     with pytest.raises(VoiceControllerUnavailable):
         await client.stream(
-            generation, b"overflow", media_type="audio/mpeg", request_id="r-overflow",
+            generation, b"overflow", media_type="audio/mpeg",
+            guild_id=GUILD, request_id="r-overflow",
         )
 
     # Once the active speech (and its queue) drains, streaming works again.
     fake.finish_speech()
-    await client.stream(generation, b"after-drain", media_type="audio/mpeg", request_id="r-after")
+    await client.stream(
+        generation, b"after-drain", media_type="audio/mpeg",
+        guild_id=GUILD, request_id="r-after",
+    )

@@ -12,7 +12,7 @@ edges: []
 ## Why
 
 2026-09-14, Blake said in Discord Zone 42 that he was sick and wanted the
-night off. Nora's note tier folded that into a friends-workspace note
+night off. Nora's note tier folded that into a friends-unit note
 (`90d5d715`, established_in Zone 42), and two hours later the **proactive**
 fire path answered it into the **Signal** home room (#248 — the source room
 and the delivery room diverged). The deeper failure: when the decide turn

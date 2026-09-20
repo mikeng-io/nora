@@ -91,7 +91,7 @@ async def test_seeded_notes_and_standing_render_in_the_assembled_prompt(
 
     notes_store = InMemoryNoteStore()
     notes_store.notes["11111111-0000-4000-8000-000000000001"] = Note(
-        id="11111111-0000-4000-8000-000000000001", workspace="nora",
+        id="11111111-0000-4000-8000-000000000001", unit="nora",
         title="a tracked uncertainty", description="whether the venue is booked",
         uncertainty="not confirmed", closing_condition="someone confirms the booking",
         established_in="g1", created_at=1,

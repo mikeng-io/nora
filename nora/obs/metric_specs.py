@@ -16,6 +16,11 @@ from __future__ import annotations
 from typing import NamedTuple
 
 from nora.domain.media_join import JOIN_PATHS
+from nora.domain.reasoning_strip import (
+    PATHS_HELP,
+    STRIP_OUTCOMES,
+    WRITE_OUTCOMES,
+)
 
 _DEFAULT_BUCKETS: tuple[float, ...] = (0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30)
 
@@ -38,6 +43,17 @@ class _GaugeSpec(NamedTuple):
 #: first time a ninth transcript builder lands, and a help text naming seven
 #: paths for an eight-path series is a metric that documents itself wrongly.
 _JOIN_PATHS = " / ".join(JOIN_PATHS)
+
+#: DERIVED for `_JOIN_PATHS`' reason, and this one has already been paid for
+#: once: `nora_reasoning_strip_total`'s help text was hand-written as
+#: «tag / participation / dreamer:<adaptor>» while `nora.app.fire` was sending
+#: `heartbeat` and `proactive` through the same label. An operator filtering a
+#: dashboard off that sentence dropped the reminder path silently. The set now
+#: comes from `nora.domain.audience.SPEAKING_AUDIENCES`, which is what the
+#: call sites pass.
+_STRIP_PATHS = PATHS_HELP
+
+_WRITE_OUTCOMES = " / ".join(WRITE_OUTCOMES)
 
 
 class _HistogramSpec(NamedTuple):
@@ -94,7 +110,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "fail-soft: the block is lost, never the turn, so absence is the only "
         "symptom and this series is the only tell. The three fire_* stages "
         "sit beside the pre-existing fire_peer_card / fire_standing / "
-        "fire_notes / fire_workspace for that set's own stated reason — an "
+        "fire_notes / fire_unit for that set's own stated reason — an "
         "operator asking WHICH half of the context went blind must not have "
         "to guess.",
         ("stage", "platform"),
@@ -721,9 +737,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "(fire_turn); the input refusals (unmapped / unparseable / past); "
         "screened, a proactive row whose text failed the Dreamer's "
         "identifier/coordinate screen (design/dreamer-agent-loop/39 D3); "
-        "refused_origin_unresolvable / refused_origin_wrong_workspace / "
+        "refused_origin_unresolvable / refused_origin_wrong_unit / "
         "refused_origin_not_proactive, a note-linked proactive row whose "
-        "origin room cannot be resolved, drifted across a workspace, or is "
+        "origin room cannot be resolved, drifted across a unit, or is "
         "not proactive-trusted — design/dreamer-agent-loop/40 (#248), where "
         "the row's destination is the note's own room, never a fallback to "
         "home; the "
@@ -918,7 +934,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("outcome",),
     ),
     # DEC-105. `ok` is a message that reached another room; every other value is
-    # a refusal, and WHICH one it is matters — `other_workspace` and
+    # a refusal, and WHICH one it is matters — `other_unit` and
     # `not_allowed_there` are the two that mean somebody tried to speak past a
     # trust boundary, and they are worth watching in a way that `unknown_room`
     # (a model guessing at a name) is not.
@@ -934,7 +950,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_relay_total",
         "Cross-room relays by outcome: ok / empty / unmapped / unknown_room / "
-        "ambiguous_room / unknown_source / same_room / other_workspace / "
+        "ambiguous_room / unknown_source / same_room / other_unit / "
         "not_allowed_there / egress_blocked / no_adapter / failed.",
         ("outcome",),
     ),
@@ -1097,20 +1113,20 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("adaptor",),
     ),
     # The fail-closed branch in `DreamerToolSource.build` (39 D2/D3): the
-    # adaptor's grant names a home room, the workspace declares none in
+    # adaptor's grant names a home room, the unit declares none in
     # policy.toml, and the acts are withheld along with the room. This is a
     # CONFIG state, true on every pass until somebody edits a file, so the log
-    # line beside it is emitted once per (adaptor, workspace) — that is what
+    # line beside it is emitted once per (adaptor, unit) — that is what
     # this counter is for. Without it, deduplicating the log would have traded
     # a stream of identical errors for no signal at all, and «the proactive
-    # adaptor has been inert in this workspace for a week» is exactly the
+    # adaptor has been inert in this unit for a week» is exactly the
     # reading an operator needs and cannot get from a single startup line.
     _CounterSpec(
         "nora_dream_home_room_missing_total",
         "Dreamer builds that wanted a home room and found none declared for "
-        "the workspace: the adaptor ran with no acts and no room. A standing "
+        "the unit: the adaptor ran with no acts and no room. A standing "
         "config gap, counted every pass; the log says it once.",
-        ("adaptor", "workspace"),
+        ("adaptor", "unit"),
     ),
     # Screening is the second path into the prompt, and it must never be
     # silent: a proposal dropped for carrying a phone number or a coordinate
@@ -1349,9 +1365,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "refused, over_cap, malformed, unwritten (the propose did not "
         "complete; whether it committed is unknown), broken_turn (the turn "
         "ended llm_error or timeout — a dead turn raises no notes), "
-        "no_workspace (policy "
+        "no_unit (policy "
         "names no notebook for the room — a refusal, not a fault) and "
-        "no_workspace_unavailable (the resolver itself failed). The last two "
+        "no_unit_unavailable (the resolver itself failed). The last two "
         "are separate because an unmapped room and a broken resolver are "
         "different readings, and one bucket for both is a fault reported as a "
         "policy decision.",
@@ -1592,7 +1608,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "settled, by what that means. reobserved: the same arrangement seen "
         "again across ticks — the benign case the staging table exists to "
         "absorb, and nothing is lost. displaced: a DIFFERENT arrangement "
-        "that collided on the staging key (workspace, anchor date, named "
+        "that collided on the staging key (unit, anchor date, named "
         "people, normalised title) and was dropped before the gate ever saw "
         "it — one proposal destroyed, no note written, no gate action "
         "counted, issue #235. Since 2026-09-16 the title is part of that key, "
@@ -1919,7 +1935,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "and the HOME ROOM is quiet), unclocked (no pass clock wired — every tick "
         "renders). DID NOT: held_quiet (moved but the HOME ROOM is still "
         "talking — the room a row fires into, and so the only one a pass can "
-        "interrupt; every room of the workspace until 2026-09-10), "
+        "interrupt; every room of the unit until 2026-09-10), "
         "unchanged, nothing_shown (due, but no open notes and no room has "
         "written a position), no_home_room (the operator has not said where "
         "she stands — a wiring gap, and it is here so it does not read as "
@@ -2023,6 +2039,44 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Culture folds by what the pass did with the model's answer. A tier "
         "consumed by nobody yet (02-measurement step 4 is writing-only), so "
         "this series is the ONLY place its behaviour is observable at all.",
+        ("outcome",),
+    ),
+    # Issue #325. The OmniRoute Chat Completions transport drops
+    # `reasoningContent` in a multi-turn position; in production it does not
+    # raise, the loop runs on and the turn speaks with its reasoning gone.
+    #
+    # **THE DENOMINATOR IS IN THE SAME SERIES, and that is the whole design of
+    # it.** A counter carrying only the strips cannot separate «no strips» from
+    # «no observation» — both read as an absent series, and this process
+    # restarts two or three times a day with prometheus-client creating label
+    # values lazily. Recording `clean` as well means an absent series says
+    # «nothing multi-turn has run since the last restart» and a present `clean`
+    # with no `stripped` says a real zero. That is the difference between an
+    # instrument and a reassurance.
+    #
+    # It is still NOT the record. This resets on every deploy, and the question
+    # this signal exists to answer («how often, per opportunity, on which path,
+    # and did it move when the model did») spans deploys. `reasoning_strip_log`
+    # in Postgres is the record; see
+    # docs/adr/0013-the-reasoning-strip-is-counted-in-postgres.md.
+    _CounterSpec(
+        "nora_reasoning_strip_total",
+        "CONTINUATION model calls (a call after the first of a turn — the only "
+        "calls the Chat Completions transport can strip reasoning from), by "
+        f"path ({_STRIP_PATHS}) and outcome ({' / '.join(STRIP_OUTCOMES)}). "
+        "Both outcomes are recorded so that an absent series means NO "
+        "OBSERVATION and never a zero. Resets on every restart — "
+        "reasoning_strip_log in Postgres is the durable record (issue #325, "
+        "ADR 0013).",
+        ("path", "outcome"),
+    ),
+    _CounterSpec(
+        "nora_reasoning_strip_writes_total",
+        f"reasoning_strip_log row writes, by outcome ({_WRITE_OUTCOMES}). A "
+        "failed write never costs the turn, so this is the only place the "
+        "record going blind is visible; `impossible` is a row the loop could "
+        "not have produced and is deliberately NOT `failed`, which a database "
+        "blip also produces.",
         ("outcome",),
     ),
 )
@@ -2154,9 +2208,9 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
     # no curator, the notebook only grows, and this is the series that says
     # whether it grows faster than it earns.
     #
-    # LABELLED BY WORKSPACE, which the spec's own name is not, and the label is
+    # LABELLED BY UNIT, which the spec's own name is not, and the label is
     # load-bearing rather than decoration. A note index is keyed on the
-    # WORKSPACE (§3/DEC-105) and this deployment has more than one — `friends`
+    # UNIT (§3/DEC-105) and this deployment has more than one — `friends`
     # and `ridgeline` are separate notebooks that policy says are never paired.
     # An unlabelled gauge is written by whichever room tagged last, so two
     # notebooks would overwrite each other's reading and the exported number
@@ -2174,7 +2228,7 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
     # ABSENT rather than zero when the tier is off, and that distinction is the
     # point: `_notes` returns `()` before this line when no store is wired, so
     # a missing series means «not wired» while `0` means «wired, and this
-    # workspace has written nothing». Those are the two states the tier has
+    # unit has written nothing». Those are the two states the tier has
     # been unable to tell apart since it was switched on, and publishing `0`
     # for both would preserve exactly the blindness this closes.
     #
@@ -2194,7 +2248,7 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
     #   absent + no tags yet      -> nothing has been asked of the tier
     #   absent + tags handled     -> off, or the read failed (see
     #                                `nora_errors_total{stage="notes"}`)
-    #   0                         -> wired, reached, and this workspace is empty
+    #   0                         -> wired, reached, and this unit is empty
     #
     # Recorded here rather than fixed by publishing `0` at startup, which was
     # the tempting fix and is wrong: a zero written before any read is a
@@ -2212,7 +2266,7 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
     # pass level, which the tier's own spec names in advance.
     _GaugeSpec(
         "nora_note_curator_bodies_read",
-        "Note bodies the curator FETCHED on its last tick for a workspace — "
+        "Note bodies the curator FETCHED on its last tick for a unit — "
         "every expired note it read ([notes] max_expired_per_tick, one body "
         "each) and every due-by-revisit_at note it read ([notes] "
         "max_revisits_per_tick, one body each — folded in by the note-curator "
@@ -2224,14 +2278,14 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "because it spends a slot in each cap it occupies. Sitting at a cap "
         "means the pass is reporting 'nothing to do' about notes it never "
         "reached.",
-        ("workspace",),
+        ("unit",),
     ),
     _GaugeSpec(
         "nora_note_index_entries",
-        "Standing notes rendered into <notes> for a workspace on the last tag "
+        "Standing notes rendered into <notes> for a unit on the last tag "
         "it handled. Absent when [notes] is off; 0 means the notebook is "
         "wired and empty.",
-        ("workspace",),
+        ("unit",),
     ),
     # The curator's own view of the same notebook, and deliberately a SECOND
     # series rather than a reuse of the one above: that gauge is written on the
@@ -2244,11 +2298,11 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
     # writer's clock, now the curator's own rather than a second adaptor's.
     _GaugeSpec(
         "nora_note_curator_standing",
-        "Standing notes the curator read for a workspace on its last tick. "
+        "Standing notes the curator read for a unit on its last tick. "
         "0 means the pass ran and the notebook was empty; ABSENT means the "
-        "pass has not run for that workspace at all, which is the distinction "
+        "pass has not run for that unit at all, which is the distinction "
         "that says whether the curator is wired.",
-        ("workspace",),
+        ("unit",),
     ),
 )
 

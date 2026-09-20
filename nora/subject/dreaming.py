@@ -150,7 +150,7 @@ async def _notebook(subject: Subject, workspace: str) -> dict[str, tuple[str, st
     """
     engine = create_sql_engine(subject.database_url)
     try:
-        notes = await SqlNoteStore(engine).standing(workspace=workspace)
+        notes = await SqlNoteStore(engine).standing(unit=workspace)
         return {n.id: (n.title, n.head_revision_id) for n in notes}
     finally:
         await engine.dispose()

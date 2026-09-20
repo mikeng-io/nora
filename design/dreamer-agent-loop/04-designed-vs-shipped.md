@@ -49,12 +49,12 @@ endorsing either: it says the reflection spec's row *becomes* the adaptor's
 tool-subset field, which promotes the two-tool row into the contract rather
 than superseding it.
 
-**(b) The workspace key was chosen for a disclosure reason, in a section that
-never mentions tools.** The fact tier is workspace-keyed because a fact crosses
-rooms within a workspace by design. Nothing in that argument is about
+**(b) The unit key was chosen for a disclosure reason, in a section that
+never mentions tools.** The fact tier is unit-keyed because a fact crosses
+rooms within a unit by design. Nothing in that argument is about
 capability.
 
-**(c) `WORKSPACE_SAFE_TOOLS` applies *because of* `key_kind`.** It was invented
+**(c) `UNIT_SAFE_TOOLS` applies *because of* `key_kind`.** It was invented
 during implementation, is argued only in the decision index and a docstring,
 and **appears in no design document at all.**
 
@@ -88,7 +88,7 @@ field on the tool** and never hand-listed, citing the repo's own pre-DEC-29
 stale-catalogue failure — and then demonstrates the point by omitting four act
 verbs from its own illustrative list.
 
-`WORKSPACE_SAFE_TOOLS` is a hand-list. It is mitigated — a test forces every
+`UNIT_SAFE_TOOLS` is a hand-list. It is mitigated — a test forces every
 read-only tool into one of two buckets by name, so a tool added tomorrow turns
 it red rather than silently joining or silently missing. That mitigation is
 real and should survive. But it exists only in code and a test, in no spec, and
@@ -102,12 +102,12 @@ real blocker is the resolution key, not the wiring. A careful reader who checks
 the stated reason, finds it wrong, and reclassifies would hand a background
 loop a tool that writes ([11-disclosure.md](11-disclosure.md)).
 
-The ceiling's own rationale — *"a workspace has no single room to bind them
+The ceiling's own rationale — *"a unit has no single room to bind them
 to"* — is true of every read tool **as currently built**, and is not a general
 claim. The note read verbs are sometimes offered as the counter-example; they
-are not one. They take a title or a query and **derive** the workspace from
+are not one. They take a title or a query and **derive** the unit from
 `(platform, conversation_id)`, so they need a room exactly as the others do. It
-is the *store port* beneath them that takes a workspace directly. The
+is the *store port* beneath them that takes a unit directly. The
 distinction matters because it is the difference between "this already exists"
 and "this needs building" — see [08-state.md](08-state.md) §10.
 

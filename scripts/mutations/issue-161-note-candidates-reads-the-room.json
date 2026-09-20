@@ -1,16 +1,16 @@
 [
   {
-    "name": "#161 lever 1 — the batch line names the ROOM, not the workspace",
+    "name": "#161 lever 1 — the batch line names the ROOM, not the unit",
     "file": "nora/language/note_candidates.py",
-    "old": "        room = self._label_for(key) or workspace or UNNAMED_ROOM",
-    "new": "        room = workspace or key",
+    "old": "        room = self._label_for(key) or unit or UNNAMED_ROOM",
+    "new": "        room = unit or key",
     "target": "tests/unit/test_note_candidates.py -k every_batch_line_is_attributed_to_the_room"
   },
   {
     "name": "#161 lever 1 — a nameless room renders no conversation id",
     "file": "nora/language/note_candidates.py",
-    "old": "        room = self._label_for(key) or workspace or UNNAMED_ROOM",
-    "new": "        room = self._label_for(key) or workspace or key",
+    "old": "        room = self._label_for(key) or unit or UNNAMED_ROOM",
+    "new": "        room = self._label_for(key) or unit or key",
     "target": "tests/unit/test_note_candidates.py -k no_conversation_id_is_rendered_when_the_room"
   },
   {

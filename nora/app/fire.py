@@ -83,10 +83,12 @@ from nora.agent.prefill import (
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.doctrine.loader import DoctrineStore
+from nora.domain import audience as audience_names
 from nora.domain.blocks import RowStyle, render_rows
 from nora.domain.compute import ComputeJob
 from nora.domain.decision_log import (
     PARTICIPATION_DECISION_WRITERS,
+    PROACTIVE_ACT_DECISION_WRITERS,
     DecisionLogRecorder,
     DecisionRow,
     DecisionWriter,
@@ -145,7 +147,7 @@ log = logging.getLogger("nora.app.fire")
 # takes it. A8 (`docs/runbook.md`) filters on `audience="tag"`, so a fire-turn
 # failure recorded without this would be charged to a <1% budget whose
 # denominator counts only tags.
-AUDIENCE = "heartbeat"
+AUDIENCE = audience_names.HEARTBEAT
 
 # §8.1's four outcomes. The heartbeat derives the ROW's terminal state from the
 # string (`_state_for`: only `sent` is DONE), so these are not log text —
@@ -197,7 +199,7 @@ FAILED_ERROR = "failed_error"
 # the §6 healthy default, counted on `nora_participation_silence_total`, never
 # on `nora_silent_failures_total`. A reminder that says nothing is broken; a
 # participation turn that says nothing is working.
-PARTICIPATION_AUDIENCE = "participation"
+PARTICIPATION_AUDIENCE = audience_names.PARTICIPATION
 SILENT = "silent"
 
 # The proactive occasion's audience (design/dreamer-agent-loop/39 D4/D12,
@@ -208,7 +210,23 @@ SILENT = "silent"
 # and participation's, and a turn that ends without speaking answers
 # `SILENT`, the same healthy default participation has and the heartbeat
 # cannot.
-PROACTIVE_AUDIENCE = "proactive"
+PROACTIVE_AUDIENCE = audience_names.PROACTIVE
+
+# WHICH OCCASIONS READ THE SHARED DECISION LOG, AND WITH WHICH WRITERS — one
+# statement, because they are one decision (`_read_decisions`). A kind absent
+# from this mapping renders no `<loop_decisions>` block at all: the reminder
+# and gathering occasions were decided when their row was written and are not
+# weighing whether to take a floor, so the read would cost a query and change
+# nothing.
+#
+# Both values are `nora.domain.decision_log`'s own constants and neither is
+# spelled out here, so the writers a query asks for and the deciders the
+# block's note glosses cannot drift apart — the module's own rule, and the
+# reason those constants exist at all.
+_DECISION_WRITERS_BY_KIND: dict[str, tuple[DecisionWriter, ...]] = {
+    "participation": PARTICIPATION_DECISION_WRITERS,
+    "proactive": PROACTIVE_ACT_DECISION_WRITERS,
+}
 
 # The §10.6 shadow mirror's audience label: the mirror IS a send (it goes
 # through `deliver.build` and every guard that carries), but it is operator
@@ -217,7 +235,7 @@ PROACTIVE_AUDIENCE = "proactive"
 # as a live send on `nora_participation_spoke_total` (that counter moves only
 # on the live path below; the mirror has its own Deliverer and never touches
 # it).
-SHADOW_AUDIENCE = "participation-shadow"
+SHADOW_AUDIENCE = audience_names.SHADOW
 # The Relevance Gate's review surface (design/dreamer-agent-loop/36 §4). A
 # SECOND shadow audience and not a reuse of the one above, because the two
 # mirror different things and an operator reading a dashboard must be able to
@@ -225,7 +243,7 @@ SHADOW_AUDIENCE = "participation-shadow"
 # (a turn ran), `relevance-gate-shadow` carries what the gate ADMITTED (no
 # turn ran at all). Collapsing them would make "the gate let 40 windows
 # through" and "she drafted 40 replies" the same number.
-GATE_SHADOW_AUDIENCE = "relevance-gate-shadow"
+GATE_SHADOW_AUDIENCE = audience_names.GATE_SHADOW
 
 # How a recurrence reads in the fire header. English prose, like the rest of the
 # header: the header is the SITUATION she is told about, and `doctrine` decides
@@ -732,6 +750,7 @@ class FirePath:
         preview_source: LinkPreviewSource | None = None,
         llm_state: Any = None,
         tool_call_log_store: ToolCallLogStore | None = None,
+        reasoning_strip_store: Any = None,
         event_registry: Mapping[str, EventFactory] | None = None,
         standing: StandingStore | None = None,
         standing_store_timeout_seconds: float = DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
@@ -813,9 +832,9 @@ class FirePath:
         # until an operator enables it.
         #
         # `policy` is here for exactly one read: the tier is keyed on
-        # `Conversation.workspace` (DEC-105), so scoping it needs the same
+        # `Conversation.unit` (DEC-105), so scoping it needs the same
         # `Policy` instance the assembler holds — a fire path with its own
-        # idea of a room's workspace would render another social unit's notes
+        # idea of a room's unit would render another social unit's notes
         # into this one. `None` keeps the tier inert, the pre-wiring shape
         # every test construction site has.
         self._notes = notes
@@ -884,6 +903,11 @@ class FirePath:
         # this path exactly as inert as it already is for a deployment that
         # has not wired one.
         self._tool_call_log_store = tool_call_log_store
+        # Issue #325's durable half. Optional and inert when `None`, exactly
+        # like `tool_call_log_store` above — the participation occasion is one
+        # of the two paths the watch labels, and this is where its rows come
+        # from.
+        self._reasoning_strip_store = reasoning_strip_store
         # The participation occasion's runner (design/dreamer-agent-loop/35):
         # the SAME AgentRunner shape composed with `tool_choice="auto"` —
         # the determination may end in silence, which `required` (the tag
@@ -1013,17 +1037,17 @@ class FirePath:
                     "nora_errors_total", stage="fire_peer_card", platform=occasion.platform,
                 )
 
-        # The workspace-keyed tier resolves the workspace ONCE per turn, and
+        # The unit-keyed tier resolves the unit ONCE per turn, and
         # the read is skipped entirely when it is not wired (the dormant
         # default must not count a gap it does not have).
         # Resolved ONCE per turn and now read by two tiers, so the `notes`
         # guard is no longer the whole condition: the decision log is
-        # workspace-scoped too (issue #199), and a turn that skipped the
+        # unit-scoped too (issue #199), and a turn that skipped the
         # lookup because the note tier was off would render no decisions block
         # for a reason unrelated to decisions.
-        workspace: str | None = None
+        unit: str | None = None
         if self._notes is not None or self._decisions is not None:
-            workspace = self._workspace_for(occasion)
+            unit = self._unit_for(occasion)
 
         # Issue #210 — read AFTER the transcript, because both reads are
         # curated to the window's own text and keyed on the people in it.
@@ -1039,8 +1063,8 @@ class FirePath:
             self_card=self_card,
             people_in_window=people,
             standing=await self._read_standing(occasion),
-            notes=await self._read_notes(occasion, workspace),
-            decisions=await self._read_decisions(occasion, workspace),
+            notes=await self._read_notes(occasion, unit),
+            decisions=await self._read_decisions(occasion, unit),
         )
 
     async def _read_memory(
@@ -1058,14 +1082,21 @@ class FirePath:
         behind a blind gate rendered NO memory block at all: it knew the people
         in the window by display name.
 
-        **Participation only, and the restriction is the decision** —
-        `_read_decisions`' argument, and it applies more sharply here because
-        this costs Honcho round trips rather than one SQL read. A reminder or a
-        gathering firing was decided when its row was written; a proactive act
-        turn already holds the decide pass's own index. This is the turn
-        deciding whether to speak into a room nobody addressed her in, which is
-        the only fire occasion for which «what do I know about these people»
-        changes the answer.
+        **Participation only, and the restriction is the decision** — the
+        narrow half of `_read_decisions`' argument, and it stays narrow here
+        after that method widened to the proactive act turn (2026-09-17),
+        because the two reads answer different questions at different prices.
+        A reminder or a gathering firing was decided when its row was written,
+        so neither reads either. The proactive act turn now reads the decision
+        log, because «the loop already took this floor 31 minutes ago» is a
+        fact about the ROOM that its own decide-pass index cannot carry — but
+        it still does not read memory, because «what do I know about these
+        people» is research the decide pass already did, at Honcho round trips
+        rather than one SQL read, and design 39's whole split is research at
+        decide time and the room at act time. This is the turn deciding
+        whether to speak into a room nobody addressed her in AND holding no
+        earlier pass of its own, which is what makes the memory read change
+        the answer here and nowhere else.
 
         **Fail-soft in three separate places, which is three states and not
         one.** Each read catches and counts on its OWN stage — an operator
@@ -1228,49 +1259,66 @@ class FirePath:
         return tuple(rows)
 
     async def _read_decisions(
-        self, occasion: Event, workspace: str | None,
+        self, occasion: Event, unit: str | None,
     ) -> tuple[tuple[str, tuple[DecisionRow, ...]], ...]:
-        """What her PROACTIVE half already did across this WORKSPACE, for the
-        participation turn only (issue #199). `(room label, rows)` groups.
+        """What her AMBIENT LOOP already did across this UNIT, for the two
+        occasions that decide whether to take a floor nobody offered them
+        (issue #199; the proactive act turn added 2026-09-17). `(room label,
+        rows)` groups.
 
-        **Workspace-scoped, and «this room» would have missed the incident it
-        exists for.** A `kind="proactive"` row fires into the workspace's home
+        **Unit-scoped, and «this room» would have missed the incident it
+        exists for.** A `kind="proactive"` row fires into the unit's home
         room and nowhere else (39 D2/D3); on 2026-09-10 that was a Discord
         room while the thread was on Signal. A participation turn in the
         Signal room reading «this room, last 24 hours» sees nothing and speaks
         anyway. The room a decision was made in is rendered as its policy
         LABEL instead, which is what a reader actually needs from it.
 
-        **Participation only, and the restriction is the decision.** This is
-        the turn deciding whether to speak into a room nobody addressed her in,
-        so «she raised this two hours ago in another room» is the fact that
-        changes the answer. A reminder or a gathering firing was decided when
-        its row was written; handing it this block would cost a read and change
-        nothing.
+        **Two occasions, and the restriction is still the decision.** Both are
+        turns deciding whether to speak into a room nobody addressed her in, so
+        «she raised this two hours ago in another room» is the fact that changes
+        the answer. A reminder or a gathering firing was decided when its row
+        was written and is not weighing the floor at all; handing it this block
+        would cost a read and change nothing.
 
-        **Her own participation rows are excluded.** A turn reading back its
-        own last verdict is a turn agreeing with itself, and on the ambient
-        path that is the direction design 35's silence bias already leans. The
-        tag rows are excluded too: a tag is somebody asking, so what it
-        answered belongs in the transcript underneath, where it already is.
+        **The proactive act turn was excluded here until 2026-09-17, and the
+        exclusion is what shipped that day's duplicate** (msgs 5450/5455). The
+        docstring's own argument for it — «a proactive act turn already holds
+        the decide pass's own index» — is true and answers the wrong question.
+        The decide pass's index is what she MEANT TO RAISE. It says nothing
+        about what the loop has since DONE, and on that day two rows about two
+        notes came due 30 minutes apart: the first turn raised both (it reads
+        `<notes>`, which lists both), the second raised the second one again.
+        Its window carried the first message — as an unlabelled line of her own
+        speech, with nothing marking it as a raise she had just made. This
+        block is what marks it.
 
-        **A turn with no workspace renders NO block, rather than falling back
-        to this room.** No workspace is the wiring gap `_workspace_for` already
+        **Each occasion gets its own writer set** (`decision_log`'s constants,
+        which carry the reasoning): participation excludes its own verdicts,
+        the act turn excludes `proactive_decide` — the deliberation that
+        produced this very turn, already in front of her in the header — and
+        reads `proactive_act`, which is the sibling-row fact it exists for.
+        Neither reads `tag`: a tag is somebody asking, so what it answered
+        belongs in the transcript underneath, where it already is.
+
+        **A turn with no unit renders NO block, rather than falling back
+        to this room.** No unit is the wiring gap `_unit_for` already
         refuses to guess past, and a narrower read presented under a block that
         says «across this group» would be a claim the rows cannot support.
 
-        Fail-soft with no `except` here — `DecisionLogRecorder.read_workspace`
+        Fail-soft with no `except` here — `DecisionLogRecorder.read_unit`
         answers `()` on every failure and counts it. `None` is the dormant
         default.
         """
-        if (
-            self._decisions is None
-            or occasion.kind != "participation"
-            or not workspace
-        ):
+        # A MAPPING, not a chain of `or`s: the set a turn reads with IS the
+        # decision, and a lookup that answers `None` for an unlisted kind makes
+        # «this occasion does not read the log» and «this occasion reads it
+        # with these writers» one statement instead of two that can disagree.
+        writers = _DECISION_WRITERS_BY_KIND.get(occasion.kind)
+        if self._decisions is None or writers is None or not unit:
             return ()
-        rows = await self._decisions.read_workspace(
-            platform=occasion.platform, workspace=workspace,
+        rows = await self._decisions.read_unit(
+            platform=occasion.platform, unit=unit,
             # In the QUERY, never a filter over what came back. The bound is 20
             # rows, so a post-filter could let one busy writer's rows evict
             # every other decider's — silently, in exactly the busy room where
@@ -1278,7 +1326,7 @@ class FirePath:
             #
             # The SAME constant `build_prefill` hands the renderer, so the
             # block's note names exactly the deciders the query asked for.
-            writers=PARTICIPATION_DECISION_WRITERS,
+            writers=writers,
         )
         return tuple((self._room_label(row), (row,)) for row in rows)
 
@@ -1295,17 +1343,17 @@ class FirePath:
             return ""
         return convo.label if convo is not None else ""
 
-    def _workspace_for(self, occasion: Event) -> str | None:
-        """The workspace this occasion's room belongs to, or `None`.
+    def _unit_for(self, occasion: Event) -> str | None:
+        """The unit this occasion's room belongs to, or `None`.
 
-        The workspace-keyed tier scopes through the SAME `Policy` read the
+        The unit-keyed tier scopes through the SAME `Policy` read the
         tag path's own note prefill uses (`nora.engagement.context.
         TranscriptInjection._notes`, DEC-105): two readers each carrying
-        their own idea of a room's workspace disagree the first time a
+        their own idea of a room's unit disagree the first time a
         deployment runs two social units.
 
         `None` — a store wired but no `Policy` or no `Conversation` for the
-        room — is a WIRING GAP, not an empty tier: guessing a workspace would
+        room — is a WIRING GAP, not an empty tier: guessing a unit would
         render another unit's notes into this room. Counted, because a
         block missing for the life of a deployment with nothing saying so is
         how `_peer_card`'s `nora_peer_card_empty_total` lesson was bought.
@@ -1325,43 +1373,43 @@ class FirePath:
             # `_peer_card`'s `nora_peer_card_empty_total` lesson was bought.
             log.exception(
                 "policy conversation read failed for %s/%s — the note "
-                "tier cannot be scoped to a workspace; continuing without it",
+                "tier cannot be scoped to a unit; continuing without it",
                 occasion.platform, occasion.conversation_id,
             )
             self._metrics.inc(
-                "nora_errors_total", stage="fire_workspace",
+                "nora_errors_total", stage="fire_unit",
                 platform=occasion.platform,
             )
             return None
         if convo is None:
             log.warning(
                 "no policy conversation for %s/%s — the note tier cannot "
-                "be scoped to a workspace; continuing without it",
+                "be scoped to a unit; continuing without it",
                 occasion.platform, occasion.conversation_id,
             )
             self._metrics.inc(
-                "nora_errors_total", stage="fire_workspace",
+                "nora_errors_total", stage="fire_unit",
                 platform=occasion.platform,
             )
             return None
-        return convo.workspace
+        return convo.unit
 
     async def _read_notes(
-        self, occasion: Event, workspace: str | None,
+        self, occasion: Event, unit: str | None,
     ) -> tuple[Note, ...]:
         """The standing note index, `TranscriptInjection._notes` mirrored.
 
         Fail-SOFT and COUNTED, the same three states: no store is the dormant
-        default (not an error, not counted); no workspace is the wiring gap
+        default (not an error, not counted); no unit is the wiring gap
         above (counted there, once); a FAILED read is neither — a thinner
         prompt beats a reminder that does not fire, but a note index that
         exists and could not be fetched reported as «there are none» is the
         `unavailable`-as-`nothing_found` substitution R-27 exists to prevent.
         """
-        if self._notes is None or workspace is None:
+        if self._notes is None or unit is None:
             return ()
         try:
-            return tuple(await self._notes.standing(workspace=workspace))
+            return tuple(await self._notes.standing(unit=unit))
         except Exception:
             log.exception("fire note-index read failed; continuing without it")
             self._metrics.inc(
@@ -1689,6 +1737,7 @@ class FirePath:
                 audience=audience,
                 cacheable_tools=self._registry.cacheable_tools(),
                 tool_call_log_store=self._tool_call_log_store,
+                reasoning_strip_store=self._reasoning_strip_store,
                 # The participation SEND cooldown (§10.3). True on every other
                 # occasion — the heartbeat has no cooldown, and this keyword's
                 # whole reason for travelling through `deliver.build` rather
@@ -1782,6 +1831,7 @@ class FirePath:
             failure, stop_reason, final_text = await self._invoke(
                 doctrine=doctrine, tools=tools, pre_fill=pre_fill,
                 guard=handle.guard, tool_call_log=handle.tool_call_log,
+                reasoning_watch=handle.reasoning_watch,
                 tag_message=tag_message, ctx=ctx,
                 platform=occasion.platform, deliverer=handle.deliverer,
                 participation=participation, proactive=proactive,
@@ -1932,6 +1982,7 @@ class FirePath:
         pre_fill: list[dict[str, Any]],
         guard: ReplyGuard,
         tool_call_log: Any = None,
+        reasoning_watch: Any = None,
         tag_message: str,
         ctx: TagContext,
         platform: str,
@@ -2008,7 +2059,7 @@ class FirePath:
             stop_reason, final_text, _trace = await asyncio.wait_for(
                 runner.invoke(
                     doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
-                    tool_call_log=tool_call_log,
+                    tool_call_log=tool_call_log, reasoning_watch=reasoning_watch,
                     tag_message=tag_message, limits=self._limits, ctx=ctx,
                     trace_attributes=trace_attributes(ctx, doctrine),
                 ),
@@ -2040,6 +2091,21 @@ class FirePath:
                 "nora_llm_latency_seconds", time.perf_counter() - started,
                 audience=audience,
             )
+        # AFTER the try/finally and before anything is recovered or delivered,
+        # for `nora.engagement.stages.invoke.run`'s reason: a fire turn that
+        # timed out or raised still writes what its loop had already done, and
+        # awaiting inside a `finally` on a cancelled task re-raises out of the
+        # cleanup path. `flush` is idempotent, swallows its own exceptions and
+        # no-ops when the loop never went multi-turn.
+        #
+        # BOUNDED INSIDE `flush`, and the rule is `_standing_store_timeout_
+        # seconds` in this class's own `__init__` — the heartbeat holds this
+        # conversation's slot around the whole fire turn, and an unbounded
+        # store await here wedges it exactly as the unbounded read in
+        # `debrief.run` did. That was the second instance; this line was the
+        # third, shipped unbounded and caught in review (#325).
+        if reasoning_watch is not None:
+            await reasoning_watch.flush()
         if stop_reason is not None:
             self._metrics.inc(
                 "nora_llm_stop_reason_total", reason=stop_reason, audience=audience,
@@ -2258,6 +2324,7 @@ class FirePath:
                 composer=None,
                 cacheable_tools=self._registry.cacheable_tools(),
                 tool_call_log_store=self._tool_call_log_store,
+                reasoning_strip_store=self._reasoning_strip_store,
                 # The mirror is not subject to the room's participation
                 # cooldown — it is how a cooldown-HELD message is reviewed at
                 # all, so holding the mirror too would hide exactly that case.
@@ -2360,6 +2427,7 @@ class FirePath:
                 composer=None,
                 cacheable_tools=self._registry.cacheable_tools(),
                 tool_call_log_store=self._tool_call_log_store,
+                reasoning_strip_store=self._reasoning_strip_store,
                 send_permitted=True,
             )
             posted = await handle.deliverer.deliver(
@@ -2557,6 +2625,22 @@ def _synthetic_message(
 
     `sender_name` falls back to `Event.speaker` when no `PersonRef` resolved,
     so a turn nobody asked for still names the author of the words it carries.
+
+    **`voice` is left at its `False` default, DELIBERATELY** (operator,
+    2026-09-17). Every occasion that reaches here — a reminder, a proactive
+    row, a participation turn, a version announcement, the destination half of
+    `send_to` — goes out as TEXT, even when the request that created it was
+    SPOKEN. A reminder asked for aloud at 14:00 arrives as a message in the
+    room at 20:00.
+
+    That is a decision, not an oversight, and it needs saying because it
+    changed shape under §12.2's reversal. While speech had a room of its own,
+    the occasion carried that room's id and `adapter.send` routed on the ROOM,
+    so everything into it was spoken. The routing key is the TURN now, so this
+    default is what decides the surface — and the operator's answer was that a
+    deferred reply can always be a text message. Speaking unprompted into a
+    voice channel is a much larger claim than answering a question that was
+    just asked in one.
     """
     return NormalizedMessage(
         platform=occasion.platform,

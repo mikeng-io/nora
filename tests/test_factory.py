@@ -377,8 +377,17 @@ def test_the_dream_agent_takes_none_of_the_tag_paths_welded_parameters():
 
     params = set(inspect.signature(factory.create_dream_agent).parameters)
     assert params.isdisjoint({"pre_fill", "skills_dir", "tool_call_log"})
+    # `reasoning_watch` (issue #325) is the one parameter BOTH constructors
+    # take, and it is admitted here rather than excluded because it is not a
+    # tag-path concern that leaked: it observes the request shape the Chat
+    # Completions transport strips reasoning from, which is a property of the
+    # TRANSPORT and belongs to every loop that speaks through it. The Dreamer
+    # is in fact the path most exposed to it as of 2026-09-17 — see
+    # `docs/adr/0013-the-reasoning-strip-is-counted-in-postgres.md`. The three
+    # names above stay unspellable; this one is deliberately spellable on both.
     assert params == {"model", "system_prompt", "tools", "guard",
-                      "trace_attributes", "retry", "agent_name"}
+                      "reasoning_watch", "trace_attributes", "retry",
+                      "agent_name"}
 
 
 def test_the_dream_agent_is_named_apart_from_her_turns():

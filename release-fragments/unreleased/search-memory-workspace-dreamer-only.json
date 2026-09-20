@@ -1,0 +1,17 @@
+{
+  "type": "security",
+  "summary": "`search_memory_workspace` no longer appears in any room's tool catalog. It returns verbatim lines from every unit at once, and its own code said it was Dreamer-only while it shipped to every tag turn.",
+  "details": [
+    "The verb calls Honcho's workspace `/search` with no conversation id, so its reach is the whole deployment — every unit — and the only filter is identity.toml's entire address book. `PersonRef` carries no unit, so that filter cannot be made unit-shaped without new identity data.",
+    "Its own body carried the justification «this verb exists for the Dreamer, whose output is verdicts, never a quote into any room». It sat in `build_tool_specs`' unconditional list, so every tag and every fire turn carried it, in every room. A room whose policy entry names one unit could surface words said by people in none of its units — the crossing `send_to` refuses outright (R-49), and the one R-21 exists because of.",
+    "Gated on `dream_adaptor`, the provenance that already means «`RegistryToolSource` built this set» and is empty for every tag and fire turn. `room is None` keeps the registry-table caller's full declared surface, the same exception the Discord-only music verbs take. `build_tools` now forwards `dream_adaptor` rather than defaulting it away.",
+    "Measured before removing it (Langfuse, 2026-09-03 to 09-18): 49 calls across 17 traces — 44 from Dreamer paths, 5 across 3 `engagement` traces. The tag path loses roughly three turns a fortnight; the Dreamer keeps the verb unchanged.",
+    "Found by a subagent audit of the unit/workspace boundary opened by the rename in the same release. The rename changed no scope — it made the two senses separable enough for the gap to be visible."
+  ],
+  "limitations": [
+    "The name is still `search_memory_workspace`, and under the convention the rename set — Honcho's word survives only inside `nora/infra/honcho/` — that reads narrower than what it does. Renaming it is a prompt change and gets measured, not eyeballed.",
+    "`tool_subset_faults` still has no axis for scope ABOVE a unit: its two questions are read-vs-act and room-scoped-vs-unit-safe, and a deployment-scoped verb answers «no, I need no room» exactly as a unit-scoped one does. This change closes the tag half at the catalog; the missing axis is recorded at `UNIT_SAFE_TOOLS` and not built.",
+    "Unit isolation on the Honcho tier is otherwise unchanged and still absent by decision: `about` and `ask_memory` read the whole workspace and are bounded on the SUBJECT by the room roster, never on the content. A conclusion's text naming a non-member is not filtered.",
+    "Nothing measures whether the Dreamer's use of the verb is worth its 4-call budget; only that it is where the calls come from."
+  ]
+}

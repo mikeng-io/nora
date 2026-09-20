@@ -2,8 +2,8 @@
   {
     "name": "#235 the staging key's schema declaration carries the normalised title",
     "file": "nora/infra/sql/schema.py",
-    "old": "    NOTE_CANDIDATE.c.workspace, NOTE_CANDIDATE.c.anchor_date,\n    NOTE_CANDIDATE.c.anchor_entity_ids,\n    sa.text(\"lower(btrim(title))\"),\n    unique=True, postgresql_where=sa.text(\"kind = 'create'\"),",
-    "new": "    NOTE_CANDIDATE.c.workspace, NOTE_CANDIDATE.c.anchor_date,\n    NOTE_CANDIDATE.c.anchor_entity_ids,\n    unique=True, postgresql_where=sa.text(\"kind = 'create'\"),",
+    "old": "    NOTE_CANDIDATE.c.unit, NOTE_CANDIDATE.c.anchor_date,\n    NOTE_CANDIDATE.c.anchor_entity_ids,\n    sa.text(\"lower(btrim(title))\"),\n    unique=True, postgresql_where=sa.text(\"kind = 'create'\"),",
+    "new": "    NOTE_CANDIDATE.c.unit, NOTE_CANDIDATE.c.anchor_date,\n    NOTE_CANDIDATE.c.anchor_entity_ids,\n    unique=True, postgresql_where=sa.text(\"kind = 'create'\"),",
     "target": "tests/infra/test_schema_parity.py -k test_the_metadata_matches_the_migrated_database"
   },
   {

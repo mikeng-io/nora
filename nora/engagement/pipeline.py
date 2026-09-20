@@ -89,6 +89,7 @@ from nora.agent.prefill import (
 )
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
+from nora.domain import audience as audience_names
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.ports import (
     EngagementRequest,
@@ -210,6 +211,7 @@ class EngagementPipeline:
         rosters: Mapping[str, RosterSource] | None = None,
         preview_source: LinkPreviewSource | None = None,
         tool_call_log_store: ToolCallLogStore | None = None,
+        reasoning_strip_store: Any = None,
         tag_trace_store: Any = None,
         debrief_wiring: debrief.Wiring | None = None,
         decisions: DecisionLogRecorder | None = None,
@@ -293,6 +295,12 @@ class EngagementPipeline:
         # `None` store as fully inert, same shape as `roster_source`/
         # `preview_source` above.
         self._tool_call_log_store = tool_call_log_store
+        # Issue #325's durable half (`reasoning_strip_log`, migration 0057).
+        # Same optional-collaborator shape as `tool_call_log_store` above:
+        # `None` leaves `deliver.build`'s `ReasoningStripWatch` counting in
+        # Prometheus and writing no row, which is what every offline/eval
+        # composition gets.
+        self._reasoning_strip_store = reasoning_strip_store
         # The reasoning-continuity retention store (spec
         # docs/superpowers/specs/2026-08-20-reflection-reasoning-continuity-design.md
         # §6/§7.4, Task 6). `None` in every offline/eval composition and any
@@ -528,7 +536,7 @@ class EngagementPipeline:
                 store=wiring.store,
             store_verdict=wiring.store_verdict,
             notes_sink=wiring.notes_sink,
-            workspace_of=wiring.workspace_of,
+            unit_of=wiring.unit_of,
                 client=wiring.client,
                 objective=wiring.objective,
                 metrics=self._metrics,
@@ -671,9 +679,10 @@ class EngagementPipeline:
                 conversation_id=msg.conversation_id,
                 budgets=self._tool_registry.budgets(allowed_mcp=allowed_mcp),
                 terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,
-                audience="tag",
+                audience=audience_names.TAG,
                 cacheable_tools=self._tool_registry.cacheable_tools(),
                 tool_call_log_store=self._tool_call_log_store,
+                reasoning_strip_store=self._reasoning_strip_store,
                 # The outbound decoration stage (@-mentions + a link preview
                 # card). ONE per turn, holding the same `roster_source` the
                 # room-scoped tools use — so a mention is confirmed against the
@@ -770,12 +779,17 @@ class EngagementPipeline:
                 ok, llm_elapsed, stop_reason, final_text, trace = await invoke.run(
                     runner=self._runner, doctrine=doctrine, tools=tools, pre_fill=pre_fill,
                     guard=handle.guard, tool_call_log=handle.tool_call_log,
+                    reasoning_watch=handle.reasoning_watch,
                     tag_message=tag_message, limits=self._limits, ctx=ctx,
                     timeout_seconds=self._timeout_seconds, metrics=self._metrics,
-                    # This pipeline IS the tag path; the literal stays at the
-                    # call site rather than as a default so an omitted one
-                    # cannot compile (the A8 filter is `audience="tag"`).
-                    audience="tag",
+                    # This pipeline IS the tag path; the NAME stays at the
+                    # call site rather than becoming a default so an omitted
+                    # one cannot compile (the A8 filter is `audience="tag"`).
+                    # It is `nora.domain.audience.TAG` rather than a literal
+                    # since 2026-09-17: `reasoning_strip_log.path` reads the
+                    # same vocabulary, and it shipped documenting four of the
+                    # values and carrying five.
+                    audience=audience_names.TAG,
                 )
                 # Inside the `with`, so it lands on the invoke span rather than
                 # on the turn: `ok` and `stop_reason` are what this stage

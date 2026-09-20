@@ -125,7 +125,7 @@ cases:
     
       persons = "*"
     
-      workspace = "ridgeline"
+      unit = "ridgeline"
     
       proactive = true
     
@@ -141,7 +141,7 @@ cases:
     
       persons = "*"
     
-      workspace = "ridgeline"
+      unit = "ridgeline"
     
       proactive = true
     
@@ -186,7 +186,7 @@ cases:
     
       persons = "*"
     
-      workspace = "friends"
+      unit = "friends"
     
       proactive = true
     
@@ -233,7 +233,7 @@ cases:
     
       persons = "*"
     
-      workspace = "friends"
+      unit = "friends"
     
       proactive = true
     
@@ -286,7 +286,7 @@ cases:
     
       persons = "*"
     
-      workspace = "friends"
+      unit = "friends"
     
       proactive = true
     
@@ -328,7 +328,7 @@ cases:
     
       persons = "*"
     
-      workspace = "friends"
+      unit = "friends"
     
       proactive = true
     
@@ -369,7 +369,7 @@ cases:
     
       persons = "*"
     
-      workspace = "friends"
+      unit = "friends"
     
       proactive = true
     
@@ -411,7 +411,7 @@ cases:
     
       persons = "*"
     
-      workspace = "friends"
+      unit = "friends"
     
       proactive = true
     
@@ -424,7 +424,7 @@ cases:
     - signal
     - friends-sig
 
-  - name: d08_empty_workspace
+  - name: d08_empty_unit
     entry: dreamer
     category: proactive
     expect: none
@@ -445,7 +445,7 @@ cases:
     
       persons = "*"
     
-      workspace = "wedding"
+      unit = "wedding"
     
       proactive = true
     
@@ -490,7 +490,7 @@ cases:
     
       persons = "*"
     
-      workspace = "ridgeline"
+      unit = "ridgeline"
     
       proactive = true
     
@@ -538,7 +538,7 @@ cases:
     
       persons = "*"
     
-      workspace = "friends"
+      unit = "friends"
     
       proactive = true
     
@@ -586,7 +586,7 @@ cases:
     
       persons = "*"
     
-      workspace = "friends"
+      unit = "friends"
     
       proactive = true
     

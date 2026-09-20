@@ -64,8 +64,8 @@ class StandingNotesReader(Protocol):
     than trusts, exactly as `_peer_card` does for a port that DOES promise it.
     """
 
-    async def standing(self, *, workspace: str) -> tuple[Note, ...]:
-        """Every note in `workspace` that has not been retired. Uncapped by
+    async def standing(self, *, unit: str) -> tuple[Note, ...]:
+        """Every note in `unit` that has not been retired. Uncapped by
         design (§5.1): a note missing from the index is invisible to her, and
         invisible is indistinguishable from absent."""
         ...
@@ -103,13 +103,13 @@ class TranscriptInjection:
         # already uses to disable the self/tagger card reads below, kept OFF
         # rather than raising so existing call sites keep working unchanged.
         self._notes_store = notes
-        # policy.toml, ONLY so `_notes` can name the workspace a room belongs
-        # to (`Conversation.workspace`, DEC-105). Nothing else in this class
+        # policy.toml, ONLY so `_notes` can name the unit a room belongs
+        # to (`Conversation.unit`, DEC-105). Nothing else in this class
         # reads it, and nothing here decides admission — by the time a tag
         # reaches the assembler ingest has already applied the allowlist
-        # (DEC-18). Passing the Policy rather than a resolved workspace string
+        # (DEC-18). Passing the Policy rather than a resolved unit string
         # is what keeps this correct once a deployment runs two social units:
-        # the workspace is a property of the ROOM, resolved per message.
+        # the unit is a property of the ROOM, resolved per message.
         self._policy = policy
         # Standing (design/dreamer-agent-loop/26-standing.md). `None` while
         # `[standing] enabled = false`, the same "not yet wired" shape its five
@@ -126,7 +126,7 @@ class TranscriptInjection:
         #
         # It is keyed `(platform, conversation_id)` and needs no `Policy`,
         # unlike `notes`: a position is held in a room, not shared
-        # across a workspace's rooms, so there is no workspace to resolve.
+        # across a unit's rooms, so there is no unit to resolve.
         self._standing_store = standing
         # THE MEDIA JOIN (issue #116). `messages.body` carries `[image a3f2c1]`
         # and nothing more; the comprehension lives in `media_objects`, and the
@@ -166,7 +166,7 @@ class TranscriptInjection:
         # knowledge tier, which put the count back inside the typed overloads,
         # so the nesting had nothing left to buy.
         #
-        # `_notes` is the one read scoped by WORKSPACE rather than by room, and
+        # `_notes` is the one read scoped by UNIT rather than by room, and
         # it is gathered beside the rest anyway — where a read is scheduled says
         # nothing about what it is keyed on.
         (
@@ -308,7 +308,7 @@ class TranscriptInjection:
 
         The `representation` verb with `target=None`, i.e. observer==observed —
         her own model of herself, built from what she has said in this
-        workspace. NOT `peer_card`: the card renders the same history as
+        Honcho workspace. NOT `peer_card`: the card renders the same history as
         IDENTITY claims, and hers currently asserts «Kind: AI chatbot/assistant»
         and an owner with «admin authority», both of which contradict
         `identity.md` and would win on injection because a learned claim reads
@@ -351,11 +351,11 @@ class TranscriptInjection:
         (`design/dreamer-agent-loop/26-standing.md` §4).
 
         **Keyed `(platform, conversation_id)`** — S4, and unlike `_notes`
-        beside it there is no workspace to resolve and no `Policy` read
-        here at all. A position is held in a room. Two rooms in one workspace
-        share what the workspace has not settled (notes); they do not share
+        beside it there is no unit to resolve and no `Policy` read
+        here at all. A position is held in a room. Two rooms in one unit
+        share what the unit has not settled (notes); they do not share
         where a conversation had got to, and keying
-        this on the workspace would have one room's position rewritten by
+        this on the unit would have one room's position rewritten by
         another room's turn.
 
         Three states, and they are deliberately not three: **no store** is
@@ -386,13 +386,13 @@ class TranscriptInjection:
     async def _notes(self, msg: NormalizedMessage) -> tuple[Note, ...]:
         """The standing note index (2026-08-21 note-tier design §5.1).
 
-        **KEYED ON THE WORKSPACE, NOT THE ROOM — the one read in this class
+        **KEYED ON THE UNIT, NOT THE ROOM — the one read in this class
         that is.** Every sibling above passes `msg.conversation_id`; this one
-        passes `Conversation.workspace`, and the difference is deliberate
+        passes `Conversation.unit`, and the difference is deliberate
         rather than an oversight to be tidied up later. §3/DEC-105: rooms
-        sharing a workspace are ONE social unit — the boundary `send_to`
+        sharing a unit are ONE social unit — the boundary `send_to`
         already relays across — so a note raised in the group's Discord channel
-        belongs in its Signal room's index too, and `policy.toml`'s workspace
+        belongs in its Signal room's index too, and `policy.toml`'s unit
         key is what keeps a different social unit's notes out. `established_in`
         (the room a note was born in) is a routing key for promotion, never a
         filter on who sees it.
@@ -406,10 +406,10 @@ class TranscriptInjection:
           and went with their tier on 2026-09-07 (see the gather's own note
           above).
         - **No `Conversation` for this room** — a store is wired but there is
-          no workspace to scope it by. That is a WIRING GAP (engagement and
+          no unit to scope it by. That is a WIRING GAP (engagement and
           ingest disagreeing about which `Policy` they hold — see
           `EngagementPipeline`'s own `convo is not None` note), so it defaults
-          safely AND is counted: guessing a workspace would render another
+          safely AND is counted: guessing a unit would render another
           unit's notes into this room, and staying silent about it is how a
           block goes missing for the life of a deployment (`_peer_card`'s
           `nora_peer_card_empty_total` was bought with exactly that lesson).
@@ -431,14 +431,14 @@ class TranscriptInjection:
         if convo is None:
             log.warning(
                 "no policy conversation for %s/%s — the note index cannot be "
-                "scoped to a workspace; continuing without it",
+                "scoped to a unit; continuing without it",
                 msg.platform, msg.conversation_id,
             )
             self._metrics.inc(
                 "nora_errors_total", stage="notes", platform=msg.platform)
             return ()
         try:
-            standing = await self._notes_store.standing(workspace=convo.workspace)
+            standing = await self._notes_store.standing(unit=convo.unit)
         except Exception:
             log.exception("note-index read failed; continuing without it")
             self._metrics.inc(
@@ -461,5 +461,5 @@ class TranscriptInjection:
         # gap already has `nora_errors_total{stage="notes"}`; absence here is
         # what says the reading was not taken.
         self._metrics.gauge(
-            "nora_note_index_entries", len(standing), workspace=convo.workspace)
+            "nora_note_index_entries", len(standing), unit=convo.unit)
         return standing

@@ -118,7 +118,7 @@ def _now_line(now: datetime | None) -> str:
 #: THE BLOCK TABLE — every block this prefill serves, declared once.
 #:
 #: `order` is the argument `build_prefill`'s fifteen-line comment used to make
-#: and nothing could check: her own past, then theirs, then the workspace's open
+#: and nothing could check: her own past, then theirs, then the unit's open
 #: questions, then what she already did about them, then her position, then the
 #: room — each widening scope, with the transcript last because it is adjacent
 #: to the message it explains. `<standing>` breaks scope order deliberately
@@ -147,8 +147,8 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("peer_card", 20, "person"),
     ("peer_history", 30, "person"),
     ("people_in_window", 35, "room"),
-    ("notes", 40, "workspace"),
-    ("loop_decisions", 50, "workspace"),
+    ("notes", 40, "unit"),
+    ("loop_decisions", 50, "unit"),
     ("standing", 60, "room"),
     ("group_transcript", 70, "room"),
 )
@@ -696,9 +696,9 @@ def _notes_block(ctx: TagContext, *, now: datetime) -> ContextBlock | None:
     point: it is rendered here (`build_prefill`'s per-turn message) rather
     than in `_context_header`, so the static head — the cache PREFIX
     `_context_header` documents at 98-99% hit — stays byte-identical across
-    every room. Keyed on the WORKSPACE rather than this room, which changes
-    nothing about that: a workspace-wide block in the cached head would
-    fragment the prefix across every workspace instead of every room.
+    every room. Keyed on the UNIT rather than this room, which changes
+    nothing about that: a unit-wide block in the cached head would
+    fragment the prefix across every unit instead of every room.
     Trailing newline added here, not by `render_notes`, so blocks concatenate
     onto separate lines.
 
@@ -736,9 +736,9 @@ def _standing_block(ctx: TagContext) -> ContextBlock | None:
     **It sits LAST, immediately before the transcript, and that breaks the
     widening-scope order the blocks above it follow on purpose.** Every block
     from `<self_card>` to `<notes>` widens — her past, then theirs, then the
-    room's slang, then the workspace's settled claims, then its open questions.
+    room's slang, then the unit's settled claims, then its open questions.
     Standing is the narrowest thing in the prompt (one conversation, not even a
-    workspace), so on scope alone it would sit at the front. It sits at the back
+    unit), so on scope alone it would sit at the front. It sits at the back
     because it is not on that axis at all: it is «where you had got to», and the
     thing it is about is the transcript directly underneath it. Read in order
     the pair says *here is where you were, here is what has been said since*,
@@ -753,18 +753,20 @@ def _standing_block(ctx: TagContext) -> ContextBlock | None:
 
 
 def _decisions_block(ctx: TagContext, *, now: datetime) -> ContextBlock | None:
-    """What NORA'S OWN LOOP already did across this WORKSPACE, as
+    """What NORA'S OWN LOOP already did across this UNIT, as
     `<loop_decisions>` (issue #199). `""` when there is nothing — which is
-    every turn but the participation occasion's today.
+    every turn but the two that weigh a floor nobody offered them: the
+    participation occasion, and the proactive act turn (added 2026-09-17,
+    after two act turns 30 minutes apart duplicated one raise).
 
     **This is the only block here that is not about the world.** Its five
-    neighbours distil what people said, what they are like, what the workspace
+    neighbours distil what people said, what they are like, what the unit
     has not settled. This one is the record of her own turns: the proactive
     decide and act turns that raised something in this room unprompted, with
     how long ago. Before it, the participation turn could not tell a room
     nobody had spoken to from a room she had raised the same question in two
-    hours earlier — 2026-09-10's duplicate, the third leg of it. WORKSPACE and
-    not room: a proactive row fires into the workspace's home room and nowhere
+    hours earlier — 2026-09-10's duplicate, the third leg of it. UNIT and
+    not room: a proactive row fires into the unit's home room and nowhere
     else, so on the incident's own rooms a room-scoped block would have carried
     nothing.
 

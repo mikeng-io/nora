@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from math import ceil
 
 __all__ = [
+    "ACCOUNT_CHARS_OBSERVED_MAX",
     "ACCOUNT_OUTPUT_TOKENS",
     "BODY_MAX_CHARS",
     "OUTPUT_TOKENS_PER_CHAR",
@@ -42,8 +43,10 @@ __all__ = [
 ]
 
 #: **MEASURED, 2026-09-17** — what one character of a culture account costs in
-#: OUTPUT TOKENS, and the one place the character cap and the token budgets are
-#: related, so that they are not two independently chosen numbers again.
+#: OUTPUT TOKENS, and the one place a length in characters and a budget in
+#: tokens are related, so that they are not two independently chosen numbers
+#: again. The length it converts is `ACCOUNT_CHARS_OBSERVED_MAX`, what the
+#: model is seen to emit — NOT `BODY_MAX_CHARS`, what we decline to record.
 #:
 #: The bridge was `1.0` and asserted rather than taken. Taken, with
 #: `tiktoken`'s `o200k_base` over a realistic account for this deployment's
@@ -69,65 +72,103 @@ __all__ = [
 #: `json.dumps(..., ensure_ascii=True)`). That is the MODEL's choice of
 #: emission, not the transport's: the HTTP frame's own escaping costs no output
 #: tokens, so this only bites when the model itself writes escapes. When it
-#: does, an account at the cap costs ~4,400 tokens against a 2,000-token
-#: completion, the completion truncates, and the run lands in the HELD branch
-#: below — loud, recoverable, and fixed by `[dreamer] max_tokens`, which is the
-#: knob `config.example.toml` already names for exactly this. It is not fixed
-#: by lowering the cap, and the cap does not pretend to.
+#: does, a realistic account costs ~5,850 tokens instead of ~2,222, the
+#: completion truncates, and the run lands in the HELD branch below — loud,
+#: recoverable, and fixed by `[dreamer] max_tokens`, which is the knob
+#: `config.example.toml` already names for exactly this. It is not fixed by
+#: lowering `BODY_MAX_CHARS`, and that cap does not pretend to.
 OUTPUT_TOKENS_PER_CHAR = 1.15
 
 #: The OPERATING cap on an account, in characters. The database ceiling
-#: (`CULTURE_BODY_CEILING_CHARS`, 32,000) is far above it and the gap is
+#: (`CULTURE_BODY_CEILING_CHARS`, 32,000) is above it and the gap is
 #: deliberate, the same split `notes` makes: this number says "no writer should
 #: produce that", the ceiling says "this row is corrupt".
 #:
-#: **WHAT IT GUARDS, and what it does not.** It guards ONE thing: an account
-#: that has drifted back into chronicle — restating what happened instead of
-#: saying what the room is — does not enter the chain, where nothing retires
-#: and every link is indelible. That is a QUALITY refusal and it is the only
-#: claim this constant is entitled to make.
+#: **20,000 (operator, 2026-09-18), and what changed is what this number IS.**
+#: It was 1,400 for about twenty minutes of production and the reading that
+#: ended it is written below, because it is the whole justification and it cost
+#: a room its account.
 #:
-#: **It does NOT guard the self-perpetuating truncation loop**, and an earlier
-#: version of this comment said it did. The cap is checked in
-#: `nora.language.culture.CultureAdaptor.accept`, which only ever sees a body
-#: the model ALREADY EMITTED IN FULL — so by the time this number is read, the
-#: truncation it was said to prevent either did not happen or happened one
-#: layer up, where no envelope was parsed at all. What governs truncation is
-#: `[dreamer] max_tokens` (0 -> `[llm] max_tokens`), the PROVIDER's ceiling on
-#: one completion. Two different failures, two different constants; the merged
-#: version of this paragraph is what let 8,000 be replaced by a number derived
-#: from the wrong one of them.
+#: *What 1,400 was.* A QUALITY refusal, sized as 1.89x the objective's own
+#: 739-character worked example — "room for the second paragraph the objective
+#: allows, and nothing left for a third". Both ends of it were derived and
+#: neither end was the model. Nothing had asked what an account actually comes
+#: out at.
 #:
-#: **1,400, and both ends of it are measured.**
+#: *What the model actually writes.* Measured on norty the evening 1,400
+#: shipped, every account the live fold produced or tried to, n=10 across five
+#: rooms:
 #:
-#: *From above — what can be emitted.* `ACCOUNT_OUTPUT_TOKENS` below converts
-#: this cap into output tokens at the MEASURED `OUTPUT_TOKENS_PER_CHAR`. The
-#: shipped per-completion ceiling is 2,000 (`config.example.toml`'s `[llm]
-#: max_tokens`, inherited because `[dreamer] max_tokens = 0`), and the default
-#: loop budget is 4,000 and must emit a full account TWICE. 1,400 spends
-#: **83.7% of each** — headroom that is real rather than nominal. 1,600, the
-#: number this PR first carried, spends 95% of both once the bridge is measured
-#: rather than assumed, which is the edge and not a derivation.
+#: | outcome | characters |
+#: |---|---|
+#: | written | 563, 811, 1,095, 1,316, 1,323 |
+#: | REFUSED | 1,583, 1,677, 1,725, 1,812, 1,826, 1,876 |
 #:
-#: *From below — what the objective asks for.*
-#: `nora/dreamer/objectives/culture.md` says "one paragraph or two" and prints
-#: a worked example body of **739 characters** (extracted, not eyeballed;
-#: `tests/unit/test_culture_adaptor.py` re-extracts it and pins the ratio).
-#: 1,400 is **1.89x** that example: room for the second paragraph the
-#: objective allows, and nothing left for a third. An earlier version of this
-#: comment said "~890 characters" and "1.8x" and both were wrong — the example
-#: is 739 and 1,600 was 2.17x it.
+#: **6 of 11 draws were refused — 55%.** The cap sits above every account that
+#: landed and below every one that did not, and 1,316 is 94% of it, so it is
+#: not a bar the writer clears with room to spare; it is a coin the fold
+#: tosses every fire.
 #:
-#: 8,000, until 2026-09-17, was 10.8x the operator's own example: the cap said
-#: "short account" while admitting something no reader would call one.
-BODY_MAX_CHARS = 1_400
+#: **CORRECTED 2026-09-18, and the correction matters.** The first version of
+#: this comment said the busiest room (a Discord games room,
+#: `100000000000000201/…`) "never got an account at all" and "re-folded
+#: forever". Both were wrong, and they were written while the room was still
+#: mid-sequence. It was refused four times — 1,876, 1,725, 1,677, 1,583 — and
+#: then its FIFTH draw came in at 1,323 and was recorded. The Signal room
+#: `MP4ODQ…` did the same thing two fires earlier: refused at 1,812 and 1,826,
+#: written at 1,316.
+#:
+#: So the wedge is a LOTTERY, not a deadlock: `accept` raises, the Dreamer
+#: holds the watermark, and the fold re-draws until one lands under the cap —
+#: one model call per tick, for a geometrically distributed number of ticks at
+#: a 55% refusal rate. Zone 42 paid four calls and 26 minutes. That is a real
+#: cost and it is why this number moved, but "forever" was an overclaim made
+#: from a four-point window, and the fifth point was already on its way.
+#:
+#: *What 20,000 is.* Not a quality refusal — it is a CORRUPTION ceiling one
+#: notch under the database's, and it is stated plainly that this tier now has
+#: no automatic guard against an account drifting back into chronicle. That
+#: guard is the objective's job and always was: the `accept` docstring already
+#: says so, and the change that would restore it is a line in "What to write"
+#: naming the worked example AS the target length. That is a prompt change
+#: under `change_policy: operator-only` and it needs the arm that measures it.
+#: Refusing 13%-over prose in the meantime bought nothing and cost the chain
+#: the one room with the most to say.
+#:
+#: **The cap is no longer what sizes the token budgets.** That coupling is what
+#: made this number look expensive to move, and it was wrong on its own terms:
+#: a cap is a refusal threshold, not a reservation. See
+#: `ACCOUNT_CHARS_OBSERVED_MAX` below, which is what the budgets are sized on
+#: now — a measurement of what gets emitted, not an arithmetic consequence of
+#: what gets refused.
+BODY_MAX_CHARS = 20_000
 
-#: What emitting an account at `BODY_MAX_CHARS` costs in OUTPUT TOKENS.
+#: **MEASURED, 2026-09-17/18** — the longest account this deployment's model has
+#: been observed to emit, and the basis every token budget for this tier is
+#: sized on.
 #:
-#: `BODY_MAX_CHARS` at the MEASURED `OUTPUT_TOKENS_PER_CHAR` — rounded UP,
-#: because rounding a fail-closed conversion down is the one direction that
-#: lets the two assertions below pass while the account truncates — plus 64 for
-#: the JSON envelope the objective requires around it
+#: This constant exists because `ACCOUNT_OUTPUT_TOKENS` used to be
+#: `BODY_MAX_CHARS * OUTPUT_TOKENS_PER_CHAR`, which tied the provider's
+#: completion ceiling to a QUALITY refusal. The two answer different questions
+#: — "how long a body do we decline to record" and "how long a completion must
+#: the transport be able to carry" — and binding them meant a cap could not be
+#: raised without a 23,000-token reservation nothing would ever use.
+#:
+#: 1,876 is the maximum of the n=10 sample in `BODY_MAX_CHARS`' table above.
+#: **n=10 is small and this number is expected to move**; it is the honest
+#: basis available, and it is a great deal better than the derivation it
+#: replaced. Widen the sample before treating the budgets below as tight — and
+#: note the direction of the risk is asymmetric: a reservation that is too
+#: small TRUNCATES, which holds the watermark and re-reads the same batch
+#: forever, so this is the one to keep loose.
+ACCOUNT_CHARS_OBSERVED_MAX = 1_876
+
+#: What emitting a REALISTIC account costs in OUTPUT TOKENS.
+#:
+#: `ACCOUNT_CHARS_OBSERVED_MAX` at the MEASURED `OUTPUT_TOKENS_PER_CHAR` —
+#: rounded UP, because rounding a fail-closed conversion down is the one
+#: direction that lets the two assertions below pass while the account
+#: truncates — plus 64 for the JSON envelope the objective requires around it
 #: (`{"account": [{"body": "…"}]}`, its escaping, and the newline the provider
 #: usually adds), measured at 15 tokens for a one-account envelope, so 64 is
 #: four times the observed overhead.
@@ -136,23 +177,22 @@ BODY_MAX_CHARS = 1_400
 #: `config.example.toml`'s `[dreamer] max_tokens`, which spells the confusion
 #: out):
 #:
-#: - `DreamBudgetConfig.output_tokens` — the Strands LOOP budget, 4,000 by
-#:   default, spent across every turn of the fold. The rule is that the loop
-#:   must be able to emit a full account TWICE: once for the tool-call
-#:   arguments and any preamble the pass spends before it writes, once for the
-#:   account itself. 2 x 1,674 = 3,348, inside the 4,000 an adaptor with no
-#:   `[dreamer.budgets.culture]` block gets.
+#: - `DreamBudgetConfig.output_tokens` — the Strands LOOP budget, spent across
+#:   every turn of the fold. The rule is that the loop must be able to emit a
+#:   full account TWICE: once for the tool-call arguments and any preamble the
+#:   pass spends before it writes, once for the account itself. The shipped
+#:   `[dreamer.budgets.culture] output_tokens = 6000` clears 2 x 2,222.
 #: - `[dreamer] max_tokens` (0 -> `[llm] max_tokens`) — the PROVIDER's ceiling
 #:   on ONE completion, which binds as `MaxTokensReachedException` ->
-#:   `PartialReplyError` rather than as a `stop_reason`. `config.example.toml`
-#:   ships 2,000, so an account at the cap uses ~84% of one completion. That is
-#:   the tighter of the two and the one to raise if a fold is ever seen
+#:   `PartialReplyError` rather than as a `stop_reason`. The deployment ships
+#:   6,000 and that is the tighter one to raise if a fold is ever seen
 #:   truncating — the example file says so in those words, and the escape case
 #:   in `OUTPUT_TOKENS_PER_CHAR` above is the reading that would raise it.
 #:
 #: Both inequalities are asserted rather than argued
 #: (`tests/unit/test_culture_adaptor.py::test_an_account_at_the_cap_fits_...`).
-ACCOUNT_OUTPUT_TOKENS = ceil(BODY_MAX_CHARS * OUTPUT_TOKENS_PER_CHAR) + 64
+ACCOUNT_OUTPUT_TOKENS = ceil(
+    ACCOUNT_CHARS_OBSERVED_MAX * OUTPUT_TOKENS_PER_CHAR) + 64
 
 
 @dataclass(frozen=True, slots=True)

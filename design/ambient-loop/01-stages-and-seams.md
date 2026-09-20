@@ -20,7 +20,7 @@ wrong; the corrections are marked.
 
 | stage | transcript | Standing | notes | memory | other decider | room named |
 |---|---|---|---|---|---|---|
-| **Orient · note-candidates** | batch, injected | ✗ | index, injected | ✗ | ✗ | **✗ — workspace name** (bug, #161) |
+| **Orient · note-candidates** | batch, injected | ✗ | index, injected | ✗ | ✗ | **✗ — unit name** (bug, #161) |
 | **Orient · note-curation** | **✓ per-note window, injected** (v1 said ✗) | ✗ | ✓ | ✗ | ✗ | — |
 | **Orient · Standing fold** (tag path) | the exchange, injected | prior | ✗ | ✗ | ✗ | **✗** (v1 said ✓; `render_debrief_turn` names no room) |
 | **Decide · gate** | ✓ with ages | ✓ with age | ✗ *by design 36 §6* | ✗ *by design 36 §6* | ✗ — and stays so | **✗** (v1 said ✓; the prompt names no room, label or platform) |
@@ -36,7 +36,7 @@ the tier was wired); `fire.py:974` (`_read_memory`, the participation-only
 gate on both Honcho reads — #210); `proactive.py:479` (`inputs()`), `:600`
 (`_people_block`, which read the roster and NOT memory until #210 gave it
 `:677` `_roster_index`); `note_candidates.py:492`
-(`room = workspace or key`); `note_curator.py:672` (the per-note transcript
+(`room = unit or key`); `note_curator.py:672` (the per-note transcript
 window); `debrief_render.py:240-247` (no room label, id-suppression at
 `:34-42`).
 
@@ -95,7 +95,7 @@ so when a 17:40 window that settles it is admitted the turn can cancel the
 row; the tag turn sees participation answered one second ago, so it does not
 re-derive the route and die doing it (#199). Written by the participation
 turn, the proactive turns and the tag path, at turn completion; read by the
-same, scoped by workspace with a `note_id` per row — a room-scoped read
+same, scoped by unit with a `note_id` per row — a room-scoped read
 could not see #199's own row, which fired into Discord about a Signal thread.
 Never the gate.
 
@@ -186,7 +186,7 @@ first.
 
 v1 said "a row must say where it came from". It does: `key` in
 `note_candidates.py:491` **is** the room's conversation id, and the next line
-overwrites it with the workspace. Observe is fine; Orient throws the room
+overwrites it with the unit. Observe is fine; Orient throws the room
 away. Fix: render the room's label (`composition.py` already builds the map
 the proactive adaptor uses). The only genuinely cross-stage part is the
 operator's one-line `description` per room in `policy.toml`, which is config,

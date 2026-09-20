@@ -33,10 +33,11 @@ WHO WRITES AND WHO READS — AND WHY THE GATE DOES NEITHER
 outcome: calling it `failed` would make a working turn read as a broken one to
 whatever renders the block next.
 
-Two readers, both scoped to the WORKSPACE, and each one excludes its own
-writers — a decider reading back its own last verdict is a decider agreeing
-with itself, which is not evidence about anything.
-`PARTICIPATION_DECISION_WRITERS` and `PROACTIVE_DECISION_WRITERS` are those two
+Three readers, all scoped to the UNIT, and each one excludes the writer
+that answers ITS OWN recurring question — a decider reading back its own last
+verdict is a decider agreeing with itself, which is not evidence about
+anything. `PARTICIPATION_DECISION_WRITERS`, `PROACTIVE_DECISION_WRITERS` and
+`PROACTIVE_ACT_DECISION_WRITERS` are those three
 sets, and each is read TWICE: once as the `writers=` that bounds the query, once
 by the block's own note. Both halves matter. The bound must count rows the
 reader can USE — a room whose highest-volume writer fires far more often than
@@ -158,15 +159,56 @@ VERDICTS: tuple[str, ...] = get_args(DecisionVerdict)
 #: keep claiming a decider it no longer carries, and its absence would read as
 #: «that decider never ran» rather than as «that decider is not in here».
 #:
-#: Each reader excludes ITS OWN writers. A decider reading back its own last
-#: verdict is a decider agreeing with itself: it is the strongest signal in the
-#: block, it is not evidence about the room, and on the ambient path it leans
-#: the way the existing silence bias already leans.
+#: Each reader excludes the writer that answers ITS OWN recurring question. A
+#: decider reading back its own last verdict is a decider agreeing with itself:
+#: it is the strongest signal in the block, it is not evidence about the room,
+#: and on the ambient path it leans the way the existing silence bias already
+#: leans.
 PARTICIPATION_DECISION_WRITERS: tuple[DecisionWriter, ...] = (
     "proactive_decide", "proactive_act",
 )
 PROACTIVE_DECISION_WRITERS: tuple[DecisionWriter, ...] = (
     "participation", "tag",
+)
+
+#: The ACT turn's set, and the one place `proactive_act` is read by a
+#: `proactive_act` reader. **That is the exception, and it is the whole point
+#: of the constant** (2026-09-17, msgs 5450/5455).
+#:
+#: MEASURED. Two proactive rows about two different notes came due 30 minutes
+#: apart in one Signal room. `heartbeat._by_turn` coalesces only rows due in the
+#: SAME tick, so they were two turns; the 20:00 turn read `<notes>`, saw both,
+#: and raised both; the 20:30 turn raised the second one again. Its transcript
+#: window DID carry the 20:00 message — as an unlabelled line of Nora speech,
+#: with nothing saying it was a raise she had just made unprompted. Nothing
+#: else in that prompt could say so: `<decisions>` is the DECIDE pass's block,
+#: and `_read_decisions` was participation-only.
+#:
+#: **Why the exclusion rule does not bind here.** It bars a decider from
+#: reading its own answer to its own recurring question — participation's last
+#: verdict on this room, the decide pass's last pass over these notes. An act
+#: turn is not that shape: it is a ONE-SHOT on one row about one note, its own
+#: row's determination is written after this read (`FirePath._determined`), and
+#: a sibling row's `spoke` is not its answer to its question but the fact that
+#: the floor in this room was already taken, unprompted, N minutes ago. There
+#: are also no words to echo — a `proactive_act` row carries `spoke`/`silent`
+#: and a code-derived disposition, never model text (this module's own rule),
+#: which is exactly what the decide pass's exclusion of itself turns on.
+#:
+#: **`proactive_decide` IS excluded, and that is the same rule honoured.** The
+#: decide row that scheduled THIS turn is the reason the turn is happening;
+#: `_proactive_header` already puts it in front of her, in her own words, as
+#: the intention to weigh. Handing it back a second time under a block of
+#: what the loop DID would be the self-echo the rule is about, and it leans
+#: toward speaking.
+#:
+#: `tag` is excluded for `PARTICIPATION_DECISION_WRITERS`' own reason, and the
+#: bound is the second half of it: a tag is somebody asking, what it answered
+#: is in the transcript underneath, and it is the highest-volume writer on the
+#: table — 20 rows of it would evict the one `proactive_act spoke` row this
+#: set exists to carry, in exactly the busy room where that matters most.
+PROACTIVE_ACT_DECISION_WRITERS: tuple[DecisionWriter, ...] = (
+    "participation", "proactive_act",
 )
 
 #: How much of a `reason` is kept. ONE number, not a store cap and a render cap:
@@ -196,9 +238,9 @@ class DecisionRow:
     """One decision, as the next decider needs to read it.
 
     `note_id` is nullable because only the proactive decide turn decides ABOUT
-    a note; every other writer decides about a room. `workspace` may be empty
-    for the same shape of reason `FirePath._workspace_for` returns `None` — a
-    room with no policy entry is a wiring gap, and guessing a workspace would
+    a note; every other writer decides about a room. `unit` may be empty
+    for the same shape of reason `FirePath._unit_for` returns `None` — a
+    room with no policy entry is a wiring gap, and guessing a unit would
     put one social unit's decisions in another's prompt.
     """
 
@@ -206,7 +248,7 @@ class DecisionRow:
     writer: DecisionWriter
     platform: str
     conversation_id: str
-    workspace: str
+    unit: str
     note_id: str | None
     verdict: DecisionVerdict
     #: A CODE-DERIVED label and never model text: a determination's
@@ -265,8 +307,8 @@ class _Store(Protocol):
         self, *, conversation_id: str, since_ms: int, limit: int = ...,
     ) -> Sequence[DecisionRow]: ...
 
-    async def recent_for_workspace(
-        self, *, workspace: str, since_ms: int,
+    async def recent_for_unit(
+        self, *, unit: str, since_ms: int,
         writers: Sequence[str] = ..., limit: int = ...,
     ) -> Sequence[DecisionRow]: ...
 
@@ -292,9 +334,9 @@ class DecisionLogRecorder:
     result: the write either happened or is counted as not having happened, and
     nothing in between reaches the path being logged.
 
-    `workspace_of` is how a row gets its workspace without four call sites each
+    `unit_of` is how a row gets its unit without four call sites each
     growing a `Policy` read. `None`, or a lookup that raises or answers `None`,
-    leaves the column empty — the wiring gap `FirePath._workspace_for` already
+    leaves the column empty — the wiring gap `FirePath._unit_for` already
     refuses to guess past.
     """
 
@@ -304,7 +346,7 @@ class DecisionLogRecorder:
         store: _Store,
         metrics: DecisionLogMetrics,
         clock: Callable[[], datetime],
-        workspace_of: Callable[[str, str], str | None] | None = None,
+        unit_of: Callable[[str, str], str | None] | None = None,
         timeout_seconds: float = 2.0,
         limit: int = RECENT_LIMIT,
         window_ms: int = RECENT_WINDOW_MS,
@@ -312,7 +354,7 @@ class DecisionLogRecorder:
         self._store = store
         self._metrics = metrics
         self._clock = clock
-        self._workspace_of = workspace_of
+        self._unit_of = unit_of
         self._timeout_seconds = timeout_seconds
         self._limit = limit
         self._window_ms = window_ms
@@ -376,7 +418,7 @@ class DecisionLogRecorder:
                 writer=writer,
                 platform=platform,
                 conversation_id=conversation_id,
-                workspace=self._workspace(platform, conversation_id),
+                unit=self._unit(platform, conversation_id),
                 note_id=note_id,
                 verdict=verdict,
                 # Truncated HERE, so `DecisionRow` can refuse an over-long one
@@ -404,15 +446,15 @@ class DecisionLogRecorder:
             return None
         return row
 
-    async def read_workspace(
-        self, *, platform: str, workspace: str,
+    async def read_unit(
+        self, *, platform: str, unit: str,
         writers: Sequence[DecisionWriter] = (),
     ) -> tuple[DecisionRow, ...]:
-        """**The primary read**: every room of one workspace, over the window,
+        """**The primary read**: every room of one unit, over the window,
         newest-LAST. `()` on any failure.
 
-        **Workspace and not room, and that is what makes the log answer issue
-        #199 at all.** A `kind="proactive"` row fires into the workspace's HOME
+        **Unit and not room, and that is what makes the log answer issue
+        #199 at all.** A `kind="proactive"` row fires into the unit's HOME
         room and nowhere else (39 D2/D3), and the home room is one platform;
         the thread it is about runs wherever the group happens to be talking.
         In the measured incident those were different rooms on different
@@ -443,19 +485,19 @@ class DecisionLogRecorder:
         writer, which is what a caller with no filter means.
 
         `platform` is the metric label only — a read failure has to be counted
-        somewhere, and a workspace is not a platform.
+        somewhere, and a unit is not a platform.
 
-        **A blank `workspace` answers nothing, fail-closed.** An unmapped room
-        writes `workspace=""` deliberately (the wiring gap this module refuses
-        to guess past), so `""` is not a workspace — it is the POOL of every
+        **A blank `unit` answers nothing, fail-closed.** An unmapped room
+        writes `unit=""` deliberately (the wiring gap this module refuses
+        to guess past), so `""` is not a unit — it is the POOL of every
         unmapped room in every social unit, and answering it would be the
-        cross-workspace leak this module's own argument forbids.
+        cross-unit leak this module's own argument forbids.
         """
-        if not workspace:
+        if not unit:
             return ()
         return await self._read(
-            lambda since: self._store.recent_for_workspace(
-                workspace=workspace, since_ms=since,
+            lambda since: self._store.recent_for_unit(
+                unit=unit, since_ms=since,
                 writers=tuple(writers), limit=self._limit,
             ),
             platform=platform,
@@ -480,34 +522,34 @@ class DecisionLogRecorder:
             return ()
         return tuple(rows)
 
-    def _workspace(self, platform: str, conversation_id: str) -> str:
-        if self._workspace_of is None:
+    def _unit(self, platform: str, conversation_id: str) -> str:
+        if self._unit_of is None:
             return ""
         try:
-            workspace = self._workspace_of(platform, conversation_id) or ""
+            unit = self._unit_of(platform, conversation_id) or ""
         except Exception:
             log.exception(
                 "decision log: policy read failed for %s; leaving the "
-                "workspace empty rather than guessing", platform,
+                "unit empty rather than guessing", platform,
             )
-            self._count("decision_log_workspace", platform)
+            self._count("decision_log_unit", platform)
             return ""
-        if not workspace:
-            # COUNTED, not just left empty. Every read is workspace-keyed and
-            # `read_workspace("")` answers nothing by design, so a row written
-            # with no workspace is a row NOTHING WILL EVER READ — the wiring
+        if not unit:
+            # COUNTED, not just left empty. Every read is unit-keyed and
+            # `read_unit("")` answers nothing by design, so a row written
+            # with no unit is a row NOTHING WILL EVER READ — the wiring
             # gap degrades to a feature that is silently, permanently dark in
-            # that room. `FirePath._workspace_for` counts the same gap for the
+            # that room. `FirePath._unit_for` counts the same gap for the
             # same reason: «a block missing for the life of a deployment with
             # nothing saying so» is how `nora_peer_card_empty_total`'s lesson
             # was bought.
             log.warning(
-                "decision log: no policy workspace for %s/%s — the row is "
+                "decision log: no policy unit for %s/%s — the row is "
                 "written but no reader will ever see it",
                 platform, conversation_id,
             )
-            self._count("decision_log_workspace", platform)
-        return workspace
+            self._count("decision_log_unit", platform)
+        return unit
 
     def _count(self, stage: str, platform: str) -> None:
         try:
@@ -561,7 +603,7 @@ def decision_line(
     id at all.
 
     `label` is the operator-authored policy label for the room, never an id
-    (R-18/R-28). It is how a workspace-scoped block stays readable: the row
+    (R-18/R-28). It is how a unit-scoped block stays readable: the row
     that matters is often from the OTHER room.
 
     `reason` is a code-derived label — a fail-closed error kind or a

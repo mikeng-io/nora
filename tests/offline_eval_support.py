@@ -84,7 +84,7 @@ from nora.ingest.relevance_gate import (
 from nora.ingest.relevance_gate import Completion as GateCompletion
 from nora.instructions.dreamer import DreamerInstructions
 from nora.language.note_candidates import NoteCandidateAdaptor
-from nora.language.proactive import ProactiveAdaptor, WorkspaceRoom
+from nora.language.proactive import ProactiveAdaptor, UnitRoom
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, load_persons
 from nora.policy import permissive_policy
@@ -118,12 +118,12 @@ from nora.testing.reminders import FakeReminderStore
 #: R-31 disclosure gate PERMITS `where_is`/`saved_places`.
 _EVAL_PERSON_ID = "miles_novak"
 
-#: The workspace `nora.policy.permissive_policy()` resolves EVERY conversation
+#: The unit `nora.policy.permissive_policy()` resolves EVERY conversation
 #: to (`_PermissivePolicy.conversation`'s hardcoded default) — the note and
-#: fact tiers are keyed on `Conversation.workspace` (DEC-105), so a seed read
-#: under any other workspace string would seed rows the eval room's assembler
+#: fact tiers are keyed on `Conversation.unit` (DEC-105), so a seed read
+#: under any other unit string would seed rows the eval room's assembler
 #: can never reach, silently discarding the seed rather than injecting it.
-_EVAL_WORKSPACE = "nora"
+_EVAL_UNIT = "nora"
 
 #: The SHIPPED table, deliberately WITHOUT `[llm.budgets]`. An eval measures the
 #: agent as the repo defines it, so runs stay comparable across deployments and
@@ -355,7 +355,7 @@ def build_live_participation_runner(
 
 
 def build_eval_tool_registry(
-    *, notes: Any | None = None, note_workspace: str = _EVAL_WORKSPACE,
+    *, notes: Any | None = None, note_unit: str = _EVAL_UNIT,
     reminders: Any | None = None, clock: Any | None = None,
 ) -> ToolRegistry:
     """A `ToolRegistry` wired with the canned eval backends (F4): `weather`,
@@ -384,8 +384,8 @@ def build_eval_tool_registry(
     correction pairs were deleted; these two were left in the same state
     (audit, 2026-09-08).
 
-    `note_workspace` is a constant here rather than a resolver: every seeded
-    row lands in the eval workspace by construction (`seed_from_dict`), and a
+    `note_unit` is a constant here rather than a resolver: every seeded
+    row lands in the eval unit by construction (`seed_from_dict`), and a
     row keyed anywhere else silently never renders.
 
     `reminders`/`clock` are the proactive suites' pair (design/dreamer-agent-
@@ -407,7 +407,7 @@ def build_eval_tool_registry(
         presence=CannedPresenceReader(),
         circles=(Circle(circle_id=EVAL_CIRCLE_ID, person_ids=frozenset({_EVAL_PERSON_ID})),),
         notes=notes,
-        note_workspace=(lambda _platform, _conv: note_workspace) if notes else None,
+        note_unit=(lambda _platform, _conv: note_unit) if notes else None,
         reminders=reminders,
         reminder_caps=ReminderCaps() if reminders is not None else None,
         **extra,
@@ -441,7 +441,7 @@ class ProductionSeed:
     "the eval room's own position" in production, so the closest production
     shape is whatever position Nora most recently held anywhere. `notes` pairs
     a `Note` with its HEAD `NoteRevision` (what `InMemoryNoteStore.standing`
-    reads), read under `_EVAL_WORKSPACE` so they land where the eval's
+    reads), read under `_EVAL_UNIT` so they land where the eval's
     `permissive_policy()` resolves every room to (see that constant's
     docstring).
     """
@@ -512,14 +512,14 @@ async def build_production_seed(
             if standing_row is not None:
                 standing = Standing(**dict(standing_row._mapping))
 
-            # Notes: every live (unretired) note in the eval workspace, paired
+            # Notes: every live (unretired) note in the eval unit, paired
             # with its HEAD revision — the exact shape `InMemoryNoteStore.
             # standing` reads back (module docstring), so seeding `.notes`/
             # `.revisions` from these pairs reproduces what `SqlNoteStore.
             # standing` would have returned in production.
             note_rows = (await conn.execute(
                 sa.text(
-                    "SELECT n.id, n.workspace, n.title, n.description, "
+                    "SELECT n.id, n.unit, n.title, n.description, "
                     "n.uncertainty, n.closing_condition, n.anchor_date, "
                     "n.anchor_entity_ids, n.established_in, n.created_at, "
                     "n.head_revision_id, n.retired_at, n.replaced_by, "
@@ -530,14 +530,14 @@ async def build_production_seed(
                     "r.established_by, r.instruction_sha256, r.model "
                     "FROM note n JOIN note_revision r "
                     "ON r.id = n.head_revision_id "
-                    "WHERE n.workspace = :ws AND n.retired_at IS NULL "
+                    "WHERE n.unit = :ws AND n.retired_at IS NULL "
                     "ORDER BY n.created_at"
                 ),
-                {"ws": _EVAL_WORKSPACE},
+                {"ws": _EVAL_UNIT},
             )).all()
             for nrow in note_rows:
                 note = Note(
-                    id=nrow.id, workspace=nrow.workspace, title=nrow.title,
+                    id=nrow.id, unit=nrow.unit, title=nrow.title,
                     description=nrow.description, uncertainty=nrow.uncertainty,
                     closing_condition=nrow.closing_condition,
                     anchor_date=nrow.anchor_date,
@@ -639,9 +639,9 @@ def seed_from_dict(raw: dict[str, Any], *, now_ms: int | None = None) -> Product
     gained for the participation suite (design/dreamer-agent-loop/35 §9
     gap 2).
 
-    EVERYTHING is keyed to `_EVAL_WORKSPACE` ("nora"). That is the footgun
-    the design audit named: the note tier is workspace-keyed
-    (DEC-105) and the eval room resolves to this workspace through
+    EVERYTHING is keyed to `_EVAL_UNIT` ("nora"). That is the footgun
+    the design audit named: the note tier is unit-keyed
+    (DEC-105) and the eval room resolves to this unit through
     `permissive_policy()`, so a seed row keyed anywhere else silently
     vanishes — the case would grade a prompt missing the very block it is
     about, and the knowledge-cut twin would "pass" for the wrong reason.
@@ -668,8 +668,8 @@ def seed_from_dict(raw: dict[str, Any], *, now_ms: int | None = None) -> Product
     `target or peer_id` and an unknown peer is `reachable=True, conclusions=()`
     — reachable, knowing nothing — so the case would grade a prompt missing the
     block it is about and its knowledge-cut twin would pass for the wrong
-    reason. That is the same footgun the workspace note above describes, on the
-    one tier whose key is a PERSON rather than a workspace.
+    reason. That is the same footgun the unit note above describes, on the
+    one tier whose key is a PERSON rather than a unit.
 
     `nora` is the observer-equals-observed key: `cfg.memory.ai_peer` on every
     shipped config, and `<self_card>` is the block it feeds.
@@ -735,7 +735,7 @@ def seed_from_dict(raw: dict[str, Any], *, now_ms: int | None = None) -> Product
         note_id = _seed_id(0x1000 + n, "note")
         revision_id = _seed_id(0x2000 + n, "rev")
         note = Note(
-            id=note_id, workspace=_EVAL_WORKSPACE,
+            id=note_id, unit=_EVAL_UNIT,
             title=entry["title"], description=entry["description"],
             uncertainty=entry.get("uncertainty", "open"),
             closing_condition=entry.get("closing_condition", "the room settles it"),
@@ -1074,7 +1074,7 @@ class _NoDreamTools:
         return frozenset()
 
     def build(
-        self, *, key: str, names: frozenset[str], workspace: str | None = None,
+        self, *, key: str, names: frozenset[str], unit: str | None = None,
         adaptor: str = "", grant: Any = None,
     ) -> list[Any]:
         return []
@@ -1150,7 +1150,7 @@ def build_note_candidates_runtime(
 
 
 async def run_note_candidates_case(
-    runtime: DreamerRuntime, *, cfg: Config, workspace: str, scope: str,
+    runtime: DreamerRuntime, *, cfg: Config, unit: str, scope: str,
     batch: Sequence[dict[str, Any]], notebook: Sequence[dict[str, Any]],
     now_ms: int, room_label: str | None = None,
     room_description: str | None = None,
@@ -1170,13 +1170,13 @@ async def run_note_candidates_case(
     store = InMemoryNoteStore()
     for entry in notebook:
         await store.create(
-            workspace=workspace, title=entry["title"], description=entry["description"],
+            unit=unit, title=entry["title"], description=entry["description"],
             uncertainty=entry["description"], closing_condition="the arrangement settles",
             established_in=scope, body=entry["body"], established_by="tag:eval",
             now_ms=now_ms - 86_400_000, anchor_date=int(entry["anchor_date"]),
         )
     adaptor = NoteCandidateAdaptor(
-        notes=store, candidates=store, workspace_for=lambda _key: workspace,
+        notes=store, candidates=store, unit_for=lambda _key: unit,
         # The room a case is set in, exactly as composition supplies it from
         # `policy.toml` (issue #161): `room_label` is what the room is called
         # and reaches every rendered batch line; `room_description` is the
@@ -1201,7 +1201,7 @@ async def run_note_candidates_case(
     async def _snapshot() -> tuple[tuple[str, str, int | None, str], ...]:
         return tuple(
             (n.id, n.title, n.anchor_date, n.head_revision_id)
-            for n in await store.standing(workspace=workspace)
+            for n in await store.standing(unit=unit)
         )
 
     before = await _snapshot()
@@ -1312,17 +1312,17 @@ class EvalDreamTools:
         self.metrics: Metrics = Metrics()
 
     def bind(
-        self, *, workspace: str, home: HomeRoom, notes: Any, reminders: Any,
+        self, *, unit: str, home: HomeRoom, notes: Any, reminders: Any,
         memory: Any, clock: Callable[[], datetime],
     ) -> None:
         registry = build_eval_tool_registry(
-            notes=notes, note_workspace=workspace, reminders=reminders, clock=clock,
+            notes=notes, note_unit=unit, reminders=reminders, clock=clock,
         )
         self.metrics = Metrics()
         self._source = RegistryToolSource(
             registry=registry, store=FakeRecordStore(), persons=_EVAL_PERSONS,
             honcho=memory, metrics=self.metrics, ai_peer="nora",
-            home_rooms={workspace: home},
+            home_rooms={unit: home},
             rosters={home.platform: FakeRosterSource(
                 groups={home.conversation_id: (
                     _EVAL_ROOM_DISCORD if home.platform == "discord"
@@ -1336,13 +1336,13 @@ class EvalDreamTools:
         return ToolRegistry().read_only_tools()
 
     def build(
-        self, *, key: str, names: frozenset[str], workspace: str | None = None,
+        self, *, key: str, names: frozenset[str], unit: str | None = None,
         adaptor: str = "", grant: AdaptorGrant | None = None,
     ) -> list[Any]:
         if self._source is None:
             raise RuntimeError("EvalDreamTools.build before bind: a case must bind its stores")
         built = self._source.build(
-            key=key, names=names, workspace=workspace, adaptor=adaptor, grant=grant,
+            key=key, names=names, unit=unit, adaptor=adaptor, grant=grant,
         )
         self.builds.append((adaptor, frozenset(
             str(getattr(t, "tool_name", None) or getattr(t, "__name__", "")) for t in built
@@ -1426,7 +1426,7 @@ _LOG_STATES: Mapping[str, ReminderState] = {
 
 
 async def _seed_notes(
-    store: InMemoryNoteStore, *, workspace: str, scope: str, notes: Sequence[Mapping[str, Any]],
+    store: InMemoryNoteStore, *, unit: str, scope: str, notes: Sequence[Mapping[str, Any]],
     now_ms: int,
 ) -> dict[str, Note]:
     """Case notes through the tag path's own `create` shape, keyed by title.
@@ -1438,7 +1438,7 @@ async def _seed_notes(
     for n, entry in enumerate(notes):
         anchor = entry.get("anchor_date")
         note = await store.create(
-            workspace=workspace, title=str(entry["title"]),
+            unit=unit, title=str(entry["title"]),
             description=str(entry["description"]),
             uncertainty=str(entry.get("uncertainty", entry["description"])),
             closing_condition=str(entry.get("closing_condition", "the room settles it")),
@@ -1452,7 +1452,7 @@ async def _seed_notes(
         )
         for _ in range(1 + int(entry.get("strikes", 0))) if entry.get("strikes") else ():
             await store.record_wake(
-                workspace=workspace, note_id=note.id,
+                unit=unit, note_id=note.id,
                 next_revisit_at=now_ms - 1, now_ms=now_ms - 3_600_000,
             )
         by_title[note.title] = note
@@ -1460,12 +1460,12 @@ async def _seed_notes(
 
 
 async def run_proactive_decide_case(
-    runtime: DreamerRuntime, *, tools: EvalDreamTools, workspace: str, now: datetime,
+    runtime: DreamerRuntime, *, tools: EvalDreamTools, unit: str, now: datetime,
     rooms: Sequence[Mapping[str, Any]], notes: Sequence[Mapping[str, Any]],
     standing: Sequence[Mapping[str, Any]], log: Sequence[Mapping[str, Any]],
     memory: Mapping[str, Any] | None = None,
 ) -> ProactiveDecideDrive:
-    """One decide case: seed the workspace's orient state, run the real
+    """One decide case: seed the unit's orient state, run the real
     adaptor through the real runtime with the real tool source bound to
     these stores, and read the reminder store back.
 
@@ -1479,7 +1479,7 @@ async def run_proactive_decide_case(
     """
     now_ms = int(now.timestamp() * 1000)
     ws_rooms = tuple(
-        WorkspaceRoom(
+        UnitRoom(
             platform=str(r["platform"]), conversation_id=str(r["conversation_id"]),
             label=str(r["label"]), home=bool(r.get("home", False)),
         )
@@ -1487,12 +1487,12 @@ async def run_proactive_decide_case(
     )
     home_room = next(r for r in ws_rooms if r.home)
     home = HomeRoom(
-        workspace=workspace, platform=home_room.platform,
+        unit=unit, platform=home_room.platform,
         conversation_id=home_room.conversation_id, location_trusted=True,
     )
     note_store = InMemoryNoteStore()
     by_title = await _seed_notes(
-        note_store, workspace=workspace, scope=home_room.conversation_id, notes=notes,
+        note_store, unit=unit, scope=home_room.conversation_id, notes=notes,
         now_ms=now_ms,
     )
     standing_store = InMemoryStandingStore()
@@ -1536,12 +1536,12 @@ async def run_proactive_decide_case(
     for body in seed.get("messages") or []:
         canned.messages.append(("miles_novak", str(body)))
     tools.bind(
-        workspace=workspace, home=home, notes=note_store, reminders=reminders,
+        unit=unit, home=home, notes=note_store, reminders=reminders,
         memory=canned, clock=lambda: now,
     )
     adaptor = ProactiveAdaptor(
         notes=note_store, standing=standing_store, reminders=reminders, memory=canned,
-        rooms_of=lambda ws: ws_rooms if ws == workspace else (),
+        rooms_of=lambda ws: ws_rooms if ws == unit else (),
         # The people index the pass gets in production (issue #145). Read from
         # the SAME `_EVAL_PERSONS` the tools resolve against, so a case can put
         # a handle in a note body and the suite grades whether she reads it off
@@ -1559,7 +1559,7 @@ async def run_proactive_decide_case(
         requester_person_id="nora", since=now - timedelta(days=365), limit=1000,
     )}
     tools.builds.clear()
-    outcome = await runtime.run(adaptor=adaptor, key=workspace, batch=())
+    outcome = await runtime.run(adaptor=adaptor, key=unit, batch=())
     rows = []
     for row in await reminders.history(
         requester_person_id="nora", since=now - timedelta(days=365), limit=1000,
@@ -1586,7 +1586,7 @@ async def run_proactive_decide_case(
 
 #: The memory verbs the decide turn holds (39 D3) and the series each counts
 #: on — the three room-scoped ones on the room-lookup series (`_record_room`),
-#: the workspace one on the tool-call series (`_record`).
+#: the unit one on the tool-call series (`_record`).
 #:
 #: **It is `nora.agent.dreamer.MEMORY_TOOLS`, and the two are pinned against
 #: each other** (`tests/unit/test_dream_memory_budget.py`). `lookup_person`
@@ -1686,7 +1686,7 @@ async def run_proactive_act_case(
     )
     if note_moved:
         await note_store.append_revision(
-            workspace=_EVAL_WORKSPACE, note_id=linked.id,
+            unit=_EVAL_UNIT, note_id=linked.id,
             body=f"{seed.notes[0][1].body}\nSettled by the room.",
             parent_revision_id=linked.head_revision_id, established_by="tag:eval",
             now_ms=int(now.timestamp() * 1000) - 60_000,

@@ -1100,7 +1100,7 @@ async def _fire_path_with_tiers(
     """`fire_path`'s own builder plus the tier collaborators — same
     model-side-collaborators-are-None shape, for the same reason: these tests
     call `build_context` only. `policy="permissive"` resolves every room to
-    the `nora` workspace, matching where the seeds below are keyed."""
+    the `nora` unit, matching where the seeds below are keyed."""
     return FirePath(
         persons=persons, records=record_store, memory=memory_store,
         doctrine_store=doctrine_store, metrics=metrics,
@@ -1116,7 +1116,7 @@ async def _fire_path_with_tiers(
 def _seeded_note_store() -> InMemoryNoteStore:
     store = InMemoryNoteStore()
     store.notes["11111111-0000-4000-8000-000000000001"] = Note(
-        id="11111111-0000-4000-8000-000000000001", workspace="nora",
+        id="11111111-0000-4000-8000-000000000001", unit="nora",
         title="Raft roadmap", description="when the next Raft update ships",
         uncertainty="no date announced", closing_condition="Raft announces a date",
         established_in="conv-1", created_at=1,
@@ -1136,7 +1136,7 @@ async def test_the_fire_path_reads_the_note_index(
     persons, record_store, memory_store, doctrine_store, metrics,
 ) -> None:
     """The determination's `<notes>` block: the standing index for the room's
-    WORKSPACE, not the room — DEC-105's keying, mirrored from
+    UNIT, not the room — DEC-105's keying, mirrored from
     `TranscriptInjection._notes`."""
     fire = await _fire_path_with_tiers(
         persons, record_store, memory_store, doctrine_store, metrics,
@@ -1154,7 +1154,7 @@ async def test_a_failed_note_read_is_counted_not_silent(
     """R-27 on this path: an index that exists but could not be read is
     `unavailable` (counted), never folded silently into «there are none»."""
     class _Down:
-        async def standing(self, *, workspace: str):
+        async def standing(self, *, unit: str):
             raise RuntimeError("db down")
 
     fire = await _fire_path_with_tiers(
@@ -1172,7 +1172,7 @@ async def test_a_wired_tier_without_a_policy_is_a_counted_wiring_gap(
     persons, record_store, memory_store, doctrine_store, metrics,
 ) -> None:
     """A store wired but no `Policy` to scope it by: the tier defaults safely
-    AND the gap is counted ONCE for the turn — guessing a workspace would
+    AND the gap is counted ONCE for the turn — guessing a unit would
     render another social unit's notes into this room (DEC-105)."""
     fire = await _fire_path_with_tiers(
         persons, record_store, memory_store, doctrine_store, metrics,
@@ -1182,7 +1182,7 @@ async def test_a_wired_tier_without_a_policy_is_a_counted_wiring_gap(
     ctx = await fire.build_context(reminder_occasion([_reminder()]))
 
     assert ctx.notes == ()
-    assert metrics.get("nora_errors_total", stage="fire_workspace") == 1
+    assert metrics.get("nora_errors_total", stage="fire_unit") == 1
 
 
 async def test_the_dormant_default_reads_nothing_and_counts_nothing(
@@ -1194,7 +1194,7 @@ async def test_the_dormant_default_reads_nothing_and_counts_nothing(
     ctx = await fire_path.build_context(reminder_occasion([_reminder()]))
 
     assert ctx.notes == ()
-    assert metrics.get("nora_errors_total", stage="fire_workspace") == 0
+    assert metrics.get("nora_errors_total", stage="fire_unit") == 0
 
 
 # ---------------------------------------------------------------------------
@@ -2371,7 +2371,7 @@ def test_the_proactive_doctrine_audience_carries_the_may_speak_rule(doctrine_sto
 # --- the shared decision log (issue #199) ---------------------------------
 
 
-def _decision_recorder(store=None, *, metrics=None, workspace_of=None):
+def _decision_recorder(store=None, *, metrics=None, unit_of=None):
     """A real `DecisionLogRecorder` over the SHARED in-memory store, which
     `tests/contract/test_decision_log_store_contract.py` judges against
     Postgres. The clock is `T0`, the same instant `_fire_path` runs at."""
@@ -2379,7 +2379,7 @@ def _decision_recorder(store=None, *, metrics=None, workspace_of=None):
         store=store if store is not None else InMemoryDecisionLogStore(),
         metrics=metrics if metrics is not None else Metrics(),
         clock=lambda: T0,
-        workspace_of=workspace_of,
+        unit_of=unit_of,
     )
 
 
@@ -2518,7 +2518,7 @@ async def test_a_participation_turn_sees_what_she_already_raised_in_this_room(
         id="r1", writer="proactive_decide", platform="discord",
         # The HOME room, on the other platform — the shape of issue #199's own
         # incident. A room-scoped read would answer nothing here.
-        conversation_id="home-1", workspace="friends", note_id="n-1",
+        conversation_id="home-1", unit="friends", note_id="n-1",
         verdict="remind", reason="",
         ts=int(T0.timestamp() * 1000) - 7_200_000,
     ))
@@ -2544,6 +2544,47 @@ async def test_a_participation_turn_sees_what_she_already_raised_in_this_room(
     assert "home-1" not in block
 
 
+async def test_a_proactive_act_turn_sees_the_raise_its_sibling_row_just_made(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """**The 2026-09-17 duplicate, end to end** (msgs 5450/5455).
+
+    The shape, exactly: a row about note A fired at 20:00 and took the floor;
+    31 minutes later a row about note B came due in the same room. Before this,
+    the second turn's only trace of the first was an unlabelled line of her own
+    speech in the transcript, and it raised again. The block is what says «that
+    was you, unprompted, 31 minutes ago» — with an AGE, because every question
+    it is read to answer is a question about when.
+
+    Falsification: drop `"proactive"` from `_DECISION_WRITERS_BY_KIND`.
+    """
+    store = InMemoryDecisionLogStore()
+    await store.append(row=DecisionRow(
+        id="r1", writer="proactive_act", platform="signal",
+        conversation_id="conv-1", unit="friends", note_id=None,
+        verdict="spoke", reason="spoke",
+        ts=int(T0.timestamp() * 1000) - 31 * 60_000,
+    ))
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        runner=FakeAgentRunner([]), participation_runner=FakeAgentRunner([]),
+        decisions=_decision_recorder(store), policy=_decision_policy(),
+    )
+
+    ctx = await path.build_context(
+        fire_module.proactive_occasion([_proactive_row()]),
+    )
+    rendered = "\n".join(str(m) for m in build_prefill(
+        ctx, display_name="Nora", context_window=40, now=T0,
+    ))
+
+    # `spoke` once, not twice: `decision_line` suppresses a reason that merely
+    # repeats the verdict. The AGE is the half this test is about.
+    assert "(31m ago) Friends proactive_act spoke" in rendered
+    block = rendered.split("<loop_decisions")[1].split("</loop_decisions>")[0]
+    assert "conv-1" not in block
+
+
 async def test_a_participation_turn_never_reads_back_its_own_rows(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
@@ -2565,7 +2606,7 @@ async def test_a_participation_turn_never_reads_back_its_own_rows(
     ):
         await store.append(row=DecisionRow(
             id=row_id, writer=writer, platform="signal",
-            conversation_id="conv-1", workspace="friends", note_id=None,
+            conversation_id="conv-1", unit="friends", note_id=None,
             verdict=verdict, reason=reason, ts=ts,
         ))
     path = _fire_path(
@@ -2581,16 +2622,26 @@ async def test_a_participation_turn_never_reads_back_its_own_rows(
     ]
 
 
-async def test_only_the_participation_occasion_reads_the_decision_log(
+async def test_only_the_floor_weighing_occasions_read_the_decision_log(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
-    """A reminder or a gathering firing was decided when its row was written,
-    so the block would cost a read and change nothing. Asserted as the pair, so
-    deleting the `kind` check cannot pass by making both sides empty."""
+    """Participation and the proactive act turn read it; a reminder does not.
+
+    A reminder or a gathering firing was decided when its row was written and
+    is not weighing whether to take a floor, so the block would cost a read and
+    change nothing. Asserted as the triple, so deleting
+    `_DECISION_WRITERS_BY_KIND` cannot pass by making every side empty.
+
+    Falsification: drop `"proactive"` from `_DECISION_WRITERS_BY_KIND` and the
+    second assertion reddens; drop the whole mapping lookup and the third does.
+    """
+    # `proactive_act` is the ONE writer both readers carry, so a single row
+    # serves all three assertions and neither side can pass by being empty for
+    # a reason unrelated to the `kind` check.
     store = InMemoryDecisionLogStore()
     await store.append(row=DecisionRow(
         id="r1", writer="proactive_act", platform="signal",
-        conversation_id="conv-1", workspace="friends", note_id=None,
+        conversation_id="conv-1", unit="friends", note_id=None,
         verdict="spoke", reason="spoke", ts=int(T0.timestamp() * 1000),
     ))
     path = _fire_path(
@@ -2600,26 +2651,78 @@ async def test_only_the_participation_occasion_reads_the_decision_log(
     )
 
     assert (await path.build_context(_participation())).decisions != ()
+    assert (await path.build_context(
+        fire_module.proactive_occasion([_proactive_row()]),
+    )).decisions != ()
     assert (await path.build_context(reminder_occasion([_reminder()]))).decisions == ()
 
 
+async def test_the_proactive_act_turn_reads_its_siblings_and_not_its_own_decide_row(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """The 2026-09-17 duplicate, pinned (msgs 5450/5455).
+
+    Two proactive rows about two notes came due 30 minutes apart in one room;
+    `heartbeat._by_turn` coalesces only rows due in the SAME tick, so they were
+    two turns, and the second raised what the first had already said. The
+    second turn's window DID carry the first message — as an unlabelled line of
+    her own speech. `proactive_act` in this set is what labels it.
+
+    `proactive_decide` is excluded for the rule's own reason: it is the
+    deliberation that produced THIS turn, `_proactive_header` already puts it
+    in front of her, and reading it back leans toward speaking. `tag` is
+    excluded because what a tag answered is in the transcript underneath, and
+    because it is the highest-volume writer — 20 rows of it would evict the one
+    `proactive_act` row this set exists to carry.
+
+    Falsification: add `proactive_decide` to `PROACTIVE_ACT_DECISION_WRITERS`,
+    or drop `proactive_act` from it.
+    """
+    store = InMemoryDecisionLogStore()
+    ts = int(T0.timestamp() * 1000)
+    for row_id, writer, verdict, reason in (
+        ("a", "participation", "silent", "declined"),
+        ("b", "tag", "replied", "send_reply"),
+        ("c", "proactive_decide", "remind", ""),
+        ("d", "proactive_act", "spoke", "spoke"),
+    ):
+        await store.append(row=DecisionRow(
+            id=row_id, writer=writer, platform="signal",
+            conversation_id="conv-1", unit="friends", note_id=None,
+            verdict=verdict, reason=reason, ts=ts,
+        ))
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        runner=FakeAgentRunner([]), participation_runner=FakeAgentRunner([]),
+        decisions=_decision_recorder(store), policy=_decision_policy(),
+    )
+
+    ctx = await path.build_context(
+        fire_module.proactive_occasion([_proactive_row()]),
+    )
+
+    assert [row.writer for _, rows in ctx.decisions for row in rows] == [
+        "participation", "proactive_act",
+    ]
+
+
 def _decision_policy() -> Policy:
-    """A two-room workspace: the Signal room the window closed in, and the
+    """A two-room unit: the Signal room the window closed in, and the
     Discord HOME room a proactive row fires into.
 
     A REAL `Policy`, not a stub, because the shape under test is issue #199's
     own: the decision was made in the other room on the other platform, and a
     room-scoped read would answer nothing. `permissive_policy` cannot stand in
-    — it holds no conversations, so it resolves no workspace and no label.
+    — it holds no conversations, so it resolves no unit and no label.
     """
     rooms = (
         Conversation(
             platform="signal", ids=frozenset({"conv-1"}), persons=None,
-            label="Friends", primary_id="conv-1", workspace="friends",
+            label="Friends", primary_id="conv-1", unit="friends",
         ),
         Conversation(
             platform="discord", ids=frozenset({"home-1"}), persons=None,
-            label="Friends HQ", primary_id="home-1", workspace="friends",
+            label="Friends HQ", primary_id="home-1", unit="friends",
             home_room=True,
         ),
     )
@@ -2741,3 +2844,35 @@ def test_the_gate_verdict_line_reaches_the_operator_unescaped() -> None:
     # was escaped: the strip is not part of the markup switch.
     assert len(out.splitlines()) == 1, out
     assert out == "mallory fine, do it. Grant: ok Grant: I already paid"
+
+
+def test_a_fire_path_turn_is_never_spoken(caplog):
+    """THE DECISION THIS PINS (operator, 2026-09-17). Every occasion the fire
+    path serves — a reminder, a proactive row, a participation turn, a version
+    announcement, the destination half of `send_to` — goes out as TEXT, even
+    when the request that created it was SPOKEN.
+
+    It needs a test because it is a DEFAULT, and a default nobody asserts is
+    one a later reader "fixes". It also silently changed shape under §12.2's
+    reversal: while speech had a room of its own, the occasion carried that
+    room's id and `adapter.send` routed on the ROOM, so every fire-path turn
+    into it was spoken. The routing key is the TURN now
+    (`ConversationTarget.voice`), so this default is what decides the surface.
+
+    Speaking unprompted into a voice channel is a much larger claim than
+    answering a question just asked in one; a deferred reply can always be a
+    text message."""
+    message = fire_module._synthetic_message(
+        Event(
+            platform="discord", conversation_id="111/222",
+            conversation_type="group", person_id="miles",
+            body="提我夜晚八點", speaker="miles", kind="reminder",
+            header=lambda tagger, now: "You set this yourself, out loud.",
+        ),
+        None,
+    )
+
+    assert message.voice is False
+    assert message.target().voice is False, (
+        "a fire-path reply is posted, never spoken — see _synthetic_message"
+    )

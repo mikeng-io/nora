@@ -349,7 +349,7 @@ async def test_recall_accepts_a_model_generated_query_override(persons):
 
 async def test_recall_is_blind_to_someone_who_is_not_in_this_room(persons):
     """Same scope as `lookup_person`, and it has to be: a memory lookup that
-    could reach any peer in the workspace is an address-book dump with extra
+    could reach any peer in the unit is an address-book dump with extra
     steps (design/11 §1.5)."""
     honcho = FakeMemoryStore(conclusions={"elsewhere_liu": ["a secret about her"]})
     result = await _call(_build(persons=persons, honcho=honcho)["about"], person="外人")
@@ -380,7 +380,7 @@ async def test_ask_memory_depth_falls_back_to_low_when_off_list(persons):
 
 async def test_ask_memory_is_blind_to_someone_not_in_this_room(persons):
     """Same roster gate as `about`: a reasoning call that could reach any peer
-    in the workspace is a cross-room leak with extra steps. Never asked."""
+    in the unit is a cross-room leak with extra steps. Never asked."""
     honcho = FakeMemoryStore(conclusions={"elsewhere_liu": ["a secret about her"]})
     result = await _call(_build(persons=persons, honcho=honcho)["ask_memory"], person="外人")
     assert result["status"] == "not_found"

@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import net from 'node:net';
 
+import { createFrontDoor } from '../src/controller.mjs';
 import { makeHarness, playTrack, tick, until, GUILD, CHANNEL } from './helpers.mjs';
 
 const PINNED_SNAPSHOT_KEYS = [
@@ -264,7 +265,7 @@ test('/stream enforces the decoded 2MB body budget and the bounded speech queue'
 
 test('/voice/status carries the snapshot plus seq/streaming/error/wake/pump', async () => {
   const h = await makeHarness();
-  const idle = await h.get('/voice/status');
+  const idle = await h.get(`/voice/status?guild_id=${GUILD}`);
   assert.equal(idle.status, 200);
   assert.equal(idle.body.last_event_seq, 0);
   assert.equal(idle.body.streaming, false);
@@ -278,7 +279,7 @@ test('/voice/status carries the snapshot plus seq/streaming/error/wake/pump', as
 
   const { generation } = await h.join();
   const t = await playTrack(h, { generation });
-  const playing = await h.get('/voice/status');
+  const playing = await h.get(`/voice/status?guild_id=${GUILD}`);
   assert.equal(playing.body.streaming, true);
   assert.equal(playing.body.player.status, 'playing');
   assert.equal(playing.body.playback_id, t.playbackId);
@@ -287,7 +288,7 @@ test('/voice/status carries the snapshot plus seq/streaming/error/wake/pump', as
   t.proc.close(1); // abnormal exit -> stream-failed surfaces in status
   await tick();
   await tick();
-  const failed = await h.get('/voice/status');
+  const failed = await h.get(`/voice/status?guild_id=${GUILD}`);
   assert.equal(failed.body.streaming, false);
   assert.equal(failed.body.last_error, 'ffmpeg-exit-1');
   assert.equal(failed.body.last_event_seq, 1);
@@ -300,7 +301,11 @@ test('/health is 200 liveness even healthy-but-idle, and /play is gone', async (
   const health = await h.get('/health');
   assert.equal(health.status, 200);
   assert.equal(health.body.status, 'ok');
-  assert.equal(health.body.voice, 'idle');
+  // PROCESS liveness, not one guild's, since 2026-09-17: one process serves
+  // several guilds, so `voice` (a single connection's state) could not be a
+  // property of the whole. The compose HEALTHCHECK curls this and must get
+  // 200 while the process holds no connection at all.
+  assert.deepEqual(health.body.guilds, [GUILD]);
 
   const gone = await h.post('/play', { audio_b64: 'eA', media_type: 'audio/mpeg' });
   assert.equal(gone.status, 404);
@@ -338,7 +343,7 @@ test('voice-death: destroyed connection tears down to idle and pushes the event'
   h.connection.emit('stateChange', { status: 'ready' }, { status: 'destroyed' });
   await tick();
 
-  const status = await h.get('/voice/status');
+  const status = await h.get(`/voice/status?guild_id=${GUILD}`);
   assert.equal(status.body.voice, 'idle');
   assert.equal(status.body.generation, null);
   for (let i = 0; i < 50 && h.leaves() === 0; i += 1) await tick(); // teardown persists idle BEFORE leave()
@@ -361,7 +366,7 @@ test('voice-death after a failed disconnect recovery window', async () => {
   await tick();
   await tick();
   assert.deepEqual(h.entersStateCalls.map((c) => c.status), ['ready']);
-  const status = await h.get('/voice/status');
+  const status = await h.get(`/voice/status?guild_id=${GUILD}`);
   assert.equal(status.body.voice, 'idle');
   assert.equal(h.delivered.filter((e) => e.type === 'voice-death').length, 1);
   void generation;
@@ -397,7 +402,7 @@ test('channel-emptied fires 60s after the human count drops to zero', async () =
   // The drop to zero only ARMS the grace timer — music keeps playing and
   // nothing is emitted yet.
   assert.equal(h.delivered.filter((e) => e.type === 'channel-emptied').length, 0);
-  const midway = await h.get('/voice/status');
+  const midway = await h.get(`/voice/status?guild_id=${GUILD}`);
   assert.equal(midway.body.voice, 'connected');
 
   h.clock.advance(60_000);
@@ -409,7 +414,7 @@ test('channel-emptied fires 60s after the human count drops to zero', async () =
   // The timer firing tears the connection down itself (§12.6: "the
   // controller tears the connection down AND writes desired=idle").
   assert.ok(await waitFor(() => h.leaves() > 0));
-  const after = await h.get('/voice/status');
+  const after = await h.get(`/voice/status?guild_id=${GUILD}`);
   assert.equal(after.body.voice, 'idle');
   await h.close();
 });
@@ -499,7 +504,7 @@ test('a human returning before the empty-channel timer fires cancels it', async 
   await tick();
   await tick();
   assert.equal(h.delivered.filter((e) => e.type === 'channel-emptied').length, 0);
-  const status = await h.get('/voice/status');
+  const status = await h.get(`/voice/status?guild_id=${GUILD}`);
   assert.equal(status.body.voice, 'connected');
   assert.equal(h.leaves(), 0);
   await h.close();
@@ -528,7 +533,7 @@ test('a manual Discord-UI disconnect during the empty-channel grace period cance
   h.connection.emit('stateChange', { status: 'ready' }, { status: 'destroyed' });
   await tick();
 
-  const status = await h.get('/voice/status');
+  const status = await h.get(`/voice/status?guild_id=${GUILD}`);
   assert.equal(status.body.voice, 'idle');
   assert.ok(await waitFor(() => h.leaves() > 0));
   assert.equal(h.leaves(), 1);
@@ -575,7 +580,7 @@ test('an over-limit body is 413 body_too_large, distinct from a transport read f
 
 test('a body that fails mid-read is 400 body_read_failed, not body_too_large', async () => {
   const h = await makeHarness();
-  const port = h.core.server.address().port;
+  const port = h.port;
   const raw = await new Promise((resolve, reject) => {
     const socket = net.connect({ host: '127.0.0.1', port }, () => {
       // Promise 100 bytes, send 7, then FIN: the upload dies mid-body but
@@ -723,7 +728,7 @@ test('a retried /voice/exit with the same request_id returns the memo without re
 
 test('a JSON null body is 400 invalid_body and the server keeps serving', async () => {
   const h = await makeHarness();
-  const raw = await fetch(`${h.core.server.address().address === '127.0.0.1' ? 'http://127.0.0.1' : ''}:${h.core.server.address().port}/music/stop`, {
+  const raw = await fetch(`http://127.0.0.1:${h.port}/music/stop`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: 'null',
@@ -732,7 +737,7 @@ test('a JSON null body is 400 invalid_body and the server keeps serving', async 
   const parsed = await raw.json();
   assert.equal(parsed.error, 'invalid_body');
 
-  const list = await fetch(`http://127.0.0.1:${h.core.server.address().port}/music/stop`, {
+  const list = await fetch(`http://127.0.0.1:${h.port}/music/stop`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: '[1,2]',
@@ -742,5 +747,176 @@ test('a JSON null body is 400 invalid_body and the server keeps serving', async 
   // The server survived: a normal request still works.
   const { res } = await h.join();
   assert.equal(res.status, 200);
+  await h.close();
+});
+
+// --- one process, several guilds (2026-09-17) --------------------------------
+// The front door is the only thing that sees a request before its guild is
+// known. These pin what it does with that: route it, or refuse it.
+
+test('a POST for a guild with no core is refused, and mints nothing', async () => {
+  // THE BOUND THIS GUARDS: cores are minted on JOIN only. Minting on any POST
+  // would make an unbounded map keyed by whatever a caller puts in guild_id —
+  // the same shape as the unknown-guild hole fixed on nora's side the same
+  // day, and this control plane has no auth either.
+  const h = await makeHarness();
+
+  const res = await h.post('/music/stop', { guild_id: 'a-guild-with-no-core', generation: 'x' });
+
+  assert.equal(res.status, 400);
+  assert.equal(res.body.error, 'wrong_guild');
+  await h.close();
+});
+
+test('a POST with no guild_id at all is refused before any handler runs', async () => {
+  const h = await makeHarness();
+
+  const res = await h.post('/music/stop', { generation: 'x' });
+
+  assert.equal(res.status, 400);
+  assert.equal(res.body.error, 'wrong_guild');
+  await h.close();
+});
+
+test('/voice/status requires a guild and 404s an unknown one', async () => {
+  // A GET carries no body, so the guild rides the query string. Defaulting to
+  // "the only guild" would report one server's playback as another's the
+  // moment a second one connected.
+  const h = await makeHarness();
+
+  const missing = await h.get('/voice/status');
+  assert.equal(missing.status, 400);
+
+  const unknown = await h.get('/voice/status?guild_id=someone-else');
+  assert.equal(unknown.status, 404);
+  assert.equal(unknown.body.error, 'unknown_guild');
+  await h.close();
+});
+
+test('an error raised before a guild resolves carries the contract shape', async () => {
+  // `{error, request_id, state}` on every error, always. Before a guild is
+  // known there is no snapshot to attach, so `state` is null rather than
+  // another guild's — nora's client reads these three keys unconditionally.
+  const h = await makeHarness();
+
+  const res = await h.post('/music/stop', { guild_id: 'nope' });
+
+  assert.deepEqual(Object.keys(res.body).sort(), ['error', 'request_id', 'state']);
+  assert.equal(res.body.state, null);
+  await h.close();
+});
+
+test('the front door asks to CREATE only on a join', async () => {
+  // THE GAP THIS CLOSES: the tests above drive `makeHarness`, whose
+  // `controllerFor` ignores the `create` flag entirely — so "a POST for an
+  // unknown guild mints nothing" was asserting the harness's behaviour, not
+  // production's. Reverting the rule in controller.mjs left them all green.
+  //
+  // Cores are minted on JOIN only. Minting on any POST would build an
+  // unbounded map keyed by whatever a caller puts in `guild_id`, on a control
+  // plane that has no auth by design.
+  const asked = [];
+  const stub = {
+    handleParsedPost: (res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{}');
+    },
+  };
+  const server = createFrontDoor({
+    controllerFor: (guildId, opts = {}) => {
+      asked.push({ guildId, create: Boolean(opts.create) });
+      return stub;
+    },
+    health: () => ({ status: 'ok' }),
+    log: () => {},
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const send = (p) => fetch(base + p, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ guild_id: GUILD }),
+  });
+
+  await send('/voice/join');
+  await send('/music/stop');
+  await send('/stream');
+
+  assert.deepEqual(asked, [
+    { guildId: GUILD, create: true },   // join may create
+    { guildId: GUILD, create: false },  // every other verb may not
+    { guildId: GUILD, create: false },
+  ]);
+  await new Promise((r) => server.close(r));
+});
+
+test('a COLD BOOT with zero cores still accepts a join', async () => {
+  // THE DEADLOCK THIS GUARDS, shipped to production 2026-09-17. The front door
+  // asked a CORE whether a route was known, to answer before the guild was
+  // known. With no cores yet — a fresh volume, or a restart after every guild
+  // exited — that probe returned null and EVERY route 404'd, including the
+  // join that would have created the first core. Voice could never be joined
+  // for the life of the process, and /health stayed 200 throughout.
+  //
+  // Route knowledge is static. It must not depend on state that a join creates.
+  const cores = new Map();
+  const stub = {
+    handleParsedPost: (res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{}');
+    },
+  };
+  const server = createFrontDoor({
+    controllerFor: (guildId, opts = {}) => {
+      if (cores.has(guildId)) return stub;
+      if (!opts.create) return null;
+      cores.set(guildId, stub);
+      return stub;
+    },
+    health: () => ({ status: 'ok', guilds: [...cores.keys()] }),
+    log: () => {},
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  assert.equal(cores.size, 0, 'precondition: no cores, as on a cold boot');
+  const res = await fetch(`${base}/voice/join`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ guild_id: '100000000000000203', channel_id: 'c1' }),
+  });
+
+  assert.equal(res.status, 200, 'a join on a cold boot must not 404');
+  assert.equal(cores.size, 1);
+  await new Promise((r) => server.close(r));
+});
+
+test('a guild_id that is not a snowflake is refused before it can name a file', async () => {
+  // `guild_id` reaches `path.join(STATE_DIR, `${guildId}.json`)` and mints a
+  // core, on a control plane with no auth by design. Production accepted
+  // "../../etc/evil" and only Discord's own API refused it, by luck.
+  const h = await makeHarness();
+
+  for (const bad of ['../../etc/evil', 'desired_state', '', 'g1', '12345']) {
+    const res = await h.post('/voice/join', { guild_id: bad, channel_id: 'c1' });
+    assert.equal(res.status, 400, bad);
+    assert.equal(res.body.error, 'wrong_guild', bad);
+  }
+  await h.close();
+});
+
+test('a guild the process holds no connection for is 404, not wrong_guild', async () => {
+  // Same fact as GET /voice/status's 404: "I have no connection for this
+  // guild" is the ordinary state after a restart into idle, and nora reads it
+  // as "reconnect me". `wrong_guild` reads as "you are misconfigured".
+  const h = await makeHarness();
+
+  const res = await h.post('/music/stop', {
+    guild_id: '222222222222222222', generation: 'g', request_id: 'r',
+  });
+
+  assert.equal(res.status, 404);
+  assert.equal(res.body.error, 'unknown_guild');
+  assert.equal(res.body.request_id, 'r', 'the envelope still echoes request_id');
   await h.close();
 });

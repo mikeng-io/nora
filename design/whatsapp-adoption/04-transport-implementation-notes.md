@@ -2,7 +2,7 @@
 
 Implemented 2026-09-04 on branch `design/whatsapp-adoption` (this worktree
 only; master untouched). Scope: the TRANSPORT phase of
-`design/whatsapp-adoption/` — groups admitted to the friends workspace, 1:1
+`design/whatsapp-adoption/` — groups admitted to the friends unit, 1:1
 deny-by-default until the DM study lands.
 
 ## What was built

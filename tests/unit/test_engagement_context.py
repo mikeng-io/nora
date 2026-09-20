@@ -286,15 +286,15 @@ async def test_the_block_is_off_entirely_when_the_budget_is_zero():
 # The note tier's read (2026-08-21 note-tier design, §5.1).
 #
 # The ONE read in this assembler that is not room-keyed: `standing` is scoped
-# by WORKSPACE (§3 / DEC-105), so the fake below is a workspace→notes map
+# by UNIT (§3 / DEC-105), so the fake below is a unit→notes map
 # rather than a store that says yes — a `standing` implementation ignoring its
 # argument would pass every assertion here and prove nothing about the
 # scoping, which is the only property deciding who sees a note.
 
 
-def _note(note_id: str, workspace: str, title: str) -> Note:
+def _note(note_id: str, unit: str, title: str) -> Note:
     return Note(
-        id=note_id, workspace=workspace, title=title,
+        id=note_id, unit=unit, title=title,
         description="Three venues on the table; nobody has picked one.",
         uncertainty="which venue, and whether the date still works",
         closing_condition="a venue is booked, or the date is abandoned",
@@ -303,10 +303,10 @@ def _note(note_id: str, workspace: str, title: str) -> Note:
     )
 
 
-def _policy(workspace: str = "ridgeline", conversation_id: str = "g1") -> Policy:
+def _policy(unit: str = "ridgeline", conversation_id: str = "g1") -> Policy:
     convo = Conversation(
         platform="signal", ids=frozenset({conversation_id}), persons=None,
-        primary_id=conversation_id, workspace=workspace,
+        primary_id=conversation_id, unit=unit,
     )
     return Policy(
         conversations=(convo,), _by_id={("signal", conversation_id): convo},
@@ -314,21 +314,21 @@ def _policy(workspace: str = "ridgeline", conversation_id: str = "g1") -> Policy
 
 
 class FakeNoteStore:
-    """A workspace→notes map answering `()` for a workspace it does not hold —
-    the shape `SqlNoteStore.standing` has (`WHERE workspace = :workspace`), not
+    """A unit→notes map answering `()` for a unit it does not hold —
+    the shape `SqlNoteStore.standing` has (`WHERE unit = :unit`), not
     a double that returns its whole contents whatever it is asked."""
 
-    def __init__(self, by_workspace: dict[str, tuple[Note, ...]]) -> None:
-        self._by_workspace = by_workspace
+    def __init__(self, by_unit: dict[str, tuple[Note, ...]]) -> None:
+        self._by_unit = by_unit
         self.calls: list[str] = []
 
-    async def standing(self, *, workspace: str) -> tuple[Note, ...]:
-        self.calls.append(workspace)
-        return self._by_workspace.get(workspace, ())
+    async def standing(self, *, unit: str) -> tuple[Note, ...]:
+        self.calls.append(unit)
+        return self._by_unit.get(unit, ())
 
 
 class RaisingNoteStore:
-    async def standing(self, *, workspace: str) -> tuple[Note, ...]:
+    async def standing(self, *, unit: str) -> tuple[Note, ...]:
         raise RuntimeError("note store is down")
 
 
@@ -356,12 +356,12 @@ async def test_notes_are_empty_when_no_store_is_configured():
     assert ctx.notes == ()
 
 
-async def test_the_notes_read_is_keyed_on_the_workspace_not_the_conversation():
-    """§3 is the whole point of this read: `g1` belongs to workspace `ridgeline`,
-    and a note established in the OTHER workspace must not appear however alike
+async def test_the_notes_read_is_keyed_on_the_unit_not_the_conversation():
+    """§3 is the whole point of this read: `g1` belongs to unit `ridgeline`,
+    and a note established in the OTHER unit must not appear however alike
     the two rooms are. The ARGUMENT is asserted as well as the result, because
     a read keyed on the conversation id would answer `()` here — the right
-    result for the wrong reason, and the wrong result the day a workspace has
+    result for the wrong reason, and the wrong result the day a unit has
     two rooms."""
     mine = _note("n1", "ridgeline", "9 Sept dinner")
     theirs = _note("n2", "friends", "Someone else's wedding")
@@ -369,13 +369,13 @@ async def test_the_notes_read_is_keyed_on_the_workspace_not_the_conversation():
     assembler = TranscriptInjection(
         audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
         context_window=10, metrics=Metrics(), notes=store,
-        policy=_policy(workspace="ridgeline"),
+        policy=_policy(unit="ridgeline"),
     )
 
     ctx = await assembler.assemble(request=_request())
 
     assert ctx.notes == (mine,)
-    assert store.calls == ["ridgeline"], "scoped by workspace, never by room"
+    assert store.calls == ["ridgeline"], "scoped by unit, never by room"
 
 
 async def test_a_failing_notes_read_yields_an_empty_index_not_a_dead_turn():
@@ -406,10 +406,10 @@ async def test_a_failing_notes_read_counts_nora_errors_total_stage_notes():
 
 
 async def test_a_room_the_policy_does_not_know_reads_no_notes_and_is_counted():
-    """A store wired with no workspace to scope it by is a WIRING GAP, not an
+    """A store wired with no unit to scope it by is a WIRING GAP, not an
     empty notebook: engagement and ingest disagree about which `Policy` they
     were given (`EngagementPipeline`'s own `convo is not None` note). It
-    defaults safely — a thinner prompt, never notes from a guessed workspace —
+    defaults safely — a thinner prompt, never notes from a guessed unit —
     and it is COUNTED, because the alternative is the `<notes>` block quietly
     never appearing for the life of a deployment."""
     metrics = Metrics()
@@ -423,7 +423,7 @@ async def test_a_room_the_policy_does_not_know_reads_no_notes_and_is_counted():
     ctx = await assembler.assemble(request=_request())
 
     assert ctx.notes == ()
-    assert store.calls == [], "no workspace means no read at all, not a guess"
+    assert store.calls == [], "no unit means no read at all, not a guess"
     assert metrics.get("nora_errors_total", stage="notes", platform="signal") == 1
 
 
@@ -453,10 +453,10 @@ async def test_the_index_gauge_reports_how_many_notes_she_was_actually_shown():
     # Bound to what reached the context, not to a number written beside it: a
     # gauge that agreed with a constant while `ctx.notes` disagreed would be
     # measuring the test.
-    assert metrics.get("nora_note_index_entries", workspace="ridgeline") == len(ctx.notes) == 3
+    assert metrics.get("nora_note_index_entries", unit="ridgeline") == len(ctx.notes) == 3
 
 
-async def test_the_index_gauge_is_labelled_so_two_workspaces_do_not_overwrite():
+async def test_the_index_gauge_is_labelled_so_two_units_do_not_overwrite():
     """The label is the reason this gauge means anything on this deployment.
     `friends` and `ridgeline` are separate notebooks; unlabelled, whichever room
     tagged last would own the reading and the exported number would mean «the
@@ -467,17 +467,17 @@ async def test_the_index_gauge_is_labelled_so_two_workspaces_do_not_overwrite():
     })
     metrics = Metrics()
 
-    for conversation_id, workspace in (("g1", "ridgeline"), ("g2", "friends")):
+    for conversation_id, unit in (("g1", "ridgeline"), ("g2", "friends")):
         assembler = TranscriptInjection(
             audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
             context_window=10, metrics=metrics, notes=store,
-            policy=_policy(conversation_id=conversation_id, workspace=workspace),
+            policy=_policy(conversation_id=conversation_id, unit=unit),
         )
         await assembler.assemble(
             request=_request(_msg(conversation_id=conversation_id)))
 
-    assert metrics.get("nora_note_index_entries", workspace="ridgeline") == 1
-    assert metrics.get("nora_note_index_entries", workspace="friends") == 4
+    assert metrics.get("nora_note_index_entries", unit="ridgeline") == 1
+    assert metrics.get("nora_note_index_entries", unit="friends") == 4
 
 
 async def test_an_empty_notebook_reads_zero_rather_than_going_absent():
@@ -498,8 +498,8 @@ async def test_an_empty_notebook_reads_zero_rather_than_going_absent():
     # `get(...) == 0` is true of a gauge that was never published and cannot
     # tell this state from the one the test below covers. Asserting membership
     # in `snapshot()` is what makes the zero a measurement.
-    assert ("nora_note_index_entries", (("workspace", "ridgeline"),)) in metrics.snapshot()
-    assert metrics.get("nora_note_index_entries", workspace="ridgeline") == 0
+    assert ("nora_note_index_entries", (("unit", "ridgeline"),)) in metrics.snapshot()
+    assert metrics.get("nora_note_index_entries", unit="ridgeline") == 0
 
 
 async def test_a_failed_read_leaves_the_gauge_absent_rather_than_zero():
@@ -518,7 +518,7 @@ async def test_a_failed_read_leaves_the_gauge_absent_rather_than_zero():
 
     await assembler.assemble(request=_request())
 
-    assert ("nora_note_index_entries", (("workspace", "ridgeline"),)) not in metrics.snapshot()
+    assert ("nora_note_index_entries", (("unit", "ridgeline"),)) not in metrics.snapshot()
     assert metrics.get("nora_errors_total", stage="notes", platform="signal") == 1
 
 
@@ -540,7 +540,7 @@ async def test_no_standing_store_is_the_dormant_default_and_costs_no_query():
 async def test_the_position_is_read_by_platform_and_conversation():
     """S4, asserted on the ARGUMENTS rather than on the value: this is the one
     read in the assembler keyed on `(platform, conversation_id)` rather than on
-    a workspace or a scope, and a store called with the wrong key would return
+    a unit or a scope, and a store called with the wrong key would return
     a plausible position belonging to another room."""
     from nora.domain.standing import Standing
     from nora.testing import InMemoryStandingStore

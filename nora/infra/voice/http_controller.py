@@ -65,9 +65,24 @@ class VoiceControllerRejected(VoiceControllerError):  # noqa: N818 — pinned co
         self.reason = reason
 
 
+class VoiceControllerNoConnection(VoiceControllerUnavailable):
+    """HTTP 404 `unknown_guild` — the controller holds NO connection for this
+    guild. Since one process serves several (multi-guild, 2026-09-17) this is
+    an ordinary answer, not an outage: on a cold boot every guild answers it.
+
+    Subclasses `VoiceControllerUnavailable` ON PURPOSE, so every existing
+    handler keeps its fail-closed behaviour unchanged and only the callers
+    that care — boot adoption, which must not log a WARNING on every start —
+    need to know the difference."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 class VoiceControllerClient:
     """One HTTP client for the whole control plane. `base_url` is the
-    `[speech.tts] sidecar_endpoint` config value — that endpoint IS the
+    `[speech.tts] sidecars` config value — that endpoint IS the
     audio-controller's base.
 
     With no injected `session`, each call opens its own
@@ -97,10 +112,11 @@ class VoiceControllerClient:
             {"guild_id": guild_id, "channel_id": channel_id, "request_id": request_id},
         )
 
-    async def exit(self, generation: str, *, request_id: str) -> dict[str, Any]:
+    async def exit(self, generation: str, *, guild_id: str, request_id: str) -> dict[str, Any]:
         """`POST /voice/exit` — stop everything and destroy the connection."""
         return await self._control(
-            "/voice/exit", {"generation": generation, "request_id": request_id},
+            "/voice/exit",
+            {"guild_id": guild_id, "generation": generation, "request_id": request_id},
         )
 
     async def play(
@@ -108,6 +124,7 @@ class VoiceControllerClient:
         generation: str,
         stream_url: str,
         *,
+        guild_id: str,
         title: str | None = None,
         duration_seconds: float | None = None,
         resumable: bool | None = None,
@@ -119,7 +136,8 @@ class VoiceControllerClient:
         policy: speech preemption ENDS it instead of reviving from 0);
         `None` (every caller today) leaves the controller's default."""
         body: dict[str, Any] = {
-            "generation": generation, "stream_url": stream_url, "request_id": request_id,
+            "guild_id": guild_id, "generation": generation,
+            "stream_url": stream_url, "request_id": request_id,
         }
         if title is not None:
             body["title"] = title
@@ -129,33 +147,43 @@ class VoiceControllerClient:
             body["resumable"] = resumable
         return await self._control("/music/play", body)
 
-    async def stop_music(self, generation: str, *, request_id: str) -> dict[str, Any]:
+    async def stop_music(
+        self, generation: str, *, guild_id: str, request_id: str,
+    ) -> dict[str, Any]:
         """`POST /music/stop` — stop the music slot, STAY connected. A no-op
         (200) when idle."""
         return await self._control(
-            "/music/stop", {"generation": generation, "request_id": request_id},
+            "/music/stop",
+            {"guild_id": guild_id, "generation": generation, "request_id": request_id},
         )
 
-    async def pause(self, generation: str, *, request_id: str) -> dict[str, Any]:
+    async def pause(
+        self, generation: str, *, guild_id: str, request_id: str,
+    ) -> dict[str, Any]:
         """`POST /music/pause` — 409 `pause_during_speech` when speech holds
         the pipeline (surfaces as `GenerationConflict`)."""
         return await self._control(
-            "/music/pause", {"generation": generation, "request_id": request_id},
+            "/music/pause",
+            {"guild_id": guild_id, "generation": generation, "request_id": request_id},
         )
 
-    async def resume(self, generation: str, *, request_id: str) -> dict[str, Any]:
+    async def resume(
+        self, generation: str, *, guild_id: str, request_id: str,
+    ) -> dict[str, Any]:
         return await self._control(
-            "/music/resume", {"generation": generation, "request_id": request_id},
+            "/music/resume",
+            {"guild_id": guild_id, "generation": generation, "request_id": request_id},
         )
 
     async def set_volume(
-        self, generation: str, percent: int, *, request_id: str,
+        self, generation: str, percent: int, *, guild_id: str, request_id: str,
     ) -> dict[str, Any]:
         """`POST /music/volume` — `percent` is 0-200 (400
         `percent_out_of_range` otherwise)."""
         return await self._control(
             "/music/volume",
-            {"generation": generation, "percent": percent, "request_id": request_id},
+            {"guild_id": guild_id, "generation": generation,
+             "percent": percent, "request_id": request_id},
         )
 
     async def stream(
@@ -181,11 +209,15 @@ class VoiceControllerClient:
             body["guild_id"] = guild_id
         return await self._control("/stream", body)
 
-    async def status(self) -> dict[str, Any]:
+    async def status(self, guild_id: str) -> dict[str, Any]:
         """`GET /voice/status` — the full snapshot (voice state, generation,
         channel, playback id, player, speech queue depth, `last_event_seq`,
-        `streaming`, `last_error`, `wake`, `pump`)."""
-        return await self._request("GET", "/voice/status", None)
+        `streaming`, `last_error`, `wake`, `pump`) for ONE guild.
+
+        The guild rides the query string because a GET carries no body
+        (multi-guild, 2026-09-17): one controller process serves several, so
+        an unqualified status could only answer for whichever it picked."""
+        return await self._request("GET", f"/voice/status?guild_id={guild_id}", None)
 
     async def _control(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         """A control POST's return is the `state` snapshot out of the
@@ -235,6 +267,8 @@ class VoiceControllerClient:
                     raise GenerationConflict(reason)
                 if resp.status == 400:
                     raise VoiceControllerRejected(reason)
+                if resp.status == 404 and reason == "unknown_guild":
+                    raise VoiceControllerNoConnection(reason)
                 raise VoiceControllerUnavailable(
                     f"{path} answered HTTP {resp.status} ({reason})"
                 )
@@ -290,7 +324,7 @@ class HttpVoiceSession:
         stale generation, it is a gone one, and retrying against it would
         resurrect audio nora already tore down."""
         try:
-            status = await self._client.status()
+            status = await self._client.status(self._guild_id)
         except VoiceControllerError:
             return False
         if status.get("voice") != "connected":
@@ -330,7 +364,7 @@ class HttpVoiceSession:
     ) -> None:
         state = await self._with_reconcile(
             lambda request_id: self._client.play(
-                self._generation, stream_url,
+                self._generation, stream_url, guild_id=self._guild_id,
                 duration_seconds=duration_seconds, resumable=resumable,
                 request_id=request_id,
             )
@@ -340,12 +374,16 @@ class HttpVoiceSession:
 
     async def pause(self) -> None:
         await self._with_reconcile(
-            lambda request_id: self._client.pause(self._generation, request_id=request_id)
+            lambda request_id: self._client.pause(
+                self._generation, guild_id=self._guild_id, request_id=request_id,
+            )
         )
 
     async def resume(self) -> None:
         await self._with_reconcile(
-            lambda request_id: self._client.resume(self._generation, request_id=request_id)
+            lambda request_id: self._client.resume(
+                self._generation, guild_id=self._guild_id, request_id=request_id,
+            )
         )
 
     async def stop(self) -> None:
@@ -356,7 +394,9 @@ class HttpVoiceSession:
         teardown (B7, design/voice-channel/07) complete locally instead of
         dying on a controller that is already gone."""
         try:
-            await self._client.stop_music(self._generation, request_id=self._request_id())
+            await self._client.stop_music(
+                self._generation, guild_id=self._guild_id, request_id=self._request_id(),
+            )
         except GenerationConflict as exc:
             if exc.reason != "generation_conflict":
                 raise
@@ -373,7 +413,8 @@ class HttpVoiceSession:
         percent = max(0, min(200, round(volume * 100)))
         await self._with_reconcile(
             lambda request_id: self._client.set_volume(
-                self._generation, percent, request_id=request_id,
+                self._generation, percent, guild_id=self._guild_id,
+                request_id=request_id,
             )
         )
 
@@ -383,7 +424,9 @@ class HttpVoiceSession:
         saw first, an exit someone else issued) is exactly the end state
         this call asks for."""
         try:
-            await self._client.exit(self._generation, request_id=self._request_id())
+            await self._client.exit(
+                self._generation, guild_id=self._guild_id, request_id=self._request_id(),
+            )
         except GenerationConflict:
             log.info(
                 "voice exit for guild %s: generation already invalid — treated as done",

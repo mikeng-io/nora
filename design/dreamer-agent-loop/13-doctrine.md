@@ -332,7 +332,7 @@ careful is the entire job"* was at least shape-free in this respect, whatever
 §2 says against it on other grounds.
 
 **(b) That sentence is not only job-layer; it is wrong as a description of the
-environment.** `note-curation` is workspace-keyed, `uses_watermark = False`,
+environment.** `note-curation` is unit-keyed, `uses_watermark = False`,
 and is handed note bodies with a per-note evidence block — not a stretch of one
 room's conversation. `proactive` is handed the note index, each room's standing,
 its own decision log and a self card, and its objective says so in its first

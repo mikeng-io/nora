@@ -32,7 +32,7 @@ introducing a second, looser gate.
 
 ## One person, multiple platforms
 
-This is the first real exercise of the workspace concept described in
+This is the first real exercise of the unit concept described in
 `design/proposed/24-honcho-integration-v2.md`: a person's Discord and Signal
 accounts both resolve to the same `person_id` / Honcho peer, so recall and
 disclosure guardrails (R-18/R-28/R-31) apply uniformly regardless of which

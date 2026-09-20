@@ -22,8 +22,12 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from nora.domain.music import MusicSession
-from nora.domain.ports import ResolvedTrack
-from nora.platform.discord.music_manager import MusicPlayerManager, PlaybackProbe
+from nora.domain.ports import ResolvedTrack, TrackSource
+from nora.platform.discord.music_manager import (
+    _MAX_STREAM_RETRIES,
+    MusicPlayerManager,
+    PlaybackProbe,
+)
 from nora.testing.music import FakeMusicQueueStore, FakeMusicSessionStore
 
 T0 = datetime(2026, 8, 23, 12, 0, tzinfo=UTC)
@@ -67,15 +71,34 @@ class _StubSource:
     def __init__(
         self, tracks: dict[str, _StubEntry], *,
         related: dict[str, Sequence[ResolvedTrack]] | None = None,
+        session_broken: bool = False,
+        gone: set[str] | None = None,
     ) -> None:
         self._tracks = _with_locators_registered(tracks)
         self._related = dict(related or {})
+        self.resolved: list[str] = []
+        self.refreshed = 0
+        # The live 2026-09-18 shape: a source session has gone bad, so NOTHING
+        # resolves until it is refreshed. Lets a test prove the stale-stream
+        # retry discards the session before re-resolving rather than asking
+        # the broken thing for another broken answer.
+        self.session_broken = session_broken
+        # Locators that resolve to nothing however healthy the session is —
+        # a deleted or private video, which no retry can bring back.
+        self._gone = set(gone or ())
 
     async def resolve(self, *, query_or_url: str) -> Sequence[ResolvedTrack]:
+        self.resolved.append(query_or_url)
+        if self.session_broken or query_or_url in self._gone:
+            return ()
         return _as_sequence(self._tracks.get(query_or_url))
 
     async def related(self, *, locator: str) -> Sequence[ResolvedTrack]:
         return self._related.get(locator, ())
+
+    async def refresh_session(self) -> None:
+        self.refreshed += 1
+        self.session_broken = False
 
 
 class _GatedSource:
@@ -93,6 +116,9 @@ class _GatedSource:
         if query_or_url == self._gated_query:
             await self._gate.wait()
         return _as_sequence(self._tracks.get(query_or_url))
+
+    async def refresh_session(self) -> None:
+        return None
 
 
 class _FakeVoiceSession:
@@ -198,11 +224,12 @@ def _manager(
     generation_probe=None,
     drop_voice_session=None,
     exit_voice_session=None,
+    source: TrackSource | None = None,
 ) -> MusicPlayerManager:
     scheduler = _FakeScheduler()
     return MusicPlayerManager(
         queue_store=FakeMusicQueueStore(), session_store=FakeMusicSessionStore(),
-        track_source=_StubSource(tracks, related=related), idle_timeout_seconds=300.0,
+        track_source=source or _StubSource(tracks, related=related), idle_timeout_seconds=300.0,
         spawn=asyncio.ensure_future, clock_sleep=scheduler.clock_sleep,
         autoplay_enabled=autoplay_enabled, playback_probe=playback_probe,
         generation_probe=generation_probe, drop_voice_session=drop_voice_session,
@@ -1543,3 +1570,169 @@ async def test_a_stale_play_success_after_stop_and_new_play_does_not_corrupt_the
         "bookkeeping for the NEW player"
     )
     assert status.now_playing is not None and status.now_playing.title == "Track C"
+
+
+# --- stale-stream retry (design/voice-channel/07 §5, audit B14) ------------
+#
+# Before this, `stream-failed` called straight through to the advance, so a
+# rejected CDN address cost not one song but the whole session: each failure
+# advanced, the next track was resolved through the same broken source
+# session, failed identically, and autoplay emptied the queue into silence in
+# about a minute (measured live 2026-09-18 — four plays, four `ffmpeg-exit-1`,
+# zero seconds of audio). A failure to START playing is a reason to try that
+# track again; it is not evidence the track is over.
+
+
+async def _playing_a_and_b(**kwargs: object) -> tuple[MusicPlayerManager, _RecordingNotify]:
+    """Track A playing, Track B queued behind it."""
+    manager = _manager({"track a": _TRACK_A, "track b": _TRACK_B}, **kwargs)
+    notify = _RecordingNotify()
+
+    async def connect() -> _FakeVoiceSession:
+        return _FakeVoiceSession()
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1", notify=notify,
+    )
+    await manager.play(
+        guild_id="guild-1", query_or_url="track b", requested_by="miles",
+        added_at=T0, connect=None,
+    )
+    notify.messages.clear()
+    return manager, notify
+
+
+async def test_a_failed_stream_retries_the_same_track_instead_of_advancing() -> None:
+    manager, notify = await _playing_a_and_b()
+    source = manager._track_source  # type: ignore[attr-defined]
+    source.resolved.clear()
+
+    handled = await manager.on_stream_failed(
+        "guild-1", playback_id=None, reason="ffmpeg-exit-1",
+    )
+
+    assert handled is True
+    status = await manager.status("guild-1")
+    assert status is not None
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track A"  # the SAME track, not the next
+    assert [t.title for t in status.queue] == ["Track B"]  # nothing popped
+    assert source.resolved == ["locator-a"]  # re-resolved for a fresh address
+    assert source.refreshed == 1  # through a NEW session, not the broken one
+    # The room was already told what is playing; a stumble is not news.
+    assert notify.messages == []
+
+
+async def test_the_retry_refreshes_the_source_session_before_re_resolving() -> None:
+    """Order matters, and this is the whole reason the hook exists: a
+    locator is only as good as the session that signed it, so re-resolving
+    first would hand back another address from the thing that just failed.
+    The source here answers NOTHING until it has been refreshed."""
+    source = _StubSource({"track a": _TRACK_A, "track b": _TRACK_B})
+    manager, _ = await _playing_a_and_b(source=source)
+    source.session_broken = True  # the session rots while Track A is playing
+
+    await manager.on_stream_failed("guild-1", playback_id=None, reason="ffmpeg-exit-1")
+
+    status = await manager.status("guild-1")
+    assert status is not None
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track A"
+    assert source.refreshed == 1
+
+
+async def test_the_retry_budget_is_bounded_and_then_the_queue_advances() -> None:
+    """Bounded, not infinite: a genuinely dead track must not strand a guild
+    on silence with no way out, which would be strictly worse than the
+    advance this replaced."""
+    manager, notify = await _playing_a_and_b()
+
+    for _ in range(_MAX_STREAM_RETRIES):
+        await manager.on_stream_failed("guild-1", playback_id=None, reason="ffmpeg-exit-1")
+        status = await manager.status("guild-1")
+        assert status is not None and status.now_playing is not None
+        assert status.now_playing.title == "Track A"
+
+    await manager.on_stream_failed("guild-1", playback_id=None, reason="ffmpeg-exit-1")
+
+    status = await manager.status("guild-1")
+    assert status is not None
+    assert status.now_playing is not None
+    assert status.now_playing.title == "Track B"  # budget spent, queue moves on
+    assert notify.messages != []  # and the advance announces itself as always
+
+
+async def test_each_track_gets_its_own_retry_budget() -> None:
+    """Keyed by locator, not by playback id — every retry starts a NEW
+    playback, so a playback-keyed budget would reset on each attempt and
+    never run out. Keyed per track, Track B arrives with a full budget."""
+    manager, _ = await _playing_a_and_b()
+
+    for _ in range(_MAX_STREAM_RETRIES + 1):
+        await manager.on_stream_failed("guild-1", playback_id=None, reason="ffmpeg-exit-1")
+
+    status = await manager.status("guild-1")
+    assert status is not None and status.now_playing is not None
+    assert status.now_playing.title == "Track B"
+
+    await manager.on_stream_failed("guild-1", playback_id=None, reason="ffmpeg-exit-1")
+
+    status = await manager.status("guild-1")
+    assert status is not None and status.now_playing is not None
+    assert status.now_playing.title == "Track B"  # retried, not advanced past
+
+
+async def test_a_natural_track_end_clears_the_retry_budget() -> None:
+    manager, _ = await _playing_a_and_b()
+
+    await manager.on_stream_failed("guild-1", playback_id=None, reason="ffmpeg-exit-1")
+    await manager.on_track_finished("guild-1", playback_id=None)
+
+    status = await manager.status("guild-1")
+    assert status is not None and status.now_playing is not None
+    assert status.now_playing.title == "Track B"
+
+    await manager.on_stream_failed("guild-1", playback_id=None, reason="ffmpeg-exit-1")
+
+    status = await manager.status("guild-1")
+    assert status is not None and status.now_playing is not None
+    assert status.now_playing.title == "Track B"  # B's own budget, unspent by A
+
+
+async def test_a_track_that_no_longer_resolves_advances_rather_than_retrying() -> None:
+    """A deleted or private video cannot be retried into existence — the
+    retry falls through to the ordinary advance instead of burning its
+    budget on a track that will never resolve."""
+    source = _StubSource({"track a": _TRACK_A, "track b": _TRACK_B})
+    manager, notify = await _playing_a_and_b(source=source)
+    source._gone.add("locator-a")  # Track A is deleted while it plays
+
+    await manager.on_stream_failed("guild-1", playback_id=None, reason="ffmpeg-exit-1")
+
+    status = await manager.status("guild-1")
+    assert status is not None and status.now_playing is not None
+    assert status.now_playing.title == "Track B"
+    assert notify.messages != []
+
+
+async def test_a_stream_failure_for_a_superseded_playback_does_nothing() -> None:
+    """B5, the same check `on_track_finished` applies and for the same
+    reason: a failure belonging to a playback a skip already superseded must
+    neither retry nor advance — the queue has moved on without it."""
+    manager, notify = await _playing_a_and_b(playback_probe=lambda _guild_id: "pb-new")
+    source = manager._track_source  # type: ignore[attr-defined]
+    source.resolved.clear()
+
+    handled = await manager.on_stream_failed(
+        "guild-1", playback_id="pb-old", reason="ffmpeg-exit-1",
+    )
+
+    assert handled is False
+    status = await manager.status("guild-1")
+    assert status is not None and status.now_playing is not None
+    assert status.now_playing.title == "Track A"
+    assert [t.title for t in status.queue] == ["Track B"]
+    assert source.resolved == []  # not even a resolve was spent on it
+    assert notify.messages == []

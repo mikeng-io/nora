@@ -90,7 +90,7 @@ def _connect_factory(hub: VoiceControllerHub | None, guild_id: str, channel_id: 
     async def connect() -> VoiceSession:
         if hub is None:
             raise VoiceControllerUnavailable(
-                "no audio-controller configured ([speech.tts] sidecar_endpoint is empty)"
+                "no audio-controller configured for this guild ([speech.tts] sidecars)"
             )
         return await hub.join(guild_id, channel_id)
 

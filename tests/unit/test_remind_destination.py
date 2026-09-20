@@ -1,9 +1,9 @@
 """Proactive destination routing (design/dreamer-agent-loop/40, issue #248).
 
 The live failure: Blake asked for the night off in **Discord Zone 42**; the
-note-candidates pass folded it into a friends-workspace note with
+note-candidates pass folded it into a friends-unit note with
 `established_in = Zone 42`; ~2h later the proactive fire path spoke into
-**Signal Friends** — the workspace's home room — so the person the answer
+**Signal Friends** — the unit's home room — so the person the answer
 was about never saw it.
 
 These tests pin the decision: a note-linked proactive row is stamped into
@@ -22,7 +22,7 @@ from tests.test_reminder_tools import (
     CONVERSATION,
     SOON,
     T0,
-    WORKSPACE,
+    UNIT,
     _tools,
 )
 
@@ -43,7 +43,7 @@ def _home_origin_map() -> dict[str, OriginRoom]:
     return {
         CONVERSATION: OriginRoom(
             platform="signal", conversation_id=CONVERSATION,
-            conversation_type="group", proactive=True, workspace=WORKSPACE,
+            conversation_type="group", proactive=True, unit=UNIT,
         ),
     }
 
@@ -54,11 +54,11 @@ def _foreign_map() -> dict[str, OriginRoom]:
     return {
         CONVERSATION: OriginRoom(
             platform="signal", conversation_id=CONVERSATION,
-            conversation_type="group", proactive=True, workspace=WORKSPACE,
+            conversation_type="group", proactive=True, unit=UNIT,
         ),
         FOREIGN_CONVERSATION: OriginRoom(
             platform="discord", conversation_id=FOREIGN_CONVERSATION,
-            conversation_type="group", proactive=True, workspace=WORKSPACE,
+            conversation_type="group", proactive=True, unit=UNIT,
         ),
     }
 
@@ -74,7 +74,7 @@ async def test_a_note_born_elsewhere_fires_into_its_own_room_not_home() -> None:
 
     other_store = InMemoryNoteStore()
     await other_store.create(
-        workspace=WORKSPACE, title="Blake 請假 request 未回覆",
+        unit=UNIT, title="Blake 請假 request 未回覆",
         description="leave request, night off",
         uncertainty="whether he is back",
         closing_condition="he replies",
@@ -119,7 +119,7 @@ async def test_a_note_born_in_an_untrusted_room_is_refused_not_relocated() -> No
 
     other_store = InMemoryNoteStore()
     await other_store.create(
-        workspace=WORKSPACE, title="wedding 討論",
+        unit=UNIT, title="wedding 討論",
         description="wedding talk",
         uncertainty="when",
         closing_condition="a date is picked",
@@ -136,7 +136,7 @@ async def test_a_note_born_in_an_untrusted_room_is_refused_not_relocated() -> No
             **_foreign_map(),
             UNTRUSTED_CONVERSATION: OriginRoom(
                 platform="discord", conversation_id=UNTRUSTED_CONVERSATION,
-                conversation_type="group", proactive=False, workspace=WORKSPACE,
+                conversation_type="group", proactive=False, unit=UNIT,
             ),
         },
     )
@@ -165,7 +165,7 @@ async def test_an_unresolvable_origin_refuses_the_row() -> None:
 
     other_store = InMemoryNoteStore()
     await other_store.create(
-        workspace=WORKSPACE, title="ghost room note",
+        unit=UNIT, title="ghost room note",
         description="note from a room that is no longer listed",
         uncertainty="?", closing_condition="nothing",
         established_in="conv-gone",  # NOT in the map
@@ -194,17 +194,17 @@ async def test_an_unresolvable_origin_refuses_the_row() -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_cross_workspace_origin_refuses_the_row() -> None:
-    """The origin room must belong to the workspace the adaptor is keyed on.
+async def test_a_cross_unit_origin_refuses_the_row() -> None:
+    """The origin room must belong to the unit the adaptor is keyed on.
     A note that drifted across social units is not something this pass may
-    raise — that boundary is what a workspace IS."""
+    raise — that boundary is what a unit IS."""
     store = FakeReminderStore()
     metrics = Metrics()
     from nora.testing import InMemoryNoteStore
 
     other_store = InMemoryNoteStore()
     await other_store.create(
-        workspace=WORKSPACE,  # the NOTE is in the friends workspace
+        unit=UNIT,  # the NOTE is in the friends unit
         title="婚禮 賓客表",
         description="wedding guest list",
         uncertainty="?", closing_condition="done",
@@ -214,12 +214,12 @@ async def test_a_cross_workspace_origin_refuses_the_row() -> None:
         anchor_date=20260930,
     )
 
-    # The origin room carries workspace="wedding" — the room drifted into a
+    # The origin room carries unit="wedding" — the room drifted into a
     # DIFFERENT social unit — while the note and the adaptor stand in friends.
     drifted = _foreign_map()
     drifted[FOREIGN_CONVERSATION] = OriginRoom(
         platform="discord", conversation_id=FOREIGN_CONVERSATION,
-        conversation_type="group", proactive=True, workspace="wedding",
+        conversation_type="group", proactive=True, unit="wedding",
     )
 
     tools = _tools(
@@ -234,7 +234,7 @@ async def test_a_cross_workspace_origin_refuses_the_row() -> None:
     )
 
     assert result["status"] == "refused"
-    assert "outside this workspace" in result["note"]
+    assert "outside this unit" in result["note"]
     assert metrics.get(
-        "nora_reminders_created_total", status="refused_origin_wrong_workspace",
+        "nora_reminders_created_total", status="refused_origin_wrong_unit",
     ) == 1

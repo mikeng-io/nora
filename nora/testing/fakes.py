@@ -61,6 +61,7 @@ def transcript_rows(
     ts_base: int,
     ts_step: int = 60_000,
     id_start: int = 1000,
+    is_nora: bool = False,
 ) -> tuple[TranscriptRow, ...]:
     """Build transcript rows from plain message bodies.
 
@@ -70,11 +71,24 @@ def transcript_rows(
     `RecordStore.recent` read returns (see `_transcript_row` below): oldest
     first as written, `ts` ticking forward by `ts_step`, every row SENT — a
     row the sender's own message produced, not a pending outbound one.
+
+    **`is_nora` was hardcoded `False` until 2026-09-17**, and that made HER OWN
+    earlier speech unseedable by any corpus built on this helper. It is the
+    input a whole class of judgement turns on — «have I already said this?» —
+    and the proactive duplicate of that day (msgs 5450/5455) is exactly that
+    question answered wrong. A harness that cannot seed a speaker cannot
+    measure a judgement about that speaker. `nora.agent.prefill._speaker` reads
+    THIS flag to attribute a row, so a row that merely carries the name "Nora"
+    renders as a member with that display name instead — which is why the flag
+    and not a `sender_name` convention.
+
+    Its corpus-side caller lands with the evaluation rebuild (PR #334); the
+    test below is what keeps it honest until then.
     """
     return tuple(
         TranscriptRow(
             id=id_start + i, sender_id=sender_id, sender_name=sender_name,
-            ts=ts_base + i * ts_step, body=body, is_nora=False,
+            ts=ts_base + i * ts_step, body=body, is_nora=is_nora,
             delivery_status=DeliveryStatus.SENT,
             raw_json=None, quoted_ts=None, media_json=None,
             person_id=person_id,

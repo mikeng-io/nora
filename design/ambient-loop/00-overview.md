@@ -58,7 +58,7 @@ argument, is in §2–§3.
 |---|---|---|
 | **trigger** | somebody addresses her | a window closes; a note moves; a clock fires |
 | **owed** | a reply, always | nothing — silence is the default outcome |
-| **scope** | one room, one exchange | a workspace, across rooms and turns |
+| **scope** | one room, one exchange | a unit, across rooms and turns |
 | **judgement** | *what* to say | *whether* to say anything, and *when* |
 | **what it is for** | being useful when asked | being there when not asked |
 

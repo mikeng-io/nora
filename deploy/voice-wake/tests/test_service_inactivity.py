@@ -15,6 +15,7 @@ import pytest
 from wakegate import service as service_mod
 from wakegate.service import Config, WakeService
 
+GUILD = "100000000000000203"
 FRAME = np.full(1920 * 2, 3000, dtype=np.int16).tobytes()  # 20 ms, 48 kHz stereo, loud
 TAIL_MS = 100
 
@@ -52,21 +53,25 @@ def service(monkeypatch, tmp_path):
 
 async def _feed(svc, n, user="u1"):
     for _ in range(n):
-        await svc._on_frame(user, FRAME)
+        await svc._on_frame((GUILD, user), FRAME)
 
 
 async def test_an_utterance_ends_when_the_source_stops_sending_frames(service):
     svc, fired, stub = service
     await _feed(svc, 8)  # two 80 ms blocks: the first scores 0.9 and fires
-    assert svc._users["u1"].gate.collecting
+    assert svc._users[(GUILD, "u1")].gate.collecting
     assert fired == []  # no quiet chunk ever arrived; the chunk tail cannot end it
     await asyncio.wait_for(_until(lambda: fired), timeout=1.0)
     user_id, utterance = fired[0]
-    assert user_id == "u1"
+    assert user_id == (GUILD, "u1")  # keyed by (guild, user) since 2026-09-17
     assert utterance.peak_score == 0.9
-    assert not svc._users["u1"].gate.collecting
+    assert not svc._users[(GUILD, "u1")].gate.collecting
     assert stub.resets == 1  # the model was reset exactly as a tail-ended utterance would
-    assert svc._health_payload()["users"]["u1"]["wakes"] == 1
+    # /health keys users by "<guild>/<user>" now — one gate serves several
+    # guilds, so a bare user id could name two different speakers.
+    health = svc._health_payload()
+    assert health["users"][f"{GUILD}/u1"]["wakes"] == 1
+    assert health["guilds"] == [GUILD]
 
 
 async def test_frames_keep_re_arming_the_timer_so_a_phrase_is_not_cut(service):
@@ -83,7 +88,7 @@ async def test_frames_keep_re_arming_the_timer_so_a_phrase_is_not_cut(service):
 async def test_a_reaped_user_does_not_fire_from_a_stale_timer(service):
     svc, fired, _ = service
     await _feed(svc, 4)
-    state = svc._users.pop("u1")
+    state = svc._users.pop((GUILD, "u1"))
     assert state.inactivity is not None
     await asyncio.sleep(TAIL_MS / 1000 + 0.05)
     assert fired == []

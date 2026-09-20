@@ -62,7 +62,7 @@ The operator's direction, verbatim:
 |---|---|---|
 | Budgets are already per-adaptor | `[dreamer.budgets.<name>]` → `AdaptorBudget` (`nora/agent/dreamer.py:96`) | ✅ no change needed |
 | `is_nora` rows are excluded from the batch | `RecordStore.since` (`nora/infra/sql/audit.py:154`) | ✅ no change needed |
-| The Dreamer has no write tools | `WORKSPACE_SAFE_TOOLS` + `read_only_tools()` ceiling | ✅ structural |
+| The Dreamer has no write tools | `UNIT_SAFE_TOOLS` + `read_only_tools()` ceiling | ✅ structural |
 | The fact tier has no read tools | `get_fact`/`search_fact`/`check_note`/`get_note`/`search_note` do not exist in `tools.py` | ❌ to build |
 | Schedule is global | `dream_loop` takes one `quiet_seconds`/`max_age_seconds`/`batch_limit` from `[language]` (`nora/__main__.py:197`) | ❌ to split |
 | No tool-result truncation in the Dreamer | runtime passes tool results through untruncated | ❌ to build |
@@ -190,14 +190,14 @@ The Dreamer gets the same three mechanisms the orchestrator uses:
 
 ### 3.4 The comprehensive read surface
 
-New tools, all read-only, all workspace-scoped (the Fact Dreamer is
-workspace-keyed; room-scoped tools answer EMPTY for it — `verify_tool_subsets`
+New tools, all read-only, all unit-scoped (the Fact Dreamer is
+unit-keyed; room-scoped tools answer EMPTY for it — `verify_tool_subsets`
 already refuses them):
 
 | Tool | Reads | Returns |
 |---|---|---|
-| `search_knowledge(query)` | `fact` hybrid (dense + lexical) | **EXISTS** (`tools.py:868`/`5959`) — but key path broken for workspace-keyed adaptors (see below) |
-| `get_knowledge(subject)` | `fact` where `superseded_at IS NULL` | the live facts about a subject — **resolves the subject first**: `fact_entity.resolve(workspace, name)` → entity id → `standing_facts(subject_ids=[id])`. `standing_facts` takes entity IDS, not strings (`facts.py:783`); a name that resolves to nothing is `nothing_found`, never an empty ok. |
+| `search_knowledge(query)` | `fact` hybrid (dense + lexical) | **EXISTS** (`tools.py:868`/`5959`) — but key path broken for unit-keyed adaptors (see below) |
+| `get_knowledge(subject)` | `fact` where `superseded_at IS NULL` | the live facts about a subject — **resolves the subject first**: `fact_entity.resolve(unit, name)` → entity id → `standing_facts(subject_ids=[id])`. `standing_facts` takes entity IDS, not strings (`facts.py:783`); a name that resolves to nothing is `nothing_found`, never an empty ok. |
 
 > **ERRATUM (2026-09-03, implementation review).** The claim above that
 > `standing_facts` takes entity IDS is wrong against the code: `propose`
@@ -229,21 +229,21 @@ until a migration renames them; the tool surface does not wait for that.
 
 **The fact tier is NOT a blank — it has a query surface with a key-path
 defect.** `search_knowledge` already exists and is the tier's retrieval verb
-(hybrid dense + lexical, workspace-scoped, `tools.py:5959`). It is
-deliberately NOT in `WORKSPACE_SAFE_TOOLS` (`dreamer.py:201-220`): the verb
-resolves its workspace through the ROOM — `workspace_for(room.platform,
-conversation_id)` — and `RegistryToolSource.build` hands a workspace-keyed
-adaptor a `Room` with no platform and the workspace in the conversation slot.
+(hybrid dense + lexical, unit-scoped, `tools.py:5959`). It is
+deliberately NOT in `UNIT_SAFE_TOOLS` (`dreamer.py:201-220`): the verb
+resolves its unit through the ROOM — `unit_for(room.platform,
+conversation_id)` — and `RegistryToolSource.build` hands a unit-keyed
+adaptor a `Room` with no platform and the unit in the conversation slot.
 Policy cannot name that, so the verb answers `unavailable` on every call,
 forever. `08-state.md` §10 names this exact trap: a tier read tool for a
-workspace-keyed adaptor needs a key path that does not route through the
-room at all, because the Dreamer's key already IS the workspace and must be
+unit-keyed adaptor needs a key path that does not route through the
+room at all, because the Dreamer's key already IS the unit and must be
 SUPPLIED rather than derived.
 
 **So the real work is: (1) fix the key path** — `search_knowledge` (and the
-new knowledge tools) take the workspace from the adaptor's key, not from the
+new knowledge tools) take the unit from the adaptor's key, not from the
 room; **(2) expose what exists** — `search_knowledge`, `note_read`,
-`note_search` go into `WORKSPACE_SAFE_TOOLS` once the key path is supplied;
+`note_search` go into `UNIT_SAFE_TOOLS` once the key path is supplied;
 **(3) add the graph-aware reads** — `get_knowledge`, `knowledge_premises`,
 `knowledge_asserters`, `knowledge_entity` are genuinely new, wrapping
 `SqlFactStore`'s existing read methods (`asserters()` at `facts.py:532`,
@@ -264,12 +264,12 @@ adjudicator.
 **Reuse, not rewrite.** `note_read`/`note_search` already exist for the tag
 path (`NativeTool` rows at `tools.py:775/786`, implementations at
 `tools.py:5793/5935`). The Dreamer gets them by adding the names to its
-`tools` set and to `WORKSPACE_SAFE_TOOLS` — the same function objects, no
-second copy. `search_memory_workspace` is a workspace-scoped variant of the
+`tools` set and to `UNIT_SAFE_TOOLS` — the same function objects, no
+second copy. `search_memory_workspace` was INTENDED as a unit-scoped variant of the
 room-scoped `search_memory` — the existing implementation is reused with a
 different scope argument, not copied.
 
-All nine are added to `WORKSPACE_SAFE_TOOLS` and declared in `NativeTool`
+All nine are added to `UNIT_SAFE_TOOLS` and declared in `NativeTool`
 with `read_only=True`, `source_tier="remembered"`, bounded budgets (2–4 per
 turn).
 
@@ -292,12 +292,15 @@ attribution is the "who said it, when" the operator asked for.
 
 ## 5. Closed decisions (operator, 2026-09-01)
 
-1. **Memory search is workspace-scoped.** The Fact Dreamer is workspace-keyed;
-   "search 六個人嘅 memory" means searching the whole workspace's memory. A
-   workspace-scoped memory search tool is added alongside the five fact/note
+1. **Memory search is unit-scoped.** *(Intent, 2026-08. It was never built
+   that way — the verb resolves no unit and reaches Honcho's whole workspace.
+   See `nora/agent/tools.py`'s own comment at the `honcho.search` call.)* The
+   Fact Dreamer is unit-keyed;
+   "search 六個人嘅 memory" means searching the whole unit's memory. A
+   memory search tool is added alongside the five fact/note
    tools — it searches all peers' Honcho memory in the workspace, not one
    room's history. The existing room-scoped `search_memory` stays for the tag
-   path; the Dreamer gets the workspace variant.
+   path; the Dreamer gets the unit variant.
 2. **Attribution carries to the fact row.** `asserted_by`/`asserted_at` are
    written on the candidate at `propose` time (joined from `messages`), and
    copied onto the adjudicated `fact` row when the candidate is settled — so
@@ -308,7 +311,7 @@ attribution is the "who said it, when" the operator asked for.
    `knowledge_entity`, `note_read`, `note_search`,
    `search_memory_workspace` — the two note tools already exist under those
    names; the knowledge tools wrap `SqlFactStore`'s existing read methods;
-   the workspace memory variant reuses `search_memory`'s implementation. A
+   the unit memory variant reuses `search_memory`'s implementation. A
    rename is a three-place contract change and is not made by taste.
 
 ## 6. Reversal conditions

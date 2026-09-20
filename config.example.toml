@@ -1011,27 +1011,41 @@ provider = ""                  # empty provider = no speaker; a real deployment
                                # design/voice-channel/04 §3b). The key is read
                                # from the env var api_key_env NAMES (default
                                # MINIMAX_CN_API_KEY), never from this file.
-sidecar_endpoint = ""          # the AUDIO-CONTROLLER's HTTP base
-                               # (design/voice-channel/07): speech plays via
-                               # /stream, music via /music/*, joins via
-                               # /voice/join — all on the one voice connection
-                               # the controller owns. Empty = the voice seam
-                               # is unwired; joins and speech fail closed.
-voice_guild_ids = []           # Discord GUILD ids whose voice channels
-                               # /music play and /discord join may auto-join.
-                               # ANY channel in a listed guild; empty =
-                               # nowhere (fail-closed). Exactly one guild —
-                               # the audio-controller is hard-bound to one
-                               # (design/voice-channel/07 §12.5).
+sidecars = []                  # one AUDIO-CONTROLLER per GUILD — the sole
+                               # owner of that server's Discord voice
+                               # connection (design/voice-channel/07 §12.5):
                                #
-                               # GUILDS since 2026-09-17 (§12.2 reversed): a
-                               # server's voice channels are not a fixed list,
-                               # so a per-channel allow-list could not be kept
-                               # true. WHERE a guild's speech is RECORDED is
-                               # policy.toml's `voice = true`, not here, and
-                               # whether a reply is SPOKEN is a fact about the
-                               # turn — three questions one list used to
-                               # answer only because speech had its own room.
+                               #   sidecars = [
+                               #     { guild = "<guild_id>", endpoint = "http://voice-sidecar:4600" },
+                               #     { guild = "<other_id>", endpoint = "http://voice-sidecar:4600" },
+                               #   ]
+                               #
+                               # Speech plays via /stream, music via /music/*,
+                               # joins via /voice/join — all on the one voice
+                               # connection that controller owns. Empty (the
+                               # default) = the voice seam is unwired; joins
+                               # and speech fail closed.
+                               #
+                               # ONE ENTRY PER GUILD, but ONE CONTAINER for all
+                               # of them: Discord allows one voice connection
+                               # per bot token PER GUILD, so the sidecar holds
+                               # one connection per listed guild inside a
+                               # single process. Adding a server is a line
+                               # here — no new container, no new env var.
+                               #
+                               # The endpoint is therefore usually the SAME
+                               # for every entry. It is per-entry anyway so a
+                               # guild can be moved to its own process later
+                               # without a config shape change.
+                               #
+                               # A LIST, not a table keyed by guild: the
+                               # config/example parity gate flattens tables to
+                               # leaf paths, and a guild-keyed table would need
+                               # a real snowflake declared in this file.
+                               #
+                               # THIS IS THE JOIN ALLOW-LIST. WHERE a guild's
+                               # speech is RECORDED is policy.toml's
+                               # `voice = true` — independent on purpose.
 # voice = "Cantonese_CuteGirl" # a NATIVE Cantonese voice — the lever is the
 #                              # voice, not the model tier; language_boost is
 #                              # hard-set in the adapter ("auto" mis-renders 係/唔該)
@@ -1053,8 +1067,9 @@ emotion = ""                   # voice_setting.emotion when set (e.g. "fluent"
 # voice-wake CONTAINER at startup (compose bind-mounts this file read-only into
 # it, as into nora) — one place for its knobs; a change needs `docker compose
 # restart voice-wake`. Endpoint, language and timeout for its STT calls come
-# from [speech.stt] above. Discord identity (VOICE_GUILD_ID / VOICE_CHANNEL_ID)
-# stays in .env: without it the service is healthy-but-idle and hears nothing.
+# from [speech.stt] above. It has NO Discord identity of its own: the guild
+# arrives on each audio connection, so one gate serves every server and the
+# container is identical everywhere (multi-guild, 2026-09-17).
 enabled = false
 threshold = 0.5                    # wake score that starts utterance collection
 model_path = "/app/models/喂Nora.onnx"  # baked into the voice-wake image (deploy/voice-wake/models/MODEL.md)
@@ -1129,8 +1144,8 @@ timezone = "Asia/Hong_Kong"   # the wall clock a recurrence KEEPS. An IANA zone
 
 [notes]
 # The note tier's gate (docs/superpowers/specs/2026-08-21-note-tier-design.md).
-# ON, every tag reads the standing note index for the room's WORKSPACE — not
-# its conversation (§3/DEC-105: rooms sharing a workspace are one social unit)
+# ON, every tag reads the standing note index for the room's UNIT — not
+# its conversation (§3/DEC-105: rooms sharing a unit are one social unit)
 # — and renders it as <notes>. OFF, no store is built, no query runs, and the
 # block never appears.
 #
@@ -1166,7 +1181,7 @@ enabled = false
 # tier that REMOVES something from her index. An operator turning notes on has
 # not thereby asked for a background pass that reorganises them.
 #
-# What it does when on, on the schedule below, per workspace:
+# What it does when on, on the schedule below, per unit:
 #
 #   (MERGE was here until 2026-09-08 — notes sharing an anchor date AND the
 #             same RESOLVED people were one occasion written twice. The
@@ -1220,7 +1235,7 @@ curator_enabled = false
 # process creating notes on her behalf.
 #
 # ON, a scope-keyed, hourly, tool-free Dreamer pass reads each room's message
-# batch and the workspace's standing note index, proposes full notes for
+# batch and the unit's standing note index, proposes full notes for
 # anything not yet tracked, and a DETERMINISTIC gate — never the model —
 # decides whether that becomes a new note, a revision to one that already
 # covers the same occasion, or nothing. The model never writes a note
@@ -1629,19 +1644,32 @@ model = "ollamacloud/deepseek-v4-flash:0731"
 # Leave at 0 unless a pass is truncating. If one is, raise THIS, not the loop
 # budget — and keep the loop budget a MULTIPLE of it, the ratio `[llm.limits]`
 # already uses, or one call can spend the whole loop's allowance.
-max_tokens = 0
+#
+# 6,000, and this file said 0 while the deployment ran 6,000 until 2026-09-18.
+# That drift is the reason the value is written here rather than inherited: at
+# 0 this resolves to `[llm] max_tokens = 2000`, which is a TAG TURN's ceiling,
+# and `nora.domain.culture.ACCOUNT_OUTPUT_TOKENS` (~2,222 for a realistic
+# culture account) does not fit in it. A template that ships a number no
+# adaptor can actually run under is a template nobody can copy.
+#
+# The history behind 6,000 is note-candidates': 2,000 truncated every run on
+# one scope for ~24h (every failing run pinned at exactly 2,000, so their true
+# length was right-censored and unknown); 8,000 was headroom picked against a
+# failure; 4,000 was set on n=1 and the second uncensored sample was 29%
+# higher; 6,000 is 2.2x the largest of n=2 (2,124 and 2,732).
+max_tokens = 6000
 
 # Per-adaptor run ceilings (`DreamBudgetConfig`; an adaptor with no block gets
 # the defaults: 6 turns, 40000 total tokens, 4000 output tokens, 120 s, and 2
 # memory reads per pass). The
 # proactive adaptor (design/dreamer-agent-loop/39 D1, revised by issue #136)
-# ticks hourly per workspace but RENDERS — pays a model call — only on a daily
-# floor or a change in a quiet workspace, and researches with real tools —
+# ticks hourly per unit but RENDERS — pays a model call — only on a daily
+# floor or a change in a quiet unit, and researches with real tools —
 # where_is, route, note_read, memory, the web — so it can afford more than a
 # tag turn's fixed budgets. Uncomment to
 # widen it; the two proactive eval suites (39 §5) are what say whether the
 # extra turns buy anything. It is wired only when policy.toml names a
-# `home_room = true` for a workspace — there is no [dreamer] flag for it.
+# `home_room = true` for a unit — there is no [dreamer] flag for it.
 # OPENED 2026-09-10, and these are the numbers the deployment runs. They are
 # NOT a measurement — they are room to take one, and the block is uncommented
 # so that the `proactive_decide` suite measures the configuration production
@@ -1653,7 +1681,7 @@ max_tokens = 0
 # turn RE-SENDS it, so the loop's running total is roughly context x turns and
 # 40,000 bought four turns. The decide turn had not finished researching by
 # then, and R-7 was already vetoing a fifth `search_memory_workspace`. The cost
-# scales with the workspace's roster: a one-person room finished in 19-28k, a
+# scales with the unit's roster: a one-person room finished in 19-28k, a
 # real one did not finish at all.
 #
 # So `turns` is the REAL budget here and `total_tokens` is a safety net, which
@@ -1694,7 +1722,7 @@ timeout_seconds = 240.0
 # NATIVE_TOOLS table) bound each verb on its own, which is exactly what a pass
 # spends by asking four different verbs the same question.
 #
-# The measurement that put it here: a decide turn on the `friends` workspace
+# The measurement that put it here: a decide turn on the `friends` unit
 # (Langfuse 340373cd, 2026-09-10 18:03 HKT) made `note_read` three times,
 # `about`, `search_memory_workspace` and `ask_memory` — six held-state reads
 # for TWO notes whose two handles its own `<people>` block already carried.
@@ -1707,7 +1735,7 @@ timeout_seconds = 240.0
 # The (N+1)th read is ANSWERED — R-27 `unavailable` with a reason the model can
 # read — never an error, never a silent empty. 2 is `d11`'s grading budget: the
 # one read the objective requires before any `remind`, plus one. Raise it for a
-# workspace whose notes genuinely involve more people than the index can settle;
+# unit whose notes genuinely involve more people than the index can settle;
 # the reading that says so is the decide suite losing recall at 2 that it keeps
 # at 3. Omit the key and every adaptor gets 2 by default — a ceiling by
 # omission, never an unbounded pass.
@@ -1716,7 +1744,21 @@ timeout_seconds = 240.0
 # fire — the same grain the three token caps above have. Inert here (the
 # proactive adaptor takes one sample per fire) and stated so that it is not a
 # surprise the day it is not.
-max_memory_calls = 2
+#
+# 2 -> 6 (operator, 2026-09-18), TRIPLED alongside `lookup_person` below —
+# and the pairing is the whole point. `lookup_person` is one of the four verbs
+# in `nora.agent.dreamer.MEMORY_TOOLS`, so THIS number bounds it before its
+# per-tool ceiling ever does: raising `tool_calls.lookup_person` to 12 against
+# a pass ceiling of 2 would have changed nothing at all and left this file
+# recording a bound the pass does not run under.
+#
+# A shared ceiling, not a reservation: the extra four are equally available to
+# `about`, `ask_memory` and `search_memory_workspace`, which is accepted
+# rather than overlooked — headroom on a ceiling costs nothing until a pass
+# spends it, and the instrument that says whether it is being spent well is
+# `nora_dream_guard_vetoes_total{adaptor="proactive",rule="memory-budget"}`
+# against the decide suite's recall.
+max_memory_calls = 6
 
 # **The per-tool call ceilings this pass overrides**, a tool name to how many
 # times ONE pass may call it. Applied OVER `NativeTool.budget` and over
@@ -1752,6 +1794,18 @@ max_memory_calls = 2
 # actually run under, with nothing measuring the difference.
 [dreamer.budgets.proactive.tool_calls]
 note_read = 8
+# `lookup_person` — the table says 4, another TAG TURN's number, sized for
+# "one message routinely names two people". TRIPLED to 12 (operator,
+# 2026-09-18). A decide pass is not answering one message: it is asked for a
+# verdict per open note across a whole roster, and a room's own nicknames
+# («@熱咖啡☕少奶多糖») resolve against the person index rather than against more
+# occurrences of the same handle — which is the reason the verb was granted to
+# this adaptor at all (issue #145).
+#
+# The call is a dict lookup over a cached roster, so this is sized by model
+# round trips and not by work. See `max_memory_calls = 6` above: that is the
+# ceiling that actually binds this verb, and 12 here is inert without it.
+lookup_person = 12
 
 # THE CULTURE FOLD (design/culture-tier). Uncommented from 2026-09-17, when the
 # adaptor stopped being tool-free: it now holds nine read verbs through an
@@ -1771,25 +1825,31 @@ note_read = 8
 # block above already paid for once, on a bigger roster.
 #
 # `output_tokens` is DERIVED and is not a free number: see
-# `nora.domain.culture.ACCOUNT_OUTPUT_TOKENS`. The account cap is 1,400
-# CHARACTERS and this budget is in TOKENS; the bridge is 1.15 output tokens per
-# character — MEASURED 2026-09-17 with `o200k_base` over a realistic
+# `nora.domain.culture.ACCOUNT_OUTPUT_TOKENS`. It is sized on
+# `ACCOUNT_CHARS_OBSERVED_MAX` — 1,876 characters, the longest account this
+# deployment's model has been SEEN to emit (n=10, 2026-09-17) — and NOT on
+# `BODY_MAX_CHARS`, which is the length at which a body is declined. Those
+# answer different questions and tying them together is what made the cap look
+# expensive to move. The budget is in TOKENS; the bridge is 1.15 output tokens
+# per character, MEASURED 2026-09-17 with `o200k_base` over a realistic
 # dense-Cantonese account (1.094) and continuous Cantonese prose (1.131), not
-# assumed — so emitting a full account costs ~1,674. The rule is that the loop
-# must be able to emit one TWICE — once for the tool-call arguments it spends
-# before it writes, once for the account — and
-# `tests/unit/test_culture_adaptor.py` asserts that against the FIELD DEFAULT,
-# so an operator who deletes this block still gets a fold that can finish its
-# sentence. 6,000 is that floor with room for the research.
+# assumed — so a realistic account costs ~2,222.
+#
+# The rule is that the loop must be able to emit one TWICE — once for the
+# tool-call arguments it spends before it writes, once for the account — so
+# the floor is ~4,444 and `tests/unit/test_culture_adaptor.py` asserts 6,000
+# against it. The assertion reads THIS BLOCK, not the field default: the
+# default is 4,000 and would fail, which is honest, because an operator who
+# deletes this block is running a fold that cannot finish its sentence.
 #
 # NOT `[dreamer] max_tokens`, which is the PROVIDER's ceiling on one completion
-# and is the tighter of the two: at `[llm] max_tokens = 2000` an account at the
-# cap uses ~84% of a single completion. Raise THAT, not this, if a fold is ever
-# seen truncating — and the ONE reading that would is a model emitting
-# `\uXXXX` escapes instead of raw UTF-8, which costs 2.85x the measured bridge
-# (3.117 tok/char) and puts an account at the cap at ~4,400 tokens. That is a
-# truncation, so it shows up as `unavailable` with the watermark held, never as
-# a quietly shorter account.
+# and is the tighter of the two: at 6,000 a realistic account uses ~37% of a
+# single completion. Raise THAT, not this, if a fold is ever seen truncating —
+# and the ONE reading that would is a model emitting `\uXXXX` escapes instead
+# of raw UTF-8, which costs 2.85x the measured bridge (3.117 tok/char) and
+# puts a realistic account at ~5,850 tokens. That is a truncation, so it shows
+# up as `unavailable` with the watermark held, never as a quietly shorter
+# account.
 [dreamer.budgets.culture]
 turns = 10
 total_tokens = 120000
@@ -1801,12 +1861,30 @@ output_tokens = 6000
 # Memory reads per pass. 4 rather than the default 2: the decide turn asks
 # about the one or two people a note names, and this pass is asking what a
 # ROOM is — several members, each a separate `about`/`ask_memory`. Still a
-# ceiling and still fail-closed (the 5th read is answered `unavailable` with a
-# reason, never an error and never a silent empty). The reading that would
-# raise it is a fold that spends all four and still names people it could not
-# resolve; the one that would lower it is four reads that never change the
+# ceiling and still fail-closed (the Nth+1 read is answered `unavailable` with
+# a reason, never an error and never a silent empty). The reading that would
+# raise it is a fold that spends all of them and still names people it could
+# not resolve; the one that would lower it is reads that never change the
 # account.
-max_memory_calls = 4
+#
+# 4 -> 12 (operator, 2026-09-18), TRIPLED alongside `lookup_person` below, and
+# for the reason the proactive block states at length: `lookup_person` lives
+# in `MEMORY_TOOLS`, so this ceiling binds it before its per-tool one does,
+# and raising only the per-tool number would have been decoration. A room's
+# account names several members; 4 was the count of a pass that had not yet
+# been asked to resolve all of them.
+max_memory_calls = 12
+
+# **The per-tool call ceilings this fold overrides.** A key naming a verb the
+# adaptor does not declare REFUSES THE BOOT — `culture_grant` grants
+# `lookup_person`, so this one reaches something.
+#
+# 4 in `NATIVE_TOOLS`, sized for a tag turn where "one message routinely names
+# two people". This pass is writing what a ROOM is, and the objective's own
+# bar is a name whose ORIGIN can be explained — which is per-member work
+# against the person index, not two lookups. 12 (operator, 2026-09-18).
+[dreamer.budgets.culture.tool_calls]
+lookup_person = 12
 
 
 

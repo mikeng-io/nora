@@ -117,7 +117,7 @@ async def test_a_workspace_with_no_home_room_is_an_error_not_none(
     # with more than one workspace produces, and it is the shape that ships.
     homeless = case.policy.replace("home_room = true\n", "") + (
         '[[conversations]]\nplatform = "signal"\nid = "elsewhere"\n'
-        'persons = "*"\nworkspace = "somewhere-else"\n'
+        'persons = "*"\nunit = "somewhere-else"\n'
         "proactive = true\nhome_room = true\n"
     )
     assert "home_room = true" in homeless, "the adaptor must still be built"

@@ -292,7 +292,7 @@ which claims were tested rather than argued.
     - `AdaptorGrant` (`nora/agent/dreamer.py:387`) is that mechanism. It is not
       hypothetical and it is not new: the proactive adaptor has held one since
       DEC-162. Its docstring also answers the disclosure objection in advance —
-      `WORKSPACE_SAFE_TOOLS`'s refusal, *"binding one to an arbitrary room of
+      `UNIT_SAFE_TOOLS`'s refusal, *"binding one to an arbitrary room of
       that workspace would be a disclosure decision nobody has made"*, *"is
       answered by the operator naming the room in `policy.toml`."*
 
@@ -305,7 +305,7 @@ which claims were tested rather than argued.
     have carried it into the next design unchallenged.
 
     **Culture's case is simpler than proactive's, and that is the part worth
-    stating.** Proactive is workspace-keyed, so a workspace has no room and one
+    stating.** Proactive is unit-keyed, so a unit has no room and one
     must be CHOSEN — hence `home_rooms` in `policy.toml`, and hence a
     disclosure decision for the operator to take. Culture is `key_kind =
     "scope"` (`nora/language/culture.py:145`), so its key already IS the
@@ -316,8 +316,8 @@ which claims were tested rather than argued.
 
     One thing that is not yet wired, said plainly so that «the mechanism
     exists» is not read as «the wiring exists»: `home_room` resolves through a
-    workspace — `build` does `home = self._home_rooms.get(workspace or "")` —
-    and the runtime supplies `workspace=key if adaptor.key_kind == "workspace"
+    unit — `build` does `home = self._home_rooms.get(unit or "")` —
+    and the runtime supplies `unit=key if adaptor.key_kind == "unit"
     else None` (`nora/agent/dreamer.py:1249-1256`). A scope-keyed adaptor
     granted a home room TODAY looks up `home_rooms[""]`, finds none, and takes
     the loud closed branch with room and acts both withheld. What is missing is

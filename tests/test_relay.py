@@ -74,18 +74,18 @@ def _occasion_for(*, destination, requester, text, from_platform):
     )
 
 
-def _policy(*, other_workspace: bool = False, ada_in_discord: bool = False) -> Policy:
-    """Two rooms in one workspace by default — the legitimate pairing."""
+def _policy(*, other_unit: bool = False, ada_in_discord: bool = False) -> Policy:
+    """Two rooms in one unit by default — the legitimate pairing."""
     signal = Conversation(
         platform="signal", ids=frozenset({SIGNAL_ROOM}),
         persons=frozenset({"miles_novak"}), label="Friends",
-        primary_id=SIGNAL_ROOM, workspace="friends",
+        primary_id=SIGNAL_ROOM, unit="friends",
     )
     discord = Conversation(
         platform="discord", ids=frozenset({DISCORD_ROOM}),
         persons=frozenset({"miles_novak", "ada"} if ada_in_discord else {"miles_novak"}),
         label="Zone 42", primary_id=DISCORD_ROOM,
-        workspace="ridgeline" if other_workspace else "friends",
+        unit="ridgeline" if other_unit else "friends",
     )
     rooms = (signal, discord)
     return Policy(
@@ -160,12 +160,12 @@ async def test_an_unmapped_asker_is_refused_rather_than_sent_unattributed():
     assert fire.spoken == []
 
 
-async def test_a_room_in_another_workspace_is_refused():
-    """THE BOUNDARY. Rooms sharing a workspace are one social unit reachable in
+async def test_a_room_in_another_unit_is_refused():
+    """THE BOUNDARY. Rooms sharing a unit are one social unit reachable in
     more than one place, so the audience is already the same audience. Rooms in
-    different workspaces are different groups of people, and no amount of
+    different units are different groups of people, and no amount of
     per-room trust makes speaking across them acceptable."""
-    relay, fire, _ = _relay(_policy(other_workspace=True))
+    relay, fire, _ = _relay(_policy(other_unit=True))
 
     out = await _send(
         relay, platform="discord", from_platform="signal",
@@ -177,8 +177,8 @@ async def test_a_room_in_another_workspace_is_refused():
 
 
 async def test_somebody_not_in_the_destination_cannot_speak_into_it():
-    """The workspace bounds WHICH rooms may be paired; this decides who may use
-    the pair. Without it anyone in one room of a workspace could speak into
+    """The unit bounds WHICH rooms may be paired; this decides who may use
+    the pair. Without it anyone in one room of a unit could speak into
     every other room of it — a promotion, not a relay.
 
     Ada is in the Discord room and NOT in the Signal one.
@@ -200,14 +200,14 @@ async def test_an_unknown_room_name_is_refused_not_guessed():
     assert fire.spoken == []
 
 
-async def test_two_rooms_of_one_platform_in_a_workspace_refuse_rather_than_pick():
-    """A workspace holds at most one room per platform BY DESIGN, which is what
+async def test_two_rooms_of_one_platform_in_a_unit_refuse_rather_than_pick():
+    """A unit holds at most one room per platform BY DESIGN, which is what
     makes the platform a usable address. Two is the invariant broken, and
     guessing would turn a misconfiguration into a delivery to the wrong group.
     """
     dupe = Conversation(
         platform="signal", ids=frozenset({OTHER_ROOM}), persons=frozenset({"miles_novak"}),
-        label="Friends Overflow", primary_id=OTHER_ROOM, workspace="friends",
+        label="Friends Overflow", primary_id=OTHER_ROOM, unit="friends",
     )
     base = _policy()
     rooms = (*base.conversations, dupe)

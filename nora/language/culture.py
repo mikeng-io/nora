@@ -115,22 +115,33 @@ class AccountNotRecordableError(NoraError):
     never `nothing_found`, *because the loop must not advance a watermark past
     a batch nobody read*. A batch whose one account was refused is that batch.
 
-    **The cost, named rather than discovered.** If EVERY draw for a room
-    overruns the cap, that room's fold wedges: the watermark never moves and
-    `lag` grows. That is the accepted trade and it is the loud half of the
-    pair — a wedged fold shows up as `nora_dream_run_total{status=
-    "unavailable"}`, a growing lag and a WARNING naming the scope, where the
-    silent discard showed up as nothing. It also self-heals on any compliant
-    draw, because the next fire is a fresh sample at non-zero temperature. The
-    cap is set (`BODY_MAX_CHARS`) so that an account written to the objective's
-    own instruction does not reach it, which is what makes a wedge a
-    configuration fault rather than a normal Tuesday.
+    **The cost, OBSERVED rather than named.** If a draw for a room overruns
+    the cap, that fire is spent and the watermark does not move; while it keeps
+    overrunning, `lag` grows. This paragraph called that an accepted trade that
+    "self-heals on any compliant draw, because the next fire is a fresh sample
+    at non-zero temperature". **That sentence is CORRECT and a rewrite of this
+    docstring briefly claimed it was not** — the claim was made on 2026-09-17
+    from a four-fire window, while the fifth fire was still pending. It landed:
+    the deployment's busiest room drew 1,876, 1,725, 1,677 and 1,583 against a
+    1,400 cap, then 1,323, which was recorded. A Signal room did the same two
+    fires earlier. Both self-healed exactly as the original sentence said.
 
-    **What would close this properly is in the OBJECTIVE, and the objective is
-    `change_policy: operator-only`.** The model is never told the cap — it is
-    enforced after emission, on prose already written — so nothing in this
-    module can stop a long account being produced, only stop it being lost.
-    See the note in `CultureAdaptor.accept`.
+    What the window DID show is the price of the healing. At the refusal rate
+    measured that evening — 6 of 11 draws over the cap — a room re-draws for a
+    geometrically distributed number of ticks and pays a model call each time;
+    zone 42 paid four. Loud, it was: `nora_dream_run_total{status=
+    "unavailable"}`, a growing lag and a WARNING naming the scope. Loud and
+    self-healing still is not free. What makes the trade cheap is
+    `BODY_MAX_CHARS` being set where an account written to the objective's own
+    instruction rarely reaches it — a claim about what the model EMITS, which
+    is why the cap is now sized against `ACCOUNT_CHARS_OBSERVED_MAX` rather
+    than against a ratio to the worked example.
+
+    **What would make the cap a quality instrument again is in the OBJECTIVE,
+    and the objective is `change_policy: operator-only`.** The model is never
+    told the cap — it is enforced after emission, on prose already written — so
+    nothing in this module can stop a long account being produced, only stop it
+    being lost. See the note in `CultureAdaptor.accept`.
     """
 
 #: The adaptor's `name`: the metric label, the schedule and budget key, and the
@@ -220,7 +231,7 @@ CULTURE_TOOLS: frozenset[str] = frozenset({
     # turn could observe the state contradicting the note". A culture account
     # inferring a habit from a transcript has the same blind spot one clock
     # tick wider. Its input domain here is THIS ROOM's own roster — the
-    # widened decide-turn union is bound only for a workspace-keyed build
+    # widened decide-turn union is bound only for a unit-keyed build
     # (`RegistryToolSource.build`).
     "online_now",
     # THE OPEN INTERNET — `01-the-adaptor §2`: these earn their place BECAUSE
@@ -262,7 +273,7 @@ class _StandingReader(Protocol):
 
 class _NoteStore(Protocol):
     """The note tier's index — what the room has OPEN. `NoteCandidateAdaptor`
-    reads exactly this, keyed exactly this way (DEC-105: notes are a WORKSPACE
+    reads exactly this, keyed exactly this way (DEC-105: notes are a UNIT
     store, so a scope key must be translated).
 
     Note the vocabulary trap this bundle has fallen into before
@@ -271,7 +282,7 @@ class _NoteStore(Protocol):
     stores, similar spelling.
     """
 
-    async def standing(self, *, workspace: str) -> Sequence[Note]: ...
+    async def standing(self, *, unit: str) -> Sequence[Note]: ...
 
 
 class _CultureStore(Protocol):
@@ -352,8 +363,9 @@ def _parse(item: Mapping[str, object]) -> CultureProposal | None:
     a well-formed account that must not be written AND must not cost the batch,
     and only `accept` can raise for that (see `AccountNotRecordableError`).
     `BODY_MAX_CHARS` says "no writer should produce that"; the database ceiling
-    far above it (`CULTURE_BODY_CEILING_CHARS`) says "this row is corrupt", and
-    neither says anything about what could be emitted.
+    above it (`CULTURE_BODY_CEILING_CHARS`) says "this row is corrupt", and
+    neither says anything about what could be emitted — the budgets are sized
+    on `ACCOUNT_CHARS_OBSERVED_MAX`, which is the number that does.
     """
     body = item.get("body")
     if not isinstance(body, str):
@@ -411,7 +423,7 @@ class CultureAdaptor:
         # adaptor's key to the `standing` tier's happens in ONE expression the
         # composition root owns — see `_StandingReader` for why it is a
         # translation and not an identity.
-        workspace_for: Callable[[str], str | None],
+        unit_for: Callable[[str], str | None],
         standing_key_for: Callable[[str], tuple[str, str] | None],
         label_for: Callable[[str], str | None],
         description_for: Callable[[str], str | None],
@@ -433,7 +445,7 @@ class CultureAdaptor:
         self._culture = culture
         self._standing = standing
         self._notes = notes
-        self._workspace_for = workspace_for
+        self._unit_for = unit_for
         self._standing_key_for = standing_key_for
         self._label_for = label_for
         self._description_for = description_for
@@ -460,7 +472,7 @@ class CultureAdaptor:
         **The `<room>` block comes first** and frames everything under it: what
         the room is CALLED and what the operator says it IS. This is issue
         #161's defect one tier over — that pass attributed every line of every
-        room of a workspace to the workspace and wrote «Bath gathering» twice
+        room of a unit to the unit and wrote «Bath gathering» twice
         out of a games room's shorthand, because nothing in the prompt said
         what kind of room it was reading. The instruction was not the broken
         half; the input was. An account is a claim about a room, so a prompt
@@ -526,11 +538,11 @@ class CultureAdaptor:
                 parts.append(block.render())
         # WHAT THE ROOM HAS OPEN. `NoteCandidateAdaptor.inputs`' own read, same
         # verb and same key translation (DEC-105: the note store is keyed by
-        # WORKSPACE, so a scope key must be resolved and never guessed).
-        workspace = self._workspace_for(key)
-        if self._notes is not None and workspace is not None:
+        # UNIT, so a scope key must be resolved and never guessed).
+        unit = self._unit_for(key)
+        if self._notes is not None and unit is not None:
             index = render_notes(
-                await self._notes.standing(workspace=workspace),
+                await self._notes.standing(unit=unit),
                 # WITH TODAY, so each entry renders a DISTANCE («in 3 days»)
                 # rather than a bare `20260920`. `render_notes` falls back to
                 # the raw anchor for a caller with no clock, and a raw calendar
@@ -546,7 +558,7 @@ class CultureAdaptor:
             )
             if index is not None:
                 parts.append(index.render())
-        if standing_key is None or workspace is None:
+        if standing_key is None or unit is None:
             # A key that names no policy conversation. Not silent — but not
             # counted here either, because `RegistryToolSource.build` counts
             # and logs a fault for this key on this same run
@@ -558,7 +570,7 @@ class CultureAdaptor:
             # two resolutions read the SAME allowlist and build DIFFERENT KEY
             # SETS from it: `scope_rooms` is keyed by every id form a
             # conversation answers to (`conv.ids`), while the four maps above
-            # — `workspace_for`, `standing_key_for`, `label_for`,
+            # — `unit_for`, `standing_key_for`, `label_for`,
             # `description_for` — are keyed by `conv.primary_id` alone. So a
             # conversation reached by an `also_ids` form resolves a home room
             # and NO policy inputs, and only this `log.warning` would say so.
@@ -569,8 +581,8 @@ class CultureAdaptor:
             # thing that reports it.
             log.warning(
                 "culture: scope=%s resolves to no policy conversation "
-                "(workspace=%r standing_key=%r); folding without those inputs",
-                key, workspace, standing_key,
+                "(unit=%r standing_key=%r); folding without those inputs",
+                key, unit, standing_key,
             )
         # WRAPPED, for the reason the note-candidates batch is (#292 audit):
         # bodies keep their newlines in the element form, so an uncontained
@@ -663,14 +675,27 @@ class CultureAdaptor:
         account being WRITTEN; it can only stop one being written AND the
         batch being lost with it, and that is exactly what the raise buys.
 
-        **What would close it properly belongs to the operator.** The objective
-        would have to ask for the length it wants in terms the model can act on
-        — its own worked example is 739 characters, and the instruction around
-        it says "one paragraph or two" without ever saying what that is in
-        prose it has not yet written. A line in "What to write" naming the
-        worked example AS the target length ("about as long as the example
-        below, and never more than twice it") is the change; it is a prompt
-        change, so it needs the arm that measures it, not an assertion here.
+        **Which is why the raise is now nearly unreachable, and that is the
+        point** (operator, 2026-09-18). `BODY_MAX_CHARS` is 20,000 against a
+        measured emission maximum of 1,876, so `oversize` has gone from a
+        refusal that fired on 6 of 11 live draws — 55%, each one costing a
+        model call and a re-fold — to one that should never fire at all.
+        `nora_culture_fold_total{outcome="oversize"}` reading zero is the
+        EXPECTED state now, not evidence the branch is dead — and if it
+        ever fires it means a body 10x anything observed, which is the
+        corruption the ceiling is for.
+
+        **The quality guard this used to pretend to be belongs to the
+        operator.** The objective would have to ask for the length it wants in
+        terms the model can act on — its own worked example is 739 characters,
+        and the instruction around it says "one paragraph or two" without ever
+        saying what that is in prose it has not yet written. A line in "What to
+        write" naming the worked example AS the target length ("about as long
+        as the example below, and never more than twice it") is the change; it
+        is a prompt change, so it needs the arm that measures it, not an
+        assertion here. Until that lands, nothing stops an account drifting
+        back into chronicle, and refusing 13%-over prose was never the thing
+        that would have.
         """
         if not items:
             self._inc("empty")

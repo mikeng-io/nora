@@ -58,7 +58,7 @@
   {
     "name": "#199 the participation turn READS the log",
     "file": "nora/app/fire.py",
-    "old": "            decisions=await self._read_decisions(occasion, workspace),",
+    "old": "            decisions=await self._read_decisions(occasion, unit),",
     "new": "            decisions=(),",
     "target": "tests/unit/test_fire_path.py -k participation_turn_sees_what_she_already_raised"
   },
@@ -72,8 +72,8 @@
   {
     "name": "#199 only the participation occasion reads the log",
     "file": "nora/app/fire.py",
-    "old": "            or occasion.kind != \"participation\"\n            or not workspace",
-    "new": "            or not workspace",
+    "old": "            or occasion.kind != \"participation\"\n            or not unit",
+    "new": "            or not unit",
     "target": "tests/unit/test_fire_path.py -k only_the_participation_occasion_reads_the_decision_log"
   },
   {
@@ -168,11 +168,11 @@
     "target": "tests/contract/test_decision_log_store_contract.py -k older_than_the_window"
   },
   {
-    "name": "#199 the workspace read does not leak another workspace",
+    "name": "#199 the unit read does not leak another unit",
     "file": "nora/infra/sql/decision_log.py",
-    "old": "        return await self._read(DECISION_LOG.c.workspace == workspace,\n                                since_ms=since_ms, limit=limit, writers=writers)",
+    "old": "        return await self._read(DECISION_LOG.c.unit == unit,\n                                since_ms=since_ms, limit=limit, writers=writers)",
     "new": "        return await self._read(sa.true(),\n                                since_ms=since_ms, limit=limit, writers=writers)",
-    "target": "tests/contract/test_decision_log_store_contract.py -k workspace_read_spans_its_rooms"
+    "target": "tests/contract/test_decision_log_store_contract.py -k unit_read_spans_its_rooms"
   },
   {
     "name": "#199 a tag turn that DELIBERATELY said nothing is not called a failure",
@@ -193,14 +193,14 @@
     "file": "nora/infra/sql/decision_log.py",
     "old": "        if writers:\n            where.append(DECISION_LOG.c.writer.in_(tuple(writers)))",
     "new": "        pass",
-    "target": "tests/contract/test_decision_log_store_contract.py -k workspace_read_narrows_by_writer_inside_the_bound"
+    "target": "tests/contract/test_decision_log_store_contract.py -k unit_read_narrows_by_writer_inside_the_bound"
   },
   {
     "name": "#199 the double narrows by writer before the bound too",
     "file": "nora/testing/decision_log.py",
     "old": "                and (not writers or r.writer in writers)",
     "new": "",
-    "target": "tests/contract/test_decision_log_store_contract.py -k workspace_read_narrows_by_writer_inside_the_bound"
+    "target": "tests/contract/test_decision_log_store_contract.py -k unit_read_narrows_by_writer_inside_the_bound"
   },
   {
     "name": "#199 the recorder passes the reader's writer set to the store",
@@ -210,11 +210,11 @@
     "target": "tests/domain/test_decision_log.py -k writer_filter_is_applied_before_the_bound"
   },
   {
-    "name": "#199 a blank workspace answers nothing",
+    "name": "#199 a blank unit answers nothing",
     "file": "nora/domain/decision_log.py",
-    "old": "        if not workspace:\n            return ()\n        return await self._read(",
+    "old": "        if not unit:\n            return ()\n        return await self._read(",
     "new": "        return await self._read(",
-    "target": "tests/domain/test_decision_log.py -k blank_workspace_answers_nothing"
+    "target": "tests/domain/test_decision_log.py -k blank_unit_answers_nothing"
   },
   {
     "name": "#199 a limit of zero answers nothing on the double too",

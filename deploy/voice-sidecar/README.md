@@ -47,9 +47,9 @@ exponential backoff until 2xx.
 Speech preempts music with a hard cut (no ducking): the music ffmpeg is
 killed, the slot remembered as suspended, and the track revives at the
 cut position when speech drains (ffmpeg `-ss`; `position_policy` is
-`approximate_seek` — the consumed-frames count, not sample-exact). Durable desired-state (`STATE_FILE`): `/voice/exit` writes
+`approximate_seek` — the consumed-frames count, not sample-exact). Durable desired-state (`STATE_DIR`, one `<guild_id>.json` per guild): `/voice/exit` writes
 `idle`, a successful join writes `connected`; boot joins only when the
-file says `connected`, or the file is absent AND `CHANNEL_ID` is set.
+file says `connected`. There is no env fallback channel: a process serving several guilds has no single one to return to, so it boots idle until a join.
 
 ## Layout
 
@@ -84,14 +84,13 @@ file says `connected`, or the file is absent AND `CHANNEL_ID` is set.
 | var | default | meaning |
 |---|---|---|
 | `DISCORD_BOT_TOKEN` | — | bot token; from the operator's `.env`, never committed |
-| `GUILD_ID` | — | the single guild the controller is hard-bound to |
-| `CHANNEL_ID` | — | voice channel for the FIRST boot (desired-state file wins afterwards) |
+| ~~`GUILD_ID`~~ / ~~`CHANNEL_ID`~~ | — | **GONE 2026-09-17.** The process has no guild identity: a connection is created on `POST /voice/join` and restored at boot from `STATE_DIR`. Setting these is a silent no-op. Which guilds exist is nora's `[speech.tts] sidecars`. |
 | `PUMP_HOST` | `127.0.0.1` | where the wake gate (stage 3) will listen |
 | `PUMP_PORT` | `4599` | wake-gate seam port (frame format: `TRANSPORT.md`) |
 | `HOST` | `127.0.0.1` | HTTP bind |
 | `PORT` | `4600` | HTTP port |
 | `NORA_EVENT_URL` | `http://nora:9100/app/v1/voice/event` | where controller → nora events are POSTed |
-| `STATE_FILE` | `/var/lib/audio-controller/desired_state.json` | durable desired-state file (atomic write) |
+| `STATE_DIR` | `/var/lib/audio-controller` | durable desired-state DIRECTORY, one `<guild_id>.json` per guild (atomic writes). A file whose name is not a guild snowflake is skipped at boot. |
 
 The token is read from the environment only — it is never logged, never
 written, and there is no default that would "work".

@@ -357,7 +357,7 @@ harness as it stands** — four concrete gaps, each with its path:
 2. **No per-case seed in the case schema.** `Case.from_dict` reads no per-case
    seed (`harness.py:131-140`) though `run_case` accepts a hand-built
    `ProductionSeed` (`harness.py:259,319-362`) — the case format needs a seed
-   field. (Footgun: facts/notes keyed outside workspace "nora" silently vanish,
+   field. (Footgun: facts/notes keyed outside unit "nora" silently vanish,
    `eval_support.py:66-71`.)
 3. **Verdict assertion — "called" vs "sent".** Live-mode `tool_calls` is
    reconstructed from Prometheus counters with documented blindness to
@@ -386,7 +386,7 @@ fire path assembled neither the note nor the fact tier, so the determination
 never saw them — ratified and fixed first): the drive path is
 `build_offline_pipeline(participation_opt_in=...)` + `run_case`; the seed
 field is `Case.seed` built nora-side by `eval_support.seed_from_dict` (every
-tier row keyed to the eval workspace); the verdict signal is
+tier row keyed to the eval unit); the verdict signal is
 `Trajectory.sent` (`ParticipationVerdict`, chosen and documented); the parity
 scan covers the FirePath construction sites in composition.py AND offline.py;
 and the judge has a situation-shaped participation rubric

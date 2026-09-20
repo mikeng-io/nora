@@ -2,22 +2,22 @@
   {
     "name": "part 1: a scope-keyed grant resolves through home_rooms again (the defect)",
     "file": "nora/agent/dreamer.py",
-    "old": "        elif workspace is None:\n            home = self._scope_rooms.get(key)",
-    "new": "        elif workspace is None:\n            home = self._home_rooms.get(\"\")",
+    "old": "        elif unit is None:\n            home = self._scope_rooms.get(key)",
+    "new": "        elif unit is None:\n            home = self._home_rooms.get(\"\")",
     "target": "tests/unit/test_dreamer_runtime.py -k SCOPE_keyed_grant_resolves"
   },
   {
     "name": "part 1: the widened online_now domain reaches a scope-keyed build",
     "file": "nora/agent/dreamer.py",
-    "old": "            if home is not None\n            and online_scope_for is not None\n            and workspace is not None\n            else None",
+    "old": "            if home is not None\n            and online_scope_for is not None\n            and unit is not None\n            else None",
     "new": "            if home is not None\n            and online_scope_for is not None\n            else None",
     "target": "tests/unit/test_dreamer_runtime.py -k scope_keyed_build_never_gets"
   },
   {
     "name": "part 1: every broken scope collapses onto one log line",
     "file": "nora/agent/dreamer.py",
-    "old": "            seen = (adaptor, workspace if workspace is not None else key)",
-    "new": "            seen = (adaptor, workspace or \"\")",
+    "old": "            seen = (adaptor, unit if unit is not None else key)",
+    "new": "            seen = (adaptor, unit or \"\")",
     "target": "tests/unit/test_dreamer_runtime.py -k two_broken_scopes"
   },
   {
@@ -107,7 +107,7 @@
   {
     "name": "part 2b: an unresolvable scope goes silent",
     "file": "nora/language/culture.py",
-    "old": "        if standing_key is None or workspace is None:",
+    "old": "        if standing_key is None or unit is None:",
     "new": "        if False:",
     "target": "tests/unit/test_culture_adaptor.py -k names_no_policy_conversation"
   },

@@ -56,7 +56,7 @@ from tests.fakes import SinkSender
 
 CONVERSATION = "conv-1"
 TARGET = ConversationTarget("signal", CONVERSATION, "group")
-WORKSPACE = "friends"
+UNIT = "friends"
 
 # A Wednesday, 19:00 HKT — the clock every test in this file runs against, so
 # «two hours from now» is a literal rather than a computation.
@@ -133,7 +133,7 @@ def _tools(
         tool_call_log_store=tool_call_log_store,
         presence=presence_source, circles=presence_circles,
         notes=notes,
-        note_workspace=(lambda _p, _c: WORKSPACE) if notes is not None else None,
+        note_unit=(lambda _p, _c: UNIT) if notes is not None else None,
     )
     specs = registry.specs(
         store=_FakeStore(), conversation_id=conversation_id, conversation_type="group",
@@ -1343,12 +1343,12 @@ async def test_the_repeat_floor_refusal_is_counted():
 
 
 async def _seeded_notes():
-    """One open note in the workspace `_tools` resolves every room to."""
+    """One open note in the unit `_tools` resolves every room to."""
     from nora.testing import InMemoryNoteStore
 
     store = InMemoryNoteStore()
     note = await store.create(
-        workspace=WORKSPACE, title="AI Hackathon dinner plan",
+        unit=UNIT, title="AI Hackathon dinner plan",
         description="where to eat on Saturday night is open",
         uncertainty="where", closing_condition="a place is picked",
         established_in=CONVERSATION, body="Cyberport, Saturday; venue open.",
@@ -1372,7 +1372,7 @@ async def test_a_dreamer_provenance_stamps_the_row_in_code():
         origin_rooms={
             CONVERSATION: OriginRoom(
                 platform="signal", conversation_id=CONVERSATION,
-                conversation_type="group", proactive=True, workspace=WORKSPACE,
+                conversation_type="group", proactive=True, unit=UNIT,
             ),
         },
     )
@@ -1435,7 +1435,7 @@ async def test_a_dreamer_row_without_a_home_room_is_unavailable():
     Dreamer provenance answers `unavailable`, never a row bound to nowhere."""
     store = FakeReminderStore()
     empty = Room(
-        platform="", conversation_id=WORKSPACE, roster_source=None,
+        platform="", conversation_id=UNIT, roster_source=None,
         persons=_FakePersons(MILES), tagger=None,
     )
     tools = _tools(reminders=store, tagger=None, dream_adaptor="proactive", room=empty)

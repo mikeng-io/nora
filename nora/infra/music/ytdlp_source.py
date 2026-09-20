@@ -35,7 +35,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Sequence
+import threading
+import time
+from collections.abc import Callable, Sequence
 from typing import Any, Protocol
 from urllib.parse import SplitResult, parse_qs, urlencode, urlsplit, urlunsplit
 
@@ -95,16 +97,101 @@ class _Extractor(Protocol):
     def extract_info(self, url: str, *, download: bool) -> Any: ...
 
 
+# How long one `YoutubeDL` may be reused before it is thrown away and
+# rebuilt.
+#
+# Diagnosed 2026-09-18: every `/music play` in guild 100000000000000201 died
+# instantly with `ffmpeg-exit-1`, ffmpeg's stderr carrying `HTTP error 403
+# Forbidden` from the googlevideo CDN — 4 plays, 4 failures, zero seconds of
+# audio, and autoplay then burned the whole queue because a failed stream
+# advances (`nora/app/voice_events.py`). Everything obvious measured CLEAN at
+# the same moment, from inside the same two containers: the production
+# resolver path returned 206 on 6/6 videos, ffmpeg with the sidecar's EXACT
+# argument list decoded a fresh URL to exit 0, and the resolver's own
+# `http_headers` changed nothing (206 with and without). Same host, same
+# egress IP, same yt-dlp.
+#
+# The one thing that differed was AGE. `YtDlpSource` was built once at
+# composition and its `YoutubeDL` had been alive 21 hours; a new one in the
+# same container worked every time. A `YoutubeDL` owns a private cookiejar
+# (`shared jar object: False`) holding a negotiated YouTube visitor session —
+# `VISITOR_INFO1_LIVE`, `YSC`, `GPS` — and `videoplayback` locators are bound
+# to the session that resolved them. Rebuilding negotiates a fresh one
+# (measured: distinct `VISITOR_INFO1_LIVE` per instance).
+#
+# The bound is measured, not guessed: `GPS` came back at exactly now + 1800s
+# on both samples, so the shortest session cookie lives 30 minutes. 15 leaves
+# margin inside that and costs at most one extra session negotiation per
+# quarter hour in which music is actually played. It is NOT the player-JS
+# cache — `_code_cache`/`_player_cache` measured empty even after a successful
+# extraction, because the image ships no JS runtime for yt-dlp to use.
+_EXTRACTOR_TTL_SECONDS = 900.0
+
+
+class _RotatingExtractor:
+    """A `_Extractor` that throws its delegate away once it is older than
+    `ttl_seconds`, so a process-lifetime source can never serve locators from
+    a stale YouTube visitor session (`_EXTRACTOR_TTL_SECONDS`).
+
+    Only the DEFAULT extractors rotate. An injected one (tests, or a caller
+    with its own lifecycle) is held as-is by `YtDlpSource.__init__` and never
+    rebuilt — rotation is this module's own repair, not a contract it imposes
+    on whatever it is handed."""
+
+    def __init__(
+        self,
+        build: Callable[[], _Extractor],
+        *,
+        ttl_seconds: float = _EXTRACTOR_TTL_SECONDS,
+        monotonic: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._build = build
+        self._ttl_seconds = ttl_seconds
+        self._monotonic = monotonic
+        # `extract_info` runs under `asyncio.to_thread`, so the swap is
+        # reachable from several worker threads at once: without the lock two
+        # concurrent resolves could each build a replacement and one would be
+        # dropped on the floor mid-use. Building a `YoutubeDL` touches no
+        # network, so the lock is held only across the decision.
+        self._lock = threading.Lock()
+        self._delegate: _Extractor | None = None
+        self._built_at = 0.0
+
+    def _current(self) -> _Extractor:
+        with self._lock:
+            now = self._monotonic()
+            if self._delegate is None or now - self._built_at >= self._ttl_seconds:
+                # The retired instance is dropped, never `close()`d: a resolve
+                # already in flight on a worker thread still holds it, and
+                # closing its opener underneath that call would turn a routine
+                # rotation into the very failure this exists to prevent.
+                self._delegate = self._build()
+                self._built_at = now
+            return self._delegate
+
+    def invalidate(self) -> None:
+        """Drop the delegate NOW, so the next call builds a fresh one rather
+        than waiting out the remaining TTL. Called when a locator this
+        extractor produced turned out to be unplayable: the TTL bounds how
+        long a session may rot unnoticed, but once something has actually
+        failed there is no reason to keep resolving through it."""
+        with self._lock:
+            self._delegate = None
+
+    def extract_info(self, url: str, *, download: bool) -> Any:
+        return self._current().extract_info(url, download=download)
+
+
 def _default_extractor() -> _Extractor:
     # `_YDL_OPTS`'s TypedDict stub demands an exact `_Params` shape; the
     # documented `yt_dlp.YoutubeDL` API is "pass it a dict of option names"
     # (same argument as `nora/infra/vision/client.py`'s own `type: ignore`
     # for a gateway whose contract is the wire JSON, not the SDK's stub).
-    return yt_dlp.YoutubeDL(_YDL_OPTS)  # type: ignore[arg-type]
+    return _RotatingExtractor(lambda: yt_dlp.YoutubeDL(_YDL_OPTS))  # type: ignore[arg-type]
 
 
 def _default_flat_extractor() -> _Extractor:
-    return yt_dlp.YoutubeDL(_FLAT_YDL_OPTS)  # type: ignore[arg-type]
+    return _RotatingExtractor(lambda: yt_dlp.YoutubeDL(_FLAT_YDL_OPTS))  # type: ignore[arg-type]
 
 
 class YtDlpSource:
@@ -157,6 +244,20 @@ class YtDlpSource:
         # A Mix always lists its own seed video first -- autoplay must offer
         # something NEW, never re-queue the track that just finished.
         return tuple(t for t in tracks if t.source_id != video_id)
+
+    async def refresh_session(self) -> None:
+        """Discard the negotiated YouTube visitor session (`TrackSource.
+        refresh_session`) by dropping both rotating extractors, so the next
+        resolve signs its locators with a new one.
+
+        An INJECTED extractor is deliberately untouched: it owns its own
+        lifecycle (`_RotatingExtractor`'s docstring), and this adapter has
+        no business reaching into something it was handed. That makes this a
+        no-op under test, which is correct — a fake extractor has no session
+        to rot."""
+        for extractor in (self._extractor, self._flat_extractor):
+            if isinstance(extractor, _RotatingExtractor):
+                extractor.invalidate()
 
 
 def _is_playlist_page(parsed: SplitResult) -> bool:

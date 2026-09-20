@@ -1233,9 +1233,9 @@ EVENT_RSVPS = sa.Table(
     ),
 )
 
-# The fact tier (2026-08-20 fact-tier design). Keyed on WORKSPACE, not
-# scope_id: a room's words are that room's, the world is not. `workspace` is
-# `nora.policy.Conversation.workspace` (DEC-105) — the same key R-49 refuses to
+# The fact tier (2026-08-20 fact-tier design). Keyed on UNIT, not
+# scope_id: a room's words are that room's, the world is not. `unit` is
+# `nora.policy.Conversation.unit` (DEC-105) — the same key R-49 refuses to
 # relay across, which is what makes a fact rendering into a sibling room
 # something other than a leak.
 FACT_ENTITY = sa.Table(
@@ -1243,13 +1243,13 @@ FACT_ENTITY = sa.Table(
     METADATA,
     sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
               server_default=sa.text("gen_random_uuid()")),
-    sa.Column("workspace", sa.Text, nullable=False),
+    sa.Column("unit", sa.Text, nullable=False),
     sa.Column("canonical_name", sa.Text, nullable=False),
     sa.Column("aliases", pg.ARRAY(sa.Text), nullable=False,
               server_default=sa.text("'{}'")),
     sa.Column("created_at", sa.BigInteger, nullable=False),
-    sa.UniqueConstraint("workspace", "canonical_name",
-                        name="fact_entity_workspace_name_key"),
+    sa.UniqueConstraint("unit", "canonical_name",
+                        name="fact_entity_unit_name_key"),
 )
 
 FACT_CANDIDATE = sa.Table(
@@ -1257,7 +1257,7 @@ FACT_CANDIDATE = sa.Table(
     METADATA,
     sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
               server_default=sa.text("gen_random_uuid()")),
-    sa.Column("workspace", sa.Text, nullable=False),
+    sa.Column("unit", sa.Text, nullable=False),
     sa.Column("subject_id", sa.Text, nullable=False),
     sa.Column("predicate", sa.Text, nullable=False),
     sa.Column("object", sa.Text, nullable=False),
@@ -1314,7 +1314,7 @@ FACT_CANDIDATE = sa.Table(
         f"length(predicate) <= {FACT_PREDICATE_CEILING_CHARS}",
         name="fact_candidate_predicate_fits_the_ceiling_check",
     ),
-    sa.UniqueConstraint("workspace", "subject_id", "predicate", "object",
+    sa.UniqueConstraint("unit", "subject_id", "predicate", "object",
                         name="fact_candidate_triple_key"),
 )
 
@@ -1323,7 +1323,7 @@ FACT = sa.Table(
     METADATA,
     sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
               server_default=sa.text("gen_random_uuid()")),
-    sa.Column("workspace", sa.Text, nullable=False),
+    sa.Column("unit", sa.Text, nullable=False),
     sa.Column("subject_id", sa.Text, nullable=False),
     sa.Column("predicate", sa.Text, nullable=False),
     # 2026-08-28 (migration 0039): an ADDITIVE, nullable resolution pointer —
@@ -1399,7 +1399,7 @@ FACT = sa.Table(
     #
     # That is what makes a false positive survivable. Under suppression one
     # message from one member removed a true row from every future turn for
-    # everyone in the workspace, with no way to clear it — a memory
+    # everyone in the unit, with no way to clear it — a memory
     # denial-of-service available to anyone in the room.
     sa.Column("disputed_at", sa.BigInteger),
     # The person_id of whoever disputed it. NULLABLE because an unmapped
@@ -1502,11 +1502,11 @@ FACT = sa.Table(
 )
 
 # Serves the ONE read on the turn's critical path: the standing facts for a
-# set of subjects in one workspace. Partial on the standing rows, because a
+# set of subjects in one unit. Partial on the standing rows, because a
 # superseded fact is history and is never rendered.
 IDX_FACT_STANDING = sa.Index(
     "idx_fact_standing",
-    FACT.c.workspace,
+    FACT.c.unit,
     FACT.c.subject_id,
     postgresql_where=FACT.c.superseded_at.is_(None),
 )
@@ -1550,11 +1550,11 @@ FACT_PREMISE = sa.Table(
     ),
 )
 
-#: The correction loop's read: which rows in this workspace are disputed.
+#: The correction loop's read: which rows in this unit are disputed.
 #: PARTIAL, because a disputed row is the rare case and a full index would be a
 #: majority-class predicate the planner will not choose.
 IDX_FACT_DISPUTED = sa.Index(
-    "idx_fact_disputed", FACT.c.workspace,
+    "idx_fact_disputed", FACT.c.unit,
     postgresql_where=FACT.c.disputed_at.isnot(None),
 )
 
@@ -1589,7 +1589,7 @@ EMBEDDING = sa.Table(
     METADATA,
     sa.Column("kind", sa.Text, primary_key=True),
     sa.Column("row_key", sa.Text, primary_key=True),
-    # The scope a search is allowed to cross. `workspace` for a fact, a
+    # The scope a search is allowed to cross. `unit` for a fact, a
     # conversation for a lexeme — the seam does not care which, only that a
     # reader can filter by it, because a retrieval verb that could not would
     # be R-49's relay in a new place.
@@ -1662,9 +1662,9 @@ RENDERED_CLAIM = sa.Table(
     # What a later message is matched against — `fact.subject_id` for a fact,
     # `room_lexeme.canonical_form` for a lexeme.
     sa.Column("surface", sa.Text, nullable=False),
-    # Facts only. A lexeme is conversation-keyed and has no workspace, and a
-    # sentinel would be a workspace that compares equal to nothing.
-    sa.Column("workspace", sa.Text),
+    # Facts only. A lexeme is conversation-keyed and has no unit, and a
+    # sentinel would be a unit that compares equal to nothing.
+    sa.Column("unit", sa.Text),
     sa.Column("last_tag_id", sa.Text, nullable=False),
     sa.Column("last_rendered_at", sa.BigInteger, nullable=False),
     sa.CheckConstraint(
@@ -1748,8 +1748,8 @@ FACT_ASSERTER = sa.Table(
 
 # ---------------------------------------------------------------------------
 # The note tier (2026-08-21 note-tier design). A note is TRACKED UNCERTAINTY —
-# workspace-keyed like `fact`, and for the same DEC-105/R-49 reason: rooms
-# sharing a workspace are one social unit, so a note established in one room
+# unit-keyed like `fact`, and for the same DEC-105/R-49 reason: rooms
+# sharing a unit are one social unit, so a note established in one room
 # rendering into another crosses no boundary R-31 guards.
 #
 # Every CHECK below is required BY THE MIGRATION, not by this file alone —
@@ -1762,7 +1762,7 @@ NOTE = sa.Table(
     METADATA,
     sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
               server_default=sa.text("gen_random_uuid()")),
-    sa.Column("workspace", sa.Text, nullable=False),
+    sa.Column("unit", sa.Text, nullable=False),
     # The injected index entry. Capped in `nora.domain.notes` AND here: the
     # block goes into EVERY tag, so an over-long description is prompt budget
     # spent forever. Truncating at render would be silent loss.
@@ -1782,7 +1782,7 @@ NOTE = sa.Table(
     sa.Column("anchor_date", sa.Integer),
     sa.Column("anchor_entity_ids", pg.ARRAY(sa.Text), nullable=False,
               server_default=sa.text("'{}'")),
-    # A ROUTING key, never a filter (spec §3): the workspace is already the
+    # A ROUTING key, never a filter (spec §3): the unit is already the
     # disclosure boundary. This decides where a promoted `Event` lands, since
     # `Event` is conversation-scoped and a note is not.
     sa.Column("established_in", sa.Text, nullable=False),
@@ -1899,7 +1899,7 @@ NOTE_CANDIDATE = sa.Table(
     METADATA,
     sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
               server_default=sa.text("gen_random_uuid()")),
-    sa.Column("workspace", sa.Text, nullable=False),
+    sa.Column("unit", sa.Text, nullable=False),
     # Two row shapes share this table and its id space, migration `0049`
     # (design/dreamer-agent-loop/33 §4, issue #98). `miss` is the negative
     # cache below, unchanged; `create` is a full note proposal the
@@ -1948,7 +1948,7 @@ NOTE_CANDIDATE = sa.Table(
               server_default=sa.text("'{}'")),
     sa.Column("status", sa.Text),
     sa.Column("attempts", sa.Integer, nullable=False, server_default=sa.text("0")),
-    sa.UniqueConstraint("workspace", "probe", name="note_candidate_probe_key"),
+    sa.UniqueConstraint("unit", "probe", name="note_candidate_probe_key"),
     sa.CheckConstraint(
         "kind in ('miss', 'create')", name="note_candidate_kind_check",
     ),
@@ -1991,7 +1991,7 @@ NOTE_CANDIDATE = sa.Table(
 )
 
 #: `kind='create'` rows dedupe on the note tier's OWN staging key —
-#: `(workspace, anchor_date, anchor_entity_ids, lower(btrim(title)))` (#235).
+#: `(unit, anchor_date, anchor_entity_ids, lower(btrim(title)))` (#235).
 #: This is the STAGING key, not the create gate's match key, and the two have
 #: been fully independent since 2026-09-13 (#228): the gate
 #: (`nora.language.note_candidates`) resolves the title the MODEL names for an
@@ -2001,14 +2001,14 @@ NOTE_CANDIDATE = sa.Table(
 #: **M10 — "a title is not an identity" — is UPHELD for the note and REVERSED
 #: here, and the two are not in tension.** A note must stay findable by one
 #: name across revisions, so `note`'s own uniqueness is still the title alone
-#: per workspace and its gate still matches on what the model names. A staging
+#: per unit and its gate still matches on what the model names. A staging
 #: row is not an identity: it is a one-shot dedupe slot for one sighting, and
 #: the title is the only field that separates two arrangements the model wrote
 #: about on the same day. The entity list was the discriminator until
 #: 2026-09-16, when a two-entity candidate was destroyed by a same-day
-#: collision in workspace `ridgeline` — in a fixed-membership room every
+#: collision in unit `ridgeline` — in a fixed-membership room every
 #: arrangement names the same people, so the list is a constant and the key
-#: degenerated to `(workspace, anchor_date)`. What narrowing costs is a
+#: degenerated to `(unit, anchor_date)`. What narrowing costs is a
 #: re-described occasion staging twice, which is a visible duplicate (#236);
 #: what it removes is a silent destruction, and this tier fails toward the
 #: visible, additive side.
@@ -2025,25 +2025,25 @@ NOTE_CANDIDATE = sa.Table(
 #: array at write time is what makes an ordinary equality index correct here.
 IDX_NOTE_CANDIDATE_CREATE_ANCHOR_KEY = sa.Index(
     "note_candidate_create_anchor_key",
-    NOTE_CANDIDATE.c.workspace, NOTE_CANDIDATE.c.anchor_date,
+    NOTE_CANDIDATE.c.unit, NOTE_CANDIDATE.c.anchor_date,
     NOTE_CANDIDATE.c.anchor_entity_ids,
     sa.text("lower(btrim(title))"),
     unique=True, postgresql_where=sa.text("kind = 'create'"),
 )
 
 #: The one read on the turn's critical path: every standing note for this
-#: workspace, for the injected index. PARTIAL on `retired_at is null` because a
+#: unit, for the injected index. PARTIAL on `retired_at is null` because a
 #: retired note is history and is never rendered — the same shape
 #: `idx_fact_standing` uses, and identically invisible to `alembic check`.
 IDX_NOTE_STANDING = sa.Index(
-    "idx_note_standing", NOTE.c.workspace,
+    "idx_note_standing", NOTE.c.unit,
     postgresql_where=sa.text("retired_at is null"),
 )
 
 #: Merge detection (spec §7.1) is a GROUP BY over the anchor, so it reads this
 #: rather than every body — candidate detection costs zero tokens.
 IDX_NOTE_ANCHOR = sa.Index(
-    "idx_note_anchor", NOTE.c.workspace, NOTE.c.anchor_date,
+    "idx_note_anchor", NOTE.c.unit, NOTE.c.anchor_date,
     postgresql_where=sa.text("retired_at is null"),
 )
 
@@ -2307,10 +2307,10 @@ DECISION_LOG = sa.Table(
     sa.Column("platform", sa.Text, nullable=False),
     sa.Column("conversation_id", sa.Text, nullable=False),
     # Empty, never NULL: a room with no policy entry is a WIRING GAP, and the
-    # recorder leaves the column empty rather than guessing a workspace — the
-    # same refusal `FirePath._workspace_for` already makes. One spelling for
-    # "not known" so a workspace read cannot half-match.
-    sa.Column("workspace", sa.Text, nullable=False, server_default=""),
+    # recorder leaves the column empty rather than guessing a unit — the
+    # same refusal `FirePath._unit_for` already makes. One spelling for
+    # "not known" so a unit read cannot half-match.
+    sa.Column("unit", sa.Text, nullable=False, server_default=""),
     # NULLable, and the only nullable column here: solely the proactive decide
     # turn decides ABOUT a note; every other writer decides about a room.
     sa.Column("note_id", sa.Text, nullable=True),
@@ -2352,13 +2352,13 @@ IDX_DECISION_LOG_CONV_TS = sa.Index(
     DECISION_LOG.c.conversation_id, sa.text("ts DESC"), sa.text("id DESC"),
 )
 
-#: The workspace-keyed read. A SECOND index rather than a filter over the one
-#: above, because `recent_for_workspace` does not name a conversation at all and
+#: The unit-keyed read. A SECOND index rather than a filter over the one
+#: above, because `recent_for_unit` does not name a conversation at all and
 #: would otherwise scan: AGENTS.md's «instruments measure the RESULT; something
 #: must measure the COST — check the PLAN or the bound, never the answer».
-IDX_DECISION_LOG_WORKSPACE_TS = sa.Index(
-    "idx_decision_log_workspace_ts",
-    DECISION_LOG.c.workspace, sa.text("ts DESC"), sa.text("id DESC"),
+IDX_DECISION_LOG_UNIT_TS = sa.Index(
+    "idx_decision_log_unit_ts",
+    DECISION_LOG.c.unit, sa.text("ts DESC"), sa.text("id DESC"),
 )
 
 
@@ -2542,4 +2542,88 @@ TAG_DEBOUNCE_STATE = sa.Table(
     sa.Column("last_allowed_at", sa.BigInteger, nullable=False),
     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False,
               server_default=sa.text("now()")),
+)
+
+# `reasoning_strip_log` — one row per MULTI-TURN agent invocation, so that a
+# turn whose reasoning the transport threw away is distinguishable from one
+# that reasoned fine (issue #325, migration 0057, ADR 0013).
+#
+# **THE ROW CARRIES ITS OWN DENOMINATOR.** `continuation_calls` is how many
+# model calls in that TURN could have been stripped — every call after the
+# first — and `strip_calls` is how many were. «After the first», not «with a
+# prior assistant message»: every tag prefill carries one, and it holds no
+# `reasoningContent` to lose.
+# A count without the denominator answers nothing: two strips in two hours is a
+# catastrophe at two opportunities and a rounding error at two hundred, and the
+# production reading that opened #325 had no way to tell which it was.
+#
+# **ONLY MULTI-TURN INVOCATIONS GET A ROW** (`continuation_calls >= 1`, and the
+# CHECK holds it). A single-call turn has zero opportunity: it would contribute
+# nothing to either half of the ratio, and admitting it would make this a log of
+# every model call in the system rather than a census of the calls at risk.
+#
+# `reasoning_effort` is read off the MODEL PROVIDER at the moment of the call,
+# not from config, because the question this table exists to make cheap is «did
+# this move when something else did». `model` is the OmniRoute ALIAS and
+# CANNOT see a combo repoint — the served model id does not reach this seam at
+# all; see the migration's docstring for why the column stays anyway. `reasoning_effort = 'none'`
+# is why the column is not optional: a path emitting no reasoning cannot be
+# stripped, so zero strips there means IMPOSSIBLE, not healthy, and without this
+# column the two readings are the same number.
+#
+# `tag_id` IS NULLABLE, and the NULL is load-bearing: a Dreamer run has no tag.
+# Not "", not a synthesised one — the same rule
+# `participation_window_state.last_send_at` states one table over.
+#
+# NO SWEEP, and the bound is stated rather than assumed: rows land only on
+# multi-turn invocations, which is a few hundred a day at the observed tag rate
+# and roughly one per adaptor per day on the Dreamer. Pruning would be a
+# retention JUDGEMENT rather than arithmetic (unlike `tag_debounce_state`, whose
+# rows provably cannot change an answer once their interval has passed), and
+# this table's whole purpose is to answer a question about a window that is
+# longer than one deploy.
+REASONING_STRIP_LOG = sa.Table(
+    "reasoning_strip_log",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=True), primary_key=True),
+    sa.Column("path", sa.Text, nullable=False),
+    sa.Column("model", sa.Text, nullable=False),
+    sa.Column("reasoning_effort", sa.Text, nullable=False),
+    sa.Column("tag_id", sa.Text),
+    sa.Column("model_calls", sa.Integer, nullable=False),
+    sa.Column("continuation_calls", sa.Integer, nullable=False),
+    sa.Column("strip_calls", sa.Integer, nullable=False),
+    sa.Column("stripped_blocks", sa.Integer, nullable=False),
+    sa.Column("created_at", sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.text("now()")),
+    # The row's own arithmetic, refused at the database rather than trusted
+    # from the writer. `strip_calls > continuation_calls` is unreachable
+    # through `ReasoningStripWatch` and would mean the reasoning arrived from
+    # the PREFILL rather than from the loop — a shape no correct reading of
+    # this table can explain, and one that must not be silently stored. The
+    # last clause is the pair that must agree: `stripped_blocks` is the
+    # DISTINCT reasoning lost and `strip_calls` is how often, so one of them
+    # being zero while the other is not is a writer that has drifted.
+    sa.CheckConstraint(
+        "continuation_calls >= 1 "
+        "AND continuation_calls <= model_calls "
+        "AND strip_calls >= 0 "
+        "AND strip_calls <= continuation_calls "
+        "AND stripped_blocks >= 0 "
+        "AND ((strip_calls = 0) = (stripped_blocks = 0))",
+        name="ck_reasoning_strip_log_counts",
+    ),
+    # NULL is the answer for a Dreamer run; "" is a writer that lost the tag
+    # and did not say so.
+    sa.CheckConstraint(
+        "tag_id IS NULL OR tag_id <> ''",
+        name="ck_reasoning_strip_log_tag_id_not_empty",
+    ),
+)
+
+# The read this table exists for is «the rate on one path over one window», so
+# the index is (path, created_at) rather than created_at alone.
+IDX_REASONING_STRIP_LOG_PATH_TS = sa.Index(
+    "idx_reasoning_strip_log_path_ts",
+    REASONING_STRIP_LOG.c.path, REASONING_STRIP_LOG.c.created_at,
 )

@@ -418,16 +418,20 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                 },
                 # Same reason `memory.workspace_id` above is the ISOLATED
                 # value, not `stated_workspace`: a policy that still says
-                # `workspace = "friends"` while the subject's own config
-                # says `friends-<isolated>` means the proactive adaptor's
-                # home-room lookup finds no room for the workspace it is
+                # `unit = "friends"` while the subject's own config says
+                # `friends-<isolated>` means the proactive adaptor's
+                # home-room lookup finds no room for the unit it is
                 # actually composed with, and reports "no home room" —
                 # found live, 2026-09-20, porting `proactive_decide.yaml`
                 # (`evals/rebuilt/runner.run_once`'s own `case_policy =
                 # case.policy.replace(...)` step, not carried over here).
+                # The TOML key is `unit` (`Policy.Conversation.unit`,
+                # DEC-105/`e2092ecd`) — distinct from `stated_workspace`/
+                # `workspace` above, which name Honcho's OWN `workspace_id`
+                # concept and were never part of that rename.
                 policy=(
                     policy_template.replace(
-                        f'workspace = "{stated_workspace}"', f'workspace = "{workspace}"',
+                        f'unit = "{stated_workspace}"', f'unit = "{workspace}"',
                     ).format(platform=room[0], room=room[1])
                     if policy_template else ""
                 ),

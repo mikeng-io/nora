@@ -72,7 +72,7 @@ async def owe(
     engine = create_sql_engine(subject.database_url)
     try:
         notes = SqlNoteStore(engine)
-        standing = await notes.standing(workspace=subject.cfg.memory.workspace_id)
+        standing = await notes.standing(unit=subject.cfg.memory.workspace_id)
         matches = [n for n in standing if n.title == note_title]
         if not matches:
             raise LookupError(
@@ -117,7 +117,7 @@ async def owe(
         await subject.deps.reminders.create(row)
         if note_moved:
             await notes.append_revision(
-                workspace=subject.cfg.memory.workspace_id,
+                unit=subject.cfg.memory.workspace_id,
                 note_id=linked.id,
                 body="Settled by the room.",
                 parent_revision_id=linked.head_revision_id,

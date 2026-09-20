@@ -1,7 +1,7 @@
 ---
 type: proposal
 title: "The Proactive Adaptor Is Nora's Other Half — One OODA Loop, Two Entry Points"
-description: "Decides what node 38 left open. The proactive adaptor is a Dreamer adaptor, workspace-keyed through a home room, with the whole tool registry to READ and exactly one act verb — her own `remind`, stamped by provenance to write a proactive reminder row; its turn decides WHEN and the fire path speaks THEN. Passive (tagged) and active (clocked) Nora run the same observe–orient–decide–act loop, whose one structural brake is on the note. Every decision carries where it was checked and what would reopen it. Revised once against two reviews."
+description: "Decides what node 38 left open. The proactive adaptor is a Dreamer adaptor, unit-keyed through a home room, with the whole tool registry to READ and exactly one act verb — her own `remind`, stamped by provenance to write a proactive reminder row; its turn decides WHEN and the fire path speaks THEN. Passive (tagged) and active (clocked) Nora run the same observe–orient–decide–act loop, whose one structural brake is on the note. Every decision carries where it was checked and what would reopen it. Revised once against two reviews."
 tags: [nora, proactive, initiative, dreamer, ooda, reminder, standing, measurement]
 timestamp: '2026-09-09'
 edges:
@@ -70,12 +70,12 @@ act — and it is closed *through a human*.
 |---|---|---|
 | **Observe** | Human rows land in the record; Honcho derives her model of each person | `RecordStore`, `is_nora == 0` in `since`; Honcho `(nora → person)` |
 | **Orient** | Conversation becomes tracked uncertainty; each room gets a one-paragraph position | note tier (`note-candidates`, curator); Standing (design 26) |
-| **Decide** | Given the whole workspace, what is worth doing and *when* | the proactive adaptor's turn (this node) |
+| **Decide** | Given the whole unit, what is worth doing and *when* | the proactive adaptor's turn (this node) |
 | **Act** | Say it, in a room, at the decided time | the fire path, via a `kind="proactive"` reminder row |
 
 The passive half enters this loop at *Act*: somebody tags her, she reads the
 same observe/orient state, answers in that room. The active half enters at
-*Decide*: the clock fires, she reads the same state across the workspace, and
+*Decide*: the clock fires, she reads the same state across the unit, and
 either schedules an act or does nothing. Same tools, same doctrine substrate,
 same deliverer chain. What differs is the trigger, the scope, and the fact
 that the active half is owed nothing and may stay silent.
@@ -179,36 +179,36 @@ is bounded there.
 be a fire-path occasion, and D3's «no `send_reply`» is what keeps it from
 needing one).
 
-### D2. Workspace-keyed, with a home room per workspace.
+### D2. Unit-keyed, with a home room per unit.
 
-`key_kind = "workspace"`, like `note-curation`. The operator's word is
-*circle*; the codebase's word is *workspace*, defined in `policy.example.toml`
+`key_kind = "unit"`, like `note-curation`. The operator's word is
+*circle*; the codebase's word is *unit*, defined in `policy.example.toml`
 as «the SOCIAL UNIT a room belongs to — the same people reachable in more than
-one place» (DEC-105, R-49). Notes are already workspace-scoped
-(`Note` docstring: «one tracked uncertainty, scoped to a workspace»;
+one place» (DEC-105, R-49). Notes are already unit-scoped
+(`Note` docstring: «one tracked uncertainty, scoped to a unit»;
 `established_in` is «a routing key, never a filter»).
 
-**The home room.** A workspace has no conversation, and every room-scoped
+**The home room.** A unit has no conversation, and every room-scoped
 tool — `where_is`, `about`, `ask_memory`, `group_members` — resolves through
 a `Room` that needs `platform` and `conversation_id`. `policy.toml` therefore
-gains one room per workspace marked as its home. The adaptor's `Room` is
+gains one room per unit marked as its home. The adaptor's `Room` is
 built from that room with a real roster source, and the act verb (D3) writes
 into it.
 
 **What «through the home room» means, said plainly.** Roster-gated reads
 see the home room's roster; notes and Standing come from every room of the
-workspace; `search_memory_workspace` is the one cross-room memory read. So
+unit; `search_memory_workspace` is the one cross-room memory read. So
 «every read tool is accessible» is accessible *through one of the
-workspace's two or three rooms*. There is no disclosure consequence: the act
+unit's two or three rooms*. There is no disclosure consequence: the act
 turn speaks into that same room, and R-31 is evaluated against it.
 
 **This answers 38's «R-31 with no asker» by dissolving it.** `Whereis.locate`
 reads `room.scope()`, the guard, `view.unnamed` and `location_trusted`
-(`whereis.py:380, 412-440`) — never the asker. `WORKSPACE_SAFE_TOOLS`'
-refusal of room-scoped tools for workspace-keyed adaptors was written because
-«binding one to an arbitrary room of that workspace would be a disclosure
+(`whereis.py:380, 412-440`) — never the asker. `UNIT_SAFE_TOOLS`'
+refusal of room-scoped tools for unit-keyed adaptors was written because
+«binding one to an arbitrary room of that unit would be a disclosure
 decision (R-31) nobody has made» (`dreamer.py:274-275`). The home room is
-that decision, made by the operator per workspace, in the file where room
+that decision, made by the operator per unit, in the file where room
 trust already lives.
 
 **Two arguments the Dreamer build does not pass today, without which
@@ -222,11 +222,11 @@ in the build map. Degraded roster (read fails): `scope()` narrows to the
 tagger, there is none, `locate` answers `unavailable` — honest, not a hole.
 
 Live on 2026-09-09 (read back on `norty`; `policy.toml` is not in the tree):
-three workspaces — `ridgeline` (2 rooms), `friends` (3 rooms), `wedding` (1
+three units — `ridgeline` (2 rooms), `friends` (3 rooms), `wedding` (1
 room).
 
-**Reopens if:** a workspace needs two home rooms (then the home room is per
-platform, and `send_to`'s «one room per platform per workspace» rule already
+**Reopens if:** a unit needs two home rooms (then the home room is per
+platform, and `send_to`'s «one room per platform per unit» rule already
 constrains it that way). **Superseded in part by 40 (issue #248, 2026-09-15):**
 a proactive row LINKED to a note fires into the note's `established_in` room,
 not the home room — the home room stays where she stands, and the write verb
@@ -248,8 +248,8 @@ Three fields the row needs are not the model's to set: `kind` and `payload`
 take their defaults `"reminder"` / `None` (`reminders.py:348-349`), so the
 row would fire as an ordinary «X asked you to remind…» with no note id for
 D11 to screen; and the destination is `bound_conversation_id`, the
-`conversation_id` argument of the build — which for a workspace-keyed
-adaptor is the *workspace name* (`dreamer.py:588`), so swapping the `Room`
+`conversation_id` argument of the build — which for a unit-keyed
+adaptor is the *unit name* (`dreamer.py:588`), so swapping the `Room`
 alone writes rows into a conversation that does not exist and every one dies
 `failed_policy`. `gathering` shows the right shape: its rows get
 `kind="gathering"` and a payload from *code* (`nora/app/gatherings.py:
@@ -295,14 +295,14 @@ three need the allowance: `RegistryToolSource.build`'s `& self.read_only()`
 (`dreamer.py:584`); `tool_subset_faults` axis 1, `declared - ceiling`
 (`:397-406`), raised at startup by `verify_tool_subsets`; and the per-run
 re-check in `DreamerRuntime.run` (`:722-723`). Axis 2
-(`WORKSPACE_SAFE_TOOLS`) is exempted for this adaptor. The build passes the
+(`UNIT_SAFE_TOOLS`) is exempted for this adaptor. The build passes the
 home room's `conversation_id` and `conversation_type` (not the key),
-`self_ids`, `location_trusted`, and keeps `supplied_workspace=key`. Four
+`self_ids`, `location_trusted`, and keeps `supplied_unit=key`. Four
 tests pin what this changes and go red on purpose:
 `tests/contract/test_dream_adaptor_contract.py::test_the_tool_subset_narrows_the_read_only_ceiling`,
 `tests/test_composition.py::test_every_wired_adaptor_stays_inside_the_read_only_ceiling`,
 `tests/unit/test_dreamer_runtime.py::test_the_tool_source_never_builds_a_tool_outside_the_ceiling`,
-`::test_a_workspace_keyed_adaptor_is_refused_a_room_scoped_tool`.
+`::test_a_unit_keyed_adaptor_is_refused_a_room_scoped_tool`.
 `test_remind_refuses_on_a_fire_turn` stays green.
 
 **Reopens if:** measurement (§5) shows the decide turn needs to speak
@@ -317,7 +317,7 @@ The operator's test for whether something is proactive: «明明應該晏晝先�
 slot with `send_reply` would let her choose *whether*; it would not let her
 choose *when*. Choosing when is the capability.
 
-So the **decide turn** (Dreamer, D1) reads the workspace, uses tools, and its
+So the **decide turn** (Dreamer, D1) reads the unit, uses tools, and its
 only act is `remind(...)` under Dreamer provenance: zero or several rows. It never composes the
 message.
 
@@ -423,8 +423,8 @@ No third store. Two reads are added to the decide turn's `inputs()`: the
 `<self_card>` block, rendered as DEC-96 frames it («a record she may
 contradict, at transcript authority»); and a **decision log** — rows with
 `requester_person_id = "nora"` over the last N days, with outcomes. `Reminder`
-has no workspace column (`reminders.py:325-349`), so the read joins through
-policy's room → workspace map. The store port has `pending_for`,
+has no unit column (`reminders.py:325-349`), so the read joins through
+policy's room → unit map. The store port has `pending_for`,
 `all_pending`, `count_pending` and no history read (`reminders.py:593-730`);
 one is added.
 
@@ -448,7 +448,7 @@ not-retired notes (`sql/notes.py:306`). 38 and version 1's reasoning
 conflated the two; 33 §8's «standing» means design 26.
 
 Live on 2026-09-09: `[standing] enabled = true`, all six policy rooms have a
-row (§4). The decide turn injects every room of the workspace's Standing body
+row (§4). The decide turn injects every room of the unit's Standing body
 *with its `updated_at`*, because Standing is written only after tag turns —
 the fire path reads it and never writes it (`fire.py:519-524`, «S1 (fire
 turns debrief too) is blocked») — so a room that only ever hears proactive
@@ -462,7 +462,7 @@ started, and it can never ask for more, ask differently, or ask again».
 
 | injected by `inputs()` | called by the model |
 |---|---|
-| open notes of the workspace (title, anchor, `revisit_at`, strikes) | `note_read`, `note_search` |
+| open notes of the unit (title, anchor, `revisit_at`, strikes) | `note_read`, `note_search` |
 | Standing per room, with age (D8) | `search_memory_workspace` (drops her own peer, `tools.py:7157-7163`) |
 | decision log (D7) | `about`, `ask_memory` for a person |
 | `<self_card>` (D7) | `where_is`, `saved_places`, `route`, `group_members` |
@@ -478,13 +478,13 @@ started, and it can never ask for more, ask differently, or ask again».
 > (07:00 HK, no rendered pass yet that day), or a change since the last
 > rendered pass — a note created, revised on the tag path, or newly past
 > its `revisit_at`, or a room's Standing rewritten — once every room of the
-> workspace has been quiet for `[dreamer] quiet_seconds`. A tick that does
+> unit has been quiet for `[dreamer] quiet_seconds`. A tick that does
 > not render is one store read and no model call, which is the same shape
 > the note tier's watermark and the curator's blank render already have.
 > «Last rendered pass» is durable in `dream_schedule_state`
 > (`proactive:pass`). The reason the daily slot was wrong: a note
 > `note-candidates` creates at 10:00 about tonight was first seen the next
-> morning, and a workspace where nothing moved still paid a full tool loop
+> morning, and a unit where nothing moved still paid a full tool loop
 > daily. The message-time distribution is not estimated — the note tier's
 > watermarks and Standing's `updated_at` already compress conversation
 > rhythm into state. **Reopens if** `nora_proactive_pass_total{reason=
@@ -492,7 +492,7 @@ started, and it can never ask for more, ask differently, or ask again».
 > detector fires on noise, and a slot is the honest cadence.
 >
 > **REVISED AGAIN 2026-09-10 by the operator, on the second live day:** the
-> quiet condition reads the HOME ROOM, not every room of the workspace. A
+> quiet condition reads the HOME ROOM, not every room of the unit. A
 > proactive row fires into the home room and `policy.py` refuses it anywhere
 > else, so the home room is the only room the pass can interrupt; every
 > other room was a proxy for that, and on `friends` the proxy was the whole
@@ -500,9 +500,9 @@ started, and it can never ask for more, ask differently, or ask again».
 > note that moved (09:40Z) was raised in it, and four consecutive hourly
 > ticks held `held_quiet` on Zone 42's traffic rather than speak into the
 > Signal room where the row would have landed. Measured over the 14 days to
-> 2026-09-10, 337 hourly ticks on that workspace: quiet on every room 257
+> 2026-09-10, 337 hourly ticks on that unit: quiet on every room 257
 > (76%), quiet on the home room alone 313 (93%); longest unbroken
-> workspace-busy run 6 hours — long enough to swallow a note anchored on the
+> unit-busy run 6 hours — long enough to swallow a note anchored on the
 > day it was raised. **Reopens if** a `changed` pass is answered as a
 > barge-in: what this drops is «a sibling room is still settling the thing
 > she is about to raise», and the fix for that is a hold that follows the
@@ -624,7 +624,7 @@ with only the model live, both grading structurally on the state left
 behind, both treating `unavailable` as ERROR — the rule `evals/
 note_candidates.py:20` states and `evals/run.py` enforces.
 
-**Decide suite.** Input: a workspace's open notes, Standing rows, decision
+**Decide suite.** Input: a unit's open notes, Standing rows, decision
 log, memory snippets, `now`. `expect`: `none`, or a set of rows each with a
 note id and a `due_at` window. PASS = exactly those rows, in those windows,
 owner `"nora"`, read back from the reminder store. This suite measures
@@ -663,12 +663,12 @@ threshold is the operator's; it is a number.
 
 | # | change | file | size |
 |---|---|---|---|
-| 1 | ceiling allowance in three places; home-room `Room` with `self_ids`; `conversation_id`/`conversation_type` from the home room; `location_trusted` threaded; `WORKSPACE_SAFE_TOOLS` exemption; module docstring rewritten | `nora/agent/dreamer.py` | a dozen lines, four tests rewritten |
+| 1 | ceiling allowance in three places; home-room `Room` with `self_ids`; `conversation_id`/`conversation_type` from the home room; `location_trusted` threaded; `UNIT_SAFE_TOOLS` exemption; module docstring rewritten | `nora/agent/dreamer.py` | a dozen lines, four tests rewritten |
 | 2 | `home_room` and `proactive = true` per room | `policy.toml`, `nora/policy.py`, `nora/config.py`, `policy.example.toml` | two fields |
 | 3 | `remind` reads a `dream_adaptor` provenance: stamps kind/payload/owner/destination in code, screens the text; optional `note_id` parameter | `nora/agent/tools.py`, `nora/agent/registry.py` | one closure branch, one parameter |
 | 4 | the adaptor: `inputs()` (D9), envelope → `record_wake` sink | new module under `nora/language/` | the main piece |
 | 5 | schedule entry | `nora/app/composition.py` | one entry |
-| 6 | reminder history read, joined to workspace via policy | `nora/domain/reminders.py`, both stores | one method |
+| 6 | reminder history read, joined to unit via policy | `nora/domain/reminders.py`, both stores | one method |
 | 7 | `proactive` occasion factory (`person_id=None`) + `event_registry` entry + screening on flag and tag-path revision (D11) | `nora/app/fire.py`, `nora/app/heartbeat.py`, composition | small |
 | 8 | `SILENT` reachable for `proactive`; `_state_for` third mapping | `nora/app/fire.py`, `nora/app/heartbeat.py` | small |
 | 9 | decide objective | Dreamer corpus | one file |

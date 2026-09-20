@@ -109,6 +109,7 @@ from nora.infra.sql.music_session import SqlMusicSessionStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.participation_state import SqlParticipationStateStore
 from nora.infra.sql.presence import PresenceStore
+from nora.infra.sql.reasoning_strip import SqlReasoningStripStore
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.tag_debounce import SqlTagDebounceStore
@@ -143,7 +144,7 @@ from nora.language.note_curator import NoteCuratorAdaptor
 from nora.language.proactive import (
     PROACTIVE_ADAPTOR_NAME,
     ProactiveAdaptor,
-    WorkspaceRoom,
+    UnitRoom,
 )
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
@@ -198,14 +199,14 @@ _REASONING_EFFORTS: frozenset[str] = frozenset(
 
 def _home_room_people(
     rosters: Mapping[str, RosterSource], persons: Persons,
-) -> Callable[[WorkspaceRoom], Awaitable[tuple[PersonRef, ...]]]:
+) -> Callable[[UnitRoom], Awaitable[tuple[PersonRef, ...]]]:
     """The proactive pass's people index (issue #145, design 39 D9).
 
     D9's rule is «inject the index, call for depth», and it was implemented for
     notes and for Standing and for nothing else. A note's body is written in
     whatever the group calls each other — «@熱咖啡☕少奶多糖», «@隨風而去» — while
     the roster holds the mapped name; nothing joined the two, so every unknown
-    handle cost a tool call. Measured on the `friends` workspace: six of ten
+    handle cost a tool call. Measured on the `friends` unit: six of ten
     calls in one pass were the same memory search asking who these people were,
     until R-7 stopped the pass.
 
@@ -213,7 +214,7 @@ def _home_room_people(
     ideas of who is in a room. A platform with no roster source returns nothing
     and the block is omitted — the pre-2026-09-10 shape, and the honest one.
     """
-    async def read(home: WorkspaceRoom) -> tuple[PersonRef, ...]:
+    async def read(home: UnitRoom) -> tuple[PersonRef, ...]:
         source = rosters.get(home.platform)
         if source is None:
             return ()
@@ -241,7 +242,7 @@ def _online_scope_of(
     but a note may name people from its `established_in` room, and the #248
     failure was exactly a note about someone the home roster alone would
     not have covered. The roster half is the SAME `Room` the tag path
-    builds (one idea of who is in a room); a workspace with no home room,
+    builds (one idea of who is in a room); a unit with no home room,
     or a roster that cannot be read, contributes nothing from that half.
 
     Subjects come from each standing note's `title` + `description` ONLY —
@@ -255,9 +256,9 @@ def _online_scope_of(
     roster alone. A resolver that RAISES is the tool's `unavailable`, never
     a narrowed guess — the tool wraps the call.
     """
-    async def resolve(workspace: str) -> tuple[PersonRef, ...]:
+    async def resolve(unit: str) -> tuple[PersonRef, ...]:
         people: dict[str, PersonRef] = {}
-        home = homes.get(workspace)
+        home = homes.get(unit)
         if home is not None:
             source = rosters.get(home.platform)
             if source is not None:
@@ -268,7 +269,7 @@ def _online_scope_of(
                 if view.available:
                     people.update((p.person_id, p) for p in view.people)
         if notes is not None:
-            for note in await notes.standing(workspace=workspace):
+            for note in await notes.standing(unit=unit):
                 text = f"{note.title} {note.description}".casefold()
                 for person in persons.by_person.values():
                     if person.person_id in people:
@@ -920,11 +921,11 @@ class Dependencies:
     # would put a `None` on the one path whose whole purpose is to survive
     # process boundaries. `dream_loop` ignores it when `schedules` is empty.
     dream_schedule_clock: SqlDreamScheduleClock
-    # `language_scopes`' workspace-keyed sibling. `Conversation.workspace`
-    # (DEC-105) — several rooms of one workspace are ONE unit of work here, not
-    # several, which is the whole reason a workspace-keyed adaptor could not
+    # `language_scopes`' unit-keyed sibling. `Conversation.unit`
+    # (DEC-105) — several rooms of one unit are ONE unit of work here, not
+    # several, which is the whole reason a unit-keyed adaptor could not
     # ride the per-scope schedule.
-    workspace_scopes: Callable[[], Sequence[str]]
+    unit_scopes: Callable[[], Sequence[str]]
     # The SAME `GatheringService` built above alongside `event_store`/
     # `reminder_caps` and already threaded to `ToolRegistry(events=events)` —
     # exposed here too so `nora.web.api.register_web_routes`'s read-only
@@ -941,9 +942,9 @@ class Dependencies:
     # The audio-controller seam (design/voice-channel/07): the per-guild
     # voice-session registry every voice path shares, and the consumer for
     # the controller's `/app/v1/voice/event` callbacks. Both `None` when
-    # `[speech.tts] sidecar_endpoint` is empty (the consumer additionally
-    # needs `[music] enabled`) — a deployment without the controller boots
-    # unchanged and every voice verb fails closed.
+    # `[speech.tts] sidecars` is empty (the consumer additionally needs
+    # `[music] enabled`) — a deployment without a controller boots unchanged
+    # and every voice verb fails closed.
     voice_hub: VoiceControllerHub | None
     voice_event_consumer: VoiceEventConsumer | None
 
@@ -1063,6 +1064,16 @@ async def build_dependencies(
     # deliver.build); the THIRD — ToolRegistry(...) below, for
     # recall_lookups — is Task 7's own wiring.
     tool_call_log_store: ToolCallLogStore = SqlToolCallLogStore(engine)
+    # Issue #325's durable half (`reasoning_strip_log`, migration 0057, ADR
+    # 0013), REUSING `engine` for the same reason the three stores above do.
+    # UNCONDITIONAL and behind no flag: an instrument that is off by default
+    # answers nothing, and the question it exists to answer -- how often the
+    # transport throws a turn's reasoning away, per unit of OPPORTUNITY, and
+    # whether that moved when the model or the effort did -- spans deploys,
+    # which is exactly what a Prometheus counter in this process cannot hold.
+    # All three consumers take it: the tag path and the participation occasion
+    # through `deliver.build`, and the Dreamer through `DreamerRuntime`.
+    reasoning_strip_store = SqlReasoningStripStore(engine)
     # The reasoning-continuity retention store (Task 6, spec §6/§7.4),
     # REUSING `engine` for the same reason `reminders`/`compute_jobs`/
     # `tool_call_log_store` do above. UNCONDITIONAL, unlike the Dreamer's own
@@ -1129,17 +1140,17 @@ async def build_dependencies(
     # fail-soft rule and the wall clock live, which is what makes «can a log
     # write fail a turn?» a question about one method.
     #
-    # `workspace_of` is the SAME `Policy` read `FirePath._workspace_for` and
+    # `unit_of` is the SAME `Policy` read `FirePath._unit_for` and
     # `TranscriptInjection._notes` make (DEC-105): two readers each carrying
-    # their own idea of a room's workspace disagree the first time a deployment
+    # their own idea of a room's unit disagree the first time a deployment
     # runs two social units. A room with no entry leaves the column empty
     # rather than guessing — the recorder's own refusal.
     decision_log = DecisionLogRecorder(
         store=SqlDecisionLogStore(engine),
         metrics=metrics,
         clock=clock,
-        workspace_of=lambda platform, conversation_id: (
-            convo.workspace
+        unit_of=lambda platform, conversation_id: (
+            convo.unit
             if (convo := allowlist.conversation(platform, conversation_id))
             is not None else None
         ),
@@ -1180,21 +1191,25 @@ async def build_dependencies(
     # reads the environment once and hands the already-resolved value to
     # whatever constructs the client that needs it (design/discord-integration/).
     discord_token = os.environ.get(cfg.platforms.discord.token_env, "")
-    # The audio-controller base (design/voice-channel/07): the value of
-    # `[speech.tts] sidecar_endpoint` IS the audio-controller's HTTP base —
-    # the sole owner of the Discord voice connection. Empty (the default)
-    # leaves the whole voice seam unwired: no hub, no speech playout, and
-    # every `/music` or `/discord join` failing CLOSED (the join-failed
-    # reply), never a local connection attempt. Non-empty builds the client
-    # + hub every voice path shares. Built BEFORE the music manager: the
-    # manager's B5/B8 staleness probes (`playback_probe`,
-    # `generation_probe`) and its hub-session drop/exit seams read and
-    # mutate the hub from construction.
+    # The audio-controllers (design/voice-channel/07): ONE PER GUILD, because
+    # Discord's limit is one voice connection per bot token per guild and each
+    # connection stays single (§12.5). `[speech.tts] sidecars` lists a
+    # controller endpoint per guild — usually the SAME one, since a single
+    # sidecar serves them all — and IS the join allow-list: a guild with no
+    # entry has no voice at all. Empty (the default) leaves the
+    # whole seam unwired: no hub, no speech playout, and every `/music` or
+    # `/discord join` failing CLOSED (the join-failed reply), never a local
+    # connection attempt.
+    #
+    # Built BEFORE the music manager: the manager's B5/B8 staleness probes
+    # (`playback_probe`, `generation_probe`) and its hub-session drop/exit
+    # seams read and mutate the hub from construction.
     voice_hub: VoiceControllerHub | None = None
-    if cfg.speech.tts.sidecar_endpoint:
-        voice_hub = VoiceControllerHub(
-            VoiceControllerClient(cfg.speech.tts.sidecar_endpoint)
-        )
+    if cfg.speech.tts.sidecars:
+        voice_hub = VoiceControllerHub({
+            guild_id: VoiceControllerClient(endpoint)
+            for guild_id, endpoint in cfg.speech.tts.sidecars_by_guild.items()
+        })
     # design/discord-music/00-overview.md. `spawn=asyncio.ensure_future`
     # rather than the `BackgroundTasks` instance built further down this
     # function (out of scope here) — safe because `MusicPlayerManager`
@@ -1215,12 +1230,30 @@ async def build_dependencies(
         if cfg.music.enabled
         else None
     )
+    # A room marked `voice = true` with NO controller for its guild is the one
+    # combination that is neither useful nor refused: the join fails, so the
+    # sidecar never connects, so no utterance is ever produced — and nothing
+    # anywhere says why. The other three combinations are either a working
+    # path or a loud 400 at the first wake.
+    _joinable = voice_hub.guild_ids if voice_hub is not None else frozenset()
+    for _convo in allowlist.conversations:
+        if not _convo.voice:
+            continue
+        _guild = _convo.primary_id.partition("/")[0]
+        if _guild not in _joinable:
+            log.warning(
+                "policy.toml marks %s (guild %s) `voice = true`, but no "
+                "audio-controller is configured for that guild in "
+                "[speech.tts] sidecars — nothing can join it, so no spoken "
+                "utterance will ever be recorded there",
+                _convo.label or _convo.primary_id, _guild,
+            )
     if music_manager is not None and voice_hub is None:
         log.warning(
-            "[music] enabled but [speech.tts] sidecar_endpoint is empty — no "
-            "audio-controller is wired, so every /music join will fail closed "
-            "(the join-failed reply); music stays silent until the endpoint "
-            "is configured"
+            "[music] enabled but [speech.tts] sidecars is empty — no "
+            "audio-controller is wired for any guild, so every /music join "
+            "will fail closed (the join-failed reply); music stays silent "
+            "until a guild is mapped to its controller"
         )
     # `[speech.tts]`'s speaker (design/voice-channel/01 §5): wired ONLY when
     # enabled AND a provider is named AND that provider's key is present —
@@ -1250,7 +1283,9 @@ async def build_dependencies(
                 "is wired; voice answers stay text-only",
                 cfg.speech.tts.provider, cfg.speech.tts.api_key_env,
             )
-    voice_guild_ids = frozenset(cfg.speech.tts.voice_guild_ids)
+    # The join allow-list IS the set of guilds a controller exists for — one
+    # source of truth, so the gate and the client map can never disagree.
+    voice_guild_ids = voice_hub.guild_ids if voice_hub is not None else frozenset()
     # The controller → nora callback consumer (`POST /app/v1/voice/event`,
     # design/voice-channel/07 §5) — only when BOTH halves it glues exist:
     # the hub (whose event-id dedupe and expected-playback bookkeeping it
@@ -1342,10 +1377,10 @@ async def build_dependencies(
             "unless this split is intended",
             cfg.agent.name, cfg.memory.ai_peer,
         )
-    # The conversation→workspace seam (design/24 §S.4). Today a router with NO
+    # The conversation→unit seam (design/24 §S.4). Today a router with NO
     # overrides — every conversation resolves to the single `workspace_id`, so
     # this changes nothing — but the multi-social-unit routing (a per-group
-    # workspace from identity.toml / a future workspaces.toml) lands here without
+    # unit from identity.toml / a future units.toml) lands here without
     # a client refactor.
     memory = HonchoClient(
         cfg.memory.base_url, cfg.memory.workspace_id, ai_peer=cfg.memory.ai_peer,
@@ -1353,7 +1388,7 @@ async def build_dependencies(
     )
     await memory.ensure_workspace()          # best-effort, never fatal — no try/except
     # The Nora aiPeer (Honcho v2, design/24): her replies feed under it to build
-    # her self-model card. Created here like the workspace — best-effort, never
+    # her self-model card. Created here like the unit — best-effort, never
     # fatal (a missing peer is auto-created on first feed anyway).
     await memory.ensure_peer(peer_id=cfg.memory.ai_peer)
 
@@ -1442,17 +1477,17 @@ async def build_dependencies(
         # `None` while `[notes] enabled = false`. `policy=allowlist` is the
         # SAME policy.toml instance the ingest pipeline and `EngagementPipeline`
         # are given below — the assembler needs it for one thing only, naming
-        # the workspace a room belongs to (`Conversation.workspace`, DEC-105),
+        # the unit a room belongs to (`Conversation.unit`, DEC-105),
         # which is what the note index is scoped by. Handing it a different
-        # Policy would scope the read to a workspace ingest never admitted.
+        # Policy would scope the read to a unit ingest never admitted.
         notes=note_store,
         policy=allowlist,
         # Standing's READ half. `None` while `[standing] enabled = false`, the
         # shipped default, so `<standing>` renders nothing. Unlike `notes`
         # beside it this needs no `policy=` at all: a position is keyed
         # `(platform, conversation_id)` (S4) and is NOT shared across a
-        # workspace's rooms — two rooms in one social unit share what the
-        # workspace knows, not where a conversation had got to.
+        # unit's rooms — two rooms in one social unit share what the
+        # unit knows, not where a conversation had got to.
         #
         # It is the WHOLE store rather than a read-only narrowing, and the same
         # instance the debrief's `Wiring` gets below: the fold's non-negotiable
@@ -1489,11 +1524,11 @@ async def build_dependencies(
         conv.primary_id for conv in allowlist.conversations if conv.primary_id
     )
     # The same closure over the OTHER key. Sorted and de-duplicated: two rooms
-    # of one workspace are one unit of work, and a set would reorder the tick
+    # of one unit are one unit of work, and a set would reorder the tick
     # between runs of the same build — which turns "did adaptor X run for
-    # workspace Y this tick" into a question you cannot answer from a log.
-    workspace_scopes: Callable[[], Sequence[str]] = lambda: tuple(sorted(  # noqa: E731
-        {conv.workspace for conv in allowlist.conversations if conv.workspace}
+    # unit Y this tick" into a question you cannot answer from a log.
+    unit_scopes: Callable[[], Sequence[str]] = lambda: tuple(sorted(  # noqa: E731
+        {conv.unit for conv in allowlist.conversations if conv.unit}
     ))
     # One CLIENT (audit T2, DEC-13), MANY MODELS — one per tag, built by this
     # source. The model carries `tool_choice`, which `ReplyGuard` flips
@@ -2309,23 +2344,23 @@ async def build_dependencies(
         # The note tier's four tools. `None` while `[notes] enabled = false`,
         # so all four answer `unavailable` (R-5) rather than a guessed empty
         # result — the same optional-collaborator shape `events` and
-        # `reminders` above use. `note_workspace` resolves a room to its
-        # `Conversation.workspace` (DEC-105), because a note is workspace-keyed
+        # `reminders` above use. `note_unit` resolves a room to its
+        # `Conversation.unit` (DEC-105), because a note is unit-keyed
         # while every tool argument the model can name is room-scoped; without
         # it the tools would have no way to reach the right notebook. The
         # SAME `allowlist` the assembler is given, for the reason stated there.
         notes=note_store,
         # RESOLVER, not a constant — see `build_tools`' own note. This
-        # deployment has two workspaces (`ridgeline`, `friends`) that
+        # deployment has two units (`ridgeline`, `friends`) that
         # `policy.toml` says are never paired, so a fixed string would hand one
         # room the other's notebook. `None` for a room policy cannot name, which
         # the note verbs report as `unavailable` rather than guessing a
         # notebook. Same `allowlist` instance the assembler and ingest hold.
-        note_workspace=_note_workspace_of(allowlist),
-        # ONE resolver for every workspace-keyed verb, so a verb outside the
+        note_unit=_note_unit_of(allowlist),
+        # ONE resolver for every unit-keyed verb, so a verb outside the
         # note tier does not silently depend on the NOTE tier being wired —
         # two absences covering for each other.
-        workspace_for=_note_workspace_of(allowlist),
+        unit_for=_note_unit_of(allowlist),
         versions=version_manifest,
         giphy=giphy_client,
         music=music_bridge,
@@ -2422,11 +2457,11 @@ async def build_dependencies(
             # so the debrief parses no proposals and raises none — the
             # same inert shape the other optional collaborators use.
             notes_sink=note_store if cfg.notes.enabled else None,
-            # The SAME workspace resolver the note tools and the assembler
-            # hold. `propose`'s key is the workspace (DEC-105), and two
+            # The SAME unit resolver the note tools and the assembler
+            # hold. `propose`'s key is the unit (DEC-105), and two
             # tiers keyed on it must not each carry their own idea of
-            # which workspace a room belongs to.
-            workspace_of=_note_workspace_of(allowlist),
+            # which unit a room belongs to.
+            unit_of=_note_unit_of(allowlist),
             client=_DebriefModelClient(
                 base_url=cfg.llm.base_url,
                 api_key=os.environ.get(cfg.llm.api_key_env, ""),
@@ -2476,6 +2511,7 @@ async def build_dependencies(
         preview_source=preview_source,
         slots=slots,
         tool_call_log_store=tool_call_log_store,
+        reasoning_strip_store=reasoning_strip_store,
         tag_trace_store=tag_trace_store,
         debrief_wiring=debrief_wiring,
         # The shared decision log (issue #199). The tag path only
@@ -2570,6 +2606,7 @@ async def build_dependencies(
             preview_source=preview_source,
             llm_state=llm_state,
             tool_call_log_store=tool_call_log_store,
+            reasoning_strip_store=reasoning_strip_store,
             # The reminder-derived Event registry (DEC-139,
             # design/event-abstraction/04): kind -> factory, wired here at
             # the composition root so the domain type stays free of app
@@ -2623,8 +2660,8 @@ async def build_dependencies(
             # fire occasion, gated exactly like the assembler's reads above:
             # the SAME store instance (already `None` while the tier's
             # `enabled = false`), and the SAME `allowlist` the assembler scopes
-            # its workspace reads through — two readers each carrying their own
-            # idea of a room's workspace is the DEC-105 violation.
+            # its unit reads through — two readers each carrying their own
+            # idea of a room's unit is the DEC-105 violation.
             notes=note_store,
             policy=allowlist,
             # The participation occasion's own runner (§4) — None whenever the
@@ -2967,8 +3004,8 @@ async def build_dependencies(
         # revisitor), and that is the whole reason this adaptor needs no
         # room-scoped TOOL: the evidence is selected in code, from a note's own
         # `established_in`, where it can be capped and counted. A
-        # workspace-keyed adaptor handed a room-scoped tool would get a
-        # workspace where a conversation id is expected and be answered EMPTY.
+        # unit-keyed adaptor handed a room-scoped tool would get a
+        # unit where a conversation id is expected and be answered EMPTY.
         #
         # THE GROUP'S calendar day, not UTC and not the store's clock. The
         # curator compares against a YYYYMMDD day, and "has the 9th passed" is
@@ -3077,8 +3114,8 @@ async def build_dependencies(
         # Scope-keyed, unlike the curator: a note's arrangement spans days of
         # conversation, so this needs a PER-ROOM watermark to see the whole
         # exchange rather than a slice. The scope key must still be translated
-        # to a WORKSPACE for the note table (DEC-105) — an unresolvable scope
-        # RAISES rather than guessing, since a guessed workspace is one social
+        # to a UNIT for the note table (DEC-105) — an unresolvable scope
+        # RAISES rather than guessing, since a guessed unit is one social
         # unit's notes entering another's.
         if cfg.notes.enabled and cfg.notes.candidates_enabled and note_store is not None:
             dream_schedules = {
@@ -3088,7 +3125,7 @@ async def build_dependencies(
                 # exchange to read without paying for a model call every
                 # 5-minute tick. `batch_limit=200`: "a week of one room's
                 # planning" (33 §5), the size the design itself argues for
-                # rather than a whole-workspace daily figure, which is sized
+                # rather than a whole-unit daily figure, which is sized
                 # for a different unit of work rather
                 # than one room's arrangements.
                 "note-candidates": AdaptorSchedule(
@@ -3121,15 +3158,15 @@ async def build_dependencies(
                 NoteCandidateAdaptor(
                     notes=note_store,
                     candidates=note_store,
-                    workspace_for={
-                        conv.primary_id: conv.workspace
+                    unit_for={
+                        conv.primary_id: conv.unit
                         for conv in allowlist.conversations
-                        if conv.primary_id and conv.workspace
+                        if conv.primary_id and conv.unit
                     }.get,
                     # THE ROOM, off the SAME allowlist read and keyed the same
                     # way (issue #161). `label_for` is what the room is called
                     # — the string that reaches every rendered batch line, so
-                    # two rooms of one workspace stop reading as one room.
+                    # two rooms of one unit stop reading as one room.
                     # `description_for` is the operator's sentence about what
                     # kind of room it is, rendered once above the batch.
                     # A room with neither is simply absent from the map; the
@@ -3213,10 +3250,10 @@ async def build_dependencies(
                     # withdrawn). Built here, in one place, so they cannot
                     # disagree about which room a key names (issue #161's
                     # arrangement one tier over).
-                    workspace_for={
-                        conv.primary_id: conv.workspace
+                    unit_for={
+                        conv.primary_id: conv.unit
                         for conv in allowlist.conversations
-                        if conv.primary_id and conv.workspace
+                        if conv.primary_id and conv.unit
                     }.get,
                     # THE PLATFORM is resolved; the conversation_id half is
                     # the key VERBATIM, and saying so is the point of this
@@ -3269,7 +3306,7 @@ async def build_dependencies(
         # loop/39, DEC-162). Gated on the note tier being on (its inputs are
         # the notes) and on `policy.toml` naming at least one home room
         # (39 D2): the home room IS the operator's opt-in, so there is no
-        # config flag — a workspace without one is simply a workspace she
+        # config flag — a unit without one is simply a unit she
         # does not act for. Its rows fire through the heartbeat; wiring it
         # with the heartbeat off is legal and loud, because the rows would
         # sit PENDING forever.
@@ -3279,16 +3316,16 @@ async def build_dependencies(
                     "proactive adaptor wired with [heartbeat] enabled = false: "
                     "its rows will be written and never fired"
                 )
-            # Workspace -> its rooms, with the home room marked. ONE read of
+            # Unit -> its rooms, with the home room marked. ONE read of
             # the allowlist, here, so the adaptor and the tool source name
             # the same room (39 D2: two readers with two ideas of a
-            # workspace's home would put the decide turn in one room and the
+            # unit's home would put the decide turn in one room and the
             # act turn in another).
-            rooms_by_workspace: dict[str, tuple[WorkspaceRoom, ...]] = {}
+            rooms_by_unit: dict[str, tuple[UnitRoom, ...]] = {}
             for conv in allowlist.conversations:
-                rooms_by_workspace[conv.workspace] = (
-                    *rooms_by_workspace.get(conv.workspace, ()),
-                    WorkspaceRoom(
+                rooms_by_unit[conv.unit] = (
+                    *rooms_by_unit.get(conv.unit, ()),
+                    UnitRoom(
                         platform=conv.platform, conversation_id=conv.primary_id,
                         label=conv.label or conv.primary_id, home=conv.home_room,
                         # The operator's own description of the room (issue
@@ -3314,7 +3351,7 @@ async def build_dependencies(
                 # HOURLY since issue #136 (operator, 2026-09-09), not the
                 # daily 07:00 HK slot 39 D10 first chose: the adaptor's own
                 # deterministic check decides whether a tick RENDERS — a
-                # daily floor at 07:00 HK, or a change in the workspace's
+                # daily floor at 07:00 HK, or a change in the unit's
                 # notes/Standing once its HOME ROOM is quiet — and a tick that
                 # does not render is one SQL read and no model call. The
                 # slot is therefore the ceiling on how soon a change is seen,
@@ -3334,7 +3371,7 @@ async def build_dependencies(
                     standing=standing_store if cfg.standing.enabled else None,
                     reminders=reminders,
                     memory=memory,
-                    rooms_of=lambda ws: rooms_by_workspace.get(ws, ()),
+                    rooms_of=lambda ws: rooms_by_unit.get(ws, ()),
                     # WHO IS IN THE HOME ROOM (issue #145). Built HERE because
                     # `nora.language` may not import `nora.agent.room`, and
                     # through the same `Room` the tag path uses so the pass and
@@ -3363,7 +3400,7 @@ async def build_dependencies(
                     # The shared decision log (issue #199): this pass
                     # writes its own decide verdicts and reads back the
                     # participation / tag rows of every room of the
-                    # workspace. Never its OWN rows — 39 sec.1's
+                    # unit. Never its OWN rows — 39 sec.1's
                     # self-echo brake, here as a predicate.
                     decisions=decision_log,
                 ),
@@ -3438,7 +3475,7 @@ async def build_dependencies(
             # closed inside `build`.
             home_rooms={
                 ws: HomeRoom(
-                    workspace=ws, platform=conv.platform,
+                    unit=ws, platform=conv.platform,
                     conversation_id=conv.primary_id, conversation_type="group",
                     location_trusted=conv.location,
                 )
@@ -3457,7 +3494,7 @@ async def build_dependencies(
             # `home_rooms` is.
             scope_rooms={
                 cid: HomeRoom(
-                    workspace=conv.workspace, platform=conv.platform,
+                    unit=conv.unit, platform=conv.platform,
                     conversation_id=conv.primary_id, conversation_type="group",
                     location_trusted=conv.location,
                 )
@@ -3476,7 +3513,7 @@ async def build_dependencies(
                     conversation_id=conv.primary_id,
                     conversation_type="group",
                     proactive=conv.proactive,
-                    workspace=conv.workspace,
+                    unit=conv.unit,
                 )
                 for conv in allowlist.conversations
                 for cid in conv.ids
@@ -3549,6 +3586,15 @@ async def build_dependencies(
             # The per-CALL-SITE allowance for `inputs`/`commit` (issue #60),
             # multiplied by each adaptor's own declared `store_calls_per_tick`.
             store_timeout_seconds=cfg.dreamer.store_timeout_seconds,
+            # Issue #325. The Dreamer is where the 2026-09-17 config change
+            # moved the exposure: `[dreamer] reasoning_effort` went
+            # `none -> low` in the same session `CultureAdaptor.tools` went
+            # from empty to nine read verbs, and a tool-using run at `low` is
+            # the multi-turn shape the transport strips. Low-traffic and
+            # judgement-forming, so a discarded reasoning there is both closer
+            # to being the verdict and harder to notice than on a reply
+            # somebody reads.
+            reasoning_strip_store=reasoning_strip_store,
         )
         # R-5's refuse-to-start shape, and the one check that must run at
         # STARTUP rather than at the first tick: an adaptor holding an act verb
@@ -3590,7 +3636,7 @@ async def build_dependencies(
         dream_adaptors=dream_adaptors,
         dream_schedules=dream_schedules,
         dream_schedule_clock=dream_schedule_clock,
-        workspace_scopes=workspace_scopes,
+        unit_scopes=unit_scopes,
         events=events,
         speaker=speaker,
         voice_hub=voice_hub,
@@ -3857,20 +3903,20 @@ async def _build_blob_store(cfg: Config, *, cipher: BlobCipher) -> BlobStore:
     return store
 
 
-def _note_workspace_of(policy: Policy) -> Callable[[str, str], str | None]:
-    """`(platform, conversation_id)` → the room's workspace, or `None`.
+def _note_unit_of(policy: Policy) -> Callable[[str, str], str | None]:
+    """`(platform, conversation_id)` → the room's unit, or `None`.
 
     A free function rather than a lambda so the `None` branch is nameable: a
-    room `policy.toml` does not list has no workspace, and the note verbs must
+    room `policy.toml` does not list has no unit, and the note verbs must
     answer `unavailable` for it. Guessing one — defaulting to "nora", or to
-    whichever workspace happens to be first — would write a note into a
+    whichever unit happens to be first — would write a note into a
     notebook the room is not part of, and `standing` would then render it to
     people who never saw the conversation it came from.
     """
 
     def _resolve(platform: str, conversation_id: str) -> str | None:
         convo = policy.conversation(platform, conversation_id)
-        return convo.workspace if convo is not None else None
+        return convo.unit if convo is not None else None
 
     return _resolve
 
@@ -3879,7 +3925,7 @@ def _voice_room_of(policy: Policy) -> Callable[[str], str | None]:
     """A Discord `guild_id` → the `conversation_id` its speech is recorded in,
     or `None` (design/voice-channel/07 §12.2, reversed 2026-09-17).
 
-    A free function for the same reason as `_note_workspace_of`: the `None`
+    A free function for the same reason as `_note_unit_of`: the `None`
     branch has to be nameable. A guild with no room marked `voice = true` has
     nowhere its speech belongs, and `nora.web.voice` answers 400 — falling
     back to the voice channel's own id would create the per-channel rooms this

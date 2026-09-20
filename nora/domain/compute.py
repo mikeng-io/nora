@@ -54,7 +54,7 @@ class ComputeJob:
     `task_sha256`/`context_sha256` are the SHA-256 of `task`/`context` as
     `make_artifact` actually sent them (context-channel spec §5) — computed
     once, by `make_artifact` itself, never by a backend. A caller can verify
-    the workspace file on disk still matches what was launched.
+    the unit file on disk still matches what was launched.
     """
 
     id: UUID

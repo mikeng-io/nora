@@ -333,6 +333,62 @@ class MusicPlayer:
         lock, the POST outside it)."""
         return await self._advance_prepare()
 
+    @property
+    def now_playing_locator(self) -> str | None:
+        """The locator of the track currently playing, for the manager's
+        per-track stale-stream retry budget. The budget is keyed by THIS,
+        not by playback id: every retry starts a new playback, so a
+        playback-keyed budget would reset itself on each attempt and never
+        run out."""
+        track = self._now_playing
+        return None if track is None else track.url
+
+    async def retry_current_prepare(self) -> _PendingPlay | None:
+        """Re-resolve the CURRENTLY-playing track for a fresh stream
+        address — the prepare phase of the stale-stream retry (design/
+        voice-channel/07 §5, audit B14). `None` when there is nothing
+        playing or the track no longer resolves, and the manager advances
+        instead.
+
+        Deliberately does NOT touch the queue. The track did not finish;
+        the address it was handed went bad. `pop_next` is exactly the wrong
+        move, and taking it is what turned ONE rejected address into a
+        silent guild on 2026-09-18: every failure advanced, the next track
+        was resolved through the same broken session, failed the same way,
+        and autoplay drained the queue in about a minute.
+
+        The source's session is refreshed FIRST (`TrackSource.
+        refresh_session`) — a locator is only as good as the session that
+        signed it, so re-resolving through the same one reproduces the
+        failure and spends a round-trip doing it.
+
+        Three things this must NOT redo, all of them already done by the
+        advance that started this track: the prewarm cache is bypassed
+        (`_prewarm_streams` is never read here — a cached address is
+        precisely the kind of thing that just failed), `schedule_prewarm`
+        is `False` (the failed play's own `finish_pending` already armed it
+        if it was going to be — the POST succeeded, it was ffmpeg that
+        died), and `_played_locators`/`_last_played` keep the entries that
+        advance recorded. A retry is the same track continuing, not a new
+        one starting."""
+        track = self._now_playing
+        if track is None:
+            return None
+        await self._source.refresh_session()
+        resolved = await self._source.resolve(query_or_url=track.url)
+        if not resolved:
+            log.warning(
+                "stale-stream retry for guild %s: %s (%s) no longer resolves — advancing",
+                self._guild_id, track.title, track.url,
+            )
+            return None
+        return _PendingPlay(
+            track=track,
+            stream_url=resolved[0].stream_url,
+            duration_seconds=resolved[0].duration_seconds,
+            schedule_prewarm=False,
+        )
+
     async def pause(self) -> bool:
         if self._now_playing is None or self._paused:
             return False

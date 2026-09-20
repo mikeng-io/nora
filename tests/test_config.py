@@ -915,14 +915,20 @@ def test_every_budget_block_the_template_declares_is_pinned_with_its_reasoning(
     )
     # CULTURE, pinned 2026-09-17, when the adaptor stopped being tool-free.
     #
-    # `output_tokens` is DERIVED, not chosen: the account cap is in CHARACTERS
-    # and this is in TOKENS, and the bridge is `ACCOUNT_OUTPUT_TOKENS` — one
-    # token per character, the CJK worst case. The rule is that the loop must
-    # be able to emit a full account TWICE (the tool-call arguments it spends
-    # before it writes, then the account), which 6,000 clears with room for the
-    # research. `tests/unit/test_culture_adaptor.py` asserts the same rule
-    # against the FIELD DEFAULT, so deleting this block still leaves a fold
-    # that can finish its sentence.
+    # `output_tokens` is DERIVED, not chosen: a length in CHARACTERS converted
+    # at the MEASURED `OUTPUT_TOKENS_PER_CHAR` (1.15). **The length it converts
+    # is `ACCOUNT_CHARS_OBSERVED_MAX` — what the model is seen to emit — and
+    # NOT `BODY_MAX_CHARS`, what we decline to record** (corrected 2026-09-18;
+    # this comment previously said "the account cap" and "one token per
+    # character, the CJK worst case", and both were wrong). The rule is that
+    # the loop must be able to emit a full account TWICE — the tool-call
+    # arguments it spends before it writes, then the account — so the floor is
+    # ~4,444 and 6,000 clears it with room for the research.
+    #
+    # `max_memory_calls` 4 -> 12 (operator, 2026-09-18), tripled together with
+    # `tool_calls.lookup_person`: that verb is one of the four in
+    # `MEMORY_TOOLS`, so this ceiling binds it before its per-tool one does and
+    # raising only the per-tool number would have been decoration.
     #
     # `turns`/`total_tokens` are the proactive block's own lesson applied one
     # adaptor over and are NOT measurements: `[culture] batch_limit = 300` is
@@ -932,8 +938,14 @@ def test_every_budget_block_the_template_declares_is_pinned_with_its_reasoning(
     # same batch forever — the trap this whole pairing exists to keep shut.
     culture = budgets["culture"]
     assert (culture.turns, culture.total_tokens) == (10, 120_000)
-    assert (culture.output_tokens, culture.max_memory_calls) == (6_000, 4)
+    assert (culture.output_tokens, culture.max_memory_calls) == (6_000, 12)
     assert culture.timeout_seconds == DreamBudgetConfig().timeout_seconds
+    # Its per-tool ceiling, pinned 2026-09-18. `lookup_person` is 4 on the
+    # NATIVE_TOOLS table, sized for a tag turn where "one message routinely
+    # names two people". This pass writes what a ROOM is, and the objective's
+    # own bar is a name whose ORIGIN can be explained — per-member work against
+    # the person index, not two lookups.
+    assert culture.tool_calls == {"lookup_person": 12}
     # PROACTIVE, pinned 2026-09-10 with its reasoning, which is what the
     # message above asks of anything that lands in this section.
     #
@@ -951,6 +963,12 @@ def test_every_budget_block_the_template_declares_is_pinned_with_its_reasoning(
     proactive = budgets["proactive"]
     assert (proactive.turns, proactive.total_tokens) == (24, 1_000_000)
     assert (proactive.output_tokens, proactive.timeout_seconds) == (10_000, 240.0)
+    # `max_memory_calls` 2 -> 6 (operator, 2026-09-18) — the shared per-pass
+    # ceiling across `MEMORY_TOOLS`, tripled so that the `lookup_person` rise
+    # below reaches anything at all. A ceiling and not a reservation: the extra
+    # four are equally available to `about`, `ask_memory` and
+    # `search_memory_workspace`.
+    assert proactive.max_memory_calls == 6
     # And its per-tool ceiling, pinned 2026-09-17. `note_read = 3` on the
     # NATIVE_TOOLS table is a TAG TURN's number — a reply that reads a note or
     # two before answering — while this pass is asked for one decision per
@@ -967,7 +985,11 @@ def test_every_budget_block_the_template_declares_is_pinned_with_its_reasoning(
     # headroom costs nothing until a pass spends it, and one more note must
     # not re-open the config. The instrument that says it is still too low is
     # `nora_dream_guard_vetoes_total{rule="tool-budget"}`.
-    assert proactive.tool_calls == {"note_read": 8}
+    #
+    # `lookup_person` 4 -> 12 (operator, 2026-09-18). 4 is another TAG TURN's
+    # number; a decide pass resolves a whole roster's nicknames against the
+    # person index, which is the reason the verb was granted here (#145).
+    assert proactive.tool_calls == {"note_read": 8, "lookup_person": 12}
     # NOTE-CANDIDATES, pinned 2026-09-17 — declared in the template only
     # because the DEPLOYMENT sets it (it was set live while chasing #291 and
     # the template did not follow, which is the drift
@@ -1463,48 +1485,86 @@ def test_a_misspelt_dreamer_effort_refuses_to_start(toml_path):
 
 
 
-def test_voice_guild_ids_with_two_guilds_refuses_to_start(toml_path):
-    """B10 (design/voice-channel/07 §12.5): the audio-controller is hard-bound
-    to ONE guild. A second would pass the local gate and then be refused by
-    the controller's own 400 — refused at LOAD, while the operator is still
-    holding the file."""
-    toml_path.write_text(_set_key(
-        toml_path.read_text(), "voice_guild_ids", '["g1", "g2"]',
-    ))
-
-    with pytest.raises(ConfigError, match="hard-bound"):
-        load(toml_path)
+def _with_sidecars(text: str, entries: str) -> str:
+    """Rewrite the template's `sidecars = []` to the given list literal."""
+    return _set_key(text, "sidecars", entries)
 
 
-def test_two_channels_in_one_guild_is_no_longer_a_config_question(toml_path):
-    """THE REVERSAL (§12.2, 2026-09-17). Phase 1 refused a second CHANNEL
-    here; a server's voice channels are not a fixed list, so that refusal made
-    a 10-voice-channel guild unusable. One guild id now admits every channel
-    in it, and there is no second entry to refuse."""
-    toml_path.write_text(_set_key(
-        toml_path.read_text(), "voice_guild_ids", '["g1"]',
+def test_two_guilds_each_with_a_controller_load(toml_path):
+    """MULTI-GUILD (2026-09-17). There is deliberately no cap: the single-guild
+    bound belongs to a CONTROLLER (§12.5) and each still enforces its own, so
+    two entries here mean two controller containers — which is what multi-guild
+    is. The key that came before this refused a second guild outright."""
+    toml_path.write_text(_with_sidecars(
+        toml_path.read_text(),
+        '[{ guild = "g1", endpoint = "http://voice-sidecar:4600" },'
+        ' { guild = "g2", endpoint = "http://voice-sidecar-b:4600" }]',
     ))
 
     cfg = load(toml_path)
 
-    assert cfg.speech.tts.voice_guild_ids == ["g1"]
+    assert cfg.speech.tts.sidecars_by_guild == {
+        "g1": "http://voice-sidecar:4600",
+        "g2": "http://voice-sidecar-b:4600",
+    }
 
 
-def test_a_guild_channel_pair_refuses_to_start(toml_path):
-    """An operator upgrading from phase 1 must SEE that the key changed
-    meaning. A `"guild/channel"` pair silently truncated to its guild would
-    look like it kept working while quietly widening the allow-list, so it is
-    refused with the reason spelled out."""
-    toml_path.write_text(_set_key(
-        toml_path.read_text(), "voice_guild_ids", '["g1/c1"]',
+def test_a_guild_channel_pair_as_a_key_refuses_to_start(toml_path):
+    """An operator carrying forward either earlier key must SEE that the shape
+    changed — `voice_channel_ids` named channels, `voice_guild_ids` named
+    guilds, and both are gone. A pair silently truncated to its guild half
+    would look like it kept working while meaning something else."""
+    toml_path.write_text(_with_sidecars(
+        toml_path.read_text(),
+        '[{ guild = "g1/c1", endpoint = "http://voice-sidecar:4600" }]',
     ))
 
     with pytest.raises(ConfigError, match="bare Discord guild id"):
         load(toml_path)
 
 
-def test_an_empty_voice_guild_ids_loads_and_fails_closed(toml_path):
-    """The shipped posture: nothing configured, nothing joinable."""
+def test_a_guild_with_an_empty_endpoint_refuses_to_start(toml_path):
+    """An entry with no controller behind it would admit a join the hub then
+    cannot make. Leaving the guild out is how you say "no voice here", and
+    that fails closed."""
+    toml_path.write_text(_with_sidecars(
+        toml_path.read_text(), '[{ guild = "g1", endpoint = "   " }]',
+    ))
+
+    with pytest.raises(ConfigError, match="empty endpoint"):
+        load(toml_path)
+
+
+def test_one_guild_listed_twice_refuses_to_start(toml_path):
+    """Two answers to "which controller owns this guild" would send joins to
+    one and take events back from the other."""
+    toml_path.write_text(_with_sidecars(
+        toml_path.read_text(),
+        '[{ guild = "g1", endpoint = "http://a:4600" },'
+        ' { guild = "g1", endpoint = "http://b:4600" }]',
+    ))
+
+    with pytest.raises(ConfigError, match="twice"):
+        load(toml_path)
+
+
+def test_an_endpoint_is_stripped_not_merely_checked(toml_path):
+    """THE BUG THIS GUARDS: the validator accepted on `.strip()` while
+    composition passed the RAW value to the client, so a leading space loaded
+    clean and died at the first request with a URL error instead of at load."""
+    toml_path.write_text(_with_sidecars(
+        toml_path.read_text(),
+        '[{ guild = "g1", endpoint = "  http://voice-sidecar:4600  " }]',
+    ))
+
     cfg = load(toml_path)
 
-    assert cfg.speech.tts.voice_guild_ids == []
+    assert cfg.speech.tts.sidecars_by_guild == {"g1": "http://voice-sidecar:4600"}
+
+
+def test_no_sidecars_loads_and_fails_closed(toml_path):
+    """The shipped posture: no controller for any guild, so nothing joinable."""
+    cfg = load(toml_path)
+
+    assert cfg.speech.tts.sidecars == []
+    assert cfg.speech.tts.sidecars_by_guild == {}

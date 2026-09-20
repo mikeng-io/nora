@@ -79,6 +79,12 @@ screen), it resolves in this order, ON HOST:
    an ordered list of sources so these are additive.
 3. **Google Places text lookup** — today's behaviour, for public place names.
 
+**The inverse direction, added 2026-09-17:** this ordering resolves a NAME to
+a position, for routing. `design/27 §3.7` (DEC-190) applies the same ordering
+the other way — a POSITION to a place, inside the analytics substrate — so a
+derived cluster takes its identity and name from the tagged place it matches.
+One ordering, both directions; neither document restates the other's half.
+
 A hit at 1 (or 2) substitutes the stored coordinate into the Google Routes
 call SERVER-SIDE; the model never sees or handles the coordinate, so the R-28
 model-facing barrier is untouched — it still refuses any coordinate the MODEL

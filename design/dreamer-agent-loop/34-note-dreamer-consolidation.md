@@ -328,8 +328,8 @@ empty `inputs()` suppresses the model call). Five MAJOR findings, all
 addressed in place:
 
 - **M1 (33 §4.1)** — the read-only awareness grant is constrained by
-  `tool_subset_faults`: workspace-keyed adaptors can only hold
-  `WORKSPACE_SAFE_TOOLS`; `list_reminders`/`list_events` are room-scoped and
+  `tool_subset_faults`: unit-keyed adaptors can only hold
+  `UNIT_SAFE_TOOLS`; `list_reminders`/`list_events` are room-scoped and
   need a supplied-key path before they are grantable. Resolved: recorded as
   an implementation decision under the constraint.
 - **M2 (§5.3, the load-bearing one)** — `record_wake` needs a POLICY (who
@@ -345,7 +345,7 @@ addressed in place:
   entirely, and `strikes`/`wakes` series do not exist). Fixed.
 - **M5 (33 §4/C3)** — `note_candidate` migration: `probe`/`first_seen_at`/
   `last_seen_at` are `nullable=False` with no defaults; the create-key
-  (`workspace, title`) and the miss-key (`workspace, probe`) are two domains
+  (`unit, title`) and the miss-key (`unit, probe`) are two domains
   with separate upsert behaviour. Fixed in 33.
 - **M6 (33 §6)** — hourly-vs-daily is NOT a phase offset: periods coincide
   every 24h and `dream_loop` dispatches concurrently. The rule is an

@@ -1,7 +1,7 @@
 # The note-candidates scenario corpus (design/dreamer-agent-loop/37 §7,
 # issue #118). Each case is ONE batch the adaptor would be handed on a fire —
 # several messages from one room, attributed and timestamped — plus the
-# notebook that room's workspace already holds, and the outcome the notebook
+# notebook that room's unit already holds, and the outcome the notebook
 # must show afterwards.
 #
 # `expect` is graded STRUCTURALLY on the in-memory note store after the real
@@ -29,7 +29,7 @@
 # (issue #161): what the room is CALLED, attributed on every rendered line,
 # and what the operator says the room IS, rendered once above the batch. A
 # case that names NEITHER renders what an unlabelled, undescribed room renders
-# in production — the room's workspace name on every line and a `<room>` block
+# in production — the room's unit name on every line and a `<room>` block
 # with no prose in it. Both spellings are deliberately in this corpus: n10/n11
 # are the incident as it happened, with nothing told to the model, and
 # n10b/n11b are the same two batches with the room described. They are a
@@ -39,7 +39,7 @@
 
 - name: p1_group_dinner_date_set_venue_open
   expect: create
-  workspace: friends
+  unit: friends
   anchor_date: 20260919
   must_cite: [101]
   batch:
@@ -51,7 +51,7 @@
 
 - name: p2_one_person_stated_plan_with_open_corners
   expect: create
-  workspace: ridgeline
+  unit: ridgeline
   anchor_date: 20260912
   must_cite: [201]
   batch:
@@ -59,7 +59,7 @@
 
 - name: p3_follow_up_owed
   expect: create
-  workspace: friends
+  unit: friends
   anchor_date: 20260925
   must_cite: [301]
   batch:
@@ -69,7 +69,7 @@
 
 - name: p4_plan_inside_ordinary_talk
   expect: create
-  workspace: friends
+  unit: friends
   anchor_date: 20260920
   must_cite: [404]
   batch:
@@ -82,7 +82,7 @@
 
 - name: p5_already_tracked_gains_a_decision
   expect: update
-  workspace: friends
+  unit: friends
   updates: "Dinner 19 Sept"
   notebook:
     - title: "Dinner 19 Sept"
@@ -95,7 +95,7 @@
 
 - name: n1_settled_fact_nothing_open
   expect: none
-  workspace: friends
+  unit: friends
   batch:
     - {id: 601, ts: "2026-09-07T03:00:00Z", person: ada, name: Ada, body: "尋晚 Yardbird 好正，個雞翼"}
     - {id: 602, ts: "2026-09-07T03:01:00Z", person: ben, name: Ben, body: "係，下次再去"}
@@ -103,7 +103,7 @@
 
 - name: n2_throwaway_nobody_picks_up
   expect: none
-  workspace: friends
+  unit: friends
   batch:
     - {id: 701, ts: "2026-09-07T06:00:00Z", person: ben, name: Ben, body: "不如幾時去下 trip"}
     - {id: 702, ts: "2026-09-07T06:30:00Z", person: cat, name: Cat, body: "今日好熱"}
@@ -111,7 +111,7 @@
 
 - name: n3_media_and_stickers_only
   expect: none
-  workspace: friends
+  unit: friends
   batch:
     - {id: 801, ts: "2026-09-07T15:40:00Z", person: cat, name: Cat, body: null, media: true}
     - {id: 802, ts: "2026-09-07T15:41:00Z", person: ben, name: Ben, body: null, media: true}
@@ -119,7 +119,7 @@
 
 - name: n4_banter_no_plan
   expect: none
-  workspace: friends
+  unit: friends
   batch:
     - {id: 901, ts: "2026-09-07T16:00:00Z", person: ada, name: Ada, body: "邊個偷食咗我雪櫃嗰件蛋糕"}
     - {id: 902, ts: "2026-09-07T16:00:30Z", person: ben, name: Ben, body: "唔係我"}
@@ -128,7 +128,7 @@
 
 - name: n5_already_in_notebook_no_new_detail
   expect: none
-  workspace: friends
+  unit: friends
   notebook:
     - title: "Dinner 19 Sept"
       description: "Dinner on the 19th at Luk Fook, Sai Kung, 7:30pm, four people; booked by Ada."
@@ -148,7 +148,7 @@
 
 - name: p6_solo_update_to_an_existing_entry
   expect: update
-  workspace: friends
+  unit: friends
   updates: "Dinner 19 Sept"
   notebook:
     - title: "Dinner 19 Sept"
@@ -160,7 +160,7 @@
 
 - name: p7_cantonese_only_solo_plan
   expect: create
-  workspace: friends
+  unit: friends
   anchor_date: 20260912
   must_cite: [1201]
   batch:
@@ -168,7 +168,7 @@
 
 - name: n6_stated_then_cancelled
   expect: none
-  workspace: friends
+  unit: friends
   batch:
     - {id: 1301, ts: "2026-09-07T14:00:00Z", person: cat, name: Cat, body: "今個禮拜六去大帽山行山，大家得唔得？"}
     - {id: 1302, ts: "2026-09-07T14:00:40Z", person: ben, name: Ben, body: "得"}
@@ -177,7 +177,7 @@
 
 - name: n7_invitation_nobody_picks_up
   expect: none
-  workspace: friends
+  unit: friends
   batch:
     - {id: 1401, ts: "2026-09-07T11:00:00Z", person: ada, name: Ada, body: "今個禮拜六邊個得閒？"}
     - {id: 1402, ts: "2026-09-07T12:10:00Z", person: cat, name: Cat, body: null, media: true}
@@ -185,19 +185,19 @@
 
 - name: n8_settled_solo_plan_nothing_open
   expect: none
-  workspace: friends
+  unit: friends
   batch:
     - {id: 1501, ts: "2026-09-07T18:20:00Z", person: ben, name: Ben, body: "今個禮拜六我去數碼港個 hackathon，隊友搵齊晒，嗰晚同佢哋食咗飯先返"}
 
 - name: n9_conditional_not_a_plan
   expect: none
-  workspace: friends
+  unit: friends
   batch:
     - {id: 1601, ts: "2026-09-07T09:00:00Z", person: cat, name: Cat, body: "如果禮拜六唔使返工，我可能去睇下個 hackathon"}
     - {id: 1602, ts: "2026-09-07T09:01:00Z", person: ada, name: Ada, body: "睇下啦"}
 
 # --- added 2026-09-10 from a LIVE miss, not a brainstorm. The `friends`
-# workspace's Discord room is a GAMES room, and on 2026-09-08 the adaptor read
+# unit's Discord room is a GAMES room, and on 2026-09-08 the adaptor read
 # five words of it — "Bath", "2200", "today no?", "I am reday" — as a social
 # arrangement and wrote «Bath gathering»: "Bath proposed; time 2200 mentioned;
 # unclear which bath or if happening today." Two days later it wrote a SECOND
@@ -219,7 +219,7 @@
 
 - name: n10_games_room_shorthand_is_not_an_arrangement
   expect: none
-  workspace: friends
+  unit: friends
   batch:
     - {id: 1701, ts: "2026-09-08T11:51:29Z", person: ben, name: Ben, body: null, media: true}
     - {id: 1702, ts: "2026-09-08T13:14:29Z", person: cat, name: Cat, body: "Bath"}
@@ -231,7 +231,7 @@
 # has said what this room is. `2200` is the log-on time, not an appointment.
 - name: n10b_a_described_games_room_is_still_not_an_arrangement
   expect: none
-  workspace: friends
+  unit: friends
   room_label: "Zone 42"
   room_description: "a games room; 2200 is when people log on, not an appointment"
   batch:
@@ -243,7 +243,7 @@
 
 - name: n11_notebook_subject_is_not_a_licence_to_rewrite_it
   expect: none
-  workspace: friends
+  unit: friends
   notebook:
     - title: "Bath gathering"
       description: "Bath proposed; time 2200 mentioned; unclear which bath or if happening today."
@@ -263,7 +263,7 @@
 # to bind today's numbers onto it.
 - name: n11b_a_described_games_room_does_not_rewrite_the_notebook_subject
   expect: none
-  workspace: friends
+  unit: friends
   room_label: "Zone 42"
   room_description: "a games room; 2200 is when people log on, not an appointment"
   notebook:
@@ -292,7 +292,7 @@
 # otherwise read as a pass on the count alone.
 #
 # Note what it also measures, deliberately: `note_candidate`'s STAGING key is
-# `(workspace, anchor_date, anchor_entity_ids, lower(btrim(title)))` since
+# `(unit, anchor_date, anchor_entity_ids, lower(btrim(title)))` since
 # 2026-09-16 (#235), so the two proposals reach two rows as long as the model
 # gives them different titles — which is the same judgement the gate above
 # already turns on. It did NOT hold before that date: the key was the entity
@@ -303,7 +303,7 @@
 - name: p8_two_unrelated_arrangements_on_one_date
   expect: create
   creates: 2
-  workspace: friends
+  unit: friends
   must_cite: [2101, 2104]
   room_label: "Friends"
   batch:

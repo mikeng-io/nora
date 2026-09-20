@@ -431,10 +431,12 @@ def test_note_candidates_survived_its_deeper_reshape() -> None:
             if before.get(key) is not None:
                 assert meta.get(key) == before[key], f"{name}: {key}"
 
-        # `workspace:` became two settings because it is two facts.
-        ws = before.get("workspace", "nora")
+        # `unit:` (renamed from `workspace:`, `e2092ecd`) became two settings
+        # because it is two facts: Honcho's OWN `workspace_id` and the
+        # policy's `Conversation.unit`.
+        ws = before.get("unit", "nora")
         assert after["config"]["memory.workspace_id"] == ws, name
-        assert f'workspace = "{ws}"' in after["policy"], name
+        assert f'unit = "{ws}"' in after["policy"], name
 
 
 @pytest.mark.parametrize("old,new", [

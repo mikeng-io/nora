@@ -91,7 +91,7 @@ class _Tools:
         ))
 
     def build(
-        self, *, key: str, names: frozenset[str], workspace: str | None = None,
+        self, *, key: str, names: frozenset[str], unit: str | None = None,
         adaptor: str = "", grant: Any = None,
     ) -> list[Any]:
         return [self._spec(n) for n in self._names if n in names]
@@ -110,7 +110,7 @@ class _Adaptor(_RuntimeAdaptor):
     """
 
     name = "proactive"
-    key_kind = "workspace"
+    key_kind = "unit"
     objective = "proactive"
     uses_watermark = False
 
@@ -200,7 +200,7 @@ def _runtime(model: Model, tools: _Tools, *, budget: AdaptorBudget = BUDGET) -> 
         retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
         metrics=metrics,
         model_name="scripted",
-        # The production grant (39 D3). Without it a workspace-keyed adaptor
+        # The production grant (39 D3). Without it a unit-keyed adaptor
         # may hold no room-scoped verb, which is three of the four this file
         # counts — so the ceiling would be measured on a tool set the decide
         # turn does not have.
@@ -329,7 +329,7 @@ async def test_a_non_memory_verb_is_never_charged_to_the_memory_ration():
 async def test_the_ration_resets_for_the_next_pass():
     """Per PASS, never per adaptor lifetime.
 
-    ONE runtime, ONE model, TWO `run` calls on different workspaces — and the
+    ONE runtime, ONE model, TWO `run` calls on different units — and the
     single object is the whole test. A ledger built at `DreamerRuntime.__init__`
     or hung off the runtime would leave the second pass with nothing to spend
     and nothing saying so, and a test that built a second runtime for the second

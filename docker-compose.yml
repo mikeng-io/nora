@@ -771,10 +771,9 @@ services:
   #
   # Posture mirrors stt: own image from deploy/voice-sidecar/, NO `ports:`
   # publish — reachable only on the private `nora` network. Without
-  # DISCORD_BOT_TOKEN + VOICE_GUILD_ID + VOICE_CHANNEL_ID the service is
-  # healthy-but-idle (its /health is liveness, see the README in
-  # deploy/voice-sidecar/), so a deployment with voice receive off still
-  # starts clean.
+  # DISCORD_BOT_TOKEN the service is healthy-but-idle (its /health is
+  # liveness, see the README in deploy/voice-sidecar/), so a deployment with
+  # voice receive off still starts clean.
   voice-sidecar:
     build:
       context: ./deploy/voice-sidecar
@@ -792,16 +791,15 @@ services:
       # the sidecar joins voice as the same bot. `:-` not `:?` so a
       # deployment with voice receive off starts without it (idle, above).
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
-      # Where to join. Namespaced VOICE_* so the operator's .env carries no
-      # bare GUILD_ID that some other service might grow a meaning for.
+      # NO GUILD IDENTITY HERE (multi-guild, 2026-09-17). One process serves
+      # every guild nora asks it to: a core is created on `/voice/join` and
+      # restored at boot from the state directory below. Which guilds exist is
+      # nora's `[speech.tts] sidecars`, and Discord itself enforces the rest —
+      # a join for a guild this bot is not in fails at the Discord API, which
+      # is a stronger authority than any list this container could hold.
       #
-      # GUILD_ID is a HARD BINDING: any request naming another guild is 400
-      # (§12.5). CHANNEL_ID is only the FIRST-BOOT channel — since 2026-09-17
-      # (§12.2 reversed) /voice/join admits any channel in the guild, and a
-      # restart prefers the channel in the controller's own desired-state
-      # file over this one.
-      - GUILD_ID=${VOICE_GUILD_ID:-}
-      - CHANNEL_ID=${VOICE_CHANNEL_ID:-}
+      # A guild id is not a secret (it is in every Discord URL) so it never
+      # belonged in .env; the bot token does, and stays.
       # The wake-gate seam (deploy/voice-sidecar/TRANSPORT.md). Stage 3 made
       # the consumer real: `voice-wake` below listens on 4599, so the shipped
       # default is the service name on this same private network — the
@@ -825,7 +823,12 @@ services:
       # mount MASKS the image's chown of /var/lib/audio-controller — a fresh
       # host would see root:root and every write would EACCES; a named
       # volume inherits the image path's ownership on first use).
-      - STATE_FILE=/var/lib/audio-controller/desired_state.json
+      #
+      # A DIRECTORY, one `<guild_id>.json` inside it (multi-guild 2026-09-17):
+      # each guild's connection is its own single-connection state machine
+      # with its own file, and this directory is also the process's only
+      # memory of which guilds to restore on boot.
+      - STATE_DIR=/var/lib/audio-controller
       - NORA_EVENT_URL=http://nora:9100/app/v1/voice/event
     volumes:
       # Desired-state durability (§12.1): /discord exit writes idle, a join
@@ -855,9 +858,9 @@ services:
   #
   # Posture mirrors stt/voice-sidecar: own image from deploy/voice-wake/, NO
   # `ports:` publish — the seam (4599) and /health (4601) are reachable only
-  # on the private `nora` network. Without VOICE_GUILD_ID the service is
-  # healthy-but-idle (detects, but has no server to forward into), so a
-  # deployment with voice wake off still starts clean.
+  # on the private `nora` network. It has no configuration of its own beyond
+  # its binds: with nothing connected it is healthy-but-idle, so a deployment
+  # with voice wake off still starts clean.
   voice-wake:
     build:
       context: ./deploy/voice-wake
@@ -871,17 +874,11 @@ services:
     restart: unless-stopped
     networks: [nora]
     environment:
-      # WHICH SERVER the wake happened on. nora resolves it to the room whose
-      # policy.toml entry says `voice = true` — that server's own text room —
-      # so a spoken utterance lands beside its typed chat, and adding a voice
-      # channel to the server reconfigures nothing here
-      # (design/voice-channel/07 §12.2, reversed 2026-09-17).
-      #
-      # VOICE_CHANNEL_ID is deliberately NOT passed: this service used to
-      # build a "<guild>/<channel>" conversation id from it and no longer
-      # reads it at all. The audio-controller (voice-sidecar, below) still
-      # does, as its first-boot channel.
-      - VOICE_GUILD_ID=${VOICE_GUILD_ID:-}
+      # NO GUILD IDENTITY HERE EITHER (multi-guild, 2026-09-17). The guild
+      # arrives per CONNECTION in the sidecar's hello frame, so one gate
+      # serves them all and this container is identical on every deployment.
+      # nora resolves that guild to the room marked `voice = true` in
+      # policy.toml, so a spoken utterance lands beside its typed chat.
       # Model knobs — threshold, model path, STT engine (sensevoice: warm 0.3s
       # CPU vs whisper 5.1s), STT endpoint/language/timeout, silence tail —
       # come from config.toml [speech.wake] + [speech.stt], mounted below.

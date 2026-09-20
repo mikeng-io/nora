@@ -107,7 +107,7 @@ such rather than dressed as decisions.
 | **D3** | decision | **Knowable-before-the-call is an input; discovered-during-reasoning must be a tool** | [08](08-state.md) §1 |
 | **D4** | decision | A tier contributes read access through the existing registry seam — not a bespoke mechanism | [08](08-state.md) §10 |
 | **D5** | decision | Phase A **gains tools**, and must **not** deduplicate against existing candidates — that would destroy the recurrence signal the filter ranks on | [08](08-state.md) §9 **(DEPRECATED 2026-09-07 — the tier this decides is deleted; issue #115)** |
-| **D6** | decision | Room access splits by key kind: scope-keyed proceeds; workspace-keyed is **blocked**, and the cheaper answer is a bounded input | [10](10-room-access.md) |
+| **D6** | decision | Room access splits by key kind: scope-keyed proceeds; unit-keyed is **blocked**, and the cheaper answer is a bounded input | [10](10-room-access.md) |
 | **D7** | decision | **Every seam ships its instrument**, this bundle's own change first — with a stated acceptance reading and a rollback condition | [09](09-measurement.md) |
 | **D8** | decision | Doctrine becomes shape-aware; the audience field stops being decorative | [13](13-doctrine.md) |
 | **D9** | deferral | The language tier's absence of supersession is a **designed cost**; reversing it needs its own argument | [12](12-self-correction.md) **(DEPRECATED 2026-09-07 — the tier this decides is deleted; issue #115)** |

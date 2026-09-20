@@ -86,7 +86,10 @@ async def test_join_returns_the_state_snapshot(aiohttp_client):
 async def test_status_returns_the_full_get_body(aiohttp_client):
     vc = await _client(aiohttp_client, _app())
 
-    snapshot = await vc.status()
+    # The guild rides the query string on this GET since 2026-09-17: one
+    # controller process serves several, so an unqualified status could only
+    # answer for whichever it picked.
+    snapshot = await vc.status("guild-1")
 
     assert snapshot["generation"] == "gen-1"
     assert snapshot["player"]["status"] == "playing"
@@ -99,7 +102,7 @@ async def test_a_409_maps_to_generation_conflict(aiohttp_client):
     )
 
     with pytest.raises(GenerationConflict):
-        await vc.play("stale-gen", "https://cdn.example/x", request_id="req-1")
+        await vc.play("stale-gen", "https://cdn.example/x", guild_id="guild-1", request_id="req-1")
 
 
 async def test_a_400_maps_to_rejected_carrying_the_reason(aiohttp_client):
@@ -128,7 +131,7 @@ async def test_a_transport_error_maps_to_unavailable():
     vc = VoiceControllerClient("http://127.0.0.1:1", timeout_seconds=2.0)
 
     with pytest.raises(VoiceControllerUnavailable):
-        await vc.status()
+        await vc.status("guild-1")
 
 
 async def test_an_unparseable_success_body_maps_to_unavailable(aiohttp_client):
@@ -141,7 +144,7 @@ async def test_an_unparseable_success_body_maps_to_unavailable(aiohttp_client):
     vc = await _client(aiohttp_client, app)
 
     with pytest.raises(VoiceControllerUnavailable):
-        await vc.status()
+        await vc.status("guild-1")
 
 
 async def test_a_success_body_without_a_state_snapshot_is_unavailable(aiohttp_client):
@@ -245,8 +248,11 @@ async def test_play_sends_resumable_only_when_given(aiohttp_client):
     record: list = []
     vc = await _client(aiohttp_client, _app(record=record))
 
-    await vc.play("gen-1", "https://cdn.example/live", resumable=False, request_id="r1")
-    await vc.play("gen-1", "https://cdn.example/vod", request_id="r2")
+    await vc.play(
+        "gen-1", "https://cdn.example/live",
+        resumable=False, guild_id="guild-1", request_id="r1",
+    )
+    await vc.play("gen-1", "https://cdn.example/vod", guild_id="guild-1", request_id="r2")
 
     bodies = [r[2] for r in record if r[1] == "/music/play"]
     assert bodies[0]["resumable"] is False
@@ -282,7 +288,7 @@ async def test_a_conflict_with_no_live_connection_does_not_reconcile(aiohttp_cli
     vc = VoiceControllerClient(str(test_client.make_url("")).rstrip("/"))
     state = await vc.join("guild-1", "cortez-1", request_id="r-join")
     session = HttpVoiceSession(vc, guild_id="guild-1", generation=state["generation"])
-    await vc.exit(state["generation"], request_id="r-exit")
+    await vc.exit(state["generation"], guild_id="guild-1", request_id="r-exit")
 
     with pytest.raises(GenerationConflict):
         await session.play("https://cdn.example/a")
@@ -299,7 +305,8 @@ async def test_an_arbiter_rejection_is_not_retried(aiohttp_client):
     session = HttpVoiceSession(vc, guild_id="guild-1", generation=state["generation"])
     await session.play("https://cdn.example/a")
     await vc.stream(
-        state["generation"], b"speech", media_type="audio/mpeg", request_id="r-s",
+        state["generation"], b"speech", media_type="audio/mpeg",
+        guild_id="guild-1", request_id="r-s",
     )
 
     with pytest.raises(GenerationConflict) as excinfo:

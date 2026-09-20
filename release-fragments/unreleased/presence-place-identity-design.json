@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Design and one code comment. design/27 gains three amendments: a record that every stay the substrate wrote was an artefact of how often the phone reports its position until that was fixed; a place-identity section (DEC-190, ADR 0014) making a place somebody has named and saved outrank one the system guessed at, which lifts a ceiling that has 88 stays currently filed under places up to 12 km from where they happened; and a rewrite of the forecasting tier, which had been asking the wrong question and whose own accuracy numbers are now marked as measured once and not reproducible. The decision index carries DEC-190 and amends the two points of DEC-115 this reverses. The only code change is a comment: the dwell cap's stated source was a config value that has never held that number, and that cap is now the clock a stay closes on. Nothing in nora/ behaves differently; the place model is designed, not built."
+}

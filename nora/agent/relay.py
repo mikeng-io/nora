@@ -19,24 +19,24 @@ THE FIVE REFUSALS, all fail-closed, in the order they are cheapest to decide:
    name cannot be attributed, and an unattributed relay is exactly the thing
    this module exists to prevent (see the attribution note below).
 2. **The destination is named by PLATFORM, not by room** — «tell Signal», which
-   is what a person actually says. A workspace holds at most one room per
+   is what a person actually says. A unit holds at most one room per
    platform by design (operator, 2026-08-14: "theoretically only 1 discord
-   server and 1 signal group" per workspace), so within a workspace the
+   server and 1 signal group" per unit), so within a unit the
    platform IS the address. Never an id: an id is not something a person says
    in a chat, and a model that could name one could be talked into naming one.
-   Two rooms of one platform in one workspace REFUSES rather than picking —
+   Two rooms of one platform in one unit REFUSES rather than picking —
    that is the invariant being violated, and guessing would turn a
    misconfiguration into a delivery to the wrong group.
-3. **Both rooms must share a `workspace`** (`nora.policy.Conversation`). This
+3. **Both rooms must share a `unit`** (`nora.policy.Conversation`). This
    is the boundary that makes a relay legitimate rather than a leak: rooms in
-   one workspace are one social unit reachable in more than one place — a
+   one unit are one social unit reachable in more than one place — a
    friend group with a Signal group AND a Discord channel — so the audience is
-   already the same audience. Rooms in different workspaces are different
+   already the same audience. Rooms in different units are different
    groups of people, however trusted each is on its own, and no amount of
    per-room trust makes speaking across them acceptable.
 4. **The asker must independently be allowed in the DESTINATION.** The
-   workspace bounds which rooms may ever be paired; this decides who may use
-   the pair. Without it, anyone in one room of a workspace could speak into
+   unit bounds which rooms may ever be paired; this decides who may use
+   the pair. Without it, anyone in one room of a unit could speak into
    every other room of it — which is a promotion, not a relay.
 5. **The text must pass the same egress scan a reply does** (R-18). It is
    outbound text authored partly by a person and partly by a model, and the
@@ -122,11 +122,11 @@ class Relay:
         self._count(outcome)
         return {"status": "refused", "note": note}
 
-    def _find(self, platform: str, *, workspace: str, exclude: str) -> tuple[Conversation, ...]:
-        """The room of `platform` inside `workspace`, excluding the source.
+    def _find(self, platform: str, *, unit: str, exclude: str) -> tuple[Conversation, ...]:
+        """The room of `platform` inside `unit`, excluding the source.
 
         Returns a tuple so the caller can tell none from more than one: a
-        workspace holding two rooms of one platform breaks the invariant this
+        unit holding two rooms of one platform breaks the invariant this
         addressing scheme rests on, and it must refuse rather than choose.
         """
         wanted = _key(platform)
@@ -135,7 +135,7 @@ class Relay:
         return tuple(
             c for c in self._policy.conversations
             if _key(c.platform) == wanted
-            and c.workspace == workspace
+            and c.unit == unit
             and c.primary_id != exclude
         )
 
@@ -165,7 +165,7 @@ class Relay:
         if source is None:
             # Unreachable in production — ingest admitted this turn from this
             # room — so this is a wiring fault, and refusing is the only honest
-            # answer: with no source there is no workspace to compare.
+            # answer: with no source there is no unit to compare.
             log.error(
                 "relay refused: source %s/%s is not in policy",
                 from_platform, from_conversation_id,
@@ -181,16 +181,16 @@ class Relay:
                 "passing it on.",
             )
 
-        # Scoped to the SOURCE's workspace from the start, so a room belonging
+        # Scoped to the SOURCE's unit from the start, so a room belonging
         # to another group is not merely rejected — it is never a candidate.
         # There is no way to name it and be told no; it does not exist from
         # here, which is the stronger shape for a trust boundary.
         matches = self._find(
-            platform, workspace=source.workspace, exclude=source.primary_id,
+            platform, unit=source.unit, exclude=source.primary_id,
         )
         if not matches:
             log.warning(
-                "relay refused: no %r room in workspace %r", platform, source.workspace,
+                "relay refused: no %r room in unit %r", platform, source.unit,
             )
             return self._refuse(
                 "unknown_room",
@@ -199,10 +199,10 @@ class Relay:
             )
         if len(matches) > 1:
             log.error(
-                "relay refused: workspace %r holds %d %r rooms — a workspace is "
+                "relay refused: unit %r holds %d %r rooms — a unit is "
                 "meant to hold at most one room per platform, and with two there "
                 "is no way to tell which was meant",
-                source.workspace, len(matches), platform,
+                source.unit, len(matches), platform,
             )
             return self._refuse(
                 "ambiguous_room",

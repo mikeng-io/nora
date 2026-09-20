@@ -22,7 +22,7 @@ class _Doctrine:
 
 def _note(note_id: str) -> Note:
     return Note(
-        id=note_id, workspace="ridgeline", title=f"note {note_id}",
+        id=note_id, unit="ridgeline", title=f"note {note_id}",
         description="one line about it", uncertainty="not settled",
         closing_condition="somebody decides", established_in="g1",
         created_at=1, head_revision_id=f"{note_id}-r1", anchor_date=20261011,

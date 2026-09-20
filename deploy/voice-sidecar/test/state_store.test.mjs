@@ -9,7 +9,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, chmod
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { createStateStore } from '../src/state_store.mjs';
+import { createStateStore, guildsFromStateFiles } from '../src/state_store.mjs';
 import { bootChannel } from '../src/lifecycle.mjs';
 import { makeHarness, GUILD, CHANNEL } from './helpers.mjs';
 
@@ -157,19 +157,56 @@ test('a state write failure is loud: state_write_ok flips false in /voice/status
     path: statePath,
   };
   const h = await makeHarness({ stateStore });
-  const before = await h.get('/voice/status');
+  const before = await h.get(`/voice/status?guild_id=${GUILD}`);
   assert.equal(before.body.state_write_ok, true);
 
   failWrites = true;
   await h.join(); // join persists desired connected -> write fails
-  const after = await h.get('/voice/status');
+  const after = await h.get(`/voice/status?guild_id=${GUILD}`);
   assert.equal(after.body.state_write_ok, false);
   assert.equal(after.body.voice, 'connected'); // the join itself still succeeded
 
   failWrites = false;
   const { generation } = after.body;
   await h.post('/voice/exit', { guild_id: GUILD, generation }); // persist recovers
-  const recovered = await h.get('/voice/status');
+  const recovered = await h.get(`/voice/status?guild_id=${GUILD}`);
   assert.equal(recovered.body.state_write_ok, true);
   await h.close();
+});
+
+// --- which state files name a guild (multi-guild, 2026-09-17) ----------------
+// THE GAP THESE CLOSE: a falsification probe that removed the snowflake check
+// reddened NOTHING — `main()`'s boot loop has no test, and the filter lived in
+// service.mjs behind a discord.js import where nothing could reach it.
+
+test('the pre-multi-guild state file is skipped, not adopted as a guild', () => {
+  // WHAT HAPPENED: the old layout kept ONE `desired_state.json` on this same
+  // volume. Globbing `*.json` adopted it as a guild literally named
+  // "desired_state" — every boot called guilds.fetch("desired_state"), failed,
+  // and left a junk core in the map and in /health, while the real guild's
+  // connection (whose state lived under the old filename) was never restored.
+  const { guilds, skipped } = guildsFromStateFiles([
+    'desired_state.json',
+    '100000000000000203.json',
+  ]);
+
+  assert.deepEqual(guilds, ['100000000000000203']);
+  assert.deepEqual(skipped, ['desired_state.json']);
+});
+
+test('only a Discord snowflake names a guild', () => {
+  const { guilds, skipped } = guildsFromStateFiles([
+    '100000000000000203.json',  // 19 digits — a real snowflake
+    '12345.json',                // too short
+    '../evil.json',              // traversal
+    'notes.txt',                 // not state at all
+    '.json',                     // empty stem
+  ]);
+
+  assert.deepEqual(guilds, ['100000000000000203']);
+  assert.deepEqual(skipped, ['12345.json', '../evil.json', '.json']);
+});
+
+test('an empty directory yields no guilds and no complaints', () => {
+  assert.deepEqual(guildsFromStateFiles([]), { guilds: [], skipped: [] });
 });

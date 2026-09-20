@@ -13,9 +13,9 @@ Only the WRITE verb's destination changes.
 
 2026-09-14, Blake asked for the night off in **Discord Zone 42**
 (`100000000000000201/100000000000000202`). The note-candidates pass
-folded it into a friends-workspace note with `established_in = Zone 42`.
+folded it into a friends-unit note with `established_in = Zone 42`.
 ~2h later the proactive fire path spoke into **Signal Friends** — the
-workspace's home room (`policy.toml` L93-94) — and the person the answer
+unit's home room (`policy.toml` L93-94) — and the person the answer
 was about never saw it. The answer was delivered where Nora stands, not
 where the question was asked.
 
@@ -44,9 +44,9 @@ NEVER falls back to the home room (a fallback is the bug).
   `policy.toml`. `ProactiveScreen` already re-checks the ROW's
   platform/conversation at fire time (`proactive_screen.py:102`), so the
   row carries the origin room and the screen enforces the same flag.
-- **Workspace check.** The resolved room must belong to the same workspace
-  the adaptor is keyed on. Cross-workspace origin is refused
-  (`origin_wrong_workspace`) — a note born in another social unit is not
+- **Unit check.** The resolved room must belong to the same unit
+  the adaptor is keyed on. Cross-unit origin is refused
+  (`origin_wrong_unit`) — a note born in another social unit is not
   something this pass may raise into.
 - **`policy.toml` change.** Zone 42 gains `proactive = true` (operator
   decision, 2026-09-15): the friends actually plan there, and the
@@ -67,12 +67,12 @@ shape, different fix path (`remind` destination stamping).
 | change | file | what |
 |---|---|---|
 | `established_in` into the note-linked payload | `nora/agent/tools.py` (`remind`, payload build ~:6906) | `linked.established_in` is already in scope from `_resolve`; add it beside `note_id`/`revision_id`/`note_title` |
-| origin-room resolver shape | `nora/agent/dreamer.py` (`RegistryToolSource`) + composition root | a `Mapping[str, OriginRoom]` (conversation_id → `OriginRoom(platform, conversation_id, conversation_type, workspace, proactive)`) built by the composition root from `Policy.conversations` — the same shape as `home_rooms`, which `RegistryToolSource` already receives (`:787`) — mirroring its policy-independence («the tool source never reads policy itself», `dreamer.py:344`); import-linter keeps `nora.agent` off `nora.policy`, so the value type is a local dataclass, not `Conversation` |
-| destination stamping | `nora/agent/tools.py` (`remind`, `row = Reminder(...)`) | proactive + note-linked: resolve `payload["established_in"]` through the origin map; refuse on unresolvable / wrong workspace / not `proactive`; else set `platform` / `conversation_id` / `conversation_type` (default `"group"`) from the origin room; unlinked keeps home room |
+| origin-room resolver shape | `nora/agent/dreamer.py` (`RegistryToolSource`) + composition root | a `Mapping[str, OriginRoom]` (conversation_id → `OriginRoom(platform, conversation_id, conversation_type, unit, proactive)`) built by the composition root from `Policy.conversations` — the same shape as `home_rooms`, which `RegistryToolSource` already receives (`:787`) — mirroring its policy-independence («the tool source never reads policy itself», `dreamer.py:344`); import-linter keeps `nora.agent` off `nora.policy`, so the value type is a local dataclass, not `Conversation` |
+| destination stamping | `nora/agent/tools.py` (`remind`, `row = Reminder(...)`) | proactive + note-linked: resolve `payload["established_in"]` through the origin map; refuse on unresolvable / wrong unit / not `proactive`; else set `platform` / `conversation_id` / `conversation_type` (default `"group"`) from the origin room; unlinked keeps home room |
 | deliverer readiness | deployment | fire path selects the deliverer by `occasion.platform` (`fire.py:1765`) — Discord Zone 42 already has one; no code change |
 | `proactive = true` | `policy.toml` (deploy-time edit — policy.toml is untracked) | Zone 42; the `ProactiveScreen` fire-time check (`proactive_screen.py:102`) enforces it on the row's own room |
 | `proactive` semantics doc | `nora/policy.py` `Conversation.proactive` docstring (already exists:112) | extend one line: the flag now also gates where a note-linked proactive row may land |
-| tests | `tests/unit/test_remind_destination.py` (new) | note born in same-workspace proactive room → origin; born in untrusted room → refused, home is NOT used; unresolvable id → refused; no note → home preserved; `also_ids` match resolves |
+| tests | `tests/unit/test_remind_destination.py` (new) | note born in same-unit proactive room → origin; born in untrusted room → refused, home is NOT used; unresolvable id → refused; no note → home preserved; `also_ids` match resolves |
 
 ## Fail-closed behaviour, said plainly
 

@@ -526,7 +526,7 @@ async def test_drive_reads_room_now_policy_config_from_case_metadata(monkeypatch
             "config": {"memory.workspace_id": "ridgeline", "notes.enabled": True},
             "policy": (
                 'default = "deny"\n\n[[conversations]]\nplatform = "{platform}"\n'
-                'id = "{room}"\npersons = "*"\nworkspace = "ridgeline"\n'
+                'id = "{room}"\npersons = "*"\nunit = "ridgeline"\n'
                 "proactive = true\nhome_room = true\n"
             ),
         },
@@ -543,13 +543,14 @@ async def test_drive_reads_room_now_policy_config_from_case_metadata(monkeypatch
     # `workspace_for` derives a unique name so cases sharing a database do
     # not accumulate notes in each other's workspace.
     assert spec.overrides["memory.workspace_id"] != "ridgeline"
-    # Found live, 2026-09-20: the POLICY's own `workspace = "..."` must be
-    # rewritten to the SAME isolated name, or the composed subject's real
-    # `memory.workspace_id` and its policy's declared room workspace
+    # Found live, 2026-09-20: the POLICY's own `unit = "..."` (the TOML key
+    # is `unit`, `e2092ecd` — distinct from Honcho's OWN `workspace_id`
+    # concept) must be rewritten to the SAME isolated name, or the composed
+    # subject's real `memory.workspace_id` and its policy's declared unit
     # disagree, and the proactive adaptor reports "no home room" for a
-    # workspace whose policy plainly names one.
-    assert f'workspace = "{spec.overrides["memory.workspace_id"]}"' in spec.policy
-    assert 'workspace = "ridgeline"' not in spec.policy
+    # unit whose policy plainly names one.
+    assert f'unit = "{spec.overrides["memory.workspace_id"]}"' in spec.policy
+    assert 'unit = "ridgeline"' not in spec.policy
 
 
 async def test_drive_falls_through_to_spec_when_a_case_states_no_room_or_now(monkeypatch):

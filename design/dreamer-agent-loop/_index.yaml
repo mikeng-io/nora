@@ -193,7 +193,7 @@ scope:
     - "State: knowable-before is an input, discovered-during is a tool; a tier contributes read access through the existing registry seam"
     - "Measurement: every seam ships its instrument, this bundle's own change first"
     - "Phase A gains GROUNDING as an INPUT between the two extraction calls (D32 amends D5's mechanism), and must NOT deduplicate against existing candidates"
-    - "Room access splits by key kind: scope-keyed proceeds, workspace-keyed is blocked"
+    - "Room access splits by key kind: scope-keyed proceeds, unit-keyed is blocked"
     - "Doctrine becomes shape-aware; the audience field stops being decorative (D9 — SUPERSEDED IN PART 2026-09-17 by D10: the split is by LAYER, runtime vs job, so there is nothing for an audience field to select; 13 section 6)"
     - "The Dreamer doctrine says what the RUNTIME is and nothing about what a run is for; what the pass must find out belongs to its objective (D10, 13 section 8)"
     - "The language tier GETS supersession — D19 reverses D9's designed cost, which had already consumed 100% of the tier's output (16 §7)"
@@ -207,7 +207,7 @@ scope:
     - "The episode is a conversational chunk (D31)"
   deferred:
     - "BLOCKED — everything, pending one measurement: does the transport honour tool calls and carry reasoning between turns, and which token ceiling actually binds"
-    - "BLOCKED — workspace-keyed room access, pending a decision on R-49's second condition (answered twice, incompatibly)"
+    - "BLOCKED — unit-keyed room access, pending a decision on R-49's second condition (answered twice, incompatibly)"
     - "BLOCKED — the migration landing, pending a chosen global concurrency bound"
     - "BLOCKED — no graded eval corpus; three prompt questions reduce to it (16 §11)"
     - "UNMEASURED — the room's literal-object rate, the reading that would have caught the shape mismatch on day one (16 §10)"

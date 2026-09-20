@@ -22,14 +22,14 @@ breaks if any of them is reversed:
    `WHERE`** — never a read, a comparison in Python, and then a write. Between
    those two statements is the window the CAS exists to close: the curator
    merging the note mid-turn, or a parallel turn in the other room of the same
-   workspace. `UPDATE note SET head_revision_id = :new WHERE id = :id AND
-   workspace = :ws AND head_revision_id = :parent` is atomic in Postgres, so a
+   unit. `UPDATE note SET head_revision_id = :new WHERE id = :id AND
+   unit = :ws AND head_revision_id = :parent` is atomic in Postgres, so a
    `rowcount` of 0 IS the refusal, decided by the database rather than by a
    racing reader. On 0 the transaction rolls back and `StaleNoteHeadError` is
    raised: nothing is written on top, ever.
 
-3. **Every read carries `WHERE workspace = :workspace`.** Unreachable, not
-   merely unrendered. `read` on a note in another workspace returns `None`,
+3. **Every read carries `WHERE unit = :unit`.** Unreachable, not
+   merely unrendered. `read` on a note in another unit returns `None`,
    exactly as if it did not exist — a caller must not be able to distinguish
    "no such note" from "not yours", because the distinction alone confirms the
    note exists. `append_revision` refuses across the boundary for the same
@@ -129,7 +129,7 @@ from nora.infra.sql.schema import (
 
 def _row_to_note(r: Row[Any]) -> Note:
     return Note(
-        id=r.id, workspace=r.workspace, title=r.title, description=r.description,
+        id=r.id, unit=r.unit, title=r.title, description=r.description,
         uncertainty=r.uncertainty, closing_condition=r.closing_condition,
         established_in=r.established_in, created_at=r.created_at,
         head_revision_id=r.head_revision_id, anchor_date=r.anchor_date,
@@ -143,7 +143,7 @@ def _row_to_note(r: Row[Any]) -> Note:
 
 def _row_to_create_candidate(r: Row[Any]) -> NoteCreateCandidate:
     return NoteCreateCandidate(
-        id=r.id, workspace=r.workspace, title=r.title, description=r.description,
+        id=r.id, unit=r.unit, title=r.title, description=r.description,
         body=r.body, closing_condition=r.closing_condition,
         anchor_date=r.anchor_date, anchor_entity_ids=tuple(r.anchor_entity_ids),
         message_ids=tuple(r.message_ids), status=r.status, attempts=r.attempts,
@@ -187,7 +187,7 @@ class SqlNoteStore:
     async def create(
         self,
         *,
-        workspace: str,
+        unit: str,
         title: str,
         description: str,
         uncertainty: str,
@@ -219,7 +219,7 @@ class SqlNoteStore:
         note_id = str(uuid4())
         revision_id = str(uuid4())
         note = Note(
-            id=note_id, workspace=workspace, title=title, description=description,
+            id=note_id, unit=unit, title=title, description=description,
             uncertainty=uncertainty, closing_condition=closing_condition,
             established_in=established_in, created_at=now_ms,
             head_revision_id=revision_id, anchor_date=anchor_date,
@@ -236,7 +236,7 @@ class SqlNoteStore:
 
     @staticmethod
     def _new_note(
-        *, workspace: str, payload: NoteCreationProposal, proposal: Proposal,
+        *, unit: str, payload: NoteCreationProposal, proposal: Proposal,
         now_ms: int,
     ) -> tuple[Note, NoteRevision]:
         """A `NoteCreationProposal` as the two domain objects it becomes.
@@ -250,7 +250,7 @@ class SqlNoteStore:
         revision_id = str(uuid4())
         return (
             Note(
-                id=note_id, workspace=workspace, title=payload.title,
+                id=note_id, unit=unit, title=payload.title,
                 description=payload.description,
                 uncertainty=payload.uncertainty,
                 closing_condition=payload.closing_condition,
@@ -282,7 +282,7 @@ class SqlNoteStore:
         transaction a write belongs to is the caller's decision, and `propose`
         needs its whole batch in one."""
         await conn.execute(sa.insert(NOTE).values(
-            id=note.id, workspace=note.workspace, title=note.title,
+            id=note.id, unit=note.unit, title=note.title,
             description=note.description, uncertainty=note.uncertainty,
             closing_condition=note.closing_condition,
             anchor_date=note.anchor_date,
@@ -303,7 +303,7 @@ class SqlNoteStore:
             model=revision.model,
         ))
 
-    async def standing(self, *, workspace: str) -> tuple[Note, ...]:
+    async def standing(self, *, unit: str) -> tuple[Note, ...]:
         """Every note that has not been retired — the read the injected index
         (§5.1) renders from, and the one note-tier read on the turn's critical
         path. `retired_at is null` matches `idx_note_standing`'s own predicate,
@@ -323,7 +323,7 @@ class SqlNoteStore:
         """
         stmt = (
             sa.select(NOTE)
-            .where(NOTE.c.workspace == workspace, NOTE.c.retired_at.is_(None))
+            .where(NOTE.c.unit == unit, NOTE.c.retired_at.is_(None))
             .order_by(NOTE.c.created_at.asc(), NOTE.c.id.asc())
         )
         async with self._engine.connect() as conn:
@@ -331,7 +331,7 @@ class SqlNoteStore:
         return tuple(_row_to_note(r) for r in rows)
 
     async def read(
-        self, *, workspace: str, note_id: str,
+        self, *, unit: str, note_id: str,
     ) -> tuple[Note, NoteRevision] | None:
         """The note and its HEAD revision, or `None`.
 
@@ -339,7 +339,7 @@ class SqlNoteStore:
         (§7.4), and history that cannot be read back cannot re-derive a lossy
         step that went wrong. `standing` is where the retired ones disappear.
 
-        A note in another workspace answers `None`, identically to one that does
+        A note in another unit answers `None`, identically to one that does
         not exist (module docstring (3)). So does a `note_id` that is not even
         UUID-shaped.
         """
@@ -347,7 +347,7 @@ class SqlNoteStore:
             return None
         async with self._engine.connect() as conn:
             row = (await conn.execute(self._head_join().where(
-                NOTE.c.id == note_id, NOTE.c.workspace == workspace,
+                NOTE.c.id == note_id, NOTE.c.unit == unit,
             ))).one_or_none()
         if row is None:
             return None
@@ -356,7 +356,7 @@ class SqlNoteStore:
     async def append_revision(
         self,
         *,
-        workspace: str,
+        unit: str,
         note_id: str,
         body: str,
         parent_revision_id: str,
@@ -370,7 +370,7 @@ class SqlNoteStore:
         database refusing, not a reader losing a race it did not know it was in.
 
         Raises `StaleNoteHeadError` when the head is not `parent_revision_id` —
-        including when the note does not exist, is in another workspace, or was
+        including when the note does not exist, is in another unit, or was
         named by a malformed id, all of which report `observed_head = None`
         because from this caller's side they are the same situation with the
         same remedy. The transaction is rolled back by the `raise`, so the
@@ -397,13 +397,13 @@ class SqlNoteStore:
             )
         async with self._engine.begin() as conn:
             await self._append_on_conn(
-                conn, workspace=workspace, revision=revision,
+                conn, unit=unit, revision=revision,
             )
         return revision
 
     @staticmethod
     async def _append_on_conn(
-        conn: AsyncConnection, *, workspace: str, revision: NoteRevision,
+        conn: AsyncConnection, *, unit: str, revision: NoteRevision,
     ) -> None:
         """The CAS and the insert, on a connection the CALLER owns.
 
@@ -421,7 +421,7 @@ class SqlNoteStore:
             sa.update(NOTE)
             .where(
                 NOTE.c.id == note_id,
-                NOTE.c.workspace == workspace,
+                NOTE.c.unit == unit,
                 NOTE.c.head_revision_id == parent_revision_id,
             )
             .values(head_revision_id=revision_id)
@@ -433,7 +433,7 @@ class SqlNoteStore:
             # is what the failed CAS actually saw.
             observed = (await conn.execute(
                 sa.select(NOTE.c.head_revision_id).where(
-                    NOTE.c.id == note_id, NOTE.c.workspace == workspace,
+                    NOTE.c.id == note_id, NOTE.c.unit == unit,
                 )
             )).scalar_one_or_none()
             raise StaleNoteHeadError(
@@ -441,7 +441,7 @@ class SqlNoteStore:
                 f"written against {parent_revision_id}, the head is "
                 f"{observed} — read it again"
                 if observed is not None
-                else f"note {note_id} is not in workspace {workspace!r} — "
+                else f"note {note_id} is not in unit {unit!r} — "
                      f"read it again",
                 observed_head=observed,
             )
@@ -455,9 +455,9 @@ class SqlNoteStore:
         ))
 
     async def search(
-        self, *, workspace: str, query: str, limit: int,
+        self, *, unit: str, query: str, limit: int,
     ) -> tuple[tuple[Note, str], ...]:
-        """Substring search over HEAD bodies, workspace-scoped, standing only.
+        """Substring search over HEAD bodies, unit-scoped, standing only.
         Returns `(note, matching_body)` pairs — the note so the caller can name
         and read it, the body so a hit is legible without a second round trip.
 
@@ -475,7 +475,7 @@ class SqlNoteStore:
         input.
 
         `autoescape=True` on `icontains` escapes `%` and `_` in the caller's
-        query. Without it a query of `%` returns every note in the workspace and
+        query. Without it a query of `%` returns every note in the unit and
         `100%` returns every note containing `100`, because the caller's text
         would be `ilike`'s own wildcard syntax. The query is data.
         """
@@ -484,7 +484,7 @@ class SqlNoteStore:
         stmt = (
             self._head_join()
             .where(
-                NOTE.c.workspace == workspace,
+                NOTE.c.unit == unit,
                 NOTE.c.retired_at.is_(None),
                 NOTE_REVISION.c.body.icontains(query, autoescape=True),
             )
@@ -498,7 +498,7 @@ class SqlNoteStore:
     # ---- the wake pass (§9.6) ----------------------------------------------
 
     async def revision_chain(
-        self, *, workspace: str, note_id: str,
+        self, *, unit: str, note_id: str,
     ) -> tuple[NoteRevision, ...]:
         """Every revision of one note, oldest first — the chain
         `tag_path_progressed_since_wake` walks, exposed as a READ so a caller
@@ -507,7 +507,7 @@ class SqlNoteStore:
         cancels a proactive row when the tag path revised the note after the
         row was linked to it).
 
-        `()` for a note that is absent, in another workspace, or not even
+        `()` for a note that is absent, in another unit, or not even
         UUID-shaped — the same «not reachable from here» answer `read` gives,
         never a partial chain. Retired notes ARE readable, for `read`'s
         reason: retirement is a status change, not a delete.
@@ -517,7 +517,7 @@ class SqlNoteStore:
         async with self._engine.connect() as conn:
             owner = (await conn.execute(
                 sa.select(NOTE.c.id).where(
-                    NOTE.c.id == note_id, NOTE.c.workspace == workspace,
+                    NOTE.c.id == note_id, NOTE.c.unit == unit,
                 )
             )).one_or_none()
             if owner is None:
@@ -539,11 +539,11 @@ class SqlNoteStore:
         return tuple(_row_to_revision(r) for r in rows)
 
     async def record_wake(
-        self, *, workspace: str, note_id: str, next_revisit_at: int,
+        self, *, unit: str, note_id: str, next_revisit_at: int,
         now_ms: int,
     ) -> WakeOutcome | None:
         """Record that the revisitor woke on this note. Returns what happened,
-        or `None` if the note is not reachable from `workspace`.
+        or `None` if the note is not reachable from `unit`.
 
         `revisit_at`, `strikes` and `last_wake_revision_id` have existed since
         `0026` with a CHECK and **no writer anywhere**, so the revisitor's
@@ -595,7 +595,7 @@ class SqlNoteStore:
                 )
                 .where(
                     NOTE.c.id == note_id,
-                    NOTE.c.workspace == workspace,
+                    NOTE.c.unit == unit,
                     NOTE.c.retired_at.is_(None),
                 )
                 # The row is write-locked for the rest of the transaction, so
@@ -658,7 +658,7 @@ class SqlNoteStore:
     # 2026-09-08 — see the module docstring for why it went.
 
     async def anchored_before(
-        self, *, workspace: str, day: int, limit: int,
+        self, *, unit: str, day: int, limit: int,
     ) -> tuple[tuple[Note, str], ...]:
         """Standing notes whose anchor date is strictly before `day`, oldest
         first, with their head bodies.
@@ -685,7 +685,7 @@ class SqlNoteStore:
         stmt = (
             self._head_join()
             .where(
-                NOTE.c.workspace == workspace,
+                NOTE.c.unit == unit,
                 NOTE.c.retired_at.is_(None),
                 NOTE.c.anchor_date.is_not(None),
                 NOTE.c.anchor_date < day,
@@ -698,7 +698,7 @@ class SqlNoteStore:
         return tuple((_row_to_note(r), r.body) for r in rows)
 
     async def due_for_revisit(
-        self, *, workspace: str, now_ms: int, limit: int,
+        self, *, unit: str, now_ms: int, limit: int,
     ) -> tuple[tuple[Note, str], ...]:
         """Standing notes whose `revisit_at` has arrived, oldest `revisit_at`
         first, with their head bodies — the note-curator merge's `due` read
@@ -733,7 +733,7 @@ class SqlNoteStore:
         stmt = (
             self._head_join()
             .where(
-                NOTE.c.workspace == workspace,
+                NOTE.c.unit == unit,
                 NOTE.c.retired_at.is_(None),
                 NOTE.c.revisit_at.is_not(None),
                 NOTE.c.revisit_at <= now_ms,
@@ -754,7 +754,7 @@ class SqlNoteStore:
     # not a verb the runtime may call.
 
     async def revision_by_id(self, *, revision_id: str) -> NoteRevision | None:
-        """One revision by id, or `None`. **Not workspace-scoped, and that is
+        """One revision by id, or `None`. **Not unit-scoped, and that is
         deliberate rather than an omission** — a revision is reached through the
         note that owns it, so scoping happens at `note_by_id` below. Scoping
         here too would mean joining `note` on every call to answer a question
@@ -776,26 +776,26 @@ class SqlNoteStore:
             row = (await conn.execute(stmt)).one_or_none()
         return None if row is None else _row_to_revision(row)
 
-    async def note_by_id(self, *, workspace: str, note_id: str) -> Note | None:
-        """One note by id within a workspace, **retired or not**.
+    async def note_by_id(self, *, unit: str, note_id: str) -> Note | None:
+        """One note by id within a unit, **retired or not**.
 
         `read` above cannot serve this: it goes through `_head_join`, which is
         the model-facing path, and a caller asking whether a note was retired
-        needs the row precisely BECAUSE it is retired. Workspace-scoped like
+        needs the row precisely BECAUSE it is retired. Unit-scoped like
         every other read here — a caller must not be able to confirm a note
-        exists in a workspace it may not read.
+        exists in a unit it may not read.
         """
         if not _is_uuid(note_id):
             return None
         stmt = sa.select(NOTE).where(
-            NOTE.c.id == note_id, NOTE.c.workspace == workspace,
+            NOTE.c.id == note_id, NOTE.c.unit == unit,
         )
         async with self._engine.connect() as conn:
             row = (await conn.execute(stmt)).one_or_none()
         if row is None:
             return None
         return Note(
-            id=row.id, workspace=row.workspace, title=row.title,
+            id=row.id, unit=row.unit, title=row.title,
             description=row.description, uncertainty=row.uncertainty,
             closing_condition=row.closing_condition,
             established_in=row.established_in, created_at=row.created_at,
@@ -814,7 +814,7 @@ class SqlNoteStore:
     async def propose(
         self, *, key: str, proposals: Sequence[Proposal], now_ms: int,
     ) -> Sequence[str]:
-        """`DreamSink.propose`. `key` is the WORKSPACE (§3/DEC-105).
+        """`DreamSink.propose`. `key` is the UNIT (§3/DEC-105).
 
         **ONE TRANSACTION FOR THE WHOLE BATCH, and this is a correction.** The
         first version looped over `append_revision`, each of which opened its
@@ -891,7 +891,7 @@ class SqlNoteStore:
             for p, payload in typed:
                 if isinstance(payload, NoteCreationProposal):
                     note, first = self._new_note(
-                        workspace=key, payload=payload, proposal=p,
+                        unit=key, payload=payload, proposal=p,
                         now_ms=now_ms,
                     )
                     await self._create_on_conn(conn, note=note, revision=first)
@@ -944,7 +944,7 @@ class SqlNoteStore:
                         observed_head=None,
                     )
                 await self._append_on_conn(
-                    conn, workspace=key, revision=revision,
+                    conn, unit=key, revision=revision,
                 )
                 heads[revision.note_id] = revision.id
                 # **THE NOTE's id, not the revision's.** The port's rationale
@@ -992,7 +992,7 @@ class SqlNoteStore:
         week, and why» is the reading that justifies the curator existing, and
         it cannot be answered against prose.
 
-        A `target` that names no standing note in this workspace reports **0
+        A `target` that names no standing note in this unit reports **0
         rather than raising**, including a malformed id: a background pass that
         raises on a row it does not recognise takes the whole tick down with it.
         A malformed `replaced_by`, by contrast, RAISES, and the split is the
@@ -1035,7 +1035,7 @@ class SqlNoteStore:
             sa.update(NOTE)
             .where(
                 NOTE.c.id == target,
-                NOTE.c.workspace == key,
+                NOTE.c.unit == key,
                 NOTE.c.retired_at.is_(None),
             )
             .values(
@@ -1047,13 +1047,13 @@ class SqlNoteStore:
         return int(result.rowcount)
 
     async def record_miss(
-        self, *, workspace: str, probe: str, conversation_id: str, now_ms: int,
+        self, *, unit: str, probe: str, conversation_id: str, now_ms: int,
     ) -> int:
         """The negative cache (§4.5), `fact_candidate`'s shape and its reason:
         the SECOND miss on the same ground is evidence rather than a guess. An
         insert per miss would make one gap look like N unrelated gaps and
         nothing would ever cross a threshold, so this UPSERTs on
-        `note_candidate_probe_key` — `(workspace, probe)` — and returns the new
+        `note_candidate_probe_key` — `(unit, probe)` — and returns the new
         `occurrence_count`.
 
         Three details that are decisions, not defaults:
@@ -1068,12 +1068,12 @@ class SqlNoteStore:
           three; appending unconditionally turns one chatty room into a false
           consensus and grows the array without bound.
         - **The whole thing is one statement.** A read-then-write would let two
-          concurrent turns in the same workspace each see count 1 and each write
+          concurrent turns in the same unit each see count 1 and each write
           2, losing an occurrence — the same race the CAS above exists to close,
           and the reason this uses `ON CONFLICT` rather than a `SELECT`.
         """
         insert = pg_insert(NOTE_CANDIDATE).values(
-            id=str(uuid4()), workspace=workspace, probe=probe,
+            id=str(uuid4()), unit=unit, probe=probe,
             first_seen_at=now_ms, last_seen_at=now_ms, occurrence_count=1,
             observed_in=[conversation_id],
         )
@@ -1104,7 +1104,7 @@ class SqlNoteStore:
     async def record_create_candidate(
         self,
         *,
-        workspace: str,
+        unit: str,
         title: str,
         description: str,
         body: str,
@@ -1120,7 +1120,7 @@ class SqlNoteStore:
         uniqueness domain.
 
         **Upserts on THIS TIER'S OWN staging key** —
-        `note_candidate_create_anchor_key`, `(workspace, anchor_date,
+        `note_candidate_create_anchor_key`, `(unit, anchor_date,
         anchor_entity_ids, lower(btrim(title)))` — so a re-observation of the
         same occasion refreshes the staged proposal rather than duplicating
         it, while a DIFFERENT arrangement the model wrote about on the same
@@ -1136,7 +1136,7 @@ class SqlNoteStore:
         across revisions, so its identity cannot be its title. A staging row is
         a one-shot dedupe slot for one sighting, and the title is the only
         field that separates two arrangements on one day: measured 2026-09-16
-        in workspace `ridgeline`, a two-entity candidate was destroyed by a
+        in unit `ridgeline`, a two-entity candidate was destroyed by a
         same-day collision, because in a fixed-membership room every
         arrangement names the same people and the entity list is a constant.
         `lower()` here diverges from `note_handle`'s `casefold()` on the cases
@@ -1158,7 +1158,7 @@ class SqlNoteStore:
         entities = sorted(set(anchor_entity_ids))
         ids = list(dict.fromkeys(message_ids))
         insert = pg_insert(NOTE_CANDIDATE).values(
-            id=str(uuid4()), workspace=workspace, kind="create",
+            id=str(uuid4()), unit=unit, kind="create",
             title=title, description=description, body=body,
             closing_condition=closing_condition, anchor_date=anchor_date,
             anchor_entity_ids=entities, message_ids=ids,
@@ -1167,7 +1167,7 @@ class SqlNoteStore:
         )
         stmt = insert.on_conflict_do_update(
             index_elements=[
-                NOTE_CANDIDATE.c.workspace, NOTE_CANDIDATE.c.anchor_date,
+                NOTE_CANDIDATE.c.unit, NOTE_CANDIDATE.c.anchor_date,
                 NOTE_CANDIDATE.c.anchor_entity_ids,
                 # A raw expression, not a column: `index_elements` renders it
                 # verbatim into the inferred conflict target, and it must match
@@ -1205,7 +1205,7 @@ class SqlNoteStore:
                 # **The predicate list is the FULL staging key, title
                 # included** (#235). Without the title clause this SELECT is
                 # wider than the index it re-finds a row through, so once two
-                # arrangements legitimately share `(workspace, anchor_date,
+                # arrangements legitimately share `(unit, anchor_date,
                 # anchor_entity_ids)` it either hands the caller the other
                 # arrangement's settled row — the #235 bug wearing a different
                 # mask — or raises `MultipleResultsFound` out of a background
@@ -1213,7 +1213,7 @@ class SqlNoteStore:
                 # so the comparison is the index's own.
                 row = (await conn.execute(
                     sa.select(NOTE_CANDIDATE).where(
-                        NOTE_CANDIDATE.c.workspace == workspace,
+                        NOTE_CANDIDATE.c.unit == unit,
                         NOTE_CANDIDATE.c.kind == "create",
                         NOTE_CANDIDATE.c.anchor_date == anchor_date,
                         NOTE_CANDIDATE.c.anchor_entity_ids == entities,
@@ -1224,10 +1224,10 @@ class SqlNoteStore:
         return _row_to_create_candidate(row)
 
     async def set_create_candidate_status(
-        self, *, workspace: str, candidate_id: str, status: str, now_ms: int,
+        self, *, unit: str, candidate_id: str, status: str, now_ms: int,
     ) -> int:
         """Advance one create-candidate to a TERMINAL status. Returns rows
-        affected — `0` if the row is gone, in another workspace, or already
+        affected — `0` if the row is gone, in another unit, or already
         terminal.
 
         **Idempotent by construction, never a re-decision.** The `WHERE
@@ -1249,7 +1249,7 @@ class SqlNoteStore:
             sa.update(NOTE_CANDIDATE)
             .where(
                 NOTE_CANDIDATE.c.id == candidate_id,
-                NOTE_CANDIDATE.c.workspace == workspace,
+                NOTE_CANDIDATE.c.unit == unit,
                 NOTE_CANDIDATE.c.kind == "create",
                 NOTE_CANDIDATE.c.status == CANDIDATE_PENDING,
             )

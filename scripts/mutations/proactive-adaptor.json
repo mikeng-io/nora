@@ -16,9 +16,9 @@
  {
   "name": "D2 axis 2 exempts a home-room grant",
   "file": "nora/agent/dreamer.py",
-  "old": "    if adaptor.key_kind == \"workspace\" and not allowance.home_room:",
-  "new": "    if adaptor.key_kind == \"workspace\":",
-  "target": "tests/unit/test_dreamer_runtime.py -k a_workspace_keyed_adaptor_is_refused_a_room_scoped_tool"
+  "old": "    if adaptor.key_kind == \"unit\" and not allowance.home_room:",
+  "new": "    if adaptor.key_kind == \"unit\":",
+  "target": "tests/unit/test_dreamer_runtime.py -k a_unit_keyed_adaptor_is_refused_a_room_scoped_tool"
  },
  {
   "name": "D3 build admits the granted act verb past read_only()",
@@ -56,7 +56,7 @@
   "target": "tests/unit/test_dreamer_runtime.py -k a_home_room_grant_builds_the_room_the_operator_named"
  },
  {
-  "name": "D3 the destination is the home room, not the workspace name",
+  "name": "D3 the destination is the home room, not the unit name",
   "file": "nora/agent/dreamer.py",
   "old": "            conversation_id=home.conversation_id if home is not None else key,",
   "new": "            conversation_id=key,",
@@ -186,7 +186,7 @@
   "file": "nora/policy.py",
   "old": "        if other is not None:",
   "new": "        if False:",
-  "target": "tests/test_policy.py -k two_home_rooms_in_one_workspace_refuse_to_start"
+  "target": "tests/test_policy.py -k two_home_rooms_in_one_unit_refuse_to_start"
  },
  {
   "name": "D7 the log honours since (sql)",
@@ -214,7 +214,7 @@
   "file": "nora/language/proactive.py",
   "old": "        if not any(room.home for room in rooms):",
   "new": "        if False:",
-  "target": "tests/unit/test_proactive_adaptor.py -k a_workspace_with_no_home_room_renders_nothing"
+  "target": "tests/unit/test_proactive_adaptor.py -k a_unit_with_no_home_room_renders_nothing"
  },
  {
   "name": "D10 (revised #136) the slot is hourly; the check decides what renders",
@@ -247,9 +247,9 @@
  {
   "name": "audit: an unreachable note is a wiring gap, not a retirement",
   "file": "nora/app/proactive_screen.py",
-  "old": "                row.id, note_id, convo.workspace,\n            )\n            return ReminderState.FAILED, FAILED_ERROR",
-  "new": "                row.id, note_id, convo.workspace,\n            )\n            return ReminderState.CANCELLED, CANCELLED_NOTE_RETIRED",
-  "target": "tests/unit/test_heartbeat_loop.py -k a_note_the_rows_workspace_cannot_reach_fails_closed"
+  "old": "                row.id, note_id, convo.unit,\n            )\n            return ReminderState.FAILED, FAILED_ERROR",
+  "new": "                row.id, note_id, convo.unit,\n            )\n            return ReminderState.CANCELLED, CANCELLED_NOTE_RETIRED",
+  "target": "tests/unit/test_heartbeat_loop.py -k a_note_the_rows_unit_cannot_reach_fails_closed"
  },
  {
   "name": "audit: the act runner is gated on the home room, not the adaptor",
@@ -273,11 +273,11 @@
   "target": "tests/unit/test_proactive_evals.py -k a_silent_failure_behind_a_silent_act_turn_is_an_error"
  },
  {
-  "name": "#136 an unchanged workspace renders nothing",
+  "name": "#136 an unchanged unit renders nothing",
   "file": "nora/language/proactive.py",
   "old": "        if reason in (\"unchanged\", \"held_quiet\"):\n            self._shown[key] = _Shown({}, {})\n            return \"\"",
   "new": "        if False:\n            self._shown[key] = _Shown({}, {})\n            return \"\"",
-  "target": "tests/unit/test_proactive_adaptor.py -k an_unchanged_workspace_renders_nothing_the_same_day"
+  "target": "tests/unit/test_proactive_adaptor.py -k an_unchanged_unit_renders_nothing_the_same_day"
  },
  {
   "name": "#136 a background revision is not a change",

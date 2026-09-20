@@ -53,6 +53,7 @@ class _StubSource:
         self._related = dict(related or {})
         self.resolved: list[str] = []
         self.related_calls: list[str] = []
+        self.refreshed = 0
 
     async def resolve(self, *, query_or_url: str) -> Sequence[ResolvedTrack]:
         self.resolved.append(query_or_url)
@@ -66,6 +67,12 @@ class _StubSource:
     async def related(self, *, locator: str) -> Sequence[ResolvedTrack]:
         self.related_calls.append(locator)
         return self._related.get(locator, ())
+
+    async def refresh_session(self) -> None:
+        # Counted, not ignored: whether the stale-stream retry discards the
+        # source session BEFORE re-resolving is the whole difference between
+        # a retry and a second helping of the same broken answer.
+        self.refreshed += 1
 
 
 class _FakeVoiceSession:

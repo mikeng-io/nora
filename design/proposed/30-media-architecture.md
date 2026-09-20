@@ -241,7 +241,7 @@ tool, `images_lookup`/`images_resend` tools, composition wiring
 5. Tools: `images_lookup`/`images_resend` become `media_search`/`media_send`
    (thin wrappers with the scope filter), `media_fetch` re-roots to the
    unified store + conversation scope. **Rename is NOT free:**
-   `nora/agent/dreamer.py:190-196` `WORKSPACE_SAFE_TOOLS` hand-lists
+   `nora/agent/dreamer.py:190-196` `UNIT_SAFE_TOOLS` hand-lists
    `"images_lookup"` and `tests/unit/test_tool_registry.py` pins the tool
    names — both move with the rename.
 6. Tests: update contract + tool + registry tests; add collision/scope tests

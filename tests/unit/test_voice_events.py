@@ -55,6 +55,12 @@ class _StubManager:
         self.calls.append(f"track-finished:{guild_id}:{playback_id}")
         return playback_id == PLAYBACK
 
+    async def on_stream_failed(
+        self, guild_id: str, *, playback_id: str | None = None, reason: str | None = None,
+    ) -> bool:
+        self.calls.append(f"stream-failed:{guild_id}:{playback_id}:{reason}")
+        return playback_id == PLAYBACK
+
     async def on_voice_death(self, guild_id: str, *, generation: str | None = None) -> None:
         self.calls.append(f"voice-death:{guild_id}:{generation}")
 
@@ -66,7 +72,7 @@ class _StubManager:
 
 async def _consumer() -> tuple[VoiceEventConsumer, _StubManager, VoiceControllerHub]:
     manager = _StubManager()
-    hub = VoiceControllerHub(_StubClient())
+    hub = VoiceControllerHub({GUILD: _StubClient()})
     await hub.join(GUILD, "cortez-1")
     return VoiceEventConsumer(manager, hub), manager, hub
 
@@ -179,7 +185,17 @@ async def test_a_stale_track_finished_never_advances():
         assert (status, payload["status"]) == (200, "stale"), playback_id
 
 
-async def test_stream_failed_advances_past_the_failed_track():
+async def test_stream_failed_is_its_own_transition_not_a_track_end():
+    """A track that failed to START has not finished, so this must NOT reach
+    `on_track_finished`. It did until 2026-09-18, and routing a failure to
+    the advance is what made one rejected CDN address cost a whole session:
+    every failure advanced, the next track resolved through the same broken
+    source session and failed identically, and autoplay emptied the queue
+    into silence in about a minute (design/voice-channel/07 §5, audit B14).
+
+    The reason is forwarded because the manager logs it — a failure whose
+    cause is unreadable is the thing that made this take a live incident to
+    find."""
     consumer, manager, _ = await _consumer()
 
     status, _ = await consumer.consume(
@@ -187,7 +203,7 @@ async def test_stream_failed_advances_past_the_failed_track():
     )
 
     assert status == 200
-    assert manager.calls == [f"track-finished:{GUILD}:{PLAYBACK}"]
+    assert manager.calls == [f"stream-failed:{GUILD}:{PLAYBACK}:ffmpeg-exit-1"]
 
 
 async def test_a_stale_stream_failed_never_advances():
@@ -260,7 +276,7 @@ async def test_an_event_seq_gap_is_warned_about(caplog):
         "seq gap" in record.message and "guild-1" in record.message
         for record in caplog.records
     )
-    assert hub.last_event_seq == 5, (
+    assert hub.last_event_seq(GUILD) == 5, (
         "a SUCCESSFUL delivery moves the bookmark; the gap warning compared "
         "against the previous one"
     )
@@ -272,6 +288,30 @@ async def test_a_failed_delivery_does_not_move_the_seq_bookmark():
 
     await consumer.consume(_event("track-finished", playback_id=PLAYBACK, event_seq=3))
 
-    assert hub.last_event_seq is None, (
+    assert hub.last_event_seq(GUILD) is None, (
         "a failed delivery stays retryable — its seq is not consumed either"
+    )
+
+
+async def test_an_event_for_a_guild_with_no_controller_is_refused():
+    """THE HOLE THIS CLOSES (found by review, 2026-09-17). This route has no
+    auth by design — its only caller is a controller on the private compose
+    network. The hub's seq bookmark became a per-guild DICT with multi-guild,
+    where a scalar used to be, and nothing checked the `guild_id` against the
+    configured controllers: every distinct value a caller invented added a
+    permanent entry to a map keyed by request input.
+
+    It was also fail-OPEN — an event for a guild nora can do nothing about was
+    answered `200 ok`."""
+    consumer, manager, hub = await _consumer()
+
+    status, payload = await consumer.consume(
+        _event("speech-finished", guild_id="a-guild-nobody-configured", event_seq=1),
+    )
+
+    assert status == 400
+    assert payload == {"error": "unknown guild"}
+    assert manager.calls == [], "nothing was acted on"
+    assert hub.last_event_seq("a-guild-nobody-configured") is None, (
+        "no bookmark was created for an unknown guild"
     )
