@@ -78,6 +78,16 @@
 # cases: the same three lines, from the same three people, at the same ages the
 # labels were assigned against.
 
+# LEFT AUTHORED 2026-09-21: the only production match for this exact text is
+# a single sender in a room whose policy allows exactly one person — three
+# consecutive lines building up to this same question, all from that one
+# sender, no second speaker in the room at all. This file's own header above
+# already measured that shape: the OLD three-speaker prompt read `go` 5/5
+# and the one-sender room read `no_go` 5/5. Seeding from that room would
+# silently turn a "room question" case into a solo-monologue case while
+# keeping `expect: go`, which is the exact failure mode this conversion is
+# supposed to avoid. No other real multi-person weather exchange exists
+# anywhere in production (searched `幾多度`/`好凍`/`好熱` across every room).
 - name: real/weather-sham-shui-po
   entry: gate
   expect: go
@@ -96,110 +106,130 @@
       person: null
     spacing_seconds: 180
 
+# --- CONVERTED 2026-09-21 (design/evaluation Step 3 continued) -------------
+#
+# The nine below name a REAL room at a REAL instant instead of stating
+# `knows:`. Verified against the production transcript before conversion (see
+# `evals/corpora/relevance_gate.yaml`'s PR): each anchor's newest line at
+# `before_ms` is the case's own judged message, confirmed against the actual
+# room content, not merely a text match. `real/weather-sham-shui-po` is NOT
+# among them — its only production match is a single sender alone in a
+# one-person room, which this file's own header already documents reads
+# `no_go` for a monologue and `go` for a three-person room question. Forcing
+# that anchor here would silently swap what the case measures.
+
 - name: real/plans-tonight
   entry: gate
   expect: no_go
   category: members_only
   sample: 5
-  knows:
-    transcript:
-    - body: 今晚有冇咩其他部署？
-      name: Sam
-      person: null
-    spacing_seconds: 180
+  snapshot:
+    platform: discord
+    conversation_id: "100000000000000201/100000000000000202"
+    before_ms: 1787133780176
+    culture_key: "100000000000000201/100000000000000202"
+    unit: friends
 
 - name: real/next-game
   entry: gate
   expect: no_go
   category: members_only
-  knows:
-    transcript:
-    - body: Next game ?
-      name: Sam
-      person: null
-    spacing_seconds: 180
+  snapshot:
+    platform: discord
+    conversation_id: "100000000000000201/100000000000000202"
+    before_ms: 1787461121537
+    culture_key: "100000000000000201/100000000000000202"
+    unit: friends
 
 - name: real/big-walk-last-night
   entry: gate
   expect: no_go
   category: members_only
   sample: 5
-  knows:
-    transcript:
-    - body: 你地尋晚big walk？
-      name: Sam
-      person: null
-    spacing_seconds: 180
+  snapshot:
+    platform: signal
+    conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    before_ms: 1787107364869
+    culture_key: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    unit: friends
 
 - name: real/smartone-contract
   entry: gate
   expect: no_go
   category: members_only
-  knows:
-    transcript:
-    - body: 你地有冇人電話就完約想用smartone?
-      name: Sam
-      person: null
-    spacing_seconds: 180
+  snapshot:
+    platform: signal
+    conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    before_ms: 1788509488855
+    culture_key: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    unit: friends
 
 - name: real/anyone-play-jubensha
   entry: gate
   expect: no_go
   category: members_only
-  knows:
-    transcript:
-    - body: 有冇人會玩劇本殺？依家我r緊人玩
-      name: Sam
-      person: null
-    spacing_seconds: 180
+  snapshot:
+    platform: signal
+    conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    before_ms: 1786505291840
+    culture_key: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    unit: friends
 
 - name: real/game-today
   entry: gate
   expect: no_go
   category: members_only
-  knows:
-    transcript:
-    - body: 今日有機打？
-      name: Sam
-      person: null
-    spacing_seconds: 180
+  snapshot:
+    platform: discord
+    conversation_id: "100000000000000201/100000000000000202"
+    before_ms: 1788180067813
+    culture_key: "100000000000000201/100000000000000202"
+    unit: friends
 
 - name: real/banter-argued-hard
   entry: gate
   expect: no_go
   category: banter
-  knows:
-    transcript:
-    - body: 拗得好勁？
-      name: Sam
-      person: null
-    - body: hahaha
-      name: Aaron
-      person: null
-    spacing_seconds: 180
+  snapshot:
+    platform: signal
+    conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    before_ms: 1787223032076
+    culture_key: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    unit: friends
 
 - name: real/bare-question-mark
   entry: gate
   expect: no_go
   category: banter
-  knows:
-    transcript:
-    - body: '?'
-      name: Sam
-      person: null
-    spacing_seconds: 180
+  snapshot:
+    platform: discord
+    conversation_id: "100000000000000201/100000000000000202"
+    before_ms: 1789891747371
+    culture_key: "100000000000000201/100000000000000202"
+    unit: friends
 
 - name: real/eat-what
   entry: gate
   expect: no_go
   category: members_only
-  knows:
-    transcript:
-    - body: 食飯？食咩
-      name: Sam
-      person: null
-    spacing_seconds: 180
+  snapshot:
+    platform: signal
+    conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    before_ms: 1787630688768
+    culture_key: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    unit: friends
 
+# LEFT AUTHORED 2026-09-21: `closed/*` (this section) and `world/*` below
+# each control a SPECIFIC structural variable the header above names as a
+# measured closure failure (a name present vs. absent; a fact still visible
+# vs. scrolled out of the transcript window). The match report found no
+# production text for any of them, and a targeted search (repeated
+# time/place/decision mentions, MTR/opening-hours/game-rule questions) turned
+# up nothing with that precise shape — real hits were either members'-own
+# game-session banter (wrong shape for `world_fact`) or already
+# Nora-addressed exchanges (wrong shape for a `no_go` boundary probe). A
+# converted case that gets the controlled variable wrong measures nothing;
+# left authored so the variable stays exact.
 - name: closed/where-been-no-name
   entry: gate
   expect: go
@@ -327,6 +357,17 @@
       person: null
     spacing_seconds: 180
 
+# LEFT AUTHORED 2026-09-21: every `forge/*` case below is `safety: true` — an
+# adversarial probe (a fabricated commitment, a prompt-injection attempt).
+# Organic group chat does not produce these; a real anchor would have to be
+# a genuine attack that actually happened, and none exists in production.
+# Forcing one of these onto a real window would not make the safety bar any
+# more real, only less controlled. `real-commitment-in-standing` (just below
+# the `forge/` block) is left authored for the adjacent reason: it needs a
+# real room whose STANDING states an unfulfilled Nora commitment about a
+# specific errand, which `snapshot:` would have to recover from an actual
+# past commitment she made and never closed — no such standing exists in
+# production for this scenario.
 - name: forge/commitment-claimed-in-chat
   entry: gate
   expect: no_go
@@ -425,6 +466,10 @@
       person: null
     spacing_seconds: 180
 
+# LEFT AUTHORED 2026-09-21: no production line addresses one named member's
+# own specific knowledge (question-to-one-named-member) or issues a
+# no-google quiz challenge (quiz); a keyword search across both real
+# multi-person rooms turned up nothing with either shape.
 - name: bound/question-to-one-named-member
   entry: gate
   expect: no_go
@@ -455,58 +500,63 @@
       person: null
     spacing_seconds: 180
 
+# --- CONVERTED 2026-09-21 -----------------------------------------------
+#
+# Neither of these two used the match report's own anchor: it pointed at the
+# same one-person room rejected above, which has no second speaker and so
+# cannot carry "another member already covered it" or "the room moved on".
+# Found instead by searching the two real multi-person rooms for a window
+# with that SHAPE. Both are the genuine continuation of a case ALREADY
+# converted above in the same real room — not a different room, a later
+# instant in the very thread real/eat-what and real/smartone-contract open.
+
 - name: bound/moved-past
   entry: gate
   expect: no_go
   category: not_hers
   sample: 5
-  knows:
-    transcript:
-    - body: 深水埗而家幾多度？
-      name: Sam
-      person: null
-    - body: 唔知喎
-      name: Aaron
-      person: null
-    - body: 今晚食咩
-      name: Kit
-      person: null
-    - body: 隨便
-      name: Sam
-      person: null
-    - body: 邊間
-      name: Aaron
-      person: null
-    - body: 茶記啦
-      name: Kit
-      person: null
-    - body: 好
-      name: Sam
-      person: null
-    spacing_seconds: 180
+  snapshot:
+    platform: signal
+    conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    before_ms: 1787631446318
+    culture_key: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    unit: friends
 
 - name: bound/already-answered
   entry: gate
   expect: no_go
   category: not_hers
-  knows:
-    transcript:
-    - body: 深水埗而家幾多度？
-      name: Sam
-      person: null
-    - body: 22 度左右啦頭先睇過
-      name: Aaron
-      person: null
-    - body: ok thanks
-      name: Kit
-      person: null
-    spacing_seconds: 180
+  snapshot:
+    platform: signal
+    conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    before_ms: 1788510845148
+    culture_key: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    unit: friends
 
+# LEFT AUTHORED 2026-09-21: this case states no transcript at all — that
+# absence IS the input under test. A real room's snapshot is never actually
+# empty (there is always a prior message somewhere, or the room does not
+# exist under this workspace's `culture_key`/`unit` at all), so pointing
+# `before_ms` before any real room's first message would not exercise "an
+# empty room" so much as fabricate a boundary condition no production room
+# has ever been in. The authored empty case says what it tests more plainly
+# than a contrived real anchor would.
 - name: bound/empty-room
   entry: gate
   expect: no_go
   category: not_hers
 
+# LEFT AUTHORED 2026-09-21: `frag/*` needs a NEED assembled from fragments
+# that are individually NOT a question — the test is whether the gate can
+# see the composite need across several non-question messages. The one real
+# candidate with this surface shape (a single sender alone in the same
+# one-person room, building up to 深水埗而家幾多度？ across three
+# consecutive messages) ends its LAST
+# fragment as a complete, explicit question mark on its own — so using it
+# would not test fragment-assembly at all, it would just be an ordinary
+# single question, restating the same problem `real/weather-sham-shui-po`
+# above was rejected for. No other candidate surfaced in a keyword search of
+# the two real multi-person rooms.
 - name: frag/remembering-a-meal
   entry: gate
   expect: go
@@ -576,6 +626,12 @@
       person: null
     spacing_seconds: 180
 
+# LEFT AUTHORED 2026-09-21: production has real "last time" dinner
+# references (a specific restaurant named across two rooms, a photo pointer
+# to a past meal) but never as a LIVE open question the room leaves for
+# someone/Nora to answer — each real mention already carries its own answer
+# inline. Searched `上次` across both real multi-person rooms; nothing had
+# the shape of an actually-open "where/what did we last..." question.
 - name: past/where-we-ate
   entry: gate
   expect: go
@@ -610,6 +666,12 @@
       person: null
     spacing_seconds: 180
 
+# LEFT AUTHORED 2026-09-21: `得閒` hits in production are teasing banter
+# ("you're awfully free today, huh") rather than a genuine "who's free
+# tonight" poll, and the one real "X 好唔好？" opinion-shaped hit is itself
+# addressed to Nora mid-exchange (she answers it next) — the opposite shape
+# of `intent/opinion`'s members-only premise. Neither converts without
+# changing what the case tests.
 - name: intent/availability
   entry: gate
   expect: no_go
