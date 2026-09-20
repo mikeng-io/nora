@@ -491,6 +491,14 @@ async def know(
                 f"subject knows ({sorted(known)}); it would be written and "
                 "never read"
             )
+        # Honcho requires `target` to already exist as a peer in this
+        # workspace, and `workspace_for()` (obtain.py) hands every case a
+        # FRESH workspace of its own — so unlike production, where a peer is
+        # always created by a real `feed()` call before anyone concludes
+        # about them, nothing here has created `peer` yet. Skipping this
+        # 404s the write and this loop's fail-loud check misreports it as
+        # Honcho refusing a well-formed call.
+        await subject.deps.memory.ensure_peer(peer_id=peer)
         for line in lines:
             if not await subject.deps.memory.conclude(
                 peer_id=subject.cfg.memory.ai_peer, content=line, target=peer,
