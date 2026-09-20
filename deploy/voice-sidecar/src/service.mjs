@@ -88,7 +88,18 @@ export function createJoinVoice({ joinImpl, createPumpImpl, createPlayerImpl, lo
     try {
       joined = await joinImpl(channelId);
       const player = createPlayerImpl();
-      joined.connection.subscribe(player);
+      // `subscribe()` returns undefined instead of throwing when the
+      // connection can't take a subscriber (e.g. already destroyed) — with
+      // NoSubscriberBehavior.Pause that failure was previously invisible:
+      // ffmpeg runs, decodes, never stalls, and the player just sits
+      // AutoPaused with nothing reaching Discord (measured 2026-09-20,
+      // guild 100000000000000201 — one `play` log, no error, no sound).
+      const subscription = joined.connection.subscribe(player);
+      if (!subscription) {
+        logFn('error', { event: 'subscribe_failed', channel_id: channelId });
+      } else {
+        logFn('subscribe', { ok: true, channel_id: channelId });
+      }
 
       joined.bus.on('listening', (userId) => {
         logFn('listening', { user_id: userId, channel_id: channelId });

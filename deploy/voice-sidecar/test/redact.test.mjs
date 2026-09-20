@@ -48,7 +48,7 @@ test('the play log carries the redacted stream_url, never the signed one', async
   arbiter.playMusic({ streamUrl: 'https://cdn.example.com/track?expire=9&signature=topsecret' });
   procs[0].data();
   await tick();
-  const playLogs = logs.filter((l) => l.event === 'play');
+  const playLogs = logs.filter((l) => l.event === 'play_requested');
   assert.ok(playLogs.length >= 1);
   const serialized = JSON.stringify(logs);
   assert.ok(!serialized.includes('topsecret'));
@@ -103,7 +103,7 @@ test('play_latency_ms is measured from request arrival, not first ffmpeg bytes',
   procs[0].data();
   clock.advance(50); // first-bytes-to-player time
   await tick();
-  const play = logs.filter((l) => l.event === 'play' && l.play_latency_ms !== undefined);
+  const play = logs.filter((l) => l.event === 'play');
   assert.equal(play.length, 1);
   assert.equal(play[0].play_latency_ms, 850); // includes the 800ms before first bytes
 });

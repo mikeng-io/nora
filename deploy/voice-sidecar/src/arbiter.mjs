@@ -488,11 +488,48 @@ export function createArbiter({
     }
   }
 
+  // AutoPaused has no other listener anywhere in this file: `.play()`
+  // succeeding is not the same as Discord receiving audio, and a silent
+  // AutoPause (no subscriber, or a subscription that stopped holding) fires
+  // neither 'idle' nor 'error' — ffmpeg keeps decoding, the stall watch
+  // keeps seeing bytes, and `state` here stays 'playing' while nothing is
+  // audible. Logged at 'error' level so it doesn't hide next to routine
+  // buffering/playing/paused transitions.
+  //
+  // subscribers/playable distinguish the two ways in: 0 subscribers means
+  // nothing ever held the subscription (or it was dropped); subscribers > 0
+  // with 0 playable means it's held but that connection isn't Ready. Without
+  // these two counts the line says only THAT it autopaused, not why.
+  function onPlayerStateChange(oldState, newState) {
+    if (oldState.status === newState.status) return;
+    const fields = {
+      from: oldState.status,
+      to: newState.status,
+      // null during music (no active speech item to attribute the
+      // transition to) rather than the previous music playback_id, which
+      // suspendMusic() clears before this can fire for a speech preemption.
+      playback_id: activeKind === 'music' ? (slot?.playbackId ?? null) : null,
+      kind: activeKind,
+      request_id: activeKind === 'speech' ? (speechActive?.requestId ?? null) : null,
+    };
+    if (newState.status === 'autopaused') {
+      log('error', {
+        event: 'player_autopaused',
+        ...fields,
+        subscribers: player?.subscribers?.length ?? null,
+        playable: player?.playable?.length ?? null,
+      });
+    } else {
+      log('player_state', fields);
+    }
+  }
+
   function attach(p) {
     if (player) detach();
     player = p;
     player.on('idle', onPlayerIdle);
     player.on('error', onPlayerError);
+    player.on('stateChange', onPlayerStateChange);
   }
 
   // Terminal teardown (exit / voice-death): everything stops, no events.
@@ -510,6 +547,7 @@ export function createArbiter({
     if (player) {
       player.removeListener('idle', onPlayerIdle);
       player.removeListener('error', onPlayerError);
+      player.removeListener('stateChange', onPlayerStateChange);
       try {
         player.stop();
       } catch {
@@ -540,7 +578,15 @@ export function createArbiter({
       slot = s;
       startFfmpeg(s, 'starting');
     }
-    log('play', {
+    // Named distinctly from the 'play' logged in onFirstBytes: this one
+    // fires the instant the command is accepted, before ffmpeg even spawns.
+    // It used to share the 'play' event name with the one that confirms the
+    // AudioPlayer reached 'Playing' — collapsing "we tried" and "the decoder
+    // produced bytes" into one line only a timestamp diff could tell apart.
+    // NOTE: 'Playing' is still not proof Discord received audio — that
+    // transition fires independent of subscribers; player_autopaused
+    // (onPlayerStateChange, below) is the closer-to-ground-truth signal.
+    log('play_requested', {
       playback_id: s.playbackId,
       request_id: s.requestId,
       url: redactUrl(s.streamUrl),

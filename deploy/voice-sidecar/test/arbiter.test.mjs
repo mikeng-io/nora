@@ -553,3 +553,63 @@ test('a fresh connection starts music at the quiet default, not full scale', () 
   assert.equal(player.current.volume.value, DEFAULT_VOLUME_PERCENT / 100);
   assert.equal(DEFAULT_VOLUME_PERCENT, 25, 'the operator asked for 25%');
 });
+
+// Measured 2026-09-20: ffmpeg alive and decoding, the stall watch fed bytes
+// the whole time, no ffmpeg_error/exit — and no sound, because the player
+// went AutoPaused (NoSubscriberBehavior.Pause) with nothing here noticing.
+// Neither 'idle' nor 'error' fires on that transition, so it was invisible
+// until now.
+test('the player going AutoPaused mid-track is logged loudly (error level), with the counts that explain why', async () => {
+  // [level, fields] tuples, not a flattened object: 'error' is the
+  // POSITIONAL argument that routes to stderr in service.mjs's log(), and
+  // collapsing it into the same object as the rendered event name let a
+  // mutant that dropped the error-level routing pass unnoticed.
+  const logs = [];
+  const { arbiter, player, playToPlaying } = makeArbiter({
+    log: (level, fields) => logs.push([level, fields]),
+  });
+  const { playbackId } = playToPlaying();
+  assert.equal(arbiter.state(), 'playing');
+
+  // 0 subscribers / 0 playable: the exact split the log needs to answer
+  // "never held" vs "held but the connection wasn't Ready" without a live
+  // repro. discord.js's real AudioPlayer exposes both; the fake doesn't
+  // model them, so they're set here to prove they pass through untouched.
+  player.subscribers = [];
+  player.playable = [];
+  const oldState = player.state;
+  player.state = { status: 'autopaused' };
+  player.emit('stateChange', oldState, player.state);
+
+  const autopaused = logs.filter(([level, f]) => level === 'error' && f.event === 'player_autopaused');
+  assert.equal(autopaused.length, 1);
+  const [, fields] = autopaused[0];
+  assert.equal(fields.playback_id, playbackId);
+  assert.equal(fields.to, 'autopaused');
+  assert.equal(fields.kind, 'music');
+  assert.equal(fields.subscribers, 0);
+  assert.equal(fields.playable, 0);
+});
+
+test('an AutoPause during a spoken reply is attributed to the speech request, not the suspended track', async () => {
+  const logs = [];
+  const { arbiter, player, playToPlaying } = makeArbiter({
+    log: (level, fields) => logs.push([level, fields]),
+  });
+  playToPlaying(); // music playing, will be suspended by the speech below
+  arbiter.enqueueSpeech({ audio: Buffer.from('tts'), mediaType: 'audio/mpeg', requestId: 'r1' });
+  assert.equal(arbiter.state(), 'suspended');
+
+  const oldState = player.state;
+  player.state = { status: 'autopaused' };
+  player.emit('stateChange', oldState, player.state);
+
+  const autopaused = logs.filter(([level, f]) => level === 'error' && f.event === 'player_autopaused');
+  assert.equal(autopaused.length, 1);
+  const [, fields] = autopaused[0];
+  assert.equal(fields.kind, 'speech');
+  assert.equal(fields.request_id, 'r1');
+  // suspendMusic() already cleared `slot` — must not misattribute to the
+  // music track that's no longer actually the active kind.
+  assert.equal(fields.playback_id, null);
+});

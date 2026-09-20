@@ -12,12 +12,21 @@ import { createJoinVoice } from '../src/service.mjs';
 function makeSeams() {
   const pumps = [];
   const joined = [];
-  const seams = { joinError: null, playerError: null, pumps, joined };
+  // [level, fields] — level is the POSITIONAL arg (what routes console.log
+  // vs console.error in service.mjs's log()); fields.event, if present,
+  // overrides the rendered event name. Kept as tuples, not a flattened
+  // object, so a test can tell "logged at error level" apart from "the
+  // rendered event name happens to be 'subscribe_failed'" — collapsing
+  // those two was exactly the gap that let 5/6 mutants survive review.
+  const logs = [];
+  const seams = { joinError: null, playerError: null, pumps, joined, logs };
   seams.seam = createJoinVoice({
     joinImpl: async () => {
       if (seams.joinError) throw seams.joinError;
       const j = {
-        connection: { subscribe: () => {} },
+        // Truthy: a real PlayerSubscription. () => {} would make every join
+        // here look like the subscribe_failed case to the new instrument.
+        connection: { subscribe: () => ({}) },
         bus: new EventEmitter(),
         leaveCount: 0,
         leave: async () => {
@@ -40,7 +49,7 @@ function makeSeams() {
       if (seams.playerError) throw seams.playerError;
       return new EventEmitter();
     },
-    log: () => {},
+    log: (level, fields) => logs.push([level, fields]),
   });
   return seams;
 }
@@ -50,6 +59,12 @@ test('a failed join closes the pump it created and leaves the previous pump alon
   await s.seam.joinVoice('c1');
   const working = s.seam.currentPump();
   assert.equal(working, s.pumps[0]);
+  // The success half of the subscribe instrument: its absence is what tells
+  // an operator the call never even ran, so it needs its own coverage, not
+  // just an assertion that the failure log stays silent on the happy path.
+  assert.ok(
+    s.logs.some(([level, fields]) => level === 'subscribe' && fields.ok === true && fields.channel_id === 'c1'),
+  );
 
   s.joinError = new Error('discord down');
   await assert.rejects(s.seam.joinVoice('c1'), /discord down/);
@@ -76,4 +91,38 @@ test('a failure after the discord join closes the pump AND tears down the half-b
   assert.equal(s.pumps[0].closeCount, 1); // pump closed
   assert.equal(s.joined[0].leaveCount, 1); // connection + client destroyed via leave()
   assert.equal(s.seam.currentPump(), null);
+});
+
+// Measured 2026-09-20: a subscribe() that doesn't take hold (with
+// NoSubscriberBehavior.Pause) leaves ffmpeg decoding, the stall watch happy,
+// and nothing reaching Discord — no error anywhere. `subscribe()` returning
+// falsy is the one seam-visible signal of that failure; it must not be
+// silently discarded the way the join itself still succeeds.
+test('a subscribe() that returns falsy is logged as subscribe_failed, not swallowed', async () => {
+  const logs = [];
+  const seam = createJoinVoice({
+    joinImpl: async () => ({
+      connection: { subscribe: () => undefined },
+      bus: new EventEmitter(),
+      leave: async () => {},
+    }),
+    createPumpImpl: () => {
+      const pump = () => {};
+      pump.close = () => {};
+      return pump;
+    },
+    createPlayerImpl: () => new EventEmitter(),
+    log: (level, fields) => logs.push([level, fields]),
+  });
+  await seam.joinVoice('c1');
+  // Both halves: the rendered name (what a reader filters logs by) AND the
+  // positional level (what routes it to stderr, per service.mjs's log()).
+  // Asserting only the rendered name let a mutant that renamed the level to
+  // 'subscribe_failed' directly (silently dropping the 'error' routing)
+  // pass; asserting only the level would miss a mutant that mislabeled the
+  // rendered event.
+  assert.ok(
+    logs.some(([level, fields]) => level === 'error' && fields.event === 'subscribe_failed' && fields.channel_id === 'c1'),
+  );
+  assert.ok(!logs.some(([level]) => level === 'subscribe')); // success log did not also fire
 });
