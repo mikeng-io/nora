@@ -121,7 +121,7 @@ async def _staged(
         stmt = sa.select(
             NOTE_CANDIDATE.c.title, NOTE_CANDIDATE.c.anchor_date,
             NOTE_CANDIDATE.c.message_ids, NOTE_CANDIDATE.c.status,
-        ).where(NOTE_CANDIDATE.c.workspace == workspace)
+        ).where(NOTE_CANDIDATE.c.unit == workspace)
         async with engine.begin() as conn:
             rows = (await conn.execute(stmt)).all()
         return tuple(
@@ -175,18 +175,18 @@ async def dream(
         )
 
     # THE KEY DEPENDS ON THE ADAPTOR, and the loop resolves it the same way
-    # (`nora/app/runtime.py:965`, `_keys_for`): a `key_kind == "scope"` adaptor
-    # is keyed by the ROOM, a `key_kind == "workspace"` one by the WORKSPACE.
+    # (`nora/app/runtime.py:976`, `_keys_for`): a `key_kind == "scope"` adaptor
+    # is keyed by the ROOM, a `key_kind == "unit"` one by the UNIT.
     #
     # Keying everything by the room was silently wrong for the proactive
-    # adaptor: it reads `notes.standing(workspace=key)` and its home-room check
-    # walks that workspace's rooms, so a conversation id found no home room and
+    # adaptor: it reads `notes.standing(unit=key)` and its home-room check
+    # walks that unit's rooms, so a conversation id found no home room and
     # the pass returned before rendering anything. It answered `nothing_found`
     # with an empty diff — which every case expecting `none` scored as a PASS
     # until the decline reason was carried out.
     workspace = subject.cfg.memory.workspace_id
     _, conversation_id = room or subject.room
-    key = workspace if chosen.key_kind == "workspace" else conversation_id
+    key = workspace if chosen.key_kind == "unit" else conversation_id
     before = await _notebook(subject, workspace)
     ok_before = _samples(subject, "ok")
     failed_before = _samples(subject, "unavailable")

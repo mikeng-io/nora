@@ -535,6 +535,15 @@ def _as_nora_case(case: Case, spec: Spec) -> Any:
         # hand-written S4/S5/S6 case this session wrote left `category`
         # unset, so the drop stayed latent until a corpus case set it.
         category=str(md.get("category") or ""),
+        # Found live, 2026-09-20, porting `proactive_act.yaml`: dropping
+        # the rest of `metadata` here (only `expect`/`knows`/`category`
+        # were read off it) silently emptied `evals.rebuilt.entry.
+        # proactive_act`'s own `case.metadata["row"]` read — every ported
+        # act case refused with "an act case must state the row it fires
+        # on" despite stating one. `NoraCase.metadata`'s own docstring is
+        # "whatever else the corpus recorded, carried verbatim" — this
+        # carried none of it.
+        metadata=md,
     )
 
 
