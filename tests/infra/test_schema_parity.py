@@ -78,6 +78,15 @@ EXPECTED_DESC_INDEXES = {
     # presence_trips (Tier 5 routes, design/27 §4, issue #6): the identically
     # alembic-check-blind `(subject_id, started_ts DESC)` index.
     "idx_presence_trips_subject_started": {"subject_id": False, "started_ts": True},
+    # standing_revision (0059): `(platform, conversation_id, updated_at DESC,
+    # id DESC)` — the backwards scan the as-of read makes. Two DESC columns
+    # rather than one, so this is also the row that proves the `indoption` bit
+    # check reads PER COLUMN rather than taking the index's first answer for
+    # all of them.
+    "idx_standing_revision_room_updated": {
+        "platform": False, "conversation_id": False,
+        "updated_at": True, "id": True,
+    },
 }
 
 

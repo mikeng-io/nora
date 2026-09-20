@@ -63,6 +63,88 @@ _NOT_A_BUILDER = {
     "nora/language/proactive.py": "reads one row's ts per room for the quiet check",
 }
 
+#: Modules that BUILD a transcript and that `_discovered_readers` structurally
+#: cannot see, because they read `messages` with their own SQL instead of
+#: calling one of the four store reads above. Each maps to the sentence a caller
+#: needs: what it renders that master rendered better, and why it is not joined.
+#:
+#: **This is not a second allowlist, it is the gate's blind spot written down.**
+#: The discovery is keyed on the record store's method NAMES; a `sa.select` over
+#: `MESSAGES` is invisible to it, so such a module passes silently — which is
+#: verbatim the failure this file's docstring says it exists to catch («never
+#: listed» is the only failure mode that has actually happened, twice). A third
+#: instance would be the same failure in a new disguise, so the entry is
+#: required rather than optional, and `test_the_unjoined_builders_are_still
+#: _unjoined_and_still_say_so` keeps it honest in BOTH directions: it goes red
+#: if the module stops reading `messages` (stale entry — delete it) and red if
+#: it starts joining (limitation closed — delete it).
+_UNJOINED_BY_OWN_SQL = {
+    "nora/infra/sql/snapshot.py": (
+        "the point-in-time reconstruction reads `messages` directly and returns "
+        "`body` as stored, so a row that had media shows the bare "
+        "`[image a3f2c1]` handle rather than what the photo was. `MediaJoin` "
+        "needs a store, a screen and a metrics sink, all above `nora.infra`; "
+        "reaching it from here would invert this module's own layering. The "
+        "limitation is stated in the module docstring and is closed by building "
+        "the reconstruction's transcript one layer up, not by importing the "
+        "join downwards."
+    ),
+}
+
+#: Modules that read `MESSAGES.c.body` with their own SQL and are NOT
+#: transcript builders — the raw-SQL mirror of `_NOT_A_BUILDER`, so
+#: `_UNJOINED_BY_OWN_SQL` stays DERIVED-CHECKED rather than a second
+#: hand-maintained list nothing scans for completeness. Without this, a raw-SQL
+#: reader added later and never listed here passes both gates silently — the
+#: exact failure this file exists to catch, one AST shape further down.
+_NOT_A_RAW_READER = {
+    # `nora/infra/sql/audit.py` DEFINES `recent`/`since`/`since_including_nora`/
+    # `unattributed` — it is the thing `_discovered_readers` finds callers of,
+    # not a caller bypassing them. Its own `MESSAGES.c.body` selects are the
+    # store's storage, not a second transcript rendered for a model.
+    "nora/infra/sql/audit.py": "defines the record store's own reads, is not a caller of them",
+}
+
+
+def _discovered_raw_message_readers(root: pathlib.Path | None = None) -> set[str]:
+    """Every module under `nora/` that reads `MESSAGES.c.body` with its own SQL
+    rather than through one of the record store's methods.
+
+    `_discovered_readers` below is keyed on the store's method NAMES, so a
+    module doing `sa.select(MESSAGES.c.body)` directly is invisible to it —
+    which is exactly how `_UNJOINED_BY_OWN_SQL` could have grown a second,
+    unenforced entry with nobody scanning for a third. Same shape as
+    `_discovered_readers`, different AST pattern.
+
+    Narrowed to the `body` column specifically, not `MESSAGES.c.<anything>`:
+    several modules query `ts`/`id`/`is_nora`/`conversation_id` for watermarks,
+    windows and indexes (`participation_measures.py`, `infra/sql/language.py`,
+    `infra/sql/participation_state.py`, `infra/sql/schema.py`'s own index
+    declarations) without ever handing a body to a model. `body` is the one
+    column media-join affects, so it is the one column that makes a module a
+    transcript builder in this file's sense.
+    """
+    base = root if root is not None else ROOT
+    found: set[str] = set()
+    for path in sorted((base / "nora").rglob("*.py")):
+        rel = path.relative_to(base).as_posix()
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:                                # pragma: no cover
+            continue
+        hit = any(
+            isinstance(node, ast.Attribute)
+            and node.attr == "body"
+            and isinstance(node.value, ast.Attribute)
+            and isinstance(node.value.value, ast.Name)
+            and node.value.value.id == "MESSAGES"
+            and node.value.attr == "c"
+            for node in ast.walk(tree)
+        )
+        if hit:
+            found.add(rel)
+    return found
+
 
 def _discovered_readers(root: pathlib.Path | None = None) -> dict[str, set[str]]:
     """Every module under `nora/` that calls one of `_TRANSCRIPT_READS`.
@@ -214,6 +296,103 @@ def test_the_builder_set_is_not_hand_maintained() -> None:
         f"these are listed but no longer read the record store: "
         f"{sorted(stale)} — delete the entry rather than leaving a list of "
         f"modules the gate silently checks nothing about."
+    )
+
+
+def test_the_unjoined_by_own_sql_set_is_not_hand_maintained() -> None:
+    """The raw-SQL mirror of `test_the_builder_set_is_not_hand_maintained`.
+
+    `_UNJOINED_BY_OWN_SQL` was added as a plain dict with no scan behind it —
+    a second allowlist of the exact kind this file's own docstring names as
+    the failure mode that has already happened twice. A module reading
+    `MESSAGES.c.body` with its own SQL and never listed in either set below
+    would pass silently: invisible to `_discovered_readers` (wrong AST shape),
+    and unmentioned in `_UNJOINED_BY_OWN_SQL` (nobody added it). This closes
+    that gap the same way `BUILDERS`/`_NOT_A_BUILDER` closes it for the
+    method-call shape.
+    """
+    discovered = _discovered_raw_message_readers()
+    classified = set(_UNJOINED_BY_OWN_SQL) | set(_NOT_A_RAW_READER)
+
+    unclassified = discovered - classified
+    assert not unclassified, (
+        f"these modules read MESSAGES.c.<column> with their own SQL and are "
+        f"neither exempted nor listed: {sorted(unclassified)}. Add a "
+        f"`_UNJOINED_BY_OWN_SQL` entry naming what a caller loses, or a "
+        f"`_NOT_A_RAW_READER` entry with the reason it is not a transcript "
+        f"builder."
+    )
+    stale = classified - discovered
+    assert not stale, (
+        f"these are listed but no longer read MESSAGES.c.<column> directly: "
+        f"{sorted(stale)} — delete the entry rather than leaving the gate "
+        f"checking nothing."
+    )
+
+
+@pytest.mark.parametrize("rel,reason", sorted(_UNJOINED_BY_OWN_SQL.items()))
+def test_the_unjoined_builders_are_still_unjoined_and_still_say_so(
+    rel: str, reason: str,
+) -> None:
+    """**The disclosure, enforced rather than written down once.**
+
+    A module reading `messages` with its own `sa.select` is a transcript
+    builder that the AST discovery above cannot see, so it neither joins nor
+    trips the classification gate — it just renders thinner prompts than master
+    did, with nothing anywhere saying so. That silence is the exact shape of
+    the defect this file was written for, which is why such a module has to be
+    listed here even though nothing forces it to be.
+
+    Four assertions, and each one can go red for its own reason:
+
+      - it still reads `messages` — otherwise the entry is stale and the honest
+        move is to delete it rather than leave the gate checking nothing;
+      - it still does NOT call one of the record store's reads — if it now
+        does, `_NOT_A_BUILDER`/`BUILDERS` is where it belongs, not here;
+      - it still does NOT import `MediaJoin` — if it does, the limitation is
+        closed and the entry is a lie;
+      - its own module docstring names the handle a caller will see, so the
+        disclosure the reader actually reaches and this list cannot drift
+        apart. The literal is the one issue #116's handles are spelled with.
+    """
+    assert reason.strip(), f"{rel} is listed with no reason"
+    source = _source(rel)
+    tree = ast.parse(source)
+
+    reads_messages = any(
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Attribute)
+        and isinstance(node.value.value, ast.Name)
+        and node.value.value.id == "MESSAGES"
+        and node.value.attr == "c"
+        for node in ast.walk(tree)
+    )
+    assert reads_messages, (
+        f"{rel} no longer selects from MESSAGES — delete its "
+        f"_UNJOINED_BY_OWN_SQL entry rather than leaving a module the gate "
+        f"silently checks nothing about"
+    )
+
+    assert rel not in _discovered_readers(), (
+        f"{rel} now calls one of the record store's transcript reads, so the "
+        f"discovery can see it: classify it in BUILDERS or _NOT_A_BUILDER and "
+        f"drop it from _UNJOINED_BY_OWN_SQL"
+    )
+
+    imports_join = any(
+        isinstance(node, ast.ImportFrom)
+        and (node.module or "").endswith("domain.media_join")
+        for node in ast.walk(tree)
+    )
+    assert not imports_join, (
+        f"{rel} now imports MediaJoin — the limitation is closed, so delete "
+        f"its _UNJOINED_BY_OWN_SQL entry and the docstring paragraph with it"
+    )
+
+    assert "[image a3f2c1]" in source, (
+        f"{rel} is exempted from the media join but its module docstring no "
+        f"longer shows a caller what they will actually see. A limitation "
+        f"nobody reads is the same as an undisclosed one."
     )
 
 

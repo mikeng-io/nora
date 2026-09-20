@@ -2222,6 +2222,88 @@ STANDING = sa.Table(
     sa.CheckConstraint("fold_count >= 0", name="standing_fold_count_is_not_negative_check"),
 )
 
+#: One position, as it stood at the moment a fold set it — the chain behind
+#: `standing`'s head, and the thing `standing` alone cannot express.
+#:
+#: **`standing` is revised in place, so without this the previous position is
+#: GONE.** Every fold is an `ON CONFLICT DO UPDATE` over one row, which is the
+#: right shape for the head (§4: one position per room, and two contradictory
+#: ones coexisting is the language tier's exact live failure) and leaves nothing
+#: at all behind it. The note tier has `note_revision` and the culture tier has
+#: `culture_revision`; this was the one model-written tier whose head had no
+#: history, which made it the one tier that could not answer "what did she hold
+#: here, then" — and one unanswerable tier makes the whole point-in-time
+#: reconstruction unanswerable.
+#:
+#: **NO foreign key, for `culture_revision`'s reason.** `standing`'s key is the
+#: composite `(platform, conversation_id)` text pair rather than a surrogate id,
+#: so the constraint would be two columns wide and would demand that the head
+#: exist before its own revision — a constraint on statement ORDER inside the
+#: fold's single transaction, not on the data. The columns are carried instead,
+#: which is also what makes the as-of read a single-table query.
+#:
+#: **`updated_at` is the fold's own instant and there is no second clock.**
+#: `note_revision.written_at` and `culture_revision.written_at` exist because
+#: their heads carry no time of their own; `standing.updated_at` already means
+#: «when this position was taken», so it is copied here and nothing else is. A
+#: second column filled from the same source would be a duplicate, and one
+#: filled from a different source would be a way for a revision to claim an
+#: instant its head never had.
+#:
+#: **Append-only by construction**: `SqlStandingStore` has one `INSERT` into
+#: this table and no `UPDATE` or `DELETE` of it anywhere, and the insert rides
+#: in the SAME transaction as the head's upsert — so a head that moved without
+#: its revision landing, or the reverse, is not a state this store can produce.
+STANDING_REVISION = sa.Table(
+    "standing_revision",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
+              server_default=sa.text("gen_random_uuid()")),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("body", sa.Text, nullable=False),
+    sa.Column("fold_count", sa.Integer, nullable=False),
+    sa.Column("updated_at", sa.BigInteger, nullable=False),
+    # Both watermarks are carried at their revision's own value, nullable
+    # exactly as on the head: `None` is the only «nothing consumed» / «never
+    # folded», and a revision that flattened either to a sentinel would read
+    # back as a watermark satisfiable by accident — the same argument migration
+    # 0037 made for the head, and the reason a reconstruction can be trusted to
+    # say which stretch a past fold had actually read.
+    sa.Column("consumed_verdict_tag", sa.Text, nullable=True),
+    sa.Column("last_folded_row_id", sa.BigInteger, nullable=True),
+    # The SAME ceiling the head carries, not a looser one: a revision holds a
+    # value the head held, so a body this table would accept and `standing`
+    # would refuse is a history recording a position that could never have been
+    # taken.
+    sa.CheckConstraint(
+        f"length(btrim(body)) > 0 and length(body) <= {STANDING_BODY_CEILING_CHARS}",
+        name="standing_revision_body_fits_the_ceiling_check",
+    ),
+    sa.CheckConstraint(
+        "fold_count >= 0",
+        name="standing_revision_fold_count_is_not_negative_check",
+    ),
+)
+
+#: The as-of read: one room's revisions, newest first. `updated_at DESC` because
+#: the question is always «the latest one at or before T», which is a backwards
+#: scan from the bound.
+#:
+#: `id DESC` is here as the index's own trailing key, and it is NOT the tie-break
+#: `SqlStandingStore.read_as_of` sorts on. `id` is `gen_random_uuid()`, so two
+#: folds of one room sharing a millisecond resolved by uuid order — which is
+#: uncorrelated with which fold came first, and measurably returned the earlier
+#: position most of the time. The read orders `updated_at DESC, fold_count DESC,
+#: id DESC` instead; this index's `(platform, conversation_id, updated_at DESC)`
+#: prefix still serves the filter and the backwards scan, and the tie-break
+#: sorts over the handful of rows that share the bound millisecond.
+IDX_STANDING_REVISION_ROOM_UPDATED = sa.Index(
+    "idx_standing_revision_room_updated",
+    STANDING_REVISION.c.platform, STANDING_REVISION.c.conversation_id,
+    sa.text("updated_at DESC"), sa.text("id DESC"),
+)
+
 # ── turn_verdict (design/dreamer-agent-loop/26-standing.md §3) ─────────────
 # The debrief's per-TURN judgement, written once and NEVER rewritten — the
 # opposite cardinality to `standing` beside it, and the split is structural

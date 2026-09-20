@@ -3,15 +3,18 @@
 Two deliberate deviations from the generated template:
 
 - `include_object` excludes `idx_messages_conv_ts`, `idx_presence_member_ts`,
-  `idx_tool_call_log_conv_ts`, `idx_presence_stays_subject_ts`, AND
-  `idx_presence_trips_subject_started`. All five are `... DESC` in production,
+  `idx_tool_call_log_conv_ts`, `idx_presence_stays_subject_ts`,
+  `idx_presence_trips_subject_started` AND
+  `idx_standing_revision_room_updated`. All six are `... DESC` in production,
   declared with `sa.text("... DESC")` in the metadata.
   Reflection returns a plain column, autogenerate compares the two as
   different, and the result is a `remove_index`/`add_index` pair on EVERY
   check, forever. Excluding them is the only way `alembic check` is usable at
   all. The ordering it can no longer see is asserted by
   `tests/infra/test_schema_parity.py` via `pg_index.indoption` — parameterised
-  over all five, so each new one is covered with no new test (design/19 §8).
+  over all six, so each new one is covered with no new test (design/19 §8).
+  **Both registrations or neither**: an index excluded here without its row in
+  `EXPECTED_DESC_INDEXES` is an index nothing checks at all.
 - **No `render_as_batch`.** That was SQLite's table-rebuild workaround for
   ALTERs it could not do in place; Postgres alters in place, and batch mode here
   would only obscure migrations. It is gone with the SQLite backend.
@@ -44,10 +47,15 @@ config = context.config
 
 
 # The DESC expression indexes autogenerate reports permanent phantom drift on —
-# see module docstring. All five are authored by hand.
+# see module docstring. All six are authored by hand.
 _DESC_EXPRESSION_INDEXES = frozenset({
     "idx_messages_conv_ts", "idx_presence_member_ts", "idx_tool_call_log_conv_ts",
     "idx_presence_stays_subject_ts", "idx_presence_trips_subject_started",
+    # standing_revision (0059). Registered WITH its row in
+    # `EXPECTED_DESC_INDEXES`, never one without the other: excluding it here
+    # alone would hide the drift and the ordering both, which is the state the
+    # exclusion exists to avoid rather than to create.
+    "idx_standing_revision_room_updated",
 })
 
 
