@@ -44,6 +44,52 @@
 # ENGAGEMENT, the expensive direction: an uninvited ~29k-token turn in a room
 # that did not call her.
 
+# --- SEEDED FROM A REAL ROOM 2026-09-21 (empty-room conversion) -------------
+#
+# Every case here used to fire into an empty room. Every one is now seeded via
+# `snapshot:` from the same real multi-person room `injections.yaml` calls
+# ROOM A -- a REAL `relevance_gate = true` room (`policy.toml`), measured
+# notes-rich (24 open notes on its unit) and standing-rich (311 chars, 11
+# folds) as of its own last real message. `expect`/`metadata` are UNCHANGED.
+# Identified here only by its `snapshot.conversation_id`, never by label or
+# roster.
+#
+# MEASURED, not assumed, and the honest finding is that this room choice is
+# STILL functionally inert for `expect: no_reply` here, for a DIFFERENT
+# reason than the empty room was:
+#
+#   `evals/rebuilt/entry.py`'s `"tag"` `EntryPoint` carries NO config
+#   overrides ("The tag path needs NOTHING turned on"), so
+#   `[relevance_gate] enabled` stays at `config.example.toml`'s shipped
+#   `false` for every case in this file, and `RelevanceGatePolicy` is wired
+#   into `CompositePolicy` ONLY when that flag is true
+#   (`nora/ingest/policy.py`'s own docstring: "Wired LAST ... and only when
+#   `[relevance_gate] enabled`"). No case here states a `config:` override, so
+#   the policy is never even consulted, real room or not.
+#
+#   Even granting that flag, `nora/app/dispatch.py`'s `Dispatcher.on_message`
+#   answers an untagged, opted-in message with
+#   `self._participation.note_message(result.message)` and returns --
+#   `note_message` is a plain SYNCHRONOUS method (`ParticipationTrigger`'s own
+#   docstring: "synchronous on the dispatcher's path and must not await"), so
+#   nothing is spawned into `subject.deps.background`. `evals.rebuilt.
+#   entry.tag()`'s `settle()` polls exactly that queue and returns `True`
+#   immediately with nothing to wait for. The quiescence window and the real
+#   Relevance Gate model call only ever run off a separate periodic sweep
+#   (`ParticipationTrigger.sweep`) that nothing in `obtain()`'s eval-subject
+#   composition schedules.
+#
+# So through THIS entry point, a real relevance-gate room cannot produce a
+# reply for any case here no matter what it is seeded with -- the "genuinely
+# contested claim" the conversion prompt anticipated does not arrive at this
+# entry point; it would need `entry: participation` (a different corpus's
+# entry, `evals/rebuilt/entry.py`'s `participation()`, which drives
+# `FirePath.speak` directly and bypasses the trigger entirely) or a change to
+# the `"tag"` `EntryPoint`/`Spec`, neither of which this conversion may touch.
+# Every `expect: no_reply` below is therefore still correct, unchanged, and
+# still structurally guaranteed -- just guaranteed by the entry point's own
+# wiring now, not by `default_policy()` omitting `relevance_gate`.
+
 config:
   engagement.trigger.text: "nora.000"
 #
@@ -77,6 +123,12 @@ cases:
     input: hey a{trigger} 你喺度未
     metadata:
       trigger: false
+    snapshot: &room_a
+      platform: signal
+      conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+      before_ms: 1789909891000
+      culture_key: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+      unit: friends
 
   - name: trailing_word_char_glued
     entry: tag
@@ -84,6 +136,7 @@ cases:
     input: '{trigger}x 聽日見'
     metadata:
       trigger: false
+    snapshot: *room_a
 
   - name: underscore_glued_both_sides
     entry: tag
@@ -91,6 +144,7 @@ cases:
     input: user_{trigger}_alias 係邊個
     metadata:
       trigger: false
+    snapshot: *room_a
 
   - name: trailing_digit_glued
     entry: tag
@@ -98,6 +152,7 @@ cases:
     input: check {trigger}1 later
     metadata:
       trigger: false
+    snapshot: *room_a
 
   - name: not_the_trigger_underscore_variant
     entry: tag
@@ -105,6 +160,7 @@ cases:
     input: nora_520 係咪你
     metadata:
       trigger: false
+    snapshot: *room_a
 
   - name: inside_a_code_span
     entry: tag
@@ -112,6 +168,7 @@ cases:
     input: '`{trigger}` 呢個字點解嚟㗎'
     metadata:
       trigger: false
+    snapshot: *room_a
 
   - name: space_inside_token_mid_word
     entry: tag
@@ -119,6 +176,7 @@ cases:
     input: nor a.520 今晚得唔得
     metadata:
       trigger: false
+    snapshot: *room_a
 
   - name: inline_code_span
     entry: tag
@@ -126,6 +184,7 @@ cases:
     input: '`{trigger}` 係咪個bot個名'
     metadata:
       trigger: false
+    snapshot: *room_a
 
   - name: fenced_code_block
     entry: tag
@@ -133,6 +192,7 @@ cases:
     input: 睇吓呢段code點解 ```{trigger}```
     metadata:
       trigger: false
+    snapshot: *room_a
 
   - name: name_inside_a_longer_word
     entry: tag
@@ -140,6 +200,7 @@ cases:
     input: we drove through So{trigger} last year
     metadata:
       trigger: false
+    snapshot: *room_a
 
   - name: missing_dot_typo
     entry: tag
@@ -147,6 +208,7 @@ cases:
     input: nora520 你今晚得唔得閒
     metadata:
       trigger: false
+    snapshot: *room_a
 
   - name: plain_no_mention
     entry: tag
@@ -154,3 +216,4 @@ cases:
     input: 今晚食咩好呢，好肚餓
     metadata:
       trigger: false
+    snapshot: *room_a

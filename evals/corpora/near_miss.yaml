@@ -51,23 +51,53 @@
 config:
   engagement.trigger.text: "nora.000"
 
+# --- SEEDED FROM A REAL ROOM 2026-09-21 (empty-room conversion) -------------
+#
+# Same conversion, same anchor and the same finding as `no_trigger.yaml`
+# (read that file's header for the full argument): all four cases here are
+# now seeded via `snapshot:` from the same real multi-person room -- a real
+# `relevance_gate = true` room measured notes-rich (24 open notes on its
+# unit) and standing-rich (311 chars, 11 folds). Identified here only by its
+# `snapshot.conversation_id`, never by label or roster. `expect` is
+# UNCHANGED, and the `{trigger}`/`{trigger_split}` substitution below is
+# untouched -- NOT hardcoded, per this file's own header warning above about
+# the 2026-08-26 incident.
+#
+# The room choice is still functionally inert for `expect: silence` here,
+# for the identical reason `no_trigger.yaml` measured: this corpus also
+# shares `entry: tag`, whose `EntryPoint` in `evals/rebuilt/entry.py` never
+# turns on `[relevance_gate] enabled`, and even granting that flag,
+# `ParticipationTrigger.note_message` is a synchronous bookkeeping call that
+# spawns nothing `settle()` can observe. Every `expect: silence` below stays
+# correct and structurally guaranteed, for the entry point's reason rather
+# than the empty room's.
+
 cases:
   - name: near_miss_trailing_word_char
     entry: tag
     expect: silence
     input: '{trigger}1 what time we eating'
+    snapshot: &room_a
+      platform: signal
+      conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+      before_ms: 1789909891000
+      culture_key: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+      unit: friends
 
   - name: near_miss_leading_word_char
     entry: tag
     expect: silence
     input: x{trigger} anyone there?
+    snapshot: *room_a
 
   - name: near_miss_broken_spacing
     entry: tag
     expect: silence
     input: '{trigger_split} typo?'
+    snapshot: *room_a
 
   - name: near_miss_code_span
     entry: tag
     expect: silence
     input: see `{trigger}` mentioned in the docs
+    snapshot: *room_a

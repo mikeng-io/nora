@@ -46,6 +46,31 @@
 # in `metadata.trigger` and in a comment, which is why these two corpora had no
 # runner: an expectation nothing reads cannot be graded.
 
+# --- SEEDED FROM REAL ROOMS 2026-09-21 (empty-room conversion) --------------
+#
+# Every case here used to reply into an empty room. `entry: tag` engagement is
+# room-independent (`nora.tag.is_tagged` reads only the literal input), so
+# `expect: reply` was never at risk from an empty room -- but the reply itself
+# used to have nothing real to work with. `snapshot:` seeds a real room's
+# transcript/standing/notes/culture as of a real instant instead; `expect` and
+# `expected_output` are UNCHANGED.
+#
+# Reused the SAME three anchors `injections.yaml` measured (never guessed),
+# referred to structurally as there — ROOM A and ROOM B are the two real
+# multi-person rooms sharing one notebook (notes-rich, strong standing each);
+# ROOM C is the real single-person room (notes-poor on its own unit, but
+# real standing).
+#
+# `metadata.prefill_sufficient` (10 true / 2 false) is UNTOUCHED by this
+# conversion and is carried verbatim -- grep across the repo found nothing in
+# the live harness (`evals/backbone.py`, `evals/rebuilt/entry.py`,
+# `evals.scenarios.MeetsGrader`) that reads it; `evals/rebuilt/domain.py`'s own
+# `metadata` docstring already says so ("Nothing grades that yet"). The only
+# readers are the OLD, unrelated `tests/offline_eval_harness.py` /
+# `tests/offline_eval_evaluators.py` pair, which does not drive this corpus.
+# So the 10-vs-2 split was not a real distinction before this conversion and
+# is not one after it either -- seeding was not built around it.
+
 config:
   engagement.trigger.text: "nora.000"
 
@@ -58,6 +83,12 @@ cases:
     metadata:
       trigger: true
       prefill_sufficient: true
+    snapshot: &room_a
+      platform: signal
+      conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+      before_ms: 1789909891000
+      culture_key: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+      unit: friends
 
   - name: what_time_english
     entry: tag
@@ -67,6 +98,7 @@ cases:
     metadata:
       trigger: true
       prefill_sufficient: true
+    snapshot: *room_a
 
   - name: punctuated_call
     entry: tag
@@ -76,6 +108,7 @@ cases:
     metadata:
       trigger: true
       prefill_sufficient: true
+    snapshot: *room_a
 
   - name: parenthetical_call
     entry: tag
@@ -85,6 +118,7 @@ cases:
     metadata:
       trigger: true
       prefill_sufficient: true
+    snapshot: *room_a
 
   - name: mid_sentence_mixed
     entry: tag
@@ -94,6 +128,12 @@ cases:
     metadata:
       trigger: true
       prefill_sufficient: true
+    snapshot: &room_b
+      platform: discord
+      conversation_id: "100000000000000201/100000000000000202"
+      before_ms: 1789922644000
+      culture_key: "100000000000000201/100000000000000202"
+      unit: friends
 
   - name: case_insensitive_call
     entry: tag
@@ -103,6 +143,7 @@ cases:
     metadata:
       trigger: true
       prefill_sufficient: true
+    snapshot: *room_b
 
   - name: bracket_call
     entry: tag
@@ -112,6 +153,7 @@ cases:
     metadata:
       trigger: true
       prefill_sufficient: true
+    snapshot: *room_b
 
   - name: cjk_punctuation_boundary
     entry: tag
@@ -121,6 +163,12 @@ cases:
     metadata:
       trigger: true
       prefill_sufficient: true
+    snapshot: &room_c
+      platform: signal
+      conversation_id: "Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34="
+      before_ms: 1789469213000
+      culture_key: "Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34="
+      unit: ridgeline
 
   - name: english_question_thin_prefill
     entry: tag
@@ -130,6 +178,7 @@ cases:
     metadata:
       trigger: true
       prefill_sufficient: false
+    snapshot: *room_c
 
   - name: mixed_help_request_thin_prefill
     entry: tag
@@ -139,6 +188,7 @@ cases:
     metadata:
       trigger: true
       prefill_sufficient: false
+    snapshot: *room_c
 
   - name: casual_greeting_tag
     entry: tag
@@ -148,6 +198,7 @@ cases:
     metadata:
       trigger: true
       prefill_sufficient: true
+    snapshot: *room_a
 
   - name: glued_cjk_call
     entry: tag
@@ -157,3 +208,4 @@ cases:
     metadata:
       trigger: true
       prefill_sufficient: true
+    snapshot: *room_b
