@@ -182,6 +182,41 @@ workaround awaiting a patch we control. If upstream ever ships a story read,
 test (1) fails and the row is removed — that is the only way the list
 shrinks.
 
+## What actually protects the bridge's write verbs today — measured 2026-09-22
+
+The bridge serves `/send`, `/react` and `/unsend` **unauthenticated, with no
+allowlist**, unlike the OpenCLI host bridge. What stops a prompt-injected
+model reaching them is network isolation, and that had been *derived from
+Docker defaults* rather than measured. Now measured on norty:
+
+| probe | result |
+|---|---|
+| a `nora`-only service by DNS from `nora-compute` | `Could not resolve host` |
+| the same service by its `nora`-network IP | connection timed out |
+| **positive control** — the host social bridge on `172.17.0.1:19826` | `http=200` |
+
+The control is what makes the two failures mean something: without it, two
+timeouts are indistinguishable from a broken probe.
+
+**So isolation holds, and it is one layer.** Three things follow:
+
+1. **The reachable path is the OpenCLI bridge, and there the design works.**
+   `make_artifact` → the Smith sandbox → `run_python` → arbitrary sockets
+   reaches `172.17.0.1:19826` unauthenticated. `READ_ONLY_ALLOWLIST` refuses
+   every pair outside its seven read rows and spawns nothing, so a write verb
+   is unconstructible *with no help from topology*. That is precisely the
+   property DEC-151 claims for it, now exercised rather than asserted.
+2. **The Instagram bridge has no such property.** Its safety is entirely
+   topological, and R-86 exists because one layer was judged insufficient.
+   It needs its own frozen allowlist **before `/social/*` is written**, not
+   after — at which point the route also becomes the thing the allowlist
+   names, rather than a tautology over a single route.
+3. **The isolation is fragile in a specific way.** `drop` is deliberately
+   dual-homed (`nora-compute nora_nora`) so Smith can reach it. Any future
+   need to let Smith reach the Instagram bridge would attach it the same way
+   and silently delete the only control protecting its write verbs. Recorded
+   so that change cannot be made casually.
+
 ## Responsibilities: instameow vs OpenCLI, per use case
 
 Measured, not preferred. instameow's complete social surface is `FetchReel`,
