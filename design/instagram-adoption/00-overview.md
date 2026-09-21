@@ -15,6 +15,7 @@ edges:
   - {dst: 05-phase2-social-and-opencli.md, rel: details, provenance: asserted}
   - {dst: 06-retention-and-custody.md, rel: details, provenance: asserted}
   - {dst: 07-social-boundary-and-scope.md, rel: details, provenance: asserted}
+  - {dst: 08-social-adapter-architecture.md, rel: details, provenance: asserted}
 ---
 
 # Instagram Adoption — Overview, Verdict & Phases
