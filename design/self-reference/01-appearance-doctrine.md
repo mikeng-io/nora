@@ -38,16 +38,23 @@ so a new file needs **zero code changes** to reach the model every turn.
    the look defined by the sheet and are kept in the asset deliberately.
 2. **Self-recognition rule** — "Your canonical self reference is
    `[image <SELF_HANDLE>]`; when the task is to draw yourself or your avatar,
-   reference it. A photo of Miles is NOT you."
-3. **Operator-recognition rule** — "Miles's canonical avatar is
-   `[image <OPERATOR_HANDLE>]`." This pins the second anchor the live failure
-   actually needed (Nora confused two *user* photos, not herself).
-4. **Conflict rule** — when Miles supplies his own reference image AND asks for
-   "your style", use both; the reference slot budget is a **tool-surface
+   reference it. A photo of a person in the conversation is NOT you."
+3. **No operator anchor in v1** — there is **no `OPERATOR_HANDLE`**. v1 pins
+   one canonical asset only (operator decision 2026-09-16, `「no need operator,
+   just nora」`), so the identity file names no handle for the operator and the
+   doctrine must not imply one exists. A photo the user supplies is handled by
+   a **user-reference rule** instead: "when the user sends a photo of
+   themselves, that is the USER — use their photo as reference"; when more
+   than one user photo could be the subject, ask rather than guess (03
+   §"Deterministic no-guess rule"). This is the accepted v1 trade-off: the
+   2026-08-27 failure class is covered by the ask rule, not by a pinned handle.
+4. **Conflict rule** — when a user supplies their own reference image AND asks
+   for "your style", use both; the reference slot budget is a **tool-surface
    convention** (three params `reference`/`reference_2`/`reference_3`,
    `tools.py:3265-3266`) rather than a provider limit — the adapter sends N
-   images via `images[]` (`xai_adapter.py:162`). The "self wins over a second
-   user image" rule is doctrine guidance, labelled advisory not mechanical.
+   images via `images[]` (`xai_adapter.py:162`). With no operator anchor, "self
+   wins over a second user image" is doctrine guidance, labelled advisory not
+   mechanical — it decides slot order, not correctness.
 
 ## Authority fields (loader-enforced)
 

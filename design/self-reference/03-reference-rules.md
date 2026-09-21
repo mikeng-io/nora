@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Self-Reference — Layer 3: reference rules (doctrine text)"
-description: "Doctrine teaches Nora when to use her canonical handles — including a deterministic no-guess rule for ambiguous user photos — and why tool-level intent detection is rejected."
+description: "Doctrine teaches Nora when to use her canonical self handle — and the deterministic no-guess rule that carries the operator-photo ambiguity, since v1 pins no operator asset — and why tool-level intent detection is rejected."
 tags: [nora, doctrine, image-gen, reference]
 timestamp: '2026-08-27'
 edges:
@@ -16,16 +16,15 @@ edges:
 No code. The *rules* live in `appearance.md`; the *mechanism* already exists
 (reference marker → resolve → `/v1/images/edits` JSON, fixed in the xAI JSON
 adapter). Nora has vision; she sees the reference image and the prompt; the
-doctrine tells her which is herself, which is Miles, and which photos are
-neither. The failure mode of a wrong guess is a wrong image — normal model
-error, not a security or custody issue.
+doctrine tells her which is herself and which photos are not. The failure mode
+of a wrong guess is a wrong image — normal model error, not a security or
+custody issue.
 
 ## The rules
 
 - "When asked to draw yourself / your avatar, set reference=`<SELF_HANDLE>`."
 - "When the user sends a photo of themselves, that is the USER, not you —
   use their photo as reference, not yours."
-- "Miles's canonical avatar is `<OPERATOR_HANDLE>`."
 - "If the user asks to merge their photo with your style, use BOTH
   references."
 - "If two user photos could both be the requested subject, ASK which one —
@@ -36,8 +35,14 @@ error, not a security or custody issue.
 When more than one user-supplied photo could be the requested subject, Nora
 ASKS which one — she never guesses. This is what the 2026-08-27 failure
 actually calls for: the transcript held two user photos (牛來 meme `ef0606`,
-avatar `1fce23`) and she guessed wrong. With the canonical operator avatar
-pinned, the common case resolves instantly; the ask rule covers the residue.
+avatar `1fce23`) and she guessed wrong.
+
+**This rule is now load-bearing, not a backstop.** v1 pins no `operator` asset
+(operator decision 2026-09-16), so there is no canonical handle that would
+resolve the common case instantly — the ask rule is the **only** cover for the
+whole operator-photo ambiguity class. That is the accepted v1 trade-off. If the
+ask rule proves insufficient in practice, the resolution is to pin an
+`operator` asset (a new DEC), NOT to weaken this rule.
 
 ## Deliberately NOT built: tool-level intent detection
 
