@@ -68,10 +68,25 @@ type eventSender struct {
 	Username string `json:"username"`
 }
 
+// eventMention is one span of tagged text.
+//
+// RangeType is `profile_range_type` passed through, and it is not decoration:
+// for `THREAD` (Instagram's @everyone) `user_fbid` carries the CHAT id, not a
+// person's — the library says so on the field itself
+// (slidetypes.Mention.UserFBID). Emitting that number unlabelled means it can
+// never equal Nora's own fbid, so an @everyone that names the whole room reads
+// as a mention of somebody who is not her and she silently never answers it.
+// The value still goes out, because the adapter may want the room id; what it
+// needs is to be told which question the number answers.
+//
+// The same struct is what /send accepts for outbound mentions, where only
+// fbid/offset/length are read: a caller cannot ask for an @everyone by setting
+// this field, and sendText ignores it.
 type eventMention struct {
-	FBID   string `json:"fbid"`
-	Offset int    `json:"offset"`
-	Length int    `json:"length"`
+	FBID      string `json:"fbid"`
+	Offset    int    `json:"offset"`
+	Length    int    `json:"length"`
+	RangeType string `json:"range_type,omitempty"`
 }
 
 // eventReply is the contract's `reply_to`, which the document only ever shows
@@ -169,9 +184,10 @@ func normalizeMessage(threadFBID string, msg *slidetypes.Message, ownFBID int64)
 			continue
 		}
 		ev.Mentions = append(ev.Mentions, eventMention{
-			FBID:   strconv.FormatInt(m.UserFBID, 10),
-			Offset: m.Offset,
-			Length: m.Length,
+			FBID:      strconv.FormatInt(m.UserFBID, 10),
+			Offset:    m.Offset,
+			Length:    m.Length,
+			RangeType: string(m.ProfileRangeType),
 		})
 	}
 
@@ -392,16 +408,18 @@ type reactionEvent struct {
 	SenderFBID  string `json:"sender_fbid"`
 	Emoji       string `json:"emoji"`
 	Removed     bool   `json:"removed"`
+	FromMe      *bool  `json:"from_me"`
 	TimestampMS int64  `json:"timestamp_ms,omitempty"`
 }
 
-func normalizeReaction(room string, r slidetypes.Reaction, messageID string, removed bool) *reactionEvent {
+func normalizeReaction(room string, r slidetypes.Reaction, messageID string, removed bool, ownFBID int64) *reactionEvent {
 	ev := &reactionEvent{
 		Kind:      kindReaction,
 		RoomID:    room,
 		MessageID: messageID,
 		Emoji:     r.Reaction,
 		Removed:   removed,
+		FromMe:    fromMe(r.SenderFBID, ownFBID),
 	}
 	if r.SenderFBID != 0 {
 		ev.SenderFBID = strconv.FormatInt(r.SenderFBID, 10)
@@ -416,17 +434,29 @@ func normalizeReaction(room string, r slidetypes.Reaction, messageID string, rem
 // row rather than a mutation of an earlier one — the audit trail is
 // append-only, so the bridge reports the event and never rewrites history.
 type editEvent struct {
-	Kind        string `json:"kind"`
-	RoomID      string `json:"room_id"`
-	MessageID   string `json:"message_id"`
-	Text        string `json:"text"`
-	TimestampMS int64  `json:"timestamp_ms,omitempty"`
+	Kind      string `json:"kind"`
+	RoomID    string `json:"room_id"`
+	MessageID string `json:"message_id"`
+	Text      string `json:"text"`
+	// FromMe is a POINTER and it is null here, always, and that is the honest
+	// answer rather than a gap. slidetypes.EditMessageEvent carries
+	// message_id, the new body and a timestamp and NO sender field of any
+	// kind, so who edited cannot be derived from the delta. `false` would be a
+	// claim — that a member did it — and the account is also used from a
+	// browser and a phone, so it is a claim that can be wrong. `null` says the
+	// bridge does not know, which is a thing an adapter can branch on; a
+	// confident `false` is not.
+	FromMe      *bool `json:"from_me"`
+	TimestampMS int64 `json:"timestamp_ms,omitempty"`
 }
 
 type unsendEvent struct {
 	Kind      string `json:"kind"`
 	RoomID    string `json:"room_id"`
 	MessageID string `json:"message_id"`
+	// Null for the same reason as editEvent's: DeleteMessageEvent is a message
+	// id and nothing else.
+	FromMe *bool `json:"from_me"`
 }
 
 // typingEvent deliberately does NOT claim a room_id it cannot prove.
@@ -443,6 +473,23 @@ type typingEvent struct {
 	ThreadID   string `json:"thread_id"`
 	SenderFBID string `json:"sender_fbid,omitempty"`
 	Typing     bool   `json:"typing"`
+	// Derivable here, unlike on edit/unsend: the notification names its
+	// sender. Null when it does not, or when our own fbid is unknown.
+	FromMe *bool `json:"from_me"`
+}
+
+// fromMe answers "was this us?" and is allowed to answer "I cannot tell".
+//
+// Both zeroes are real cases: a delta that carries no sender, and a session
+// whose own fbid never resolved (see ensureSession's GetOwnFBID branch). In
+// either one a plain `false` would be indistinguishable from a confident "no",
+// and the consequence of getting it wrong is Nora answering her own echo.
+func fromMe(senderFBID, ownFBID int64) *bool {
+	if senderFBID == 0 || ownFBID == 0 {
+		return nil
+	}
+	v := senderFBID == ownFBID
+	return &v
 }
 
 type heartbeatEvent struct {

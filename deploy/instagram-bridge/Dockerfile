@@ -48,12 +48,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=build /out/instagram-bridge /usr/local/bin/instagram-bridge
 
-# uid 1000, matching signal-cli's container and every other service in this
-# compose project. The check is there because a base-image change that shifts
-# uid 1000 would silently make the bind-mounted session directory unwritable,
-# and the first symptom would be a bridge that authenticates once and can never
-# persist its state again.
-RUN test "$(id -un 1000)" = "ubuntu" || (echo "uid 1000 changed in base image" && false)
+# uid/gid 1000, matching signal-cli's container and every other service in this
+# compose project, so the bind-mounted session directory needs no chmod dance
+# or runtime `user:` override. The account is CREATED here rather than assumed:
+# debian:bookworm-slim ships no uid 1000 at all, so the `id -un 1000` guard
+# this file used to carry — copied from deploy/signal-cli, whose base is Ubuntu
+# noble and does ship `ubuntu` at 1000 — failed the build outright. Same shape
+# as deploy/stt, deploy/drop and deploy/voice-wake.
+RUN groupadd --gid 1000 bridge \
+    && useradd --uid 1000 --gid 1000 --create-home --home-dir /home/bridge \
+       --shell /usr/sbin/nologin bridge
 USER 1000:1000
 
 # No VOLUME declaration: compose bind-mounts the real session store at

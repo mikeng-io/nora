@@ -70,6 +70,16 @@ const (
 	// turn a checkpoint into a ban.
 	reconnectFloor   = 5 * time.Second
 	reconnectCeiling = 5 * time.Minute
+	// stableConnection is how long Connect() must block before the session
+	// counts as having actually worked. Connect() has NO return value and
+	// returns instantly on a clean close, so without a duration test a socket
+	// that closes the moment it opens is indistinguishable from one that ran
+	// for a week — and the supervisor would treat both as a success, reset the
+	// backoff to five seconds, and re-LoadIndex against Instagram every five
+	// seconds forever with the anti-ban ceiling never once engaging. A healthy
+	// session sits inside one Connect() call for days, so a minute is a
+	// generous floor for "that was real".
+	stableConnection = 60 * time.Second
 	// sessionPoll is the retry when there is no credential on disk at all.
 	// That failure never touches Instagram, so the anti-ban ceiling above does
 	// not apply to it — and the documented first-run flow is an operator
@@ -240,20 +250,29 @@ func (b *bridge) supervise(ctx context.Context, libLog zerolog.Logger) {
 				backoff = min(backoff*2, reconnectCeiling)
 			}
 			log.Printf("session setup failed (%s, retrying in %s): %v", b.currentState(), wait, err)
-			select {
-			case <-ctx.Done():
+			if !sleepOrDone(ctx, wait) {
 				return
-			case <-time.After(wait):
 			}
 			continue
 		}
-		backoff = reconnectFloor
 
 		cli := b.currentClient()
 		if cli == nil {
+			// ensureSession succeeded without leaving a client behind. There
+			// is no writer that does this today, but `continue` with no sleep
+			// would be a hot loop, so it is backed off like any other failed
+			// pass rather than trusted not to happen.
+			backoff = min(backoff*2, reconnectCeiling)
+			log.Printf("session setup reported success with no client (retrying in %s)", backoff)
+			if !sleepOrDone(ctx, backoff) {
+				return
+			}
 			continue
 		}
+
+		start := time.Now()
 		cli.Connect(ctx) // blocks until clean close, cancel, or resnapshot
+		lasted := time.Since(start)
 		b.setConnected(false)
 		if ctx.Err() != nil {
 			return
@@ -264,11 +283,48 @@ func (b *bridge) supervise(ctx context.Context, libLog zerolog.Logger) {
 		// against a void sequence id costs every message until someone
 		// notices the room went quiet.
 		b.forceReindex()
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(reconnectFloor):
+		// THE BACKOFF IS ON THE DURATION, not on an error, because Connect()
+		// does not report one. A socket that ran and then closed resets to the
+		// floor; a socket that returned immediately is flapping, and the next
+		// pass does a full LoadIndex against Instagram, so the retry rate IS
+		// the request rate against a service that bans for exactly this.
+		next := nextBackoff(backoff, lasted)
+		if next != reconnectFloor || backoff != reconnectFloor {
+			log.Printf("realtime socket lasted %s (retrying in %s)", lasted.Truncate(time.Millisecond), next)
 		}
+		backoff = next
+		if !sleepOrDone(ctx, backoff) {
+			return
+		}
+	}
+}
+
+// nextBackoff is the supervisor's retry interval after Connect() returns.
+//
+// It is a function so that it can be measured without a socket. The rule it
+// encodes: a connection that LASTED counts as a success and resets to the
+// floor; one that returned quickly is flapping and doubles, up to the anti-ban
+// ceiling. Connect() reports no error and returns instantly on a clean close,
+// so duration is the only signal there is — and without it a flapping socket
+// re-LoadIndexes against Instagram every five seconds indefinitely.
+func nextBackoff(current, lasted time.Duration) time.Duration {
+	if lasted >= stableConnection {
+		return reconnectFloor
+	}
+	return min(max(current, reconnectFloor)*2, reconnectCeiling)
+}
+
+// sleepOrDone waits, and reports false when the process is shutting down
+// instead. Every wait in the supervisor goes through it so that none of them
+// can be the one that ignores a SIGTERM.
+func sleepOrDone(ctx context.Context, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 
@@ -352,18 +408,7 @@ func (b *bridge) ensureSession(ctx context.Context, libLog zerolog.Logger) error
 	// mention, anywhere, ever — and choosing it produces no error at all,
 	// just an account that never notices it was tagged. viewer.GetUserId()
 	// is the public igid, which the Phase 2 social calls take.
-	self := selfIdentity{
-		FBID:     strconv.FormatInt(cli.GetOwnFBID(), 10),
-		IGID:     viewer.GetUserId(),
-		Username: viewer.GetUsername(),
-	}
-	if self.FBID == "0" {
-		self.FBID = ""
-	}
-	b.setSelf(self)
-	if err := b.store.saveSelf(self); err != nil {
-		log.Printf("could not cache own identity: %v", err)
-	}
+	b.recordSelf(cli.GetOwnFBID(), viewer.GetUserId(), viewer.GetUsername())
 	if mailbox != nil {
 		b.setSeq(mailbox.UQSeqID)
 		if err := b.store.saveSeq(mailbox.UQSeqID, time.Now()); err != nil {
@@ -373,14 +418,21 @@ func (b *bridge) ensureSession(ctx context.Context, libLog zerolog.Logger) error
 	b.clearReindex()
 	b.setState(stateAuthenticated, "")
 	b.flushCookies()
+	self := b.selfSnapshot()
 	log.Printf("authenticated as @%s (fbid=%s igid=%s)", self.Username, self.FBID, self.IGID)
 	return nil
 }
 
-// onEvent is instameow's single callback for everything the session does. It
-// runs on the socket's goroutine, so nothing here may block: every branch
-// either mutates a mutex-guarded field or hands a serialized event to the hub,
-// which drops rather than blocks.
+// onEvent is instameow's single callback for everything the session does.
+// Nothing here may block: every branch either mutates a mutex-guarded field or
+// hands a serialized event to the hub, which drops rather than blocks.
+//
+// It is NOT single-goroutine. Deltas and Connected/Disconnected arrive on the
+// realtime socket's loop, TypingNotification on the stream-controller socket's
+// — a second connection with a second loop — and AuthError is dispatched from
+// whichever HTTP request goroutine got the rejection. Two branches can
+// therefore run at once, which is why every write below goes through the
+// bridge mutex and why writeAtomic may not use a shared temp name.
 func (b *bridge) onEvent(ctx context.Context, evt slidetypes.ClientEvent) error {
 	switch e := evt.(type) {
 	case *slidetypes.Connected:
@@ -417,7 +469,7 @@ func (b *bridge) onEvent(ctx context.Context, evt slidetypes.ClientEvent) error 
 			detail = e.Error.Error()
 		}
 		b.setState(state, detail)
-		b.forceReindex()
+		b.invalidateSeq()
 		log.Printf("session %s: %s", state, detail)
 		if cli := b.currentClient(); cli != nil {
 			go cli.Disconnect()
@@ -439,10 +491,12 @@ func (b *bridge) onEvent(ctx context.Context, evt slidetypes.ClientEvent) error 
 
 	case *slidetypes.ResnapshotRequired:
 		// Connect() returns right after dispatching this, so the supervisor
-		// regains control on its own; all this branch owes is the flag that
-		// stops the next pass from trusting the cached sequence id.
+		// regains control on its own; all this branch owes is the invalidation
+		// that stops the NEXT pass from trusting the cached sequence id — and
+		// that has to reach the disk, not just the in-memory flag. See
+		// invalidateSeq.
 		log.Printf("resnapshot required, will re-read index")
-		b.forceReindex()
+		b.invalidateSeq()
 
 	case *slidetypes.TypingNotification:
 		b.emitTyping(e)
@@ -483,10 +537,11 @@ func (b *bridge) emitDelta(d *slidetypes.Delta) {
 			b.hub.emit(ev)
 		}
 	case *slidetypes.CreateReactionEvent:
-		b.hub.emit(normalizeReaction(room, data.Reaction, data.MessageID, false))
+		b.hub.emit(normalizeReaction(room, data.Reaction, data.MessageID, false, own))
 	case *slidetypes.DeleteReactionEvent:
-		b.hub.emit(normalizeReaction(room, data.Reaction, data.MessageID, true))
+		b.hub.emit(normalizeReaction(room, data.Reaction, data.MessageID, true, own))
 	case *slidetypes.EditMessageEvent:
+		// from_me is left nil: the delta carries no sender. See editEvent.
 		ev := &editEvent{Kind: kindEdit, RoomID: room, MessageID: data.MessageID, Text: data.TextBody}
 		if !data.SlideEditHistoryEntry.TimestampMS.IsZero() {
 			ev.TimestampMS = data.SlideEditHistoryEntry.TimestampMS.UnixMilli()
@@ -506,6 +561,7 @@ func (b *bridge) emitTyping(t *slidetypes.TypingNotification) {
 	if t.SenderID != 0 {
 		ev.SenderFBID = strconv.FormatInt(t.SenderID, 10)
 	}
+	ev.FromMe = fromMe(t.SenderID, b.ownFBID())
 	// room_id is filled ONLY when the cache can vouch for the id space. See
 	// typingEvent's doc comment: guessing here would put a long id in a field
 	// the contract defines as the short one, and every consumer keying on
@@ -626,6 +682,45 @@ func (b *bridge) setSeq(seq int64) {
 	b.seq = seq
 }
 
+// recordSelf is the identity half of a successful LoadIndex, and it FAILS
+// CLOSED on a zero fbid.
+//
+// GetOwnFBID() returns 0 when the browser config table did not carry
+// `interop_messaging_user_fbid`, or carried one whose viewer fbid disagrees
+// with it — a real outcome of a partially-served page, not a hypothetical.
+// Persisting the fbid-less identity anyway OVERWRITES a good self.json with
+// one loadSelf will refuse, and from then on `from_me` is false for every
+// echo, R-12's self-tag detection matches nothing, and /react cannot verify
+// its own read-back. There is no error, no counter and no field on /health
+// that looks wrong: the only symptom is an account that stops noticing it was
+// spoken to. So the cached identity is kept, the file is not rewritten, and
+// the log says so loudly enough to be found.
+//
+// It is a method rather than four lines inside ensureSession because
+// ensureSession needs a live LoadIndex and cannot be exercised without the
+// account, and a branch nothing can reach is a branch nothing measures.
+func (b *bridge) recordSelf(fbid int64, igid, username string) {
+	self := selfIdentity{IGID: igid, Username: username}
+	if fbid != 0 {
+		self.FBID = strconv.FormatInt(fbid, 10)
+		b.setSelf(self)
+		if err := b.store.saveSelf(self); err != nil {
+			log.Printf("could not cache own identity: %v", err)
+		}
+		return
+	}
+	cached := b.selfSnapshot()
+	log.Printf("ERROR GetOwnFBID() returned 0 for @%s: KEEPING the cached identity (fbid=%q) and "+
+		"NOT overwriting self.json. from_me, self-tag detection and the /react "+
+		"read-back all bind on this value.", username, cached.FBID)
+	if cached.FBID == "" {
+		// Nothing to protect. Record what LoadIndex did give us so /health can
+		// report the username, but leave the file alone: an identity with no
+		// fbid is not an identity, and loadSelf refuses one anyway.
+		b.setSelf(self)
+	}
+}
+
 func (b *bridge) setSelf(self selfIdentity) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -643,6 +738,24 @@ func (b *bridge) forceReindex() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.reindex = true
+}
+
+// invalidateSeq is forceReindex plus the durable half.
+//
+// The in-memory flag only binds THIS process. Instagram voiding the snapshot
+// also voids the number in seq.json, and ensureSession's resume shortcut reads
+// that file: a restart in the window between the invalidation and the next
+// successful LoadIndex would find HasSeqID() true, skip LoadIndex, and
+// subscribe from a sequence id that no longer refers to anything. Nothing
+// errors; messages simply stop arriving. So the file goes too.
+func (b *bridge) invalidateSeq() {
+	b.forceReindex()
+	if err := b.store.clearSeq(); err != nil {
+		log.Printf("ERROR could not clear the stale seq id (a restart may resume from it): %v", err)
+	}
+	b.mu.Lock()
+	b.seq = 0
+	b.mu.Unlock()
 }
 
 func (b *bridge) clearReindex() {

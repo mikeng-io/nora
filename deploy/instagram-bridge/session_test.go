@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -257,5 +260,140 @@ func TestMissingOrPartialSessionIsABootstrapStateNotAnAuthFailure(t *testing.T) 
 		if b.currentClient() != nil {
 			t.Errorf("%s: a client was built from an unusable credential", name)
 		}
+	}
+}
+
+// --- the broken-credential remedy ---------------------------------------------
+
+// A cookies.json that is PRESENT but unusable must not shadow the cURL
+// bootstrap. The old form reached the cURL path only when the READ errored, so
+// an empty, truncated or half-written cookies.json made the documented re-auth
+// remedy — "log in in a browser, Copy as cURL, drop it in the volume" —
+// silently do nothing, forever, while /health went on reporting logged_out and
+// the operator went on believing they had already fixed it.
+func TestABrokenCookiesJSONDoesNotShadowTheCurlBootstrap(t *testing.T) {
+	good := `-H 'cookie: csrftoken=CSRF123; ds_user_id=79597894900; sessionid=79597894900%3Asecret%3A28'`
+	for name, broken := range map[string]string{
+		"empty file":        "",
+		"truncated json":    `{"platform":1,"values":{"csrf`,
+		"not json at all":   "<html>rate limited</html>",
+		"valid but partial": `{"csrftoken":"CSRF123"}`,
+	} {
+		s := store{dir: t.TempDir()}
+		if err := os.WriteFile(s.path("cookies.json"), []byte(broken), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(s.path("cookies.curl"), []byte(good), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		jar, err := loadCookieJar(s)
+		if err != nil {
+			t.Errorf("%s: the cURL remedy did not take: %v", name, err)
+			continue
+		}
+		if missing := jar.GetMissingCookieNames(); len(missing) > 0 {
+			t.Errorf("%s: recovered jar is still missing %v", name, missing)
+		}
+		// And the recovery is durable: cookies.json now holds the good
+		// session, so the next boot does not depend on the paste still
+		// being there.
+		reread, err := loadCookieJar(store{dir: s.dir})
+		if err != nil || reread.Get("csrftoken") != "CSRF123" {
+			t.Errorf("%s: the recovery was not normalized into cookies.json (%v)", name, err)
+		}
+	}
+}
+
+// The other half: a broken cookies.json with NO cURL paste beside it is still
+// an error, and the error names what is actually wrong rather than claiming
+// the file is absent.
+func TestABrokenCookiesJSONWithNoRemedyIsStillAnError(t *testing.T) {
+	s := store{dir: t.TempDir()}
+	if err := os.WriteFile(s.path("cookies.json"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := loadCookieJar(s)
+	if err == nil {
+		t.Fatal("a corrupt cookies.json produced a jar")
+	}
+	if !strings.Contains(err.Error(), "cookies.json") {
+		t.Errorf("the error does not name the broken file: %v", err)
+	}
+}
+
+// --- concurrent writers -------------------------------------------------------
+
+// writeAtomic is reachable from several goroutines at once: instameow
+// dispatches AuthError on an HTTP request goroutine and TypingNotification on
+// a second socket's, the cookie flush has a ticker of its own, and the
+// supervisor writes seq and self from a third. With a fixed `path + ".tmp"`
+// two writers interleave their WriteFile calls and rename a file that is half
+// of each — on cookies.json, the one file here that cannot be regenerated
+// without a human at a browser.
+//
+// This test fails with the fixed temp name (the file comes back as a mix of
+// the two payloads) and passes with a per-call one.
+func TestWriteAtomicUnderConcurrentWritersNeverPublishesAMix(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cookies.json")
+	a := []byte(strings.Repeat("a", 64<<10))
+	b := []byte(strings.Repeat("b", 64<<10))
+
+	var wg sync.WaitGroup
+	for range 24 {
+		for _, payload := range [][]byte{a, b} {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if err := writeAtomic(path, payload); err != nil {
+					t.Errorf("writeAtomic: %v", err)
+				}
+			}()
+		}
+	}
+	wg.Wait()
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, a) && !bytes.Equal(got, b) {
+		t.Fatalf("the published file is neither writer's payload (%d bytes, "+
+			"starts %q ends %q) — a reader would see a torn credential",
+			len(got), got[:min(16, len(got))], got[max(0, len(got)-16):])
+	}
+	// No temp file survives to be mistaken for the real one.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "cookies.json" {
+		names := make([]string, 0, len(entries))
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Fatalf("directory holds %v, want only cookies.json", names)
+	}
+}
+
+// clearSeq is the durable half of the resnapshot invalidation. A missing file
+// is success — the point is that seq.json does not hold a stale number
+// afterwards, not that a delete happened.
+func TestClearSeqIsIdempotent(t *testing.T) {
+	s := store{dir: t.TempDir()}
+	if err := s.clearSeq(); err != nil {
+		t.Fatalf("clearing an absent seq.json errored: %v", err)
+	}
+	if err := s.saveSeq(4242, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.clearSeq(); err != nil {
+		t.Fatal(err)
+	}
+	if seq, _ := s.loadSeq(); seq != 0 {
+		t.Fatalf("seq survived the clear: %d", seq)
+	}
+	if err := s.clearSeq(); err != nil {
+		t.Fatalf("a second clear errored: %v", err)
 	}
 }

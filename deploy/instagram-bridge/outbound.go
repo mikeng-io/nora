@@ -4,10 +4,30 @@ package main
 //
 // THE TRAP. Instagram gives one thread two numeric identities and they are not
 // interchangeable. Inbound deltas carry the SHORT id (`thread_fbid`,
-// measured `1009543911792316`); every send — text, media, reaction, edit,
-// unsend — requires the LONG one (`thread_igid`,
-// `340282366841710301281152937372201004392`). A send addressed with the short
-// id does not arrive, and does not error usefully either.
+// measured `1009543911792316`); the LONG one (`thread_igid`,
+// `340282366841710301281152937372201004392`) comes back from a route lookup.
+//
+// WHICH ID EACH VERB TAKES IS MIXED, AND THAT IS NOT A TIDINESS PROBLEM TO
+// SOLVE. Unifying it is how the reaction bug happened:
+//
+//	/send        LONG   measured — the echo delta came back
+//	/send-media  LONG   measured — the image appeared, upload uses SHORT
+//	/unsend      LONG   measured — every probe cleanup ran this way
+//	/react       SHORT  measured 2026-09-22 — a reaction addressed with the
+//	                    LONG id is ACCEPTED by the API (200, no error of any
+//	                    kind) and is ABSENT from the thread on read-back. The
+//	                    SHORT id is present. Upstream mautrix-meta passes the
+//	                    short id here too (igconnector/handlematrix.go:210,
+//	                    via `meta.IGID`, which fetchIGIDs sets to ShortID).
+//	/typing      SHORT  NOT measured — arrival was never verified in either id
+//	                    space. It follows upstream (handlematrix.go:484, the
+//	                    same `meta.IGID`) because an unmeasured verb should
+//	                    copy the only implementation anybody has evidence for,
+//	                    not the guess this bridge happened to make.
+//
+// A send addressed with the wrong id does not arrive and does not error
+// usefully either, so there is no signal to notice it by. That is the whole
+// reason the table above is written out instead of collapsed into a rule.
 //
 // The translation lives HERE, behind the HTTP surface, and the contract
 // exposes only the short id. That is the same reasoning that puts JID
@@ -45,6 +65,19 @@ type igClient interface {
 // same reason: it hangs off *httpclient.HTTPClient, which cannot be faked.
 type uploader func(context.Context, int64, *httpclient.MercuryUploadMedia) (*types.MercuryUploadResponse, error)
 
+// threadRef is both ids for one thread, resolved together and carried
+// together. It exists because the per-verb table at the top of this file means
+// a handler needs BOTH: there is no single "the thread id" to pass around, and
+// a function that took one string would make picking the wrong space a
+// one-character mistake again.
+type threadRef struct {
+	// Short is `thread_fbid`, canonicalized through ParseInt/FormatInt so the
+	// cache cannot hold "012" and "12" as two different threads.
+	Short string
+	// Long is `thread_igid`.
+	Long string
+}
+
 // threadIndex caches the short->long pair. The lookup is an HTTP round trip
 // against Instagram's route endpoint, so doing it per send would add a request
 // to every reply — and a rate-limited one, on the navigation endpoint rather
@@ -71,36 +104,37 @@ func newThreadIndex(fetch func(context.Context, int64) (*instameow.ThreadIGIDs, 
 
 var errBadRoomID = errors.New("room_id must be a decimal thread_fbid")
 
-// resolve maps a short thread id to the long one, fetching on a miss.
-func (t *threadIndex) resolve(ctx context.Context, short string) (string, error) {
+// resolve maps a room key to both thread ids, fetching on a miss.
+func (t *threadIndex) resolve(ctx context.Context, short string) (threadRef, error) {
 	// Parse before anything else: `room_id` arrives from HTTP and a non-numeric
 	// value is a caller error (400), not an Instagram failure (5xx). Letting it
 	// through would produce a route lookup for `/direct/t/0/` and a 404 that
 	// reads like a deleted thread.
 	shortID, err := strconv.ParseInt(short, 10, 64)
 	if err != nil || shortID <= 0 {
-		return "", fmt.Errorf("%w: %q", errBadRoomID, short)
+		return threadRef{}, fmt.Errorf("%w: %q", errBadRoomID, short)
 	}
+	canonical := strconv.FormatInt(shortID, 10)
 
 	t.mu.RLock()
-	long, ok := t.shortLong[short]
+	long, ok := t.shortLong[canonical]
 	t.mu.RUnlock()
 	if ok {
-		return long, nil
+		return threadRef{Short: canonical, Long: long}, nil
 	}
 
 	ids, err := t.fetch(ctx, shortID)
 	if err != nil {
-		return "", err
+		return threadRef{}, err
 	}
 	if ids == nil || ids.LongID == "" {
 		// Fail closed. Returning the short id as a "best effort" would produce
 		// a send that is accepted by the HTTP layer and never arrives, which
 		// is the single worst outcome available here.
-		return "", fmt.Errorf("thread %s resolved to no thread_igid", short)
+		return threadRef{}, fmt.Errorf("thread %s resolved to no thread_igid", canonical)
 	}
-	t.remember(short, ids.LongID)
-	return ids.LongID, nil
+	t.remember(canonical, ids.LongID)
+	return threadRef{Short: canonical, Long: ids.LongID}, nil
 }
 
 func (t *threadIndex) remember(short, long string) {
@@ -136,6 +170,32 @@ type sendResult struct {
 	OK          bool   `json:"ok"`
 	ID          string `json:"id,omitempty"`
 	TimestampMS int64  `json:"timestamp_ms,omitempty"`
+}
+
+// errNoMessageID is what a send that Instagram accepted without naming the
+// message becomes. It is an ERROR rather than a degraded success on purpose:
+// slidetypes.SentMessage is a VALUE field on the response, so a null or absent
+// `…_send_with_slide_messaging_response` unmarshals to a zero struct with
+// err == nil. Reporting that as 200 would answer `{"ok":true}` against a
+// contract that promises `{ok,id,timestamp_ms}`, and an adapter that cannot
+// name the message it just sent can neither react to it, unsend it, nor quote
+// it — the same class of "accepted, invisible" failure the two-id trap
+// produces, arriving through the response instead of the request.
+var errNoMessageID = errors.New("send was accepted but returned no message id")
+
+// messageIDOf reads the id out of a send response.
+//
+// SentMessage carries the id under TWO names, `message_id` and `id`, and which
+// one the server populates for a given mutation is not decidable from here:
+// upstream mautrix-meta reads `id` for a send (handlematrix.go:176) and
+// `message_id` for inbound deltas that reactions then target, which can only
+// work because the two agree. Reading both and refusing an empty result is the
+// only form that is correct whichever one turns out to be filled.
+func messageIDOf(msg slidetypes.SentMessage) string {
+	if msg.MessageID != "" {
+		return msg.MessageID
+	}
+	return msg.ID
 }
 
 // sendText posts a text message, optionally carrying mentions and a reply.
@@ -183,8 +243,10 @@ func sendText(
 	if err != nil {
 		return sendResult{}, err
 	}
-	msg := resp.GetMessage()
-	return sendResult{OK: true, ID: msg.MessageID, TimestampMS: unixMilliOrZero(msg)}, nil
+	if resp == nil {
+		return sendResult{}, errNoMessageID
+	}
+	return resultOf(resp.GetMessage())
 }
 
 // sendMedia uploads bytes and then sends the resulting attachment.
@@ -231,35 +293,105 @@ func sendMedia(
 	if err != nil {
 		return sendResult{}, err
 	}
-	msg := sent.GetMessage()
-	return sendResult{OK: true, ID: msg.MessageID, TimestampMS: unixMilliOrZero(msg)}, nil
+	if sent == nil {
+		return sendResult{}, errNoMessageID
+	}
+	return resultOf(sent.GetMessage())
 }
 
-func sendReaction(ctx context.Context, cli igClient, longThreadID, messageID, emoji string, remove bool) error {
+// resultOf is the one place a send turns into a 200 body, so it is the one
+// place that can refuse to.
+func resultOf(msg slidetypes.SentMessage) (sendResult, error) {
+	id := messageIDOf(msg)
+	if id == "" {
+		return sendResult{}, errNoMessageID
+	}
+	return sendResult{OK: true, ID: id, TimestampMS: unixMilliOrZero(msg)}, nil
+}
+
+// errReactionNotApplied is the read-back failing, not the request failing.
+//
+// MEASURED 2026-09-22: a reaction addressed with the long thread id is
+// accepted — HTTP 200, no error value, nothing in the body that reads as a
+// refusal — and is simply not in the thread afterwards. The ONLY signal that
+// separates that from a real reaction is the post-state list the mutation
+// returns, which is why it is read here instead of discarded.
+var errReactionNotApplied = errors.New("reaction mutation was accepted but the reaction is not on the message")
+
+// errReactionUnverifiable is the fail-closed half: with no own fbid there is
+// nothing to look for in the post-state list, so the mutation cannot be
+// confirmed. That is an ERROR and never a PASS — reporting 200 for an
+// unverifiable reaction is exactly the defect above, one layer up.
+var errReactionUnverifiable = errors.New("cannot verify the reaction: own fbid is unknown")
+
+// sendReaction posts (or retracts) one reaction and then CHECKS IT LANDED.
+//
+// shortThreadID, not the long one — see the table at the top of this file.
+func sendReaction(
+	ctx context.Context, cli igClient,
+	shortThreadID, messageID, emoji string, remove bool, ownFBID int64,
+) error {
 	status := slidetypes.ReactionStatusCreated
 	if remove {
 		status = slidetypes.ReactionStatusDeleted
 		// Instagram still wants the emoji on a removal — the mutation
 		// identifies WHICH reaction is being retracted, not just that one is.
 	}
-	_, err := cli.SendReaction(ctx, &slidetypes.CreateReactionRequest{
+	resp, err := cli.SendReaction(ctx, &slidetypes.CreateReactionRequest{
 		Input: slidetypes.ReactionInput{
 			Emoji:          emoji,
 			MessageID:      messageID,
 			ItemID:         messageID,
 			ReactionStatus: status,
-			ThreadID:       longThreadID,
+			ThreadID:       shortThreadID,
 		},
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if resp == nil {
+		return errReactionNotApplied
+	}
+	if ownFBID == 0 {
+		return errReactionUnverifiable
+	}
+	// Reactions is the POST-state of the message, which is what upstream
+	// scans for its own SenderFBID to date the reaction it just made
+	// (handlematrix.go:214). Here it answers the stronger question: is the
+	// reaction there at all?
+	var mine bool
+	for _, r := range resp.Message.Reactions {
+		if r.SenderFBID == ownFBID {
+			mine = true
+			break
+		}
+	}
+	if mine == remove {
+		// create + absent, or remove + still present. Either way the wire
+		// said yes and the thread disagrees.
+		return fmt.Errorf("%w (remove=%t)", errReactionNotApplied, remove)
+	}
+	return nil
 }
 
+// errNotUnsent is the unsend equivalent: `direct_unsend_message` is the whole
+// response body and it is a boolean, so a false there is the mutation saying
+// it did nothing. Discarding it and answering 200 would tell the adapter a
+// message is gone while it is still in the room.
+var errNotUnsent = errors.New("unsend mutation was accepted but the message was not retracted")
+
 func unsendMessage(ctx context.Context, cli igClient, longThreadID, messageID string) error {
-	_, err := cli.UnsendMessage(ctx, &slidetypes.UnsendMessageRequest{
+	resp, err := cli.UnsendMessage(ctx, &slidetypes.UnsendMessageRequest{
 		MessageID: messageID,
 		SendData:  slidetypes.SendData{ThreadID: longThreadID},
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if resp == nil || !resp.DirectUnsendMessage {
+		return errNotUnsent
+	}
+	return nil
 }
 
 // unixMilliOrZero guards the same zero-time trap normalizeMessage does:

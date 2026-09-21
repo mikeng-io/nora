@@ -461,3 +461,120 @@ func TestNilMessageNormalizesToNothing(t *testing.T) {
 		t.Fatalf("a nil message produced an event: %+v", ev)
 	}
 }
+
+// --- @everyone ----------------------------------------------------------------
+
+// TestEveryoneMentionIsLabelledNotDisguisedAsAPerson.
+//
+// For `profile_range_type: "THREAD"` — Instagram's @everyone — `user_fbid`
+// carries the CHAT id, not a person's; the library says so on the field
+// itself. Emitting that number unlabelled means it can never equal Nora's own
+// fbid, so a message that names the whole room reads as a mention of somebody
+// who is not her and she silently never answers it. There is no error and no
+// counter: the only symptom is a bot that ignores @everyone forever.
+//
+// Both halves are asserted. The PROFILE mention beside it must still be a
+// person, or "label the thread one" would have been bought by breaking the
+// case that already worked.
+func TestEveryoneMentionIsLabelledNotDisguisedAsAPerson(t *testing.T) {
+	msg := messageOf(t, `{
+	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1009543911792316",
+	  "message":{"thread_fbid":"1009543911792316","message_id":"mid.$e","sender_fbid":"110966695387753",
+	    "text_body":"@everyone and @not_____nora","content_type":"TEXT","timestamp_ms":"1789985625166",
+	    "content":{"__typename":"SlideMessageText","text_body":"@everyone and @not_____nora"},
+	    "mentions":[
+	      {"user_fbid":"1009543911792316","length":9,"offset":0,"profile_range_type":"THREAD"},
+	      {"user_fbid":"14963523149149302","length":13,"offset":14,"profile_range_type":"PROFILE"}],
+	    "sender":{"name":"Member A","id":"110966695387753","igid":"221731317",
+	      "user_dict":{"username":"member_a","interop_messaging_user_fbid":"110966695387753","id":"221731317"}}}}`)
+
+	ev := normalizeMessage(roomShort, msg, noraFBID)
+	if len(ev.Mentions) != 2 {
+		t.Fatalf("%d mentions survived, want 2", len(ev.Mentions))
+	}
+	everyone, person := ev.Mentions[0], ev.Mentions[1]
+	if everyone.RangeType != "THREAD" {
+		t.Fatalf("@everyone is emitted as %q — indistinguishable from a person", everyone.RangeType)
+	}
+	// The number is the ROOM, and that is why it must be labelled: compared to
+	// an fbid it can only ever be a miss.
+	if everyone.FBID != roomShort {
+		t.Errorf("@everyone fbid = %q, want the chat id passed through", everyone.FBID)
+	}
+	if everyone.FBID == person.FBID {
+		t.Fatal("the thread id and the person's fbid compared equal")
+	}
+	if person.RangeType != "PROFILE" || person.FBID != "14963523149149302" {
+		t.Fatalf("the ordinary mention was damaged: %+v", person)
+	}
+	// And it survives serialization under the name the adapter reads.
+	blob, err := json.Marshal(ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Mentions []map[string]any `json:"mentions"`
+	}
+	if err := json.Unmarshal(blob, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Mentions[0]["range_type"] != "THREAD" {
+		t.Fatalf("range_type did not reach the wire: %v", got.Mentions[0])
+	}
+}
+
+// --- from_me on the non-message events ----------------------------------------
+
+// The contract says EVERY event carries from_me. A reaction names its sender,
+// so the answer is a real boolean; an edit and an unsend do not name anyone at
+// all, so the answer is an explicit null. `false` there would be a claim — that
+// a member did it — and the account is also used from a browser and a phone,
+// so it is a claim that can be wrong.
+func TestFromMeIsAnsweredOrExplicitlyUnknownOnEveryEvent(t *testing.T) {
+	mine := normalizeReaction(roomShort, slidetypes.Reaction{
+		Reaction: "👍", SenderFBID: noraFBID}, "mid.$m", false, noraFBID)
+	if mine.FromMe == nil || !*mine.FromMe {
+		t.Fatalf("our own reaction reported from_me = %v", mine.FromMe)
+	}
+	theirs := normalizeReaction(roomShort, slidetypes.Reaction{
+		Reaction: "👍", SenderFBID: mikengFBID}, "mid.$m", false, noraFBID)
+	if theirs.FromMe == nil || *theirs.FromMe {
+		t.Fatalf("another member's reaction reported from_me = %v", theirs.FromMe)
+	}
+	// Own fbid unknown: "I cannot tell", not "no". A false here is how a bot
+	// answers its own echo.
+	unknown := normalizeReaction(roomShort, slidetypes.Reaction{
+		Reaction: "👍", SenderFBID: mikengFBID}, "mid.$m", false, 0)
+	if unknown.FromMe != nil {
+		t.Fatalf("from_me = %v with no own fbid, want null", *unknown.FromMe)
+	}
+
+	// Every event kind serializes the key, whatever the value.
+	for name, ev := range map[string]any{
+		"reaction": mine,
+		"edit":     &editEvent{Kind: kindEdit, RoomID: roomShort, MessageID: "mid.$m"},
+		"unsend":   &unsendEvent{Kind: kindUnsend, RoomID: roomShort, MessageID: "mid.$m"},
+		"typing":   &typingEvent{Kind: kindTyping, ThreadID: roomShort},
+	} {
+		blob, err := json.Marshal(ev)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got map[string]any
+		if err := json.Unmarshal(blob, &got); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := got["from_me"]; !ok {
+			t.Errorf("%s: from_me is absent, not null — the contract says every event carries it", name)
+		}
+	}
+	// The unknown cases are null, not false: a consumer must be able to tell
+	// "nobody knows" from "somebody else".
+	blob, err := json.Marshal(&editEvent{Kind: kindEdit, MessageID: "mid.$m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(blob), `"from_me":null`) {
+		t.Fatalf("edit serialized from_me as something other than null: %s", blob)
+	}
+}

@@ -185,11 +185,11 @@ func (b *bridge) handleSend(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	long, ok := b.resolveRoom(w, r, req.RoomID)
+	thread, ok := b.resolveRoom(w, r, req.RoomID)
 	if !ok {
 		return
 	}
-	res, err := sendText(r.Context(), cli, long, req.Text, req.Mentions, req.ReplyTo)
+	res, err := sendText(r.Context(), cli, thread.Long, req.Text, req.Mentions, req.ReplyTo)
 	if err != nil {
 		b.failSend(w, "send", req.RoomID, err)
 		return
@@ -238,13 +238,17 @@ func (b *bridge) handleSendMedia(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	shortID, err := strconv.ParseInt(req.RoomID, 10, 64)
-	if err != nil || shortID <= 0 {
-		badRequest(w, "room_id must be a decimal thread_fbid")
+	thread, ok := b.resolveRoom(w, r, req.RoomID)
+	if !ok {
 		return
 	}
-	long, ok := b.resolveRoom(w, r, req.RoomID)
-	if !ok {
+	// The upload leg takes the short id as an int64 — it builds a referer of
+	// /direct/t/<short>/ — and resolveRoom has already proved it parses, so
+	// this cannot fail. The error is still checked rather than dropped: a
+	// silent 0 here would upload against /direct/t/0/.
+	shortID, err := strconv.ParseInt(thread.Short, 10, 64)
+	if err != nil || shortID <= 0 {
+		badRequest(w, "room_id must be a decimal thread_fbid")
 		return
 	}
 	media := &httpclient.MercuryUploadMedia{
@@ -258,7 +262,7 @@ func (b *bridge) handleSendMedia(w http.ResponseWriter, r *http.Request) {
 		unavailable(w, "session is being re-established")
 		return
 	}
-	res, err := sendMedia(r.Context(), cli, up, shortID, long, media, req.ReplyTo)
+	res, err := sendMedia(r.Context(), cli, up, shortID, thread.Long, media, req.ReplyTo)
 	if err != nil {
 		b.failSend(w, "send-media", req.RoomID, err)
 		return
@@ -292,11 +296,17 @@ func (b *bridge) handleReact(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	long, ok := b.resolveRoom(w, r, req.RoomID)
+	thread, ok := b.resolveRoom(w, r, req.RoomID)
 	if !ok {
 		return
 	}
-	if err := sendReaction(r.Context(), cli, long, req.MessageID, req.Emoji, req.Remove); err != nil {
+	// SHORT, not long. A reaction addressed with the long thread_igid is
+	// accepted by the API and is absent from the thread on read-back
+	// (measured 2026-09-22); upstream passes the short id here too. The long
+	// id is still resolved first, because that lookup is what validates the
+	// room exists and what warms the reverse cache /typing reads.
+	if err := sendReaction(r.Context(), cli, thread.Short,
+		req.MessageID, req.Emoji, req.Remove, b.ownFBID()); err != nil {
 		b.failSend(w, "react", req.RoomID, err)
 		return
 	}
@@ -328,11 +338,14 @@ func (b *bridge) handleTyping(w http.ResponseWriter, r *http.Request) {
 		unavailable(w, "realtime socket is not connected")
 		return
 	}
-	long, ok := b.resolveRoom(w, r, req.RoomID)
+	thread, ok := b.resolveRoom(w, r, req.RoomID)
 	if !ok {
 		return
 	}
-	if err := cli.SetTyping(r.Context(), long, req.Typing); err != nil {
+	// SHORT, following upstream (handlematrix.go:484). Typing arrival was
+	// never measured in either id space, and an unverified verb should copy
+	// the only implementation anybody has evidence for.
+	if err := cli.SetTyping(r.Context(), thread.Short, req.Typing); err != nil {
 		b.failSend(w, "typing", req.RoomID, err)
 		return
 	}
@@ -357,11 +370,11 @@ func (b *bridge) handleUnsend(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	long, ok := b.resolveRoom(w, r, req.RoomID)
+	thread, ok := b.resolveRoom(w, r, req.RoomID)
 	if !ok {
 		return
 	}
-	if err := unsendMessage(r.Context(), cli, long, req.MessageID); err != nil {
+	if err := unsendMessage(r.Context(), cli, thread.Long, req.MessageID); err != nil {
 		b.failSend(w, "unsend", req.RoomID, err)
 		return
 	}
@@ -392,21 +405,22 @@ func (b *bridge) ready(w http.ResponseWriter) (igClient, bool) {
 	return cli, true
 }
 
-// resolveRoom turns the contract's room key (the SHORT thread_fbid) into the
-// long thread_igid every send requires. The long id never crosses the HTTP
+// resolveRoom turns the contract's room key (the SHORT thread_fbid) into BOTH
+// thread ids. Which one a given verb takes is a per-verb fact, not a rule —
+// see the table at the top of outbound.go. The long id never crosses the HTTP
 // boundary in either direction.
-func (b *bridge) resolveRoom(w http.ResponseWriter, r *http.Request, roomID string) (string, bool) {
-	long, err := b.threads.resolve(r.Context(), roomID)
+func (b *bridge) resolveRoom(w http.ResponseWriter, r *http.Request, roomID string) (threadRef, bool) {
+	thread, err := b.threads.resolve(r.Context(), roomID)
 	if err == nil {
-		return long, true
+		return thread, true
 	}
 	if errors.Is(err, errBadRoomID) {
 		badRequest(w, err.Error())
-		return "", false
+		return threadRef{}, false
 	}
 	if errors.Is(err, errNotConnected) {
 		unavailable(w, err.Error())
-		return "", false
+		return threadRef{}, false
 	}
 	// A lookup that failed against Instagram is mapped through the same
 	// classifier as a send, so a checkpoint discovered here reads 409 and not
@@ -414,7 +428,7 @@ func (b *bridge) resolveRoom(w http.ResponseWriter, r *http.Request, roomID stri
 	writeJSON(w, statusForError(err), map[string]any{
 		"ok": false, "error": "thread_lookup_failed", "detail": err.Error(),
 	})
-	return "", false
+	return threadRef{}, false
 }
 
 func (b *bridge) failSend(w http.ResponseWriter, route, roomID string, err error) {

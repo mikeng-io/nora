@@ -290,32 +290,81 @@ func TestSendMediaCarriesNoCaption(t *testing.T) {
 	}
 }
 
-func TestReactAndUnsendSucceed(t *testing.T) {
+// THE ID SPACE IS MIXED PER VERB, and the route table is where that stops
+// being a comment and starts being behaviour. /react takes the SHORT id and
+// /unsend the LONG one; the fake refuses the other spelling the way the wire
+// does, so a route that swaps them fails here rather than in a group chat.
+func TestReactAndUnsendSucceedOnTheirOwnIDSpaces(t *testing.T) {
 	f := &fakeIG{}
 	b := newTestBridge(t, f)
 	if rec := post(t, b, "/react", map[string]any{
 		"room_id": threadShort, "message_id": "mid.$x", "emoji": "👍",
 	}); rec.Code != http.StatusOK {
-		t.Fatalf("/react answered %d", rec.Code)
+		t.Fatalf("/react answered %d: %s", rec.Code, rec.Body.String())
 	}
 	if rec := post(t, b, "/unsend", map[string]any{
 		"room_id": threadShort, "message_id": "mid.$x",
 	}); rec.Code != http.StatusOK {
-		t.Fatalf("/unsend answered %d", rec.Code)
+		t.Fatalf("/unsend answered %d: %s", rec.Code, rec.Body.String())
 	}
-	if f.reactReq.Input.ThreadID != threadLong || f.unsend.SendData.ThreadID != threadLong {
-		t.Error("a mutation was addressed with the wrong thread id")
+	if f.reactReq.Input.ThreadID != threadShort {
+		t.Errorf("/react addressed %q, want the SHORT id", f.reactReq.Input.ThreadID)
+	}
+	if f.unsend.SendData.ThreadID != threadLong {
+		t.Errorf("/unsend addressed %q, want the LONG id", f.unsend.SendData.ThreadID)
+	}
+	// The reaction is on the message afterwards. This is the read-back, not
+	// the request: it is what makes the assertion above fail rather than pass
+	// silently if the id ever goes back to the long one.
+	if got := f.reactions["mid.$x"]; len(got) != 1 || got[0].SenderFBID != selfFBID {
+		t.Fatalf("the reaction is not on the message: %+v", got)
 	}
 }
 
-func TestTypingUsesTheLongThreadID(t *testing.T) {
+// A /react that Instagram accepts and does not apply must NOT answer 200. The
+// bridge cannot tell the difference from the request, only from the post-state
+// the mutation returns, so this drives the failure through the whole route.
+func TestReactThatDoesNotLandIsNotA200(t *testing.T) {
+	f := &fakeIG{}
+	b := newTestBridge(t, f)
+	// An own fbid of 0 makes the read-back unverifiable, which is an ERROR.
+	b.setSelf(selfIdentity{IGID: "79597894900", Username: "not_____nora"})
+	rec := post(t, b, "/react", map[string]any{
+		"room_id": threadShort, "message_id": "mid.$x", "emoji": "👍",
+	})
+	if rec.Code == http.StatusOK {
+		t.Fatalf("an unverifiable reaction answered 200: %s", rec.Body.String())
+	}
+}
+
+// PINNED, NOT GROUNDED, and labelled so on purpose. Typing arrival was never
+// measured in either id space, so there is no read-back to check and no fake
+// behaviour that could be honest about it. What this asserts is only that the
+// bridge follows upstream (handlematrix.go:484, `meta.IGID` = the short id) —
+// if typing is ever measured, this test is the thing to replace, not to trust.
+func TestTypingFollowsUpstreamAndUsesTheShortThreadID(t *testing.T) {
 	f := &fakeIG{}
 	b := newTestBridge(t, f)
 	if rec := post(t, b, "/typing", map[string]any{"room_id": threadShort, "typing": true}); rec.Code != http.StatusOK {
 		t.Fatalf("/typing answered %d", rec.Code)
 	}
-	if len(f.typing) != 1 || f.typing[0] != threadLong {
-		t.Fatalf("typing addressed %v", f.typing)
+	if len(f.typing) != 1 || f.typing[0] != threadShort {
+		t.Fatalf("typing addressed %v, want the short id", f.typing)
+	}
+}
+
+// A send Instagram accepted without naming the message must not reach the
+// adapter as 200 {"ok":true}: the contract promises {ok,id,timestamp_ms}.
+func TestSendWithoutAMessageIDDoesNotAnswer200(t *testing.T) {
+	for _, route := range []string{"/send", "/send-media"} {
+		b := newTestBridge(t, &fakeIG{emptySend: true})
+		rec := post(t, b, route, map[string]any{
+			"room_id": threadShort, "text": "hi",
+			"data_base64": base64.StdEncoding.EncodeToString([]byte("x")),
+		})
+		if rec.Code == http.StatusOK {
+			t.Errorf("%s answered 200 with no message id: %s", route, rec.Body.String())
+		}
 	}
 }
 

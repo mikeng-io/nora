@@ -91,9 +91,35 @@ func (s store) path(name string) string { return filepath.Join(s.dir, name) }
 // bridge is live, and a truncated cookie file read at the next boot is
 // indistinguishable from a revoked session. Rename is atomic within a
 // directory, so a reader sees the old file or the new one and never a half.
+//
+// The temp name is UNIQUE per call, not `path + ".tmp"`. Every caller here is
+// reachable from more than one goroutine — instameow dispatches AuthError on
+// an HTTP request goroutine and TypingNotification on a second socket's, the
+// cookie flush has a ticker of its own, and the supervisor writes seq and self
+// from a third — so a fixed temp name lets two writers interleave their
+// WriteFile calls and publish a file that is half of each. On cookies.json,
+// which cannot be regenerated without a human at a browser, that is the one
+// unrecoverable loss in the whole session directory.
 func writeAtomic(path string, data []byte) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	// Removes the temp file on every failure path below. After a successful
+	// rename it refers to a name that no longer exists and does nothing.
+	defer func() { _ = os.Remove(tmp) }()
+	// CreateTemp opens 0600 already; this is the assertion, not the change.
+	// The session directory holds a full account credential.
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
@@ -163,6 +189,25 @@ func (s store) saveSeq(seqID int64, ts time.Time) error {
 	return writeAtomic(s.path("seq.json"), blob)
 }
 
+// clearSeq deletes the persisted sequence id.
+//
+// This is the DURABLE half of forceReindex. The in-memory flag stops the
+// current process from resuming against a void sequence id; on its own it does
+// nothing about the number still sitting in seq.json, so a restart between the
+// invalidation and the next LoadIndex takes ensureSession's resume shortcut,
+// skips LoadIndex entirely, and subscribes from a sequence id Instagram has
+// already thrown away. Nothing errors and no message arrives — the room simply
+// goes quiet until somebody notices.
+//
+// A missing file is success: the point is that seq.json does not hold a stale
+// number afterwards, not that a delete happened.
+func (s store) clearSeq() error {
+	if err := os.Remove(s.path("seq.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
 func (s store) loadSeq() (int64, time.Time) {
 	var rec seqRecord
 	blob, err := os.ReadFile(s.path("seq.json"))
@@ -201,18 +246,30 @@ func (s store) saveCookies(jar *cookies.Cookies) error {
 // thing in and normalizing it here is one less way to arrive at a half-session
 // that fails with an opaque auth error.
 func loadCookieJar(s store) (*cookies.Cookies, error) {
-	jar := &cookies.Cookies{Platform: types.PlatformFromString("instagram")}
-
-	if blob, err := os.ReadFile(s.path("cookies.json")); err == nil {
-		if err := json.Unmarshal(blob, jar); err != nil {
-			return nil, fmt.Errorf("parsing cookies.json: %w", err)
+	// A cookies.json that is PRESENT but unusable must not shadow the cURL
+	// bootstrap. Reaching the cURL path only on a read error meant an empty,
+	// truncated or half-written cookies.json made the documented re-auth
+	// remedy — "drop a fresh Copy as cURL into the volume" — silently do
+	// nothing, forever, while /health kept reporting logged_out. So the file
+	// has to be usable, not merely readable, to win: parseable AND carrying
+	// the three cookies the client refuses to start without.
+	jsonErr := errors.New("no cookies.json")
+	if blob, readErr := os.ReadFile(s.path("cookies.json")); readErr == nil {
+		jar := &cookies.Cookies{Platform: types.PlatformFromString("instagram")}
+		switch {
+		case json.Unmarshal(blob, jar) != nil:
+			jsonErr = errors.New("cookies.json does not parse")
+		case len(jar.GetMissingCookieNames()) > 0:
+			jsonErr = fmt.Errorf("cookies.json is missing %v", jar.GetMissingCookieNames())
+		default:
+			return jar, nil
 		}
-		return jar, nil
 	}
 
+	jar := &cookies.Cookies{Platform: types.PlatformFromString("instagram")}
 	blob, err := os.ReadFile(s.path("cookies.curl"))
 	if err != nil {
-		return nil, fmt.Errorf("no cookies.json and no cookies.curl in %s", s.dir)
+		return nil, fmt.Errorf("%s, and no cookies.curl in %s", jsonErr, s.dir)
 	}
 	pairs, err := cookiesFromCurl(string(blob))
 	if err != nil {

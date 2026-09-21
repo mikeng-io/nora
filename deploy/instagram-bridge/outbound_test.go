@@ -14,15 +14,33 @@ import (
 	"go.mau.fi/mautrix-meta/pkg/messagix/types"
 )
 
-// The two ids for the same thread, from 02-identity-and-policy.md. They are
-// spelled out here because half of these tests exist to prove the LONG one is
-// what leaves the process and the SHORT one is what enters it.
+// The two ids for the same thread, from 02-identity-and-policy.md, and the own
+// fbid every reaction read-back is checked against.
 const (
 	threadShort = "1009543911792316"
 	threadLong  = "340282366841710301281152937372201004392"
+	selfFBID    = int64(14963523149149302)
 )
 
-// --- a recording fake --------------------------------------------------------
+// --- a fake that behaves like the MEASURED wire -------------------------------
+//
+// This fake does NOT accept any string it is handed. That was the defect in
+// the suite it replaces: every id-space test asserted the bridge's own choice
+// against a fake with no opinion, so if the bridge had picked the wrong id the
+// test would have gone on passing. A test that cannot fail measures nothing.
+//
+// What is modelled here is what the probes actually observed, including the
+// part that makes the bug invisible in production:
+//
+//   - /send, /send-media, /unsend LAND with the LONG thread id. Addressed with
+//     anything else they are ACCEPTED — no error — and produce no message.
+//   - /react lands with the SHORT id. Addressed with the LONG one it is
+//     accepted, returns 200, and the reaction is ABSENT from the post-state
+//     list the mutation itself returns. That absence is the only signal there
+//     is, which is why the bridge now reads it.
+//
+// So a test that asserts "the reaction arrived" fails if the bridge goes back
+// to the long id, rather than passing because the fake shrugged.
 
 type fakeIG struct {
 	mu sync.Mutex
@@ -34,9 +52,16 @@ type fakeIG struct {
 	typing   []string
 	fetches  int
 
+	// reactions is the fake thread's post-state, keyed by message id: what
+	// Instagram would return on the next read-back.
+	reactions map[string][]slidetypes.Reaction
+
 	sendErr   error
 	fetchErr  error
 	typingErr error
+	// emptySend makes a send return a null message with NO error, which is how
+	// the wire produced `{"ok":true}` with no id.
+	emptySend bool
 }
 
 func (f *fakeIG) SendMessage(_ context.Context, req *slidetypes.SendTextRequest) (*slidetypes.SendTextResponse, error) {
@@ -45,6 +70,10 @@ func (f *fakeIG) SendMessage(_ context.Context, req *slidetypes.SendTextRequest)
 	f.textReq = req
 	if f.sendErr != nil {
 		return nil, f.sendErr
+	}
+	if f.emptySend || req.IGThreadIGID == nil || *req.IGThreadIGID != threadLong {
+		// Accepted, and nothing arrived. No error: that is the point.
+		return &slidetypes.SendTextResponse{}, nil
 	}
 	return &slidetypes.SendTextResponse{Message: slidetypes.SentMessage{MessageID: "mid.$sent"}}, nil
 }
@@ -56,6 +85,9 @@ func (f *fakeIG) SendMedia(_ context.Context, req *slidetypes.SendMediaRequest) 
 	if f.sendErr != nil {
 		return nil, f.sendErr
 	}
+	if f.emptySend || req.ThreadID != threadLong {
+		return &slidetypes.SendMediaResponse{}, nil
+	}
 	return &slidetypes.SendMediaResponse{Message: slidetypes.SentMessage{MessageID: "mid.$media"}}, nil
 }
 
@@ -63,14 +95,46 @@ func (f *fakeIG) SendReaction(_ context.Context, req *slidetypes.CreateReactionR
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.reactReq = req
-	return &slidetypes.SendReactionResponse{}, f.sendErr
+	if f.sendErr != nil {
+		return nil, f.sendErr
+	}
+	if f.reactions == nil {
+		f.reactions = map[string][]slidetypes.Reaction{}
+	}
+	id := req.Input.MessageID
+	// MEASURED 2026-09-22: only the short thread id mutates the thread. The
+	// long one is accepted and changes nothing, so the post-state comes back
+	// unchanged and the caller has no error to go on.
+	if req.Input.ThreadID == threadShort {
+		kept := f.reactions[id][:0:0]
+		for _, r := range f.reactions[id] {
+			if r.SenderFBID != selfFBID {
+				kept = append(kept, r)
+			}
+		}
+		if req.Input.ReactionStatus == slidetypes.ReactionStatusCreated {
+			kept = append(kept, slidetypes.Reaction{Reaction: req.Input.Emoji, SenderFBID: selfFBID})
+		}
+		f.reactions[id] = kept
+	}
+	return &slidetypes.SendReactionResponse{
+		Message: slidetypes.ReactionUpdateMessage{ID: id, Reactions: f.reactions[id]},
+	}, nil
 }
 
 func (f *fakeIG) UnsendMessage(_ context.Context, req *slidetypes.UnsendMessageRequest) (*slidetypes.UnsendMessageResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.unsend = req
-	return &slidetypes.UnsendMessageResponse{}, f.sendErr
+	if f.sendErr != nil {
+		return nil, f.sendErr
+	}
+	// `direct_unsend_message` is the whole response body: the mutation says
+	// whether it retracted anything. Addressed with the wrong thread it does
+	// not, and says so — which is exactly the field the bridge used to drop.
+	return &slidetypes.UnsendMessageResponse{
+		DirectUnsendMessage: req.SendData.ThreadID == threadLong,
+	}, nil
 }
 
 func (f *fakeIG) SetTyping(_ context.Context, threadID string, _ bool) error {
@@ -101,21 +165,46 @@ func newIndex(f *fakeIG) *threadIndex { return newThreadIndex(f.FetchThreadID) }
 func TestSendUsesTheLongThreadID(t *testing.T) {
 	f := &fakeIG{}
 	idx := newIndex(f)
-	long, err := idx.resolve(t.Context(), threadShort)
+	thread, err := idx.resolve(t.Context(), threadShort)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if long != threadLong {
-		t.Fatalf("resolve gave %q, want the long thread_igid", long)
+	if thread.Long != threadLong || thread.Short != threadShort {
+		t.Fatalf("resolve gave %+v, want both ids", thread)
 	}
-	if _, err := sendText(t.Context(), f, long, "hello", nil, ""); err != nil {
+	// GROUNDED, not pinned: the fake returns a message id only for the long
+	// id, the same way the wire returns a message only for the thread it
+	// recognises. A send addressed with the short one is accepted and produces
+	// nothing, so this fails if the bridge ever swaps them.
+	res, err := sendText(t.Context(), f, thread.Long, "hello", nil, "")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if f.textReq.IGThreadIGID == nil || *f.textReq.IGThreadIGID != threadLong {
-		t.Fatalf("send carried %v, want the long id", f.textReq.IGThreadIGID)
+	if res.ID != "mid.$sent" {
+		t.Fatalf("the send did not arrive: %+v", res)
 	}
-	if strings.Contains(*f.textReq.IGThreadIGID, threadShort) {
-		t.Fatal("the short id leaked into the send")
+	if _, err := sendText(t.Context(), f, thread.Short, "hello", nil, ""); err == nil {
+		t.Fatal("a send addressed with the SHORT id was reported as a success")
+	}
+}
+
+// The canonical short id is what the cache keys on. "012" and "12" are the
+// same thread, and two entries for one thread would mean a typing
+// notification's reverse lookup misses depending on how the room key was spelled.
+func TestShortIDIsCanonicalizedBeforeCaching(t *testing.T) {
+	f := &fakeIG{}
+	idx := newIndex(f)
+	for _, spelling := range []string{threadShort, "0" + threadShort} {
+		thread, err := idx.resolve(t.Context(), spelling)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if thread.Short != threadShort {
+			t.Fatalf("resolve(%q).Short = %q", spelling, thread.Short)
+		}
+	}
+	if f.fetches != 1 {
+		t.Fatalf("FetchThreadID called %d times for one thread", f.fetches)
 	}
 }
 
@@ -165,8 +254,8 @@ func TestEmptyLongIDIsAnErrorNotAFallback(t *testing.T) {
 		return &instameow.ThreadIGIDs{ShortID: threadShort}, nil
 	})
 	_ = f
-	if _, err := idx.resolve(t.Context(), threadShort); err == nil {
-		t.Fatal("an empty thread_igid was accepted")
+	if got, err := idx.resolve(t.Context(), threadShort); err == nil {
+		t.Fatalf("an empty thread_igid was accepted: %+v", got)
 	}
 }
 
@@ -359,9 +448,35 @@ func TestSendMediaRequestHasNoTextField(t *testing.T) {
 
 // --- reaction / unsend --------------------------------------------------------
 
-func TestReactionRemovalStillCarriesTheEmoji(t *testing.T) {
+// THE REACTION BUG, as a test that fails on the code this replaces.
+//
+// MEASURED 2026-09-22: the long thread_igid is accepted by /react and the
+// reaction is absent from the thread on read-back; the short thread_fbid
+// lands. Both halves are asserted, because a capability recorded only from
+// what worked is decoration.
+func TestReactionLandsOnlyWithTheShortThreadID(t *testing.T) {
 	f := &fakeIG{}
-	if err := sendReaction(t.Context(), f, threadLong, "mid.$x", "👍", true); err != nil {
+	if err := sendReaction(t.Context(), f, threadLong, "mid.$x", "👍", false, selfFBID); err == nil {
+		t.Fatal("a reaction addressed with the LONG thread id was reported as delivered")
+	}
+	f = &fakeIG{}
+	if err := sendReaction(t.Context(), f, threadShort, "mid.$x", "👍", false, selfFBID); err != nil {
+		t.Fatalf("a reaction addressed with the SHORT thread id failed: %v", err)
+	}
+	if f.reactReq.Input.ThreadID != threadShort {
+		t.Errorf("reaction thread = %q, want the short id", f.reactReq.Input.ThreadID)
+	}
+	if f.reactReq.Input.ItemID != "mid.$x" || f.reactReq.Input.MessageID != "mid.$x" {
+		t.Errorf("reaction target = %+v", f.reactReq.Input)
+	}
+}
+
+func TestReactionRemovalStillCarriesTheEmojiAndIsCheckedToo(t *testing.T) {
+	f := &fakeIG{}
+	if err := sendReaction(t.Context(), f, threadShort, "mid.$x", "👍", false, selfFBID); err != nil {
+		t.Fatal(err)
+	}
+	if err := sendReaction(t.Context(), f, threadShort, "mid.$x", "👍", true, selfFBID); err != nil {
 		t.Fatal(err)
 	}
 	if f.reactReq.Input.ReactionStatus != slidetypes.ReactionStatusDeleted {
@@ -372,11 +487,39 @@ func TestReactionRemovalStillCarriesTheEmoji(t *testing.T) {
 	if f.reactReq.Input.Emoji != "👍" {
 		t.Errorf("emoji dropped on removal: %q", f.reactReq.Input.Emoji)
 	}
-	if f.reactReq.Input.ThreadID != threadLong {
-		t.Errorf("reaction thread = %q, want the long id", f.reactReq.Input.ThreadID)
+	if got := f.reactions["mid.$x"]; len(got) != 0 {
+		t.Fatalf("the reaction survived the removal: %+v", got)
 	}
-	if f.reactReq.Input.ItemID != "mid.$x" || f.reactReq.Input.MessageID != "mid.$x" {
-		t.Errorf("reaction target = %+v", f.reactReq.Input)
+	// And a removal that does NOT take is refused, same as a create that does
+	// not: the long id retracts nothing and the emoji stays on the message.
+	f2 := &fakeIG{}
+	if err := sendReaction(t.Context(), f2, threadShort, "mid.$y", "👍", false, selfFBID); err != nil {
+		t.Fatal(err)
+	}
+	if err := sendReaction(t.Context(), f2, threadLong, "mid.$y", "👍", true, selfFBID); err == nil {
+		t.Fatal("a removal that retracted nothing was reported as a success")
+	}
+}
+
+// Fail closed on the unverifiable case. With no own fbid there is nothing to
+// look for in the post-state, so the mutation cannot be confirmed — and an
+// unconfirmable reaction is an ERROR, never a 200. Same defect as the long id
+// produced, one layer up.
+func TestReactionWithNoOwnFBIDIsRefusedRatherThanAssumed(t *testing.T) {
+	err := sendReaction(t.Context(), &fakeIG{}, threadShort, "mid.$x", "👍", false, 0)
+	if !errors.Is(err, errReactionUnverifiable) {
+		t.Fatalf("err = %v, want errReactionUnverifiable", err)
+	}
+}
+
+// Somebody ELSE's reaction on the same message is not evidence that ours
+// landed. Without this the post-state check would pass on any non-empty list.
+func TestAnotherMembersReactionIsNotOurReceipt(t *testing.T) {
+	f := &fakeIG{reactions: map[string][]slidetypes.Reaction{
+		"mid.$x": {{Reaction: "❤️", SenderFBID: 110966695387753}},
+	}}
+	if err := sendReaction(t.Context(), f, threadLong, "mid.$x", "👍", false, selfFBID); err == nil {
+		t.Fatal("another member's reaction was read as our own receipt")
 	}
 }
 
@@ -387,6 +530,58 @@ func TestUnsendCarriesTheLongThreadID(t *testing.T) {
 	}
 	if f.unsend.SendData.ThreadID != threadLong || f.unsend.MessageID != "mid.$y" {
 		t.Fatalf("unsend = %+v", f.unsend)
+	}
+	// `direct_unsend_message: false` is the mutation saying it retracted
+	// nothing. Discarding it and answering 200 tells the adapter a message is
+	// gone while it is still in the room.
+	if err := unsendMessage(t.Context(), &fakeIG{}, threadShort, "mid.$y"); !errors.Is(err, errNotUnsent) {
+		t.Fatalf("an unsend that retracted nothing gave %v, want errNotUnsent", err)
+	}
+}
+
+// --- a send Instagram accepted without naming the message ---------------------
+
+// SentMessage is a VALUE field on the response, so a null
+// `…_send_with_slide_messaging_response` unmarshals to a zero struct with
+// err == nil. Reporting that as 200 answers `{"ok":true}` against a contract
+// that promises `{ok,id,timestamp_ms}`, and an adapter that cannot name the
+// message it just sent can neither react to it, unsend it, nor quote it.
+func TestSendWithNoMessageIDIsAnErrorNotA200(t *testing.T) {
+	for name, send := range map[string]func(*fakeIG) (sendResult, error){
+		"text": func(f *fakeIG) (sendResult, error) {
+			return sendText(t.Context(), f, threadLong, "hi", nil, "")
+		},
+		"media": func(f *fakeIG) (sendResult, error) {
+			return sendMedia(t.Context(), f, okUpload(2280432885466163), 1, threadLong,
+				&httpclient.MercuryUploadMedia{MediaData: []byte{1}}, "")
+		},
+	} {
+		res, err := send(&fakeIG{emptySend: true})
+		if !errors.Is(err, errNoMessageID) {
+			t.Errorf("%s: err = %v, want errNoMessageID", name, err)
+		}
+		if res.OK {
+			t.Errorf("%s: an id-less send reported ok=true", name)
+		}
+	}
+}
+
+// SentMessage carries the id under two names and which one the server fills is
+// not decidable from here: upstream reads `id` for a send and `message_id` for
+// the deltas its reactions then target. Both are read, so neither spelling
+// silently degrades a send to `{"ok":true}`.
+func TestMessageIDIsReadFromEitherSpelling(t *testing.T) {
+	for name, msg := range map[string]slidetypes.SentMessage{
+		"message_id": {MessageID: "mid.$a"},
+		"id":         {ID: "mid.$a"},
+		"both":       {MessageID: "mid.$a", ID: "mid.$a"},
+	} {
+		if got := messageIDOf(msg); got != "mid.$a" {
+			t.Errorf("%s: messageIDOf = %q", name, got)
+		}
+	}
+	if got := messageIDOf(slidetypes.SentMessage{}); got != "" {
+		t.Errorf("a zero SentMessage produced an id: %q", got)
 	}
 }
 
