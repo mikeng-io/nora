@@ -1,0 +1,12 @@
+{
+  "type": "change",
+  "summary": "When Nora mentions what she saw on someone's story, she says it was their story and roughly when — not what she now knows about them.",
+  "details": [
+    "A story is gone in a day. What Nora SAYS about it is not: her side of a conversation is kept as things she has learned about people, permanently. So «he was at the gym» quietly turns something she glimpsed once into something she knows, and a week later nothing can tell the two apart. «His story this morning» goes stale honestly, because it says where it came from and when.",
+    "The instruction to phrase it that way now rides along with the story itself, so it arrives exactly when she is deciding how to say it — and costs nothing on every other thing she does."
+  ],
+  "limitations": [
+    "It is a phrasing she is told to use, not something enforced afterwards. It makes the honest wording the obvious one; it cannot make a model that ignores it say something else.",
+    "It only covers what she read from a story. Anything she works out by putting a story next to something else she knows is not touched by this."
+  ]
+}

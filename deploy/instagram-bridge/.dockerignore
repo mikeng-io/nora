@@ -1,0 +1,7 @@
+# The session directory never belongs in a build context: it holds the account
+# credential. It is bind-mounted at runtime, not baked in.
+session
+state
+cookies.json
+cookies.curl
+*.md

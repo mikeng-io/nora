@@ -82,6 +82,25 @@ def test_every_declared_extension_is_named_and_documented() -> None:
     assert undocumented == [], f"declared with no meaning: {undocumented}"
 
 
+def test_ambiguous_declares_both_senses_it_is_actually_used_in() -> None:
+    """A declared meaning that has fallen behind the use is worse than none.
+
+    `ambiguous` was declared as "several candidates, cannot pick one" while
+    the Instagram story row had been using it for "no index entry AT ALL" —
+    a subject-keyed read whose `target` is a person id, where the honest
+    sentence is «I don't know which account that is, so I didn't look» and
+    guessing a handle from a name reads a different human's stories. The
+    declaration is the thing a reader checks a status against; if it names one
+    of the two senses in use, a reviewer reading the other one has no way to
+    tell a drift from a design. Both senses are named now, and this asserts
+    both, because asserting only "non-empty" is what let the gap live.
+    """
+    meaning = DECLARED_STATUS_EXTENSIONS["ambiguous"]
+    assert "several candidates" in meaning, "the original sense is gone"
+    assert "NO entry at all" in meaning, "the subject-resolution sense is missing"
+    assert "nothing_found" in meaning, "it must say which word it is NOT"
+
+
 def test_the_vocabulary_is_derived_from_the_core_and_the_extensions() -> None:
     """One definition, per CLAUDE.md's label rule — never a hand-copied third list.
 

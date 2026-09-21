@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "design/instagram-adoption/ gains node 12, a pre-merge advisory review by an outside architect given the abstract design and the measurements but no repository access. Two of its arguments are applied: the correlation decision now GATES the story capability rather than accompanying it, and the attribution-phrasing mitigation is relabelled a UX improvement rather than a bound, with a provenance class on memory writes named as the real fix. A third — that the reach ladder is backwards, since the vetted person needs a flag while the unvetted one does not — is recorded as recommended but NOT applied, because it reverses a stated operator preference and needs their decision. Nothing user-visible ships.",
+  "details": [],
+  "limitations": []
+}

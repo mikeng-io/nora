@@ -22,8 +22,13 @@ bound to `nora.platform.signal.roster.SignalRoster` by
 (`LinkPreviewSource`, bound to `nora.infra.preview.OpenGraphPreviewSource` by
 `tests/contract/test_link_preview_contract.py`) and `FakeArtifactIngest`
 (`ArtifactIngest`, bound to `nora.infra.drop.DropArtifactIngest` by
-`tests/contract/test_artifact_ingest_contract.py`). Adding such a fake without
-one is a project rule violation, not a shortcut.
+`tests/contract/test_artifact_ingest_contract.py`) and `FakeSocialProvider`
+(`SocialProvider`, bound to `nora.infra.social`'s THREE implementations —
+`OpenCliBridgeClient`, `InstagramSocialClient` and the `SocialRouter` in front
+of them — by `tests/contract/test_social_provider_contract.py`, which also
+drives `FakeSocialSubjectIndex` (`SocialSubjectIndex`, whose production
+implementation does not exist yet — see that class's docstring). Adding such a
+fake without one is a project rule violation, not a shortcut.
 
 `FakeArtifactIngest` is still also exercised on its own by
 `tests/test_artifact_ingest.py` (a shape/behaviour check written before
@@ -113,6 +118,8 @@ from nora.testing.fakes import (
     FakeRecordStore,
     FakeReverseGeocoder,
     FakeRosterSource,
+    FakeSocialProvider,
+    FakeSocialSubjectIndex,
     FakeToolCallLogStore,
     FakeTranscriber,
     transcript_rows,
@@ -167,6 +174,8 @@ __all__ = [
     "FakeRecordStore",
     "FakeReverseGeocoder",
     "FakeRosterSource",
+    "FakeSocialProvider",
+    "FakeSocialSubjectIndex",
     "FakeSteamPresenceProvider",
     "FakeToolCallLogStore",
     "FakeTranscriber",

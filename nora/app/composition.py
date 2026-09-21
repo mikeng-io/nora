@@ -78,6 +78,7 @@ from nora.domain.ports import (
     ReverseGeocoder,
     RosterSource,
     SearchProvider,
+    SocialProvider,
     Speaker,
     SteamPresenceProvider,
     VoicePresenceSource,
@@ -1945,19 +1946,57 @@ async def build_dependencies(
                 cfg.search.provider,
                 cfg.search.api_key_env,
             )
-    # `social_fetch` (OpenCLI, DEC-151) is wired ONLY when `[social] enabled` —
-    # there is NO credential, so `enabled` alone is the gate (the `[preview]`
-    # shape). Off leaves the registry without a provider and the tool answers
-    # `unavailable` (R-5). The client only ever reaches the host-side bridge
-    # over loopback; the read-only (site, command) allowlist is re-enforced
-    # THERE (`nora.infra.social.bridge_server`), outside the container.
-    social_client = None
+    # `social_fetch` (DEC-151) gets ONE `SocialProvider` — `SocialRouter` —
+    # and the registry stays unaware that there are two backends under it
+    # (design/instagram-adoption/08). Each backend is wired independently and
+    # there is NO credential on either, so `enabled` alone is the gate (the
+    # `[preview]` shape); an unwired backend answers `unavailable` for ITS OWN
+    # rows (R-5) and never widens or narrows the other's reach.
+    #
+    # The DEFAULT is OpenCLI, reaching the host-side bridge over loopback; its
+    # read-only (site, command) allowlist is re-enforced THERE
+    # (`nora.infra.social.bridge_server`), outside the container.
+    social_client: SocialProvider | None = None
+    opencli_client = None
     if cfg.social.enabled:
         from nora.infra.social import OpenCliBridgeClient
-        social_client = OpenCliBridgeClient(
+        opencli_client = OpenCliBridgeClient(
             bridge_url=cfg.social.bridge_url,
             timeout_seconds=cfg.social.timeout_seconds,
             content_max_chars=cfg.social.content_max_chars,
+        )
+    # The EXCEPTION backend serves the one row OpenCLI structurally cannot
+    # (`instagram/story`). It is not built yet, and the reason is a real
+    # dependency rather than an omission: that row is Tier 0, so the ROUTER
+    # needs a `SocialSubjectIndex` — `person_id -> igid`, plus the reach check
+    # — and that needs the `instagram` id kind (`fbid` + `igid`) in
+    # `identity.toml`, which belongs to the platform-adapter milestone
+    # (design/instagram-adoption/11 M2) and is ITS schema to define, not the
+    # social axis's. `SocialRouter` refuses to be constructed with a Tier 0
+    # backend and no index, so this is not a discipline to remember.
+    #
+    # Wiring it with a resolver that answers `None` for everybody would be
+    # worse than not wiring it: the tool would say `ambiguous` («I don't know
+    # whose account that is») about people Nora knows perfectly well, which is
+    # a false statement about HER OWN index manufactured out of a wiring gap.
+    # Unwired, the router answers `unavailable` — «I couldn't check» — which
+    # is true. `[social.instagram] enabled` exists so turning it on is a
+    # one-line change once the index can answer.
+    instagram_social: SocialProvider | None = None
+    if cfg.social.instagram.enabled:
+        log.warning(
+            "[social.instagram] is enabled but no subject index exists yet — "
+            "Instagram story reads stay unavailable until the person index "
+            "carries igids (design/instagram-adoption/11 M2)",
+        )
+    if opencli_client is not None or instagram_social is not None:
+        from nora.infra.social import SocialRouter
+        social_client = SocialRouter(
+            default=opencli_client,
+            exceptions=(
+                {("instagram", "story"): instagram_social}
+                if instagram_social is not None else {}
+            ),
         )
     # `weather` (DEC-70) is wired on `[weather] enabled` alone — the HK Observatory
     # provider is KEYLESS, so unlike `route`/`search` there is no key to resolve;

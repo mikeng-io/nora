@@ -1515,18 +1515,43 @@ class SocialProvider(Protocol):
     the `social_fetch` tool (DEC-151). NEVER raises — a transport failure of
     the bridge call is `{"status": "unavailable"}`, never an exception into
     the loop (R-5), and the R-27 three states apply end to end: an error is
-    never a `nothing_found`. `OpenCliBridgeClient` today; a PORT so another
-    backend (a native Threads adapter, when OpenCLI grows one) plugs in with
-    no tool change — and a second implementation means a shared contract suite
-    both pass (tests/contract/).
+    never a `nothing_found`.
+
+    THREE implementations since social v1 (design/instagram-adoption/08):
+    `OpenCliBridgeClient` (the default backend), `InstagramSocialClient` (the
+    exception backend, one row), and `SocialRouter` — which is itself a
+    `SocialProvider` and is what the registry is actually handed, so nothing
+    above this port knows there are two backends. The contract suite the
+    sentence above has been asking for since there was one implementation is
+    `tests/contract/test_social_provider_contract.py`, and all three pass it.
+
+    Two DECLARED status extensions ride beside the core three on this port,
+    both of them only reachable on the Instagram story row, and both named
+    here so they cannot arrive silently (`nora.agent.ports
+    .DECLARED_STATUS_EXTENSIONS` is where the vocabulary is declared):
+
+      * `ambiguous` — the subject did not resolve. `target` is a `person_id`
+        for a subject-keyed read, and no person-index entry means Nora does
+        NOT get to guess a handle from a name (design/instagram-adoption/09).
+        This is the SECOND sense the declaration carries — «no entry at all»
+        beside «several candidates» — and the two share a word because they
+        share a sentence: I don't know which one you mean, so I didn't look.
+      * `refused` — the subject resolved and is out of reach. v1 is Tier 0
+        only: someone in a room Nora is in (`07-social-boundary-and-scope`).
+
+    Neither is a failure of the call, which is why neither may collapse into
+    `unavailable` — «I may not look him up» and «I couldn't look» are
+    different claims, and R-27 exists to keep them apart.
 
     READ-ONLY by construction at three layers: the tool only constructs
     allowlisted `(platform, what)` pairs (there is no free-form command
-    passthrough), the HOST-SIDE bridge re-enforces its own `(site, command)`
-    allowlist before any subprocess is spawned — that mapping is the single
-    source of truth and lives outside the container, so a write verb
-    (`twitter post/like/follow/delete`, …) is unreachable even under prompt
-    injection — and the tool's `NativeTool` entry declares `read_only=True`.
+    passthrough), the BACKEND re-enforces its own frozen allowlist in the
+    process that performs the read — never the process running the model — so
+    a write verb (`twitter post/like/follow/delete`, …) is unreachable even
+    under prompt injection, and the tool's `NativeTool` entry declares
+    `read_only=True`. "Host-side" was HOW that was achieved when there was one
+    backend, not the point of it: the instagram-bridge is in-container and
+    holds an equivalent allowlist of its own (design/instagram-adoption/08).
 
     Retrieved text is stranger-written: the implementation `untrusted`-wraps
     it (R-13) with the source URL as provenance and CLAMPS it, because a tool
@@ -1537,6 +1562,50 @@ class SocialProvider(Protocol):
     async def read(
         self, *, platform: str, what: str, target: str, limit: int,
     ) -> dict[str, Any]: ...
+
+
+@runtime_checkable
+class SocialSubjectIndex(Protocol):
+    """`person_id -> the network id Nora may read, and whether she may`
+    (design/instagram-adoption/07 §tiers, /10 §identity).
+
+    This is the seam that keeps a SUBJECT-keyed social read from becoming an
+    address-keyed one. A story read names a person Nora already knows; the
+    igid behind them is a FACT IN THE PERSON INDEX, never something the model
+    supplies and never something inferred from a display name — a wrong
+    binding does not degrade the answer, it reads a different human's stories
+    silently.
+
+    **Not Honcho, deliberately.** Honcho holds what Nora remembers and infers
+    about people, which is the right home for "Miles posts a lot of food
+    photos" and the wrong home for "Miles is igid 221731317": the binding is an
+    AUTHORIZATION KEY (the tier decision is made on it), and a binding that
+    can drift is a permission that can drift. It must also be auditable and
+    revocable — a human reads one file and deletes one line — which inferred
+    memory supports neither of.
+
+    Two methods rather than one fused answer, because the two failures are
+    different claims the model must not conflate: an unresolved subject is
+    `ambiguous` («I don't know who that is on there»), an out-of-tier one is
+    `refused` («I'm not going to look»).
+
+    **Neither method raises**, and both fail CLOSED: an index that cannot be
+    read answers `None` / `False`, which costs a read that should have
+    happened and never grants one that should not have.
+
+    NO IMPLEMENTATION SHIPS YET, and that is the honest state rather than an
+    omission: it needs the `instagram` id kind (`fbid` + `igid`) in
+    `identity.toml`, which lands with the platform adapter
+    (design/instagram-adoption/11 M2) and is that milestone's to define, not
+    this one's. Until then the composition root wires no Instagram backend at
+    all and `social_fetch(instagram, story)` answers `unavailable` — inert,
+    honest, and exactly what `[social] enabled = false` already does for the
+    OpenCLI path.
+    """
+
+    async def igid_for(self, *, person_id: str) -> str | None: ...
+
+    async def is_tier_zero(self, *, person_id: str) -> bool: ...
 
 
 @runtime_checkable

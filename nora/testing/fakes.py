@@ -1411,3 +1411,115 @@ class FakeToolCallLogStore:
         ]
         rows.sort(key=lambda e: e.created_at, reverse=True)
         return rows[:limit]
+
+
+class FakeSocialProvider:
+    """In-memory `SocialProvider`, bound to `OpenCliBridgeClient`,
+    `InstagramSocialClient` and `SocialRouter` by
+    `tests/contract/test_social_provider_contract.py`.
+
+    **It does not answer every request the same way** (CLAUDE.md), and the
+    decision table it reproduces is the production one rather than its
+    transport:
+
+    * a `(platform, what)` it serves, with an answer → that answer;
+    * a `(platform, what)` it serves, with nothing behind it →
+      `nothing_found`, the honest miss;
+    * a `(platform, what)` it does NOT serve → `unavailable`, because being
+      asked for a pair outside its reach is a routing gap, not «there is
+      nothing there». This is the branch that matters: a fake that returned
+      `nothing_found` for an unrouted verb would let a mis-wired router pass
+      every test while production said «he has no story up» about a backend
+      that was never asked;
+    * `unavailable=True` → `unavailable` for everything, the "this whole
+      backend is having a bad day" state that no single pair can express.
+
+    `calls` records `(platform, what, target, limit)` in order, which is what
+    lets a router test prove not just what came back but WHICH backend was
+    asked — and, for the no-failover rule, that the other one was not.
+    """
+
+    def __init__(
+        self,
+        answers: dict[tuple[str, str], dict[str, Any]] | None = None,
+        *,
+        serves: frozenset[tuple[str, str]] | None = None,
+        unavailable: bool = False,
+    ) -> None:
+        self.answers = dict(answers or {})
+        # Defaults to whatever it has an answer for, so the common case needs
+        # one argument; pass `serves` explicitly to model a backend that
+        # legitimately has nothing to return for a verb it does serve.
+        self.serves = serves if serves is not None else frozenset(self.answers)
+        self.unavailable = unavailable
+        self.calls: list[tuple[str, str, str, int]] = []
+
+    async def read(
+        self, *, platform: str, what: str, target: str, limit: int,
+    ) -> dict[str, Any]:
+        self.calls.append((platform, what, target, limit))
+        if self.unavailable or (platform, what) not in self.serves:
+            return {
+                "status": "unavailable",
+                "note": "I couldn't read that just now. Say so — don't answer "
+                        "as if you'd checked.",
+            }
+        answer = self.answers.get((platform, what))
+        if answer is None:
+            return {"status": "nothing_found"}
+        return dict(answer)
+
+
+class FakeSocialSubjectIndex:
+    """In-memory `SocialSubjectIndex`, exercised by
+    `tests/contract/test_social_provider_contract.py` through `SocialRouter`,
+    which is where the tier ladder lives (design/instagram-adoption/10 §"Who
+    owns what"; it used to live in `InstagramSocialClient` and could only
+    govern that backend's one row from there) — the port has no production
+    implementation yet (it needs the `instagram` id kind in `identity.toml`,
+    which belongs to the platform-adapter milestone), so this is its first,
+    and the suite that binds it is the one that drives the router's three
+    outcomes through it.
+
+    **It does not answer every request the same way.** The three outcomes it
+    can produce are the three the tier ladder produces, and collapsing any two
+    of them is the defect the port exists to prevent:
+
+    * a person it holds an igid for, in reach → that igid, Tier 0 true;
+    * a person it holds an igid for, out of reach → the igid, Tier 0 false,
+      which is `refused` at the router — a boundary, not an outage;
+    * a person it has never heard of → `None`, which is `ambiguous` — and
+      NEVER a handle derived from the id, because a wrong binding does not
+      degrade the answer, it reads a different human's stories silently.
+
+    Both methods fail CLOSED and neither raises, exactly as the port requires:
+    `unavailable=True` models an index that cannot be read at all and answers
+    `None` / `False`, which costs a read that should have happened rather than
+    granting one that should not have.
+
+    `asked` records the person ids, so a test can prove a refusal happened
+    BEFORE any network call rather than after one.
+    """
+
+    def __init__(
+        self,
+        igids: dict[str, str] | None = None,
+        *,
+        out_of_reach: frozenset[str] = frozenset(),
+        unavailable: bool = False,
+    ) -> None:
+        self.igids = dict(igids or {})
+        self.out_of_reach = out_of_reach
+        self.unavailable = unavailable
+        self.asked: list[str] = []
+
+    async def igid_for(self, *, person_id: str) -> str | None:
+        self.asked.append(person_id)
+        if self.unavailable:
+            return None
+        return self.igids.get(person_id)
+
+    async def is_tier_zero(self, *, person_id: str) -> bool:
+        if self.unavailable:
+            return False
+        return person_id in self.igids and person_id not in self.out_of_reach
