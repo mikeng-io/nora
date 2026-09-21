@@ -1,0 +1,69 @@
+kind: design_index
+title: "Tool Catalogue — split a tool's text by the decision it serves"
+description: >
+  The prompt is tool-schema-heavy, not doctrine-heavy: 22,130 of 35,473 input
+  tokens (62%) are 54 tool schemas, against 8,288 for the doctrine. A tool's
+  text today fuses three things and pays all three for all 54 tools every
+  turn — selection (does this exist), invocation (how do I call it) and
+  reporting (what does `unavailable` mean, may I read the coordinate aloud).
+  54% of description text (8,602 tokens) is the third. Measured over 574
+  turns, a turn uses 2 tools of 54 and 1.09 outside the hot set. So: a
+  generated one-line catalogue for all 54 (991 tokens, measured) stays
+  resident; a `load_tools` verb fetches full schemas on demand; result-handling
+  prose moves onto the tool result. Projected mean input ~35,500 -> ~17,700.
+  Break-even is 46 cold tools in one turn; observed max is 7.
+status: proposed
+governance: draft
+timestamp: '2026-09-22'
+origin: >
+  design conversation with miles, 2026-09-22 — opened as doctrine compression
+  ("even the simplest conversation hits over 30,000 input tokens"), redirected
+  by measurement to the tool schemas, then redirected again by miles ("have you
+  actually searched online for the proper convention?") to the published
+  deferred-loading threshold, which Nora is 5x past on tool count and 2.2x on
+  definition tokens.
+members:
+  - 00-overview.md
+  - 01-the-catalogue.md
+  - 02-load-tools.md
+  - 03-result-handling.md
+  - 04-code-surface.md
+  - 05-measurement.md
+edges:
+  - {src: 01-the-catalogue, dst: 00-overview, rel: realizes, provenance: measured}
+  - {src: 02-load-tools, dst: 00-overview, rel: realizes, provenance: measured}
+  - {src: 03-result-handling, dst: 00-overview, rel: realizes, provenance: measured}
+  - {src: 04-code-surface, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 04-code-surface, dst: 01-the-catalogue, rel: depends_on, provenance: asserted}
+  - {src: 04-code-surface, dst: 02-load-tools, rel: depends_on, provenance: asserted}
+  - {src: 05-measurement, dst: 00-overview, rel: verifies, provenance: asserted}
+  - {src: 03-result-handling, dst: 05-measurement, rel: depends_on, provenance: asserted}
+scope:
+  v1:
+    - "Generate a one-line catalogue for all 54 tools at doctrine order 35, reusing ToolRegistry.capability_digest() rather than writing a second renderer"
+    - "Repair where_is's first sentence (measured under-discrimination against where_been) and cap recall_lookups / set_music_volume"
+    - "Gate every catalogue line at <=20 tokens and the block at <=1,400"
+    - "Add the load_tools verb: budget 3, non-terminal, read_only, no source_tier; R-27 status shape with partial resolve as ok"
+    - "Hold non-hot schemas out of Agent(tools=...) and return them in the tool_result body, preserving the 30,080-token cached prefix"
+    - "Keep six tools resident: web_search, send_reply, note_read, web_fetch, now, search_memory (55.2% of calls, 2,606 tokens); send_reply is structural, not usage-based"
+    - "Raise the shared turn ceiling by the expected load_tools count (~0.8/turn) so a per-tool budget is not inert under it"
+    - "Add the DEC-28 counter: turns ending without a reply while the room named a catalogued capability"
+  deferred:
+    - "Phase 3 — relocate 8,602 tokens of result-handling prose onto tool results via the output_contract seam; ships last because LongFuncEval measures 7-91% accuracy loss as responses grow"
+    - "Phase 2 — lane/room scoping beyond today's Discord music filter; value shrinks once a cold tool costs a catalogue line rather than a schema"
+    - "Doctrine compression (identity 973, conduct 3,893) — separate workstream, operator-owned files"
+    - "Whether doctrine rules belong on tool results too (whitefish-c0 is moving one there from the Instagram side) — separate decision, separate owner"
+  not_in_scope:
+    - "Deleting any tool. Over 40 days only transit, parking_status, suggest_venue and note_create are uncalled; the rest are rare, not dead"
+    - "Trimming parameters. DEC-24's minimize-parameters was over-applied to external-service tools once already and reversed 2026-08-06"
+    - "Anthropic server-side tool_search — Nora is on DeepSeek via OmniRoute; strands-agents 1.50.2 ships only AgentCoreToolSearchPlugin, which needs Bedrock AgentCore Gateway"
+gates:
+  - "2a catalogue size <=1,400 tokens (measured today: 991) — cheap, run first"
+  - "2b provider accepts a tool_call for a schema delivered in a tool_result but absent from the tools array — HIGHEST RISK, single probe, run before building"
+  - "2c tool-selection accuracy no worse than baseline on confusable pairs, via PR #334's tag entry point, n>=3 per case"
+  - "2d load_tools is actually reached for (the DEC-28 trap; invisible to a log grep, measure on the suite)"
+  - "2e cache_read_input_tokens before/after across >=20 turns, split by whether load_tools fired"
+decision: >
+  No DEC number claimed. Per AGENTS.md a number is taken from
+  design/09-decision-index.md at MERGE time, not at claim time. Highest
+  allocated at time of writing: DEC-192.
