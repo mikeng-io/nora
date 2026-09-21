@@ -613,3 +613,91 @@ test('an AutoPause during a spoken reply is attributed to the speech request, no
   // music track that's no longer actually the active kind.
   assert.equal(fields.playback_id, null);
 });
+
+// --- start deadline (2026-09-21 silent-wedge) ------------------------------
+// Found live: two `play_requested` lines, NO ffmpeg process in the container,
+// and zero follow-up events — the room was told "Now playing" and heard
+// nothing until the process was restarted. Every test below pins the same
+// invariant from a different entry: an ACCEPTED play either produces sound or
+// reports a failure. It never just stops existing.
+
+test('a play with no attached player fails loudly instead of vanishing', async () => {
+  const { arbiter, events, procs } = makeArbiter();
+  arbiter.detach(); // the state a connection that came back without onJoined leaves
+
+  const playbackId = arbiter.playMusic({ streamUrl: 'https://cdn.test/a', title: 'A' });
+
+  assert.equal(procs.length, 0); // nothing was ever spawned — that part is unchanged
+  const failed = events.filter((e) => e.type === 'stream-failed');
+  assert.equal(failed.length, 1);
+  assert.equal(failed[0].reason, 'no-player');
+  assert.equal(failed[0].playback_id, playbackId);
+  assert.equal(arbiter.state(), 'stopped');
+  assert.equal(arbiter.lastError(), 'no-player');
+});
+
+test('a play parked behind a speech queue that never drains fails at the deadline', async () => {
+  const { arbiter, clock, events } = makeArbiter({ startDeadlineMs: 60_000 });
+  // Speech takes the player and never finishes (no player.finish()), so
+  // speechBusy() stays true and every later play parks as the suspended slot.
+  assert.equal(arbiter.enqueueSpeech({ audio: Buffer.from('tts'), mediaType: 'ogg/opus' }), true);
+  const playbackId = arbiter.playMusic({ streamUrl: 'https://cdn.test/a', title: 'A' });
+  assert.equal(arbiter.state(), 'suspended');
+  assert.equal(events.filter((e) => e.type === 'stream-failed').length, 0); // still legitimately waiting
+
+  clock.advance(60_000);
+
+  const failed = events.filter((e) => e.type === 'stream-failed');
+  assert.equal(failed.length, 1);
+  assert.equal(failed[0].reason, 'start-timeout');
+  assert.equal(failed[0].playback_id, playbackId);
+  // The parked slot is released, so /voice/status stops reporting a track
+  // that is never going to play.
+  assert.equal(arbiter.statusSnapshot().playback_id, null);
+});
+
+test('the deadline is disarmed once sound actually starts', async () => {
+  // stall watch effectively off: this isolates the START deadline from the
+  // no-bytes watchdog that already owns a stream once it is running.
+  const { arbiter, clock, events, playToPlaying } = makeArbiter({
+    startDeadlineMs: 60_000,
+    stallMs: 10_000_000,
+  });
+  playToPlaying();
+  assert.equal(arbiter.state(), 'playing');
+
+  clock.advance(600_000); // ten minutes into a long track
+
+  assert.equal(events.filter((e) => e.type === 'stream-failed').length, 0);
+  assert.equal(arbiter.state(), 'playing');
+});
+
+test('a replaced play does not fire the deadline of the slot it replaced', async () => {
+  const { arbiter, clock, events, procs, playToPlaying } = makeArbiter({
+    startDeadlineMs: 60_000,
+    stallMs: 10_000_000,
+  });
+  arbiter.playMusic({ streamUrl: 'https://cdn.test/a', title: 'A' }); // never produces bytes
+  const b = playToPlaying('https://cdn.test/b', 'B');
+  void b;
+  await tick();
+  procs[procs.length - 1].data();
+
+  clock.advance(600_000);
+
+  // The abandoned first slot is superseded, not failed: B reported for both.
+  assert.equal(events.filter((e) => e.type === 'stream-failed').length, 0);
+});
+
+test('re-attaching the same player is a no-op, not a teardown', async () => {
+  const { arbiter, player, events, playToPlaying } = makeArbiter();
+  const a = playToPlaying();
+  assert.equal(arbiter.state(), 'playing');
+
+  arbiter.attach(player); // what the already-connected join path now does
+
+  assert.equal(arbiter.state(), 'playing');
+  assert.equal(arbiter.statusSnapshot().playback_id, a.playbackId);
+  assert.deepEqual(a.proc.signals, []); // the live ffmpeg was never killed
+  assert.equal(events.filter((e) => e.type === 'stream-failed').length, 0);
+});

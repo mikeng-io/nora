@@ -103,7 +103,18 @@ export function createLifecycle({
   async function join(targetChannelId) {
     for (;;) {
       if (voice === 'connected') {
-        if (channelId === targetChannelId) return { generation, channelId, already: true };
+        if (channelId === targetChannelId) {
+          // Re-assert the arbiter's player on the already-connected path.
+          // `onJoined` is the ONLY caller of `arbiter.attach`, so a
+          // connection that survived here while the arbiter detached (voice
+          // death handled out of order, a teardown that lost the race) left
+          // `voice === 'connected'` with a null player — and every play
+          // after that was dropped in silence. `attach` is a no-op when the
+          // player is already the current one, so this costs nothing when
+          // nothing is wrong.
+          onJoined(session, generation);
+          return { generation, channelId, already: true };
+        }
         throw httpError(409, 'connected_elsewhere');
       }
       if (joinPromise) {
