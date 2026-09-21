@@ -35,6 +35,7 @@ from .listener import DiscordListener
 from .music_commands import register as register_music_commands
 from .music_commands import resume_persisted_sessions as resume_persisted_music_sessions
 from .music_manager import MusicPlayerManager
+from .music_notify import ResolveMusicChannel, no_music_channel
 from .parser import parse_discord_message
 from .react import DiscordReactor
 from .self_id import derive_identity
@@ -55,6 +56,7 @@ class DiscordAdapter:
         speaker: Any = None,
         voice_hub: VoiceControllerHub | None = None,
         voice_guild_ids: frozenset[str] = frozenset(),
+        resolve_music_channel: ResolveMusicChannel = no_music_channel,
     ) -> None:
         self._token = token
         self._base_url = base_url
@@ -67,6 +69,12 @@ class DiscordAdapter:
         # keeps this adapter unchanged for every deployment that hasn't
         # turned the feature on.
         self._music_manager = music_manager
+        # WHERE this guild's music ANNOUNCEMENTS go (design/discord-music/
+        # 10-notification-routing.md) — `policy.toml`'s `music_channel`,
+        # threaded as a callable so the platform layer keeps knowing nothing
+        # about `nora.policy`. The default answers `None` for every guild,
+        # which is the pre-field behaviour: announce where the session started.
+        self._resolve_music_channel = resolve_music_channel
         # The voice path (design/voice-channel/07): the MiniMax speaker and
         # the audio-controller hub. BOTH None on every deployment that hasn't
         # wired the voice path — the text-only posture stays byte-identical.
@@ -137,6 +145,8 @@ class DiscordAdapter:
                     client, self._music_manager,
                     hub=self._voice_hub,
                     voice_guild_ids=frozenset(self._voice_guild_ids),
+                    resolve_music_channel=self._resolve_music_channel,
+                    client_getter=self.current_client,
                 )
                 # design/discord-music/06-session-persistence.md stage 2 --
                 # safe to run on every on_ready, not just a genuine boot
@@ -144,6 +154,8 @@ class DiscordAdapter:
                 # an already-live player).
                 await resume_persisted_music_sessions(
                     client, self._music_manager, hub=self._voice_hub,
+                    resolve_music_channel=self._resolve_music_channel,
+                    client_getter=self.current_client,
                 )
             # B-2 (2026-09-16 audit): a guild with no persisted MUSIC row
             # never calls `hub.join` above, so a wake-reply-only boot would

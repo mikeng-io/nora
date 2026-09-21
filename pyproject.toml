@@ -176,6 +176,27 @@ source_modules = ["nora.domain"]
 forbidden_modules = ["aiohttp", "strands", "sqlalchemy", "pydantic", "prometheus_client", "opentelemetry", "yaml", "openai"]
 
 [[tool.importlinter.contracts]]
+name = "the room policy is composed in, never imported by a lower layer"
+type = "forbidden"
+# `resolve_voice_room` (nora/web/voice.py) and `resolve_music_channel`
+# (nora/platform/discord/music_notify.py, design/discord-music/10) are both
+# threaded as `Callable[[str], str | None]` rather than as the `Policy` itself,
+# each justified in a docstring by "this layer must not learn that nora.policy
+# exists". Both were true and neither was enforced — the same "a neutrality
+# claim living only in a docstring is decoration" this file already says about
+# nora.analytics below (audit, 2026-09-21). `nora.app` and `nora.__main__` are
+# the composition roots and DO load the policy; `nora.ingest`/`nora.engagement`
+# legitimately hold it as the engage-time gate. These three may not.
+#
+# allow_indirect_imports keeps this about each module's OWN imports, the same
+# reason the analytics contract below sets it: nora.platform reaches
+# nora.domain.ports, and a transitive walk would flag paths no module here
+# writes.
+source_modules = ["nora.platform", "nora.domain", "nora.infra"]
+forbidden_modules = ["nora.policy"]
+allow_indirect_imports = "True"
+
+[[tool.importlinter.contracts]]
 name = "the analytics substrate serves no particular consumer"
 type = "forbidden"
 # DEC-115 / spec §1.1: the operator's constraint was that nora.analytics

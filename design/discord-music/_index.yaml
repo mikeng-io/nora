@@ -23,6 +23,7 @@ members:
   - 07-agent-tool.md
   - 08-autoplay.md
   - 09-message-conventions.md
+  - 10-notification-routing.md
 edges:
   - {src: 01-playback-and-source, dst: 00-overview, rel: realizes, provenance: asserted}
   - {src: 02-control-surface, dst: 00-overview, rel: realizes, provenance: asserted}
@@ -39,6 +40,9 @@ edges:
   - {src: 09-message-conventions, dst: 02-control-surface, rel: extends, provenance: asserted}
   - {src: 09-message-conventions, dst: 07-agent-tool, rel: extends, provenance: asserted}
   - {src: 09-message-conventions, dst: 08-autoplay, rel: extends, provenance: asserted}
+  - {src: 10-notification-routing, dst: 02-control-surface, rel: extends, provenance: asserted}
+  - {src: 10-notification-routing, dst: 06-session-persistence, rel: extends, provenance: asserted}
+  - {src: 10-notification-routing, dst: 09-message-conventions, rel: extends, provenance: asserted}
 scope:
   v1:
     - "Discord slash commands (/music play|skip|queue|pause|resume|stop|volume) as the primary control surface"
@@ -48,6 +52,7 @@ scope:
     - "Auto-disconnect on empty voice channel or idle timeout"
     - "Discord-only Nora agent tools (play_music/skip_music/top_music/stop_music/music_status) for conversational control"
     - "Autoplay: seed YouTube's own Mix recommendations when the queue empties, config-gated (08-autoplay.md)"
+    - "A dedicated music channel per guild, named by a room's `music_channel` in policy.toml (10-notification-routing.md); unset keeps the where-it-started fallback"
   deferred:
     - "Saved/named playlists"
     - "Persistent audio library / cache"
