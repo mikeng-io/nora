@@ -1,8 +1,6 @@
 {
   "type": "none",
-  "summary": "design/evaluation/11-the-sandbox-rebuild.md gains §1.6 — what the eval rebuild still owes, what each item waits on, and which session raised it.",
-  "details": [
-    "Written because three sessions worked on this concurrently on 2026-09-22 and two ended. Their branches are the record, not their memories, so the owed items are named in the bundle rather than left in transcripts nobody can read.",
-    "Also records two facts a re-measurer needs: the owed culture `blocks_empty` test must pin BOTH directions (asserting only 'culture not in blocks_empty' passes on a build where the block is unconditionally present -- a different defect failing the same way, which is what #294 was about), and the culture read-side flag affects only participation.yaml, one corpus of thirteen, because the tag assembler contains `culture` zero times."
-  ]
+  "reason": "design/evaluation/11-the-sandbox-rebuild.md gains §1.6 — what the eval rebuild still owes, what each item waits on, and which session raised it. Written because three sessions worked on this concurrently on 2026-09-22 and two ended. Their branches are the record, not their memories, so the owed items are named in the bundle rather than left in transcripts nobody can read. Also records two facts a re-measurer needs: the owed culture `blocks_empty` test must pin BOTH directions (asserting only 'culture not in blocks_empty' passes on a build where the block is unconditionally present -- a different defect failing the same way, which is what #294 was about), and the culture read-side flag affects only participation.yaml, one corpus of thirteen, because the tag assembler contains `culture` zero times.",
+  "details": [],
+  "limitations": []
 }
