@@ -1077,7 +1077,7 @@ def sampled(base: Case, n: int) -> list[Case]:
     ]
 
 
-def _base_name(name: str) -> str:
+def base_name(name: str) -> str:
     """The name `sampled()` drew FROM, undoing its `#i` suffix. A name that
     was never run through `sampled()` returns unchanged."""
     head, sep, tail = name.rpartition("#")
@@ -1119,7 +1119,7 @@ def sample_read(report: Any) -> dict[str, SampleReading]:
     """
     groups: dict[str, list[str]] = {}
     for case_row, outputs in zip(report.cases, report.detailed_results, strict=True):
-        base = _base_name(case_row["name"])
+        base = base_name(case_row["name"])
         for out in outputs:
             label = getattr(out, "label", None)
             groups.setdefault(base, []).append(label if label in (PASS, FAIL, ERROR) else ERROR)

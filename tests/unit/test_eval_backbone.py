@@ -740,14 +740,14 @@ def test_sampled_draws_are_uniquely_named_off_the_base_case():
     assert [d.session_id for d in draws] == ["speak-1#1", "speak-1#2", "speak-1#3"]
 
 
-def test_base_name_reverses_a_sampled_suffix():
-    assert backbone._base_name("speak-1#1") == "speak-1"
-    assert backbone._base_name("speak-1#12") == "speak-1"
+def testbase_name_reverses_a_sampled_suffix():
+    assert backbone.base_name("speak-1#1") == "speak-1"
+    assert backbone.base_name("speak-1#12") == "speak-1"
 
 
-def test_base_name_is_unchanged_for_a_name_sampled_never_drew():
-    assert backbone._base_name("speak-1") == "speak-1"
-    assert backbone._base_name("room#general") == "room#general", (
+def testbase_name_is_unchanged_for_a_name_sampled_never_drew():
+    assert backbone.base_name("speak-1") == "speak-1"
+    assert backbone.base_name("room#general") == "room#general", (
         "a '#' not followed by a digit is not a sampled() suffix"
     )
 
