@@ -23,6 +23,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 from uuid import uuid4
 
+from nora.domain.playback_liveness import PlaybackReading
 from nora.infra.voice.http_controller import (
     GenerationConflict,
     HttpVoiceSession,
@@ -249,6 +250,19 @@ class VoiceControllerHub:
             log.warning("speech for guild %s failed: %s", guild_id, exc)
             return False
         return True
+
+    async def read_playback(self, guild_id: str) -> PlaybackReading:
+        """The guild's live playback state, for the manager's liveness watch.
+
+        No cached session means nora holds no connection for this guild, so
+        there is nothing to ask — reported as UNREACHABLE rather than idle:
+        "I have nobody to ask" is not the same claim as "it is not playing",
+        and collapsing the two is the fail-open shape this watch exists to
+        remove."""
+        session = self._sessions.get(guild_id)
+        if session is None:
+            return PlaybackReading.unreachable()
+        return await session.read_playback()
 
     def expected_playback_id(self, guild_id: str) -> str | None:
         session = self._sessions.get(guild_id)

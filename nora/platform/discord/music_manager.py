@@ -34,6 +34,11 @@ from nora.domain.music import (
     MusicSessionStore,
     QueuedTrack,
 )
+from nora.domain.playback_liveness import (
+    PlaybackReading,
+    PlaybackVerdict,
+    judge_playback,
+)
 from nora.domain.ports import TrackSource
 from nora.platform.discord import music_messages as m
 from nora.platform.discord.music_player import (
@@ -73,6 +78,16 @@ DropVoiceSession = Callable[[str], None]
 # for a session that has NO music player (voice-only: leaving IS exiting).
 ExitVoiceSession = Callable[[str], Awaitable[bool]]
 
+#: Reads one guild's live playback state off the audio-controller. `None`
+#: when no session is wired (tests, or a deployment with no voice).
+ReadPlayback = Callable[[str], Awaitable[PlaybackReading]]
+
+#: Seconds between liveness polls for a guild nora believes is playing.
+#: 30s: the controller's own start deadline is 60s, so a slot stuck at
+#: `starting` is seen by two consecutive polls before that fires, and a
+#: playing track that stops producing frames is caught within a minute.
+_LIVENESS_POLL_SECONDS = 30.0
+
 #: How many times ONE track may be re-resolved after a `stream-failed`
 #: before the queue advances past it (design/voice-channel/07 §5, audit
 #: B14 — "nora may bounded-retry re-resolve").
@@ -101,6 +116,7 @@ class MusicPlayerManager:
         autoplay_enabled: bool = False,
         autoplay_prewarm_seconds: float = 0.0,
         playback_probe: PlaybackProbe | None = None,
+        read_playback: ReadPlayback | None = None,
         generation_probe: GenerationProbe | None = None,
         drop_voice_session: DropVoiceSession | None = None,
         exit_voice_session: ExitVoiceSession | None = None,
@@ -114,11 +130,16 @@ class MusicPlayerManager:
         self._autoplay_enabled = autoplay_enabled
         self._autoplay_prewarm_seconds = autoplay_prewarm_seconds
         self._playback_probe = playback_probe
+        self._read_playback = read_playback
         self._generation_probe = generation_probe
         self._drop_voice_session = drop_voice_session
         self._exit_voice_session = exit_voice_session
         self._players: dict[str, MusicPlayer] = {}
         self._idle_tasks: dict[str, asyncio.Task[None]] = {}
+        # The previous liveness reading per guild — the position DELTA is the
+        # measurement, so one sample is never enough to call a track wedged.
+        self._last_reading: dict[str, PlaybackReading] = {}
+        self._liveness_task: asyncio.Task[None] | None = None
         self._notify: dict[str, Notify] = {}
         # The stale-stream retry budget: guild -> (locator, attempts spent).
         # One entry per guild, replaced whenever a different track fails, so
@@ -798,6 +819,109 @@ class MusicPlayerManager:
         task = self._idle_tasks.pop(guild_id, None)
         if task is not None:
             task.cancel()
+
+    # --- liveness ----------------------------------------------------------
+
+    def start_liveness_watch(self) -> None:
+        """Begin asking the controller whether sound is actually moving.
+
+        Until this existed, nora asked for status exactly twice in her life:
+        once at boot and once after a version conflict. Everything else was
+        event-driven, so a controller that stopped producing audio WITHOUT
+        sending an event — which is precisely what a wedge does — left her
+        believing a track was playing forever. Nothing timed out, the queue
+        never advanced, and the only thing that ever noticed was a person in
+        the room."""
+        if self._read_playback is None or self._liveness_task is not None:
+            return
+        self._liveness_task = self._spawn(self._liveness_loop())
+
+    async def _liveness_loop(self) -> None:
+        while True:
+            await self._clock_sleep(_LIVENESS_POLL_SECONDS)
+            try:
+                await self.reconcile_liveness()
+            except Exception:
+                log.exception("music liveness poll failed")
+
+    async def reconcile_liveness(self) -> dict[str, PlaybackVerdict]:
+        """One pass over every guild nora believes is playing.
+
+        Returns the verdict per guild so a caller (and a test) can read what
+        happened without scraping logs."""
+        if self._read_playback is None:
+            return {}
+        verdicts: dict[str, PlaybackVerdict] = {}
+        for guild_id in list(self._players):
+            verdicts[guild_id] = await self._reconcile_guild(guild_id)
+        return verdicts
+
+    async def _reconcile_guild(self, guild_id: str) -> PlaybackVerdict:
+        read_playback = self._read_playback
+        if read_playback is None:
+            return PlaybackVerdict.OK
+        player = self._players.get(guild_id)
+        if player is None:
+            self._last_reading.pop(guild_id, None)
+            return PlaybackVerdict.OK
+        status = await player.status()
+        believed_playing = status.now_playing is not None
+        if not believed_playing:
+            # Nothing is claimed, so there is nothing to falsify — and the
+            # delta must not carry across a gap in which no track was live.
+            self._last_reading.pop(guild_id, None)
+            return PlaybackVerdict.OK
+
+        current = await read_playback(guild_id)
+        previous = self._last_reading.get(guild_id)
+        verdict = judge_playback(
+            previous=previous,
+            current=current,
+            believed_playing=True,
+            believed_paused=bool(status.paused),
+        )
+        # UNKNOWN keeps the previous reading: a single unreachable poll must
+        # not reset the delta and hand the next poll a free pass.
+        if verdict is not PlaybackVerdict.UNKNOWN:
+            self._last_reading[guild_id] = current
+        await self._act_on_verdict(guild_id, verdict, current, previous)
+        return verdict
+
+    async def _act_on_verdict(
+        self,
+        guild_id: str,
+        verdict: PlaybackVerdict,
+        current: PlaybackReading,
+        previous: PlaybackReading | None,
+    ) -> None:
+        if verdict in (PlaybackVerdict.OK, PlaybackVerdict.PAUSED):
+            return
+        if verdict is PlaybackVerdict.UNKNOWN:
+            # Loud but inert. "I could not check" is not evidence of silence,
+            # and acting on it would tear down live audio over a blip.
+            log.warning(
+                "music liveness for guild %s: UNKNOWN — the controller could not be "
+                "read (reachable=%s status=%s); belief left untouched",
+                guild_id, current.reachable, current.status,
+            )
+            return
+        log.warning(
+            "music liveness for guild %s: %s — controller status=%s position_ms=%s "
+            "(was %s) autopaused=%s subscribers=%s; treating it as a failed stream",
+            guild_id, verdict.value.upper(), current.status, current.position_ms,
+            previous.position_ms if previous is not None else None,
+            current.autopaused, current.subscribers,
+        )
+        # Both ENDED and WEDGED route through the SAME handler the controller's
+        # own `stream-failed` uses, so a missed event and a wedge are repaired
+        # by the path that is already tested: bounded re-resolve, then advance.
+        # `playback_id` comes from the reading, so the staleness check inside
+        # sees the playback the controller is actually holding.
+        await self.on_stream_failed(
+            guild_id,
+            playback_id=current.playback_id,
+            reason=f"liveness-{verdict.value}",
+        )
 
     async def _idle_disconnect_after_timeout(self, guild_id: str) -> None:
         await self._clock_sleep(self._idle_timeout_seconds)
