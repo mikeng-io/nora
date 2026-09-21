@@ -325,3 +325,50 @@ def test_a_corpus_is_gradable_end_to_end_through_a_real_experiment(tmp_path, mon
         labels = {out.label for outputs in report.detailed_results for out in outputs}
         assert labels == {want}
         assert ERROR not in labels
+
+
+def _rows(*names: str) -> str:
+    """A corpus of N minimal anchored cases, one per name."""
+    return "".join(
+        f"""
+- name: {n}
+  entry: tag
+  expect: reply
+  input: hi
+  snapshot:
+    platform: signal
+    conversation_id: the-real-group
+    before_ms: 1752000000000
+"""
+        for n in names
+    )
+
+
+# --- `only` — re-measuring the cases that moved, not the corpus ------------
+
+
+def test_only_selects_the_named_cases(tmp_path, monkeypatch):
+    """A re-measurement asks about the cases that moved. Paying for a whole
+    corpus to re-draw four of them is how a sample count gets chosen by
+    budget instead of by the question."""
+    _corpus(tmp_path, monkeypatch, _rows("a", "b", "c"), "no_trigger")
+    experiment, _task = experiment_for(
+        "no_trigger", source_url="x", only=frozenset({"a", "c"}),
+    )
+    assert sorted(c.name for c in experiment.cases) == ["a", "c"]
+
+
+def test_only_multiplies_with_sample(tmp_path, monkeypatch):
+    _corpus(tmp_path, monkeypatch, _rows("a", "b"), "no_trigger")
+    experiment, _task = experiment_for(
+        "no_trigger", source_url="x", only=frozenset({"a"}), sample=3,
+    )
+    assert sorted(c.name for c in experiment.cases) == ["a#1", "a#2", "a#3"]
+
+
+def test_only_refuses_a_name_that_matches_nothing(tmp_path, monkeypatch):
+    """A typo that silently selected zero cases would report a clean corpus,
+    which is the vacuous pass this whole layer exists to refuse."""
+    _corpus(tmp_path, monkeypatch, _rows("a"), "no_trigger")
+    with pytest.raises(ValueError, match="no active case named"):
+        experiment_for("no_trigger", source_url="x", only=frozenset({"typo"}))

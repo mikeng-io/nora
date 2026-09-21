@@ -111,10 +111,16 @@ def _corpora_for(args: argparse.Namespace) -> list[str]:
     return sorted(selected)
 
 
-def _run_one(name: str, *, source_url: str, judge: Judge | None, sample: int) -> bool:
-    experiment, task = experiment_for(name, source_url=source_url, judge=judge, sample=sample)
+def _run_one(
+    name: str, *, source_url: str, judge: Judge | None, sample: int,
+    only: frozenset[str] | None = None,
+) -> bool:
+    experiment, task = experiment_for(
+        name, source_url=source_url, judge=judge, sample=sample, only=only,
+    )
     report = experiment.run_evaluations(task=task)
-    print(f"--- {name}: {census(name)} ---")
+    scope = f" [{len(experiment.cases)} selected]" if only else ""
+    print(f"--- {name}: {census(name)}{scope} ---")
     if sample > 1:
         readings = sample_read(report)
         ok = True
@@ -139,6 +145,13 @@ def main() -> int:
                      help="run every corpus in this S-class (e.g. S7); repeatable")
     ap.add_argument("--all", action="store_true", help="run every corpus")
     ap.add_argument("--list", action="store_true", help="list corpora and exit")
+    ap.add_argument(
+        "--case", action="append", dest="cases", metavar="NAME",
+        help="run only these cases of the named corpus; repeatable. A "
+             "re-measurement asks about the cases that moved, and paying for "
+             "a whole corpus to re-draw four of them is how a sample count "
+             "gets chosen by budget instead of by the question.",
+    )
     ap.add_argument(
         "--source-url", default=os.environ.get("NORA_EVAL_SOURCE_URL", ""),
         help="the deployment's CLONE (nora_eval), read and never written; "
@@ -185,6 +198,14 @@ def main() -> int:
         return 0
 
     names = _corpora_for(args)
+    only = frozenset(args.cases) if args.cases else None
+    if only and len(names) != 1:
+        print(
+            "--case names cases OF ONE corpus; pass exactly one corpus name "
+            f"(got {names or 'none'})",
+            file=sys.stderr,
+        )
+        return 2
     if not names:
         print("no corpus selected — pass names, --class, --all, or --list", file=sys.stderr)
         return 2
@@ -236,6 +257,7 @@ def main() -> int:
     for name in names:
         ok = _run_one(
             name, source_url=source_url, judge=judge, sample=args.sample,
+            only=only,
         ) and ok
     return 0 if ok else 1
 

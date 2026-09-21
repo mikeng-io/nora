@@ -186,6 +186,7 @@ JUDGED_CORPORA = frozenset({
 
 def experiment_for(
     name: str, *, source_url: str, judge: Any = None, sample: int = 1,
+    only: frozenset[str] | None = None,
 ) -> tuple[Experiment, Any]:
     """A ready-to-run `(Experiment, task)` pair for one corpus.
 
@@ -196,10 +197,29 @@ def experiment_for(
     `sample > 1` draws each case `sample` times via `evals.backbone.sampled`
     — one draw of a stochastic process is not a reading of it. Read the
     result with `evals.backbone.sample_read`, not `read`, when `sample > 1`.
+
+    `only` restricts the run to named cases, so re-measuring the few that
+    moved does not cost the whole corpus. `sample_read`'s UNSTABLE is the
+    answer that needs draws, and draws are what a corpus-sized bill makes
+    people skimp on.
     """
     from evals.backbone import sampled
 
     cases = load_corpus(name)
+    if only is not None:
+        # NAMED cases only. A re-measurement asks about the cases that moved,
+        # and paying for a whole corpus to re-draw four of them is how a
+        # sample count gets chosen by budget instead of by the question.
+        # Refused by name when a name matches nothing: a typo that silently
+        # selected zero cases would report a clean corpus.
+        known = {c.name for c in cases}
+        missing = sorted(only - known)
+        if missing:
+            raise ValueError(
+                f"{name}: no active case named {missing}; it may be parked, "
+                f"or misspelt. Active: {sorted(known)}"
+            )
+        cases = [c for c in cases if c.name in only]
     if sample > 1:
         cases = [draw for base in cases for draw in sampled(base, sample)]
     spec = Spec(
