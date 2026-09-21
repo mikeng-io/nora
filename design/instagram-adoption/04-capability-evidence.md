@@ -164,8 +164,25 @@ protocol — see `02-identity-and-policy.md` §Open decisions.
 
 ## Not measured, and load-bearing
 
-- **Session longevity.** The whole question of whether this is operable. A
-  soak has been running on norty since 2026-09-21 (`~/workspace/ig-soak/`).
+- **Session longevity — first real reading, 2026-09-21/22.** 10.5 hours
+  continuous on one login: **zero auth errors, zero checkpoints**, and **four
+  socket disconnects**, every one self-healed without human action. The
+  disconnect reason each time was `dgw: reading message: … EOF` — the socket
+  flapping at roughly 2.5x/day and recovering, not the session dying.
+
+  Two things follow. The session itself is durable on the timescale that
+  matters, so re-auth is not a frequent operational event. And the flapping is
+  real, which makes the bridge's reconnect backoff load-bearing rather than
+  defensive — an audit found it had none on the path where `Connect()` returns
+  immediately, which would have meant hitting Instagram every 5 seconds
+  through exactly this condition.
+
+  **A correction to the record**: an earlier reading of this soak was reported
+  as "zero disconnects". It was taken minutes after start, before any had
+  happened, and the number was then repeated. The disconnects were always in
+  the log.
+
+  A soak has been running on norty since 2026-09-21 (`~/workspace/ig-soak/`).
   Until it produces a number, every fresh probe misleads by succeeding,
   because age is the variable.
 - **Pagination is broken in this library version, both kinds.** Explicit
