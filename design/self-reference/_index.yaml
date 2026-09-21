@@ -12,6 +12,9 @@ description: >
   confused a 牛來 meme with Miles's avatar when asked to merge his photo
   into a rainy scene).
 status: proposed
+decisions:
+  reserved: "DEC-193 — CLAIMED AT MERGE. Registered in design/09-decision-index.md and marked 'Designed, not built': no doctrine file, no resolver code and no test exists for it yet. Drafted as DEC-139, renumbered 141 -> 193 (master already held 141-144, the trace series)."
+  index: null
 governance: pre-governance-input
 timestamp: '2026-08-27'
 revision: '2026-08-27 — adversarial review (Hermes delegate) of the earlier single-file draft returned REQUEST CHANGES; all findings addressed: operator canonical asset added + deterministic no-guess rule (03), test_doctrine_assembly.py added to files-touched (04), authority fields specified (01), ingest-before-doctrine ordering + handle-pinning test (02, 04), resolver precedence pinned (02), 3-slot cap relabelled tool-surface convention (01), no-migration wording (02), appearance tag-only mirroring silence (04). Restructured from a single proposed/ document into this bundle (Miles: design bundle, not design document).'

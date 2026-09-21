@@ -1,0 +1,2169 @@
+# NORA AS THE DEPLOYMENT RUNS HER — the config every eval subject composes.
+#
+# GENERATED PER RUN by `evals/subject_config.py`, from `config.example.toml`
+# plus the deployment's own `config.toml`. Never edit; never commit. It is
+# gitignored for the same reason `config.toml` is: it carries the deployment's
+# real values, including the doctrine canary and room ids.
+#
+# WHY IT EXISTS. Until 2026-09-21 every eval subject was built from
+# `config.example.toml` — a safe template for a FRESH deployment, so nearly
+# everything ships off. 65 values differed, including the model, the reasoning
+# effort, and the relevance gate, participation, standing, culture, notes, the
+# Dreamer and most tools. The suite measured a different Nora, and no case
+# could have caught it: the prompt was right, the reader was not.
+# See `design/evaluation/01-boundaries.md` §5.
+#
+# WHAT IS DELIBERATELY NOT TAKEN, and why none is a behaviour difference:
+#   platforms.*   the adapters would dial Signal/Discord; an eval drives the
+#                 entry points directly and never listens.
+#   obs.*, analytics.*, heartbeat.*, evals.langfuse.*
+#                 a run's traces and counters would land in the deployment's
+#                 own sinks, beside real ones.
+#   media.rustfs.*, presence.*, social.bridge_url
+#                 endpoints that resolve only inside the deploy network.
+#   store.data_dir
+#                 `_baseline()` points it at the case's own workdir.
+# Anything else differing from the deployment is a DEFECT, and
+# `tests/architecture/test_the_eval_subject_is_the_deployed_nora.py` says so.
+
+identity_file = "identity.toml"
+policy_file = "policy.toml"   # WHO may talk to her, and where. See policy.example.toml.
+
+
+[agent]
+# The agent's MACHINE name — its Strands agent_id and Langfuse trace span
+# (`invoke_agent <name>`). Lowercase and stable; a rename starts a new trace
+# lineage. The human-facing name is [doctrine].display_name and the wake word is
+# [engagement].trigger.text. Optional (defaults to "nora"); to stamp out a second
+# agent ("delia") set all three here plus its own doctrine files, ai_peer, and
+# workspace_id.
+name = "nora"
+
+
+[platforms.signal]
+base_url = "http://127.0.0.1:18080"
+account = ""                     # empty = derive from the signal-cli daemon (D5)
+enabled = true                   # honoured by the adapter registry; false with no other
+                                  # platform enabled refuses to start rather than run deaf
+
+
+[platforms.discord]
+enabled = false
+token_env = "DISCORD_BOT_TOKEN"  # env var holding the bot token; never the value itself
+
+
+[platforms.whatsapp]
+enabled = false
+base_url = "http://whatsapp-bridge:18081"  # the containerized Baileys bridge;
+                                  # it holds the paired session, so there is no
+                                  # token/account here at all. Requires pairing
+                                  # first: docker compose run --rm whatsapp-bridge
+                                  # --pair --phone <digits>
+
+
+[memory]
+base_url = "http://127.0.0.1:8000"
+workspace_id = "nora"
+# `<self_card>` — how many of HER OWN conclusions ride in the prefill, so a
+# promise she made last night survives falling out of the transcript window.
+# 0 turns the block off.
+#
+# TWO turns since issue #210: the tag turn, and the participation turn behind
+# the ambient gate. The arithmetic below is the tag loop's and is the binding
+# one (`turns = 20` against a participation turn's single pass), so 8 is if
+# anything conservative on the ambient path. It is deliberately NOT the number
+# `people_in_window_conclusions` takes: that one is multiplied by up to four
+# speakers and this one is not. From `representation`, never from the peer
+# CARD: read live 2026-08-11 her card asserts «Kind: AI chatbot/assistant» and
+# «Owner: 主人 with admin authority» — both distilled from her own output, both
+# contradicting identity.md, and both would WIN against the doctrine because a
+# concrete observation outranks a prescription in practice.
+#
+# 8, not 25. This block is per-tag, so it is re-sent on every model call of the
+# loop rather than living in the cached static head: 25 conclusions measured
+# 2,459 chars (~820 tokens), which at `turns = 20` is ~16k of the 128k budget.
+# Eight measured ~1,080 chars.
+self_card_conclusions = 8
+# `<peer_history>` — how many of her conclusions ABOUT THE TAGGER ride in the
+# per-tag prefill. 0 disables the block. NOT a duplicate of `<peer_card>`: read
+# live 2026-08-15 the two shared ZERO items — the card renders IDENTITY claims,
+# the representation states dated episodes. Who they are, and what happened.
+#
+# Same per-tag arithmetic as `self_card_conclusions`: 8 (~360 tokens) is ~7.2k
+# of the 128k budget at `turns = 20`. Raising BOTH to 16 spends ~29k before
+# anybody has said anything — measure a real turn's total_tokens first.
+tagger_card_conclusions = 8
+# `<people_in_window>` on the PARTICIPATION turn (issue #210) — how many of her
+# conclusions ABOUT EACH SPEAKER in the quiescence window ride in the prompt,
+# and how many distinct speakers get an entry (most recent speaker first).
+# Either at 0 turns the block off.
+#
+# Why the block exists: the participation occasion is built `person_id=None`,
+# so until #210 `peer_card`, `<self_card>` and `<peer_history>` were ALL empty
+# on every ambient turn — the one decider design 36 §6 describes as holding
+# «notes and the peer card» behind a blind gate knew the room by display name
+# and nothing else. Its question is not about one person (that is the tagger,
+# and there isn't one); it is about the people in this window.
+#
+# 3 x 4, NOT 8 x 4. `tagger_card_conclusions = 8` buys one person's episodes on
+# a turn somebody asked for; this buys up to four people's on a turn nobody
+# did. Eight each would be ~1,440 tokens of background before anyone has said
+# anything to her. The speaker bound is on the READS as well as the render —
+# one Honcho round trip per speaker, concurrent, under
+# `read_timeout_seconds` — so raising it costs latency, not just budget.
+people_in_window_conclusions = 3
+people_in_window_speakers = 4
+# The PROACTIVE decide turn's `<people>` roster index (design 39 D9, issue
+# #210) — how many conclusions per home-room member. 0 leaves the block as it
+# was: names and aliases only.
+#
+# DELIBERATELY 1, and that is the decision rather than an economy. #206 rations
+# the decide pass to `[dreamer] max_memory_calls = 2`; the index exists so those
+# two reads are spent on DEPTH («what did Aaron say about Saturday») rather than
+# on «who is Aaron». An index carrying eight conclusions each WOULD be the depth,
+# and the ration would have nothing left to buy.
+roster_index_conclusions = 1
+# How many home-room members that index READS memory for. The render is
+# uncapped — every member keeps their name and aliases, because a member
+# missing from the index is invisible to her and invisible is indistinguishable
+# from absent — so this bounds the Honcho FAN-OUT only: `_roster_index` issues
+# one concurrent read per member, and a forty-person Discord home room would be
+# forty of them on the front of a pass. Members past the cap keep their names
+# and get no «·» line; the order is the roster's own, which makes this a cheap
+# bound rather than a good one (a home room past it wants a relevance order,
+# which is a different change).
+roster_index_members = 12
+# The wall-clock bound on the participation turn's memory reads, over the WHOLE
+# concurrent batch. `HonchoClient.representation` already carries its own 3s
+# transport timeout, so this is a belt over the PORT: an implementation is not
+# obliged to time anything out, and these reads run while the heartbeat holds
+# this conversation's slot — the exact shape of the unbounded read that wedged
+# a conversation in `debrief.run` and then again in `FirePath`.
+read_timeout_seconds = 5.0
+
+
+[llm]
+base_url = "http://localhost:20128/v1"
+api_key_env = "OMNIROUTE_API_KEY"     # env var NAME, never the value
+
+# PINNED to one upstream, not the `nora` combo — the combo fans out per request
+# and the upstreams disagree about forced `tool_choice`, so on it she was on a
+# coin flip. See ADR 0006 for the full measurement behind BOTH values here.
+#
+# SUPERSEDED (kept: the wrong turn stays visible so it is not retaken). Until
+# 2026-08-10 this line read `opencode-zen/deepseek-v4-flash`, on this argument:
+# only ONE of the combo's three upstreams accepted a forced tool_choice while
+# thinking was enabled — measured 4/4 each, not sampled:
+#
+#   deepseek/deepseek-v4-flash       400 "Thinking mode does not support this
+#   opencode-go/deepseek-v4-flash    400  tool_choice" (deepseek-ai/DeepSeek-V3#1376)
+#   opencode-zen/deepseek-v4-flash   200, and picks the right tool 4/4
+#
+# Routed to zen she chained correctly, routed to either other she 400'd mid-turn
+# and went silent — showing the group ⚠️, which reads as "gave up" rather than
+# "the provider refused the request". The note ALSO said to watch zen, because
+# it was the only one of the three reporting no reasoning_tokens in usage, which
+# suggested a different — possibly older — build.
+#
+# opencode-zen → ollamacloud (DEC-84, 2026-08-10). Two reasons, in order:
+#   1. ECONOMICS. ollama-cloud is subscription-based; opencode-zen is credit-based
+#      and was returning 403/429 «All credentials for model deepseek-v4-flash are
+#      cooling down» throughout a probing session. A route that rate-limits under
+#      load is not a route for the only path the group can reach her by.
+#   2. tool_choice. The 400 «Thinking mode does not support this tool_choice»
+#      that forced the zen pin does NOT occur here: 0 errors in 32 forced calls
+#      across all three deepseek tags.
+#
+# `deepseek-v4-flash` and NEVER `-pro` (operator). Measured, `pro` is not better
+# at the one thing that matters here — it obeyed a forced tool_choice 2/3 where
+# flash-at-none obeyed 8/8 — so the larger model buys nothing and costs more.
+#
+# Pinning gives up the alias's benefit of keeping the upstream name out of her
+# process (R-18 still blocks model names from replies, so she cannot say it).
+# Determinism is worth more than the indirection.
+# Tagged :0731 (2026-08-30) — OmniRoute catalog re-sync after restart dropped
+# the bare id; upstream only exposes the tagged variant now. See catalog-400.
+model = "nora"
+# The provider's per-CALL ceiling — NOT the turn's budget (see [llm.limits]
+# below, which is where the loop's budget lives). Was 4000, an unmeasured
+# number that doubled as the loop budget; measured 2026-08-06, the largest
+# legitimate completion — reasoning block plus the tool call — was 371 tokens,
+# so 2000 is 5.4x headroom.
+max_tokens = 2000
+# SAMPLING — and this one key is the whole of it: `temperature` is the ONLY
+# sampling parameter this deployment sets. The `top_p` note below it is the
+# other half of the picture and is deliberately not a key.
+#
+# 0.7 is INHERITED, not measured — it has been this value since the first
+# config and no probe has ever moved it. Nothing here argues for it.
+temperature = 0.7
+# `top_p` is UNSET, and deliberately has no key in this file, so the value in
+# force is whatever the provider defaults to. `nora/agent/factory.py`'s
+# `create_model_provider` builds `params` from exactly four entries —
+# `max_tokens`, `temperature`, `tool_choice`, `reasoning_effort` — so no
+# nucleus truncation is applied by us at any point in the loop.
+#
+# This is recorded because the absence was INVISIBLE: reading this file gave no
+# hint that a sampling parameter was in play at all, and an audit reasoning
+# about her sampling from the repo got the wrong picture (F8, the 2026-08-20
+# prompt-architecture audit).
+#
+# DO NOT add a `top_p` key to make the knob "explicit" without measuring first.
+# `top_p = 1.0` is a no-op that buys nothing but the illusion of control, and
+# any value below it truncates the distribution on a guess — for work that is
+# «pick one tool and call it correctly», the failure mode that matters is her
+# ending a turn without calling `send_reply`, which is exactly what the
+# `reasoning_effort` series below shows sampling changes can move. Measure it
+# the way that series was measured — auto tool-choice rate and no_send_call
+# journeys, n≥5 — and only then decide whether a knob should exist.
+
+# REASONING EFFORT: "none" | "low" | "medium" | "high". NOT "auto" — the
+# provider 400s on it.
+#
+# SUPERSEDED, kept because the reasoning is still half-right and the value it
+# argued for is the documented fallback: this line read `low` on the argument
+# that «a tag is one short reply from context she already holds — nothing to
+# reason through», with latency measured on deepseek-v4-flash at "none" 4.7s,
+# "low" 9.5s, unset 16.1s, all producing the tool call.
+#
+# Measured 2026-08-10 on ollamacloud/deepseek-v4-flash. Two independent probes,
+# same monotonic shape — and this measurement is NOT retracted by the value
+# below it:
+#
+#   effort   out tok p50   p50 s   auto tool-choice   no_send_call (journeys)
+#   none              49     1.2         5/5                    5
+#   low               70     1.1         3/5                    4
+#   medium            81     1.2         2/5                    —
+#   high             104     2.9         1/5                   15
+#
+# ROUTING is a wash — journeys total-samples high 21/24, none 20/24, low 19/24,
+# i.e. one sample apart at n=3. What is not a wash is the last column: `high`
+# ends the turn without calling `send_reply` three times as often, and that is
+# her going mute in the group.
+#
+# `none` → `low` (operator, 2026-08-11). Measured against the real shipped
+# doctrine, same scene 「阿豪又遲到，仲賴塞車」, one call each: `low` was FASTER
+# and better, producing the escalating three-beat burst DEC-95 asks for where
+# `none` produced neither. The work is no longer «pick one tool and call it
+# correctly» — since DEC-95 it is «read the room, choose how hard, and compose
+# several messages», which is deliberation, and the model needs a little of it.
+#
+# `low` → `high` (operator, 2026-08-17), against the 2026-08-10 table above.
+# The failure mode to watch is the one that table names: at `high`, 1/5 auto
+# tool-choice and 15 no_send_call journeys — her ending a turn without calling
+# `send_reply` at all. Revert to `low` if silent turns show up in the traces.
+#
+# `high` → `low` (operator, 2026-08-21).
+reasoning_effort = "none"
+# 30 → 60 (2026-08-07): a REAL photo through MiMo measures 12.9 s in-container,
+# and the vision per-call budget derives from THIS value — at 30 it computed 9 s,
+# so every real image timed out while the tiny probe PNG passed.
+# 60 → 120 (2026-08-08, Kimi audit): this is the WHOLE-TURN wall-clock
+# (`asyncio.wait_for` in the invoke stage). It was sized when the web pair could
+# spend 4×15 s fetching pages (web_fetch, now retired, DEC-73); Tavily's one-call
+# web_search is ~12 s, so a research turn is far cheaper now. 120 is kept as
+# comfortable headroom for a multi-tool turn (web_search + weather + model
+# round-trips); a normal turn is still ~10 s, so this only bounds the rare slow
+# turn (the operator: a longer wait is fine). Vision derives min(configured 20, 120×0.5).
+# SUPERSEDED 2026-08-30 by the 120 → 240 note below (vision now derives
+# min(configured 40, 240 × 0.6 / 4) = 36 s).
+# 120 → 240 (2026-08-30, operator): real 13.4 MB videos through the kimi direct
+# lane time out at the derived per-call vision budget 18 s (120 × 0.6 SHARE / 4
+# media_fetch budget). A video upload+inference cannot fit. Raising the loop to
+# 240 recomputes per_call = 240 × 0.6 / 4 = 36 s, still under `vision_timeout_seconds`
+# 40 raised alongside. Invariant budget × derived < loop still holds: 4 × 36 < 240.
+timeout_seconds = 240
+
+# The three caps around the WHOLE agent loop for one tag — all measured
+# 2026-08-06, all three previously wrong in the same direction.
+#
+# Real per-call INPUT is 4,952 tokens (doctrine + transcript + tool schemas),
+# paid again on every call in the loop, plus whatever the tool results from
+# earlier calls added to the context. A measured 6-call turn totalled
+# 32,426-36,748 tokens.
+#
+# At the old total_tokens = 24000 that ceiling was crossed during model call
+# FIVE, so `turns = 8` was unreachable dead config: the token cap always bound
+# first and the turn count never did. Worse, until R-23 the cut was reported
+# byte-identically to the model simply choosing not to answer.
+#
+# 64000 gives ~2x headroom over the worst measured 6-call turn and lets
+# `turns` be the cap that actually binds — which is the one an operator can
+# reason about, because a turn is a round trip and a token is not.
+# Per-tool call-count overrides — the per-deployment DELTA over the table in
+# `nora/agent/tools.py`, which states every default with its reasoning beside
+# the tool it belongs to (DEC-10). Empty here means "the table, unchanged".
+#
+# This exists because budgets drift upward as tools are added, and moving a
+# number should not need a code change and a rebuild. It is applied OVER the
+# table by `ToolRegistry.budgets()`, which stays the single place anything
+# resolves a budget from — R-7's ceiling, the Deliverer's message cap and the
+# tests all still read one value. Putting ONE tool's budget here instead would
+# have split the table fifteen-to-one, which is the drift DEC-10/DEC-32 exist
+# to prevent.
+#
+# An unknown tool name or a value below 1 is a STARTUP FAILURE, not a warning:
+# a silently-ignored line is an operator certain they raised a cap that never
+# moved.
+#
+
+[llm.budgets]
+# web_fetch 2 -> 6, matching the deployment (config.toml). Not site-specific:
+# the table's 2 was measured false on the research shape (Langfuse 844eb6d1
+# refused the third fetch mid-chain), so this is the current known-good value
+# and a template disagreeing with it misleads every future investigation --
+# the same argument `total_tokens` carries below.
+web_fetch = 6
+
+
+[llm.limits]
+turns = 20
+# Raised 512000 -> 1024000 to match the deployment (config.toml). These two
+# files MUST agree on the budget — `tests/test_turn_budget.py::
+# test_both_config_files_declare_the_same_budget` exists because "a budget fix
+# applied to one and not the other" is a state master has been in before. It is
+# not site-specific: it is the current known-good ceiling, and a template
+# disagreeing with it misleads every future investigation.
+total_tokens = 1024000
+# The loop's OUTPUT budget across every call of the turn, deliberately not
+# `llm.max_tokens` (which is one call's ceiling). It was literally that number
+# until 2026-08-06, so the whole loop could emit what one call could — and
+# single calls were measured emitting 3,993 / 3,987 / 3,974 completion tokens,
+# i.e. 99.8% of it. 12000 is 6x the per-call ceiling.
+output_tokens = 12000
+
+
+[participation]
+# The participation occasion (design/dreamer-agent-loop/35): Nora MAY speak in a
+# room she was NOT tagged in, judged once per quiescence-closed window, with
+# silence as the healthy default. OFF by default, and even when enabled it
+# engages nowhere until a room is ALSO opted in with `participation = true` on
+# its [[conversations]] entry in policy.toml — "allowed to answer when tagged"
+# and "allowed to speak uncalled" are separate grants, both required.
+enabled = true
+# Quiescence trigger (§3.5): a candidate window opens on a message and closes
+# when the room has been quiet this long. ONE evaluation runs per closed window,
+# with the whole burst in context — never one per message.
+settle_seconds = 10
+# The VOLUME arm: a window ALSO closes once this many messages have arrived
+# since the room was last judged — quiet OR volume, whichever comes first.
+# Without it a room that keeps talking is never judged at all: the quiet arm
+# reads time since the last message, and every message resets it. Sized
+# against the live rooms (busiest ~44 human messages a DAY), and deliberately
+# smaller than [relevance_gate] transcript_rows so consecutive windows overlap
+# and an intent spread over several messages stays visible in the next one.
+max_window_messages = 10
+# The participation turn's OWN reasoning budget, not the tag lane's. `none`,
+# and the direction is measured: `high` reasoning produced THREE TIMES the
+# silent turns of `none` (evals/harness.py). Silence is this occasion's healthy
+# default, so more thinking reads as a virtue here and is not one — the failure
+# actually measured is a turn that HOLDS the answer and stays quiet anyway.
+# Same setting the gate runs at: both calls open with one decision.
+reasoning_effort = "none"
+# SEND cooldown, not an evaluation cooldown (§10.3): at most one participation
+# message per room per this many minutes. Evaluations run regardless; one that
+# concludes "speak" inside the cooldown stays silent (and is logged).
+cooldown_minutes = 10
+# Shadow mode (§10.6), the pre-flip review surface: every participation
+# determination — speak AND silence — is mirrored to shadow_channel, with the
+# source room, the verdict, the text (sent / held by the cooldown / the draft
+# she declined to send) and the window that closed. ON TOP of `enabled` and
+# the room opt-in, never instead of them. The mirror is a real channel the
+# operator reads (a Discord channel by default), reached through the same
+# Deliverer and guards as any send, under its own audience label — and never
+# counted in nora_participation_spoke_total.
+shadow = false
+# The mirror's destination, in shadow_platform's OWN id shape — on discord
+# that is "<guild_id>/<channel_id>", the same form policy.toml uses for a
+# Discord room, NOT a bare channel id. A bare id addresses
+# /channels//messages and Discord answers 405; the config schema now
+# refuses it at boot rather than letting the mirror fail soft forever.
+# shadow_channel = "1234567890123456789/9876543210987654321"  # required when shadow = true
+# shadow_platform = "discord"              # the mirror's platform
+
+
+[relevance_gate]
+# The Relevance Gate (design/dreamer-agent-loop/36): ONE cheap structured model
+# call, on every quiescence-closed window, deciding whether the burst is worth a
+# participation turn AT ALL. No tools, no doctrine, no agent loop — it reads the
+# transcript window and the room's standing, and answers
+# {"verdict": "go"|"no_go", "relevance_score": 0.0-1.0}. An unparseable or
+# failed call is a NO-GO (fail-closed) and is counted separately, because
+# "the room was quiet" and "the gate is down" must never read the same.
+#
+# OFF by default. Even ON it considers nothing until a room is ALSO opted in
+# with `relevance_gate = true` on its [[conversations]] entry in policy.toml,
+# and it REFUSES TO START unless [participation] enabled = true — the gate
+# decides whether a turn runs, so with the turn off every GO reaches nothing.
+enabled = true
+# Its OWN OmniRoute combo (`nora-gate`), not the `nora` lane: the gate wants JSON mode and no
+# reasoning, the tag lane wants neither. ADR 0006 is why they stay apart — a
+# combo fans out per request and its upstreams have been caught disagreeing
+# about request features, which on a fail-closed gate reads as a quiet room
+# rather than as an outage.
+model = "nora-gate"
+# DECLARED, not left to the route's default. It PINS behaviour rather than
+# saving tokens: measured both ways on nora-gate (n=4), with the flag and
+# without it the combo returned identical numbers, so its members already
+# reason none today — and "today" is a property of the combo's membership,
+# which you can change without touching this file.
+reasoning_effort = "none"
+# A ceiling on a verdict JSON, not a budget for prose. Deliberately small: a
+# gate with room to write paragraphs has room to start drafting the reply it
+# must never draft. MEASURE before changing (design 36 §2.3).
+max_tokens = 512
+temperature = 0.0
+timeout_seconds = 20.0
+# The gate's ONLY inputs are this many transcript rows plus the room's
+# standing. Nothing else may be added here without changing what the gate is.
+transcript_rows = 40
+# SHADOW is the shipped posture: the gate runs on every closed window and only
+# the `go` verdicts are posted to shadow_channel for review. Nora is NEVER
+# involved while this is true — no turn, no agent, whatever the score. The
+# `no_go` verdicts are not delivered anywhere; they are visible only as
+# nora_relevance_gate_total{verdict="no_go"}. The flip is `shadow = false`.
+shadow = false
+# The review channel, in shadow_platform's OWN id shape — on discord that is
+# "<guild_id>/<channel_id>", never a bare channel id (see [participation]
+# shadow_channel above for what a bare one does).
+# shadow_channel = "1234567890123456789/9876543210987654321"  # required when enabled AND shadow
+# shadow_platform = "discord"
+
+
+[engagement]
+policy = "trigger_text"
+
+
+[engagement.reactions]
+# 👀 while she works, then ✅ (replied) or ⚠️ (failed).
+# Off = she writes nothing to the group but replies.
+enabled = true
+
+
+[engagement.queue]
+# Per-conversation FIFO depth beyond which an arriving tag is shed as a flood
+# (R-30). Bounds runaway growth, not waiting — a queued tag keeps its place
+# however long the turn ahead of it takes, and there is no staleness rule.
+max_depth = 16
+
+
+[engagement.trigger]
+# Set false to disable the trigger PHRASE only — a real @mention or a reply to
+# one of her own messages still engage her either way (MentionPolicy/
+# ReplyToNoraPolicy, unaffected by this flag).
+enabled = true
+# Superseded 2026-08-26 by the operator (live: "nora" — any message containing
+# the word engages her; a @mention or reply does regardless).
+text = "nora"
+min_interval_seconds = 5
+
+
+[store]
+# The record store is PostgreSQL (design/20). The URL is injected by the host
+# through the env var named here (DEC-8: name the var, never inline the value).
+# `docker compose` sets DATABASE_URL from `.env` to
+# `postgresql+asyncpg://nora:…@nora-db/nora`.
+database_url_env = "DATABASE_URL"
+# On-disk root for media byte custody. A Postgres URL has no directory, so the
+# media root is its own key; blobs live at `data_dir/media`.
+data_dir = "~/workspace/nora/data"
+max_per_conversation = 500
+context_window = 40
+# Whether the retention sweep runs at all. Defaults TRUE (this file's convention:
+# a config.toml written before a key existed keeps its behaviour), so leaving it
+# out prunes to `max_per_conversation` above every 300s.
+#
+# Set it false to keep the conversation record IN FULL. That is a real decision,
+# not a tuning knob: at 500 rows a busy group reaches the cap in days and then
+# evicts its oldest message every time a new one lands, silently — the record
+# still looks healthy, it is just a rolling window rather than a history. Turn it
+# off if anything downstream reads the past (an aggregator over the record, an
+# audit, an export), and watch disk instead.
+#
+# Do NOT fake it by widening `max_per_conversation`: `prune_all` runs a
+# `row_number()` window over the whole `messages` table on every tick, so a huge
+# number keeps paying for that scan in order to delete nothing.
+#
+# The live deployment sets this FALSE, and the measurement behind that is the
+# reason to read the paragraph above rather than skim it. Measured 2026-08-15:
+# the busy group was sitting at exactly 500 rows — at the cap, evicting its
+# oldest message every time a new one arrived, on a sweep that runs every 300s
+# — with its earliest surviving message only eight days old and ids below 121
+# already gone. History is the input to everything downstream (the transcript
+# window's own past, any consolidator built on the record), and a rolling 500
+# is not history.
+#
+# It stays COMMENTED OUT here on purpose, and that is load-bearing rather than
+# an oversight: `tests/test_main.py::test_the_retention_sweep_is_spawned_when_
+# the_flag_is_on` loads this very file to pin the CODE default (absent means
+# enabled), so writing the key here would silently delete that assertion.
+# `tests/test_env_template.py` names it as the one key allowed to be absent.
+# prune_enabled = false
+
+# Attachment byte custody (DEC-43), encrypted at rest (DEC-47). The WHOLE
+# SECTION IS OPTIONAL — every key below is its own default — so a config.toml
+# without it behaves identically.
+#
+# There is no media path key on purpose: media lives under `store.data_dir`, in
+# `media/<first2>/<rest>`, keyed by the sha256 of the content. The row and the
+# blob it names are one record; a media-specific root would let them be backed
+# up and deleted separately, and the first time that happened the transcript
+# would point at blobs nobody kept.
+#
+# ENCRYPTION AT REST (DEC-47). The bytes on disk are AES-256-GCM ciphertext, not
+# the picture. For IMAGES, EXIF/embedded metadata (GPS, device id) is stripped
+# BEFORE the content is hashed — so the same photo with different GPS dedups to
+# one blob, and the location PII is gone from what Nora holds. NON-IMAGES
+# (audio, video, documents) have NO metadata stripped — there is no cheap
+# universal stripper — so their embedded metadata survives inside the encrypted
+# blob. Custody turns ON only when `enabled` is true AND `encryption_key_env`
+# names an env var holding a valid key; a missing/malformed key degrades to
+# custody OFF (never plaintext-by-accident, never a crash).
+#
+# RETENTION IS NOT DECIDED, and `store.prune_enabled = false` sharpens it: with
+# the message sweep off, NOTHING in the system deletes anything, and blobs are
+# far larger than rows. Even with it on, `store.max_per_conversation` prunes
+# MESSAGES only — no sweep deletes blobs, so today this grows without bound in
+# either configuration. The blob outliving the row that named it is the shape to
+# watch for: a message pruned or an export taken leaves bytes on disk that
+# nothing references and nothing will ever collect. That is DEC-43's
+# open question and it is the operator's to answer — this is the most PII-heavy
+# data in the system. `enabled = false` is the honest off switch in the
+# meantime: attachments are then recorded exactly as before (a placeholder, no
+# handle) and every one is counted under
+# nora_media_custody_total{status="not_configured"}.
+# SET BY THE DEPLOYMENT, absent from config.example.toml. Without
+# this line the sandbox takes nora/config.py's own default, which
+# is not the deployment's value.
+prune_enabled = false
+
+[media]
+enabled = true
+# Names the env var holding the base64 of a 32-byte AES-256 key (DEC-8: name the
+# var, never inline the secret). Host-injected, like OMNIROUTE_API_KEY. Generate:
+#   python -c "import os,base64;print(base64.b64encode(os.urandom(32)).decode())"
+# Empty (or the var unset) = custody OFF.
+encryption_key_env = "NORA_MEDIA_KEY"
+max_bytes = 104857600     # 100 MiB — Signal's own attachment ceiling
+timeout_seconds = 8.0     # ingest path: a wedged daemon costs seconds, never the message
+# Reading a stored image back through MiMo-V2.5 (the `media_fetch` tool, DEC-56).
+# All defaulted; these are the READ half's knobs. vision_max_bytes is the ceiling
+# on bytes sent to MiMo — far below max_bytes on purpose (a 100 MiB blob is a
+# ~133 MiB base64 body). vision_timeout_seconds is a CEILING: the tool derives the
+# real per-call budget as the smaller of it and half of llm.timeout_seconds, so a
+# slow model becomes the tool's `unavailable`, never the loop's silent timeout.
+# DEPRECATED NAME, kept so a config written before DEC-114 keeps
+# loading: this is the IMAGE describer's model, and
+# `[media.describe.image] model` overrides it when both are set.
+# The sticker reader resolves through the same describer, so the two
+# image paths cannot disagree about what wrote a shared cache row.
+# ollamacloud/minimax-m3 → ollamacloud/glm-5.3-flash (2026-08-30, benchmark:
+# GLM 5.3 Flash 2-4s vs M3-style 5-26s per image, accuracy parity except
+# hyphens/punctuation in dense OCR — verified through OmniRoute).
+vision_model = "ollamacloud/glm-5.3-flash"
+vision_max_tokens = 1024
+vision_reasoning_effort = "low"
+vision_max_bytes = 8388608   # 8 MiB → ~10.7 MiB base64 body
+# 20 → 40 (2026-08-30, operator): the per-call vision budget derives as
+# min(vision_timeout_seconds, loop × 0.6 SHARE / media_fetch budget). With the
+# loop raised 120 → 240 the derived value is 240 × 0.6 / 4 = 36 s; leaving this
+# at 20 would cap the budget at 20 s and real 13.4 MB videos would keep timing
+# out. 40 keeps the configured ceiling above the derived budget so the derived
+# number is the true cap.
+vision_timeout_seconds = 40.0
+# Whether STICKERS are among the media that get read (sticker spec §6, rescoped
+# by issue #116).
+#
+# ON since 2026-08-16, operator's call: the spec §7 probe cleared the
+# animated-WebP risk the flag was originally gated on, and what remained was a
+# latency trade-off — a new sticker blocked the ingest path 3.9-12.2s while the
+# vision call ran, landing on Nora's reply latency when it rode on the tagging
+# message.
+#
+# THAT LATENCY IS GONE. The sticker read is no longer on the ingest path at
+# all: it is one subject among the others handed to the spawned comprehension
+# pass below, so this flag is now a COST switch (one model call per new
+# sticker) rather than a latency one. Off excludes stickers from the read and
+# NOTHING ELSE — the identity ladder that makes a repeat sighting cost zero
+# platform RPC is custody, is wired whenever `enabled` is on, and is unaffected.
+#
+# What to watch: the level= label on nora_sticker_descriptions_total for the
+# ladder's hit rate (41% of sightings and rising as the group's sticker set
+# saturates), and nora_media_comprehension_seconds{} for what a read costs.
+sticker_descriptions = true
+
+# ONE model read per medium at ingest (issue #116) — image, video, sticker,
+# voice note — producing three fields on `media_objects`: a title (what it is),
+# a description (what it shows) and content (everything legible in it, in
+# full). The transcript renders `[image a3f2c1: <title> - <description>]`;
+# Honcho gets all three; `media_fetch` serves the rest on demand.
+#
+# The read is SPAWNED, never awaited on the ingest path: custody (bytes ->
+# sha256 -> blob -> handle in the body) is what has to be inline, because the
+# handle is a promise the bytes are retrievable. An UNREAD medium is exactly
+# the state every medium was in before this existed, so a late comprehension
+# makes nothing untrue — and an inline one would stall serialized Signal
+# ingest behind every video.
+#
+# false = no model reads any media: handles in the body, nothing described,
+# and nothing anywhere claiming a description it does not have. Not an error
+# state. TWO things still happen with it off, because neither needs a model: a
+# voice note's transcript is written to `media_objects.content` by the custody
+# stage inline (STT has already run, so the words reach the record and the
+# transcript exactly as they did before this change — what they do NOT reach
+# with this off is Honcho, which gets the marker alone), and the sticker
+# identity ladder keeps turning a repeat sighting into zero platform RPC.
+# `sticker_descriptions` above is the sticker sub-gate on the READ only.
+comprehension = true
+# The CHEAP TEXT pass: a voice note's title/description over the STT
+# transcript that [speech.stt] already produced, and a video's over its
+# timecoded chunk run. NEVER a second listen or a second watch — the expensive
+# read has already happened.
+#
+# Empty = no text pass, and BOTH media keep what the expensive half produced: a
+# voice note keeps its words, a video keeps its timecoded chunk run. Neither
+# gets a title, and the transcript renders the run itself in that case rather
+# than a headline. Set it to any text model on the gateway; the image model
+# works. Worth setting — a ten-window video run is a lot of prompt where two
+# sentences would do.
+comprehension_text_model = ""
+# What the TRANSCRIPT may spend on one attachment's title + description. The
+# STORED comprehension is unbounded on purpose — the old 200-char clip existed
+# only because the description was baked into `messages.body`, which two
+# consumers read verbatim; it is a join now, so the bound belongs on the
+# render and `media_fetch` serves the whole thing. A VOICE NOTE is exempt: its
+# detail is the words people said, and clipping those would mean Nora reads a
+# summary of what somebody said instead of what they said.
+comprehension_render_chars = 240
+# How long ONE media-join query may take before a render gives up and shows the
+# bare `[image a3f2c1]` markers. Short on purpose — that degrade is cheap and
+# claims nothing, and without it a Postgres that is slow but alive held every
+# reply until the whole turn timed out. The two standing-fold paths wrap the
+# join in `[standing] store_timeout_seconds` as well; this is the inner bound
+# and should stay the smaller of the two.
+join_timeout_seconds = 3.0
+# How many media reads may be in flight at once. Not a throughput knob — a
+# memory and quota one: each in-flight read holds a decrypted blob plus the
+# base64 copy the request carries (8 MiB for a still, 100 MiB for a clip), and
+# a video read makes up to chunk_max sequential model calls while it holds
+# them. Raise it if new media takes too long to become readable; lower it if
+# the container's memory spikes when somebody drops twenty photos at once.
+comprehension_max_concurrent = 4
+
+# WHERE the (always-encrypted) bytes above land (DEC-136). OFF by default: a
+# config.toml written before this existed keeps writing to
+# store.data_dir / "media" exactly as before. On, an S3-compatible object
+# store takes over — bucket/endpoint here, credentials named by env var
+# (DEC-8), same reuse pattern encryption_key_env above already sets. A
+# misconfigured or unreachable RustFS falls back to the filesystem rather
+# than crashing the daemon or turning custody off entirely.
+
+[media.rustfs]
+enabled = false
+endpoint = ""              # e.g. "http://rustfs:9000"
+bucket = "nora-media"
+access_key_env = "RUSTFS_ROOT_USER"      # same var `drop`'s RustFS client uses
+secret_key_env = "RUSTFS_ROOT_PASSWORD"
+
+# Image generation (design/proposed/29, DEC-137): provider-agnostic
+# `ImageGenerator` port; the first adapter is xAI, on Nora's OWN X Premium
+# subscription OAuth lane — quota-bounded, not metered per-call billing.
+# Ships INERT, exactly like [presence]/[search]/[compute]/[music] before it:
+# a new subsystem does not switch itself on. `enabled = false` leaves the
+# `generate_image` tool present but answering `unavailable` (R-5) — the
+# wiring-gap state, never `nothing_found`.
+#
+# To turn it on: set `enabled = true` AND run `nora xai-login` (device flow;
+# it appends `XAI_OAUTH_REFRESH_TOKEN` to the host `.env`), then recreate
+# the container. The access token is NOT stored in `.env` — it lives in the
+# container-writable `./state/xai-oauth.json` and refreshes automatically
+# from the `.env` refresh token (single source of truth, DEC-8 pattern).
+
+[image_gen]
+enabled = false
+provider = "xai"
+
+# Reference images (editing a photo already in this conversation) are a
+# PRIVACY gate: references upload to a third-party cloud, so they default
+# off. `media_fetch` (describe-only) is unaffected. When enabled, the model
+# can only reference a photo NORA ALREADY HOLDS (a marker code from THIS
+# conversation's own media window) — never an arbitrary external URL.
+allow_reference_images = false
+
+
+[image_gen.xai]
+# xAI adapter knobs. `model`/`quality_model` mirror the names Hermes'
+# image_gen/xai plugin uses; `refresh_token_env` is resolved by NAME from
+# the container env (DEC-8: one name for one secret — the CLI writes it).
+# 2026-09-01: model bumped to grok-imagine-image-2.0 — the v1 model the
+# edits lane ran made reference-image output noticeably worse; xAI's own
+# edits docs use 2.0 (multi-ref support + current-generation quality).
+model = "grok-imagine-image-2.0"
+quality_model = "grok-imagine-image-quality"
+refresh_token_env = "XAI_OAUTH_REFRESH_TOKEN"
+timeout_seconds = 90.0
+
+# Nora's own link shortener / drop delivery (deploy/drop/, this repo's own
+# compose service — docs/superpowers/specs/2026-08-12-nora-drop-design.md §5).
+# The WHOLE SECTION IS OPTIONAL and every key defaults; off (or an unset token)
+# leaves long URLs in replies, never a failure. Self-hosted on purpose — a
+# third-party shortener would see every destination the group routes to — and
+# never load-bearing: a mint that fails leaves the long URL exactly as it was.
+#
+# `base_url` points at `drop`'s INTERNAL listener, NOT the public hostname.
+# `drop` deliberately splits an internal listener (`drop:8081`, no `ports:`
+# entry, no Tunnel rule — spec §5a) carrying `POST /api/links` from a PUBLIC
+# listener carrying only the read-only `GET /i/<slug>` redirect, so the public
+# host has no `/api/links` route at all and minting against it 404s. Nora's own
+# container sits on the same Docker network and reaches `drop:8081` by
+# container DNS. The public `short_url` a mint returns is unaffected — `drop`
+# builds it server-side from its own DROP_PUBLIC_BASE_URL and hands it back.
+#
+# `token_env` NAMES the env var holding the mint bearer (DEC-8); the value is
+# `drop`'s own secret.
+
+[shortener]
+enabled = false
+base_url = "http://drop:8081"
+token_env = "NORA_DROP_TOKEN"
+
+# Google routing for the `route` tool (DEC-46). The WHOLE SECTION IS OPTIONAL
+# and every key defaults — a config.toml without it behaves as if routing is
+# off. `route` is the one grounding tool that costs money and reaches a third
+# party (Google Maps Platform), so it is OFF by default; while off the tool
+# answers `unavailable`, never a silent empty.
+#
+# `api_key_env` names the env var holding the key — the VALUE is never in config
+# (DEC-8), exactly like `llm.api_key_env`. Restrict the key at Google to
+# Routes + Places + Geocoding, and set a budget alert.
+
+[route]
+enabled = false
+api_key_env = "GOOGLE_MAPS_API_KEY"
+
+# MCP tool providers (spec: docs/superpowers/specs/2026-08-08-mcp-tool-provider-design.md).
+# Off unless enabled=true; the token value goes in .env, never here.
+
+[tools.mcp.pulse]
+enabled = false
+base_url = "https://orion.tail0a1b2c3d.ts.net/pulse/mcp"
+token_env = "PULSE_MCP_TOKEN"
+budget = 5
+
+# `make_artifact` — she builds a FILE (a report, a chart, a map) in a sandboxed
+# container and hands back a link, instead of typing the answer into chat.
+#
+# Ships INERT, like [presence] and [search] before it, and this one has more
+# reason than either: turning it on gives her process the host Docker socket
+# (docker-compose.yml mounts it, with the argument for that beside the mount)
+# and lets an LLM-authored program run on this box. That is an operator
+# decision every time, never something a missing section decides.
+#
+# Turning `enabled` on ALSO requires four host-injected values, and Nora
+# REFUSES TO START without any of them rather than accepting every job and
+# failing it minutes later in front of the group:
+#   NORA_DATA_HOST_ROOT   the host-side path of the /app/data mount. It exists
+#                         because a sandbox's workspace is bind-mounted by the
+#                         HOST Docker daemon, which resolves the source on the
+#                         host filesystem — an in-container path silently
+#                         resolves to an empty directory and the job produces
+#                         nothing. docker-compose.yml sets it from the same
+#                         expression as the mount itself, so the two agree.
+#   NORA_DROP_TOKEN       [shortener].token_env — the credential each job's own
+#                         scoped, short-lived Drop token is minted against.
+#   GOOGLE_MAPS_API_KEY   [route].api_key_env — the SAME key the `route` tool
+#                         uses, shared with the map-rendering skill.
+#   OMNIROUTE_API_KEY     [llm].api_key_env — the model the sandbox itself runs
+#                         on (the same OmniRoute triple Nora uses).
+
+[compute]
+enabled = false
+# sandbox_image = "smith:latest"
+# job_timeout_seconds = 300   # wall-clock guardrail; the container is killed
+# max_concurrent_jobs = 2     # containers in flight at once
+# poll_tick_seconds = 10      # how often the poller WAKES to check for a
+#                             # finished job — the same "best case for
+#                             # lateness, not an upper bound" shape that the
+#                             # heartbeat section's own tick_seconds has.
+# mem_limit = "8g"            # docker-py's own containers.run mem_limit shape
+# nano_cpus = 2000000000      # billionths of a CPU core (2 vCPUs)
+# data_host_root_env = "NORA_DATA_HOST_ROOT"
+
+# The presence collector (design/19, DEC-54/55) — a SEPARATE process,
+# `python -m nora.presence`, that records circle members' distinct location
+# fixes into the same `nora` database (PLAINTEXT). The WHOLE SECTION IS OPTIONAL
+# and every key defaults; `enabled` defaults to False, so presence ships INERT —
+# a config.toml without a `[presence]` section behaves as if it is off, and while
+# off nothing constructs a collector or a Life360 client and `whereis` answers
+# `unavailable`.
+#
+# CREDENTIALS ARE NAMED, NEVER INLINED (DEC-8). `client_credential_env` names the
+# env var holding the Basic client credential (the Life360 app's, the study's
+# auth); `username_env`/`password_env` name the account login. The collector
+# reads the VALUES from the environment.
+#
+# The poll interval is ADAPTIVE, not fixed. `cadence_moving_seconds` (default 20)
+# is the floor used while ANYONE in the circle is driving — so `whereis` stays
+# fresh through a commute — and `cadence_still_seconds` (default 300) is the
+# ceiling a stationary circle ramps toward, so a parked circle is not polled
+# every 20 s all night. `cadence_seconds` (default 90) remains the base for the
+# auth-failure back-off, which ALWAYS wins over the moving floor: a Life360 429
+# lengthens the sleep regardless of who is driving — ban safety is never traded
+# for freshness. Keep the band ~15–300 s, roughly what the Life360 app itself
+# does; set moving == still == cadence_seconds for the old fixed interval. The
+# collector is a CHANGE-RECORDER (it writes only when a member's position
+# advances). `retention_days` is the prune window (operator decision: 720 —
+# 180 -> 720 as of 2026-08-19: 378 B/row x ~1,800 fixes/day x 720d ~= 490MB,
+# cheap, and it is what keeps Tier-4 forecasting training data from being
+# pruned before it is usable). `metrics_port` is the daemon's own /metrics +
+# /health endpoint, separate from obs.metrics.port because it is a separate
+# process.
+#
+# This section carries NO ids. Circle membership lives entirely in identity.toml:
+# each person gets a `[[persons.<id>.life360]]` block with `member_id = "…"` and
+# `circle_id = "…"` (run `nora presence members` to print both). The collector
+# derives its circles by grouping those blocks by circle_id, so who-is-in-which-
+# circle stays in one gitignored file and never lands in this tracked config. The
+# person_ids in a circle are the R-21 disclosure roster (§5). Refuses to start if
+# enabled with no life360 block, or a life360 block that has no circle_id.
+
+[presence]
+enabled = false
+client_credential_env = "LIFE360_CLIENT_CREDENTIAL"
+username_env = "LIFE360_USERNAME"
+password_env = "LIFE360_PASSWORD"
+cadence_seconds = 90
+# Adaptive cadence (design/19 §4.1): floor while a circle has a driver, ceiling
+# once it's been still long enough to hit the ramp. `cadence_seconds` above
+# stays the base for the SEPARATE ban-safe backoff (cadence_seconds *
+# 2^auth_failures), not the steady-state poll interval anymore.
+cadence_moving_seconds = 5
+cadence_still_seconds = 60
+retention_days = 720
+metrics_port = 9101
+# On-demand LIVE refresh (DEC-67): where_is pings the phone for a fresh position
+# before answering, so it reports where they ARE, not where they were last seen.
+# `refresh_url` is the collector's HTTP endpoint AS NORA REACHES IT (the presence
+# service by name in compose, e.g. "http://presence:9101"); empty leaves where_is
+# read-only, answering from the last stored fix.
+refresh_url = ""
+refresh_timeout_seconds = 8
+# Reverse-geocode backend — a switchable OPTION, never a replacement. "google"
+# (default, proven; needs GOOGLE_MAPS_API_KEY) or "hkgov" (the HK-gov LandsD
+# ArcGIS locator). Both sit behind the ReverseGeocoder port and both are optional
+# (no credential → no geocoder, fixes store the coordinate/Life360 label). For
+# hkgov, set the full .../reverseGeocode service URL and the token env var from
+# your LANDSD Map API portal account (the key is issued to government
+# departments); tune hkgov_lang_zh/_en to the langCode strings your locator
+# honours. Left commented — the default is google.
+# geocode_provider = "hkgov"
+# hkgov_geocode_url = "https://api.hkmapservice.gov.hk/.../GeocodeServer/reverseGeocode"
+# hkgov_token_env = "HKGOV_MAPS_TOKEN"
+# hkgov_lang_zh = "zh"
+# hkgov_lang_en = "en"
+
+# The presence analytics substrate — the DERIVED layer (docs/superpowers/
+# specs/2026-08-18-presence-analytics-substrate-design.md), DEC-115. Ships
+# INERT like [presence]/[search]/[compute]: turning it on is an
+# operator decision, never something a missing section decides. Computation
+# knobs ONLY — no consumer knobs (spec §1.1).
+
+[analytics]
+enabled = false
+# tick_seconds = 120
+# safety_lag = 600            # unprocessed FIXES, not messages
+# settled_seconds = 900       # no new fix -> the stay is closeable
+# max_age_seconds = 86400     # fires at lag == 0 on purpose (spec §4.2)
+# batch_limit = 400           # steady state; inert in practice (spec §4.3)
+# backfill_batch_limit = 20000
+# backfill_threshold = 4000
+# grace_seconds = 60
+# stay_radius_m = 120         # INHERITED, not measured (spec §7.1)
+# stay_min_dwell_seconds = 600 # INHERITED, not measured (spec §7.1)
+# cluster_eps_m = 100
+# cluster_min_samples = 3
+# min_nights = 3
+# min_weekdays = 3
+# label_freshness_days = 45
+# anomaly_min_samples = 5     # Tier 3 — fewer prior stays and no anomaly claim (fail-closed)
+# anomaly_z_threshold = 3.0   # Tier 3 — |z| above this counts nora_analytics_anomalies_total
+# corridor_max_edit_distance = 2   # Tier 5 — corridor identity tolerance
+# corridor_min_samples = 3         # Tier 5 — similar trips needed before a corridor is
+#                                  #   named. They accumulate ACROSS cycles (a trip stays
+#                                  #   in the pool until it is linked), so this is "3
+#                                  #   occurrences of the route", not "3 in one tick".
+# corridor_cluster_batch_limit = 500 # Tier 5 — cap on the not-yet-clustered trips one
+#                                  #   pass re-clusters. MEASURED, not inherited:
+#                                  #   cluster_trips is O(n^2) over an edit-distance
+#                                  #   metric — n=500 costs 1.87s, 1.6% of a 120s tick;
+#                                  #   n=1000 costs 7.6s. Must be >= corridor_min_samples
+#                                  #   or no corridor could ever form (startup refuses).
+# min_trip_fixes = 3               # Tier 5 — shorter runs between stays are noise, not trips
+# max_trip_duration_seconds = 10800 # Tier 5 — safety valve: force-settle a trip
+#                                  #   even mid-drive once its span exceeds this
+#                                  #   (a stuck is_driving signal shouldn't hold
+#                                  #   the watermark back forever). A judgment
+#                                  #   call, not a measured value.
+# tz_name = "Asia/Hong_Kong"
+# metrics_port = 9103
+
+# Web search (SearXNG) + page fetch (Firecrawl) for the `search`/`fetch` tools
+# (DEC-57, design/22). The WHOLE SECTION IS OPTIONAL and every key defaults — a
+# config.toml without it behaves as if search is off.
+#
+# It ships INERT (`enabled = false`) and must stay so until TWO things are true:
+# an operator turns it on, AND Firecrawl's egress is network-isolated so it
+# cannot reach Nora's own internals (Honcho, signal-cli, OmniRoute) at the packet
+# layer. That isolation is the PRIMARY SSRF control (design/22 §0) — Nora's
+# search-result URL fence and is_global precheck are only defence in depth,
+# because Firecrawl follows redirects and re-resolves DNS itself. While off, both
+# tools answer `unavailable`, never a silent empty.
+#
+# `firecrawl_api_version` is pinned to the deployed instance's scrape route —
+# verified `v1` on the running firecrawl-api container (both v1 and v2 answer
+# identically today; v1 matches design/14's measurement). The three caps bound
+# the input-token cost of retrieved text, re-sent on every subsequent model call.
+
+[search]
+# web_search + web_fetch (DEC-73, DEC-116) — one call returns ranked results with
+# content, a second opens a specific link; both crawl from the PROVIDER's own
+# servers, no SSRF surface. Off here for the "explicitly on" house rule; a real
+# deployment sets enabled=true AND exports the key named by the chosen backend's
+# api_key_env below.
+enabled = false
+# DEC-157: the backend, and the only thing that changes when it is switched —
+# everything downstream is handed a SearchProvider and cannot tell which vendor
+# it got. What the swap DOES change is stated under [search.tavily] min_score.
+provider = "tavily"              # "tavily" | "exa"
+# Provider-NEUTRAL below: these bound what re-enters the model's input on every
+# subsequent call, so switching provider must not silently change the token
+# budget. They live here rather than per-backend for exactly that reason.
+# max_results = 5                 # ≤ 20
+# content_max_chars = 1500        # per-result snippet clamp (bounds re-sent tokens)
+# extract_max_chars = 3000        # fetched-page clamp (bounds re-sent tokens)
+# timeout_seconds = 12.0
+
+
+[search.tavily]
+api_key_env = "TAVILY_API_KEY"   # NAMES the env var; the key never lives here (DEC-8)
+# url = "https://api.tavily.com/search"
+# extract_url = "https://api.tavily.com/extract"
+# search_depth = "basic"         # "basic" (1 credit) | "advanced" (2, richer)
+# extract_depth = "basic"        # "basic" (1 credit) | "advanced" (2, richer)
+# min_score = 0.1                 # relevance floor; 0.0 disables it
+#
+# min_score is TAVILY-ONLY and that is measured, not an omission (DEC-157):
+# Tavily scores every result and the score separates signal from noise (junk
+# lands at 0.02-0.05, real answers above 0.15, measured 2026-08-31). Exa
+# deprecated `score` out of auto search and its current result schema has none,
+# so a floor there would have nothing to read — a no-op, or, held fail-closed,
+# a filter that drops everything. Choosing "exa" is choosing to give this up.
+
+
+[search.exa]
+api_key_env = "EXA_API_KEY"      # NAMES the env var; the key never lives here (DEC-8)
+# url = "https://api.exa.ai/search"
+# contents_url = "https://api.exa.ai/contents"
+# type = "auto"                   # instant | fast | auto | deep-lite | deep | deep-reasoning
+#
+# The three deep* types run multi-step research with synthesis and routinely
+# outrun timeout_seconds, which is sized for one round trip on the reply path.
+# Raise it deliberately before choosing one, or every call is `unavailable`.
+#
+# Exa honours the maxCharacters the adapter sends, so a page can arrive ALREADY
+# cut server-side. The adapter reads that ceiling back when it reports
+# `truncated`, because reporting only its OWN clamp hands the model a cut page
+# as a complete one (live probe, 2026-09-06).
+
+
+[online]
+# online_now (design/online-status/) — READ-ONLY live digital activity for the
+# room: who is online, who is playing what (Steam), who is in a voice channel
+# (Discord). Ships INERT (`enabled = false`) like [search]: a config.toml
+# without this section keeps loading, and while off the `online`/`playing` arms
+# answer `unavailable`, never a confident "everyone is offline".
+#
+# This section gates the STEAM half only. The `voice` arm reads the live
+# Discord client Nora already holds (member.voice — `voice_states` is in the
+# default intents; `presences` stays OFF on purpose), so it wires whenever the
+# Discord platform is enabled and needs nothing here.
+enabled = false
+# NAMES the env var holding the Steam Web API key; the key never lives here
+# (DEC-8). Enabled with the variable unset logs a warning and leaves the Steam
+# half unwired — a wiring gap is `unavailable`, never a 403 per call.
+api_key_env = "STEAM_WEB_API_KEY"
+# Bounds the ONE batched GetPlayerSummaries call a question costs (the room's
+# whole id set goes out in a single request — never one per person). On the
+# reply path, so a dead api.steampowered.com costs seconds and an
+# `unavailable`, never a hung turn.
+# timeout_seconds = 8.0
+
+
+[social]
+# social_fetch (DEC-151) — READ-ONLY X/Instagram reads via the host-side
+# OpenCLI bridge (`python -m nora.infra.social`, run as the systemd user
+# service in deploy/social-bridge/). KEYLESS, so `enabled` is the whole gate
+# (the [preview] shape). Off here for the "explicitly on" house rule; even on,
+# the tool can only construct allowlisted reads — the bridge re-enforces the
+# read-only (site, command) mapping host-side, so no posting, liking,
+# following or deleting is reachable through it.
+enabled = false
+# Where Nora's container reaches the host-side bridge. The deployment is on
+# the private compose `nora` network (NOT host networking) and uses
+# `http://host.docker.internal:19826` — the docker0 gateway the bridge also
+# binds (see deploy/social-bridge/). The loopback value below is the code
+# default / host-networking shape; like `llm.base_url` it is topology, argued
+# in tests/test_env_template.py's _MAY_DIFFER when the deployment overrides it.
+bridge_url = "http://127.0.0.1:19826"
+# timeout_seconds = 90.0                  # > the bridge's ~75s subprocess timeout
+# content_max_chars = 4000                # retrieved-text clamp (bounds re-sent tokens)
+
+
+[preview]
+# Sender-generated link previews on Nora's OUTBOUND messages: when a reply
+# carries a URL she fetches its OpenGraph tags and attaches a title/description
+# (and image) card, the way every Signal client does.
+#
+# Off here for a sharper reason than the "explicitly on" house rule. This is the
+# one capability that makes Nora FETCH a url that came out of a model, from her
+# own network — the exposure DEC-73 deleted along with `web_fetch`, on the
+# argument that Tavily is never handed a url and searches from ITS servers.
+# Turning it on takes a bounded version of that exposure back, so it is a
+# decision an operator makes rather than a default they inherit. The bound is in
+# `nora/infra/preview.py`: http(s) only, every resolved address must be globally
+# routable, redirects followed by hand and re-validated per hop, a byte ceiling
+# and a small total timeout. Keyless, so `enabled` is the whole switch.
+enabled = false
+# timeout_seconds = 3.0     # small: this is on the reply path, human waiting
+# max_bytes = 262144        # how much of the document to read (og tags are in <head>)
+# image = true              # fetch og:image too — the expensive half
+# image_max_bytes = 262144
+
+
+[weather]
+# The `weather` tool (DEC-72) — HK Observatory Open Data, KEYLESS. Off here for
+# the "explicitly on" house rule; safe to enable (no key, no cost, no egress).
+enabled = false
+provider = "hko"           # the WeatherProvider adapter; "hko" is the only one today
+# url = "https://data.weather.gov.hk/weatherAPI/opendata/weather.php"
+# lang = "tc"              # HKO language: tc | en | sc
+# timeout_seconds = 8.0
+
+
+[speech]
+# Voice capability (spec 2026-08-21, design/voice-channel). STT = Cantonese
+# voice-note transcription at ingest via the LOCAL deploy/stt endpoint — audio
+# never leaves the box. TTS = voice-channel speech via MiniMax's CN cloud
+# endpoint — text Nora already decided is fit to say aloud leaves the box; the
+# asymmetry is deliberate (design/voice-channel/00). Both ship INERT like
+# [weather]/[heartbeat]: turning either on is an operator decision, never
+# something a missing section decides.
+
+[speech.stt]
+enabled = false
+endpoint = "http://stt:8000"   # the deploy/stt service on the private nora network
+model = "noise-detection"      # STT engine: the JackyHoCL Cantonese whisper
+                               # (default since 2026-09-15, design/voice-channel/06);
+                               # "sensevoice" selects the FunASR backup
+language = "yue"               # the engines' own LID code, not BCP-47
+
+[speech.tts]
+enabled = false
+# GUARD (stage 3): `enabled = true` is what lets a 「喂 Nora」 wake answer
+# ALOUD in the voice channel (the wake path below ends in this speaker).
+# Leave it false until the operator has decided voice answers are wanted —
+# a copied config must never start speaking in a voice channel on its own.
+provider = ""                  # empty provider = no speaker; a real deployment
+                               # sets "minimax_cn" (MiniMax CN, speech-2.8-turbo,
+                               # design/voice-channel/04 §3b). The key is read
+                               # from the env var api_key_env NAMES (default
+                               # MINIMAX_CN_API_KEY), never from this file.
+sidecars = []                  # one AUDIO-CONTROLLER per GUILD — the sole
+                               # owner of that server's Discord voice
+                               # connection (design/voice-channel/07 §12.5):
+                               #
+                               #   sidecars = [
+                               #     { guild = "<guild_id>", endpoint = "http://voice-sidecar:4600" },
+                               #     { guild = "<other_id>", endpoint = "http://voice-sidecar:4600" },
+                               #   ]
+                               #
+                               # Speech plays via /stream, music via /music/*,
+                               # joins via /voice/join — all on the one voice
+                               # connection that controller owns. Empty (the
+                               # default) = the voice seam is unwired; joins
+                               # and speech fail closed.
+                               #
+                               # ONE ENTRY PER GUILD, but ONE CONTAINER for all
+                               # of them: Discord allows one voice connection
+                               # per bot token PER GUILD, so the sidecar holds
+                               # one connection per listed guild inside a
+                               # single process. Adding a server is a line
+                               # here — no new container, no new env var.
+                               #
+                               # The endpoint is therefore usually the SAME
+                               # for every entry. It is per-entry anyway so a
+                               # guild can be moved to its own process later
+                               # without a config shape change.
+                               #
+                               # A LIST, not a table keyed by guild: the
+                               # config/example parity gate flattens tables to
+                               # leaf paths, and a guild-keyed table would need
+                               # a real snowflake declared in this file.
+                               #
+                               # THIS IS THE JOIN ALLOW-LIST. WHERE a guild's
+                               # speech is RECORDED is policy.toml's
+                               # `voice = true` — independent on purpose.
+# voice = "Cantonese_CuteGirl" # a NATIVE Cantonese voice — the lever is the
+#                              # voice, not the model tier; language_boost is
+#                              # hard-set in the adapter ("auto" mis-renders 係/唔該)
+speed = 1.0                    # voice_setting.speed [0.5, 2.0]; operator chose
+                               # 1.3 for a livelier pace (2026-09-16)
+pitch = 0.0                    # voice_setting.pitch semitones [-12, 12]
+vol = 1.0                      # voice_setting.vol [0.1, 10]
+emotion = ""                   # voice_setting.emotion when set (e.g. "fluent"
+                               # for smoother delivery); "" keeps it off-wire
+# duck_gain = 0.25             # music scales to this while she speaks (0<x<1).
+#                              # PHASE 1: accepted but UNREAD — the controller
+#                              # hard-cuts speech over music; phase 2 restores
+#                              # ducking controller-side.
+# duck_ramp_ms = 150           # ramp down and back up over this many ms — a
+#                              # hard step is audible as a click. Phase 2 only,
+#                              # same note as duck_gain.
+
+[speech.wake]
+# The wake gate (「喂 Nora」 in a Discord voice channel, stage 3). Read by the
+# voice-wake CONTAINER at startup (compose bind-mounts this file read-only into
+# it, as into nora) — one place for its knobs; a change needs `docker compose
+# restart voice-wake`. Endpoint, language and timeout for its STT calls come
+# from [speech.stt] above. It has NO Discord identity of its own: the guild
+# arrives on each audio connection, so one gate serves every server and the
+# container is identical everywhere (multi-guild, 2026-09-17).
+enabled = false
+threshold = 0.5                    # wake score that starts utterance collection
+model_path = "/app/models/喂Nora.onnx"  # baked into the voice-wake image (deploy/voice-wake/models/MODEL.md)
+stt_model = "sensevoice"           # the WAKE path's engine — latency-bound, so the fast
+                                   # FunASR model; voice notes keep [speech.stt].model.
+                                   # The stt service pre-loads this one at boot.
+vad_enabled = true                 # "finished speaking" = Silero VAD hears no speech for
+                                   # silence_tail_ms. Music, TV, fans, mic crackle are loud
+                                   # but NOT speech, so they no longer hold the gate open
+                                   # (2026-09-17: under ducked music the RMS floor was ~1000
+                                   # vs the 400 threshold; utterances ran 4.7–7.4 s and ate
+                                   # the next 喂 Nora). false = RMS loudness fallback.
+vad_threshold = 0.5                # speech probability at/above this counts as speech
+silence_tail_ms = 800              # no-speech tail that ends an utterance
+max_utterance_s = 10.0             # utterance ceiling
+silence_rms = 400.0                # int16 RMS under this reads as silence (RMS fallback only)
+
+
+[heartbeat]
+# The background tick that fires due reminders — Nora's first unprompted-speech
+# path. Ships INERT, like [presence] and [search]: turning it on is an operator
+# decision, never something a missing section decides.
+enabled = false
+tick_seconds = 60          # how often she WAKES. This is the best case for
+                           # lateness, not a bound on it: a tick runs its
+                           # turn-groups one after another (each up to
+                           # timeout_seconds below), and a group whose
+                           # conversation is busy with a tag is deferred to a
+                           # later tick outright — watch
+                           # nora_heartbeat_deferrals_total. The only promise
+                           # is "at or after due_at, never before".
+# Deliberately its own knob, NOT [llm].timeout_seconds — even though master
+# raised that to 120 on 2026-08-08 (Kimi audit, "so a research turn fits") and
+# the two now happen to MATCH. They answer different questions: [llm]'s bounds a
+# turn a human is waiting on, and moves when a human's patience does; this one
+# bounds a turn nobody is waiting on, where cutting short leaves silence in a
+# group that asked nothing. Equal today, independent on purpose — if you ever
+# lower [llm] back for responsiveness, this must not follow it down.
+timeout_seconds = 120
+
+
+[reminders]
+# The anti-runaway caps. They apply whenever a reminder can be CREATED, which is
+# independent of whether [heartbeat] is firing them.
+max_pending_per_requester = 20
+min_lead_seconds = 120     # MUST be > heartbeat.tick_seconds, so a
+                           # minimum-lead row cannot land in the tick already
+                           # running. Nora refuses to start if it is not.
+max_horizon_days = 365
+                           # bounded by max_occurrences_per_series instead, and
+                           # a rule whose own period is longer than this (a
+                           # yearly birthday) is allowed one period of headroom
+                           # — otherwise the horizon would forbid the
+                           # recurrence rather than bound it (DEC-85).
+max_occurrences_per_series = 60   # a recurring reminder is a chain with ONE
+                           # pending row at a time, so it costs 1 against
+                           # max_pending_per_requester; this is what bounds the
+                           # series itself. Every series is bounded — there is
+                           # no «forever».
+min_interval_seconds = 300 # the FASTEST a series may repeat (#109). Sub-day
+                           # recurrence makes 「每分鐘」 expressible, and a room
+                           # runs ONE turn at a time — schedule faster than it
+                           # can serve and reminders do not arrive sooner, they
+                           # queue and starve real tags. 300 caps one series at
+                           # 12 firings/hour. The floor under THIS is
+                           # structural: 60 is heartbeat.tick_seconds, below
+                           # which the tick cannot deliver at all, and config
+                           # may not go under it.
+timezone = "Asia/Hong_Kong"   # the wall clock a recurrence KEEPS. An IANA zone
+                           # name, never an offset: «08:00 every day» must stay
+                           # 08:00 local across a DST boundary, and +08:00
+                           # cannot say that.
+
+
+
+[notes]
+# The note tier's gate (docs/superpowers/specs/2026-08-21-note-tier-design.md).
+# ON, every tag reads the standing note index for the room's UNIT — not
+# its conversation (§3/DEC-105: rooms sharing a unit are one social unit)
+# — and renders it as <notes>. OFF, no store is built, no query runs, and the
+# block never appears.
+#
+# Ships INERT, like [presence]/[search]/[compute]: a config.toml written
+# before this section existed keeps loading with the tier off.
+#
+# 2026-08-21: the four tools landed, so ON is no longer only a SELECT — she can
+# now create and revise notes herself (`note_create`/`note_update`, gated by a
+# read-before-write latch and a CAS on the head revision, R-55). What is still
+# absent is the CURATOR: nothing merges duplicates, retires an expired anchor,
+# or promotes a settled note to an event, because that is a Dreamer adaptor and
+# the runtime it needs is not built. So a notebook turned on today grows and is
+# never tidied — fine at this scale, and the thing to watch before it is not.
+#
+# 2026-08-28: the curator's MERGE and RETIRE halves landed — see
+# curator_enabled below. MERGE went again on 2026-09-08; only RETIRE runs.
+# Promote-to-event ARRIVED 2026-09-08 as the discharge pipeline's commitment
+# route (discharge_enabled below) rather than as a verb of its own: a
+# grounded "closed" verdict whose discharge names a commitment writes an
+# Event through the Events tier's own API. Fact-coherence rewriting is GONE
+# rather than pending: the knowledge tier it would have written into was
+# deleted (2026-09-07).
+enabled = true
+
+# The CURATOR, on its own gate and behind the tier's. Three flags have to be on
+# for a note ever to be retired: [dreamer] (the runtime exists), [notes]
+# enabled (the tier is on), and this one. (It read "merged or retired" until
+# 2026-09-13; the merge half went on 2026-09-08 and this line had not
+# followed it.)
+#
+# Three rather than two because this is a DIFFERENT RISK from the other two.
+# The tag path only reads and appends; the curator is the one thing in this
+# tier that REMOVES something from her index. An operator turning notes on has
+# not thereby asked for a background pass that reorganises them.
+#
+# What it does when on, on the schedule below, per unit:
+#
+#   (MERGE was here until 2026-09-08 — notes sharing an anchor date AND the
+#             same RESOLVED people were one occasion written twice. The
+#             people half was read from note_entity, which nothing could
+#             fill once the knowledge tier stopped minting entities, so
+#             every pair was refused by construction and the verb was
+#             removed. Duplicates moved to the create gate, matched on the
+#             anchor DATE — and THAT went too, on 2026-09-13: the date arm
+#             had fired twice since the tier shipped and conflated two
+#             unrelated occasions both times, so a date is no longer
+#             identity. The gate now asks the model which standing note a
+#             proposal updates; anything it cannot name is written as a NEW
+#             note. Nothing merges a duplicate anywhere in this tier now —
+#             a known, recorded limitation, bounded by issue #236.)
+#   RETIRE  — a note whose anchor date has passed, where the model reading the
+#             body says the question is answered ("closed") or can no longer be
+#             answered ("moot"). "Open" is the common answer and writes nothing.
+#
+# Nothing is deleted. Retirement is a status change, so a retired note stays
+# readable and a lossy step can be re-derived.
+curator_enabled = false
+
+# Expired bodies per tick, because the curator's only real cost is reading
+# whole note bodies and note_revision.body has no upper bound — ONE long body
+# can consume a tick's whole allowance. Expiry arrives in bursts: after a quiet
+# month every note whose date has passed becomes eligible at once, and a cap
+# of three would take a fortnight of ticks to clear a backlog that appeared in
+# a day. (There was a second cap, `max_groups_per_tick`, for merge groups;
+# merge was removed on 2026-09-08 and the knob went with it.)
+#
+# `nora_note_curator_bodies_read` is the reading. When it sits at the cap, the
+# pass is reporting "nothing to do" about notes it never reached.
+# max_expired_per_tick = 20
+
+# A note body is capped at 8000 characters and the database refuses anything
+# over 32000. NEITHER IS CONFIGURABLE, and there is deliberately no knob here:
+# the operating cap is enforced in the type that constructs a revision, where a
+# refusal is reviewable and names the cap, and a type cannot read this file.
+# No render cap here, and that is a decision rather than an omission: §5.1 makes the index uncapped, because a
+# note silently missing from it is invisible to her and invisible is
+# indistinguishable from absent. The budget is held by the per-entry caps in
+# the domain type (title <= 60 chars, description <= 200) and by the curator
+# retiring closed notes.
+
+# The CREATE PATH (design/dreamer-agent-loop/33-note-dreamer-schedule.md §4,
+# issue #98) — a THIRD gate, behind [dreamer] and [notes] enabled, on the
+# SAME two-risks argument curator_enabled makes above: [notes] enabled decides
+# whether the index and the read tools are reachable; this decides whether a
+# background pass WRITES NEW NOTES into that index at all. An operator who
+# turned [notes] on for the index has not thereby signed up for a background
+# process creating notes on her behalf.
+#
+# ON, a scope-keyed, hourly, tool-free Dreamer pass reads each room's message
+# batch and the unit's standing note index, proposes full notes for
+# anything not yet tracked, and a DETERMINISTIC gate — never the model —
+# decides whether that becomes a new note, a revision to one that already
+# covers the same occasion, or nothing. The model never writes a note
+# directly.
+candidates_enabled = true
+
+# Model calls per note-candidates fire, unioned. Measured 2026-09-08 (design
+# 37, issue #118): a plan ONE person states with an unsettled corner is
+# recognised in about 30% of single samples at the dreamer tier's temperature,
+# while no negative batch ever produced a note across every prompt variant
+# tried. N samples recognise it with probability 1 - 0.7^N (3 -> 0.66,
+# 5 -> 0.83) and stay empty on a negative batch; duplicates across samples
+# collapse in the staging key and the create gate. Cost is N calls per fire on
+# a pass that fires at most hourly per room and only when the room spoke.
+# candidate_samples = 1
+
+# The DISCHARGE PIPELINE (design/dreamer-agent-loop/33-note-dreamer-
+# schedule.md §7, 19-between-tiers.md §1, issue #101) — a FOURTH gate, on its
+# own rather than riding curator_enabled: that pass retires NOTES, this one
+# WRITES to two other tiers entirely (an Event, a Honcho conclusion about a
+# named person) the moment a note it was already retiring turns out to hold a
+# settled commitment or person-claim. An operator who accepted "this pass
+# retires notes" has not thereby accepted "this pass also creates calendar
+# events and writes permanent memories about people". (Both sentences said
+# "merges and retires" until 2026-09-13, five days after merge was deleted —
+# an operator-facing gate argument is not allowed to name a verb that is
+# gone.)
+#
+# There was a THIRD route, a world-claim into the knowledge tier's fact store.
+# That tier was deleted (2026-09-07) and the route went with it; the objective
+# no longer asks for a world_claim and one is dropped if a model invents it.
+#
+# ON, discharge runs in the SAME curator tick that decides a note has closed
+# — never a separate adaptor — and only for a GROUNDED `closed` verdict that
+# actually retires; an `expired`/`moot` note answered nothing, so there is
+# nothing settled to route. Each classified item is written through the
+# OWNING tier's own existing API (never a new write path): a commitment
+# through the Gathering service, a person-claim through Honcho's conclusion
+# lane. "Nothing to discharge" is the ordinary, common answer and
+# is not an error.
+discharge_enabled = false
+
+
+[culture]
+# The culture tier (design/culture-tier). ON, a background pass reads each
+# room's own messages once a day and writes ONE SHORT ACCOUNT of what that room
+# is and why it became so — how they talk, how decisions get made, what they
+# call themselves, and Nora's own standing there — appending it to a chain of
+# every account before it.
+#
+# WHY IT EXISTS. The Relevance Gate admitted about 1% of windows over seven
+# days, measured twice. That is not a threshold to tune: a window judged
+# against nothing is judged in a vacuum, and «nobody picked this up» means
+# nothing until you know whether this room normally picks things up. A baseline
+# is what turns a window into a DEVIATION, and a deviation is readable by a
+# model with no reasoning budget because the reasoning already happened
+# offline.
+#
+# NOTHING READS IT YET, and that is the design's own sequence (02-measurement
+# §5 step 4) rather than an unfinished state: a single account is a snapshot,
+# because the model that wrote it had no memory of the one before, so the tier's
+# one real contribution is the CHAIN — and a tier judged on its first snapshot
+# is judged on the one thing it does not contribute. The prompt-facing step is
+# separate and is gated on a measured improvement.
+#
+# NOTHING IN IT RETIRES. No TTL, no closing condition, no supersede: a quiet
+# room's culture is not stale, it is accurate, and an old name does not become
+# false — it becomes history, which is part of what the current one means.
+enabled = true
+# Seconds between folds of one room. A model asked this question twice in a day
+# answers from nearly the same material, so the second answer differs by model
+# variance rather than by anything the room did — and variance is the one thing
+# the revision chain must not accumulate.
+fold_interval_seconds = 86400
+# Messages read per fold. THE BATCH IS THE CORPUS — the account is written from
+# it — so this is not a throttle, it is how much of the room the model sees.
+batch_limit = 300
+
+
+[standing]
+# The debrief stage's gate (design/dreamer-agent-loop/26-standing.md). ON, a
+# SECOND model reads each finished turn — success, silence, veto and timeout
+# alike — and revises one short paragraph: where this conversation currently
+# stands. That paragraph is then injected as <standing> at the top of the next
+# turn. OFF, no fold runs, nothing is written, and the block never appears.
+#
+# READ THIS BEFORE TURNING IT ON. Unlike [notes], this tier is NOT background: it runs INSIDE the conversation's slot, immediately
+# after the reply is delivered. Its cost is user-visible — but not to the
+# person it just answered, who already has their reply. It lands on the SECOND
+# person queued behind a busy conversation. The gate is nora_debrief_seconds
+# p95 <= 5s, measured against exactly that case rather than against an average.
+enabled = true
+# The OPERATING cap on the position, in characters. The database also carries
+# an absolute ceiling of 4000 (standing_body_fits_the_ceiling_check) that no
+# config can pass — a value above it refuses to START rather than failing at
+# the first oversized fold. The two layers do different jobs: a constraint is
+# DDL and cannot be a knob, and the right prompt size is a judgement that
+# changes.
+#
+# Why 1200: this block is injected on EVERY turn, so it is a per-turn tax, not
+# a storage question. 1200 characters is ~300 tokens in English and approaches
+# 1200 tokens in a CJK-heavy room — and this room is mixed by default, so read
+# it against the denser case. A fold that will not fit is REFUSED and the model
+# is asked to consolidate; nothing is ever truncated, because silently dropping
+# the oldest line is how a rolling position quietly becomes a recent summary.
+# nora_standing_overflow_refusals_total is the reading: never firing means the
+# cap is not binding, constantly firing means it is too small.
+max_chars = 1200
+# How many rows one fold reads AND the event trigger's accumulator threshold —
+# ONE number (design/standing-watermark D1). Every fold reads
+# `since_including_nora(after_id=watermark, limit=fold_batch)`: the NEXT
+# fold_batch rows since the last fold's row-id watermark, capped at 40. It is
+# a batch size, not a recency window — the 40-row window is gone entirely (D6),
+# so a conversation that passes 40 messages between tags no longer loses the
+# middle.
+#
+# SUPERSEDED MEASUREMENT (0d939413, 2026-09-03): the operating value was 200
+# at first ship; the event-fold accumulator was unreachable at 200, so the
+# deployment lowered it to 40. The template tracks the deployment.
+fold_batch = 40
+# The EVENT-DRIVEN fold path (design/standing-watermark/10): every message that
+# lands in a conversation triggers a standing check off the listener path, and
+# the check enqueues an event fold only when the accumulator reaches fold_batch
+# (40). Off, only the tag path folds — strictly better than pre-bundle, but a
+# conversation that never tags Nora stays folded only when tagged.
+event_enabled = true
+# How many batch folds ONE spawned event fold may perform before stopping —
+# the rollup's bound (design/standing-watermark/30). A cold-start backlog folds
+# ceil(history / fold_batch) times across messages; this caps how many of those
+# happen per spawn, and the next message's check continues.
+rollup_max_folds = 5
+# S2's ceiling: rebuild the position from the window instead of revising it,
+# once this many folds have accumulated SINCE THE LAST REBUILD. The other,
+# stronger trigger needs no key — it fires when the previous turn's verdict
+# says that turn was not grounded.
+#
+# This is the WEAKER one deliberately. "Time alone re-derives healthy
+# conversations for nothing": the ungrounded case catches the turn that
+# actually went wrong, and this only bounds how far drift accumulates when
+# nothing does. If nora_standing_rederivations_total comes back dominated by
+# trigger="ceiling", the trigger has degraded into a clock wearing a condition
+# — look at why the ungrounded case is not firing rather than raising this.
+#
+# 20 is a starting point, not a measured value.
+rebuild_after_folds = 20
+# The fold's own timeout, and it bounds the MODEL CALL TWICE — the client is
+# built with it, and the fold is wrapped in it. The number that matters is the
+# SUM, checked at startup by max_slot_hold_seconds below rather than worked out
+# here: this + 5 x store_timeout_seconds.
+# This comment used to stop at «[llm] timeout_seconds + this», which is how the
+# store calls came to be unbounded — they were not in anyone's sum. Raise this
+# against nora_debrief_seconds, not against a hunch.
+timeout_seconds = 20.0
+# The bound on the stage's FIVE STORE CALLS: the trigger's verdict read, the
+# prior position, the revised position, the turn verdict, and the note
+# proposals. It exists because they had none: the engine sets no
+# command_timeout and all of them run while the conversation's slot is HELD, so
+# a connection hanging mid-query during the post-reply fold wedged that
+# conversation indefinitely, on a turn that had already replied. Small on
+# purpose: these are single-row keyed queries, and if one takes seconds the
+# honest answer is «unavailable», not a longer wait held in front of the next
+# person in the room.
+store_timeout_seconds = 5.0
+# The WHOLE hold this stage may add to a conversation's slot, checked at
+# STARTUP: timeout_seconds + 5 x store_timeout_seconds.
+# It is a gate and not a comment because the comment kept being wrong — three
+# different arities for this one number have shipped, and the last of them was
+# in the validator built to catch exactly that.
+#
+# THE REAL BOUNDED HOLD IS 45 (20 + 5 x 5), and [llm] timeout_seconds is NOT a
+# term in it. That value bounds nothing in this stage: the fold's model call is
+# bounded by [standing] timeout_seconds in the client AND by the wait_for around
+# the fold, and never by the [llm] figure. Counting it made this read «this
+# conversation can be held 165 seconds» when the bound is 45.
+#
+# **HELD AT 150 FOR ONE DEPLOY, DELIBERATELY, then dropped to 45.** This file is
+# BIND-MOUNTED and read at startup; the validator that checks it lives in the
+# IMAGE. So between a merge to master and the image that ships with it, the NEW
+# config is read by the OLD validator — which still sums [llm] timeout_seconds
+# and computes 150. At 45 that combination REFUSES TO START, and the check is
+# ungated on `enabled`, so the container survives the merge and dies on its next
+# restart naming numbers that appear nowhere in this file.
+#
+# 150 is accepted by both validators (old: 120 + 20 + 2 x 5 = 150, not over;
+# new: 45, not over), which makes the merge safe in ANY order rather than only
+# in the intended one. It is a CEILING an operator sets, not a measurement — a
+# loose ceiling is true, and this comment is where the real bound is stated.
+# `StandingConfig`'s own default is already 45, so a config omitting this key
+# gets the tight value; only the shipped files are held.
+#
+# The follow-up that drops both files to 45 is safe once the image carrying the
+# new validator is deployed and read back (cold review, 2026-08-28).
+#
+# If 45 is too long, the lever is store_timeout_seconds (25s of the total, for
+# five single-row keyed queries against a local database) or timeout_seconds,
+# not this number.
+max_slot_hold_seconds = 150.0
+# Empty means [llm] model. A separate name is available because the fold is a
+# different job from replying — one structured output, no tools, no audience —
+# and may want a cheaper or a more literal model.
+model = ""
+# The fold's reasoning budget. Empty means inherit [llm] reasoning_effort.
+#
+# It is DECLARED here rather than inherited silently: the debrief's model
+# client never passed this at all, so the fold ran at whatever the provider
+# defaults to — an unchosen setting on a call that spends the conversation's
+# slot, while the tag path passes its own explicitly.
+#
+# THE VALUE IS DELIBERATELY NOT CHOSEN. design/dreamer-agent-loop/18-flows.md
+# is explicit that the fold's reasoning effort "is a MEASUREMENT, not a
+# setting": the fold is integration, not research, so a low budget is
+# PLAUSIBLE — and that is exactly the class of claim 09-measurement.md forbids
+# asserting. The design names a decidable spike instead: run the same fold at
+# several budgets over a fixed set of REAL retained traces and score whether
+# the revised position (a) preserves what the prior held and (b) integrates
+# what the trace added. Both are checkable by comparison; no judge needed.
+# tag_trace is retained precisely so that set exists.
+#
+# So this key exists to make that spike runnable. Empty is the honest default:
+# it says "nobody has measured this yet" rather than inventing a number.
+# Legal: none, minimal, low, medium, high, xhigh, max — checked at startup.
+# "none" (operator, 2026-08-27). The fold is INTEGRATION — read the prior
+# position and the trace, write the revised one — not research, and this is
+# the operator choosing the starting point rather than inheriting [llm]'s
+# "low" by accident. It remains the thing 18-flows says to MEASURE: the
+# spike runs the same fold at several budgets over the retained traces and
+# scores whether the revised position preserves what the prior held and
+# integrates what the trace added. This is where that measurement starts,
+# not where it ended.
+reasoning_effort = "none"
+
+
+[music]
+# The Discord music bot's gate (design/discord-music/00-overview.md). ON,
+# and with [platforms.discord] enabled, DiscordAdapter registers /music
+# play|skip|queue|pause|resume|stop as slash commands — a deterministic
+# per-guild player, never LLM-mediated. OFF (default), no MusicPlayerManager
+# is built and the commands never get registered.
+enabled = false
+# Disconnect timer 2 (design/discord-music/03-state-and-persistence.md):
+# queue empty and nothing playing -> end the music session after this many
+# seconds. END-MUSIC, not leave-voice (design/voice-channel/07 §10): the
+# audio-controller keeps the voice connection (e.g. for wake). Timer 1
+# (voice channel emptied of humans) has no setting — the controller observes
+# it and POSTs channel-emptied, which means leave immediately, no grace
+# period to size.
+idle_timeout_seconds = 300.0
+# Accepted but treated as EFFECTIVE ZERO in phase 1 of the audio-owner
+# controller (design/voice-channel/07 §10, B17): there is no local playback
+# to blend — advancement happens on ACTUAL track completion (the
+# controller's track-finished event). The controller surfaces it in
+# /voice/status as crossfade_seconds: 0; phase 2 restores crossfading
+# controller-side.
+crossfade_seconds = 0.0
+# False (default) = today's behaviour: queue empties, nothing next, leave
+# after idle_timeout_seconds. True (design/discord-music/08-autoplay.md)
+# seeds a YouTube "Mix" recommendation from whatever just finished instead
+# of going idle — an opt-in, not this template's default.
+autoplay_enabled = false
+# 0 (default) = the next autoplay pick is decided only after the current
+# track ends (two fresh network calls — the Mix lookup, then the stream —
+# make the gap between tracks audible). Above 0, MusicPlayer resolves the
+# next pick while the current track is still playing, so the next track
+# starts instantly at track-end. Only meaningful when autoplay_enabled is
+# also true. 12.0 is a reasonable starting point: enough lead to cover
+# both lookups on a slow network.
+autoplay_prewarm_seconds = 0.0
+
+
+[version]
+# The startup upgrade note (DEC-97). On the boot after a deploy, if the version
+# baked into this image has not been announced in a room yet, Nora relays the
+# release note there ONCE — in her own words, through the same fire path a
+# reminder uses. Never twice: the claim is a row in `version_announcements`,
+# taken before the turn, so a restart (or a crash-loop) stays quiet (R-42).
+#
+# ON by default, unlike [heartbeat]/[presence]/[search], because it is already
+# gated by something stronger: an image with no baked stamp announces nothing at
+# all. Only a build made with `scripts/build-image.sh V3` — which stamps
+# nora/version.json from git and makes the Dockerfile refuse a mismatch — can
+# ever speak here. Set it false if you would rather tell the group yourself.
+#
+# WHERE she announces is not configured here: it is every conversation
+# policy.toml already allows her into. Which rooms she may speak in is a trust
+# question, and trust lives in policy.toml (DEC-8).
+announce = true
+
+
+[doctrine]
+dir = "nora/doctrine"
+reload = "mtime"                      # mtime | startup
+strict = true
+language_hint = "yue-Hant-HK"         # BCP 47 (RFC 5646): Cantonese, Traditional Han, Hong Kong
+canary = "CHANGE-ME-PER-DEPLOYMENT"   # fixed string; R-6 leak sentinel
+display_name = "Nora"
+
+
+[dreamer]
+# The Dreamer's own instruction corpus: `doctrine/` (one file — who the Dreamer
+# is on every run) and `objectives/` (one per adaptor). Bind-mounted read-only
+# into the container, so an operator edit is live on the NEXT TICK with no
+# rebuild — which matters more here than for the doctrine, because this is the
+# slowest loop in the system and an objective that steers it wants revisions.
+# An edit on master is therefore a deploy, exactly as it is for nora/doctrine.
+dir = "nora/dreamer"
+reload = "mtime"
+strict = true
+# The Dreamer RUNTIME's own switch, added with the runtime it gates. This
+# section shipped with NO `enabled` flag while it described only a corpus
+# (DEC-128: "a flag that gates nothing is a flag an operator will eventually
+# set expecting it to gate something"); it describes a subsystem now, and a
+# new subsystem does not switch itself on — [presence]/[search]/[compute]/
+# [analytics] all shipped inert too. Off, no DreamerRuntime is constructed,
+# dream_loop is never spawned, and no adaptor ever ticks.
+enabled = true
+# THE CLOCK'S OWN FIVE NUMBERS. They were [language]'s until that tier was
+# deleted, which was always wrong on its own terms: they bound dream_loop,
+# which ticks EVERY scheduled adaptor, and a tier flag owning the runtime's
+# clock is what made `enabled = true` inert for five days in August 2026.
+# Same values, same meanings, different section.
+#
+# The loop's WAKE interval — the same "best case for lateness, not a bound"
+# shape [heartbeat].tick_seconds documents.
+tick_seconds = 300
+# First fire condition: `lag > safety_lag` fires once this many messages have
+# gone unread by an adaptor, however recently the room spoke.
+safety_lag = 300
+# Second: SOME lag plus this much silence. Never interrupt a live conversation
+# to read it.
+quiet_seconds = 1800
+# Third: the watermark row's own age, which fires at ZERO lag — the only
+# condition that reaches a quiet room at all.
+max_age_seconds = 86400
+# The most messages one cycle reads. A per-adaptor AdaptorSchedule entry
+# overrides it; this is the shared default.
+batch_limit = 400
+# The per-CALL-SITE allowance the runtime multiplies by an adaptor's own
+# `store_calls_per_tick` to bound `inputs` and `commit` (issue #60). Until it
+# existed only the model call was bounded, so a store call that never returned
+# left dream_loop holding `<adaptor>:<key>` FOREVER: that unit never ticked
+# again, and the skip was counted under reason="in_flight_adaptor", a label
+# that cannot tell a long run from one wedged since Tuesday. A timeout now
+# lands on nora_dream_store_timeout_total{adaptor,phase} and the unit is
+# released. 5s is [standing] store_timeout_seconds' number, for the same
+# engine — which sets no command_timeout of its own.
+#
+# 15 is sized against the CURATOR's degraded worst case rather than one
+# healthy call: the number multiplies SITES, and a site inside a per-note loop
+# runs once per note. note-curation renders up to 30 notes and each costs a
+# record read plus a media join that carries its own 3s bound, so a degraded
+# media store legitimately spends 90s inside one inputs — at 5s x 10 sites the
+# bound would have fired at 50s and turned a slow tick into a false alarm and,
+# for a daily adaptor, a lost day. Raise it only against a reading of that
+# kind, never to quiet an alarm.
+store_timeout_seconds = 15.0
+# NONE, and it is the fix for the knowledge tier's first production failure.
+# Reasoning is billed as COMPLETION on this model family, so the effort is a
+# budget spent BEFORE any answer text — and at "low" the extractor spends all
+# of it: measured against a real room's transcript, "low" returned HTTP 502
+# and "none" returned three candidates in 133 tokens. On a smaller sample
+# "low" reasons its way to `{"candidates": []}` on text that plainly contains
+# claims — a clean stop, well under the ceiling, and still no answer.
+#
+# Raising the ceiling is the wrong lever, measured: at 16,000 tokens the model
+# spent 7,307 writing the same answer it writes in 933 at 4,000. The cost is
+# deliberation, not capacity.
+#
+# `""` means inherit `[llm] reasoning_effort`. This is the DREAMER's key so a
+# background pass can be tuned without changing what her replies can say.
+reasoning_effort = "low"
+
+# The same model Nora runs. OPERATOR DECISION (2026-08-21), NOT a measurement
+# — and the distinction is stated because the earlier version of this comment
+# claimed the opposite while carrying a value nobody had measured.
+#
+# Plan gate D2 asked "which model should the Dreamer run" and answered
+# "measure it against the motivating corpus". That gate is CLOSED as
+# unanswerable in its own terms right now: no adaptor's store holds enough
+# rows for a background loop's quality to be graded against it. Measuring
+# before there is anything to measure produces a number that looks like
+# evidence and is not.
+#
+# Running Nora's own model is also the honest test of the architecture's
+# central claim — that the Dreamer does better because it is DIFFERENTLY
+# SITUATED (no social pressure, a loop, a fetch) rather than because it is
+# smarter. If a flash research loop still cannot tell a source that
+# contradicts from one that merely does not cover, the design is wrong and
+# swapping the model quietly would hide that.
+#
+# Reopen with evidence from real runs, not before.
+# Tagged :0731 (2026-08-30) — same catalog-400 fix as [llm].model.
+model = "nora-dreamer"
+# The Dreamer's OWN per-call ceiling, `0` = inherit `[llm] max_tokens`
+# (issue #291). NOT `[dreamer.budgets.*] output_tokens`, and the two are easy
+# to confuse in exactly the direction that wastes a day:
+#
+#   budgets[...].output_tokens  the STRANDS LOOP budget. Binds -> stop_reason
+#                               "limit_output_tokens", raises NOTHING.
+#   max_tokens (this)           the PROVIDER's ceiling on ONE completion.
+#                               Binds -> MaxTokensReachedException ->
+#                               PartialReplyError: "model cut off at
+#                               max_tokens". THIS is the one in the logs when
+#                               a pass truncates.
+#
+# `[llm] max_tokens` is sized for a TAG TURN (measured: the largest legitimate
+# completion was 371 tokens). A batch pass is a different unit of work —
+# `note-candidates` asks for one verdict per message PLUS a candidate array,
+# so its output scales with the batch. Inheriting the tag turn's ceiling is
+# what let one scope fail every run for ~24 hours, watermark held, the same
+# batch re-read hourly, lag at 1,250 messages.
+#
+# Leave at 0 unless a pass is truncating. If one is, raise THIS, not the loop
+# budget — and keep the loop budget a MULTIPLE of it, the ratio `[llm.limits]`
+# already uses, or one call can spend the whole loop's allowance.
+#
+# 6,000, and this file said 0 while the deployment ran 6,000 until 2026-09-18.
+# That drift is the reason the value is written here rather than inherited: at
+# 0 this resolves to `[llm] max_tokens = 2000`, which is a TAG TURN's ceiling,
+# and `nora.domain.culture.ACCOUNT_OUTPUT_TOKENS` (~2,222 for a realistic
+# culture account) does not fit in it. A template that ships a number no
+# adaptor can actually run under is a template nobody can copy.
+#
+# The history behind 6,000 is note-candidates': 2,000 truncated every run on
+# one scope for ~24h (every failing run pinned at exactly 2,000, so their true
+# length was right-censored and unknown); 8,000 was headroom picked against a
+# failure; 4,000 was set on n=1 and the second uncensored sample was 29%
+# higher; 6,000 is 2.2x the largest of n=2 (2,124 and 2,732).
+max_tokens = 6000
+
+# Per-adaptor run ceilings (`DreamBudgetConfig`; an adaptor with no block gets
+# the defaults: 6 turns, 40000 total tokens, 4000 output tokens, 120 s, and 2
+# memory reads per pass). The
+# proactive adaptor (design/dreamer-agent-loop/39 D1, revised by issue #136)
+# ticks hourly per unit but RENDERS — pays a model call — only on a daily
+# floor or a change in a quiet unit, and researches with real tools —
+# where_is, route, note_read, memory, the web — so it can afford more than a
+# tag turn's fixed budgets. Uncomment to
+# widen it; the two proactive eval suites (39 §5) are what say whether the
+# extra turns buy anything. It is wired only when policy.toml names a
+# `home_room = true` for a unit — there is no [dreamer] flag for it.
+# OPENED 2026-09-10, and these are the numbers the deployment runs. They are
+# NOT a measurement — they are room to take one, and the block is uncommented
+# so that the `proactive_decide` suite measures the configuration production
+# uses instead of the field defaults. It was measuring 6 turns / 40,000 while
+# the deployment ran 24 / 1,000,000, and two of its three errors were budget
+# cuts: `limit_total_tokens` on a run nobody has ever made.
+#
+# What the failing production traces showed: the context is only ~10k, but each
+# turn RE-SENDS it, so the loop's running total is roughly context x turns and
+# 40,000 bought four turns. The decide turn had not finished researching by
+# then, and R-7 was already vetoing a fifth `search_memory_workspace`. The cost
+# scales with the unit's roster: a one-person room finished in 19-28k, a
+# real one did not finish at all.
+#
+# So `turns` is the REAL budget here and `total_tokens` is a safety net, which
+# is the opposite of how the defaults read. Lifting total_tokens alone buys
+# more of the same circling.
+# THE NOTE-CANDIDATE BATCH. Declared here because the deployment sets it and
+# this file is the only committed record of the config's shape — it was set
+# live on 2026-09-17 while chasing issue #291 and the template did not follow,
+# which is exactly the drift `tests/test_env_template.py` exists to catch.
+#
+# **These two are the STRANDS LOOP budget and are NOT the ceiling that broke.**
+# #291's failure was `[dreamer] max_tokens` — the provider's limit on ONE
+# completion, which raises `PartialReplyError` — and raising these would not
+# have touched it. They are here for the other half of the same argument: a
+# batch pass's output scales with the BATCH, because the objective asks for one
+# verdict per message plus a candidate array, so the field defaults (40,000
+# total / 4,000 output, sized for a pass that makes one model call) are a tag
+# turn's numbers on a job that is not a tag turn.
+#
+# `turns` and `timeout_seconds` are deliberately absent: this adaptor holds no
+# tools, so it cannot spend a turn researching and the field defaults bound it
+# correctly. A partial block fills its missing fields from those defaults
+# rather than zeroing them.
+
+[dreamer.budgets.note-candidates]
+total_tokens = 200000
+output_tokens = 36000
+
+
+[dreamer.budgets.proactive]
+turns = 24
+total_tokens = 1000000
+output_tokens = 10000
+# 120 was not enough to observe one: a live run was still going at 58s and was
+# cut off before it decided anything.
+timeout_seconds = 240.0
+# THE PER-PASS MEMORY CEILING (issue #160). How many reads ONE pass may make
+# across `about`, `ask_memory`, `search_memory_workspace` and `lookup_person`
+# TOGETHER — not per verb. The per-tool budgets above ([llm.budgets] and the
+# NATIVE_TOOLS table) bound each verb on its own, which is exactly what a pass
+# spends by asking four different verbs the same question.
+#
+# The measurement that put it here: a decide turn on the `friends` unit
+# (Langfuse 340373cd, 2026-09-10 18:03 HKT) made `note_read` three times,
+# `about`, `search_memory_workspace` and `ask_memory` — six held-state reads
+# for TWO notes whose two handles its own `<people>` block already carried.
+# Four rewrites of the objective moved the memory count from 7-8 down to 3-5
+# and never reached 2; the fifth, which stated the cap in words, cost `d02`
+# 5/5 -> 1/5 because a model told it has a hard cap declines the work rather
+# than spending less. So the ceiling is enforced in CODE and the objective says
+# nothing about it.
+#
+# The (N+1)th read is ANSWERED — R-27 `unavailable` with a reason the model can
+# read — never an error, never a silent empty. 2 is `d11`'s grading budget: the
+# one read the objective requires before any `remind`, plus one. Raise it for a
+# unit whose notes genuinely involve more people than the index can settle;
+# the reading that says so is the decide suite losing recall at 2 that it keeps
+# at 3. Omit the key and every adaptor gets 2 by default — a ceiling by
+# omission, never an unbounded pass.
+#
+# It is PER SAMPLE, so an adaptor with `samples = N` may make N x this per
+# fire — the same grain the three token caps above have. Inert here (the
+# proactive adaptor takes one sample per fire) and stated so that it is not a
+# surprise the day it is not.
+#
+# 2 -> 6 (operator, 2026-09-18), TRIPLED alongside `lookup_person` below —
+# and the pairing is the whole point. `lookup_person` is one of the four verbs
+# in `nora.agent.dreamer.MEMORY_TOOLS`, so THIS number bounds it before its
+# per-tool ceiling ever does: raising `tool_calls.lookup_person` to 12 against
+# a pass ceiling of 2 would have changed nothing at all and left this file
+# recording a bound the pass does not run under.
+#
+# A shared ceiling, not a reservation: the extra four are equally available to
+# `about`, `ask_memory` and `search_memory_workspace`, which is accepted
+# rather than overlooked — headroom on a ceiling costs nothing until a pass
+# spends it, and the instrument that says whether it is being spent well is
+# `nora_dream_guard_vetoes_total{adaptor="proactive",rule="memory-budget"}`
+# against the decide suite's recall.
+max_memory_calls = 6
+
+# **The per-tool call ceilings this pass overrides**, a tool name to how many
+# times ONE pass may call it. Applied OVER `NativeTool.budget` and over
+# `[llm.budgets]`, for this adaptor only.
+#
+# `note_read` — the table says 3, which is a TAG TURN's number: a reply that
+# reads a note or two before answering. This pass is asked for one decision
+# per note the group has open, so its need is the OPEN-NOTE COUNT, not a
+# constant.
+#
+# Measured on the deployment, 2026-09-17 05:00 (Langfuse trace `8b3e6522`):
+# the two live scopes hold 5 and 6 open notes. Each read three, was refused a
+# FOURTH DISTINCT note at the ceiling, and then decided every note anyway —
+# three grounded in a body, the rest in the index line alone. Nothing failed:
+# both passes returned a full decision set, status `ok`, watermark advanced.
+# That is the silent shape AGENTS.md names, where a judgement whose input
+# cannot ground it answers wrong at a rate nothing reports.
+#
+# 8, not 6: this is a CEILING and not a reservation, so the headroom costs
+# nothing until a pass spends it, and a roster that grows one note must not
+# re-open this file. The instrument that says whether it is still too low is
+# `nora_dream_guard_vetoes_total{adaptor="proactive",rule="tool-budget"}` —
+# a sustained non-zero rate on a read verb is the ceiling binding.
+#
+# NOT `[llm.budgets] note_read`, which is deployment-wide: raising it there
+# raises it for every reply Nora writes, and this is a background batch pass
+# nobody waits on. Same blast-radius argument `[dreamer] max_tokens` makes
+# against raising `[llm] max_tokens`.
+#
+# A key here naming a tool the adaptor does not declare REFUSES THE BOOT
+# (`nora.agent.dreamer.tool_call_faults`) — a raised ceiling that reaches
+# nothing would otherwise leave this file recording a bound the pass does not
+# actually run under, with nothing measuring the difference.
+
+[dreamer.budgets.proactive.tool_calls]
+note_read = 8
+# `lookup_person` — the table says 4, another TAG TURN's number, sized for
+# "one message routinely names two people". TRIPLED to 12 (operator,
+# 2026-09-18). A decide pass is not answering one message: it is asked for a
+# verdict per open note across a whole roster, and a room's own nicknames
+# («@熱咖啡☕少奶多糖») resolve against the person index rather than against more
+# occurrences of the same handle — which is the reason the verb was granted to
+# this adaptor at all (issue #145).
+#
+# The call is a dict lookup over a cached roster, so this is sized by model
+# round trips and not by work. See `max_memory_calls = 6` above: that is the
+# ceiling that actually binds this verb, and 12 here is inert without it.
+lookup_person = 12
+
+# THE CULTURE FOLD (design/culture-tier). Uncommented from 2026-09-17, when the
+# adaptor stopped being tool-free: it now holds nine read verbs through an
+# `AdaptorGrant`, so its loop can spend turns researching before it writes, and
+# the field defaults (6 turns / 40,000 total) were sized for a pass that made
+# one model call and stopped.
+#
+# **The arithmetic, because the failure it avoids is silent and
+# self-perpetuating.** A cut loop emits no envelope; `parse_envelope` reads
+# nothing; the run is `unavailable`; the watermark is HELD; the SAME batch is
+# re-read and re-cut on the next fire, forever. `[culture] batch_limit` is 300
+# messages, ~7-9k tokens of context with the room block, the previous account,
+# the standing position and the note index — and every turn RE-SENDS it, so the
+# loop's running total is roughly context x turns. At the 40,000 default that
+# buys four turns, and the fourth is where the fold is still reading rather
+# than writing. This is the reading that the `[dreamer.budgets.proactive]`
+# block above already paid for once, on a bigger roster.
+#
+# `output_tokens` is DERIVED and is not a free number: see
+# `nora.domain.culture.ACCOUNT_OUTPUT_TOKENS`. It is sized on
+# `ACCOUNT_CHARS_OBSERVED_MAX` — 1,876 characters, the longest account this
+# deployment's model has been SEEN to emit (n=10, 2026-09-17) — and NOT on
+# `BODY_MAX_CHARS`, which is the length at which a body is declined. Those
+# answer different questions and tying them together is what made the cap look
+# expensive to move. The budget is in TOKENS; the bridge is 1.15 output tokens
+# per character, MEASURED 2026-09-17 with `o200k_base` over a realistic
+# dense-Cantonese account (1.094) and continuous Cantonese prose (1.131), not
+# assumed — so a realistic account costs ~2,222.
+#
+# The rule is that the loop must be able to emit one TWICE — once for the
+# tool-call arguments it spends before it writes, once for the account — so
+# the floor is ~4,444 and `tests/unit/test_culture_adaptor.py` asserts 6,000
+# against it. The assertion reads THIS BLOCK, not the field default: the
+# default is 4,000 and would fail, which is honest, because an operator who
+# deletes this block is running a fold that cannot finish its sentence.
+#
+# NOT `[dreamer] max_tokens`, which is the PROVIDER's ceiling on one completion
+# and is the tighter of the two: at 6,000 a realistic account uses ~37% of a
+# single completion. Raise THAT, not this, if a fold is ever seen truncating —
+# and the ONE reading that would is a model emitting `\uXXXX` escapes instead
+# of raw UTF-8, which costs 2.85x the measured bridge (3.117 tok/char) and
+# puts a realistic account at ~5,850 tokens. That is a truncation, so it shows
+# up as `unavailable` with the watermark held, never as a quietly shorter
+# account.
+
+[dreamer.budgets.culture]
+turns = 10
+total_tokens = 120000
+output_tokens = 6000
+# 120 s is the shared default and it is left alone: unlike the decide turn this
+# pass has no live deadline behind it, and a fold that runs long is skipped on
+# the next tick rather than making anybody wait.
+#
+# Memory reads per pass. 4 rather than the default 2: the decide turn asks
+# about the one or two people a note names, and this pass is asking what a
+# ROOM is — several members, each a separate `about`/`ask_memory`. Still a
+# ceiling and still fail-closed (the Nth+1 read is answered `unavailable` with
+# a reason, never an error and never a silent empty). The reading that would
+# raise it is a fold that spends all of them and still names people it could
+# not resolve; the one that would lower it is reads that never change the
+# account.
+#
+# 4 -> 12 (operator, 2026-09-18), TRIPLED alongside `lookup_person` below, and
+# for the reason the proactive block states at length: `lookup_person` lives
+# in `MEMORY_TOOLS`, so this ceiling binds it before its per-tool one does,
+# and raising only the per-tool number would have been decoration. A room's
+# account names several members; 4 was the count of a pass that had not yet
+# been asked to resolve all of them.
+max_memory_calls = 12
+
+# **The per-tool call ceilings this fold overrides.** A key naming a verb the
+# adaptor does not declare REFUSES THE BOOT — `culture_grant` grants
+# `lookup_person`, so this one reaches something.
+#
+# 4 in `NATIVE_TOOLS`, sized for a tag turn where "one message routinely names
+# two people". This pass is writing what a ROOM is, and the objective's own
+# bar is a name whose ORIGIN can be explained — which is per-member work
+# against the person index, not two lookups. 12 (operator, 2026-09-18).
+
+[dreamer.budgets.culture.tool_calls]
+lookup_person = 12
+
+
+
+
+[obs.logging]
+level = "INFO"
+# There is no `path`: the log goes to STDOUT, and the key was REMOVED rather
+# than accepted and ignored (2026-09-09). Under `extra = "forbid"` a leftover
+# `path =` line is a loud startup failure — which is the honest outcome, and
+# the same judgement `format` below already makes.
+#
+# It was a file for five weeks by accident, not by decision: this module landed
+# one day before the Dockerfile, so a host process's sink was never revisited.
+# `docker compose logs nora` was empty, which read as «nothing ran» at least
+# once when something had; and a plain `FileHandler` with no rotation reached
+# 66 MB beside the media and database volumes.
+#
+# Read it with `docker compose logs nora` — or `| jq` , since it is JSON lines.
+format = "json"
+
+
+[obs.metrics]
+port = 9100                           # also serves /health
+
+
+[obs.tracing]
+enabled = false
+exporter = "file"                     # console | otlp_http | file
+endpoint = ""
+headers_env = ""                      # env var NAME holding OTLP auth headers, never the
+                                       # value (DEC-8); only read when exporter = "otlp_http"
+
+
+[obs.errors]
+# Sentry — ERROR CAPTURE ONLY, never tracing (`nora/obs/errors.py`).
+#
+# It answers the one question the other three instruments cannot: «this stack
+# trace has happened 200 times, it is new since the last deploy, and here is
+# the frame». Prometheus answers "how many, how often, with what outcome" and
+# Langfuse holds the traces with a model call in them — see
+# `docs/observability.md` for the boundary.
+#
+# WHAT IT WILL NOT SEE, stated here so nobody assumes otherwise: an R-27
+# `unavailable`. This codebase is built not to raise, so its characteristic
+# failure is a counter label rather than a traceback — a media read that
+# exported no trace for two weeks threw nothing, and neither did a systemd unit
+# that was dead for sixteen days. Those are `deploy/prometheus/`'s to catch.
+enabled = false
+dsn_env = "SENTRY_DSN"                     # names the env var (DEC-8); the DSN
+                                           # itself never appears in this file.
+                                           # Unset or empty = off, not an error.
+environment = ""                           # "norty", "laptop" — so two
+                                           # deployments do not group into one
+                                           # issue. "" records `unknown`.
+
+
+[evals]
+# The model that GRADES the adversarial live run (DEC-75). MUST differ from
+# llm.model's exact id — the runner refuses a string match, because a model
+# grading itself self-scores. The judge runs once per graded case, pre-deploy
+# only.
+#
+# SUPERSEDED (kept so the wrong turn is not retaken): this read
+# `deepseek-v4-pro` on the argument that «a measured run had cheaper flash miss
+# fabrications pro caught, so pro is the conservative default».
+#
+# That run was CONFOUNDED SINGLE-SAMPLE NOISE. A controlled measurement (A4:
+# same frozen replies, k=3) showed flash MATCHES pro — 3/3 fabrications caught,
+# control PASS, both — once the attribution prompt (A1) and majority-of-3 (A2)
+# are in. So flash via a DIFFERENT provider route grades as well as pro here at
+# a fraction of the cost. Same base model = weaker independence (Kimi) but
+# measured to work for this class; n=4 controlled, revisit with the diversified
+# corpus (C1).
+#
+# SUPERSEDED IN TURN (2026-08-20), and NOT on the merits above — on reachability.
+# The `deepseek/` DIRECT route returns HTTP 402 «Insufficient Balance» through
+# OmniRoute, so `--suite adversarial` was failing as a BILLING ERROR rather than
+# producing a verdict. Operator: "use ollama cloud". Moved to
+# `ollamacloud/deepseek-v4-pro:0813`, verified reachable and grading on the same
+# gateway the same day; it clears the runner's guard (llm.model is
+# `ollamacloud/deepseek-v4-flash`, so the ids do not string-match) and matches
+# `evals.judge.JUDGE_MODEL_TIER`'s documented intent ("deep" = deepseek-v4-pro).
+# `ollamacloud/kimi-k3` is not a candidate — extra-usage-only on this plan, 402s
+# too. The flash-matches-pro measurement above still stands; it simply no longer
+# picks the model, because the route it named cannot be reached.
+#
+# SUPERSEDED IN TURN (2026-08-31, operator): judge model → `ollamacloud/glm-5.3`
+# (full GLM 5.3, not flash). The judge's verdict BINDS the gate (DEC-75 Gap 2),
+# so the operator chose the strongest reasoning tier for grading. Verified
+# present in the OmniRoute catalog alongside `ollamacloud/glm-5.3-flash`; it
+# clears the runner's guard (llm.model is `ollamacloud/deepseek-v4-flash`; the
+# ids do not string-match) and matches `evals.judge.JUDGE_MODEL_TIER`'s "deep"
+# intent.
+#
+# USAGE DISCIPLINE (operator: "do NOT blast it, since the ollama cloud is
+# subscription - usage base"). Cold: `--suite adversarial` is 10 replies
+# (llm.model) + 30 judge calls (THIS model) = 40, and 0 on an unchanged re-run
+# thanks to B1's verdict cache — so `--force`/`--no-cache` is what throws the
+# saving away. `--suite journeys` is 12 journeys x journey_samples turns
+# (36 at the shipped 3), uncached, but runs on llm.model, never on this one. Raising judge_samples multiplies the judge half
+# directly.
+#
+# NOT fixed by this swap, measured the same day: the judge cannot grade R-53 (a
+# source that does not mention something has not denied it). That blindness is a
+# property of the RUBRIC, not of the judge tier — both flash and pro pass a reply
+# that reads a scoped source's silence as a denial, pro at confidence 0.95. See
+# `docs/superpowers/specs/2026-08-20-fact-tier-design.md` §9.0.
+judge_model = "ollamacloud/glm-5.3"
+# judge_samples: the judge grades each reply k times; the gate binds the majority
+# safety verdict (A2, kills single-sample noise). 1 = single sample; 3 = stable.
+judge_samples = 1
+# journey_samples: --suite journeys runs each journey k times, majority-gated (F8a).
+# Routing is stochastic — n=1 flakes a good model and passes a lucky broken one.
+journey_samples = 3
+
+
+[evals.langfuse]
+enabled = false
+host = "http://127.0.0.1:3100"
+headers_env = ""                      # same shape/var as obs.tracing.headers_env — see
+                                       # nora.config.LangfuseEvalConfig's docstring for why
+                                       # this reuses that credential rather than adding a
+                                       # second one
+
+# The per-modality describers (2026-08-17). `vision_model` above stays the
+# IMAGE model's alias, so a config written before this split keeps working.
+#
+# Audio ships INERT — wired, but off, with no model named. That is not
+# timidity: the OmniRoute catalogue advertises `vision` on 215 of its 406 models
+# and carries NO `audio` or `video` key at all, so it cannot tell us whether any
+# reachable route can hear. Enabling it is a flag and a model name,
+# with no code change; until a probe answers that question, a voice note is
+# answered `unavailable` («I couldn't check»), never `nothing_found`.
+#
+# VIDEO shipped inert under the same argument and was ENABLED 2026-08-30 via
+# the kimi direct lane — see [media.describe.video] below.
+#
+# `provider` selects the TRANSPORT (2026-08-30): `"omniroute"` (default) keeps
+# the process-wide gateway client; `"kimi"` travels DIRECT to
+# `api.kimi.com/coding/v1` using `KIMI_CODE_API_KEY` — required for VIDEO,
+# because OmniRoute drops `video_url` content blocks (probe 2026-08-30: router
+# prompt tokens 95 vs native 3164 for the same payload). A kimi provider whose
+# key is unset answers `unavailable`, never a silent omniroute fallback.
+# `api_key_env` (optional, kimi only) NAMES the env var holding the direct
+# lane's key (DEC-8 — the value never lands here); empty falls back to
+# `KIMI_CODE_API_KEY`.
+
+[media.describe.image]
+enabled = true
+# ollamacloud/minimax-m3 → ollamacloud/glm-5.3-flash (2026-08-30, benchmark:
+# 5-10x faster, accuracy parity; verified through OmniRoute).
+model = "ollamacloud/glm-5.3-flash"
+provider = "omniroute"
+
+
+[media.describe.audio]
+enabled = false
+model = ""
+provider = "omniroute"
+
+
+[media.describe.video]
+# ENABLED 2026-08-30 — kimi DIRECT provider, NOT omniroute: OmniRoute drops
+# `video_url` content blocks (probe: router prompt 95 tokens vs native 3164
+# for the same payload), so a video through it reaches the model as text only
+# and it answers about text it did receive. `KIMI_CODE_API_KEY` must be
+# injected (docker-compose.yml) or this answers `unavailable` — never a
+# silent omniroute fallback. k3-256k over k3 (1M): same video token cost,
+# ~2x faster, half the quota (benchmark 2026-08-30).
+enabled = true
+model = "k3-256k"
+provider = "kimi"
+# Video bytes are routinely far larger than a still image; the shared
+# `vision_max_bytes` (8 MiB, chosen for images) would turn a real clip into
+# `too_large`. Set to the SAME 100 MiB as `[media] max_bytes` — the custody
+# ceiling, i.e. "whatever Nora can receive, she can describe". A 100 MiB
+# clip is a ~133 MiB base64 body to api.kimi.com; the direct lane's per-call
+# timeout (derived from llm budgets) must cover that upload+inference. If a
+# real clip ever times out at the top of this range, the `ms://file-id`
+# upload lane (probed 2026-08-30 for larger videos) is the escape hatch —
+# base64 inline works for small clips, file-id for big ones.
+max_bytes = 104857600
+# CHUNKED READ (issue #117). A clip used to be cut to its first 120 seconds
+# before the model saw it, with no metric, no log line, and nothing in the
+# answer admitting the cut — so a ten-minute video produced a description of
+# its first two minutes, phrased as a description of the video. Storage is
+# untouched (one blob, the whole original); ffmpeg cuts transient windows at
+# READ time and each one goes to the describer above unchanged.
+#
+# `chunk_max` is the ceiling that turns an unbounded clip into a bounded
+# number of model calls — 10 x 90 s = 15 minutes read in full. **When it binds
+# it is recorded and SAID**: the clip's length, how much was read and the fact
+# that the rest was not land in `media_objects.provenance`, and a sentence
+# saying so is appended to the description. That is the actual fix — not
+# "never truncate", but "never truncate silently".
+#
+# The chunks are silent: the video path passes `-an` and strips the audio
+# track, exactly as it did before, and #117 explicitly does not change that.
+chunk_seconds = 90
+chunk_max = 10
