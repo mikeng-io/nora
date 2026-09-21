@@ -35,7 +35,7 @@ _PERSON_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 # The platform sub-table names `_PersonEntry` accepts, in the order the reverse
 # index is built — every platform design/10 §3.1 declares a kind vocabulary for.
 PLATFORM_FIELDS: tuple[str, ...] = (
-    "signal", "telegram", "discord", "whatsapp", "life360", "pulse",
+    "signal", "telegram", "discord", "whatsapp", "instagram", "life360", "pulse",
 )
 
 
@@ -113,6 +113,15 @@ class _PersonEntry(BaseModel):
     telegram: list[dict[str, str | int]] | None = None
     discord: list[dict[str, str | int]] | None = None
     whatsapp: list[dict[str, str | int]] | None = None
+    # Instagram carries TWO matchable ids per account, which no other platform
+    # here does: `fbid` is `interop_messaging_user_fbid` — what a mention
+    # carries and what a message's sender is — and `igid` is the public/social
+    # id that profile and story reads take. Both belong to the same human and
+    # both resolve to this person. `username` is accepted as metadata and is
+    # NEVER matchable, for the reason every platform here refuses a handle: it
+    # renames, and an identity that renames is an identity that silently stops
+    # resolving (design/instagram-adoption/02).
+    instagram: list[dict[str, str | int]] | None = None
     # A location account, not a chat one, but the same array-of-accounts shape:
     # one block per Life360 account with a `member_id = "…"` (the circle-member
     # UUID). It resolves to this person the same way their Signal number does
