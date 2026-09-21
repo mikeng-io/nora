@@ -153,6 +153,24 @@ keep that tool and add instameow as a *backend* behind it, closing two of its
 recorded limitations and adding stories. See
 `05-phase2-social-and-opencli.md`.
 
+## Known restrictions (parked)
+
+Recorded so they are decisions rather than surprises. None blocks Phase 1.
+
+| # | Restriction | Status |
+|---|---|---|
+| R1 | **View-once and allow-replay media cannot be persisted.** `view_mode` 0 and 1 serve no bytes at all to a client that has not opened them — `content.attachment` is `null` in the live delta and in history alike. Only "keep in chat" (`view_mode` 2) carries retrievable media. | **PARKED.** Persisting them would require *opening* them, a deliberate state change. v1 records that one-time media was sent, by whom and when, with no bytes — what a person in the room who did not tap it also has. |
+| R2 | **History pagination is broken.** `PaginateMailbox` and `PaginateMessages` both fail with `Query Error`; `GetThread` returns recent history fine. | Open. Makes the message-requests folder unreadable, and makes session resume load-bearing rather than optional. |
+| R3 | **Text with media is two messages.** `SendMediaRequest` has no text field. | Settled; inverts the WhatsApp caption pattern. |
+| R4 | **One reaction per message.** | Settled; narrower than Signal and Discord. |
+
+**What is NOT restricted, and is the thing that matters most:** the bridge
+*listens*. `Connect` opens Instagram's MQTT stream and the server pushes —
+text, mentions, replies, images, video, stickers, one-time announcements,
+typing, and member events all arrived live and unprompted during measurement.
+Live ingest is the best-established capability in this bundle; history is the
+weak one, which is the reverse of the usual failure.
+
 ## What this costs
 
 Three risks, in the order they will actually bite:

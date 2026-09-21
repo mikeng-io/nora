@@ -55,7 +55,7 @@ Two consequences worth stating before implementation:
 The platform agrees with the rule, which is a good sign: a story carries
 `expiring_at`, measured at 24 hours. Media Nora kept would outlive its source.
 
-## The conflict inside the rule: one-time media — RESOLVED by measurement
+## The conflict inside the rule: one-time media — RESOLVED, and PARKED as restriction R1
 
 The rule says one-time images and videos sent **to the group** are persistent.
 Instagram only lets that be true for one of its three modes.
