@@ -27,6 +27,8 @@ from uuid import uuid4
 
 import aiohttp
 
+from nora.domain.playback_liveness import PlaybackReading
+
 log = logging.getLogger("nora.infra.voice")
 
 
@@ -311,6 +313,45 @@ class HttpVoiceSession:
     @property
     def generation(self) -> str:
         return self._generation
+
+    async def read_playback(self) -> PlaybackReading:
+        """One `/voice/status` sample, reduced to the liveness fields.
+
+        Every one of these was already served and none was ever read: nora
+        decided "music is playing" from `playback_id is not None`, which is
+        true in five arbiter states and audible in at most one.
+
+        NEVER raises. An unreachable or unparseable controller comes back as
+        `PlaybackReading.unreachable()`, which the rule turns into UNKNOWN —
+        "I could not check" must not reach a caller looking like "not
+        playing", which is the exact shape of the bug this exists for."""
+        try:
+            status = await self._client.status(self._guild_id)
+        except VoiceControllerError:
+            return PlaybackReading.unreachable()
+        if not isinstance(status, dict):
+            return PlaybackReading.unreachable()
+        player = status.get("player")
+        if not isinstance(player, dict):
+            return PlaybackReading.unreachable()
+
+        def _int(value: object) -> int | None:
+            return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+        player_status = player.get("status")
+        playback_id = status.get("playback_id")
+        autopaused = status.get("autopaused")
+        return PlaybackReading(
+            reachable=True,
+            status=player_status if isinstance(player_status, str) else None,
+            position_ms=_int(player.get("position_ms")),
+            # `None`, never `False`, when the controller does not serve the
+            # field: "this build cannot tell me" must not read as "it is
+            # fine".
+            autopaused=autopaused if isinstance(autopaused, bool) else None,
+            subscribers=_int(status.get("subscribers")),
+            playback_id=playback_id if isinstance(playback_id, str) else None,
+        )
 
     @property
     def guild_id(self) -> str:

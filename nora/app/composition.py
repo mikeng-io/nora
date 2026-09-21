@@ -1223,6 +1223,11 @@ async def build_dependencies(
             spawn=asyncio.ensure_future, autoplay_enabled=cfg.music.autoplay_enabled,
             autoplay_prewarm_seconds=cfg.music.autoplay_prewarm_seconds,
             playback_probe=voice_hub.expected_playback_id if voice_hub is not None else None,
+            # The liveness watch: without it nora asks the controller for
+            # status exactly twice in her life (boot, and after a version
+            # conflict) and otherwise believes a track is playing until an
+            # event says otherwise — which a wedged controller never sends.
+            read_playback=voice_hub.read_playback if voice_hub is not None else None,
             generation_probe=voice_hub.generation_for if voice_hub is not None else None,
             drop_voice_session=voice_hub.drop if voice_hub is not None else None,
             exit_voice_session=voice_hub.exit if voice_hub is not None else None,

@@ -157,6 +157,11 @@ class DiscordAdapter:
                     resolve_music_channel=self._resolve_music_channel,
                     client_getter=self.current_client,
                 )
+                # Idempotent, so every on_ready is safe: the watch asks the
+                # controller whether sound is actually moving, because until
+                # it existed nora only ever learned that music stopped from
+                # an event a wedged controller does not send.
+                self._music_manager.start_liveness_watch()
             # B-2 (2026-09-16 audit): a guild with no persisted MUSIC row
             # never calls `hub.join` above, so a wake-reply-only boot would
             # leave the controller's boot-joined connection un-adopted and

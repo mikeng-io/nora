@@ -124,6 +124,12 @@ export function createArbiter({
   let suspendedSlot = null; // music hard-stopped by speech, remembered
   let activeKind = null; // 'music' | 'speech' — what the player is playing
   let speechActive = null; // { requestId }
+  // AutoPaused is the one condition where the pipeline looks perfectly
+  // healthy and produces NO sound: `state` stays 'playing', ffmpeg keeps
+  // decoding, the stall watch keeps seeing bytes, and neither 'idle' nor
+  // 'error' fires. It was logged and nowhere else, so nora could not read
+  // it — and `player.status === 'playing'` alone is not proof of audio.
+  let autopaused = false;
   const speechQueue = [];
   // MUSIC STARTS AT 25% (operator, 2026-09-17). Discord voice is loud and a
   // track at full scale buries the people talking over it; `/music volume`
@@ -677,6 +683,7 @@ export function createArbiter({
       kind: activeKind,
       request_id: activeKind === 'speech' ? (speechActive?.requestId ?? null) : null,
     };
+    autopaused = newState.status === 'autopaused';
     if (newState.status === 'autopaused') {
       log('error', {
         event: 'player_autopaused',
@@ -726,6 +733,7 @@ export function createArbiter({
     player = null;
     state = 'stopped';
     streaming = false;
+    autopaused = false;
   }
 
   // --- commands (generation already validated by the controller) ---------
@@ -866,6 +874,15 @@ export function createArbiter({
         current: current ? { title: current.title, url: current.streamUrl } : null,
       },
       speech_queue: speechQueue.length + (speechActive ? 1 : 0),
+      // Is anything actually HEARING this? `player.status === 'playing'` is
+      // not proof of audio — the AudioPlayer reaches Playing whether or not
+      // a connection is subscribed. An autopaused player, or one with zero
+      // playable subscribers, is producing silence while every other field
+      // reads healthy. Both numbers already existed for the autopause log
+      // line; serving them is what lets nora tell the two apart.
+      autopaused,
+      subscribers: player?.subscribers?.length ?? 0,
+      playable: player?.playable?.length ?? 0,
       // The read-back for the 2026-09-21 wedge. A non-zero count while
       // nothing is playing means a kill never reaped and every future spawn
       // is being deferred behind it — provable in one `curl`, where before
