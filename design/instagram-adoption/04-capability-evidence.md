@@ -46,7 +46,9 @@ protocol's behaviour — two of them turned out not to match the wire.
 | one-time (view-once) image | **PARTIAL** | `ct=RAVEN_IMAGE` arrives, but `attachment` is **`null`** — see below |
 | emoji reaction from another member | UNMEASURED | probe armed; none sent during the window |
 | voice note from another member | UNMEASURED (structurally supported) | `SlideMessageAudiosContent` → `AudioAttachment{AttachmentCDNURL, PlayableDurationMS, WaveformData}` |
-| one-time media fetch is visible to sender? | **UNMEASURED** | earlier asserted as "yes"; that was inference, and the story `seen` result shows such inference failing |
+| one-time media, `view_mode` 0 and 1 | **no bytes served** | `content.attachment` is `null` in the live delta AND in thread history |
+| one-time media, `view_mode` 2 ("keep in chat") | PASS | attachment present with a CDN url, behaves like a normal image |
+| system/member events | PASS | `GROUP_THREAD_CREATED_XMAT`, `ADD_PARTICIPANT_XMAT`, `CHANGE_THREAD_IMAGE_XMAT` arrive as message types |
 | typing notification | PASS (type exists) | `slidetypes.TypingNotification` |
 
 ### Inbound media is four shapes, not one
@@ -126,10 +128,13 @@ protocol — see `02-identity-and-policy.md` §Open decisions.
   soak has been running on norty since 2026-09-21 (`~/workspace/ig-soak/`).
   Until it produces a number, every fresh probe misleads by succeeding,
   because age is the variable.
-- **Message requests (`PENDING`).** Explicit `PaginateMailbox` folder queries
-  for `INBOX`/`PENDING`/`SPAM` all fail with `Query Error - Error performing
-  query`, most likely because the connector only paginates from a cursor on a
-  non-empty page. A group invite from a non-follower lands in PENDING, so this
+- **Pagination is broken in this library version, both kinds.** Explicit
+  `PaginateMailbox` folder queries (`INBOX`/`PENDING`/`SPAM`) and
+  `PaginateMessages` both fail with `Query Error - Error performing query`.
+  `GetThread` returns recent history fine, so this is a gap in two specific
+  GraphQL documents rather than a permissions problem — but it means the
+  message-requests folder, where a group invite from a non-follower lands,
+  cannot currently be read at all. A group invite from a non-follower lands in PENDING, so this
   path matters and is currently unvalidated. `AcceptMessageRequest` exists.
 - **Voice messages, stickers, reels shared into a thread.** `xma.go` handles
   external media attachments inbound; none was exercised.

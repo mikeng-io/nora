@@ -55,33 +55,45 @@ Two consequences worth stating before implementation:
 The platform agrees with the rule, which is a good sign: a story carries
 `expiring_at`, measured at 24 hours. Media Nora kept would outlive its source.
 
-## The conflict inside the rule: one-time media
+## The conflict inside the rule: one-time media — RESOLVED by measurement
 
 The rule says one-time images and videos sent **to the group** are persistent.
-The wire makes that non-trivial and possibly non-free.
+Instagram only lets that be true for one of its three modes.
 
-`RAVEN_IMAGE` / `RAVEN_VIDEO` deltas arrive with `"attachment": null` — the
-message announces that view-once media exists and carries nothing. Persisting
-it therefore requires an explicit fetch.
+Measured 2026-09-21, three photos sent into the group seconds apart, one in
+each mode, then read back from thread history:
 
-**Whether that fetch is visible to the sender is UNMEASURED.** An earlier
-draft of this bundle asserted that fetching view-once media *is* viewing it
-and is visible to the sender. That was an inference, and the story measurement
-showed exactly how such inferences fail: `FetchReel` does **not** advance the
-`seen` watermark, so reading a story is invisible — the opposite of what the
-capability surface suggested. The same separation may or may not hold for
-raven media.
+| sent as | `view_mode` | `content.attachment` | bytes retrievable without opening |
+|---|---|---|---|
+| view once | `0` | `null` | **no** |
+| allow replay | `1` | `null` | **no** |
+| keep in chat | `2` | present, with a CDN url | **yes** |
 
-**The test, which needs one message from the operator:** send a one-time image
-to the group, let the bridge attempt to resolve it, then check in the
-Instagram UI whether it shows as opened. Decidable in one exchange, and it
-changes the design:
+The `0`/`1`/`2` to mode mapping is read off the operator's stated send order,
+not off a label in the payload. What is directly measured is the part that
+matters: **two of the three modes serve no bytes at all**, in the live delta
+and in thread history alike, to a client that has not opened them.
 
-- **Fetch is invisible** → persist one-time media as the rule says, no further
-  question.
-- **Fetch marks it opened** → persisting it makes Nora visibly open every
-  view-once message in the room, immediately, forever. That is a behaviour the
-  group will notice and should be told about, not a storage detail.
+So the rule is satisfiable exactly where Instagram permits it:
+
+- **Keep in chat** → persists normally. No fetch, no state change, no
+  visibility question. It behaves like any other image.
+- **View once and allow replay** → *cannot* be persisted passively. There is
+  nothing to store; the message announces media that the server will not hand
+  over.
+
+This also retires the question this document previously posed. It is no longer
+"is fetching visible to the sender" — there is no fetch available. Persisting
+these two modes would require Nora to **open** them, which is a deliberate
+state change, not a read. Whether opening is visible to the sender remains
+unmeasured, and is now a question only worth asking if the operator wants
+opening to happen at all.
+
+**Recommendation: do not open.** A one-time message whose sender chose "view
+once" is the clearest possible statement of intent, and unlike the story case
+there is no ambiguity to interpret. v1 records that one-time media was sent,
+by whom and when, with no bytes — which is exactly what a human in the room
+who did not tap it would also have.
 
 ## The consent note, recorded rather than assumed
 
