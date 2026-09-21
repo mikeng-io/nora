@@ -145,6 +145,40 @@ _DEFAULT_IDENTITY = (
     '[persons.miles_novak]\nname = "Miles"\n'
     '[[persons.miles_novak.signal]]\nphone = "+852111"\n'
 )
+def config_default(key: str) -> object:
+    """What `nora/config.py` gives a dotted key nobody states.
+
+    Lives here rather than in `evals/` because the layered contract forbids
+    `evals/` importing `nora.config` (`tests/test_boundaries.py`), and this is
+    already the eval-facing seam. It answers one question about the CONFIG
+    SCHEMA, which is Nora's own, not about evaluation.
+
+    `None` means UNRESOLVABLE — a required field with no default, or a nested
+    container like `dreamer.budgets.<name>` that is keyed at runtime. Callers
+    must treat that as "cannot check", never as "agrees": an earlier version
+    returned the field's ANNOTATION instead, compared a string against
+    `<class 'str'>`, and reported 57 divergences that were not.
+    """
+    from pydantic_core import PydanticUndefined
+
+    from nora.config import Config
+
+    model: Any = Config
+    parts = key.split(".")
+    for index, part in enumerate(parts):
+        field = getattr(model, "model_fields", {}).get(part)
+        if field is None:
+            return None
+        if index == len(parts) - 1:
+            if field.default is PydanticUndefined:
+                return None
+            return None if hasattr(field.default, "model_fields") else field.default
+        model = field.annotation
+        if not hasattr(model, "model_fields"):
+            return None
+    return None
+
+
 def default_policy(room: tuple[str, str], *, unit: str = "nora") -> str:
     """One allowed room, `default = "deny"`, built FROM the room.
 
@@ -325,7 +359,20 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # host directory". OUTSIDE a container there is no mount and the host path
     # IS the local one, so the workdir is not a placeholder here: it is the
     # correct answer. Run on the deploy host and compose's own value wins.
-    os.environ.setdefault("NORA_DATA_HOST_ROOT", str(workdir.resolve()))
+    # SET, never `setdefault`. An audit found this unsound on exactly the host
+    # the first comment claimed it was right for: `store.data_dir` is the case
+    # workdir two lines above, and `_compute_workspace_host_root`'s contract
+    # (`composition.py:677`) is that this variable names the HOST-side path of
+    # the mount at `store.data_dir`. Let compose's value win and the pair is
+    # guaranteed to disagree — the daemon writes job files into the case
+    # workdir while the backend bind-mounts the DEPLOYMENT's data root into the
+    # sandbox container. That is fail-OPEN (the job finds no task file) plus an
+    # eval container mounting the deployment's data directory.
+    #
+    # The workdir is the correct answer here whatever the host: outside a
+    # container there is no mount, and inside one the subject's data_dir is
+    # this directory either way.
+    os.environ["NORA_DATA_HOST_ROOT"] = str(workdir.resolve())
     # `doctrine.dir` and `dreamer.dir` resolve RELATIVE TO THE CONFIG FILE, and
     # the copy lives in the caller's workdir, which has no such subdirectories.
     # The Dreamer's corpus is validated at startup — deliberately, so a

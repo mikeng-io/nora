@@ -32,6 +32,8 @@ import re
 import tomllib
 from pathlib import Path
 
+from nora.subject import config_default
+
 #: Deployment settings the sandbox must NOT inherit. None is a behaviour
 #: difference; each would reach OUT of the sandbox or point at an endpoint that
 #: only resolves inside the deploy network.
@@ -62,7 +64,6 @@ SKIP_PREFIX: tuple[str, ...] = (
     "store.data_dir",          # `_baseline()` points it at the case's own workdir
     "social.bridge_url",
     "speech.tts.sidecars",
-    "media.encryption_key_env",
 )
 
 #: Forced OFF whatever either file says. Inheriting the EXAMPLE's value is how
@@ -220,19 +221,49 @@ ALLOWED_TO_DIFFER: dict[str, str] = {
 def divergences(generated_toml: str, deployment_toml: str) -> dict[str, tuple]:
     """Settings the generated config holds differently from the deployment.
 
-    Compared only over what the deployment actually STATES — the example
-    carries keys a given deployment never sets, and those are code defaults for
-    both, not divergences.
+    **Both directions, and the second one is where the original bug lives.**
+
+    An earlier version iterated only what the DEPLOYMENT states, on the stated
+    reasoning that a key the example carries and the deployment does not "is a
+    code default for both". That is false, and an audit measured the exposure:
+    **44 keys** are example-stated and deployment-silent, and for every one the
+    subject takes the EXAMPLE's value while production takes
+    `nora/config.py`'s default. They agree today only by curation — and that is
+    exactly the 65-value divergence this module exists to close, reached
+    through the half of the key space the gate was not looking at.
+
+    So example-only keys are compared against the CODE DEFAULT, which is what
+    production actually runs. A key whose default cannot be resolved is
+    reported as unresolvable rather than skipped: "cannot check" is not
+    "agrees".
     """
     generated = dict(_flat(tomllib.loads(generated_toml)))
+    deployment = dict(_flat(tomllib.loads(deployment_toml)))
     out: dict[str, tuple] = {}
-    for key, value in _flat(tomllib.loads(deployment_toml)):
-        if any(key.startswith(prefix) for prefix in SKIP_PREFIX):
-            continue
-        if key in ALLOWED_TO_DIFFER:
-            continue
-        if generated.get(key) != value:
+
+    def exempt(key: str) -> bool:
+        return (
+            any(key.startswith(prefix) for prefix in SKIP_PREFIX)
+            or key in ALLOWED_TO_DIFFER
+        )
+
+    for key, value in deployment.items():
+        if not exempt(key) and generated.get(key) != value:
             out[key] = (generated.get(key), value)
+
+    for key, value in generated.items():
+        if key in deployment or exempt(key):
+            continue
+        default = config_default(key)
+        if default is None:
+            continue
+        # A `Path` default against the TOML's string is the same value in two
+        # types, not a divergence.
+        if isinstance(default, Path):
+            if str(default) != str(value):
+                out[key] = (value, str(default))
+        elif value != default:
+            out[key] = (value, default)
     return out
 
 
@@ -268,10 +299,20 @@ def sandbox_room_for(real_room: tuple[str, str], case_name: str) -> tuple[str, s
     """
     platform, real_id = real_room
     digest = hashlib.sha256(f"{platform}|{real_id}|{case_name}".encode()).hexdigest()
-    if "/" in real_id:
+    if platform == "discord":
         # A Discord `<guild>/<channel>` pair. Both halves are snowflakes —
-        # decimal, so a hex digest cannot be dropped in verbatim.
+        # decimal, so a hex digest cannot be dropped in verbatim. The `g-`
+        # marker cannot be kept here: `nora.policy` refuses a Discord room
+        # carrying `voice = true` whose id is not `<guild_id>/<channel_id>`.
         return (platform, f"{int(digest[:15], 16)}/{int(digest[15:30], 16)}")
+    # BRANCH ON THE PLATFORM, NOT ON THE ID'S SHAPE. The first cut tested
+    # `"/" in real_id`, which is true of a SIGNAL group id too — they are
+    # base64, and `MuM4gROdh0/9CGiZ2Sc/...=` carries two slashes. So every
+    # Signal snapshot case (most of the converted corpus) was minted a
+    # Discord-shaped numeric id on the Signal platform, losing the `g-`
+    # sandbox marker that tells a reader — and any cleanup query — that a row
+    # belongs to an eval rather than to a real room. Found by audit, confirmed
+    # by running it on the real room id.
     return (platform, f"g-{digest[:16]}")
 
 

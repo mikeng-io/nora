@@ -61,6 +61,7 @@ reasoning_effort = "none"
 enabled = true
 model = "nora-dreamer"
 reasoning_effort = "low"
+max_tokens = 6000
 [evals]
 judge_model = "nora-judge"
 [doctrine]
@@ -72,6 +73,10 @@ shadow = false
 enabled = true
 [standing]
 enabled = true
+event_enabled = true
+fold_batch = 40
+max_slot_hold_seconds = 150.0
+reasoning_effort = "none"
 [culture]
 enabled = true
 [notes]
@@ -93,12 +98,34 @@ enabled = true
 prune_enabled = false
 [speech.wake]
 enabled = false
+[media]
+encryption_key_env = "MEDIA_ENCRYPTION_KEY"
+vision_model = "a-vision-model"
+vision_timeout_seconds = 40.0
+sticker_descriptions = true
 [media.describe.audio]
 enabled = false
+[media.describe.image]
+enabled = true
+model = "a-describe-model"
+[media.describe.video]
+enabled = true
+model = "a-video-model"
+provider = "kimi"
+max_bytes = 104857600
+[image_gen.xai]
+model = "an-image-model"
 [platforms.signal]
 enabled = true
 [engagement.trigger]
 enabled = false
+[obs.tracing]
+endpoint = "http://collector.internal:4317"
+exporter = "otlp_http"
+[analytics]
+enabled = true
+[social]
+bridge_url = "http://bridge.internal:9000"
 """
 
 
@@ -190,11 +217,25 @@ def test_an_enabled_adapter_is_adopted_but_its_credentials_are_not():
 
 def test_a_skipped_prefix_is_not_taken_from_the_deployment():
     """Endpoints that resolve only inside the deploy network, and sinks a run
-    would write into beside real traffic."""
+    would write into beside real traffic.
+
+    STRENGTHENED after an audit: the first version asserted no `obs.` key was
+    adopted truthy, while the fixture stated no `obs.` key AT ALL and
+    `FORCE_OFF` independently wrote the two booleans False. Removing `"obs."`
+    from `SKIP_PREFIX` — the exact thing the test is named for — was a full
+    pass. It now uses NON-BOOLEAN keys, which only `SKIP_PREFIX` can exclude.
+    """
     from evals.subject_config import adopted
 
     taken = adopted(_DEPLOYMENT_FIXTURE)
-    assert not [k for k in taken if k.startswith("obs.") and taken[k] is not False]
+    for key in ("obs.tracing.endpoint", "obs.tracing.exporter",
+                "social.bridge_url"):
+        assert key not in taken, (
+            f"{key} is a deploy-network endpoint; adopting it points the "
+            "sandbox at the deployment's own infrastructure"
+        )
+    # And the generated config must not carry the deployment's value either.
+    assert _eval_config().get("obs.tracing.endpoint") != "http://collector.internal:4317"
 
 
 def test_the_generated_config_matches_the_deployment_or_is_refused():
@@ -249,3 +290,163 @@ def test_the_canary_is_the_deployments_own():
         f"doctrine.canary is {canary!r} — a placeholder. A leak probe looking "
         "for it cannot fire on the deployed doctrine's real canary."
     )
+
+
+# --- `sandbox_room_for` — the isolated room, shaped like the one it copies ---
+
+
+def test_a_signal_room_keeps_the_sandbox_marker_even_though_its_id_has_slashes():
+    """The bug an audit found, pinned.
+
+    The first cut branched on `"/" in real_id` to spot a Discord
+    `<guild>/<channel>` pair. A SIGNAL group id is base64 and carries slashes
+    too, so every Signal snapshot case — most of the converted corpus — was
+    minted a Discord-shaped NUMERIC id on the Signal platform, losing the
+    `g-` marker that tells a reader, and any cleanup query, that a row belongs
+    to an eval rather than to a real room.
+    """
+    from evals.subject_config import sandbox_room_for
+
+    platform, room_id = sandbox_room_for(
+        ("signal", "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="), "some_case",
+    )
+    assert platform == "signal"
+    assert room_id.startswith("g-"), (
+        f"a Signal sandbox room must keep the g- marker; got {room_id!r}"
+    )
+    assert "/" not in room_id
+
+
+def test_a_discord_room_gets_a_guild_channel_pair_because_the_validator_needs_one():
+    """`nora.policy` refuses a Discord room carrying `voice = true` whose id is
+    not `<guild_id>/<channel_id>` — the guild half is what a spoken utterance
+    is matched on. So the copy must be shaped like the room it copies."""
+    from evals.subject_config import sandbox_room_for
+
+    platform, room_id = sandbox_room_for(
+        ("discord", "100000000000000201/100000000000000202"), "some_case",
+    )
+    assert platform == "discord"
+    guild, _, channel = room_id.partition("/")
+    assert guild.isdigit() and channel.isdigit(), room_id
+
+
+def test_the_sandbox_room_is_distinct_per_case_and_per_real_room():
+    """Isolation is by NAMING — two cases sharing a room id would read each
+    other's rows, which is what `room_for()` exists to prevent. Mixing the real
+    room in as well keeps one case distinct across two anchors."""
+    from evals.subject_config import sandbox_room_for
+
+    a = sandbox_room_for(("signal", "room-one"), "case_a")
+    b = sandbox_room_for(("signal", "room-one"), "case_b")
+    c = sandbox_room_for(("signal", "room-two"), "case_a")
+    assert a != b, "two cases in one real room must not share a sandbox room"
+    assert a != c, "one case at two anchors must not share a sandbox room"
+
+
+def test_the_sandbox_room_never_reproduces_the_room_it_copied():
+    """The isolation itself: a sandbox naming the real room IS the leak."""
+    from evals.subject_config import sandbox_room_for
+
+    for platform, real in (
+        ("signal", "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="),
+        ("discord", "100000000000000201/100000000000000202"),
+    ):
+        assert sandbox_room_for((platform, real), "c")[1] != real
+
+
+def test_materialise_refuses_to_write_when_the_result_disagrees(tmp_path, monkeypatch):
+    """`materialise()` had NO test — an audit found the one place that reads
+    the real deployment and fails closed was itself unguarded, while the test
+    named for it actually called `divergences()`.
+
+    The trigger is a GENERATOR THAT STOPPED WORKING, not a config that
+    disagrees: every setting in `FORCE_OFF` is also in `ALLOWED_TO_DIFFER`, by
+    design, so no input file can make the two legitimately differ. What must
+    be caught is a rewrite rule silently ceasing to apply — after which a run
+    would compose a Nora nobody deployed.
+
+    Falsified both ways: it must RAISE, and it must NOT write the target, or a
+    refused run leaves a stale config for the next one to compose unchecked.
+    """
+    import evals.subject_config as sc
+    from evals.subject_config import materialise
+
+    example = tmp_path / "config.example.toml"
+    example.write_text('[llm]\nmodel = "example-model"\n', encoding="utf-8")
+    deployment = tmp_path / "config.toml"
+    deployment.write_text('[llm]\nmodel = "deployed-model"\n', encoding="utf-8")
+    target = tmp_path / "config.evaluation.toml"
+
+    # The rewriter stops applying: the example comes back verbatim.
+    monkeypatch.setattr(sc, "build", lambda example_toml, deployment_toml: example_toml)
+
+    with pytest.raises(ValueError, match="differs from the deployment"):
+        materialise(example=example, deployment=deployment, target=target)
+
+    assert not target.exists(), (
+        "a refused run must not leave a config behind; the next run would "
+        "compose it with no check at all"
+    )
+
+
+def test_materialise_writes_when_the_result_agrees(tmp_path):
+    """The positive control, so the test above cannot pass by always raising."""
+    from evals.subject_config import materialise
+
+    example = tmp_path / "config.example.toml"
+    example.write_text('[llm]\nmodel = "example-model"\n', encoding="utf-8")
+    deployment = tmp_path / "config.toml"
+    deployment.write_text('[llm]\nmodel = "deployed-model"\n', encoding="utf-8")
+    target = tmp_path / "config.evaluation.toml"
+
+    materialise(example=example, deployment=deployment, target=target)
+
+    assert target.exists()
+    assert 'model = "deployed-model"' in target.read_text(encoding="utf-8")
+
+
+def test_the_gate_looks_at_keys_the_deployment_never_states():
+    """The half of the key space the gate was blind to — the original bug's
+    own shape, one layer down.
+
+    An earlier `divergences()` iterated only DEPLOYMENT-stated keys, reasoning
+    that a key the example carries and the deployment does not "is a code
+    default for both". False: it is the EXAMPLE's value for the subject and
+    `nora/config.py`'s default for production. An audit measured 44 such keys
+    against the real deployment. They agree today by curation alone, and
+    nothing pinned that — so one tidied line in the example, or one new
+    default in `config.py`, moved production and left the subject behind with
+    the gate green.
+    """
+    from evals.subject_config import build, divergences
+
+    example = (_REPO_ROOT / "config.example.toml").read_text(encoding="utf-8")
+    # `participation.reasoning_effort` is example-stated, deployment-silent,
+    # and its code default is "none" — the audit's own worked example.
+    drifted = example.replace('reasoning_effort = "none"', 'reasoning_effort = "high"', 1)
+
+    assert not divergences(build(example, _DEPLOYMENT_FIXTURE), _DEPLOYMENT_FIXTURE), (
+        "the undrifted example must be clean, or this test proves nothing"
+    )
+    found = divergences(build(drifted, _DEPLOYMENT_FIXTURE), _DEPLOYMENT_FIXTURE)
+    assert found, (
+        "an example-only key drifting from nora/config.py's default is a "
+        "subject running settings production does not — the gate must see it"
+    )
+
+
+def test_a_key_whose_default_cannot_be_resolved_is_not_silently_passed():
+    """"Cannot check" is not "agrees".
+
+    `_code_default` returns None for a key it cannot resolve. Treating that as
+    agreement would reopen the hole for exactly the keys hardest to reason
+    about.
+    """
+    from nora.subject import config_default
+
+    assert config_default("no.such.setting.anywhere") is None
+    assert config_default("dreamer.budgets.culture.turns") is None, (
+        "a runtime-keyed container has no static default to compare against"
+    )
+    assert config_default("participation.reasoning_effort") == "none"

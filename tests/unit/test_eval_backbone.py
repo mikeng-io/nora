@@ -882,20 +882,40 @@ def test_meets_grader_an_error_is_error_regardless_of_expect():
 
 @pytest.fixture
 def stated_deployment(tmp_path, monkeypatch):
-    """A deployment of this test's own: one room, one person."""
+    """A deployment of this test's own: one room, THREE people.
+
+    Three, and a named roster, because an audit found the first version could
+    not fail. It wrote an `identity.toml` BYTE-IDENTICAL to
+    `nora.subject.obtain._DEFAULT_IDENTITY`, so `"persons.miles_novak" in identity`
+    was true whether or not the roster wiring existed — the assertion pinned
+    the fixture, not the behaviour. Same for `persons`: the fixture stated
+    `persons = "*"`, which is the very value `policy_for` claims never to
+    widen to.
+
+    Every field of `_ROOM_FIELDS` is stated here for the same reason: the tail
+    (`persons`, `tools`, `location`, `voice`, `proactive`) could be deleted
+    from the copier with every test still green, because no fixture room
+    carried them.
+    """
     import evals.backbone as backbone
 
     (tmp_path / "policy.toml").write_text(
         'default = "deny"\n\n[[conversations]]\n'
         'platform = "signal"\nid = "the-real-group"\n'
-        'unit = "friends"\npersons = "*"\n'
+        'unit = "friends"\n'
+        'persons = ["miles_novak", "someone_else", "a_third_person"]\n'
         'label = "A Room"\ndescription = "what kind of room this is"\n'
-        'relevance_gate = true\nhome_room = true\n',
+        'tools = ["pulse"]\nlocation = true\n'
+        'relevance_gate = true\nhome_room = true\nproactive = true\n',
         encoding="utf-8",
     )
     (tmp_path / "identity.toml").write_text(
         '[persons.miles_novak]\nname = "Miles"\n'
-        '[[persons.miles_novak.signal]]\nphone = "+852111"\n',
+        '[[persons.miles_novak.signal]]\nphone = "+852111"\n'
+        '[persons.someone_else]\nname = "Someone Else"\n'
+        '[[persons.someone_else.signal]]\nphone = "+852222"\n'
+        '[persons.a_third_person]\nname = "A Third Person"\n'
+        '[[persons.a_third_person.signal]]\nphone = "+852333"\n',
         encoding="utf-8",
     )
     monkeypatch.setattr(backbone, "_DEPLOYMENT_DIR", tmp_path)
@@ -904,7 +924,6 @@ def stated_deployment(tmp_path, monkeypatch):
     yield tmp_path
     backbone._deployment_policy.cache_clear()
     backbone._deployment_identity.cache_clear()
-
 
 
 async def test_drive_seeds_a_snapshot_case_through_the_sandbox(monkeypatch, stated_deployment):
@@ -973,6 +992,7 @@ async def test_a_snapshot_case_composes_the_real_rooms_policy_and_roster(
         captured["policy"] = spec.policy
         captured["identity"] = spec.identity
         captured["room"] = spec.room
+        captured["workspace"] = spec.overrides["memory.workspace_id"]
         return await _fake_obtain(spec)
 
     async def fake_sandbox(_subject: object, **_kwargs: object) -> SimpleNamespace:
@@ -997,18 +1017,32 @@ async def test_a_snapshot_case_composes_the_real_rooms_policy_and_roster(
     await backbone._drive(case, Spec(database_url="x", entry="dreamer"))
 
     policy = str(captured["policy"])
-    # Carried from the REAL room's entry.
+    # EVERY field of `_ROOM_FIELDS`, because dropping the tail was green.
     assert 'description = "what kind of room this is"' in policy
+    assert 'label = "A Room"' in policy
     assert "relevance_gate = true" in policy
     assert "home_room = true" in policy
-    assert 'label = "A Room"' in policy
+    assert "proactive = true" in policy
+    assert "location = true" in policy
+    assert 'tools = ["pulse"]' in policy
+    # `persons` copied VERBATIM, never widened to "*" — which admits everyone,
+    # i.e. MORE than the room being reconstructed.
+    assert '"someone_else"' in policy and '"a_third_person"' in policy
+    assert 'persons = "*"' not in policy, (
+        "widening the roster admits more than the real room does"
+    )
     # Swapped for the isolated ones — never the real room's.
     assert "the-real-group" not in policy, (
         "the sandbox must not name the room it copied; that is the isolation"
     )
     assert f'id = "{captured["room"][1]}"' in policy
-    # The deployment's roster, not the one-person default.
-    assert "persons.miles_novak" in str(captured["identity"])
+    assert f'unit = "{captured["workspace"]}"' in policy
+
+    # The deployment's roster — checked against a person the ONE-PERSON
+    # default does not contain, so reverting the wiring cannot pass.
+    identity = str(captured["identity"])
+    assert "persons.a_third_person" in identity
+    assert identity != backbone._SPEC_DEFAULT_IDENTITY
 
 
 async def test_drive_hands_the_sandbox_the_cases_own_instant_not_the_wall_clock(
