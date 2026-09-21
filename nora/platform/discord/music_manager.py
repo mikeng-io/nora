@@ -117,6 +117,7 @@ class MusicPlayerManager:
         autoplay_prewarm_seconds: float = 0.0,
         playback_probe: PlaybackProbe | None = None,
         read_playback: ReadPlayback | None = None,
+        metrics: Any | None = None,
         generation_probe: GenerationProbe | None = None,
         drop_voice_session: DropVoiceSession | None = None,
         exit_voice_session: ExitVoiceSession | None = None,
@@ -131,6 +132,9 @@ class MusicPlayerManager:
         self._autoplay_prewarm_seconds = autoplay_prewarm_seconds
         self._playback_probe = playback_probe
         self._read_playback = read_playback
+        # Optional on purpose: every other collaborator here is injected the
+        # same way, and a manager built without metrics must still run.
+        self._metrics = metrics
         self._generation_probe = generation_probe
         self._drop_voice_session = drop_voice_session
         self._exit_voice_session = exit_voice_session
@@ -349,6 +353,14 @@ class MusicPlayerManager:
             player = self._players.get(guild_id)
             if player is None:
                 return False
+            if self._metrics is not None:
+                try:
+                    self._metrics.inc(
+                        "nora_music_stream_failed_total",
+                        guild_id=guild_id, reason=reason or "unknown",
+                    )
+                except Exception:  # telemetry must never break playback
+                    log.exception("music stream-failed metric failed for guild %s", guild_id)
             pending = None
             locator = player.now_playing_locator
             if locator is not None and self._take_stream_retry(guild_id, locator):
@@ -870,6 +882,12 @@ class MusicPlayerManager:
             # Nothing is claimed, so there is nothing to falsify — and the
             # delta must not carry across a gap in which no track was live.
             self._last_reading.pop(guild_id, None)
+            if self._metrics is not None:
+                # Drop the belief to 0 rather than leaving the last value
+                # standing: a stale 1 here would keep the divergence alert
+                # firing forever after a track legitimately ended.
+                self._metrics.gauge("nora_music_expected_playing", 0.0, guild_id=guild_id)
+                self._metrics.gauge("nora_music_controller_playing", 0.0, guild_id=guild_id)
             return PlaybackVerdict.OK
 
         current = await read_playback(guild_id)
@@ -884,8 +902,35 @@ class MusicPlayerManager:
         # not reset the delta and hand the next poll a free pass.
         if verdict is not PlaybackVerdict.UNKNOWN:
             self._last_reading[guild_id] = current
+        self._record_liveness(guild_id, verdict)
         await self._act_on_verdict(guild_id, verdict, current, previous)
         return verdict
+
+    def _record_liveness(self, guild_id: str, verdict: PlaybackVerdict) -> None:
+        """The two series an alert can be written against.
+
+        `expected` is nora's belief; `controller` is what the controller
+        reports. Their DIVERGENCE is the failure itself, not a proxy for it —
+        which is why both are published rather than one derived 'healthy'
+        flag that would have to decide, in code, what the alert should
+        decide.
+
+        On UNKNOWN the controller gauge is NOT set to 0. A gauge that could
+        not be measured must not assert a value: 0 would read as 'definitely
+        not playing' and is exactly the fail-open reading this whole watch
+        exists to remove."""
+        metrics = self._metrics
+        if metrics is None:
+            return
+        try:
+            metrics.inc("nora_music_liveness_total", guild_id=guild_id, verdict=verdict.value)
+            metrics.gauge("nora_music_expected_playing", 1.0, guild_id=guild_id)
+            if verdict is PlaybackVerdict.UNKNOWN:
+                return
+            playing = 1.0 if verdict in (PlaybackVerdict.OK, PlaybackVerdict.PAUSED) else 0.0
+            metrics.gauge("nora_music_controller_playing", playing, guild_id=guild_id)
+        except Exception:  # telemetry must never break playback
+            log.exception("music liveness metrics failed for guild %s", guild_id)
 
     async def _act_on_verdict(
         self,
