@@ -160,9 +160,10 @@ rather than assumed away.
 ## 5. Open questions — recorded, not planned
 
 - **Does the doctrine belong in the same split?** The same lever points at the
-  8,288-token doctrine block, and whitefish-c0 is already moving one rule out
-  of doctrine onto a tool result
-  (`design/instagram-adoption/06-retention-and-custody.md`). But doctrine is
+  8,288-token doctrine block, and the Instagram workstream is already moving
+  one rule out of doctrine onto a tool result — a story must be reported AS a
+  story, with when it was posted, rather than restated as fact. That bundle is
+  on its own branch and not on master at the time of writing. But doctrine is
   authored, operator-owned and governed by `change_policy`; `identity.md`,
   `voice.md` and `constraints.md` are `operator-only`. Separate decision,
   separate owner.
