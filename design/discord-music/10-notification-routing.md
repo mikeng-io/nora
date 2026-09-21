@@ -124,8 +124,11 @@ It does **not** move:
 
 - **A slash command's own reply.** The person who typed `/music skip` is
   looking at the channel they typed it in; answering somewhere else would be
-  worse than the split it would fix. The `_NowPlayingControls` panel stays
-  with its reply for the same reason — it is a control, not an announcement.
+  worse than the split it would fix. (This once also covered the
+  `_NowPlayingControls` button panel, which travelled with that reply for the
+  same reason. The panel was REMOVED 2026-09-22 — music is driven by asking
+  Nora or by a slash command, and a third control surface was not worth the
+  interaction deadline it kept losing. Only the reply itself remains.)
 - **Nora's conversational reply on the tag path.** A reply lands in the room
   she was tagged in, for every tool; music is not special
   (`09-message-conventions.md` D4).

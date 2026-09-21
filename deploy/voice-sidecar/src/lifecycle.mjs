@@ -112,7 +112,9 @@ export function createLifecycle({
           // after that was dropped in silence. `attach` is a no-op when the
           // player is already the current one, so this costs nothing when
           // nothing is wrong.
-          onJoined(session, generation);
+          // Guarded: this path previously returned 200 `already:true` with no
+          // arbiter call at all, so a null session must not turn it into a 500.
+          if (session?.player) onJoined(session, generation);
           return { generation, channelId, already: true };
         }
         throw httpError(409, 'connected_elsewhere');
