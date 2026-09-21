@@ -21,15 +21,19 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from nora.domain.media import MediaBlob
 from nora.domain.models import NormalizedMessage
+from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import Standing
 from nora.infra.sql import create_sql_engine
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.notes import SqlNoteStore
+from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.standing import SqlStandingStore
 
 from .obtain import Subject
@@ -125,6 +129,39 @@ class NoteSeed:
 
 
 @dataclass(frozen=True, slots=True)
+class ReminderSeed:
+    """One reminder OUTSTANDING in the room, as the reminder tier's own fields.
+
+    Deliberately smaller than `domain.Reminder`: a seed states what a case can
+    know — who asked, what for, and when it comes due — and everything else is
+    the store's to assign or is fixed by the fact that the row is outstanding.
+    `state` is not a field because there is only one state a seeded row can be
+    in; `fired_at`/`outcome` are not fields for the same reason.
+
+    `due_in_seconds` is RELATIVE, like `standing_age_hours` and for the same
+    reason: an absolute instant written into a case goes stale every calendar
+    day, while «due in four hours» keeps meaning what it meant. A sandbox
+    seeded from a real snapshot passes the real offset it measured, so nothing
+    is rounded away there either.
+    """
+
+    text: str
+    #: Seconds from `now_ms` to `due_at`. NEGATIVE is legal and is the
+    #: interesting case: a row already overdue is exactly what the proactive
+    #: path fires on, and a seed that could not express one could not set that
+    #: path up at all.
+    due_in_seconds: float
+    #: Seconds from `now_ms` back to `created_at`. How long the room has been
+    #: waiting on it, which is part of what a turn reads.
+    created_seconds_ago: float = 0.0
+    requester_person_id: str = _KNOWN_PERSON
+    #: `kind` names WHAT the row is (DEC-139). `"reminder"` is the whole of
+    #: the pre-DEC-139 table; `"proactive"` is the row a proactive act fires.
+    kind: str = "reminder"
+    payload: Mapping[str, str] | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Written:
     """What `know()` laid down, and where it landed.
 
@@ -211,6 +248,12 @@ class Knowledge:
     #: ages the labels were assigned against lived in the driver.
     spacing_seconds: int = 60
     notes: tuple[NoteSeed, ...] = field(default_factory=tuple)
+
+    #: What the room was still WAITING on. Written through the real
+    #: `SqlReminderStore.create`, keyed on the subject's own room, so a
+    #: proactive turn reads them back through `ReminderStore.due` /
+    #: `pending_for` exactly as production does.
+    reminders: tuple[ReminderSeed, ...] = field(default_factory=tuple)
 
     #: The room's CULTURE ACCOUNT — how this room TALKS, as one revision body.
     #:
@@ -678,6 +721,44 @@ async def know(
                     established_by="case-seed",
                     now_ms=now_ms + n,
                     anchor_date=note.anchor_date,
+                )
+        if knowledge.reminders:
+            # THE REAL STORE, so the row a proactive turn reads is the row
+            # production would have read. `create` is the same method the
+            # `remind` tool calls; nothing here writes the table directly.
+            #
+            # `state` is PENDING and `fired_at`/`outcome` are None on every
+            # seeded row, which is not a default being accepted but the whole
+            # definition of the tier: `Knowledge.reminders` states what the
+            # room was still WAITING on, and a row that had already fired was
+            # not something it was waiting on.
+            # NOT `rows`: that name is already the message-id map this
+            # function returns as `Written.rows`, and shadowing it made
+            # `Sandboxed.rows` come back as a store. Caught by
+            # `test_the_returned_map_translates_a_source_row_id_into_the_copy`.
+            reminder_store = SqlReminderStore(engine)
+            base = datetime.fromtimestamp(now_ms / 1000, tz=UTC)
+            for seed in knowledge.reminders:
+                await reminder_store.create(
+                    Reminder(
+                        # v4, not derived from the text: two cases seeding the
+                        # same reminder text must be two rows, and a
+                        # content-derived id would silently make them one
+                        # under the primary key.
+                        id=uuid.uuid4(),
+                        requester_person_id=seed.requester_person_id,
+                        platform=platform,
+                        conversation_id=conversation_id,
+                        conversation_type="group",
+                        text=seed.text,
+                        created_at=base - timedelta(seconds=seed.created_seconds_ago),
+                        due_at=base + timedelta(seconds=seed.due_in_seconds),
+                        state=ReminderState.PENDING,
+                        fired_at=None,
+                        outcome=None,
+                        kind=seed.kind,
+                        payload=seed.payload,
+                    )
                 )
         if knowledge.culture is not None:
             # `established_by` is NOT NULL on `culture_revision`

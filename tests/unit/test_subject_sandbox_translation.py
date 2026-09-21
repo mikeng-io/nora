@@ -22,11 +22,15 @@ it is, and it would read as coverage.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from uuid import UUID
+
 import pytest
 
 from nora.domain.culture import CultureRevision
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.notes import Note, NoteRevision
+from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import Standing
 from nora.infra.sql.snapshot import Snapshot
 from nora.subject.sandbox import as_knowledge
@@ -97,6 +101,7 @@ def _shot(**over: object) -> Snapshot:
         "standing": None,
         "culture": None,
         "notes": (),
+        "reminders": (),
     }
     base.update(over)
     return Snapshot(**base)  # type: ignore[arg-type]
@@ -260,3 +265,63 @@ def test_an_empty_snapshot_translates_to_an_empty_knowledge() -> None:
     assert knowledge.standing_age_hours is None
     assert knowledge.culture is None
     assert knowledge.notes == ()
+
+
+# --- the reminder tier -------------------------------------------------------
+
+
+def _reminder(**over: object) -> Reminder:
+    base: dict[str, object] = {
+        "id": UUID("11111111-2222-3333-4444-555555555555"),
+        "requester_person_id": "tyler_cortez",
+        "platform": "signal",
+        "conversation_id": "group-one",
+        "conversation_type": "group",
+        "text": "ask the room where dinner is",
+        "created_at": _at(BEFORE_MS - 6 * HOUR),
+        "due_at": _at(BEFORE_MS + 2 * HOUR),
+        "state": ReminderState.PENDING,
+        "fired_at": None,
+        "outcome": None,
+    }
+    base.update(over)
+    return Reminder(**base)  # type: ignore[arg-type]
+
+
+def _at(ms: int) -> datetime:
+    return datetime.fromtimestamp(ms / 1000, tz=UTC)
+
+
+def test_a_reminder_keeps_the_offsets_it_really_had() -> None:
+    """The clock is frozen at the instant, so `know()` reproduces `due_at`
+    exactly: the seed carries the OFFSET the real row had, not a new one."""
+    seed = as_knowledge(_shot(reminders=(_reminder(),))).reminders[0]
+    assert seed.due_in_seconds == 2 * HOUR / 1000
+    assert seed.created_seconds_ago == 6 * HOUR / 1000
+
+
+def test_an_overdue_reminder_stays_overdue_by_the_same_margin() -> None:
+    """The case the proactive path is about. A negative offset is the whole
+    reason `due_in_seconds` is signed rather than a duration."""
+    overdue = _reminder(due_at=_at(BEFORE_MS - 90 * 60 * 1000))
+    seed = as_knowledge(_shot(reminders=(overdue,))).reminders[0]
+    assert seed.due_in_seconds == -5400.0
+
+
+def test_the_requester_travels_because_it_is_a_handle_not_an_account() -> None:
+    seed = as_knowledge(_shot(reminders=(_reminder(),))).reminders[0]
+    assert seed.requester_person_id == "tyler_cortez"
+
+
+def test_a_proactive_row_keeps_its_kind_and_payload() -> None:
+    """`kind` is what the row IS (DEC-139) and a proactive act fires on it, so
+    a translation that dropped it would turn every act case into a plain
+    reminder and measure nothing the case is about."""
+    row = _reminder(kind="proactive", payload={"note_id": "n-1"})
+    seed = as_knowledge(_shot(reminders=(row,))).reminders[0]
+    assert seed.kind == "proactive"
+    assert seed.payload == {"note_id": "n-1"}
+
+
+def test_a_snapshot_with_no_reminders_seeds_none() -> None:
+    assert as_knowledge(_shot()).reminders == ()
