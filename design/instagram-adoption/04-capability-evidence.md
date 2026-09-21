@@ -115,6 +115,10 @@ All on the **same authenticated session**, no second credential:
 | `FetchReel([igid])` | PASS | full `user_reel`: per-item media type, playable CDN url, `taken_at`; per-reel `expiring_at`, `media_ids`, `seen` |
 | story read marks it viewed? | **NO** | `seen` unchanged across two reads 20s apart, with a newer item outside the watermark both times |
 | member → igid join | PASS | `GetThread` → `Users[].ID` is the igid `FetchReel`/`GetProfile` take |
+| multi-sender attribution (3-person room) | PASS | each message's `sender_fbid` matches that member's roster `interop_messaging_user_fbid` |
+| member added to the room | PASS | `ADD_PARTICIPANT_XMAT`, attributed to the member who did the adding |
+| message from a member other than the operator | PASS | `@gemini_.xoxo.04` text and image, both correctly attributed |
+| one member `@`-mentioning ANOTHER (not Nora) | UNMEASURED | the last ambient behaviour two-person data could not exercise |
 | `SearchUsers(query)` | PASS | 2,941 bytes of results |
 | `FetchMedia(mediaID, shortcode)` | not exercised | `responses.Items` — full post object with caption, like count, usertags |
 

@@ -75,6 +75,23 @@ own members; one is only needed for people outside it.
 That is what makes Phase 2's circle-first scope cheap: the circle is the
 thread membership, and it resolves itself.
 
+Verified on a three-person room (2026-09-21), after a second member joined:
+
+```
+member @nka_bpumvg        interop_fbid=110966695387753     ID=221731317
+member @gemini_.xoxo.04   interop_fbid=12116372067347151   ID=70503037937
+```
+
+Every message's `sender_fbid` matched that member's `interop_messaging_user_fbid`
+exactly, so attribution across a real roster is an id join and never a name
+match. `ADD_PARTICIPANT_XMAT` arrived as an ordinary message attributed to the
+member who did the adding, which is how roster changes reach the adapter.
+
+**Do not validate the id by shape.** The two interop fbids above are
+`110966695387753` (15 digits) and `12116372067347151` (17 digits, sharing the
+`1784…` prefix with Nora's own). The space is not uniformly formatted, so any
+length or prefix check would reject real members.
+
 ## Thread ids are also two
 
 | Field | Value (group "Ridgeline") | Used for |
