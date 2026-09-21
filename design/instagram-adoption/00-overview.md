@@ -17,6 +17,7 @@ edges:
   - {dst: 07-social-boundary-and-scope.md, rel: details, provenance: asserted}
   - {dst: 08-social-adapter-architecture.md, rel: details, provenance: asserted}
   - {dst: 09-tool-surface-and-naming.md, rel: details, provenance: asserted}
+  - {dst: 10-discovery-retrieval-and-paging.md, rel: details, provenance: asserted}
 ---
 
 # Instagram Adoption — Overview, Verdict & Phases
