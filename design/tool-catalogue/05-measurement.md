@@ -112,9 +112,33 @@ this is invisible to a log grep — no tool logged its own name, so zero was
 consistent with "every turn" and with "never". Measure it on the eval suite
 with the counter from `04` §7, not from production logs.
 
-**2f — Per-turn accounting. The instrument exists; do not build one.**
+**2f — Per-turn accounting. The building block exists; the wiring does not.**
 
-Verified on master 2026-09-22, after the eval owner pointed at it:
+**Corrected 2026-09-22, same day it was written.** An earlier version of this
+section said "the instrument exists; do not build one." That was wrong, and
+the way it went wrong is worth keeping: a peer named `traced_nora_task`, I
+verified that it exists and that a test pins it, and I did not check whether
+anything CALLS it. Verifying the artefact named is not verifying the claim
+made.
+
+`evals/scenarios.py:231` is the whole correction:
+
+```python
+experiment = Experiment(cases=cases, evaluators=[MeetsGrader()])
+return experiment, nora_task(spec)          # UNTRACED
+```
+
+Every corpus runs the untraced task under a single `MeetsGrader`.
+`traced_nora_task` has exactly one caller in the tree — its own unit test. **No
+corpus produces a trajectory today**, so nothing can count `InferenceSpan`s
+yet.
+
+What that changes: gate 2f is **not closed**, it is **owned**, by the eval
+suite's session. It is real work — a traced task path, the SDK evaluator, and
+an expected-tool label (which fits in the free-form `metadata`, so no corpus
+format change). Not a dict entry.
+
+What is still true, and is why this is wiring rather than construction:
 
 `evals/backbone.py:649` `traced_nora_task(spec)` is
 `eval_task(TracedHandler())(nora_task(spec))`. `TracedHandler.after()` does
@@ -135,6 +159,12 @@ From that trajectory, per TURN and by construction:
 Constraint carried by `traced_nora_task`'s own docstring: the caller must hold
 `handler` for the run's lifetime (one shared exporter) and pass
 `max_workers=1` — serial only.
+
+**The 2c baseline must be taken on BOTH sides of the switch.** Changing which
+schemas are resident changes the prompt, so any number measured before PR C is
+incomparable to one measured after — and the prefix cache invalidates with it,
+which surfaces as cost rather than as an error. The same anchored cases run
+either side, before and after, or the comparison is not one.
 
 **A caution on the 3-vs-4 call question.** A driven case recorded in
 `design/evaluation/10-the-scenario-map.md` §13 shows **four** `InferenceSpan`s
