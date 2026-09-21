@@ -103,6 +103,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 import urllib.parse
 from typing import Any
 
@@ -457,11 +458,44 @@ def _render(items: list[dict[str, Any]]) -> str:
     "this particular envelope carries nothing unsafe today" is a fact about
     today and a wrapper is what makes it not matter.
     """
+    now = int(time.time())
     lines = []
     for item in items:
-        when = f" · {item['taken_at']}" if "taken_at" in item else ""
+        when = _age(item.get("taken_at"), now)
         lines.append(f"[{item['kind']} {item['url']}]{when}")
     return "\n".join(lines)
+
+
+def _age(taken_at: Any, now: int) -> str:
+    """A story item's time, rendered as an AGE rather than an epoch.
+
+    The result's note asks the model to attribute what it saw — "his story
+    from this morning", never "he was at the gym". That is a judgement about
+    WHEN, and `1789935632` cannot ground it: the model has no now-anchor, so
+    it either declines to attribute or invents an interval. Measured elsewhere
+    in this system (the Relevance Gate, 2026-09-09/10): three questions about
+    time against an input carrying none, and rendering an age cut the error
+    rate by two thirds. Rewriting the instruction did not — every rewrite was
+    worse, one of them unsafely so.
+
+    So the age is the fix and the note is not. Both are kept: the note says
+    what to do, this says what with.
+
+    The epoch stays in `items[].taken_at` for anything that computes; this
+    renders only the line the model reads."""
+    epoch = _as_int(taken_at)
+    if epoch is None:
+        return ""
+    delta = now - epoch
+    if delta < 0:  # clock skew between us and Instagram — say nothing rather than "in 3h"
+        return ""
+    if delta < 3600:
+        return f" · {max(1, delta // 60)}m ago"
+    if delta < 86400:
+        return f" · {delta // 3600}h ago"
+    # A story older than 24h should not exist; if one arrives, say so plainly
+    # rather than rendering a day count that implies it is still live.
+    return f" · {delta // 86400}d ago (past its 24h expiry)"
 
 
 def _as_int(value: Any) -> int | None:

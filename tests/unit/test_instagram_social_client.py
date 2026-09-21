@@ -108,6 +108,51 @@ async def test_an_item_carries_only_the_four_reference_fields(client):
     assert "beach" not in str(out).lower()
 
 
+async def test_a_story_line_carries_an_AGE_not_an_epoch(client):
+    """The result's note asks the model to attribute what it saw — "his story
+    from this morning", never "he was at the gym". That is a judgement about
+    WHEN, and `1789935632` cannot ground it: the model has no now-anchor, so
+    it either declines to attribute or invents an interval.
+
+    Measured elsewhere in this system (the Relevance Gate, 2026-09-09/10):
+    three questions about time against an input carrying none. Rendering an
+    age cut the error rate by two thirds; rewriting the instruction made it
+    worse every time, once unsafely. So the age is the fix and the note is
+    not — the note says what to do, the age says what with.
+
+    The epoch stays in `items[].taken_at` for anything that computes on it;
+    only the LINE the model reads is rendered."""
+    import time as _time
+
+    box, provider = client
+    now = int(_time.time())
+    box["items"] = [
+        _reel(id="1", taken_at=now - 3 * 3600),
+        _reel(id="2", kind="image", taken_at=now - 10 * 60),
+    ]
+    out = await provider.read(**_READ)
+    assert "3h ago" in out["text"]
+    assert "10m ago" in out["text"]
+    assert str(now - 3 * 3600) not in out["text"], "the raw epoch must not reach the model's line"
+    # …and the machine-usable epoch survives where a caller can compute on it.
+    assert out["items"][0]["taken_at"] == now - 3 * 3600
+
+
+async def test_a_story_line_never_invents_a_time_it_does_not_have(client):
+    """Absent, unusable, or in the future — the line simply carries no time.
+    A future `taken_at` is clock skew between us and Instagram, not a story
+    that has not happened yet, so it says nothing rather than "in 3h"."""
+    import time as _time
+
+    box, provider = client
+    now = int(_time.time())
+    box["items"] = [_reel(id="1", taken_at=now + 3600)]
+    out = await provider.read(**_READ)
+    line = next(ln for ln in out["text"].splitlines() if ln.startswith("[video"))
+    assert " \u00b7 " not in line, f"a time was rendered from an unusable value: {line}"
+    assert "ago" not in line
+
+
 async def test_the_item_url_is_rendered_as_a_media_fetch_marker(client):
     """`[video https://…]` is `media_fetch`'s own documented shape, which is
     what makes the second call a thing the model can actually make. A result

@@ -103,7 +103,7 @@ exactly one tier:
 | **0 — the room** | someone in a room Nora is in | **derived**: `GetThread` → `Users[].ID` | **allowed** |
 | **1 — the circle** | a known person in the workspace, not in this room | person index (`identity.toml`) | allowed, per-person flag |
 | **2 — the named** | a handle someone in the room typed | explicit in the conversation | allowed, never resolved implicitly |
-| **3 — the open network** | explore, search results, arbitrary URLs | none | **off** |
+| **3 — the open network** | `explore`, `followers`, `following`, `saved` | none | **off** |
 
 The ladder is the boundary, and its shape is deliberate:
 
@@ -115,8 +115,29 @@ The ladder is the boundary, and its shape is deliberate:
   and has no per-person capability; that gap is real and blocks Tier 1, not
   Tier 0.
 - **Tier 2 requires the handle to have been typed by a person**, never
-  inferred by the model from a name. This is the `web_search` screening shape
+  inferred by the model from a name. **Only half of this is enforceable.**
+  Whether a human typed a handle is a fact about the conversation that neither
+  the tool nor the router can see; `target` reaches them straight from the
+  model. What *is* enforceable, and is enforced, is that Nora never resolves a
+  Tier 2 subject through the person index herself — asserted as a negative
+  (the index is never consulted), because "we did not look anything up" leaves
+  no trace in a status. Stated plainly so the unenforceable half is not
+  mistaken for a control. This is the `web_search` screening shape
   (design/14 §2.2) applied to identity: the model may not invent a subject.
+### `search` is Tier 2 on the QUERY, and that is a real gap
+
+An earlier revision put "search results" at Tier 3 while the Tier 3 bullet
+enumerated only `explore`/`followers`/`following`/`saved` — a contradiction,
+and `x/search` and `instagram/search` are both in the live vocabulary today.
+
+Resolved as **Tier 2 on the query**: a person typed the thing being searched
+for, so the *act* is Tier 2. **But every account a search returns is a subject
+Nora just read without any tier applying to it**, and nothing in the code
+distinguishes the two. This is the one place the ladder is knowingly
+incomplete. It is recorded rather than closed because narrowing it means
+deciding what a search result *is* — a subject, or a pointer to one — and that
+is an operator call, not an implementation detail.
+
 - **Tier 3 is off by default** and is the only tier where Nora reads people
   who have no relationship to the conversation at all. `explore`,
   `followers`, `following` and `saved` all live here.
