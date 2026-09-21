@@ -256,9 +256,11 @@ func TestSendReturnsTheContractResultShape(t *testing.T) {
 	if body["ok"] != true || body["id"] != "mid.$sent" {
 		t.Fatalf("result = %v", body)
 	}
-	// The long id was used, and it never appeared on the wire the caller sees.
-	if f.textReq.IGThreadIGID == nil || *f.textReq.IGThreadIGID != threadLong {
-		t.Errorf("send used %v", f.textReq.IGThreadIGID)
+	// The SHORT id is what /send carries — measured arriving 2026-09-22, and
+	// what upstream uses — and the long id never appears on the wire the
+	// caller sees, in either direction.
+	if f.textReq.IGThreadIGID == nil || *f.textReq.IGThreadIGID != threadShort {
+		t.Errorf("send used %v, want the short id", f.textReq.IGThreadIGID)
 	}
 	if strings.Contains(rec.Body.String(), threadLong) {
 		t.Error("the long thread id leaked into the HTTP response")
@@ -282,18 +284,20 @@ func TestSendMediaCarriesNoCaption(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("answered %d: %s", rec.Code, rec.Body.String())
 	}
-	if f.mediaReq.ThreadID != threadLong {
-		t.Errorf("media thread = %q", f.mediaReq.ThreadID)
+	if f.mediaReq.ThreadID != threadShort {
+		t.Errorf("media thread = %q, want the short id", f.mediaReq.ThreadID)
 	}
 	if f.textReq != nil {
 		t.Error("/send-media also sent a text message")
 	}
 }
 
-// THE ID SPACE IS MIXED PER VERB, and the route table is where that stops
-// being a comment and starts being behaviour. /react takes the SHORT id and
-// /unsend the LONG one; the fake refuses the other spelling the way the wire
-// does, so a route that swaps them fails here rather than in a group chat.
+// FOUR VERBS SHORT, ONE LONG, and the route table is where that stops being a
+// comment and starts being behaviour. /react is the verb that DISCRIMINATES —
+// the long id is accepted and the reaction never lands — so the fake refuses
+// the other spelling the way the wire does, and a route that swaps them fails
+// here rather than in a group chat. /unsend is the one that is genuinely long,
+// on both sides.
 func TestReactAndUnsendSucceedOnTheirOwnIDSpaces(t *testing.T) {
 	f := &fakeIG{}
 	b := newTestBridge(t, f)
@@ -334,6 +338,40 @@ func TestReactThatDoesNotLandIsNotA200(t *testing.T) {
 	})
 	if rec.Code == http.StatusOK {
 		t.Fatalf("an unverifiable reaction answered 200: %s", rec.Body.String())
+	}
+}
+
+// An unsend the mutation did not confirm still answers 200, and says so in the
+// body rather than only in a log line nobody will read. A false 500 here
+// strands probe messages in a real group; the field has never been observed
+// against an unsend known to have failed, and upstream discards it.
+func TestAnUnconfirmedUnsendStillAnswers200AndSaysSo(t *testing.T) {
+	// The route resolves room_id to the LONG id, which the fake confirms, so
+	// the unconfirmed path can only be reached by making the MUTATION answer
+	// false — which is the thing being tested. Driving it any other way would
+	// be a test that cannot fail.
+	b := newTestBridge(t, &fakeIG{unconfirmedUnsend: true})
+	rec := post(t, b, "/unsend", map[string]any{"room_id": threadShort, "message_id": "mid.$x"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/unsend answered %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["ok"] != true {
+		t.Fatalf("body = %v", body)
+	}
+	if body["confirmed"] != false {
+		t.Fatalf("confirmed = %v, want an explicit false", body["confirmed"])
+	}
+
+	// And a CONFIRMED unsend does not carry the field, so its presence means
+	// something rather than being noise on every call.
+	ok := post(t, newTestBridge(t, &fakeIG{}), "/unsend",
+		map[string]any{"room_id": threadShort, "message_id": "mid.$x"})
+	if strings.Contains(ok.Body.String(), "confirmed") {
+		t.Fatalf("a confirmed unsend still reported confirmed: %s", ok.Body.String())
 	}
 }
 

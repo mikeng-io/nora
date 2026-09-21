@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -32,15 +33,20 @@ const (
 // What is modelled here is what the probes actually observed, including the
 // part that makes the bug invisible in production:
 //
-//   - /send, /send-media, /unsend LAND with the LONG thread id. Addressed with
-//     anything else they are ACCEPTED — no error — and produce no message.
-//   - /react lands with the SHORT id. Addressed with the LONG one it is
+//   - /send takes EITHER id. Measured 2026-09-22: a carrier message sent with
+//     the SHORT id arrived, and the long id was already known to. So the fake
+//     accepts both and refuses only an id that names no thread at all — which
+//     is all the grounding a send admits, and the reason its id-space test is
+//     labelled pinned rather than grounded.
+//   - /react lands ONLY with the SHORT id. Addressed with the LONG one it is
 //     accepted, returns 200, and the reaction is ABSENT from the post-state
 //     list the mutation itself returns. That absence is the only signal there
-//     is, which is why the bridge now reads it.
-//
-// So a test that asserts "the reaction arrived" fails if the bridge goes back
-// to the long id, rather than passing because the fake shrugged.
+//     is, which is why the bridge now reads it — and why a test asserting
+//     "the reaction arrived" fails if the bridge goes back to the long id,
+//     rather than passing because the fake shrugged.
+//   - /unsend reports `direct_unsend_message` honestly. The bridge DEGRADES on
+//     a false rather than failing, so the fake is what proves both halves: the
+//     200 still happens, and the observation is not swallowed.
 
 type fakeIG struct {
 	mu sync.Mutex
@@ -62,6 +68,11 @@ type fakeIG struct {
 	// emptySend makes a send return a null message with NO error, which is how
 	// the wire produced `{"ok":true}` with no id.
 	emptySend bool
+	// unconfirmedUnsend makes `direct_unsend_message` come back false even for
+	// a correctly addressed unsend. No probe has ever seen the field do that;
+	// it is here so the DEGRADATION can be exercised, because a test that can
+	// only reach the confirmed path is a test that cannot fail.
+	unconfirmedUnsend bool
 }
 
 func (f *fakeIG) SendMessage(_ context.Context, req *slidetypes.SendTextRequest) (*slidetypes.SendTextResponse, error) {
@@ -71,7 +82,7 @@ func (f *fakeIG) SendMessage(_ context.Context, req *slidetypes.SendTextRequest)
 	if f.sendErr != nil {
 		return nil, f.sendErr
 	}
-	if f.emptySend || req.IGThreadIGID == nil || *req.IGThreadIGID != threadLong {
+	if f.emptySend || req.IGThreadIGID == nil || !knownThread(*req.IGThreadIGID) {
 		// Accepted, and nothing arrived. No error: that is the point.
 		return &slidetypes.SendTextResponse{}, nil
 	}
@@ -85,7 +96,7 @@ func (f *fakeIG) SendMedia(_ context.Context, req *slidetypes.SendMediaRequest) 
 	if f.sendErr != nil {
 		return nil, f.sendErr
 	}
-	if f.emptySend || req.ThreadID != threadLong {
+	if f.emptySend || !knownThread(req.ThreadID) {
 		return &slidetypes.SendMediaResponse{}, nil
 	}
 	return &slidetypes.SendMediaResponse{Message: slidetypes.SentMessage{MessageID: "mid.$media"}}, nil
@@ -133,7 +144,7 @@ func (f *fakeIG) UnsendMessage(_ context.Context, req *slidetypes.UnsendMessageR
 	// whether it retracted anything. Addressed with the wrong thread it does
 	// not, and says so — which is exactly the field the bridge used to drop.
 	return &slidetypes.UnsendMessageResponse{
-		DirectUnsendMessage: req.SendData.ThreadID == threadLong,
+		DirectUnsendMessage: !f.unconfirmedUnsend && req.SendData.ThreadID == threadLong,
 	}, nil
 }
 
@@ -155,6 +166,11 @@ func (f *fakeIG) FetchThreadID(_ context.Context, short int64) (*instameow.Threa
 	return &instameow.ThreadIGIDs{ShortID: threadShort, LongID: threadLong}, nil
 }
 
+// knownThread is the send legs' only discrimination: measured, BOTH id spaces
+// deliver a text message, so the fake can honestly refuse only an id that
+// names no thread at all.
+func knownThread(id string) bool { return id == threadShort || id == threadLong }
+
 func newIndex(f *fakeIG) *threadIndex { return newThreadIndex(f.FetchThreadID) }
 
 // --- the two-thread-id trap ---------------------------------------------------
@@ -162,7 +178,19 @@ func newIndex(f *fakeIG) *threadIndex { return newThreadIndex(f.FetchThreadID) }
 // A send addressed with the short id does not arrive, and does not error
 // usefully either. This is the most expensive single fact on the Instagram
 // wire, so it gets the most direct test: the id that goes out is the long one.
-func TestSendUsesTheLongThreadID(t *testing.T) {
+// PINNED, NOT GROUNDED, and labelled so because the measurement says so.
+//
+// Measured 2026-09-22: a text message sent with the SHORT id ARRIVED
+// (mid.$gAASG4nvQLWim9pFqD2gxUwgMAAAq, read back from thread history), and the
+// LONG id was already known to arrive via the echo delta. BOTH work, so there
+// is no read-back that can tell them apart and nothing here can fail on the
+// choice itself. What this asserts is the REASON for the choice: the bridge
+// follows upstream (from-matrix.go:81, `meta.IGID`), so the reference consumer
+// and this one cannot drift.
+//
+// The grounded id-space test in this file is the reaction one. That is the
+// verb that discriminates; this is the verb that does not.
+func TestSendFollowsUpstreamAndUsesTheShortThreadID(t *testing.T) {
 	f := &fakeIG{}
 	idx := newIndex(f)
 	thread, err := idx.resolve(t.Context(), threadShort)
@@ -172,19 +200,20 @@ func TestSendUsesTheLongThreadID(t *testing.T) {
 	if thread.Long != threadLong || thread.Short != threadShort {
 		t.Fatalf("resolve gave %+v, want both ids", thread)
 	}
-	// GROUNDED, not pinned: the fake returns a message id only for the long
-	// id, the same way the wire returns a message only for the thread it
-	// recognises. A send addressed with the short one is accepted and produces
-	// nothing, so this fails if the bridge ever swaps them.
-	res, err := sendText(t.Context(), f, thread.Long, "hello", nil, "")
+	res, err := sendText(t.Context(), f, thread.Short, "hello", nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if res.ID != "mid.$sent" {
 		t.Fatalf("the send did not arrive: %+v", res)
 	}
-	if _, err := sendText(t.Context(), f, thread.Short, "hello", nil, ""); err == nil {
-		t.Fatal("a send addressed with the SHORT id was reported as a success")
+	if f.textReq.IGThreadIGID == nil || *f.textReq.IGThreadIGID != threadShort {
+		t.Fatalf("send carried %v, want the short id", f.textReq.IGThreadIGID)
+	}
+	// An id that names no thread at all is still refused — the one thing a
+	// send CAN be grounded on.
+	if _, err := sendText(t.Context(), f, "999", "hello", nil, ""); err == nil {
+		t.Fatal("a send to an unknown thread was reported as a success")
 	}
 }
 
@@ -279,7 +308,7 @@ func TestRoomForAnswersBothIDSpacesAndAdmitsIgnorance(t *testing.T) {
 
 func TestOutboundMentionPopulatesBothFields(t *testing.T) {
 	f := &fakeIG{}
-	_, err := sendText(t.Context(), f, threadLong, "@member_a hi",
+	_, err := sendText(t.Context(), f, threadShort, "@member_a hi",
 		[]eventMention{{FBID: "110966695387753", Offset: 0, Length: 9}}, "")
 	if err != nil {
 		t.Fatal(err)
@@ -304,7 +333,7 @@ func TestOutboundMentionPopulatesBothFields(t *testing.T) {
 // any length or prefix rule would reject real members.
 func TestMentionIDsOfDifferentLengthsAreBothAccepted(t *testing.T) {
 	f := &fakeIG{}
-	_, err := sendText(t.Context(), f, threadLong, "both", []eventMention{
+	_, err := sendText(t.Context(), f, threadShort, "both", []eventMention{
 		{FBID: "110966695387753", Offset: 0, Length: 1},   // 15 digits
 		{FBID: "12116372067347151", Offset: 2, Length: 1}, // 17 digits
 	}, "")
@@ -318,7 +347,7 @@ func TestMentionIDsOfDifferentLengthsAreBothAccepted(t *testing.T) {
 
 func TestNonNumericMentionIsRefusedRatherThanSilentlyDropped(t *testing.T) {
 	f := &fakeIG{}
-	if _, err := sendText(t.Context(), f, threadLong, "hi",
+	if _, err := sendText(t.Context(), f, threadShort, "hi",
 		[]eventMention{{FBID: "@member_a"}}, ""); err == nil {
 		t.Fatal("a non-numeric mention id was accepted")
 	}
@@ -329,7 +358,7 @@ func TestNonNumericMentionIsRefusedRatherThanSilentlyDropped(t *testing.T) {
 
 func TestReplyPopulatesBothReplyFields(t *testing.T) {
 	f := &fakeIG{}
-	if _, err := sendText(t.Context(), f, threadLong, "re", nil, "mid.$parent"); err != nil {
+	if _, err := sendText(t.Context(), f, threadShort, "re", nil, "mid.$parent"); err != nil {
 		t.Fatal(err)
 	}
 	if f.textReq.ReplyToMessageID == nil || *f.textReq.ReplyToMessageID != "mid.$parent" {
@@ -346,7 +375,7 @@ func TestReplyPopulatesBothReplyFields(t *testing.T) {
 func TestLongTextIsNotCapped(t *testing.T) {
 	f := &fakeIG{}
 	text := strings.Repeat("x", 20000)
-	if _, err := sendText(t.Context(), f, threadLong, text, nil, ""); err != nil {
+	if _, err := sendText(t.Context(), f, threadShort, text, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	if got := len(f.textReq.Text.Value); got != 20000 {
@@ -356,11 +385,11 @@ func TestLongTextIsNotCapped(t *testing.T) {
 
 func TestEveryMutationGetsItsOwnOfflineThreadingID(t *testing.T) {
 	f := &fakeIG{}
-	if _, err := sendText(t.Context(), f, threadLong, "one", nil, ""); err != nil {
+	if _, err := sendText(t.Context(), f, threadShort, "one", nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	first := f.textReq.OfflineThreadingID
-	if _, err := sendText(t.Context(), f, threadLong, "two", nil, ""); err != nil {
+	if _, err := sendText(t.Context(), f, threadShort, "two", nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	// Reusing the token across two sends is how a retry becomes a duplicate,
@@ -380,10 +409,12 @@ func okUpload(fbid int64) uploader {
 	}
 }
 
-// The upload is addressed with the SHORT id (it builds a referer of
-// /direct/t/<short>/) and the send with the LONG one. Both id spaces appear in
-// one call path, which is exactly why they are easy to swap.
-func TestSendMediaUsesShortForUploadAndLongForSend(t *testing.T) {
+// BOTH LEGS take the short id, from ONE int64, so they cannot disagree. The
+// upload always needed it (it builds a referer of /direct/t/<short>/); the
+// send follows upstream (from-matrix.go:95). Unmeasured with the short id —
+// the same standing as /typing — but /send is measured on this endpoint
+// family and upstream runs this shape in production.
+func TestSendMediaUsesTheShortThreadIDForBothLegs(t *testing.T) {
 	f := &fakeIG{}
 	var uploadedTo int64
 	inner := okUpload(2280432885466163)
@@ -391,7 +422,7 @@ func TestSendMediaUsesShortForUploadAndLongForSend(t *testing.T) {
 		uploadedTo = short
 		return inner(ctx, short, media)
 	}
-	res, err := sendMedia(t.Context(), f, up, 1009543911792316, threadLong,
+	res, err := sendMedia(t.Context(), f, up, 1009543911792316,
 		&httpclient.MercuryUploadMedia{Filename: "x.png", MimeType: "image/png", MediaData: []byte{1}}, "")
 	if err != nil {
 		t.Fatal(err)
@@ -399,8 +430,13 @@ func TestSendMediaUsesShortForUploadAndLongForSend(t *testing.T) {
 	if uploadedTo != 1009543911792316 {
 		t.Errorf("upload addressed %d, want the short thread id", uploadedTo)
 	}
-	if f.mediaReq.ThreadID != threadLong {
-		t.Errorf("SendMedia thread = %q, want the long id", f.mediaReq.ThreadID)
+	if f.mediaReq.ThreadID != threadShort {
+		t.Errorf("SendMedia thread = %q, want the short id", f.mediaReq.ThreadID)
+	}
+	// The two legs are ONE value: they cannot name different threads.
+	if f.mediaReq.ThreadID != strconv.FormatInt(uploadedTo, 10) {
+		t.Errorf("the upload and the send addressed different threads: %d vs %q",
+			uploadedTo, f.mediaReq.ThreadID)
 	}
 	if f.mediaReq.AttachmentFBID != "2280432885466163" {
 		t.Errorf("attachment fbid = %q", f.mediaReq.AttachmentFBID)
@@ -424,7 +460,7 @@ func TestUploadWithoutMetadataIsAnError(t *testing.T) {
 		},
 		"zero fbid": okUpload(0),
 	} {
-		if _, err := sendMedia(t.Context(), f, up, 1, threadLong,
+		if _, err := sendMedia(t.Context(), f, up, 1009543911792316,
 			&httpclient.MercuryUploadMedia{MediaData: []byte{1}}, ""); err == nil {
 			t.Errorf("%s: upload failure was reported as a successful send", name)
 		}
@@ -523,19 +559,38 @@ func TestAnotherMembersReactionIsNotOurReceipt(t *testing.T) {
 	}
 }
 
+// /unsend is the one verb that is genuinely LONG on both sides: every probe
+// cleanup ran this way and upstream agrees (handlematrix.go:292).
 func TestUnsendCarriesTheLongThreadID(t *testing.T) {
 	f := &fakeIG{}
-	if err := unsendMessage(t.Context(), f, threadLong, "mid.$y"); err != nil {
+	confirmed, err := unsendMessage(t.Context(), f, threadLong, "mid.$y")
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !confirmed {
+		t.Error("a successful unsend was not confirmed")
 	}
 	if f.unsend.SendData.ThreadID != threadLong || f.unsend.MessageID != "mid.$y" {
 		t.Fatalf("unsend = %+v", f.unsend)
 	}
-	// `direct_unsend_message: false` is the mutation saying it retracted
-	// nothing. Discarding it and answering 200 tells the adapter a message is
-	// gone while it is still in the room.
-	if err := unsendMessage(t.Context(), &fakeIG{}, threadShort, "mid.$y"); !errors.Is(err, errNotUnsent) {
-		t.Fatalf("an unsend that retracted nothing gave %v, want errNotUnsent", err)
+}
+
+// `direct_unsend_message: false` is REPORTED, not raised.
+//
+// Nothing has ever observed that field against an unsend known to have failed,
+// upstream discards it entirely (`_, err = ic.Client.UnsendMessage(...)`), and
+// /unsend is the one verb where a false failure strands probe messages in a
+// REAL group: the cleanup path fails, a human is told the message is still
+// there, and it gets deleted by hand or not at all. So the signal is surfaced
+// and the call still succeeds. If the field is ever measured to mean what its
+// name suggests, delete THIS TEST, not the check.
+func TestAnUnconfirmedUnsendIsReportedNotRaised(t *testing.T) {
+	confirmed, err := unsendMessage(t.Context(), &fakeIG{unconfirmedUnsend: true}, threadLong, "mid.$y")
+	if err != nil {
+		t.Fatalf("an unconfirmed unsend was raised as an error: %v", err)
+	}
+	if confirmed {
+		t.Fatal("direct_unsend_message=false was reported as confirmed")
 	}
 }
 
@@ -549,10 +604,10 @@ func TestUnsendCarriesTheLongThreadID(t *testing.T) {
 func TestSendWithNoMessageIDIsAnErrorNotA200(t *testing.T) {
 	for name, send := range map[string]func(*fakeIG) (sendResult, error){
 		"text": func(f *fakeIG) (sendResult, error) {
-			return sendText(t.Context(), f, threadLong, "hi", nil, "")
+			return sendText(t.Context(), f, threadShort, "hi", nil, "")
 		},
 		"media": func(f *fakeIG) (sendResult, error) {
-			return sendMedia(t.Context(), f, okUpload(2280432885466163), 1, threadLong,
+			return sendMedia(t.Context(), f, okUpload(2280432885466163), 1009543911792316,
 				&httpclient.MercuryUploadMedia{MediaData: []byte{1}}, "")
 		},
 	} {

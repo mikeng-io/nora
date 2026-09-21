@@ -189,7 +189,7 @@ func (b *bridge) handleSend(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	res, err := sendText(r.Context(), cli, thread.Long, req.Text, req.Mentions, req.ReplyTo)
+	res, err := sendText(r.Context(), cli, thread.Short, req.Text, req.Mentions, req.ReplyTo)
 	if err != nil {
 		b.failSend(w, "send", req.RoomID, err)
 		return
@@ -242,10 +242,10 @@ func (b *bridge) handleSendMedia(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// The upload leg takes the short id as an int64 — it builds a referer of
-	// /direct/t/<short>/ — and resolveRoom has already proved it parses, so
-	// this cannot fail. The error is still checked rather than dropped: a
-	// silent 0 here would upload against /direct/t/0/.
+	// BOTH legs of /send-media take the short id, as one int64 so they cannot
+	// disagree. resolveRoom has already proved it parses, so this cannot fail;
+	// the error is still checked rather than dropped, because a silent 0 here
+	// would upload against /direct/t/0/.
 	shortID, err := strconv.ParseInt(thread.Short, 10, 64)
 	if err != nil || shortID <= 0 {
 		badRequest(w, "room_id must be a decimal thread_fbid")
@@ -262,7 +262,7 @@ func (b *bridge) handleSendMedia(w http.ResponseWriter, r *http.Request) {
 		unavailable(w, "session is being re-established")
 		return
 	}
-	res, err := sendMedia(r.Context(), cli, up, shortID, thread.Long, media, req.ReplyTo)
+	res, err := sendMedia(r.Context(), cli, up, shortID, media, req.ReplyTo)
 	if err != nil {
 		b.failSend(w, "send-media", req.RoomID, err)
 		return
@@ -300,10 +300,11 @@ func (b *bridge) handleReact(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// SHORT, not long. A reaction addressed with the long thread_igid is
-	// accepted by the API and is absent from the thread on read-back
-	// (measured 2026-09-22); upstream passes the short id here too. The long
-	// id is still resolved first, because that lookup is what validates the
+	// SHORT — and this is the one verb where that is load-bearing rather than
+	// merely matching upstream. A reaction addressed with the long thread_igid
+	// is accepted by the API and is absent from the thread on read-back
+	// (measured 2026-09-22), where a SEND was measured arriving either way.
+	// The long id is still resolved first: that lookup is what validates the
 	// room exists and what warms the reverse cache /typing reads.
 	if err := sendReaction(r.Context(), cli, thread.Short,
 		req.MessageID, req.Emoji, req.Remove, b.ownFBID()); err != nil {
@@ -343,8 +344,8 @@ func (b *bridge) handleTyping(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// SHORT, following upstream (handlematrix.go:484). Typing arrival was
-	// never measured in either id space, and an unverified verb should copy
-	// the only implementation anybody has evidence for.
+	// never measured in either id space — there is no read-back for typing —
+	// so this is followed, not proven.
 	if err := cli.SetTyping(r.Context(), thread.Short, req.Typing); err != nil {
 		b.failSend(w, "typing", req.RoomID, err)
 		return
@@ -374,8 +375,24 @@ func (b *bridge) handleUnsend(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := unsendMessage(r.Context(), cli, thread.Long, req.MessageID); err != nil {
+	// LONG: the one verb that is genuinely long on both sides (upstream
+	// handlematrix.go:292 passes `meta.IGThreadID`), and the one every probe
+	// cleanup ran this way.
+	confirmed, err := unsendMessage(r.Context(), cli, thread.Long, req.MessageID)
+	if err != nil {
 		b.failSend(w, "unsend", req.RoomID, err)
+		return
+	}
+	if !confirmed {
+		// REPORTED, NOT FAILED. `direct_unsend_message` has never been
+		// observed against an unsend known to have failed, upstream discards
+		// it, and a false 500 here strands probe messages in a real group —
+		// the cleanup path fails and a human is told the message is still
+		// there. So the observation is surfaced both ways and the call still
+		// reads 200. See unsendMessage.
+		logf("unsend (room=%s) returned direct_unsend_message=false; "+
+			"the message may still be in the thread", req.RoomID)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "confirmed": false})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})

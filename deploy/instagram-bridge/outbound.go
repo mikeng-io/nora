@@ -2,32 +2,49 @@ package main
 
 // Outbound: the send half, and the trap that makes it non-trivial.
 //
-// THE TRAP. Instagram gives one thread two numeric identities and they are not
-// interchangeable. Inbound deltas carry the SHORT id (`thread_fbid`,
-// measured `1009543911792316`); the LONG one (`thread_igid`,
-// `340282366841710301281152937372201004392`) comes back from a route lookup.
+// THE TRAP. Instagram gives one thread two numeric identities. Inbound deltas
+// carry the SHORT id (`thread_fbid`, measured `1009543911792316`); the LONG
+// one (`thread_igid`, `340282366841710301281152937372201004392`) comes back
+// from a route lookup. They are NOT interchangeable everywhere — but they are
+// interchangeable in more places than the first reading of this file assumed,
+// and the one verb where they are not is the one nothing had read back.
 //
-// WHICH ID EACH VERB TAKES IS MIXED, AND THAT IS NOT A TIDINESS PROBLEM TO
-// SOLVE. Unifying it is how the reaction bug happened:
+// EVERY VERB NOW MATCHES UPSTREAM mautrix-meta. Three are measured on this
+// account; two follow upstream on its authority alone, and the table says
+// which is which, because that distinction is exactly what was missing when
+// the reaction bug shipped:
 //
-//	/send        LONG   measured — the echo delta came back
-//	/send-media  LONG   measured — the image appeared, upload uses SHORT
-//	/unsend      LONG   measured — every probe cleanup ran this way
-//	/react       SHORT  measured 2026-09-22 — a reaction addressed with the
-//	                    LONG id is ACCEPTED by the API (200, no error of any
-//	                    kind) and is ABSENT from the thread on read-back. The
-//	                    SHORT id is present. Upstream mautrix-meta passes the
-//	                    short id here too (igconnector/handlematrix.go:210,
-//	                    via `meta.IGID`, which fetchIGIDs sets to ShortID).
-//	/typing      SHORT  NOT measured — arrival was never verified in either id
-//	                    space. It follows upstream (handlematrix.go:484, the
-//	                    same `meta.IGID`) because an unmeasured verb should
-//	                    copy the only implementation anybody has evidence for,
-//	                    not the guess this bridge happened to make.
+//	verb         id     standing
+//	/send        SHORT  MEASURED 2026-09-22 — a carrier message sent with the
+//	                    SHORT id ARRIVED (mid.$gAASG4nvQLWim9pFqD2gxUwgMAAAq,
+//	                    read back from thread history). The LONG id also
+//	                    arrives, via the echo delta. BOTH WORK for text, so
+//	                    matching upstream (msgconv/igconv/from-matrix.go:81,
+//	                    `meta.IGID`) is free, and a standing disagreement with
+//	                    the reference consumer is not.
+//	/send-media  SHORT  UPSTREAM (from-matrix.go:95). Not measured with the
+//	                    short id; the same endpoint family as /send, which is,
+//	                    and upstream runs this shape in production. The UPLOAD
+//	                    leg was always short — it builds a referer of
+//	                    /direct/t/<short>/.
+//	/react       SHORT  MEASURED 2026-09-22, and the ONLY verb that
+//	                    discriminates. A reaction addressed with the LONG id is
+//	                    ACCEPTED by the API — 200, no error of any kind — and
+//	                    is ABSENT from the thread on read-back. The SHORT id is
+//	                    present. Upstream: handlematrix.go:210.
+//	/typing      SHORT  UPSTREAM (handlematrix.go:484). Arrival was never
+//	                    verified in either id space; there is no read-back for
+//	                    typing, so this is followed, not proven.
+//	/unsend      LONG   MEASURED — every probe cleanup ran this way, and
+//	                    upstream agrees (handlematrix.go:292,
+//	                    `meta.IGThreadID`). The one verb that is genuinely
+//	                    long, on both sides.
 //
-// A send addressed with the wrong id does not arrive and does not error
-// usefully either, so there is no signal to notice it by. That is the whole
-// reason the table above is written out instead of collapsed into a rule.
+// A reaction addressed with the wrong id does not arrive and does not error
+// usefully either, so there is no signal to notice it by. That is why the
+// standing column exists: "follows upstream" is a reason to believe and
+// "measured" is a reason to know, and writing one where the other belongs is
+// how a verb goes wrong for a month.
 //
 // The translation lives HERE, behind the HTTP surface, and the contract
 // exposes only the short id. That is the same reasoning that puts JID
@@ -208,11 +225,16 @@ func messageIDOf(msg slidetypes.SentMessage) string {
 // budget and make it unraisable. The binding cross-platform limit stays
 // Discord's 2,000, which lives in Nora, not here.
 func sendText(
-	ctx context.Context, cli igClient, longThreadID, text string,
+	ctx context.Context, cli igClient, shortThreadID, text string,
 	mentions []eventMention, replyTo string,
 ) (sendResult, error) {
+	// `IGThreadIGID` is a MISNOMER in the library, the same way
+	// Delta.ThreadIGID is on the inbound side: upstream puts `meta.IGID` — the
+	// SHORT id — in this field (from-matrix.go:81), and a send addressed that
+	// way was measured arriving. Do not let the field name talk you into the
+	// long one.
 	req := &slidetypes.SendTextRequest{
-		IGThreadIGID:       &longThreadID,
+		IGThreadIGID:       &shortThreadID,
 		OfflineThreadingID: offlineThreadingID(),
 		Text:               slidetypes.SensitiveString{Value: text},
 	}
@@ -261,12 +283,15 @@ func sendText(
 // does not hear the reply twice. Copying that shape here would silently drop
 // the text. On Instagram the caller sends /send first, then /send-media.
 //
-// Note the two id spaces appear in the same function: the UPLOAD is addressed
-// with the short id (it builds a referer of /direct/t/<short>/), the SEND with
-// the long one.
+// BOTH LEGS take the short id, and it is taken as ONE int64 so the two cannot
+// disagree. The upload always needed it (it builds a referer of
+// /direct/t/<short>/); the send now matches upstream (from-matrix.go:95,
+// `meta.IGID`). Passing the two separately — as this function did while the
+// send leg was long — is an invitation to hand it a thread and a different
+// thread.
 func sendMedia(
 	ctx context.Context, cli igClient, up uploader,
-	shortThreadID int64, longThreadID string,
+	shortThreadID int64,
 	media *httpclient.MercuryUploadMedia, replyTo string,
 ) (sendResult, error) {
 	resp, err := up(ctx, shortThreadID, media)
@@ -283,7 +308,7 @@ func sendMedia(
 
 	req := &slidetypes.SendMediaRequest{
 		AttachmentFBID:     strconv.FormatInt(attachID, 10),
-		ThreadID:           longThreadID,
+		ThreadID:           strconv.FormatInt(shortThreadID, 10),
 		OfflineThreadingID: offlineThreadingID(),
 	}
 	if replyTo != "" {
@@ -374,24 +399,35 @@ func sendReaction(
 	return nil
 }
 
-// errNotUnsent is the unsend equivalent: `direct_unsend_message` is the whole
-// response body and it is a boolean, so a false there is the mutation saying
-// it did nothing. Discarding it and answering 200 would tell the adapter a
-// message is gone while it is still in the room.
-var errNotUnsent = errors.New("unsend mutation was accepted but the message was not retracted")
-
-func unsendMessage(ctx context.Context, cli igClient, longThreadID, messageID string) error {
+// unsendMessage retracts a message and REPORTS, rather than decides, what the
+// mutation said about it.
+//
+// `direct_unsend_message` is the whole response body and it is a boolean, so a
+// false there reads like the mutation saying it did nothing. It is reported
+// and NOT turned into a failure, and the asymmetry is deliberate:
+//
+//   - No evidence says the field is a real success signal. Upstream discards
+//     it outright (`_, err = ic.Client.UnsendMessage(...)`,
+//     handlematrix.go:289), and the only sibling bool in that response file
+//     (`xig_direct_mark_read_id_validation`) is unread too. Nothing here has
+//     ever observed its value against an unsend known to have failed.
+//   - The cost of being wrong is asymmetric. A false 500 on /unsend strands
+//     probe messages in a REAL group: the cleanup path fails, a human is told
+//     the message is still there, and it gets deleted by hand or not at all.
+//     A missed signal only loses a warning nobody had before.
+//
+// So: 200, with the observation attached. If the field is ever read back
+// against an unsend known to have failed, this becomes an error and the test
+// that pins the degradation is the one to delete.
+func unsendMessage(ctx context.Context, cli igClient, longThreadID, messageID string) (confirmed bool, err error) {
 	resp, err := cli.UnsendMessage(ctx, &slidetypes.UnsendMessageRequest{
 		MessageID: messageID,
 		SendData:  slidetypes.SendData{ThreadID: longThreadID},
 	})
 	if err != nil {
-		return err
+		return false, err
 	}
-	if resp == nil || !resp.DirectUnsendMessage {
-		return errNotUnsent
-	}
-	return nil
+	return resp != nil && resp.DirectUnsendMessage, nil
 }
 
 // unixMilliOrZero guards the same zero-time trap normalizeMessage does:
