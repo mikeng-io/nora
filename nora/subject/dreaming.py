@@ -156,12 +156,18 @@ async def _notebook(subject: Subject, workspace: str) -> dict[str, tuple[str, st
         await engine.dispose()
 
 
+#: What an adaptor with NO schedule entry is handed. Production's own
+#: fallback for the same case (`nora/app/runtime.py`'s `batch_limit`
+#: parameter), and it is reached only by an adaptor the deployment does not
+#: schedule — which is itself worth noticing rather than papering over.
+_FALLBACK_BATCH = 64
+
 async def dream(
     subject: Subject,
     *,
     adaptor: str,
     room: tuple[str, str] | None = None,
-    limit: int = 64,
+    limit: int | None = None,
 ) -> Pass:
     """One adaptor, one room, one pass. Raises `LookupError` for an unknown
     adaptor rather than running nothing and reporting `nothing_found`."""
@@ -207,6 +213,13 @@ async def dream(
     # would hold at the moment is "everything but the newest `limit` rows has
     # been read", so the backlog is exactly those — found by the corpus
     # conversion, whose every anchor assumed the newest rows.
+    # THE ADAPTOR'S OWN batch size, asked of the runtime rather than assumed.
+    # A hardcoded default here is a number production does not use: it hands
+    # note-candidates 80 and culture 300 (`composition.py:3177`, `:3247`).
+    # `limit` stays a parameter for a caller that is deliberately probing a
+    # smaller window, and `None` means "whatever this adaptor is given".
+    if limit is None:
+        limit = runtime.batch_limit_for(chosen.name) or _FALLBACK_BATCH
     batch: list = []
     if chosen.uses_watermark:
         newest = await subject.deps.audit.recent(
