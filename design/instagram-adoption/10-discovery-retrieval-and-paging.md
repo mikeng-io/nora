@@ -83,6 +83,116 @@ So identity is **deterministic config or derivation**, in two tiers:
 Honcho may hold *observations about* a person whose identity the index
 established. It never establishes one.
 
+## Concretely: how Nora learns that this account is Miles
+
+There is no new mechanism. It is the workflow `identity.toml` already uses for
+Signal and WhatsApp, and the **social** identity arrives free alongside the
+messaging one.
+
+1. **Nora is in the Instagram room. Miles sends a message.** The adapter
+   records the sender carrying *both* ids — `sender.id` (the interop messaging
+   fbid) and `sender.igid` — and does not yet know it is Miles.
+2. **`nora persons pending` prints the unmapped sender**, exactly as it does
+   for an unrecognised Signal phone or a WhatsApp `@lid`. The username is
+   printed as a *hint* so a human can tell who it is.
+3. **A human writes one block:**
+
+   ```toml
+   [[persons.miles.instagram]]
+   fbid = "110966695387753"   # messaging identity — who spoke
+   igid = "221731317"         # social identity — whose profile
+   ```
+
+4. **Restart** (reload is startup-only in v2).
+5. From then on Nora knows the sender is Miles **and** which profile is his.
+
+The two kinds mirror WhatsApp's `phone` + `lid` precedent: list whichever you
+have, match on any. `username` is deliberately **not** a kind — the identity
+file already refuses renameable handles on every platform, and an Instagram
+handle is renameable.
+
+**The social capability is unlocked by the same one-time act that unlocks
+messaging attribution.** Nobody maintains a separate handle table: the roster
+already carried the igid (`GetThread` → `Users[].ID`, measured exact on a
+three-person room), so writing the block once binds both axes.
+
+Two cases worth naming:
+
+- **A room member Nora has not yet been told about** is `pending`: she records
+  what they said (the allowlist records every sender) but cannot answer about
+  them and cannot read their profile, because tier 0 authorization needs a
+  person, not a sender.
+- **Someone not in any room** (tier 1) gets a block with `igid` only and no
+  `fbid` — a social-only identity, which is a shape the file does not have
+  today and which Tier 1 will need.
+
+## Getting the next page, and getting the content
+
+Two different questions with two different answers.
+
+### The next page: the same tool, with a cursor
+
+`social_fetch` gains `cursor` beside `limit`, and a paged result carries the
+cursor for the next call:
+
+```
+social_fetch(platform="instagram", what="posts", target=<miles>, limit=5)
+  -> {status:"ok", items:[…5…], next_cursor:"QVFE…"}
+
+social_fetch(…, limit=5, cursor="QVFE…")
+  -> {status:"ok", items:[…5…], next_cursor:null}
+```
+
+A `next_cursor` of `null` means the end; **absence of a cursor is never
+inferred to mean more**. The cursor is opaque to the model and to Nora — it is
+the backend's own, passed back verbatim — so nothing above the provider knows
+whether it is an OpenCLI offset or an Instagram pagination token.
+
+Stories are the exception: a reel arrives **whole** from the protocol (two
+items in the measured case), so `limit` clamps Nora-side and there is no
+`next_cursor`. Asking for more of a story is asking for something that does
+not exist.
+
+### The content: `media_fetch`, not `social_fetch`
+
+A `social_fetch` result carries media **URLs**. Looking at one is
+`media_fetch(url=…)`, which is the composition `media_fetch`'s own docstring
+already describes. `social_fetch` never returns bytes and never describes an
+image — if it did, it would be two tools in one, which is the operator's
+original objection.
+
+**Two problems with that path, both real, neither yet solved:**
+
+**1. It would persist a story, violating the retention rule.** `media_fetch`
+is declared `side_effect_state: none` with an explicit narrow exemption: *"its
+content-addressed cache write is the narrow exemption"*. That write goes to
+the durable, sha256-keyed, cross-room, cross-restart `media_objects` cache
+(R-90). So `media_fetch(url=<story frame>)` **durably stores a story frame**,
+which is exactly what `06-retention-and-custody.md` forbids for social reads —
+and it does so through a tool that is correct for every existing caller.
+
+This needs a decision before Phase 2 ships. Three shapes, none free:
+
+- an **ephemeral mode** on `media_fetch` that comprehends without caching
+  (smallest change; adds a second code path to a tool whose cache is load-
+  bearing elsewhere);
+- **social URLs never go through `media_fetch`**, and a separate ephemeral
+  comprehension path exists (clean boundary; duplicates the hard part);
+- the cache entry is **written and swept**, marked ephemeral with the sweep
+  keyed on it (keeps one path; a sweep that fails silently re-creates the
+  violation, and `18-media-custody.md` §8 records that no blob sweep exists
+  today).
+
+Left open deliberately rather than decided here: it is a change to a shared
+tool, so it belongs to whoever owns `media_fetch`, not to this bundle.
+
+**2. Instagram CDN URLs are signed and expire.** A story URL carries `oe=` and
+`oh=` parameters; it is valid for a window, not indefinitely. So a URL is only
+useful promptly, and a URL stored anywhere is a dead link later. This cuts in
+the design's favour — it reinforces that social reads are ephemeral by nature
+— but it means a two-step "list now, look later" flow must be *soon* after,
+and that a cursor must never be assumed to keep its URLs alive.
+
 ## The steps, end to end
 
 For "what is on this person's story", the honest sequence:
