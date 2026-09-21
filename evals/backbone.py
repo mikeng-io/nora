@@ -30,11 +30,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import shutil
 import tempfile
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from datetime import datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +52,7 @@ from strands_evals.types.evaluation import (
     EvaluationOutput,
 )
 
+from evals.subject_config import policy_for, sandbox_room_for
 from nora.subject import (
     Knowledge,
     Message,
@@ -368,6 +371,61 @@ class Spec:
     judge: Any = None
 
 
+#: `SubjectSpec`'s OWN default roster, read off the dataclass field.
+#:
+#: NOT `SubjectSpec.identity` — the dataclass is slotted, so the class
+#: attribute is a slot DESCRIPTOR, and passing it would write
+#: `<member 'identity' of 'SubjectSpec' object>` into the case's identity.toml
+#: as if it were TOML. Caught by reading the value back rather than by the
+#: types.
+_SPEC_DEFAULT_IDENTITY: str = next(
+    str(f.default) for f in fields(SubjectSpec) if f.name == "identity"
+)
+
+#: Where the deployment's policy and roster live. Copied verbatim into each
+#: case's own temp workdir, NEVER into the repo — `policy.toml` and
+#: `identity.toml` are gitignored precisely because they are the PII (real
+#: names, phone numbers, real room ids), and that does not change because an
+#: eval wants them.
+#:
+#: Read from the deployment rather than authored, on the operator's call
+#: (2026-09-21): an authored roster drifts from the real one, and faking the
+#: NAMES while the bodies keep them is worse than either — 647 of 4294 message
+#: bodies (15%, measured) name a roster member outright, so a faked roster
+#: makes the room talk about people who are not in it.
+_DEPLOYMENT_DIR = Path(
+    os.environ.get("NORA_DEPLOYMENT_DIR", "/home/norty/workspace/nora")
+)
+
+
+@lru_cache(maxsize=1)
+def _deployment_policy() -> str:
+    return _read_deployment("policy.toml")
+
+
+@lru_cache(maxsize=1)
+def _deployment_identity() -> str:
+    return _read_deployment("identity.toml")
+
+
+def _read_deployment(name: str) -> str:
+    """Fail-closed: a snapshot case without the deployment's own files would
+    silently fall back to an invented room and a one-person roster, which is
+    the divergence this whole layer exists to close."""
+    path = _DEPLOYMENT_DIR / name
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(
+            f"a `snapshot:` case needs the deployment's {name} and {path} is "
+            f"unreadable ({exc}). It reconstructs a REAL room, so it needs "
+            "that room's own policy entry and the roster its speakers resolve "
+            "through. Run this where the deployment lives, or point "
+            "$NORA_DEPLOYMENT_DIR at it "
+            "(design/evaluation/11-the-sandbox-rebuild.md §1.2)."
+        ) from exc
+
+
 async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
     """Obtain, isolate, seed, drive, tear down. Raises; `nora_task` catches."""
     from evals.rebuilt.entry import ENTRY_POINTS
@@ -397,7 +455,22 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
     # case above is unchanged.
     md = case.metadata or {}
     md_room = tuple(md.get("room") or ())
-    room = md_room if len(md_room) == 2 else (spec.room or room_for(case.name or "unnamed"))
+    md_snapshot = dict(md.get("snapshot") or {})
+    # A snapshot case's sandbox room is SHAPED like the room it copies.
+    # `room_for()` hardcodes `("signal", ...)`, so a Discord room was rebuilt
+    # as a Signal one — and the shape is load-bearing, not cosmetic: a Discord
+    # entry carrying `voice = true` is refused unless its id is
+    # `<guild_id>/<channel_id>`, which is the deployment's own validator saying
+    # an unreachable id is not a copy of a reachable room.
+    if md_snapshot:
+        room = sandbox_room_for(
+            (str(md_snapshot["platform"]), str(md_snapshot["conversation_id"])),
+            case.name or "unnamed",
+        )
+    elif len(md_room) == 2:
+        room = md_room
+    else:
+        room = spec.room or room_for(case.name or "unnamed")
     md_config = dict(md.get("config") or {})
     stated_workspace = str(md_config.get("memory.workspace_id") or spec.workspace)
     workspace = workspace_for(case.name or "unnamed", stated_workspace)
@@ -430,12 +503,44 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                 # DEC-105/`e2092ecd`) — distinct from `stated_workspace`/
                 # `workspace` above, which name Honcho's OWN `workspace_id`
                 # concept and were never part of that rename.
+                # A SNAPSHOT case gets the REAL room's own policy entry, with
+                # only `platform`/`id`/`unit` swapped for the isolated ones.
+                #
+                # `default_policy()` invents a minimal room instead —
+                # `default`, `platform`, `id`, `persons = "*"`, `unit`, and
+                # nothing else. A real entry also carries `description` (which
+                # REACHES THE MODEL via `composition.py:3180`/`:3335`, and is
+                # the operator's own account of what the room IS — "2200 is
+                # when people log on, not an appointment"), `relevance_gate`
+                # (what opts a room into the gate at all), `home_room` (which
+                # is why `proactive_decide` cases hand-write their own
+                # `policy:`), `voice`, `location` and `tools`. Seeding the
+                # right transcript into a room stripped of all of that
+                # measures a different room.
                 policy=(
-                    policy_template.replace(
+                    policy_for(
+                        deployment_policy=_deployment_policy(),
+                        real_room=(
+                            str(md_snapshot["platform"]),
+                            str(md_snapshot["conversation_id"]),
+                        ),
+                        sandbox_room=room,
+                        sandbox_unit=workspace,
+                    )
+                    if md_snapshot
+                    else policy_template.replace(
                         f'unit = "{stated_workspace}"', f'unit = "{workspace}"',
                     ).format(platform=room[0], room=room[1])
                     if policy_template else ""
                 ),
+                # The deployment's OWN roster. `_DEFAULT_IDENTITY` knows ONE
+                # person; a real room has ten, and a snapshot copies each row's
+                # real `person_id` — so nine speakers in ten resolved to "the
+                # identity does not know them" and rendered nameless, while
+                # 15% of message BODIES (647 of 4294, measured) name a roster
+                # member outright. The room she read was not the room that
+                # happened.
+                identity=(_deployment_identity() if md_snapshot else _SPEC_DEFAULT_IDENTITY),
                 now=datetime.fromisoformat(now) if now else None,
             )
         )

@@ -20,6 +20,7 @@ from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from strands_evals import Case, Experiment
 from strands_evals.evaluators.evaluator import Evaluator
 from strands_evals.types.evaluation import EnvironmentState, EvaluationData, EvaluationOutput
@@ -870,9 +871,43 @@ def test_meets_grader_an_error_is_error_regardless_of_expect():
 
 
 # --- `snapshot:` routing — a case seeded from a REAL room at a REAL instant --
+#
+# These are MECHANICAL tests: no database, no network, and no deployment. A
+# snapshot case now takes the real room's own policy entry and the deployment's
+# roster (`_deployment_policy`/`_deployment_identity`), which would make these
+# depend on a file that only exists on the deploy host — so they state their
+# own deployment instead. The routing is what is under test here; the fidelity
+# of the real files is `tests/architecture/`'s job.
 
 
-async def test_drive_seeds_a_snapshot_case_through_the_sandbox(monkeypatch):
+@pytest.fixture
+def stated_deployment(tmp_path, monkeypatch):
+    """A deployment of this test's own: one room, one person."""
+    import evals.backbone as backbone
+
+    (tmp_path / "policy.toml").write_text(
+        'default = "deny"\n\n[[conversations]]\n'
+        'platform = "signal"\nid = "the-real-group"\n'
+        'unit = "friends"\npersons = "*"\n'
+        'label = "A Room"\ndescription = "what kind of room this is"\n'
+        'relevance_gate = true\nhome_room = true\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "identity.toml").write_text(
+        '[persons.miles_novak]\nname = "Miles"\n'
+        '[[persons.miles_novak.signal]]\nphone = "+852111"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(backbone, "_DEPLOYMENT_DIR", tmp_path)
+    backbone._deployment_policy.cache_clear()
+    backbone._deployment_identity.cache_clear()
+    yield tmp_path
+    backbone._deployment_policy.cache_clear()
+    backbone._deployment_identity.cache_clear()
+
+
+
+async def test_drive_seeds_a_snapshot_case_through_the_sandbox(monkeypatch, stated_deployment):
     """A case stating `snapshot:` must reach `sandbox_from_snapshot`, not
     `know()` with an empty `Knowledge` — which is what it would silently get
     if the branch were missing, seeding NOTHING and grading her on an empty
@@ -917,8 +952,67 @@ async def test_drive_seeds_a_snapshot_case_through_the_sandbox(monkeypatch):
     assert seeded["unit"] == "friends"
 
 
+async def test_a_snapshot_case_composes_the_real_rooms_policy_and_roster(
+    monkeypatch, stated_deployment,
+):
+    """The wiring the three routing tests above do NOT catch.
+
+    Falsified: reverting `policy_for(...)` to the invented policy left all 331
+    unit and architecture tests GREEN. They assert `sandbox_from_snapshot` was
+    reached with the right anchor, which says nothing about the ROOM the
+    subject was composed with — and seeding a real transcript into a room
+    stripped of its own `description`, `relevance_gate` and `home_room` is the
+    defect this whole layer exists to close.
+
+    `description` in particular REACHES THE MODEL
+    (`nora/app/composition.py:3180`, `:3335`).
+    """
+    captured: dict[str, object] = {}
+
+    async def capturing_obtain(spec: object) -> object:
+        captured["policy"] = spec.policy
+        captured["identity"] = spec.identity
+        captured["room"] = spec.room
+        return await _fake_obtain(spec)
+
+    async def fake_sandbox(_subject: object, **_kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(now_ms=1_700_000_000_000)
+
+    async def fake_drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
+        return Outcome(admitted=None)
+
+    monkeypatch.setitem(ENTRY_POINTS, "dreamer", EntryPoint(drive=fake_drive))
+    monkeypatch.setattr(backbone, "obtain", capturing_obtain)
+    monkeypatch.setattr(backbone, "sandbox_from_snapshot", fake_sandbox)
+
+    case = Case(
+        name="snapshot-policy-probe",
+        input="x",
+        metadata={"snapshot": {
+            "platform": "signal", "conversation_id": "the-real-group",
+            "before_ms": 1_752_000_000_000, "culture_key": "the-real-group",
+            "unit": "friends",
+        }},
+    )
+    await backbone._drive(case, Spec(database_url="x", entry="dreamer"))
+
+    policy = str(captured["policy"])
+    # Carried from the REAL room's entry.
+    assert 'description = "what kind of room this is"' in policy
+    assert "relevance_gate = true" in policy
+    assert "home_room = true" in policy
+    assert 'label = "A Room"' in policy
+    # Swapped for the isolated ones — never the real room's.
+    assert "the-real-group" not in policy, (
+        "the sandbox must not name the room it copied; that is the isolation"
+    )
+    assert f'id = "{captured["room"][1]}"' in policy
+    # The deployment's roster, not the one-person default.
+    assert "persons.miles_novak" in str(captured["identity"])
+
+
 async def test_drive_hands_the_sandbox_the_cases_own_instant_not_the_wall_clock(
-    monkeypatch,
+    monkeypatch, stated_deployment,
 ):
     """`SubjectSpec.now` freezes her clock at the case's own instant, so the
     copy has to be shifted to the SAME instant. Shifted to the wall clock
@@ -959,7 +1053,7 @@ async def test_drive_hands_the_sandbox_the_cases_own_instant_not_the_wall_clock(
 
 
 async def test_drive_forwards_the_entry_points_own_window_rule_to_the_sandbox(
-    monkeypatch,
+    monkeypatch, stated_deployment,
 ):
     """`leave_room_for_arrival` is per ENTRY POINT, not per seeding style: the
     gate's window IS its input, so its newest line lands AT `now_ms` rather
