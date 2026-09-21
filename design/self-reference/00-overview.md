@@ -110,12 +110,13 @@ Supersedes the single-file draft at `design/proposed/31-self-reference.md`
 yet; pending operator decision on the two canonical images (§5 questions in
 `04-tests-and-files.md`).
 
-_2026-09-16_ — **self-canon material changed**. The operator sent a proper
-character reference sheet (1536×1024, `assets/nora-character-reference-sheet.png`,
-in this bundle) and asked the design docs be updated to it: appearance is now
-casual minimal Korean style (white tank, grey hoodie, jeans, wired earpiece),
-not the earlier neon-grid Tron setting; 01 and 03's description and 04's
-open-question 1 are updated accordingly. The sheet is the design reference;
-whether it also becomes the canonical asset directly, or a simplified single
-front full-body image is generated first, stays an open question (04 §5.1).
-The bundle now carries the asset so it transfers with the branch.
+_2026-09-16_ — **self-canon material changed, and the asset is now decided.**
+The operator sent a character reference sheet (1536×1024, multi-panel) and
+asked the design docs be updated to it: appearance is now casual minimal
+Korean style (white tank, grey hoodie, jeans, wired earbuds), not the earlier
+neon-grid Tron setting. A simplified single image was then produced and
+accepted — **`assets/nora-canonical-self.png`** (1024×1536) is THE canonical
+asset; the sheet stays the descriptive source (02 §"Source of the canonical
+image", 04 §5.1). 01's description is written from the sheet and confirmed
+against the asset. Both files travel with the branch so the bundle is
+self-contained. Still open: the operator (`role=operator`) asset (04 §5.2).

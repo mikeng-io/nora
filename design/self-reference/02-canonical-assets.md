@@ -12,12 +12,23 @@ edges:
 
 ## Source of the canonical image
 
-The canonical `self` asset source material lives IN this bundle:
-`assets/nora-character-reference-sheet.png` (1536×1024, operator-provided
-2026-09-16). At build time the ingest one-shot (`scripts/ingest_self_asset.py`)
-ingests this image (or the simplified single-image produced from it — see
-04 §5.1) into Nora's media library, marks `role: self`, and the doctrine's
-`<SELF_HANDLE>` is pinned to the ingested row's full sha256 as normal.
+The canonical `self` asset source material lives IN this bundle, as two files
+with two distinct roles:
+
+- **`assets/nora-canonical-self.png`** (1024×1536) — **THE ASSET.** A single
+  clean full-body front-facing studio image, produced from the reference sheet
+  (2026-09-16) and accepted by the operator as the canonical self image. This
+  is what gets ingested.
+- **`assets/nora-character-reference-sheet.png`** (1536×1024) — **THE
+  DESCRIPTIVE SOURCE, not an asset.** Multi-panel (angles, expressions, eye
+  directions, closeups, turnaround, sitting poses, swatches); it is what the
+  doctrine text is written from, and it is deliberately NOT ingested as a
+  reference image — a multi-panel image muddles identity in generation.
+
+At build time the ingest one-shot (`scripts/ingest_self_asset.py`) ingests the
+canonical single image into Nora's media library, marks `role: self`, and the
+doctrine's `<SELF_HANDLE>` is pinned to the ingested row's full sha256 as
+normal. Source sha256 at acceptance: `4b8825fe61b874bbcee85b28ce740fb2da1b10c1c7e5ba406fbca4c4e9b45e09`.
 
 ## Storage
 

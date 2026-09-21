@@ -47,13 +47,26 @@ config.toml                                    # (none expected — asset handle
 
 ## Open questions (operator decision needed)
 
-1. **Which image is canonical for `self`?** **DECIDED 2026-09-16 — the character
-   reference sheet sent this session** (`assets/nora-character-reference-sheet.png`,
-   1536×1024, in the bundle). It is a proper design reference: front/
-   profile/3-4 angles, eight expressions, eye directions, detail closeups,
-   full-body turnaround, sitting poses and colour-reference swatches for the
-   same character. The earlier Codex setting image (neon Tron grid) is NOT
-   the canon — the operator's 2026-09-16 message («呢一張會唔會太過複雜?…你哋可能要 update 翻個 markdown document 嚟 fit 翻呢張圖入面啲設定,因為有少少唔同咗同改變咗») makes the sheet the source; the sheet's own panels define the look, and the doctrine text in 01 is written from it. **Open sub-question: whether the sheet is too complex for a canonical reference image (operator asked 2026-09-16) — an image-generation pass to produce a simplified front full-body single image may follow; if it does, THAT image becomes the canonical asset and this sheet stays the descriptive source.**
+1. **Which image is canonical for `self`?** **DECIDED 2026-09-16.** Two files,
+   two roles:
+   - **`assets/nora-canonical-self.png`** (1024×1536) is **THE ASSET** — the
+     single clean full-body front-facing studio image accepted by the operator
+     (`「Just use this one ba」`, 2026-09-16). Individually vision-checked
+     before acceptance: single image, no panels/text/watermark, full body
+     head-to-feet, eye-level, even soft lighting, plain seamless light-grey
+     background, neutral expression. Its known imperfections are recorded and
+     accepted: the earbud cable crosses face-side/torso, loose strands soften
+     the jaw edge, hair is tied back (full length undocumented), the open
+     hoodie hides the shoulder silhouette. The earbuds are CANON (the sheet
+     defines them), so the cable is not treated as contamination.
+   - **`assets/nora-character-reference-sheet.png`** (1536×1024) is the
+     **descriptive source only** — multi-panel; the doctrine text in 01 is
+     written from it, and it is deliberately NOT ingested (a multi-panel image
+     muddles identity in generation). The earlier Codex neon-Tron setting
+     image is NOT the canon and is superseded by both.
+   The operator's earlier question («呢一張會唔會太過複雜?») is resolved by this
+   split: complexity is kept in the sheet's role (description), not the
+   asset's (identity).
 2. **Which image is canonical for `operator`?** The avatar Miles asked Nora to
    merge in the failing run is `1fce23` — unless Miles has a different
    canonical avatar in mind. **Decision needed: confirm the operator asset.**

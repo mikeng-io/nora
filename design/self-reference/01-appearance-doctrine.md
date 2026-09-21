@@ -22,15 +22,20 @@ so a new file needs **zero code changes** to reach the model every turn.
 ## Contents
 
 1. **Visual description** — derived from the canonical character-design
-   reference sheet (2026-09-16, `assets/nora-character-reference-sheet.png`):
-   slim East Asian woman, visual late 20s, 166 cm, dark brown hair and eyes;
-   casual minimal Korean style — white tank, grey hoodie, jeans, wired
-   earpiece. Written in the same descriptive register as the existing
+   reference sheet (`assets/nora-character-reference-sheet.png`, the
+   descriptive source) and confirmed by the canonical single image
+   (`assets/nora-canonical-self.png`, 1024×1536, the ASSET): slim East Asian
+   woman, visual late 20s, 166 cm, dark brown hair and eyes, worn loosely
+   tied back with wispy face-framing strands; casual minimal Korean style —
+   white ribbed scoop-neck tank top under a light heather-grey zip-up hoodie
+   worn open, mid-blue straight-leg jeans, white wired earbuds with the cable
+   down the front. Written in the same descriptive register as the existing
    doctrine — it is *identity text for the model*, not prose. The sheet also
    carries her public-facing brand line (values: Clarity, Connection,
    Empathy, Impact; tagline: "Every voice matters. People first."), which the
    doctrine references where the model renders herself as the public
-   assistant.
+   assistant. **The wired earbuds are canon, not clutter** — they are part of
+   the look defined by the sheet and are kept in the asset deliberately.
 2. **Self-recognition rule** — "Your canonical self reference is
    `[image <SELF_HANDLE>]`; when the task is to draw yourself or your avatar,
    reference it. A photo of Miles is NOT you."
