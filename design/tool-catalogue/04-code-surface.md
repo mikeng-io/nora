@@ -65,17 +65,34 @@ from `02`. A partial resolve is `ok` with non-empty `unknown`, never
 
 `build()` returns `list[Any]` for `Agent(tools=...)`. Today it adapts every
 spec. It must now return the hot set + `load_tools` + any MCP groups, and hold
-the rest for `load_tools` to hand back.
+the rest — adapted but unregistered — for `load_tools` to register.
 
-**Return schemas in the `tool_result` body, not by mutating the `tools`
-array** (`02` §"Interaction with prompt caching"). The cached prefix is 30,080
-tokens today and is the reason this is a first-call problem rather than a
-per-call one.
+**Use Strands' own dynamic-tool path** (`02` §"The mechanism", verified in the
+installed 1.50.2 and by the spike in `05` §2b):
 
-**This is gated on §2b of `05` passing.** Whether DeepSeek via OmniRoute will
-emit a `tool_call` for a tool absent from the `tools` array is unverified. A
-negative result forces array mutation, which costs the cache and needs its own
-measurement before anything else is built.
+- `load_tools`'s closure calls `agent.tool_registry.register_dynamic_tool(t)`
+  for each resolved tool.
+- `event_loop.py:152`/`:523` re-read `get_all_tool_specs()` on **every** model
+  call, so the next call carries the tool in its `tools` array natively.
+- `_executor.py:142` checks `dynamic_tools` before `registry`, so dispatch
+  resolves.
+
+`register_dynamic_tool` **raises `ValueError` if the name already exists** in
+either dict (`registry.py:570`). Loading a hot tool, or the same cold tool
+twice, must therefore be a no-op in the closure, not an exception — return it
+in `tools` as already-loaded.
+
+**The closure needs the agent's registry.** `ToolSpec.call` closures today
+receive their collaborators at build time; this one needs the live
+`tool_registry`. Wire it the way `deliverer` is wired, not by reaching for a
+global — and keep `strands` imports inside `nora.agent.**` (ADR 0008
+constraint).
+
+**Lifetime is the turn.** `ToolRegistry` is constructed per turn by `build()`
+and must stay that way: a shared registry accumulating `dynamic_tools` leaks
+tool availability between concurrent rooms and silently regrows the resident
+set over the process's life while every per-call measurement still looks
+right. §7 adds the gauge that catches it.
 
 ## 5. Turn ceilings — `nora/config.py`
 
@@ -123,6 +140,13 @@ reads as current. (`a-late-reversal-is-not-landed-until-every-quoting-file-chang
   lesson is that without it a grep returns zero either way.
 - Catalogue token count as a gauge at build time, so the ≤1,400 ceiling is
   observable in production and not only in a test.
+- **Resident tool-spec token count as a gauge, per model call.** This is the
+  one that catches a leaking registry: if `dynamic_tools` outlives its turn,
+  per-call input tokens creep back toward 22,130 and nothing else in the plan
+  would notice.
+- **Model calls per turn**, as a histogram. The per-call token target can be
+  met while turns grow from 3 calls to 4 and total cost rises; this is the
+  series that makes that visible (`05` §3).
 
 Metrics are append-only (R-17): nothing is removed, and a tool that stops
 being called leaves a frozen series.

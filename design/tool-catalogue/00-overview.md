@@ -95,7 +95,8 @@ tool**. The saving is on the ~52 not loaded.
 | fetched per turn (mean) | — | 1.09 × 407 ≈ **444** |
 | doctrine | 8,288 | 8,288 (untouched by this bundle) |
 | situation | ~5,400 | ~5,400 |
-| **mean total** | **~35,500** | **~17,700 (−50%)** |
+| **mean total, per call** | **~35,500** | **~17,700 (−50%)** |
+| **per TURN** (the honest unit) | ~106,700 | **~72,000 (−30%)** |
 
 The catalogue figure is **measured**, not estimated: rendering `name — first
 sentence` for all 54 tools from today's docstrings is 991 cl100k tokens, mean
@@ -104,8 +105,16 @@ guard.
 
 With category 3 parked, the 8,602 tokens of result-handling prose stay in the
 schemas — so a **fetched** schema still costs its full ~407 tokens. That is
-already what the 444/turn figure above assumes; parking changes the ceiling
-this can reach later (~14,000), not the number it reaches now.
+already what the 444/turn figure assumes; parking changes the ceiling this can
+reach later, not the number it reaches now.
+
+**The per-call row is the flattering one and it is not the unit that matters.**
+`load_tools` plausibly adds a fourth model call on the 72.8% of turns needing a
+cold tool, and a fetched schema is re-paid on every later call in the turn.
+Per turn the saving is ~30%, not ~50%. It is still large, and it does not move
+the break-even near the observed maximum of 7 — but `05` §3 gates on per-turn
+tokens, calls-per-turn and end-to-end latency, and treats every per-call number
+as a diagnostic. Adversarial review found this framing and it was right to.
 
 ## What this is not
 
@@ -173,7 +182,9 @@ when the tool was never offered — and constraints.md's "a broken Nora and a
 quiet Nora look the same" is the rule it violates.
 
 **B — model-driven `load_tools` (this bundle).** The catalogue is resident, so
-Nora always knows the shape of what she can do; she names what she needs.
+Nora always knows the shape of what she can do; she names what she needs, and
+`load_tools` registers them through Strands' own `register_dynamic_tool` so the
+next model call carries them natively (`02`, verified).
 **Fails closed and visibly**: R-7 default-deny already refuses an invented
 tool name, so a miss is an error, not a silence. Self-correcting — she can ask
 again. Costs at most one extra round trip on a cold turn, and measurement says

@@ -10,12 +10,17 @@
 > result?" deserves the answer rather than the question. Nothing here is built
 > without a fresh operator decision.
 >
-> **What parking it costs:** ~6,970 tokens left on the table. That is real but
-> secondary — phases 1–2 already take the call from ~35,500 to ~17,700, and
-> this would take it to roughly ~14,000. It is the smaller half of a saving
-> that is already large, and it carries the only quality risk in the bundle
-> (§4). Deferring the risky half of a win you have already banked is the right
-> trade.
+> **What parking it costs — far less than the ~6,970 below.** That figure is
+> computed against TODAY's architecture, where all 54 schemas are resident.
+> Once the catalogue and `load_tools` land, result-handling prose is only paid
+> on tools actually fetched: ~54% × ~444 ≈ **240 tokens per turn**, not 6,970.
+> Parking the bundle's only non-selection quality risk to forgo ~240
+> tokens/turn is clearly the right trade — more clearly than the number in §3
+> suggests.
+>
+> **Read §3's "≈6,970 fleet projection" as a pre-phase-1 figure.** A future
+> reader who reopens this for the 6,970 is chasing a prize that phase 1
+> already took.
 
 Realizes `00-overview.md`. Covers category 3 only: *what does `unavailable`
 mean, may I read the coordinate aloud, must I carry the age?*

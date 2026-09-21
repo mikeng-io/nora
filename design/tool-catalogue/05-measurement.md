@@ -3,8 +3,9 @@
 What would prove this works, what would falsify it, and what is not yet known.
 
 Every number in this bundle is `cl100k_base` (tiktoken), not DeepSeek's
-tokenizer. The cached-prefix cross-check in §1 is what makes them trustworthy
-anyway; do not restate them as DeepSeek counts.
+tokenizer. They are ratios and magnitudes, not provider-exact counts — never
+restate one as a DeepSeek count. §1 says what the cache cross-check does and
+does not establish.
 
 ## 1. The baseline, and how to re-derive it
 
@@ -16,10 +17,24 @@ anyway; do not restate them as DeepSeek counts.
 | doctrine, tag lane | 8,288 | `DoctrineStore.get(applies_to="tag")` |
 | tools + doctrine | 30,418 | — |
 
-**The cross-check is the point.** 30,418 against a measured cached prefix of
-30,080 is 1.1% — two independent paths to the same number, one from the code
-and one from the provider. A decomposition that only added up to the reported
-total would be consistent with several wrong splits; this one is not.
+**What the cross-check does and does not establish.** The two parts are
+measured *separately from source* — the doctrine from `DoctrineStore.get()`,
+the schemas from the built registry — and neither is derived by subtracting
+the other. Their sum, 30,418, lands 1.1% from an independently reported
+boundary (the cached prefix, 30,080).
+
+An earlier draft claimed this "rules out wrong splits." **It does not**, and
+adversarial review was right to say so: the cache figure constrains the two
+*jointly*, so an error of +2,000 in one and −2,000 in the other would pass it.
+What rules that out is that each part was counted directly, not that they sum
+correctly. Two further limits worth stating: both parts are counted in
+`cl100k_base` while the provider counts in DeepSeek's tokenizer, so a
+systematic bias would shift both together; and the 338-token gap is unexplained
+— it is equally consistent with the cached prefix including a slice of the
+per-turn block, which would mean the layout assumption is approximate.
+
+The decomposition is sound because each part was measured. The cache agreement
+is corroboration, not proof.
 
 Langfuse is at `192.168.1.10:3100`; credentials are in norty's
 `nora/.env` under `LANGFUSE_OTLP_HEADERS` (URL-encoded, strip the
@@ -41,14 +56,35 @@ does not get its threshold moved.
 20. Measured today at **991 / mean 18.4**, so this is a regression guard, not
 a hurdle. Cheap, no model calls — run it first.
 
-**2b — Does the provider accept an out-of-array tool?** Send DeepSeek via
-OmniRoute a `tool_result` carrying a tool schema for a tool **absent from the
-`tools` array**, and see whether it emits a `tool_call` for it.
+**2b — End-to-end mechanism spike. RESOLVED 2026-09-22.**
 
-This is **the highest-risk unknown in the bundle** and it is a single probe.
-A negative result forces array mutation (`04` §4), which costs the 30,080-token
-cached prefix and changes the economics enough to need re-deciding. Run it
-before writing any of §3–§6 of `04`.
+An earlier draft made this the bundle's highest risk: *"does the provider emit
+a `tool_call` for a tool absent from the `tools` array?"* That was the wrong
+question — it probed the model and assumed the framework, and the framework is
+the harder half. `_executor.py:449` returns `"Unknown tool: {name}"` for a name
+Strands does not hold, so the draft mechanism would have dead-ended there
+regardless of what the model emitted.
+
+**Strands 1.50.2 makes the question moot.** Verified by reading the installed
+package and by running the spike:
+
+```
+before:                      ['hot_tool']
+  dispatch cold_tool ->      None
+after register_dynamic_tool: ['cold_tool', 'hot_tool']
+  dispatch cold_tool ->      DecoratedFunctionTool
+```
+
+`register_dynamic_tool` (`registry.py:562`) puts the tool in `dynamic_tools`;
+`get_all_tools_config` (`:219`) merges it into the spec list; `event_loop.py`
+re-reads that list on **every** model call (`:152`, `:523`); `_executor.py:142`
+checks `dynamic_tools` first at dispatch. The tool appears in the next call's
+`tools` array natively. Nothing unusual is asked of the provider.
+
+**What replaces this gate:** one end-to-end turn against the real stack —
+catalogue → `load_tools` → registration → the model calls the fetched tool →
+`ReplyGuard` ends the turn on `send_reply`. Cheap, and it exercises the
+`ValueError`-on-duplicate path (`registry.py:570`) that `04` §4 must handle.
 
 **2c — Selection accuracy.** The one that can sink phase 1.
 
@@ -83,17 +119,31 @@ expectation is not a result.
 
 ## 3. What success looks like
 
-| | today | target |
-|---|---|---|
-| resident schema tokens | 22,130 | ≤ 3,600 |
-| mean input per call | ~35,500 | ≤ 18,000 |
-| cold-call TTFT | 4,575 ms | measurably lower |
-| tool-selection accuracy | baseline from 2c | **no worse** |
-| turns ending without a reply | baseline | **no worse** |
+**Per-turn, not per-call.** An earlier draft's table was entirely per-call,
+which is gameable in the exact way this repo keeps relearning: a regression
+from 3 model calls per turn to 4 passes every per-call row while total cost
+rises. Per-call rows are kept as diagnostics; **no gate passes on them.**
 
-The last two are the ones that matter. A 50% token cut that costs selection
-accuracy is a regression, and the token number will look like a success in
-every dashboard while it happens.
+| | unit | today | target |
+|---|---|---|---|
+| **input tokens per TURN** | turn | ~106,700 (3 × ~35,500) | **≤ 75,000** |
+| **model calls per turn** | turn | ~3 | **≤ 3.4 mean** |
+| **end-to-end turn latency** | turn | baseline | **no worse** |
+| **tool-selection accuracy** | turn | baseline from 2c | **no worse** |
+| **turns ending without a reply** | turn | baseline | **no worse** |
+| resident tool-spec tokens | call | 22,130 | ≤ 3,700 (diagnostic) |
+| mean input per call | call | ~35,500 | ≤ 18,000 (diagnostic) |
+| cold-call TTFT | call | 4,575 ms | lower (diagnostic) |
+
+The bottom three are the ones that will look best and mean least. Cold-call
+TTFT improves trivially because the prompt is smaller; what a person in the
+room feels is **end-to-end turn latency**, which gets an extra round trip on
+72.8% of turns and may get worse. If turn latency regresses, the change is a
+regression however good the token numbers look.
+
+The per-turn token target is deliberately ~30% rather than the ~50% the
+per-call arithmetic suggests — that gap IS the extra round trip, priced in
+rather than assumed away.
 
 ## 4. After it ships
 
@@ -133,8 +183,11 @@ every dashboard while it happens.
 ## 6. What would falsify the whole bundle
 
 - 2c shows selection accuracy dropping outside noise on confusable pairs.
-- 2b fails **and** array mutation destroys the cache, making mean input worse
-  than 35,473 on warm turns.
+- Turn latency regresses, or mean calls per turn exceeds 3.4 — the extra round
+  trip is not absorbed after all.
+- Resident tool-spec tokens creep upward across a process's life, meaning
+  `dynamic_tools` is outliving its turn and the registry is leaking between
+  rooms.
 - Measured cold tools per turn rises toward the 46-tool break-even. Nothing in
   574 turns is near it (max 7), but it is the assumption the arithmetic rests
   on, so it is worth re-checking rather than assuming.

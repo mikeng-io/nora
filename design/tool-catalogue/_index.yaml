@@ -14,9 +14,31 @@ description: >
   observed max is 7. The third category (result-handling relocation) is
   PARKED by operator decision 2026-09-22 — its measurement is retained in
   03-result-handling.md, its implementation is not in scope.
-status: proposed-parked-phase3
+status: proposed-reviewed-parked-phase3
 governance: draft
 timestamp: '2026-09-22'
+revision: >
+  2026-09-22 adversarial review #1 (Kimi 0.40.1, session
+  88331a01-ebb9-4408-92cf-738828db2b81): 2 PASS, 2 FAIL, 1 mixed. Absorbed:
+  (a) the cache cross-check validates the SUM, not the split — overclaim
+  removed from 05 §1, and the cl100k-vs-DeepSeek limit stated; (b) the cost
+  model was per-call and ignored both the extra round trip and fetched-schema
+  persistence — 05 §3 now gates on per-turn tokens, calls-per-turn and
+  end-to-end latency, with every per-call number demoted to diagnostic;
+  (c) load_tools' names list was unbounded, so budget:3 capped calls but not
+  tokens — capped at 4 names/call; (d) parking cost is ~240 tok/turn after
+  phase 1, not ~6,970 — 03's header corrected, which strengthens the park;
+  (e) per-turn registry isolation was unspecified — now explicit in 02/04 with
+  a resident-tokens gauge. REJECTED, with evidence: the review's single
+  most-likely-failure ("the deferred tool is never executable; Strands cannot
+  dispatch a tool it never registered") is false on this stack —
+  register_dynamic_tool (registry.py:562), get_all_tool_specs re-read per call
+  (event_loop.py:152/523) and dynamic_tools-first dispatch (_executor.py:142),
+  confirmed by spike. The review was nonetheless right that the DRAFTED
+  mechanism (schemas as text in a tool_result body) would have dead-ended at
+  _executor.py:449; the mechanism was rewritten rather than the objection
+  dismissed. Review #2 (Codex) abandoned — it explored the repo instead of the
+  bundle, the failure mode the scenarios-not-code rule exists to prevent.
 origin: >
   design conversation with miles, 2026-09-22 — opened as doctrine compression
   ("even the simplest conversation hits over 30,000 input tokens"), redirected
@@ -45,11 +67,12 @@ scope:
     - "Generate a one-line catalogue for all 54 tools at doctrine order 35, reusing ToolRegistry.capability_digest() rather than writing a second renderer"
     - "Repair where_is's first sentence (measured under-discrimination against where_been) and cap recall_lookups / set_music_volume"
     - "Gate every catalogue line at <=20 tokens and the block at <=1,400"
-    - "Add the load_tools verb: budget 3, non-terminal, read_only, no source_tier; R-27 status shape with partial resolve as ok"
-    - "Hold non-hot schemas out of Agent(tools=...) and return them in the tool_result body, preserving the 30,080-token cached prefix"
+    - "Add the load_tools verb: budget 3, max 4 names per call (budget caps calls, not tokens), non-terminal, read_only, no source_tier; R-27 status shape with partial resolve as ok"
+    - "Hold non-hot schemas out of Agent(tools=...) and register them mid-turn via Strands' register_dynamic_tool (registry.py:562); get_all_tool_specs is re-read per model call (event_loop.py:152/523) so the next call carries them natively, and _executor.py:142 dispatches from dynamic_tools first. VERIFIED by spike 2026-09-22"
     - "Keep six tools resident: web_search, send_reply, note_read, web_fetch, now, search_memory (55.2% of calls, 2,606 tokens); send_reply is structural, not usage-based"
     - "Raise the shared turn ceiling by the expected load_tools count (~0.8/turn) so a per-tool budget is not inert under it"
     - "Add the DEC-28 counter: turns ending without a reply while the room named a catalogued capability"
+    - "Keep ToolRegistry per-turn: a shared registry accumulating dynamic_tools leaks tool availability between concurrent rooms and silently regrows the resident set; add a resident-tokens gauge and a calls-per-turn histogram so neither can hide"
   deferred:
     - "PARKED 2026-09-22 by operator decision — relocate 8,602 tokens of result-handling prose onto tool results via the output_contract seam. Measurement retained in 03-result-handling.md (-1,746 hand-measured on three tools, ~6,970 fleet projection); not built without a fresh decision. It carried the bundle's only non-selection quality risk (LongFuncEval: 7-91% accuracy loss as responses grow)"
     - "Phase 2 — lane/room scoping beyond today's Discord music filter; value shrinks once a cold tool costs a catalogue line rather than a schema"
@@ -61,10 +84,11 @@ scope:
     - "Anthropic server-side tool_search — Nora is on DeepSeek via OmniRoute; strands-agents 1.50.2 ships only AgentCoreToolSearchPlugin, which needs Bedrock AgentCore Gateway"
 gates:
   - "2a catalogue size <=1,400 tokens (measured today: 991) — cheap, run first"
-  - "2b provider accepts a tool_call for a schema delivered in a tool_result but absent from the tools array — HIGHEST RISK, single probe, run before building"
+  - "2b RESOLVED 2026-09-22 — the original gate asked whether the provider would emit a tool_call for an out-of-array tool. Wrong question: it probed the model and assumed the framework, and _executor.py:449 returns 'Unknown tool' for a name Strands does not hold, so the drafted mechanism would have dead-ended there. Strands 1.50.2's register_dynamic_tool makes it moot. Replaced by a cheap end-to-end turn spike covering the ValueError-on-duplicate path"
   - "2c tool-selection accuracy no worse than baseline on confusable pairs, via PR #334's tag entry point, n>=3 per case"
   - "2d load_tools is actually reached for (the DEC-28 trap; invisible to a log grep, measure on the suite)"
-  - "2e cache_read_input_tokens before/after across >=20 turns, split by whether load_tools fired"
+  - "2e cache_read_input_tokens before/after across >=20 turns, split by whether load_tools fired. NOTE: the tools array DOES change after a load, so the call following load_tools takes a full prefix miss on 72.8% of turns — the earlier claim that the cached prefix is preserved was wrong"
+  - "2f per-TURN tokens, model-calls-per-turn and end-to-end turn latency. No gate passes on per-call tokens alone: a regression from 3 calls/turn to 4 satisfies every per-call target while total cost rises"
 decision: >
   No DEC number claimed. Per AGENTS.md a number is taken from
   design/09-decision-index.md at MERGE time, not at claim time. Highest

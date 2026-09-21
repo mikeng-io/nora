@@ -6,8 +6,16 @@ what format?*
 ## The verb
 
 ```
-load_tools(names: list[str]) -> {status, tools: [...], unknown: [...]}
+load_tools(names: list[str])  # max 4 names per call
+    -> {status, tools: [...], unknown: [...], refused: [...]}
 ```
+
+**`names` is capped at 4 per call.** `budget: 3` caps *calls*, not *tokens* —
+without a per-call cap one `load_tools(["a"..."t"])` fetches ~8,000 tokens and
+undoes the whole change in a single line. Names past the cap come back in
+`refused`, and `refused` is not an error: the tools that fit are registered
+and usable. 4 covers p90 (2 cold tools) with headroom; max observed is 7,
+which is two calls.
 
 Takes names from the catalogue, returns their full schemas into the turn.
 Nora then calls the tool in the normal way.
@@ -18,7 +26,7 @@ or BM25 index, it has no relevance threshold to tune, and its failure mode is
 an error rather than a silent omission. Anthropic's regex/BM25 search exists
 for catalogues of hundreds to thousands; the same page's own guidance is that
 tool search is for aggregating "200+ tools". Nora has 54 and a catalogue that
-fits in ~900 tokens.
+fits in 991 tokens.
 
 Accepting a **list** rather than one name matters: 13.6% of turns need two
 cold tools and 8.8% need three or more (`00-overview.md`). One call for the
@@ -34,10 +42,20 @@ set costs one round trip; one call per tool costs three.
 | 2 | + `find_parking` schema (540) | calls `find_parking("銅鑼灣")` |
 | 3 | + result + its reporting rules (`03`) | calls `send_reply` |
 
-**Three model calls — the same as today.** A tag turn already spends ~3
-(measured: trace `836eda48…` ran 3 `chat` generations at 35,473 / 35,609 /
-35,675). Today's call 1 spends a round trip on a tool anyway; here it spends
-it on `load_tools`. The extra trip is mostly absorbed, not added.
+**Whether this is 3 calls or 4 is ASSUMED, not measured, and it is the
+bundle's biggest open cost.** A tag turn spends ~3 today (trace `836eda48…`:
+3 `chat` generations at 35,473 / 35,609 / 35,675, each productive). The
+absorption argument is that mean distinct tools per turn is 2.02, so a turn
+with one cold tool plausibly has a call to spare. But today's call 1 calls the
+*actual* tool; here it calls `load_tools` and everything shifts down one.
+
+If the turn grows to 4 calls on cold paths (72.8% of turns), each extra call
+carries the full ~17,800-token resident prompt. **Per-turn, that is a ~30–35%
+saving rather than the ~50% the per-call table shows.** Still a large win, and
+it does not move the break-even anywhere near the observed maximum of 7 — but
+the headline number is per-call and the honest unit is per-turn.
+`05-measurement.md` §3 measures calls-per-turn and tokens-per-turn directly;
+no gate passes on per-call tokens alone.
 
 A hot-tool turn is **unchanged** — 55.2% of calls, no `load_tools` at all.
 
@@ -68,7 +86,8 @@ real tool call. `04-code-surface.md` §5.
 {
   "status": "ok",
   "tools":   [ {"name": "find_parking", "description": "...", "inputSchema": {...}} ],
-  "unknown": []
+  "unknown": [],
+  "refused": []
 }
 ```
 
@@ -82,9 +101,10 @@ Three statuses, R-27's shape:
   `nothing_found` by conduct.md's own rule, which this tool must not be the
   first thing in the system to blur.
 
-A **partial** resolve is `ok` with a non-empty `unknown`: the tools that
-resolved are usable, and reporting that as a failure would throw away work
-that succeeded.
+A **partial** resolve is `ok` with a non-empty `unknown` or `refused`: the
+tools that resolved are registered and usable, and reporting that as a failure
+would throw away work that succeeded. `refused` means over the 4-name cap —
+say which, so the next call asks for the rest rather than re-asking for all.
 
 ## Failure modes, and why this one fails safely
 
@@ -111,36 +131,73 @@ measurement shows this happening, the marker is the thing to fix.
 
 ## Persistence within a turn
 
-**Loaded schemas persist for the rest of the turn.** A turn is bounded (~3
-model calls, `tool_calls` ceiling), cold tools per turn are median 1 / p90 2,
-and re-fetching would spend a round trip to save ~407 tokens on a call that is
-already the cheap one. AgentCore's plugin clears tools between *invocations*,
-not within one — the analogous boundary here is the turn.
+**Loaded schemas persist for the rest of the turn** — concretely, they stay in
+`dynamic_tools` until the turn ends. A turn is bounded (~3 model calls,
+`tool_calls` ceiling), cold tools per turn are median 1 / p90 2, and
+re-fetching would spend a round trip to save ~407 tokens.
 
-Across turns nothing persists: each turn builds its own prompt.
+**The registry must be per-turn, not shared.** `ToolRegistry` in this repo is
+constructed per turn by `build()`, and that must stay true: a process-wide
+registry accumulating `dynamic_tools` would leak tool availability between
+concurrent turns in different rooms, and — worse — would silently re-grow the
+resident set back toward 22,130 over the process's lifetime while every
+per-call measurement kept looking fine. `04` §4 makes the per-turn lifetime
+explicit and `05` §3 watches resident size as a gauge so the regrowth mode
+cannot hide.
 
-## Interaction with prompt caching
+Across turns nothing persists: each turn builds its own prompt and its own
+registry.
 
-Today 30,080 of 35,473 tokens are cached, and the cold call costs 4,575ms
-against ~1,600ms warm. The cache is the reason this is a first-call latency
-and money problem rather than a per-call one, and it is the thing most likely
-to be damaged by accident.
+## The mechanism — `register_dynamic_tool`, verified
 
-Under this split the resident prefix (doctrine + catalogue + hot set, ~11,900)
-is **stable across every turn**, which should cache at least as well as
-today's. Calls *after* a `load_tools` carry a tool array that varies by which
-tools were fetched, and may miss.
+**Strands 1.50.2 has a first-class deferred-loading path.** Verified by
+reading the installed package and by a spike (`05` §2b):
 
-Anthropic's server-side implementation avoids this by keeping deferred tools
-out of the system-prompt prefix and appending discovered definitions inline in
-the conversation. A client-side implementation on OpenAI Chat Completions
-should do the same where the provider allows it: return the schemas **in the
-`tool_result` body**, not by mutating the `tools` array, so the cached prefix
-is untouched. Whether DeepSeek via OmniRoute will then emit a `tool_call` for
-a tool absent from the `tools` array is **unverified and is the single
-highest-risk unknown in this bundle** — `05-measurement.md` §2b probes it
-before anything else is built, and a negative result forces the
-array-mutation variant and a cache re-measurement.
+| seam | file | what it does |
+|---|---|---|
+| `ToolRegistry.dynamic_tools` | `tools/registry.py:39` | a second dict beside `registry` |
+| `register_dynamic_tool(tool)` | `tools/registry.py:562` | "Register a tool dynamically for temporary use" |
+| `get_all_tools_config()` | `tools/registry.py:219` | merges `registry` + `dynamic_tools` |
+| `get_all_tool_specs()` | `event_loop.py:152`, `:523` | **re-read on every model call in the loop**, not once at construction |
+| dispatch | `tools/executors/_executor.py:142` | checks `dynamic_tools` **first**, then `registry` |
+
+So `load_tools` registers the fetched tools on the agent's own registry, and
+the **next model call in the same loop sees them in its `tools` array
+natively**. The model is never asked to call something it has not been given;
+the framework is never asked to dispatch something it does not hold.
+
+An earlier draft of this file proposed returning schemas as text in the
+`tool_result` body specifically to avoid mutating the tools array. That was
+solving a problem this stack does not have, and it would have required the
+model to emit a `tool_call` for an undeclared tool and Strands to dispatch it
+— `_executor.py:449` returns `"Unknown tool: {name}"` for exactly that case.
+**The draft mechanism would have dead-ended at the framework.**
+
+## Interaction with prompt caching — this is where the real cost is
+
+Today 30,080 of 35,473 tokens are cached, and a cold call costs 4,575ms
+against ~1,600ms warm.
+
+Because `get_all_tool_specs()` is re-read per call, **the tools array changes
+on the call immediately after a `load_tools`** — and on an OpenAI-compatible
+API `tools` is rendered into the prefix ahead of the messages. So that call
+takes a **full prefix miss**, not a partial one.
+
+Per cold turn, expected shape:
+
+| call | tools array | cache |
+|---|---|---|
+| 1 (`load_tools`) | hot 6 + `load_tools` — identical every turn | **hit** |
+| 2 (the fetched tool) | + the fetched schema — new | **miss** |
+| 3 (`send_reply`) | unchanged from call 2 | hit off call 2 |
+
+One full miss per cold turn, on 72.8% of turns. That is a real cost the
+earlier draft claimed to avoid and does not.
+
+It is still a large net win, because the absolute number being missed is
+~18,000 rather than ~35,500 — but the honest claim is "the resident prefix is
+stable and smaller", **not** "the cached prefix is preserved". `05` §2e
+measures it instead of asserting it.
 
 ## Known interaction: #325
 
