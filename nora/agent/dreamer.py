@@ -1328,6 +1328,26 @@ class DreamerRuntime:
         sched = self._schedules.get(adaptor_name)
         return sched.samples if sched is not None else 1
 
+    def batch_limit_for(self, adaptor_name: str) -> int | None:
+        """How many rows this adaptor is handed per fire — its schedule's
+        `batch_limit`, `None` for an adaptor with no schedule entry.
+
+        The third of the per-adaptor numbers this runtime already hands back
+        (`samples_for`, `max_items_for`), and it exists for the same reason:
+        the value is per-ADAPTOR and lives here, so a caller that needs it
+        should ask rather than keep a copy. `nora/app/runtime.py`'s
+        `_dream_adaptor_once` reads the same field off the same mapping.
+
+        Measured 2026-09-22: the eval seam drove EVERY adaptor with a
+        hardcoded 64 while the deployment hands note-candidates 80 and
+        culture 300 — a tier present but REDUCED, which
+        `design/evaluation/11-the-sandbox-rebuild.md` §6 R7 calls the same
+        divergence as one absent. It surfaced as note-candidates emitting
+        ~7,000 output tokens a call against production's median of 711.
+        """
+        sched = self._schedules.get(adaptor_name)
+        return sched.batch_limit if sched is not None else None
+
     def max_items_for(self, adaptor_name: str) -> int:
         """This adaptor's envelope item cap — its schedule's `max_items`
         where set, else the runtime-wide `MAX_ITEMS`."""

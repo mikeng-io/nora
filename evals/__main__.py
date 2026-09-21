@@ -13,7 +13,16 @@ import os
 import sys
 from pathlib import Path
 
-from evals.backbone import ERROR, FAIL, PASS, UNSTABLE, base_name, read, sample_read
+from evals.backbone import (
+    ERROR,
+    FAIL,
+    PASS,
+    UNSTABLE,
+    base_name,
+    drain_spend,
+    read,
+    sample_read,
+)
 from evals.rebuilt.grading import DEFAULT_JUDGE_MODEL, DEFAULT_SAMPLES, Judge
 from evals.scenarios import CORPUS_ENTRY, JUDGED_CORPORA, census, experiment_for
 from evals.subject_config import materialise
@@ -111,6 +120,27 @@ def _corpora_for(args: argparse.Namespace) -> list[str]:
     return sorted(selected)
 
 
+def _print_spend() -> None:
+    """What this corpus actually spent, and whether any call was TRUNCATED.
+
+    Printed on every run because it is free — the numbers ride on spans this
+    process already captures for `agent.prefill` — and because the
+    alternative is what happened on 2026-09-22: a truncation was diagnosed by
+    changing a ceiling and re-running, twice, while the call's own
+    `finish_reason` sat in memory unread.
+    """
+    spend = drain_spend()
+    if not spend["calls"]:
+        return
+    line = (
+        f"  spend: {spend['calls']} model call(s), in={spend['input']} "
+        f"(cached {spend['cached']}, fresh {spend['fresh']}), out={spend['output']}"
+    )
+    if spend["truncated"]:
+        line += f"   TRUNCATED: {spend['truncated']}"
+    print(line)
+
+
 def _run_one(
     name: str, *, source_url: str, judge: Judge | None, sample: int,
     only: frozenset[str] | None = None,
@@ -121,6 +151,7 @@ def _run_one(
     report = experiment.run_evaluations(task=task)
     scope = f" [{len(experiment.cases)} selected]" if only else ""
     print(f"--- {name}: {census(name)}{scope} ---")
+    _print_spend()
     if sample > 1:
         readings = sample_read(report)
         # THE SPLIT, not just the verdict. `UNSTABLE` says the draws

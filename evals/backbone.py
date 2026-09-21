@@ -88,6 +88,28 @@ NORA_ADMITTED = "nora.admitted"
 #: shaped like a model turn. Empty string for every entry point that never
 #: calls `build_prefill` (`gate`, `dreamer`).
 NORA_BLOCKS_EMPTY = "nora.blocks_empty"
+#: What the SUBJECT's turn spent, read off the model-call spans this process
+#: already captures for `agent.prefill` — NOT from an external collector.
+#:
+#: Eval runs force `[obs.tracing]` off, deliberately: a run's spans would land
+#: in the deployment's own collector beside real ones. The cost of that was
+#: measured on 2026-09-22 — a note-candidates case failed with a truncation
+#: and the call that truncated was invisible, so the only way to ask "cut off
+#: at what?" was to change a ceiling and re-run. Reading the numbers HERE
+#: needs no second Langfuse project, no credential, and cannot pollute
+#: anything: `_prefill_capture()` already attaches an in-memory exporter to
+#: this process's own provider, and Strands puts `gen_ai.usage.*` and
+#: `finish_reason` on every model-call span.
+#:
+#: These describe the FIRST drive and exclude the judge, which is eval-layer
+#: cost rather than the subject's.
+NORA_CALLS = "nora.model_calls"
+NORA_INPUT_TOKENS = "nora.input_tokens"
+NORA_OUTPUT_TOKENS = "nora.output_tokens"
+NORA_CACHED_TOKENS = "nora.cached_input_tokens"
+#: Every distinct `finish_reason` the turn's calls reported, comma-joined.
+#: `max_tokens` here is the truncation, named rather than inferred.
+NORA_STOPS = "nora.stop_reasons"
 #: `Outcome.written`/`len(.changed)`/`len(.staged)` off the FIRST drive —
 #: never surfaced to a grader before this (S6, `10-the-scenario-map.md` §3).
 #: `dream()`'s own `written`/`changed` are already PER-CALL DELTAS (it
@@ -221,6 +243,71 @@ def _blocks_empty(exporter: InMemorySpanExporter) -> str | None:
         if finished.name == "agent.prefill":
             return str((finished.attributes or {}).get("nora.prefill.blocks_empty", ""))
     return None
+
+
+#: What every case driven in this process has spent, appended by `_drive`.
+#:
+#: A module-level accumulator and not a field on the report, because the SDK's
+#: report does NOT carry `environment_state`: `Experiment` builds each row from
+#: `result["case"]` alone (`experiment.py:672`), so the graders see the spend
+#: and the report never does. Measured by printing nothing on the first try.
+#:
+#: Safe as process state for the reason `nora_task`'s own docstring already
+#: gives: `TracedHandler` forces `max_workers=1`, so cases are driven one at a
+#: time, in this process.
+_SPEND: list[dict[str, Any]] = []
+
+
+def drain_spend() -> dict[str, Any]:
+    """Totals for the cases driven since the last drain, and reset.
+
+    Drained per corpus rather than accumulated for the run, so a corpus's
+    line describes that corpus.
+    """
+    calls = sum(int(x[NORA_CALLS]) for x in _SPEND)
+    inp = sum(int(x[NORA_INPUT_TOKENS]) for x in _SPEND)
+    out = sum(int(x[NORA_OUTPUT_TOKENS]) for x in _SPEND)
+    cached = sum(int(x[NORA_CACHED_TOKENS]) for x in _SPEND)
+    stops: list[str] = []
+    for x in _SPEND:
+        for reason in str(x[NORA_STOPS] or "").split(","):
+            if reason and reason not in stops:
+                stops.append(reason)
+    _SPEND.clear()
+    return {
+        "calls": calls, "input": inp, "output": out, "cached": cached,
+        "fresh": inp - cached, "stops": stops,
+        # NAMED, not inferred. A `max_tokens` finish reason is the truncation
+        # that cost two ceiling changes and two re-runs to identify on
+        # 2026-09-22, and it was in this attribute the whole time.
+        "truncated": [r for r in stops if "max_token" in r or "length" in r],
+    }
+
+
+def _model_calls(exporter: InMemorySpanExporter) -> dict[str, Any]:
+    """What the model calls captured so far spent, and how they stopped.
+
+    A span counts as a model call when it carries `gen_ai.usage.output_tokens`
+    — the attribute Strands sets on exactly those (`telemetry/tracer.py`), so
+    no span name has to be matched and a rename cannot silently empty this.
+    """
+    calls = inp = out = cached = 0
+    stops: list[str] = []
+    for span in exporter.get_finished_spans():
+        attrs = span.attributes or {}
+        if "gen_ai.usage.output_tokens" not in attrs:
+            continue
+        calls += 1
+        inp += int(attrs.get("gen_ai.usage.input_tokens") or 0)
+        out += int(attrs.get("gen_ai.usage.output_tokens") or 0)
+        cached += int(attrs.get("gen_ai.usage.cache_read_input_tokens") or 0)
+        reason = attrs.get("finish_reason")
+        if reason and str(reason) not in stops:
+            stops.append(str(reason))
+    return {
+        NORA_CALLS: calls, NORA_INPUT_TOKENS: inp, NORA_OUTPUT_TOKENS: out,
+        NORA_CACHED_TOKENS: cached, NORA_STOPS: ",".join(stops),
+    }
 
 
 @dataclass(frozen=True)
@@ -510,6 +597,10 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
             nora_case = _as_nora_case(case, spec, trigger=subject.cfg.engagement.trigger.text)
             outcome = await port.drive(subject, nora_case, now_ms=seeded.now_ms)
             blocks_empty = _blocks_empty(exporter)
+            # BEFORE the judge: these describe what the SUBJECT spent, and a
+            # judge's draws are the eval layer's own cost.
+            spend = _model_calls(exporter)
+            _SPEND.append(spend)
             outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)
 
             # S3/S9 (`10-the-scenario-map.md` §3) — judged HERE, while the
@@ -558,6 +649,7 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                     EnvironmentState(name=NORA_DELIVERY, state=outcome.delivery),
                     EnvironmentState(name=NORA_ADMITTED, state=outcome.admitted),
                     EnvironmentState(name=NORA_BLOCKS_EMPTY, state=blocks_empty),
+                    *(EnvironmentState(name=k, state=v) for k, v in spend.items()),
                     EnvironmentState(name=NORA_WRITTEN, state=outcome.written),
                     EnvironmentState(name=NORA_CHANGED_COUNT, state=len(outcome.changed)),
                     EnvironmentState(name=NORA_STAGED_COUNT, state=len(outcome.staged)),
@@ -631,6 +723,11 @@ def nora_task(spec: Spec):
                     EnvironmentState(name=NORA_DELIVERY, state=""),
                     EnvironmentState(name=NORA_ADMITTED, state=None),
                     EnvironmentState(name=NORA_BLOCKS_EMPTY, state=None),
+                    EnvironmentState(name=NORA_CALLS, state=None),
+                    EnvironmentState(name=NORA_INPUT_TOKENS, state=None),
+                    EnvironmentState(name=NORA_OUTPUT_TOKENS, state=None),
+                    EnvironmentState(name=NORA_CACHED_TOKENS, state=None),
+                    EnvironmentState(name=NORA_STOPS, state=None),
                     EnvironmentState(name=NORA_WRITTEN, state=None),
                     EnvironmentState(name=NORA_CHANGED_COUNT, state=None),
                     EnvironmentState(name=NORA_STAGED_COUNT, state=None),

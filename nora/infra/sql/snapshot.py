@@ -15,7 +15,7 @@ READ-ONLY, AND THAT IS STRUCTURAL RATHER THAN A PROMISE. There is no `INSERT`,
 reconstructing, and a second run over the same instant would answer differently
 from the first.
 
-WHERE IT LIVES, AND WHY HERE. It composes four reads of four tables through the
+WHERE IT LIVES, AND WHY HERE. It composes five reads of five tables through the
 same store classes production runs, over a bare `AsyncEngine`, and imports
 nothing above `nora.infra`. That is what `nora.infra.sql` already is, and every
 other candidate location costs something real: `nora.app` would put a read-only
@@ -77,6 +77,39 @@ WHAT IT CANNOT FREEZE, stated rather than left to be discovered:
   left for a reader to discover from a prompt that reads thinner than it
   should. Closing it means building the reconstruction's transcript one layer
   up, where the join already lives.
+- **WHEN a reminder was CANCELLED.** `reminders` has no history table, and
+  exactly three of its columns move after create — verified, not assumed: the
+  four `sa.update(REMINDERS)` sites in `nora/infra/sql/reminders.py`
+  (`claim`, `mark`, `cancel`, `sweep_firing`) touch only `state`, `fired_at`
+  and `outcome`. Everything else — `text`, `due_at`, `created_at`, `kind`,
+  `payload`, the requester, the room, and every recurrence/series column — is
+  written once by `_insert_values` and never updated, so today's row IS the
+  as-of value for all of them.
+
+  Two of the three moving columns are recoverable and one is not, and the
+  split is the same shape as a note's retirement:
+
+    - `fired_at` (and the `outcome`/terminal `state` it accompanies) IS
+      instant-gated. Every terminal write stamps it — `mark(fired_at=now)` on
+      the normal path and `sweep_firing` on the swept one, whose own docstring
+      says the stamp is "the only timestamp that exists" for a swept row. So a
+      resolution AFTER the instant is removable: `_reminders` reports the row
+      `PENDING` with both blanked, because that is what it was.
+    - a CANCELLATION is NOT. `cancel()` writes `state` and nothing else, and
+      the schema says so in as many words: `fired_at` is "NULL until the row
+      fires, and NULL forever on one that is cancelled." A row cancelled one
+      minute after the instant and one cancelled a month before are the same
+      row today, and no query can separate them.
+
+  **So a cancelled row is OMITTED rather than guessed, and the direction is
+  chosen deliberately.** Reporting it `PENDING` would be the dangerous guess:
+  a pending reminder is what FIRES, so a row cancelled long before the instant
+  would put a turn into the reconstruction that the room never had, and the
+  suite would grade that turn as behaviour. Omitting it fails the other way,
+  loudly — a case anchored on that row finds no row and ERRORs, which is a
+  reconstruction refusing to answer rather than answering wrongly. It is the
+  same rule the peer card follows two bullets up.
+
 - **Anything before its tier's history existed.** `0059_standing_revision`
   deliberately did not backfill, so a room's standing chain begins at its first
   fold after that migration and `standing` reads `None` for any instant before
@@ -98,6 +131,7 @@ nothing, and reads identically to a room that genuinely had neither.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from typing import Any
 
 import sqlalchemy as sa
@@ -106,13 +140,16 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nora.domain.culture import CultureRevision
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.notes import Note, NoteRevision
+from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import Standing
 from nora.infra.sql.notes import _row_to_note, _row_to_revision
+from nora.infra.sql.reminders import _row_to_reminder
 from nora.infra.sql.schema import (
     CULTURE_REVISION,
     MESSAGES,
     NOTE,
     NOTE_REVISION,
+    REMINDERS,
 )
 from nora.infra.sql.standing import SqlStandingStore
 
@@ -167,6 +204,19 @@ class Snapshot:
     #: The four other mutable columns are TODAY's — see the module docstring.
     notes: tuple[tuple[Note, NoteRevision], ...]
 
+    #: Every reminder this room had OUTSTANDING at `before_ms`, oldest first.
+    #:
+    #: Each one reports the state it held THEN, which for everything in this
+    #: tuple is `PENDING`: a row is only here if nothing had resolved it by the
+    #: instant, and `_reminders` blanks the `fired_at`/`outcome` of a
+    #: resolution that had not happened yet. A row that had already fired,
+    #: failed or been swept by then is not in this tuple at all.
+    #:
+    #: **A CANCELLED row is MISSING, and that is the one tier gap this module
+    #: cannot close** — see the module docstring. It is an omission, never a
+    #: silent `PENDING`.
+    reminders: tuple[Reminder, ...]
+
 
 async def snapshot(
     engine: AsyncEngine,
@@ -188,18 +238,19 @@ async def snapshot(
     silent cut would make a short transcript ambiguous between «the room was
     quiet» and «the window clipped it».
 
-    Four independent reads, run in SEQUENCE rather than concurrently: they are
+    Five independent reads, run in SEQUENCE rather than concurrently: they are
     point-in-time reads of an append-only history, so nothing they could
     observe changes between them, and running them one after another means at
     most one of this call's connections is checked out of the pool at a time
-    rather than four contending for it.
+    rather than five contending for it.
 
     Sequential is not the same as sharing a connection, and this does not share
-    one: FOUR connections are opened and closed in turn, one per read —
-    `_transcript`, `SqlStandingStore.read_as_of`, `_culture`, `_notes`. (This
-    file carries four `engine.connect()` sites, not three, because
-    `_transcript` has a bounded and an unbounded branch; exactly one of them
-    runs. The fourth connection is `read_as_of`'s own.) One connection
+    one: FIVE connections are opened and closed in turn, one per read —
+    `_transcript`, `SqlStandingStore.read_as_of`, `_culture`, `_notes`,
+    `_reminders`. (This file carries five `engine.connect()` sites, not four,
+    because `_transcript` has a bounded and an unbounded branch; exactly one
+    of them runs. The remaining connection is `read_as_of`'s own.) One
+    connection
     for the whole reconstruction would mean threading it through every helper,
     and `read_as_of` is a store method that owns its own — a cost with nothing
     to buy, since a sequence of reads never contends with itself.
@@ -221,6 +272,10 @@ async def snapshot(
     )
     culture = await _culture(engine, culture_key=culture_key, before_ms=before_ms)
     notes = await _notes(engine, unit=unit, before_ms=before_ms)
+    reminders = await _reminders(
+        engine, platform=platform, conversation_id=conversation_id,
+        before_ms=before_ms,
+    )
     return Snapshot(
         platform=platform,
         conversation_id=conversation_id,
@@ -229,6 +284,7 @@ async def snapshot(
         standing=standing,
         culture=culture,
         notes=notes,
+        reminders=reminders,
     )
 
 
@@ -469,6 +525,91 @@ async def _notes(
                 _row_to_revision(revision_row),
             ))
     return tuple(out)
+
+
+async def _reminders(
+    engine: AsyncEngine, *, platform: str, conversation_id: str, before_ms: int
+) -> tuple[Reminder, ...]:
+    """The room's OUTSTANDING reminders at `before_ms`, oldest first.
+
+    **Keyed on `(platform, conversation_id)`, which is the pair the table
+    actually carries** — unlike the transcript, whose rows have no platform
+    column at all. So this needs no argument the caller cannot already give.
+
+    The as-of rule is ONE sentence and it is deliberately not the state
+    column: **a row was pending at the instant unless a `fired_at` at or
+    before the instant says otherwise.** That single test covers every shape
+    the table can hold, which is why it is written as one rule rather than a
+    branch per state:
+
+      - `pending` today, created by then — pending then;
+      - `firing` today with no stamp — `claim()` set that NOW, not at the
+        instant, so it was pending then;
+      - `done`/`failed` stamped AFTER the instant — the resolution had not
+        happened, so pending then, with the stamp and outcome removed;
+      - `done`/`failed` stamped at or before it — genuinely resolved by then,
+        and therefore not outstanding, so it is not returned at all.
+
+    `created_at <= before_ms` is the existence test and is separate from all
+    of that: a reminder written after the instant was not in the room's queue
+    then however pending it is now.
+
+    **CANCELLED rows are excluded entirely**, and that is the module
+    docstring's named limitation rather than a filter with a reason of its
+    own: `cancel()` records no instant, so «cancelled» carries no when. The
+    exclusion is expressed in SQL rather than by dropping rows afterwards so
+    that a reader of the query sees the whole visibility rule in one place.
+
+    One `engine.connect()`, no transaction, consistent with every other read
+    here.
+    """
+    instant = datetime.fromtimestamp(before_ms / 1000, tz=UTC)
+    stmt = (
+        sa.select(REMINDERS)
+        .where(
+            REMINDERS.c.platform == platform,
+            REMINDERS.c.conversation_id == conversation_id,
+            REMINDERS.c.created_at <= instant,
+            REMINDERS.c.state != ReminderState.CANCELLED.value,
+            # Outstanding AT the instant: either never stamped, or stamped
+            # after it. A stamp at or before it means the row had already
+            # been dealt with and was not in the queue she was looking at.
+            sa.or_(
+                REMINDERS.c.fired_at.is_(None),
+                REMINDERS.c.fired_at > instant,
+            ),
+        )
+        .order_by(REMINDERS.c.created_at.asc(), REMINDERS.c.id.asc())
+    )
+    async with engine.connect() as conn:
+        rows = (await conn.execute(stmt)).all()
+    return tuple(_as_of_reminder(_row_to_reminder(row)) for row in rows)
+
+
+def _as_of_reminder(reminder: Reminder) -> Reminder:
+    """A row the query kept, with a resolution that had not happened removed.
+
+    Every reminder `_reminders` returns was outstanding at the instant — that
+    is what its `WHERE` selected — so all three moving columns have a known
+    as-of value: `PENDING`, and no stamp, and no outcome. Restoring them is
+    the same move `_as_of_note` makes for a retirement, and for the same
+    reason: the row is TODAY's, and leaving it un-restored would hand back a
+    reminder the snapshot itself calls outstanding while it carries the
+    timestamp and the verdict of a firing still in its future.
+
+    All three together, never one: a `fired_at` beside `PENDING` would claim
+    a row that fired and then went back to waiting, and an `outcome` with no
+    stamp would read as a verdict reached at no recorded time.
+    """
+    if (
+        reminder.state is ReminderState.PENDING
+        and reminder.fired_at is None
+        and reminder.outcome is None
+    ):
+        return reminder
+    return replace(
+        reminder, state=ReminderState.PENDING, fired_at=None, outcome=None,
+    )
 
 
 def _as_of_note(note_row: Any, *, before_ms: int) -> Note:

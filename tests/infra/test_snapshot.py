@@ -17,6 +17,7 @@ The database is MODULE-scoped per `test_culture_store.py`'s pattern.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -26,12 +27,14 @@ import sqlalchemy as sa
 
 from nora.domain.models import NormalizedMessage
 from nora.domain.notes import NoteSupersedeReason
+from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import Standing
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.notes import SqlNoteStore
+from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.snapshot import snapshot
 from nora.infra.sql.standing import SqlStandingStore
 
@@ -143,11 +146,11 @@ async def _at(engine: Any, when: int, **kwargs: Any) -> Any:
 # --- the empty room ----------------------------------------------------------
 
 
-async def test_a_room_with_nothing_in_it_snapshots_to_four_empties(
+async def test_a_room_with_nothing_in_it_snapshots_to_five_empties(
     engine: Any
 ) -> None:
     """Every tier's «nothing here» is its own value, and none of them is an
-    error. `None` for the two heads, `()` for the two collections — a reader
+    error. `None` for the two heads, `()` for the three collections — a reader
     building a case can tell «she held no position» apart from «this room does
     not exist», because neither is expressible as the other."""
     seen = await _at(engine, T0)
@@ -155,6 +158,7 @@ async def test_a_room_with_nothing_in_it_snapshots_to_four_empties(
     assert seen.standing is None
     assert seen.culture is None
     assert seen.notes == ()
+    assert seen.reminders == ()
 
 
 async def test_the_snapshot_says_what_it_is_a_snapshot_of(engine: Any) -> None:
@@ -543,3 +547,112 @@ async def test_the_snapshot_writes_nothing(engine: Any) -> None:
     before = await counts()
     await _at(engine, T0 + MINUTE)
     assert await counts() == before
+
+
+# --- the reminder tier -------------------------------------------------------
+#
+# Read DIRECTLY off `snapshot()`, and that is the point rather than a
+# convenience. The sandbox seeds every reminder through `ReminderSeed`, which
+# has no `state` field because everything it seeds was outstanding — so the
+# as-of restoration below is INVISIBLE through that path and a test written
+# there passes with `_as_of_reminder` deleted. Measured: the first version of
+# this coverage lived in the integration file and stayed green under exactly
+# that revert.
+
+
+async def _texts(engine: Any, when: int) -> set[str]:
+    """The outstanding reminders at `when`, by text.
+
+    Text rather than the whole tuple because `engine` is MODULE-scoped: these
+    rows accumulate across the tests below exactly as the module's messages
+    and notes do, so each assertion scopes itself to the row it created.
+    """
+    return {r.text for r in (await _at(engine, when)).reminders}
+
+
+async def _remind(
+    engine: Any, text: str, *, created: int, due: int, conv: str = CONV,
+) -> Any:
+    row = Reminder(
+        id=uuid4(), requester_person_id="miles_novak", platform=PLATFORM,
+        conversation_id=conv, conversation_type="group", text=text,
+        created_at=_utc(created), due_at=_utc(due),
+        state=ReminderState.PENDING, fired_at=None, outcome=None,
+    )
+    await SqlReminderStore(engine).create(row)
+    return row
+
+
+def _utc(ms: int) -> datetime:
+    return datetime.fromtimestamp(ms / 1000, tz=UTC)
+
+
+async def test_a_reminder_written_after_the_instant_is_not_in_the_queue(
+    engine: Any,
+) -> None:
+    await _remind(engine, "later", created=T0 + 9 * MINUTE, due=T0 + 90 * MINUTE)
+    assert "later" not in await _texts(engine, T0 + 5 * MINUTE)
+
+
+async def test_a_reminder_outstanding_at_the_instant_is_returned(engine: Any) -> None:
+    await _remind(engine, "ask about friday", created=T0 + MINUTE, due=T0 + 90 * MINUTE)
+    assert "ask about friday" in await _texts(engine, T0 + 5 * MINUTE)
+
+
+async def test_a_reminder_resolved_after_the_instant_is_restored_to_pending(
+    engine: Any,
+) -> None:
+    """THE FALSIFICATION for `_as_of_reminder`. The row is `DONE` today with a
+    stamp and an outcome; at the instant none of the three had happened, and a
+    reconstruction that hands back today's values describes a reminder as
+    outstanding while carrying the verdict of a firing still in its future.
+
+    Delete the `replace(...)` in `_as_of_reminder` and this goes red on all
+    three fields.
+    """
+    row = await _remind(engine, "chase it", created=T0 + MINUTE, due=T0 + 2 * MINUTE)
+    await SqlReminderStore(engine).mark(
+        row.id, ReminderState.DONE, fired_at=_utc(T0 + 8 * MINUTE), outcome="sent",
+    )
+    [seen] = [
+        r for r in (await _at(engine, T0 + 5 * MINUTE)).reminders
+        if r.text == "chase it"
+    ]
+    assert seen.state is ReminderState.PENDING
+    assert seen.fired_at is None
+    assert seen.outcome is None
+
+
+async def test_a_reminder_resolved_before_the_instant_is_not_outstanding(
+    engine: Any,
+) -> None:
+    """It was not something the room was waiting on. The same rule that keeps
+    a note retired before the instant out of the notebook."""
+    row = await _remind(engine, "already done", created=T0 + MINUTE, due=T0 + 2 * MINUTE)
+    await SqlReminderStore(engine).mark(
+        row.id, ReminderState.DONE, fired_at=_utc(T0 + 3 * MINUTE), outcome="sent",
+    )
+    assert "already done" not in await _texts(engine, T0 + 5 * MINUTE)
+
+
+async def test_a_cancelled_reminder_is_omitted_because_its_instant_is_unknowable(
+    engine: Any,
+) -> None:
+    """`cancel()` writes `state` and no timestamp, and the schema says
+    `fired_at` is "NULL forever on one that is cancelled" — so a row cancelled
+    a month before the instant and one cancelled a minute after are the same
+    row today. It is omitted rather than guessed PENDING, because a pending
+    row is what FIRES and inventing one is the dangerous direction."""
+    row = await _remind(engine, "called off", created=T0 + MINUTE, due=T0 + 90 * MINUTE)
+    await SqlReminderStore(engine).cancel(row.id, conversation_id=CONV)
+    assert "called off" not in await _texts(engine, T0 + 5 * MINUTE)
+
+
+async def test_another_rooms_reminder_does_not_leak_in(engine: Any) -> None:
+    """Keyed on `(platform, conversation_id)`, the pair this table actually
+    carries — unlike the transcript, whose rows have no platform column."""
+    await _remind(
+        engine, "someone else's", created=T0 + MINUTE, due=T0 + 90 * MINUTE,
+        conv=OTHER_CONV,
+    )
+    assert "someone else's" not in await _texts(engine, T0 + 5 * MINUTE)

@@ -272,6 +272,48 @@ same correction §7.1 records being made once before.
 Dreamer runs under too. It is one sample of one case; a ceiling is never sized
 on n=1.
 
+### 1.5 The counterfactual state — DECIDED 2026-09-22 (operator)
+
+A fifth state, and the first deliberate hole in §0's rule. It exists because
+the culture arm's `-chronicle` case cannot be a real moment: a chronicle and
+an account are the SAME FACTS IN TWO REPRESENTATIONS, and no room ever held
+both at once. The operator ruled the case stays.
+
+**Why it earns the hole, and this is the opposite of the argument for
+dropping it.** "An account beats a chronicle" is the premise
+`design/culture-tier` is BUILT ON, not a question it asks — which was the
+case for dropping the arm. It is the better reason to keep it: a premise
+nobody has measured is the one most worth measuring. If it comes back null
+the finding is about whether the tier should EXIST, and that is a finding
+worth being able to get.
+
+**What makes the hole safe is the COUNT, not the argument.** A counterfactual
+is a manipulation, not a reconstruction. `census()` reports it as its own
+number beside total/active/parked/unanchored, and never folds it in, because
+an aggregate that averaged the two would let §0's rule erode by ARITHMETIC
+rather than by anybody deciding to relax it. A corpus with none says nothing
+about the state, so the column cannot make it look ordinary.
+
+**The state holds ONLY what cannot be reconstructed.** The same arm's
+`-deviant` case is NOT in it: another real room's REAL account, attached
+here, is a declared swap of real data and stays anchored. Putting it here too
+would be the cheap economy that makes the number stop meaning anything — one
+arm in the hole, not two.
+
+A case states `counterfactual: {varies, why}` beside a real `snapshot:`, and
+`evals/scenarios.py` refuses: a counterfactual with no anchor (that is
+authored content, which this corpus has no path for), a `varies` outside a
+CLOSED set (today: `culture`), a missing `why`, and a case that is both
+parked and counterfactual (a parked case does not run, so varying a tier in
+it asserts nothing). Widening the set is an edit to that file, which is the
+point.
+
+**Three controls, one hole.** W3 of the culture arm inverts its expectation
+(`-nocult` silence, `-account` speak), which guards presence-versus-content
+structurally; `-deviant` guards it by content using real data; `-chronicle`
+tests the representation claim the tier is named for. Only the last costs the
+rule anything.
+
 ### Where the suite runs — DECIDED 2026-09-21: on the deploy host
 
 Not a preference. Measured: with the deployment's features on, composition

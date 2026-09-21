@@ -68,17 +68,19 @@ import contextlib
 import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 import sqlalchemy as sa
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from nora.domain.notes import Note, NoteRevision
+from nora.domain.reminders import Reminder
 from nora.infra.sql import create_readonly_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.snapshot import Snapshot, snapshot
 
-from .knowledge import Knowledge, Message, NoteSeed, know
+from .knowledge import Knowledge, Message, NoteSeed, ReminderSeed, know
 from .obtain import Subject
 
 __all__ = ["Sandboxed", "as_knowledge", "sandbox_database", "sandbox_from_snapshot"]
@@ -220,6 +222,35 @@ def as_knowledge(shot: Snapshot) -> Knowledge:
         ),
         culture=None if shot.culture is None else shot.culture.body,
         notes=tuple(_note_seed(note, revision) for note, revision in shot.notes),
+        # OFFSETS measured against the instant itself, which is what keeps
+        # the copy at the moment's own clock: `know()` is handed
+        # `now_ms=shot.before_ms`, so `base + due_in_seconds` reproduces the
+        # real `due_at` exactly, and an overdue row stays overdue by the
+        # number of seconds it really was.
+        reminders=tuple(_reminder_seed(r, before_ms=shot.before_ms) for r in shot.reminders),
+    )
+
+
+def _reminder_seed(reminder: Reminder, *, before_ms: int) -> ReminderSeed:
+    """One outstanding reminder as the seed that reproduces it.
+
+    `state`, `fired_at` and `outcome` are not carried because `_reminders`
+    already established them: everything in `Snapshot.reminders` was
+    outstanding at the instant, so all three have one value and `ReminderSeed`
+    has no field to get them wrong in.
+
+    The requester IS copied. It is an `identity.toml` handle rather than an
+    account — the same reason `person_id` is copied on a transcript row — and
+    it is the key the proactive path reads to decide whose request this was.
+    """
+    instant = datetime.fromtimestamp(before_ms / 1000, tz=UTC)
+    return ReminderSeed(
+        text=reminder.text,
+        due_in_seconds=(reminder.due_at - instant).total_seconds(),
+        created_seconds_ago=(instant - reminder.created_at).total_seconds(),
+        requester_person_id=reminder.requester_person_id,
+        kind=reminder.kind,
+        payload=reminder.payload,
     )
 
 

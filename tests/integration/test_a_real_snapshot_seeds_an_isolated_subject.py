@@ -26,6 +26,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID
 
 import psycopg
 import pytest
@@ -33,11 +34,13 @@ import sqlalchemy as sa
 
 from evals.backbone import _close
 from nora.domain.models import NormalizedMessage
+from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import Standing
 from nora.infra.sql import create_sql_engine
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.notes import SqlNoteStore
+from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.schema import MESSAGES
 from nora.infra.sql.standing import SqlStandingStore
 from nora.subject import (
@@ -55,6 +58,26 @@ from tests.sandbox_fixtures import ROOM, Source, seed_source
 BEFORE_MS = 1_752_000_000_000
 MINUTE = 60_000
 HOUR = 3_600_000
+
+#: Fixed ids, so a test names the row it means instead of matching on text.
+OUTSTANDING = UUID("aaaaaaaa-0000-4000-8000-000000000001")
+FIRED_BEFORE = UUID("aaaaaaaa-0000-4000-8000-000000000002")
+FIRED_AFTER = UUID("aaaaaaaa-0000-4000-8000-000000000003")
+CREATED_AFTER = UUID("aaaaaaaa-0000-4000-8000-000000000004")
+CANCELLED = UUID("aaaaaaaa-0000-4000-8000-000000000005")
+
+
+def _at(ms: int) -> datetime:
+    return datetime.fromtimestamp(ms / 1000, tz=UTC)
+
+
+def _reminder(rid: UUID, text: str, *, created: int, due: int) -> Reminder:
+    return Reminder(
+        id=rid, requester_person_id="miles_novak", platform=ROOM[0],
+        conversation_id=ROOM[1], conversation_type="group", text=text,
+        created_at=_at(created), due_at=_at(due),
+        state=ReminderState.PENDING, fired_at=None, outcome=None,
+    )
 
 
 @pytest.fixture
@@ -132,6 +155,42 @@ async def source(
         established_in=ROOM[1], body="nobody has booked saturday",
         established_by="debrief", now_ms=BEFORE_MS + 5 * HOUR, anchor_date=20260702,
     )
+    # THE REMINDER TIER, one row per shape the as-of rule has to separate.
+    # Four of the five must NOT reach the sandbox, and each is excluded for a
+    # different reason — a single pending row would pass any of them.
+    rows = SqlReminderStore(engine)
+    await rows.create(_reminder(
+        OUTSTANDING, "ask whether friday holds",
+        created=BEFORE_MS - 6 * HOUR, due=BEFORE_MS + 2 * HOUR,
+    ))
+    resolved_before = _reminder(
+        FIRED_BEFORE, "remind them about the deposit",
+        created=BEFORE_MS - 8 * HOUR, due=BEFORE_MS - 5 * HOUR,
+    )
+    await rows.create(resolved_before)
+    await rows.mark(
+        resolved_before.id, ReminderState.DONE,
+        fired_at=_at(BEFORE_MS - 5 * HOUR), outcome="sent",
+    )
+    fired_after = _reminder(
+        FIRED_AFTER, "chase the booking",
+        created=BEFORE_MS - 7 * HOUR, due=BEFORE_MS + 30 * MINUTE,
+    )
+    await rows.create(fired_after)
+    await rows.mark(
+        fired_after.id, ReminderState.DONE,
+        fired_at=_at(BEFORE_MS + 3 * HOUR), outcome="sent",
+    )
+    await rows.create(_reminder(
+        CREATED_AFTER, "book saturday instead",
+        created=BEFORE_MS + HOUR, due=BEFORE_MS + 6 * HOUR,
+    ))
+    cancelled = _reminder(
+        CANCELLED, "the one whose cancellation has no clock",
+        created=BEFORE_MS - 9 * HOUR, due=BEFORE_MS + 4 * HOUR,
+    )
+    await rows.create(cancelled)
+    await rows.cancel(cancelled.id, conversation_id=ROOM[1])
     return src
 
 
@@ -261,6 +320,70 @@ async def test_the_sandbox_holds_the_notebook_as_it_stood_then(sandbox, source) 
 # --- the source is untouched -------------------------------------------------
 
 
+async def _pending(subject: Subject) -> list[Any]:
+    """What the sandbox's own store answers a proactive turn — the production
+    read path, not a query of my own."""
+    return list(await subject.deps.reminders.pending_for(subject.room[1]))
+
+
+async def test_the_sandbox_holds_the_reminders_the_room_was_waiting_on(
+    sandbox, source,
+) -> None:
+    await _seed(sandbox, source)
+    assert [r.text for r in await _pending(sandbox)] == [
+        "chase the booking", "ask whether friday holds",
+    ], "oldest first, and ONLY the two that were outstanding at the instant"
+
+
+async def test_a_reminder_resolved_after_the_instant_comes_back_pending(
+    sandbox, source,
+) -> None:
+    """THE GATING TEST, and the one a reconstruction that reads today's row
+    fails. `chase the booking` is `DONE` today with a stamp and an outcome;
+    at the instant it had not fired, so all three must be as-of."""
+    await _seed(sandbox, source)
+    [chased] = [r for r in await _pending(sandbox) if r.text == "chase the booking"]
+    assert chased.state is ReminderState.PENDING
+    assert chased.fired_at is None
+    assert chased.outcome is None
+
+
+async def test_a_reminder_already_fired_by_then_is_not_in_the_queue(
+    sandbox, source,
+) -> None:
+    """It was not something the room was waiting on, so it is not seeded —
+    the same rule that keeps a note retired before the instant out."""
+    await _seed(sandbox, source)
+    assert "remind them about the deposit" not in {r.text for r in await _pending(sandbox)}
+
+
+async def test_a_reminder_written_after_the_instant_is_not_there(sandbox, source) -> None:
+    await _seed(sandbox, source)
+    assert "book saturday instead" not in {r.text for r in await _pending(sandbox)}
+
+
+async def test_a_cancelled_reminder_is_omitted_rather_than_guessed(
+    sandbox, source,
+) -> None:
+    """`cancel()` records no instant, so «cancelled» carries no when — see
+    `snapshot.py`'s module docstring. It is left OUT rather than seeded
+    pending, because a pending row is what fires and reconstructing one the
+    room may not have had is the dangerous direction."""
+    await _seed(sandbox, source)
+    assert "the one whose cancellation has no clock" not in {
+        r.text for r in await _pending(sandbox)
+    }
+
+
+async def test_the_reminder_keeps_the_due_time_it_really_had(sandbox, source) -> None:
+    """The clock is frozen at the instant and nothing is shifted, so the copy's
+    `due_at` is the real one to the second."""
+    await _seed(sandbox, source)
+    [friday] = [r for r in await _pending(sandbox) if r.text == "ask whether friday holds"]
+    assert friday.due_at == _at(BEFORE_MS + 2 * HOUR)
+    assert friday.requester_person_id == "miles_novak"
+
+
 async def test_the_source_is_not_written_to(sandbox, source, engine) -> None:
     """Every tier of the source must be exactly what the fixture left: the
     copy went into the sandbox, and only there."""
@@ -273,9 +396,14 @@ async def test_the_source_is_not_written_to(sandbox, source, engine) -> None:
         standing = await SqlStandingStore(engine).read(platform=ROOM[0], conversation_id=ROOM[1])
         head = await SqlCultureStore(engine).head(key=ROOM[1])
         notes = await SqlNoteStore(engine).standing(unit="nora")
+        # Reminders too: `_reminders` is the newest read and the only one
+        # whose rows the reconstruction also WRITES elsewhere, so a stray
+        # `mark`/`cancel` leaking back here is exactly what this catches.
+        reminders = await SqlReminderStore(engine).all_pending(limit=50)
         return (
             bodies, standing.body if standing else None, head.body if head else None,
             tuple(sorted((n.title, n.head_revision_id) for n in notes)),
+            tuple(sorted((r.text, r.state.value) for r in reminders)),
         )
 
     before = await tiers()

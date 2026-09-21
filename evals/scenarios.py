@@ -40,9 +40,17 @@ _CORPORA = Path(__file__).parent / "corpora"
 CASE_KEYS = frozenset({
     "name", "entry", "expect", "input", "expected_output", "snapshot",
     "person", "mention", "sample", "safety", "category", "metadata", "parked",
+    "counterfactual",
 })
 PARKED_KEYS = frozenset({"reason", "why", "returns_when"})
 PARKING_REASONS = frozenset({"P-A"})
+
+#: What a COUNTERFACTUAL case must state: which tier it varies, and why that
+#: variation cannot be reconstructed from any real moment.
+COUNTERFACTUAL_KEYS = frozenset({"varies", "why"})
+#: The tiers a case may vary. Closed, because the whole value of this state is
+#: that it names a small, argued set rather than becoming a general override.
+COUNTERFACTUAL_TIERS = frozenset({"culture"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,11 +62,33 @@ class Census:
     active: int
     parked: int
     unanchored: int
+    #: Cases that are ANCHORED but vary one tier that no real moment can
+    #: carry. A subset of `active`, reported separately and never folded in.
+    #:
+    #: **This count is what makes the state safe to have.** A counterfactual
+    #: is a manipulation, not a reconstruction; an aggregate that averaged the
+    #: two would let `11-the-sandbox-rebuild.md`'s rule erode by ARITHMETIC
+    #: rather than by anybody deciding to relax it. Opened 2026-09-22 on the
+    #: operator's ruling that the culture arm's `-chronicle` case stays: a
+    #: chronicle and an account are the same facts in two representations, and
+    #: no room ever held both at once.
+    #:
+    #: The state holds ONLY what genuinely cannot be reconstructed. The same
+    #: arm's `-deviant` case is NOT in it: another real room's real account,
+    #: attached here, is a declared swap of real data, so it stays anchored.
+    #: Putting it here too would be the cheap economy that makes the number
+    #: stop meaning anything.
+    counterfactual: int
 
     def __str__(self) -> str:
-        return (
+        line = (
             f"{self.total} total, {self.active} active, {self.parked} parked, "
             f"{self.unanchored} unanchored"
+        )
+        # Printed only when non-zero: a corpus with no counterfactual case
+        # should not carry a column implying the state is ordinary.
+        return line + (
+            f", {self.counterfactual} COUNTERFACTUAL" if self.counterfactual else ""
         )
 
 
@@ -98,8 +128,36 @@ def _check(name: str, row: dict[str, Any]) -> None:
                 "come from the deployment's policy entry, and its window from "
                 "production's config (R7)"
             )
+    counterfactual = row.get("counterfactual") or {}
+    if counterfactual:
+        if not snapshot:
+            raise ValueError(
+                f"{name}: case {row['name']!r} is counterfactual but names no "
+                "`snapshot:`. A counterfactual is a real moment with ONE tier "
+                "varied — without the anchor it is authored content, which is "
+                "the thing this corpus has no path for"
+            )
+        if set(counterfactual) != COUNTERFACTUAL_KEYS:
+            raise ValueError(
+                f"{name}: case {row['name']!r}'s `counterfactual:` must state "
+                f"exactly {sorted(COUNTERFACTUAL_KEYS)}"
+            )
+        varies = counterfactual.get("varies")
+        if varies not in COUNTERFACTUAL_TIERS:
+            raise ValueError(
+                f"{name}: case {row['name']!r} varies {varies!r}; only "
+                f"{sorted(COUNTERFACTUAL_TIERS)} may be varied. The set is "
+                "CLOSED on purpose — a general override is what this state "
+                "exists instead of"
+            )
     parked = row.get("parked") or {}
     if parked:
+        if counterfactual:
+            raise ValueError(
+                f"{name}: case {row['name']!r} is parked AND counterfactual; "
+                "a parked case is not run, so varying a tier in it asserts "
+                "nothing"
+            )
         if snapshot:
             raise ValueError(
                 f"{name}: case {row['name']!r} is parked AND anchored; a "
@@ -124,6 +182,7 @@ def _case(row: dict[str, Any]) -> Case:
             "expect": row["expect"],
             "snapshot": dict(row.get("snapshot") or {}),
             "parked": dict(row.get("parked") or {}),
+            "counterfactual": dict(row.get("counterfactual") or {}),
             "person": str(row.get("person") or "miles_novak"),
             "mention": bool(row.get("mention", False)),
             "category": row.get("category", ""),
@@ -152,7 +211,12 @@ def census(name: str) -> Census:
         1 for c in cases if not c.metadata.get("parked") and not c.metadata.get("snapshot")
     )
     return Census(
-        total=len(cases), active=len(cases) - parked, parked=parked, unanchored=unanchored,
+        total=len(cases), active=len(cases) - parked, parked=parked,
+        unanchored=unanchored,
+        counterfactual=sum(
+            1 for c in cases
+            if c.metadata.get("counterfactual") and not c.metadata.get("parked")
+        ),
     )
 
 

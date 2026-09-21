@@ -1,0 +1,13 @@
+{
+  "type": "feature",
+  "summary": "nora/infra/sql/snapshot.py reconstructs the REMINDER tier -- what a room was still waiting on at a historical instant -- so an eval sandbox is no longer seeded with an empty reminder queue.",
+  "details": [
+    "Four tiers were extracted (transcript, standing, culture, notes) and reminders were EMPTY in every sandbox. `Snapshot.reminders` is the fifth, keyed on `(platform, conversation_id)` -- the pair this table actually carries, unlike the transcript, whose rows have no platform column.",
+    "The as-of rule is ONE sentence rather than a branch per state: a row was pending at the instant unless a `fired_at` at or before the instant says otherwise. That covers pending, mid-flight `firing` (whose stamp `claim()` set now, not then), and terminal rows stamped either side of the instant. `_as_of_reminder` then restores state/fired_at/outcome together, the same move `_as_of_note` makes for a retirement.",
+    "VERIFIED, not assumed: the four `sa.update(REMINDERS)` sites (`claim`, `mark`, `cancel`, `sweep_firing`) touch only `state`, `fired_at` and `outcome`. Every other column -- text, due_at, created_at, kind, payload, requester, room, and all recurrence/series fields -- is written once by `_insert_values`, so today's row IS the as-of value for them.",
+    "NAMED LIMITATION, written into the module docstring beside the peer card and the note's loop state: `cancel()` records no instant and the schema says `fired_at` is 'NULL forever on one that is cancelled', so a row cancelled a month before the instant and one cancelled a minute after are identical today. Such rows are OMITTED rather than guessed pending -- a pending row is what FIRES, so reconstructing one the room may not have had would put a turn into the eval that never happened, and the suite would grade it as behaviour. Omitting fails loudly instead.",
+    "`Knowledge.reminders` / `ReminderSeed` carry it into a sandbox through the real `SqlReminderStore.create`, with RELATIVE offsets (`due_in_seconds`, signed so an already-overdue row is expressible) for the reason `standing_age_hours` is relative.",
+    "Falsified both halves against `tests/infra/test_snapshot.py`: deleting the `replace(...)` in `_as_of_reminder` reddens `test_a_reminder_resolved_after_the_instant_is_restored_to_pending`; deleting the CANCELLED filter reddens `test_a_cancelled_reminder_is_omitted_because_its_instant_is_unknowable`. The coverage lives there and NOT only in the integration test on purpose -- `ReminderSeed` has no `state` field, so the restoration is invisible through the sandbox and an integration-only test stays green under that revert (measured).",
+    "snapshot.py remains structurally read-only: no INSERT/UPDATE/DELETE/begin()."
+  ]
+}
