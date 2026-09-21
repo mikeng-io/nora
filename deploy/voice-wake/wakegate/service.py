@@ -88,6 +88,8 @@ class _UserState:
     pending48: np.ndarray  # 48 kHz mono int16 not yet downsampled (< one block)
     frames: int = 0
     bytes_in: int = 0
+    chunks: int = 0            # 80 ms blocks actually scored
+    reported_chunks: int = 0   # chunks at the last scoring report
     wakes: int = 0
     utterances: int = 0
     last_seen: float = field(default_factory=time.time)
@@ -103,6 +105,11 @@ def _load_model(model_path: str):
     from openwakeword.model import Model
 
     return Model(wakeword_model_paths=[model_path])
+
+
+#: 80 ms chunks per scoring report — 50 is one line per 4 s of speech per
+#: speaker, enough to see a near-miss and too few to drown the log.
+_SCORE_REPORT_CHUNKS = 50
 
 
 class WakeService:
@@ -171,10 +178,34 @@ class WakeService:
             block, state.pending48 = state.pending48[:BLOCK_48K], state.pending48[BLOCK_48K:]
             chunk = downsample_to_16k(block)
             assert chunk.size == OWW_CHUNK
+            state.chunks += 1
             utterance = state.gate.feed(chunk)
             if utterance is not None:
                 self._fire(key, utterance, state)
+        self._report_scoring(key, state)
         self._arm_inactivity(key, state)
+
+    def _report_scoring(self, key: tuple[str, str], state: _UserState) -> None:
+        """What the model is SEEING, sampled.
+
+        The gate scored every chunk and reported nothing unless it crossed the
+        threshold, so a gate that stopped firing was indistinguishable from a
+        gate hearing nothing: 37 arms and 0 fires over four days with no number
+        anywhere to say which. The peak over a window separates the two cases
+        that need opposite fixes -- a peak near 0 means the audio reaching the
+        model is not speech (a pipeline fault), a peak just under the threshold
+        means it is speech the model nearly matched (a model or mic fault).
+
+        Sampled per window, never per chunk: one line every 80 ms would be
+        12.5 lines a second per speaker."""
+        if state.chunks - state.reported_chunks < _SCORE_REPORT_CHUNKS:
+            return
+        state.reported_chunks = state.chunks
+        peak = state.gate.take_listening_peak()
+        log.info(
+            "wake scoring: user=%s guild=%s chunks=%d window_peak=%.3f threshold=%.2f",
+            key[1], key[0], state.chunks, peak, self._cfg.threshold,
+        )
 
     def _fire(self, key: tuple[str, str], utterance: Utterance, state: _UserState) -> None:
         state.wakes += 1
