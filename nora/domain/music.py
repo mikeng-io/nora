@@ -110,8 +110,13 @@ class MusicSession:
     """One row per guild -- a snapshot of what `MusicPlayer` holds right
     now, not an append log (contrast `QueuedTrack`). `voice_channel_id`/
     `notify_channel_id` are captured once, at session start, and never
-    change for this row's lifetime; everything else is overwritten on
-    every transition. `now_playing_*` are all `None` together exactly when
+    change for this row's lifetime — `notify_channel_id` is "the channel
+    where it started" and is the FALLBACK destination for announcements,
+    not necessarily where they go: a guild whose `policy.toml` marks a room
+    `music = true` routes there instead, resolved per-post rather than
+    persisted (design/discord-music/10-notification-routing.md). Everything
+    else is overwritten on every transition. `now_playing_*` are all `None`
+    together exactly when
     nothing is currently playing (queue empty, waiting on the idle timer)
     -- the row still exists (the voice connection is still live), it's
     just idle."""

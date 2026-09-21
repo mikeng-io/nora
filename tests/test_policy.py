@@ -472,3 +472,149 @@ def test_voice_defaults_to_false(tmp_path):
     policy = load_policy(_write(tmp_path, TOML))
 
     assert all(not c.voice for c in policy.conversations)
+
+
+# --- `music = true` -----------------------------------------------------------
+# design/discord-music/10-notification-routing.md: a guild's music
+# ANNOUNCEMENTS are posted in the ONE room that claims them, resolved by GUILD.
+# The same shape as `voice = true` above, with one deliberate difference — an
+# unclaimed guild falls BACK (announce where the session started) rather than
+# refusing, which is why `test_an_unmarked_guild_has_no_music_room` reads
+# differently from its voice twin.
+
+MUSIC_GUILD = "100000000000000203"
+MUSIC_ROOM = f"{MUSIC_GUILD}/100000000000000204"
+
+
+def _music_toml(*, extra: str = "", music_line: str = "music = true") -> str:
+    return f"""
+default = "deny"
+
+[[conversations]]
+platform = "discord"
+id       = "{MUSIC_ROOM}"
+label    = "Ridgeline #music"
+persons  = ["miles"]
+{music_line}
+{extra}
+"""
+
+
+def test_a_guilds_music_resolves_to_the_room_that_claims_it(tmp_path):
+    policy = load_policy(_write(tmp_path, _music_toml()))
+
+    room = policy.music_room("discord", MUSIC_GUILD)
+
+    assert room is not None
+    assert room.primary_id == MUSIC_ROOM
+    assert room.music is True
+
+
+def test_an_unmarked_guild_has_no_music_room(tmp_path):
+    """`None` is the FALLBACK, not a refusal (contrast `voice_room`): the
+    announcement goes to the channel the session started in, which is what
+    every deployment did before this flag existed."""
+    policy = load_policy(_write(tmp_path, _music_toml(music_line="")))
+
+    assert policy.music_room("discord", MUSIC_GUILD) is None
+
+
+def test_a_different_guild_has_no_music_room(tmp_path):
+    policy = load_policy(_write(tmp_path, _music_toml()))
+
+    assert policy.music_room("discord", "999999999999999999") is None
+
+
+def test_two_music_rooms_in_one_guild_refuse_to_start(tmp_path):
+    """A guild has one voice connection and one player, so two rooms claiming
+    its announcements is the operator having written two answers — refused at
+    startup rather than resolved by picking the first."""
+    extra = f"""
+[[conversations]]
+platform = "discord"
+id       = "{MUSIC_GUILD}/1785459208793411409"
+label    = "Ridgeline #other"
+persons  = ["miles"]
+music = true
+"""
+    with pytest.raises(PolicyError, match="two music rooms"):
+        load_policy(_write(tmp_path, _music_toml(extra=extra)))
+
+
+def test_music_on_a_non_discord_room_refuses_to_start(tmp_path):
+    body = f"""
+default = "deny"
+
+[[conversations]]
+platform = "signal"
+id       = "{GROUP}"
+label    = "Ridgeline"
+persons  = ["miles"]
+music = true
+"""
+    with pytest.raises(PolicyError, match="no other platform"):
+        load_policy(_write(tmp_path, body))
+
+
+def test_music_on_an_id_without_a_guild_half_refuses_to_start(tmp_path):
+    """The guild half matches the session and the channel half receives the
+    post, so a bare id can never be reached — and `_music_channel_of` relies
+    on this refusal to know its partition always yields both."""
+    body = """
+default = "deny"
+
+[[conversations]]
+platform = "discord"
+id       = "100000000000000204"
+label    = "bare channel id"
+persons  = ["miles"]
+music = true
+"""
+    with pytest.raises(PolicyError, match="not \\\"<guild_id>/<channel_id>\\\""):
+        load_policy(_write(tmp_path, body))
+
+
+def test_music_defaults_to_false(tmp_path):
+    """A policy.toml that has never heard of the key loads exactly as before,
+    and claims no guild's announcements."""
+    policy = load_policy(_write(tmp_path, TOML))
+
+    assert all(not c.music for c in policy.conversations)
+
+
+def test_voice_and_music_can_name_different_rooms_in_one_guild(tmp_path):
+    """The two flags are independent grants over the same guild: speech is
+    RECORDED in the room that holds the conversation, and announcements can be
+    posted somewhere they will not interrupt it. Nothing couples them, and a
+    startup error for the pair would be inventing a constraint."""
+    body = f"""
+default = "deny"
+
+[[conversations]]
+platform = "discord"
+id       = "{MUSIC_GUILD}/100000000000000204"
+label    = "Ridgeline #discussion"
+persons  = ["miles"]
+voice = true
+
+[[conversations]]
+platform = "discord"
+id       = "{MUSIC_GUILD}/1785459208793411409"
+label    = "Ridgeline #music"
+persons  = ["miles"]
+music = true
+"""
+    policy = load_policy(_write(tmp_path, body))
+
+    voice = policy.voice_room("discord", MUSIC_GUILD)
+    music = policy.music_room("discord", MUSIC_GUILD)
+
+    assert voice is not None and music is not None
+    assert voice.primary_id != music.primary_id
+
+
+def test_the_permissive_policy_claims_no_music_room(tmp_path):
+    """`permissive_policy` overrides `voice_room` because `None` there would
+    refuse; it deliberately does NOT override `music_room`, because `None`
+    here is the fallback a harness wants."""
+    assert permissive_policy().music_room("discord", MUSIC_GUILD) is None

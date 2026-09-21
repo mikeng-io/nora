@@ -25,6 +25,11 @@ from nora.platform.discord import music_messages as m
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.music_commands import _connect_factory
 from nora.platform.discord.music_manager import MusicPlayerManager
+from nora.platform.discord.music_notify import (
+    ResolveMusicChannel,
+    make_notify,
+    no_music_room,
+)
 from nora.platform.discord.voice_gate import voice_join_decision
 
 log = logging.getLogger("nora.music")
@@ -56,11 +61,13 @@ class DiscordMusicToolBridge:
         manager: MusicPlayerManager,
         hub: VoiceControllerHub | None = None,
         voice_guild_ids: frozenset[str] = frozenset(),
+        resolve_music_channel: ResolveMusicChannel = no_music_room,
     ) -> None:
         self._adapter = adapter
         self._manager = manager
         self._hub = hub
         self._voice_guild_ids = voice_guild_ids
+        self._resolve_music_channel = resolve_music_channel
 
     def _guild_id(self, conversation_id: str) -> str:
         guild_id, _, _ = conversation_id.partition("/")
@@ -106,20 +113,19 @@ class DiscordMusicToolBridge:
         return None
 
     def _notify(self, conversation_id: str):
-        _guild_id, _, channel_id = conversation_id.partition("/")
-
-        async def notify(text: str) -> None:
-            client = self._adapter.current_client()
-            if client is None or not channel_id:
-                return
-            try:
-                channel = client.get_channel(int(channel_id))
-            except ValueError:
-                return
-            if isinstance(channel, discord.abc.Messageable):
-                await channel.send(text, silent=True)
-
-        return notify
+        """The announcement destination for a session started by `play_music`:
+        the guild's `music = true` room if one is set, else the room she was
+        tagged in — resolved per-post by `music_notify.make_notify`, the ONE
+        place any surface decides this (design/discord-music/10-notification-
+        routing.md). `current_client` is passed as the getter, not called:
+        this closure outlives a gateway reconnect."""
+        guild_id, _, channel_id = conversation_id.partition("/")
+        return make_notify(
+            client=self._adapter.current_client,
+            guild_id=guild_id,
+            fallback_channel_id=channel_id or None,
+            resolve_music_channel=self._resolve_music_channel,
+        )
 
     async def play(
         self, *, conversation_id: str, sender_ids: frozenset[str], query_or_url: str,

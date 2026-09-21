@@ -35,6 +35,7 @@ from nora.domain.ports import MediaSource, PlatformAdapter, PlatformIdentity
 from nora.infra.voice.hub import VoiceControllerHub
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.music_manager import MusicPlayerManager
+from nora.platform.discord.music_notify import ResolveMusicChannel, no_music_room
 from nora.platform.signal.account import AccountError, derive_account
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.self_id import MetricsSink
@@ -126,6 +127,7 @@ class AdapterRegistry:
         discord_speaker: Any = None,
         voice_hub: VoiceControllerHub | None = None,
         voice_guild_ids: frozenset[str] = frozenset(),
+        resolve_music_channel: ResolveMusicChannel = no_music_room,
     ) -> AdapterRegistry:
         """Build+resolve every enabled platform — Signal, Discord, WhatsApp;
         each one more `if platforms.<x>.enabled:` block, not a rewrite of this
@@ -152,7 +154,15 @@ class AdapterRegistry:
         `voice_hub` (design/voice-channel/07) is the audio-controller's
         per-guild session registry — `None` when `[speech.tts]
         sidecars` is empty, which leaves every voice join and speech
-        stream failing closed."""
+        stream failing closed.
+
+        `resolve_music_channel` (design/discord-music/10-notification-routing.md)
+        maps a guild id to the channel its music announcements belong in, from
+        `policy.toml`'s `music = true`. Threaded, never consulted here — same
+        posture as `music_manager`. The default answers `None` for every
+        guild, which is the pre-flag behaviour (announce where the session
+        started), so a harness that builds a registry without it is
+        unaffected."""
         adapters: dict[str, PlatformAdapter] = {}
         identities: dict[str, PlatformIdentity] = {}
 
@@ -189,6 +199,7 @@ class AdapterRegistry:
                 speaker=discord_speaker,
                 voice_hub=voice_hub,
                 voice_guild_ids=voice_guild_ids,
+                resolve_music_channel=resolve_music_channel,
             )
             try:
                 discord_identity = await discord_adapter.resolve_identity()

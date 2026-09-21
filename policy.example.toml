@@ -120,6 +120,33 @@ persons  = ["miles", "ada"]
                              # At most one room per guild may set it; a second is a startup
                              # error. A guild with none refuses speech outright (400) rather
                              # than guessing a room.
+# music = true               # (optional, default false) WHERE THIS GUILD'S MUSIC
+                             # ANNOUNCEMENTS LAND. The system's own music posts —
+                             # 「Now playing:」 on a natural track-end, 「Autoplaying:」,
+                             # the next track after a skip, the connection-lost
+                             # teardown — go to THIS channel, for every session in this
+                             # room's guild.
+                             #
+                             # Without it the destination is discovered instead of
+                             # named: whichever text channel the session's FIRST play
+                             # happened to run in, captured once and never moved. That
+                             # is invisible (nothing shows you where it points), sticky
+                             # (persisted, survives a restart, no command changes it)
+                             # and unbounded — `/music play` is gated by GUILD, never by
+                             # room, so it can capture a channel that is not an
+                             # allowlisted room at all. Naming it here fixes all three
+                             # at once, because a room in this file is by construction
+                             # one Nora may speak in.
+                             #
+                             # SYSTEM ANNOUNCEMENTS ONLY. A slash command still replies
+                             # where you typed it — you are looking there — and her
+                             # conversational reply still lands in the room you tagged
+                             # her in. This moves the posts nobody asked for.
+                             #
+                             # Like `voice` above: the GUILD is what is matched, at most
+                             # one room per guild may set it, and a second is a startup
+                             # error. A guild with none keeps the where-it-started
+                             # fallback, so leaving this out changes nothing.
 # location = true            # same switch as Signal, same meaning — see below.
 description = "a games room; 2200 is when people log on, not an appointment"
                              # (optional, no default) WHAT KIND OF ROOM THIS IS, in your own

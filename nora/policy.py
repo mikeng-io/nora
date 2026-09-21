@@ -147,6 +147,33 @@ class Conversation:
     # At most one per guild; a second is a startup error, not a guess — the
     # same shape as `home_room`.
     voice: bool = False
+    # WHERE THIS GUILD'S MUSIC NOTIFICATIONS LAND
+    # (design/discord-music/10-notification-routing.md). Default False.
+    #
+    # The system's own music announcements — `Now playing:` on a natural
+    # track-end, `Autoplaying:`, the next track after a skip, the
+    # connection-lost teardown — used to go to whichever text channel the
+    # session's FIRST play happened to be invoked from, captured once and
+    # never moved. That made the routing invisible (nothing surfaces it),
+    # sticky (persisted, survives a restart, no command to change it), and
+    # unbounded: `/music play` is gated by GUILD, never by room, so the
+    # channel it captured need not be an allowlisted room at all.
+    #
+    # `music = true` names the channel instead of discovering it. Same shape
+    # as `voice` above and for the same reason — the player is per-GUILD
+    # (Discord allows one voice connection per guild), so "which channel" is
+    # a guild-level question with exactly one answer. Routing through
+    # `policy.toml` rather than `config.toml` additionally makes the answer
+    # a room Nora is already allowed to speak in, by construction.
+    #
+    # This is the SYSTEM announcements only. A slash command still replies
+    # where it was invoked (the person who typed it is looking there), and
+    # Nora's conversational reply on the tag path still lands in the room
+    # she was tagged in. Unset leaves the old where-it-started behaviour as
+    # the fallback, so a deployment that never sets it is unchanged.
+    #
+    # At most one per guild; a second is a startup error, not a guess.
+    music: bool = False
 
 
 @dataclass(frozen=True)
@@ -157,6 +184,9 @@ class Policy:
     dm_persons: frozenset[str] = frozenset()
     _by_id: dict[tuple[str, str], Conversation] = field(repr=False, default_factory=dict)
     _voice_by_guild: dict[tuple[str, str], Conversation] = field(
+        repr=False, default_factory=dict,
+    )
+    _music_by_guild: dict[tuple[str, str], Conversation] = field(
         repr=False, default_factory=dict,
     )
 
@@ -177,6 +207,22 @@ class Policy:
         room, so inference would work and would keep working right up until it
         silently picked the wrong one."""
         return self._voice_by_guild.get((platform, guild_id))
+
+    def music_room(self, platform: str, guild_id: str) -> Conversation | None:
+        """The room `guild_id`'s music announcements belong in, or `None`.
+
+        Unlike `voice_room`, `None` is a FALLBACK rather than a refusal: the
+        music bot worked for weeks before this flag existed, announcing into
+        the channel its session started in, and a guild that has not opted in
+        keeps exactly that behaviour (`design/discord-music/10-notification-
+        routing.md`). Speech has no such prior — there was never a place to
+        put an utterance other than the room the operator named — which is
+        why the two answer `None` differently.
+
+        Explicit rather than inferred from "the only room in that guild", for
+        `voice_room`'s reason: inference works right up until it silently
+        picks the wrong one."""
+        return self._music_by_guild.get((platform, guild_id))
 
     def home_rooms(self) -> dict[str, Conversation]:
         """Unit -> its home room (39 D2), for every unit that named
@@ -266,6 +312,12 @@ class _PermissivePolicy(Policy):
         have."""
         return self.conversation(platform, f"{guild_id}/voice")
 
+    # NO `music_room` override, deliberately: the inherited one answers `None`
+    # for every guild, and `None` is music's FALLBACK (announce where the
+    # session started), not its refusal. Inventing a room here would route a
+    # harness's music announcements at a channel id nothing can send to —
+    # `voice_room` overrides precisely because `None` there WOULD refuse.
+
     def proactive_allowed(self, *, platform: str, conversation_id: str) -> bool:
         """Every room, for the harnesses' reason: the act suite drives
         proactive rows through a heartbeat over synthetic ids. `home_rooms`
@@ -308,6 +360,11 @@ class _ConversationEntry(BaseModel):
     # 2026-09-17): every voice channel in THIS room's guild speaks into this
     # room. Default False — a room takes no speech until the operator says so.
     voice: bool = False
+    # See `Conversation.music` (design/discord-music/10-notification-routing.md):
+    # this guild's music announcements land in this room. Default False — an
+    # unset guild keeps announcing where its session started, so a policy.toml
+    # that has never heard of the key behaves exactly as before.
+    music: bool = False
     # See `Conversation.description` (issue #161): what kind of room this is,
     # in the operator's own words. Absent is the default and the shipped
     # state — `extra = "forbid"` is in force here, so this entry is what makes
@@ -385,7 +442,7 @@ def load_policy(path: Path) -> Policy:
             primary_id=entry.id, unit=entry.unit,
             relevance_gate=entry.relevance_gate,
             home_room=entry.home_room, proactive=entry.proactive,
-            description=entry.description, voice=entry.voice,
+            description=entry.description, voice=entry.voice, music=entry.music,
         )
         conversations.append(convo)
         for cid in ids:
@@ -452,6 +509,45 @@ def load_policy(path: Path) -> Policy:
             )
         voice_by_guild[key] = convo
 
+    # ONE music room per guild (design/discord-music/10-notification-routing.md).
+    # Mirrors the voice block above, and for the same structural reason rather
+    # than by imitation: Discord allows ONE voice connection per guild, so
+    # `MusicPlayerManager` holds one player and one notify target per guild.
+    # Two rooms claiming it is the operator having written two answers to
+    # "where do the announcements go", and picking one would put them in a
+    # room nobody chose.
+    music_by_guild: dict[tuple[str, str], Conversation] = {}
+    for convo in conversations:
+        if not convo.music:
+            continue
+        if convo.platform != "discord":
+            raise PolicyError(
+                f"{convo.label or convo.primary_id!r} sets music = true on "
+                f"platform {convo.platform!r}. Music is a Discord voice-channel "
+                "capability and is resolved by GUILD; no other platform reaches "
+                "this path at all."
+            )
+        guild_id, sep, channel_id = convo.primary_id.partition("/")
+        if not sep or not guild_id or not channel_id:
+            raise PolicyError(
+                f"{convo.label or convo.primary_id!r} sets music = true but its "
+                f"id {convo.primary_id!r} is not \"<guild_id>/<channel_id>\". "
+                "The guild half is what a playing session is matched on and the "
+                "channel half is where the announcement is posted, so an id "
+                "without both can never be reached."
+            )
+        key = (convo.platform, guild_id)
+        other = music_by_guild.get(key)
+        if other is not None:
+            raise PolicyError(
+                f"guild {guild_id} names two music rooms "
+                f"({other.label or other.primary_id!r} and "
+                f"{convo.label or convo.primary_id!r}). A guild has one voice "
+                "connection and one player, so its announcements land in "
+                "exactly one room; mark one."
+            )
+        music_by_guild[key] = convo
+
     if not conversations:
         raise PolicyError(
             f"{path} allows no conversations, so Nora would ingest and answer "
@@ -465,4 +561,5 @@ def load_policy(path: Path) -> Policy:
         dm_persons=frozenset(parsed.dm.get("persons", [])),
         _by_id=by_id,
         _voice_by_guild=voice_by_guild,
+        _music_by_guild=music_by_guild,
     )

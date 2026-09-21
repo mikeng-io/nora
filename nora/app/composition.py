@@ -1231,6 +1231,12 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         if music_manager is not None and voice_hub is not None
         else None
     )
+    # Where a guild's music ANNOUNCEMENTS go (design/discord-music/
+    # 10-notification-routing.md). Built from the room policy, not from
+    # `cfg.music`: the answer is a room, so it belongs beside the room's
+    # trust flags — and routing through `policy.toml` is what makes the
+    # announcement channel one Nora is already allowed to speak in.
+    resolve_music_channel = _music_channel_of(allowlist)
     try:
         registry = await AdapterRegistry.from_config(
             cfg.platforms, metrics=metrics, discord_token=discord_token,
@@ -1238,6 +1244,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             discord_speaker=speaker,
             voice_hub=voice_hub,
             voice_guild_ids=voice_guild_ids,
+            resolve_music_channel=resolve_music_channel,
         )
     except AdapterRegistryError as exc:
         raise StartupError(str(exc)) from exc
@@ -2183,6 +2190,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             music_bridge = DiscordMusicToolBridge(
                 adapter=discord_adapter, manager=music_manager,
                 hub=voice_hub, voice_guild_ids=voice_guild_ids,
+                resolve_music_channel=resolve_music_channel,
             )
         else:
             log.error(
@@ -3854,5 +3862,30 @@ def _voice_room_of(policy: Policy) -> Callable[[str], str | None]:
     def _resolve(guild_id: str) -> str | None:
         convo = policy.voice_room("discord", guild_id)
         return convo.primary_id if convo is not None else None
+
+    return _resolve
+
+
+def _music_channel_of(policy: Policy) -> Callable[[str], str | None]:
+    """A Discord `guild_id` → the CHANNEL id its music announcements are
+    posted in, or `None` (design/discord-music/10-notification-routing.md).
+
+    Returns the channel half, not the `conversation_id`, because the consumer
+    is `discord.Client.get_channel` — `_voice_room_of` returns the whole id
+    because ITS consumer records a room. Same free-function-so-the-`None`-
+    branch-is-nameable reason, and `None` means something different here: not
+    a refusal but the fallback to where the session started, which
+    `music_notify.make_notify` holds.
+
+    `load_policy` has already refused two rooms claiming one guild and any
+    `music = true` id without a `<guild>/<channel>` shape, so the partition
+    below cannot come back empty for a room that reached here."""
+
+    def _resolve(guild_id: str) -> str | None:
+        convo = policy.music_room("discord", guild_id)
+        if convo is None:
+            return None
+        _guild, _, channel_id = convo.primary_id.partition("/")
+        return channel_id or None
 
     return _resolve
