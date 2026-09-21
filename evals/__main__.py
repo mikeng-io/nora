@@ -12,10 +12,12 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from pathlib import Path
 
 from evals.backbone import ERROR, FAIL, PASS, UNSTABLE, read, sample_read
 from evals.rebuilt.grading import DEFAULT_JUDGE_MODEL, DEFAULT_SAMPLES, Judge
 from evals.scenarios import CORPUS_ENTRY, JUDGED_CORPORA, experiment_for
+from evals.subject_config import materialise
 
 #: Coarse S-class grouping for `--class`, per `10-the-scenario-map.md` §2/§15.
 #: Approximate on purpose where a corpus is not wholly one class (e.g. only
@@ -46,6 +48,9 @@ def _list_corpora() -> None:
         judged = "judged" if name in JUDGED_CORPORA else "structural"
         cls = CORPUS_CLASS.get(name, "?")
         print(f"{name:24} entry={CORPUS_ENTRY[name]:14} {cls:3} {judged}")
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _corpora_for(args: argparse.Namespace) -> list[str]:
@@ -91,6 +96,14 @@ def main() -> int:
     ap.add_argument("--list", action="store_true", help="list corpora and exit")
     ap.add_argument("--database-url", default=os.environ.get("DATABASE_URL", ""))
     ap.add_argument(
+        "--deployment-config",
+        default=os.environ.get("NORA_CONFIG", "/home/norty/workspace/nora/config.toml"),
+        help="the DEPLOYMENT's config.toml. Every subject is composed from it "
+             "(rebuilt into config.evaluation.toml per run), because the "
+             "example ships with almost everything off and running against it "
+             "measures a different Nora.",
+    )
+    ap.add_argument(
         "--judge", nargs="?", const=DEFAULT_JUDGE_MODEL, default=None,
         help=(
             "grade JUDGED_CORPORA (S3/S9) with a model, not just structurally. "
@@ -127,6 +140,40 @@ def main() -> int:
     if not args.database_url:
         print("--database-url or DATABASE_URL is required", file=sys.stderr)
         return 2
+
+    # THE SUBJECT'S CONFIG, REBUILT FOR THIS RUN, BEFORE ANY CASE.
+    #
+    # Every subject composes `config.evaluation.toml`, and this is the only
+    # thing that writes it. Regenerated per run rather than reused: a stale
+    # file is a run measuring a Nora the deployment has since stopped being,
+    # and nothing downstream would say so.
+    #
+    # It is also the one gate that can compare the two — `materialise()`
+    # REFUSES when the generated config disagrees with the deployment outside
+    # `ALLOWED_TO_DIFFER`, so a run never starts against a Nora nobody
+    # deployed. Fail-closed here, or every number after it is unattributable.
+    try:
+        generated = materialise(
+            example=_REPO_ROOT / "config.example.toml",
+            deployment=Path(args.deployment_config),
+            target=_REPO_ROOT / "config.evaluation.toml",
+        )
+    except FileNotFoundError:
+        print(
+            f"--deployment-config {args.deployment_config!r} does not exist. "
+            "An eval subject composes the DEPLOYMENT's config, never "
+            "config.example.toml — the example ships with almost everything "
+            "off, and running against it measures a different Nora "
+            "(design/evaluation/01-boundaries.md §5). Run this where the "
+            "deployment lives, or point --deployment-config at its "
+            "config.toml.",
+            file=sys.stderr,
+        )
+        return 2
+    except ValueError as exc:
+        print(f"refusing to run: {exc}", file=sys.stderr)
+        return 2
+    print(f"subject config rebuilt from {args.deployment_config} -> {generated}")
 
     judge = None if not args.judge else Judge(
         base_url=args.judge_base_url, model=args.judge, samples=args.judge_samples,

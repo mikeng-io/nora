@@ -127,8 +127,38 @@ grew.**
 3. **Adding a suite adds no code.** A suite is cases.
 4. **Nothing reaches the model that the deployment would not send.** The prompt
    is the observable; it is the same prompt or the subject is not Nora.
+5. **It is the deployment's own model, under the deployment's own settings, with
+   the deployment's own features on.** Added 2026-09-21 — see the correction
+   below. (4) constrains what is SENT; a subject can satisfy it perfectly and
+   still not be Nora, because the thing receiving it is configured differently.
 
 Each is a property a test can hold, and (1) and (3) are the two that decay first.
+
+> **CORRECTED 2026-09-21 — (4) was stated, never held, and was too narrow.**
+>
+> Measured: `nora/subject/obtain.py:92` builds every subject from
+> `config.example.toml`, not the deployment's `config.toml`. **65 values
+> differ** — including `llm.model` (`ollamacloud/deepseek-v4-flash:0731` vs
+> `nora`), `llm.reasoning_effort` (`low` vs `none`), and `relevance_gate`,
+> `participation`, `standing`, `culture`, `notes`, `dreamer`, `search`,
+> `online`, `weather`, `route` and `preview` all **disabled** where production
+> enables them. `default_policy()` likewise emits no per-room flags, while
+> production's `policy.toml` sets `relevance_gate = true` on 3 of 6 rooms.
+>
+> So every case in this bundle to date evaluated a different model, at a
+> different reasoning effort, with most of Nora switched off. The per-case
+> `config:` overrides in the corpora (22 cases re-enabling `notes.enabled`) are
+> that defect's symptom, not a feature.
+>
+> (4) did not catch it because it constrains the PROMPT, and the prompt was
+> fine. What differed was the reader. Hence (5).
+>
+> The rule that replaces both: **the subject composes the deployment's own
+> config and the real room's own policy entry, and the ONLY permitted
+> differences are the isolation keys — room id and unit/workspace.** An example
+> file is by definition not the deployment and drifts from it by design, so it
+> can never be the baseline. Design:
+> `design/evaluation/11-the-sandbox-rebuild.md` §1.2.
 
 ## 6. Step 1's real question, measured 2026-09-17
 

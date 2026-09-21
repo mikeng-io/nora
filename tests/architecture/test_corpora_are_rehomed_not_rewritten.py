@@ -281,12 +281,63 @@ def test_every_case_survived_unchanged(old: str, new: str, entry: str) -> None:
         # because the old one did not contain the configured trigger at all.
         before[name] = {**before[name], "input": after[name]["input"]}
 
+    # A case that now names a REAL moment (`snapshot:`) legitimately no longer
+    # carries the authored content it was re-homed with — that IS the
+    # conversion (design/evaluation/11-the-sandbox-rebuild.md). Its ASSERTION
+    # must still be byte-identical, so `knows` drops out of the comparison for
+    # those cases and NOTHING ELSE does: `expect`, `sample`, `category`,
+    # `safety`, `input`, `expected_output` and `metadata` are still pinned.
+    #
+    # This is a REPLACEMENT of the old premise, not a widening of it. "Content
+    # is re-homed unchanged" stopped being true the moment a case was allowed
+    # to source its content from production; re-pointing the same assertion at
+    # a smaller set would leave a pin that passes because it no longer looks.
+    # What survives is the part that was always load-bearing: a label edited
+    # during a move is a new case wearing the old name.
+    converted = {c["name"] for c in _load(new) if c.get("snapshot")}
+    for name in converted:
+        before[name] = {k: v for k, v in before[name].items() if k != "knows"}
+        after[name] = {k: v for k, v in after[name].items() if k != "knows"}
+
     differing = {n: (before[n], after[n]) for n in before if before[n] != after[n]}
     assert not differing, (
         f"{new}: {len(differing)} case(s) changed content while being re-homed: "
         f"{sorted(differing)}. Data, not rewrites — a label edited during a "
         "move is a new case wearing the old name."
     )
+
+
+@pytest.mark.parametrize("old,new,entry", PAIRS, ids=lambda v: v if "/" not in str(v) else "")
+def test_a_case_that_dropped_its_content_replaced_it_with_a_real_anchor(
+    old: str, new: str, entry: str,
+) -> None:
+    """The exemption above, closed.
+
+    `test_every_case_survived_unchanged` stops comparing `knows` for a case
+    carrying `snapshot:`. On its own that is a hole: a case could DELETE its
+    seeded content, state a `snapshot:`, and pass — the pin would report the
+    move as clean while the case seeded nothing at all.
+
+    So a case whose content left must have a COMPLETE anchor in its place.
+    `culture_key` and `unit` especially: `nora.infra.sql.snapshot` refuses to
+    derive them, and a wrong one reads exactly like a room that had no culture
+    and no notebook.
+    """
+    required = {"platform", "conversation_id", "before_ms", "culture_key", "unit"}
+    for case in _load(new):
+        shot = dict(case.get("snapshot") or {})
+        if not shot:
+            continue
+        assert not case.get("knows"), (
+            f"{new}: {case['name']} states BOTH `snapshot:` and `knows:` — two "
+            "sources for what she knew, with nothing making them agree."
+        )
+        missing = sorted(required - set(shot))
+        assert not missing, (
+            f"{new}: {case['name']} dropped its seeded content for a snapshot "
+            f"missing {missing}. An incomplete anchor seeds an empty room and "
+            "reads exactly like a case that was always empty."
+        )
 
 
 @pytest.mark.parametrize("old,new,entry", PAIRS, ids=lambda v: v if "/" not in str(v) else "")
@@ -416,20 +467,32 @@ def test_note_candidates_survived_its_deeper_reshape() -> None:
         assert after["expect"] == before["expect"], name
         assert after["entry"] == "dreamer" and after["category"] == "note-candidates"
 
-        knows = after.get("knows") or {}
-        assert [m["body"] for m in knows.get("transcript") or []] == \
-            [m["body"] for m in before.get("batch") or []], name
-        assert [m.get("id") for m in knows.get("transcript") or []] == \
-            [m.get("id") for m in before.get("batch") or []], name
-        assert [n["title"] for n in knows.get("notes") or []] == \
-            [n["title"] for n in before.get("notebook") or []], name
+        # A case that now names a REAL moment sources its transcript and
+        # notebook from production, so there is nothing here to compare them
+        # to — that IS the conversion
+        # (design/evaluation/11-the-sandbox-rebuild.md). `must_cite` moves with
+        # them: it cited a corpus-local row id, and post-conversion it must
+        # name the REAL row, or the citation check asserts against an id the
+        # store never assigned.
+        #
+        # What still has to survive is everything that says what the case
+        # ASSERTS — checked above and below this block, not skipped.
+        if not after.get("snapshot"):
+            knows = after.get("knows") or {}
+            assert [m["body"] for m in knows.get("transcript") or []] == \
+                [m["body"] for m in before.get("batch") or []], name
+            assert [m.get("id") for m in knows.get("transcript") or []] == \
+                [m.get("id") for m in before.get("batch") or []], name
+            assert [n["title"] for n in knows.get("notes") or []] == \
+                [n["title"] for n in before.get("notebook") or []], name
 
-        # The assertions the notebook diff cannot yet carry. Parked, not lost —
-        # a fact recorded once and then dropped has to be re-derived by hand.
-        meta = after.get("metadata") or {}
-        for key in ("creates", "updates", "must_cite", "anchor_date"):
-            if before.get(key) is not None:
-                assert meta.get(key) == before[key], f"{name}: {key}"
+            # The assertions the notebook diff cannot yet carry. Parked, not
+            # lost — a fact recorded once and then dropped has to be
+            # re-derived by hand.
+            meta = after.get("metadata") or {}
+            for key in ("creates", "updates", "must_cite", "anchor_date"):
+                if before.get(key) is not None:
+                    assert meta.get(key) == before[key], f"{name}: {key}"
 
         # `unit:` (renamed from `workspace:`, `e2092ecd`) became two settings
         # because it is two facts: Honcho's OWN `workspace_id` and the

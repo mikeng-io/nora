@@ -89,7 +89,22 @@ def room_for(case_name: str) -> tuple[str, str]:
 
 #: The committed template. ONE place knows its name, the same rule
 #: `tests/builders.copy_example_config` holds for the test suite (R-B, #113).
-_TEMPLATE = _REPO_ROOT / "config.example.toml"
+#: NORA AS THE DEPLOYMENT RUNS HER, not as a fresh install would.
+#:
+#: This was `config.example.toml` until 2026-09-21, and that was the single
+#: largest divergence in the suite. The example file's JOB is to be a safe
+#: template for a new deployment, so it ships with almost everything off: 65
+#: values differed from production, including `llm.model`
+#: (`ollamacloud/deepseek-v4-flash:0731` vs `nora`), `llm.reasoning_effort`,
+#: and `relevance_gate`, `participation`, `standing`, `culture`, `notes`,
+#: `dreamer`, `search`, `online`, `weather`, `route` and `preview` all
+#: DISABLED. Every case ever run measured a different model, at a different
+#: reasoning effort, with most of Nora switched off.
+#:
+#: No case could have caught it. `01-boundaries.md` §5's rule 4 — "nothing
+#: reaches the model that the deployment would not send" — constrains the
+#: PROMPT, and the prompt was fine. What differed was the reader.
+_TEMPLATE = _REPO_ROOT / "config.evaluation.toml"
 
 #: `miles_novak`, matching the old driver's `_EVAL_PERSON_ID`, and it matters.
 #:
@@ -109,6 +124,19 @@ _TEMPLATE = _REPO_ROOT / "config.example.toml"
 #: which `Dockerfile`'s `COPY nora/ ./nora/` and `pyproject.toml`'s
 #: `include = ["nora*"]` put in the image and the wheel. Found by audit.
 _PLACEHOLDER_ACCOUNT = "+85200000000"
+#: An env var this process owns, so an enabled Discord adapter authenticates
+#: against nothing instead of the deployment's real bot. The value is the
+#: variable's NAME, not a credential — hence the S105 suppression.
+_PLACEHOLDER_TOKEN_ENV = "NORA_EVAL_SUBJECT_DISCORD_TOKEN"  # noqa: S105
+
+#: Credentials an ENABLED feature demands before composition will start, or
+#: whose absence downgrades a tool the deployment's Nora holds. Filled with
+#: `setdefault`, so the deploy host's real values always win.
+_CREDENTIALS_ENABLED_FEATURES_DEMAND = (
+    "NORA_DROP_TOKEN",          # [compute] — the per-job token it mints against
+    "GOOGLE_MAPS_API_KEY",      # [compute] map-rendering skill, and [route]
+    "OMNIROUTE_API_KEY",        # the model key Smith itself runs on
+)
 
 #: One person, one room, `default = "deny"`. A caller that does not care about
 #: identity gets something VALID and CLOSED rather than an accident — the same
@@ -264,6 +292,40 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # reaches the world unless told otherwise; that was measured here, by this
     # call failing.
     cfg = _with(cfg, "platforms.signal.account", _PLACEHOLDER_ACCOUNT)
+    # `platforms.discord.token_env` — the SAME neutralisation, for the reason
+    # above. The adapters stay ENABLED as the deployment has them, because the
+    # registry's `self_aliases()` feeds `self_ids` and `self_ids` is what
+    # `MentionPolicy`/`ReplyToNoraPolicy` match on — with the deployment's text
+    # trigger off since 2026-09-01, mention-and-reply IS the engagement path,
+    # so a disabled adapter would delete it. What must not reach the world is
+    # the CREDENTIAL, and Discord's lives in an env var rather than the config
+    # (`nora/platform/registry.py:183` refuses to start without it), so the
+    # variable is pointed at one this process owns.
+    os.environ.setdefault(_PLACEHOLDER_TOKEN_ENV, "eval-subject-not-a-real-token")
+    cfg = _with(cfg, "platforms.discord.token_env", _PLACEHOLDER_TOKEN_ENV)
+    # Every credential an ENABLED feature demands at startup.
+    #
+    # `setdefault`, which is the whole point: run this ON the deploy host with
+    # its environment and the REAL keys win, so the tools are the tools
+    # production has. Run it anywhere else and composition still succeeds, with
+    # those tools degrading to unavailable — which `composition.py` already
+    # warns about per feature rather than failing.
+    #
+    # THAT DEGRADATION IS A DIVERGENCE, and the honest place to say so is here:
+    # production's Nora holds `web_search`, `route`, `online`, `generate_image`
+    # and the shortener; a subject composed without their keys does not, and a
+    # case whose turn would have reached one measures a Nora missing it. Full
+    # fidelity means running where the deployment runs
+    # (`design/evaluation/11-the-sandbox-rebuild.md` §1.2).
+    for name in _CREDENTIALS_ENABLED_FEATURES_DEMAND:
+        os.environ.setdefault(name, "eval-subject-placeholder")
+    # `NORA_DATA_HOST_ROOT` is the HOST-side path of the bind mount the
+    # deployment's docker daemon attaches — `[compute]` refuses to start
+    # without it, because an in-container path "silently resolves to an empty
+    # host directory". OUTSIDE a container there is no mount and the host path
+    # IS the local one, so the workdir is not a placeholder here: it is the
+    # correct answer. Run on the deploy host and compose's own value wins.
+    os.environ.setdefault("NORA_DATA_HOST_ROOT", str(workdir.resolve()))
     # `doctrine.dir` and `dreamer.dir` resolve RELATIVE TO THE CONFIG FILE, and
     # the copy lives in the caller's workdir, which has no such subdirectories.
     # The Dreamer's corpus is validated at startup — deliberately, so a
