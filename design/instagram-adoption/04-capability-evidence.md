@@ -107,7 +107,9 @@ All on the **same authenticated session**, no second credential:
 | Call | Result | Returns |
 |---|---|---|
 | `GetProfile(igid)` | PASS | `@nka_bpumvg` "Miles Novak", exposes `latest_reel_media` |
-| `FetchReel([igid])` | PASS | `status=ok`, 2 reels — **stories are readable** |
+| `FetchReel([igid])` | PASS | full `user_reel`: per-item media type, playable CDN url, `taken_at`; per-reel `expiring_at`, `media_ids`, `seen` |
+| story read marks it viewed? | **NO** | `seen` unchanged across two reads 20s apart, with a newer item outside the watermark both times |
+| member → igid join | PASS | `GetThread` → `Users[].ID` is the igid `FetchReel`/`GetProfile` take |
 | `SearchUsers(query)` | PASS | 2,941 bytes of results |
 | `FetchMedia(mediaID, shortcode)` | not exercised | `responses.Items` — full post object with caption, like count, usertags |
 

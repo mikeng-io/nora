@@ -148,6 +148,47 @@ tolerates multiple device sessions — which it obviously does in general — an
 is **not** evidence that a bridge session is safe long-term. The soak is the
 instrument for that, not this observation.
 
+## What a story read returns, and what it costs (measured 2026-09-21)
+
+Read against the operator's own story, with their approval, before anyone
+else's — the circle-first sequencing they asked for.
+
+`FetchReel([igid])` returns a `user_reel` with everything needed:
+
+```
+reel id=221731317 @nka_bpumvg type=user_reel media_count=2
+  seen=1789935673  expiring_at=2026-09-22T04:21:13+08:00
+  can_reply=true can_reshare=true
+  media_ids=[3575332932625258692 3993554204431792593]
+  item 1  video  taken_at=2026-09-20T20:20:32  url=https://instagram.f…fbcdn.net/…
+  item 2  video  taken_at=2026-09-21T04:21:13  url=https://instagram.f…fbcdn.net/…
+```
+
+Per item: media type, a directly playable CDN url, and `taken_at`. Per reel:
+`expiring_at`, which is the natural retention bound — a story is gone in 24
+hours and anything Nora keeps outlives its source.
+
+### Reading a story does NOT register as watching it
+
+This was the open ethical question and it is decidable, because `ReelInfo`
+carries the viewer's own `seen` watermark.
+
+Measured: two `FetchReel` calls twenty seconds apart both returned
+`seen=1789935673` (2026-09-20 20:21:13), while item 2 — posted 2026-09-21
+04:21:13 — stayed **outside** that watermark across both reads. Marking a
+story seen is a separate mutation that this call does not perform.
+
+**So the framing inverts.** The worry was that Nora reading the circle's
+stories would be visible to the circle. It is not: she can read without
+appearing in anyone's viewer list. That is technically less intrusive and
+ethically more so, because the author gets no signal at all — the ordinary
+social contract of "I can see who watched" silently does not apply to her.
+
+This is now a decision with the facts in hand rather than a risk to weigh:
+the operator has approved story reads for the circle, starting with their own
+and widening in a second wave. Recorded here so the reason the question was
+closed is legible later.
+
 ## Policy has no shape for this yet
 
 `policy.toml` is room-shaped: `voice`, `relevance_gate`, `music` are

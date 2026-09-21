@@ -58,6 +58,23 @@ and the thread's member list gave `@nka_bpumvg` an
 Both are needed: messaging binds on interop fbid, social reads bind on igid.
 An Instagram person entry therefore carries **two** identifiers, not one.
 
+### One call yields both, for every member of a room
+
+`GetThread` returns `ThreadInfo.Users[]`, and each entry carries **both**:
+
+```
+member @nka_bpumvg   interop_messaging_user_fbid=110966695387753   ID=221731317
+```
+
+`User.ID` is the igid — the same `221731317` that `GetProfile` and
+`FetchReel` accept. So for anyone in a room Nora is already in, the mapping
+from "person in this group" to "whose story can be read" is **derivable from
+the thread itself**. No hand-maintained handle table is needed for a room's
+own members; one is only needed for people outside it.
+
+That is what makes Phase 2's circle-first scope cheap: the circle is the
+thread membership, and it resolves itself.
+
 ## Thread ids are also two
 
 | Field | Value (group "Ridgeline") | Used for |
