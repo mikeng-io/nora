@@ -372,3 +372,97 @@ def test_only_refuses_a_name_that_matches_nothing(tmp_path, monkeypatch):
     _corpus(tmp_path, monkeypatch, _rows("a"), "no_trigger")
     with pytest.raises(ValueError, match="no active case named"):
         experiment_for("no_trigger", source_url="x", only=frozenset({"typo"}))
+
+
+# --- the counterfactual state, and the guards that keep it narrow ----------
+
+_COUNTERFACTUAL = """
+- name: w1-chronicle
+  entry: participation
+  expect: speak
+  input: hi
+  snapshot:
+    platform: signal
+    conversation_id: the-real-group
+    before_ms: 1752000000000
+  counterfactual:
+    varies: culture
+    why: |
+      A chronicle and an account are the same facts in two representations,
+      and no room ever held both at once.
+"""
+
+
+def test_a_counterfactual_case_is_active_and_counted_separately(tmp_path, monkeypatch):
+    """The count is what makes the state safe to have. A counterfactual is a
+    MANIPULATION, not a reconstruction, and an aggregate that folded the two
+    together would let the rule erode by arithmetic rather than by anybody
+    deciding to relax it."""
+    name = _corpus(tmp_path, monkeypatch, _ANCHORED + _COUNTERFACTUAL, "participation")
+    c = census(name)
+    assert (c.total, c.active, c.parked, c.unanchored) == (2, 2, 0, 0)
+    assert c.counterfactual == 1
+    assert "1 COUNTERFACTUAL" in str(c)
+    # It RUNS — it is a real moment with one tier varied, not a parked case.
+    assert "w1-chronicle" in {case.name for case in load_corpus(name)}
+
+
+def test_a_corpus_with_no_counterfactual_says_nothing_about_the_state(
+    tmp_path, monkeypatch,
+):
+    """A column implying the state is ordinary is how it becomes ordinary."""
+    assert "COUNTERFACTUAL" not in str(
+        census(_corpus(tmp_path, monkeypatch, _ANCHORED, "participation"))
+    )
+
+
+def test_a_counterfactual_without_an_anchor_is_refused(tmp_path, monkeypatch):
+    """Without the anchor it is authored content, which is the one thing this
+    corpus has no path for."""
+    body = _COUNTERFACTUAL.replace(
+        """  snapshot:
+    platform: signal
+    conversation_id: the-real-group
+    before_ms: 1752000000000
+""", "")
+    with pytest.raises(ValueError, match="names no `snapshot:`"):
+        load_all(_corpus(tmp_path, monkeypatch, body, "participation"))
+
+
+def test_a_counterfactual_varying_an_unlisted_tier_is_refused(tmp_path, monkeypatch):
+    """The set is CLOSED on purpose — a general override is what this state
+    exists INSTEAD of, so widening it has to be a decision in this file."""
+    body = _COUNTERFACTUAL.replace("varies: culture", "varies: transcript")
+    with pytest.raises(ValueError, match="only \\['culture'\\] may be varied"):
+        load_all(_corpus(tmp_path, monkeypatch, body, "participation"))
+
+
+def test_a_counterfactual_must_say_why_it_cannot_be_reconstructed(
+    tmp_path, monkeypatch,
+):
+    body = _COUNTERFACTUAL.replace(
+        """  counterfactual:
+    varies: culture
+    why: |
+      A chronicle and an account are the same facts in two representations,
+      and no room ever held both at once.
+""", "  counterfactual:\n    varies: culture\n")
+    with pytest.raises(ValueError, match="must state exactly"):
+        load_all(_corpus(tmp_path, monkeypatch, body, "participation"))
+
+
+def test_a_parked_case_cannot_also_be_counterfactual(tmp_path, monkeypatch):
+    """A parked case is not run, so varying a tier in it asserts nothing."""
+    body = _COUNTERFACTUAL.replace(
+        """  snapshot:
+    platform: signal
+    conversation_id: the-real-group
+    before_ms: 1752000000000
+""",
+        """  parked:
+    reason: P-A
+    why: no real room produced it
+    returns_when: a room produces it
+""")
+    with pytest.raises(ValueError, match=r"parked AND counterfactual|names no `snapshot:`"):
+        load_all(_corpus(tmp_path, monkeypatch, body, "participation"))
