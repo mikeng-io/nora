@@ -9,10 +9,12 @@ description: >
   54% of description text (8,602 tokens) is the third. Measured over 574
   turns, a turn uses 2 tools of 54 and 1.09 outside the hot set. So: a
   generated one-line catalogue for all 54 (991 tokens, measured) stays
-  resident; a `load_tools` verb fetches full schemas on demand; result-handling
-  prose moves onto the tool result. Projected mean input ~35,500 -> ~17,700.
-  Break-even is 46 cold tools in one turn; observed max is 7.
-status: proposed
+  resident and a `load_tools` verb fetches full schemas on demand. Projected
+  mean input ~35,500 -> ~17,700. Break-even is 46 cold tools in one turn;
+  observed max is 7. The third category (result-handling relocation) is
+  PARKED by operator decision 2026-09-22 — its measurement is retained in
+  03-result-handling.md, its implementation is not in scope.
+status: proposed-parked-phase3
 governance: draft
 timestamp: '2026-09-22'
 origin: >
@@ -49,7 +51,7 @@ scope:
     - "Raise the shared turn ceiling by the expected load_tools count (~0.8/turn) so a per-tool budget is not inert under it"
     - "Add the DEC-28 counter: turns ending without a reply while the room named a catalogued capability"
   deferred:
-    - "Phase 3 — relocate 8,602 tokens of result-handling prose onto tool results via the output_contract seam; ships last because LongFuncEval measures 7-91% accuracy loss as responses grow"
+    - "PARKED 2026-09-22 by operator decision — relocate 8,602 tokens of result-handling prose onto tool results via the output_contract seam. Measurement retained in 03-result-handling.md (-1,746 hand-measured on three tools, ~6,970 fleet projection); not built without a fresh decision. It carried the bundle's only non-selection quality risk (LongFuncEval: 7-91% accuracy loss as responses grow)"
     - "Phase 2 — lane/room scoping beyond today's Discord music filter; value shrinks once a cold tool costs a catalogue line rather than a schema"
     - "Doctrine compression (identity 973, conduct 3,893) — separate workstream, operator-owned files"
     - "Whether doctrine rules belong on tool results too (whitefish-c0 is moving one there from the Instagram side) — separate decision, separate owner"

@@ -52,15 +52,21 @@ decision is "not this one."
 
 ## The split
 
-| category | lives in | paid |
-|---|---|---|
-| selection | a generated **catalogue** in the prompt | always — all 54, ~900 tokens |
-| invocation | the **tool schema** | on `load_tools`, ~407 × ~1 per turn |
-| reporting | the **tool result** | on return, only the tool that fired |
+| category | lives in | paid | status |
+|---|---|---|---|
+| selection | a generated **catalogue** in the prompt | always — all 54, 991 tokens | **in scope** |
+| invocation | the **tool schema** | on `load_tools`, ~407 × ~1 per turn | **in scope** |
+| reporting | the **tool result** | on return, only the tool that fired | **PARKED** |
 
 `01-the-catalogue.md`, `02-load-tools.md`, `03-result-handling.md` take one
 category each. `04-code-surface.md` is the authoritative per-file change list.
 `05-measurement.md` is how to prove it and what would falsify it.
+
+**Category 3 is parked** by operator decision, 2026-09-22 — "not really a big
+deal" against what categories 1–2 already save. `03-result-handling.md` is
+kept for its measurement, not as a plan; see its header. The split is stated
+as three because that is what a tool's text *is*, and naming the third is what
+makes the first two legible. Implementing it is a separate decision.
 
 ## Why this is viable: a turn uses 2 tools out of 54
 
@@ -85,19 +91,27 @@ tool**. The saving is on the ~52 not loaded.
 
 | | today | with the split |
 |---|---|---|
-| tool schemas resident | 22,130 | catalogue ~900 + hot set 2,606 + `load_tools` ~80 = **~3,590** |
+| tool schemas resident | 22,130 | catalogue 991 + hot set 2,606 + `load_tools` ~80 = **~3,680** |
 | fetched per turn (mean) | — | 1.09 × 407 ≈ **444** |
 | doctrine | 8,288 | 8,288 (untouched by this bundle) |
 | situation | ~5,400 | ~5,400 |
 | **mean total** | **~35,500** | **~17,700 (−50%)** |
 
-The catalogue figure is an **estimate** (54 lines × ~17 tokens), not a
-measurement — it cannot be measured until the generator exists.
-`05-measurement.md` §2 makes it the first gate.
+The catalogue figure is **measured**, not estimated: rendering `name — first
+sentence` for all 54 tools from today's docstrings is 991 cl100k tokens, mean
+18.4 per line. `05-measurement.md` §2a keeps it under 1,400 as a regression
+guard.
+
+With category 3 parked, the 8,602 tokens of result-handling prose stay in the
+schemas — so a **fetched** schema still costs its full ~407 tokens. That is
+already what the 444/turn figure above assumes; parking changes the ceiling
+this can reach later (~14,000), not the number it reaches now.
 
 ## What this is not
 
-**Not a trim.** Nothing is deleted. DEC-24's minimize-parameters was already
+**Not a trim.** Nothing is deleted, and with category 3 parked, no existing
+docstring prose moves at all — the only docstring edits in scope are the
+`where_is` discriminator repair and two over-budget first sentences. DEC-24's minimize-parameters was already
 over-applied once to external-service tools, cutting intent-bearing
 parameters (the transit BUS/SUBWAY/TRAIN modes); the operator reversed that
 on 2026-08-06. Every word survives — it moves to where its decision is made.
@@ -127,9 +141,13 @@ LongFuncEval (<https://arxiv.org/abs/2505.10570>) measures the degradation:
 7–85% accuracy loss as the tool catalogue grows, 7–91% as tool responses grow,
 13–40% over long multi-turn.
 
-That second figure is the standing risk in `03-result-handling.md`: moving
-prose into results makes results longer. It is why this bundle sequences the
-catalogue first and the relocation last.
+The second figure is why `03-result-handling.md` is parked rather than
+sequenced: moving prose into results makes results longer, and that is the
+only part of this work whose risk lands on quality rather than tokens.
+
+The third figure — 13–40% loss over long multi-turn — is the one that still
+applies to what IS in scope, because `load_tools` adds a turn on cold paths.
+`05-measurement.md` §2c and #325.
 
 Anthropic's own tool-authoring guidance also puts error and response handling
 in **tool responses, not descriptions**
@@ -167,13 +185,14 @@ exists, which reintroduces exactly the failure A was rejected for.
 
 ## Sequencing
 
-1. **Phase 1 — catalogue + `load_tools`** (`01`, `02`). The whole saving lives
-   here. Gated on selection accuracy holding (`05` §2).
+1. **Phase 1 — catalogue + `load_tools`** (`01`, `02`). The whole in-scope
+   saving lives here. Gated on `05` §2 — 2b and 2c can each stop it.
 2. **Phase 2 — lane scoping** (out of bundle; existing platform filter
    extended). De-risks phase 1 by shrinking the catalogue per room.
-3. **Phase 3 — result-handling relocation** (`03`). Independent saving, but
-   carries LongFuncEval's response-length risk, so it ships last and is
-   measured on *total* tokens rather than prompt tokens.
+3. ~~Phase 3 — result-handling relocation~~ — **PARKED** 2026-09-22. It was
+   sequenced last because it carries LongFuncEval's response-length risk;
+   parking it removes the bundle's only quality risk beyond selection
+   accuracy, at the cost of ~6,970 tokens not taken.
 
 Doctrine compression (identity 973 / conduct 3,893 tokens) is **a separate
 workstream** and is deliberately not in this bundle; the same three-way

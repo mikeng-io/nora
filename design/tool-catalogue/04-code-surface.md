@@ -3,8 +3,8 @@
 The authoritative per-file change list. Realizes `00-overview.md`; depends on
 `01`, `02`, `03`.
 
-Phase 1 is §1–§6. Phase 3 is §8. Verify each against the section that decided
-it — this file says *where*, not *why*.
+Phase 1 is §1–§7. §8 is parked and is here for the record only. Verify each
+against the section that decided it — this file says *where*, not *why*.
 
 ## 1. The catalogue generator — `nora/agent/registry.py`
 
@@ -127,9 +127,10 @@ reads as current. (`a-late-reversal-is-not-landed-until-every-quoting-file-chang
 Metrics are append-only (R-17): nothing is removed, and a tool that stops
 being called leaves a frozen series.
 
-## 8. Phase 3 — result handling (`03`)
+## 8. PARKED — result handling (`03`)
 
-Not phase 1. Per tool: cut the result-handling paragraphs from the docstring,
+**Not in scope.** Operator decision 2026-09-22. Kept here so the seam is
+recorded, not as work. Per tool: cut the result-handling paragraphs from the docstring,
 leave the one-line pointer, attach the prose to the returned payload. The
 `output_contract` field on `ToolSpec` (ADR 0009 / DEC-153) is already read at
 runtime in `adapt()` (`nora/agent/ports.py`) and is the seam.
@@ -152,4 +153,4 @@ whatever was built — `a-test-can-be-green-on-the-defect`.
 ## Release fragment
 
 Phase 1 is user-observable (latency, and a new verb). `type: "change"`.
-Phase 3 likewise. This bundle alone is docs — `type: "none"` with a reason.
+This bundle alone is docs — `type: "none"` with a reason.

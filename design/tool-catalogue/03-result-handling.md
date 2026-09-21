@@ -1,9 +1,24 @@
 # 03 — Result handling (reporting)
 
+> **PARKED — operator decision, 2026-09-22.** Not in scope for this bundle's
+> implementation. Miles: *"let's defer and park the docstring compression
+> because it's not really a big deal."*
+>
+> This file stays in the bundle because the **measurement** is the expensive
+> part and it is already done — reproducing it later costs a day, and a future
+> reader asking "why is 54% of every tool description about handling its
+> result?" deserves the answer rather than the question. Nothing here is built
+> without a fresh operator decision.
+>
+> **What parking it costs:** ~6,970 tokens left on the table. That is real but
+> secondary — phases 1–2 already take the call from ~35,500 to ~17,700, and
+> this would take it to roughly ~14,000. It is the smaller half of a saving
+> that is already large, and it carries the only quality risk in the bundle
+> (§4). Deferring the risky half of a win you have already banked is the right
+> trade.
+
 Realizes `00-overview.md`. Covers category 3 only: *what does `unavailable`
 mean, may I read the coordinate aloud, must I carry the age?*
-
-Phase 3. Ships **last**, for the reason in §4.
 
 ## What moves
 
