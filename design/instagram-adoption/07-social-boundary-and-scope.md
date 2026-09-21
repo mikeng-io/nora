@@ -144,6 +144,93 @@ policy machinery at all.
   Both are needed: a Tier 0 read with durable custody would quietly build a
   dossier on a friend out of nothing but permitted acts.
 
+## Resolution across platforms: the person index already does it
+
+"Ask on Signal about someone's Instagram story" needs no new mechanism. The
+person index is cross-platform by construction — one `[persons.<id>]` holds a
+Signal block, a WhatsApp block and an Instagram block — so resolution is
+always:
+
+```
+sender on ANY platform ──> person ──> that person's instagram.igid
+```
+
+The platform the question is asked from is irrelevant, which is the whole
+point of the workspace/person model.
+
+The prerequisite is that the Instagram block exists. Two paths:
+
+- **Someone in an Instagram room with Nora**: free. They speak, the sender is
+  unmapped, `nora persons pending` prints both ids, a human writes the block.
+- **Someone who is not** (Tier 1): there is **no automatic path**. A human
+  must obtain the numeric igid once — `SearchUsers` resolves a handle to one,
+  measured working — and write it. The handle itself cannot be the key,
+  because the index refuses renameable ids on every platform.
+
+## The gap this design does NOT close: correlation
+
+Raised by the operator, 2026-09-22, in its sharpest form: *"check Tyler's
+Instagram story — where have they been today?"*, given that Nora also holds
+presence analytics.
+
+**The capability is real.** Story `taken_at` timestamps, Life360 presence,
+room messages and the note tier compose into a timeline of where a person was
+and what they were doing. Nothing in this bundle prevents it, and nothing
+should be claimed otherwise.
+
+**Every input is individually permitted.** Tyler is in the room, so he is Tier
+0. Presence is already in Nora and predates this work. Story reads are
+approved. There is no step at which a rule is broken — *the composition is the
+dossier*, assembled entirely out of permitted acts.
+
+**The three bounds in this bundle do not reach it:**
+
+| bound | what it constrains | why it misses this |
+|---|---|---|
+| tier ladder (`07`) | *who* may be read | Tyler is Tier 0; every read is allowed |
+| retention (`06`) | *what bytes survive* | the bytes are discarded; the **inference** is what persists |
+| ports (`08`) | *how* a read is performed | correlation happens above all ports, in the model |
+
+Retention protects the wrong thing here. A story frame vanishes in 24 hours;
+"Tyler was at the beach at 3pm", written into a note, outlives it
+indefinitely. This is `06`'s own warning — *"the comprehension is the durable
+artefact, not the media"* — arriving as a concrete capability rather than a
+caveat.
+
+### The distinction that matters
+
+The operator can authorize reads **of the operator**. Authorizing reads *and
+correlation* **of Tyler** is different in kind, and Tyler is not in the
+conversation where it is being decided. Tier 0's justification — *the subject
+opted in by joining a room with her* — covers being heard in that room. It
+does not obviously extend to having one's movements assembled from four
+sources.
+
+### What would bound it, if anything should
+
+Stated as options rather than a decision, because this is the operator's to
+make and it is about people, not code:
+
+1. **Bound the derived claim, not the read.** The tier ladder currently
+   governs reads; it could equally govern *claims about a person* — so
+   "where was Tyler today" is a Tier-2 act requiring someone in the room to
+   ask, while "did Tyler post a story" stays Tier 0.
+2. **Bound persistence of derived claims.** Extend `06` from bytes to
+   inferences: a location claim derived from a social read is as ephemeral as
+   the read. This is the narrowest fix and the hardest to enforce, since the
+   note tier is designed to persist.
+3. **Bound the correlation itself** — presence and social may not be joined
+   in one answer without an explicit ask. Crude, and probably the only one
+   that is mechanically checkable.
+4. **Accept it explicitly.** Nora is a member of the circle and members do
+   know things about each other. Written down as a decision rather than left
+   as an emergent property, so it is legible to the people it concerns.
+
+**Nothing here is blocked on this.** Phase 1 does not touch it and Phase 2
+Tier 0 story reads do not require it to be settled. It is recorded now because
+the capability arrives with Phase 2, and a capability that arrives before its
+decision tends not to get one.
+
 ## The open decision this leaves
 
 `policy.toml` has no per-person capability, and Tier 1 needs one. The shape is
