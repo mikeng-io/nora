@@ -158,12 +158,6 @@ REQUIRED: dict[str, tuple[str, ...]] = {
 
 #: Call sites that are NOT production raw clients, each with the reason.
 EXEMPT: dict[str, str] = {
-    "nora/app/eval_support.py": (
-        "the eval harness's own measuring client. It exists to read token "
-        "usage back out for the gate suite's cost measurement, and it is "
-        "never constructed by the composition root — `evals/` may import "
-        "`nora.app`, so it lives here rather than under `evals/`."
-    ),
 }
 
 

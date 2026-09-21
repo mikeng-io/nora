@@ -1,0 +1,11 @@
+{
+  "type": "fix",
+  "summary": "Added evals/backbone.py's sampled()/sample_read() mechanism for scenarios whose grading signal is stochastic, closing the gap 09-the-backbone-measured.md §3.1 measured: two model-dependent cases swapped verdicts across two runs at sample:1, and strands_evals.Experiment has no repeat/sample parameter of its own.",
+  "details": [
+    "sampled(base, n) draws n uniquely-named copies of a Case (base.name + '#i'), because EvaluationDataStore and the SDK's own report caching key on case_name -- re-running the same Case unchanged would collide rather than produce n independent rows (08-the-sdk-surface.md §4.4).",
+    "sample_read(report) groups a report's rows back to their base case via _base_name() and reads a fourth verdict, UNSTABLE, when draws disagree, rather than collapsing disagreement into a majority vote -- doing so would hide exactly the instability §3.1 measured, which contradicts this suite's own fail-closed measurement discipline. All-ERROR still reads ERROR, not UNSTABLE, matching rule 3 (ERROR is never a PASS).",
+    "Required first confirming report.cases/report.detailed_results are flattened per (case x evaluator) pair, not per case, via a synthetic no-network probe against a real Experiment -- documented in sample_read()'s own docstring so the next reader doesn't have to re-derive it.",
+    "Falsified: collapsing UNSTABLE to a majority vote turned test_sample_read_disagreement_reads_unstable_not_a_majority_vote red before the real fix was restored.",
+    "6 new tests, all against a real strands_evals.Experiment with fake evaluators (no DB/network). Full suite: 7935 passed."
+  ]
+}

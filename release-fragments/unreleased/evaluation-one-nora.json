@@ -1,0 +1,15 @@
+{
+  "type": "change",
+  "summary": "The evaluation suite now measures the Nora that is deployed, through one function, rather than seven hand-built approximations of her.",
+  "details": [
+    "nora/subject/obtain() composes the same dependency graph nora/__main__.py runs \u2014 same builder, all 43 fields \u2014 and there is no way for a caller to pass it a collaborator.",
+    "Three entry points are driven as the deployment drives them: the Relevance Gate's own decide, the fire path's speak, and Dispatcher.on_message, which is the call a platform adapter's listen loop makes.",
+    "Thirteen corpora (150 cases) moved across as data, checked field by field against the originals rather than retyped.",
+    "Eight of those ten were previously graded against a bare agent that had none of her context blocks, none of her tools and none of her output guards \u2014 so a number from them described a wording, never a room."
+  ],
+  "limitations": [
+    "The old evaluation layer still runs and is still what a live number comes from; it is removed only once the replacement has driven a live run.",
+    "The first full live run was one draw per case, which separates a behaviour from noise on nothing: the corpora ask for five and are right to.",
+    "That run graded structurally and without a judge, so a number from the adversarial corpora says a reply happened, not that the reply was sound."
+  ]
+}

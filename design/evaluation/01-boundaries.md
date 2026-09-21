@@ -12,16 +12,24 @@ the evidence.
 
 ## 2. The four things, and nothing else
 
-| | what it is | where it lives |
-|---|---|---|
-| **Case** | input + the expectation it must meet + which entry point it enters at | domain — data, no behaviour, no imports |
-| **Subject** | Nora. Obtained, never built | one function, one caller |
-| **Runner** | takes a case, obtains the subject, drives it, returns an outcome | application |
-| **Outcome** | what happened, in one shape, for a grader to judge | domain |
+> **CORRECTED 2026-09-18 — three of these four already existed.** See
+> `07-sdk-native`. The table below was derived from first principles against a
+> dependency that has shipped `Case`, the runner and the outcome types since
+> before this bundle opened, and which no node in it mentions. The shapes are
+> right; deriving them was the error. The last column is the correction.
+
+| | what it is | where it lives | already shipped by `strands-agents-evals` |
+|---|---|---|---|
+| **Case** | input + the expectation it must meet + which entry point it enters at | domain — data, no behaviour, no imports | `strands_evals.Case` |
+| **Subject** | Nora. Obtained, never built | one function, one caller | **no — this one is ours**, and it is what this bundle actually found |
+| **Runner** | takes a case, obtains the subject, drives it, returns an outcome | application | `Experiment.run_evaluations` |
+| **Outcome** | what happened, in one shape, for a grader to judge | domain | `EvaluationData` / `EvaluationOutput` |
 
 **A suite is a set of cases.** It is not a module, a driver, or a function. If
 adding a suite requires code, the boundary has already leaked — that is the test
-of this design and it is mechanically checkable.
+of this design and it is mechanically checkable. **That rule survives the
+correction unchanged**, and the SDK holds it the same way: a case is `Case`
+data and a suite is a list of them.
 
 ## 3. The DDD shape
 
@@ -36,11 +44,42 @@ model, no `nora.app`. This is where "what a suite IS" lives, and it is small.
 - **stores** — what she knows. Per the operator: *配置嘅啫嘛*. A case says what
   she knows; that is input, not substitution.
 - **model** — which one, at what effort.
+- **clock** — what time it is. Added 2026-09-17, and it belongs on this list
+  for the same reason the transcript does: it is the world reaching her, not
+  part of her. For the proactive adaptor the time is not context around the
+  question, it IS the question — whether a note is due, whether a position has
+  gone stale, whether now is the moment. A case that cannot state it can only
+  watch that adaptor answer about today.
+
+  **It was not addable before.** `build_dependencies` wrote a wall-clock read at NINE separate sites — seven
+  `clock=lambda: datetime.now(UTC)` and two `now=datetime.now(UTC)` values —
+  while nine components
+  already accepted an injectable `clock`, each for the reason `FirePath`'s own
+  docstring gives. So the composition root had the dependency and had no name
+  for it, and the only way to ask the adaptor a dated question was to build a
+  second one by hand — which is one of the seven assemblies §4 counts. Naming
+  it once, with the same literal as the default, is a fix to the composition
+  root on its own terms and closes the third of §7's four missing seams.
 
 **Application** — the runner. One function. No suite-specific branch.
 
 **Infrastructure** — store implementations, the model client, reporters, the
 provenance line. Swappable without the domain noticing.
+
+**CORRECTED 2026-09-18.** This layering is sound and mostly is not ours to
+write. `Experiment` is the Application layer and `EvaluationReport` the
+reporter; `Case`, `EvaluationData` and `EvaluationOutput` are the Domain. What
+belongs to this repo is the **Ports** list above — entry point, stores, model,
+clock — because those are seams into *Nora*, and the task function that closes
+them. `07-sdk-native` §2 measures the split: 1,037 of the rebuilt layer's 2,267
+lines re-implement Application and Domain.
+
+One constraint the SDK does impose and this section should carry:
+`EvaluationOutput.test_pass` is a `bool`. `Verdict`'s third state — the judge
+that did not answer — has no field, so it rides in `label` and no aggregation
+may read `test_pass` alone. That is the rule 3 hole (*ERROR is not FAIL and is
+never PASS*) restated at the boundary, and it is the one place a custom grader
+is not optional.
 
 ### 3.1 Why the entry point is a port and not a taxonomy
 
@@ -88,8 +127,38 @@ grew.**
 3. **Adding a suite adds no code.** A suite is cases.
 4. **Nothing reaches the model that the deployment would not send.** The prompt
    is the observable; it is the same prompt or the subject is not Nora.
+5. **It is the deployment's own model, under the deployment's own settings, with
+   the deployment's own features on.** Added 2026-09-21 — see the correction
+   below. (4) constrains what is SENT; a subject can satisfy it perfectly and
+   still not be Nora, because the thing receiving it is configured differently.
 
 Each is a property a test can hold, and (1) and (3) are the two that decay first.
+
+> **CORRECTED 2026-09-21 — (4) was stated, never held, and was too narrow.**
+>
+> Measured: `nora/subject/obtain.py:92` builds every subject from
+> `config.example.toml`, not the deployment's `config.toml`. **65 values
+> differ** — including `llm.model` (`ollamacloud/deepseek-v4-flash:0731` vs
+> `nora`), `llm.reasoning_effort` (`low` vs `none`), and `relevance_gate`,
+> `participation`, `standing`, `culture`, `notes`, `dreamer`, `search`,
+> `online`, `weather`, `route` and `preview` all **disabled** where production
+> enables them. `default_policy()` likewise emits no per-room flags, while
+> production's `policy.toml` sets `relevance_gate = true` on 3 of 6 rooms.
+>
+> So every case in this bundle to date evaluated a different model, at a
+> different reasoning effort, with most of Nora switched off. The per-case
+> `config:` overrides in the corpora (22 cases re-enabling `notes.enabled`) are
+> that defect's symptom, not a feature.
+>
+> (4) did not catch it because it constrains the PROMPT, and the prompt was
+> fine. What differed was the reader. Hence (5).
+>
+> The rule that replaces both: **the subject composes the deployment's own
+> config and the real room's own policy entry, and the ONLY permitted
+> differences are the isolation keys — room id and unit/workspace.** An example
+> file is by definition not the deployment and drifts from it by design, so it
+> can never be the baseline. Design:
+> `design/evaluation/11-the-sandbox-rebuild.md` §1.2.
 
 ## 6. Step 1's real question, measured 2026-09-17
 

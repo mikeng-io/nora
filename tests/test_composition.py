@@ -898,7 +898,22 @@ def test_only_app_and_main_import_config():
         # three packages allowed to read Config (import-linter contract 3
         # lists none as forbidden), same standing as `__main__.py`/`config.py`
         # themselves.
-        if rel.parts[0] in ("app", "presence", "analytics") or str(rel) in (
+        #
+        # `subject/` is the FOURTH, and it is the one that needs an argument
+        # rather than a precedent (`design/evaluation/01-boundaries.md` §6,
+        # edit 2 — which that node flagged as arguable before this test ever
+        # ran). It is a composition root by the same definition: `obtain()`
+        # calls `build_dependencies(cfg)`, so it must build a `Config` to call
+        # it with. Composing the real graph means reading the real config, and
+        # a subject that read something else would not be Nora — which is the
+        # entire property it exists to hold.
+        #
+        # The exemption is narrow: it admits ONE caller of `build_dependencies`
+        # outside the application, and `tests/architecture/
+        # test_the_subject_is_obtained_not_assembled.py` holds that there is
+        # exactly one. Without that pin this line would be the door the eighth
+        # assembly walks through.
+        if rel.parts[0] in ("app", "presence", "analytics", "subject") or str(rel) in (
             "__main__.py", "config.py",
         ):
             continue

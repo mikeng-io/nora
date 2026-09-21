@@ -55,6 +55,13 @@ venv/
 # persons.yaml (which held real phone numbers) on an operator's machine can
 # never be committed by accident.
 /config.toml
+# GENERATED PER EVAL RUN, never pre-generated and never committed: the
+# deployment's own behaviour values applied over `config.example.toml`, so an
+# eval subject composes the Nora that is deployed rather than a fresh install
+# (`design/evaluation/01-boundaries.md` §5). It carries the deployment's real
+# values -- the doctrine canary, room ids, internal endpoints -- which is
+# exactly what `config.toml` is untracked for.
+/config.evaluation.toml
 /config.yaml
 /identity.toml
 /persons.yaml

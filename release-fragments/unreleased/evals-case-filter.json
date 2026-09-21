@@ -1,0 +1,10 @@
+{
+  "type": "feature",
+  "summary": "python -m evals --case NAME restricts a run to named cases of one corpus, so re-measuring the few that moved does not cost the whole corpus.",
+  "details": [
+    "A re-measurement asks about the cases that moved. Without this, re-drawing four participation failures at --sample 3 pays for all thirteen participation cases three times -- which is how a sample count gets chosen by budget instead of by the question, and sample_read's UNSTABLE is exactly the answer that needs draws.",
+    "Measured on the deploy host 2026-09-21: a full turn is a median of 6 model calls and ~118k input tokens (production traces, Langfuse), so corpus-sized re-runs are the dominant cost of iterating on this suite.",
+    "`--case` is repeatable and requires exactly one corpus. A name matching no ACTIVE case is refused by name rather than silently selecting zero, which would report a clean corpus.",
+    "tests/unit/test_eval_scenarios.py pins selection, its interaction with --sample, and the refusal."
+  ]
+}

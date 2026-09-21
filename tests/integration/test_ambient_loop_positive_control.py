@@ -81,7 +81,7 @@ WHAT IS FAKE, AND WHAT THAT COSTS
 ---------------------------------
 Only the models and the platform. Every stage between them is production code:
 the real `IngestPipeline` + `EngagementPipeline` + `Dispatcher` from
-`nora.app.offline.build_offline_pipeline`, the real `RelevanceGatePolicy`, the
+`tests.offline_pipeline.build_offline_pipeline`, the real `RelevanceGatePolicy`, the
 real `RelevanceGate`, the real `ParticipationTrigger`, the real `FirePath`, the
 real guards and `Deliverer`, the real `debrief.run` stage over the real
 `nora/dreamer/` objectives, and the real `ProactiveAdaptor`. The stores are
@@ -94,7 +94,7 @@ WHY `integration/` WITH NO POSTGRES
 behaves, through the real composition root"*, and names Postgres under **needs**
 — what the tests there happen to require, not what makes them true. This one is
 true for exactly that reason: it assembles the real pipelines through
-`nora.app.offline.build_offline_pipeline`, the offline composition root, and
+`tests.offline_pipeline.build_offline_pipeline`, the offline composition root, and
 nothing it asserts would be more true against SQL — every store it touches is a
 double the contract suites already bind to its production sibling. Driving it
 on the real engine would buy one fact this case is not about (the SQL stores
@@ -184,7 +184,6 @@ import httpx
 import openai
 import pytest
 
-from nora.app.offline import build_offline_pipeline
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import DeliveryStatus
 from nora.engagement.stages import debrief
@@ -211,6 +210,7 @@ from nora.testing import (
 from nora.testing.reminders import FakeReminderStore
 from tests.builders import load_example_config, override_config
 from tests.objectives import shipped_objectives
+from tests.offline_pipeline import build_offline_pipeline
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DOCTRINE_DIR = REPO_ROOT / "nora" / "doctrine"
@@ -326,7 +326,9 @@ class _ScriptedDebriefClient:
     def model(self) -> str:
         return "scripted-debrief"
 
-    async def complete(self, *, system: str, prompt: str) -> debrief.Completion:
+    async def complete(
+        self, *, system: str, prompt: str, trace_attributes=None,
+    ) -> debrief.Completion:
         if system.startswith(self._standing_objective):
             self.standing_calls.append(prompt)
             return debrief.Completion(

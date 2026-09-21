@@ -12,6 +12,22 @@ edges:
 
 # Nora — Evaluation
 
+> **SUPERSEDED 2026-09-19 by `design/evaluation/` (start at `_index.yaml`,
+> current task order in `GOAL-2-backbone.md`).** This node is the 2026-08-03
+> plan, written before Nora had an evaluation layer at all. What survived:
+> **the framework choice** — `strands-agents-evals` is still the answer, now
+> enforced rather than merely cited (`07-sdk-native`). What did not survive,
+> measured rather than argued: the CI-integration shape below (a fast
+> deterministic gate plus a slow judged gate, run on every change) was never
+> implemented — `NoraOutputEvaluator`/`NoraTrajectoryEvaluator` existed and
+> were never called; and the axis breakdown in §§1-3 (`OutputEvaluator` rubric,
+> per-tag `TrajectoryEvaluator`, a fixed adversarial corpus) is the "accretion,
+> not a decision" `10-the-scenario-map.md` replaces with nine failure classes
+> derived from the issue record — S7 (speech/silence) needs an `AbsenceGrader`
+> no built-in evaluator supplies, four of the nine classes need no model call
+> at all, and this document names none of that. Kept below as the historical
+> record of the original intent, not as live design.
+
 ## Role
 
 Nora must be **measurable**, not just functional. The verification checklist in

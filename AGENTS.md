@@ -454,11 +454,18 @@ earned. They are the `measure` verb pointed at our own instruments.
 - **Spawned work does not inherit the caller's span.** `create_task` copies the
   context of the task that CALLS it, so work handed to a worker starts its own
   trace unless the intended context is captured and attached explicitly.
-- **One spelling for "this span is a model call".** `nora.obs.tracing.
-  generation` / `annotate_generation` own the `gen_ai.*` and
-  `langfuse.observation.*` vocabulary; a call site never writes those names. The
-  spelling was hand-rolled twice, diverged, and left every raw call priced at
-  zero tokens.
+- **One spelling for "this span is a model call" — and it is Strands'
+  own, not this repo's, since 2026-09-19.** An Agent-backed call
+  (`nora.agent.structured.ask_text`/`ask_structured`) needs no
+  instrumentation code at all; a raw `chat.completions.create` call
+  instruments through `nora.agent.telemetry.start_raw_model_span`/
+  `end_raw_model_span`. A call site never writes a `gen_ai.*` or
+  `langfuse.observation.*` literal by hand, and never wraps an
+  `ask_text`/`ask_structured` call in a span of its own — the Agent already
+  opens one, and a second span around it is two overlapping traces for one
+  call (the debrief/standing fold's own incident: `4448c737` moved them onto
+  the SDK, nothing removed the hand-rolled wrapper still around the call, and
+  every fold produced two nested traces for months).
 - **Detaching a span and dropping it are two decisions.** Spawned work should
   detach so it does not hold a trace open; that is not a reason to declare it
   plumbing. Conflating them hid every media read from the collector for two

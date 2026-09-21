@@ -13,6 +13,7 @@ majority of the suite (which uses `FakeRecordStore`) pays nothing for it.
 
 from __future__ import annotations
 
+import os
 import time
 import urllib.error
 import urllib.request
@@ -374,3 +375,71 @@ def no_build_stamp():
     finally:
         if moved:
             parked.replace(stamp)
+
+
+#: A deployment-shaped config for tests that COMPOSE A SUBJECT.
+#:
+#: `nora/subject/obtain.py` points every subject at `config.evaluation.toml`,
+#: which is gitignored and written ONLY by `python -m evals`. So on a fresh
+#: clone, in CI, or in a new worktree the file does not exist and every such
+#: test dies with `FileNotFoundError` — measured, 7 of 10 in
+#: `test_subject_obtain.py`. Worse in a checkout where it DOES exist: those
+#: tests compose whatever a previous run left behind, from whatever deployment
+#: that run pointed at, with no freshness check — the exact staleness
+#: `materialise()`'s own docstring says must never happen.
+#:
+#: NOT a second composition path. It is the SAME generator, fed a STATED
+#: deployment instead of a discovered one — which is what a fixture is. A test
+#: run on the deploy host uses the real `config.toml` and gets the real thing.
+_STATED_DEPLOYMENT = """\
+[llm]
+model = "nora"
+reasoning_effort = "none"
+[dreamer]
+enabled = true
+model = "nora-dreamer"
+reasoning_effort = "low"
+[relevance_gate]
+enabled = true
+shadow = false
+[participation]
+enabled = true
+[standing]
+enabled = true
+[culture]
+enabled = true
+[notes]
+enabled = true
+candidates_enabled = true
+[store]
+prune_enabled = false
+"""
+
+
+@pytest.fixture(scope="session", autouse=True)
+def evaluation_config() -> Path:
+    """Materialise `config.evaluation.toml` before any subject is composed.
+
+    Prefers the DEPLOYMENT's own config when it is reachable, so a run on the
+    deploy host measures the deployed Nora. Falls back to a stated deployment
+    elsewhere, and says which it used — a silent fallback to the example is the
+    65-value divergence this whole layer exists to close, so the fallback is
+    explicit and narrow.
+    """
+    from evals.subject_config import build, materialise
+
+    root = Path(__file__).resolve().parents[1]
+    target = root / "config.evaluation.toml"
+    example = root / "config.example.toml"
+    deployment = Path(
+        os.environ.get("NORA_DEPLOYMENT_DIR", "/home/norty/workspace/nora")
+    ) / "config.toml"
+
+    if deployment.is_file():
+        materialise(example=example, deployment=deployment, target=target)
+    else:
+        target.write_text(
+            build(example.read_text(encoding="utf-8"), _STATED_DEPLOYMENT),
+            encoding="utf-8",
+        )
+    return target

@@ -10,9 +10,10 @@
 | `nora/app/offline.py` | **335** |
 | **deleted or re-homed** | **~7,700** |
 
-Not small. The argument for doing it anyway is `00-overview` §1: there is no
-target shape the current code is an imperfect version of, because there are six
-shapes and the target is in production.
+Not small. The argument for doing it anyway is `00-overview` §3 — **CORRECTED
+2026-09-18** (`07-sdk-native` §2): there IS a target shape for the harness, and
+it is `strands-agents-evals`. The delete argument stands for the SUBJECT.
+(The cross-reference was also wrong: the claim is in `00-overview` §3, not §1.)
 
 ## 2. Order, and the first step is not code
 
@@ -63,6 +64,38 @@ design — `allow_indirect_imports`).
 
 Then: one function returning Nora, no caller passing collaborators.
 
+**Steps 1-4 and 6 — DONE 2026-09-17. Step 5 is the only one left.**
+
+> **SUPERSEDED IN PART 2026-09-18 by `07-sdk-native`.** Steps 2 and 5 below
+> built a runner, an outcome type and a report renderer that
+> `strands-agents-evals` already ships — 1,037 of 2,267 lines. Step 1 (the one
+> subject) is untouched by that and is the part worth keeping. Read
+> `07-sdk-native` before treating this sequence as the plan.
+
+| step | state |
+|---|---|
+| 1 — the one subject | `nora/subject/` — `obtain(spec)`, 40-field graph, 3+4 tests. **Stands** |
+| 2 — two entry points, one runner | §7 run; did NOT refute. 4 pins, all falsified. **The runner is the SDK's `Experiment`; the entry-point-as-port finding stands** |
+| 3 — re-home the corpora | 13 files, 149 cases, pinned field-by-field. Content stands; the bespoke YAML schema is `Case` data |
+| 4 — the remaining entry points | `tag` and `dreamer` added. **The "23 refused for missing seams" is RETRACTED 2026-09-18** — both seams closed and 0 cases are refused; see `04-the-convention` §7 |
+| 5 — the delete | **DONE 2026-09-18.** 8,187 lines deleted, three files re-homed into `tests/`. See `04-the-convention` §6 |
+| 6 — the convention | `04-the-convention.md` |
+| 7 — the SDK was there all along | `07-sdk-native.md`. The harness half of steps 2 and 5 is to be replaced, not re-derived |
+
+**Why Step 5 was held, stated as a rule rather than a hesitation.** The new
+layer had never reached a model. Every measurement in the session that wrote
+this was taken with the provider deliberately unreachable, which proves the
+fail-closed behaviour and proves nothing about agreement. Deleting the only
+instrument that had produced a live number, on the strength of a replacement
+that had not, would have been this bundle's own finding repeated one level up.
+
+It was released by the live run in `06-first-full-run` §8. The run WITHDRAWN by
+adversarial review is the earlier one on that page, not §8; §8 is the run after
+its fixes, and its own four vacuous corpora remain withdrawn. So the delete
+landed on a layer whose grading half does not stand. `07-sdk-native` §7 records what survives.
+
+---
+
 **Step 2 — two entry points through one runner.** `relevance_gate` and
 `participation`, deliberately the least alike. `01-boundaries` §7: if they cannot
 share a runner, the boundary is drawn wrong and we learn it here rather than at
@@ -73,7 +106,24 @@ measured readings and caveats; those travel.
 
 **Step 4 — the remaining entry points**, one at a time.
 
-**Step 5 — delete `evals/`, `eval_support.py`, `offline.py`.** Last, not first.
+**Step 5 — delete `evals/*.py` and `eval_support.py`. NOT `offline.py`.**
+Last, not first. **LANDED 2026-09-18** — `offline.py` and `eval_support.py`
+were RE-HOMED into `tests/`, not left in place; the prose below predates that
+and is kept for its argument, not its status. See `04-the-convention` §6.
+
+**`nora/app/offline.py` IS NOT AN EVAL MODULE, and this bundle said it was.**
+Measured 2026-09-18 by an adversarial reviewer who ran the delete:
+`build_offline_pipeline` is the offline composition root for
+`tests/integration/harness.py`, so deleting it stops **106 integration tests**
+and takes **ten acceptance rules** with it — R-1, R-3, R-5, R-8, R-9, R-10,
+R-10b, R-10c, R-12, R-23. §1's line item "`nora/app/offline.py` (335 lines)"
+was wrong about what that file is for, and `01-boundaries` §4's reading of it
+as "a pipeline assembly that exists only for evals and tests" collapsed two
+very different things: evals, and the integration suite.
+
+It stays. If it should eventually go, that is its own piece of work with its
+own argument, and it is about the integration suite rather than about
+evaluation.
 Deleting before the replacement drives one real case means a period with no
 instrument at all, and the instrument being wrong is better than absent while
 something is being built against it.
@@ -85,8 +135,9 @@ six variations and legitimises them.
 ## 3. What survives, explicitly
 
 - **13 corpora.** Cases and expectations are data and were never the problem.
-- **The graders** — judge, rubric, structural. What a verdict means does not
-  depend on how the subject was built.
+- **The graders** — **CORRECTED 2026-09-18:** only the confidence-weighted
+  rubric and the absence grader. Content grading is the SDK's built-ins
+  (`08-the-sdk-surface` §5).
 - **`subject=` in the provenance line** (#310). The qualifier travels with the
   number into logs and pastes; prose in a document does not.
 - **The recorded findings inside corpus headers** — measured readings with their

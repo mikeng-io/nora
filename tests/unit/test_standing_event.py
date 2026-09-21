@@ -44,12 +44,18 @@ class _Client:
         self.calls = 0
         self._n = 0
         self._malformed = malformed
+        #: What `_complete` passed as `trace_attributes` on each call, in
+        #: order — see `test_the_event_folds_tag_id_is_honestly_empty` below.
+        self.trace_attributes: list[dict | None] = []
 
     @property
     def model(self) -> str:
         return "test-model"
 
-    async def complete(self, *, system: str, prompt: str) -> standing_event.Completion:
+    async def complete(
+        self, *, system: str, prompt: str, trace_attributes=None,
+    ) -> standing_event.Completion:
+        self.trace_attributes.append(trace_attributes)
         self.calls += 1
         self.prompts.append(f"{system}\n\n{prompt}")
         self._n += 1
@@ -276,20 +282,29 @@ async def test_an_event_fold_from_inside_plumbing_exports_one_generation_root(
     assert root.attributes["nora.trace_kind"] == "generation"
     assert root.attributes["nora.platform"] == "signal"
     assert root.attributes["nora.conversation_id"] == "g1"
+    # The debrief/verdict calls no longer open their own named spans (they
+    # run through `nora.agent.structured.ask_text` in production, a real
+    # Strands Agent invocation Strands instruments itself) — this file's
+    # `_Client` fake, like `test_debrief.py`'s, never calls Strands, so no
+    # child span is produced here at all. `test_the_event_folds_tag_id_is_
+    # honestly_empty` below covers the trace_attributes half of this claim.
 
-    by_name = {s.name: s for s in spans}
-    for child_name in ("engagement.debrief.fold", "engagement.debrief.verdict"):
-        assert child_name in by_name, (
-            f"{child_name} did not reach the collector at all"
-        )
-        child = by_name[child_name]
-        assert child.context.trace_id == root.context.trace_id, (
-            f"{child_name} is not in the same trace as standing.event_fold"
-        )
-        assert child.attributes["nora.conversation_id"] == "g1"
-    # The event fold has no tag — the honest value on the generation is an
-    # EMPTY tag id, never a borrowed or fabricated one (issue #209).
-    assert by_name["engagement.debrief.fold"].attributes["nora.tag_id"] == ""
+
+async def test_the_event_folds_tag_id_is_honestly_empty():
+    """The event fold has no tag — `_complete`'s `trace_attributes` must
+    carry an EMPTY `nora.tag_id`, never a borrowed or fabricated one
+    (issue #209), on both the debrief and verdict calls it makes."""
+    store = FakeRecordStore()
+    await _seed(store, 200)
+    harness = _Harness(record_store=store)
+
+    with span("ingest.some_stage", **{TRACE_KIND: "plumbing"}):
+        await harness.run_one_spawn()
+
+    assert harness.client.trace_attributes, "the fold made no calls to assert on"
+    for ta in harness.client.trace_attributes:
+        assert ta["nora.tag_id"] == ""
+        assert ta["nora.conversation_id"] == "g1"
 
 
 async def test_a_queued_fold_dispatched_from_another_turns_span_still_opens_its_own_root(
@@ -345,11 +360,8 @@ async def test_a_queued_fold_dispatched_from_another_turns_span_still_opens_its_
         "the queued fold must open its OWN trace, never nest under whichever "
         "turn's span happened to be current when release_and_dispatch ran it"
     )
-    fold_root = next(s for s in roots.values() if s.name == "standing.event_fold")
-    same_trace = {
-        s.name: s for s in spans if s.context.trace_id == fold_root.context.trace_id
-    }
-    for child_name in ("engagement.debrief.fold", "engagement.debrief.verdict"):
-        assert child_name in same_trace, (
-            f"{child_name} did not export under the fold's own root"
-        )
+    # The debrief/verdict calls no longer open their own named child spans
+    # under `standing.event_fold` — see the plumbing-root test's own note
+    # above; the root-shape claim this test exists for (two SEPARATE trace
+    # ids, not one fold nested under `unrelated.turn`) is unaffected and is
+    # exactly what the `sorted(...)` assertion above already proves.

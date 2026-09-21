@@ -30,6 +30,7 @@ from zoneinfo import ZoneInfo
 import boto3
 from openai import AsyncOpenAI
 from openai.types.shared.reasoning_effort import ReasoningEffort
+from opentelemetry.util.types import AttributeValue
 
 from nora.agent import factory, tool_choice
 from nora.agent.dreamer import (
@@ -49,6 +50,12 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.relay import Relay
 from nora.agent.room import Room
 from nora.agent.structured import ask_text, build_structured_model
+from nora.agent.telemetry import (
+    end_raw_model_span,
+    end_raw_model_span_with_error,
+    start_raw_model_span,
+)
+from nora.agent.telemetry import timed as telemetry_timed
 from nora.agent.tools import OriginRoom
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.app.voice_events import VoiceEventConsumer
@@ -141,7 +148,6 @@ from nora.language.proactive import (
 )
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
-from nora.obs.tracing import annotate_generation
 from nora.persons import Persons, PersonsError, load_persons
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.media import DiscordMediaSource
@@ -334,60 +340,6 @@ def _adaptor_budget(b: DreamBudgetConfig) -> AdaptorBudget:
     )
 
 
-def _annotate_usage_triple(usage: tuple[int, int, int] | None) -> None:
-    """The SDK's accumulated `(prompt, completion, total)` onto the current
-    generation span.
-
-    Through `annotate_generation`, not a hand-spelled `annotate`: that helper
-    exists so a call site cannot invent a third spelling of the token names,
-    and this one was written before it landed.
-
-    ACCUMULATED across the exchange's turns, which is the honest number for a
-    structured call — the tool round-trip is what it cost to get one verdict.
-    A provider that reported nothing records NOTHING rather than zero; writing
-    0 would assert the call was free, and a generation reporting zero tokens
-    is exactly what Langfuse showed for the gate, the debrief and the standing
-    fold until 2026-09-08."""
-    if usage is None:
-        return
-    prompt, completion, total = usage
-    annotate_generation(
-        input_tokens=prompt, output_tokens=completion, total_tokens=total,
-    )
-
-
-def _annotate_usage(response: Any) -> None:
-    """Put a raw completion's token counts on the span that is current.
-
-    Strands emits `gen_ai.usage.*` itself; a raw `chat.completions.create`
-    emits nothing, so every raw client has to do this or its call exports to
-    Langfuse as a generation that cost zero. Measured 2026-09-08: the gate and
-    the debrief both did exactly that, and the debrief has since it shipped.
-
-    ON THE SPAN, never in the return type. Usage is the provider's fact and no
-    caller's verdict depends on it; widening a port to carry a number only the
-    collector reads would be the measurement changing the thing it measures.
-
-    A provider that omits usage records NOTHING rather than zero — writing 0
-    would assert the call was free, the same argument `finish_reason=... or ""`
-    makes one field over.
-
-    `tests/architecture/test_raw_model_calls_carry_their_own_machinery.py` is
-    what keeps a fifth raw client from forgetting this.
-    """
-    usage = getattr(response, "usage", None)
-    if usage is None:
-        return
-    # The SPELLING is `annotate_generation`'s, not this function's: the five
-    # attribute names for these three numbers live once, beside every other
-    # name that makes a span a generation, so a sixth raw client cannot invent
-    # a sixth spelling. What stays here is the only part that is the
-    # PROVIDER's: which fields an OpenAI-shaped response calls them.
-    annotate_generation(
-        input_tokens=usage.prompt_tokens,
-        output_tokens=usage.completion_tokens,
-        total_tokens=usage.total_tokens,
-    )
 
 
 class _RelevanceGateModelClient:
@@ -413,6 +365,28 @@ class _RelevanceGateModelClient:
     `[assistant]:` row inside a member's message, believed go x4 / no_go x1.
     That is not an accuracy miss, it is an unauthenticated turn: a member who
     can forge Nora's side of a transcript steers the admission decision.
+
+    **CACHE CAVEAT, added 2026-09-17 and it travels with these numbers.** Both
+    arms above ran through `eval_support.build_gate_probe`, and BOTH are
+    cache-bypassed: `NO_CACHE_HEADERS` is applied to the SDK arm's model
+    (`eval_support.py:919`) and to the raw arm's client (`:1014`). This client
+    — the deployed one — sets no such header, and `NO_CACHE_HEADERS` appears
+    nowhere in this file.
+
+    So the comparison BETWEEN the two arms holds: same instruction, same
+    corpus, same bypass, one variable. What does not transfer unqualified is
+    the ABSOLUTE reading — `n=5` against a bypassed gateway and `n=5` against
+    the deployed one are not the same five calls, and `0/5` and `5/5` are
+    exactly the shape a cache produces. The safety finding stands on the
+    mechanism (`structured_output` becomes a tool spec, three messages, the
+    reasoning dropped before the verdict), which is transport-level and does
+    not depend on the sample count.
+
+    Verified here rather than repeated: `design/evaluation/05-live-parity.md`
+    §4. Neither this docstring's author nor the two sessions that have cited
+    #186 has read the issue first-hand — its numbers are quoted from ADR 0011's
+    account of it — so this caveat is stated at the QUOTING site rather than
+    only in a design node, because that is where somebody reads them.
 
     The mechanism is below the prompt, which is why no instruction reaches it:
     Strands converts the schema into a TOOL SPECIFICATION and feeds the result
@@ -478,41 +452,64 @@ class _RelevanceGateModelClient:
         return self._model
 
     async def complete(self, *, system: str, prompt: str) -> GateCompletion:
-        response = await asyncio.wait_for(
-            self._client.chat.completions.create(
-                model=self._model,
-                messages=[
-                    # The instruction in the SYSTEM role, the room in the USER
-                    # role. Concatenated into one user string — which this
-                    # never was — a member typing `[assistant]:` would sit in
-                    # exactly the role the operator's rules occupy, and nothing
-                    # downstream could tell them apart.
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": prompt},
-                ],
-                response_format={"type": "json_object"},
-                max_tokens=self._max_tokens,
-                temperature=self._temperature,
-                reasoning_effort=self._reasoning_effort,
-            ),
-            timeout=self._timeout_seconds,
+        # A span of its own — `start_raw_model_span`/`end_raw_model_span`
+        # (`nora.agent.telemetry`, thin wrappers around Strands'
+        # `Tracer.start_model_invoke_span`/`end_model_invoke_span`) — nested
+        # under whatever `nora.ingest.relevance_gate.decide` has open
+        # (a plain `span()`, not a `generation()`: the decision procedure
+        # itself is not one model call, so it no longer pretends to be the
+        # generation span too). This is the ONLY thing that changed about
+        # this call: `messages`/`response_format`/`reasoning_effort` below
+        # are byte-for-byte what `4448c737`/#186 measured 6/6 safe — the
+        # docstring's caveats bind exactly as much as before.
+        span = start_raw_model_span(
+            messages=[{"role": "user", "content": [{"text": prompt}]}],
+            model_id=self._model, system_prompt=system,
         )
-        # Token cost, onto the gate's OWN span rather than into
-        # `GateCompletion`. The gate has no use for usage — its verdict does
-        # not depend on it — and widening the port's return type to carry a
-        # number only the collector reads would be the measurement changing
-        # the thing it measures. `annotate_generation` writes to the span that
-        # is current right now, and that is `relevance_gate`'s, because
-        # `decide` opens it around this call.
-        _annotate_usage(response)
+        with telemetry_timed() as elapsed:
+            try:
+                response = await asyncio.wait_for(
+                    self._client.chat.completions.create(
+                        model=self._model,
+                        messages=[
+                            # The instruction in the SYSTEM role, the room in
+                            # the USER role. Concatenated into one user
+                            # string — which this never was — a member typing
+                            # `[assistant]:` would sit in exactly the role the
+                            # operator's rules occupy, and nothing downstream
+                            # could tell them apart.
+                            {"role": "system", "content": system},
+                            {"role": "user", "content": prompt},
+                        ],
+                        response_format={"type": "json_object"},
+                        max_tokens=self._max_tokens,
+                        temperature=self._temperature,
+                        reasoning_effort=self._reasoning_effort,
+                    ),
+                    timeout=self._timeout_seconds,
+                )
+            except Exception as exc:
+                end_raw_model_span_with_error(
+                    span=span, error_message=str(exc) or type(exc).__name__,
+                    exception=exc,
+                )
+                raise
+            latency_seconds = elapsed()
         choice = response.choices[0]
-        return GateCompletion(
-            content=(choice.message.content or "").strip(),
-            # `or ""` and not a `"stop"` default: a provider that omits the
-            # field has told us nothing, and inventing `"stop"` would assert
-            # the call completed.
-            finish_reason=choice.finish_reason or "",
+        content = (choice.message.content or "").strip()
+        # `or ""` and not a `"stop"` default: a provider that omits the
+        # field has told us nothing, and inventing `"stop"` would assert
+        # the call completed.
+        finish_reason = choice.finish_reason or ""
+        usage = getattr(response, "usage", None)
+        end_raw_model_span(
+            span=span, content=content, finish_reason=finish_reason,
+            input_tokens=getattr(usage, "prompt_tokens", None),
+            output_tokens=getattr(usage, "completion_tokens", None),
+            total_tokens=getattr(usage, "total_tokens", None),
+            latency_seconds=latency_seconds,
         )
+        return GateCompletion(content=content, finish_reason=finish_reason)
 
 
 class _DebriefModelClient:
@@ -570,13 +567,20 @@ class _DebriefModelClient:
     def model(self) -> str:
         return self._model_id
 
-    async def complete(self, *, system: str, prompt: str) -> DebriefCompletion:
+    async def complete(
+        self, *, system: str, prompt: str,
+        trace_attributes: Mapping[str, AttributeValue] | None = None,
+    ) -> DebriefCompletion:
         got = await ask_text(
             model=self._provider, prompt=prompt,
             timeout_seconds=self._timeout_seconds, system_prompt=system,
-            agent_name=self._agent_name,
+            agent_name=self._agent_name, trace_attributes=trace_attributes,
         )
-        _annotate_usage_triple(got.usage)
+        # No usage annotation here anymore: this is a real Strands `Agent`
+        # invocation (`ask_text`), and Strands emits `gen_ai.usage.*` on its
+        # own model-invoke span itself — the old `_annotate_usage_triple` was
+        # written for the hand-rolled span this call used to run inside,
+        # which is gone (see `nora.engagement.stages.debrief._complete`).
         return DebriefCompletion(
             content=got.content, finish_reason=got.finish_reason,
         )
@@ -804,6 +808,40 @@ class Dependencies:
     # built. `nora/__main__.py` spawns `runtime.participation_loop` on it —
     # the same "dependencies, not config" split every other loop uses.
     participation_trigger: ParticipationTrigger | None
+    #: The deployed gate, named so it can be reached without a private.
+    #:
+    #: It is BUILT below beside `participation_trigger` and held by it
+    #: (`ParticipationTrigger._gate`) — that stays true, and the two still
+    #: cannot come apart because one branch constructs both. This field adds
+    #: no second instance and changes no behaviour; it makes the graph's own
+    #: inventory complete.
+    #:
+    #: Added because the gate is an ENTRY POINT into Nora
+    #: (`design/evaluation/01-boundaries.md` §3) and every other entry point is
+    #: already an attribute here — `dispatcher`, `engagement`,
+    #: `participation_trigger`, `dreamer_runtime`. The gate was the one that
+    #: was not, which is a fair part of why measuring it meant building a
+    #: second one (`eval_support.py:980`) rather than reaching the deployed
+    #: one.
+    relevance_gate: RelevanceGate | None
+    #: The deployed fire path, named for the same reason as `relevance_gate`
+    #: above: it is an ENTRY POINT and was reachable only as
+    #: `participation_trigger._speak`, a bound method behind a private.
+    #:
+    #: `FirePath.speak` is what the trigger calls once the gate admits a
+    #: window, what the heartbeat calls when a reminder comes due, and what
+    #: every proactive occasion runs through. Nothing here changes any of
+    #: that; the object was already built and already held.
+    fire_path: FirePath | None
+    #: The clock this graph runs on. Named for the same reason the two entry
+    #: points above are: it was a fact the graph had and could not be asked for.
+    clock: Callable[[], datetime]
+
+    #: The fire-time screen a `kind="proactive"` row passes before it speaks.
+    #: Named for the same reason the entry points above are — it decides whether
+    #: an act turn happens at all, and it was reachable only as an argument
+    #: inside the heartbeat's constructor call.
+    proactive_screen: ProactiveScreen
     adapter: SignalAdapter
     # EVERY built adapter, keyed by platform. `adapter` above stays the concrete
     # Signal one because a handful of call sites are still Signal-specific by
@@ -911,12 +949,40 @@ class Dependencies:
     voice_event_consumer: VoiceEventConsumer | None
 
 
-async def build_dependencies(cfg: Config) -> Dependencies:
+def wall_clock() -> datetime:
+    """The deployment's clock. THE default, and the only one production uses."""
+    return datetime.now(UTC)
+
+
+async def build_dependencies(
+    cfg: Config, *, clock: Callable[[], datetime] = wall_clock,
+) -> Dependencies:
     """Build the object graph from `cfg`.
 
     This function is the only place in the codebase allowed to know `Config`'s
     shape (besides `nora.__main__` itself, which only ever passes `cfg`
     straight through here). Everything downstream takes a `Dependencies`.
+
+    **`clock` names a dependency this function already had.** Nine components
+    below take `clock: Callable[[], datetime]` — `FirePath`, `HeartbeatLoop`,
+    `ComputePoller`, `VersionAnnouncer`, `ProactiveAdaptor` and the rest — each
+    for the reason `FirePath`'s own docstring gives: *"a module that read the
+    wall clock itself could not be tested at a fixed instant."* Every one of
+    them was then handed a separately-written wall-clock read from here: SEVEN
+    `clock=lambda: datetime.now(UTC)` plus TWO `now=datetime.now(UTC)` values.
+    Nine reads of one fact, written nine times.
+
+    So this is not a new seam bolted on: it is the composition root stating
+    once what it was already saying nine times, and the default is the same
+    literal, so production composes exactly the graph it composed before.
+
+    What it makes possible is the part that could not be done at all: a caller
+    can say WHAT TIME IT IS. The proactive adaptor's whole judgement is about
+    time — is this note due, has this position gone stale, is now the moment —
+    and until this parameter existed the only way to ask it a question at a
+    fixed instant was to build a second adaptor by hand. That is one of the
+    seven assemblies `design/evaluation/` measures, and this is the seam whose
+    absence produced it.
     """
     try:
         persons = load_persons(cfg.identity_file)
@@ -1082,7 +1148,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     decision_log = DecisionLogRecorder(
         store=SqlDecisionLogStore(engine),
         metrics=metrics,
-        clock=lambda: datetime.now(UTC),
+        clock=clock,
         unit_of=lambda platform, conversation_id: (
             convo.unit
             if (convo := allowlist.conversation(platform, conversation_id))
@@ -2301,7 +2367,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         # it for three of its six refusals, and a registry clock that disagreed
         # with the tick's would let a row be accepted as "two minutes out" and
         # then be found already due.
-        clock=lambda: datetime.now(UTC),
+        clock=clock,
         # The note tier's four tools. `None` while `[notes] enabled = false`,
         # so all four answer `unavailable` (R-5) rather than a guessed empty
         # result — the same optional-collaborator shape `events` and
@@ -2493,7 +2559,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     #
     # `recover` counts what it sweeps; this call site logged and counted nothing,
     # which made a crash that ate reminders invisible to every dashboard.
-    await recover(store=reminders, metrics=metrics, now=datetime.now(UTC))
+    await recover(store=reminders, metrics=metrics, now=clock())
     # Compute-job boot recovery, ALSO unconditional, and for the SAME reason —
     # deliberately NOT behind `cfg.compute.enabled`. An earlier draft of this
     # wiring put this call inside that gate; a deployment that crashes
@@ -2509,7 +2575,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # requester heard «I'm working on it» and then nothing, ever. Delivered
     # below, once `fire_path` exists.
     lost_jobs = await compute_poller_recover(
-        store=compute_jobs, metrics=metrics, now=datetime.now(UTC),
+        store=compute_jobs, metrics=metrics, now=clock(),
     )
     # The liveness gauge is seeded HERE, not in `HeartbeatLoop.__init__` alone —
     # otherwise every deployment on the shipped default (`enabled = false`)
@@ -2560,7 +2626,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # the 60s chosen for a person staring at a group chat is the wrong
             # bound (§5.4).
             timeout_seconds=cfg.heartbeat.timeout_seconds,
-            clock=lambda: datetime.now(UTC),
+            clock=clock,
             rosters=rosters,
             # The SAME preview source the tag path holds. A fire turn is a
             # message into the same group, so a link in it earns the same card.
@@ -2674,6 +2740,17 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             "compute all off)", len(lost_jobs),
         )
 
+    # THE FIRE-TIME SCREEN for a `kind="proactive"` row, hoisted out of the
+    # heartbeat's argument list and built unconditionally.
+    #
+    # Same object, same arguments, same one consumer. It is a pure value with no
+    # side effects, so constructing it a few lines earlier changes nothing — the
+    # same reasoning as `gate` above. Hoisted for the reason the comment on its
+    # own parameter already gives: the screen belongs to the ROW, not to the
+    # loop, so asking "would this row be refused" should not require turning the
+    # loop on.
+    proactive_screen = ProactiveScreen(policy=allowlist, notes=note_store)
+
     if cfg.heartbeat.enabled and fire_path is not None:
         heartbeat = HeartbeatLoop(
             store=reminders,
@@ -2686,7 +2763,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # whole point of this parameter (§5.1): the file is read once at
             # startup and a row may be thirty days old.
             policy=allowlist,
-            clock=lambda: datetime.now(UTC),
+            clock=clock,
             metrics=metrics,
             tick_seconds=cfg.heartbeat.tick_seconds,
             fire=fire_path.run,
@@ -2697,7 +2774,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # written yesterday must be screened today even if the adaptor
             # was switched off in between — and with no screen the loop
             # fails such a row rather than firing it unscreened.
-            proactive=ProactiveScreen(policy=allowlist, notes=note_store),
+            proactive=proactive_screen,
         )
         background.spawn(heartbeat.run())
     if announcing and fire_path is not None:
@@ -2730,7 +2807,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # locks and no serialisation at all.
             slots=slots,
             metrics=metrics,
-            clock=lambda: datetime.now(UTC),
+            clock=clock,
         )
         # Spawned, never awaited: a boot must not wait on a model call, and this
         # is the least important thing the process does. `BackgroundTasks` holds
@@ -2757,7 +2834,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             slots=slots,
             metrics=metrics,
             tick_seconds=cfg.compute.poll_tick_seconds,
-            clock=lambda: datetime.now(UTC),
+            clock=clock,
         )
         # Spawned, never awaited — the same reason `heartbeat.run()`/
         # `announcer.run()` above are: a boot must not wait on a background
@@ -2775,6 +2852,8 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     # `nora/__main__.py` from `deps.participation_trigger`, like every other
     # background clock — this section only builds the trigger itself.
     participation_trigger: ParticipationTrigger | None = None
+    # Bound in the branch below, beside the trigger that holds it.
+    gate: RelevanceGate | None = None
     if cfg.relevance_gate.enabled and fire_path is not None:
         # The gate is built HERE and not beside the other model clients,
         # because it is the only one whose absence would change behaviour
@@ -3327,7 +3406,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
                     # for the platform means no block, not a failure.
                     people_of=_home_room_people(rosters, persons),
                     ai_peer=cfg.memory.ai_peer,
-                    clock=lambda: datetime.now(UTC),
+                    clock=clock,
                     timezone=ZoneInfo(cfg.reminders.timezone),
                     self_card_conclusions=cfg.memory.self_card_conclusions,
                     # The roster index's DEPTH (issue #210, 39 D9). Read from
@@ -3566,6 +3645,10 @@ async def build_dependencies(cfg: Config) -> Dependencies:
         resolve_voice_room=_voice_room_of(allowlist),
         dispatcher=dispatcher, adapter=adapter, registry=registry,
         participation_trigger=participation_trigger,
+        relevance_gate=gate,
+        fire_path=fire_path,
+        clock=clock,
+        proactive_screen=proactive_screen,
         account=account, doctrine=doctrine,
         doctrine_store=doctrine_store, debounce=debounce, background=background,
         llm_state=llm_state, client=client, reminders=reminders,

@@ -11,7 +11,6 @@ rather than that a helper was called. Deleting a `with span(...)` turns them red
 import asyncio
 
 import pytest
-from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -30,26 +29,29 @@ _EXPORTER = InMemorySpanExporter()
 
 @pytest.fixture(scope="module", autouse=True)
 def _provider():
-    """`trace.set_tracer_provider` is ONE-SHOT per process — a second call is
-    ignored with a warning, so a per-test provider silently leaves every test
-    after the first reading the FIRST exporter. Set it once, clear between tests.
+    """A provider of this file's own, reached by patching `get_tracer` — the
+    same shape as `tests/conftest.py`'s `exported_spans`, and for the reason
+    it gives: `trace.set_tracer_provider` is ONE-SHOT per process.
 
-    Found the hard way: these tests passed individually and failed as a file.
+    An earlier version installed a GLOBAL provider here and relied on being
+    the first file to do so. `evals.backbone._prefill_capture()` installs one
+    too (it must — it reads a span the composed subject emits through the
+    global tracer), so any run in which an eval integration test collected
+    before this file left every test here reading a provider with the wrong
+    sampler and the wrong exporter: 13 failures that vanished when the file
+    ran alone. Patching the lookup keeps the capture local and order-free.
 
-    Built with `build_sampler()`, production's own rule — this file is where the
-    rule's own tests live, and a provider that sampled everything could not see
-    it at all."""
+    Built with `build_sampler()`, production's own rule — this file is where
+    the rule's own tests live, and a provider that sampled everything could
+    not see it at all."""
+    from nora.obs import tracing as _tracing
+
     provider = TracerProvider(sampler=build_sampler())
     provider.add_span_processor(SimpleSpanProcessor(_EXPORTER))
-    trace.set_tracer_provider(provider)
+    patch = pytest.MonkeyPatch()
+    patch.setattr(_tracing.trace, "get_tracer", provider.get_tracer)
     yield
-    # SHUT THE PROCESSOR DOWN. `set_tracer_provider` is one-shot, so the provider
-    # itself cannot be un-set — it stays global for the whole pytest process. Left
-    # running, its SimpleSpanProcessor exports SYNCHRONOUSLY on every span end for
-    # every test that follows, and the two timing-sensitive tests elsewhere in the
-    # suite (`test_a_slow_reaction_is_not_counted_as_tag_overhead`,
-    # `test_prune_loop_survives_a_failing_sweep_and_keeps_looping`) then fail —
-    # while passing in isolation, which is how this hid.
+    patch.undo()
     provider.shutdown()
 
 

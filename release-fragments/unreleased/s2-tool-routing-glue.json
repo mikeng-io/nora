@@ -1,0 +1,9 @@
+{
+  "type": "feature",
+  "summary": "evals/backbone.py gains traced_nora_task(spec) for S2 (\"which tool, with what arguments, in what order\") -- no new grader needed, the SDK's own ToolCalled/ToolSelectionAccuracyEvaluator/ToolParameterAccuracyEvaluator/TrajectoryEvaluator already read the Session this adds.",
+  "details": [
+    "traced_nora_task wraps nora_task(spec) with eval_task(TracedHandler()), which adds a trajectory key onto nora_task's existing output/environment_state dict without disturbing it -- S2 and S7 (AbsenceGrader) can grade the same driven case.",
+    "Corrected a wrong claim found while building this: _prefill_capture()'s docstring (S4) said it could not coexist with TracedHandler in the same process. Verified empirically, both construction orders, that it was wrong -- add_span_processor is additive and StrandsEvalsTelemetry falls back to the already-registered provider when its own set_tracer_provider is refused, so both exporters end up on one shared provider and both receive every span. Fixed in the code comment directly.",
+    "Verified mechanically (a deliberately unreachable database exercises the full before/after wrap without needing live infra) and pinned in tests/unit/test_eval_backbone.py, falsified by reverting. NOT yet verified against a real live participation case with ToolCalled actually scoring a real tool call -- 09-the-backbone-measured.md §1 measured the underlying spans exist once, live, before this session; that specific combination (traced_nora_task + a real SDK evaluator) has not itself been re-run."
+  ]
+}

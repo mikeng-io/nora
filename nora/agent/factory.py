@@ -519,6 +519,16 @@ def create_dream_agent(
     )
 
 
+#: Strands' canned recovery notice (`_recover_message_on_max_tokens_reached`,
+#: `event_loop.py:601`) as two fragments, so a partial-text extraction can
+#: exclude a block carrying it without asserting a full-sentence match.
+#: A SINGLE shared definition (review, 2026-09-19) — `nora.agent.structured.
+#: ask_text`'s own extraction split the same notice at different points,
+#: which made `grep` for the literal string Strands emits find neither site.
+MAX_TOKENS_NOTICE_PREFIX = "The selected tool "
+MAX_TOKENS_NOTICE_INFIX = "tool use was incomplete due to maximum token limits being reached"
+
+
 async def invoke(agent: Agent, tag_message: str, *, invocation_state: dict, limits: dict) -> Any:
     """Run one turn and return Strands' `AgentResult` — `stop_reason` included.
 
@@ -582,10 +592,8 @@ async def invoke(agent: Agent, tag_message: str, *, invocation_state: dict, limi
                 parts = [
                     block["text"] for block in content
                     if isinstance(block, dict) and isinstance(block.get("text"), str)
-                    and not block["text"].startswith(
-                        "The selected tool "
-                    ) and "tool use was incomplete due"
-                    " to maximum token limits being reached" not in block["text"]
+                    and not block["text"].startswith(MAX_TOKENS_NOTICE_PREFIX)
+                    and MAX_TOKENS_NOTICE_INFIX not in block["text"]
                 ]
                 partial = "\n".join(p for p in parts if p.strip()).strip()
         raise PartialReplyError(partial) from None

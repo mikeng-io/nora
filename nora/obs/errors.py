@@ -4,9 +4,13 @@
 observability.md` states the boundary: Prometheus answers "how many, how often,
 with what outcome", Langfuse holds the traces with a model call in them, and
 logs are forensic. All three answer questions about things that HAPPENED. None
-of them groups two hundred occurrences of the same stack trace into one issue,
-tells you it is new since the last deploy, and puts the local variables of the
-frame that raised it in front of you.
+of them groups two hundred occurrences of the same stack trace into one issue —
+which is the one thing this module exists for. It does NOT currently tell you
+an issue is new since the last deploy (no release is stamped — see
+`setup_errors`'s `release` parameter), and as of `include_local_variables=False`
+below it deliberately does not put a frame's local variables in front of you
+either — Prometheus and Langfuse have their own gaps this module does not
+close.
 
 **And it is deliberately errors ONLY — `traces_sample_rate` is 0.**
 `sentry_sdk` will happily instrument spans, and letting it would give this
@@ -114,12 +118,15 @@ def setup_errors(
             # atexit, stdlib) and are what make an unhandled exception an
             # event at all.
             auto_enabling_integrations=False,
-            # A stack trace is worth little without the values in it, and this
-            # is a single-operator deployment reading its own errors. The
-            # redaction floor still applies at the LOG boundary; what reaches
-            # Sentry from a frame is a separate exit, so `send_default_pii`
-            # stays OFF — an ACI or a phone number in a local variable is the
-            # same identifier R-18 keeps off every other wire.
+            # `send_default_pii=False` does NOT keep a frame's local variable
+            # VALUES off the wire — verified against the installed SDK
+            # (sentry-sdk==2.44.0, `consts.py`): `include_local_variables`
+            # defaults to `True` independently of `send_default_pii`, which
+            # only gates broader request/user PII. An ACI or a phone number
+            # sitting in a local when an exception fires is the same
+            # identifier R-18 keeps off every other exit, so it is turned off
+            # explicitly rather than assumed covered by the flag above.
+            include_local_variables=False,
             send_default_pii=False,
             attach_stacktrace=True,
         )

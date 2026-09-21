@@ -1,0 +1,11 @@
+{
+  "type": "fix",
+  "summary": "Trimmed evals/rebuilt/ of its actually-dead layer (the old CLI, evals/rebuilt/__main__.py, and its report renderer, report.py) now that python -m evals replaces both -- correcting the premise that the whole package was disposable once the corpus port landed. domain.py/entry.py/grading.py/judge.py/rubric.py, and runner.py's run_once/run/load/_case, stay: the new SDK-native spine imports the former directly, and real tests still drive the latter on purpose.",
+  "details": [
+    "GOAL-2-backbone.md's own release condition ('deleting evals/rebuilt/') read as a full-package deletion; checked against the actual import graph first -- MeetsGrader delegates to domain.Outcome.meets(), _drive() routes through entry.ENTRY_POINTS, Spec.judge wires grading.Judge. Deleting the package would have broken the port on the same commit that finished it.",
+    "Makefile's four eval-* targets migrated from `python -m evals.rebuilt evals/corpora/<name>.yaml` to `python -m evals <name>`. Found and dropped along the way: eval-note-candidates's DREAMER_DIR/EFFORT/PER_FIRE conditional flags named CLI options that never existed on either CLI -- a pre-existing, unrelated drift.",
+    "tests/integration/test_the_rebuilt_suite_runs.py: one test's use of the now-deleted render() (only for the overall pass/fail TEXT) removed; its substantive per-entry-point assertions were already independent of it and are unchanged. A second, now-redundant test (corpus/case-count) dropped in favor of evals.scenarios's own equivalent. The other three tests (induced proactive-path failure guards) untouched.",
+    "docs/runbook.md's operator-facing CLI example updated. docs/eval-sop.md found already stale from an earlier, unrelated supersession (still shows the long-deleted evals.run --suite CLI) -- out of scope, not touched.",
+    "Full suite: 7967 passed (one fewer than before -- the one redundant test dropped)."
+  ]
+}

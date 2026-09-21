@@ -232,6 +232,152 @@ def _tracked_markdown_files() -> list[str]:
 # the operator; do not mass-rewrite the docs to clear it, and do not add to it
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
+    # --- the one-path rebuild, 2026-09-21 (design/evaluation/11 §1.3) ---
+    #
+    # The old harness `evals/rebuilt/runner.py` and the pre-port corpus copies
+    # under `evals/cases/` and `evals/adversarial/` are deleted; the live
+    # corpora are `evals/corpora/*.yaml` and the runner is
+    # `evals/backbone.py`. These lines record what was true when written.
+    **{
+        (doc, "evals/rebuilt/runner.py"): (
+            "the old harness, deleted 2026-09-21; `evals/backbone._drive` is "
+            "the one path (design/evaluation/11 §1.3)"
+        )
+        for doc in (
+            "design/evaluation/04-the-convention.md",
+            "design/evaluation/07-sdk-native.md",
+            "design/evaluation/08-the-sdk-surface.md",
+            "design/evaluation/GOAL.md",
+        )
+    },
+    **{
+        (doc, old): f"pre-port copy deleted 2026-09-21; now evals/corpora/{new}"
+        for doc, old, new in (
+            ("design/09-decision-index.md",
+             "evals/adversarial/being_contradicted.yaml", "being_contradicted.yaml"),
+            ("design/dreamer-agent-loop/13-doctrine.md",
+             "evals/cases/note_candidates/note_candidates.yaml", "note_candidates.yaml"),
+            ("design/dreamer-agent-loop/35-ambient-participation.md",
+             "evals/cases/participation/participation.yaml", "participation.yaml"),
+        )
+    },
+    # --- the old eval layer, deleted 2026-09-18 (design/evaluation Step 5) ---
+    #
+    # These are HISTORY, not broken links: each describes what was true when it
+    # was written, and `evals/run.py` was the CLI at the time. Pinned rather
+    # than rewritten, for this gate's own stated reason — a design brief that
+    # names the code of its day is not drift, and mass-rewriting prose to chase
+    # a delete loses the record of what the delete removed.
+    #
+    # The OPERATOR-facing docs were fixed instead, because those tell somebody
+    # to run a command: `docs/runbook.md`, `docs/eval-sop.md`,
+    # `docs/CONVENTIONS.md` and the `make eval-*` targets now name
+    # `python -m evals` (2026-09-20, `10-the-scenario-map.md` §15/16 — the
+    # corpus port superseded `python -m evals.rebuilt` in turn).
+    **{
+        (doc, "evals/run.py"): (
+            "the old eval CLI, deleted 2026-09-18; this line records what was "
+            "true when it was written (design/evaluation Step 5)"
+        )
+        for doc in (
+            "design/ambient-loop/02-doctrine-and-measurement.md",
+            "design/capability-drop/03-code-surface.md",
+            "design/capability-drop/implementation-brief.md",
+            "design/dreamer-agent-loop/13-doctrine.md",
+            "design/dreamer-agent-loop/39-proactive-ooda-loop.md",
+            "design/evaluation/06-first-full-run.md",
+        )
+    },
+    # The eval-layer modules RE-HOMED into `tests/` on 2026-09-18 — they were
+    # in `nora/` and `evals/` only because of an import contract that no longer
+    # binds anything. These references name where the code WAS.
+    ("ARCHITECTURE.md", "evals/harness.py"): (
+        "re-homed into `tests/` 2026-09-18; the reference records where "
+        "it lived (design/evaluation Step 5)"
+    ),
+    ("design/capability-drop/03-code-surface.md", "evals/harness.py"): (
+        "re-homed into `tests/` 2026-09-18; the reference records where "
+        "it lived (design/evaluation Step 5)"
+    ),
+    ("design/13-trace-content-and-redaction.md", "evals/judge.py"): (
+        "re-homed into `tests/` 2026-09-18; the reference records where "
+        "it lived (design/evaluation Step 5)"
+    ),
+    ("design/capability-drop/03-code-surface.md", "nora/app/eval_support.py"): (
+        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/capability-drop/implementation-brief.md", "evals/harness.py"): (
+        "re-homed to `tests/offline_eval_harness.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/capability-drop/implementation-brief.md", "nora/app/eval_support.py"): (
+        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/dreamer-agent-loop/16-open-items.md", "evals/harness.py"): (
+        "re-homed to `tests/offline_eval_harness.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/dreamer-agent-loop/39-proactive-ooda-loop.md", "nora/app/eval_support.py"): (
+        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/evaluation/01-boundaries.md", "evals/harness.py"): (
+        "re-homed to `tests/offline_eval_harness.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/evaluation/01-boundaries.md", "nora/app/eval_support.py"): (
+        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/evaluation/01-boundaries.md", "nora/app/offline.py"): (
+        "re-homed to `tests/offline_pipeline.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/evaluation/02-the-rebuild.md", "nora/app/offline.py"): (
+        "re-homed to `tests/offline_pipeline.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/evaluation/04-the-convention.md", "evals/harness.py"): (
+        "re-homed to `tests/offline_eval_harness.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/evaluation/04-the-convention.md", "nora/app/offline.py"): (
+        "re-homed to `tests/offline_pipeline.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("design/evaluation/05-live-parity.md", "nora/app/eval_support.py"): (
+        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    (
+        "docs/adr/0011-the-relevance-gate-stays-off-the-sdk-transport.md",
+        "nora/app/eval_support.py",
+    ): (
+        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
+        "reference records where it lived"
+    ),
+    ("docs/eval-sop.md", "evals/evaluators.py"): (
+        "re-homed to `tests/offline_eval_evaluators.py` 2026-09-18 (design/evaluation Step 5); "
+        "the reference records where it lived"
+    ),
+    ("design/evaluation/04-the-convention.md", "nora/app/eval_support.py"): (
+        "the convention names where it WAS while explaining where it went"
+    ),
+    ("design/evaluation/04-the-convention.md", "evals/relevance_gate.py"): (
+        "the convention quotes its docstring as the evidence that the facade was a boundary adapter"
+    ),
+    ("design/evaluation/04-the-convention.md", "tests/integration/test_live_parity_gate.py"): (
+        "the convention names the parity test as the one-way door the delete passed; the "
+        "reference is the point"
+    ),
+    # The ROUTING tier, which has no counterpart — DEC-76 is NOT ENFORCED.
+    # These two lines NAME that absence, so the reference is the point.
+    ("docs/eval-sop.md", "evals/journeys.py"): (
+        "the SOP's step 2 now states that this step has no instrument; the "
+        "reference is to the thing that no longer exists, deliberately"
+    ),
     ("voice-lab/docs/audit-brief-kimi-integration.md", "nora/platform/discord/voice_session.py"): (
         "a 2026-09 audit brief moved in from the voice-lab repo; it proposes where "
         "stage-1 TTS+ducking WOULD live. The file was never created (the voice "

@@ -8,7 +8,7 @@
 
 .PHONY: test test-fast test-affected lint typecheck imports gate mutate \
         setup hooks schema-parity heads decision-numbers \
-        eval-participation eval-note-candidates eval-journeys eval-adversarial \
+        eval-participation eval-note-candidates eval-adversarial-corpora eval-gate \
         release-check release-notes release \
         build build-release up stop logs ps \
         branches
@@ -74,23 +74,38 @@ test-affected:
 		uv run pytest -q -n 8 $$targets; \
 	fi
 
-# --- eval gates (evals/run.py; the live ones need the LLM key env set) ---
+# --- eval gates (evals/scenarios, the SDK-native spine; the live ones need
+# the LLM key env set) ---
+#
+# `python -m evals` runs a NAMED corpus (or `--class`, or `--all`) rather than
+# a file path — `design/evaluation/10-the-scenario-map.md` §15's port put the
+# 150 corpus cases behind `evals.scenarios.experiment_for()`, and adding a
+# corpus adds a dict entry there, not a target here.
+#
+# WHERE IT RUNS: on the deploy host, against the deployment's clone
+# (`nora_eval`, made by `scripts/refresh_eval_clone.sh`). Every case names a
+# real room at a real instant, is seeded from the clone into a sandbox
+# database of its own, and composes the deployment's own config, policy and
+# roster (design/evaluation/11-the-sandbox-rebuild.md §1.2). Off the deploy
+# host there is no source and no deployment to compose, and the run says so.
+
+# Refresh the eval source from production. Deploy host only.
+eval-source:
+	./scripts/refresh_eval_clone.sh
 
 # The ambient-participation flip gate (design/dreamer-agent-loop/35 §9): all
 # 15 cases must reach their expected verdict — zero false-speaks on the
 # knowledge-cut twins, zero speaks on the pure-No five.
 eval-participation:
-	uv run python -m evals.run --suite participation
+	uv run python -m evals participation
 
 # The note-candidates scenario suite (design/dreamer-agent-loop/37 §7, issue
 # #118): 18 batches through the real Dreamer runtime + adaptor, N samples
-# each, graded on the notebook. `make eval-note-candidates SAMPLES=5
-# DREAMER_DIR=/path/to/variant` measures a prompt variant held as files.
+# each, graded on the notebook. `make eval-note-candidates SAMPLES=5`
+# measures with that many draws per case.
 SAMPLES ?= 3
 eval-note-candidates:
-	uv run python -m evals.run --suite note_candidates --samples $(SAMPLES) \
-		$(if $(DREAMER_DIR),--dreamer-dir $(DREAMER_DIR),) $(if $(EFFORT),--effort $(EFFORT),) \
-		$(if $(MODEL),--model $(MODEL),) $(if $(PER_FIRE),--samples-per-fire $(PER_FIRE),)
+	uv run python -m evals note_candidates --sample $(SAMPLES)
 
 # --- release fragments ---
 
@@ -169,8 +184,12 @@ schema-parity:
 # --- evals, tier 2 (docs/eval-sop.md; network-marked, so excluded from `make
 # test` by pyproject's addopts and never part of the gate) ---
 
-eval-journeys:
-	uv run python -m evals.run --suite journeys
+# The ROUTING tier has no counterpart in the rebuilt layer (DEC-76 is marked
+# NOT ENFORCED). This target now runs the corpora that DO exist, so it is not a
+# command that lies about what it measures.
+eval-adversarial-corpora:
+	uv run python -m evals injections near_miss transcript_injection \
+	  identity_grounding source_scope being_contradicted --judge
 
-eval-adversarial:
-	uv run python -m evals.run --suite adversarial
+eval-gate:
+	uv run python -m evals relevance_gate

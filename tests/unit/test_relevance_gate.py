@@ -835,7 +835,11 @@ async def test_the_verdict_is_written_on_the_generation_span(
     (span_row,) = [s for s in exported_spans.get_finished_spans()
                    if s.name == "relevance_gate"]
     attrs = dict(span_row.attributes or {})
-    assert attrs["langfuse.observation.output"] == (
+    # `nora.relevance_gate.verdict_json`, not `langfuse.observation.output`:
+    # this span stopped being a `generation()`-shaped span itself once the
+    # model call moved to its own child span (`nora.agent.telemetry`,
+    # `_RelevanceGateModelClient.complete`) — see `_emit`'s own comment.
+    assert attrs["nora.relevance_gate.verdict_json"] == (
         '{"finish_reason": "stop", "relevance_score": 0.4, '
         '"source": "model", "verdict": "go"}'
     )
@@ -847,11 +851,11 @@ async def test_the_verdict_is_written_on_the_generation_span(
     (fail_row,) = [s for s in exported_spans.get_finished_spans()
                    if s.name == "relevance_gate" and s is not span_row]
     fail_attrs = dict(fail_row.attributes or {})
-    assert fail_attrs["langfuse.observation.output"]  # fail_closed also carries
-    assert fail_attrs["langfuse.observation.output"].startswith("{")
+    assert fail_attrs["nora.relevance_gate.verdict_json"]  # fail_closed also carries
+    assert fail_attrs["nora.relevance_gate.verdict_json"].startswith("{")
     # …but a fail-closed verdict NEVER fakes a provider stop reason: the
     # JSON carries no `finish_reason` at all (the model never answered).
-    assert '"finish_reason"' not in fail_attrs["langfuse.observation.output"]
+    assert '"finish_reason"' not in fail_attrs["nora.relevance_gate.verdict_json"]
 
 
 async def test_pre_model_fail_closed_paths_write_their_verdict_too(
@@ -866,11 +870,11 @@ async def test_pre_model_fail_closed_paths_write_their_verdict_too(
     (row,) = [s for s in exported_spans.get_finished_spans()
               if s.name == "relevance_gate"]
     attrs = dict(row.attributes or {})
-    assert attrs["langfuse.observation.output"] == (
+    assert attrs["nora.relevance_gate.verdict_json"] == (
         '{"source": "fail_closed", "verdict": "no_go"}'
     )
     assert attrs["nora.relevance_gate.error_kind"] == "no_context"
-    assert '"finish_reason"' not in attrs["langfuse.observation.output"]
+    assert '"finish_reason"' not in attrs["nora.relevance_gate.verdict_json"]
 
     # Same for a missing instruction.
     gate_no_inst = _gate(_Client("unused"), prompts=_Doctrine(body="", sections=0))

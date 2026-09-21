@@ -96,7 +96,7 @@ from nora.domain.prompt import age as _age
 from nora.domain.prompt import one_line as _one_line
 from nora.domain.provenance import instruction_sha256
 from nora.obs.metrics import Metrics
-from nora.obs.tracing import annotate, annotate_generation, generation
+from nora.obs.tracing import TRACE_KIND, annotate, span
 from nora.persons import Persons
 
 log = logging.getLogger("nora.ingest.relevance_gate")
@@ -604,11 +604,15 @@ class RelevanceGate:
         most needs to read — so both now emit the same tiny document, with
         `finish_reason=""` saying «the model never answered».
         """
-        annotate_generation(
-            completion=_verdict_json(verdict),
-            finish_reason=verdict.finish_reason,
-        )
         annotate(**{
+            # The gate's own verdict JSON, safe for the wire (no room
+            # content) — already includes `finish_reason` (`_verdict_json`'s
+            # own docstring). Plain `annotate()` now, not `annotate_
+            # generation()`: this span stopped being a "generation" span
+            # itself once the model call moved to its own child span inside
+            # `_RelevanceGateModelClient.complete()` (`nora.agent.telemetry`,
+            # a strands.telemetry replacement for the retired helper).
+            "nora.relevance_gate.verdict_json": _verdict_json(verdict),
             "nora.relevance_gate.verdict": verdict.verdict,
             # OTel attributes cannot carry `None`: an absent score is
             # `SCORE_ABSENT`, so `score > -1` is the «a score was stated»
@@ -633,24 +637,29 @@ class RelevanceGate:
         its due windows serially, so an unbounded call is not one slow window,
         it is that room refusing tags and every other room going unjudged.
         """
-        with generation(
+        with span(
             "relevance_gate",
-            model=self._client.model,
             # A ROOT: the trigger is driven from the runtime loop, not from
-            # under a turn, so nothing above it opens a span. `root=True` is
-            # what puts `nora.trace_kind` on it, and it must be set AT START or
-            # `build_sampler` decides without it and the trace is dropped —
-            # issue #111 is the same rule going wrong one path over, and the
-            # gate is the path where a dropped trace hurts most: nobody is
-            # waiting on it, so an unmeasured gate failure has no human to
-            # notice it.
+            # under a turn, so nothing above it opens a span. It must be set
+            # AT START or `build_sampler` decides without it and the trace is
+            # dropped — issue #111 is the same rule going wrong one path
+            # over, and the gate is the path where a dropped trace hurts
+            # most: nobody is waiting on it, so an unmeasured gate failure
+            # has no human to notice it.
             #
-            # `generation` and not `plumbing` even though a fail-closed verdict
-            # may never reach the model — a gate refused before the call is
-            # still a gate decision worth seeing, DEC-141's point about a tag
-            # refused at admission, one path over.
-            root=True,
-            attributes={
+            # `"generation"`, not `"plumbing"`, even though a fail-closed
+            # verdict may never reach the model — a gate refused before the
+            # call is still a gate decision worth seeing, DEC-141's point
+            # about a tag refused at admission, one path over. This span is
+            # no longer itself shaped like a generation (no `model=`, no
+            # GenAI attributes) — the model call, when one happens, opens
+            # its OWN child span inside `_RelevanceGateModelClient.complete`
+            # (`nora.agent.telemetry.start_raw_model_span`), which is the
+            # thing R-76's `TRACE_KIND` label was always describing: whether
+            # a model call CAN happen under this root, not whether this
+            # exact span is one.
+            **{
+                TRACE_KIND: "generation",
                 "nora.conversation_id": conversation_id,
                 "nora.platform": platform,
             },
@@ -668,9 +677,20 @@ class RelevanceGate:
             prompt = build_user_message(render_context(
                 transcript, standing, window=self._transcript_limit,
             ))
-            # The prompt is a room's own words, so it is NOT put on the wire.
-            # The digest plus the retained transcript re-derives it exactly —
-            # design 13's rule, applied to the one call that reads every room.
+            # The digest is retained regardless — the retained transcript
+            # re-derives the prompt exactly, which matters now that the
+            # prompt ALSO reaches a span by a separate path (below): `_ask`
+            # hands `system`/`prompt` to `self._client.complete`, whose
+            # production implementation (`_RelevanceGateModelClient`) passes
+            # them into `nora.agent.telemetry.start_raw_model_span`, which
+            # Strands records as real `gen_ai.system.message`/
+            # `.user.message` span events — the room's own words, and every
+            # room's, including ones Nora does not serve, UNSCREENED. Until
+            # 2026-09-19 this comment said the prompt was never put on the
+            # wire at all; the operator was told this specific exposure
+            # directly and accepted it (`design/evaluation/08-the-sdk-
+            # surface.md` §4.2 records the fork and the reason: closing the
+            # gate's evaluation-mapper gap required exactly this).
             annotate(**{
                 # The INSTRUCTION, separately from the whole prompt: the digest
                 # below hashes the room too, so it cannot fingerprint what the

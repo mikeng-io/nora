@@ -37,13 +37,13 @@ import json
 
 import pytest
 
-from evals.evaluators import ParticipationVerdict
-from evals.harness import Case, run_case
 from nora.agent.guards import ReplyGuard
 from nora.agent.registry import ToolRegistry
 from nora.agent.tools import NATIVE_TOOLS
 from nora.obs.metrics import Metrics
 from nora.testing import ScriptedTurn
+from tests.offline_eval_evaluators import ParticipationVerdict
+from tests.offline_eval_harness import Case, run_case
 
 BUDGETS = ToolRegistry().budgets()
 TERMINAL = ToolRegistry().terminal_tools()

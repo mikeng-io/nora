@@ -1,13 +1,21 @@
-"""OTel tracing setup (spec C.9). Strands instruments the agent loop/tools/model calls
-itself; this module only configures the exporter and resource attributes.
+"""OTel plumbing: the R-76 sampler, the generic named-span helper, and context
+propagation — everything here is pure OpenTelemetry with no `strands` import,
+which is the point (`tests/test_boundaries.py::test_strands_import_boundary`
+allows `strands` only under `nora/agent/`).
 
-The OTLP exporter is HTTP/protobuf, not gRPC: Langfuse's collector endpoint
-(`/api/public/otel/v1/traces`) speaks HTTP, and `opentelemetry-exporter-otlp-
-proto-grpc` was never installed to begin with (Phase 4's mypy override covered
-exactly that missing import). `otlp_http` replaces the old `otlp` config value
-outright rather than joining it — a gRPC option that nothing installs and
-nothing can ever reach is worse than no option, and there was never a
-production config using it (the live `config.toml` has always been `file`).
+Provider/exporter setup moved to `nora.agent.telemetry.setup_agent_tracing`,
+called directly from `nora/__main__.py` (the composition root) with
+`build_sampler()` passed in as a plain value — see the comment where
+`setup_tracing` used to live, below, for why this module cannot make that
+call itself.
+
+Raw-model-call instrumentation (`generation`/`annotate_generation`, the
+hand-rolled GenAI/Langfuse dialect this module used to spell by hand) is gone
+— replaced by `nora.agent.telemetry.start_raw_model_span`/
+`end_raw_model_span`, thin wrappers around Strands' own
+`Tracer.start_model_invoke_span`/`end_model_invoke_span`, for the same reason:
+that dialect is upstream-maintained now, not this module's to keep two
+architecture tests in sync with.
 """
 
 from __future__ import annotations
@@ -21,10 +29,6 @@ from typing import Literal, get_args
 from opentelemetry import context as otel_context
 from opentelemetry import trace
 from opentelemetry.context import Context
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
-from opentelemetry.sdk.trace.export import SpanExporter as _SpanExporter
 from opentelemetry.sdk.trace.sampling import (
     Decision,
     ParentBased,
@@ -132,34 +136,25 @@ def build_sampler() -> Sampler:
     return ParentBased(root=_PlumbingIsNotATrace())
 
 
-def setup_tracing(
-    *, enabled: bool, exporter: str, endpoint: str, headers_env: str = "",
-    service_name: str = "nora",
-) -> None:
-    if not enabled:
-        return
-    try:
-        span_exporter = _build_exporter(exporter, endpoint, headers_env)
-        provider = TracerProvider(
-            resource=Resource.create({"service.name": service_name}),
-            sampler=build_sampler(),
-        )
-        provider.add_span_processor(BatchSpanProcessor(span_exporter))
-        trace.set_tracer_provider(provider)
-    except Exception:
-        # Tracing is never load-bearing — a bad endpoint, an unparsable headers_env
-        # value, or (once spans actually flow) an unreachable collector must never
-        # take the app down. Setup-time failures land here; export-time failures
-        # (the network call itself) happen later on BatchSpanProcessor's own
-        # background thread, which the OTel SDK already isolates from the app —
-        # see tests/test_tracing.py's PROBE-derived test for the latter.
-        log.warning("tracing setup failed; continuing without tracing", exc_info=True)
+#: `setup_tracing` used to live here, assembling its own `TracerProvider`.
+#: Deleted rather than turned into a call-through to
+#: `nora.agent.telemetry.setup_agent_tracing`: `nora.agent` sits ABOVE
+#: `nora.obs` in the layered-import contract (`pyproject.toml`, "layered
+#: architecture" — `nora.agent | nora.platform` precedes `nora.obs` in the
+#: `layers` list), so this module importing FROM `nora.agent`, even lazily
+#: inside a function, is the exact violation the contract exists to catch —
+#: `uv run lint-imports` would refuse it. `nora/__main__.py` (the composition
+#: root, outside the layer graph) calls `setup_agent_tracing` directly instead
+#: and passes it `build_sampler()` from here as a plain value; that keeps the
+#: import direction the contract requires (`nora.agent` may import
+#: `nora.obs`, never the reverse) without this module needing to know
+#: `nora.agent` exists at all.
 
 
 @contextmanager
 def span(name: str, **attributes: object) -> Iterator[None]:
-    """One named span, and **never load-bearing** — the same rule `setup_tracing`
-    keeps one function up.
+    """One named span, and **never load-bearing** — the same rule
+    `nora.agent.telemetry.setup_agent_tracing` keeps at provider setup.
 
     Until 2026-08-27 `nora/` opened **zero** spans: every span reaching Langfuse
     came from Strands, from inside the agent loop, so a turn that failed BEFORE
@@ -228,152 +223,17 @@ def span(name: str, **attributes: object) -> Iterator[None]:
             log.debug("span %s did not close cleanly", name, exc_info=True)
 
 
-#: The two spellings of "this span is a model call", emitted TOGETHER by
-#: `generation` and nowhere else. PUBLIC so the architecture test DERIVES the
-#: vocabulary it forbids elsewhere rather than hand-copying it (AGENTS.md).
-#:
-#: `gen_ai.*` is the OTel GenAI semantic convention — what a future collector,
-#: and Jaeger's own attribute search, read. `langfuse.observation.*` is what
-#: TODAY'S collector renders a generation from: without it Langfuse shows the
-#: span as a plain span with no model, no latency attribution and no place to
-#: put input/output, which is the difference between a trace of a model call
-#: and a rectangle that happens to be named after one.
-#:
-#: They are two spellings of one fact and neither is guessed. Both were verified
-#: against a live trace (`relevance_gate`, 2026-09-08) before this constant
-#: existed to hold them: it is the block that trace proved, lifted out of the
-#: one call site that had it.
-GENERATION_ATTRIBUTES = ("langfuse.observation.type", "gen_ai.operation.name")
-
-
-@contextmanager
-def generation(
-    name: str,
-    *,
-    model: str = "",
-    root: bool = False,
-    prompt: str = "",
-    completion: str = "",
-    attributes: dict[str, object] | None = None,
-) -> Iterator[None]:
-    """One MODEL CALL, spelled the one way Langfuse renders as a generation.
-
-    **This exists because the spelling was copied, and copies drift.** Two call
-    sites hand-rolled the attribute block — `nora/ingest/relevance_gate.py` and
-    `nora/engagement/stages/debrief.py` — and by the time there were two they
-    had already diverged: the debrief carried `langfuse.observation.input` and
-    `output`, the gate carried neither, so one generation was readable in the
-    collector and the other was a name with a latency. Everything else that
-    calls a model carried no spelling at all and rendered as a bare span. Four
-    dialects for one fact (measured against 1041 live traces, 2026-09-09).
-
-    **`root=True` is the R-76 declaration, and it is not the default.** A
-    generation that hangs under a turn's root inherits that root's sampling
-    decision and must NOT re-declare anything — `ParentBased` gives a child its
-    parent's decision, so `nora.trace_kind` on a non-root is inert (and reads,
-    to the next person, as though it were doing something). Pass `root=True`
-    only where this span genuinely opens its own trace: work reached off an
-    ingest path that is itself plumbing, or spawned work that has detached with
-    `attached(None)`.
-
-    **`prompt`/`completion` must ALREADY BE SCREENED** — `nora.agent.egress`'s
-    `trace_safe` is the screen, and it cannot be applied here: `nora.obs` sits
-    BELOW `nora.agent` in the import contract (`pyproject.toml`, "layered
-    architecture"), so this module cannot reach the egress predicates and must
-    not pretend to. A trace is an egress — the collector is a third party over
-    the network — so a caller that passes raw model text past this parameter
-    has moved an identifier onto the wire. `tests/architecture/
-    test_generation_spans_use_the_helper.py` is what keeps the dialect here;
-    the screen is the caller's, stated in `docs/observability.md`.
-
-    **`attributes` is a DICT, not `**kwargs`**, unlike `span`'s. `span` has no
-    keyword parameters of its own, so a caller's `**{...}` cannot collide with
-    one; this function has four, and a `dict[str, str]` splatted past them is
-    a type error mypy reports at the CALL SITE (`root` expects a `bool`) rather
-    than a name the caller can see. One explicit parameter costs a `attributes=`
-    at three call sites and removes the collision entirely.
-
-    Both halves are OPTIONAL and omitted rather than blanked when empty: an
-    absent `langfuse.observation.input` reads as "this span does not carry the
-    prompt", where an empty string reads as "the prompt was empty", and those
-    are different claims about the same turn.
-    """
-    attrs: dict[str, object] = {
-        "langfuse.observation.type": "generation",
-        "gen_ai.operation.name": "chat",
-    }
-    # OMITTED, not blanked, when the model is not known yet. `""` renders in
-    # Langfuse as a generation whose model is the empty string — a positive
-    # claim that is false — where an absent attribute reads as "not stated".
-    # It is genuinely not always known at span start: the media comprehension
-    # learns which describer answered FROM the result (a voice note's title is
-    # written by the text model, not the audio one), so it opens the span
-    # without a model and calls `annotate_generation(model=...)` on the way out.
-    if model:
-        attrs["langfuse.observation.model.name"] = model
-        attrs["gen_ai.request.model"] = model
-    if root:
-        attrs[TRACE_KIND] = "generation"
-    if prompt:
-        attrs["langfuse.observation.input"] = prompt
-    if completion:
-        attrs["langfuse.observation.output"] = completion
-    attrs.update(attributes or {})
-    with span(name, **attrs):
-        yield
-
-
-def annotate_generation(
-    *,
-    model: str = "",
-    completion: str = "",
-    finish_reason: str = "",
-    input_tokens: int | None = None,
-    output_tokens: int | None = None,
-    total_tokens: int | None = None,
-    attributes: dict[str, object] | None = None,
-) -> None:
-    """The half of a generation only known on the way OUT, in the same spelling.
-
-    `span` takes its attributes at entry (it has to — the sampler reads them),
-    and a completion does not exist yet at that point. This is `annotate` with
-    the two names that matter pre-filled, so a call site does not re-derive
-    them and cannot spell them a third way.
-
-    Same screening contract as `generation`: `completion` is text a model wrote
-    and reaches a third party over the network. Screen it first.
-
-    **The token counts belong here rather than in a caller's return type.**
-    Usage is the provider's fact and no caller's verdict depends on it; widening
-    a port to carry a number only the collector reads would be the measurement
-    changing the thing it measures. Strands emits `gen_ai.usage.*` itself, so
-    only the raw `chat.completions.create` paths need this — and every one of
-    them exported as a generation costing zero until 2026-09-08.
-    """
-    out: dict[str, object] = {}
-    if model:
-        out["langfuse.observation.model.name"] = model
-        out["gen_ai.request.model"] = model
-    if completion:
-        out["langfuse.observation.output"] = completion
-    if finish_reason:
-        out["gen_ai.response.finish_reasons"] = finish_reason
-    if input_tokens is not None and output_tokens is not None and total_tokens is not None:
-        # FIVE NAMES FOR THREE NUMBERS, deliberately. Langfuse reads the
-        # `input`/`output`/`total` triple; `prompt_tokens`/`completion_tokens`
-        # are the names its older mapping uses, and a collector upgrading (or
-        # downgrading) under us must not silently price every call at zero
-        # again. Written only when ALL THREE arrived: a provider that omits
-        # usage records NOTHING rather than zero, because writing 0 asserts the
-        # call was free — the same argument `finish_reason=... or ""` makes one
-        # field over.
-        out["gen_ai.usage.input_tokens"] = input_tokens
-        out["gen_ai.usage.output_tokens"] = output_tokens
-        out["gen_ai.usage.total_tokens"] = total_tokens
-        out["gen_ai.usage.prompt_tokens"] = input_tokens
-        out["gen_ai.usage.completion_tokens"] = output_tokens
-    out.update(attributes or {})
-    annotate(**out)
+#: `generation`/`annotate_generation` (the hand-rolled `langfuse.observation.*`
+#: + `gen_ai.*` dialect this module used to spell by hand) are deleted —
+#: replaced by `nora.agent.telemetry.start_raw_model_span`/
+#: `end_raw_model_span`, thin wrappers around Strands' own
+#: `Tracer.start_model_invoke_span`/`end_model_invoke_span`. That pair already
+#: implements the OTel GenAI semantic conventions and (for the Agent-SDK path)
+#: Langfuse-observation wiring, upstream-maintained; this module no longer
+#: needs to keep a second, hand-copied dialect in sync with it via
+#: `tests/architecture/test_generation_spans_use_the_helper.py` (deleted with
+#: this change — see `tests/architecture/
+#: test_raw_model_calls_use_strands_telemetry.py` for its replacement).
 
 
 def _safe_attributes(attributes: dict[str, object]) -> dict[str, str | bool | int | float]:
@@ -477,12 +337,17 @@ def attached(carrier: Context | None) -> Iterator[None]:
                 log.debug("trace context could not be detached", exc_info=True)
 
 
-def _resolve_headers(headers_env: str) -> dict[str, str] | None:
+def resolve_otlp_headers(headers_env: str) -> dict[str, str] | None:
     """`headers_env` names an environment variable (DEC-8: `*_env`, never the
     value inlined, no `${VAR}` interpolation); its content is OTel's own
     `OTEL_EXPORTER_OTLP_HEADERS` shape — comma-separated `key=value` pairs,
     URL-encoded. Empty name or empty/unset value both mean "send no auth
     header", not an error.
+
+    Public (not `_resolve_headers`) because `nora.agent.telemetry` — the only
+    module allowed to build the actual `OTLPSpanExporter` — needs this exact
+    logic, and `nora.agent` importing this pure, strands-free function from
+    `nora.obs` is the direction the layered contract allows.
     """
     if not headers_env:
         return None
@@ -490,20 +355,6 @@ def _resolve_headers(headers_env: str) -> dict[str, str] | None:
     if not raw:
         return None
     return dict(parse_env_headers(raw))
-
-
-def _build_exporter(exporter: str, endpoint: str, headers_env: str) -> _SpanExporter:
-    if exporter == "console":
-        return ConsoleSpanExporter()
-    if exporter == "file":
-        return ConsoleSpanExporter(out=open(endpoint, "a", encoding="utf-8"))
-    if exporter == "otlp_http":
-        from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
-            OTLPSpanExporter,
-        )
-
-        return OTLPSpanExporter(endpoint=endpoint, headers=_resolve_headers(headers_env))
-    raise ValueError(f"unknown tracing exporter: {exporter!r}")
 
 
 def trace_attributes(ctx, doctrine) -> dict:

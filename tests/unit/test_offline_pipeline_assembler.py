@@ -22,8 +22,6 @@ from pathlib import Path
 
 import pytest
 
-from nora.app.eval_support import TOOL_NAMES
-from nora.app.offline import build_offline_pipeline
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.notes import Note, NoteRevision
 from nora.domain.standing import Standing
@@ -39,6 +37,8 @@ from nora.testing import (
     ScriptedTurn,
     group_event,
 )
+from tests.offline_eval_support import TOOL_NAMES
+from tests.offline_pipeline import build_offline_pipeline
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DOCTRINE_DIR = REPO_ROOT / "nora" / "doctrine"

@@ -1,7 +1,8 @@
 import json
 
+from nora.agent.telemetry import setup_agent_tracing
 from nora.obs.metrics import Metrics
-from nora.obs.tracing import _resolve_headers, setup_tracing, trace_attributes
+from nora.obs.tracing import build_sampler, resolve_otlp_headers, trace_attributes
 from tests.builders import make_tracing_config
 
 
@@ -35,14 +36,27 @@ def test_trace_attributes_never_carry_message_content(tmp_path):
     assert "a private thing" not in json.dumps(attrs)
 
 
-def test_tracing_disabled_is_a_no_op():
-    cfg = make_tracing_config()
-    setup_tracing(enabled=cfg.enabled, exporter=cfg.exporter, endpoint=cfg.endpoint)
+# `setup_tracing` moved out of this module entirely — see
+# `nora/obs/tracing.py`'s own comment where the function used to live:
+# `nora.obs` may not import `nora.agent` (the layered contract), so the
+# actual provider assembly is `nora.agent.telemetry.setup_agent_tracing`
+# now, called directly from `nora/__main__.py`. Two consequences for these
+# tests: `setup_agent_tracing` has no `enabled` flag (that check is the
+# composition root's, not this layer's — `test_tracing_disabled_is_a_no_op`
+# had nothing left to test and is deleted rather than kept as a tautology),
+# and it does NOT itself swallow a bad-exporter failure — `__main__.py`'s
+# own `try/except` around the call does that now, so
+# `test_setup_tracing_swallows_a_build_failure_instead_of_crashing` is
+# rewritten below to assert the RAISE this module's caller depends on
+# catching, not a swallow this module no longer performs.
 
 
 def test_file_exporter_writes_to_a_path(tmp_path):
     cfg = make_tracing_config(enabled=True, endpoint=str(tmp_path / "traces.jsonl"))
-    setup_tracing(enabled=cfg.enabled, exporter=cfg.exporter, endpoint=cfg.endpoint)
+    setup_agent_tracing(
+        sampler=build_sampler(), service_name="nora",
+        exporter=cfg.exporter, endpoint=cfg.endpoint, headers_env=cfg.headers_env,
+    )
 
 
 def test_otlp_http_setup_does_not_crash_on_an_unreachable_endpoint():
@@ -50,28 +64,40 @@ def test_otlp_http_setup_does_not_crash_on_an_unreachable_endpoint():
     exporter is network-free (it only configures a `requests.Session`; the
     live PROBE run against `http://127.0.0.1:1/...` confirmed the later,
     async export failures never propagate either — retried and logged on
-    BatchSpanProcessor's own background thread, never raised here)."""
-    setup_tracing(
-        enabled=True, exporter="otlp_http", endpoint="http://127.0.0.1:1/v1/traces",
-        headers_env="",
+    BatchSpanProcessor's own background thread, never raised here).
+    `StrandsTelemetry.setup_otlp_exporter` has its own internal
+    `try/except Exception: logger.exception(...)`, so this holds even though
+    `setup_agent_tracing` itself no longer wraps the call."""
+    setup_agent_tracing(
+        sampler=build_sampler(), service_name="nora", exporter="otlp_http",
+        endpoint="http://127.0.0.1:1/v1/traces", headers_env="",
     )
 
 
-def test_setup_tracing_swallows_a_build_failure_instead_of_crashing():
-    """An unknown exporter value raises inside `_build_exporter`; `setup_tracing`
-    must swallow it (log + continue), not let it take the app down."""
-    setup_tracing(enabled=True, exporter="not-a-real-exporter", endpoint="")
+def test_setup_agent_tracing_raises_on_an_unknown_exporter():
+    """An unknown exporter value is `setup_agent_tracing`'s own `ValueError`
+    — it does not swallow this (the caller, `nora/__main__.py`, does, so a
+    bad `config.toml` value never takes the app down; that swallow is
+    exercised at the call site, not testable from this module alone without
+    a config-loading integration test)."""
+    import pytest
+
+    with pytest.raises(ValueError, match="unknown tracing exporter"):
+        setup_agent_tracing(
+            sampler=build_sampler(), service_name="nora",
+            exporter="not-a-real-exporter", endpoint="", headers_env="",
+        )
 
 
 def test_resolve_headers_is_none_when_headers_env_is_unset():
-    assert _resolve_headers("") is None
+    assert resolve_otlp_headers("") is None
 
 
 def test_resolve_headers_is_none_when_the_named_env_var_is_absent(monkeypatch):
     monkeypatch.delenv("NORA_TEST_OTLP_HEADERS", raising=False)
-    assert _resolve_headers("NORA_TEST_OTLP_HEADERS") is None
+    assert resolve_otlp_headers("NORA_TEST_OTLP_HEADERS") is None
 
 
 def test_resolve_headers_parses_the_otel_header_env_shape(monkeypatch):
     monkeypatch.setenv("NORA_TEST_OTLP_HEADERS", "Authorization=Basic%20abc123")
-    assert _resolve_headers("NORA_TEST_OTLP_HEADERS") == {"authorization": "Basic abc123"}
+    assert resolve_otlp_headers("NORA_TEST_OTLP_HEADERS") == {"authorization": "Basic abc123"}

@@ -696,7 +696,10 @@ four files loaded the eval harness's config through `load_eval_config((real,
 example))`, which prefers the DEPLOYMENT's file, so unit tests of `_build_sink`
 asserted the operator's `config.toml` — and went red the day the operator
 enabled the Langfuse export. A false dependency, recorded in
-`tests/test_evals_gate.py`'s own docstring, which is now the fixture's.
+that gate test's own docstring, which is now the fixture's. (That file was
+split on 2026-09-18: its evaluator assertions live in
+`tests/unit/test_the_deterministic_evaluators.py` and the rest went with the
+old eval layer.)
 
 The three files that DO read the real `config.toml` cannot take the fixture,
 and are pinned with the reason: `tests/builders.py` (the copier),

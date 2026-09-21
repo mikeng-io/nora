@@ -61,6 +61,13 @@ _NOT_A_BUILDER = {
     # and its own log, never transcript rows (39 §1 keeps `load_transcript`
     # out of it on purpose).
     "nora/language/proactive.py": "reads one row's ts per room for the quiet check",
+    # The eval seam's read-back (`design/evaluation/01-boundaries.md`): `heard`
+    # reads NORA'S OWN rows after a turn, to report what the room heard, and
+    # `last_row_id` reads one row's id as a watermark. Neither body reaches a
+    # prompt — they are the OUTPUT side. What this test guards is the input
+    # side, and the input side of a case is `know()`, which WRITES rows and
+    # reads none.
+    "nora/subject/knowledge.py": "reads Nora's own rows back as the outcome, never into a prompt",
 }
 
 #: Modules that BUILD a transcript and that `_discovered_readers` structurally
@@ -191,9 +198,16 @@ PATHS = {
     "nora/app/adoption.py": "adoption",
     "nora/agent/tools.py": "load_transcript",
     "nora/ingest/relevance_gate.py": "relevance_gate",
+    # The eval seam's dream pass (`design/evaluation/`). Its OWN label: this
+    # test's control refuses a reused one, and it is right to — nothing here is
+    # scraped alongside the loop's read (a `Subject` carries its own `Metrics()`,
+    # built per case), so the distinct label costs nothing and says something
+    # true about where the read came from.
+    "nora/subject/dreaming.py": "dreamer_eval",
 }
 
 BUILDERS = {
+    "nora/subject/dreaming.py": "since",
     "nora/engagement/context.py": "recent",
     "nora/app/fire.py": "recent",
     "nora/engagement/stages/debrief.py": "since_including_nora",

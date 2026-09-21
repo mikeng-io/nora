@@ -1,7 +1,7 @@
 """Eval-injection parity: production and the offline harness must build their
 `TranscriptInjection` through the SAME function, or the two prompts drift
 apart exactly like they had — `nora/app/composition.py` passed 18 keyword
-arguments and `nora/app/offline.py` passed 7, so every eval measured an agent
+arguments and `tests/offline_pipeline.py` passed 7, so every eval measured an agent
 missing `<standing>`/`<notes>`/`<facts>` with nothing to notice.
 
 `nora.app.assembler.build_assembler` is the fix: one function both
@@ -48,7 +48,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPOSITION = REPO_ROOT / "nora" / "app" / "composition.py"
-OFFLINE = REPO_ROOT / "nora" / "app" / "offline.py"
+#: Re-homed to `tests/` 2026-09-18: it was in `nora/app/` only because
+#: `evals/` could not import `tests/`, and `evals/` no longer has a harness.
+#: The PARITY it checks is unchanged — production against the offline
+#: mirror — and is the gate that caught "composition passed 18 keyword
+#: arguments and offline passed 7".
+OFFLINE = REPO_ROOT / "tests" / "offline_pipeline.py"
 
 
 def _calls(path: Path, func_name: str) -> list[ast.Call]:

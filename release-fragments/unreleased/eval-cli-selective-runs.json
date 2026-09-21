@@ -1,0 +1,10 @@
+{
+  "type": "feature",
+  "summary": "Added python -m evals: a CLI over evals.scenarios.experiment_for() that runs a chosen subset of the 13 ported corpora -- by name, by S-class (--class S7), or all of them -- instead of forcing a full 4-5 hour run for a one-line change. Also gave experiment_for() a sample= parameter (drawing each case N times via evals.backbone.sampled/sample_read, matching the existing sampling-instability mechanism) rather than always reading one draw.",
+  "details": [
+    "Picking nothing refuses rather than silently running everything -- the whole point of the script. --list shows every corpus with its entry point, S-class and whether it needs a judge, so a cheap smoke run can be chosen deliberately.",
+    "--judge/--judge-base-url/--judge-samples mirror evals/rebuilt/__main__.py's existing flags for the old harness, so the new CLI's judge story is not a second thing to learn.",
+    "Live-verified: python -m evals no_trigger --database-url <real pg> against the real deployed nora alias ran all 12 cases end to end (passed=12 failed=0 errored=0).",
+    "18 new tests (selection logic, sample expansion, exit codes), falsified: hardcoding the selection to \"everything when nothing is named\" and hardcoding sample expansion off both turned the relevant tests red before restoring the real logic. Full suite: 7968 passed."
+  ]
+}

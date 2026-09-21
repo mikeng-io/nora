@@ -1,0 +1,11 @@
+{
+  "type": "fix",
+  "summary": "evals/subject seeding: know() now ensures the target peer exists in Honcho before writing a seeded conclusion about them, fixing a 404 that surfaced as 'could not write a conclusion ... Honcho did not accept it' against two live participation cases.",
+  "details": [
+    "Root cause, confirmed live against a real Honcho instance: workspace_for() (nora/subject/obtain.py) hands every eval case a fresh, isolated Honcho workspace, so a target peer named only in a case's `knows.conclusions` has never been created there. Production never hits this because a peer always exists by the time anything concludes about it -- created by a real feed() call first.",
+    "Curled Honcho's /conclusions endpoint directly to isolate the failure from the SSH tunnel/latency theory first raised when the error appeared: same call against an existing production peer succeeded (201); against a never-created peer it 404'd ('Peer ... not found in workspace ...'), which is exactly the failure the eval's two participation cases hit.",
+    "Fix: nora/subject/knowledge.py's know() calls memory.ensure_peer(peer_id=...) before its conclude() loop -- ensure_peer is already part of the MemoryStore protocol (nora/domain/ports.py:754), unused by this call site until now.",
+    "tests/unit/test_subject_knowledge.py: two new tests. FakeMemory enforces the real Honcho invariant (conclude fails for an unensured peer) rather than a mock the fix could trivially satisfy without calling ensure_peer correctly. Falsified: removing the fix line reproduced the exact live RuntimeError message; restored, both pass.",
+    "Full suite: 7969 passed (2 new)."
+  ]
+}

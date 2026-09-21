@@ -6,6 +6,38 @@ interceptor. It is built as the same **comprehend → measure → serialize** sp
 the rest of the repo runs on (`AGENTS.md`), applied one layer up: comprehend a
 user *journey*, measure the *trajectory* she produces, serialize a *verdict*.
 
+## The rebuilt suite (2026-09-21) — where and how it runs
+
+> Everything below this section describes the PREVIOUS harness (`evals.run`,
+> fake stores, hand-authored journeys). It is kept for the reasoning; the
+> commands no longer exist. The current suite is `python -m evals`.
+
+The suite runs **on the deploy host**, against the deployment's **clone**.
+Every corpus case names a real room at a real instant; the runner composes
+the deployment's own Nora (its `config.toml`, `policy.toml`, `identity.toml`)
+against a sandbox database of the case's own, seeds it with what that room
+held at that instant, and drives one entry point. Nothing is authored and
+nothing is configurable per case (`design/evaluation/11-the-sandbox-rebuild.md`
+§1.2–§1.3).
+
+```bash
+# on the deploy host, in a checkout of the branch under test (NOT the deploy checkout)
+make eval-source                 # refresh nora_eval from production (pg_dump); do this first
+set -a; source /home/norty/workspace/nora/.env; set +a   # the deployment's keys, so the tools are production's
+uv run python -m evals --list    # corpora, entry points, classes
+uv run python -m evals --all     # every corpus; prints "N total, active, parked, unanchored" per corpus
+uv run python -m evals relevance_gate --sample 3
+uv run python -m evals injections identity_grounding --judge
+```
+
+- `--source-url` defaults to the clone on the deploy host (from its `.env`);
+  a database whose name is not `*_eval` is refused.
+- `--deployment-config` defaults to the deployment's `config.toml`; the run
+  refuses to start if the rebuilt `config.evaluation.toml` differs from it
+  outside `ALLOWED_TO_DIFFER`.
+- Read the census. A parked case is counted, never run; an unanchored case
+  ERRORs. ERROR is never PASS.
+
 ## The two tiers
 
 A change is gated in two tiers, cheapest first. Tier 1 is deterministic and runs
@@ -214,10 +246,16 @@ This is the SOP, not a one-time setup:
 
 1. **Comprehend** — a real turn went wrong (weather web-searched, "我邊度返工"
    answered with live GPS). Name the journey and its *correct* tool path.
-2. **Measure** — add a `Journey` to `evals/journeys.py` with the real message, the
-   required tool(s), and the trap. If the trap is a tool not yet in
-   `SEED_INTENT_GRAPH`, add the confusability edge — every touching journey
-   tightens at once.
+2. **Measure** — **THIS STEP HAS NO INSTRUMENT as of 2026-09-18.** The routing
+   tier went with the old eval layer and the rebuilt one has no counterpart:
+   its `Outcome` carries no tool calls and no corpus is a journey, so "which
+   tool did she reach for" cannot currently be graded. DEC-76 and DEC-84 are
+   marked NOT ENFORCED in `design/09-decision-index.md` for exactly this.
+
+   Until it is rebuilt, a routing failure is caught by a reply-grader that
+   `design/09-decision-index.md` DEC-75/DEC-76 both record as BLIND to it — a
+   wrong route answers fluently from the wrong source. Adding a corpus case
+   still measures whether she replied; it does not measure where she looked.
 3. **Serialize** — tier 1 pins intended-vs-regression (offline, no model); tier 2
    proves the *current* model against it. The verdict is the gate's exit code and,
    when exported, a Langfuse score.

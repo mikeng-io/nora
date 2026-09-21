@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Design-doc finding only, no code change. Live-verified S2 (tool routing) and S6 (idempotence) against the deployed nora alias over the SSH tunnel, both previously only mechanism/wiring-tested with fakes. S2: a real participation case driven through traced_nora_task produced a real Session (InferenceSpan/ToolExecutionSpan/AgentInvocationSpan, the same retry-loop shape 09-the-backbone-measured.md already measured), and the SDK's own unmodified ToolCalled evaluator correctly scored a real send_reply tool call. S6: a real note-candidates create case driven twice (Spec(repeat=2)) correctly wrote once on run 1 and nothing on run 2; IdempotenceGrader scored it PASS. Recorded in design/evaluation/10-the-scenario-map.md §11 and §13."
+}

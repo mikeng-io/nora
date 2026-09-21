@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Design-doc cleanup only, no code or behavior change: design/05-evaluation.md marked SUPERSEDED (its CI-gate plan and OutputEvaluator/TrajectoryEvaluator axes were never implemented; design/evaluation/10-the-scenario-map.md replaces the axis breakdown); design/00-overview.md's Evaluation row repointed at design/evaluation/_index.yaml -> GOAL-2-backbone.md instead of the superseded plan; design/evaluation/GOAL.md corrected (it claimed the old eval layer 'still exists' while its own Step 8 says that layer was deleted 2026-09-18) and flagged superseded-by-scope by GOAL-2-backbone.md; design/evaluation/_index.yaml gained GOAL.md/GOAL-2-backbone.md as members with edges and closed out its 'SUPERSESSION UNSTATED' open question."
+}

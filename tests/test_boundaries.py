@@ -158,7 +158,21 @@ def _imported_dotted_modules(path: Path) -> set[str]:
 
 
 EVALS_DIR = ROOT / "evals"
-EVALS_ALLOWED_NORA_PACKAGES = {"app", "testing"}
+#: `subject` joined 2026-09-17 (design/evaluation/, operator): it is the ONE way
+#: `evals/` obtains the composed graph, and the point of it is that no caller
+#: assembles one. THIS TEST IS THE GATE THAT BINDS — the import-linter contract
+#: "evals may only reach nora.app and nora.testing" reports KEPT while `evals/`
+#: imports a package its own name forbids, because `allow_indirect_imports` is
+#: load-bearing there (pyproject.toml, that contract's own comment). Measured
+#: 2026-09-17 while choosing the layer.
+#:
+#: `domain` joined 2026-09-19 (design/evaluation, S5 — `evals/backbone.py`'s
+#: `render_transcript_at` calls `nora.domain.blocks.render_messages` directly):
+#: `nora/domain/__init__.py`'s own docstring is "framework-free contracts,
+#: imports only the standard library" — pure types and pure functions, not a
+#: collaborator or an assembly seam, so it does not reopen the "no caller
+#: assembles a Nora" property `subject` exists to hold.
+EVALS_ALLOWED_NORA_PACKAGES = {"app", "testing", "subject", "domain"}
 
 
 def _evals_files():
@@ -243,4 +257,42 @@ def test_composition_never_uses_the_permissive_policy():
     assert "permissive_policy" not in src, (
         "composition.py must build the allowlist from policy.toml, never the "
         "permissive one — that would disable deny-by-default in production"
+    )
+
+
+def test_nora_never_imports_evals():
+    """THE DIRECTION THE WHOLE BUNDLE IS ABOUT, and nothing looked at it.
+
+    `design/evaluation/01-boundaries.md` §1: *"the eval layer depends on Nora.
+    Nora depends on nothing in the eval layer."* Both existing gates check only
+    the first half:
+
+    - the import-linter `layers` contract orders `nora.*` rows, and `evals` is a
+      second root package appearing in no layer;
+    - the `evals may only reach ...` contract has `source_modules = ["evals"]`,
+      so it constrains `evals -> nora` and not the reverse;
+    - `test_evals_only_imports_nora_app_and_nora_testing` scans `evals/` only.
+
+    MEASURED by review 2026-09-17: `import evals.rebuilt.domain` inserted into
+    `nora/subject/dreaming.py` left `lint-imports` at *6 kept, 0 broken* and the
+    whole architecture suite green. That is §6's documented hole — "import-linter
+    knows two root packages, the boundary test scans one directory" — reproduced
+    for the direction that matters, inside the step written to close it.
+    """
+    offenders = []
+    for path in PKG.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            mods = []
+            if isinstance(node, ast.Import):
+                mods = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                mods = [node.module]
+            for m in mods:
+                if m == "evals" or m.startswith("evals."):
+                    offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}: {m}")
+    assert not offenders, (
+        f"nora imports the eval layer: {offenders}. The direction IS the "
+        "property — a Nora that knows it is being measured is not the Nora the "
+        "deployment runs."
     )

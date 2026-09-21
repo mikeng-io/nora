@@ -1,0 +1,9 @@
+{
+  "type": "feature",
+  "summary": "Added evals.scenarios.experiment_for(name, database_url=..., judge=...), the last piece of the corpus port: a ready-to-run (Experiment, task) pair for any of the 13 evals/corpora/*.yaml files, using load_corpus() + MeetsGrader uniformly and threading a judge only into the 5 corpora that need one (JUDGED_CORPORA).",
+  "details": [
+    "All 13 corpora are now runnable through the SDK-native spine end to end. Live-verified against the real deployed nora alias and a real Postgres: no_trigger, proactive_decide, participation, relevance_gate each ran a real case to a real verdict (PASS/FAIL, never ERROR).",
+    "MeetsGrader used uniformly across all 13 corpora rather than per-corpus grader selection -- Outcome.meets() already covers every vocabulary any corpus uses.",
+    "3 new mechanical tests (judge threaded only for JUDGED_CORPORA, falsified by removing the gate; full case-set wiring). Full suite: 7959 passed."
+  ]
+}

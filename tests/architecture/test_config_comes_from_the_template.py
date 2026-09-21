@@ -50,6 +50,24 @@ CONFIG_FILES = {"config.toml", "config.example.toml"}
 # Files whose SUBJECT is the deployment, or which are the one copier. Each
 # entry says why a fixture cannot stand in.
 _DEPLOYMENT_SUBJECTS: dict[str, str] = {
+    "tests/architecture/test_the_eval_subject_is_the_deployed_nora.py": (
+        "Its subject IS the rule that builds the eval subject's config FROM "
+        "`config.example.toml` plus the deployment's own values, so it must "
+        "read the real example — a fixture would compare the template to a "
+        "copy of itself and measure nothing, which is this gate's own stated "
+        "failure mode. Added 2026-09-21 with the fix for the suite composing "
+        "the example instead of the deployment (65 values differed, including "
+        "the model and most features)."
+    ),
+    "tests/offline_eval_harness.py": (
+        "The offline eval harness, re-homed from `evals/harness.py` on "
+        "2026-09-18. Its subject IS the deployment: `load_eval_config` prefers "
+        "the operator's real `config.toml` and falls back to the template, "
+        "deliberately, because an eval run must measure the doctrine, models "
+        "and budgets the deployment actually has. A fixture here would make it "
+        "measure the template instead — which is the exact failure this gate "
+        "exists to prevent, one directory over."
+    ),
     "tests/builders.py": (
         "the one place that knows the template's name — copy_example_config / "
         "load_example_config, which the conftest fixtures wrap"

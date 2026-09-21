@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Design-doc only. Recorded the corpus port's landing in design/evaluation/10-the-scenario-map.md §15 (what was built, the two live-found bugs, live verification results, §5's fold/drop decisions as applied) and corrected GOAL-2-backbone.md's stale 'porting the 150 cases ... separate work, not done here' escalation note with a DONE/operator-override pointer to §15."
+}

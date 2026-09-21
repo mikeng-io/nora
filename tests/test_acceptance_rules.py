@@ -458,11 +458,16 @@ RULE_TESTS = {
     # order backwards is the failure that silently corrupts §6's own reading of
     # whether the trigger has degraded into a clock.
     "R-72": "test_ungrounded_wins_when_both_conditions_hold",
-    # R-73 names the IDENTIFIER test rather than the coordinate one: both are
-    # in the index row, but a phone number reaching a third-party collector is
-    # the exposure `nora.agent.egress` exists for, and the prompt side is the
-    # half that carries the turn's raw tool results.
-    "R-73": "test_an_identifier_never_reaches_the_collector",
+    # R-73's debrief/standing-fold enforcement (this repo's own
+    # `test_an_identifier_never_reaches_the_collector` /
+    # `test_a_coordinate_in_the_answer_never_reaches_the_collector`) was
+    # DELETED 2026-09-19, moving the fold onto strands.telemetry — see
+    # `design/09-decision-index.md`'s R-73 row for the narrowing note and
+    # `docs/observability.md`'s "Known gaps" for the disclosed consequence.
+    # The PRINCIPLE still holds and is still enforced elsewhere; this points
+    # at `who_said`'s enforcement instead, which the decision index's own
+    # R-73 row already cited as a second satisfying test.
+    "R-73": "test_neither_the_words_nor_a_line_reaches_the_collector",
     # R-74 names the no-evidence refusal rather than the citation check,
     # because it is the clause a future change is most likely to "simplify":
     # a passed anchor date LOOKS sufficient for expiry, and treating it as
@@ -578,8 +583,8 @@ def test_every_enforced_rule_has_a_named_test():
 
 def test_r14_is_covered_by_the_adversarial_corpus():
     """R-14 is behavioural: asserted by constraints.md, measured by the corpus."""
-    assert (ROOT / "evals" / "adversarial" / "injections.yaml").exists()
-    assert (ROOT / "evals" / "adversarial" / "transcript_injection.yaml").exists()
+    assert (ROOT / "evals" / "corpora" / "injections.yaml").exists()
+    assert (ROOT / "evals" / "corpora" / "transcript_injection.yaml").exists()
 
 
 def test_r41_is_covered_by_the_identity_grounding_corpus():
@@ -591,7 +596,7 @@ def test_r41_is_covered_by_the_identity_grounding_corpus():
     failing to detect it). This test pins that the measurement exists and is
     findable, not that the rule holds; see DEC-75 for the honest number.
     """
-    assert (ROOT / "evals" / "adversarial" / "identity_grounding.yaml").exists()
+    assert (ROOT / "evals" / "corpora" / "identity_grounding.yaml").exists()
 
 
 def test_r53_is_covered_by_the_source_scope_corpus():
@@ -612,7 +617,7 @@ def test_r53_is_covered_by_the_source_scope_corpus():
     and only the first was made. This test pins that the measurement exists and
     is findable, not that the rule holds.
     """
-    assert (ROOT / "evals" / "adversarial" / "source_scope.yaml").exists()
+    assert (ROOT / "evals" / "corpora" / "source_scope.yaml").exists()
 
 
 def test_r83_is_covered_by_the_being_contradicted_corpus():
@@ -637,7 +642,7 @@ def test_r83_is_covered_by_the_being_contradicted_corpus():
     is how it is read, because one window is not a rate. This test pins that the
     measurement exists and is findable, not that the rule holds.
     """
-    assert (ROOT / "evals" / "adversarial" / "being_contradicted.yaml").exists()
+    assert (ROOT / "evals" / "corpora" / "being_contradicted.yaml").exists()
 
 
 def _message(*, platform: str, body: str, media: tuple[MediaRef, ...]) -> NormalizedMessage:
@@ -835,7 +840,7 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
     HONEST SCOPE: a content test, the same posture as
     `test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache` above. It
     measures that the position is stated, and where. It does not measure that
-    the model follows it; `evals/adversarial/being_contradicted.yaml` does, and
+    the model follows it; `evals/corpora/being_contradicted.yaml` does, and
     `test_r83_is_covered_by_the_being_contradicted_corpus` below pins that the
     corpus exists. That corpus was written because the position being stated on
     four surfaces did not stop #227 — DEC-78/DEC-92's finding that prose alone
@@ -1012,7 +1017,9 @@ async def test_r87_the_standing_fold_reads_since_a_row_id_watermark():
         def model(self) -> str:
             return "test-model"
 
-        async def complete(self, *, system: str, prompt: str) -> debrief.Completion:
+        async def complete(
+            self, *, system: str, prompt: str, trace_attributes=None,
+        ) -> debrief.Completion:
             self.prompts.append(f"{system}\n\n{prompt}")
             return debrief.Completion(
                 json.dumps({"standing": "the revised position"}), "stop")

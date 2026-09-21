@@ -95,13 +95,6 @@ _NOT_A_LINE = {
         "encloses."
     ),
     (
-        "nora/app/eval_support.py", "run_proactive_act_case", 'seed.notes[0][1].body',
-    ): (
-        "Not a render at all: the eval seed composes a new NOTE REVISION body "
-        "out of the previous one. The newline is deliberate content in a stored "
-        "document, and nothing puts this string on a line beside another row."
-    ),
-    (
         "nora/domain/blocks.py", "render", "self.body",
     ): (
         "ALREADY collapsed, per row, by whatever built the body: "

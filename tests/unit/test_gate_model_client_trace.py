@@ -6,12 +6,28 @@ verdicts in the deployment showed `usage: {input: 0, output: 0, total: 0}` —
 and the debrief and the standing fold had done the same since they shipped.
 That is the number the cost of running this path has to be judged against.
 
-**Two seams, because there are two transports again.** The debrief and the
-standing fold are on the Agent SDK, where the counts arrive as an accumulated
-triple (`_annotate_usage_triple`); the gate came back off it on 2026-09-11
-(#186) and reads them off a response object (`_annotate_usage`). Both are
-covered here, and both must record NOTHING rather than zero when the provider
-reported nothing.
+**This file used to test `_annotate_usage`/`_annotate_usage_triple`
+directly** (both hand-rolled helpers in `nora.obs.tracing`'s retired
+`generation()`/`annotate_generation()` dialect). Both are gone: the debrief/
+standing-fold path runs through a real Strands `Agent` now
+(`nora.agent.structured.ask_text`), which annotates its own usage
+automatically; the gate's raw call annotates through
+`nora.agent.telemetry.start_raw_model_span`/`end_raw_model_span`, thin
+wrappers around Strands' own `Tracer`. This file now tests the GATE's
+wiring into that pair — `_annotate_usage_triple`'s debrief-side tests moved
+with the function; there is nothing left to test standalone on that seam
+here (`tests/unit/test_debrief.py`'s own trace-attribute tests cover the
+debrief side of the delegation).
+
+**One real, disclosed behavior change**, not fixed here:
+`Tracer.end_model_invoke_span` writes `gen_ai.usage.*` unconditionally from
+the `Usage` dict it is given — there is no "provider reported nothing, so
+record nothing" branch to ask it for, unlike the retired
+`annotate_generation`. `nora.agent.telemetry.end_raw_model_span` writes zero
+in that case, which asserts something weaker than "the provider said
+nothing" — see `test_a_provider_that_reports_no_usage_now_records_zero`
+below, which asserts the NEW, weaker guarantee rather than silently
+inverting or deleting the old test.
 """
 
 from __future__ import annotations
@@ -20,15 +36,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from nora.app.composition import _annotate_usage, _annotate_usage_triple
-from nora.obs.tracing import span
-
 pytestmark = pytest.mark.anyio
-
-
-def _attrs(exported, name: str) -> dict:
-    (recorded,) = [s for s in exported.get_finished_spans() if s.name == name]
-    return dict(recorded.attributes or {})
 
 
 class _Usage:
@@ -38,42 +46,7 @@ class _Usage:
         self.total_tokens = total
 
 
-class _Response:
-    def __init__(self, usage) -> None:
-        self.usage = usage
-
-
-async def test_the_token_usage_reaches_the_span_it_runs_under(exported_spans):
-    with span("relevance_gate", **{"nora.trace_kind": "generation"}):
-        _annotate_usage_triple((1830, 12, 1842))
-
-    attrs = _attrs(exported_spans, "relevance_gate")
-    assert attrs["gen_ai.usage.input_tokens"] == 1830
-    assert attrs["gen_ai.usage.output_tokens"] == 12
-    assert attrs["gen_ai.usage.total_tokens"] == 1842
-
-
-async def test_a_raw_responses_usage_reaches_the_span_it_runs_under(exported_spans):
-    """The gate's own seam since it came back off the SDK. Same three numbers,
-    read off the provider's response rather than out of a triple."""
-    with span("relevance_gate", **{"nora.trace_kind": "generation"}):
-        _annotate_usage(_Response(_Usage(2055, 20, 2075)))
-
-    attrs = _attrs(exported_spans, "relevance_gate")
-    assert attrs["gen_ai.usage.input_tokens"] == 2055
-    assert attrs["gen_ai.usage.output_tokens"] == 20
-    assert attrs["gen_ai.usage.total_tokens"] == 2075
-
-
-async def test_a_provider_that_reports_no_usage_records_no_usage(exported_spans):
-    """Not zero, on EITHER seam. A provider that omitted the field has told us
-    nothing, and writing 0 would assert the call was free — the same argument
-    `finish_reason=... or ""` makes one field over."""
-    with span("relevance_gate", **{"nora.trace_kind": "generation"}):
-        _annotate_usage_triple(None)
-        _annotate_usage(_Response(None))
-
-    assert "gen_ai.usage.total_tokens" not in _attrs(exported_spans, "relevance_gate")
+_DEFAULT_USAGE = _Usage(999, 7, 1006)
 
 
 class _FakeCompletions:
@@ -86,12 +59,13 @@ class _FakeCompletions:
     same way and kept nothing would have made this test decorative.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, usage: _Usage | None = _DEFAULT_USAGE) -> None:
         self.seen: dict = {}
         #: Settable, so a test can make the provider report a CUT-OFF. A fake
         #: that answers `"stop"` to every call cannot tell a client that reads
         #: the field from one that hardcodes the word.
         self.finish_reason: str | None = "stop"
+        self._usage = usage
 
     async def create(self, **kwargs):
         self.seen = kwargs
@@ -104,35 +78,157 @@ class _FakeCompletions:
                 ),
                 finish_reason=self.finish_reason,
             )],
-            usage=_Usage(999, 7, 1006),
+            usage=self._usage,
         )
 
 
 class _FakeClient:
-    def __init__(self) -> None:
-        self.completions = _FakeCompletions()
+    def __init__(self, *, usage: _Usage | None = _DEFAULT_USAGE) -> None:
+        self.completions = _FakeCompletions(usage=usage)
 
     @property
     def chat(self):
         return self
 
 
-async def test_the_gate_client_annotates_what_the_provider_returned(exported_spans):
-    """The wiring, not just the helper: a client that computed the counts and
-    never annotated them would pass both tests above."""
+def _gate_client(client):
     from nora.app import composition
 
-    client = _FakeClient()
-    gate_client = composition._RelevanceGateModelClient(
+    return composition._RelevanceGateModelClient(
         client=client, model="nora-gate", max_tokens=512,
         temperature=0.0, timeout_seconds=20.0, reasoning_effort="none",
     )
-    with span("relevance_gate", **{"nora.trace_kind": "generation"}):
-        got = await gate_client.complete(system="rules", prompt="room")
+
+
+async def test_the_gate_client_annotates_what_the_provider_returned(monkeypatch):
+    """The wiring, not just the wrapper: a client that computed the counts
+    and never handed them to `end_raw_model_span` would pass no test at all
+    if this one did not exist.
+
+    Patches `nora.app.composition`'s own imported names — the same way
+    `tests/unit/test_debrief.py`'s `_Client.trace_attributes` verifies
+    `_complete`'s delegation without needing a real Strands span — rather
+    than reading back a real Strands-produced span: `tests/conftest.py`'s
+    `exported_spans` fixture patches `nora.obs.tracing.trace.get_tracer`,
+    which Strands' own `Tracer` never calls (it reads
+    `trace_api.get_tracer_provider()` directly), so it cannot see spans
+    `start_raw_model_span`/`end_raw_model_span` open. See
+    `tests/architecture/test_raw_model_calls_use_strands_telemetry.py` for
+    the test that DOES read back a real Strands span, against a patched
+    provider.
+    """
+    from nora.app import composition
+
+    captured: dict = {}
+
+    def _fake_start(**kwargs):
+        return object()  # opaque — `end_raw_model_span` never inspects it
+
+    def _fake_end(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(composition, "start_raw_model_span", _fake_start)
+    monkeypatch.setattr(composition, "end_raw_model_span", _fake_end)
+
+    client = _FakeClient()
+    gate_client = _gate_client(client)
+    got = await gate_client.complete(system="rules", prompt="room")
 
     assert got.content == '{"verdict": "no_go", "relevance_score": 0.0}'
     assert got.finish_reason == "stop"
-    assert _attrs(exported_spans, "relevance_gate")["gen_ai.usage.total_tokens"] == 1006
+    assert captured["input_tokens"] == 999
+    assert captured["output_tokens"] == 7
+    assert captured["total_tokens"] == 1006
+    assert captured["finish_reason"] == "stop"
+    assert captured["content"] == '{"verdict": "no_go", "relevance_score": 0.0}'
+
+
+async def test_a_provider_that_reports_no_usage_now_records_zero(monkeypatch):
+    """The NEW, WEAKER guarantee, stated so it cannot be mistaken for the old
+    one. `Tracer.end_model_invoke_span` has no "provider reported nothing, so
+    write nothing" branch — see this file's own module docstring for why
+    this is accepted rather than fixed."""
+    from nora.app import composition
+
+    captured: dict = {}
+    monkeypatch.setattr(composition, "start_raw_model_span", lambda **kw: object())
+    monkeypatch.setattr(composition, "end_raw_model_span", lambda **kw: captured.update(kw))
+
+    client = _FakeClient(usage=None)
+    gate_client = _gate_client(client)
+    await gate_client.complete(system="rules", prompt="room")
+
+    assert captured["input_tokens"] is None
+    assert captured["output_tokens"] is None
+    assert captured["total_tokens"] is None
+
+
+async def test_start_raw_model_span_swallows_its_own_failure():
+    """`nora.agent.telemetry.start_raw_model_span` itself, not the gate's
+    wiring — a broken tracer provider must return `None`, never raise, for
+    `end_raw_model_span`'s own `None`-is-a-no-op contract to be reachable at
+    all. `monkeypatch`ing `strands.telemetry.tracer.get_tracer` is enough:
+    no need to reach into Strands' own provider machinery for this half."""
+    import strands.telemetry.tracer as tracer_module
+
+    from nora.agent.telemetry import start_raw_model_span
+
+    class _BrokenTracer:
+        def start_model_invoke_span(self, **kwargs):
+            raise RuntimeError("exporter is unreachable")
+
+    tracer_module._tracer_instance = _BrokenTracer()
+    try:
+        span = start_raw_model_span(
+            messages=[{"role": "user", "content": [{"text": "hi"}]}],
+            model_id="m",
+        )
+    finally:
+        tracer_module._tracer_instance = None
+
+    assert span is None
+
+
+async def test_a_broken_tracer_never_costs_a_verdict_already_obtained():
+    """Tracing is never load-bearing (`nora.obs.tracing.span`'s own rule,
+    restated for the raw-span pair in `nora.agent.telemetry`'s module
+    docstring) — a positive control PROVING it through the gate's REAL,
+    unpatched wiring, not by patching the wrapper functions to bypass their
+    own guard (which would prove nothing about whether that guard works).
+
+    Breaks the underlying `strands.telemetry.tracer` singleton instead —
+    `nora.app.composition._RelevanceGateModelClient.complete` calls the real
+    `nora.agent.telemetry.start_raw_model_span`/`end_raw_model_span`, which
+    call the real (now broken) `get_tracer()` internally, and must swallow
+    the failure THEMSELVES.
+
+    PROBE: remove either `try/except` inside `nora.agent.telemetry.
+    start_raw_model_span`/`end_raw_model_span` and this test raises instead
+    of asserting — a broken tracer would then discard an already-obtained
+    verdict, exactly the failure mode `_ask`'s `except Exception:
+    _fail_closed("call_failed")` cannot distinguish from a real provider
+    outage.
+    """
+    import strands.telemetry.tracer as tracer_module
+
+    class _BrokenTracer:
+        def start_model_invoke_span(self, **kwargs):
+            raise RuntimeError("exporter is unreachable")
+
+        def end_model_invoke_span(self, **kwargs):
+            raise RuntimeError("span already closed")
+
+    saved = tracer_module._tracer_instance
+    tracer_module._tracer_instance = _BrokenTracer()
+    try:
+        client = _FakeClient()
+        gate_client = _gate_client(client)
+        got = await gate_client.complete(system="rules", prompt="room")
+    finally:
+        tracer_module._tracer_instance = saved
+
+    assert got.content == '{"verdict": "no_go", "relevance_score": 0.0}'
+    assert got.finish_reason == "stop"
 
 
 async def test_the_gate_asks_for_json_with_the_instruction_in_the_system_role():
@@ -160,13 +256,8 @@ async def test_the_gate_asks_for_json_with_the_instruction_in_the_system_role():
     Strands sends `tool_choice: None` when nothing sets it and a thinking-mode
     provider then refuses the call outright.
     """
-    from nora.app import composition
-
     client = _FakeClient()
-    gate_client = composition._RelevanceGateModelClient(
-        client=client, model="nora-gate", max_tokens=512,
-        temperature=0.0, timeout_seconds=20.0, reasoning_effort="none",
-    )
+    gate_client = _gate_client(client)
     await gate_client.complete(system="the rules", prompt="the room")
 
     sent = client.completions.seen
@@ -192,14 +283,9 @@ async def test_the_gate_reports_the_providers_own_finish_reason():
     (it matches the identifier, not what flows into it) and would report every
     cut-off body as complete.
     """
-    from nora.app import composition
-
     client = _FakeClient()
     client.completions.finish_reason = "length"
-    gate_client = composition._RelevanceGateModelClient(
-        client=client, model="nora-gate", max_tokens=512,
-        temperature=0.0, timeout_seconds=20.0, reasoning_effort="none",
-    )
+    gate_client = _gate_client(client)
     got = await gate_client.complete(system="the rules", prompt="the room")
     assert got.finish_reason == "length"
 

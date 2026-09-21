@@ -1,0 +1,9 @@
+{
+  "type": "fix",
+  "summary": "_knowledge/_close (layer 3: case seeding and teardown, which no SDK supplies) moved out of evals/rebuilt/runner.py -- the old harness slated for deletion -- into evals/backbone.py, the new spine that survives it. room_for/workspace_for now import directly from nora.subject instead of through runner.py.",
+  "details": [
+    "This was a named, unresolved marker since design/evaluation/09-the-backbone-measured.md §5: backbone.py's own import comment said these had to move before runner.py (layer 1) could be deleted. runner.py now imports _knowledge/_close BACK from evals.backbone, so the dependency runs the direction that survives the eventual delete rather than the other way round.",
+    "Found and fixed along the way: _drive() called _knowledge({}) unconditionally, ignoring a case's own metadata['knows'] entirely. Every S4/S5/S6 case this session hand-wrote happened to seed nothing, so the bug never showed -- it would have silently blocked any future case that tries to seed a transcript/notes/rooms. Now reads (case.metadata or {}).get('knows', {}).",
+    "All dependent tests verified green, including the two integration tests that drive the old harness through a real container (test_the_rebuilt_suite_runs.py, test_two_entry_points_one_runner.py) and the corpus-shape architecture tests -- confirming the move preserved behavior exactly for the still-live old harness. New regression test pins the knows-metadata fix."
+  ]
+}
