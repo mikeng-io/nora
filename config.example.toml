@@ -28,6 +28,31 @@ base_url = "http://whatsapp-bridge:18081"  # the containerized Baileys bridge;
                                   # first: docker compose run --rm whatsapp-bridge
                                   # --pair --phone <digits>
 
+[platforms.instagram]
+enabled = false                  # off by default — see design/instagram-adoption/
+base_url = "http://instagram-bridge:18082"  # the containerized Go/instameow bridge;
+                                  # it holds the cookie session, so there is no
+                                  # token/account here at all. Requires a session
+                                  # first: log in at instagram.com in a private
+                                  # window, copy the cookie header, and hand it to
+                                  # the bridge's own /session volume.
+                                  #
+                                  # NOT the same knob as [social.instagram] further
+                                  # down, which names the SAME container on the SAME
+                                  # port. One authenticated session serves both, but
+                                  # they are separate capabilities: this one sends and
+                                  # hears messages, that one reads stories. Two flags
+                                  # so a messaging outage cannot silently take the
+                                  # social axis with it, or the reverse.
+                                  #
+                                  # ENABLED-BUT-CHECKPOINTED IS A VALID STATE. Unlike
+                                  # every other platform, an Instagram adapter that
+                                  # cannot authenticate does NOT stop Nora starting:
+                                  # she registers it DEGRADED, refuses every send,
+                                  # ingests nothing, logs one line saying so, and keeps
+                                  # Signal and Discord running. Read /health's
+                                  # platforms.instagram.degraded to see it.
+
 [memory]
 base_url = "http://127.0.0.1:8000"
 workspace_id = "nora"

@@ -37,6 +37,8 @@ def test_membership_values_are_the_designs_literal_strings():
         ("discord", "user_id", "100000000000000003"),
         ("whatsapp", "phone", "+85212345678"),
         ("whatsapp", "lid", "12345.1"),
+        ("instagram", "fbid", "100000000000001"),
+        ("instagram", "igid", "10000001"),
     ],
 )
 def test_identifier_accepts_every_kind_the_vocabulary_declares(platform, kind, value):
@@ -47,7 +49,7 @@ def test_identifier_accepts_every_kind_the_vocabulary_declares(platform, kind, v
 def test_display_name_is_never_matchable_on_any_platform():
     """§1.3: display names are shown, never matched. Constructing an
     `Identifier` with this kind is an error, not a silently-dropped key."""
-    for platform in ("signal", "telegram", "discord", "whatsapp"):
+    for platform in ("signal", "telegram", "discord", "whatsapp", "instagram"):
         with pytest.raises(UnmatchableIdentifierError):
             Identifier(platform=platform, kind=DISPLAY_NAME_KIND, value="Miles")
 
@@ -67,6 +69,11 @@ def test_id_kinds_matches_the_designs_table_exactly():
     assert id_kinds("telegram") == {"user_id"}
     assert id_kinds("discord") == {"user_id"}
     assert id_kinds("whatsapp") == {"phone", "lid"}
+    # design/instagram-adoption/02: TWO kinds, and they answer different
+    # questions. `fbid` is `interop_messaging_user_fbid` (the messaging
+    # identity, what a mention carries); `igid` is the public/social id the
+    # story reads take. Neither is derivable from the other.
+    assert id_kinds("instagram") == {"fbid", "igid"}
 
 
 def test_a_username_is_never_a_matchable_kind_on_any_platform():
@@ -84,7 +91,7 @@ def test_a_username_is_never_a_matchable_kind_on_any_platform():
     It stays ACCEPTED as metadata so identity.toml can still be read by a
     human; it is simply never matched on.
     """
-    for platform in ("signal", "telegram", "discord"):
+    for platform in ("signal", "telegram", "discord", "instagram"):
         assert "username" not in id_kinds(platform), (
             f"{platform} must not match on a renameable handle"
         )
@@ -105,3 +112,30 @@ def test_identifier_is_frozen_and_hashable():
     assert a == b
     assert hash(a) == hash(b)
     assert {a, b} == {a}
+
+
+def test_an_instagram_person_is_NEVER_matched_by_their_handle():
+    """The same rule as every other platform, and it bites harder here: an
+    Instagram @handle is the id a human would think to write down, it is
+    renameable at will, and the freed name can be taken by somebody else.
+
+    Asserted separately from the loop above because the Instagram failure has
+    a second half the others do not: `igid` and `fbid` are BOTH numeric and
+    BOTH matchable, so the temptation is to treat the handle as "the readable
+    third id" rather than as metadata."""
+    assert "username" in metadata_keys("instagram")
+    with pytest.raises(UnmatchableIdentifierError):
+        Identifier(platform="instagram", kind="username", value="example_handle")
+
+
+def test_an_instagram_igid_is_not_accepted_as_an_fbid_and_vice_versa():
+    """They are different numbers for the same person and choosing the wrong
+    one produces NO ERROR anywhere — Nora simply never notices she was tagged.
+    The vocabulary cannot prevent that by itself (both kinds are valid and
+    both hold digits), so what is pinned here is that they stay two NAMED
+    kinds rather than collapsing into one `id`, which is what would make the
+    confusion unreportable."""
+    fbid = Identifier(platform="instagram", kind="fbid", value="14963523149149302")
+    igid = Identifier(platform="instagram", kind="igid", value="14963523149149302")
+    assert fbid != igid
+    assert {fbid, igid} == {fbid, igid}  # both hashable, and distinct

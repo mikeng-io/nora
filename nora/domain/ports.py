@@ -486,9 +486,30 @@ class LinkPreview:
 
 @dataclass(frozen=True)
 class AdapterHealth:
+    """What one platform's transport can say about itself right now.
+
+    `degraded` and `detail` are ADDITIVE (design/instagram-adoption/01
+    §Degradation, M0) and default to the pre-existing behaviour, so an adapter
+    that never sets them reads exactly as it did before.
+
+    **`degraded` is a THIRD state, not a spelling of `connected=False`.** A
+    disconnected adapter is one whose socket is down and which the bridge is
+    expected to heal on its own; a degraded one is present, registered, and
+    structurally unable to act until a HUMAN intervenes — an Instagram session
+    that got checkpointed. Collapsing them would mean either flapping the
+    container healthcheck on an ordinary captcha, or — the failure that
+    actually matters — reporting a platform as merely quiet when Nora is
+    silently absent from every room on it.
+
+    `detail` is the stated reason, rendered beside the flag. A degradation
+    with no reason is a field nobody can act on.
+    """
+
     platform: str
     connected: bool
     last_event_age_seconds: float | None = None
+    degraded: bool = False
+    detail: str = ""
 
 
 @dataclass(frozen=True)

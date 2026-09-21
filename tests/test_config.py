@@ -344,6 +344,67 @@ def test_an_unknown_discord_key_is_a_startup_failure(toml_path):
         load(toml_path)
 
 
+def test_instagram_platform_section_is_optional_and_defaults_to_disabled(toml_path):
+    """A config.toml written before the Instagram transport existed must still
+    load — `extra="forbid"` only forbids UNKNOWN keys, an absent optional
+    section is fine (same probe shape as Discord's and WhatsApp's above)."""
+    text = toml_path.read_text()
+    head, _, tail = text.partition("[platforms.instagram]\n")
+    assert tail, "config.example.toml no longer declares [platforms.instagram]"
+    remainder = tail.split("\n[", 1)
+    toml_path.write_text(head + ("[" + remainder[1] if len(remainder) > 1 else ""))
+
+    cfg = load(toml_path)
+
+    assert cfg.platforms.instagram.enabled is False
+    assert cfg.platforms.instagram.base_url == "http://instagram-bridge:18082"
+
+
+def test_instagram_platform_can_be_enabled(toml_path):
+    toml_path.write_text(
+        toml_path.read_text().replace(
+            "[platforms.instagram]\nenabled = false",
+            "[platforms.instagram]\nenabled = true",
+        )
+    )
+    assert load(toml_path).platforms.instagram.enabled is True
+
+
+def test_an_unknown_instagram_platform_key_is_a_startup_failure(toml_path):
+    """A typo'd key must be refused by pydantic's `extra="forbid"`, not merely
+    ignored — a silently-dropped line is an operator certain they configured
+    something that never took effect. Edited INTO the existing section, for
+    the reason Discord's version of this test records."""
+    toml_path.write_text(
+        toml_path.read_text().replace(
+            'base_url = "http://instagram-bridge:18082"', 'base_urll = "x"',
+        )
+    )
+    with pytest.raises(ConfigError, match="base_urll"):
+        load(toml_path)
+
+
+def test_the_messaging_and_social_instagram_blocks_are_SEPARATE_knobs(toml_path):
+    """They name the same container on the same port and they are still two
+    flags (`nora.config.InstagramPlatformConfig`'s docstring). One
+    authenticated session serves both axes, but sending a message and reading
+    a story are provisioned and fail independently — a single flag would mean
+    a messaging outage silently taking the social axis with it, or the
+    reverse. Asserted because the duplication looks like a mistake to anyone
+    who has not read the argument."""
+    toml_path.write_text(
+        toml_path.read_text().replace(
+            "[platforms.instagram]\nenabled = false",
+            "[platforms.instagram]\nenabled = true",
+        )
+    )
+
+    cfg = load(toml_path)
+
+    assert cfg.platforms.instagram.enabled is True
+    assert cfg.social.instagram.enabled is False
+
+
 def test_the_presence_section_is_optional_and_ships_inert(toml_path):
     """DEC-54/55. `[presence]` deleted from the example must keep loading, and
     the default is INERT (enabled = false): presence must never be on by a

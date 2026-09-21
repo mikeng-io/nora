@@ -22,6 +22,7 @@ from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.honcho import HonchoClient
 from nora.obs.metrics import Metrics
 from nora.platform.discord.adapter import DiscordAdapter
+from nora.platform.instagram.adapter import InstagramAdapter
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.media import SignalMediaSource
 from nora.platform.whatsapp.adapter import WhatsAppAdapter
@@ -114,6 +115,21 @@ def test_whatsapp_adapter_satisfies_platform_adapter():
     covering it (CLAUDE.md); this is the name-level floor, and
     `test_send_contract.py`/`test_reaction_contract.py` carry the behaviour."""
     assert isinstance(WhatsAppAdapter("http://x"), PlatformAdapter)
+
+
+def test_instagram_adapter_satisfies_platform_adapter():
+    """The registry's fourth concrete adapter (design/instagram-adoption/).
+
+    It is the one adapter with a state the port does not name — DEGRADED
+    (`01` §Degradation, M0) — and it still has to be an ordinary
+    `PlatformAdapter` in that state, because the whole point is that it stays
+    REGISTERED. A degraded adapter that stopped satisfying the port would be
+    refused by the registry after all, one layer later."""
+    healthy = InstagramAdapter("http://x")
+    degraded = InstagramAdapter("http://x")
+    degraded.degrade("checkpointed")
+    assert isinstance(healthy, PlatformAdapter)
+    assert isinstance(degraded, PlatformAdapter)
 
 
 def test_runtime_checkable_protocols_only_check_method_names():
