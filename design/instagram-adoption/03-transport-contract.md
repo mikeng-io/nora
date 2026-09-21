@@ -139,6 +139,31 @@ WhatsApp bridge's precedent rather than a raw body, so one JSON shape covers
 every route. `/send-media` carries **no caption field** and ignores one if
 sent — the wire has nowhere to put it.
 
+## The social route — specified here, NOT YET IMPLEMENTED
+
+`08` routes `(instagram, story)` to the bridge, and `11` scopes social routes
+out of M1, so the bridge has **no `/social/*` route today**. The Python client
+is written against this shape and currently answers `unavailable`, which is
+true. Pinned so the two halves cannot drift:
+
+```
+POST /social/story   {"igid": "<numeric>", "limit": <int>}
+
+200  {"status":"ok","items":[{id,kind,taken_at,url}],"expires_at":<unix>}
+200  {"status":"nothing_found"}          ← no story up. NOT an error
+200  {"status":"unavailable"}            ← could not check
+non-200                                  ← the client reads as `unavailable`
+```
+
+`igid` is the **public/social id** (`Users[].ID`), not the messaging fbid —
+the one place the bridge is handed the social id rather than deriving it.
+The bridge re-checks its own read-only allowlist before performing the read
+(`08` §the security invariant restated): the request names a verb, and the
+verb must be on the list.
+
+**The bridge binds `18082`** (`whatsapp-bridge` is 18081). Both sides chose it
+independently; recorded so it stays a decision.
+
 ## Inbound event kinds
 
 `kind: "message"` is the one this document originally defined. The bridge

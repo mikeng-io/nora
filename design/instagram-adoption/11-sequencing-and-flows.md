@@ -108,13 +108,15 @@ agent turn ── social_fetch(platform="instagram", what="story", target="miles
         │                                                      └── a PERSON id,
         │                                                          never a handle
         ▼
-tool: screen target ──► person index: persons.miles.instagram.igid = 221731317
-        │                             (no entry -> `ambiguous`, never a guess)
-        ▼
-tier check: miles is a known person in a room with Nora -> Tier 0 -> allowed
+tool: screen target for identifiers (egress), validate (platform, what)
         │
         ▼
-SocialRouter: (instagram, story) is THE exception row -> InstagramSocialClient
+SocialRouter ── resolve: persons.miles.instagram.igid = 221731317
+        │              (no entry -> `ambiguous`, never a guess)
+        │       ── tier:    known person in a room with Nora -> Tier 0 -> allowed
+        │       ── route:   (instagram, story) is THE exception row
+        ▼
+InstagramSocialClient
         │
         ▼
 instagram-bridge /social/story ── re-checks its OWN allowlist

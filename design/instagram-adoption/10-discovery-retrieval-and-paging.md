@@ -40,8 +40,8 @@ them belong to the tool.
 
 | Concern | Owner | Explicitly NOT |
 |---|---|---|
-| who this person is → network + id | **person index** (`identity.toml`, or derived from room membership) | Honcho, the model, the tool |
-| may Nora read this subject | **tier check** (`07`) | the tool's vocabulary alone |
+| who this person is → network + id | the **person index** answers it; the **router** asks it | Honcho, the model, the tool, a backend |
+| may Nora read this subject | the **router**, before dispatch (`07`) | the tool's vocabulary alone; a backend |
 | which backend serves it | **`SocialRouter`** | the model |
 | performing the read | the backend, behind its own allowlist | the tool |
 | how much comes back | the **provider contract** (`limit` + cursor) | the backend's natural page size |
@@ -52,6 +52,21 @@ them belong to the tool.
 What is left for the tool is thin and is what DEC-151 already built: validate a
 closed `(platform, what)` pair, screen `target` for identifiers before egress,
 delegate, return a three-state result.
+
+**Subject resolution and the tier check belong to the ROUTER**, decided
+2026-09-22 after the first implementation put them in the Instagram backend
+and `11`'s Flow 3 drew them in the tool. Three reasons the router wins:
+
+- It is the **single choke point** every social read passes through — below
+  the tool, so the model cannot bypass it; above the backends, so no backend
+  needs its own copy of an authorization rule.
+- A **second backend would otherwise duplicate the tier check**, and a
+  duplicated authorization rule is one that will diverge.
+- `07` makes the tier ladder govern *all* social reads, not Instagram's. A
+  check living in `InstagramSocialClient` cannot be that.
+
+The tool still screens `target` for identifiers before egress — that is an
+egress concern and stays where DEC-151 put it.
 
 ## Identity comes from the person index, never from Honcho
 
@@ -130,10 +145,16 @@ Two cases worth naming:
 
 Two different questions with two different answers.
 
-### The next page: the same tool, with a cursor
+### The next page: the same tool, with a cursor — NOT in v1
 
-`social_fetch` gains `cursor` beside `limit`, and a paged result carries the
-cursor for the next call:
+**Scope note, and this document contradicted `11` until 2026-09-22.** `cursor`
+is the shape paging *will* take; it is **out of social v1**, which serves only
+`story`, and stories do not paginate. Nothing below is implemented. It is
+recorded now so that when `posts` moves to this port the shape is already
+decided rather than invented under pressure.
+
+The eventual shape: `social_fetch` gains `cursor` beside `limit`, and a paged
+result carries the cursor for the next call:
 
 ```
 social_fetch(platform="instagram", what="posts", target=<miles>, limit=5)
