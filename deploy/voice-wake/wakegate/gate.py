@@ -76,10 +76,27 @@ class WakeGate:
         self._buffer: list[np.ndarray] = []
         self._silent_run = 0
         self._peak = 0.0
+        self._last_score = 0.0
+        self._listening_peak = 0.0
 
     @property
     def collecting(self) -> bool:
         return self._collecting
+
+    @property
+    def last_score(self) -> float:
+        """The score of the most recent chunk. Exposed because the gate used
+        to compute a score for every chunk and discard it: when the gate
+        stopped firing there was no number anywhere to say whether the model
+        was seeing near-misses or silence, and the two need opposite fixes."""
+        return self._last_score
+
+    def take_listening_peak(self) -> float:
+        """The highest score seen while LISTENING since the last call, and
+        reset. The owner samples this to report what the model is actually
+        seeing, without a log line per 80 ms chunk."""
+        peak, self._listening_peak = self._listening_peak, 0.0
+        return peak
 
     def feed(self, chunk: np.ndarray) -> Utterance | None:
         """One 80 ms (1280-sample) int16 chunk; an `Utterance` the moment one
@@ -97,7 +114,9 @@ class WakeGate:
         if chunk.size != OWW_CHUNK:
             raise ValueError(f"chunk of {chunk.size}, expected {OWW_CHUNK}")
         score = self._score(chunk)
+        self._last_score = score
         if not self._collecting:
+            self._listening_peak = max(self._listening_peak, score)
             self._preroll.append(chunk)
             if score >= self._threshold:
                 self._collecting = True
