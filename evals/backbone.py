@@ -477,6 +477,28 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                     now=now,
                 )
             )
+            # SPEAKING NEEDS AN ADAPTER, and the sandbox disables Discord's
+            # (a declared divergence — it authenticates for real at startup).
+            # `FirePath._turn` resolves the room's own adapter before it says
+            # anything, so a turn case anchored where no adapter is wired dies
+            # deep in `fire.py` with a `KeyError`. Refused here, by name,
+            # against the COMPOSED config rather than a list kept in step by
+            # hand.
+            if port.drives_a_turn:
+                platform = room[0]
+                enabled = getattr(
+                    getattr(subject.cfg.platforms, platform, None), "enabled", False,
+                )
+                if not enabled:
+                    raise ValueError(
+                        f"case {case.name!r} drives a turn (entry={spec.entry!r}) "
+                        f"in a {platform} room, and the sandbox composes no "
+                        f"{platform} adapter — `FirePath._turn` resolves the "
+                        "room's adapter before speaking, so the turn cannot "
+                        "run. Anchor a turn case where an adapter is wired "
+                        "(design/evaluation/11-the-sandbox-rebuild.md §1.2's "
+                        "declared Discord divergence)."
+                    )
             seeded = await sandbox_from_snapshot(
                 subject,
                 source_url=spec.source_url,

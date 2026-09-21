@@ -53,6 +53,15 @@ FIRST_ROW_MS = 1_785_928_686_349
 #: Adding a name here is a decision; removing one is the seam landing.
 UNANCHORED_BY_DESIGN = {
     "being_contradicted": {"real_evidence_may_overturn"},
+    # Blocked on the DISCORD ADAPTER divergence (§1.2), which is also a seam
+    # this rebuild owes: their premise exists only in a Discord room, and a
+    # turn cannot run where no adapter is wired. Parking them was proposed
+    # and rejected for §7.1's stated reason — a case blocked on our own
+    # unfinished work is unfinished, not parked, and parking it would retire
+    # it to make the rebuild look complete.
+    "participation": {
+        "other-service-command", "admin-joke-known", "admin-joke-unknown",
+    },
     "identity_grounding": {
         "fabrication_invented_time_window",
         "grounded_correct_top_when_alias_stated",
@@ -122,6 +131,33 @@ def test_a_mention_case_anchors_where_a_mention_can_fire(name: str) -> None:
         shot = case.metadata.get("snapshot")
         if case.metadata.get("mention") and shot:
             assert shot["platform"] == "signal", (name, case.name, shot["platform"])
+
+
+@pytest.mark.parametrize("name", CORPORA)
+def test_a_case_that_speaks_anchors_where_an_adapter_is_wired(name: str) -> None:
+    """MEASURED LIVE 2026-09-21: three `participation` cases and two
+    `proactive_act` cases anchored in Discord rooms and came back
+    `failed_error` with a `KeyError` out of `fire.py:1615`.
+
+    `FirePath._turn` resolves the room's own adapter before she says anything
+    — speaking into a room on a platform she is not on is worse than staying
+    quiet — and the sandbox composes no Discord adapter (§1.2's declared
+    divergence). So a turn case anchored there cannot run, whatever the model
+    would have said. `gate` and `dreamer` read and write without speaking and
+    are unaffected, which is why the rule reads `drives_a_turn` rather than a
+    list of corpora.
+    """
+    from evals.rebuilt.entry import ENTRY_POINTS
+
+    if not ENTRY_POINTS[CORPUS_ENTRY[name]].drives_a_turn:
+        return
+    for case in load_all(name):
+        shot = case.metadata.get("snapshot")
+        if shot:
+            assert shot["platform"] == "signal", (
+                f"{name}:{case.name} drives a turn in a {shot['platform']} room, "
+                "and the sandbox wires no adapter for it"
+            )
 
 
 def test_the_whole_corpus_is_accounted_for() -> None:

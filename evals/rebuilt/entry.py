@@ -448,6 +448,25 @@ class EntryPoint:
     #: still change anything.
     config: dict[str, Any] = field(default_factory=dict)
 
+    #: Does driving this entry point make her SPEAK INTO the room — a real
+    #: `FirePath` turn?
+    #:
+    #: It decides which rooms a case may anchor in, so it is data here rather
+    #: than a list in a test. `FirePath._turn` resolves the room's own adapter
+    #: (`_adapter_for`) before it says anything, because speaking into a room
+    #: on a platform she is not on is worse than staying quiet — so a turn in a
+    #: room whose adapter the sandbox disables cannot run. Discord's is
+    #: disabled there (a declared divergence: its adapter authenticates for
+    #: real at startup), which makes a Discord-anchored turn case unrunnable
+    #: by construction.
+    #:
+    #: MEASURED LIVE 2026-09-21: three `participation` cases and two
+    #: `proactive_act` cases anchored in Discord rooms and came back
+    #: `failed_error` with a `KeyError` out of `fire.py:1615` — an ERROR, so
+    #: nothing was scored as a verdict, but a confusing one. `gate` and
+    #: `dreamer` are unaffected: they read and write, and never speak.
+    drives_a_turn: bool = False
+
 
 #: Both entry points turn on the SAME pair, and that is not duplication: since
 #: design 36 the quiescence trigger and the room policy belong to the gate, so
@@ -486,11 +505,12 @@ ENTRY_POINTS = {
     "gate": EntryPoint(drive=gate, config=_PARTICIPATION_SUBSYSTEM),
     "participation": EntryPoint(
         drive=participation, config=_PARTICIPATION_SUBSYSTEM, delivers_input=True,
+        drives_a_turn=True,
     ),
     # The tag path needs NOTHING turned on: `[engagement.trigger] enabled` ships
     # true, which is the deployment's own default and the reason this is the
     # cheapest of the three to drive.
-    "tag": EntryPoint(drive=tag, delivers_input=True),
+    "tag": EntryPoint(drive=tag, delivers_input=True, drives_a_turn=True),
     # `[dreamer] enabled` ships false, and `[notes]` decides whether the
     # note-candidates adaptor is built at all — two switches for two risks, and
     # a corpus that needs the pass needs both on.
@@ -506,6 +526,7 @@ ENTRY_POINTS = {
     # would tick underneath the case and `settle()` would never return.
     "proactive_act": EntryPoint(
         drive=proactive_act,
+        drives_a_turn=True,
         config={
             "participation.enabled": True,
             "relevance_gate.enabled": True,

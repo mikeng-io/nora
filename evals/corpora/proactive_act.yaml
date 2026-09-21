@@ -49,6 +49,20 @@
 # One shape has no real moment and is parked (P-A): a plan cancelled in the
 # room — no real room has cancelled an arrangement.
 #
+# --- A SPEAKING CASE MUST ANCHOR WHERE AN ADAPTER IS WIRED (2026-09-21) -----
+#
+# An act turn speaks, and `FirePath._turn` resolves the room's own adapter
+# before it says anything — speaking into a room on a platform she is not on
+# is worse than staying quiet. The sandbox wires no Discord adapter (§1.2's
+# declared divergence, its adapter authenticates for real at startup), so a
+# Discord-anchored act case cannot run whatever the model would have said:
+# measured live, `failed_error` with a KeyError out of `nora/app/fire.py`.
+# a01/a02 were re-anchored to the Signal room for that reason. Of the
+# deployment's Signal rooms only one carries `proactive = true`, so it is the
+# only place an act case can fire at all; `tests/architecture/
+# test_every_case_is_anchored_or_parked.py` pins the rule off
+# `EntryPoint.drives_a_turn` rather than a list kept in step by hand.
+#
 # --- a11, from the live duplicate-reminder incident of 2026-09-17/18 --------
 #
 # On the evening of the 17th she raised the same errand twice, 20:00 and
@@ -67,22 +81,28 @@ cases:
   - name: a01_dinner_nobody_said_where
     entry: proactive_act
     expect: speak
-    # REAL: the `ridgeline` unit's home room on the afternoon before an event
-    # whose dinner and company the one open note records as undecided. The
-    # deployment's own turn fired here on the day itself (17:00); this fires
-    # the evening before, as the rater wanted.
+    # RE-ANCHORED 2026-09-21. It named the `ridgeline` unit's home room, which
+    # is a DISCORD room — and an act turn SPEAKS, so `FirePath._turn` resolves
+    # that room's own adapter before saying anything and the sandbox wires
+    # none for Discord (§1.2's declared divergence). Measured live: the case
+    # came back `failed_error`, a KeyError out of `nora/app/fire.py`. Moved to
+    # the one Signal room the deployment trusts to be spoken in proactively,
+    # onto a note of the SAME shape: a dated plan, days out, whose company
+    # nobody has answered. The window ends on the room raising that date again
+    # while the offer still stands unanswered, so «nobody said» is true of the
+    # transcript and not only of the note.
     snapshot:
-      platform: discord
-      conversation_id: 100000000000000203/100000000000000204
-      before_ms: 1789113600000
+      platform: signal
+      conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+      before_ms: 1789802613456
     metadata:
       expect_original: speak
       row:
-        note: AI Hackathon dinner plan
-        intent: Dinner after Saturday's hackathon at 數碼港 — nobody has said where to eat or who is coming. Ask now, the evening before, so people can answer tonight.
+        note: 27號 Yat Ho 揸車載大家
+        intent: Yat Ho offered to drive everyone on the 27th if people squeeze in, and nobody has answered whether they are coming. Ask now, while there is still time to arrange it.
         decided_hours_ago: 9
       must_cite:
-      - 數碼港
+      - "27"
 
   - name: a02_note_moved_on_the_tag_path
     entry: proactive_act
@@ -90,15 +110,18 @@ cases:
     # REAL: the same instant and note as a01; `note_moved` appends a
     # revision after the row is linked, which is the tag path overtaking
     # the decision — the screen cancels with no model call.
+    # RE-ANCHORED with a01, and to the SAME note and instant: the pair's whole
+    # point is one row, one note, one moment, differing only in whether the
+    # tag path moved the note after the row was linked.
     snapshot:
-      platform: discord
-      conversation_id: 100000000000000203/100000000000000204
-      before_ms: 1789113600000
+      platform: signal
+      conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+      before_ms: 1789802613456
     metadata:
       expect_original: silent
       row:
-        note: AI Hackathon dinner plan
-        intent: Ask where dinner is after the hackathon.
+        note: 27號 Yat Ho 揸車載大家
+        intent: Ask who is coming on the 27th.
         decided_hours_ago: 9
       note_moved: true
 

@@ -222,10 +222,12 @@
   expect: silence
   sample: 5
   input: /weather tomorrow
-  snapshot:
-    platform: discord
-    conversation_id: "100000000000000201/100000000000000202"
-    before_ms: 1788534739325
+  # UNANCHORED, not parked: blocked on the Discord adapter divergence,
+  # which is a seam THIS REBUILD OWES (§1.2). The design rejected P-B as
+  # a parking reason in as many words — a case blocked on our own
+  # unfinished work is not parked, it is unfinished, and parking it would
+  # retire it to make the rebuild look complete. It loads, runs and ERRORs
+  # until a Discord room can hold a turn (§7.1).
 
 # --- S11: the room's name for her --------------------------------------------
 #
@@ -247,10 +249,12 @@
   sample: 5
   input: 麻煩管理員處理一下
   person: grant_carver
-  snapshot:
-    platform: discord
-    conversation_id: "100000000000000201/100000000000000202"
-    before_ms: 1789134962211
+  # UNANCHORED, not parked: blocked on the Discord adapter divergence,
+  # which is a seam THIS REBUILD OWES (§1.2). The design rejected P-B as
+  # a parking reason in as many words — a case blocked on our own
+  # unfinished work is not parked, it is unfinished, and parking it would
+  # retire it to make the rebuild look complete. It loads, runs and ERRORs
+  # until a Discord room can hold a turn (§7.1).
 
 - name: admin-joke-unknown
   entry: participation
@@ -258,10 +262,30 @@
   sample: 5
   input: 麻煩管理員處理一下
   person: miles_novak
-  snapshot:
-    platform: discord
-    conversation_id: "100000000000000201/100000000000000202"
-    before_ms: 1789134606959
+  # UNANCHORED, not parked: blocked on the Discord adapter divergence,
+  # which is a seam THIS REBUILD OWES (§1.2). The design rejected P-B as
+  # a parking reason in as many words — a case blocked on our own
+  # unfinished work is not parked, it is unfinished, and parking it would
+  # retire it to make the rebuild look complete. It loads, runs and ERRORs
+  # until a Discord room can hold a turn (§7.1).
+
+# --- A SPEAKING CASE MUST ANCHOR WHERE AN ADAPTER IS WIRED (2026-09-21) -----
+#
+# A participation case ends in `FirePath.speak`, and `FirePath._turn` resolves
+# the room's own adapter before she says anything — speaking into a room on a
+# platform she is not on is worse than staying quiet. The sandbox wires no
+# Discord adapter (§1.2's declared divergence: its adapter authenticates for
+# real at startup, so a sandbox cannot hold one), which makes a Discord-
+# anchored participation case unrunnable whatever the model would have said.
+# Measured live on the deploy host: three of them came back `failed_error`
+# with a KeyError out of `nora/app/fire.py`.
+#
+# All three are PARKED rather than moved, because each rests on something only
+# the Discord room has — a service to command, and a term coined then re-used.
+# Moving them would keep the input and lose the premise. The rule is pinned
+# off `EntryPoint.drives_a_turn` by `tests/architecture/
+# test_every_case_is_anchored_or_parked.py`, so a turn case cannot be anchored
+# in an unspeakable room again without the gate saying so.
 
 # --- S12: who is actually asking ---------------------------------------------
 #

@@ -199,6 +199,79 @@ yet enforced mechanically — a case whose tier is empty runs — because the
 extraction cannot yet tell "empty then" from "not extracted"; the counts in
 this section are what to read until it can.
 
+### 1.4 The first live run, 2026-09-21 — what it measured and what it found
+
+Run on the deploy host, against the clone, with the deployment's own
+environment. **The machinery works end to end**: the blank template is built,
+a sandbox database is cloned per case, the real room is reconstructed at the
+named instant, the deployment's own model answers, and the case is graded.
+
+**Two wiring defects, both found by running and both fixed.** Neither could
+have been found by a test, because both are properties of the DEPLOYMENT's
+configuration and the repo's tests compose from the example:
+
+1. **`settle()` waited for the process to be idle.** All four `near_miss`
+   cases ERRORed with "the turn never settled". Composition spawns ENDLESS
+   loops into the same `BackgroundTasks` set a turn is spawned into —
+   `ComputeJobPoller.run()`, `VersionAnnouncer.run()`, `heartbeat.run()` —
+   and the deployment enables the first. Waiting for that set to reach zero is
+   waiting for the process to exit. It now waits for the DELTA the case added.
+2. **A turn cannot run in a room whose adapter the sandbox disables.**
+   Three `participation` and two `proactive_act` cases anchored in Discord
+   rooms and died with a `KeyError` from `fire.py:1615`: `FirePath._turn`
+   resolves the room's adapter before speaking. `EntryPoint.drives_a_turn`
+   now carries the fact, `_drive` refuses by name, and an architecture test
+   catches it before a run.
+
+**The numbers are n=1 and are NOT a rate.** Recorded so the next run has a
+baseline, and for no other purpose:
+
+| corpus | passed | failed | errored |
+|---|---|---|---|
+| near_miss | 4 | 0 | 0 |
+| no_trigger | 12 | 0 | 0 |
+| trigger | 12 | 0 | 0 |
+| injections | 5 | 0 | 0 |
+| relevance_gate | 17 | 2 | 0 |
+| participation | 6 | 4 | 3 |
+
+The `participation` errors are the Discord cases above; `proactive_act`'s is
+the same fault, and both are fixed rather than carried.
+| note_candidates | 14 | 4 | 1 |
+| proactive_act | 4 | 5 | 1 |
+| proactive_decide | 4 | 1 | 0 |
+
+**Read the failures with §1.1 in hand.** Twelve of the eighteen are the same
+direction — she acted or spoke where the case expects silence — and there are
+two explanations this run cannot separate:
+
+- the behaviour is real, and it is the FIRST honest reading these cases have
+  had: every earlier run had `participation`, `relevance_gate`, `standing`,
+  `culture`, `notes` and the Dreamer switched OFF by the example config;
+- the anchors do not carry the cases' premises. Every one was chosen in a
+  single automated pass on 2026-09-21, and a case asserting "nothing is open
+  here" is exactly the kind whose premise a newly-chosen window can fail to
+  hold.
+
+**Separating them is a measurement, not a reading.** `--sample N` on the
+failing subset, and a human reading of a handful of anchors. This suite has
+already measured its own noise floor at 0.20–0.50 recall on an identical
+prompt at n=5; treating any of the table above as a behavioural verdict would
+be the exact error §1.1 exists to refuse.
+
+**Three `participation` cases became UNANCHORED rather than parked.** Their
+premise exists only in a Discord room, so the adapter divergence blocks them
+— and that divergence is a seam THIS REBUILD OWES, which §7.1 rejected as a
+parking reason in as many words. They load, run and ERROR until a Discord
+room can hold a turn. Proposed as P-A parkings and corrected, which is the
+same correction §7.1 records being made once before.
+
+**One error is a production-shaped reading rather than a defect.**
+`p7_cantonese_only_solo_plan` came back `unavailable` with a
+`PartialReplyError` — the deployment's own per-call `max_tokens`, which its
+Dreamer runs under too. It is one sample of one case; a ceiling is never sized
+on n=1.
+
 ### Where the suite runs — DECIDED 2026-09-21: on the deploy host
 
 Not a preference. Measured: with the deployment's features on, composition
