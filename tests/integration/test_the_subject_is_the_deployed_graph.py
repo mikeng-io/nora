@@ -109,16 +109,16 @@ async def test_two_subjects_do_not_share_an_environment_variable(
     """
     import os
 
-    from nora.subject import SubjectSpec, obtain, room_for
+    from nora.subject import SubjectSpec, obtain
 
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://untouched/db")
 
     a = await obtain(SubjectSpec(
-        database_url=pg_url, workdir=tmp_path / "a", room=room_for("a"),
+        database_url=pg_url, workdir=tmp_path / "a", room=("signal", "g-a"),
     ))
     b = await obtain(SubjectSpec(
-        database_url=pg_url, workdir=tmp_path / "b", room=room_for("b"),
+        database_url=pg_url, workdir=tmp_path / "b", room=("signal", "g-b"),
     ))
     assert os.environ["DATABASE_URL"] == "postgresql+asyncpg://untouched/db"
     # The returned config NAMES NO VARIABLE. Each call used one of its own and

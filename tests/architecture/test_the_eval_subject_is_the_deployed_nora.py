@@ -292,67 +292,24 @@ def test_the_canary_is_the_deployments_own():
     )
 
 
-# --- `sandbox_room_for` — the isolated room, shaped like the one it copies ---
+# --- no room swap: isolation is by database, the room is the real one --------
 
 
-def test_a_signal_room_keeps_the_sandbox_marker_even_though_its_id_has_slashes():
-    """The bug an audit found, pinned.
+def test_the_room_swap_is_gone():
+    """`sandbox_room_for`/`policy_for`/`identity_for` minted a hashed room per
+    case and rewrote the deployment's policy entry onto it, because every
+    case once shared one database. A case now composes against a sandbox
+    database of its own (`nora.subject.sandbox_database`) under the REAL
+    room's id, with the deployment's `policy.toml` and `identity.toml`
+    verbatim — so there is nothing to swap, and a helper that reappeared here
+    would be a second copy of the room drifting from the first."""
+    import evals.subject_config as subject_config
 
-    The first cut branched on `"/" in real_id` to spot a Discord
-    `<guild>/<channel>` pair. A SIGNAL group id is base64 and carries slashes
-    too, so every Signal snapshot case — most of the converted corpus — was
-    minted a Discord-shaped NUMERIC id on the Signal platform, losing the
-    `g-` marker that tells a reader, and any cleanup query, that a row belongs
-    to an eval rather than to a real room.
-    """
-    from evals.subject_config import sandbox_room_for
-
-    platform, room_id = sandbox_room_for(
-        ("signal", "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="), "some_case",
-    )
-    assert platform == "signal"
-    assert room_id.startswith("g-"), (
-        f"a Signal sandbox room must keep the g- marker; got {room_id!r}"
-    )
-    assert "/" not in room_id
-
-
-def test_a_discord_room_gets_a_guild_channel_pair_because_the_validator_needs_one():
-    """`nora.policy` refuses a Discord room carrying `voice = true` whose id is
-    not `<guild_id>/<channel_id>` — the guild half is what a spoken utterance
-    is matched on. So the copy must be shaped like the room it copies."""
-    from evals.subject_config import sandbox_room_for
-
-    platform, room_id = sandbox_room_for(
-        ("discord", "100000000000000201/100000000000000202"), "some_case",
-    )
-    assert platform == "discord"
-    guild, _, channel = room_id.partition("/")
-    assert guild.isdigit() and channel.isdigit(), room_id
-
-
-def test_the_sandbox_room_is_distinct_per_case_and_per_real_room():
-    """Isolation is by NAMING — two cases sharing a room id would read each
-    other's rows, which is what `room_for()` exists to prevent. Mixing the real
-    room in as well keeps one case distinct across two anchors."""
-    from evals.subject_config import sandbox_room_for
-
-    a = sandbox_room_for(("signal", "room-one"), "case_a")
-    b = sandbox_room_for(("signal", "room-one"), "case_b")
-    c = sandbox_room_for(("signal", "room-two"), "case_a")
-    assert a != b, "two cases in one real room must not share a sandbox room"
-    assert a != c, "one case at two anchors must not share a sandbox room"
-
-
-def test_the_sandbox_room_never_reproduces_the_room_it_copied():
-    """The isolation itself: a sandbox naming the real room IS the leak."""
-    from evals.subject_config import sandbox_room_for
-
-    for platform, real in (
-        ("signal", "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="),
-        ("discord", "100000000000000201/100000000000000202"),
-    ):
-        assert sandbox_room_for((platform, real), "c")[1] != real
+    reappeared = [
+        name for name in ("sandbox_room_for", "policy_for", "identity_for", "_ROOM_FIELDS")
+        if hasattr(subject_config, name)
+    ]
+    assert not reappeared, f"the room swap is back: {reappeared}"
 
 
 def test_materialise_refuses_to_write_when_the_result_disagrees(tmp_path, monkeypatch):

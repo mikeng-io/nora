@@ -184,7 +184,10 @@ async def dream(
     # the pass returned before rendering anything. It answered `nothing_found`
     # with an empty diff — which every case expecting `none` scored as a PASS
     # until the decline reason was carried out.
-    workspace = subject.cfg.memory.workspace_id
+    # The ROOM'S unit (`Subject.unit`, resolved from its policy entry) — not
+    # `memory.workspace_id`, which is Honcho's per-deployment workspace and in
+    # production is not the unit of any room.
+    workspace = subject.unit
     _, conversation_id = room or subject.room
     key = workspace if chosen.key_kind == "unit" else conversation_id
     before = await _notebook(subject, workspace)
@@ -196,13 +199,24 @@ async def dream(
     # adaptor's real input is a TABLE, and the loop hands it an empty batch
     # (`_dream_adaptor_once`: "an adaptor with `uses_watermark = False` gets NO
     # watermark ... and runs on every tick with an empty batch").
-    batch = (
-        []
-        if not chosen.uses_watermark
-        else await subject.deps.audit.since(
-            conversation_id=conversation_id, after_id=0, limit=limit,
+    # THE MOMENT'S batch, not the room's oldest. Production reads
+    # `since(after_id=<watermark>, limit=batch)` — the unread backlog past the
+    # cursor. A sandbox seeded with a room's whole history has no cursor, and
+    # `after_id=0` read the OLDEST rows: on a room with 1,500 rows at the
+    # anchor, a batch from the room's first week. The cursor a real deployment
+    # would hold at the moment is "everything but the newest `limit` rows has
+    # been read", so the backlog is exactly those — found by the corpus
+    # conversion, whose every anchor assumed the newest rows.
+    batch: list = []
+    if chosen.uses_watermark:
+        newest = await subject.deps.audit.recent(
+            conversation_id=conversation_id, limit=limit,
         )
-    )
+        batch = await subject.deps.audit.since(
+            conversation_id=conversation_id,
+            after_id=(newest[0].id - 1) if newest else 0,
+            limit=limit,
+        )
     # Joined ONCE here rather than inside the adaptor, which is where
     # `_run_adaptor` does it and for the reason issue #116 gives: every
     # scope-keyed adaptor reads this one batch. Without it an image-only message

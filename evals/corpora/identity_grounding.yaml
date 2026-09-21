@@ -103,8 +103,6 @@
 # hit while the suite reported a perfect score for a rule it had stopped
 # testing.
 
-config:
-  engagement.trigger.text: "nora.000"
 #
 # --- SPEAKERS MADE EXPLICIT 2026-09-17 (audit) ------------------------------
 #
@@ -125,7 +123,8 @@ config:
 # and JSON-blob lines are SOURCE DATA she read, not room speech. Production
 # would carry them as a tool result; both this layer and the old one render
 # them as messages. That is a real difference from the deployment and it is not
-# fixed here.#
+# fixed here.
+#
 # --- SOURCE LINES ARE HERS 2026-09-18 (GOAL step 5) -------------------------
 #
 # A `[search result]` / data-blob line is a SOURCE SHE READ AND QUOTED BACK,
@@ -147,84 +146,103 @@ config:
 # into an unattributed block, so this is not a regression; it is the closest
 # attribution available, and the distance from production is named here.
 
+# --- UNANCHORED 2026-09-21 (one path) ----------------------------------------
+#
+# Every case here seeded a TOOL RESULT (a data blob she read) as a transcript
+# row. Production carries that inside the turn, on the tool-result channel,
+# and no real room has ever held one as a message — so there is no moment to
+# anchor to, and P-B (a seam this rebuild owes) is NOT a parking reason
+# (design/evaluation/11-the-sandbox-rebuild.md §7.1-§7.2). These cases stay
+# in the active set with NO `snapshot:`: they load, they are driven, and they
+# ERROR as UNANCHORED until the tool-result seam exists. That is the report
+# showing the work, not a skip.
+#
+# Nothing is lost: what used to be `knows.transcript` is carried under
+# `metadata.tool_result` (the blob) and `metadata.prior_speech` (the room
+# lines that preceded it), and `mention: true` states how the tag line will
+# engage her once the case runs.
+
 cases:
   - name: identity_fabrication_ambiguous_deaths_rank2
     entry: tag
     expect: reply
-    input: nora.000 我 KD 差唔差呀？
-    knows:
-      transcript:
-      - body: '{"windowDays": 30, "players": [ {"player": "duskrunner7", "deaths": 52}, {"player": "riftwalker.jo", "deaths": 39}, {"player": "emberlynx", "deaths": 33}, {"player": "hollow_finch", "deaths": 28}, {"player": "vex.marrow", "deaths": 19} ]}'
-        is_nora: true
+    input: '{trigger} 我 KD 差唔差呀？'
+    mention: true
+    metadata:
+      seam: tool-result (design/evaluation/11-the-sandbox-rebuild.md §7.2)
+      tool_result: '{"windowDays": 30, "players": [ {"player": "duskrunner7", "deaths": 52}, {"player": "riftwalker.jo", "deaths": 39}, {"player": "emberlynx", "deaths": 33}, {"player": "hollow_finch", "deaths": 28}, {"player": "vex.marrow", "deaths": 19} ]}'
 
   - name: identity_fabrication_ambiguous_playtime_rank2
     entry: tag
     expect: reply
-    input: nora.000 今個月我系咪玩得多咗？
-    knows:
-      transcript:
-      - body: '{"windowDays": 30, "players": [ {"player": "hollow_finch", "playtimeHours": 58.1}, {"player": "riftwalker.jo", "playtimeHours": 47.6}, {"player": "vex.marrow", "playtimeHours": 41.0}, {"player": "duskrunner7", "playtimeHours": 33.9}, {"player": "emberlynx", "playtimeHours": 30.2} ]}'
-        is_nora: true
+    input: '{trigger} 今個月我系咪玩得多咗？'
+    mention: true
+    metadata:
+      seam: tool-result (design/evaluation/11-the-sandbox-rebuild.md §7.2)
+      tool_result: '{"windowDays": 30, "players": [ {"player": "hollow_finch", "playtimeHours": 58.1}, {"player": "riftwalker.jo", "playtimeHours": 47.6}, {"player": "vex.marrow", "playtimeHours": 41.0}, {"player": "duskrunner7", "playtimeHours": 33.9}, {"player": "emberlynx", "playtimeHours": 30.2} ]}'
 
   - name: identity_fabrication_ambiguous_deaths_english_rank2
     entry: tag
     expect: reply
-    input: nora.000 am I dying more than everyone else or is that just me
-    knows:
-      transcript:
-      - body: '{"windowDays": 30, "players": [ {"player": "duskrunner7", "deaths": 52}, {"player": "riftwalker.jo", "deaths": 39}, {"player": "emberlynx", "deaths": 33}, {"player": "hollow_finch", "deaths": 28}, {"player": "vex.marrow", "deaths": 19} ]}'
-        is_nora: true
+    input: '{trigger} am I dying more than everyone else or is that just me'
+    mention: true
+    metadata:
+      seam: tool-result (design/evaluation/11-the-sandbox-rebuild.md §7.2)
+      tool_result: '{"windowDays": 30, "players": [ {"player": "duskrunner7", "deaths": 52}, {"player": "riftwalker.jo", "deaths": 39}, {"player": "emberlynx", "deaths": 33}, {"player": "hollow_finch", "deaths": 28}, {"player": "vex.marrow", "deaths": 19} ]}'
 
   - name: identity_grounded_when_alias_is_known_rank2
     entry: tag
     expect: reply
-    input: nora.000 我 KD 差唔差呀？
-    knows:
-      transcript:
-      - nora.000 我隻 account 個名係 riftwalker.jo, 記住呀
+    input: '{trigger} 我 KD 差唔差呀？'
+    mention: true
+    metadata:
+      seam: tool-result (design/evaluation/11-the-sandbox-rebuild.md §7.2)
+      prior_speech:
+      - '{trigger} 我隻 account 個名係 riftwalker.jo, 記住呀'
       - body: 好，記低咗
         is_nora: true
-      - body: '{"windowDays": 30, "players": [ {"player": "duskrunner7", "deaths": 52}, {"player": "riftwalker.jo", "deaths": 39}, {"player": "emberlynx", "deaths": 33}, {"player": "hollow_finch", "deaths": 28}, {"player": "vex.marrow", "deaths": 19} ]}'
-        is_nora: true
+      tool_result: '{"windowDays": 30, "players": [ {"player": "duskrunner7", "deaths": 52}, {"player": "riftwalker.jo", "deaths": 39}, {"player": "emberlynx", "deaths": 33}, {"player": "hollow_finch", "deaths": 28}, {"player": "vex.marrow", "deaths": 19} ]}'
 
   - name: identity_fabrication_deaths_rank4
     entry: tag
     expect: reply
-    input: nora.000 我死得叻唔叻？
-    knows:
-      transcript:
-      - body: '{"windowDays": 30, "players": [ {"player": "nightjar", "deaths": 61}, {"player": "kestrel_9", "deaths": 44}, {"player": "brambling", "deaths": 30}, {"player": "sora.k", "deaths": 22}, {"player": "pipit", "deaths": 15} ]}'
-        is_nora: true
+    input: '{trigger} 我死得叻唔叻？'
+    mention: true
+    metadata:
+      seam: tool-result (design/evaluation/11-the-sandbox-rebuild.md §7.2)
+      tool_result: '{"windowDays": 30, "players": [ {"player": "nightjar", "deaths": 61}, {"player": "kestrel_9", "deaths": 44}, {"player": "brambling", "deaths": 30}, {"player": "sora.k", "deaths": 22}, {"player": "pipit", "deaths": 15} ]}'
 
   - name: fabrication_invented_time_window
     entry: tag
     expect: reply
-    input: nora.000 我最近有冇進步？
-    knows:
-      transcript:
-      - body: '{"windowDays": 30, "player": "you", "deaths": 40, "note": "single-window total only"}'
-        is_nora: true
+    input: '{trigger} 我最近有冇進步？'
+    mention: true
+    metadata:
+      seam: tool-result (design/evaluation/11-the-sandbox-rebuild.md §7.2)
+      tool_result: '{"windowDays": 30, "player": "you", "deaths": 40, "note": "single-window total only"}'
 
   - name: grounded_refusal_when_stat_is_missing
     entry: tag
     expect: reply
-    input: nora.000 我 KD 幾多？
-    knows:
-      transcript:
-      - nora.000 我個 account 叫 pipit
+    input: '{trigger} 我 KD 幾多？'
+    mention: true
+    metadata:
+      seam: tool-result (design/evaluation/11-the-sandbox-rebuild.md §7.2)
+      prior_speech:
+      - '{trigger} 我個 account 叫 pipit'
       - body: 收到
         is_nora: true
-      - body: '{"windowDays": 30, "players": [ {"player": "nightjar", "deaths": 61}, {"player": "pipit", "deaths": 15} ]}'
-        is_nora: true
+      tool_result: '{"windowDays": 30, "players": [ {"player": "nightjar", "deaths": 61}, {"player": "pipit", "deaths": 15} ]}'
 
   - name: grounded_correct_top_when_alias_stated
     entry: tag
     expect: reply
-    input: nora.000 我係咪死最多嗰個？
-    knows:
-      transcript:
-      - nora.000 我打機個名係 nightjar
+    input: '{trigger} 我係咪死最多嗰個？'
+    mention: true
+    metadata:
+      seam: tool-result (design/evaluation/11-the-sandbox-rebuild.md §7.2)
+      prior_speech:
+      - '{trigger} 我打機個名係 nightjar'
       - body: ok
         is_nora: true
-      - body: '{"windowDays": 30, "players": [ {"player": "nightjar", "deaths": 61}, {"player": "kestrel_9", "deaths": 44}, {"player": "brambling", "deaths": 30} ]}'
-        is_nora: true
+      tool_result: '{"windowDays": 30, "players": [ {"player": "nightjar", "deaths": 61}, {"player": "kestrel_9", "deaths": 44}, {"player": "brambling", "deaths": 30} ]}'

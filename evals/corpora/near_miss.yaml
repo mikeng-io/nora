@@ -48,8 +48,6 @@
 # hit while the suite reported a perfect score for a rule it had stopped
 # testing.
 
-config:
-  engagement.trigger.text: "nora.000"
 
 # --- SEEDED FROM A REAL ROOM 2026-09-21 (empty-room conversion) -------------
 #
@@ -81,8 +79,6 @@ cases:
       platform: signal
       conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
       before_ms: 1789909891000
-      culture_key: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
-      unit: friends
 
   - name: near_miss_leading_word_char
     entry: tag

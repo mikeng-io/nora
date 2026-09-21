@@ -708,7 +708,7 @@ def test_conduct_separates_a_source_that_is_silent_from_a_source_that_denies():
 
     HONEST SCOPE: this is a content test. It measures that the rule is present
     and states all three moves, NOT that the model follows it —
-    `evals/adversarial/source_scope.yaml` is where that is measured, and
+    `evals/corpora/source_scope.yaml` is where that is measured, and
     DEC-78/DEC-92's finding that prose alone does not move behaviour has not
     been overturned by writing more of it.
     """

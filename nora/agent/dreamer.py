@@ -231,7 +231,7 @@ class AdaptorBudget:
     #: asking four verbs the same question.
     #:
     #: **Defaulted, so a ceiling exists by omission rather than by
-    #: configuration.** 2 is the number `evals/cases/proactive/decide.yaml`'s
+    #: configuration.** 2 is the number `evals/corpora/proactive_decide.yaml`'s
     #: `d11` grades at — one read the objective requires before any `remind`,
     #: plus one — and it is a STARTING POINT, not a measurement: what was
     #: measured is that four objective rewrites moved the live count between 3

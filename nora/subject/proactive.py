@@ -72,7 +72,7 @@ async def owe(
     engine = create_sql_engine(subject.database_url)
     try:
         notes = SqlNoteStore(engine)
-        standing = await notes.standing(unit=subject.cfg.memory.workspace_id)
+        standing = await notes.standing(unit=subject.unit)
         matches = [n for n in standing if n.title == note_title]
         if not matches:
             raise LookupError(
@@ -89,8 +89,8 @@ async def owe(
             # With per-case workspaces this cannot happen; it raises anyway,
             # because the isolation is the thing that could regress.
             raise LookupError(
-                f"{len(matches)} notes titled {note_title!r} in workspace "
-                f"{subject.cfg.memory.workspace_id!r}; the case would link one "
+                f"{len(matches)} notes titled {note_title!r} in unit "
+                f"{subject.unit!r}; the case would link one "
                 "of them and there is no way to say which"
             )
         linked = matches[0]
@@ -117,7 +117,7 @@ async def owe(
         await subject.deps.reminders.create(row)
         if note_moved:
             await notes.append_revision(
-                unit=subject.cfg.memory.workspace_id,
+                unit=subject.unit,
                 note_id=linked.id,
                 body="Settled by the room.",
                 parent_revision_id=linked.head_revision_id,

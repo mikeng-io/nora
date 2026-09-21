@@ -38,7 +38,7 @@ description: >-
   grep — no decide-suite written rows exist anywhere outside a live run (the
   suite's `FakeReminderStore` is in-process and discarded per run; the
   Langfuse sink records only a per-case PASS/FAIL score, never the `intent`/
-  `why` text) — the deterministic suite's `evals/cases/proactive/decide.yaml`
+  `why` text) — the deterministic suite's `evals/corpora/proactive_decide.yaml`
   and `act.yaml` corpora themselves were grepped too: their only two hits
   (`decide.yaml:3`, `act.yaml:218`) are YAML comments describing the corpus,
   not case fields a model could echo, and `act.yaml`'s is deliberate —

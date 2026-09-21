@@ -583,8 +583,8 @@ def test_every_enforced_rule_has_a_named_test():
 
 def test_r14_is_covered_by_the_adversarial_corpus():
     """R-14 is behavioural: asserted by constraints.md, measured by the corpus."""
-    assert (ROOT / "evals" / "adversarial" / "injections.yaml").exists()
-    assert (ROOT / "evals" / "adversarial" / "transcript_injection.yaml").exists()
+    assert (ROOT / "evals" / "corpora" / "injections.yaml").exists()
+    assert (ROOT / "evals" / "corpora" / "transcript_injection.yaml").exists()
 
 
 def test_r41_is_covered_by_the_identity_grounding_corpus():
@@ -596,7 +596,7 @@ def test_r41_is_covered_by_the_identity_grounding_corpus():
     failing to detect it). This test pins that the measurement exists and is
     findable, not that the rule holds; see DEC-75 for the honest number.
     """
-    assert (ROOT / "evals" / "adversarial" / "identity_grounding.yaml").exists()
+    assert (ROOT / "evals" / "corpora" / "identity_grounding.yaml").exists()
 
 
 def test_r53_is_covered_by_the_source_scope_corpus():
@@ -617,7 +617,7 @@ def test_r53_is_covered_by_the_source_scope_corpus():
     and only the first was made. This test pins that the measurement exists and
     is findable, not that the rule holds.
     """
-    assert (ROOT / "evals" / "adversarial" / "source_scope.yaml").exists()
+    assert (ROOT / "evals" / "corpora" / "source_scope.yaml").exists()
 
 
 def test_r83_is_covered_by_the_being_contradicted_corpus():
@@ -642,7 +642,7 @@ def test_r83_is_covered_by_the_being_contradicted_corpus():
     is how it is read, because one window is not a rate. This test pins that the
     measurement exists and is findable, not that the rule holds.
     """
-    assert (ROOT / "evals" / "adversarial" / "being_contradicted.yaml").exists()
+    assert (ROOT / "evals" / "corpora" / "being_contradicted.yaml").exists()
 
 
 def _message(*, platform: str, body: str, media: tuple[MediaRef, ...]) -> NormalizedMessage:
@@ -840,7 +840,7 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
     HONEST SCOPE: a content test, the same posture as
     `test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache` above. It
     measures that the position is stated, and where. It does not measure that
-    the model follows it; `evals/adversarial/being_contradicted.yaml` does, and
+    the model follows it; `evals/corpora/being_contradicted.yaml` does, and
     `test_r83_is_covered_by_the_being_contradicted_corpus` below pins that the
     corpus exists. That corpus was written because the position being stated on
     four surfaces did not stop #227 — DEC-78/DEC-92's finding that prose alone

@@ -71,13 +71,26 @@
 # So the 10-vs-2 split was not a real distinction before this conversion and
 # is not one after it either -- seeding was not built around it.
 
-config:
-  engagement.trigger.text: "nora.000"
+
+# --- RE-ANCHORED 2026-09-21 (one path) ---------------------------------------
+#
+# Every `snapshot:` names only a room and an instant now; the room's unit and
+# culture key come from the deployment's own policy entry, and the window is
+# whatever production's config reads (no `transcript_limit`). The corpus-level
+# `config:` is gone: the subject is the deployment's, whose text trigger is
+# OFF (2026-09-01), so every `expect: reply` case states `mention: true` — a
+# structural @-mention, which is how the inbound path engages her. The
+# case(s) that anchored to a Discord room moved to the Signal room at the
+# contemporaneous moment: Discord's adapter is off in the sandbox and a
+# mention cannot fire there. What these cases measure is "a mention carrying
+# this text gets a grounded reply", and for the near-miss corpora, "trigger-
+# shaped text with no mention gets silence".
 
 cases:
   - name: dinner_time_cantonese
     entry: tag
     expect: reply
+    mention: true
     input: nora.000 幾點食飯
     expected_output: 答返實際時間，或者話未有共識
     metadata:
@@ -87,12 +100,11 @@ cases:
       platform: signal
       conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
       before_ms: 1789909891000
-      culture_key: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
-      unit: friends
 
   - name: what_time_english
     entry: tag
     expect: reply
+    mention: true
     input: nora.000 what time we meeting
     expected_output: states a concrete time, or says it's still TBD
     metadata:
@@ -103,6 +115,7 @@ cases:
   - name: punctuated_call
     entry: tag
     expect: reply
+    mention: true
     input: hey nora.000! 醒吓我哋而家幾點
     expected_output: reminds the group what time it is
     metadata:
@@ -113,6 +126,7 @@ cases:
   - name: parenthetical_call
     entry: tag
     expect: reply
+    mention: true
     input: (nora.000) 可以幫手訂位嗎
     expected_output: offers to help or explains it can't book directly
     metadata:
@@ -123,21 +137,21 @@ cases:
   - name: mid_sentence_mixed
     entry: tag
     expect: reply
+    mention: true
     input: 我哋而家傾緊呢件事, nora.000 你有咩意見
     expected_output: gives an opinion grounded in the conversation so far
     metadata:
       trigger: true
       prefill_sufficient: true
     snapshot: &room_b
-      platform: discord
-      conversation_id: "100000000000000201/100000000000000202"
-      before_ms: 1789922644000
-      culture_key: "100000000000000201/100000000000000202"
-      unit: friends
+      platform: signal
+      conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+      before_ms: 1789909890213
 
   - name: case_insensitive_call
     entry: tag
     expect: reply
+    mention: true
     input: NORA.000 你喺唔喺度
     expected_output: confirms it's present and listening
     metadata:
@@ -148,6 +162,7 @@ cases:
   - name: bracket_call
     entry: tag
     expect: reply
+    mention: true
     input: '[nora.000] 可唔可以幫我睇吓呢個'
     expected_output: looks at what's being asked and responds to it
     metadata:
@@ -158,6 +173,7 @@ cases:
   - name: cjk_punctuation_boundary
     entry: tag
     expect: reply
+    mention: true
     input: nora.000，聽日放唔放假
     expected_output: answers whether tomorrow is a day off, or says it doesn't know
     metadata:
@@ -167,12 +183,11 @@ cases:
       platform: signal
       conversation_id: "Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34="
       before_ms: 1789469213000
-      culture_key: "Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34="
-      unit: ridgeline
 
   - name: english_question_thin_prefill
     entry: tag
     expect: reply
+    mention: true
     input: nora.000 can you check the group chat history
     expected_output: reads more of the buffer before answering (thin pre-fill)
     metadata:
@@ -183,6 +198,7 @@ cases:
   - name: mixed_help_request_thin_prefill
     entry: tag
     expect: reply
+    mention: true
     input: nora.000 幫手check下今日有咩安排
     expected_output: reads more of the buffer before answering (thin pre-fill)
     metadata:
@@ -193,6 +209,7 @@ cases:
   - name: casual_greeting_tag
     entry: tag
     expect: reply
+    mention: true
     input: 早晨 nora.000 起身未
     expected_output: a light, casual morning reply
     metadata:
@@ -203,6 +220,7 @@ cases:
   - name: glued_cjk_call
     entry: tag
     expect: reply
+    mention: true
     input: 快啲nora.000快啲覆我
     expected_output: a quick, direct reply
     metadata:

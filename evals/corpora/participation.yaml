@@ -1,14 +1,6 @@
 # The participation suite (design/dreamer-agent-loop/35 §9): 15 cases —
 # 5 relevance-Yes, their 5 knowledge-cut twins, and 5 pure-No (S6-S10).
 #
-# The two newest pairs (S11 «the room's name for her», S12 «who is actually
-# asking») are cut on HONCHO rather than on a note or a position — issue #210.
-# Every pair before them seeds a tier the participation turn already read; a
-# turn built `person_id=None` read NO Honcho block at all, so a memory-cut twin
-# could not have flipped on master however it was written. The seed key is
-# `conclusions:`, keyed by honcho peer id — see `seed_from_dict`'s docstring
-# for why a key that is not a peer id seeds a row nothing can read.
-#
 # There were 15. Two twin pairs (S1 "fact-lookup", S4 "correction") were
 # grounded in the KNOWLEDGE TIER, which is deleted: with no fact seed there is
 # no grounding for the -known half to draw on, so the pair could not flip and
@@ -16,20 +8,16 @@
 # rewritten onto another tier's seed, which would have been a different case
 # wearing the old name.
 #
-# Each case is `transcript + standing seed + incoming -> expected verdict`.
+# Each case is `a real room at a real instant + incoming -> expected verdict`.
 # The incoming `input` is UNTAGGED by construction (that is what makes it a
 # participation candidate); it is driven through the real ParticipationPolicy
-# -> ParticipationTrigger -> FirePath.speak path (`evals.harness.run_case`),
-# and the verdict is graded on what the room actually HEARD (`Trajectory.sent`
-# — see `evals.evaluators.ParticipationVerdict`).
+# -> ParticipationTrigger -> FirePath.speak path, and the verdict is graded on
+# what the room actually HEARD.
 #
-# The twins are the load-bearing half: same message, same transcript, only the
-# seed differs — the verdict MUST flip to silence when the grounding is cut. A
-# model that answers a twin from parametric memory has failed, however correct
-# the answer is in the world.
-#
-# Seed keys are documented on `nora.app.eval_support.seed_from_dict`; all tier
-# rows land in the eval unit ("nora") from there, never keyed by hand.
+# The twins are the load-bearing half: same line, the same room, and only what
+# the room HELD differs — the verdict MUST flip to silence when the grounding
+# is not there. A model that answers a twin from parametric memory has failed,
+# however correct the answer is in the world.
 #
 # `sample: 5` runs a case five times. It is on EVERY case, because one draw of
 # a stochastic process is not a reading of it: the 2026-09-08 audit found
@@ -39,138 +27,155 @@
 # a SILENCE case on zero speaks in five — a false speak is unrecoverable, the
 # room heard it, so one in five is one too many.
 
-# --- S2: the stalled question ----------------------------------------------
+# --- EVERY CASE IS A REAL MOMENT 2026-09-21 (one path) ----------------------
+#
+# `knows:` is gone from this file and from the runner. A case names a real
+# room and a real instant (`snapshot:`), the harness reconstructs what that
+# room held then — transcript, standing, culture, the unit's notebook — into a
+# sandbox database of its own, and the `input` arrives on top at that
+# instant, said by `person`. Nothing is authored into the stores.
+#
+# HOW THE TWINS WERE FOUND. A twin pair is now two instants in ONE room, a few
+# minutes apart, either side of the moment the grounding came into existence:
+#
+#   * two pairs straddle the CREATION of a real note in the unit's notebook.
+#     The room's last line is the same on both sides; the `-known` instant is
+#     after the note was written, the `-unknown` instant is before it. That is
+#     the exact counterfactual the twins were designed to state — the same
+#     window, with and without the note — and a real room produced it.
+#   * one pair straddles the room's first use of its running name for her: the
+#     `-unknown` instant is just before the first member said it, the `-known`
+#     instant is after the room had said it and she had answered to it. The
+#     grounding for the `-known` half is the TRANSCRIPT, not a peer card; that
+#     pair was written to be cut on Honcho, but the room itself carries the
+#     cut, and a peer card (once the sandbox replays Honcho) can only add to
+#     it.
+#   * two `-known` halves have NO real moment and are parked P-A with the
+#     condition that unparks them: one needs a standing that records a
+#     commitment SHE made, and no room's standing history holds one
+#     (`standing_revision` begins 2026-09-20, one room, every revision saying
+#     she committed to nothing); one needs a peer card and only a peer card,
+#     and the sandbox does not replay Honcho yet.
+#
+# Referred to structurally, never by room label, member name or message body:
+# the `conversation_id` inside each `snapshot:` is the only identifying value
+# this file carries, and it is the mechanism, not prose.
+#
+# The five pure-No cases were converted on 2026-09-21 (empty-room conversion,
+# earlier the same day) and are unchanged here except for the keys the one
+# path no longer takes: the window is production's own, never a per-case
+# `transcript_limit` (R7), and the room's culture key and unit are resolved
+# from its policy entry rather than stated.
 
-# --- RE-HOMED 2026-09-17 (design/evaluation Step 3) -------------------------
+# --- S2: the stalled question --------------------------------------------
 #
-# The CASES are unchanged — same names, same inputs, same seeds, same labels,
-# same `sample`. `seed:` is now `knows:` and each case names its entry point.
-#
-# THE TWO `conclusions` CASES RUN (GOAL step 2). They were refused for half a
-# day on a claim that was simply false: that Honcho only DERIVES conclusions
-# and cannot be told one. `nora/infra/honcho/client.py:489` `conclude()` is
-# production's OWN write lane — the one the `remember` tool uses — over the
-# same (observer, observed) pair `representation` reads back. Seeding one is
-# the WRITE side of the tier whose READ side the turn uses, not a substitution.
-#
-# The claim was asserted without reading the file. That is the failure mode
-# this bundle exists to end, committed inside the bundle.
-#
-# The key is the Honcho peer id, which IS the person id, and these cases spell
-# `miles_novak` — so `SubjectSpec.identity` does too. Keyed under anything else the
-# conclusion is written and cannot be read: `representation` looks up
-# `target or peer_id` and an unknown peer answers reachable-and-knowing-
-# nothing, so the `-known` half of a pair would come back identical to its
-# `-unknown` half. `know()` refuses an unknown key rather than writing it.
-#
-# They ERROR when Honcho is unreachable, naming the address it tried.
+# A question about a pickup that the room asked and then drifted off. The
+# `-known` instant is eight minutes after a note about that pickup was written
+# into the unit's notebook; the `-unknown` instant is two minutes before the
+# note existed. Same last line in the room on both sides.
 
 - name: stalled-question-known
   entry: participation
   expect: speak
   sample: 5
-  input: when is the next Raft update?
-  knows:
-    transcript:
-    - when is the next Raft update?
-    - anyway 聽日 lunch 食咩
-    - 我唔care 你哋揀啦
-    notes:
-    - title: Raft roadmap
-      description: when the next Raft update ships
-      body: Raft's maintainer said the next update targets the week of October 19; no firm date announced.
-      uncertainty: no firm date
-      closing_condition: Raft announces a date
+  input: 咁陀螺盤幾時拎到？
+  person: grant_carver
+  snapshot:
+    platform: signal
+    conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    before_ms: 1789490400000
 
 - name: stalled-question-unknown
   entry: participation
   expect: silence
   sample: 5
-  input: when is the next Raft update?
-  knows:
-    transcript:
-    - when is the next Raft update?
-    - anyway 聽日 lunch 食咩
-    - 我唔care 你哋揀啦
+  input: 咁陀螺盤幾時拎到？
+  person: grant_carver
+  snapshot:
+    platform: signal
+    conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    before_ms: 1789489800000
+
+# --- S3: the commitment follow-up ------------------------------------------
+#
+# The `-known` half needs the room's STANDING to record a commitment she made
+# and has not reported back on. No such moment is recoverable: standing
+# history begins 2026-09-20 in one room, and every revision it holds says in
+# terms that she committed to nothing. Parked, not deleted — the case is
+# right, the room has not produced it.
+#
+# The `-unknown` half is a real room three days after she had recommended
+# venues for a dinner and nobody had booked or asked her to: a member asks
+# the room whether it got booked. Nobody addressed her, nothing in the room
+# says she owed an answer, so silence is the right call.
 
 - name: commitment-followup-known
   entry: participation
   expect: speak
   sample: 5
   input: so did anyone book the restaurant for Saturday?
-  knows:
-    transcript:
-    - Saturday dinner 8pm 好唔好
-    - 好呀 邊度食
-    - name: Grant
-      body: 上次話咗要訂嗰間 tapas 啦
-    standing: Nora committed to confirming the tapas venue for Saturday's dinner and has not reported back yet.
+  parked:
+    reason: P-A
+    why: |
+      Needs a standing that records a commitment SHE made and has not yet
+      reported back on. `standing_revision` begins 2026-09-20 (one room) and
+      every revision there states she committed to nothing; before that floor
+      no standing is reconstructable at all. No real room has produced the
+      moment.
+    returns_when: |
+      A room's standing history holds a revision, at or after the revision
+      floor, whose body records a commitment of hers that is still open at
+      that instant.
 
 - name: commitment-followup-unknown
   entry: participation
   expect: silence
   sample: 5
-  input: so did anyone book the restaurant for Saturday?
-  knows:
-    transcript:
-    - Saturday dinner 8pm 好唔好
-    - 好呀 邊度食
-    - name: Grant
-      body: 上次話咗要訂嗰間 tapas 啦
+  input: 咁27號嗰餐訂咗位未？
+  person: tyler_cortez
+  snapshot:
+    platform: signal
+    conversation_id: "x5hcBMQITtdUfSC0o9AHsqJKU7ywYMrOG5hcBMQITtc="
+    before_ms: 1788782000000
+
+# --- S4: planning context --------------------------------------------------
+#
+# A member asks the room what time a session the room had just agreed to join
+# will start. The `-known` instant is three minutes after a note about that
+# session (who is in, no time set) was written; the `-unknown` instant is
+# seven minutes before it. Same last line on both sides.
 
 - name: planning-context-known
   entry: participation
   expect: speak
   sample: 5
-  input: weekday or weekend then?
-  knows:
-    transcript:
-    - Tai O 一日遊幾時去好
-    - name: Grant
-      body: 我星期六要返工
-    - 咁即係得星期日或者平日
-    notes:
-    - title: Tai O trip timing
-      description: which day the Tai O day trip lands on
-      body: Grant works Saturdays, so the earlier discussion narrowed it to Sunday or a weekday; nobody has picked.
-      uncertainty: day not picked
-      closing_condition: the group picks a day
+  input: 咁星期三幾點開？
+  person: tyler_cortez
+  snapshot:
+    platform: signal
+    conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    before_ms: 1789936200000
 
 - name: planning-context-unknown
   entry: participation
   expect: silence
   sample: 5
-  input: weekday or weekend then?
-  knows:
-    transcript:
-    - Tai O 一日遊幾時去好
-    - name: Grant
-      body: 我星期六要返工
-    - 咁即係得星期日或者平日
+  input: 咁星期三幾點開？
+  person: tyler_cortez
+  snapshot:
+    platform: signal
+    conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    before_ms: 1789935600000
 
-
-# --- FIVE PURE-NO CASES CONVERTED TO REAL MOMENTS 2026-09-21 ---------------
+# --- S6-S10: the pure-No cases (converted 2026-09-21, empty-room conversion) --
 #
-# `knows:` -> `snapshot:` for the five below. Each names a REAL room's REAL
-# instant whose actual trailing rhythm is the same SHAPE the authored `input`
-# already was (a link drop, a private aside, a bare ack, a laugh at a meme, a
-# service line) — untagged banter with no address to Nora and nothing that
-# should pull her in. `input` is UNCHANGED, deliberately: it is not read back
-# out of the room (the match report already established none of these
-# authored lines exist verbatim in production), it is the thing arriving on
-# TOP of the real window, and the real window is what makes silence the
-# genuinely right call rather than an assertion about it. `transcript_limit:
-# 40` mirrors the window size a real participation turn actually reads
-# (`nora.subject.obtain.room_for`'s own docstring cites `recent(limit=40)`).
-#
-# The ten twin pairs below (S1-S5's `-known`/`-unknown` halves) are NOT
-# converted — see the corpus-wide note above this block's own reasoning
-# doesn't repeat: a twin pair's whole point is one transcript, only the
-# grounding cut between the two halves, and a real room either held a note at
-# an instant or it did not. There is no real counterfactual "the same
-# instant, minus the note" to anchor the `-unknown` half against, so
-# converting only the `-known` half would compare two different rooms, not
-# read one room with and without its own grounding. Left hand-authored.
+# Each names a REAL room's REAL instant whose actual trailing rhythm is the
+# same SHAPE the authored `input` already was (a link drop, a private aside,
+# a bare ack, a laugh at a meme, a service line) — untagged banter with no
+# address to Nora and nothing that should pull her in. `input` is UNCHANGED:
+# it is the thing arriving on TOP of the real window, and the real window is
+# what makes silence the genuinely right call rather than an assertion about
+# it.
 
 - name: status-update
   entry: participation
@@ -181,9 +186,6 @@
     platform: signal
     conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
     before_ms: 1787631425110
-    culture_key: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
-    unit: friends
-    transcript_limit: 40
 
 - name: private-exchange
   entry: participation
@@ -194,9 +196,6 @@
     platform: signal
     conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
     before_ms: 1787132628710
-    culture_key: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
-    unit: friends
-    transcript_limit: 40
 
 - name: acknowledgment
   entry: participation
@@ -207,9 +206,6 @@
     platform: signal
     conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
     before_ms: 1789122798961
-    culture_key: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
-    unit: friends
-    transcript_limit: 40
 
 - name: inside-joke
   entry: participation
@@ -220,9 +216,6 @@
     platform: signal
     conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
     before_ms: 1787631403121
-    culture_key: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
-    unit: friends
-    transcript_limit: 40
 
 - name: other-service-command
   entry: participation
@@ -233,66 +226,79 @@
     platform: discord
     conversation_id: "100000000000000201/100000000000000202"
     before_ms: 1788534739325
-    culture_key: "100000000000000201/100000000000000202"
-    unit: friends
-    transcript_limit: 40
+
+# --- S11: the room's name for her --------------------------------------------
+#
+# A real room, one evening: a member addressed her by a running joke name and
+# she answered to it; six minutes later a second member said the same line.
+# The `-known` instant is one millisecond before that second line, said here
+# untagged by the member who really said it: the window holds the room using
+# the name and her answering to it. The `-unknown` instant is one millisecond
+# before the FIRST use — the same line, untagged, at a moment when nothing in
+# the room had yet tied that name to her.
+#
+# Written to be cut on Honcho (issue #210). The room's own transcript carries
+# the cut; a replayed peer card would add a second reading of the same fact,
+# not a different one.
 
 - name: admin-joke-known
   entry: participation
   expect: speak
   sample: 5
   input: 麻煩管理員處理一下
-  knows:
-    transcript:
-    - 個 channel 又多咗人 spam
-    - name: Grant
-      body: 又嚟？管理員呢
-    - 哈哈 我哋個管理員好忙
-    conclusions:
-      nora:
-      - miles_novak asked nora as 管理員 to handle spam in the channel, and she did
-      - the room jokingly calls nora the channel's 管理員
-      miles_novak:
-      - miles_novak calls nora 管理員 as a running joke and asks her to handle room matters with 麻煩管理員處理一下
+  person: grant_carver
+  snapshot:
+    platform: discord
+    conversation_id: "100000000000000201/100000000000000202"
+    before_ms: 1789134962211
 
 - name: admin-joke-unknown
   entry: participation
   expect: silence
   sample: 5
   input: 麻煩管理員處理一下
-  knows:
-    transcript:
-    - 個 channel 又多咗人 spam
-    - name: Grant
-      body: 又嚟？管理員呢
-    - 哈哈 我哋個管理員好忙
+  person: miles_novak
+  snapshot:
+    platform: discord
+    conversation_id: "100000000000000201/100000000000000202"
+    before_ms: 1789134606959
+
+# --- S12: who is actually asking ---------------------------------------------
+#
+# The `-known` half is grounded on a peer card and NOTHING else — that she had
+# told this member a date last week, off the room's transcript. The sandbox
+# reconstructs no Honcho state (`11-the-sandbox-rebuild.md` §3 is the replay
+# that would), so there is no instant at which that grounding exists. Parked.
+#
+# The `-unknown` half is a real line: a member asking the room whether an
+# event is on this Saturday, in a thread two members were having between
+# themselves, which the other member then answered. She had nothing that
+# grounds an answer; the room answered itself.
 
 - name: asked-before-known
   entry: participation
   expect: speak
   sample: 5
   input: 有冇人記得個 deadline 幾時
-  knows:
-    transcript:
-    - submission 嗰份嘢搞掂未
-    - name: Grant
-      body: 我嗰 part 交咗
-    - 咁淨返邊個未
-    conclusions:
-      miles_novak:
-      - miles_novak asked nora for the submission deadline last week and booked the work around her answer
-      - miles_novak follows up on the deadline when the group drifts off it
-      nora:
-      - nora told miles_novak the submission deadline was the 19th and he planned around it
+  parked:
+    reason: P-A
+    why: |
+      Grounded only on a peer card (what she told this member a week earlier,
+      outside the room). The sandbox holds no Honcho state, so no instant
+      reconstructs the grounding; the room's transcript does not carry it.
+    returns_when: |
+      The sandbox replays Honcho into its own workspace
+      (design/evaluation/11-the-sandbox-rebuild.md §3) and a real room holds
+      a moment where a member asks about something she had earlier told them
+      off-transcript.
 
 - name: asked-before-unknown
   entry: participation
   expect: silence
   sample: 5
-  input: 有冇人記得個 deadline 幾時
-  knows:
-    transcript:
-    - submission 嗰份嘢搞掂未
-    - name: Grant
-      body: 我嗰 part 交咗
-    - 咁淨返邊個未
+  input: 今個禮拜六有？
+  person: grant_carver
+  snapshot:
+    platform: signal
+    conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+    before_ms: 1789616220900

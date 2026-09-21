@@ -142,8 +142,8 @@ def test_a_failed_assertion_is_a_FAIL_and_not_a_REVIEW() -> None:
 def test_the_checks_do_not_run_on_an_un_run_case() -> None:
     """An ERROR must not acquire a second reason to fail; it is not gradable at
     all, and `_check_the_corpus_assertions` returns early for it."""
+    from evals.backbone import _check_the_corpus_assertions
     from evals.rebuilt.domain import Outcome
-    from evals.rebuilt.runner import _check_the_corpus_assertions
 
     errored = Outcome(admitted=None, error="the pass did not complete")
     checked = _check_the_corpus_assertions(
@@ -165,7 +165,7 @@ _ROWS = {101: 7, 102: 8, 103: 9}
 
 
 def _checked(meta: dict, *, expect="create", changed=(("create", "Dinner 19 Sept"),)):
-    from evals.rebuilt.runner import _check_the_corpus_assertions
+    from evals.backbone import _check_the_corpus_assertions
 
     return _check_the_corpus_assertions(
         Case(name="c", entry="dreamer", expect=expect, metadata=meta),
@@ -219,13 +219,13 @@ def test_a_database_url_never_reaches_the_report() -> None:
 
     The URL is KNOWN at that point, so it is removed exactly rather than by
     guessing at what a secret looks like."""
-    from evals.rebuilt.runner import _scrubbed
+    from evals.backbone import scrub
 
     dsn = "postgresql+asyncpg://nora:hunter2@10.0.0.4:5432/nora"
     exc = RuntimeError(f"could not connect to {dsn} — refused")
-    text = _scrubbed(exc, dsn)
+    text = scrub(str(exc), dsn)
     assert dsn not in text and "hunter2" not in text
-    assert "<database-url>" in text and "refused" in text
+    assert "<dsn>" in text and "refused" in text
 
 
 @pytest.mark.parametrize(
@@ -269,7 +269,7 @@ def test_must_cite_is_substrings_for_an_act_case(meta, said, should_fail) -> Non
     Dispatched on the TYPE, so a corpus cannot get the wrong rule by being
     renamed.
     """
-    from evals.rebuilt.runner import _check_the_corpus_assertions
+    from evals.backbone import _check_the_corpus_assertions
 
     out = _check_the_corpus_assertions(
         Case(name="a", entry="proactive_act", expect="speak", metadata=meta),

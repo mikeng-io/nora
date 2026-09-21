@@ -1,161 +1,80 @@
 # The proactive ACT suite (design/dreamer-agent-loop/39 §5, DEC-162 (10)).
 #
 # Each case is ONE proactive row coming due — what the decide turn wrote to
-# its later self — plus the room as it is at fire time: the recent
-# transcript, the room's Standing, and the note the row is about. The row
-# goes through the REAL ProactiveScreen first (39 D11 — a note the tag path
-# revised since the row was linked is cancelled with no model call), then
-# the REAL FirePath with the proactive runner (tool_choice auto), and the
-# grade is what the room HEARD (`evals.proactive.grade_act`):
+# its later self — plus the room as it REALLY was at fire time: its transcript
+# up to the instant, its standing where the history holds one, and the note
+# the row is about as the unit's notebook really held it. The row goes through
+# the REAL ProactiveScreen first (39 D11 — a note the tag path revised since
+# the row was linked is cancelled with no model call), then the REAL FirePath
+# with the proactive runner (tool_choice auto), and the grade is what the room
+# HEARD:
 #
-#   silent  — nothing was sent. A screened-out row counts as silent.
+#   silence — nothing was sent. A screened-out row counts as silence.
 #   speak   — something was sent, and every `must_cite` substring is in it.
 #   either  — the DECISION is not labelled, because on this input both are
 #             defensible; what is graded is the message, if there was one.
-#             A silent sample is UNMEASURED (this case had nothing to grade),
-#             which is neither PASS nor ERROR: nothing went wrong, and nothing
-#             was measured. A case that is UNMEASURED on EVERY sample does not
-#             redden the gate — it would be reddening on the option this file
-#             itself calls defensible — and it does not go quiet either: the
-#             case line reads `[UNMEASURED]` and the gate line carries the
-#             count. `evals.proactive.act_case_ok` is the whole rule.
 #
 # `must_not_cite` is the negative half and applies on any expectation: a reply
-# carrying one of its terms FAILS before anything else is checked. It is
-# matched case-insensitively, where `must_cite` is exact, and an ASCII term is
-# anchored on a WORD BOUNDARY at each ASCII end — `note` does not fire on
-# "noted", "notebook" or "denote". A CJK term has no boundary to anchor on and
-# is a plain substring, so it has to be chosen tightly enough to survive that
-# (`evals.proactive._banned_hits`).
+# carrying one of its terms FAILS before anything else is checked. Matched
+# case-folded as a substring (`evals.backbone._check_the_corpus_assertions`).
 #
-# `failed_*` (timeout, error) is ERROR, never PASS. Majority `silent` on
+# `failed_*` (timeout, error) is ERROR, never PASS. Majority `silence` on
 # purpose, for the decide corpus's reason.
-#
-# `transcript` entries are the eval room's member ("Miles") as a plain
-# string, or `{name, body}` for another member. Timestamps carry +08:00.
-
-# --- RE-HOMED 2026-09-17 (design/evaluation Step 4) -------------------------
-#
-# `entry: dreamer`, `category: proactive` -- the real `DreamerRuntime` and the
-# real `ProactiveAdaptor` on the composed graph.
-#
-# STILL REFUSED, FOR A DIFFERENT AND SHARPER REASON: these cases are
-# MULTI-ROOM. Each names two rooms and keys its standing per room, because the
-# decide pass judges a WORKSPACE and picks which of its rooms to stand in.
-# `nora.subject.Knowledge` is single-room -- one transcript, one standing, one
-# room -- so the rooms cannot be seeded and the pass judges an empty workspace.
-#
-# That had to be CAUGHT, not noticed. With the rooms unseeded the pass finds
-# nothing due, writes nothing and returns `nothing_found` with no error, so
-# every case expecting `none` PASSED -- having measured an empty workspace. It
-# survived one round of fixing here because the clock was the louder problem.
-# The entry point now refuses any case naming `rooms`, `standing`, `rows` or
-# `row`, so they are ERROR and cannot score.
-#
-# `now:` IS A FIRST-CLASS CASE FIELD. Every case here states one, because the
-# proactive decision is about time: whether a note is due, whether a position
-# has gone stale, whether the moment to say something has arrived.
-#
-# It was parked in `metadata:` for half a day, and these cases were REFUSED as
-# ERROR, because the composed graph had no way to be told what time it is --
-# `build_dependencies` wrote `lambda: datetime.now(UTC)` at nine separate sites
-# while nine components already accepted an injectable `clock`. The two wrong
-# ways out were to pass a clock (a collaborator, the one thing this rebuild
-# exists to stop) or to shift the data (`anchor_date: 20260912` and a note body
-# saying "Saturday 12 Sep" would stop agreeing, and the case would assert
-# against prose it had invalidated).
-#
-# The seam was built instead: `build_dependencies(cfg, clock=...)`, wall clock
-# by default, one name replacing nine literals. `SubjectSpec.now` sets it and
-# it is FROZEN, so a turn and the window it reads cannot drift apart mid-case.
-#
-# `config:` and `policy:` state what the adaptor NEEDS TO EXIST. It has no
-# config flag of its own -- `composition.py:1558` wires it on
-# `dreamer.enabled and notes.enabled and proactive_homes`, and
-# `proactive_homes` comes from `policy.toml`, because the HOME ROOM is the
-# operator's opt-in (design/dreamer-agent-loop/39 D2). So a proactive suite
-# states a policy, and no number of dotted config paths could say it.
-#
-# --- a11, ADDED 2026-09-17 from the live duplicate-reminder incident ---------
-#
-# She raised the same errand twice, 20:00 and 20:31. Two proactive rows about
-# two different notes came due 30 minutes apart; `heartbeat._by_turn` coalesces
-# only rows due in the SAME tick, and `FirePath._read_decisions` returned () for
-# every occasion.kind != "participation", so the act turn had no
-# <loop_decisions> block and no way to know the loop had just taken that floor.
-# Fixed on nora/app/fire.py by 271909aa (_DECISION_WRITERS_BY_KIND).
-#
-# THE POINT OF THE CASE: every ground for declining was already in the prompt on
-# the day. Her own line was in the transcript, saying the thing. What was
-# missing was the mark that the unattributed line was HERS, unprompted, moments
-# ago. 271909aa supplies the mark. Whether it changes the JUDGEMENT is exactly
-# what this case measures and what nobody has measured yet.
-#
-# FOUR CONSTRAINTS, from its author, carried because a case ported without them
-# is a different case:
-#
-#  1. Her line is `is_nora: true`, NOT `name: Nora`. `prefill._speaker` reads
-#     the FLAG; a row merely named Nora renders as an ordinary member called
-#     that, which is a different input and the wrong one.
-#  2. `decisions.minutes_ago` MUST agree with where her line falls in the
-#     rendered window. Two inputs disagreeing about one event is an undecidable
-#     input, not a harder test. RE-DERIVED here, not copied: the original said 2
-#     against a window that walked one row per minute from a different base;
-#     this corpus pins `spacing_seconds: 60` on a four-row window ending at
-#     `now`, so her line (third of four) is ONE minute back.
-#  3. The gap is MINUTES, not the incident's 31. Thirty-one minutes of distance
-#     would cost 31 filler rows against a 40-row window and the case would be
-#     measuring dilution. What must be true is what was true on the day: her
-#     raise is IN the window, nobody answered it, and the decision row marks it
-#     as hers.
-#  4. `silence`, not `either`. Minutes after saying it, with no reply, there is
-#     no defensible second raise — so this binds at zero and one speak in five
-#     fails it, which is right, because one is what the room heard.
-#
-# It does not run yet, for this file's own reason above: `standing` and `row`
-# are unseedable. It is here as DATA so that stops being a thing anyone has to
-# reconstruct.
-#
-# --- ITS OWN ENTRY POINT 2026-09-17 (GOAL step 1) ---------------------------
 #
 # `entry: proactive_act`, not `dreamer`. This is NOT a dream pass: the DECIDE
 # pass writes a reminder row, and this is what happens when that row comes due
-# -- a FIRE TURN. That is why the old driver's `FirePath(21)` lived inside
-# `run_proactive_act_case`: the seventh assembly, and the one no parity test
-# covered.
-#
-# The screen runs first, as the heartbeat runs it. A row it refuses is not a
-# failure -- the room lost its `proactive` trust, the note was retired, or the
-# note moved on the tag path since the decision was linked -- and it is
-# reported as its own fact rather than as silence.
+# — a FIRE TURN. The screen runs first, as the heartbeat runs it; a row it
+# refuses for a wiring reason is ERROR, and one it cancels is silence.
 #
 # `row:` stays in metadata because it is not something she KNOWS: it is the
 # decision she already took, and `owe()` writes it into the real reminder
-# store so its identity and payload are the store's.
+# store — so `row.note` MUST name a note the unit's notebook really held at
+# `before_ms`, by its real title, or the row would point at nothing.
 #
-# `policy:` is a TEMPLATE. `{platform}` and `{room}` are filled with the room
-# this case actually runs in, which is derived per case so the eleven do not
-# share one transcript. The flags -- `proactive = true`, `home_room = true` --
-# belong to the SUITE; the room belongs to the case.
+# --- EVERY CASE IS A REAL MOMENT (2026-09-21, one-path conversion) ----------
+#
+# `knows:`, `config:`, `policy:` and `now:` are gone. A case names a room the
+# deployment's policy trusts to be spoken in proactively and an instant; the
+# sandbox holds that room as it stood then and the clock is frozen there. The
+# fire happens AT `before_ms`, on top of the real window.
+#
+# HOW MOMENTS WERE CHOSEN. The notebook records each real note's creation
+# and revisions; the rooms record when the deployment's Nora actually took
+# the floor unprompted and what followed. Each case's shape — an answer
+# already given, a room that deferred, a promise not yet kept, a settled
+# plan, her own raise minutes earlier — was matched to a real instant in the
+# same unit and its `row.intent` rewritten to be about THAT note. `must_cite`
+# terms are words the real room used for the thing.
+#
+# One shape has no real moment and is parked (P-A): a plan cancelled in the
+# room — no real room has cancelled an arrangement.
+#
+# --- a11, from the live duplicate-reminder incident of 2026-09-17/18 --------
+#
+# On the evening of the 17th she raised the same errand twice, 20:00 and
+# 20:31 — two proactive rows about two different notes came due 30 minutes
+# apart, and the act turn had no way to know the loop had just taken that
+# floor (fixed on nora/app/fire.py by 271909aa, `_DECISION_WRITERS_BY_KIND`).
+# The next morning she raised it again three times within two minutes. The
+# case sits at the last of those: her own raise is IN the window, seconds
+# old, unanswered. What is measured is whether she takes the floor a fourth
+# time. `decisions` is carried in metadata as the incident's data; the
+# decision log is not reconstructed into the sandbox, so the `<loop_decisions>`
+# mark 271909aa supplies is ABSENT here and the case measures the judgement
+# on the transcript alone — which is the harder half of the same question.
 
 cases:
   - name: a01_dinner_nobody_said_where
     entry: proactive_act
     expect: speak
-    config:
-      memory.workspace_id: nora
-      notes.enabled: true
-    knows:
-      transcript:
-      - 聽日 hackathon 我八點幾出門
-      - name: Grant
-        body: 加油 🔥
-      notes:
-      - title: AI Hackathon dinner plan
-        description: dinner after Saturday's AI Thinking hackathon at 數碼港 — who and where are open
-        body: Miles is at the AI Thinking hackathon at 數碼港 on Saturday 12 Sep. Teammates unknown; dinner venue undecided.
-        anchor_date: 20260912
-      standing: Miles is going to the 數碼港 hackathon Saturday; nobody has said where dinner is.
+    # REAL: the `ridgeline` unit's home room on the afternoon before an event
+    # whose dinner and company the one open note records as undecided. The
+    # deployment's own turn fired here on the day itself (17:00); this fires
+    # the evening before, as the rater wanted.
+    snapshot:
+      platform: discord
+      conversation_id: 100000000000000203/100000000000000204
+      before_ms: 1789113600000
     metadata:
       expect_original: speak
       row:
@@ -164,42 +83,17 @@ cases:
         decided_hours_ago: 9
       must_cite:
       - 數碼港
-    now: '2026-09-11T16:00:00+08:00'
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "nora"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Ridgeline"
-    
-      '
 
   - name: a02_note_moved_on_the_tag_path
     entry: proactive_act
     expect: silence
-    config:
-      memory.workspace_id: nora
-      notes.enabled: true
-    knows:
-      transcript:
-      - 聽日 hackathon 我八點幾出門
-      notes:
-      - title: AI Hackathon dinner plan
-        description: dinner after Saturday's hackathon — where is open
-        body: Dinner Saturday after the hackathon; venue open.
-        anchor_date: 20260912
-      standing: Dinner Saturday; venue open.
+    # REAL: the same instant and note as a01; `note_moved` appends a
+    # revision after the row is linked, which is the tag path overtaking
+    # the decision — the screen cancels with no model call.
+    snapshot:
+      platform: discord
+      conversation_id: 100000000000000203/100000000000000204
+      before_ms: 1789113600000
     metadata:
       expect_original: silent
       row:
@@ -207,326 +101,132 @@ cases:
         intent: Ask where dinner is after the hackathon.
         decided_hours_ago: 9
       note_moved: true
-    now: '2026-09-11T16:00:00+08:00'
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "nora"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Ridgeline"
-    
-      '
 
   - name: a03_standing_says_settled
     entry: proactive_act
     expect: silence
-    config:
-      memory.workspace_id: nora
-      notes.enabled: true
-    knows:
-      transcript:
-      - name: Ada
-        body: 好 7點 K-Town 見
-      - name: Ben
-        body: ok
-      - 見！
-      notes:
-      - title: Friday drinks
-        description: drinks tonight — Central or Kennedy Town undecided
-        body: Drinks tonight after work. Central or K-Town — nobody has picked.
-        anchor_date: 20260911
-      standing: 'Drinks tonight are settled: Kennedy Town, 7pm at the usual bar, everyone has said yes.'
+    # REAL: the main room late on a night whose meet-up the transcript has
+    # already fixed — venue named, start time answered, an "as usual, ten"
+    # — while the open note the row was written against still reads "place
+    # and time undecided". The room, not the note, is right.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789737522305
     metadata:
       expect_original: silent
       row:
-        note: Friday drinks
-        intent: Ask whether drinks tonight are Central or K-Town.
+        note: 宵夜元朗邊度、幾點未定
+        intent: Ask where and when tonight's 宵夜 is.
         decided_hours_ago: 9
-    now: '2026-09-11T16:00:00+08:00'
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "nora"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Ridgeline"
-    
-      '
 
   - name: a04_someone_already_said_it
     entry: proactive_act
     expect: silence
-    config:
-      memory.workspace_id: nora
-      notes.enabled: true
-    knows:
-      transcript:
-      - name: Ada
-        body: Ben 業主覆咗未？
-      - name: Ben
-        body: 覆咗 可以 十個人冇問題
-      - name: Cat
-        body: yeah！
-      notes:
-      - title: Ben's flat for the 25th
-        description: whether Ben's landlord allows the party on the 25th
-        body: Ben asked his landlord about ten people on Sat 25 Sep; answer promised by Fri 11 Sep.
-        anchor_date: 20260925
-      standing: Party on the 25th hinges on Ben's landlord.
+    # REAL: the main room minutes after one member has asked the holder of
+    # an item exactly the question the row would ask — when he finishes on
+    # Friday — and been answered "don't know yet, tomorrow".
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789543062439
     metadata:
       expect_original: silent
       row:
-        note: Ben's flat for the 25th
-        intent: Ben promised the landlord's answer by today; nudge him if it has not come.
+        note: Pick up 陀螺盤 before Saturday
+        intent: Ask what time the handover of the 陀螺盤 can happen on Friday.
         decided_hours_ago: 9
-    now: '2026-09-11T16:00:00+08:00'
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "nora"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Ridgeline"
-    
-      '
 
   - name: a05_room_said_decide_later
     entry: proactive_act
     expect: silence
-    config:
-      memory.workspace_id: nora
-      notes.enabled: true
-    knows:
-      transcript:
-      - name: Cat
-        body: 行山條路線到時先講啦 仲有成個月
-      - name: Ada
-        body: 係 唔急
-      notes:
-      - title: October hike
-        description: a hike on 3 Oct — trail undecided
-        body: Hike Sat 3 Oct. Trail to be decided nearer the time.
-        anchor_date: 20261003
-      standing: October hike is on; the trail gets picked the week before, the group said not to fuss about it yet.
+    # REAL: the main room just after the two people concerned agreed to
+    # settle a handover later — "I'll tell you tomorrow", then "Friday" —
+    # and after the note recording it was written (00:32).
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789490100000
     metadata:
       expect_original: silent
       row:
-        note: October hike
-        intent: Ask which trail for the October hike.
+        note: Pick up 陀螺盤 before Saturday
+        intent: Ask when the 陀螺盤 handover will be.
         decided_hours_ago: 9
-    now: '2026-09-11T16:00:00+08:00'
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "nora"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Ridgeline"
-    
-      '
 
   - name: a06_plan_cancelled_in_the_room
     entry: proactive_act
     expect: silence
-    config:
-      memory.workspace_id: nora
-      notes.enabled: true
-    knows:
-      transcript:
-      - name: Ada
-        body: 星期六飲茶要取消 我要返工 😭
-      - name: Ben
-        body: 冇問題 下次啦
-      - 下次先
-      notes:
-      - title: Saturday dim sum
-        description: dim sum Saturday — place and time open
-        body: Dim sum this Saturday. Place and time open.
-        anchor_date: 20260912
-      standing: Dim sum Saturday was floated; time and place open.
     metadata:
       expect_original: silent
       row:
         note: Saturday dim sum
         intent: Ask what time dim sum is on Saturday.
         decided_hours_ago: 9
-    now: '2026-09-11T16:00:00+08:00'
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "nora"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Ridgeline"
-    
-      '
+    parked:
+      reason: P-A
+      why: |
+        No real room has cancelled an arrangement in its transcript
+        (searched the whole history for the room's own words for cancelling
+        and backing out), so there is no instant at which an open note's
+        plan has been called off in the window she reads.
+      returns_when: |
+        A real room calls off a plan an open note records, so a `snapshot:`
+        at the cancelling row and a `row.note` naming that note reproduce
+        it.
 
   - name: a07_follow_up_still_owed
     entry: proactive_act
     expect: speak
-    config:
-      memory.workspace_id: nora
-      notes.enabled: true
-    knows:
-      transcript:
-      - name: Ada
-        body: 今晚食咩好
-      - name: Cat
-        body: 隨便
-      notes:
-      - title: Ben's flat for the 25th
-        description: whether Ben's 業主 allows ten people on the 25th — Ben said Friday
-        body: Ben asked his 業主 about ten people on Sat 25 Sep and promised an answer by Fri 11 Sep. Ada and Cat are waiting.
-        anchor_date: 20260925
-      standing: Party on the 25th hinges on Ben's 業主; Ben said Friday. Nothing since.
+    # REAL: the main room at midday on the day the holder of an item said
+    # he would answer whether to bring it — nothing has come. (Later that
+    # afternoon another member asked him; this instant is before that.)
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789536124962
     metadata:
       expect_original: speak
       row:
-        note: Ben's flat for the 25th
-        intent: Ben promised the 業主's answer about the 25th by today and nothing has come; ask him gently.
+        note: Pick up 陀螺盤 before Saturday
+        intent: Yat Ho said he would say by today whether to bring the 陀螺盤 before Saturday, and nothing has come; ask him gently.
         decided_hours_ago: 9
       must_cite:
-      - 業主
-    now: '2026-09-11T16:00:00+08:00'
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "nora"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Ridgeline"
-    
-      '
+      - 陀螺盤
 
   - name: a08_nothing_new_since_she_last_asked
     entry: proactive_act
     expect: silence
-    config:
-      memory.workspace_id: nora
-      notes.enabled: true
-    knows:
-      transcript:
-      - name: Ada
-        body: 今晚睇波
-      - name: Ben
-        body: 🍺
-      notes:
-      - title: Mahjong night
-        description: a mahjong night — no date, no host, asked several times
-        body: Cat floated mahjong in August. No date, no host. Nora has asked about it three times and nobody answered.
-        anchor_date: 20260913
-      standing: Mahjong keeps being mentioned and going nowhere; Nora asked yesterday and nobody replied.
+    # REAL: the main room in the afternoon after her own morning raise —
+    # three lines asking where and when — went unanswered; what followed
+    # was a game session being arranged and one link, nothing about the
+    # question she asked.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789720073700
     metadata:
       expect_original: silent
       row:
-        note: Mahjong night
-        intent: Ask if mahjong is still happening.
-        decided_hours_ago: 9
-    now: '2026-09-11T16:00:00+08:00'
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "nora"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Ridgeline"
-    
-      '
+        note: 宵夜團地點時間未定，陀螺盤交收卡住
+        intent: Ask where and when tonight's 宵夜 is.
+        decided_hours_ago: 6
 
   - name: a09_her_own_machinery_is_never_named
     entry: proactive_act
     expect: either
-    config:
-      memory.workspace_id: nora
-      notes.enabled: true
-    knows:
-      transcript:
-      - name: Ada
-        body: 今日返工好攰
-      - name: Ben
-        body: 我都係
-      notes:
-      - title: 十月長跑報名
-        description: 十月長跑報名今晚截 — Ada 話會報,Ben 話今日覆,兩個都未講
-        body: 十月長跑,報名 11 Sep 夜晚截。Ada 話想報。Ben 話今日會覆報唔報。到而家兩個都未講。
-        anchor_date: 20260911
-      standing: 十月長跑報名今晚截;Ada 想報,Ben 話今日覆,兩個都未講。
+    # REAL: the main room minutes after a note was written about a handover
+    # "tomorrow" with where and when open, following a two-word exchange.
+    # Whatever she says must not name her own bookkeeping.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789626000000
     metadata:
       expect_original: either
       row:
-        note: 十月長跑報名
-        intent: 報名今晚截,Ben 話今日覆都未覆。趁仲趕得切問一次。
+        note: 拎抽包畀 Yat Ho
+        intent: Yat Ho brings the 抽包 tomorrow and nobody has fixed where or when the handover happens. Ask, while there is still time to arrange it.
         decided_hours_ago: 7
       must_not_cite:
       - note
@@ -535,127 +235,41 @@ cases:
       - 備忘
       - reminder
       - 提醒自己
-    now: '2026-09-11T16:00:00+08:00'
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "nora"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Ridgeline"
-    
-      '
 
   - name: a10_the_transcript_outranks_her_own_summary
     entry: proactive_act
     expect: either
-    config:
-      memory.workspace_id: nora
-      notes.enabled: true
-    knows:
-      transcript:
-      - name: Ada
-        body: 灣仔嗰間訂唔到,我改咗去觀塘
-      - name: Ben
-        body: 好
-      - name: Cat
-        body: 今日好攰
-      - 係
-      notes:
-      - title: 星期六聚餐
-        description: 星期六聚餐喺灣仔 — 幾點未定,冇人講過
-        body: 星期六聚餐,地點灣仔。時間未定,冇人講過。
-        anchor_date: 20260912
-      standing: 星期六聚餐照去;時間仲未有人講過。
+    # REAL: the main room at the row where one member finally names the
+    # venue and rough time for a meet-up the open note (written two
+    # minutes earlier) still records as undecided. If she speaks, she must
+    # use the venue the room just named, not the note's "undecided".
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789721126208
     metadata:
       expect_original: either
       row:
-        note: 星期六聚餐
-        intent: 聽日聚餐,冇人講過幾點。趁今晚問一問。
+        note: 宵夜元朗邊度、幾點未定
+        intent: 今晚宵夜元朗邊間、幾點，冇人講過。趁而家問一問。
         decided_hours_ago: 8
       must_cite:
-      - 觀塘
-    now: '2026-09-11T16:00:00+08:00'
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "nora"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Ridgeline"
-    
-      '
+      - 三多
 
   - name: a11_she_already_raised_this_minutes_ago
     entry: proactive_act
     expect: silence
-    now: '2026-09-11T16:00:00+08:00'
-    config:
-      memory.workspace_id: nora
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "nora"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Ridgeline"
-    
-      '
-    knows:
-      spacing_seconds: 60
-      transcript:
-      - name: Yat Ho
-        body: 藍色鳳凰嗰隻過咗
-      - name: Chi Ming
-        body: 仲諗住抽到就賣
-      - body: '@Avery 聽日拎抽包，同 Chi Ming 傾咗邊度幾點未？佢禮拜六要用嗰個陀螺盤都喺你手，一次過搞埋好過聽日撲。'
-        is_nora: true
-      - name: Yat Ho
-        body: 你聽日收幾點
-      notes:
-      - title: 抽包 handover tomorrow
-        description: Yat Ho collects the 抽包 tomorrow — where and when are open
-        body: Yat Ho said he would collect the 抽包 on Fri 12 Sep. Chi Ming replied with a sticker only; time and place undecided.
-        anchor_date: 20260912
-      - title: Pick up the 陀螺盤 before Saturday
-        description: the 陀螺盤 is with Avery and Chi Ming needs it Saturday
-        body: Chi Ming needs the 陀螺盤 on Sat 13 Sep and it is with Avery. Friday is Chi Ming's only free day; the pickup date is not fixed.
-        anchor_date: 20260913
-      standing: 抽包 handover is tomorrow with no time or place set, and the 陀螺盤 is still with Avery.
+    # REAL: see the header. The instant is her fourth unprompted line of
+    # the morning (10:32:21); the three before it fall within the previous
+    # 94 seconds and the only replies deflect the question.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789698741901
     metadata:
       expect_original: silent
       row:
-        note: Pick up the 陀螺盤 before Saturday
+        note: Pick up 陀螺盤 before Saturday
         intent: Chi Ming only has Friday free and needs the 陀螺盤 on Saturday; the pickup date is still not set. Nudge so it is not a last-minute scramble.
         decided_hours_ago: 43
       decisions:

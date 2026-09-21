@@ -6,11 +6,12 @@ pinning HERE rather than only through a database round trip: a subtraction the
 wrong way round reads perfectly in a diff, produces rows a read-back happily
 returns, and is only visible as a number.
 
-**The property every timing test below asserts is the same one**: the sandbox
-must show the ROOM AS IT WAS AT THE INSTANT, not the snapshot as it is today.
-Ages are what reach the model (`nora.agent.prefill._age`), so copying a
-historical `ts` verbatim is not the conservative choice — it renders a room that
-has said nothing since July, which is a room that never existed.
+**The property every timing test below asserts is the same one**: NOTHING
+MOVES. The sandbox shows the room as it was at the instant because the
+subject's clock is frozen there (`SubjectSpec.now = before_ms`), so every row
+keeps its real `ts` and the standing's age is how stale it was THEN. An
+earlier design shifted every timestamp onto the wall clock instead, which was
+only necessary while the clock was not a port.
 **A real sender id not travelling is pinned in
 `tests/integration/test_a_real_snapshot_seeds_an_isolated_subject.py`, against
 the `messages.sender_id` column, and deliberately not here.** `Message` has no
@@ -30,11 +31,9 @@ from nora.domain.standing import Standing
 from nora.infra.sql.snapshot import Snapshot
 from nora.subject.sandbox import as_knowledge
 
-#: The historical instant the snapshot reconstructs, and the instant the case
-#: is driven at. Deliberately far apart — two months — because every defect
-#: this file is about is invisible when they are close.
+#: The historical instant the snapshot reconstructs — and, under one path,
+#: the instant the case is driven at.
 BEFORE_MS = 1_752_000_000_000
-NOW_MS = 1_757_000_000_000
 MINUTE = 60_000
 HOUR = 3_600_000
 
@@ -106,46 +105,44 @@ def _shot(**over: object) -> Snapshot:
 # --- the clock ---------------------------------------------------------------
 
 
-def test_the_window_keeps_the_ages_it_had_at_the_instant() -> None:
-    """Ten minutes before the instant must read as ten minutes before now.
-
-    This is the whole reason the translation is not a field copy. Byte-faithful
-    is not meaning-faithful: the rows would be identical to the originals and
-    would render a two-month-old room.
+def test_the_window_keeps_its_real_timestamps() -> None:
+    """Ten minutes before the instant IS ten minutes before the subject's
+    clock, because the clock is frozen at the instant. Nothing is shifted:
+    a shift would only be right against a clock the subject is not reading.
     """
     shot = _shot(transcript=(
         _row(1, "are we still on", ts=BEFORE_MS - 10 * MINUTE),
         _row(2, "think so", ts=BEFORE_MS - 4 * MINUTE),
     ))
 
-    knowledge = as_knowledge(shot, now_ms=NOW_MS)
+    knowledge = as_knowledge(shot)
 
     assert [m.at_ms for m in knowledge.transcript] == [
-        NOW_MS - 10 * MINUTE, NOW_MS - 4 * MINUTE,
+        BEFORE_MS - 10 * MINUTE, BEFORE_MS - 4 * MINUTE,
     ]
 
 
-def test_a_row_said_at_the_instant_lands_at_now() -> None:
-    """`before_ms` maps to `now_ms` exactly, so the newest line had JUST been
-    said — which is what the room looked like at the moment being
-    reconstructed. An arriving line stamped the same millisecond still sorts
-    above it, because `recent` breaks a `ts` tie on `id`."""
+def test_a_row_said_at_the_instant_stays_at_the_instant() -> None:
+    """The newest line had JUST been said — which is what the room looked
+    like at the moment being reconstructed. An arriving line stamped the same
+    millisecond still sorts above it, because `recent` breaks a `ts` tie on
+    `id`."""
     shot = _shot(transcript=(_row(1, "right now", ts=BEFORE_MS),))
 
-    assert as_knowledge(shot, now_ms=NOW_MS).transcript[0].at_ms == NOW_MS
+    assert as_knowledge(shot).transcript[0].at_ms == BEFORE_MS
 
 
 def test_the_standing_carries_how_stale_it_was_THEN() -> None:
     """A position folded three hours before the instant is three hours stale in
-    the sandbox — not two months, which is what measuring it against today's
-    clock would report."""
+    the sandbox: `know(now_ms=before_ms)` turns the age straight back into
+    the real `updated_at`."""
     shot = _shot(standing=Standing(
         platform="signal", conversation_id="group-one",
         body="they are deciding where to eat",
         fold_count=4, updated_at=BEFORE_MS - 3 * HOUR,
     ))
 
-    knowledge = as_knowledge(shot, now_ms=NOW_MS)
+    knowledge = as_knowledge(shot)
 
     assert knowledge.standing == "they are deciding where to eat"
     assert knowledge.standing_age_hours == 3.0
@@ -166,7 +163,7 @@ def test_a_sender_the_identity_does_not_know_stays_unknown() -> None:
         _row(1, "who is this", ts=BEFORE_MS, sender_name="Jordan", person_id=None),
     ))
 
-    assert as_knowledge(shot, now_ms=NOW_MS).transcript[0].person is None
+    assert as_knowledge(shot).transcript[0].person is None
 
 
 def test_a_nameless_sender_keeps_having_no_name() -> None:
@@ -177,7 +174,7 @@ def test_a_nameless_sender_keeps_having_no_name() -> None:
         _row(1, "...", ts=BEFORE_MS, sender_name=None, person_id=None),
     ))
 
-    assert as_knowledge(shot, now_ms=NOW_MS).transcript[0].name is None
+    assert as_knowledge(shot).transcript[0].name is None
 
 
 def test_her_own_speech_stays_hers() -> None:
@@ -187,7 +184,7 @@ def test_her_own_speech_stays_hers() -> None:
         _row(1, "want me to book it?", ts=BEFORE_MS, is_nora=True),
     ))
 
-    assert as_knowledge(shot, now_ms=NOW_MS).transcript[0].is_nora is True
+    assert as_knowledge(shot).transcript[0].is_nora is True
 
 
 def test_each_message_is_labelled_with_the_row_it_came_from() -> None:
@@ -196,14 +193,14 @@ def test_each_message_is_labelled_with_the_row_it_came_from() -> None:
     really has."""
     shot = _shot(transcript=(_row(4321, "hi", ts=BEFORE_MS),))
 
-    assert as_knowledge(shot, now_ms=NOW_MS).transcript[0].label == 4321
+    assert as_knowledge(shot).transcript[0].label == 4321
 
 
 def test_a_bodiless_row_survives_as_an_empty_body() -> None:
     """`messages.body` is nullable and `NormalizedMessage.body` is not."""
     shot = _shot(transcript=(_row(1, None, ts=BEFORE_MS),))
 
-    assert as_knowledge(shot, now_ms=NOW_MS).transcript[0].body == ""
+    assert as_knowledge(shot).transcript[0].body == ""
 
 
 # --- culture and the notebook ------------------------------------------------
@@ -216,7 +213,7 @@ def test_the_culture_account_current_then_is_what_is_seeded() -> None:
         written_at=BEFORE_MS - 40 * HOUR, established_by="run-7",
     ))
 
-    assert as_knowledge(shot, now_ms=NOW_MS).culture == (
+    assert as_knowledge(shot).culture == (
         "they roast each other and mean it kindly"
     )
 
@@ -228,7 +225,7 @@ def test_the_note_body_is_the_as_of_revision_not_the_head() -> None:
     read the pair's second element and nothing else."""
     shot = _shot(notes=((_note(), _revision("nobody has booked it yet")),))
 
-    seed = as_knowledge(shot, now_ms=NOW_MS).notes[0]
+    seed = as_knowledge(shot).notes[0]
 
     assert seed.body == "nobody has booked it yet"
     assert seed.title == "Dinner 19 Sept"
@@ -249,14 +246,14 @@ def test_a_note_anchored_only_by_entities_is_refused_by_name() -> None:
     ))
 
     with pytest.raises(ValueError, match="anchored by entity ids alone"):
-        as_knowledge(shot, now_ms=NOW_MS)
+        as_knowledge(shot)
 
 
 def test_an_empty_snapshot_translates_to_an_empty_knowledge() -> None:
     """A room that held nothing is a legal case — `Knowledge`'s own docstring
     calls empty the knowledge cut — and must not become four `None`s that raise
     somewhere else."""
-    knowledge = as_knowledge(_shot(), now_ms=NOW_MS)
+    knowledge = as_knowledge(_shot())
 
     assert knowledge.transcript == ()
     assert knowledge.standing is None

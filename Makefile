@@ -81,6 +81,17 @@ test-affected:
 # a file path — `design/evaluation/10-the-scenario-map.md` §15's port put the
 # 150 corpus cases behind `evals.scenarios.experiment_for()`, and adding a
 # corpus adds a dict entry there, not a target here.
+#
+# WHERE IT RUNS: on the deploy host, against the deployment's clone
+# (`nora_eval`, made by `scripts/refresh_eval_clone.sh`). Every case names a
+# real room at a real instant, is seeded from the clone into a sandbox
+# database of its own, and composes the deployment's own config, policy and
+# roster (design/evaluation/11-the-sandbox-rebuild.md §1.2). Off the deploy
+# host there is no source and no deployment to compose, and the run says so.
+
+# Refresh the eval source from production. Deploy host only.
+eval-source:
+	./scripts/refresh_eval_clone.sh
 
 # The ambient-participation flip gate (design/dreamer-agent-loop/35 §9): all
 # 15 cases must reach their expected verdict — zero false-speaks on the

@@ -1,12 +1,12 @@
 # The note-candidates scenario corpus (design/dreamer-agent-loop/37 §7,
 # issue #118). Each case is ONE batch the adaptor would be handed on a fire —
-# several messages from one room, attributed and timestamped — plus the
-# notebook that room's workspace already holds, and the outcome the notebook
-# must show afterwards.
+# the newest rows of a REAL room at a REAL instant — plus the notebook that
+# room's unit really held then, and the outcome the notebook must show
+# afterwards.
 #
-# `expect` is graded STRUCTURALLY on the in-memory note store after the real
+# `expect` is graded STRUCTURALLY on the note store after the real
 # `DreamerRuntime` + real `NoteCandidateAdaptor` have run against the live
-# model (`nora.app.eval_support.run_note_candidates_case`). No judge:
+# model. No judge:
 #
 #   create  — exactly `creates` NEW standing notes exist afterwards (default
 #             one), and NOTHING standing was revised. `anchor_date` (when
@@ -21,947 +21,353 @@
 # `unavailable` (timeout, prose instead of JSON, throttle) is ERROR for every
 # case, never PASS and never a correct `none` — R-27.
 #
-# Timestamps are ISO-8601 UTC. 2026-09-07 is a Monday; «今個禮拜六» from it is
-# 2026-09-12. Message ids are per-case and only need to be distinct within
-# the batch; the adaptor's own membership check reads the ids it rendered.
+# --- EVERY CASE IS A REAL MOMENT (2026-09-21, one-path conversion) ----------
 #
-# `room_label` and `room_description` are what `policy.toml` supplies live
-# (issue #161): what the room is CALLED, attributed on every rendered line,
-# and what the operator says the room IS, rendered once above the batch. A
-# case that names NEITHER renders what an unlabelled, undescribed room renders
-# in production — the room's workspace name on every line and a `<room>` block
-# with no prose in it. Both spellings are deliberately in this corpus: n10/n11
-# are the incident as it happened, with nothing told to the model, and
-# n10b/n11b are the same two batches with the room described. They are a
-# CONTROLLED PAIR — identical input, one variable — so a live run answers
-# «does the description change the judgement» rather than «is the number
-# better than last month's».
-
-# --- RE-HOMED 2026-09-17 (design/evaluation Step 4) -------------------------
+# `knows:`, `config:`, `policy:` and `now:` are gone. A case names a room and
+# an instant (`snapshot:`); the sandbox is seeded with everything that room
+# held up to that instant, its unit's notebook as it stood then, and the
+# subject's clock is frozen there. The room's label and description reach the
+# adaptor from the DEPLOYMENT'S OWN `policy.toml`, so the n10/n10b and
+# n11/n11b "described-room" pairs now compose the same room twice — the
+# control they formed is stated in their names and no longer measured.
 #
-# `entry: dreamer`, `category: note-candidates` -- the REAL `DreamerRuntime`
-# and the REAL `NoteCandidateAdaptor` on the composed graph, over the REAL
-# `SqlNoteStore`. The pass is driven the way `nora/app/runtime.py`'s
-# `_run_adaptor` drives it: read the batch with `record.since`, join media at
-# `path="dreamer"`, then `runtime.run`. What the old driver replaced -- the
-# note store, with `InMemoryNoteStore` -- is now the deployed one.
+# HOW MOMENTS WERE CHOSEN, structurally. The corpus's twenty-one shapes were
+# matched against the real rooms' history by reading the messages and the
+# notebook side by side:
 #
-# `batch:` is now `knows.transcript:` and `notebook:` is `knows.notes:`. Both
-# are things she KNOWS, written into the stores she reads, rather than
-# constructor arguments. Message `id:` and `ts:` travel verbatim, and a store
-# that cannot honour a stated id RAISES: these cases cite their own rows
-# (`must_cite`), and a citation checked against a renumbered store is checked
-# against nothing.
+#   * a `create` case sits at the last row of a real exchange from which the
+#     production Dreamer DID create a note minutes later (the notebook records
+#     the note's `created_at`), so `must_cite` names the REAL row ids the
+#     candidate must cite and `anchor_date` is the date that real note
+#     carries;
+#   * an `update` case sits at the last row of an exchange after which the
+#     production Dreamer DID append a revision to an existing note
+#     (`note_revision` records it), and `updates` names that note's title;
+#   * a `none` case sits at the tail of a real stretch that produced no note —
+#     banter, media, links, a settled recount — with the unit's notebook as it
+#     stood then.
 #
-# `workspace:` becomes TWO settings, because it is two facts: the note store is
-# keyed by `[memory] workspace_id` and a ROOM's workspace comes from
-# policy.toml (`nora/policy.py`, DEC-105). They must agree or the pass writes
-# where nothing reads -- which is `seed_from_dict`'s documented footgun, and it
-# is why both are stated per case rather than one being assumed.
+# `before_ms` is the `ts` of the last row in the window (the batch is what the
+# room had said up to and including it). Three shapes have NO real moment and
+# are parked (P-A) rather than faked: a plan stated and cancelled inside one
+# window, two unrelated arrangements on one date in one batch, and a
+# conditional that was never taken up without a real note appearing.
 #
-# GRADING IS STRUCTURAL AND CURRENTLY PARTIAL. `expect: create|update|none` is
-# graded on the notebook diff -- what the pass actually wrote -- and never on
-# `DreamOutcome.status`, which says only whether the loop completed: a pass can
-# return `ok` having written nothing, and a `none` case would then pass for a
-# reason it is not about.
-#
-# NOT YET GRADED, and recorded rather than quietly dropped: `must_cite`,
-# `anchor_date`, `creates`, `updates`. They need the staged candidate's
-# `message_ids` and the created note's anchor, which the notebook diff does not
-# carry. They are in `metadata:` so the facts survive the move and the next
-# person does not re-derive them by hand.
-
-config:
-  notes.enabled: true
-  notes.candidates_enabled: true
-#
-# --- THREE LOSSES RESTORED 2026-09-17 (audit) -------------------------------
-#
-# `now:` per case. The old driver passed `now_ms = max(batch ts) + 60_000`
-# (`evals/run.py:1311`) -- it told the adaptor that NOW was one minute after
-# the newest message in the batch. Dropped in the move, so the adaptor was
-# handed a 2026-09-07 batch and told it was today: ten days stale on the day
-# this was written, and one day staler every calendar day after. The adaptor
-# resolves relative dates ("呢個星期六") into an `anchor_date`, so that is the
-# assertion five `create` cases carry. The clock seam existed; the `now` did
-# not.
-#
-# `media: true` on five rows. Dropped in the first conversion, and the pin was
-# GREEN over it -- it compares body and id and nothing else.
-# `n3_media_and_stickers_only` is a case named for stickers whose stickers had
-# been removed.
-#
-# `room_label` / `room_description` in metadata. They reached the adaptor
-# through the old driver (`eval_support.py:1161`) and reach nothing now; the
-# adaptor's labels come from `policy.toml`. Carried so the fact survives:
-# `n10b` and `n11b` exist ONLY as the described-room variants of `n10`/`n11`,
-# so without the description they are byte-identical reruns and the control
-# they form controls for nothing. NOT yet wired -- stated so it is a known gap
-# rather than an invisible one.
-#
-# --- room_label / room_description REACH THE ADAPTOR 2026-09-18 -------------
-#
-# They were parked in `metadata:` and reached nothing. The adaptor's labels
-# come from `policy.toml` (`label_for` / `description_for`), so a case that
-# wants one states a POLICY -- which it can, as a template the runner fills
-# with the room this case actually runs in.
-#
-# It matters most for `n10b` and `n11b`, which exist ONLY as the described-room
-# variants of `n10` and `n11`. Without the description they were byte-identical
-# reruns, so the control they form controlled for nothing.
-#
-# `room_label` reaches every rendered batch line (issue #161).
-#
-# The four remaining assertions -- `must_cite`, `anchor_date`, `creates`,
-# `updates` -- are GRADED now, not parked. `must_cite` translates a case's own
-# message label into the id the store assigned (`Written.rows`), which is what
-# `Message.label` exists for and what was being discarded: a citation checked
-# against a renumbered store is checked against nothing.
+# The one variable the Dreamer reads that this conversion cannot supply per
+# case is the batch WATERMARK: production feeds the adaptor the rows since its
+# last fire, and the harness must read the batch the same way (see
+# `nora/subject/dreaming.py`). The anchors below assume the batch is the
+# newest rows up to `before_ms`.
 
 cases:
   - name: p1_group_dinner_date_set_venue_open
     entry: dreamer
     category: note-candidates
     expect: create
-    config:
-      memory.workspace_id: friends
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      '
-    knows:
-      transcript:
-      - body: 19號星期六大家得唔得食飯？
-        name: Ada
-        person: ada
-        id: 101
-        ts: '2026-09-07T12:01:00Z'
-      - body: 得
-        name: Ben
-        person: ben
-        id: 102
-        ts: '2026-09-07T12:02:10Z'
-      - body: 我都得，食邊度？
-        name: Cat
-        person: cat
-        id: 103
-        ts: '2026-09-07T12:02:40Z'
-      - body: 西貢定中環？我兩邊都ok
-        name: Ada
-        person: ada
-        id: 104
-        ts: '2026-09-07T12:05:00Z'
-      - body: 西貢遠啲喎，不過海鮮正
-        name: Ben
-        person: ben
-        id: 105
-        ts: '2026-09-07T12:06:30Z'
+    # REAL: a real single-purpose room's opening exchange — one member states
+    # a dated group outing (the 27th) with the evening meal's venue explicitly
+    # open and asks for recommendations. The window is two human rows and
+    # nothing else; the unit's notebook was empty. The anchor date is the one
+    # the message states.
+    snapshot:
+      platform: signal
+      conversation_id: x5hcBMQITtdUfSC0o9AHsqJKU7ywYMrOG5hcBMQITtc=
+      before_ms: 1788512390207
     metadata:
       must_cite:
-      - 101
-      anchor_date: 20260919
-    now: '2026-09-07T12:07:30+00:00'
+      - 2483
+      anchor_date: 20260927
 
   - name: p2_one_person_stated_plan_with_open_corners
     entry: dreamer
     category: note-candidates
     expect: create
-    config:
-      memory.workspace_id: ridgeline
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "ridgeline"
-    
-      '
     # REAL: a real single-sender `ridgeline`-unit room, before_ms=1788804863655
-    # (message ts + 60s, this corpus's own `now:` convention). The message
-    # this case names is real production row 2816 -- byte-identical body --
-    # and the notebook was empty at this instant: a matching open note was
-    # not created until roughly 48 minutes later. `must_cite` names the real
-    # row id, not a corpus-local one, per `sandbox.py`'s `as_knowledge`
-    # (`Message.label = row.id`).
+    # (message ts + 60s). The message this case names is real production row
+    # 2816 and the notebook was empty at this instant: a matching open note
+    # was not created until roughly 48 minutes later. `must_cite` names the
+    # real row id.
     snapshot:
       platform: signal
       conversation_id: Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34=
       before_ms: 1788804863655
-      culture_key: Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34=
-      unit: ridgeline
-      transcript_limit: 1
     metadata:
       must_cite:
       - 2816
       anchor_date: 20260912
-    now: '2026-09-07T18:14:23.655000+00:00'
 
   - name: p3_follow_up_owed
     entry: dreamer
     category: note-candidates
     expect: create
-    config:
-      memory.workspace_id: friends
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      '
-    knows:
-      transcript:
-      - body: 25號嗰晚我屋企搞唔搞到？我聽日問咗業主先覆你哋，佢有時唔俾咁多人上嚟
-        name: Ben
-        person: ben
-        id: 301
-        ts: '2026-09-07T09:10:00Z'
-      - body: ok 等你消息
-        name: Ada
-        person: ada
-        id: 302
-        ts: '2026-09-07T09:11:00Z'
-      - body: 如果唔得我哋再諗
-        name: Cat
-        person: cat
-        id: 303
-        ts: '2026-09-07T09:11:30Z'
+    # REAL: a late-night exchange in the main room in which one member asks
+    # for an item before Saturday and the holder says he will answer
+    # tomorrow, then narrows it to Friday. The production Dreamer created the
+    # matching note (anchored on that Saturday) eleven minutes after the last
+    # row. Cited: the request and the "I'll tell you tomorrow" reply.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789489253014
     metadata:
       must_cite:
-      - 301
-      anchor_date: 20260925
-    now: '2026-09-07T09:12:30+00:00'
+      - 3393
+      - 3397
+      anchor_date: 20260919
 
   - name: p4_plan_inside_ordinary_talk
     entry: dreamer
     category: note-candidates
     expect: create
-    config:
-      memory.workspace_id: friends
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      '
-    knows:
-      transcript:
-      - body: 尋日場波睇到瞓著
-        name: Cat
-        person: cat
-        id: 401
-        ts: '2026-09-07T14:00:00Z'
-      - body: 哈哈 下半場先精彩
-        name: Ben
-        person: ben
-        id: 402
-        ts: '2026-09-07T14:00:40Z'
-      - body: '[media]'
-        name: Cat
-        person: cat
-        id: 403
-        ts: '2026-09-07T14:01:00Z'
-      - body: 20號行山，大家想去大帽山定西貢？我 book 車要知人數
-        name: Ada
-        person: ada
-        id: 404
-        ts: '2026-09-07T14:20:00Z'
-      - body: 我去，邊度都得
-        name: Ben
-        person: ben
-        id: 405
-        ts: '2026-09-07T14:21:00Z'
-      - body: 睇下天氣先
-        name: Cat
-        person: cat
-        id: 406
-        ts: '2026-09-07T14:25:00Z'
+    # REAL: a mid-morning stretch of the main room — shift-time chat, a
+    # "join?" exchange — inside which one member announces a game session for
+    # that night. The production Dreamer created the matching note (anchored
+    # that day) about fifty minutes later. Cited: the announcing row.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789699563601
     metadata:
       must_cite:
-      - 404
-      anchor_date: 20260920
-    now: '2026-09-07T14:26:00+00:00'
+      - 5512
+      anchor_date: 20260918
 
   - name: p5_already_tracked_gains_a_decision
     entry: dreamer
     category: note-candidates
     expect: update
-    config:
-      memory.workspace_id: friends
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      '
-    knows:
-      transcript:
-      - body: 19號定咗西貢，我 book 咗六福 7 點半，4 位
-        name: Ada
-        person: ada
-        id: 501
-        ts: '2026-09-08T10:00:00Z'
-      - body: 正
-        name: Cat
-        person: cat
-        id: 502
-        ts: '2026-09-08T10:01:00Z'
-      notes:
-      - title: Dinner 19 Sept
-        description: Dinner on the 19th; venue undecided between Sai Kung and Central.
-        body: 'Ada asked about the 19th; Ben and Cat can make it. Venue undecided: Sai Kung or Central. Ben prefers Sai Kung for the seafood.'
-        anchor_date: 20260919
+    # REAL: the same night's session, already an open note, gains its start
+    # time in the room ("as usual, ten"). The production Dreamer appended a
+    # revision to that note thirty-five minutes after the last row.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789737522305
     metadata:
-      updates: Dinner 19 Sept
-    now: '2026-09-08T10:02:00+00:00'
+      updates: 今晚 backroom 行動
 
   - name: n1_settled_fact_nothing_open
     entry: dreamer
     category: note-candidates
     expect: none
-    config:
-      memory.workspace_id: friends
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      '
-    knows:
-      transcript:
-      - body: 尋晚 Yardbird 好正，個雞翼
-        name: Ada
-        person: ada
-        id: 601
-        ts: '2026-09-07T03:00:00Z'
-      - body: 係，下次再去
-        name: Ben
-        person: ben
-        id: 602
-        ts: '2026-09-07T03:01:00Z'
-      - body: '[media]'
-        name: Cat
-        person: cat
-        id: 603
-        ts: '2026-09-07T03:02:00Z'
-    now: '2026-09-07T03:03:00+00:00'
+    # REAL: an afternoon of the main room recounting the day just had — a
+    # venue photo, tiredness, what the day was for — with nothing left open.
+    # The unit's notebook held two unrelated open notes; no note was created
+    # or revised from this stretch.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789202644436
 
   - name: n2_throwaway_nobody_picks_up
     entry: dreamer
     category: note-candidates
     expect: none
-    config:
-      memory.workspace_id: friends
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      '
-    knows:
-      transcript:
-      - body: 不如幾時去下 trip
-        name: Ben
-        person: ben
-        id: 701
-        ts: '2026-09-07T06:00:00Z'
-      - body: 今日好熱
-        name: Cat
-        person: cat
-        id: 702
-        ts: '2026-09-07T06:30:00Z'
-      - body: 35 度
-        name: Ada
-        person: ada
-        id: 703
-        ts: '2026-09-07T06:31:00Z'
-    now: '2026-09-07T06:32:00+00:00'
+    # REAL: the paired Discord room on a game night — "what do we have",
+    # a floated "we three could try something", one "dunno", then an image.
+    # No note was produced from it; the notebook held the unit's open notes.
+    snapshot:
+      platform: discord
+      conversation_id: 100000000000000201/100000000000000202
+      before_ms: 1789912909931
 
   - name: n3_media_and_stickers_only
     entry: dreamer
     category: note-candidates
     expect: none
-    config:
-      memory.workspace_id: friends
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      '
-    knows:
-      transcript:
-      - body: null
-        name: Cat
-        person: cat
-        id: 801
-        ts: '2026-09-07T15:40:00Z'
-        media: true
-      - body: null
-        name: Ben
-        person: ben
-        id: 802
-        ts: '2026-09-07T15:41:00Z'
-        media: true
-      - body: 哈哈哈
-        name: Cat
-        person: cat
-        id: 803
-        ts: '2026-09-07T15:43:00Z'
-    now: '2026-09-07T15:44:00+00:00'
+    # REAL: the paired Discord room's tail is links, clips and two images
+    # with no text around them. The room's position (standing) is real at
+    # this instant — one of the few moments after the standing history
+    # begins (2026-09-20).
+    snapshot:
+      platform: discord
+      conversation_id: 100000000000000201/100000000000000202
+      before_ms: 1789976158501
 
   - name: n4_banter_no_plan
     entry: dreamer
     category: note-candidates
     expect: none
-    config:
-      memory.workspace_id: friends
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      '
-    knows:
-      transcript:
-      - body: 邊個偷食咗我雪櫃嗰件蛋糕
-        name: Ada
-        person: ada
-        id: 901
-        ts: '2026-09-07T16:00:00Z'
-      - body: 唔係我
-        name: Ben
-        person: ben
-        id: 902
-        ts: '2026-09-07T16:00:30Z'
-      - body: 我淨係食咗一半
-        name: Cat
-        person: cat
-        id: 903
-        ts: '2026-09-07T16:01:00Z'
-      - body: 你死喇
-        name: Ada
-        person: ada
-        id: 904
-        ts: '2026-09-07T16:01:20Z'
-    now: '2026-09-07T16:02:20+00:00'
+    # REAL: early-evening teasing in the main room — mock leave requests, a
+    # "we have secretaries" joke, a prize shown off — with nothing arranged.
+    # No note was produced from it.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789208357833
 
   - name: n5_already_in_notebook_no_new_detail
     entry: dreamer
     category: note-candidates
     expect: none
-    config:
-      memory.workspace_id: friends
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      '
-    knows:
-      transcript:
-      - body: 19號西貢六福 7 點半記得啊
-        name: Ada
-        person: ada
-        id: 1001
-        ts: '2026-09-09T11:00:00Z'
-      - body: 記得
-        name: Ben
-        person: ben
-        id: 1002
-        ts: '2026-09-09T11:00:30Z'
-      notes:
-      - title: Dinner 19 Sept
-        description: Dinner on the 19th at Luk Fook, Sai Kung, 7:30pm, four people; booked by Ada.
-        body: Ada booked Luk Fook in Sai Kung for 7:30pm on the 19th, four people. Ben and Cat confirmed.
-        anchor_date: 20260919
-    now: '2026-09-09T11:01:30+00:00'
+    # REAL: the main room after that night's meet-up had been fixed — place
+    # and time already folded into the open note by an earlier revision —
+    # and the only new row is a two-word acknowledgement.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789727481941
 
   - name: p6_solo_update_to_an_existing_entry
     entry: dreamer
     category: note-candidates
     expect: update
-    config:
-      memory.workspace_id: friends
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      '
-    knows:
-      transcript:
-      - body: 19號我 book 咗西貢六福 7 點半，4 位
-        name: Ada
-        person: ada
-        id: 1101
-        ts: '2026-09-08T10:00:00Z'
-      notes:
-      - title: Dinner 19 Sept
-        description: Dinner on the 19th; venue undecided between Sai Kung and Central.
-        body: 'Ada asked about the 19th; Ben and Cat can make it. Venue undecided: Sai Kung or Central.'
-        anchor_date: 20260919
+    # REAL: one member finally names the venue and rough time for a meet-up
+    # the notebook had been tracking as "place and time undecided". The
+    # production Dreamer appended a revision to that note within the hour.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789721126208
     metadata:
-      updates: Dinner 19 Sept
-    now: '2026-09-08T10:01:00+00:00'
+      updates: 元朗宵夜地點時間未定，陀螺盤交收綁死今晚
 
   - name: p7_cantonese_only_solo_plan
     entry: dreamer
     category: note-candidates
     expect: create
-    config:
-      memory.workspace_id: friends
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      '
-    knows:
-      transcript:
-      - body: 今個星期六我去數碼港個 hackathon，未搵到隊友，嗰晚食咩都未諗
-        name: Ben
-        person: ben
-        id: 1201
-        ts: '2026-09-07T18:13:23Z'
+    # REAL: a single early-morning row in the main room — one member offers
+    # to drive everyone on the 27th if they squeeze in — with nobody yet
+    # answering. The production Dreamer created the matching note nine
+    # minutes later, anchored on that date.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789764313450
     metadata:
       must_cite:
-      - 1201
-      anchor_date: 20260912
-    now: '2026-09-07T18:14:23+00:00'
+      - 5716
+      anchor_date: 20260927
 
   - name: n6_stated_then_cancelled
     entry: dreamer
     category: note-candidates
     expect: none
-    config:
-      memory.workspace_id: friends
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      '
-    knows:
-      transcript:
-      - body: 今個禮拜六去大帽山行山，大家得唔得？
-        name: Cat
-        person: cat
-        id: 1301
-        ts: '2026-09-07T14:00:00Z'
-      - body: 得
-        name: Ben
-        person: ben
-        id: 1302
-        ts: '2026-09-07T14:00:40Z'
-      - body: 算啦，天文台話禮拜六打風，取消咗佢
-        name: Cat
-        person: cat
-        id: 1303
-        ts: '2026-09-07T14:30:00Z'
-      - body: ok 下次
-        name: Ben
-        person: ben
-        id: 1304
-        ts: '2026-09-07T14:31:00Z'
-    now: '2026-09-07T14:32:00+00:00'
+    parked:
+      reason: P-A
+      why: |
+        No real room has stated a plan and cancelled it inside one window:
+        the whole recorded history carries no cancellation of an arrangement
+        (searched for the room's own words for cancelling, postponing and
+        backing out). Authoring one would seed a room that never happened.
+      returns_when: |
+        A real room states an arrangement and withdraws it before the next
+        Dreamer fire, so a `snapshot:` at the withdrawal's row reproduces it.
 
   - name: n7_invitation_nobody_picks_up
     entry: dreamer
     category: note-candidates
     expect: none
-    config:
-      memory.workspace_id: friends
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      '
-    knows:
-      transcript:
-      - body: 今個禮拜六邊個得閒？
-        name: Ada
-        person: ada
-        id: 1401
-        ts: '2026-09-07T11:00:00Z'
-      - body: null
-        name: Cat
-        person: cat
-        id: 1402
-        ts: '2026-09-07T12:10:00Z'
-        media: true
-      - body: 哈哈
-        name: Ben
-        person: ben
-        id: 1403
-        ts: '2026-09-07T12:11:00Z'
-    now: '2026-09-07T12:12:00+00:00'
+    # REAL: an evening in the main room where one member floats a late
+    # supper and the only answer is a decline and a sticker. The unit's
+    # notebook held one open note from earlier that day; nothing was
+    # created from this stretch.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789131718111
 
   - name: n8_settled_solo_plan_nothing_open
     entry: dreamer
     category: note-candidates
     expect: none
-    config:
-      memory.workspace_id: friends
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      '
-    knows:
-      transcript:
-      - body: 今個禮拜六我去數碼港個 hackathon，隊友搵齊晒，嗰晚同佢哋食咗飯先返
-        name: Ben
-        person: ben
-        id: 1501
-        ts: '2026-09-07T18:20:00Z'
-    now: '2026-09-07T18:21:00+00:00'
+    # REAL: the single-sender room over two nights — an evening ride the
+    # sender has already decided on, then weather and calendar questions she
+    # answers. The unit's notebook held one open note (from two days
+    # earlier); nothing was created from this stretch.
+    snapshot:
+      platform: signal
+      conversation_id: Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34=
+      before_ms: 1788975232078
 
   - name: n9_conditional_not_a_plan
     entry: dreamer
     category: note-candidates
     expect: none
-    config:
-      memory.workspace_id: friends
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      '
-    knows:
-      transcript:
-      - body: 如果禮拜六唔使返工，我可能去睇下個 hackathon
-        name: Cat
-        person: cat
-        id: 1601
-        ts: '2026-09-07T09:00:00Z'
-      - body: 睇下啦
-        name: Ada
-        person: ada
-        id: 1602
-        ts: '2026-09-07T09:01:00Z'
-    now: '2026-09-07T09:02:00+00:00'
+    # REAL: a lunchtime stretch of the main room weighing which game to move
+    # to next — "if this many play we'd finish in three months", "but it
+    # waits until late October" — speculation, no arrangement. The unit's
+    # notebook was empty; nothing was created.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1788410234778
 
   - name: n10_games_room_shorthand_is_not_an_arrangement
     entry: dreamer
     category: note-candidates
     expect: none
-    config:
-      memory.workspace_id: friends
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      '
     # REAL: a real multi-person `friends`-unit room, before_ms=1788876107288
-    # (last real message ts + 60s). Real production rows 2836-2839,
-    # byte-identical bodies; no real media row precedes them within the hour
-    # (the two nearest real rows from the same sender are link shares, not
-    # media -- the case's leading `media: true` row has no real counterpart
-    # and is dropped, which does not change the shape of the judgement). The
+    # (last real message ts + 60s). Real production rows 2836-2839. The
     # notebook holds no open note at this instant: a matching open note was
-    # created roughly 94 seconds after this exchange -- this incident is
-    # very likely what produced it. `expect: none` asserts what SHOULD have
+    # created roughly 94 seconds after this exchange — this incident is very
+    # likely what produced it. `expect: none` asserts what SHOULD have
     # happened.
     snapshot:
       platform: discord
       conversation_id: 100000000000000201/100000000000000202
       before_ms: 1788876107288
-      culture_key: 100000000000000201/100000000000000202
-      unit: friends
-      transcript_limit: 4
-    now: '2026-09-08T14:01:47.288000+00:00'
 
   - name: n10b_a_described_games_room_is_still_not_an_arrangement
     entry: dreamer
     category: note-candidates
     expect: none
-    config:
-      memory.workspace_id: friends
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      label = "Zone 42"
-    
-      description = "a games room; 2200 is when people log on, not an appointment"
-    
-      '
-    # REAL: same anchor as n10 (before_ms=1788876107288) -- n10b is the
-    # described-room control variant, identical input plus the room's real
-    # policy.toml label/description. See n10's comment above.
+    # REAL: same anchor as n10 (before_ms=1788876107288). Since the room's
+    # real policy entry (label and description) now reaches every case, this
+    # composes the same room as n10; kept as the named control pair.
     snapshot:
       platform: discord
       conversation_id: 100000000000000201/100000000000000202
       before_ms: 1788876107288
-      culture_key: 100000000000000201/100000000000000202
-      unit: friends
-      transcript_limit: 4
     metadata:
       room_label: Zone 42
       room_description: a games room; 2200 is when people log on, not an appointment
-    now: '2026-09-08T14:01:47.288000+00:00'
 
   - name: n11_notebook_subject_is_not_a_licence_to_rewrite_it
     entry: dreamer
     category: note-candidates
     expect: none
-    config:
-      memory.workspace_id: friends
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      '
     # REAL: same room as n10, before_ms=1789032833253 (last real message ts
-    # + 60s), two days after n10's incident. Real production rows 2905-2910,
-    # byte-identical bodies and order. At this instant the notebook holds
-    # exactly ONE open note -- anchor 20260908, the note n10's incident is
-    # believed to have produced -- matching this case's single seeded note.
-    # A second, near-duplicate note on the same subject was not created
-    # until roughly 6.5 minutes after this instant, so it is correctly
-    # excluded here.
+    # + 60s), two days after n10's incident. Real production rows 2905-2910.
+    # At this instant the notebook holds exactly ONE open note — the note
+    # n10's incident produced. A second, near-duplicate note on the same
+    # subject was not created until roughly 6.5 minutes after this instant,
+    # so it is correctly excluded here.
     snapshot:
       platform: discord
       conversation_id: 100000000000000201/100000000000000202
       before_ms: 1789032833253
-      culture_key: 100000000000000201/100000000000000202
-      unit: friends
-      transcript_limit: 6
-    now: '2026-09-10T09:33:53.253000+00:00'
 
   - name: n11b_a_described_games_room_does_not_rewrite_the_notebook_subject
     entry: dreamer
     category: note-candidates
     expect: none
-    config:
-      memory.workspace_id: friends
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      label = "Zone 42"
-    
-      description = "a games room; 2200 is when people log on, not an appointment"
-    
-      '
-    # REAL: same anchor as n11 (before_ms=1789032833253) -- n11b is the
-    # described-room control variant. See n11's comment above.
+    # REAL: same anchor as n11 (before_ms=1789032833253); composes the same
+    # room as n11 under the real policy entry. See n10b.
     snapshot:
       platform: discord
       conversation_id: 100000000000000201/100000000000000202
       before_ms: 1789032833253
-      culture_key: 100000000000000201/100000000000000202
-      unit: friends
-      transcript_limit: 6
     metadata:
       room_label: Zone 42
       room_description: a games room; 2200 is when people log on, not an appointment
-    now: '2026-09-10T09:33:53.253000+00:00'
 
   - name: p8_two_unrelated_arrangements_on_one_date
     entry: dreamer
     category: note-candidates
     expect: create
-    config:
-      memory.workspace_id: friends
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "{platform}"
-    
-      id = "{room}"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      label = "Friends"
-    
-      '
-    knows:
-      transcript:
-      - body: 11號截止報名嗰個工作坊，我今晚 email 主辦問下仲有冇位
-        name: Ada
-        person: ada
-        id: 2101
-        ts: '2026-09-07T13:02:00Z'
-      - body: ok 你問到再同我講，我未決定去唔去
-        name: Ben
-        person: ben
-        id: 2102
-        ts: '2026-09-07T13:02:40Z'
-      - body: 好
-        name: Ada
-        person: ada
-        id: 2103
-        ts: '2026-09-07T13:03:10Z'
-      - body: 另外 11 號晚上打機幾點開？五個人定四個？
-        name: Cat
-        person: cat
-        id: 2104
-        ts: '2026-09-07T20:41:00Z'
-      - body: 我梗係打，等 Cat 話幾點
-        name: Ben
-        person: ben
-        id: 2105
-        ts: '2026-09-07T20:42:00Z'
-      - body: 我今晚睇下人數先
-        name: Cat
-        person: cat
-        id: 2106
-        ts: '2026-09-07T20:43:00Z'
     metadata:
       creates: 2
-      must_cite:
-      - 2101
-      - 2104
       room_label: Friends
-    now: '2026-09-07T20:44:00+00:00'
+    parked:
+      reason: P-A
+      why: |
+        No real batch carries two unrelated arrangements for one date. The
+        closest real stretch (the main room, 2026-09-16 00:11-00:20) states
+        two arrangements on two different dates, and the production Dreamer
+        created one note from it — so it is neither this shape nor a fair
+        `creates: 2`.
+      returns_when: |
+        A real room fixes two unrelated arrangements for the same date
+        within one Dreamer batch, so a `snapshot:` at its last row carries
+        both and `must_cite` can name both rows.

@@ -679,7 +679,7 @@ def test_the_configured_memory_ceiling_reaches_the_runtime():
 
 
 def test_the_shipped_default_is_the_number_d11_grades_at():
-    """Two is `evals/cases/proactive/decide.yaml`'s `d11` budget, and the
+    """Two is `evals/corpora/proactive_decide.yaml`'s `d11` budget, and the
     default has to BE that number rather than merely be near it: the suite is
     the only instrument that can say whether the ceiling costs recall, and it
     can only say so if the deployment and the grader agree on what a pass is

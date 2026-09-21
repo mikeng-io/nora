@@ -635,7 +635,7 @@ def _seed_id(n: int, kind: str) -> str:
 
 def seed_from_dict(raw: dict[str, Any], *, now_ms: int | None = None) -> ProductionSeed:
     """Build a `ProductionSeed` from a case file's `seed:` mapping
-    (`evals/cases/participation/`) — the per-case seed `Case.from_dict`
+    (`evals/corpora/participation.yaml`) — the per-case seed `Case.from_dict`
     gained for the participation suite (design/dreamer-agent-loop/35 §9
     gap 2).
 

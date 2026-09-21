@@ -1,6 +1,7 @@
 # 11 — The sandbox rebuild: one Nora, rebuilt from production, run isolated
 
-**Status: SKELETON.** Architecture only. Nothing below is built.
+**Status: §1.2's rule and §7.1's three states are BUILT (2026-09-21, see
+§1.3). §2–§6's replay/rebuild machinery is not.**
 
 ## 0. The rule
 
@@ -135,6 +136,68 @@ assert the behaviour of a mechanism production no longer runs. Under this rule
 they do not merely change config; they test a path that does not exist in the
 deployment. What those 28 are for is a question about the corpus, not about the
 harness.
+
+### 1.3 What landed 2026-09-21 — one path, isolated by database
+
+**Built.** `evals.backbone._drive` has ONE path. Every case names a real room
+and a real instant (`snapshot: {platform, conversation_id, before_ms}`) and
+nothing else about what she knows. There is no `knows:`, no `config:`, no
+`policy:`, no `room:`, no `now:`; `evals.scenarios.load_all` refuses them by
+name. The three states of §7.1 are live: `census()` counts active / parked /
+unanchored per corpus and `python -m evals` prints them beside every result.
+
+**Isolation is by DATABASE, not by room.** The previous design shared one
+database across cases and minted a hashed room per case (`room_for`,
+`workspace_for`, `sandbox_room_for`). That is gone. Each case composes
+against a sandbox database of its own, cloned from a blank migrated template
+BESIDE the source (`nora.subject.sandbox.sandbox_database`, the same
+`CREATE DATABASE … TEMPLATE` the test suite already used per test), and is
+dropped when the case ends. So:
+
+- the room is the REAL room's own id, and the deployment's `policy.toml` and
+  `identity.toml` are copied VERBATIM — no swapped entry, no Discord-shaped
+  minted id, no one-person roster;
+- the unit and the culture key are RESOLVED from the room's policy entry at
+  `obtain()` (`Subject.unit`, `Subject.culture_key`) and are not a case's to
+  state. An earlier check that `unit == memory.workspace_id` is deleted: the
+  deployment itself fails it on every room, because `memory.workspace_id` is
+  Honcho's per-deployment workspace and a unit is per room;
+- the subject's clock is frozen AT `before_ms` and every seeded row keeps its
+  real `ts`. Nothing is shifted. The clock is a port (`01-boundaries` §3), so
+  the shift the earlier sandbox needed is no longer needed;
+- **the source is the deployment's clone**, `nora_eval` on the deploy host
+  (`scripts/refresh_eval_clone.sh`, `make eval-source`), opened read-only.
+  Production is never opened by the suite, and `python -m evals` refuses a
+  source whose name is not a clone's (`*_eval`).
+
+**Honcho** is the one store a database does not isolate. `_baseline()` points
+`memory.workspace_id` at a fixed `<deployment>-eval` sibling — stable, not
+per case, so §3's replay can one day fill it. Until then every sandbox's peer
+card is EMPTY. That is a stated tier gap, not a hidden one.
+
+**What a case may still say about its input.** `input` is the line that
+arrives at `before_ms`; `person` is who says it (a `person_id` the roster
+knows — the room's `persons` gate would otherwise refuse the line silently);
+`mention: true` marks it as @-mentioning her, structurally
+(`NormalizedMessage.mentions`). With the text trigger off since 2026-09-01,
+a mention IS how the inbound path engages her, so every `tag` case expecting
+a reply states one. Discord's adapter is off in the sandbox, so those cases
+anchor to Signal rooms.
+
+**Decided here, where the operator question above was open.** The
+trigger/no_trigger/near_miss cases keep their inputs (a trigger-shaped line
+is still what arrived); the reply-expecting ones engage her by mention.
+What they measure is therefore "a mention with this text gets a grounded
+reply" and "trigger-shaped text with no mention gets silence", both of which
+the deployment does run.
+
+**Still empty in the sandbox** (the extraction is `snapshot.py`'s four tiers):
+reminders, note candidates, debounce/window state, Honcho. A `proactive_act`
+case, which fires a due reminder row, has no anchor until reminders join the
+extraction; those cases are parked P-A with that return condition. R1 is not
+yet enforced mechanically — a case whose tier is empty runs — because the
+extraction cannot yet tell "empty then" from "not extracted"; the counts in
+this section are what to read until it can.
 
 ### Where the suite runs — DECIDED 2026-09-21: on the deploy host
 

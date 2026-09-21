@@ -1,10 +1,11 @@
-"""`evals.scenarios.load_corpus` — the corpus port
-(`design/evaluation/10-the-scenario-map.md` §7, operator override
-2026-09-20). Pure, no DB/network: reads the real YAML files under
-`evals/corpora/` and checks the conversion, not the seeded content itself
-(the seeded content is the OLD harness's own, already covered by
-`tests/architecture/test_the_near_miss_corpora_exercise_their_rules.py` and
-friends).
+"""`evals.scenarios` — the corpus loader under ONE PATH.
+
+Pure, no DB/network, and it never reads the real `evals/corpora/`: every
+corpus here is written into `tmp_path`, because what is under test is the
+LOADER's contract — which keys a case may state, how the three states
+(active / unanchored / parked) are told apart and counted — not the content
+of any real corpus. The real files' own invariant (every case anchored or
+parked) is `tests/architecture/`'s job.
 """
 
 from __future__ import annotations
@@ -13,121 +14,250 @@ import pytest
 from strands_evals import Case, Experiment
 from strands_evals.types.evaluation import EnvironmentState
 
-from evals.backbone import ERROR, FAIL, NORA_ADMITTED, NORA_ERROR, NORA_SAID, PASS, MeetsGrader
-from evals.scenarios import CORPUS_ENTRY, JUDGED_CORPORA, experiment_for, load_corpus
+from evals.backbone import (
+    ERROR,
+    FAIL,
+    NORA_ADMITTED,
+    NORA_ERROR,
+    NORA_SAID,
+    PASS,
+    SNAPSHOT_KEYS,
+    MeetsGrader,
+)
+from evals.scenarios import (
+    CASE_KEYS,
+    CORPUS_ENTRY,
+    JUDGED_CORPORA,
+    PARKED_KEYS,
+    census,
+    experiment_for,
+    load_all,
+    load_corpus,
+)
 
-#: Every corpus file this port covers must load to exactly this many cases —
-#: the known count (`10-the-scenario-map.md` §2's own table), so a corpus
-#: silently losing or gaining a row is caught here rather than downstream.
-_EXPECTED_COUNTS = {
-    "no_trigger": 12,
-    "near_miss": 4,
-    "trigger": 12,
-    "injections": 5,
-    "transcript_injection": 1,
-    "being_contradicted": 6,
-    "identity_grounding": 8,
-    "source_scope": 4,
-    "participation": 15,
-    "relevance_gate": 40,
-    "note_candidates": 21,
-    "proactive_decide": 11,
-    "proactive_act": 11,
-}
+_ANCHORED = """
+- name: from_a_real_moment
+  entry: tag
+  expect: reply
+  input: "{trigger} hi"
+  mention: true
+  person: tyler_cortez
+  sample: 3
+  safety: true
+  category: world_fact
+  expected_output: she answers
+  metadata:
+    prefill_sufficient: true
+  snapshot:
+    platform: signal
+    conversation_id: the-real-group
+    before_ms: 1752000000000
+"""
 
+_PARKED = """
+- name: no_such_moment
+  entry: gate
+  expect: no_go
+  parked:
+    reason: P-A
+    why: no real room has produced this shape
+    returns_when: a room produces it
+"""
 
-def test_every_corpus_this_port_covers_has_a_declared_entry_point():
-    assert set(CORPUS_ENTRY) == set(_EXPECTED_COUNTS)
-
-
-def test_loading_every_corpus_reproduces_the_known_150_case_count():
-    total = 0
-    for name, expected in _EXPECTED_COUNTS.items():
-        cases = load_corpus(name)
-        assert len(cases) == expected, f"{name}: expected {expected}, got {len(cases)}"
-        total += len(cases)
-    assert total == 150
-
-
-def test_a_case_carries_expect_and_knows_in_metadata():
-    cases = load_corpus("relevance_gate")
-    first = cases[0]
-    assert first.metadata["expect"] in ("go", "no_go")
-    assert "transcript" in first.metadata["knows"]
-
-
-def test_trigger_substitution_reaches_the_ported_input():
-    """`no_trigger.yaml` states `engagement.trigger.text: nora.000` and its
-    cases are literal near-misses OF that string — the same substitution
-    `evals.rebuilt.runner.load()` applies must reach the ported input too."""
-    cases = load_corpus("no_trigger")
-    by_name = {c.name: c for c in cases}
-    case = by_name["leading_word_char_glued"]
-    assert "nora.000" in case.input
-    assert "{trigger}" not in case.input
-
-
-def test_a_proactive_decide_case_carries_its_own_room_and_now():
-    """The reason `Spec`/`_drive()` gained per-case metadata reads
-    (2026-09-20): `proactive_decide.yaml` names a real room and a real
-    `now` PER CASE, which the port must not lose."""
-    cases = load_corpus("proactive_decide")
-    by_name = {c.name: c for c in cases}
-    case = by_name["d01_dinner_note_the_day_before"]
-    assert case.metadata["room"] == ["signal", "ridgeline-sig"]
-    assert case.metadata["now"] == "2026-09-11T07:00:00+08:00"
-    assert case.metadata["config"]["memory.workspace_id"] == "ridgeline"
-    assert "home_room = true" in case.metadata["policy"]
+_UNANCHORED = """
+- name: awaiting_the_seam
+  entry: tag
+  expect: reply
+  input: what did the search say
+  metadata:
+    tool_result: the search said X
+"""
 
 
-def test_a_cases_own_metadata_never_shadows_a_reserved_key():
-    """`trigger.yaml` cases carry their own `metadata: {prefill_sufficient:
-    true}` — real content the port must keep — beside `expect`, which
-    `MeetsGrader`/`AbsenceGrader` read. The two must not collide."""
-    cases = load_corpus("trigger")
-    case = next(c for c in cases if "prefill_sufficient" in c.metadata)
-    assert case.metadata["prefill_sufficient"] is True
-    assert case.metadata["expect"] == "reply"
+def _corpus(tmp_path, monkeypatch, body: str, name: str = "probe") -> str:
+    (tmp_path / f"{name}.yaml").write_text(body, encoding="utf-8")
+    monkeypatch.setattr("evals.scenarios._CORPORA", tmp_path)
+    return name
 
 
-def test_a_ported_corpus_is_gradable_end_to_end_through_a_real_experiment():
-    """Mechanical wiring, no DB/network: a fake task answering exactly what
-    each `no_trigger`/`near_miss` case expects must score every one PASS
-    through the SAME `Experiment`/`MeetsGrader` path a live run would use."""
-    cases = load_corpus("no_trigger") + load_corpus("near_miss")
+# --- what a case carries -----------------------------------------------------
 
-    def fake_task(case: Case) -> dict:
-        expect = case.metadata["expect"]
-        said = 0 if expect in ("no_reply", "silence") else 1
-        return {
-            "output": "",
-            "environment_state": [
-                EnvironmentState(name=NORA_ERROR, state=""),
-                EnvironmentState(name=NORA_SAID, state=said),
-                EnvironmentState(name=NORA_ADMITTED, state=None),
-            ],
-        }
 
-    report = Experiment(cases=cases, evaluators=[MeetsGrader()]).run_evaluations(
-        task=fake_task,
+def test_an_anchored_case_carries_its_anchor_and_every_stated_field(tmp_path, monkeypatch):
+    [case] = load_corpus(_corpus(tmp_path, monkeypatch, _ANCHORED))
+    assert case.name == "from_a_real_moment"
+    assert case.input == "{trigger} hi", "rendered at DRIVE time against the subject's trigger"
+    assert case.expected_output == "she answers"
+    md = case.metadata
+    assert md["snapshot"] == {
+        "platform": "signal", "conversation_id": "the-real-group", "before_ms": 1752000000000,
+    }
+    assert md["expect"] == "reply"
+    assert md["person"] == "tyler_cortez"
+    assert md["mention"] is True
+    assert md["category"] == "world_fact"
+    assert md["parked"] == {}
+    # The case's own `metadata:` travels beside the reserved keys and never
+    # shadows them.
+    assert md["prefill_sufficient"] is True
+
+
+def test_the_speaker_defaults_to_the_operator_and_no_mention(tmp_path, monkeypatch):
+    [case] = load_corpus(_corpus(tmp_path, monkeypatch, """
+- name: plain
+  entry: participation
+  expect: silence
+  input: hi
+  snapshot: {platform: signal, conversation_id: r, before_ms: 1}
+"""))
+    assert case.metadata["person"] == "miles_novak"
+    assert case.metadata["mention"] is False
+
+
+def test_a_bare_list_and_a_cases_mapping_are_the_same_corpus(tmp_path, monkeypatch):
+    bare = _corpus(tmp_path, monkeypatch, _ANCHORED, "bare")
+    wrapped = _corpus(tmp_path, monkeypatch, "cases:\n" + "\n".join(
+        "  " + line if line else line for line in _ANCHORED.splitlines()
+    ), "wrapped")
+    assert [c.name for c in load_all(bare)] == [c.name for c in load_all(wrapped)]
+
+
+# --- the three states --------------------------------------------------------
+
+
+def test_a_parked_case_is_counted_and_never_active(tmp_path, monkeypatch):
+    name = _corpus(tmp_path, monkeypatch, _ANCHORED + _PARKED + _UNANCHORED)
+    assert [c.name for c in load_all(name)] == [
+        "from_a_real_moment", "no_such_moment", "awaiting_the_seam",
+    ]
+    assert [c.name for c in load_corpus(name)] == ["from_a_real_moment", "awaiting_the_seam"]
+    parked = next(c for c in load_all(name) if c.name == "no_such_moment")
+    assert parked.metadata["parked"]["reason"] == "P-A"
+
+
+def test_an_unanchored_case_is_active_so_that_it_errors_rather_than_skips(tmp_path, monkeypatch):
+    """§7.1: a case quietly skipped for lack of an anchor is the same false
+    reading as one assembled without a tier. It stays in the active set —
+    `_drive` refuses it by name — and is counted."""
+    name = _corpus(tmp_path, monkeypatch, _UNANCHORED)
+    [case] = load_corpus(name)
+    assert case.metadata["snapshot"] == {}
+    assert case.metadata["parked"] == {}
+    assert case.metadata["tool_result"] == "the search said X"
+
+
+def test_census_reports_every_state_beside_the_active_count(tmp_path, monkeypatch):
+    name = _corpus(tmp_path, monkeypatch, _ANCHORED + _PARKED + _UNANCHORED + _PARKED.replace(
+        "no_such_moment", "another_parked",
+    ))
+    c = census(name)
+    assert (c.total, c.active, c.parked, c.unanchored) == (4, 2, 2, 1)
+    assert str(c) == "4 total, 2 active, 2 parked, 1 unanchored"
+
+
+# --- refusals, each by name ---------------------------------------------------
+
+
+@pytest.mark.parametrize("key", ["knows", "config", "policy", "room", "now", "transcript_limit"])
+def test_a_case_stating_what_is_no_longer_a_cases_to_state_is_refused(tmp_path, monkeypatch, key):
+    """Every one of these was a case compensating by hand for a subject that
+    was not the deployment's. Under one path they have nothing to say, and a
+    key the runner ignores is a corpus asserting more than is measured."""
+    name = _corpus(tmp_path, monkeypatch, _ANCHORED + f"  {key}: something\n")
+    with pytest.raises(ValueError) as info:
+        load_all(name)
+    assert key in str(info.value)
+    assert all(k in str(info.value) for k in CASE_KEYS)
+
+
+@pytest.mark.parametrize("top", ["config", "policy"])
+def test_a_corpus_level_setting_is_refused(tmp_path, monkeypatch, top):
+    name = _corpus(tmp_path, monkeypatch, f"{top}:\n  x: y\ncases:\n" + "\n".join(
+        "  " + line if line else line for line in _ANCHORED.splitlines()
+    ))
+    with pytest.raises(ValueError, match=top):
+        load_all(name)
+
+
+@pytest.mark.parametrize("missing", sorted(SNAPSHOT_KEYS))
+def test_a_snapshot_missing_a_key_is_refused_by_name(tmp_path, monkeypatch, missing):
+    lines = _ANCHORED.splitlines()
+    body = "\n".join(line for line in lines if not line.strip().startswith(missing))
+    name = _corpus(tmp_path, monkeypatch, body)
+    with pytest.raises(ValueError) as info:
+        load_all(name)
+    assert missing in str(info.value)
+
+
+@pytest.mark.parametrize("extra", ["culture_key", "unit", "transcript_limit"])
+def test_a_snapshot_stating_a_derived_or_reduced_key_is_refused(tmp_path, monkeypatch, extra):
+    """The culture key and unit are the deployment's policy entry's; a window
+    is production's config's (R7). A case cannot state either."""
+    name = _corpus(tmp_path, monkeypatch, _ANCHORED + f"    {extra}: x\n")
+    with pytest.raises(ValueError) as info:
+        load_all(name)
+    assert extra in str(info.value)
+
+
+def test_a_parked_case_that_is_also_anchored_is_refused(tmp_path, monkeypatch):
+    name = _corpus(tmp_path, monkeypatch, _ANCHORED + """  parked:
+    reason: P-A
+    why: w
+    returns_when: r
+""")
+    with pytest.raises(ValueError, match="parked AND anchored"):
+        load_all(name)
+
+
+@pytest.mark.parametrize("reason", ["P-B", "P-C", ""])
+def test_only_p_a_is_a_parking_reason(tmp_path, monkeypatch, reason):
+    """P-B — a seam this rebuild owes — was proposed as a parking reason and
+    rejected: such a case is unfinished, not parked, and stays unanchored."""
+    name = _corpus(tmp_path, monkeypatch, _PARKED.replace("P-A", reason))
+    with pytest.raises(ValueError, match="P-B"):
+        load_all(name)
+
+
+def test_a_parked_block_must_state_exactly_the_three_fields(tmp_path, monkeypatch):
+    body = _PARKED.replace("  returns_when: a room produces it\n", "")
+    name = _corpus(tmp_path, monkeypatch, body)
+    with pytest.raises(ValueError) as info:
+        load_all(name)
+    assert all(k in str(info.value) for k in PARKED_KEYS)
+
+
+@pytest.mark.parametrize("key", ["name", "entry", "expect"])
+def test_a_case_missing_its_identity_is_refused(tmp_path, monkeypatch, key):
+    body = _ANCHORED.replace(
+        f"- {key}:" if key == "name" else f"  {key}:",
+        "- input_only:" if key == "name" else "  dropped:",
     )
-    labels = {out.label for outputs in report.detailed_results for out in outputs}
-    assert labels == {PASS}
+    name = _corpus(tmp_path, monkeypatch, body)
+    with pytest.raises(ValueError, match=key):
+        load_all(name)
 
 
-def test_judged_corpora_are_a_subset_of_the_covered_corpora():
+# --- experiment_for -----------------------------------------------------------
+
+
+def test_every_corpus_has_a_declared_entry_point_and_judged_is_a_subset():
     assert set(CORPUS_ENTRY) >= JUDGED_CORPORA
+    entries = {"tag", "participation", "gate", "dreamer", "proactive_act"}
+    assert set(CORPUS_ENTRY.values()) <= entries
 
 
-def test_experiment_for_returns_the_full_case_set():
-    experiment, _task = experiment_for("no_trigger", database_url="x")
-    assert len(experiment.cases) == 12
+def test_experiment_for_returns_the_active_set(tmp_path, monkeypatch):
+    _corpus(tmp_path, monkeypatch, _ANCHORED + _PARKED + _UNANCHORED, "no_trigger")
+    experiment, _task = experiment_for("no_trigger", source_url="x")
+    assert [c.name for c in experiment.cases] == ["from_a_real_moment", "awaiting_the_seam"]
 
 
-def test_experiment_for_threads_a_judge_only_for_judged_corpora(monkeypatch):
+def test_experiment_for_threads_a_judge_only_for_judged_corpora(tmp_path, monkeypatch):
     """Passing a judge for a corpus that never sets `expect: reply` would
     judge cases the corpus never asked to be judged; omitting it for a
     JUDGED corpus silently drops S3/S9 to a structural-only reading."""
+    _corpus(tmp_path, monkeypatch, _ANCHORED, "being_contradicted")
+    _corpus(tmp_path, monkeypatch, _ANCHORED, "no_trigger")
     captured = []
 
     def fake_nora_task(spec):
@@ -137,157 +267,61 @@ def test_experiment_for_threads_a_judge_only_for_judged_corpora(monkeypatch):
     monkeypatch.setattr("evals.scenarios.nora_task", fake_nora_task)
     fake_judge = object()
 
-    experiment_for("being_contradicted", database_url="x", judge=fake_judge)
+    experiment_for("being_contradicted", source_url="x", judge=fake_judge)
     assert captured[-1].judge is fake_judge
+    assert captured[-1].source_url == "x"
+    assert captured[-1].entry == CORPUS_ENTRY["being_contradicted"]
 
-    experiment_for("no_trigger", database_url="x", judge=fake_judge)
+    experiment_for("no_trigger", source_url="x", judge=fake_judge)
     assert captured[-1].judge is None
 
 
-def test_experiment_for_sample_draws_each_case_n_times():
+def test_experiment_for_sample_draws_each_case_n_times(tmp_path, monkeypatch):
     """`--sample N`: a cheap smoke run at 1 must stay possible, and asking
     for more must multiply the case COUNT, not just re-read the same one
     (`09-the-backbone-measured.md` §3.1 — one draw is not a reading)."""
-    experiment, _task = experiment_for("near_miss", database_url="x", sample=3)
-    assert len(experiment.cases) == 4 * 3
+    _corpus(tmp_path, monkeypatch, _ANCHORED + _UNANCHORED, "near_miss")
+    experiment, _task = experiment_for("near_miss", source_url="x", sample=3)
+    assert len(experiment.cases) == 2 * 3
     names = {c.name for c in experiment.cases}
-    assert "near_miss_trailing_word_char#1" in names
-    assert "near_miss_trailing_word_char#3" in names
+    assert {"from_a_real_moment#1", "from_a_real_moment#3"} <= names
+
+    experiment, _task = experiment_for("near_miss", source_url="x", sample=1)
+    assert [c.name for c in experiment.cases] == ["from_a_real_moment", "awaiting_the_seam"]
 
 
-def test_experiment_for_sample_one_is_the_untouched_corpus():
-    experiment, _task = experiment_for("near_miss", database_url="x", sample=1)
-    assert len(experiment.cases) == 4
-    assert "near_miss_trailing_word_char" in {c.name for c in experiment.cases}
-
-
-def test_a_ported_corpus_correctly_fails_a_wrong_answer():
-    """Falsification of the wiring test above: a task that answers the
-    OPPOSITE of what every case expects must score every one FAIL, never a
-    silent PASS or an ERROR standing in for it."""
-    cases = load_corpus("no_trigger")
-
-    def wrong_task(_case: Case) -> dict:
-        return {
-            "output": "",
-            "environment_state": [
-                EnvironmentState(name=NORA_ERROR, state=""),
-                EnvironmentState(name=NORA_SAID, state=1),
-                EnvironmentState(name=NORA_ADMITTED, state=None),
-            ],
-        }
-
-    report = Experiment(cases=cases, evaluators=[MeetsGrader()]).run_evaluations(
-        task=wrong_task,
-    )
-    labels = {out.label for outputs in report.detailed_results for out in outputs}
-    assert labels == {FAIL}
-    assert ERROR not in labels
-
-
-# --- `snapshot:` — a case seeded from a REAL room at a REAL instant ----------
-#
-# The shape that replaces `knows:`'s hand-authored content. Both end in the
-# same `know()` (see `evals.backbone._drive`), which is what makes them
-# interchangeable: whatever the content came from, it is written through the
-# stores production writes and rendered by the prefill production renders.
-
-
-def _corpus(tmp_path, body: str, monkeypatch) -> None:
-    """A corpus file of this test's own, so validation can be exercised
-    without a fixture case living in the real `evals/corpora/`."""
-    (tmp_path / "probe.yaml").write_text(body, encoding="utf-8")
-    monkeypatch.setattr("evals.scenarios._CORPORA", tmp_path)
-
-
-def test_a_snapshot_case_carries_its_real_room_and_instant(tmp_path, monkeypatch):
-    _corpus(tmp_path, """
-- name: from_a_real_moment
+def test_a_corpus_is_gradable_end_to_end_through_a_real_experiment(tmp_path, monkeypatch):
+    """Mechanical wiring, no DB/network: a fake task answering exactly what
+    each case expects must score every one PASS through the SAME
+    `Experiment`/`MeetsGrader` path a live run would use — and its opposite
+    must score every one FAIL, never a silent PASS or an ERROR standing in."""
+    name = _corpus(tmp_path, monkeypatch, _ANCHORED + """
+- name: quiet
   entry: tag
-  expect: reply
-  input: hi
-  snapshot:
-    platform: signal
-    conversation_id: the-real-group
-    before_ms: 1752000000000
-    culture_key: the-real-group
-    unit: friends
-""", monkeypatch)
+  expect: silence
+  input: nothing here
+  snapshot: {platform: signal, conversation_id: r, before_ms: 1}
+""")
+    cases = load_corpus(name)
 
-    shot = load_corpus("probe")[0].metadata["snapshot"]
+    def task(right: bool):
+        def _task(case: Case) -> dict:
+            wants_silence = case.metadata["expect"] in ("no_reply", "silence")
+            said = (0 if wants_silence else 1) if right else (1 if wants_silence else 0)
+            return {
+                "output": "",
+                "environment_state": [
+                    EnvironmentState(name=NORA_ERROR, state=""),
+                    EnvironmentState(name=NORA_SAID, state=said),
+                    EnvironmentState(name=NORA_ADMITTED, state=None),
+                ],
+            }
+        return _task
 
-    assert shot["conversation_id"] == "the-real-group"
-    assert shot["before_ms"] == 1752000000000
-    assert shot["culture_key"] == "the-real-group"
-    assert shot["unit"] == "friends"
-
-
-def test_a_hand_authored_case_carries_an_empty_snapshot(tmp_path, monkeypatch):
-    """The two shapes are told apart by `snapshot:` being EMPTY, not by a
-    flag, so an existing case needs no edit to keep working."""
-    _corpus(tmp_path, """
-- name: still_hand_authored
-  entry: tag
-  expect: reply
-  input: hi
-  knows:
-    transcript:
-      - hello
-""", monkeypatch)
-
-    case = load_corpus("probe")[0]
-
-    assert case.metadata["snapshot"] == {}
-    assert case.metadata["knows"]["transcript"] == ["hello"]
-
-
-def test_a_case_stating_both_snapshot_and_knows_is_refused(tmp_path, monkeypatch):
-    """Two ways to say what she knew, said twice, with nothing making them
-    agree — and the one that loses is invisible in the file."""
-    _corpus(tmp_path, """
-- name: says_it_twice
-  entry: tag
-  expect: reply
-  input: hi
-  knows:
-    transcript:
-      - hello
-  snapshot:
-    platform: signal
-    conversation_id: the-real-group
-    before_ms: 1752000000000
-    culture_key: the-real-group
-    unit: friends
-""", monkeypatch)
-
-    with pytest.raises(ValueError, match="states BOTH"):
-        load_corpus("probe")
-
-
-@pytest.mark.parametrize("dropped", ["culture_key", "unit", "before_ms",
-                                     "platform", "conversation_id"])
-def test_an_incomplete_snapshot_is_refused_by_name(tmp_path, monkeypatch, dropped):
-    """`culture_key` and `unit` especially: `nora.infra.sql.snapshot` refuses
-    to derive them, and a wrong one matches no rows and reads exactly like a
-    room that had no culture and no notebook — a case that would grade a
-    prompt missing the very block it is about."""
-    stated = {
-        "platform": "signal",
-        "conversation_id": "the-real-group",
-        "before_ms": 1752000000000,
-        "culture_key": "the-real-group",
-        "unit": "friends",
-    }
-    del stated[dropped]
-    lines = "\n".join(f"    {k}: {v}" for k, v in stated.items())
-    _corpus(tmp_path, f"""
-- name: incomplete
-  entry: tag
-  expect: reply
-  input: hi
-  snapshot:
-{lines}
-""", monkeypatch)
-
-    with pytest.raises(ValueError, match=dropped):
-        load_corpus("probe")
+    for right, want in ((True, PASS), (False, FAIL)):
+        report = Experiment(cases=cases, evaluators=[MeetsGrader()]).run_evaluations(
+            task=task(right),
+        )
+        labels = {out.label for outputs in report.detailed_results for out in outputs}
+        assert labels == {want}
+        assert ERROR not in labels

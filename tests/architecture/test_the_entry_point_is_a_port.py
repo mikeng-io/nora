@@ -17,6 +17,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 REBUILT = ROOT / "evals" / "rebuilt"
+#: The runner. `evals/rebuilt/runner.py` was the old harness and is deleted
+#: (2026-09-21); `evals/backbone.py`'s `_drive` is the one path.
+RUNNER = ROOT / "evals" / "backbone.py"
 
 #: `01-boundaries` §5(1), stated so it can be checked: the eval layer never
 #: composes a subject. These are the call names the seven assemblies used.
@@ -92,14 +95,14 @@ def test_the_runner_has_no_suite_specific_branch() -> None:
     A runner that branches on `case.entry` is a runner that grows a limb per
     suite, which is the eight drivers reappearing inside one file.
     """
-    tree = ast.parse((REBUILT / "runner.py").read_text(encoding="utf-8"))
+    tree = ast.parse(RUNNER.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
         if not isinstance(node, ast.Compare):
             continue
         left = node.left
         if isinstance(left, ast.Attribute) and left.attr == "entry":
             raise AssertionError(
-                f"runner.py:{node.lineno} compares `case.entry` — the entry "
+                f"backbone.py:{node.lineno} compares `case.entry` — the entry "
                 "point is a port looked up in ENTRY_POINTS, not a branch."
             )
 
@@ -110,14 +113,14 @@ def test_adding_a_suite_adds_no_code() -> None:
     Checked as: the runner reaches an entry point ONLY through the registry, so
     there is no name a new suite could need it to import.
     """
-    src = (REBUILT / "runner.py").read_text(encoding="utf-8")
+    src = RUNNER.read_text(encoding="utf-8")
     tree = ast.parse(src)
     imported = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and (node.module or "").endswith("entry"):
             imported = {a.name for a in node.names}
     assert imported == {"ENTRY_POINTS"}, (
-        f"runner.py imports {sorted(imported)} from the entry module. Only "
+        f"backbone.py imports {sorted(imported)} from the entry module. Only "
         "ENTRY_POINTS may cross: importing an entry point by name is how a "
         "runner acquires a suite-specific path without looking like it has one."
     )

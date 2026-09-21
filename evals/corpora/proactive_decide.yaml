@@ -1,11 +1,10 @@
 # The proactive DECIDE suite (design/dreamer-agent-loop/39 §5, DEC-162 (10)).
 #
-# Each case is ONE morning pass over ONE workspace: the open notes, where
-# each room stood (with the age of that reading), what Nora decided on
-# earlier mornings and how it went, a little memory, and `now`. The REAL
-# DreamerRuntime + REAL ProactiveAdaptor run through the REAL tool source
-# (home room, grant, `remind` under Dreamer provenance) and the grade is
-# read off the reminder store afterwards (`evals.proactive.grade_decide`):
+# Each case is ONE morning pass over ONE unit: the open notes the unit really
+# held at the instant, where each room stood (when the standing history holds
+# it), and the instant itself. The REAL DreamerRuntime + REAL ProactiveAdaptor
+# run through the REAL tool source (home room, grant, `remind` under Dreamer
+# provenance) and the grade is read off the reminder store afterwards:
 #
 #   none    — no row was written. The common, correct answer.
 #   remind  — EXACTLY the listed rows, each matched by note title, each
@@ -16,96 +15,56 @@
 # and a corpus of only should-speak cases breeds a Nora who speaks daily.
 # The windows are one rater's threshold — the operator's.
 #
-# Timestamps carry +08:00 (Asia/Hong_Kong). 2026-09-11 is a Friday.
-
-# 39 §4's first real case: the one live note. Dinner Saturday at Cyberport,
-# venue open, revisit already past. The day before, in the afternoon or
-# evening, is when a word from her helps; not at breakfast Friday, and not
-# after people have already eaten.
-
-# --- RE-HOMED 2026-09-17 (design/evaluation Step 4) -------------------------
-#
-# `entry: dreamer`, `category: proactive` -- the real `DreamerRuntime` and the
-# real `ProactiveAdaptor` on the composed graph.
-#
-# STILL REFUSED, FOR A DIFFERENT AND SHARPER REASON: these cases are
-# MULTI-ROOM. Each names two rooms and keys its standing per room, because the
-# decide pass judges a WORKSPACE and picks which of its rooms to stand in.
-# `nora.subject.Knowledge` is single-room -- one transcript, one standing, one
-# room -- so the rooms cannot be seeded and the pass judges an empty workspace.
-#
-# That had to be CAUGHT, not noticed. With the rooms unseeded the pass finds
-# nothing due, writes nothing and returns `nothing_found` with no error, so
-# every case expecting `none` PASSED -- having measured an empty workspace. It
-# survived one round of fixing here because the clock was the louder problem.
-# The entry point now refuses any case naming `rooms`, `standing`, `rows` or
-# `row`, so they are ERROR and cannot score.
-#
-# `now:` IS A FIRST-CLASS CASE FIELD. Every case here states one, because the
-# proactive decision is about time: whether a note is due, whether a position
-# has gone stale, whether the moment to say something has arrived.
-#
-# It was parked in `metadata:` for half a day, and these cases were REFUSED as
-# ERROR, because the composed graph had no way to be told what time it is --
-# `build_dependencies` wrote `lambda: datetime.now(UTC)` at nine separate sites
-# while nine components already accepted an injectable `clock`. The two wrong
-# ways out were to pass a clock (a collaborator, the one thing this rebuild
-# exists to stop) or to shift the data (`anchor_date: 20260912` and a note body
-# saying "Saturday 12 Sep" would stop agreeing, and the case would assert
-# against prose it had invalidated).
-#
-# The seam was built instead: `build_dependencies(cfg, clock=...)`, wall clock
-# by default, one name replacing nine literals. `SubjectSpec.now` sets it and
-# it is FROZEN, so a turn and the window it reads cannot drift apart mid-case.
-#
-# `config:` and `policy:` state what the adaptor NEEDS TO EXIST. It has no
-# config flag of its own -- `composition.py:1558` wires it on
-# `dreamer.enabled and notes.enabled and proactive_homes`, and
-# `proactive_homes` comes from `policy.toml`, because the HOME ROOM is the
-# operator's opt-in (design/dreamer-agent-loop/39 D2). So a proactive suite
-# states a policy, and no number of dotted config paths could say it.
-#
-# `expect: remind|none` is the corpus's OWN vocabulary, restored. It was briefly
-# translated to `speak|none`, which lost the only thing it meant: this pass does
-# not speak and does not touch the notebook, it writes a REMINDER ROW. Graded on
+# `expect: remind|none` is the corpus's OWN vocabulary: this pass does not
+# speak and does not touch the notebook, it writes a REMINDER ROW. Graded on
 # `DreamOutcome.written`; on `changed` or `said` every case would score alike.
 #
-# --- MULTI-ROOM SEEDING LANDED 2026-09-17 (GOAL step 1) ---------------------
+# --- EVERY CASE IS A REAL MOMENT (2026-09-21, one-path conversion) ----------
 #
-# `rooms:` and per-room `standing:` are real fields now, not parked metadata.
-# The decide pass judges a WORKSPACE and picks which of its rooms to stand in,
-# so a case naming one room was asking it a different question; a case naming
-# NO rooms handed it an empty workspace, where it finds nothing due, writes
-# nothing, answers `nothing_found` -- and every case expecting `none` PASSED.
+# `knows:`, `config:`, `policy:`, `room:` and `now:` are gone. A case names
+# the unit's HOME ROOM (from the deployment's own `policy.toml`, which is what
+# wires the adaptor at all — design 39 D2) and an instant. The unit's notebook
+# is reconstructed as it stood then; the subject's clock is frozen there. The
+# instant IS the question — whether a note is due — so `before_ms` is the
+# morning-pass time on the chosen day (07:00 HKT), not a row's timestamp; the
+# room's transcript up to it is whatever it was.
 #
-# The HOME room (39 D2, `policy.toml`'s `home_room = true`) is the subject's
-# own room; the rest are `knows.rooms`, each with its own transcript and
-# standing. `standing_age_hours` travels because a position renders as an AGE
-# and how stale it is is part of what this pass judges.
+# HOW MOMENTS WERE CHOSEN. The real notebook records what the production
+# Dreamer noted and when, and the rooms record when Nora's own proactive turn
+# actually fired and whether it landed. A `remind` case sits on the morning of
+# a day the deployment's own pass DID write a reminder that was taken up (or,
+# for d01, the morning the corpus's own rater said it should have); its
+# `due_between` brackets the hour the real turn fired. A `none` case sits on a
+# morning whose notebook shape the corpus describes and from which no
+# reminder was written.
 #
-# `policy:` is generated from the rooms, so the rooms a case seeds and the
-# rooms the deployment admits cannot come apart.
+# WHAT HAS NO ANCHOR, parked (P-A) rather than faked:
+#
+#   * cases whose evidence lives in the DECISION LOG (d04, d10) — that tier
+#     is not extracted into the sandbox, so the pass could not see it;
+#   * cases that need a room STANDING saying something specific (d05, d09) —
+#     `standing_revision` begins 2026-09-20 in one room and every revision it
+#     holds describes an open decision, never a settled one;
+#   * a dateless note (d06) — every real note carries an anchor date;
+#   * a note three weeks out (d07) — the furthest any real note stood ahead
+#     of its date was eight days.
+#
+# Timestamps in `due_between` carry +08:00 (Asia/Hong_Kong).
 
 cases:
   - name: d01_dinner_note_the_day_before
     entry: dreamer
     category: proactive
     expect: remind
-    config:
-      memory.workspace_id: ridgeline
-      notes.enabled: true
-    knows:
-      notes:
-      - title: AI Hackathon dinner plan
-        description: dinner after Saturday's AI Thinking hackathon at Cyberport — who and where are open
-        body: Miles is at the AI Thinking hackathon at Cyberport on Saturday 12 Sep. He does not know his teammates yet and has not decided where to eat that night.
-        anchor_date: 20260912
-      standing: Miles is going to the Cyberport hackathon on Saturday; nobody has said where dinner is or who is coming.
-      standing_age_hours: 30
-      rooms:
-      - conversation_id: 100000000000000203/100000000000000204
-        platform: discord
-        label: Ridgeline discord
+    # REAL: the `ridgeline` unit on the morning before its one open note's
+    # date — an event the next day with dinner and company still open. The
+    # deployment's own pass reminded on the day itself (its turn fired in
+    # this home room at 17:00 that afternoon); the rater's threshold is the
+    # afternoon or evening BEFORE, which this instant asks about.
+    snapshot:
+      platform: discord
+      conversation_id: 100000000000000203/100000000000000204
+      before_ms: 1789081200000
     metadata:
       expect_original: remind
       rows:
@@ -114,153 +73,53 @@ cases:
         - '2026-09-11T12:00:00+08:00'
         - '2026-09-11T23:00:00+08:00'
       workspace: ridgeline
-    now: '2026-09-11T07:00:00+08:00'
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "signal"
-    
-      id = "ridgeline-sig"
-    
-      persons = "*"
-    
-      unit = "ridgeline"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Ridgeline"
-    
-      [[conversations]]
-    
-      platform = "discord"
-    
-      id = "100000000000000203/100000000000000204"
-    
-      persons = "*"
-    
-      unit = "ridgeline"
-    
-      proactive = true
-    
-      label = "Ridgeline discord"
-    
-      '
-    room:
-    - signal
-    - ridgeline-sig
 
   - name: d02_anchored_today_open_corner
     entry: dreamer
     category: proactive
     expect: remind
-    config:
-      memory.workspace_id: friends
-      notes.enabled: true
-    knows:
-      notes:
-      - title: Friday drinks
-        description: drinks tonight — Central or Kennedy Town still undecided
-        body: Ada, Ben and Cat are meeting for drinks tonight (Fri 11 Sep) after work. Central or Kennedy Town — nobody has picked.
-        anchor_date: 20260911
-      standing: Drinks tonight are on; the area is still a coin toss between Central and K-Town.
-      standing_age_hours: 14
+    # REAL: the `friends` unit on the morning of a handover the notebook had
+    # anchored to that day with where and when still open. The deployment's
+    # own pass reminded, and its turn fired in this home room at 10:30 and
+    # was answered — so the window opens before eleven.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789686000000
     metadata:
       expect_original: remind
       rows:
-      - note: Friday drinks
+      - note: 拎抽包畀 Yat Ho
         due_between:
-        - '2026-09-11T11:00:00+08:00'
-        - '2026-09-11T19:30:00+08:00'
+        - '2026-09-18T09:00:00+08:00'
+        - '2026-09-18T19:30:00+08:00'
       workspace: friends
-    now: '2026-09-11T07:00:00+08:00'
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "signal"
-    
-      id = "friends-sig"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Friends"
-    
-      '
-    room:
-    - signal
-    - friends-sig
 
   - name: d03_follow_up_owed_today
     entry: dreamer
     category: proactive
     expect: remind
-    config:
-      memory.workspace_id: friends
-      notes.enabled: true
-    knows:
-      notes:
-      - title: Ben's flat for the 25th
-        description: whether Ben's landlord allows the party on the 25th — Ben said he would answer by Friday
-        body: Ben asked his landlord whether ten people can come to his flat on Sat 25 Sep and promised the group an answer by Friday 11 Sep. Ada and Cat are waiting on it before booking anything else.
-        anchor_date: 20260925
-      standing: Party on the 25th hinges on Ben's landlord; Ben said Friday for an answer. Nothing since.
-      standing_age_hours: 40
+    # REAL: the `friends` unit two mornings after one member floated joining
+    # a race together and nobody answered — the notebook's note says exactly
+    # that. The deployment's own pass reminded; its turn fired in this home
+    # room at 10:00 and the member replied within a minute.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789254000000
     metadata:
       expect_original: remind
       rows:
-      - note: Ben's flat for the 25th
+      - note: Blake 拉人跑馬拉松，邊個落水未定
         due_between:
-        - '2026-09-11T12:00:00+08:00'
-        - '2026-09-11T22:00:00+08:00'
+        - '2026-09-13T09:00:00+08:00'
+        - '2026-09-13T14:00:00+08:00'
       workspace: friends
-    now: '2026-09-11T07:00:00+08:00'
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "signal"
-    
-      id = "friends-sig"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Friends"
-    
-      '
-    room:
-    - signal
-    - friends-sig
 
   - name: d04_already_raised_four_times
     entry: dreamer
     category: proactive
     expect: none
-    config:
-      memory.workspace_id: friends
-      notes.enabled: true
-    knows:
-      notes:
-      - title: Mahjong night
-        description: a mahjong night somebody floated — nobody has picked a date
-        body: Cat floated a mahjong night back in August. No date, no host, nobody has answered the last few times it came up.
-        anchor_date: 20260913
-      standing: Mahjong keeps being mentioned and keeps going nowhere.
-      standing_age_hours: 60
     metadata:
       expect_original: none
       log:
@@ -275,249 +134,112 @@ cases:
         due_hours_ago: 36
         outcome: silent
       workspace: friends
-    now: '2026-09-11T07:00:00+08:00'
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "signal"
-    
-      id = "friends-sig"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Friends"
-    
-      '
-    room:
-    - signal
-    - friends-sig
+    parked:
+      reason: P-A
+      why: |
+        The case turns on the DECISION LOG — what Nora decided on earlier
+        mornings and how it went. The sandbox reconstructs transcript,
+        standing, culture and notes; the decision log is not extracted, so
+        a pass here would judge a note with no memory of having raised it,
+        which is a different case. (The moment itself is real: on 2026-09-18
+        the deployment's Nora raised one meet-up six times.)
+      returns_when: |
+        `nora.infra.sql.snapshot` extracts the decision-log tier as of
+        `before_ms`, so the pass sees its own earlier verdicts.
 
   - name: d05_standing_says_settled
     entry: dreamer
     category: proactive
     expect: none
-    config:
-      memory.workspace_id: friends
-      notes.enabled: true
-    knows:
-      notes:
-      - title: Saturday dim sum
-        description: dim sum on Saturday — place and time were open
-        body: Dim sum this Saturday 12 Sep. Ada suggested Lin Heung or Sun Tung Lok; time undecided.
-        anchor_date: 20260912
-      standing: 'Dim sum Saturday is booked: Sun Tung Lok, 11:30, Ada has the table for five. Everyone has confirmed.'
-      standing_age_hours: 9
     metadata:
       expect_original: none
       workspace: friends
-    now: '2026-09-11T07:00:00+08:00'
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "signal"
-    
-      id = "friends-sig"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Friends"
-    
-      '
-    room:
-    - signal
-    - friends-sig
+    parked:
+      reason: P-A
+      why: |
+        Needs a room's STANDING saying an open note is in fact settled.
+        `standing_revision` (migration 0059) begins 2026-09-20 in one room,
+        and every revision it holds describes a decision still open; no
+        instant exists at which a reconstructed standing says "booked, all
+        confirmed" beside an open note.
+      returns_when: |
+        The standing history holds a revision that reads a note's subject as
+        settled while the note is still open, so a `snapshot:` at that
+        instant reproduces the disagreement.
 
   - name: d06_dateless_note
     entry: dreamer
     category: proactive
     expect: none
-    config:
-      memory.workspace_id: friends
-      notes.enabled: true
-    knows:
-      notes:
-      - title: Japan trip someday
-        description: a Japan trip everyone wants and nobody has dated
-        body: Everyone wants to do Japan together — Kyoto in autumn was mentioned. No year, no month, no budget. Purely a wish for now.
-      standing: Japan comes up now and then as a someday plan.
-      standing_age_hours: 50
     metadata:
       expect_original: none
       workspace: friends
-    now: '2026-09-11T07:00:00+08:00'
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "signal"
-    
-      id = "friends-sig"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Friends"
-    
-      '
-    room:
-    - signal
-    - friends-sig
+    parked:
+      reason: P-A
+      why: |
+        Every note the deployment has ever written carries an anchor date;
+        no unit has held a dateless ("someday") note, so there is no moment
+        at which the pass could be shown one.
+      returns_when: |
+        A real unit's notebook holds an open note with no anchor date.
 
   - name: d07_three_weeks_out
     entry: dreamer
     category: proactive
     expect: none
-    config:
-      memory.workspace_id: friends
-      notes.enabled: true
-    knows:
-      notes:
-      - title: October hike
-        description: a hike on 3 Oct — trail undecided
-        body: Hike on Sat 3 Oct. Dragon's Back or Lion Rock, to be decided nearer the time. Everyone is in.
-        anchor_date: 20261003
-      standing: October hike is on; trail to be chosen the week before.
-      standing_age_hours: 20
     metadata:
       expect_original: none
       workspace: friends
-    now: '2026-09-11T07:00:00+08:00'
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "signal"
-    
-      id = "friends-sig"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Friends"
-    
-      '
-    room:
-    - signal
-    - friends-sig
+    parked:
+      reason: P-A
+      why: |
+        No real note has stood three weeks ahead of its date. The furthest
+        was eight days (a lift offered for the 27th, noted on the 19th), and
+        eight days is inside the range a rater might reasonably nudge — not
+        the "far too early" the case is about.
+      returns_when: |
+        A real unit's notebook holds an open note anchored at least three
+        weeks past the morning of the pass.
 
   - name: d08_empty_unit
     entry: dreamer
     category: proactive
     expect: none
-    config:
-      memory.workspace_id: wedding
-      notes.enabled: true
+    # REAL: the `ridgeline` unit's home room on a morning before the unit's
+    # first note was ever written — the notebook is genuinely empty. (The
+    # wedding-party unit, whose notebook is always empty, cannot host this
+    # case: its home room is not proactive-trusted in the deployment's
+    # policy, so the pass would decline for a wiring reason.)
+    snapshot:
+      platform: discord
+      conversation_id: 100000000000000203/100000000000000204
+      before_ms: 1788735600000
     metadata:
       expect_original: none
-      workspace: wedding
-    now: '2026-09-11T07:00:00+08:00'
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "signal"
-    
-      id = "wedding-sig"
-    
-      persons = "*"
-    
-      unit = "wedding"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Wedding"
-    
-      '
-    knows:
-      standing: Quiet since the invitations went out.
-      standing_age_hours: 120
-    room:
-    - signal
-    - wedding-sig
+      workspace: ridgeline
 
   - name: d09_all_corners_closed_tomorrow
     entry: dreamer
     category: proactive
     expect: none
-    config:
-      memory.workspace_id: ridgeline
-      notes.enabled: true
-    knows:
-      notes:
-      - title: Saturday hackathon logistics
-        description: Miles's Saturday hackathon — arrival time and badge were the open bits
-        body: Miles is at the Cyberport hackathon Saturday 12 Sep. Registration confirmed, badge emailed, he is taking the 8:15 bus with Grant. Nothing left to arrange.
-        anchor_date: 20260912
-      standing: 'Hackathon Saturday: everything is sorted — badge, bus, Grant is going too.'
-      standing_age_hours: 12
     metadata:
       expect_original: none
       workspace: ridgeline
-    now: '2026-09-11T07:00:00+08:00'
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "signal"
-    
-      id = "ridgeline-sig"
-    
-      persons = "*"
-    
-      unit = "ridgeline"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Ridgeline"
-    
-      '
-    room:
-    - signal
-    - ridgeline-sig
+    parked:
+      reason: P-A
+      why: |
+        Needs a note for tomorrow beside a STANDING saying every corner is
+        closed. The one real note-for-tomorrow the `ridgeline` unit held kept
+        its corners open, and the standing history (2026-09-20 onward, one
+        room) never describes a settled state — see d05.
+      returns_when: |
+        A real unit holds a note anchored tomorrow while its room's
+        reconstructed standing says the note's open points are resolved.
 
   - name: d10_reminded_yesterday_and_it_landed
     entry: dreamer
     category: proactive
     expect: none
-    config:
-      memory.workspace_id: friends
-      notes.enabled: true
-    knows:
-      notes:
-      - title: Cat's birthday gift
-        description: a group gift for Cat's birthday on the 14th — who buys it is open
-        body: Cat's birthday is Mon 14 Sep. Ada and Ben want to chip in for a gift; nobody has volunteered to buy it.
-        anchor_date: 20260914
-      standing: Nora asked yesterday who is buying Cat's gift; Ben said he will sort it over the weekend.
-      standing_age_hours: 16
     metadata:
       expect_original: none
       log:
@@ -527,74 +249,36 @@ cases:
         due_hours_ago: 18
         outcome: sent
       workspace: friends
-    now: '2026-09-11T07:00:00+08:00'
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "signal"
-    
-      id = "friends-sig"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Friends"
-    
-      '
-    room:
-    - signal
-    - friends-sig
+    parked:
+      reason: P-A
+      why: |
+        As d04: the case turns on the decision log recording yesterday's
+        reminder and its outcome, which the sandbox does not reconstruct.
+        (Real instances exist — the deployment's turn of 2026-09-13 10:00 was
+        answered within a minute.)
+      returns_when: |
+        `nora.infra.sql.snapshot` extracts the decision-log tier as of
+        `before_ms`.
 
   - name: d11_note_written_in_the_rooms_own_handles
     entry: dreamer
     category: proactive
     expect: remind
-    config:
-      memory.workspace_id: friends
-      notes.enabled: true
-    knows:
-      notes:
-      - title: Bath gathering tonight
-        description: 熱咖啡 proposed a bath tonight — where and what time are open
-        body: 熱咖啡 said he wants a bath tonight; 明明 is in. Nobody has said which place or what time.
-        anchor_date: 20260911
-      standing: 熱咖啡 floated a bath tonight and 明明 said yes; the place and the hour are still open.
-      standing_age_hours: 9
+    # REAL: the `friends` unit on the evening of a gathering the notebook
+    # anchored to that day, with which venue and whether it is on still
+    # open — a note the production Dreamer wrote in the paired Discord
+    # room's own display handles, not roster names. The instant is after
+    # the note was written (17:40) and before the hour the room named.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1789036200000
     metadata:
       expect_original: remind
       rows:
       - note: Bath gathering tonight
         due_between:
-        - '2026-09-11T12:00:00+08:00'
-        - '2026-09-11T22:00:00+08:00'
+        - '2026-09-10T18:30:00+08:00'
+        - '2026-09-10T21:30:00+08:00'
       max_memory_calls: 2
       workspace: friends
-    now: '2026-09-11T07:00:00+08:00'
-    policy: 'default = "deny"
-    
-      [[conversations]]
-    
-      platform = "signal"
-    
-      id = "friends-sig"
-    
-      persons = "*"
-    
-      unit = "friends"
-    
-      proactive = true
-    
-      home_room = true
-    
-      label = "Friends"
-    
-      '
-    room:
-    - signal
-    - friends-sig

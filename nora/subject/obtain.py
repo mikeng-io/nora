@@ -93,6 +93,30 @@ _DEFAULT_IDENTITY = (
     '[persons.miles_novak]\nname = "Miles"\n'
     '[[persons.miles_novak.signal]]\nphone = "+852111"\n'
 )
+#: What docker calls the machine a container runs on, and what the host
+#: itself calls that machine.
+_DOCKER_HOST = "host.docker.internal"
+_LOOPBACK = "127.0.0.1"
+
+
+def _resolves(host: str) -> bool:
+    import socket
+
+    try:
+        socket.gethostbyname(host)
+    except OSError:
+        return False
+    return True
+
+
+def _from_host(url: str) -> str:
+    """`url` with `host.docker.internal` swapped for loopback; anything else
+    untouched."""
+    return url.replace(f"//{_DOCKER_HOST}:", f"//{_LOOPBACK}:").replace(
+        f"//{_DOCKER_HOST}/", f"//{_LOOPBACK}/"
+    )
+
+
 def config_default(key: str) -> object:
     """What `nora/config.py` gives a dotted key nobody states.
 
@@ -347,6 +371,19 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # Honcho INTO it (`11-the-sandbox-rebuild.md` §3), and a replay can only
     # be shared if its name is stable.
     cfg = _with(cfg, "memory.workspace_id", f"{cfg.memory.workspace_id}-eval")
+    # THE HOST, FROM THE HOST. The deployment's config reaches OmniRoute and
+    # Honcho at `host.docker.internal`, the name docker gives a container for
+    # the machine it runs on. The suite runs on that machine, outside a
+    # container, where the name does not resolve at all — so the model call
+    # would fail before the turn and read as "the model was unreachable" for
+    # every case. The same services, reached from the host, are on loopback;
+    # rewriting the HOSTNAME alone is the same endpoint at the address the
+    # caller can use, the shape `SKIP_PREFIX` already gives every other
+    # endpoint. Only when the name does not resolve here: inside a container
+    # it does, and nothing is touched.
+    if not _resolves(_DOCKER_HOST):
+        cfg = _with(cfg, "llm.base_url", _from_host(cfg.llm.base_url))
+        cfg = _with(cfg, "memory.base_url", _from_host(cfg.memory.base_url))
     # `doctrine.dir` and `dreamer.dir` resolve RELATIVE TO THE CONFIG FILE, and
     # the copy lives in the caller's workdir, which has no such subdirectories.
     # The Dreamer's corpus is validated at startup — deliberately, so a

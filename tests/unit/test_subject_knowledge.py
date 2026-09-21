@@ -4,8 +4,9 @@ before writing about them.
 Production never needs this: a peer always exists by the time anyone
 concludes about it, because it was created by a real `feed()` call first. The
 eval harness's `know()` is a second caller of `conclude()` that skips straight
-to the write — `workspace_for()` (obtain.py) hands every case a workspace of
-its own, so the peer has never been created in it. Live-run evidence
+to the write — the sandbox's Honcho workspace is `_baseline()`'s `-eval`
+sibling of the deployment's, not the one production feeds, so the peer may
+never have been created in it. Live-run evidence
 (`design/evaluation/10-the-scenario-map.md`): `participation`'s
 `admin-joke-known`/`asked-before-known` cases errored against a real,
 tunnelled Honcho with "did not accept it" — traced to a live 404, `Peer

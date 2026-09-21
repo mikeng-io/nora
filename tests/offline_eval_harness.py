@@ -124,7 +124,7 @@ def _configured_trigger() -> str:
 # DERIVED from the config, not transcribed from it. The comment here used to
 # say «kept in sync with config.example.toml's engagement.trigger.text» above
 # the value `"nora.000"`, while that file — and the deployment — both say
-# `"nora"`. So `evals/cases/no_trigger.yaml` was a corpus of near-misses for a
+# `"nora"`. So `evals/corpora/no_trigger.yaml` was a corpus of near-misses for a
 # trigger no deployment runs, and four of its twelve cases actually TAGGED
 # under the real one (2026-09-09). A hand-copied vocabulary is what drifts.
 TRIGGER_TEXT = _configured_trigger()

@@ -232,6 +232,35 @@ def _tracked_markdown_files() -> list[str]:
 # the operator; do not mass-rewrite the docs to clear it, and do not add to it
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
+    # --- the one-path rebuild, 2026-09-21 (design/evaluation/11 §1.3) ---
+    #
+    # The old harness `evals/rebuilt/runner.py` and the pre-port corpus copies
+    # under `evals/cases/` and `evals/adversarial/` are deleted; the live
+    # corpora are `evals/corpora/*.yaml` and the runner is
+    # `evals/backbone.py`. These lines record what was true when written.
+    **{
+        (doc, "evals/rebuilt/runner.py"): (
+            "the old harness, deleted 2026-09-21; `evals/backbone._drive` is "
+            "the one path (design/evaluation/11 §1.3)"
+        )
+        for doc in (
+            "design/evaluation/04-the-convention.md",
+            "design/evaluation/07-sdk-native.md",
+            "design/evaluation/08-the-sdk-surface.md",
+            "design/evaluation/GOAL.md",
+        )
+    },
+    **{
+        (doc, old): f"pre-port copy deleted 2026-09-21; now evals/corpora/{new}"
+        for doc, old, new in (
+            ("design/09-decision-index.md",
+             "evals/adversarial/being_contradicted.yaml", "being_contradicted.yaml"),
+            ("design/dreamer-agent-loop/13-doctrine.md",
+             "evals/cases/note_candidates/note_candidates.yaml", "note_candidates.yaml"),
+            ("design/dreamer-agent-loop/35-ambient-participation.md",
+             "evals/cases/participation/participation.yaml", "participation.yaml"),
+        )
+    },
     # --- the old eval layer, deleted 2026-09-18 (design/evaluation Step 5) ---
     #
     # These are HISTORY, not broken links: each describes what was true when it

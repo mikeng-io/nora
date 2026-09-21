@@ -90,8 +90,6 @@
 # still structurally guaranteed -- just guaranteed by the entry point's own
 # wiring now, not by `default_policy()` omitting `relevance_gate`.
 
-config:
-  engagement.trigger.text: "nora.000"
 #
 # --- `{trigger}` SUBSTITUTION 2026-09-18 ------------------------------------
 #
@@ -127,8 +125,6 @@ cases:
       platform: signal
       conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
       before_ms: 1789909891000
-      culture_key: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
-      unit: friends
 
   - name: trailing_word_char_glued
     entry: tag

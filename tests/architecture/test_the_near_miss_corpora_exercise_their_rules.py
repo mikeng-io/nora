@@ -16,6 +16,10 @@ reason (an operator re-enabled the plain trigger in 2026-08 and two cases
 silently stopped being near-misses); `no_trigger.yaml` had not. The fix stopped
 at a file boundary, which is why this test reads both.
 
+The trigger is the DEPLOYMENT'S (`engagement.trigger.text`, `nora`), rendered
+here the way `evals.backbone._drive` renders it against the composed subject —
+a corpus can no longer state one of its own.
+
 Costs milliseconds and needs no model: it is the cheapest real check in the
 suite.
 """
@@ -25,10 +29,14 @@ import pathlib
 
 import pytest
 
-from evals.rebuilt.runner import load
+from evals.backbone import substitute_trigger
+from evals.scenarios import load_all
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 _SRC = (ROOT / "nora" / "tag.py").read_text(encoding="utf-8")
+#: The deployment's trigger text — `nora/config.py`'s own default, which is
+#: what the deployment runs (its `[engagement.trigger] text = "nora"`).
+_TRIGGER = "nora"
 
 #: `(label, exact source text, replacement)` — the two rules these corpora are
 #: about. Exact text, asserted present: a variant built from a string that does
@@ -100,13 +108,13 @@ def test_no_case_passes_with_both_matching_rules_deleted(corpus: str) -> None:
     A case broken by neither is not testing `nora/tag.py` at all — whatever its
     name says.
     """
-    cases = load(ROOT / "evals" / "corpora" / corpus)
-    trigger = cases[0].config.get("engagement.trigger.text", "nora")
+    cases = load_all(corpus.removesuffix(".yaml"))
+    inputs = {c.name: substitute_trigger(c.input, _TRIGGER) for c in cases}
 
     reached: set[str] = set()
     for _label, old, new in _RULES:
         without = _variant(old, new)
-        reached |= {c.name for c in cases if without(c.input, trigger)}
+        reached |= {name for name, text in inputs.items() if without(text, _TRIGGER)}
 
     inert = [
         c.name for c in cases
@@ -124,7 +132,8 @@ def test_every_case_is_a_near_miss_under_the_shipped_rules(corpus: str) -> None:
     """The control for the test above: with the rules INTACT, nothing tags."""
     from nora.tag import is_tagged
 
-    cases = load(ROOT / "evals" / "corpora" / corpus)
-    trigger = cases[0].config.get("engagement.trigger.text", "nora")
-    tagged = [c.name for c in cases if is_tagged(c.input, trigger)]
+    cases = load_all(corpus.removesuffix(".yaml"))
+    tagged = [
+        c.name for c in cases if is_tagged(substitute_trigger(c.input, _TRIGGER), _TRIGGER)
+    ]
     assert not tagged, f"{corpus}: these DO engage her: {tagged}"
