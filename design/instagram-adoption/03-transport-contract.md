@@ -119,6 +119,56 @@ Measured on the wire: 20,000 characters accepted, 50,000 refused with
 `Message Too Long`. The contract sets no Instagram-specific text cap; Nora's
 existing cross-platform limit (Discord's 2,000) remains the binding one.
 
+## Request shapes — pinned 2026-09-22
+
+The first revision of this document named the routes and not their fields,
+which the bridge implementation correctly flagged as unpinnable. Pinned here
+so the adapter is written against the same contract the bridge already
+implements:
+
+```
+POST /send        {room_id, text, mentions:[{fbid,offset,length}], reply_to}
+POST /send-media  {room_id, data_base64, filename, mimetype, reply_to, voice_note}
+POST /react       {room_id, message_id, emoji}
+POST /typing      {room_id, typing}
+POST /unsend      {room_id, message_id}
+```
+
+`room_id` is the SHORT thread id everywhere. `data_base64` follows the
+WhatsApp bridge's precedent rather than a raw body, so one JSON shape covers
+every route. `/send-media` carries **no caption field** and ignores one if
+sent — the wire has nowhere to put it.
+
+## Inbound event kinds
+
+`kind: "message"` is the one this document originally defined. The bridge
+emits five more, and they are part of the contract:
+
+| kind | why it exists |
+|---|---|
+| `heartbeat` | the real socket-death detector — `last_event_age_seconds` is meaningless without it, since a quiet room and a dead socket look identical |
+| `dropped` | the offline buffer overflowed; the count is the honest signal that history was lost |
+| `reaction` / `edit` / `unsend` | the corresponding inbound deltas |
+| `typing` | carries `thread_id`; `room_id` is filled **only** when the id cache can vouch for it, because guessing would put a long id in a field defined as short and every consumer would miss silently |
+
+Every event also carries `from_me`, without which the adapter can only infer
+its own echo from a config value.
+
+## `/health` carries identity
+
+`/health` returns the four documented fields plus:
+
+```json
+"self": {"fbid": "...", "igid": "...", "username": "..."},
+"dropped_events": 0, "buffered_events": 0, "clients": 1, "uptime_seconds": 4210
+```
+
+`self` is there because the contract had no `/self` route (WhatsApp has one),
+and the alternative — the adapter carrying `GetOwnFBID()` in config — is a
+value whose drift has **no symptom**: R-12 would simply stop recognising
+Nora's own mentions, silently, which is the exact bug class
+`02-identity-and-policy.md` exists to prevent.
+
 ## Status mapping
 
 | Bridge response | Meaning |
@@ -127,6 +177,8 @@ existing cross-platform limit (Discord's 2,000) remains the binding one.
 | 409 | session is checkpointed — **not** retryable without human action |
 | 503 | socket down or reconnecting — retryable |
 | 413 | payload over an Instagram limit |
+| 400 | malformed request — including a `room_id` that is actually the LONG thread id, which is all digits and would pass a naive numeric check |
+| 500 | unclassifiable refusal. **The fail-closed default**: 503 is a claim that retrying will work, and an unknown failure has not earned it |
 
 `timestamp_ms` is the platform's own sent-timestamp, which is what a later
 reply's quote resolves against — the same lesson `signal.send._sent_timestamp`

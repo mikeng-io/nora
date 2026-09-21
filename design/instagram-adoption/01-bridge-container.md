@@ -64,14 +64,30 @@ errors and no hint as to why. Verified 2026-09-21.
 first contact an account can make. Warm the account through a browser on the
 normal residential IP, then hand the bridge the resulting session.
 
-### State resume
+### State resume — and the correction that `LoadState` alone does NOT resume
 
-`Client.DumpState()` / `LoadState()` persist the reconnection state, and the
-client emits `ReconnectionStateUpdate` whenever it changes. The bridge writes
-that to `/session` atomically on every update and loads it at boot: if
-`HasSeqID()` is true after loading, it goes straight to `Connect` and resumes
-the same stream instead of looking like a fresh login. Measured state size:
-~6 KB.
+`Client.DumpState()`/`LoadState()` persist the HTTP/reconnection state
+(~6 KB measured), and the client emits `ReconnectionStateUpdate` whenever it
+changes. The bridge writes that to `/session` atomically and loads it at boot.
+
+**`LoadState` does not restore the sequence id.** An earlier revision of this
+document said that `HasSeqID()` becomes true after `LoadState` and the client
+then resumes the stream. It does not: the seq arrives through
+`ClientParams.SeqID` / `SetSeqID`, which is why the bridge connector persists
+it *separately* in its own database and calls `SetSeqID` before connecting
+(`pkg/igconnector/client.go`) — the `LoadState` branch there only works
+because that has already happened.
+
+So a bridge must persist **two** things: the reconnection state from
+`ReconnectionStateUpdate`, and the sequence id from `SeqIDUpdate`. Persisting
+only the first produces a process that looks like it resumes and silently does
+a full `LoadIndex` on every boot.
+
+Found by the bridge implementation, 2026-09-22, and it had already bitten:
+`~/workspace/ig-soak/igsoak` checks `HasSeqID()` after `LoadState` and has
+therefore logged `resumed: false` on every start. That does not invalidate the
+soak's uptime figure — it has run as one continuous session since boot and
+never restarted — but "resume works" was never among the things it measured.
 
 ## Pairing state is a FIELD, never a status code
 
