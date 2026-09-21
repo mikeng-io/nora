@@ -128,10 +128,34 @@ reach the model, and the source kind must be explicit — `instagram_story`,
 not a bare URL that could be anything. A model cannot attribute what it was
 not told.
 
-**2. Doctrine must require the attribution.** "When you report something seen
-in a story, say it was a story and when it was posted. Do not restate it as a
-fact about where someone was or what they did." That is a doctrine line, not
-code, and it belongs with the other rules about how Nora speaks.
+**2. The instruction belongs in the TOOL RESULT, with doctrine as the
+backstop.** Revised 2026-09-22 on a measurement from the session compressing
+prompt tokens: **54% of all tool-description text — 8,602 of 16,045 tokens —
+is result-handling prose that is only read after a call returns, and it is
+paid on every call of every turn for all 54 tools.**
+
+That argues the schema is the wrong home, and so, more weakly, is doctrine:
+
+| home | cost | when read |
+|---|---|---|
+| tool **description** | paid every turn, for every tool, forever | before any call |
+| **doctrine** | paid every turn | always |
+| tool **result** | **paid only when a story is actually read** | exactly when it applies |
+
+The result wins on all three counts. It is free unless a story was fetched, it
+sits **adjacent to the `taken_at` and `expires_at` it is talking about**, and
+it arrives at the moment the model is deciding how to phrase the answer rather
+than thousands of tokens earlier.
+
+So a story result carries its own framing — that this is a story, when it was
+posted, when it expires, and that reporting it means saying so. Doctrine keeps
+one short line as the backstop, because a result-carried instruction is weaker
+than a standing rule and a model that ignores the result should still meet the
+rule.
+
+The general lever is worth noting beyond this bundle: **instructions about how
+to handle an answer are cheaper next to the answer than in the schema that
+described the question.**
 
 ### The honest limit
 
