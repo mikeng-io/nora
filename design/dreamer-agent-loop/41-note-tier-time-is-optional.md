@@ -15,7 +15,7 @@ version: 1
 
 # Time Is a Property of a Note, Not Its Axis
 
-*DEC-190 — assigned at PR opening 2026-09-16, below its decision-index row.*
+*DEC-194 — renumbered 2026-09-22. Drafted as DEC-190 at PR opening 2026-09-16; DEC-190 was taken by the presence place-identity decision (#336, merged 2026-09-17) while this PR sat open, and master now runs to DEC-193. Below its decision-index row.*
 
 ## 0. What is true on 2026-09-16 (read back, not recalled)
 
@@ -49,17 +49,17 @@ open.
   since the last wake → reset strikes, advance `revisit_at`) or strike
   (`revisit_at` untouched, so the note stays due). At the ceiling —
   `anchor_date is None and outcome.strikes > MAX_DATELESS_STRIKES`, 4
-  (`notes.py:132`) — the curator **logs and counts**
+  (`notes.py:134`) — the curator **logs and counts**
   (`nora_note_curator_total{action="dateless_stale"}`,
   `note_curator.py:1282-1293`) and does nothing else. Its own comment says
   why: *"ELIGIBLE, not retired … this merge counts the crossing rather than
   building the discharge decision"*.
 - **DEC-189 / #235 (merged 2026-09-16, PR #264) put the title in the staging
-  key.** `IDX_NOTE_CANDIDATE_CREATE_ANCHOR_KEY` is now `(workspace,
+  key.** `IDX_NOTE_CANDIDATE_CREATE_ANCHOR_KEY` is now `(unit,
   anchor_date, anchor_entity_ids, lower(btrim(title)))`
   (`schema.py:2026-2032`, migration `0054`), because in a fixed-membership
   room the entity list is a constant and the key had degenerated to
-  `(workspace, anchor_date)`. That is the precondition this node needed — but
+  `(unit, anchor_date)`. That is the precondition this node needed — but
   it is **not sufficient on its own**, and §3.1 says why.
 - **The create gate does not key on the date at all** (post-#228). The
   candidate carries the TITLE of the standing note it updates, exactly as the
@@ -110,7 +110,7 @@ a property and not a subtype.
 
 | | **dated lane** (anchor present) | **dateless lane** (topic anchor only) |
 |---|---|---|
-| identity at staging | `(workspace, anchor_date, entity ids, title)` | `(workspace, title)` + a topic anchor — §3.1 |
+| identity at staging | `(unit, anchor_date, entity ids, title)` | `(unit, title)` + a topic anchor — §3.1 |
 | create-vs-update | title resolution (#228), unchanged | title resolution, and a **judgement** where the title does not resolve (37 §3) |
 | first wake | anchor day start − 3 days | `now + 7 days` |
 | clock-driven retirement | `anchored_before` → `expired`/`moot`, `_covers`-grounded | **strikes ceiling** → a retirement ACTION that does not exist yet (§4) |
