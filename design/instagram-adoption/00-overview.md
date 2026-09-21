@@ -14,6 +14,7 @@ edges:
   - {dst: 04-capability-evidence.md, rel: evidence, provenance: measured}
   - {dst: 05-phase2-social-and-opencli.md, rel: details, provenance: asserted}
   - {dst: 06-retention-and-custody.md, rel: details, provenance: asserted}
+  - {dst: 07-social-boundary-and-scope.md, rel: details, provenance: asserted}
 ---
 
 # Instagram Adoption — Overview, Verdict & Phases
@@ -135,6 +136,12 @@ realization and needs no change to the port.
 send images, see images, see video, mentions, replies, emoji reactions.
 Measured as reachable; see `04-capability-evidence.md` for what is proven and
 what is still open.
+
+> **Instagram is the first social NETWORK Nora adopts, not a fourth
+> messenger.** The messaging and social axes are separate ports joined only by
+> the person index, and reach is bounded by a four-tier ladder. Read
+> `07-social-boundary-and-scope.md` before designing anything on the social
+> side; it supersedes the framing in `05`.
 
 **Phase 2 — social fetching.** Read the graph around the group: the stories,
 posts and profiles of the people in it, where the account follows them.

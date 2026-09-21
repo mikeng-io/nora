@@ -102,6 +102,74 @@ each would be one allowlist row plus one vocabulary entry if wanted. They are
 noted here because `followers`/`following` are the graph reads Phase 3 would
 most plausibly want, and they already exist.
 
+## The distinction that actually matters: URL-keyed vs person-keyed
+
+`social_fetch` today is **URL-keyed**. Its `target` is an address someone
+supplies — a link pasted into the room, a handle typed by the model — and the
+tool fetches whatever is at it. Nora is a retriever pointed at a location.
+
+What Phase 2 is actually for is **person-keyed**: Nora already knows that the
+person in this room *is* this Instagram account, and can ask "what is their
+latest story, what does their profile say" with no URL anywhere in the path.
+The subject is someone she knows, not an address she was handed.
+
+That is not a backend choice. It is a change to what `target` MEANS, and it
+belongs in the identity layer rather than in either fetcher:
+
+```
+person in a room  ──(identity.toml / person index)──>  igid
+                                                        │
+                        ┌───────────────────────────────┤
+                        ▼                               ▼
+              FetchReel(igid)                    GetProfile(igid)
+              their stories                      their profile
+```
+
+The join is already measured and free for anyone in a room Nora is in:
+`GetThread` returns `Users[].ID`, which is the igid. Read against the
+operator's own account this returned their two live stories and their profile
+with no link supplied by anybody — the graph model working end to end.
+
+**Person-keyed reads are therefore the design, and URL-keyed reads become the
+fallback** for content nobody in the room owns: a link someone pastes, which
+is what `FetchMedia`'s `(mediaID, shortcode)` signature is shaped for.
+
+## Which backend can serve a PERSON-keyed read
+
+This is where the "drop OpenCLI entirely" question resolves, and it resolves
+on a structural fact rather than a preference. instameow's complete social
+read surface is:
+
+```
+FetchReel(reelIDs, mediaID)          stories        PERSON-keyed
+GetProfile(igid)                     profile        PERSON-keyed (thin)
+SearchUsers(query)                   user search    query-keyed
+GetUserForNewDM(fbid)                user info      PERSON-keyed
+FetchMedia(mediaID, mediaShortcode)  one post       URL/ID-keyed
+```
+
+**There is no "list this user's posts" call.** Not a thin one, not a broken
+one — it does not exist. So:
+
+| Person-keyed read | instameow | OpenCLI |
+|---|---|---|
+| their **stories** | **yes** — the only path anywhere | no story read at all |
+| their **profile** | yes, but no follower/following/media counts or biography | yes, the social fields |
+| their **posts** | **no such call** | `instagram user <username>` |
+| their friendship status to us | yes | no |
+| X, anything | no — Instagram only | yes |
+
+So OpenCLI cannot be dropped for Instagram: it is the only person-keyed path
+to someone's posts, and the only path to the social profile fields. And it
+cannot be dropped at all while X reads are wanted, since instameow is
+Instagram-only and X is half of `social_fetch`'s vocabulary.
+
+The defensible split is therefore not "one tool wins" but a per-row backend
+choice, which is what the routing table below encodes. The prize the operator
+was after — fewer external dependencies, no VNC desktop, no headed Chrome — is
+only reachable by giving up X *and* posts *and* the profile fields, which is a
+much larger sacrifice than it first looks.
+
 ## Recommendation
 
 **Keep the tool. Add a backend for what instameow is actually better at. Do
