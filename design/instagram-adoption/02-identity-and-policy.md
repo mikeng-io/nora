@@ -87,6 +87,20 @@ exactly, so attribution across a real roster is an id join and never a name
 match. `ADD_PARTICIPANT_XMAT` arrived as an ordinary message attributed to the
 member who did the adding, which is how roster changes reach the adapter.
 
+R-12's discrimination was then exercised directly. Two messages from the same
+third-party sender, in the same room, seconds apart:
+
+```
+"@nka_bpumvg GH"        mentions[0].user_fbid = 110966695387753     -> not Nora
+"@not_____nora love I"  mentions[0].user_fbid = 14963523149149302   -> IS Nora
+```
+
+`14963523149149302` is exactly `client.GetOwnFBID()`. So "was I tagged?"
+reduces to one integer comparison against that value, with no name matching
+anywhere in the path — and Nora correctly hears mentions of *other* people
+without treating them as her own. This is the behaviour the Discord
+plaintext-tag bug got wrong, measured before a line of adapter code exists.
+
 **Do not validate the id by shape.** The two interop fbids above are
 `110966695387753` (15 digits) and `12116372067347151` (17 digits, sharing the
 `1784…` prefix with Nora's own). The space is not uniformly formatted, so any

@@ -118,7 +118,8 @@ All on the **same authenticated session**, no second credential:
 | multi-sender attribution (3-person room) | PASS | each message's `sender_fbid` matches that member's roster `interop_messaging_user_fbid` |
 | member added to the room | PASS | `ADD_PARTICIPANT_XMAT`, attributed to the member who did the adding |
 | message from a member other than the operator | PASS | `@gemini_.xoxo.04` text and image, both correctly attributed |
-| one member `@`-mentioning ANOTHER (not Nora) | UNMEASURED | the last ambient behaviour two-person data could not exercise |
+| one member `@`-mentioning ANOTHER (not Nora) | PASS | `"@nka_bpumvg GH"` from a third party — `mentions[].user_fbid=110966695387753`, not Nora's |
+| Nora distinguishes "tagged me" from "tagged someone else" | PASS | same room, same sender: one mention carries Nora's `GetOwnFBID()`, the other does not |
 | `SearchUsers(query)` | PASS | 2,941 bytes of results |
 | `FetchMedia(mediaID, shortcode)` | not exercised | `responses.Items` — full post object with caption, like count, usertags |
 
