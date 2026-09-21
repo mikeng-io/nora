@@ -1019,6 +1019,36 @@ bridge_url = "http://127.0.0.1:19826"
 # content_max_chars = 4000                # retrieved-text clamp (bounds re-sent tokens)
 
 
+[social.instagram]
+# The SECOND social backend, serving the one read OpenCLI structurally cannot:
+# what is on someone's Instagram story right now. OpenCLI 1.8.7 has no story
+# READ anywhere (its `story` verb POSTS one), so the instameow bridge is the
+# only path that exists — and that proof of impossibility is the entry ticket.
+# Every other Instagram verb stays on the default backend above; nothing else
+# is routed here, now or later, without its own recorded measurement.
+#
+# Its own `enabled` rather than riding [social] above, because the two are
+# provisioned and fail independently: that one needs a systemd service and a
+# headed browser on the HOST, this one a co-networked container holding an
+# authenticated Instagram session. One flag would mean losing X to a
+# checkpointed Instagram session, or turning on stories to get profiles back.
+#
+# OFF here and off in the code, the house rule for anything that reads other
+# people. Turning it on ALSO needs the person index to carry Instagram ids —
+# a story read names a PERSON, never a handle, and Nora does not guess one
+# from a name — so until then it stays honest and says it couldn't check.
+#
+# The HEADER is live and `enabled` is written out, unlike the two settings
+# below it. A wholly commented-out section is not "the default, shown": it
+# means `InstagramSocialConfig` is never constructed from this file, so
+# `extra="forbid"` never runs against it and a typo'd key here would be found
+# by an operator in production rather than by the config test. `[social]`
+# above ships a live header for the same reason.
+enabled = false
+# base_url = "http://instagram-bridge:18082"   # private compose `nora` net; publishes nothing
+# timeout_seconds = 30.0                       # no browser behind it, unlike [social] above
+
+
 [preview]
 # Sender-generated link previews on Nora's OUTBOUND messages: when a reply
 # carries a URL she fetches its OpenGraph tags and attaches a title/description
