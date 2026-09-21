@@ -44,17 +44,42 @@ credential:
 
 | instameow call | Measured | Maps to DEC-151 |
 |---|---|---|
-| `GetProfile(igid)` | PASS | `instagram/profile` |
-| `FetchReel([igid])` | PASS — `status=ok`, 2 reels | **nothing — stories are not in the vocabulary** |
+| `GetProfile(igid)` | PASS, but **thin** — see below | only PART of `instagram/profile` |
+| `FetchReel([igid])` | PASS — full story reel | **nothing — stories are not in the vocabulary** |
 | `SearchUsers(query)` | PASS | `instagram/search` (users only, same as today) |
-| `FetchMedia(mediaID, shortcode)` | not exercised | `instagram/post` — **currently `unavailable`** |
+| `FetchMedia(mediaID, shortcode)` | **FAIL on the id tried** — HTTP 400 | `instagram/post` — **still unproven** |
+
+### GetProfile is a MESSAGING profile, not a social one
+
+Measured field set, 14 keys:
+
+```
+fbid_v2, friendship_status, full_name, id, interop_messaging_user_fbid,
+is_cannes, is_predicted_cannes, is_verified, latest_besties_reel_media,
+latest_reel_media, pk, profile_pic_url, reel_media_seen_timestamp, username
+```
+
+No `follower_count`, no `following_count`, no `media_count`, no `biography`.
+It answers "who is this person in messaging terms, and do they have a story
+up" — not "what does their profile look like". OpenCLI's browser-scraped
+profile returns the social fields; this does not replace it.
+
+What it does add that OpenCLI has no notion of: `friendship_status` (does this
+account follow them, are they restricted or blocking) and `latest_reel_media`
+/ `reel_media_seen_timestamp`, which are the story hooks.
 
 Set against DEC-151's three recorded limitations:
 
 1. **`instagram/post` answers `unavailable`** because OpenCLI 1.8.7 has no
-   caption-by-URL command. `FetchMedia` returns `responses.Items`, a full post
-   object carrying caption, like count and usertags. This limitation is
-   closable.
+   caption-by-URL command. An earlier revision of this document claimed
+   `FetchMedia` closes that limitation, reasoning from its return type
+   (`responses.Items`, which carries caption, like count and usertags).
+   **That was an inference and it did not survive contact**: the only media id
+   available to try — a story frame — returned
+   `HTTP 400` from `/api/v1/media/<id>/info/`. Whether it works for an
+   ordinary feed post is **untested**, because no post id could be obtained
+   (OpenCLI's `instagram user` is currently failing, see below). The claim is
+   withdrawn until a real post id is run through it.
 2. **Instagram `search` searches USERS only.** `SearchUsers` is also
    users-only. **No gain** — this limitation stands either way.
 3. **Threads waits on a native OpenCLI adapter.** `instameow` is Instagram
@@ -79,7 +104,11 @@ most plausibly want, and they already exist.
 
 ## Recommendation
 
-**Keep the tool. Add a backend. Do not add a second tool.**
+**Keep the tool. Add a backend for what instameow is actually better at. Do
+not add a second tool.**
+
+The split is narrower than this document first claimed, and measurement moved
+it twice. instameow is **not** a general replacement for the browser path:
 
 `social_fetch` stays the one model-facing surface with its closed vocabulary.
 The host-side bridge gains an Instagram backend that calls instameow instead
@@ -92,12 +121,31 @@ social_fetch(platform, what, target)        ← unchanged model surface
 social bridge  READ_ONLY_ALLOWLIST          ← unchanged security boundary
         │
         ├── x/*                  → opencli (unchanged)
-        ├── instagram/profile    → instameow  GetProfile
-        ├── instagram/posts      → instameow  FetchMedia
-        ├── instagram/post       → instameow  FetchMedia   (closes limitation 1)
-        ├── instagram/story      → instameow  FetchReel    (NEW vocabulary row)
-        └── instagram/search     → opencli or instameow (equivalent)
+        ├── instagram/story      → instameow  FetchReel   (NEW row; opencli cannot)
+        ├── instagram/profile    → opencli (social fields) + instameow (friendship,
+        │                          story hooks) — NEITHER alone is the whole answer
+        ├── instagram/posts      → opencli (instameow unproven)
+        ├── instagram/post       → still unavailable, both paths
+        └── instagram/search     → either; equivalent, users only
 ```
+
+### Live state of the browser path, 2026-09-21
+
+Measured minutes after OpenCLI came back up, and it is **partially broken**:
+
+| command | result |
+|---|---|
+| `instagram whoami` | works |
+| `instagram search` | works, returns ranked users |
+| `instagram profile` | **fails** — `Pre-navigation to https://www.instagram.com failed: Navigation rejected` |
+| `instagram user` (posts) | **fails** — returns HTML, `SyntaxError: Unexpected token '<'` |
+
+The social bridge service itself is healthy (`systemctl --user is-active
+nora-social-bridge` → active, `/health` → 200), so this is the browser
+runtime, not the seam. It is the ordinary failure mode of a headed-Chrome
+scraper and it is why story reads moving to the API path is worth doing on
+reliability grounds alone — `FetchReel` and `GetProfile` answered correctly in
+the same minutes that `profile` could not navigate.
 
 Why this shape rather than a new tool:
 

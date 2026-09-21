@@ -111,7 +111,7 @@ All on the **same authenticated session**, no second credential:
 
 | Call | Result | Returns |
 |---|---|---|
-| `GetProfile(igid)` | PASS | `@nka_bpumvg` "Miles Novak", exposes `latest_reel_media` |
+| `GetProfile(igid)` | PASS, thin | 14 fields, messaging-oriented; **no** follower/following/media counts or biography |
 | `FetchReel([igid])` | PASS | full `user_reel`: per-item media type, playable CDN url, `taken_at`; per-reel `expiring_at`, `media_ids`, `seen` |
 | story read marks it viewed? | **NO** | `seen` unchanged across two reads 20s apart, with a newer item outside the watermark both times |
 | member → igid join | PASS | `GetThread` → `Users[].ID` is the igid `FetchReel`/`GetProfile` take |
@@ -121,7 +121,7 @@ All on the **same authenticated session**, no second credential:
 | one member `@`-mentioning ANOTHER (not Nora) | PASS | `"@nka_bpumvg GH"` from a third party — `mentions[].user_fbid=110966695387753`, not Nora's |
 | Nora distinguishes "tagged me" from "tagged someone else" | PASS | same room, same sender: one mention carries Nora's `GetOwnFBID()`, the other does not |
 | `SearchUsers(query)` | PASS | 2,941 bytes of results |
-| `FetchMedia(mediaID, shortcode)` | not exercised | `responses.Items` — full post object with caption, like count, usertags |
+| `FetchMedia(mediaID, shortcode)` | **FAIL** on a story media id | `HTTP 400` from `/api/v1/media/<id>/info/`; untested on a real feed post |
 
 Phase 2 is therefore substantially cheaper than Phase 1 in new machinery: the
 transport already carries it. What Phase 2 actually needs is **policy**, not
