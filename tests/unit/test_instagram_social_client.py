@@ -19,12 +19,15 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from nora.infra.social import InstagramSocialClient
-from nora.testing import FakeSocialSubjectIndex
 
-_READ = {"platform": "instagram", "what": "story", "target": "miles", "limit": 5}
-# Resolves `miles`, Tier 0 — every test below is about what comes BACK, so the
-# resolve/authorize branches are left to the contract suite that owns them.
-_SUBJECTS = {"miles": "221731317"}
+# `target` is an IGID, not a `person_id`. Resolution and the tier check moved
+# up to `SocialRouter` (design/instagram-adoption/10 §"Who owns what"), so
+# this client is handed a subject that is already resolved and already
+# authorized — it has no index and cannot say `ambiguous` or `refused`. Those
+# branches now live in `tests/unit/test_social_router.py`.
+_READ = {
+    "platform": "instagram", "what": "story", "target": "221731317", "limit": 5,
+}
 
 
 @pytest.fixture
@@ -54,7 +57,6 @@ def make_client(bridge):
     def _make(**kwargs):
         return InstagramSocialClient(
             base_url=root,
-            subjects=FakeSocialSubjectIndex(_SUBJECTS),
             timeout_seconds=5.0,
             **kwargs,
         )
@@ -288,6 +290,58 @@ async def test_the_render_is_untrusted_wrapped_and_clamped(bridge, make_client):
     # subsequent model call. The wrapper is not part of that budget.
     body = out["text"].split(">", 1)[1].rsplit("<", 1)[0]
     assert len(body) < 80
+
+
+async def test_a_story_result_says_that_it_is_a_story(client):
+    """design/instagram-adoption/06 §"a story must be SAID to be a story".
+
+    A story vanishes in 24h; Nora's REPLY about it does not — every sent
+    message is fed to Honcho as durable conclusions. So «he was at the gym»
+    launders a perishable observation into permanent knowledge, while «his
+    story from 3h ago» ages honestly. The phrasing is the whole mitigation,
+    and the model cannot attribute what it was not told: a bare list of URLs
+    plus an epoch is not being told what KIND of thing this was.
+
+    Both halves are asserted, because either alone is defeated. The
+    `source_kind` without the instruction is a field nothing acts on; the
+    instruction without the kind is prose about something the result never
+    names.
+    """
+    box, provider = client
+    box["items"] = [_reel()]
+    out = await provider.read(**_READ)
+    assert out["source_kind"] == "instagram_story"
+    assert "story" in out["note"].lower()
+    assert "24h" in out["note"]
+    # It must reach the model as an INSTRUCTION about what she may say, in
+    # the slot that already carries exactly that for `refused`/`unavailable`
+    # — not as a second description of the data.
+    assert "expires_at" in out["note"] and "taken_at" in out["note"]
+
+
+async def test_the_framing_is_not_paid_for_unless_a_story_was_actually_read(client):
+    """Why the RESULT is its home and the tool description is not: 54% of all
+    tool-description text is result-handling prose, paid on every call of
+    every turn for all 54 tools. Carried here it costs nothing on the two
+    states that are not a story — and those states have their own sentence
+    already, which this must not overwrite."""
+    box, provider = client
+    box["status"] = "nothing_found"
+    out = await provider.read(**_READ)
+    assert out["status"] == "nothing_found"
+    assert "source_kind" not in out
+    assert "24h" not in out["note"]
+
+
+async def test_a_story_read_with_no_subject_never_reaches_the_bridge(client):
+    """`target` is the igid the ROUTER resolved, so an empty one is a routing
+    bug rather than a question about anybody. It must not be forwarded: the
+    bridge would be handed a blank igid and would get to decide what that
+    means, which is how «I couldn't look» turns into a read of somebody."""
+    box, provider = client
+    out = await provider.read(**{**_READ, "target": "  "})
+    assert out["status"] == "unavailable"
+    assert "_body" not in box   # positive control: nothing was sent
 
 
 async def test_a_nonpositive_limit_is_clamped_before_it_reaches_the_bridge(client):

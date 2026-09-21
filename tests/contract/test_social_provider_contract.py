@@ -66,9 +66,15 @@ IMPLS = [
 # that is the point of the exception list: `x/profile` exists only on the
 # OpenCLI side, `instagram/story` only on the other.
 _DEFAULT_READ = {"platform": "x", "what": "profile", "target": "nasa", "limit": 5}
+#: Through the ROUTER, `target` is a `person_id` — the router resolves it.
 _EXCEPTION_READ = {
     "platform": "instagram", "what": "story", "target": "miles", "limit": 5,
 }
+#: Straight at the BACKEND, `target` is already the igid. The two are not the
+#: same string on purpose: subject resolution moved to the router
+#: (design/instagram-adoption/10 §"Who owns what"), so the client no longer
+#: has an index and a `person_id` arriving there would be a routing bug.
+_BACKEND_READ = {**_EXCEPTION_READ, "target": "221731317"}
 #: The person index as the story arm needs it: `miles` resolves and is in a
 #: room Nora is in, which is Tier 0 and the only tier v1 serves.
 _SUBJECTS = {"miles": "221731317"}
@@ -148,16 +154,16 @@ async def arm(request):
     await server.start_server()
     root = str(server.make_url("")).rstrip("/")
     opencli = OpenCliBridgeClient(bridge_url=root, timeout_seconds=5.0)
-    instagram = InstagramSocialClient(
-        base_url=root, subjects=FakeSocialSubjectIndex(_SUBJECTS), timeout_seconds=5.0,
-    )
+    instagram = InstagramSocialClient(base_url=root, timeout_seconds=5.0)
     if request.param == "opencli":
         built: tuple[SocialProvider, dict] = (opencli, _DEFAULT_READ)
     elif request.param == "instagram":
-        built = (instagram, _EXCEPTION_READ)
+        built = (instagram, _BACKEND_READ)
     else:
         router = SocialRouter(
-            default=opencli, exceptions={("instagram", "story"): instagram},
+            default=opencli,
+            exceptions={("instagram", "story"): instagram},
+            subjects=FakeSocialSubjectIndex(_SUBJECTS),
         )
         built = (
             router,
@@ -173,16 +179,16 @@ def dead_arm(request):
     which needs no server at all."""
     opencli = OpenCliBridgeClient(bridge_url="http://127.0.0.1:1", timeout_seconds=1.0)
     instagram = InstagramSocialClient(
-        base_url="http://127.0.0.1:1",
-        subjects=FakeSocialSubjectIndex(_SUBJECTS),
-        timeout_seconds=1.0,
+        base_url="http://127.0.0.1:1", timeout_seconds=1.0,
     )
     if request.param == "opencli":
         return opencli, _DEFAULT_READ
     if request.param == "instagram":
-        return instagram, _EXCEPTION_READ
+        return instagram, _BACKEND_READ
     router = SocialRouter(
-        default=opencli, exceptions={("instagram", "story"): instagram},
+        default=opencli,
+        exceptions={("instagram", "story"): instagram},
+        subjects=FakeSocialSubjectIndex(_SUBJECTS),
     )
     return router, _EXCEPTION_READ
 
@@ -295,37 +301,14 @@ async def test_no_result_carries_a_content_key(arm):
         assert "content" not in out, mode
 
 
-# ---- the two declared extensions, and the router's silence about them ------
-
-
-async def test_an_unresolved_subject_is_ambiguous_not_a_guess():
-    """`target` is a `person_id`. No index entry means Nora does NOT fall back
-    to treating the string as a handle — a wrong binding does not degrade the
-    answer, it reads a different human's stories silently. The read must not
-    happen at all, which is asserted by the backend never being reachable: the
-    base_url here points at a dead port, so an `ambiguous` that had performed
-    a read would be `unavailable` instead."""
-    client = InstagramSocialClient(
-        base_url="http://127.0.0.1:1",
-        subjects=FakeSocialSubjectIndex(),          # knows nobody
-        timeout_seconds=1.0,
-    )
-    out = await client.read(**_EXCEPTION_READ)
-    assert out["status"] == "ambiguous"
-
-
-async def test_an_out_of_tier_subject_is_refused_not_unavailable():
-    """v1 is Tier 0 only. «I may not look him up» and «I couldn't look» are
-    different claims: one is a boundary the operator set and the other is an
-    outage somebody should fix. Same dead-port control as above — nothing was
-    read."""
-    client = InstagramSocialClient(
-        base_url="http://127.0.0.1:1",
-        subjects=FakeSocialSubjectIndex(_SUBJECTS, out_of_reach=frozenset({"miles"})),
-        timeout_seconds=1.0,
-    )
-    out = await client.read(**_EXCEPTION_READ)
-    assert out["status"] == "refused"
+# ---- the two declared extensions, and where they are produced -------------
+#
+# `ambiguous` and `refused` are the ROUTER's now (design/instagram-
+# adoption/10 §"Who owns what"). They are asserted here rather than only in
+# `tests/unit/test_social_router.py` because the risk this file exists for is
+# a STATE risk: `social_fetch` branches on `status` with nothing between it
+# and the model, so whichever layer produces a word, it must be one the tool's
+# vocabulary declares and it must not collapse into R-27's three.
 
 
 @pytest.mark.parametrize(
@@ -336,20 +319,60 @@ async def test_an_out_of_tier_subject_is_refused_not_unavailable():
          "refused"),
     ],
 )
-async def test_the_router_passes_a_backends_status_through_verbatim(subjects, expected):
-    """The router's contract obligation. It picks a backend; it does not have
-    an opinion about the answer. Re-mapping `ambiguous` or `refused` into
-    `unavailable` on the way past — the tempting "the router only speaks R-27's
-    three states" simplification — would replace a boundary or a missing index
-    entry with an outage, and the backend that knew the difference would have
-    no way to report it."""
+async def test_the_tier_ladder_answers_outside_r27s_three_states(subjects, expected):
+    """`target` is a `person_id`. No index entry means Nora does NOT fall back
+    to treating the string as a handle — a wrong binding does not degrade the
+    answer, it reads a different human's stories silently. Out of tier is
+    `refused`: «I may not look him up» and «I couldn't look» are different
+    claims, one a boundary the operator set and the other an outage somebody
+    should fix.
+
+    The backend here points at a dead port, which is the control that says
+    nothing was read: an `ambiguous` or a `refused` that had performed a read
+    would be `unavailable` instead."""
     client = InstagramSocialClient(
-        base_url="http://127.0.0.1:1", subjects=subjects, timeout_seconds=1.0,
+        base_url="http://127.0.0.1:1", timeout_seconds=1.0,
     )
-    router = SocialRouter(default=None, exceptions={("instagram", "story"): client})
+    router = SocialRouter(
+        default=None,
+        exceptions={("instagram", "story"): client},
+        subjects=subjects,
+    )
     out = await router.read(**_EXCEPTION_READ)
     assert out["status"] == expected
     assert expected not in R27_CORE_STATES   # positive control: it is an extension
+
+
+@pytest.mark.parametrize(
+    ("read", "exceptions"),
+    [
+        (_DEFAULT_READ, False),
+        (_EXCEPTION_READ, True),
+    ],
+)
+async def test_the_router_passes_a_backends_status_through_verbatim(read, exceptions):
+    """The router's OTHER contract obligation, and the one its new
+    authorization job makes easy to lose. It picks a backend and it decides
+    whether the subject may be read; it has no opinion about the ANSWER.
+    Re-mapping a status on the way past — the tempting "the router only speaks
+    R-27's three states" simplification — would put a second opinion in front
+    of the process that actually performed the read.
+
+    Checked with a backend that answers a DECLARED EXTENSION, because those
+    are the statuses a narrowing router would swallow: it is the backend's
+    `refused` here, arriving through a subject the router authorized, so a
+    green result cannot be the router's own refusal wearing the same word."""
+    key = ("instagram", "story") if exceptions else ("x", "profile")
+    backend = FakeSocialProvider({key: {"status": "refused", "note": "backend said"}})
+    router = SocialRouter(
+        default=None if exceptions else backend,
+        exceptions={key: backend} if exceptions else {},
+        subjects=FakeSocialSubjectIndex(_SUBJECTS),
+    )
+    out = await router.read(**read)
+    assert out["status"] == "refused"
+    assert out["note"] == "backend said"
+    assert len(backend.calls) == 1   # positive control: it WAS dispatched
 
 
 # ---- the in-memory implementation -----------------------------------------

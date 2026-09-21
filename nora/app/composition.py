@@ -1967,11 +1967,13 @@ async def build_dependencies(
         )
     # The EXCEPTION backend serves the one row OpenCLI structurally cannot
     # (`instagram/story`). It is not built yet, and the reason is a real
-    # dependency rather than an omission: `InstagramSocialClient` requires a
-    # `SocialSubjectIndex` — `person_id -> igid`, plus the Tier 0 check — and
-    # that needs the `instagram` id kind (`fbid` + `igid`) in `identity.toml`,
-    # which belongs to the platform-adapter milestone (design/instagram-
-    # adoption/11 M2) and is ITS schema to define, not the social axis's.
+    # dependency rather than an omission: that row is Tier 0, so the ROUTER
+    # needs a `SocialSubjectIndex` — `person_id -> igid`, plus the reach check
+    # — and that needs the `instagram` id kind (`fbid` + `igid`) in
+    # `identity.toml`, which belongs to the platform-adapter milestone
+    # (design/instagram-adoption/11 M2) and is ITS schema to define, not the
+    # social axis's. `SocialRouter` refuses to be constructed with a Tier 0
+    # backend and no index, so this is not a discipline to remember.
     #
     # Wiring it with a resolver that answers `None` for everybody would be
     # worse than not wiring it: the tool would say `ambiguous` («I don't know

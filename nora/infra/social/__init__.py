@@ -25,6 +25,13 @@ The Instagram half has no host-side half here at all:
   lives in that Go process (`deploy/instagram-bridge/`), which is where the
   read is performed.
 
+`SocialRouter` also owns the TIER LADDER (`SUBJECT_TIERS`), which is the
+other thing every social read passes through and the reason the router is
+more than a dispatch table: subject resolution and the reach check used to
+sit in `instagram_client.py`, where they could only govern that file's one
+row while the seven OpenCLI rows ran with no subject authorization at all
+(design/instagram-adoption/07 §tiers, /10 §"Who owns what").
+
 **The invariant is the same across both and is what survives a backend that
 is not a host subprocess**: every social read is re-authorized against a
 frozen allowlist IN THE PROCESS THAT PERFORMS IT, which is never the process
@@ -36,10 +43,19 @@ by the content it reads.
 
 from .bridge_client import OpenCliBridgeClient
 from .instagram_client import InstagramSocialClient
-from .router import EXCEPTION_ROUTES, SocialRouter
+from .router import (
+    EXCEPTION_ROUTES,
+    SUBJECT_TIERS,
+    TIER_NAMED,
+    TIER_ROOM,
+    SocialRouter,
+)
 
 __all__ = [
     "EXCEPTION_ROUTES",
+    "SUBJECT_TIERS",
+    "TIER_NAMED",
+    "TIER_ROOM",
     "InstagramSocialClient",
     "OpenCliBridgeClient",
     "SocialRouter",

@@ -8,19 +8,25 @@ verb posts one), so instameow's `FetchReel` is the only path that exists; every
 other Instagram verb stays on the default backend. `SocialRouter`'s docstring
 carries the rule this row is the single exception to.
 
-## Three things this client does that the OpenCLI one does not
+## What this client does NOT do, and why that is the interesting part
 
-**It resolves a SUBJECT.** `target` is a `person_id`, not a handle — the model
-never supplies an Instagram identity, because inferring one from a name is a
-guess that reads a different human's stories rather than failing. The person
-index is the only thing allowed to make that binding (`SocialSubjectIndex`),
-and no entry is `ambiguous`, never a guess.
+**It does not resolve a subject, and it does not authorize a tier.** Both used
+to live here and moved to `SocialRouter` on 2026-09-22
+(design/instagram-adoption/10 §"Who owns what"). The reason is not tidiness:
+an authorization check inside ONE backend can only ever govern that backend's
+rows, and the seven OpenCLI rows were therefore running with no subject
+authorization at all while node 07 says the tier ladder governs *all* social
+reads. A rule that reaches one of eight rows is not a ladder.
 
-**It authorizes a TIER.** v1 is Tier 0 only: the subject must be someone in a
-room Nora is in, which is the tier that needs no new policy machinery because
-the room IS the grant. Anything else is `refused` — a boundary, not an outage.
-Architecture bounds *how*, the tier ladder bounds *who*, retention bounds
-*what survives*; all three are required and none substitutes for another.
+So `target` arrives here already RESOLVED and already AUTHORIZED: it is the
+igid the person index bound, not the `person_id` the model named. This client
+never sees a `person_id`, has no `SocialSubjectIndex`, and cannot produce
+`ambiguous` or `refused` — those are the router's sentences now, said before
+anything is dispatched. Architecture bounds *how*, the tier ladder bounds
+*who*, retention bounds *what survives*; all three are required, and this file
+owns only the first.
+
+## What it does do that the OpenCLI client does not
 
 **It returns REFERENCES, never content.** An item is `{id, kind, taken_at,
 url}` and is BUILT FIELD BY FIELD from the envelope rather than passed
@@ -64,6 +70,32 @@ cookies, no UA and no referer, so `media_fetch` carrying no session is not a
 problem. They are also valid for a window rather than indefinitely, which is
 why `expires_at` rides the result: a two-step "list now, look later" flow has
 to be SOON after, and a stored URL is a dead link.
+
+## A story must be SAID to be a story, and the result is what says it
+
+The media vanishes in 24 hours. Nora's REPLY about it does not: every sent
+message is fed to Honcho as durable conclusions
+(`nora/engagement/stages/feedback.py`). So «he was at the beach» launders a
+perishable observation into permanent knowledge, indistinguishable a week
+later from something he actually said, while «his story from 3h ago showed a
+beach» ages honestly on its own (design/instagram-adoption/06 §"a story must
+be SAID to be a story"). The phrasing is the whole mitigation, because it
+travels WITH the claim — a retention rule cannot reach into a Honcho
+conclusion and a phrasing rule is already inside it.
+
+Two things therefore ride an `ok` result: `source_kind` says what this is in
+one token nothing can mistake — `instagram_story`, not a bare URL that could
+be anything — and `note` carries the framing, adjacent to the `taken_at` and
+`expires_at` it is talking about.
+
+**In the RESULT, not in the tool description.** Measured while compressing
+prompt tokens: 54% of all tool-description text (8,602 of 16,045 tokens) is
+result-handling prose read only after a call returns, paid on every call of
+every turn for all 54 tools. A result-carried instruction costs nothing unless
+a story was actually fetched, and it arrives at the moment the model is
+choosing how to phrase the answer rather than thousands of tokens earlier.
+That also sets its length: this is prose re-sent on every subsequent model
+call of the turn, so it is three sentences and not a policy.
 """
 
 from __future__ import annotations
@@ -77,10 +109,27 @@ from typing import Any
 import aiohttp
 
 from ...domain.blocks import wrap_outside_text
-from ...domain.ports import SocialProvider, SocialSubjectIndex
-from .results import AMBIGUOUS, NOTHING_FOUND, REFUSED, UNAVAILABLE, clamp_chars
+from ...domain.ports import SocialProvider
+from .results import NOTHING_FOUND, UNAVAILABLE, clamp_chars
 
 log = logging.getLogger("nora.social.instagram")
+
+#: What this result IS, in a field nothing can mistake for a URL. A model
+#: cannot attribute what it was not told, and "there is a `taken_at` in here"
+#: is not being told.
+SOURCE_KIND = "instagram_story"
+
+#: The framing, carried BY the result (module docstring). Short on purpose —
+#: it is re-sent on every later model call in the turn — and it names the
+#: contrast rather than a rule, because the failure is a phrasing that reads
+#: as knowledge rather than a phrasing that breaks a policy.
+_STORY_FRAMING = (
+    "This is their Instagram STORY — it disappears about 24h after it was "
+    "posted (`taken_at`, and `expires_at` is when the links die). If you "
+    "mention any of it, say it was their story and when: «his story from "
+    "this morning», never «he was at the gym». You saw something "
+    "perishable; you don't know where he was."
+)
 
 #: The one row this backend serves. A request for anything else reaching here
 #: is a ROUTING bug, not a user error — `SocialRouter` sends only the exception
@@ -121,12 +170,12 @@ _ID_RE = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 class InstagramSocialClient(SocialProvider):
     """`POST /social/story` on the instagram-bridge. NEVER raises.
 
-    Collaborators through `__init__` only (test-seam policy). `subjects` is
-    REQUIRED rather than optional: a client that could be built without an
-    index would answer `ambiguous` for everyone while looking wired, and the
-    honest expression of "the index does not exist yet" is the composition
-    root not building this client at all — which then answers `unavailable`
-    through the router, «I couldn't check», which is true.
+    Collaborators through `__init__` only (test-seam policy), and there is no
+    `SocialSubjectIndex` among them any more: `target` is the igid the ROUTER
+    resolved and authorized, so this client cannot look a person up and cannot
+    decide whether it may. Not having the collaborator is what makes that
+    structural rather than a convention — a backend holding an index is a
+    backend one edit away from carrying its own copy of the tier rule.
 
     `base_url` reaches the bridge as a co-networked container
     (`http://instagram-bridge:PORT`); nothing is published to the host. The
@@ -140,12 +189,10 @@ class InstagramSocialClient(SocialProvider):
         self,
         *,
         base_url: str,
-        subjects: SocialSubjectIndex,
         timeout_seconds: float = 30.0,
         content_max_chars: int = 4000,
     ) -> None:
         self._base_url = base_url.rstrip("/")
-        self._subjects = subjects
         self._timeout_seconds = timeout_seconds
         self._content_max_chars = content_max_chars
 
@@ -154,10 +201,11 @@ class InstagramSocialClient(SocialProvider):
     ) -> dict[str, Any]:
         """One story read. NEVER raises (R-5).
 
-        Five states, and the two beyond R-27's core are the ones that must not
-        collapse into it: `ambiguous` (I don't know whose account), `refused`
-        (I may not look), `ok`, `nothing_found` (I looked, no story up),
-        `unavailable` (I could not look).
+        Three states, which is R-27's core and nothing more: `ok`,
+        `nothing_found` (I looked, no story up), `unavailable` (I could not
+        look). The other two a story read can produce — `ambiguous` (I don't
+        know whose account) and `refused` (I may not look) — are decided ABOVE
+        this, in the router, and are never reached with a call to make.
         """
         try:
             return await self._read(platform=platform, what=what, target=target, limit=limit)
@@ -174,15 +222,16 @@ class InstagramSocialClient(SocialProvider):
         if (platform, what) not in _SERVES:
             log.warning("instagram social client asked for a row it does not serve")
             return dict(UNAVAILABLE)
-        # RESOLVE before AUTHORIZE: a tier is a property of a person, so there
-        # is nothing to authorize until the subject is one. The order also
-        # keeps the two answers distinct — "who?" and "not them" are different
-        # sentences and the model says a different thing for each.
-        igid = await self._subjects.igid_for(person_id=target)
+        # `target` is the igid the router resolved out of the person index —
+        # never a `person_id` and never a handle. An empty one is a routing
+        # bug in the same family as the row check above, so it is a wiring
+        # gap rather than a question about the subject, and it must not be
+        # sent: the bridge would be handed a blank igid and would get to
+        # decide what that means.
+        igid = target.strip()
         if not igid:
-            return dict(AMBIGUOUS)
-        if not await self._subjects.is_tier_zero(person_id=target):
-            return dict(REFUSED)
+            log.warning("instagram social client asked for a story with no subject")
+            return dict(UNAVAILABLE)
         payload = await self._post_story(igid=igid, limit=limit)
         if payload is None:
             return dict(UNAVAILABLE)
@@ -219,6 +268,19 @@ class InstagramSocialClient(SocialProvider):
         text, truncated = clamp_chars(_render(items), self._content_max_chars)
         out: dict[str, Any] = {
             "status": "ok",
+            # WHAT this is, explicitly. A story result that says only «here
+            # are some URLs» is a result the model can only describe as a
+            # fact about the world, and a fact about the world does not
+            # expire. `taken_at` alone is not this: a timestamp says when,
+            # not what kind of thing it is attached to.
+            "source_kind": SOURCE_KIND,
+            # The framing, beside the timestamps it is about. `note` is Nora's
+            # own instruction slot — nothing from the bridge ever lands in one
+            # (`results.py`) — so this is the same channel `unavailable` and
+            # `refused` already use to say what she may claim, spent here on
+            # the one state where the risk is not a wrong answer but a
+            # permanent one.
+            "note": _STORY_FRAMING,
             "items": items,
             # The rendered form, because the model reads text natively and a
             # bare list of dicts is not what it acts on. The `[video <url>]`

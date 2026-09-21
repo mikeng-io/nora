@@ -1472,11 +1472,14 @@ class FakeSocialProvider:
 
 class FakeSocialSubjectIndex:
     """In-memory `SocialSubjectIndex`, exercised by
-    `tests/contract/test_social_provider_contract.py` through
-    `InstagramSocialClient` — the port has no production implementation yet
-    (it needs the `instagram` id kind in `identity.toml`, which belongs to the
-    platform-adapter milestone), so this is its first, and the suite that
-    binds it is the one that drives the client's three outcomes through it.
+    `tests/contract/test_social_provider_contract.py` through `SocialRouter`,
+    which is where the tier ladder lives (design/instagram-adoption/10 §"Who
+    owns what"; it used to live in `InstagramSocialClient` and could only
+    govern that backend's one row from there) — the port has no production
+    implementation yet (it needs the `instagram` id kind in `identity.toml`,
+    which belongs to the platform-adapter milestone), so this is its first,
+    and the suite that binds it is the one that drives the router's three
+    outcomes through it.
 
     **It does not answer every request the same way.** The three outcomes it
     can produce are the three the tier ladder produces, and collapsing any two
@@ -1484,7 +1487,7 @@ class FakeSocialSubjectIndex:
 
     * a person it holds an igid for, in reach → that igid, Tier 0 true;
     * a person it holds an igid for, out of reach → the igid, Tier 0 false,
-      which is `refused` at the client — a boundary, not an outage;
+      which is `refused` at the router — a boundary, not an outage;
     * a person it has never heard of → `None`, which is `ambiguous` — and
       NEVER a handle derived from the id, because a wrong binding does not
       degrade the answer, it reads a different human's stories silently.
