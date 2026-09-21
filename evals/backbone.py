@@ -245,6 +245,45 @@ def _blocks_empty(exporter: InMemorySpanExporter) -> str | None:
     return None
 
 
+#: What every case driven in this process has spent, appended by `_drive`.
+#:
+#: A module-level accumulator and not a field on the report, because the SDK's
+#: report does NOT carry `environment_state`: `Experiment` builds each row from
+#: `result["case"]` alone (`experiment.py:672`), so the graders see the spend
+#: and the report never does. Measured by printing nothing on the first try.
+#:
+#: Safe as process state for the reason `nora_task`'s own docstring already
+#: gives: `TracedHandler` forces `max_workers=1`, so cases are driven one at a
+#: time, in this process.
+_SPEND: list[dict[str, Any]] = []
+
+
+def drain_spend() -> dict[str, Any]:
+    """Totals for the cases driven since the last drain, and reset.
+
+    Drained per corpus rather than accumulated for the run, so a corpus's
+    line describes that corpus.
+    """
+    calls = sum(int(x[NORA_CALLS]) for x in _SPEND)
+    inp = sum(int(x[NORA_INPUT_TOKENS]) for x in _SPEND)
+    out = sum(int(x[NORA_OUTPUT_TOKENS]) for x in _SPEND)
+    cached = sum(int(x[NORA_CACHED_TOKENS]) for x in _SPEND)
+    stops: list[str] = []
+    for x in _SPEND:
+        for reason in str(x[NORA_STOPS] or "").split(","):
+            if reason and reason not in stops:
+                stops.append(reason)
+    _SPEND.clear()
+    return {
+        "calls": calls, "input": inp, "output": out, "cached": cached,
+        "fresh": inp - cached, "stops": stops,
+        # NAMED, not inferred. A `max_tokens` finish reason is the truncation
+        # that cost two ceiling changes and two re-runs to identify on
+        # 2026-09-22, and it was in this attribute the whole time.
+        "truncated": [r for r in stops if "max_token" in r or "length" in r],
+    }
+
+
 def _model_calls(exporter: InMemorySpanExporter) -> dict[str, Any]:
     """What the model calls captured so far spent, and how they stopped.
 
@@ -561,6 +600,7 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
             # BEFORE the judge: these describe what the SUBJECT spent, and a
             # judge's draws are the eval layer's own cost.
             spend = _model_calls(exporter)
+            _SPEND.append(spend)
             outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)
 
             # S3/S9 (`10-the-scenario-map.md` §3) — judged HERE, while the

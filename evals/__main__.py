@@ -12,22 +12,16 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from typing import Any
 
 from evals.backbone import (
     ERROR,
     FAIL,
-    NORA_CACHED_TOKENS,
-    NORA_CALLS,
-    NORA_INPUT_TOKENS,
-    NORA_OUTPUT_TOKENS,
-    NORA_STOPS,
     PASS,
     UNSTABLE,
     base_name,
+    drain_spend,
     read,
     sample_read,
-    state_of,
 )
 from evals.rebuilt.grading import DEFAULT_JUDGE_MODEL, DEFAULT_SAMPLES, Judge
 from evals.scenarios import CORPUS_ENTRY, JUDGED_CORPORA, census, experiment_for
@@ -126,57 +120,25 @@ def _corpora_for(args: argparse.Namespace) -> list[str]:
     return sorted(selected)
 
 
-def _print_spend(report: Any) -> None:
+def _print_spend() -> None:
     """What this corpus actually spent, and whether any call was TRUNCATED.
 
     Printed on every run because it is free — the numbers ride on spans this
-    process already captures — and because the alternative is what happened
-    on 2026-09-22: a truncation was diagnosed by changing a ceiling and
-    re-running, twice, when the call's own `finish_reason` was sitting in
-    memory the whole time.
+    process already captures for `agent.prefill` — and because the
+    alternative is what happened on 2026-09-22: a truncation was diagnosed by
+    changing a ceiling and re-running, twice, while the call's own
+    `finish_reason` sat in memory unread.
     """
-    calls = inp = out = cached = 0
-    stops: list[str] = []
-    seen: set[int] = set()
-    for case_row, outputs in zip(report.cases, report.detailed_results, strict=True):
-        for out_row in outputs:
-            # One entry per (case, evaluator) PAIR — counting every row would
-            # multiply the spend by the evaluator count.
-            key = id(case_row)
-            if key in seen:
-                continue
-            seen.add(key)
-            data = _Data(case_row, out_row)
-            n = state_of(data, NORA_CALLS)
-            if not n:
-                continue
-            calls += int(n)
-            inp += int(state_of(data, NORA_INPUT_TOKENS) or 0)
-            out += int(state_of(data, NORA_OUTPUT_TOKENS) or 0)
-            cached += int(state_of(data, NORA_CACHED_TOKENS) or 0)
-            for reason in str(state_of(data, NORA_STOPS) or "").split(","):
-                if reason and reason not in stops:
-                    stops.append(reason)
-    if not calls:
+    spend = drain_spend()
+    if not spend["calls"]:
         return
-    fresh = inp - cached
-    truncated = [r for r in stops if "max_token" in r or "length" in r]
-    print(
-        f"  spend: {calls} model call(s), in={inp} (cached {cached}, fresh "
-        f"{fresh}), out={out}"
-        + (f"  TRUNCATED: {truncated}" if truncated else "")
+    line = (
+        f"  spend: {spend['calls']} model call(s), in={spend['input']} "
+        f"(cached {spend['cached']}, fresh {spend['fresh']}), out={spend['output']}"
     )
-
-
-class _Data:
-    """`state_of` reads `.actual_environment_state`; a report row is a dict."""
-
-    def __init__(self, case_row: Any, out_row: Any) -> None:
-        self.actual_environment_state = (
-            getattr(out_row, "actual_environment_state", None)
-            or case_row.get("environment_state")
-            or ()
-        )
+    if spend["truncated"]:
+        line += f"   TRUNCATED: {spend['truncated']}"
+    print(line)
 
 
 def _run_one(
@@ -189,7 +151,7 @@ def _run_one(
     report = experiment.run_evaluations(task=task)
     scope = f" [{len(experiment.cases)} selected]" if only else ""
     print(f"--- {name}: {census(name)}{scope} ---")
-    _print_spend(report)
+    _print_spend()
     if sample > 1:
         readings = sample_read(report)
         # THE SPLIT, not just the verdict. `UNSTABLE` says the draws
