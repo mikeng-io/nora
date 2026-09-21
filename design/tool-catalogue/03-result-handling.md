@@ -122,8 +122,9 @@ whitefish-c0 is making the same move from the other direction: the Instagram
 story-attribution rule ("say it *was* a story and when it was posted, rather
 than restating it as a fact") was written as doctrine and is moving to the
 tool result, because it is paid only when a story is actually read and sits
-next to the `taken_at`/`expires_at` it is about
-(`design/instagram-adoption/06-retention-and-custody.md`).
+next to the `taken_at`/`expires_at` it is about. That bundle is on the
+Instagram workstream's branch and not on master at the time of writing — this
+records the parallel, not a file you can open here.
 
 That is the same lever pointed at the 8,288-token doctrine block. It is
 **out of scope here** and recorded as an open question in
