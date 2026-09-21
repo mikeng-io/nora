@@ -119,14 +119,28 @@ def build_health_app(
                 entry = {
                     "connected": plat_health.connected,
                     "last_event_age_seconds": plat_health.last_event_age_seconds,
+                    # M0 (design/instagram-adoption/01 §Degradation). A
+                    # degraded adapter is registered, answers no sends and
+                    # emits no events — and without this field it is
+                    # indistinguishable from a quiet room, which is the
+                    # failure the degradation path was allowed to exist for.
+                    "degraded": plat_health.degraded,
+                    "detail": plat_health.detail,
                 }
                 try:
                     entry["account"] = (await plat_adapter.resolve_identity()).primary
                 except Exception:              # noqa: BLE001 — a health check never raises
                     entry["account"] = None
             except Exception:                  # noqa: BLE001 — a health check never raises
-                entry = {"connected": False, "last_event_age_seconds": None, "account": None}
-            if not entry["connected"]:
+                entry = {"connected": False, "last_event_age_seconds": None, "account": None,
+                         "degraded": False, "detail": ""}
+            # A DEGRADED platform does not make Nora unhealthy, and that is the
+            # whole point of the state. An Instagram checkpoint is a normal
+            # overnight event; flipping /health to 503 for it would fail the
+            # container healthcheck and take Signal and Discord down with it —
+            # the exact outcome M0 exists to prevent, arriving one layer later.
+            # It is reported LOUDLY instead, which is what the field is for.
+            if not entry["connected"] and not entry.get("degraded"):
                 healthy = False
             platforms[name] = entry
 

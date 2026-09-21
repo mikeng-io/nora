@@ -150,6 +150,41 @@ class WhatsAppPlatformConfig(BaseModel):
     base_url: str = "http://whatsapp-bridge:18081"
 
 
+class InstagramPlatformConfig(BaseModel):
+    """`design/instagram-adoption/`. Same shape as WhatsApp's and for the same
+    reason: the adapter talks to a LOCAL daemon — the containerized Go/instameow
+    bridge (`deploy/instagram-bridge/`, compose service `instagram-bridge`) — so
+    the credential never appears here at all. The bridge holds the cookie
+    session on its own `/session` volume, and there is no token to name. No
+    `account` field either: the bot's own interop fbid is derived from the
+    bridge's `GET /health` at startup (`nora.platform.instagram.self_id`), the
+    same rule DEC-102 set for Signal's removed `nora_sender_id`. That rule is
+    sharper here than anywhere else — `design/instagram-adoption/02` opens by
+    naming the failure a configured copy would produce: the obvious id is the
+    WRONG one, choosing it raises no error anywhere, and Nora simply never
+    notices she was tagged.
+
+    **This is deliberately NOT `[social.instagram]`, even though it names the
+    same process on the same port.** One authenticated session serves both axes
+    (a second would mean two concurrent logins for one account, the
+    configuration most likely to provoke a checkpoint), but they share a
+    SESSION, not a capability: this adapter cannot fetch a story and that
+    client cannot send a message. Two config homes is the honest expression of
+    two things switched on separately, and what it prevents is a messaging
+    outage silently taking the social axis with it, or the reverse. See
+    `InstagramSocialConfig`, which makes the same argument from the other side.
+
+    Defaulted and OFF: a config.toml written before the transport existed must
+    still load with Instagram off — the same argument `DiscordPlatformConfig`
+    and `WhatsAppPlatformConfig` make.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    base_url: str = "http://instagram-bridge:18082"
+
+
 class PlatformsConfig(BaseModel):
     """A model, not a free-form dict: `extra="forbid"` must keep rejecting an
     unknown platform name. A later phase widens this into a registry.
@@ -160,6 +195,7 @@ class PlatformsConfig(BaseModel):
     signal: SignalPlatformConfig
     discord: DiscordPlatformConfig = Field(default_factory=DiscordPlatformConfig)
     whatsapp: WhatsAppPlatformConfig = Field(default_factory=WhatsAppPlatformConfig)
+    instagram: InstagramPlatformConfig = Field(default_factory=InstagramPlatformConfig)
 
 
 class MemoryConfig(BaseModel):

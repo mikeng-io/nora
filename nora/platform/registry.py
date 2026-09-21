@@ -12,8 +12,21 @@ cannot resolve who it is; the caller
 `StartupError`, the same as every other fatal, ordered startup step.
 
 Each enabled platform is one more `if platforms.<x>.enabled:` block — Signal,
-Discord (DEC-102), and now WhatsApp (design/whatsapp-adoption/). A disabled
-platform is built and resolved by no one, silently.
+Discord (DEC-102), WhatsApp (design/whatsapp-adoption/) and now Instagram
+(design/instagram-adoption/). A disabled platform is built and resolved by no
+one, silently.
+
+**Instagram is the one exception to fail-fast, and it is Instagram-shaped**
+(design/instagram-adoption/01-bridge-container.md §Degradation, M0). Failing to
+resolve identity means a misconfiguration on Signal and Discord; on Instagram
+it means *a captcha happened overnight*, and under the unmodified rule one
+checkpoint stops Nora starting AT ALL — Signal and Discord included. So an
+enabled Instagram adapter that cannot authenticate is built and registered
+DEGRADED: it answers no sends, emits no events, logs one ERROR line naming the
+reason, and reports `degraded` on Nora's `/health`. It is also registered with
+NO entry in `identities`, deliberately — see the block itself. This is an
+exception with a stated reason, not a general loosening; do not extend it to
+WhatsApp, which is its own bundle's decision.
 
 **Nora's own account is never written to `identity.toml`** (DEC-9) — that
 file describes other people, not Nora. This module never writes to it and
@@ -27,6 +40,7 @@ Nora?" and "which person is this sender?" are answered by the same flattening.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -36,10 +50,13 @@ from nora.infra.voice.hub import VoiceControllerHub
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.platform.discord.music_notify import ResolveMusicChannel, no_music_channel
+from nora.platform.instagram.adapter import InstagramAdapter
 from nora.platform.signal.account import AccountError, derive_account
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.self_id import MetricsSink
 from nora.platform.whatsapp.adapter import WhatsAppAdapter
+
+log = logging.getLogger("nora.platform.registry")
 
 
 class AdapterRegistryError(Exception):
@@ -72,6 +89,16 @@ class _WhatsAppPlatformConfig(Protocol):
     def base_url(self) -> str: ...
 
 
+class _InstagramPlatformConfig(Protocol):
+    """Same shape as WhatsApp's and for the same reason — the bridge holds the
+    cookie session and answers `GET /health`; see
+    `nora.config.InstagramPlatformConfig`."""
+    @property
+    def enabled(self) -> bool: ...
+    @property
+    def base_url(self) -> str: ...
+
+
 class _PlatformsConfig(Protocol):
     """The narrow slice of `nora.config.Config` this module needs — not
     `nora.config.Config` itself, which `nora.platform` is forbidden from
@@ -96,6 +123,8 @@ class _PlatformsConfig(Protocol):
     def discord(self) -> _DiscordPlatformConfig: ...
     @property
     def whatsapp(self) -> _WhatsAppPlatformConfig: ...
+    @property
+    def instagram(self) -> _InstagramPlatformConfig: ...
 
 
 @dataclass(frozen=True)
@@ -129,9 +158,12 @@ class AdapterRegistry:
         voice_guild_ids: frozenset[str] = frozenset(),
         resolve_music_channel: ResolveMusicChannel = no_music_channel,
     ) -> AdapterRegistry:
-        """Build+resolve every enabled platform — Signal, Discord, WhatsApp;
-        each one more `if platforms.<x>.enabled:` block, not a rewrite of this
-        method's shape. `platforms` is `cfg.platforms`, not `cfg` itself — see
+        """Build+resolve every enabled platform — Signal, Discord, WhatsApp,
+        Instagram; each one more `if platforms.<x>.enabled:` block, not a
+        rewrite of this method's shape. Instagram's block is the one that
+        degrades instead of raising — see this module's docstring.
+
+        `platforms` is `cfg.platforms`, not `cfg` itself — see
         `_PlatformsConfig`'s docstring.
 
         `discord_token` is the one exception to "this module never reads
@@ -229,6 +261,31 @@ class AdapterRegistry:
             adapters["whatsapp"] = whatsapp_adapter
             identities["whatsapp"] = whatsapp_identity
 
+        instagram_cfg = platforms.instagram
+        if instagram_cfg.enabled:
+            # M0 — THE ONE BLOCK THAT DOES NOT FAIL FAST. See this module's
+            # docstring for why, and `nora.platform.instagram.adapter` for what
+            # "degraded" is defined to mean.
+            instagram_adapter = InstagramAdapter(instagram_cfg.base_url)
+            try:
+                instagram_identity = await instagram_adapter.resolve_identity()
+            except Exception as exc:  # noqa: BLE001 — degrade, never refuse to start
+                instagram_adapter.degrade(f"{type(exc).__name__}: {exc}")
+                adapters["instagram"] = instagram_adapter
+                # NO `identities` ENTRY, and this is load-bearing rather than
+                # an omission. `self_aliases()` is a UNION over this mapping
+                # and `PlatformIdentity` derives `aliases` from `primary`, so a
+                # placeholder identity built to keep the shape rectangular
+                # would put its placeholder value — `""` for the obvious
+                # choice — into the very set `MentionPolicy` and
+                # `ReplyToNoraPolicy` test membership in. Inventing an answer
+                # to "who is Nora" is exactly the R-12 bug class fail-fast
+                # exists to prevent, and a degraded adapter emits no messages,
+                # so nothing ever asks `identity_for("instagram")`.
+            else:
+                adapters["instagram"] = instagram_adapter
+                identities["instagram"] = instagram_identity
+
         return cls(adapters=adapters, identities=identities)
 
     def get(self, platform: str) -> PlatformAdapter:
@@ -248,10 +305,22 @@ class AdapterRegistry:
         without re-typing it, which is a test that asserts about its own copy
         rather than about the code.
 
-        A UNION, and safe as one: the id spaces are disjoint by construction (a
-        Signal phone is `+…`, its ACI a hyphenated UUID, a Discord id a bare
-        17-19 digit snowflake, a WhatsApp phone `+…` on a DEDICATED number and
-        its lid bare digits), so no cross-platform false positive is reachable.
+        A UNION. A Signal phone is `+…` and its ACI a hyphenated UUID, so
+        neither can collide with anything; a WhatsApp phone is `+…` on a
+        DEDICATED number. The BARE-DIGIT spaces are a different story and the
+        claim here used to be stronger than the values justify: a Discord
+        snowflake (17-19 digits), a WhatsApp lid and an Instagram interop fbid
+        (15-17 digits measured, and Nora's own is 17) are all bare digits drawn
+        from overlapping ranges, so they are disjoint by CONVENTION and luck,
+        not by construction. The reachable consequence is narrow and is stated
+        rather than assumed: a cross-platform false positive needs somebody
+        else's id on one platform to equal one of NORA's OWN ids on another,
+        and it would make `MentionPolicy` engage a turn that did not tag her —
+        never make her miss one, and never resolve a person to the wrong
+        `person_id` (`nora.persons` indexes on `(platform, value)` and is
+        unaffected). R-12's self-tag check is per-platform and cannot be
+        reached by it at all.
+
         Identity is matched on IMMUTABLE ids only — a renameable handle can
         never appear here, because `username` is not a matchable kind on any
         platform (`nora.domain.identity`) and `Identifier` refuses to carry

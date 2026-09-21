@@ -52,6 +52,36 @@ _ID_KINDS: MappingProxyType[str, frozenset[str]] = MappingProxyType(
         "telegram": frozenset({"user_id"}),
         "discord": frozenset({"user_id"}),
         "whatsapp": frozenset({"phone", "lid"}),
+        # Instagram (design/instagram-adoption/02-identity-and-policy.md):
+        # TWO matchable kinds, and they answer different questions, so neither
+        # can stand in for the other.
+        #
+        # `fbid` is `interop_messaging_user_fbid` — what `sender.fbid` carries,
+        # what `mentions[].fbid` carries, and what `client.GetOwnFBID()`
+        # returns. It is the MESSAGING identity and the only number "was this
+        # sender Nora?" may compare against. `viewer.GetFBID()` is a DIFFERENT
+        # number for the same account (18781497603028340 against
+        # 14963523149149302, measured 2026-09-21) and it is the one a reader
+        # reaches for, because `LoadIndex` returns it right beside the
+        # username. Choosing it produces no error anywhere: Nora simply never
+        # notices she was tagged, in every room, forever.
+        #
+        # `igid` is the PUBLIC Instagram numeric id — what `GetProfile` and
+        # `FetchReel` take, and what the Phase 2 social surface binds on. It is
+        # NOT a messaging address. Both are recorded because different
+        # subsystems need different ones and neither is derivable from the
+        # other; one `GetThread` call yields both for every member of a room.
+        #
+        # NOT `username` — the same rule as every other platform above, and it
+        # bites harder here: an Instagram handle is the id a human would think
+        # to write down, and it is renameable at will.
+        #
+        # DO NOT validate either by shape. The measured interop fbids on one
+        # three-person room were 15 and 17 digits long and one shared Nora's
+        # own `1784…` prefix, so any length or prefix check rejects real
+        # members — silently, because a rejected sender is one Nora cannot
+        # name.
+        "instagram": frozenset({"fbid", "igid"}),
         # Life360 is a location provider, not a chat platform, but a person's
         # Life360 account is still "another account this person holds" — so it
         # binds the same way (design/19 §3, DEC-14): the circle-member UUID
@@ -100,6 +130,7 @@ _METADATA_KEYS: MappingProxyType[str, frozenset[str]] = MappingProxyType(
         "signal": frozenset({"username"}),
         "telegram": frozenset({"username"}),
         "discord": frozenset({"username"}),
+        "instagram": frozenset({"username"}),
     }
 )
 

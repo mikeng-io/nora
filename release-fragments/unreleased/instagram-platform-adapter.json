@@ -1,0 +1,19 @@
+{
+  "type": "feature",
+  "summary": "Nora can be part of an Instagram group chat — she hears it, notices when she is tagged, and replies there the same way she does on Signal, Discord and WhatsApp. It ships OFF; turning it on takes an Instagram session and one line of config.",
+  "details": [
+    "Instagram joins the three platforms she already speaks. In a room she has been added to she reads what is said, sees photos, videos, stickers and voice clips arrive, knows who tagged her as opposed to who tagged somebody else, and can reply, thread a reply onto the message it answers, and react with an emoji.",
+    "Group rooms only, and a one-to-one message is refused without ever reaching Instagram — the same posture WhatsApp shipped with. Which rooms she answers in is still decided by the room allowlist, and nothing is answered until a room is named there.",
+    "An Instagram account gets challenged from time to time — a captcha, a login check — and that used to be the kind of failure that stops Nora starting at all. It no longer is. If her Instagram session is challenged, she starts anyway with Signal and Discord working normally, and Instagram marked unavailable: she sends nothing there, records nothing from there, says so in the startup log, and keeps saying so on her health page until someone clears it. The same thing happens if the challenge arrives in the middle of the night, while she is already running.",
+    "Recognising who is who on Instagram binds to the two numeric ids an account has, never to the @handle. A handle can be renamed and the freed name taken by somebody else, so writing one down would eventually map a stranger onto a friend. Both numbers arrive on their own with every message from a room she is already in.",
+    "Media she is sent is named honestly rather than guessed at: a photo reads as a photo, an animated sticker as a sticker, an audio clip as audio rather than as somebody speaking. A view-once photo or video is recorded as something having arrived and is deliberately NOT opened — on Instagram, opening it is visible to the sender, and that is a decision for the people in the room rather than a default."
+  ],
+  "limitations": [
+    "Instagram does not tell her whether a thread is a group or a one-to-one, and there is no way to ask. She treats every Instagram thread as a group, so the refusal that protects one-to-one messages on the other platforms cannot fire here — the room allowlist is what actually decides, and it is exact about which thread it names.",
+    "She cannot look at an Instagram photo or video; she only knows one arrived. Fetching the bytes is a later piece of work, so nothing she is sent on Instagram reaches the part of her that describes images.",
+    "View-once photos and videos are never opened, on purpose. She knows something was sent and cannot see it.",
+    "Nothing has been run against a live Instagram room yet. Every behaviour here is pinned against the bridge's documented wire and the bridge's own code; the first real room is what will confirm it.",
+    "If she is tagged on Instagram while composing an outbound mention of somebody else, the position of that mention in the text is taken on trust — the two sides count characters in ways that have not been measured against each other. Nothing composes an Instagram mention today, so this costs nothing until something does.",
+    "A checkpoint found at startup keeps Instagram unavailable until she is restarted, even after it is cleared. One found while she is running clears on its own."
+  ]
+}

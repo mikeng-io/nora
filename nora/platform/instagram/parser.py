@@ -1,0 +1,237 @@
+"""instagram-bridge SSE event → NormalizedMessage
+(design/instagram-adoption/03-transport-contract.md).
+
+The bridge owns the Instagram wire; this module owns the normalization into
+Nora's vocabulary, and `03` is the only place the shapes are defined — a drift
+here is a contract-test failure, not a judgment call. Field names below
+(`kind`, `room_id`, `sender.fbid`, `mentions`, `reply_to`, `media`,
+`timestamp_ms`, `from_me`) are the bridge's, verbatim.
+
+Dropped before a `NormalizedMessage` is built:
+
+- anything whose `kind` is not `message` — `heartbeat`, `dropped`, `reaction`,
+  `edit`, `unsend` and `typing` are listener-level or not ingested this phase,
+  and this function still answers None for them so it stays total on its own;
+- `from_me` — R-12's first pass, never ingest Nora's own sends. Unlike
+  WhatsApp this field is **structural rather than derived**: the bridge
+  compares `sender_fbid` against `client.GetOwnFBID()` itself, so the adapter
+  is not inferring its own echo from a config value;
+- a turn carrying neither text nor media, which is how the system deltas
+  (`ADD_PARTICIPANT_XMAT` and friends — they arrive as ordinary messages,
+  measured 02) leave without a special case;
+- a `room_id` that is missing or empty. There is no `is_broadcast` sibling to
+  check: Instagram has no status feed or newsletter address in this transport,
+  so the WhatsApp parser's two feed drops have no analogue here.
+
+## The one field this contract cannot ground: `conversation_type`
+
+**Reported as an ambiguity rather than papered over.** The inbound event
+(`03` §"Inbound event shape", and `deploy/instagram-bridge/inbound.go`'s
+`messageEvent`) carries NO group/DM discriminator of any kind, and the bridge
+exposes no thread-info route to ask. WhatsApp reads it off the JID's server
+and Discord off `message.guild is None`; Instagram hands over an opaque
+numeric thread id that is spelled identically either way.
+
+So this parser reports `group` unless the bridge says otherwise, and the
+deny-by-default that v1 actually rests on is `policy.toml`: it is exact-string
+on that opaque id, and an operator has to obtain and paste a thread id before
+anything in it is answered. The send-side `conversation_type != "group"`
+refusal in `send.py`/`react.py` is still real code and still fires — for every
+caller that builds a `ConversationTarget` itself (a reminder row, the fire
+path) — it simply cannot fire on an inbound Instagram DM, because nothing on
+the wire distinguishes one. `is_group` is read when present so the day the
+bridge grows the field this parser already honours it, with no second place to
+change.
+
+An EDIT arrives as its own `kind: "edit"` event here rather than as a message
+with an `edit_of` (WhatsApp's shape), so there is nothing for this function to
+ingest as a new row this phase. `03` lists the kind; ingesting it is not in
+M2's scope and it is dropped by the `kind != "message"` line above.
+
+Never raises: one malformed event is logged and skipped, mirroring the sibling
+parsers — a bad turn must never kill the stream behind it.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from ...domain.media import MediaRef, label_for, render_placeholder
+from ...domain.models import NormalizedMessage, Quote
+from .ids import conversation_id_for, fbid_form, is_person_mention
+
+log = logging.getLogger("nora.instagram.parser")
+
+#: The bridge's `media.kind` → the media type this adapter RECORDS.
+#:
+#: The wire carries no mimetype anywhere — not on the delta, not on the CDN
+#: url in any form worth reading — so the subtype is genuinely unknown and
+#: `*` says exactly that. `nora.domain.media.parse_media_type` needs a
+#: `top/subtype` pair to classify at all, and the TOP level is the part that
+#: decides the label, so this records the half that was observed and refuses
+#: to invent the half that was not. Deriving a subtype from the url's path
+#: would be scraping — the one thing `inbound.go`'s first rule forbids,
+#: because an Instagram CDN url's query string is full of `&` and a url read
+#: one character wrong comes back `403 Bad URL hash`, which reads exactly like
+#: an expired session.
+#:
+#: `animated` is absent on purpose: it becomes `sticker=True` instead, which
+#: is the axis `nora.domain.media` already has for "an image that is pack art
+#: rather than somebody's photograph".
+#:
+#: `one_time` is absent too, and that is the honest answer rather than a gap.
+#: A RAVEN delta with `attachment: null` does not say whether the bytes were
+#: an image or a video — `fromRaven` only reaches that branch when there is no
+#: attachment to read a kind from — so anything named here would be a guess
+#: about content Nora deliberately did not fetch. It falls through to `""` and
+#: renders `[file]`: something arrived, and she cannot see it.
+_MEDIA_TYPE_BY_KIND = {
+    "image": "image/*",
+    "video": "video/*",
+    "audio": "audio/*",
+}
+
+
+def _media_ref(media: dict) -> MediaRef | None:
+    """The bridge's single `media` object reduced to what labelling needs.
+
+    Singular, not a list: `03`'s `media` is one object and `firstAttachment`
+    on the bridge side surfaces exactly one. A tuple still leaves here,
+    because `NormalizedMessage.media` is a tuple everywhere and a
+    platform-shaped exception would push the difference into every consumer.
+
+    `platform_id` and `fetch_token` are EMPTY, the same as WhatsApp's and for
+    the same reason: the event carries the FACT of media, and the bridge has
+    no media-fetch route, so a handle recorded here would name something no
+    code can resolve. `attachment_fbid` and the CDN url are real handles — for
+    the bridge — and they stay in `raw`, where custody can find them the day
+    that route exists.
+
+    `voice_note` is FALSE even for `kind: "audio"`. The bridge added that kind
+    for voice notes, but Instagram does not distinguish a shared song from
+    somebody speaking, and `nora/domain/media.py`'s own rule is that calling a
+    song a voice note puts words in a member's mouth. `[audio]` is the honest
+    label; a wrong `[voice note]` would make Nora answer a track as if a human
+    had spoken.
+    """
+    kind = media.get("kind")
+    if not isinstance(kind, str) or not kind:
+        return None
+    return MediaRef(
+        platform_id="",
+        media_type=_MEDIA_TYPE_BY_KIND.get(kind, ""),
+        sticker=(kind == "animated"),
+    )
+
+
+def _mentioned_ids(entries: object) -> frozenset[str]:
+    """Every fbid a `mentions[]` entry names a PERSON with.
+
+    ONE id form, unlike WhatsApp's two: a mention carries `user_fbid` and
+    nothing else, and `self_id.derive_identity` advertises the same number, so
+    there is no second spelling for a tag to hide behind.
+
+    `range_type: "THREAD"` entries are DROPPED — see `ids.is_person_mention`
+    for why admitting a room's own id into a person-resolving set is the bug
+    and not the convenience.
+    """
+    out: set[str] = set()
+    if not isinstance(entries, list):
+        return frozenset()
+    for m in entries:
+        if not isinstance(m, dict):
+            continue
+        if not is_person_mention(m.get("range_type")):
+            continue
+        fbid = fbid_form(m.get("fbid"))
+        if fbid:
+            out.add(fbid)
+    return frozenset(out)
+
+
+def _quoted(reply_to: object) -> Quote | None:
+    """The message this one replies to, as a pointer — `ReplyToNoraPolicy`'s
+    half of the engagement contract.
+
+    `author_id` gets the same normalization as `sender_id` (bare fbid),
+    because the policy matches it against the same self-alias set.
+    `quoted_ts` is the parent's `timestamp_ms`, or **0 when the delta carried
+    only the id** — `replyOf` on the bridge side reports the relation even
+    when the parent body did not come with it, which is the same honest
+    degradation WhatsApp takes on a quote older than its cache: the reply
+    relation survives, the parent pointer does not, and a `by_ts` lookup
+    misses on 0 and renders no parent.
+    """
+    if not isinstance(reply_to, dict):
+        return None
+    ts = reply_to.get("timestamp_ms")
+    return Quote(
+        author_id=fbid_form(reply_to.get("sender_fbid")),
+        text=str(reply_to.get("text") or "").strip(),
+        quoted_ts=ts if isinstance(ts, int) and not isinstance(ts, bool) else 0,
+    )
+
+
+def parse_event(event: dict) -> NormalizedMessage | None:
+    try:
+        if not isinstance(event, dict) or event.get("kind") != "message":
+            return None                     # heartbeat / dropped are listener-level
+        if event.get("from_me"):
+            return None                     # R-12's first pass: never ingest our own sends
+        room_id = conversation_id_for(event.get("room_id"))
+        if not room_id:
+            return None
+
+        media = event.get("media")
+        ref = _media_ref(media) if isinstance(media, dict) else None
+        refs = (ref,) if ref is not None else ()
+
+        parts = []
+        text = str(event.get("text") or "").strip()
+        if text:
+            parts.append(text)
+        # Placeholders LAST — the same load-bearing trailing run
+        # `nora.domain.media.body_with_handles` rewrites on the Signal side
+        # once custody has the bytes. A media-only turn survives through this
+        # line as a bare `[image]`.
+        parts += [render_placeholder(label_for(r)) for r in refs]
+        if not parts:
+            return None                     # neither text nor media — nothing to ingest
+
+        sender = event.get("sender")
+        sender = sender if isinstance(sender, dict) else {}
+        timestamp_ms = event.get("timestamp_ms")
+        is_group = event.get("is_group")
+        return NormalizedMessage(
+            platform="instagram",
+            conversation_id=room_id,
+            # See the module docstring: the wire carries no discriminator, so
+            # an absent `is_group` reads as a group and `policy.toml` is the
+            # gate that actually holds.
+            conversation_type="group" if is_group is None or is_group else "dm",
+            # The MESSAGING id, never `sender.igid` and never `sender.username`
+            # — 02's opening failure is choosing the wrong one of the three,
+            # which produces no error anywhere.
+            sender_id=fbid_form(sender.get("fbid")),
+            # DISPLAY ONLY, exactly like a Signal profile name or a WhatsApp
+            # push name: shown to the operator and rendered in a transcript,
+            # never matched on. `username` is not a matchable kind for this
+            # platform and `Identifier` refuses to carry one.
+            sender_name=sender.get("username") or None,
+            timestamp=(
+                timestamp_ms
+                if isinstance(timestamp_ms, int) and not isinstance(timestamp_ms, bool)
+                else 0
+            ),
+            body=" ".join(parts),
+            raw=event,
+            mentions=_mentioned_ids(event.get("mentions")),
+            quote=_quoted(event.get("reply_to")),
+            media=refs,
+            # `mid.$…` — what `POST /react` and `POST /unsend` address a
+            # message by. `(author, timestamp)` means nothing to either.
+            message_id=str(event.get("message_id") or ""),
+        )
+    except Exception:
+        log.exception("unparseable instagram event, skipping")
+        return None

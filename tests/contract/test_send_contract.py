@@ -38,6 +38,7 @@ from nora.domain.ports import (
 )
 from nora.obs.metrics import Metrics
 from nora.platform.discord.adapter import DiscordAdapter
+from nora.platform.instagram.adapter import InstagramAdapter
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.whatsapp.adapter import WhatsAppAdapter
 from nora.testing import FakeAdapter
@@ -45,6 +46,9 @@ from nora.testing import FakeAdapter
 GROUP = ConversationTarget("signal", "Z3JvdXA=", "group")
 DISCORD_GROUP = ConversationTarget("discord", "111/222", "group")
 WHATSAPP_GROUP = ConversationTarget("whatsapp", "176569000000000000@g.us", "group")
+#: The SHORT thread id — the only one `03` exposes, and the only one every
+#: send verb takes.
+INSTAGRAM_GROUP = ConversationTarget("instagram", "1009543911792316", "group")
 
 
 def _target_for(adapter):
@@ -55,6 +59,8 @@ def _target_for(adapter):
         return DISCORD_GROUP
     if platform == "whatsapp":
         return WHATSAPP_GROUP
+    if platform == "instagram":
+        return INSTAGRAM_GROUP
     return GROUP
 ACI = "b9f1c2de-4a55-4c1e-9a77-0c1d2e3f4a5b"
 MENTION = Mention(start=0, length=8, recipient=ACI)
@@ -105,7 +111,20 @@ async def _whatsapp_adapter(aiohttp_server, *, status: int = 200):
     return WhatsAppAdapter(str(server.make_url("")).rstrip("/"))
 
 
-@pytest.fixture(params=["signal", "discord", "whatsapp", "fake"])
+async def _instagram_adapter(aiohttp_server, *, status: int = 200):
+    """An `InstagramAdapter` pointed at a stand-in for the bridge's `/send`."""
+    async def handler(request: web.Request) -> web.Response:
+        if status != 200:
+            return web.json_response({"error": "boom"}, status=status)
+        return web.json_response({"ok": True, "id": "mid.$x", "timestamp_ms": 1754300000000})
+
+    app = web.Application()
+    app.router.add_post("/send", handler)
+    server = await aiohttp_server(app)
+    return InstagramAdapter(str(server.make_url("")).rstrip("/"))
+
+
+@pytest.fixture(params=["signal", "discord", "whatsapp", "instagram", "fake"])
 async def working(request, aiohttp_server):
     if request.param == "signal":
         return await _signal_adapter(aiohttp_server)
@@ -113,10 +132,12 @@ async def working(request, aiohttp_server):
         return await _discord_adapter(aiohttp_server)
     if request.param == "whatsapp":
         return await _whatsapp_adapter(aiohttp_server)
+    if request.param == "instagram":
+        return await _instagram_adapter(aiohttp_server)
     return FakeAdapter(account="+15550000000")
 
 
-@pytest.fixture(params=["signal", "discord", "whatsapp", "fake"])
+@pytest.fixture(params=["signal", "discord", "whatsapp", "instagram", "fake"])
 async def broken(request, aiohttp_server):
     """An adapter whose transport refuses the send."""
     if request.param == "signal":
@@ -125,10 +146,14 @@ async def broken(request, aiohttp_server):
         return await _discord_adapter(aiohttp_server, status=500)
     if request.param == "whatsapp":
         return await _whatsapp_adapter(aiohttp_server, status=500)
+    if request.param == "instagram":
+        return await _instagram_adapter(aiohttp_server, status=500)
     return FakeAdapter(account="+15550000000", succeed=False)
 
 
-@pytest.mark.parametrize("impl", [SignalAdapter, DiscordAdapter, WhatsAppAdapter, FakeAdapter])
+@pytest.mark.parametrize(
+    "impl", [SignalAdapter, DiscordAdapter, WhatsAppAdapter, InstagramAdapter, FakeAdapter],
+)
 def test_send_accepts_the_ports_decoration_parameters(impl):
     """`isinstance` against a runtime_checkable Protocol only checks NAMES, so
     a fake whose `send` had kept the old two-parameter shape would still be a
@@ -142,13 +167,15 @@ def test_send_accepts_the_ports_decoration_parameters(impl):
     assert params["preview"].default is None
 
 
-@pytest.mark.parametrize("impl", [SignalAdapter, DiscordAdapter, WhatsAppAdapter, FakeAdapter])
+@pytest.mark.parametrize(
+    "impl", [SignalAdapter, DiscordAdapter, WhatsAppAdapter, InstagramAdapter, FakeAdapter],
+)
 def test_both_implementations_are_platform_adapters(impl):
     if impl is SignalAdapter:
         instance = impl("http://x", "+1", metrics=Metrics())
     elif impl is DiscordAdapter:
         instance = impl("tok")
-    elif impl is WhatsAppAdapter:
+    elif impl in (WhatsAppAdapter, InstagramAdapter):
         instance = impl("http://x")
     else:
         instance = impl()

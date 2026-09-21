@@ -12,6 +12,7 @@ from aiohttp import web
 from nora.domain.ports import PlatformIdentity
 from nora.obs.metrics import Metrics
 from nora.platform.discord.adapter import DiscordAdapter
+from nora.platform.instagram.adapter import InstagramAdapter
 from nora.platform.registry import AdapterRegistry, AdapterRegistryError
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.whatsapp.adapter import WhatsAppAdapter
@@ -37,10 +38,17 @@ class _WhatsAppCfg:
 
 
 @dataclass(frozen=True)
+class _InstagramCfg:
+    enabled: bool = False
+    base_url: str = "http://127.0.0.1:1"
+
+
+@dataclass(frozen=True)
 class _PlatformsCfg:
     signal: _SignalCfg
     discord: _DiscordCfg = field(default_factory=_DiscordCfg)
     whatsapp: _WhatsAppCfg = field(default_factory=_WhatsAppCfg)
+    instagram: _InstagramCfg = field(default_factory=_InstagramCfg)
 
 
 async def _accounts_server(aiohttp_server, payload):
@@ -295,3 +303,94 @@ async def test_mention_match_set_covers_every_platform_not_just_signal():
     # platform, so `Identifier` refuses to carry one and no `aliases` set can
     # contain one. Pinned by `tests/unit/test_domain_identity.py::
     # test_a_username_is_never_a_matchable_kind_on_any_platform`.
+
+
+# --- instagram (design/instagram-adoption/) ---------------------------------
+#
+# The behaviour itself — degrade rather than refuse, and everything "degraded"
+# is defined to mean — lives in `tests/unit/test_instagram_degradation.py`.
+# What belongs HERE is the property this module is about: that the fourth
+# `if platforms.<x>.enabled:` block is the one that does not fail fast, and
+# that its exception does not leak into the other three.
+
+
+async def _instagram_health_server(aiohttp_server, *, session: str = "authenticated"):
+    """A stand-in for the bridge's `GET /health`
+    (design/instagram-adoption/03 §"`/health` carries identity").
+
+    It answers **200 even for a checkpoint**, because the real one does — an
+    Instagram challenge is a normal operating state that the bridge describes
+    rather than crashes on. That is what makes this a model of the server and
+    not a switch: a fake that returned a 5xx for a checkpoint would let an
+    adapter that ignored `session` pass.
+    """
+    async def handler(request):
+        return web.json_response({
+            "ok": True, "session": session, "connected": True, "seq": 1,
+            "self": {"fbid": "14963523149149302", "igid": "79597894900",
+                     "username": "not_____nora"},
+        })
+
+    app = web.Application()
+    app.router.add_get("/health", handler)
+    return await aiohttp_server(app)
+
+
+async def test_a_disabled_instagram_platform_is_built_by_no_one():
+    cfg = _PlatformsCfg(
+        signal=_SignalCfg(base_url="http://127.0.0.1:1", account="+852999", enabled=False),
+        instagram=_InstagramCfg(enabled=False),
+    )
+
+    registry = await AdapterRegistry.from_config(cfg, metrics=Metrics())
+
+    assert "instagram" not in registry
+
+
+async def test_an_enabled_instagram_platform_is_built_and_its_identity_resolved(
+    aiohttp_server,
+):
+    server = await _instagram_health_server(aiohttp_server)
+    base_url = str(server.make_url("")).rstrip("/")
+    cfg = _PlatformsCfg(
+        signal=_SignalCfg(base_url="http://127.0.0.1:1", account="+852999", enabled=False),
+        instagram=_InstagramCfg(enabled=True, base_url=base_url),
+    )
+
+    registry = await AdapterRegistry.from_config(cfg, metrics=Metrics())
+
+    assert "instagram" in registry
+    assert isinstance(registry.get("instagram"), InstagramAdapter)
+    identity = registry.identity_for("instagram")
+    assert identity.platform == "instagram"
+    # The interop fbid, which is what a mention carries — NOT the igid, and
+    # not `viewer.GetFBID()`, both of which are different numbers for the same
+    # account and match nothing (design/instagram-adoption/02, measured).
+    assert identity.primary == "14963523149149302"
+
+
+async def test_a_CHECKPOINTED_instagram_does_NOT_fail_the_whole_registry(aiohttp_server):
+    """M0. The other three blocks raise `AdapterRegistryError` here; this one
+    must not, or one overnight captcha takes Signal and Discord down with it
+    (design/instagram-adoption/01 §Degradation).
+
+    Signal is ENABLED and healthy in this case on purpose: the assertion is
+    not merely that the call returned, it is that the OTHER platform survived.
+    """
+    accounts = await _accounts_server(aiohttp_server, [{"number": "+852999"}])
+    instagram = await _instagram_health_server(aiohttp_server, session="checkpointed")
+    cfg = _PlatformsCfg(
+        signal=_SignalCfg(
+            base_url=str(accounts.make_url("")).rstrip("/"), account="+852999", enabled=True,
+        ),
+        instagram=_InstagramCfg(
+            enabled=True, base_url=str(instagram.make_url("")).rstrip("/"),
+        ),
+    )
+
+    registry = await AdapterRegistry.from_config(cfg, metrics=Metrics())
+
+    assert "signal" in registry
+    assert registry.identity_for("signal").primary == "+852999"
+    assert "instagram" in registry
+    assert registry.get("instagram").degraded is True

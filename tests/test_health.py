@@ -194,6 +194,83 @@ async def test_health_reports_every_enabled_platform(aiohttp_client, store):
     )
 
 
+class _DegradedAdapter:
+    """An enabled Instagram adapter whose session got checkpointed.
+
+    NOT the same thing as `_DeafAdapter`: this one is not merely disconnected,
+    it is structurally unable to act until a human clears the challenge
+    (design/instagram-adoption/01 §Degradation, M0)."""
+
+    platform = "instagram"
+
+    async def health(self):
+        from nora.domain.ports import AdapterHealth
+        return AdapterHealth(
+            platform=self.platform, connected=False, last_event_age_seconds=None,
+            degraded=True, detail="instagram session is 'checkpointed'",
+        )
+
+    async def resolve_identity(self):
+        raise RuntimeError("no identity: the session is checkpointed")
+
+
+async def test_health_REPORTS_a_degraded_platform_and_stays_200(aiohttp_client, store):
+    """Both halves of M0's visibility, in one place.
+
+    REPORTS: without the field, a checkpointed Instagram is indistinguishable
+    from a quiet room — Nora is silently absent from every Instagram room and
+    `/health` says only "not connected", which is what a bridge restarting
+    says too.
+
+    STAYS 200: an Instagram challenge is a routine overnight event. Flipping
+    `/health` to 503 for it would fail the container healthcheck and take
+    Signal and Discord down with it — the exact outcome the degradation path
+    exists to prevent, arriving one layer later.
+    """
+    from nora.doctrine.loader import DoctrineStore
+
+    metrics = Metrics()
+    signal = SinkSender()
+    app = build_health_app(
+        adapter=signal, adapters={"signal": signal, "instagram": _DegradedAdapter()},
+        store=store, honcho=FakeMemoryStore(),
+        doctrine_store=DoctrineStore(
+            __import__("pathlib").Path("nora/doctrine"), canary="C", metrics=metrics),
+        metrics=metrics, started_at=0.0, llm_state=LLMState(),
+    )
+    client = await aiohttp_client(app)
+    response = await client.get("/health")
+    body = await response.json()
+
+    entry = body["platforms"]["instagram"]
+    assert entry["degraded"] is True
+    assert "checkpointed" in entry["detail"]
+    assert entry["account"] is None, "a degraded adapter has no identity to report"
+    assert response.status == 200
+
+
+async def test_a_merely_DISCONNECTED_platform_is_still_unhealthy(aiohttp_client, store):
+    """The positive control for the test above. A degraded platform being
+    exempt from `healthy` must not quietly exempt a wedged one — that would
+    turn M0 into a way to stop noticing outages."""
+    from nora.doctrine.loader import DoctrineStore
+
+    metrics = Metrics()
+    signal = SinkSender()
+    app = build_health_app(
+        adapter=signal, adapters={"signal": signal, "discord": _DeafAdapter()},
+        store=store, honcho=FakeMemoryStore(),
+        doctrine_store=DoctrineStore(
+            __import__("pathlib").Path("nora/doctrine"), canary="C", metrics=metrics),
+        metrics=metrics, started_at=0.0, llm_state=LLMState(),
+    )
+    client = await aiohttp_client(app)
+    response = await client.get("/health")
+
+    assert (await response.json())["platforms"]["discord"]["degraded"] is False
+    assert response.status == 503
+
+
 async def test_health_platforms_defaults_to_the_single_adapter(client):
     """No `adapters=` (every existing caller before this change) still reports
     the one adapter, so the new block is never empty on a Signal-only deploy."""

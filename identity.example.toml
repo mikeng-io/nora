@@ -43,3 +43,29 @@ phone = "+85212345678"
 # [[persons.miles.whatsapp]]
 # phone = "+85212345678"
 # lid   = "60000000000001"
+
+# Instagram (design/instagram-adoption/02-identity-and-policy.md): two matchable
+# kinds, `fbid` and `igid`, and they are NOT interchangeable — getting this
+# wrong is silent, not loud.
+#
+# `fbid` is `interop_messaging_user_fbid`: the MESSAGING identity. It is what
+# an inbound message's sender carries and what an @-mention carries, so it is
+# the one that decides whether Nora heard this person speak or saw them tag
+# her. `igid` is the PUBLIC Instagram numeric id — a different number for the
+# same person — and it is what the story/profile reads take. List both when you
+# have them; neither can be derived from the other.
+#
+# NOT the @handle. It is renameable, and on Instagram the freed name can be
+# taken by somebody else, so indexing it would unmap this person on a rename
+# and resolve a stranger AS them. Write it beside the ids as `username` if you
+# want the file to stay legible — it is accepted, read by nobody, and matched
+# on never.
+#
+# Both numbers are recoverable without asking anyone: they arrive together on
+# every message from a room Nora is already in, and `nora persons pending`
+# prints the fbid of any sender it could not map.
+#
+# [[persons.miles.instagram]]
+# username = "example_handle"   # readable, NEVER matched on
+# fbid     = "100000000000001"
+# igid     = "10000001"
