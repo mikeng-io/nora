@@ -30,7 +30,19 @@ defined; drift is a contract-test failure, not a judgment call.
 | `POST /typing` | typing indicator |
 | `POST /unsend` | retract a message |
 
-### Room key is the SHORT thread id, sends use the LONG one
+### Room key is the SHORT thread id; the SEND id is per-verb
+
+**Corrected 2026-09-22 by measurement.** This section previously said every
+send uses the LONG id. That is false for reactions and needlessly divergent
+elsewhere:
+
+| verb | id | status |
+|---|---|---|
+| `/send`, `/send-media`, `/react`, `/typing` | **SHORT** | matches upstream; send and react measured here |
+| `/unsend` | **LONG** | matches upstream; every probe cleanup used it |
+
+A reaction addressed with the LONG id is **accepted and never arrives**. Text
+works with either, which is why the wrong rule went unnoticed.
 
 Inbound deltas carry `thread_fbid` (short). Every send requires
 `thread_igid` (long) — measured as `1009543911792316` and

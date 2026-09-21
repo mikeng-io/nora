@@ -77,11 +77,23 @@ is wrong for at least one verb, and the failure is silent.
 
 | verb | LONG | SHORT | how established |
 |---|---|---|---|
-| `SendMessage` | **works** | (upstream uses it) | echo delta + thread history |
-| `SendMedia` | **works** | — | image appeared in the thread |
+| `SendMessage` | **works** | **works** | both read back from thread history |
+| `SendMedia` | **works** | upstream uses it | image appeared in the thread |
 | `UnsendMessage` | **works** | — | every probe cleanup succeeded |
-| **`SendReaction`** | **accepted, NEVER ARRIVES** | **works** | one carrier message, 👍 with long then 🔥 with short; only 🔥 present on read-back |
-| `SetTyping` | unverified | (upstream uses it) | never read back |
+| **`SendReaction`** | **accepted, NEVER ARRIVES** | **works** | one carrier, 👍 long then 🔥 short; only 🔥 present on read-back |
+| `SetTyping` | unverified | upstream uses it | never read back |
+
+**Both id spaces work for text; only reactions discriminate.** That is what
+makes the failure dangerous rather than merely annoying — four of five verbs
+are forgiving, so a wrong rule survives every casual test and breaks exactly
+one thing, silently.
+
+**Resolution: follow upstream on every verb** — SHORT for send, media,
+reaction and typing; LONG for unsend. Where the bridge and the reference
+consumer disagreed, the reference consumer was right and the bridge was
+silently broken. Three of the five are now measured here; the other two follow
+a consumer that runs in production, which is a better prior than an untested
+preference.
 
 `mautrix`'s own connector passes the SHORT id (`meta.IGID`) for `SendMessage`,
 `SendMedia`, reactions and typing, and the LONG one only for unsend. The
