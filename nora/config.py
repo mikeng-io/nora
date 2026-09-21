@@ -1466,10 +1466,55 @@ class SearchConfig(BaseModel):
         return self.exa.api_key_env if self.provider == "exa" else self.tavily.api_key_env
 
 
+class InstagramSocialConfig(BaseModel):
+    """The SECOND social backend — Instagram stories via the instagram-bridge
+    container (design/instagram-adoption/08).
+
+    It serves exactly one `(platform, what)` row, `(instagram, story)`, which
+    is the whole of `SocialRouter`'s exception list: OpenCLI 1.8.7 has no
+    story read anywhere, so `FetchReel` behind this bridge is the only path
+    that exists. Everything else Instagram stays on the OpenCLI default.
+
+    **Its own `enabled` rather than riding `[social] enabled`**, because the
+    two backends fail and are provisioned independently: the OpenCLI path
+    needs a systemd service and a headed browser on the HOST, this one needs a
+    co-networked container holding an authenticated session. One flag for both
+    would mean turning on stories to get profiles back, or losing X to a
+    checkpointed Instagram session.
+
+    `base_url` reaches a container on the private compose `nora` network,
+    which publishes nothing to the host — hence a service name, not a
+    loopback port. **This is deliberately NOT `[platforms.instagram]`'s
+    address even though it names the same process.** The bridge serves both
+    axes from ONE authenticated session (a second session would mean a second
+    cookie jar and two concurrent logins for one account, the configuration
+    most likely to provoke a checkpoint), but they share a SESSION, not a
+    port: the messaging adapter cannot fetch a story and this client cannot
+    send a message. Two config homes for one address is the honest expression
+    of two capabilities that are switched on separately — and the failure it
+    prevents is a messaging outage silently taking the social axis with it,
+    or the reverse.
+
+    KEYLESS, like the OpenCLI path: there is no credential here because the
+    session lives in the bridge's own volume.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    base_url: str = "http://instagram-bridge:18082"
+    # Comfortably under the tool's own budget and well over a reel read: the
+    # bridge does a cheap `latest_reel_media` probe and then at most one
+    # `FetchReel`, neither of which drives a browser — so nothing here needs
+    # the OpenCLI path's 90s.
+    timeout_seconds: float = Field(default=30.0, gt=0)
+
+
 class SocialConfig(BaseModel):
     """READ-ONLY X/Instagram reads for the `social_fetch` tool (DEC-151), via
     the host-side OpenCLI bridge (`python -m nora.infra.social`, deployed as
-    `deploy/social-bridge/`).
+    `deploy/social-bridge/`) and — for the one row it cannot serve — the
+    instagram-bridge container (`[social.instagram]` below).
 
     **Optional and every field defaults**, the `RouteConfig` shape. `enabled`
     defaults **False** and ships that way: the tool reads third-party social
@@ -1500,6 +1545,7 @@ class SocialConfig(BaseModel):
     bridge_url: str = "http://127.0.0.1:19826"
     timeout_seconds: float = Field(default=90.0, gt=0)
     content_max_chars: int = Field(default=4000, ge=1)
+    instagram: InstagramSocialConfig = Field(default_factory=InstagramSocialConfig)
 
 
 class WeatherConfig(BaseModel):

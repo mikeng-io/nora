@@ -32,6 +32,10 @@ import aiohttp
 from ...domain.blocks import wrap_outside_text
 from ...domain.ports import SocialProvider
 
+# One copy of every non-read payload, shared with the router and the Instagram
+# client — see `results.py` for why the wording cannot be local to either.
+from .results import UNAVAILABLE as _UNAVAILABLE
+
 log = logging.getLogger("nora.social")
 
 
@@ -232,10 +236,3 @@ def _clamp_chars(text: str, max_chars: int) -> tuple[str, bool]:
     if sep > 0:
         cut = cut[:sep].rstrip()
     return cut + " …", True
-
-
-_UNAVAILABLE: dict[str, Any] = {
-    "status": "unavailable",
-    "note": "I couldn't read that just now. Say so — don't answer as if "
-            "you'd checked.",
-}

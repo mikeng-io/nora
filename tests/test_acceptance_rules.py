@@ -941,16 +941,27 @@ def test_r86_social_fetch_is_read_only_at_three_layers():
     1. the tool's closed `(platform, what)` vocabulary
        (`nora.agent.tools._SOCIAL_PLATFORMS`/`_SOCIAL_WHATS`) — there is no
        free-form command passthrough;
-    2. the host-side bridge's allowlist
-       (`nora.infra.social.bridge_server.READ_ONLY_ALLOWLIST`), the single
-       source of truth for the argv mapping — its command slot is only ever
-       filled from the mapping's values, so no write verb is constructible
-       (the behavioural half — a refused pair never spawns — is pinned by
-       `tests/unit/test_social_bridge_server.py`);
+    2. the BACKEND allowlists — plural since social v1 added a second backend
+       (design/instagram-adoption/08). The host-side bridge's
+       `READ_ONLY_ALLOWLIST` is the single source of truth for the OpenCLI
+       argv mapping — its command slot is only ever filled from the mapping's
+       values, so no write verb is constructible (the behavioural half — a
+       refused pair never spawns — is pinned by
+       `tests/unit/test_social_bridge_server.py`). The Instagram backend's own
+       allowlist lives in its Go process, so what is checkable FROM PYTHON is
+       the router's exception list (`nora.infra.social.EXCEPTION_ROUTES`),
+       which is what decides that a pair reaches that process at all;
     3. the `NativeTool` declaration `read_only=True`, the Dreamer's ceiling.
+
+    The derivation stays TOTAL across the two backends: every pair the tool can
+    construct must be served by the default backend, be on the exception list,
+    or be declared unsupported. A vocabulary row added with no backend and no
+    declaration would otherwise reach the router and resolve to nothing —
+    `unavailable` forever, silently, which is the shape of a wiring gap that
+    reports as a feature.
     """
     from nora.agent import tools as tools_module
-    from nora.infra.social import bridge_server
+    from nora.infra.social import EXCEPTION_ROUTES, bridge_server
 
     # Layer 2: every command the bridge can spawn is disjoint from OpenCLI's
     # write verbs (the set in `bridge_server.OPENCLI_WRITE_VERBS`, verified
@@ -960,17 +971,28 @@ def test_r86_social_fetch_is_read_only_at_three_layers():
             f"the bridge can spawn a WRITE verb: {command}"
         )
 
-    # Layer 1 matches layer 2 exactly: the tool's vocabulary IS the bridge's
-    # allowlist plus the one recorded limitation (`instagram post` — OpenCLI
-    # 1.8.7 has no caption-by-URL command), which the tool answers
-    # `unavailable` itself and the bridge refuses without spawning.
+    # Layer 1 matches layer 2 exactly: the tool's vocabulary IS the host
+    # allowlist, PLUS the router's exception rows, PLUS the recorded
+    # limitations (`instagram post` — OpenCLI 1.8.7 has no caption-by-URL
+    # command; `x story` — X has no story concept), which the tool answers
+    # `unavailable` itself and no backend is ever asked about.
     tool_pairs = {
         (platform, what)
         for platform in tools_module._SOCIAL_PLATFORMS
         for what in tools_module._SOCIAL_WHATS
     }
-    assert tool_pairs - set(bridge_server.READ_ONLY_ALLOWLIST) == (
-        tools_module._SOCIAL_UNSUPPORTED
+    served = set(bridge_server.READ_ONLY_ALLOWLIST) | EXCEPTION_ROUTES
+    assert tool_pairs - served == tools_module._SOCIAL_UNSUPPORTED
+
+    # The exception list is an EXCEPTION list: a row on it must be one the
+    # default backend cannot serve. A pair in both places means somebody moved
+    # a verb to the second backend because it was better there, which is the
+    # "two parallel integrations in a year" drift the rule exists to stop —
+    # and it would also make the routing silently depend on lookup order.
+    assert not (EXCEPTION_ROUTES & set(bridge_server.READ_ONLY_ALLOWLIST)), (
+        "a pair is on the exception list AND in the default backend's "
+        "allowlist — the exception list admits only what the default "
+        "structurally cannot do (design/instagram-adoption/08)"
     )
 
     # Layer 3: the declaration the Dreamer's ceiling is derived from.

@@ -1,0 +1,387 @@
+"""One suite, every implementation of `SocialProvider` (DEC-151,
+design/instagram-adoption/08).
+
+The port's own docstring has been asking for this file since it had ONE
+implementation: *"a second implementation means a shared contract suite both
+pass (tests/contract/)"*. Social v1 is what produced the second — and a third,
+because `SocialRouter` is itself a `SocialProvider` and is the one the
+composition root actually injects.
+
+**Why a contract rather than three unit files.** `nora.agent.tools`'
+`social_fetch` programs against the PORT: it branches on `status` and hands
+the result to the model with nothing between. Neither the tool nor the model
+knows which backend answered. So if the two backends disagreed about what
+`nothing_found` means, Nora would SAY a different thing — «there's nothing on
+his story» instead of «I couldn't check» — depending on which verb was asked,
+with nothing in the tool layer able to notice. That is the whole risk, and it
+is a risk about STATES, so this file asserts states and never bytes.
+
+**Each backend speaks its OWN wire shape, not one shared fake.** The OpenCLI
+bridge signals a miss with `{"status": "nothing_found"}` over an exit-66
+subprocess; the instagram-bridge signals it from a `latest_reel_media` probe
+that found no reel. They are refused differently too — each backend's
+allowlist is its own process's and answers 400 from a different program. A
+fake that answered both clients identically would be the "fake that answers
+every request the same way" this repo has been bitten by, and would prove
+nothing: the point is that DIFFERENT wire shapes must reduce to the SAME
+states.
+
+**The router is treated as an arm, not as a wrapper.** It is parametrized
+twice — once on a default-backend read and once on the exception row — because
+its contract obligation is that it changes NOTHING about either: a status
+re-mapped in the router would be a second opinion in front of the process that
+actually performed the read. Its own rules (the exception list is closed, and
+there is NO failover between backends) are behavioural rather than
+port-shaped, and live in `tests/unit/test_social_router.py`.
+
+What is deliberately NOT asserted here: the OpenCLI renderer's text shape and
+its R-13 wrapper, the Instagram item field whitelist, and the request bodies.
+Those are each implementation's own and live in their own unit files — a
+contract that asserted them would be a second copy of those files wearing a
+shared name.
+"""
+
+from __future__ import annotations
+
+import inspect
+
+import pytest
+from aiohttp import web
+from aiohttp.test_utils import TestServer
+
+from nora.agent.ports import OUTPUT_STATUSES, R27_CORE_STATES
+from nora.domain.ports import SocialProvider, SocialSubjectIndex
+from nora.infra.social import (
+    InstagramSocialClient,
+    OpenCliBridgeClient,
+    SocialRouter,
+)
+from nora.testing import FakeSocialProvider, FakeSocialSubjectIndex
+
+IMPLS = [
+    OpenCliBridgeClient, InstagramSocialClient, SocialRouter, FakeSocialProvider,
+]
+
+# A read each backend actually serves. The pairs are NOT interchangeable and
+# that is the point of the exception list: `x/profile` exists only on the
+# OpenCLI side, `instagram/story` only on the other.
+_DEFAULT_READ = {"platform": "x", "what": "profile", "target": "nasa", "limit": 5}
+_EXCEPTION_READ = {
+    "platform": "instagram", "what": "story", "target": "miles", "limit": 5,
+}
+#: The person index as the story arm needs it: `miles` resolves and is in a
+#: room Nora is in, which is Tier 0 and the only tier v1 serves.
+_SUBJECTS = {"miles": "221731317"}
+
+
+class _Bridges:
+    """Both backends' routes on one app, each answering in ITS OWN documented
+    envelope. `mode` is the SITUATION — a good read, an honest miss, a refusal
+    by that backend's allowlist, a broken body — and each route expresses that
+    situation the way its real program does."""
+
+    def __init__(self) -> None:
+        self.mode = "ok"    # ok | empty | refuse | notjson | unknown | hollow
+
+    def _shared(self) -> web.Response | None:
+        if self.mode == "refuse":
+            # Each backend re-enforces its OWN allowlist in its own process
+            # and answers 400 without performing any read. Both look like
+            # this from Nora's side, and both must read as a WIRING GAP —
+            # the two allowlists have drifted — never as «nothing there».
+            return web.json_response(
+                {"status": "unavailable", "note": "that read is not supported"},
+                status=400,
+            )
+        if self.mode == "notjson":
+            return web.Response(text="<html>gateway</html>", content_type="text/html")
+        if self.mode == "unknown":
+            return web.json_response({"status": "weird"})
+        return None
+
+    async def opencli_read(self, request: web.Request) -> web.Response:
+        await request.json()
+        if (bad := self._shared()) is not None:
+            return bad
+        if self.mode == "empty":
+            # The host bridge's own miss: `opencli` exited 66 (EX_NOINPUT).
+            return web.json_response({"status": "nothing_found"})
+        if self.mode == "hollow":
+            return web.json_response({"status": "ok"})
+        return web.json_response({
+            "status": "ok",
+            "data": [{"screen_name": "nasa", "name": "NASA", "bio": "We explore."}],
+            "source_url": "https://x.com/nasa",
+        })
+
+    async def instagram_story(self, request: web.Request) -> web.Response:
+        await request.json()
+        if (bad := self._shared()) is not None:
+            return bad
+        if self.mode == "empty":
+            # The instagram-bridge's own miss: the cheap `latest_reel_media`
+            # probe found no reel, so nothing was retrieved.
+            return web.json_response({"status": "nothing_found"})
+        if self.mode == "hollow":
+            return web.json_response({"status": "ok", "items": []})
+        return web.json_response({
+            "status": "ok",
+            "expires_at": 1790022033,
+            "items": [{
+                "id": "3323265599221534543",
+                "kind": "video",
+                "taken_at": 1789935632,
+                "url": "https://scontent.cdninstagram.com/v/t50/x.mp4?oe=68D&oh=00_A",
+            }],
+        })
+
+
+@pytest.fixture(params=["opencli", "instagram", "router/default", "router/exception"])
+async def arm(request):
+    """`(fake, provider, read_kwargs)` for one implementation, pointed at its
+    own backend's routes."""
+    fake = _Bridges()
+    app = web.Application()
+    app.router.add_post("/read", fake.opencli_read)
+    app.router.add_post("/social/story", fake.instagram_story)
+    server = TestServer(app)
+    await server.start_server()
+    root = str(server.make_url("")).rstrip("/")
+    opencli = OpenCliBridgeClient(bridge_url=root, timeout_seconds=5.0)
+    instagram = InstagramSocialClient(
+        base_url=root, subjects=FakeSocialSubjectIndex(_SUBJECTS), timeout_seconds=5.0,
+    )
+    if request.param == "opencli":
+        built: tuple[SocialProvider, dict] = (opencli, _DEFAULT_READ)
+    elif request.param == "instagram":
+        built = (instagram, _EXCEPTION_READ)
+    else:
+        router = SocialRouter(
+            default=opencli, exceptions={("instagram", "story"): instagram},
+        )
+        built = (
+            router,
+            _DEFAULT_READ if request.param == "router/default" else _EXCEPTION_READ,
+        )
+    yield (fake, *built)
+    await server.close()
+
+
+@pytest.fixture(params=["opencli", "instagram", "router"])
+def dead_arm(request):
+    """A provider whose backend is not listening — the never-raises probe,
+    which needs no server at all."""
+    opencli = OpenCliBridgeClient(bridge_url="http://127.0.0.1:1", timeout_seconds=1.0)
+    instagram = InstagramSocialClient(
+        base_url="http://127.0.0.1:1",
+        subjects=FakeSocialSubjectIndex(_SUBJECTS),
+        timeout_seconds=1.0,
+    )
+    if request.param == "opencli":
+        return opencli, _DEFAULT_READ
+    if request.param == "instagram":
+        return instagram, _EXCEPTION_READ
+    router = SocialRouter(
+        default=opencli, exceptions={("instagram", "story"): instagram},
+    )
+    return router, _EXCEPTION_READ
+
+
+# ---- the port's shape ------------------------------------------------------
+
+
+@pytest.mark.parametrize("impl", IMPLS)
+def test_every_implementation_satisfies_the_port(impl):
+    assert issubclass(impl, SocialProvider)
+
+
+@pytest.mark.parametrize("impl", IMPLS)
+def test_read_takes_every_argument_keyword_only(impl):
+    """An `isinstance` against a runtime_checkable Protocol only checks method
+    NAMES (`tests/test_ports.py`), so the signature is asserted directly. It
+    matters here beyond tidiness: `platform` and `what` are adjacent strings
+    and a positional call site that swapped them would route a real read to
+    the wrong backend and still typecheck."""
+    params = inspect.signature(impl.read).parameters
+    for name in ("platform", "what", "target", "limit"):
+        assert params[name].kind is inspect.Parameter.KEYWORD_ONLY, name
+
+
+def test_the_subject_index_port_is_keyword_only():
+    """The other half of the same argument. `igid_for(person_id=…)` is handed
+    a `person_id` and must never be handed an igid or a handle by a caller
+    that got the order right by accident."""
+    for method in (SocialSubjectIndex.igid_for, SocialSubjectIndex.is_tier_zero):
+        params = inspect.signature(method).parameters
+        assert params["person_id"].kind is inspect.Parameter.KEYWORD_ONLY
+
+
+# ---- the three states, from four different wire shapes ---------------------
+
+
+async def test_a_good_read_is_ok(arm):
+    fake, provider, read = arm
+    fake.mode = "ok"
+    out = await provider.read(**read)
+    assert out["status"] == "ok"
+
+
+async def test_an_honest_miss_is_nothing_found(arm):
+    """The ONE path to `nothing_found`: the read ran and there was nothing.
+    Both backends reach it from different evidence — an exit code on one, an
+    empty reel probe on the other — and both must land on the same word,
+    because the model says a different sentence for each state."""
+    fake, provider, read = arm
+    fake.mode = "empty"
+    out = await provider.read(**read)
+    assert out["status"] == "nothing_found"
+
+
+@pytest.mark.parametrize("mode", ["refuse", "notjson", "unknown", "hollow"])
+async def test_every_wiring_gap_is_unavailable_and_never_nothing_found(arm, mode):
+    """R-27's core, and the reason this suite exists. A backend refusing the
+    pair from its own allowlist, a gateway returning HTML, an envelope
+    carrying a status nothing declares, and an `ok` with no payload in it are
+    all failures of the CALL — «I couldn't look». Any of them reported as
+    `nothing_found` is a confident false claim about the subject manufactured
+    out of our own broken plumbing, which is the exact conflation R-27 names.
+
+    `hollow` is the subtlest and is why it is in this list rather than in a
+    unit file: an `ok` envelope with nothing in it is the shape a half-written
+    backend produces, and it is one line of code away from reading as «there
+    is nothing there»."""
+    fake, provider, read = arm
+    fake.mode = mode
+    out = await provider.read(**read)
+    assert out["status"] == "unavailable"
+    assert out["status"] != "nothing_found"
+
+
+async def test_a_dead_backend_never_raises_into_the_loop(dead_arm):
+    """R-5 on the port: a transport failure is a STATUS, never an exception.
+    The loop above this has no handler that could turn a raised
+    `ClientConnectorError` into anything Nora could say."""
+    provider, read = dead_arm
+    out = await provider.read(**read)
+    assert out["status"] == "unavailable"
+
+
+async def test_every_status_is_one_the_tool_vocabulary_declares(arm):
+    """Whatever comes back is handed to the model through `social_fetch`,
+    whose `three_state` output contract validates `status` against
+    `OUTPUT_STATUSES` and replaces anything else with `MALFORMED_RESULT`. A
+    backend inventing a word would therefore not reach the model as itself —
+    it would silently become `unavailable`, and the reason would be invisible.
+    Derived from the declaration, never hand-listed."""
+    fake, provider, read = arm
+    for mode in ("ok", "empty", "refuse", "notjson", "unknown", "hollow"):
+        fake.mode = mode
+        out = await provider.read(**read)
+        assert isinstance(out, dict)
+        assert out.get("status") in OUTPUT_STATUSES, mode
+
+
+async def test_no_result_carries_a_content_key(arm):
+    """Strands' `_wrap_tool_result` passes a dict carrying both `status` AND
+    `content` through UNCHANGED, so a bare-string `content` reaches the model
+    outside the standard `[{"text": …}]` block — and the model reads that as
+    "empty" (trace 67afb6920005b741b7e314561facc002). Every native tool
+    returns a plain dict with no `content` key; this pins it for a port whose
+    whole job is returning text and links to the model."""
+    fake, provider, read = arm
+    for mode in ("ok", "empty", "refuse"):
+        fake.mode = mode
+        out = await provider.read(**read)
+        assert "content" not in out, mode
+
+
+# ---- the two declared extensions, and the router's silence about them ------
+
+
+async def test_an_unresolved_subject_is_ambiguous_not_a_guess():
+    """`target` is a `person_id`. No index entry means Nora does NOT fall back
+    to treating the string as a handle — a wrong binding does not degrade the
+    answer, it reads a different human's stories silently. The read must not
+    happen at all, which is asserted by the backend never being reachable: the
+    base_url here points at a dead port, so an `ambiguous` that had performed
+    a read would be `unavailable` instead."""
+    client = InstagramSocialClient(
+        base_url="http://127.0.0.1:1",
+        subjects=FakeSocialSubjectIndex(),          # knows nobody
+        timeout_seconds=1.0,
+    )
+    out = await client.read(**_EXCEPTION_READ)
+    assert out["status"] == "ambiguous"
+
+
+async def test_an_out_of_tier_subject_is_refused_not_unavailable():
+    """v1 is Tier 0 only. «I may not look him up» and «I couldn't look» are
+    different claims: one is a boundary the operator set and the other is an
+    outage somebody should fix. Same dead-port control as above — nothing was
+    read."""
+    client = InstagramSocialClient(
+        base_url="http://127.0.0.1:1",
+        subjects=FakeSocialSubjectIndex(_SUBJECTS, out_of_reach=frozenset({"miles"})),
+        timeout_seconds=1.0,
+    )
+    out = await client.read(**_EXCEPTION_READ)
+    assert out["status"] == "refused"
+
+
+@pytest.mark.parametrize(
+    ("subjects", "expected"),
+    [
+        (FakeSocialSubjectIndex(), "ambiguous"),
+        (FakeSocialSubjectIndex(_SUBJECTS, out_of_reach=frozenset({"miles"})),
+         "refused"),
+    ],
+)
+async def test_the_router_passes_a_backends_status_through_verbatim(subjects, expected):
+    """The router's contract obligation. It picks a backend; it does not have
+    an opinion about the answer. Re-mapping `ambiguous` or `refused` into
+    `unavailable` on the way past — the tempting "the router only speaks R-27's
+    three states" simplification — would replace a boundary or a missing index
+    entry with an outage, and the backend that knew the difference would have
+    no way to report it."""
+    client = InstagramSocialClient(
+        base_url="http://127.0.0.1:1", subjects=subjects, timeout_seconds=1.0,
+    )
+    router = SocialRouter(default=None, exceptions={("instagram", "story"): client})
+    out = await router.read(**_EXCEPTION_READ)
+    assert out["status"] == expected
+    assert expected not in R27_CORE_STATES   # positive control: it is an extension
+
+
+# ---- the in-memory implementation -----------------------------------------
+#
+# `FakeSocialProvider` is a fourth implementation of the port and is in
+# `IMPLS` above for the shape assertions, but it cannot join the `arm` fixture
+# because it has no wire: "a gateway returned HTML" has no in-memory
+# analogue. What it CAN be held to is the same three states out of its own
+# decision table, which is the half of the contract that is not about
+# transport — and the branch worth pinning is the third one.
+
+
+async def test_the_fake_answers_the_same_three_states_from_its_decision_table():
+    fake = FakeSocialProvider({("x", "profile"): {"status": "ok", "text": "NASA"}})
+    assert (await fake.read(**_DEFAULT_READ))["status"] == "ok"
+
+    empty = FakeSocialProvider(serves=frozenset({("x", "profile")}))
+    assert (await empty.read(**_DEFAULT_READ))["status"] == "nothing_found"
+
+    assert (await fake.read(**_EXCEPTION_READ))["status"] == "unavailable"
+
+
+async def test_the_fake_calls_an_unrouted_pair_unavailable_not_nothing_found():
+    """The branch a lazier fake gets wrong, and the reason it is spelled out:
+    a double that answered `nothing_found` for a pair it does not serve would
+    let a mis-wired router pass every test in this file while production said
+    «he has no story up» about a backend that was never asked. The two states
+    are the difference between a fact about the subject and a fact about our
+    own plumbing."""
+    fake = FakeSocialProvider({("x", "profile"): {"status": "ok", "text": "NASA"}})
+    out = await fake.read(**_EXCEPTION_READ)
+    assert out["status"] == "unavailable"
+    # Positive control: it DID look, so a green assertion above is not the
+    # accidental pass of a fake that answers nothing at all.
+    assert fake.calls[-1][:2] == ("instagram", "story")
