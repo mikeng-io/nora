@@ -80,6 +80,9 @@ export function createArbiter({
   log = () => {},
   stallMs = 30_000,
   killGraceMs = 2_000,
+  // Every accepted play must reach sound or report a failure within this
+  // window. See the start-deadline block below for what it is actually for.
+  startDeadlineMs = 60_000,
   maxSpeechQueue = 4,
 }) {
   let player = null;
@@ -131,6 +134,7 @@ export function createArbiter({
       requestedAt: clock.now(), // request arrival — play_latency_ms baseline
       proc: null,
       closed: null,
+      startTimer: null, // start-deadline handle; see armStartDeadline
       stderrTail: '',
       resource: null,
       playingSince: null,
@@ -151,6 +155,9 @@ export function createArbiter({
 
   function killProc(s) {
     suspendStallWatch(s);
+    // Before the no-process early return: a slot PARKED behind speech owns a
+    // start deadline and no ffmpeg, and stop/replace must disarm it.
+    clearStartDeadline(s);
     const proc = s.proc;
     if (!proc || s.killed) return;
     s.killed = true;
@@ -198,7 +205,11 @@ export function createArbiter({
   }
 
   function failStream(s, reason) {
-    if (slot !== s || s.failed) {
+    // The parked slot is tracked state, not a stale one: a play deferred
+    // behind speech can fail (start-timeout) before it ever owns the
+    // player, and that failure has to be reported like any other.
+    const parked = slot !== s && suspendedSlot === s;
+    if ((slot !== s && !parked) || s.failed) {
       // A failure from a slot that is no longer current must not touch
       // state — but its process must still die.
       killProc(s);
@@ -223,9 +234,11 @@ export function createArbiter({
       request_id: s.requestId,
       reason,
       duration_ms: positionMs(s),
+      deferred: parked,
       ...(s.stderrTail ? { stderr: redactText(s.stderrTail, s.streamUrl) } : {}),
     });
-    slot = null;
+    if (parked) suspendedSlot = null;
+    else slot = null;
     if (state === 'starting' || state === 'playing' || state === 'resuming' || state === 'paused') {
       state = 'stopped';
     }
@@ -237,6 +250,39 @@ export function createArbiter({
       s.stallTimer = null;
       failStream(s, 'stream-stall');
     }, stallMs);
+  }
+
+  // Start deadline (2026-09-21 wedge). `play_requested` is logged and the
+  // HTTP call answers ok the instant a play is ACCEPTED — before ffmpeg is
+  // spawned. Between that accept and the first PCM byte sit several guards
+  // that used to abandon the play with no event, no error and no state
+  // change: no attached player, a speech queue that never drains, a reap
+  // barrier that never settles. Found live: two `play_requested` lines, no
+  // ffmpeg process in the container at all, and zero follow-up events — the
+  // room was told "Now playing" and heard nothing, permanently, until the
+  // process was restarted. Nothing watched the gap, so the wedge was
+  // invisible and every diagnosis started from a user complaint.
+  //
+  // This closes it: an accepted play that has not produced sound by the
+  // deadline fails as `start-timeout`. That is a real `stream-failed`, so
+  // nora's bounded re-resolve (music_manager.on_stream_failed) retries the
+  // track and then advances, instead of the queue silently dying.
+  function armStartDeadline(s) {
+    clearStartDeadline(s);
+    s.startTimer = clock.setTimeout(() => onStartDeadline(s), startDeadlineMs);
+  }
+
+  function clearStartDeadline(s) {
+    if (s?.startTimer) {
+      clock.clearTimeout(s.startTimer);
+      s.startTimer = null;
+    }
+  }
+
+  function onStartDeadline(s) {
+    s.startTimer = null;
+    if (s.superseded || s.failed) return;
+    failStream(s, 'start-timeout');
   }
 
   function captureStderr(s) {
@@ -251,8 +297,25 @@ export function createArbiter({
 
   function startFfmpeg(s, phase) {
     state = phase; // 'starting' | 'resuming'
+    armStartDeadline(s);
     const begin = () => {
-      if (s.superseded || slot !== s || !player) return;
+      // A superseded/replaced slot is a legitimate silent drop: something
+      // newer already owns the pipeline and reported for itself.
+      if (s.superseded || slot !== s) return;
+      // A MISSING PLAYER is not. `attach` runs only on a real `onJoined`
+      // (controller.mjs), so a connection that came back without one leaves
+      // `player` null while the lifecycle still reads 'connected' — and this
+      // return used to drop the play with nothing written anywhere.
+      if (!player) {
+        log('error', {
+          event: 'ffmpeg_start_abandoned',
+          playback_id: s.playbackId,
+          request_id: s.requestId,
+          reason: 'no_player',
+        });
+        failStream(s, 'no-player');
+        return;
+      }
       let proc;
       try {
         proc = spawn(FFMPEG_ARGS(s.streamUrl, s.startOffsetMs));
@@ -291,6 +354,9 @@ export function createArbiter({
           failStream(s, 'ffmpeg-resource');
           return;
         }
+        // Sound is starting: the accept-to-audio window this slot was being
+        // held to is over, and from here the stall watch owns liveness.
+        clearStartDeadline(s);
         resource.volume?.setVolume?.(volumePercent / 100);
         s.resource = resource;
         s.playingSince = clock.now();
@@ -422,6 +488,19 @@ export function createArbiter({
 
   function advanceSpeech() {
     const item = speechQueue.shift();
+    if (item && !player) {
+      // No player to speak through. Dropping the item and returning here
+      // left the REST of the queue in place, so `speechBusy()` stayed true
+      // for the life of the process and every later play parked behind a
+      // queue that could never drain. Drain it instead, loudly.
+      log('error', {
+        event: 'speech_dropped_no_player',
+        request_id: item.requestId ?? null,
+        queued: speechQueue.length,
+      });
+      advanceSpeech();
+      return;
+    }
     if (item && player) {
       speechActive = item;
       activeKind = 'speech';
@@ -525,6 +604,10 @@ export function createArbiter({
   }
 
   function attach(p) {
+    // Re-attaching the SAME player is a no-op, not a teardown: the join path
+    // may report a connection it already holds, and tearing down there would
+    // kill music that is playing perfectly well.
+    if (player === p) return;
     if (player) detach();
     player = p;
     player.on('idle', onPlayerIdle);
@@ -572,7 +655,11 @@ export function createArbiter({
     const s = newSlot({ streamUrl, title, durationSeconds, requestId, resumable });
     if (speechBusy()) {
       // Speech owns the channel; the new track waits as the suspended slot.
+      // The deadline covers this wait too: a speech queue that never drains
+      // parks every subsequent play forever, which is one of the three ways
+      // the pipeline used to wedge in silence.
       suspendedSlot = s;
+      armStartDeadline(s);
       state = 'suspended';
     } else {
       slot = s;
