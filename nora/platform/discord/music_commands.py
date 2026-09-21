@@ -53,7 +53,6 @@ _QUEUE_VIEW_TIMEOUT_SECONDS = 180.0
 # Longer than the queue paginator's -- a listening session runs far longer
 # than someone browsing a queue list, and losing the control panel mid-song
 # would be a worse surprise than a long-lived one going stale.
-_CONTROLS_VIEW_TIMEOUT_SECONDS = 900.0
 
 
 def _notify_factory(
@@ -129,102 +128,6 @@ def _reply_for(outcome: PlayOutcome) -> str:
     if outcome.status == "playing":
         return m.now_playing_line(outcome.track)
     return m.queued_line(outcome.track, outcome.queued_count)
-
-
-class _NowPlayingControls(discord.ui.View):
-    """Skip/Pause-Resume/Stop, attached to `/music play`'s own reply --
-    edits itself in place on every click rather than sending a fresh reply
-    per action, so the same message stays the one place to see what's
-    playing and control it. Calls the exact same `MusicPlayerManager`
-    methods the slash commands do -- never a second control path."""
-
-    def __init__(self, manager: MusicPlayerManager, guild_id: str) -> None:
-        super().__init__(timeout=_CONTROLS_VIEW_TIMEOUT_SECONDS)
-        self._manager = manager
-        self._guild_id = guild_id
-        self.message: discord.Message | None = None
-
-    async def render(self) -> str:
-        status = await self._manager.status(self._guild_id)
-        if status is None or status.now_playing is None:
-            self._disable_all()
-            self.stop()
-            return m.nothing_playing_line()
-        self.pause_resume.label = "▶ Resume" if status.paused else "⏸ Pause"
-        return m.now_playing_line(status.now_playing, paused=status.paused)
-
-    @discord.ui.button(label="⏭ Skip", style=discord.ButtonStyle.secondary)
-    async def skip(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
-        log.info("music control: skip clicked guild=%s user=%s", self._guild_id, _who(interaction))
-        # Defer FIRST (the slash skip at `MusicCommands.skip` already does):
-        # the manager's skip makes an outbound POST to the audio-controller,
-        # which routinely outlasts Discord's ~3s acknowledgement window —
-        # `response.edit_message` after that would be an unknown-interaction
-        # 404 and the click would read as dead.
-        await interaction.response.defer()
-        await self._manager.skip(self._guild_id)
-        await interaction.edit_original_response(content=await self.render(), view=self)
-
-    @discord.ui.button(label="⏸ Pause", style=discord.ButtonStyle.secondary)
-    async def pause_resume(
-        self, interaction: discord.Interaction, _button: discord.ui.Button,
-    ) -> None:
-        # N-1 (2026-09-16 audit): defer FIRST, same reason as `skip` above —
-        # `status()` + `pause()`/`resume()` are both round-trips to the
-        # audio-controller that routinely outlast Discord's ~3s window, and
-        # this button used to do them before ever acknowledging the click.
-        await interaction.response.defer()
-        status = await self._manager.status(self._guild_id)
-        try:
-            if status is not None and status.paused:
-                log.info(
-                    "music control: resume clicked guild=%s user=%s",
-                    self._guild_id, _who(interaction),
-                )
-                await self._manager.resume(self._guild_id)
-            else:
-                log.info(
-                    "music control: pause clicked guild=%s user=%s",
-                    self._guild_id, _who(interaction),
-                )
-                await self._manager.pause(self._guild_id)
-        except GenerationConflict:
-            # Speech holds the connection (`pause_during_speech`) — refuse
-            # with a note instead of dying on the click.
-            await interaction.followup.send(m.cannot_pause_now_line(), ephemeral=True)
-            return
-        except VoiceControllerError:
-            log.exception("music control pause/resume failed for guild %s", self._guild_id)
-            await interaction.followup.send(m.controller_unavailable_line(), ephemeral=True)
-            return
-        await interaction.edit_original_response(content=await self.render(), view=self)
-
-    @discord.ui.button(label="⏹ Stop", style=discord.ButtonStyle.danger)
-    async def stop_playback(
-        self, interaction: discord.Interaction, _button: discord.ui.Button,
-    ) -> None:
-        log.info("music control: stop clicked guild=%s user=%s", self._guild_id, _who(interaction))
-        # N-1: same defer-first fix as `pause_resume`/`skip` above.
-        await interaction.response.defer()
-        try:
-            await self._manager.stop(self._guild_id)
-        except VoiceControllerError:
-            log.exception("music control stop failed for guild %s", self._guild_id)
-            await interaction.followup.send(m.controller_unavailable_line(), ephemeral=True)
-            return
-        self._disable_all()
-        await interaction.edit_original_response(content=m.stopped_line(), view=self)
-        self.stop()
-
-    def _disable_all(self) -> None:
-        for child in self.children:
-            child.disabled = True  # type: ignore[attr-defined]
-
-    async def on_timeout(self) -> None:
-        self._disable_all()
-        if self.message is not None:
-            with contextlib.suppress(discord.HTTPException):
-                await self.message.edit(view=self)
 
 
 class _QueuePaginator(discord.ui.View):
@@ -404,9 +307,9 @@ class MusicCommands(app_commands.Group):
         if outcome.status == "nothing_found":
             await interaction.followup.send(_reply_for(outcome), silent=True)
             return
-        controls = _NowPlayingControls(self._manager, guild_id)
-        await interaction.followup.send(_reply_for(outcome), view=controls, silent=True)
-        controls.message = await interaction.original_response()
+        # No control view: music is driven by asking Nora, or by the slash
+        # commands below, and nothing else. One reply, no components.
+        await interaction.followup.send(_reply_for(outcome), silent=True)
 
     @app_commands.command(name="skip", description="Skip the current track.")
     async def skip(self, interaction: discord.Interaction) -> None:
