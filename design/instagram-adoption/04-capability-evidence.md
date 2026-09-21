@@ -162,6 +162,38 @@ Phase 2 is therefore substantially cheaper than Phase 1 in new machinery: the
 transport already carries it. What Phase 2 actually needs is **policy**, not
 protocol — see `02-identity-and-policy.md` §Open decisions.
 
+## The bridge, verified live — 2026-09-22
+
+Everything the bridge implementation listed as "could not verify without live
+credentials" was exercised against the real account, by running the binary
+standalone on norty (port 18099, outside compose, so no live service was
+started):
+
+```
+[bridge] listening on :18099 (session dir ./session)
+[bridge] authenticated as @not_____nora (fbid=14963523149149302 igid=79597894900)
+[bridge] realtime socket connected (subscribed_seq=79 latest_seq=79)
+
+GET /health  -> {"ok":true,"session":"authenticated","connected":true,"seq":79,
+                 "self":{"fbid":"14963523149149302","igid":"79597894900",...}}
+GET /events  -> data: {"kind":"heartbeat","ts_ms":…,"connected":true,
+                       "session":"authenticated"}
+```
+
+Confirmed by that run: the **cookie bootstrap from a `Copy as cURL` paste**
+(the documented operator remedy, previously only unit-tested), cookie login,
+`LoadIndex`, the realtime socket, the `/health` envelope including `self`, and
+the SSE stream including the 30s heartbeat that is the socket-death detector.
+
+The ids agree with what was measured independently two days earlier, which is
+the useful part: `self.fbid` is `14963523149149302` — the id mentions carry —
+and `self.igid` is `79597894900`, the public id `opencli instagram whoami`
+returns. The bridge derives both from the session; nothing was configured.
+
+**Sends were not fired from this instance.** The account is in a real group
+with a real third person, and a test binary is the wrong thing to be sending
+from.
+
 ## Not measured, and load-bearing
 
 - **Session longevity — first real reading, 2026-09-21/22.** 10.5 hours
