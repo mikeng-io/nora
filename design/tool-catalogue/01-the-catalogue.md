@@ -154,7 +154,7 @@ refusing to reach for a tool it had never been shown — and it is
 constraints.md's "a broken Nora and a quiet Nora look the same" in the one
 place the doctrine cannot catch it.
 
-~900 tokens buys the property that Nora always knows the full shape of what
+991 tokens buys the property that Nora always knows the full shape of what
 she can do. It is the cheapest thing in this bundle and the least negotiable.
 
 ## Open question
