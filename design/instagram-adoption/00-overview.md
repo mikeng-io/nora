@@ -186,10 +186,12 @@ Discord a bot is visibly a bot. Here it is not, unless the operator says so.
 3. Phase 1 bridge + adapter, group-only, deny-by-default on DMs, mirroring
    WhatsApp v1.
 4. Phase 2 social reads, behind their own policy flag.
-5. Phase 2 needs two operator answers first — which Instagram account the
-   social Chrome profile holds, and whether story reads are permitted at all
-   (a story read is visible to its author). Both are in
-   `05-phase2-social-and-opencli.md`.
+5. Phase 2 needs **one** operator answer: whether story reads are permitted
+   at all, since a story read is visible to its author and no existing Nora
+   read is. The account question is settled — `opencli instagram whoami`
+   confirms the social browser profile holds the same `@not_____nora`
+   account, so adopting instameow removes a session rather than adding one.
+   See `05-phase2-social-and-opencli.md`.
 6. Phase 3 stays on OpenCLI. `instameow` should not grow into a general
    scraper; scoping it to the group and its members is what keeps the DM
    session's risk profile defensible.

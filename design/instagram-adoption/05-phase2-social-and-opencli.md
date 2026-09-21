@@ -60,9 +60,22 @@ Set against DEC-151's three recorded limitations:
 3. **Threads waits on a native OpenCLI adapter.** `instameow` is Instagram
    only. **No gain.**
 
-And one thing neither the decision nor OpenCLI has: **stories**, which is
-precisely what the operator asked for in Phase 2 ("喺 group 入面唔同人嘅
-story"). `FetchReel` is the only measured path to them.
+And one thing neither the decision nor OpenCLI has: **stories**. Verified
+against the live tool rather than assumed — OpenCLI 1.8.7's `instagram`
+command list marks `story` as **[write]** ("Post a single Instagram story
+image or video"). There is no story *read* anywhere in its surface.
+`FetchReel` is the only measured path to reading someone's story, and reading
+stories is precisely what the operator asked for in Phase 2 ("喺 group 入面唔
+同人嘅 story").
+
+### OpenCLI reads that DEC-151 does not currently use
+
+The tool is wider than the vocabulary exposed to the model. `opencli
+instagram` also marks `explore`, `followers`, `following`, `saved` and
+`download` as **[read]**. None is in `social_fetch`'s closed vocabulary, and
+each would be one allowlist row plus one vocabulary entry if wanted. They are
+noted here because `followers`/`following` are the graph reads Phase 3 would
+most plausibly want, and they already exist.
 
 ## Recommendation
 
@@ -110,16 +123,30 @@ both are the same Instagram account, adopting instameow means two concurrent
 authenticated sessions from one host, which is a plausible way to provoke a
 checkpoint — the thing `01-bridge-container.md` says must not happen.
 
-**Operator input required before Phase 2 starts:** which Instagram account
-does the social Chrome profile hold — `@not_____nora`, or a different one?
-The answer changes the plan:
+**Answered by measurement, 2026-09-21.** `opencli instagram whoami` on norty
+returns:
 
-- **Same account** → adopting instameow for Instagram is strictly *safer*,
-  because it removes a session rather than adding one: retire Instagram from
-  the Chrome profile and let the bridge own it.
-- **Different account** → two identities are reading, and which one a story
-  is fetched *as* becomes a visible fact (stories record viewers). That is a
-  policy question about the people in the room, not a routing question.
+```json
+{"logged_in": true, "site": "instagram",
+ "user_id": "79597894900", "username": "not_____nora", "full_name": "Nora"}
+```
+
+`79597894900` is the same `ds_user_id` the DM probe read from its own cookie
+session. **It is one account, held twice.**
+
+That resolves the question in the better direction: adopting instameow for
+Instagram **removes** a session rather than adding one. Retire Instagram from
+the Chrome profile, let the bridge own the account, and the browser profile
+keeps only X — which also means an OpenCLI outage stops taking Instagram down
+with it, the exact failure observed on 2026-09-21 while this bundle was being
+written.
+
+It also means the two sessions are running concurrently **right now**: the
+longevity soak and the browser profile, same account, same host. No auth error
+has appeared in the soak so far. That is weak evidence that Instagram
+tolerates multiple device sessions — which it obviously does in general — and
+is **not** evidence that a bridge session is safe long-term. The soak is the
+instrument for that, not this observation.
 
 ## Policy has no shape for this yet
 
