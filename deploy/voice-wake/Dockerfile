@@ -27,6 +27,12 @@ COPY wakegate ./wakegate
 # openWakeWord 16x96 ONNX, int16 input).
 COPY models ./models
 
+# The boot self-test's clip. Shipped for the same reason the model is: the
+# test asserts the wake path still wakes, and an image without the artefact
+# it asserts against reports ERROR instead of PASS — which is exactly what
+# happened the first time this was deployed without this line.
+COPY selftest ./selftest
+
 RUN chown -R wake:wake /app
 
 USER wake
