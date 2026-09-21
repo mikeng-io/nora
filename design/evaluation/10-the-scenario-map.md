@@ -29,7 +29,7 @@ scenario class is**, with the current coverage beside it:
 | # | failure shape | evidence | cases today |
 |---|---|---|---|
 | **S1** | **Spoke into the wrong room / to the wrong target** | #248 a Discord note answered on Signal; #199 raised in the wrong room 90 min later; #211 every Discord snowflake refused; #333 another agent's output recorded as room speech | **~2** (proactive_decide's two-room pair) |
-| **S2** | **Wrong or absent tool routing** | #297 the adversarial path has no tools at all; #189 the debrief clips every tool result uncounted; #226 the note tier's vocabulary spoken into the room | **0** — `Outcome` carries no tool calls |
+| **S2** | **Wrong or absent tool routing** | #297 the adversarial path has no tools at all; #189 the debrief clips every tool result uncounted; #226 the note tier's vocabulary spoken into the room | **0 at the time of writing; SUPERSEDED by §13** — `traced_nora_task` landed 2026-09-19 and the SDK's trajectory evaluators read it, so the instrument exists and the CASES are what is missing. The stale cell was quoted to the operator and into issue #297 before being caught (firefish-bb, 2026-09-22) |
 | **S3** | **Ungrounded assertion under ambiguity** | #227 denied having a site, capitulated to a bare assertion, then volunteered internal page names; DEC-75 | 23, all vacuous without a judge |
 | **S4** | **Read nothing / grounded on an empty context** | #210 the participation turn reads nothing from memory; #305 32k tokens of doctrine per turn; #222 standing repaired | **~0** |
 | **S5** | **Time misread** | #213 the judged message dated 1970 sorted above its own window; #216 honest ages produced false speaks on 4 of 5 silence twins | a few, implicit |
