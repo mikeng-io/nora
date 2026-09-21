@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "A design node and one decision-index row (DEC-194). No code — the note tier's create path still demands an anchor_date at both the database constraint and the parser. Nothing a member of a room can observe."
+}

@@ -12,6 +12,8 @@ edges:
 version: 1
 ---
 
+> **EXTENDED 2026-09-16 — «date becomes optional» is now an architecture change, not a property of this node's create path.** §2's closing position (*"the anchor date becomes optional; the clock does not become ignorable"*), §3's dateless-and-living notes and §3's *"the gate for a dateless candidate is a judgement, not a key"* are all CARRIED FORWARD unchanged — what changed is their scope: the operator's 2026-09-16 reframe makes time an optional property of a note rather than the axis the tier is built on, which pulls in the schema, the Dreamer's per-note timer, the index render and curator selection together. §7's steps 2–4 remain the build and remain unbuilt. The cascade, and one defect this node's precondition did not cover (the staging key stops deduping under a NULL anchor), are in [41-note-tier-time-is-optional.md](41-note-tier-time-is-optional.md) §3. See issue #118.
+
 # Note Candidates v2
 
 ## 0. What is true on 2026-09-08 (read back, not recalled)
