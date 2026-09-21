@@ -26,7 +26,7 @@ policy) built once per process by the composition root.
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Container, Iterable, Mapping
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
@@ -67,6 +67,7 @@ from .ports import ToolSpec, adapt
 from .relay import Relay
 from .room import Room
 from .tools import (
+    HOT_TOOLS,
     NATIVE_TOOL_BUDGETS,
     NATIVE_TOOLS,
     EventsCollaborator,
@@ -595,15 +596,66 @@ class ToolRegistry:
         guidance; a reader deciding whether an answer could exist needs the
         verb and its subject, not its usage rules.
         """
+        return "\n".join(self._digest_lines(self.read_only_tools()))
+
+    def _digest_lines(
+        self, names: Iterable[str], *, hot: Container[str] = frozenset()
+    ) -> list[str]:
+        """`- name — first sentence`, one line per name, sorted.
+
+        Extracted so `capability_digest` and `tool_catalogue` cannot drift into
+        two renderings of the same thing — the failure DEC-150 deleted the
+        capability block for. They differ only in WHICH names and whether a
+        name is marked resident; the line itself has one implementation.
+        """
         described = {
             entry["name"]: str(entry.get("description") or "")
             for entry in self.catalog()
         }
         lines = []
-        for name in sorted(self.read_only_tools()):
+        for name in sorted(names):
+            mark = "*" if name in hot else "-"
             first = _first_sentence(described.get(name, ""))
-            lines.append(f"- {name} — {first}" if first else f"- {name}")
-        return "\n".join(lines)
+            lines.append(f"{mark} {name} — {first}" if first else f"{mark} {name}")
+        return lines
+
+    def tool_catalogue(self, *, hot: Container[str] = HOT_TOOLS) -> str:
+        """EVERY tool, one line each — the index the model selects from.
+
+        The difference from `capability_digest` is the reader and therefore the
+        scope. The Relevance Gate asks «could an answer exist here?», so it
+        gets READ-ONLY tools: a verb that acts is never the reason a window is
+        worth a turn. This is read by the model that is about to CHOOSE, so it
+        gets all of them — leaving `send_reply` or `remind` out would be
+        leaving out a thing she can do.
+
+        A line answers ONE question: is this the tool I want, or not? It
+        carries the capability and, where a confusable sibling exists, the
+        discriminator against it — `where_is` says RIGHT NOW, `where_been` says
+        HAS BEEN. It carries no parameters, no arms, no `status` values and no
+        reporting rules; those are answered by the schema and by the result,
+        and a line that starts explaining how to CALL a tool has spent budget
+        belonging to the other 53 on a question nobody has asked yet.
+
+        DERIVED, like `capability_digest` and for the same reason: a tool added
+        to `NATIVE_TOOLS` appears here on the next start with nothing to edit.
+        An authored copy is a cache that goes stale in silence (DEC-150), which
+        is the whole argument for generating it.
+
+        FIRST SENTENCE, not a separate authored field. That was measured rather
+        than assumed: the existing first sentences already discriminate on
+        `find_parking`/`parking_status`, `search_memory`/
+        `search_memory_workspace` and `note_read`/`note_search`. Only
+        `where_is` needed repair, and it was repaired at the docstring rather
+        than worked around here — one source of truth per tool, not two.
+
+        `hot` marks the tools whose full schema is already resident, so the
+        model does not spend a round trip fetching what it already holds. It
+        defaults to the one declaration in `nora.agent.tools`; the parameter
+        exists so a test can render a catalogue without depending on today's
+        measured six.
+        """
+        return "\n".join(self._digest_lines(self.tool_names(), hot=hot))
 
     def catalog(self) -> tuple[dict, ...]:
         """Every built tool's public metadata — name, model-facing

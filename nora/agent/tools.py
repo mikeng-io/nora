@@ -1188,6 +1188,33 @@ NATIVE_TOOL_BUDGETS: Mapping[str, int] = {
     name: spec.budget for name, spec in NATIVE_TOOLS.items()
 }
 
+
+# The tools that stay RESIDENT — full schema in every prompt, never fetched.
+#
+# ONE declaration, read by both the catalogue renderer (which marks these) and
+# the builder (which ships them). A marker saying a tool is already loaded
+# while the builder did not load it is worse than no marker at all, so the two
+# must not be able to disagree; `tests/unit/test_tool_catalogue.py` pins that.
+#
+# MEASURED, not chosen. Langfuse, 2,000 tool calls over 2026-08-12 → 09-21:
+# `web_search` 497 (24.9%), `send_reply` 195 (9.8%), `note_read` 152 (7.6%),
+# `web_fetch` 135 (6.8%), `now` 63 (3.1%), `search_memory` 59 (3.0%) — 55.2%
+# of all calls, for 2,606 tokens of schema. Those turns never fetch anything.
+# Re-derive it when a tool's share moves; it is a fact about 2026-08/09, not a
+# constant. The next two candidates are `play_music` (3.5%, but already
+# Discord-scoped so it is free there and absent elsewhere) and `where_is`
+# (3.2%).
+#
+# `send_reply` is here REGARDLESS of its share. It is the terminal verb —
+# `ReplyGuard` ends the turn by observing it (DEC-21/DEC-32) — so a turn that
+# had to fetch it before it could reply is a turn that can fail to end.
+#
+# A short window lies here: over 3 days `web_search` barely registers and
+# `note_read` leads. Size this on 30+ days or it names the wrong six.
+HOT_TOOLS: frozenset[str] = frozenset({
+    "web_search", "send_reply", "note_read", "web_fetch", "now", "search_memory",
+})
+
 # `load_transcript`'s clamp, and the single source both the clamp and the
 # model-facing docstring below read from — `tests/test_tools.py::
 # test_the_model_is_told_the_same_ceiling_the_clamp_enforces` fails if they
@@ -3951,7 +3978,7 @@ Args:
                 "addresses": addresses or None}
 
     async def where_is(person: str) -> dict:
-        """Where somebody in this conversation was last seen.
+        """Where somebody in this conversation is RIGHT NOW — a live reading, not a pattern.
 
         Call this when somebody asks where a person is («佢喺邊», «阿媽返咗
         屋企未»). Give it the person the way they were named — a name or
@@ -6920,8 +6947,9 @@ when somebody asks what song is on.
         return _music_result(outcome)
 
     async def set_music_volume(percent: int) -> dict:
-        """Set the Discord music-player volume, when someone asks her to
-        turn the music up or down (「較細聲啲」, 「大聲啲」).
+        """Set the Discord music-player volume, up or down.
+
+        Reach for it when someone asks (「較細聲啲」, 「大聲啲」).
 
         `percent` is the volume as a whole number 0-200 (100 = normal).
         Only reachable when Nora can hear a music session in the room's
@@ -7814,9 +7842,10 @@ Args:
         }
 
     async def recall_lookups(limit: int = RECALL_LOOKUPS_DEFAULT) -> dict:
-        """Pull back facts you (or an earlier turn) already looked up in
-        THIS conversation, within the last 7 days — a place's rating, a
-        route's duration, a web search's results. It is your RECORD of what
+        """Pull back what you already looked up in THIS conversation, within the last 7 days.
+
+        A place's rating, a route's duration, a web search's results. It is
+        your RECORD of what
         you actually checked, in this conversation: reach for it before
         re-running place_info/route/web_search/weather/transit for
         something that might already be known — reusing what you already

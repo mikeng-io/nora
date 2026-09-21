@@ -112,6 +112,49 @@ this is invisible to a log grep — no tool logged its own name, so zero was
 consistent with "every turn" and with "never". Measure it on the eval suite
 with the counter from `04` §7, not from production logs.
 
+**2f — Per-turn accounting. The instrument exists; do not build one.**
+
+Verified on master 2026-09-22, after the eval owner pointed at it:
+
+`evals/backbone.py:649` `traced_nora_task(spec)` is
+`eval_task(TracedHandler())(nora_task(spec))`. `TracedHandler.after()` does
+`processed.setdefault("trajectory", session)` and `nora_task`'s dict never
+sets that key, so it **adds a `Session` onto the same
+`output`/`environment_state` shape every other grader already reads** — no
+custom evaluator, no second path. Pinned by
+`tests/unit/test_eval_backbone.py:309`.
+
+From that trajectory, per TURN and by construction:
+
+| want | read |
+|---|---|
+| model calls per turn | count the `InferenceSpan`s |
+| end-to-end turn latency | the single `AgentInvocationSpan`'s duration |
+| which tools were selected | `ToolExecutionSpan`s — and `ToolSelectionAccuracyEvaluator` / `ToolParameterAccuracyEvaluator` / `ToolCalled` ship in the SDK and read `actual_trajectory` directly |
+
+Constraint carried by `traced_nora_task`'s own docstring: the caller must hold
+`handler` for the run's lifetime (one shared exporter) and pass
+`max_workers=1` — serial only.
+
+**A caution on the 3-vs-4 call question.** A driven case recorded in
+`design/evaluation/10-the-scenario-map.md` §13 shows **four** `InferenceSpan`s
+in one turn. That is a `participation` case, not a tag turn, and the tag trace
+this bundle measured (`836eda48…`) ran **three** `chat` generations. So the
+baseline is lane-dependent and n=1 on the participation side. **Measure the
+baseline on the same lane and the same entry point as the change**, before
+attributing a 4th call to `load_tools`.
+
+**Reading `10-the-scenario-map.md`: §13 supersedes the §1 table.** The table
+(line 32) records S2 coverage as "0 — `Outcome` carries no tool calls"; §13
+records S2 as built 2026-09-19. The table is stale and was repeated to the
+operator and onto issue #297 before being caught. `Outcome` itself
+(`evals/rebuilt/domain.py:129-144`) genuinely carries no tool calls — the
+trajectory is a separate channel, which is how the row reads false while
+being literally true about `Outcome`.
+
+**Ownership:** the suite belongs to another session. Nothing under `evals/`
+is written here without their decision — see `§5`.
+
 **2e — Cache.** Before/after on `cache_read_input_tokens` across ≥20 real
 turns, split by whether the turn called `load_tools`. Expectation: the stable
 resident prefix caches at least as well; post-`load_tools` calls may miss. An
