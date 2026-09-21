@@ -1162,6 +1162,7 @@ async def build_dependencies(cfg: Config) -> Dependencies:
             # conflict) and otherwise believes a track is playing until an
             # event says otherwise — which a wedged controller never sends.
             read_playback=voice_hub.read_playback if voice_hub is not None else None,
+            metrics=metrics,
             generation_probe=voice_hub.generation_for if voice_hub is not None else None,
             drop_voice_session=voice_hub.drop if voice_hub is not None else None,
             exit_voice_session=voice_hub.exit if voice_hub is not None else None,

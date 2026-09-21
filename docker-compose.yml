@@ -117,6 +117,9 @@ services:
       options: {max-size: "10m", max-file: "3"}
 
   nora:
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
     build:
       context: .
       # network: host is REQUIRED, not a preference — BuildKit's default bridge
@@ -731,6 +734,9 @@ services:
   # volumes pin both caches so a restart/recreate doesn't re-download; first
   # start_period is long because of the download, subsequent starts are fast.
   stt:
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
     build:
       context: ./deploy/stt
       # network: host is REQUIRED, same reason as every other build in this
@@ -775,6 +781,9 @@ services:
   # liveness, see the README in deploy/voice-sidecar/), so a deployment with
   # voice receive off still starts clean.
   voice-sidecar:
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
     build:
       context: ./deploy/voice-sidecar
       # network: host is REQUIRED, same reason as every other build in this
@@ -862,6 +871,9 @@ services:
   # its binds: with nothing connected it is healthy-but-idle, so a deployment
   # with voice wake off still starts clean.
   voice-wake:
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
     build:
       context: ./deploy/voice-wake
       # network: host is REQUIRED, same reason as every other build in this

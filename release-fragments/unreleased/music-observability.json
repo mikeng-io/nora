@@ -1,0 +1,17 @@
+{
+  "type": "feature",
+  "summary": "A music failure now raises an alert and leaves evidence behind, instead of sitting green until someone in the room notices.",
+  "details": [
+    "There was no music metric of any kind before this — not uncollected, never declared — so no alert rule could be written. A live wedge sat with every light green: the containers reported healthy, Prometheus had nothing to say, and the only thing that ever noticed was a person listening.",
+    "Two series carry the divergence rather than a derived verdict: `nora_music_expected_playing` is what nora believes, `nora_music_controller_playing` is what the audio controller reports. The judgement stays in the alert expression instead of being baked into one 'healthy' flag in code.",
+    "`nora_music_liveness_total{verdict}` counts every poll by decided verdict, and `nora_music_stream_failed_total{reason}` counts streams that failed after nora believed they were playing.",
+    "Three alerts: MusicWedged (belief and controller disagree for 2 minutes, critical), MusicControllerUnreadable (nora could not read the controller for 10 minutes, warning), MusicStreamFailing (3 failures in 15 minutes, warning). They route over the Alertmanager path that already delivers to Discord.",
+    "When nora cannot read the controller the playing gauge is left ABSENT, never set to 0. A gauge that could not be measured must not assert a value: 0 would read as 'definitely not playing' and fire the wedge alert off a network blip. The alert's `unless` depends on absence, and a test pins it.",
+    "The audio controller now mirrors its log into its state volume. `docker logs` keeps nothing across `up -d --force-recreate`, which is the command every deploy runs, so the loop had been: music breaks, restart to restore service, the evidence is destroyed by the act of restoring it, the mechanism is guessed at. ffmpeg's stderr tail — the line that names the cause — crosses to nora in no event at all and died with the container every time.",
+    "The four unrotated services also gained the log rotation stanza two other services already had, so an unbounded file cannot grow on disk."
+  ],
+  "limitations": [
+    "The mirrored log keeps one generation back at 16MB, so a failure older than roughly two files is still lost.",
+    "The alerts describe divergence and unreadability; they do not name a cause. The sidecar log, now preserved, is still what does that."
+  ]
+}

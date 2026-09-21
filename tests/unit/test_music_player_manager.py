@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 from nora.domain.music import MusicSession
 from nora.domain.playback_liveness import PlaybackReading, PlaybackVerdict
 from nora.domain.ports import ResolvedTrack, TrackSource
+from nora.obs.metrics import Metrics
 from nora.platform.discord.music_manager import (
     _MAX_STREAM_RETRIES,
     MusicPlayerManager,
@@ -227,6 +228,7 @@ def _manager(
     exit_voice_session=None,
     source: TrackSource | None = None,
     read_playback=None,
+    metrics=None,
 ) -> MusicPlayerManager:
     scheduler = _FakeScheduler()
     return MusicPlayerManager(
@@ -236,6 +238,7 @@ def _manager(
         autoplay_enabled=autoplay_enabled, playback_probe=playback_probe,
         generation_probe=generation_probe, drop_voice_session=drop_voice_session,
         exit_voice_session=exit_voice_session, read_playback=read_playback,
+        metrics=metrics,
     )
 
 
@@ -1836,3 +1839,66 @@ async def test_nothing_is_polled_for_a_guild_with_no_live_track() -> None:
 
     assert await manager.reconcile_liveness() == {}
     assert calls == [], "a guild with no player must not be polled"
+
+
+async def test_the_wedge_reaches_prometheus_as_a_divergence_not_a_verdict() -> None:
+    """Both sides of the comparison are published, and the ALERT decides.
+
+    There was no music metric of any kind before this — not "not collected",
+    never declared — so no rule could be written and a wedged controller sat
+    green for days. Publishing nora's belief and the controller's report as
+    two series keeps the judgement in the alert expression rather than
+    baking it into a single derived `healthy` flag."""
+    metrics = Metrics()
+    frozen = _reading(status="playing", position_ms=1_000, playback_id="pb-1")
+
+    async def read_playback(_guild_id: str) -> PlaybackReading:
+        return frozen
+
+    manager = _manager({"track a": _TRACK_A}, read_playback=read_playback, metrics=metrics)
+    session = _FakeVoiceSession()
+
+    async def connect() -> _FakeVoiceSession:
+        return session
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+    await manager.reconcile_liveness()   # first poll: no delta yet
+    await manager.reconcile_liveness()   # second: the position never moved
+
+    assert metrics.get("nora_music_expected_playing", guild_id="guild-1") == 1.0
+    assert metrics.get("nora_music_controller_playing", guild_id="guild-1") == 0.0
+    assert metrics.get("nora_music_liveness_total", guild_id="guild-1", verdict="wedged") >= 1.0
+
+
+async def test_an_unreadable_controller_leaves_the_playing_gauge_unset() -> None:
+    """A gauge that could not be measured must not assert a value.
+
+    0 here would read as "definitely not playing" and satisfy the wedge
+    alert off a network blip — the same fail-open reading, one layer up.
+    The `unless` in the MusicWedged rule depends on this series being
+    ABSENT, not zero."""
+    metrics = Metrics()
+
+    async def read_playback(_guild_id: str) -> PlaybackReading:
+        return PlaybackReading.unreachable()
+
+    manager = _manager({"track a": _TRACK_A}, read_playback=read_playback, metrics=metrics)
+    session = _FakeVoiceSession()
+
+    async def connect() -> _FakeVoiceSession:
+        return session
+
+    await manager.play(
+        guild_id="guild-1", query_or_url="track a", requested_by="miles",
+        added_at=T0, connect=connect,
+        voice_channel_id="voice-channel-1", notify_channel_id="notify-channel-1",
+    )
+    await manager.reconcile_liveness()
+
+    assert metrics.get("nora_music_liveness_total", guild_id="guild-1", verdict="unknown") == 1.0
+    rendered = metrics.render()
+    assert 'nora_music_controller_playing{guild_id="guild-1"}' not in rendered

@@ -33,6 +33,7 @@ import {
 } from '@discordjs/voice';
 
 import { readdir } from 'node:fs/promises';
+import { appendFileSync, renameSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { createCore, createFrontDoor } from './controller.mjs';
@@ -59,9 +60,53 @@ const STATE_DIR = process.env.STATE_DIR ?? '/var/lib/audio-controller';
 // a stronger authority than any list this process could hold.
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 
+// Mirror of the log into the state VOLUME, which survives what stdout does
+// not. `docker logs` keeps nothing across `up -d --force-recreate`, and that
+// is the command every deploy runs — so the loop has been: music breaks,
+// restart to restore service, the evidence is destroyed by the act of
+// restoring it, the mechanism is guessed at. Four rounds of that, and the
+// one line that would have named the cause (ffmpeg's stderr tail, which
+// crosses to nora in NO event) died with the container every time.
+//
+// `/var/lib/audio-controller` is a named volume and already survives both
+// recreate and image rebuild — the desired-state files there predate them.
+const LOG_PATH = path.join(STATE_DIR, 'voc.log');
+const LOG_MAX_BYTES = 16 * 1024 * 1024;
+let logSize = -1; // -1 = not yet known; a failed stat disables the mirror
+
+function mirrorLog(text) {
+  if (logSize === null) return; // disabled after a failure — never retried per line
+  try {
+    if (logSize < 0) {
+      try {
+        logSize = statSync(LOG_PATH).size;
+      } catch {
+        logSize = 0; // absent is fine: the first append creates it
+      }
+    }
+    if (logSize > LOG_MAX_BYTES) {
+      // One generation back, not a ring: a wedge is diagnosed from the hours
+      // around it, and two files bound the disk without hiding them.
+      try {
+        renameSync(LOG_PATH, `${LOG_PATH}.1`);
+      } catch {
+        /* keep appending rather than lose the line */
+      }
+      logSize = 0;
+    }
+    appendFileSync(LOG_PATH, text + '\n');
+    logSize += text.length + 1;
+  } catch {
+    // Logging must never be able to stop playback. One failure disables the
+    // mirror for the life of the process; stdout is unaffected.
+    logSize = null;
+  }
+}
+
 function log(event, fields = {}) {
   const line = { event, ts: new Date().toISOString(), ...fields };
   const out = `[voc] ${JSON.stringify(line)}`;
+  mirrorLog(JSON.stringify(line));
   if (event === 'error' || event === 'stream-failed' || event === 'event_delivery_failed') {
     console.error(out);
   } else {
