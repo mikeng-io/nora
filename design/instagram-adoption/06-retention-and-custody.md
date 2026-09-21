@@ -81,6 +81,74 @@ Two consequences worth stating before implementation:
    what is stored afterwards — which is a doctrine question, not a storage
    one.
 
+## The mitigation: a story must be SAID to be a story
+
+Operator, 2026-09-22: Nora must name a story *as* a story, because stories are
+perishable.
+
+This is the only mitigation that reaches the leak, and the reason is that it
+travels **with the claim** rather than sitting under it. A storage rule cannot
+touch a Honcho conclusion; a phrasing rule is already inside it.
+
+### Attributed versus asserted
+
+The same information, two half-lives:
+
+| phrasing | what it is | how it ages |
+|---|---|---|
+| "his **story** from 3h ago showed a beach" | a claim about a **perishable artefact**, with a timestamp | reads as stale on its own; a reader knows the source is gone |
+| "he was at the beach" | a claim about **the world** | never expires, never sourced, indistinguishable from something he said |
+
+Both are true when written. Only the first stays honest a week later. The
+second has **laundered a perishable observation into durable knowledge**, and
+nothing downstream can tell that it did — which is exactly how a dossier gets
+built out of permitted acts (`07` §correlation).
+
+### This has precedent in Nora
+
+It is the pattern the codebase already uses for content whose trust or
+lifetime differs from ordinary speech:
+
+- **R-13 `untrusted` wrapping with provenance** — retrieved stranger-written
+  text is marked as such, and `SocialProvider`'s docstring already requires it
+  for social reads.
+- **Media labels and handles** (R-90) — `[image a3f2c1]` says *what kind of
+  thing* this is, in the body, where every consumer sees it.
+- **Note anchor dates** — an entry carries when the thing happens, so it can
+  retire.
+
+A story marker is the same move applied to a source whose *lifetime* is the
+unusual property rather than its trustworthiness.
+
+### What this requires, in two places
+
+**1. The tool must emit what the phrasing needs.** A story result already
+carries `taken_at` and the reel's `expiring_at` (measured: 24h). Both must
+reach the model, and the source kind must be explicit — `instagram_story`,
+not a bare URL that could be anything. A model cannot attribute what it was
+not told.
+
+**2. Doctrine must require the attribution.** "When you report something seen
+in a story, say it was a story and when it was posted. Do not restate it as a
+fact about where someone was or what they did." That is a doctrine line, not
+code, and it belongs with the other rules about how Nora speaks.
+
+### The honest limit
+
+**This is a soft bound and will sometimes fail.** A model can be told to
+attribute and assert anyway; nothing enforces it, and no test can pin the
+phrasing of free text.
+
+But it fails *gracefully*, which the storage rules do not. A missed
+attribution is one wrongly-durable sentence. A missing storage rule is every
+sentence, silently, forever. And when it works, the durable artefact carries
+its own expiry notice — which is the best available outcome once the
+conclusion is written, because at that point deletion is not on the table.
+
+Worth stating plainly: **this does not make social reads ephemeral.** It makes
+what survives *legible as perishable*. Those are different, and the second is
+what is actually achievable.
+
 The platform agrees with the rule, which is a good sign: a story carries
 `expiring_at`, measured at 24 hours. Media Nora kept would outlive its source.
 
