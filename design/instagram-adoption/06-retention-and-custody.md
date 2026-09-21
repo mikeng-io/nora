@@ -52,6 +52,35 @@ Two consequences worth stating before implementation:
    boundary bounds bytes, not recollection — and recollection is the part
    that actually reaches other people.
 
+   **Three named paths carry it, and the third is automatic:**
+
+   | path | what it keeps | triggered by |
+   |---|---|---|
+   | the note tier | an entry Nora wrote | a Dreamer pass deciding to |
+   | `media_objects` | the bytes themselves | `media_fetch`'s cache write |
+   | **`feedback.py` → Honcho** | **every reply Nora sends** | **every reply, always** |
+
+   The third was missed in the first draft of this document and is the one
+   that needs no decision to fire. `nora/engagement/stages/feedback.py` feeds
+   **Nora's own replies** under the `nora` aiPeer into the conversation's
+   session — *every* sent message, since `deliver.sent_texts` is a list, with
+   only refused or failed messages excluded. The fire path drops
+   `memory_feed_stage` and deliberately keeps this one, because "a fire turn
+   is still something she said".
+
+   So if Nora reads a story and **says what is in it**, that sentence is in
+   Honcho. The stage's own docstring notes why that is worse than a note: the
+   store keeps CONCLUSIONS rather than text, and it is "the one Honcho failure
+   a backfill cannot undo".
+
+   Nothing here is a defect — the mechanism is correct for every existing
+   caller, exactly like `media_fetch`'s cache. It means the retention rule
+   cannot be enforced downstream of the model at all: **by the time Nora has
+   phrased an answer, the durable copy is already inevitable.** Any real bound
+   on social recollection has to act on what she is allowed to *say*, not on
+   what is stored afterwards — which is a doctrine question, not a storage
+   one.
+
 The platform agrees with the rule, which is a good sign: a story carries
 `expiring_at`, measured at 24 hours. Media Nora kept would outlive its source.
 
