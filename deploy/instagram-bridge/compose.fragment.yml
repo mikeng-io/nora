@@ -1,0 +1,62 @@
+# instagram-bridge — the compose service, to be pasted into the repo-root
+# docker-compose.yml next to whatsapp-bridge.
+#
+# It lives here rather than in docker-compose.yml because the adapter that
+# consumes this bridge (nora/platform/instagram/) does not exist yet, and a
+# service in the live compose file is a service the next `docker compose up -d`
+# starts. Starting it before the degradation change described in
+# design/instagram-adoption/01-bridge-container.md lands would put a second
+# Instagram session on the account with nothing reading its events.
+#
+# The one deviation from the design sketch is the volume: that sketch used a
+# named `instagram-session` volume, and this uses a bind mount under ./state/.
+# Two reasons. It matches signal-cli (./state/signal-cli) and whatsapp-bridge
+# (./state/whatsapp), so there is one place to look, back up and restore; and
+# the session BOOTSTRAP is an operator dropping a `Copy as cURL` paste into
+# that directory, which a named volume turns into a docker cp exercise.
+
+services:
+  instagram-bridge:
+    build:
+      context: ./deploy/instagram-bridge
+      # network: host is REQUIRED, not a preference — standing operational
+      # constraint 1, the same one signal-cli and whatsapp-bridge record:
+      # BuildKit's default bridge cannot resolve deb.debian.org on this host
+      # (systemd-resolved stub 127.0.0.53), and this Dockerfile's
+      # `apt-get install ca-certificates curl` would stall. It also covers the
+      # `go mod download` in the build stage.
+      network: host
+    image: instagram-bridge:0.1.0
+    container_name: instagram-bridge
+    restart: unless-stopped
+    # Private `nora` network, publishing NOTHING — the third instance of the
+    # trust posture signal-cli cut over to on 2026-08-07. This container holds
+    # a full Instagram account session; the narrower its netns, the smaller the
+    # blast radius. Co-networked containers reach it as instagram-bridge:18082.
+    networks: [nora]
+    volumes:
+      # Cookies + reconnection state. Losing cookies.json means redoing the
+      # browser login; losing state.json and seq.json only costs a full
+      # LoadIndex on the next boot. Deliberately NOT under ./data — Nora
+      # bind-mounts that, and she has no business reading transport
+      # credentials. chmod 700; never commit.
+      - ./state/instagram:/session
+    environment:
+      - IG_SESSION_DIR=/session
+    command: ["--port", "18082", "--session", "/session"]
+    healthcheck:
+      # Proves the bridge's HTTP layer serves. It CANNOT prove the Instagram
+      # socket is alive, and it deliberately does not try: /health answers 200
+      # while checkpointed, because a checkpoint is a normal operating state
+      # and restarting on one fixes nothing. The real detector lives one layer
+      # up — the bridge emits SSE heartbeats, Nora's /health publishes the
+      # per-platform last_event_age_seconds, and deploy/watchdog.sh alerts on
+      # it aging.
+      test: ["CMD-SHELL", "curl -fsS -m 5 http://127.0.0.1:18082/health || exit 1"]
+      interval: 60s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
