@@ -252,7 +252,16 @@ make and it is about people, not code:
    know things about each other. Written down as a decision rather than left
    as an emergent property, so it is legible to the people it concerns.
 
-**Nothing here is blocked on this.** Phase 1 does not touch it and Phase 2
+**REVISED 2026-09-22 after external review (`12`): this GATES the story
+capability rather than accompanying it.** Recording an open decision is
+adequate only while the capability is off. The moment a Tier-0 story read
+works, the dossier needs no new code — only a question — so an unresolved
+decision attached to a live capability is not deferred, it is decided in
+favour of the capability. The asymmetry that makes this plain: this bundle
+demands a *recorded measurement* before admitting a backend exception, and
+demanded nothing before admitting correlation.
+
+**The original text, which understated it:** Nothing here is blocked on this. Phase 1 does not touch it and Phase 2
 Tier 0 story reads do not require it to be settled. It is recorded now because
 the capability arrives with Phase 2, and a capability that arrives before its
 decision tends not to get one.

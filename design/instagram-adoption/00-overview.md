@@ -19,6 +19,7 @@ edges:
   - {dst: 09-tool-surface-and-naming.md, rel: details, provenance: asserted}
   - {dst: 10-discovery-retrieval-and-paging.md, rel: details, provenance: asserted}
   - {dst: 11-sequencing-and-flows.md, rel: details, provenance: asserted}
+  - {dst: 12-external-review.md, rel: review, provenance: asserted}
 ---
 
 # Instagram Adoption — Overview, Verdict & Phases

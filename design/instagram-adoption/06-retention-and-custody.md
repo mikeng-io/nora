@@ -157,6 +157,22 @@ The general lever is worth noting beyond this bundle: **instructions about how
 to handle an answer are cheaper next to the answer than in the schema that
 described the question.**
 
+### It is a UX improvement, not a bound — external review, 2026-09-22
+
+Relabelled after an outside architect read this section and rejected its
+framing (`12`). The judgement: relying on an instruction to protect a property
+already classified as unenforceable is "a comfortable sentence", and **this
+bundle's own evidence convicts it** — in the Relevance Gate measurement,
+rewriting a model's instruction made it worse three times running, once
+unsafely.
+
+So attribution phrasing stays, because it costs nothing and helps when it
+works, but it is **not the bound**. The real bound is a provenance class on
+every memory write (`room-speech` vs `ephemeral-read`), so an
+ephemeral-derived conclusion can be expired and a deletion request is a query
+rather than an excavation. That changes a shared memory path and is out of
+this bundle's scope; it is named in `12` so it is owned rather than implied.
+
 ### The honest limit
 
 **This is a soft bound and will sometimes fail.** A model can be told to
