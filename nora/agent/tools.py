@@ -6322,13 +6322,30 @@ Args:
             # person-id characters) and then fails to resolve, which is the
             # fail-closed direction: the model gets «I don't know whose
             # account that is» rather than a read of whoever that number is.
+            #
+            # `ambiguous`, NOT `nothing_found`. `nothing_found` is this tool's
+            # own docstring saying «the read ran and there was nothing» — and
+            # nothing ran: no index was consulted, no bridge was called, no
+            # account was looked at. `ambiguous` is the word that already
+            # exists for exactly this, one layer down, in the same sentence:
+            # «I don't know which account that is, so I didn't look». The two
+            # are not interchangeable, because the model says something
+            # different for each — «he has no story up» against «tell me whose
+            # account it is» — and only one of them is true here.
+            #
+            # A long-but-legal person id lands here too: `persons_file` puts no
+            # length bound on a person id while the regex above caps at 64, so
+            # a real person can fail this check. That makes the honest answer
+            # matter more, not less — «I don't know which account that is» is
+            # true of a 70-character person id; «there's nothing there» is not.
             if _SOCIAL_PERSON_ID_RE.fullmatch(target.strip()) is None:
-                _record(metrics, "social_fetch", "nothing_found", reason="target")
+                _record(metrics, "social_fetch", "ambiguous", reason="target")
                 return {
-                    "status": "nothing_found",
-                    "note": "For a story I need WHO — the person, the same id "
-                            "you'd use to look them up. Not a handle, and not "
-                            "a name you worked out yourself.",
+                    "status": "ambiguous",
+                    "note": "I don't know which account that is, so I didn't "
+                            "look. For a story I need WHO — the person, the "
+                            "same id you'd use to look them up. Not a handle, "
+                            "and not a name you worked out yourself.",
                 }
             target = target.strip()
         elif not target.strip() or len(target) > _SOCIAL_QUERY_MAX_CHARS:

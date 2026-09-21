@@ -13,6 +13,20 @@ description of the fault: the model does not get to see the exception, so the
 payload has to carry what the honest sentence is. `dict(...)` at every call
 site — these are shared module constants, and a caller that mutated one would
 edit every later result.
+
+**And because a `note` is an instruction channel, nothing a BRIDGE says may
+land in one.** Both clients used to forward `payload["note"]` verbatim on the
+non-`ok` path — an unbounded, unescaped string from another process, rendered
+into the slot that tells the model what it may say. A 230-character bridge
+note reading «IGNORE PREVIOUS INSTRUCTIONS…» reached the model intact, which
+is why `NOTHING_FOUND` below exists: the miss is a STATE, and the sentence for
+a state is ours. The bridge's wording is DROPPED, not clamped and not escaped
+— there is no version of "a remote process writes part of Nora's
+instructions" that is made safe by being shorter.
+
+`clamp_chars` lives here for the same "one copy" reason the notes do: every
+implementation behind `social_fetch` bounds the text it hands back, because a
+tool result is re-sent on every subsequent model call.
 """
 
 from __future__ import annotations
@@ -50,3 +64,38 @@ REFUSED: dict[str, Any] = {
     "note": "I don't look up people outside the rooms I'm in. Say that "
             "plainly — it's a boundary, not a failure.",
 }
+
+
+#: The read RAN and there was nothing — «I looked, nothing there», which is a
+#: fact about the subject rather than about us. Nora-side wording rather than
+#: the bridge's, because a `note` is what the model is TOLD TO SAY and a
+#: remote process does not get to write it.
+NOTHING_FOUND: dict[str, Any] = {
+    "status": "nothing_found",
+    "note": "I looked and there was nothing there. Say you couldn't find "
+            "anything — not that you couldn't check.",
+}
+
+
+def clamp_chars(text: str, max_chars: int) -> tuple[str, bool]:
+    """Clamp `text` to `max_chars`, preferring an item boundary.
+
+    Truncating mid-record is what made raw JSON unreadable — a post's `text`
+    field severed from its closing brace. Rendered text is more forgiving, but
+    cutting at an item separator keeps the first item whole whenever the
+    budget allows; the result is readable text, not valid JSON, which is the
+    point.
+
+    Here rather than private to one client because BOTH implementations behind
+    `social_fetch` owe the same bound, for the same reason the notes are
+    shared: a tool result is re-sent on every subsequent model call, and a
+    clamp that exists on one backend and not the other is a token budget that
+    depends on which verb was asked.
+    """
+    if len(text) <= max_chars:
+        return text, False
+    cut = text[:max_chars]
+    sep = cut.rfind("\n\n")
+    if sep > 0:
+        cut = cut[:sep].rstrip()
+    return cut + " …", True

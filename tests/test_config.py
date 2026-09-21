@@ -361,6 +361,29 @@ def test_the_presence_section_is_optional_and_ships_inert(toml_path):
     assert cfg.presence.retention_days == 720
 
 
+def test_the_instagram_social_backend_is_declared_live_in_the_example(toml_path):
+    """A wholly commented-out section is not "the default, shown".
+
+    `[social.instagram]` shipped with its HEADER commented out too, so
+    `InstagramSocialConfig` was never constructed from `config.example.toml`
+    and `extra="forbid"` never ran against it — a typo'd key in that block
+    would have been found by an operator in production rather than here.
+    `[social]` above ships a live header for exactly this reason, and the
+    probe is the same one the other sections use: delete it and the config
+    must still load, with the class defaults.
+    """
+    text = toml_path.read_text()
+    head, _, tail = text.partition("\n[social.instagram]\n")
+    assert tail, "config.example.toml no longer declares a live [social.instagram]"
+    # Live, not commented: the section must actually reach the model.
+    cfg = load(toml_path)
+    assert cfg.social.instagram.enabled is False
+    # And `extra="forbid"` is genuinely armed against that block now.
+    toml_path.write_text(head + "\n[social.instagram]\nnot_a_key = 1\n" + tail)
+    with pytest.raises(ConfigError, match="not_a_key"):
+        load(toml_path)
+
+
 def test_the_analytics_section_is_optional_and_ships_inert(toml_path):
     """DEC-115. `[analytics]` deleted from the example must keep loading, and
     the default is INERT (enabled = false): the presence analytics substrate

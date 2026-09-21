@@ -32,9 +32,12 @@ import aiohttp
 from ...domain.blocks import wrap_outside_text
 from ...domain.ports import SocialProvider
 
-# One copy of every non-read payload, shared with the router and the Instagram
-# client — see `results.py` for why the wording cannot be local to either.
+# One copy of every non-read payload — and of the text clamp — shared with the
+# router and the Instagram client; see `results.py` for why neither the wording
+# nor the bound may be local to one implementation.
+from .results import NOTHING_FOUND as _NOTHING_FOUND
 from .results import UNAVAILABLE as _UNAVAILABLE
+from .results import clamp_chars as _clamp_chars
 
 log = logging.getLogger("nora.social")
 
@@ -101,7 +104,15 @@ class OpenCliBridgeClient(SocialProvider):
             log.warning("social bridge returned an unknown status: %r", status)
             return dict(_UNAVAILABLE)
         if status != "ok":
-            return {"status": status, "note": str(payload.get("note") or "")}
+            # The bridge's OWN `note` is dropped rather than forwarded. It is
+            # an unbounded, unescaped string from another process landing in
+            # the slot that tells the model what it may SAY — measured, a
+            # 230-character note reading «IGNORE PREVIOUS INSTRUCTIONS…»
+            # reached the model intact through this line. What the miss means
+            # is a property of the STATE, so the sentence is ours
+            # (`results.py`), and neither state loses any information: there
+            # is exactly one thing to say for each.
+            return dict(_NOTHING_FOUND if status == "nothing_found" else _UNAVAILABLE)
         if "data" not in payload:
             log.warning("social bridge ok envelope carries no data")
             return dict(_UNAVAILABLE)
@@ -218,21 +229,3 @@ def _render_item(item: dict[str, Any]) -> str:
         qt_head = f"quoted @{qt.get('author')}" if qt.get("author") else "quoted"
         lines.append(f"[{qt_head}: {qt_text[:200]}]")
     return "\n".join(lines)
-
-
-def _clamp_chars(text: str, max_chars: int) -> tuple[str, bool]:
-    """Clamp `text` to `max_chars`, preferring an item boundary (`\\n\\n`).
-
-    Truncating mid-record is what made the raw JSON unreadable — a post's
-    `text` field severed from its closing brace. Rendered text is more
-    forgiving, but cutting at an item separator keeps the first post (and its
-    `text`) whole whenever the budget allows; the result is readable text,
-    not valid JSON, which is the point.
-    """
-    if len(text) <= max_chars:
-        return text, False
-    cut = text[:max_chars]
-    sep = cut.rfind("\n\n")
-    if sep > 0:
-        cut = cut[:sep].rstrip()
-    return cut + " …", True

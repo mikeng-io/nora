@@ -1533,6 +1533,9 @@ class SocialProvider(Protocol):
       * `ambiguous` — the subject did not resolve. `target` is a `person_id`
         for a subject-keyed read, and no person-index entry means Nora does
         NOT get to guess a handle from a name (design/instagram-adoption/09).
+        This is the SECOND sense the declaration carries — «no entry at all»
+        beside «several candidates» — and the two share a word because they
+        share a sentence: I don't know which one you mean, so I didn't look.
       * `refused` — the subject resolved and is out of reach. v1 is Tier 0
         only: someone in a room Nora is in (`07-social-boundary-and-scope`).
 

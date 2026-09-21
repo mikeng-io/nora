@@ -31,14 +31,30 @@ result carries the content inline it has absorbed `media_fetch`'s job and the
 model stops spending deliberately — "does Miles have a story up" must stay a
 different cost from "what is in it".
 
+**A whitelist of KEY NAMES is not that rule — it is a third of it.** An
+adversarial audit (2026-09-22) executed the three value channels the key
+whitelist left open and got content through all three: `note` was a verbatim
+unbounded passthrough into the model's instruction slot; `url` was
+scheme-checked only, so any https host arrived rendered as text plus an
+instruction to `media_fetch` it; and `id` accepted ANY type and `str()`-ed it,
+so `id={"caption": "at the beach with tyler"}` put that caption in the result
+while the guard test — which asserted the key SET and that "beach" was not in
+`text` — stayed green on both counts. So every value is now bound to its own
+shape: the note is ours and the bridge's is dropped, the URL host must be a
+MEASURED Instagram CDN host, and the id must look like an id. A key whitelist
+answers "which fields"; only a value check answers "carrying what".
+
 ## No cursor, and stories do not paginate
 
 A reel arrives WHOLE from the protocol (two items in the measured case), so
 there is no `next_cursor` on this path and asking for more of a story is
 asking for something that does not exist. `limit` is therefore a NORA-SIDE
-clamp, applied here after the response — worth doing anyway, because a
-fifteen-item story would otherwise arrive entire and every token of a tool
-result is re-sent on every subsequent model call.
+clamp, applied after the response — worth doing anyway, because a fifteen-item
+story would otherwise arrive entire and every token of a tool result is
+re-sent on every subsequent model call. The SAME clamp is applied to the
+number the bridge is told, so the two ends cannot disagree about what was
+asked for: `limit=0` used to ride through verbatim to a process that gets to
+invent what it means.
 
 ## The URLs expire, and that cuts in the design's favour
 
@@ -54,12 +70,15 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import urllib.parse
 from typing import Any
 
 import aiohttp
 
+from ...domain.blocks import wrap_outside_text
 from ...domain.ports import SocialProvider, SocialSubjectIndex
-from .results import AMBIGUOUS, REFUSED, UNAVAILABLE
+from .results import AMBIGUOUS, NOTHING_FOUND, REFUSED, UNAVAILABLE, clamp_chars
 
 log = logging.getLogger("nora.social.instagram")
 
@@ -80,6 +99,23 @@ _KINDS: frozenset[str] = frozenset({"image", "video"})
 #: are wrong at once — which is the case worth being defended against, since
 #: what it costs is the model's whole re-sent input.
 _MAX_ITEMS = 20
+
+#: The hosts a story frame is actually served from, MEASURED — the live
+#: `FetchReel` envelope carries `https://instagram.f….fbcdn.net/…`
+#: (design/instagram-adoption/05) and the `scontent.*.cdninstagram.com` form
+#: of the same CDN. `https://` alone is not a check: the URL is rendered into
+#: text the model reads TOGETHER WITH an instruction to `media_fetch` it, so a
+#: scheme-only guard lets any host on the internet arrive as an attacker-chosen
+#: fetch target dressed as a story frame. Matched on the parsed hostname, never
+#: on the string — `https://scontent.cdninstagram.com.evil.test/x` and
+#: `https://evil.test/?u=.fbcdn.net` both defeat a substring test.
+_CDN_HOST_SUFFIXES: tuple[str, ...] = (".fbcdn.net", ".cdninstagram.com")
+
+#: What a media id may look like. Instagram's are decimal, but the point is
+#: not the charset — it is that the value is TYPE-checked and SHAPE-checked
+#: before `str()` touches it. `str(row.get("id") or "")` rendered whatever
+#: arrived, so a dict smuggled a caption into the result through the id slot.
+_ID_RE = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 
 
 class InstagramSocialClient(SocialProvider):
@@ -106,10 +142,12 @@ class InstagramSocialClient(SocialProvider):
         base_url: str,
         subjects: SocialSubjectIndex,
         timeout_seconds: float = 30.0,
+        content_max_chars: int = 4000,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._subjects = subjects
         self._timeout_seconds = timeout_seconds
+        self._content_max_chars = content_max_chars
 
     async def read(
         self, *, platform: str, what: str, target: str, limit: int,
@@ -160,7 +198,14 @@ class InstagramSocialClient(SocialProvider):
             # reel. This is the ONLY path to `nothing_found` here: it means the
             # read ran and there is no story up, which is a fact about the
             # subject rather than about us.
-            return {"status": "nothing_found", "note": str(payload.get("note") or "")}
+            #
+            # The bridge's own `note` is DROPPED. It was a verbatim, unbounded,
+            # unescaped passthrough from another process into the slot that
+            # tells the model what it may say — executed, a 230-character
+            # bridge note reading «IGNORE PREVIOUS INSTRUCTIONS…» arrived at
+            # the model intact. There is one honest sentence for this state and
+            # it is ours (`results.py`).
+            return dict(NOTHING_FOUND)
         if status == "unavailable":
             return dict(UNAVAILABLE)
         items = _items(payload.get("items"), limit=limit)
@@ -171,6 +216,7 @@ class InstagramSocialClient(SocialProvider):
             # about the subject out of our own failure to read an envelope.
             log.warning("instagram bridge ok envelope carried no usable items")
             return dict(UNAVAILABLE)
+        text, truncated = clamp_chars(_render(items), self._content_max_chars)
         out: dict[str, Any] = {
             "status": "ok",
             "items": items,
@@ -180,7 +226,18 @@ class InstagramSocialClient(SocialProvider):
             # OpenCLI client emits for post media), so the model can hand a
             # row straight to `media_fetch(url=…)` — the deliberate second
             # call that is the whole separation of concerns.
-            "text": _render(items),
+            #
+            # WRAPPED and CLAMPED, the same as the OpenCLI client, because
+            # `SocialProvider`'s docstring says every implementation does and
+            # a docstring that is true of one of two implementations is not a
+            # contract. The old justification here — "there is no
+            # stranger-written prose in a story reference" — was defeated by
+            # measurement: the audit put a caption through the `id` slot and a
+            # bridge sentence through `note`. The `items` list beside this
+            # carries each `url` UNESCAPED, so the machine-usable handoff to
+            # `media_fetch(url=…)` is unaffected by the wrapper's escaping.
+            "text": wrap_outside_text("social_post", "instagram story", text),
+            "truncated": truncated,
         }
         expires_at = _as_int(payload.get("expires_at"))
         if expires_at is not None:
@@ -192,7 +249,11 @@ class InstagramSocialClient(SocialProvider):
         on a 200 — a refusal by the bridge's OWN allowlist arrives as a 4xx
         and is a wiring gap (the two allowlists have drifted), not «nothing
         there», exactly as the OpenCLI client reads a 400."""
-        body = {"igid": igid, "limit": limit}
+        # Clamped BEFORE it leaves, not only on the way back. `limit <= 0` was
+        # forwarded verbatim while being clamped Nora-side, so the two ends
+        # disagreed about what was asked for and the bridge was handed a
+        # number whose meaning is its own to invent (all of them? none?).
+        body = {"igid": igid, "limit": _cap(limit)}
         timeout = aiohttp.ClientTimeout(total=self._timeout_seconds)
         async with (
             aiohttp.ClientSession(timeout=timeout) as session,
@@ -216,33 +277,53 @@ class InstagramSocialClient(SocialProvider):
 def _items(raw: Any, *, limit: int) -> list[dict[str, Any]]:
     """The envelope's `items` → at most `limit` reference rows.
 
-    **Built field by field, never copied.** This is the enforcement of "no
-    content in a `social_fetch` result": an envelope that grows a `caption`,
-    an `ocr_text` or a `description` cannot leak it here, because nothing
-    reads an unlisted key. A passthrough with a denylist would invert that and
-    fail open on whatever the bridge adds next.
+    **Built field by field, never copied, and every value bound to a shape.**
+    This is the enforcement of "no content in a `social_fetch` result": an
+    envelope that grows a `caption`, an `ocr_text` or a `description` cannot
+    leak it here, because nothing reads an unlisted key — and nothing renders
+    an unchecked VALUE either, which is the half a key whitelist does not
+    cover (module docstring).
 
     A malformed row is DROPPED rather than failing the whole read — one
     unparseable frame in a two-frame reel should still let the model look at
     the other — but a response with no usable row at all is `unavailable` at
     the call site above, never `nothing_found`.
+
+    **Drop THEN clamp.** Clamping the raw list first made the two sentences
+    above contradict each other: with `limit=1`, a two-frame reel whose FIRST
+    frame was malformed returned zero rows and therefore `unavailable`, and
+    the good second frame was never examined — the exact case the docstring
+    promises survives, and the exact shape of design node 10's worked "latest"
+    example (`FetchReel`, newest first, clamped to `limit=1`). The loop stops
+    as soon as `limit` usable rows exist, so dropping first costs nothing on
+    the healthy path.
     """
     if not isinstance(raw, list):
         return []
+    cap = _cap(limit)
     out: list[dict[str, Any]] = []
-    for row in raw[: max(1, min(limit, _MAX_ITEMS))]:
+    for row in raw:
         if not isinstance(row, dict):
             continue
         url = row.get("url")
-        # https ONLY. The URL is handed to the model and from there to
-        # `media_fetch`, which fetches it over NORA'S OWN network — so a
-        # scheme this does not recognise is refused at the boundary rather
-        # than being something the next tool has to defend against.
-        if not isinstance(url, str) or not url.startswith("https://"):
+        # https AND a measured Instagram CDN host. The URL is handed to the
+        # model and from there to `media_fetch`, which fetches it over NORA'S
+        # OWN network — so a host this does not recognise is refused at the
+        # boundary rather than being something the next tool has to defend
+        # against. Scheme alone was not that check: it admitted every https
+        # host on the internet, rendered as a story frame with an instruction
+        # to go and fetch it.
+        if not _is_cdn_url(url):
+            continue
+        # The id is TYPE-checked before it is rendered. `str(row.get("id"))`
+        # accepted anything — a dict, a list — and stringified it into the
+        # result, which is a content channel wearing a reference field's name.
+        item_id = _media_id(row.get("id"))
+        if item_id is None:
             continue
         kind = row.get("kind")
         item: dict[str, Any] = {
-            "id": str(row.get("id") or ""),
+            "id": item_id,
             "kind": kind if kind in _KINDS else "media",
             "url": url,
         }
@@ -254,18 +335,65 @@ def _items(raw: Any, *, limit: int) -> list[dict[str, Any]]:
             # reports. Absent rather than guessed when the bridge omits it.
             item["taken_at"] = taken_at
         out.append(item)
+        if len(out) >= cap:
+            break
     return out
+
+
+def _cap(limit: Any) -> int:
+    """`limit` → a usable count. One expression, read by the request body and
+    by the clamp on the way back, so the two cannot disagree about what was
+    asked for."""
+    try:
+        return max(1, min(int(limit), _MAX_ITEMS))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _is_cdn_url(value: Any) -> bool:
+    """A story frame's URL, or not. Parsed, never substring-matched: the
+    hostname is the only part of a URL that says where a fetch lands, and
+    `https://scontent.cdninstagram.com.evil.test/x` contains the allowed text
+    while pointing somewhere else entirely."""
+    if not isinstance(value, str) or not value.startswith("https://"):
+        return False
+    try:
+        host = (urllib.parse.urlsplit(value).hostname or "").lower()
+    except ValueError:
+        return False
+    return any(host == suffix[1:] or host.endswith(suffix) for suffix in _CDN_HOST_SUFFIXES)
+
+
+def _media_id(value: Any) -> str | None:
+    """A media id, or None for anything that is not one.
+
+    A bool is refused although Python would `str()` it happily, for the same
+    reason `_as_int` refuses one: `True` is not an identifier, and a value
+    that only LOOKS renderable is how a non-reference gets into a reference
+    field.
+    """
+    if isinstance(value, bool) or not isinstance(value, (str, int)):
+        return None
+    text = str(value)
+    return text if _ID_RE.fullmatch(text) else None
 
 
 def _render(items: list[dict[str, Any]]) -> str:
     """Items → the marker lines the model reads, newest first (the bridge's
     own order, preserved rather than re-sorted — it is the protocol's).
 
-    Deliberately thin: a kind, a time and a link per row. There is nothing to
-    `untrusted`-wrap (R-13) because there is no stranger-written PROSE in a
-    story reference — wrapping four machine-generated fields would be
-    decoration, and the moment a caption is added to this render that stops
-    being true and the wrap becomes mandatory.
+    Deliberately thin: a kind, a time and a link per row. The caller WRAPS and
+    CLAMPS what comes back (R-13) — this function only builds the lines.
+
+    That wrap used to be argued away here, on the grounds that there is no
+    stranger-written PROSE in a story reference and wrapping four
+    machine-generated fields would be decoration. The argument was wrong in
+    its premise, not in its logic: three of those four fields were not
+    machine-generated at all, they were whatever the bridge put in them, and
+    an audit got a caption and a sentence of injected instruction through two
+    of them. The values are bound now — and the wrap is there anyway, because
+    "this particular envelope carries nothing unsafe today" is a fact about
+    today and a wrapper is what makes it not matter.
     """
     lines = []
     for item in items:
