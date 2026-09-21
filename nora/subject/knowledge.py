@@ -262,6 +262,19 @@ def _speakers(
     return out
 
 
+def _sender_for(subject: Subject, platform: str, person: str) -> str:
+    """One id the roster maps `person` to on `platform` — refused by name when
+    there is none, because ingest would refuse the line and nothing would
+    raise."""
+    ids = subject.deps.persons.platform_ids(platform, person)
+    if not ids:
+        raise ValueError(
+            f"person {person!r} has no {platform} id in the subject's "
+            "roster; ingest would refuse the line and nothing would raise"
+        )
+    return sorted(ids)[0]
+
+
 async def arrive(
     subject: Subject,
     body: str,
@@ -269,6 +282,7 @@ async def arrive(
     room: tuple[str, str] | None = None,
     now_ms: int,
     name: str = _KNOWN_NAME,
+    person: str | None = None,
 ) -> None:
     """The line that ARRIVES — one untagged message from a member.
 
@@ -278,11 +292,18 @@ async def arrive(
 
     Untagged by construction: nothing here mentions her, which is what makes
     the line a participation candidate rather than a tag.
+
+    `person` is `deliver()`'s: WHO said it, as a `person_id` the roster
+    knows, with the sender id the roster maps to them on this platform.
     """
     platform, conversation_id = room or subject.room
-    sender_id, person_id = (
-        (_KNOWN_SENDER, _KNOWN_PERSON) if name == _KNOWN_NAME else ("+8529900", None)
-    )
+    person_id: str | None
+    if person is not None:
+        sender_id, person_id = _sender_for(subject, platform, person), person
+    elif name == _KNOWN_NAME:
+        sender_id, person_id = _KNOWN_SENDER, _KNOWN_PERSON
+    else:
+        sender_id, person_id = "+8529900", None
     await subject.deps.audit.append(
         message=NormalizedMessage(
             platform=platform,
@@ -305,6 +326,8 @@ async def deliver(
     room: tuple[str, str] | None = None,
     now_ms: int,
     name: str = _KNOWN_NAME,
+    person: str | None = None,
+    mention: bool = False,
 ) -> None:
     """Hand one message to `Dispatcher.on_message` — the deployment's own
     inbound path, exactly as a platform adapter's `listen()` loop does.
@@ -314,11 +337,39 @@ async def deliver(
     message in the transcript TWICE — once as history and once as itself — and
     the turn would read a room that had said everything twice. `arrive()` is
     for the paths that bypass ingest, which is why both exist.
+
+    `person` names WHO said it, as a `person_id` the subject's roster knows;
+    the sender id is then one the roster maps to that person on this platform,
+    so ingest admits the line the way it admits that member's own. A real
+    room's `policy.toml` names its members — `persons = ["miles_novak", ...]` —
+    and a line from a sender the roster cannot resolve is refused at ingest
+    with nothing raised. So an unknown `person` is refused HERE, by name, and
+    the default (`None`) keeps the synthetic `_KNOWN_SENDER` that
+    `_DEFAULT_IDENTITY` maps to `miles_novak`.
+
+    `mention` marks the line as @-mentioning her, STRUCTURALLY: Signal carries
+    a mention in a parallel array rather than in the body
+    (`NormalizedMessage.mentions`), and `MentionPolicy` matches that array
+    against the registry's `self_aliases()`. With the deployment's text
+    trigger off (2026-09-01), a mention or a reply is how she is engaged at
+    all, so a case that expects a reply states one. Refused when the registry
+    answers to no id — a mention of nobody engages nothing and would read as
+    silence.
     """
     platform, conversation_id = room or subject.room
-    sender_id, _ = (
-        (_KNOWN_SENDER, _KNOWN_PERSON) if name == _KNOWN_NAME else ("+8529900", None)
-    )
+    if person is not None:
+        sender_id = _sender_for(subject, platform, person)
+    else:
+        sender_id = _KNOWN_SENDER if name == _KNOWN_NAME else "+8529900"
+    mentions: frozenset[str] = frozenset()
+    if mention:
+        mentions = frozenset(subject.deps.registry.self_aliases())
+        if not mentions:
+            raise ValueError(
+                "the case states a mention of her, and the registry answers "
+                "to no id on any enabled platform — the mention would engage "
+                "nothing and the case would read as silence"
+            )
     await subject.deps.dispatcher.on_message(
         NormalizedMessage(
             platform=platform,
@@ -329,6 +380,7 @@ async def deliver(
             timestamp=now_ms,
             body=body,
             raw={},
+            mentions=mentions,
         )
     )
 
@@ -534,10 +586,10 @@ async def know(
                 "never read"
             )
         # Honcho requires `target` to already exist as a peer in this
-        # workspace, and `workspace_for()` (obtain.py) hands every case a
-        # FRESH workspace of its own — so unlike production, where a peer is
-        # always created by a real `feed()` call before anyone concludes
-        # about them, nothing here has created `peer` yet. Skipping this
+        # workspace, and the sandbox's workspace (`_baseline()`'s `-eval`
+        # sibling) is not production's — so unlike production, where a peer
+        # is always created by a real `feed()` call before anyone concludes
+        # about them, nothing here may have created `peer` yet. Skipping this
         # 404s the write and this loop's fail-loud check misreports it as
         # Honcho refusing a well-formed call.
         await subject.deps.memory.ensure_peer(peer_id=peer)
@@ -592,7 +644,11 @@ async def know(
             notes = SqlNoteStore(engine)
             for n, note in enumerate(knowledge.notes):
                 await notes.create(
-                    unit=subject.cfg.memory.workspace_id,
+                    # The ROOM'S unit, resolved from its policy entry at
+                    # `obtain()` — not `memory.workspace_id`, which is
+                    # Honcho's per-deployment workspace and in production is
+                    # not the unit of any room.
+                    unit=subject.unit,
                     title=note.title,
                     description=note.description,
                     uncertainty=note.uncertainty,
@@ -612,7 +668,8 @@ async def know(
             # one string for "this row came from a case statement, not from a
             # fold", so one grep finds every seeded row in a shared database.
             await SqlCultureStore(engine).append(
-                key=conversation_id,
+                # The room's `primary_id` (DEC-181), resolved at `obtain()`.
+                key=subject.culture_key if room is None else conversation_id,
                 body=knowledge.culture,
                 written_at=now_ms,
                 established_by="case-seed",

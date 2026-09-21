@@ -60,9 +60,18 @@ class Case:
     name: str
     entry: Entry
     expect: Expectation
-    #: What she knows when the case starts — `transcript`, `standing`, `notes`.
-    #: The shape `nora.subject.Knowledge` takes, as YAML wrote it.
-    knows: dict[str, Any] = field(default_factory=dict)
+    #: The REAL room and the REAL instant this case is about — `platform`,
+    #: `conversation_id`, `before_ms`. Everything she knows when the case
+    #: starts is what that room held then, reconstructed by
+    #: `nora.infra.sql.snapshot` and written into the case's own sandbox by
+    #: `nora.subject.sandbox_from_snapshot`. Nothing is authored: a case with
+    #: no anchor is UNANCHORED and ERRORs when driven
+    #: (`design/evaluation/11-the-sandbox-rebuild.md` §7.1), unless it is
+    #: `parked`.
+    snapshot: dict[str, Any] = field(default_factory=dict)
+    #: Out of the active set, with the reason and the condition that brings it
+    #: back (`reason`, `why`, `returns_when`). Never run, always counted.
+    parked: dict[str, Any] = field(default_factory=dict)
     #: The line that arrives. Empty for `gate`, whose input IS the window.
     input: str = ""
     #: How many times to run it. One draw of a stochastic process is not a
@@ -92,45 +101,15 @@ class Case:
     #: and the next person to want it has to re-derive it by hand.
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    #: WHEN this case happens, as an ISO-8601 instant. Empty means the wall
-    #: clock.
-    #:
-    #: A first-class field and not `metadata`, because for the proactive
-    #: adaptor it is the question rather than a note about it. It was in
-    #: `metadata` for exactly as long as the graph had no clock seam, and the
-    #: entry point refused every case that set it.
-    now: str = ""
-
-    #: The room this case runs in, as `[platform, id]`. Empty means one derived
-    #: from the case name (`nora.subject.room_for`), which is what isolates
-    #: cases sharing a database.
-    #:
-    #: Stated only by a suite whose rooms MEAN something — the proactive
-    #: corpora name a workspace's rooms and mark its home room, and the pass
-    #: picks between them.
-    room: list[str] = field(default_factory=list)
-
-    #: `policy.toml`, when this suite needs a room set the default does not
-    #: give. Corpus-level in practice, like `config:`.
-    #:
-    #: Separate from `config:` because it is NOT configuration: the proactive
-    #: adaptor has no config flag at all — `nora/app/composition.py:3208` says
-    #: so — and is wired only when `policy.toml` names a HOME ROOM, because the
-    #: home room IS the operator's opt-in. A suite about the proactive adaptor
-    #: therefore states a policy, and no amount of dotted config paths can say
-    #: it.
-    policy: str = ""
-
-    #: Config this case's SUITE needs, as dotted paths. Applied under the entry
-    #: point's own requirements and over nothing else.
-    #:
-    #: Corpus-level and not per-case in practice: `trigger.yaml` and
-    #: `no_trigger.yaml` are built on the literal trigger `"nora.000"` and every
-    #: near-miss in them is a near-miss *of that string*, so the trigger text is
-    #: a property of the corpus. `load()` copies the file's `config:` onto every
-    #: case in it, which keeps the file readable as data while leaving each case
-    #: self-contained once loaded.
-    config: dict[str, Any] = field(default_factory=dict)
+    #: WHO says `input`, as a `person_id` the deployment's roster knows. The
+    #: line is admitted the way that member's own is; the default is the
+    #: operator, who is in every room the deployment has.
+    person: str = "miles_novak"
+    #: Whether `input` @-mentions her, structurally
+    #: (`NormalizedMessage.mentions`). With the deployment's text trigger off
+    #: since 2026-09-01 this is how a line engages her, so a case that expects
+    #: a reply from the inbound path states it.
+    mention: bool = False
 
 
 @dataclass(frozen=True, slots=True)

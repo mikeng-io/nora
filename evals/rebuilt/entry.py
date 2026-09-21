@@ -101,7 +101,7 @@ async def participation(subject: Subject, case: Case, *, now_ms: int) -> Outcome
     # participation candidate rather than a tag. Stamped at `now_ms`, which
     # `know()` laid the window down to end one minute before, so it is strictly
     # the newest row `recent`'s `(ts, id)` sort sees.
-    await arrive(subject, case.input, now_ms=now_ms)
+    await arrive(subject, case.input, now_ms=now_ms, person=case.person)
     watermark = await last_row_id(subject)
 
     token = await path.speak(
@@ -191,7 +191,7 @@ async def tag(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     # the transcript twice.
     watermark = await last_row_id(subject)
     failures_before = silent_failures(subject)
-    await deliver(subject, body, now_ms=now_ms)
+    await deliver(subject, body, now_ms=now_ms, person=case.person, mention=case.mention)
     if not await settle(subject):
         return Outcome(
             admitted=None,

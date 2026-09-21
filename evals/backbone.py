@@ -30,12 +30,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import os
 import shutil
 import tempfile
 from collections.abc import Mapping
-from dataclasses import dataclass, fields
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -52,18 +53,11 @@ from strands_evals.types.evaluation import (
     EvaluationOutput,
 )
 
-from evals.subject_config import policy_for, sandbox_room_for
 from nora.subject import (
-    Knowledge,
-    Message,
-    NoteSeed,
-    RoomSeed,
     SubjectSpec,
-    know,
     obtain,
-    room_for,
+    sandbox_database,
     sandbox_from_snapshot,
-    workspace_for,
 )
 
 #: Names carried on `environment_state`. A reader must key on these, never on
@@ -158,124 +152,12 @@ def scrub(text: str, secret: str) -> str:
     return text.replace(secret, "<dsn>") if secret else text
 
 
-#: What a case's `knows:` mapping may state, and what one transcript ROW
-#: inside it may state. Same fail-closed rule, one level in.
-_KNOWABLE = {
-    "transcript", "standing", "standing_age_hours", "notes",
-    "spacing_seconds", "rooms", "conclusions",
-}
-_MESSAGE_KEYS = {"body", "name", "person", "id", "ts", "is_nora", "media"}
-
-
-def _ms(ts: Any) -> int | None:
-    """An ISO-8601 instant as ms, or `None`.
-
-    Corpora that state their own timestamps do so in ISO. They are kept as
-    STATED rather than shifted onto a recent base: cases that assert an
-    `anchor_date` derived from the messages would have that assertion moved
-    if this did. Every other corpus leaves `ts` out and gets the recent-base
-    rule, which is what an age-rendering prompt needs.
-    """
-    if ts is None:
-        return None
-    if isinstance(ts, (int, float)):
-        return int(ts)
-    return int(datetime.fromisoformat(str(ts).replace("Z", "+00:00")).timestamp() * 1000)
-
-
-def _knowledge(raw: Mapping[str, Any]) -> Knowledge:
-    """A case's `knows:` mapping, as the subject's own type.
-
-    **Moved here from `evals/rebuilt/runner.py`, 2026-09-20** — layer 3
-    (case isolation and seeding, which no SDK supplies) living in layer 1
-    (the old harness, to be deleted) was `_drive()`'s own long-standing
-    marker for exactly this move. `evals/rebuilt/runner.py` now imports this
-    back, since its own (older, still-live) harness needs the identical
-    translation — the dependency direction is now correct: the layer being
-    replaced depends on the layer that survives it, not the other way round.
-
-    The translation lives HERE and not in `evals.rebuilt.domain`, which
-    imports nothing from `nora`, and not in `nora.subject`, which knows
-    nothing about this YAML/dict shape.
-    """
-    unknown = set(raw) - _KNOWABLE
-    if unknown:
-        raise ValueError(
-            f"cannot seed {sorted(unknown)} into a real store; "
-            f"knowable: {sorted(_KNOWABLE)}"
-        )
-    transcript = []
-    for entry in raw.get("transcript") or []:
-        if isinstance(entry, str):
-            transcript.append(Message(body=entry))
-            continue
-        unknown = set(entry) - _MESSAGE_KEYS
-        if unknown:
-            # FAIL-CLOSED ON A TRANSCRIPT ROW TOO. Top-level `knows` keys were
-            # already checked; row keys were not, and that asymmetry is how
-            # `media: true` was dropped from five rows with nothing reporting
-            # it. A corpus stating something the runner ignores is a corpus
-            # asserting more than is measured.
-            raise ValueError(
-                f"cannot seed transcript keys {sorted(unknown)}; "
-                f"knowable: {sorted(_MESSAGE_KEYS)}"
-            )
-        transcript.append(Message(
-            body=entry["body"],
-            name=entry.get("name", "Miles"),
-            person=entry.get("person", ""),
-            label=entry.get("id"),
-            at_ms=_ms(entry.get("ts")),
-            is_nora=bool(entry.get("is_nora", False)),
-            media=bool(entry.get("media", False)),
-        ))
-    notes = tuple(
-        NoteSeed(
-            title=n["title"],
-            description=n["description"],
-            body=n["body"],
-            uncertainty=n.get("uncertainty", "open"),
-            closing_condition=n.get("closing_condition", "the room settles it"),
-            anchor_date=n.get("anchor_date", 20260901),
-        )
-        for n in (raw.get("notes") or [])
-    )
-    rooms = tuple(
-        RoomSeed(
-            conversation_id=str(r["conversation_id"]),
-            platform=str(r.get("platform", "signal")),
-            label=str(r.get("label", "")),
-            home=bool(r.get("home", False)),
-            transcript=tuple(
-                Message(body=m["body"], name=m.get("name", "Miles"))
-                if isinstance(m, dict) else Message(body=m)
-                for m in (r.get("transcript") or ())
-            ),
-            standing=r.get("standing"),
-            standing_age_hours=r.get("standing_age_hours"),
-        )
-        for r in (raw.get("rooms") or ())
-    )
-    return Knowledge(
-        conclusions={
-            str(peer): tuple(str(x) for x in (lines or ()))
-            for peer, lines in (raw.get("conclusions") or {}).items()
-        },
-        transcript=tuple(transcript),
-        standing=raw.get("standing"),
-        standing_age_hours=raw.get("standing_age_hours"),
-        notes=notes,
-        rooms=rooms,
-        spacing_seconds=int(raw.get("spacing_seconds", 60)),
-    )
-
-
 async def _close(subject: Any) -> None:
     """Best-effort teardown. Never raises: a case's RESULT must not depend on
     whether its cleanup worked, and a teardown error is not a reading.
 
     **Moved here from `evals/rebuilt/runner.py`, 2026-09-20**, same reason
-    as `_knowledge` above.
+    the seeding helpers once here.
     """
     for shut in (
         subject.deps.background.cancel_all(),
@@ -345,16 +227,14 @@ def _blocks_empty(exporter: InMemorySpanExporter) -> str | None:
 class Spec:
     """What the spine needs that the SDK's `Case` does not carry."""
 
-    database_url: str
+    #: The deployment's CLONE — `nora_eval` on the deploy host — read and
+    #: never written. Every case composes against a sandbox database of its
+    #: own cloned beside it (`nora.subject.sandbox_database`), and the
+    #: moment it names is read out of this one. NOT the deployment's live
+    #: database: `python -m evals` refuses a name that is not a clone's.
+    source_url: str
     entry: str = "participation"
-    #: `[platform, room_id]`. A room per case, because the gate reads the
-    #: newest 40 rows and the Dreamer the oldest 64 — cases sharing a database
-    #: and a room are graded on each other's messages.
-    room: tuple[str, str] | None = None
-    workspace: str = "nora"
     overrides: dict[str, Any] | None = None
-    #: When the case happens. Empty means the wall clock.
-    now: str = ""
     #: S6 idempotence (`10-the-scenario-map.md` §3): drive the SAME subject
     #: through the SAME case `repeat` times, at the SAME `now_ms`, and carry
     #: the LAST run's `written`/`changed`/`staged` separately from the
@@ -364,23 +244,20 @@ class Spec:
     #: S3/S9 (`10-the-scenario-map.md` §3): "did she reply" is structural;
     #: "was the reply right" needs a model that did not produce it —
     #: `evals.rebuilt.grading.Judge`, built ONCE per experiment batch (its
-    #: own docstring), not per case. `None` skips judging, matching
-    #: `run_once()`'s own default. Typed `Any` to avoid importing
-    #: `evals.rebuilt.grading` (and its `openai` dependency) at module load
-    #: for every caller that never judges.
+    #: own docstring), not per case. `None` skips judging. Typed `Any` to
+    #: avoid importing `evals.rebuilt.grading` (and its `openai` dependency)
+    #: at module load for every caller that never judges.
     judge: Any = None
+    #: The roster and the room set every subject composes with — the
+    #: DEPLOYMENT'S OWN `identity.toml` and `policy.toml`, verbatim, read
+    #: from `$NORA_DEPLOYMENT_DIR` when `None`. A test that reconstructs a
+    #: room of its own states its own pair; an eval run never does.
+    identity: str | None = None
+    policy: str | None = None
+    #: An already-migrated blank database beside the source to clone each
+    #: sandbox from (`sandbox_database`'s own). `None` builds one per source.
+    template: str | None = None
 
-
-#: `SubjectSpec`'s OWN default roster, read off the dataclass field.
-#:
-#: NOT `SubjectSpec.identity` — the dataclass is slotted, so the class
-#: attribute is a slot DESCRIPTOR, and passing it would write
-#: `<member 'identity' of 'SubjectSpec' object>` into the case's identity.toml
-#: as if it were TOML. Caught by reading the value back rather than by the
-#: types.
-_SPEC_DEFAULT_IDENTITY: str = next(
-    str(f.default) for f in fields(SubjectSpec) if f.name == "identity"
-)
 
 #: Where the deployment's policy and roster live. Copied verbatim into each
 #: case's own temp workdir, NEVER into the repo — `policy.toml` and
@@ -409,242 +286,265 @@ def _deployment_identity() -> str:
 
 
 def _read_deployment(name: str) -> str:
-    """Fail-closed: a snapshot case without the deployment's own files would
-    silently fall back to an invented room and a one-person roster, which is
-    the divergence this whole layer exists to close."""
+    """Fail-closed: a case without the deployment's own files would silently
+    fall back to an invented room and a one-person roster, which is the
+    divergence this whole layer exists to close."""
     path = _DEPLOYMENT_DIR / name
     try:
         return path.read_text(encoding="utf-8")
     except OSError as exc:
         raise RuntimeError(
-            f"a `snapshot:` case needs the deployment's {name} and {path} is "
-            f"unreadable ({exc}). It reconstructs a REAL room, so it needs "
-            "that room's own policy entry and the roster its speakers resolve "
-            "through. Run this where the deployment lives, or point "
+            f"a case needs the deployment's {name} and {path} is unreadable "
+            f"({exc}). It reconstructs a REAL room, so it needs that room's "
+            "own policy entry and the roster its speakers resolve through. "
+            "Run this where the deployment lives, or point "
             "$NORA_DEPLOYMENT_DIR at it "
             "(design/evaluation/11-the-sandbox-rebuild.md §1.2)."
         ) from exc
 
 
+def substitute_trigger(text: str, trigger: str) -> str:
+    """Render `{trigger}` / `{trigger_split}` against the CONFIGURED trigger.
+
+    Carried across from `evals/run.py:510` because dropping it broke ten cases
+    silently and in both directions: `near_miss.yaml`'s four cases assert that
+    trigger-SHAPED text does not fire, and a literal `{trigger}` does not fire
+    either — so they PASSED while asserting nothing.
+
+    The corpus holds RULES about `nora.tag.is_tagged`'s boundaries, not
+    literals. Rendered at DRIVE time against the composed subject's own
+    `engagement.trigger.text`, which is the deployment's — a corpus can no
+    longer state a trigger of its own.
+
+    `{trigger_split}` is the same trigger with a space after its first
+    character — how "broken by whitespace" is expressed for an arbitrary
+    trigger.
+    """
+    split = f"{trigger[:1]} {trigger[1:]}" if len(trigger) > 1 else trigger
+    return text.replace("{trigger_split}", split).replace("{trigger}", trigger)
+
+
+#: The keys a case's `snapshot:` states, and nothing else: the room and the
+#: instant. Its culture key and unit are RESOLVED from the deployment's own
+#: policy entry at `obtain()` (`Subject.culture_key`/`.unit`), so a case
+#: cannot state them wrongly.
+SNAPSHOT_KEYS = frozenset({"platform", "conversation_id", "before_ms"})
+
+
+def _check_the_corpus_assertions(
+    case: Any, outcome: Any, rows: Mapping[Any, int],
+) -> Any:
+    """`must_cite`, `anchor_date`, `creates`, `updates` — the four the
+    note-candidates corpus states.
+
+    `rows` translates a case's own message LABEL — the REAL row id in the
+    source, under `snapshot:` — into the id the sandbox assigned. That
+    translation is the whole reason `Message.label` and `Written.rows` exist.
+
+    Skipped entirely for an outcome that already carries an error — an un-run
+    case must not acquire a second reason to fail.
+    """
+    meta = case.metadata
+    if outcome.error is not None or not meta:
+        return outcome
+    failed: list[str] = []
+
+    creates = [t for kind, t in outcome.changed if kind == "create"]
+    updates = [t for kind, t in outcome.changed if kind == "update"]
+    if meta.get("creates") is not None and len(creates) != int(meta["creates"]):
+        failed.append(f"creates: expected {meta['creates']}, got {len(creates)}")
+    if meta.get("updates") and meta["updates"] not in updates:
+        failed.append(f"updates: {meta['updates']!r} was not revised; got {updates}")
+    if case.expect == "create" and updates:
+        failed.append(f"create case also revised {updates}")
+
+    if meta.get("anchor_date") is not None and case.expect in ("create", "update"):
+        want = int(meta["anchor_date"])
+        got = [a for _t, a, _m, _s in outcome.staged]
+        if want not in got:
+            failed.append(f"anchor_date: expected {want}, staged {got}")
+    said = " ".join(outcome.said)
+    for key, negate in (("must_cite", False), ("must_not_cite", True)):
+        wanted = meta.get(key)
+        if not wanted:
+            continue
+        if all(isinstance(w, int) for w in wanted):
+            cited: set[int] = set()
+            for _t, _a, message_ids, _s in outcome.staged:
+                cited |= set(message_ids)
+            ids = {rows.get(label) for label in wanted}
+            if None in ids:
+                failed.append(
+                    f"{key} names a row the snapshot did not seed: {wanted}"
+                )
+                continue
+            hit = {i for i in ids if i is not None} & cited
+            missing = {i for i in ids if i is not None} - cited
+            if negate and hit:
+                failed.append(f"{key}: cited {sorted(hit)}")
+            elif not negate and missing:
+                failed.append(f"{key}: {sorted(missing)} not among {sorted(cited)}")
+        else:
+            folded = said.casefold()
+            present = [w for w in wanted if str(w).casefold() in folded]
+            absent = [w for w in wanted if str(w).casefold() not in folded]
+            if negate and present:
+                failed.append(f"{key}: the reply contains {present}")
+            elif not negate and absent:
+                failed.append(f"{key}: the reply does not contain {absent}")
+
+    return dataclasses.replace(outcome, checks_failed=tuple(failed))
+
+
 async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
-    """Obtain, isolate, seed, drive, tear down. Raises; `nora_task` catches."""
+    """Obtain, sandbox, seed, drive, tear down. Raises; `nora_task` catches.
+
+    ONE PATH. Every case names a real room at a real instant (`snapshot:`),
+    composes the deployment's own Nora against a sandbox database of its own,
+    is seeded with what that room held then, and is driven at that instant.
+    There is no authored branch: a case with no anchor is UNANCHORED and is an
+    ERROR here — never a skip, never a case quietly run in an empty room
+    (`11-the-sandbox-rebuild.md` §7.1).
+    """
     from evals.rebuilt.entry import ENTRY_POINTS
 
     port = ENTRY_POINTS[spec.entry]
     if spec.repeat > 1 and port.delivers_input:
-        # Found by review, 2026-09-19: `port.delivers_input` means a line
-        # ARRIVES after the window (`entry.py`'s own `EntryPoint.
-        # delivers_input` docstring) — driving the SAME case a second time
-        # delivers a SECOND copy of that line, so run 2 is not "the same
-        # pass again", it is a different pass with an extra message in it.
-        # Loud rather than silent: idempotence is only meaningful for entry
-        # points that read state without re-delivering input (`dreamer`).
+        # `port.delivers_input` means a line ARRIVES after the window —
+        # driving the SAME case a second time delivers a SECOND copy of that
+        # line, so run 2 is not "the same pass again", it is a different pass
+        # with an extra message in it. Idempotence is only meaningful for
+        # entry points that read state without re-delivering input.
         raise ValueError(
             f"Spec.repeat={spec.repeat} would re-deliver the case's message "
             f"for entry={spec.entry!r} (delivers_input=True) — idempotence "
             "only makes sense for an entry point that does not re-deliver "
             "input on each drive, like `dreamer`"
         )
-    # A PORTED case (`10-the-scenario-map.md` port, 2026-09-20) carries its
-    # OWN room/now/policy/config in `metadata` — a corpus like
-    # `proactive_decide.yaml` names a real room per case (which room she
-    # picks IS the assertion) and a real `now` (whether a note is due IS
-    # about time), which one `Spec` shared across a whole `Experiment` batch
-    # cannot express. Falls through to `Spec`'s experiment-wide defaults
-    # when a case states none of these, so every hand-written S4/S5/S6/S2
-    # case above is unchanged.
     md = case.metadata or {}
-    md_room = tuple(md.get("room") or ())
-    md_snapshot = dict(md.get("snapshot") or {})
-    # A snapshot case's sandbox room is SHAPED like the room it copies.
-    # `room_for()` hardcodes `("signal", ...)`, so a Discord room was rebuilt
-    # as a Signal one — and the shape is load-bearing, not cosmetic: a Discord
-    # entry carrying `voice = true` is refused unless its id is
-    # `<guild_id>/<channel_id>`, which is the deployment's own validator saying
-    # an unreachable id is not a copy of a reachable room.
-    if md_snapshot:
-        room = sandbox_room_for(
-            (str(md_snapshot["platform"]), str(md_snapshot["conversation_id"])),
-            case.name or "unnamed",
+    if md.get("parked"):
+        raise ValueError(
+            f"case {case.name!r} is parked ({md['parked'].get('reason')}) and "
+            "must not reach the task; `load_corpus` keeps parked cases out of "
+            "the active set"
         )
-    elif len(md_room) == 2:
-        room = md_room
-    else:
-        room = spec.room or room_for(case.name or "unnamed")
-    md_config = dict(md.get("config") or {})
-    stated_workspace = str(md_config.get("memory.workspace_id") or spec.workspace)
-    workspace = workspace_for(case.name or "unnamed", stated_workspace)
-    now = md.get("now") or spec.now
-    policy_template = str(md.get("policy") or "")
+    shot = dict(md.get("snapshot") or {})
+    if not shot:
+        raise ValueError(
+            f"case {case.name!r} is UNANCHORED: it names no `snapshot:` "
+            "(a real room and a real instant) and is not parked. A case with "
+            "no anchor cannot run — there is no room to reconstruct — and is "
+            "an ERROR rather than a skip, so the report shows the work "
+            "(11-the-sandbox-rebuild.md §7.1)."
+        )
+    unknown = set(shot) - SNAPSHOT_KEYS
+    if unknown:
+        raise ValueError(
+            f"case {case.name!r}'s `snapshot:` states {sorted(unknown)}; "
+            f"only {sorted(SNAPSHOT_KEYS)} are a case's to state — the "
+            "culture key and unit are the deployment's policy entry's, and "
+            "a window or limit is production's config's (R7)"
+        )
+    room = (str(shot["platform"]), str(shot["conversation_id"]))
+    before_ms = int(shot["before_ms"])
+    now = datetime.fromtimestamp(before_ms / 1000, tz=UTC)
     workdir = Path(tempfile.mkdtemp(prefix="nora-case-"))
     subject = None
     try:
-        subject = await obtain(
-            SubjectSpec(
-                database_url=spec.database_url,
-                workdir=workdir,
-                room=room,
-                overrides={
-                    **port.config,
-                    **md_config,
-                    **(spec.overrides or {}),
-                    "memory.workspace_id": workspace,
-                },
-                # Same reason `memory.workspace_id` above is the ISOLATED
-                # value, not `stated_workspace`: a policy that still says
-                # `unit = "friends"` while the subject's own config says
-                # `friends-<isolated>` means the proactive adaptor's
-                # home-room lookup finds no room for the unit it is
-                # actually composed with, and reports "no home room" —
-                # found live, 2026-09-20, porting `proactive_decide.yaml`
-                # (`evals/rebuilt/runner.run_once`'s own `case_policy =
-                # case.policy.replace(...)` step, not carried over here).
-                # The TOML key is `unit` (`Policy.Conversation.unit`,
-                # DEC-105/`e2092ecd`) — distinct from `stated_workspace`/
-                # `workspace` above, which name Honcho's OWN `workspace_id`
-                # concept and were never part of that rename.
-                # A SNAPSHOT case gets the REAL room's own policy entry, with
-                # only `platform`/`id`/`unit` swapped for the isolated ones.
-                #
-                # `default_policy()` invents a minimal room instead —
-                # `default`, `platform`, `id`, `persons = "*"`, `unit`, and
-                # nothing else. A real entry also carries `description` (which
-                # REACHES THE MODEL via `composition.py:3180`/`:3335`, and is
-                # the operator's own account of what the room IS — "2200 is
-                # when people log on, not an appointment"), `relevance_gate`
-                # (what opts a room into the gate at all), `home_room` (which
-                # is why `proactive_decide` cases hand-write their own
-                # `policy:`), `voice`, `location` and `tools`. Seeding the
-                # right transcript into a room stripped of all of that
-                # measures a different room.
-                policy=(
-                    policy_for(
-                        deployment_policy=_deployment_policy(),
-                        real_room=(
-                            str(md_snapshot["platform"]),
-                            str(md_snapshot["conversation_id"]),
-                        ),
-                        sandbox_room=room,
-                        sandbox_unit=workspace,
-                    )
-                    if md_snapshot
-                    else policy_template.replace(
-                        f'unit = "{stated_workspace}"', f'unit = "{workspace}"',
-                    ).format(platform=room[0], room=room[1])
-                    if policy_template else ""
-                ),
-                # The deployment's OWN roster. `_DEFAULT_IDENTITY` knows ONE
-                # person; a real room has ten, and a snapshot copies each row's
-                # real `person_id` — so nine speakers in ten resolved to "the
-                # identity does not know them" and rendered nameless, while
-                # 15% of message BODIES (647 of 4294, measured) name a roster
-                # member outright. The room she read was not the room that
-                # happened.
-                identity=(_deployment_identity() if md_snapshot else _SPEC_DEFAULT_IDENTITY),
-                now=datetime.fromisoformat(now) if now else None,
+        async with sandbox_database(spec.source_url, template=spec.template) as database_url:
+            subject = await obtain(
+                SubjectSpec(
+                    database_url=database_url,
+                    workdir=workdir,
+                    room=room,
+                    overrides={**port.config, **(spec.overrides or {})},
+                    # The deployment's OWN roster and room set, verbatim.
+                    # `_DEFAULT_IDENTITY` knows ONE person; a real room has
+                    # ten, and a snapshot copies each row's real `person_id`
+                    # — so nine speakers in ten would resolve to "the
+                    # identity does not know them" and render nameless,
+                    # while 15% of message BODIES name a roster member
+                    # outright. A real policy entry also carries
+                    # `description` (which REACHES THE MODEL), the
+                    # `relevance_gate`/`home_room`/`voice` opt-ins and the
+                    # room's tool grant; a minimal invented one measures a
+                    # different room.
+                    identity=spec.identity if spec.identity is not None else _deployment_identity(),
+                    policy=spec.policy if spec.policy is not None else _deployment_policy(),
+                    # FROZEN AT THE MOMENT. The seeded rows keep their real
+                    # timestamps, so the clock she reads them against must be
+                    # the instant they were written up to.
+                    now=now,
+                )
             )
-        )
-        # Found by review, 2026-09-20: this hardcoded `{}`, ignoring
-        # whatever a case's own `knows:` metadata stated — every S4/S5/S6
-        # case this session wrote happened to seed nothing, so the bug
-        # never showed. A future case that seeds a transcript/notes/rooms
-        # via `metadata={"knows": {...}}` needs this read for real.
-        #
-        # A case stating `snapshot:` seeds from a REAL room at a REAL
-        # instant instead. Both paths end in the SAME `know()` — that is
-        # the point, and it is why the two are interchangeable at all:
-        # whatever a case's content came from, it is written through the
-        # same stores production writes and rendered by the same prefill
-        # production renders. `load_corpus` refuses a case stating both.
-        md_snapshot = dict((case.metadata or {}).get("snapshot") or {})
-        if md_snapshot:
             seeded = await sandbox_from_snapshot(
                 subject,
-                platform=str(md_snapshot["platform"]),
-                conversation_id=str(md_snapshot["conversation_id"]),
-                before_ms=int(md_snapshot["before_ms"]),
-                culture_key=str(md_snapshot["culture_key"]),
-                unit=str(md_snapshot["unit"]),
-                transcript_limit=(
-                    int(md_snapshot["transcript_limit"])
-                    if md_snapshot.get("transcript_limit") is not None else None
-                ),
-                # The case's OWN instant, not the wall clock: `SubjectSpec.now`
-                # above already froze her clock there, and a copy shifted to a
-                # different `now` would render ages against a clock she is not
-                # reading. Both have to be the same instant or the transcript
-                # says one thing and `_age` computes another.
-                now_ms=(
-                    int(datetime.fromisoformat(now).timestamp() * 1000)
-                    if now else None
-                ),
+                source_url=spec.source_url,
+                before_ms=before_ms,
                 leave_room_for_arrival=port.delivers_input,
             )
-        else:
-            seeded = await know(
-                subject, _knowledge((case.metadata or {}).get("knows", {})),
-                leave_room_for_arrival=port.delivers_input,
-            )
-        exporter = _prefill_capture()
-        exporter.clear()
-        nora_case = _as_nora_case(case, spec)
-        outcome = await port.drive(subject, nora_case, now_ms=seeded.now_ms)
-        blocks_empty = _blocks_empty(exporter)
+            exporter = _prefill_capture()
+            exporter.clear()
+            nora_case = _as_nora_case(case, spec, trigger=subject.cfg.engagement.trigger.text)
+            outcome = await port.drive(subject, nora_case, now_ms=seeded.now_ms)
+            blocks_empty = _blocks_empty(exporter)
+            outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)
 
-        # S3/S9 (`10-the-scenario-map.md` §3) — judged HERE, while the
-        # subject is alive, because the judge needs the doctrine she
-        # actually ran ON, not a copy read off disk
-        # (`evals/rebuilt/runner.run_once`'s own reasoning, mirrored here).
-        if spec.judge is not None and outcome.said and outcome.error is None:
-            from dataclasses import replace as _replace
+            # S3/S9 (`10-the-scenario-map.md` §3) — judged HERE, while the
+            # subject is alive, because the judge needs the doctrine she
+            # actually ran ON, not a copy read off disk.
+            if spec.judge is not None and outcome.said and outcome.error is None:
+                from evals.rebuilt.grading import criteria_for
 
-            from evals.rebuilt.grading import criteria_for
-            from evals.rebuilt.runner import _source
+                judgement = await spec.judge.grade(
+                    said="\n".join(outcome.said),
+                    asked=nora_case.input,
+                    doctrine=subject.deps.doctrine.doctrine_text,
+                    # The SOURCE the reply had to ground against — the window
+                    # she was seeded with. Without it the judge grades
+                    # grounding BLIND (DEC-75).
+                    source="\n".join(seeded.transcript) or None,
+                    extra=criteria_for(tuple(md.get("criteria") or ())),
+                )
+                outcome = dataclasses.replace(
+                    outcome, judged=judgement.verdict, error=judgement.error,
+                )
 
-            judgement = await spec.judge.grade(
-                said="\n".join(outcome.said),
-                asked=case.input,
-                doctrine=subject.deps.doctrine.doctrine_text,
-                source=_source(nora_case),
-                extra=criteria_for(tuple(md.get("criteria") or ())),
-            )
-            outcome = _replace(outcome, judged=judgement.verdict, error=judgement.error)
+            repeat_state = []
+            if spec.repeat > 1:
+                # SAME subject, SAME case, SAME now_ms — no re-`obtain()`.
+                repeat_outcome = outcome
+                for _ in range(spec.repeat - 1):
+                    repeat_outcome = await port.drive(subject, nora_case, now_ms=seeded.now_ms)
+                repeat_state = [
+                    EnvironmentState(name=NORA_ERROR_2, state=repeat_outcome.error),
+                    EnvironmentState(name=NORA_WRITTEN_2, state=repeat_outcome.written),
+                    EnvironmentState(name=NORA_CHANGED_COUNT_2, state=len(repeat_outcome.changed)),
+                    EnvironmentState(name=NORA_STAGED_COUNT_2, state=len(repeat_outcome.staged)),
+                ]
 
-        repeat_state = []
-        if spec.repeat > 1:
-            # SAME subject, SAME case, SAME now_ms — no re-`obtain()`.
-            # Idempotence needs run 2 to see exactly what run 1 left.
-            # `spec.repeat > 1` guarantees the loop runs at least once, so
-            # this initial value is never read — kept only so a static
-            # checker does not have to prove that.
-            repeat_outcome = outcome
-            for _ in range(spec.repeat - 1):
-                repeat_outcome = await port.drive(subject, nora_case, now_ms=seeded.now_ms)
-            repeat_state = [
-                EnvironmentState(name=NORA_ERROR_2, state=repeat_outcome.error),
-                EnvironmentState(name=NORA_WRITTEN_2, state=repeat_outcome.written),
-                EnvironmentState(name=NORA_CHANGED_COUNT_2, state=len(repeat_outcome.changed)),
-                EnvironmentState(name=NORA_STAGED_COUNT_2, state=len(repeat_outcome.staged)),
-            ]
-
-        return {
-            "output": "\n".join(outcome.said),
-            "environment_state": [
-                EnvironmentState(name=NORA_ERROR, state=outcome.error),
-                EnvironmentState(name=NORA_TOKEN, state=outcome.outcome_token),
-                EnvironmentState(name=NORA_SAID, state=len(outcome.said)),
-                EnvironmentState(name=NORA_DELIVERY, state=outcome.delivery),
-                EnvironmentState(name=NORA_ADMITTED, state=outcome.admitted),
-                EnvironmentState(name=NORA_BLOCKS_EMPTY, state=blocks_empty),
-                EnvironmentState(name=NORA_WRITTEN, state=outcome.written),
-                EnvironmentState(name=NORA_CHANGED_COUNT, state=len(outcome.changed)),
-                EnvironmentState(name=NORA_STAGED_COUNT, state=len(outcome.staged)),
-                EnvironmentState(name=NORA_CHANGED, state=outcome.changed),
-                EnvironmentState(name=NORA_JUDGED, state=outcome.judged),
-                EnvironmentState(name=NORA_CHECKS_FAILED, state=outcome.checks_failed),
-                *repeat_state,
-            ],
-        }
+            # Torn down INSIDE the sandbox's lifetime: the database is dropped
+            # on exit and a pool still open on it would make the DROP hang.
+            await _close(subject)
+            subject = None
+            return {
+                "output": "\n".join(outcome.said),
+                "environment_state": [
+                    EnvironmentState(name=NORA_ERROR, state=outcome.error),
+                    EnvironmentState(name=NORA_TOKEN, state=outcome.outcome_token),
+                    EnvironmentState(name=NORA_SAID, state=len(outcome.said)),
+                    EnvironmentState(name=NORA_DELIVERY, state=outcome.delivery),
+                    EnvironmentState(name=NORA_ADMITTED, state=outcome.admitted),
+                    EnvironmentState(name=NORA_BLOCKS_EMPTY, state=blocks_empty),
+                    EnvironmentState(name=NORA_WRITTEN, state=outcome.written),
+                    EnvironmentState(name=NORA_CHANGED_COUNT, state=len(outcome.changed)),
+                    EnvironmentState(name=NORA_STAGED_COUNT, state=len(outcome.staged)),
+                    EnvironmentState(name=NORA_CHANGED, state=outcome.changed),
+                    EnvironmentState(name=NORA_JUDGED, state=outcome.judged),
+                    EnvironmentState(name=NORA_CHECKS_FAILED, state=outcome.checks_failed),
+                    *repeat_state,
+                ],
+            }
     finally:
         # 150 cases at five samples is 750 connection pools. `EvalTaskHandler`'s
         # own hooks are SYNC and `_close()` is not, so teardown cannot live
@@ -654,7 +554,7 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
         shutil.rmtree(workdir, ignore_errors=True)
 
 
-def _as_nora_case(case: Case, spec: Spec) -> Any:
+def _as_nora_case(case: Case, spec: Spec, *, trigger: str) -> Any:
     from evals.rebuilt.domain import Case as NoraCase
 
     md = case.metadata or {}
@@ -662,25 +562,16 @@ def _as_nora_case(case: Case, spec: Spec) -> Any:
         name=case.name or "unnamed",
         entry=spec.entry,                         # type: ignore[arg-type]
         expect=md.get("expect", "either"),
-        input=str(case.input),
-        knows=md.get("knows", {}),
-        # Found live, 2026-09-20, porting `proactive_decide.yaml`:
+        input=substitute_trigger(str(case.input), trigger),
+        snapshot=dict(md.get("snapshot") or {}),
+        person=str(md.get("person") or "miles_novak"),
+        mention=bool(md.get("mention", False)),
         # `evals/rebuilt/entry.py`'s `dreamer` reads `case.category or
-        # "note-candidates"` to pick WHICH adaptor a `dreamer` pass runs —
-        # dropping it here silently ran every ported `category: proactive`
-        # case against an adaptor the graph never built (`no adaptor
-        # 'note-candidates' on the graph; built: ('proactive',)`). Every
-        # hand-written S4/S5/S6 case this session wrote left `category`
-        # unset, so the drop stayed latent until a corpus case set it.
+        # "note-candidates"` to pick WHICH adaptor a `dreamer` pass runs.
         category=str(md.get("category") or ""),
-        # Found live, 2026-09-20, porting `proactive_act.yaml`: dropping
-        # the rest of `metadata` here (only `expect`/`knows`/`category`
-        # were read off it) silently emptied `evals.rebuilt.entry.
-        # proactive_act`'s own `case.metadata["row"]` read — every ported
-        # act case refused with "an act case must state the row it fires
-        # on" despite stating one. `NoraCase.metadata`'s own docstring is
-        # "whatever else the corpus recorded, carried verbatim" — this
-        # carried none of it.
+        # `NoraCase.metadata`'s own docstring is "whatever else the corpus
+        # recorded, carried verbatim" — `proactive_act` reads its `row` off
+        # it and the note-candidates checks read `must_cite`/`anchor_date`.
         metadata=md,
     )
 
@@ -711,7 +602,7 @@ def nora_task(spec: Spec):
                 "environment_state": [
                     EnvironmentState(
                         name=NORA_ERROR,
-                        state=scrub(f"{type(exc).__name__}: {exc}", spec.database_url),
+                        state=scrub(f"{type(exc).__name__}: {exc}", spec.source_url),
                     ),
                     EnvironmentState(name=NORA_TOKEN, state=""),
                     EnvironmentState(name=NORA_SAID, state=0),

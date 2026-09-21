@@ -15,7 +15,6 @@ it.
 
 from __future__ import annotations
 
-import hashlib
 import os
 import shutil
 import uuid
@@ -28,63 +27,12 @@ from typing import Any
 from nora.app.composition import Dependencies, build_dependencies, wall_clock
 from nora.config import Config
 from nora.config import load as _load_config
-from nora.policy import load_policy
+from nora.policy import Conversation, load_policy
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: The room a subject uses when its caller names none.
 DEFAULT_ROOM = ("signal", "g1")
-
-
-def workspace_for(case_name: str, stated: str = "nora") -> str:
-    """A workspace of this case's own, keeping the name the corpus stated.
-
-    `room_for` isolated the TRANSCRIPT and nothing isolated the workspace — and
-    every accumulating table the Dreamer reads is workspace-keyed, not
-    room-keyed: notes, note candidates, the notes index. So one case's output
-    was the next case's input:
-
-    - eight `proactive_decide` cases shared workspace `friends`, so a case
-      asserting a reminder for its OWN note passed on a reminder about the
-      previous case's note, which was still standing;
-    - three `note_candidates` cases seed a note titled "Dinner 19 Sept" into
-      `friends`, so by the third there are three;
-    - two `proactive_act` pairs share a title, and `owe()` took the first match
-      by `created_at`, linking the EARLIER case's note.
-
-    The stated name is KEPT as a prefix because the corpus means it: two cases
-    in different workspaces must stay in different workspaces, and a reader
-    grepping for `friends` should still find them. The suffix is what makes
-    them per-case.
-    """
-    digest = hashlib.sha256(case_name.encode()).hexdigest()[:12]
-    return f"{stated}-{digest}"
-
-
-def room_for(case_name: str) -> tuple[str, str]:
-    """A room of this case's own, derived from its name.
-
-    **Cases are not isolated by the database.** `run_once` composes a fresh
-    graph per case but hands every one the SAME `database_url`, so without this
-    every case writes into one room and reads the others' rows back:
-
-    - the gate reads `recent(limit=40)` — the NEWEST 40 — so from case ~8 its
-      window is mostly other cases' transcripts;
-    - the Dreamer reads `since(after_id=0, limit=64)` — the OLDEST 64
-      (`nora/infra/sql/audit.py:176`, ascending) — so in a 21-case corpus the
-      later cases' rows never reach the adaptor AT ALL, and they are graded
-      anyway.
-
-    Measured on three gate cases in one database: the third case's own window
-    is one row and the gate was shown five. Found by review, not by the tests —
-    `pg_url` is per-TEST and every existing test runs at most three cases, so
-    the contamination stays under the 40-row window and is invisible there.
-
-    A room rather than a database because the room is already a parameter on
-    every function here, it costs nothing, and it isolates two concurrent runs
-    against one database as well — which a truncate would not.
-    """
-    return ("signal", f"g-{hashlib.sha256(case_name.encode()).hexdigest()[:16]}")
 
 
 #: The committed template. ONE place knows its name, the same rule
@@ -182,25 +130,18 @@ def config_default(key: str) -> object:
 def default_policy(room: tuple[str, str], *, unit: str = "nora") -> str:
     """One allowed room, `default = "deny"`, built FROM the room.
 
-    Generated rather than a constant because the room is now per-case
-    (`room_for`), and a policy naming a different room than the subject writes
-    into is the quietest failure in this layer: ingest refuses admission, no
+    Generated rather than a constant because the room is a parameter, and a
+    policy naming a different room than the subject writes into is the
+    quietest failure in this layer: ingest refuses admission, no
     turn runs, nothing raises, and every tag case scores a `no_reply` PASS with
     the report reading OK.
 
-    `unit` defaults to the shipped `memory.workspace_id` default and MUST be
-    passed the resolved override when a caller states one
-    (`build_config` does). Found live: a subject built with a
-    `memory.workspace_id` override and no explicit policy got a `Conversation
-    .unit` of `"nora"` regardless — `nora.policy.Conversation.unit`'s own
-    shipped default — while `memory.workspace_id` held the override. Every
-    unit-keyed read (notes: `nora.app.composition._note_unit_of`, the
-    `<notes>` prompt block) resolves through the POLICY's `unit`, never
-    through `memory.workspace_id`, so the two silently disagreeing means
-    seeded notes are invisible to a real turn, or worse, a real turn's own
-    write lands wherever the policy's default unit happens to point — findable
-    only by reading two files that agree by convention and not by construction
-    until now.
+    `unit` is the room's social unit (DEC-105). Every unit-keyed read (notes:
+    `nora.app.composition._note_unit_of`, the `<notes>` prompt block) resolves
+    through the POLICY's `unit`, and so does every unit-keyed WRITE this
+    package makes: `obtain()` resolves the room's entry and carries
+    `Subject.unit`, so a seed and a turn key under the same value by
+    construction rather than by two files agreeing.
     """
     platform, conversation_id = room
     return (
@@ -243,9 +184,12 @@ class SubjectSpec:
     #: produces.
     identity: str = _DEFAULT_IDENTITY
 
-    #: WHICH ROOMS she is in, as `policy.toml` content. Same reasoning. Empty
-    #: means `default_policy(room)`, so a caller that does not care gets a
-    #: valid, closed policy naming the room it is actually using.
+    #: WHICH ROOMS she is in, as `policy.toml` content — the DEPLOYMENT'S OWN
+    #: file, verbatim, for an eval case (`evals.backbone._drive`); every
+    #: entry's `description`, `persons`, `relevance_gate`, `home_room`,
+    #: `voice` and `tools` is load-bearing and reaches the model or the
+    #: gate. Empty means `default_policy(room)`, so a test that does not
+    #: care gets a valid, closed policy naming the room it is actually using.
     #:
     #: A policy that does NOT name `room` is REFUSED at `build_config`, because
     #: it is the quietest failure available: ingest refuses admission, no turn
@@ -253,10 +197,14 @@ class SubjectSpec:
     #: the report reads OK.
     policy: str = ""
 
-    #: WHICH ROOM she is in. Per-case by default (`room_for`), because cases
-    #: share one database and one room means one transcript: the gate would
-    #: read the newest 40 rows of EVERYBODY'S cases and the Dreamer the oldest
-    #: 64, so late cases' own input would never reach it at all.
+    #: WHICH ROOM she is in — the REAL room's own `(platform, conversation_id)`
+    #: when the case reconstructs one. Cases are isolated by DATABASE, not by
+    #: room: each composes against a sandbox database of its own
+    #: (`nora.subject.sandbox.sandbox_database`), so the real id is usable and
+    #: the deployment's own `policy.toml` names it verbatim. An earlier design
+    #: minted a hashed room per case because every case shared one database;
+    #: that hashing is gone, and with it the swapped policy entries and the
+    #: Discord-shaped ids it needed.
     room: tuple[str, str] = DEFAULT_ROOM
 
     #: WHAT TIME IT IS. `None` means the wall clock, which is production.
@@ -298,6 +246,22 @@ class Subject:
     #: ENVIRONMENT (`cfg.store.database_url_env` names the variable), so the
     #: URL is nowhere on `cfg` to read back.
     database_url: str
+
+    #: The social unit `policy.toml` assigns `room` (DEC-105), and the key the
+    #: room's culture chain hangs off (`primary_id`, DEC-181). RESOLVED from
+    #: the policy entry the room composes with, never stated by a caller:
+    #: both are what production reads for this room, and `GLOSSARY.md` says
+    #: neither is a function of `(platform, conversation_id)`. Carried here
+    #: because `know()` writes notes and culture under them and would
+    #: otherwise re-derive both from a second reading of the same file.
+    #:
+    #: NOT `cfg.memory.workspace_id`. That is Honcho's workspace, one per
+    #: deployment (`nora`), while a unit is per room (`friends`, `ridgeline`);
+    #: an earlier version of this package conflated the two and refused any
+    #: policy whose unit differed from the workspace — a check the
+    #: deployment's own `policy.toml` fails on every room it has.
+    unit: str
+    culture_key: str
 
 
 def _with(obj: Any, path: str, value: Any) -> Any:
@@ -373,6 +337,16 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # container there is no mount, and inside one the subject's data_dir is
     # this directory either way.
     os.environ["NORA_DATA_HOST_ROOT"] = str(workdir.resolve())
+    # `memory.workspace_id` — Honcho is the ONE store the sandbox database
+    # does not isolate: it is an external service keyed by workspace, and the
+    # deployment's workspace is where every real peer card lives. An eval
+    # turn's ingest FEEDS Honcho (`nora/ingest/stages/memory_feed.py`), so a
+    # subject composed with the deployment's workspace writes eval speech
+    # into production's peer representations. One fixed sibling workspace,
+    # suffixed rather than hashed per case: the design's rebuild replays
+    # Honcho INTO it (`11-the-sandbox-rebuild.md` §3), and a replay can only
+    # be shared if its name is stable.
+    cfg = _with(cfg, "memory.workspace_id", f"{cfg.memory.workspace_id}-eval")
     # `doctrine.dir` and `dreamer.dir` resolve RELATIVE TO THE CONFIG FILE, and
     # the copy lives in the caller's workdir, which has no such subdirectories.
     # The Dreamer's corpus is validated at startup — deliberately, so a
@@ -415,22 +389,29 @@ def build_config(spec: SubjectSpec) -> Config:
     cfg = _baseline(_load_config(cfg_path), spec.workdir)
     for path, value in (spec.overrides or {}).items():
         cfg = _with(cfg, path, value)
-    resolved_unit = cfg.memory.workspace_id
-    policy = spec.policy or default_policy(spec.room, unit=resolved_unit)
+    policy = spec.policy or default_policy(spec.room)
     (spec.workdir / "policy.toml").write_text(policy, encoding="utf-8")
-    # RESOLVED, not grepped. A substring test over the raw TOML text only
-    # proves `spec.room[1]` appears as SOME conversation's `id` somewhere in
-    # the file — a hand-written multi-entry policy can satisfy that while the
-    # subject's OWN room resolves to a different entry, with a different
-    # `primary_id` and a different `unit`. Found live, fourth review pass:
-    # a policy whose OTHER entry happened to carry the room's id string
-    # composed cleanly and silently keyed culture/notes/the Dreamer's scope
-    # under a real room's identifiers instead of the subject's own — the
-    # exact quiet failure this check exists to prevent, reached through the
-    # one path that never actually asked the parser what the room resolved
-    # to. `default_policy()`'s own output always resolves correctly; this
-    # check is for the OTHER branch — a caller-stated `spec.policy` — which
-    # nothing here previously verified at all.
+    _conversation_for(spec)
+    return cfg
+
+
+def _conversation_for(spec: SubjectSpec) -> Conversation:
+    """The policy entry `spec.room` composes with — RESOLVED, not grepped.
+
+    A substring test over the raw TOML text only proves `spec.room[1]`
+    appears as SOME conversation's `id` somewhere in the file — a hand-written
+    multi-entry policy can satisfy that while the subject's OWN room resolves
+    to a different entry, with a different `primary_id` and a different
+    `unit`. Found live, fourth review pass: a policy whose OTHER entry
+    happened to carry the room's id string composed cleanly and silently
+    keyed culture/notes/the Dreamer's scope under a real room's identifiers
+    instead of the subject's own.
+
+    A policy that does NOT name the room is REFUSED, because it is the
+    quietest failure available: ingest refuses admission, no turn runs,
+    nothing raises, and every tag case scores a `no_reply` PASS while the
+    report reads OK.
+    """
     convo = load_policy(spec.workdir / "policy.toml").conversation(*spec.room)
     if convo is None:
         raise ValueError(
@@ -446,16 +427,7 @@ def build_config(spec: SubjectSpec) -> Config:
             "conversation's, so culture/notes/the Dreamer's scope would key "
             "under the wrong room's identifiers"
         )
-    if convo.unit != resolved_unit:
-        raise ValueError(
-            f"the subject's room {spec.room!r} resolves to unit "
-            f"{convo.unit!r}, not the composed memory.workspace_id "
-            f"{resolved_unit!r} — a note write and a note read would key "
-            "under different units, so seeded/written notes would be "
-            "invisible to the turn that wrote them or read from a real "
-            "unit instead"
-        )
-    return cfg
+    return convo
 
 
 async def obtain(spec: SubjectSpec) -> Subject:
@@ -524,6 +496,8 @@ async def obtain(spec: SubjectSpec) -> Subject:
     # dead name unreadable rather than merely unused. Found by audit — it was a
     # live trap, not a tidiness point.
     cfg = _with(cfg, "store.database_url_env", "")
+    convo = _conversation_for(spec)
     return Subject(
         deps=deps, cfg=cfg, database_url=spec.database_url, room=spec.room,
+        unit=convo.unit, culture_key=convo.primary_id,
     )

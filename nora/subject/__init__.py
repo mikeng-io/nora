@@ -52,11 +52,9 @@ from .obtain import (
     SubjectSpec,
     config_default,
     obtain,
-    room_for,
-    workspace_for,
 )
 from .proactive import ActPass, act, owe
-from .sandbox import as_knowledge, sandbox_from_snapshot
+from .sandbox import Sandboxed, as_knowledge, sandbox_database, sandbox_from_snapshot
 
 __all__ = [
     "DEFAULT_ROOM",
@@ -66,6 +64,7 @@ __all__ = [
     "NoteSeed",
     "Pass",
     "RoomSeed",
+    "Sandboxed",
     "Subject",
     "SubjectSpec",
     "Written",
@@ -81,9 +80,8 @@ __all__ = [
     "last_row_id",
     "obtain",
     "owe",
-    "room_for",
+    "sandbox_database",
     "sandbox_from_snapshot",
     "settle",
     "silent_failures",
-    "workspace_for",
 ]

@@ -1,102 +1,195 @@
-"""What Nora ACTUALLY knew about a real room, copied into an isolated subject.
+"""The sandbox: a database of the case's own, holding what Nora ACTUALLY knew
+about a real room at a real moment, read from the deployment's clone.
 
-`knowledge.py` writes what a case STATES; this writes what a room REALLY held.
-`nora.infra.sql.snapshot` reconstructs the second — transcript, standing,
-culture, notebook, at one historical instant — and this is the one place that
-turns that reconstruction into the shapes `know()` already writes.
+`knowledge.py` writes what a caller STATES; this writes what a room REALLY
+held. `nora.infra.sql.snapshot` reconstructs the second — transcript,
+standing, culture, notebook, at one historical instant — and this is the one
+place that turns that reconstruction into the shapes `know()` already writes.
 
-WHY THIS IS A SEPARATE MODULE. It is the only file in this package that READS
-REAL PRODUCTION ROWS, and that is worth being able to grep for. `knowledge.py`
-never names a room it did not get from the subject; every `(platform,
-conversation_id)` it touches is one `obtain()` already isolated. This one takes
-a real room as an argument, so the isolation argument has to be made HERE, once,
-rather than inferred from a call site:
+TWO DATABASES, AND WHICH IS WHICH.
 
-- the READ is the only thing that touches real data, and it cannot write —
-  `snapshot.py` carries no `INSERT`, `UPDATE`, `DELETE` or `begin()`, which its
-  own docstring states as a structural property rather than a promise;
-- the WRITE goes into `subject.room` and `subject.cfg.memory.workspace_id`,
-  which `room_for()`/`workspace_for()` made this case's own. There is no
-  parameter for a write target, deliberately: the eval that runs afterwards
-  drives an entry point that may write a note, a reminder or a reply, and every
-  one of those must land in the copy.
+- **The source** is the deployment's clone (`nora_eval` on the deploy host:
+  `scripts/refresh_eval_clone.sh`), a copy of production taken by hand and
+  never written by anything here. It is read through
+  `create_readonly_sql_engine`, so a write is refused by the server rather
+  than promised away. Production itself is never opened: the clone is a
+  frozen copy, so the moment a case names denotes the same rows next month.
+- **The sandbox** is a database of this case's own, cloned from a blank
+  migrated template BESIDE the source (`sandbox_database`), and it is what
+  `SubjectSpec.database_url` points at. Everything the case seeds and
+  everything the turn writes lands there, under the REAL room's id, the
+  deployment's own `policy.toml` and `identity.toml`, and it is dropped when
+  the case ends.
 
-That is the operator's Option A, and the alternative was named and rejected:
-driving the real room directly would measure the real room's future.
+Isolation is by database, not by room. An earlier design shared one database
+across every case and minted a hashed room per case (`room_for`), which then
+needed a swapped policy entry, a Discord-shaped id, a per-case Honcho
+workspace and a clock shift to look like the real room — and still was not
+it. A database per case makes the real ids usable and the copied files
+verbatim, which is the whole point of copying them.
 
-THE COPY IS NOT BYTE-IDENTICAL, and each difference below is a decision.
+THE COPY IS AT THE MOMENT'S OWN CLOCK. Every seeded row keeps its real `ts`,
+the standing keeps its real `updated_at`, and the subject's clock is frozen
+at `before_ms` (`SubjectSpec.now`) — so a row that was four minutes old at
+the instant is four minutes old to the model, because the model's "now" IS
+the instant. Nothing is shifted. The previous design shifted every timestamp
+onto the wall clock instead, which was the faithful thing to do to the
+DATABASE and the wrong thing to do to the MODEL only because the clock was not
+yet a port; it is one now (`01-boundaries.md` §3).
 
-- **The clock is SHIFTED, not copied.** Every timestamp moves by
-  `now_ms - before_ms`, so a row that was four minutes old at the instant is
-  four minutes old in the sandbox. Copying `ts` verbatim would be the faithful
-  thing to do to the DATABASE and the wrong thing to do to the MODEL: ages are
-  what reach it (`nora.agent.prefill._age`), so a snapshot of last July would
-  render as a room that has said nothing for two months — a different input, and
-  one that never existed. `know()`'s own docstring says the same about frozen
-  historical constants.
-- **Sender ids are MINTED, never copied.** `Message` has no `sender_id` field,
-  so `_speakers()` assigns synthetic ones and a real member's E.164 cannot
-  reach an eval workspace through here. `person_id` IS copied, because it is an
-  `identity.toml` handle rather than an account, and it is the key the
+WHAT IS STILL NOT BYTE-IDENTICAL, each a stated limitation of the extraction:
+
+- **Sender ids are MINTED, never copied.** `Message` has no `sender_id`
+  field, so `_speakers()` assigns synthetic ones and a real member's E.164
+  cannot reach the sandbox through here. `person_id` IS copied, because it is
+  an `identity.toml` handle rather than an account, and it is the key the
   transcript renders a canonical name from.
 - **Media is NOT reconstructed.** `snapshot.py` returns `messages.body` as
   stored, which since issue #116 carries a handle (`[image a3f2c1]`) rather
   than a description; `Message.media` would synthesise a `MediaBlob` with a
-  DIFFERENT digest, so the handle in the body would name a blob that is not the
-  one attached. A missing join is a stated limitation of the snapshot already;
-  a mismatched one would be a new defect invented here.
+  DIFFERENT digest, so the handle in the body would name a blob that is not
+  the one attached.
 - **A note's loop state is whatever `snapshot.py` could recover.** `NoteSeed`
-  writes through `SqlNoteStore.create`, so every seeded note is freshly open:
-  no strikes, no revisit, head pointing at its own first revision. The
-  snapshot's `(Note, NoteRevision)` pair is read for the six columns that
-  decided what the notebook SHOWED — title, description, uncertainty, closing
-  condition, anchor, and the as-of body — which are exactly the ones
-  `snapshot.py` says are written once and never updated.
-- **Reply threading is FLATTENED, found by review rather than decided up
-  front.** `snapshot.py`'s `TranscriptRow.quoted_ts` names which earlier row a
-  message replied to; `Message` has no quote field, so `as_knowledge` drops it
-  silently. `nora.agent.prefill` resolves `quoted_ts` into the transcript's
-  `↳` reply lines, so a real threaded room copies into the sandbox with every
-  reply edge gone — the model is shown a room that never talked the way it
-  did. Left open rather than fixed here: closing it needs a citation-style
-  translation (the historical row id the quote names is not the id the
-  sandbox's own store assigns it), which is a second piece of work, not a
-  field.
+  writes through `SqlNoteStore.create`, so every seeded note is freshly open.
+- **Reply threading is FLATTENED.** `TranscriptRow.quoted_ts` names which
+  earlier row a message replied to; `Message` has no quote field. Closing it
+  needs a citation-style translation, a second piece of work.
+- **Only four tiers are extracted.** Reminders, note candidates and the
+  debounce/window state tables are EMPTY in the sandbox. That is the same
+  emptiness the hashed-room design had, now visible in one place; extending
+  `snapshot.py` is how it closes, and `11-the-sandbox-rebuild.md` §6 R1 is
+  the rule that will refuse a case once the extraction can say a tier is
+  missing rather than merely unread.
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import contextlib
+import uuid
+from collections.abc import AsyncGenerator
+from dataclasses import dataclass
+
+import sqlalchemy as sa
+from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from nora.domain.notes import Note, NoteRevision
-from nora.infra.sql import create_sql_engine
+from nora.infra.sql import create_readonly_sql_engine
+from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.snapshot import Snapshot, snapshot
 
-from .knowledge import Knowledge, Message, NoteSeed, Written, know
+from .knowledge import Knowledge, Message, NoteSeed, know
 from .obtain import Subject
 
-__all__ = ["as_knowledge", "sandbox_from_snapshot"]
+__all__ = ["Sandboxed", "as_knowledge", "sandbox_database", "sandbox_from_snapshot"]
 
 _HOUR_MS = 3_600_000
 
+#: Templates this process has already brought to the migration head, by URL.
+#: `run_migrations` on an at-head database is one connection and a version
+#: check, but it is also one more session on a template that
+#: `CREATE DATABASE ... TEMPLATE` needs nobody else connected to.
+_migrated: set[str] = set()
 
-def as_knowledge(shot: Snapshot, *, now_ms: int) -> Knowledge:
-    """A reconstruction, as the `Knowledge` that reproduces it at `now_ms`.
 
-    PURE, and separate from the call that writes it, because the one property
-    worth testing here is arithmetic: an instant maps to an instant, and a
-    staleness maps to a staleness. A translation that only existed inside a
-    database round trip could only be checked by reading rows back, which is
-    the slowest possible way to ask whether a subtraction is the right way
-    round.
+def _maintenance(url: str) -> str:
+    """The same server's `postgres` database — where `CREATE DATABASE` runs."""
+    return _sibling(url, "postgres")
 
-    `shot.before_ms` maps to `now_ms` exactly. So a row that landed AT the
-    instant lands at `now_ms` — the newest line had just been said, which is
-    what the room looked like. A line delivered afterwards at the same
-    millisecond still sorts above it, because `RecordStore.recent` breaks a
-    `ts` tie on `id` and the arriving row's is larger.
+
+def _sibling(url: str, name: str) -> str:
+    # `render_as_string`, not `str()`: SQLAlchemy's `URL.__str__` masks the
+    # password as `***`, and a URL rendered that way authenticates as nobody.
+    return make_url(url).set(database=name).render_as_string(hide_password=False)
+
+
+async def _blank_template(source_url: str) -> str:
+    """A migrated, EMPTY database beside the source, made once and reused.
+
+    `<source>_blank`, so two runs against one source share it and a run
+    against a different source never does. Brought to head with the
+    repo's own migration chain, which is the schema production runs — a
+    sandbox at a different revision would be a different store.
     """
-    shift = now_ms - shot.before_ms
+    name = f"{make_url(source_url).database}_blank"
+    url = _sibling(source_url, name)
+    if url in _migrated:
+        return name
+    admin = create_async_engine(_maintenance(source_url), isolation_level="AUTOCOMMIT")
+    try:
+        async with admin.connect() as conn:
+            exists = (await conn.execute(
+                sa.text("SELECT 1 FROM pg_database WHERE datname = :n"), {"n": name},
+            )).scalar()
+            if not exists:
+                await conn.execute(sa.text(f'CREATE DATABASE "{name}"'))
+    finally:
+        await admin.dispose()
+    # Sync Alembic on the event loop's thread: the runner opens and closes its
+    # own engine, and this happens once per process per source.
+    run_migrations(url)
+    _migrated.add(url)
+    return name
+
+
+@contextlib.asynccontextmanager
+async def sandbox_database(
+    source_url: str, *, template: str | None = None,
+) -> AsyncGenerator[str]:
+    """A fresh migrated database beside `source_url`, dropped on exit.
+
+    `template` names an already-migrated blank database on the same server
+    to clone from — the test suite's session-scoped `pg_template` — so a test
+    does not pay the migration chain per case. `None` builds and reuses
+    `<source>_blank` (`_blank_template`), which is what a run on the deploy
+    host does.
+
+    `CREATE DATABASE ... TEMPLATE <blank>` is a file-level clone inside
+    Postgres — the mechanism `tests/conftest.py`'s `pg_url` already uses per
+    test, and the reason `obtain()` costs ~64ms against one
+    (`03-step0-results.md` §3). Stragglers on the template are terminated
+    first, because Postgres refuses to copy a database with any other
+    session connected and a pooled handle is exactly what lingers.
+
+    The name carries the source's, so a `\\l` on the server says what a
+    leftover was for; dropping is best-effort, because a case's RESULT must
+    not depend on whether its cleanup worked.
+    """
+    if template is None:
+        template = await _blank_template(source_url)
+    name = f"{make_url(source_url).database}_sb_{uuid.uuid4().hex[:12]}"
+    admin = create_async_engine(_maintenance(source_url), isolation_level="AUTOCOMMIT")
+    try:
+        async with admin.connect() as conn:
+            await conn.execute(sa.text(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = :t AND pid <> pg_backend_pid()"
+            ), {"t": template})
+            await conn.execute(sa.text(f'CREATE DATABASE "{name}" TEMPLATE "{template}"'))
+        try:
+            yield _sibling(source_url, name)
+        finally:
+            with contextlib.suppress(Exception):
+                async with admin.connect() as conn:
+                    await conn.execute(sa.text(
+                        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                        "WHERE datname = :t AND pid <> pg_backend_pid()"
+                    ), {"t": name})
+                    await conn.execute(sa.text(f'DROP DATABASE IF EXISTS "{name}"'))
+    finally:
+        await admin.dispose()
+
+
+def as_knowledge(shot: Snapshot) -> Knowledge:
+    """A reconstruction, as the `Knowledge` that reproduces it AT ITS OWN
+    CLOCK.
+
+    PURE, and separate from the call that writes it, so the one property
+    worth testing — that nothing moves — is testable without a database.
+    Every `at_ms` is the row's real `ts`; the standing's age is how stale it
+    was at `shot.before_ms`, which is what `know()` turns back into the real
+    `updated_at` when it is handed `now_ms=shot.before_ms`.
+    """
     return Knowledge(
         transcript=tuple(
             Message(
@@ -111,20 +204,16 @@ def as_knowledge(shot: Snapshot, *, now_ms: int) -> Knowledge:
                 # which is what a null `person_id` on a real row means too.
                 person=row.person_id,
                 # The ORIGINAL row id, so `Written.rows` comes back as a map
-                # from the historical row to the copy. A case that wants to
-                # cite "the message that started it" names the real id and gets
-                # the sandbox's.
+                # from the historical row to the copy. A case that cites "the
+                # message that started it" names the real id and gets the
+                # sandbox's.
                 label=row.id,
-                at_ms=row.ts + shift,
+                at_ms=row.ts,
                 is_nora=row.is_nora,
             )
             for row in shot.transcript
         ),
         standing=None if shot.standing is None else shot.standing.body,
-        # HOW STALE IT WAS THEN, not how stale it is now. The prompt renders
-        # `written=` beside the position precisely so the model can tell a
-        # fresh read of the room from a weeks-old one, and measuring that
-        # against today's clock would report the age of the SNAPSHOT.
         standing_age_hours=(
             None if shot.standing is None
             else (shot.before_ms - shot.standing.updated_at) / _HOUR_MS
@@ -144,8 +233,7 @@ def _note_seed(note: Note, revision: NoteRevision) -> NoteSeed:
     inside the domain, naming a constructor rather than the room the
     reconstruction came from. Raising here says which note and why. It is not
     silently dropped: a note missing from the index is invisible, and invisible
-    is indistinguishable from absent, which is the failure the note tier's own
-    `standing()` refuses to have a `limit` for.
+    is indistinguishable from absent.
     """
     if note.anchor_date is None:
         raise ValueError(
@@ -163,124 +251,93 @@ def _note_seed(note: Note, revision: NoteRevision) -> NoteSeed:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class Sandboxed:
+    """What `sandbox_from_snapshot` left behind, for the drive that follows."""
+
+    #: The instant the room stands at — the case's `before_ms`, which is also
+    #: the subject's frozen clock. The input line, if any, arrives here.
+    now_ms: int
+    #: Historical row id -> the id the sandbox's store assigned the copy.
+    rows: dict[int | str, int]
+    #: The window she was seeded with, oldest first, one body per line — the
+    #: SOURCE a judge grades grounding against (`evals.backbone`).
+    transcript: tuple[str, ...]
+
+
 async def sandbox_from_snapshot(
     subject: Subject,
     *,
-    platform: str,
-    conversation_id: str,
+    source_url: str,
     before_ms: int,
-    culture_key: str,
-    unit: str,
-    transcript_limit: int | None = None,
-    now_ms: int | None = None,
     leave_room_for_arrival: bool = True,
-) -> Written:
-    """Seed an isolated eval subject with what Nora actually knew about a REAL
-    room at a REAL historical moment, read once and copied.
+) -> Sandboxed:
+    """Seed the subject's sandbox with what Nora knew about ITS OWN room —
+    the real one it was composed for — at `before_ms`, read from the source.
 
-    The subject driven afterward is the synthetic one `obtain()` already built
-    — never the real room this data came from. Nothing here takes a write
-    target; see the module docstring.
+    The room, its culture key and its unit are the SUBJECT'S: `obtain()`
+    resolved them from the deployment's own policy entry, so there is nothing
+    for a case to state and nothing for it to get wrong. `snapshot()` still
+    refuses to derive the two keys from the database, and it still does not
+    have to — they come from the policy, which is where production reads
+    them.
 
-    **ONE DATABASE, ONE ENGINE, and that is a finding rather than a shortcut.**
-    A subject's `database_url` is not a database of its own: `evals/__main__.py`
-    takes a single `--database-url` and `evals/rebuilt/runner.py` hands the same
-    string to every case, which is exactly why `room_for()` and
-    `workspace_for()` exist — cases are isolated by ROOM and WORKSPACE naming,
-    not by a database each. So the real historical room and the sandbox live in
-    the same physical Postgres whenever this is pointed at real history, and one
-    engine reads and writes both. A second engine would be two pools over one
-    database. (The engine is still this call's OWN, disposed before `know()`
-    opens its own: the composition root keeps its engine private and
-    `Dependencies` does not name it, which is the same reason `know()` builds
-    one.)
+    Refusals, each an ERROR rather than an empty room:
 
-    `culture_key` and `unit` are REQUIRED and passed straight through, because
-    `snapshot()` refuses to derive them and this is not the layer that has
-    earned the right to. They come from the REAL room's `policy.toml`; the keys
-    the copy is WRITTEN under are the subject's own and are not settable.
+    - `source_url` naming the subject's own database. Reading the room out
+      of the store it is about to be written into would seed the copy on top
+      of itself.
+    - a subject whose clock is not frozen at `before_ms`. Ages are what
+      reach the model, and a window seeded at the moment's clock but read at
+      another is a room that never existed.
+    - a reconstruction with an EMPTY transcript. A room that had said
+      nothing by `before_ms` is not a moment a case can be about, and it is
+      also exactly what a mistyped id or a moment before the room's first
+      row reads as.
 
-    `leave_room_for_arrival` is `know()`'s own, forwarded rather than
-    defaulted, because it decides whether the copied window ends one step
-    BEFORE `now_ms` or AT it — and that is per ENTRY POINT, not per seeding
-    style. `evals.backbone._drive` passes `port.delivers_input`: `False` for
-    the gate, whose window IS the input and whose newest line must therefore
-    land at `now_ms` rather than a step before it. Defaulting it here would
-    give a snapshot-backed gate case a different window than the same case
-    hand-authored — the one divergence between the two seeding paths that
-    would not be visible in either file.
-
-    Returns what `know()` returned, so `Written.rows` maps each historical row
-    id onto the id the sandbox's store assigned it.
+    `leave_room_for_arrival` is `know()`'s own, forwarded: with every row
+    carrying its real `ts` the reserved step is unused, but the flag still
+    documents whether a line follows the window.
     """
-    # Keyed on `conversation_id` ALONE, not the `(platform, conversation_id)`
-    # tuple `subject.room` is. Found live, second pass: `SqlRecordStore`'s
-    # reads (`recent`/`since`/`since_including_nora`) filter on
-    # `conversation_id` only — `TranscriptRow` carries no platform column at
-    # all — so a subject on a DIFFERENT platform sharing the real room's
-    # conversation_id passed the ORIGINAL tuple check untouched and its seeded
-    # rows (clock-shifted to `now_ms`, so sorted NEWEST) came back out of the
-    # real room's own `recent()`. The tuple check was too narrow, not wrong in
-    # direction: every subject this refuses, the tuple check already refused;
-    # this refuses strictly more.
-    if conversation_id == subject.room[1]:
+    if make_url(source_url).database == make_url(subject.database_url).database:
         raise ValueError(
-            f"conversation_id {conversation_id!r} equals the subject's own "
-            "room's conversation_id, which is what the transcript reads AND "
-            "writes on (platform is not part of that key — `TranscriptRow` "
-            "carries none). Standing IS tuple-keyed and would not itself "
-            "collide on conversation_id alone, but this refusal covers it "
-            "too, a fortiori, rather than drawing a line the transcript "
-            "risk does not need drawn — seeding would read back through "
-            "the real room's own `recent()` — pass the REAL room to read, "
-            "and let `obtain()` own the room that is written"
+            "source_url names the subject's own database "
+            f"({make_url(source_url).database!r}); the sandbox is seeded FROM "
+            "the deployment's clone INTO a database of its own, never from "
+            "itself"
         )
-    # The check above guards ONE of the three keys `know()` writes under
-    # (`subject.room[1]`, for the transcript and standing — see above for why
-    # platform is not part of it). Culture keys on `conversation_id` ALONE
-    # too, but via a DIFFERENT identifier — `culture_key`, not `subject.room`
-    # — because `snapshot()`'s own `culture_key` is not required to equal the
-    # room's `conversation_id` (a real room's culture can be keyed on a
-    # different `primary_id` than the room being read). Notes key on
-    # `subject.cfg.memory.workspace_id`, which is not `subject.room` at all.
-    # Found live: a cross-platform pair sharing a conversation_id appended a
-    # `case-seed` revision onto the REAL room's culture chain, moving its
-    # head; a subject whose workspace_id was left at its config default
-    # collided with a real unit's notebook with no argument having to be
-    # contrived at all. Both are checked here, not folded into the check
-    # above, because they are keyed on different VALUES than the room is,
-    # not just a narrower shape of the same one.
-    if culture_key == subject.room[1]:
+    clock_ms = int(subject.deps.clock().timestamp() * 1000)
+    if clock_ms != before_ms:
         raise ValueError(
-            f"culture_key {culture_key!r} equals the subject's own room's "
-            "conversation_id, which is what culture keys on (primary_id) — "
-            "seeding would append onto the REAL room's culture chain and "
-            "move its head. Pass the REAL room's culture_key, not the "
-            "subject's own."
+            f"the subject's clock reads {clock_ms} and the moment is "
+            f"{before_ms}; compose it with SubjectSpec.now at the moment, or "
+            "every age the model sees is measured against the wrong instant"
         )
-    if unit == subject.cfg.memory.workspace_id:
-        raise ValueError(
-            f"unit {unit!r} equals the subject's own memory.workspace_id — "
-            "seeding notes would write into the REAL unit's notebook. Pass "
-            "the REAL room's unit, not the subject's own isolated workspace."
-        )
-
-    engine = create_sql_engine(subject.database_url)
+    platform, conversation_id = subject.room
+    engine = create_readonly_sql_engine(source_url)
     try:
         shot = await snapshot(
             engine,
             platform=platform,
             conversation_id=conversation_id,
-            culture_key=culture_key,
-            unit=unit,
+            culture_key=subject.culture_key,
+            unit=subject.unit,
             before_ms=before_ms,
-            transcript_limit=transcript_limit,
         )
     finally:
         await engine.dispose()
-    if now_ms is None:
-        now_ms = int(datetime.now(UTC).timestamp() * 1000)
-    return await know(
-        subject, as_knowledge(shot, now_ms=now_ms), now_ms=now_ms,
+    if not shot.transcript:
+        raise ValueError(
+            f"the source holds no row for {platform}/{conversation_id} at or "
+            f"before {before_ms}; a moment before the room's first line is "
+            "not a moment, and an unknown id reads exactly the same"
+        )
+    written = await know(
+        subject, as_knowledge(shot), now_ms=before_ms,
         leave_room_for_arrival=leave_room_for_arrival,
+    )
+    return Sandboxed(
+        now_ms=written.now_ms,
+        rows=written.rows,
+        transcript=tuple(row.body or "" for row in shot.transcript),
     )

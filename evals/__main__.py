@@ -1,7 +1,6 @@
 """`python -m evals CORPUS...` — run selected corpora, print the measurements.
 
-`evals.rebuilt.__main__`'s new-spine sibling, one flag set narrower: this
-runs whichever corpora you name, not "everything." A run over 150 cases is
+Runs whichever corpora you name, not "everything." A run over 150 cases is
 hours (5 judged corpora at ~211s/sample x 3 samples each), and there is no
 reason a one-line change should cost that every time — `--corpus` /
 `--class` / `--all` are three ways to say how much you actually want.
@@ -16,7 +15,7 @@ from pathlib import Path
 
 from evals.backbone import ERROR, FAIL, PASS, UNSTABLE, read, sample_read
 from evals.rebuilt.grading import DEFAULT_JUDGE_MODEL, DEFAULT_SAMPLES, Judge
-from evals.scenarios import CORPUS_ENTRY, JUDGED_CORPORA, experiment_for
+from evals.scenarios import CORPUS_ENTRY, JUDGED_CORPORA, census, experiment_for
 from evals.subject_config import materialise
 
 #: Coarse S-class grouping for `--class`, per `10-the-scenario-map.md` §2/§15.
@@ -52,6 +51,52 @@ def _list_corpora() -> None:
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
+#: The clone's name on the deploy host, and the loopback publish its compose
+#: file gives the database container (`ports: ["127.0.0.1:5435:5432"]`).
+EVAL_CLONE = "nora_eval"
+_DEPLOY_DB = "127.0.0.1:5435"
+
+
+def source_url_for(stated: str, deployment_dir: Path) -> str:
+    """The source URL, or a refusal.
+
+    Stated wins; otherwise it is derived from the deployment's own `.env`
+    (`POSTGRES_PASSWORD`) and the clone's name — so on the deploy host the
+    default is right and nowhere else is there one. Either way the database
+    NAME must be a clone's: the live database is `nora`, and one flag away
+    from running 150 cases' seeds and turns into production is not a
+    default anybody should be able to reach.
+    """
+    from sqlalchemy.engine import make_url
+
+    if not stated:
+        env = deployment_dir / ".env"
+        password = ""
+        try:
+            for line in env.read_text(encoding="utf-8").splitlines():
+                if line.startswith("POSTGRES_PASSWORD="):
+                    password = line.split("=", 1)[1].strip()
+        except OSError as exc:
+            raise ValueError(
+                f"--source-url not given and {env} is unreadable ({exc}); "
+                "the default source is the deploy host's clone, derived from "
+                "its own .env"
+            ) from exc
+        if not password:
+            raise ValueError(f"--source-url not given and {env} states no POSTGRES_PASSWORD")
+        stated = f"postgresql+asyncpg://nora:{password}@{_DEPLOY_DB}/{EVAL_CLONE}"
+    name = make_url(stated).database or ""
+    if not name.endswith("_eval"):
+        raise ValueError(
+            f"--source-url names database {name!r}, which is not a clone "
+            f"(`*_eval`). The source is read to seed sandboxes and every "
+            "case composes against a sandbox cloned BESIDE it; naming the "
+            "deployment's own database here would put 150 cases' seeds on "
+            "the same server as production with one rename between them. "
+            "Make a clone: scripts/refresh_eval_clone.sh."
+        )
+    return stated
+
 
 def _corpora_for(args: argparse.Namespace) -> list[str]:
     if args.all:
@@ -66,10 +111,10 @@ def _corpora_for(args: argparse.Namespace) -> list[str]:
     return sorted(selected)
 
 
-def _run_one(name: str, *, database_url: str, judge: Judge | None, sample: int) -> bool:
-    experiment, task = experiment_for(name, database_url=database_url, judge=judge, sample=sample)
+def _run_one(name: str, *, source_url: str, judge: Judge | None, sample: int) -> bool:
+    experiment, task = experiment_for(name, source_url=source_url, judge=judge, sample=sample)
     report = experiment.run_evaluations(task=task)
-    print(f"--- {name} ---")
+    print(f"--- {name}: {census(name)} ---")
     if sample > 1:
         readings = sample_read(report)
         ok = True
@@ -94,7 +139,13 @@ def main() -> int:
                      help="run every corpus in this S-class (e.g. S7); repeatable")
     ap.add_argument("--all", action="store_true", help="run every corpus")
     ap.add_argument("--list", action="store_true", help="list corpora and exit")
-    ap.add_argument("--database-url", default=os.environ.get("DATABASE_URL", ""))
+    ap.add_argument(
+        "--source-url", default=os.environ.get("NORA_EVAL_SOURCE_URL", ""),
+        help="the deployment's CLONE (nora_eval), read and never written; "
+             "every case composes against a sandbox database cloned beside "
+             "it. Defaults to the clone on the deploy host, from its .env. "
+             "A name that is not a clone's is refused.",
+    )
     ap.add_argument(
         "--deployment-config",
         default=os.environ.get("NORA_CONFIG", "/home/norty/workspace/nora/config.toml"),
@@ -137,8 +188,10 @@ def main() -> int:
     if not names:
         print("no corpus selected — pass names, --class, --all, or --list", file=sys.stderr)
         return 2
-    if not args.database_url:
-        print("--database-url or DATABASE_URL is required", file=sys.stderr)
+    try:
+        source_url = source_url_for(args.source_url, Path(args.deployment_config).parent)
+    except ValueError as exc:
+        print(f"refusing to run: {exc}", file=sys.stderr)
         return 2
 
     # THE SUBJECT'S CONFIG, REBUILT FOR THIS RUN, BEFORE ANY CASE.
@@ -182,7 +235,7 @@ def main() -> int:
     ok = True
     for name in names:
         ok = _run_one(
-            name, database_url=args.database_url, judge=judge, sample=args.sample,
+            name, source_url=source_url, judge=judge, sample=args.sample,
         ) and ok
     return 0 if ok else 1
 
