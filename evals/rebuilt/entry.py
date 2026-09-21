@@ -41,6 +41,7 @@ from nora.subject import (
     heard,
     last_row_id,
     owe,
+    pending,
     settle,
     silent_failures,
 )
@@ -191,8 +192,12 @@ async def tag(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     # the transcript twice.
     watermark = await last_row_id(subject)
     failures_before = silent_failures(subject)
+    # BEFORE the line arrives: composition spawns endless loops into the same
+    # set (the compute poller, the version announcer), so what this case
+    # fired is the DELTA over what the graph already carried.
+    baseline = pending(subject)
     await deliver(subject, body, now_ms=now_ms, person=case.person, mention=case.mention)
-    if not await settle(subject):
+    if not await settle(subject, baseline=baseline):
         return Outcome(
             admitted=None,
             source="fail_closed",

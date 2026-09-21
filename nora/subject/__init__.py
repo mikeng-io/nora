@@ -43,6 +43,7 @@ from .knowledge import (
     heard,
     know,
     last_row_id,
+    pending,
     settle,
     silent_failures,
 )
@@ -80,6 +81,7 @@ __all__ = [
     "last_row_id",
     "obtain",
     "owe",
+    "pending",
     "sandbox_database",
     "sandbox_from_snapshot",
     "settle",

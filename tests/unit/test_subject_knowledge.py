@@ -20,7 +20,9 @@ actually calling `ensure_peer` correctly.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 
 import pytest
 
@@ -110,3 +112,57 @@ async def test_know_raises_loudly_if_the_peer_was_never_ensured() -> None:
 
     with pytest.raises(RuntimeError, match="could not write a conclusion"):
         await know(subject, knowledge)  # type: ignore[arg-type]
+
+
+# --- `settle()` waits for THIS case's turn, not for an empty process --------
+
+
+class _Background:
+    """`BackgroundTasks`'s public surface, as `settle()` uses it."""
+
+    def __init__(self, count: int) -> None:
+        self.count = count
+
+    def __len__(self) -> int:
+        return self.count
+
+
+@pytest.mark.asyncio
+async def test_settle_returns_once_the_turn_is_done_though_a_loop_is_still_running():
+    """MEASURED LIVE on the deploy host, 2026-09-21: every `near_miss` case
+    ERRORed with "the turn never settled" against a subject composed from the
+    DEPLOYMENT's config, and passed under the example's.
+
+    Composition spawns ENDLESS loops into the same set the turn is spawned
+    into — `ComputeJobPoller.run()` when `[compute]` is enabled,
+    `VersionAnnouncer.run()`, `heartbeat.run()`. Waiting for that set to reach
+    ZERO is waiting for the process to exit, so every case that drove the
+    inbound path timed out and was reported as an un-run case. The deployment
+    enables compute; the example does not, which is why no test saw it.
+    """
+    from nora.subject import pending, settle
+
+    background = _Background(2)          # two endless loops, already running
+    subject = SimpleNamespace(deps=SimpleNamespace(background=background))
+    baseline = pending(subject)          # read BEFORE the line arrives
+    assert baseline == 2
+
+    background.count = 3                 # the turn is spawned
+
+    async def _finish() -> None:
+        await asyncio.sleep(0.05)
+        background.count = 2             # the turn ends; the loops do not
+
+    task = asyncio.create_task(_finish())
+    assert await settle(subject, baseline=baseline, timeout_seconds=5.0) is True
+    await task
+
+
+@pytest.mark.asyncio
+async def test_settle_still_times_out_when_the_turn_never_finishes():
+    """The control: the baseline must not turn a hung turn into a settled one,
+    which is the failure mode this whole distinction exists to keep visible."""
+    from nora.subject import settle
+
+    subject = SimpleNamespace(deps=SimpleNamespace(background=_Background(3)))
+    assert await settle(subject, baseline=2, timeout_seconds=0.2) is False

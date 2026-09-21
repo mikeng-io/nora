@@ -1,0 +1,10 @@
+{
+  "type": "fix",
+  "summary": "nora/subject/knowledge.py's settle() now waits for the tasks THIS case spawned rather than for the graph's background set to empty, so an eval case composed from the deployment's own config no longer times out against endless loops the deployment enables.",
+  "details": [
+    "MEASURED LIVE on the deploy host 2026-09-21, first run of the rebuilt suite against the real config: all four near_miss cases ERRORed with 'the turn never settled within the timeout'. They had passed under config.example.toml.",
+    "Composition spawns endless loops into the SAME BackgroundTasks set a turn is spawned into -- ComputeJobPoller.run() when [compute] is enabled, VersionAnnouncer.run(), heartbeat.run(). settle() polled `len(deps.background)` for ZERO, which under the deployment's config is 'wait for the process to exit'. evals/rebuilt/entry.py already carried a note about [heartbeat] having this shape and treated it as a reason not to enable that one flag; it is the general shape.",
+    "settle(subject, baseline=...) now waits for the count to fall back to what the graph already carried, read by the new `pending(subject)` before the line that starts the turn. Both are public BackgroundTasks surface (__len__), so nothing is added to nora.app for evaluation's sake (01-boundaries §5(2)).",
+    "tests/unit/test_subject_knowledge.py pins both halves: a turn that finishes while a loop keeps running settles, and a turn that never finishes still times out. Falsified by reverting the comparison to `while len(...)`, which turns the first red."
+  ]
+}

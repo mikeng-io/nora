@@ -385,14 +385,28 @@ async def deliver(
     )
 
 
-async def settle(subject: Subject, *, timeout_seconds: float = 180.0) -> bool:
-    """Wait until every turn the deployment SPAWNED has finished. `True` if it
-    settled, `False` on timeout.
+async def settle(
+    subject: Subject, *, baseline: int = 0, timeout_seconds: float = 180.0,
+) -> bool:
+    """Wait until every turn the deployment SPAWNED for this case has
+    finished. `True` if it settled, `False` on timeout.
 
     `Dispatcher.on_message` does not await the turn — it hands the request to
     `BackgroundTasks.spawn` and returns, because a platform listen loop must not
     block on one room. So an entry point that drives the deployment's real
     inbound path has to wait for what that path fired.
+
+    **`baseline` is the count the graph already carried, and it is not
+    optional in practice.** Measured live on the deploy host, 2026-09-21:
+    every `near_miss` case ERRORed with "the turn never settled" against a
+    subject composed from the DEPLOYMENT's config, while passing under the
+    example's. Composition spawns ENDLESS loops into this same set when the
+    deployment enables them — `ComputeJobPoller.run()` (`[compute]`),
+    `VersionAnnouncer.run()`, `heartbeat.run()` — so the set never empties and
+    an absolute "wait for zero" waits for the process to end. `entry.py`'s own
+    note about `[heartbeat]` had spotted one instance of this and treated it
+    as a reason not to enable that flag; it is the general shape, and the
+    general fix is to measure the DELTA this case added.
 
     Polls `len(deps.background)`, which is `BackgroundTasks.__len__` — PUBLIC
     surface, deliberately. A `drain()` on `BackgroundTasks` would be tidier and
@@ -401,11 +415,17 @@ async def settle(subject: Subject, *, timeout_seconds: float = 180.0) -> bool:
     the cost of not breaking that rule, and it is paid once, here.
     """
     deadline = asyncio.get_running_loop().time() + timeout_seconds
-    while len(subject.deps.background):
+    while len(subject.deps.background) > baseline:
         if asyncio.get_running_loop().time() >= deadline:
             return False
         await asyncio.sleep(0.05)
     return True
+
+
+def pending(subject: Subject) -> int:
+    """How many background tasks the graph is already carrying — `settle()`'s
+    `baseline`, read BEFORE the line that starts the turn."""
+    return len(subject.deps.background)
 
 
 def silent_failures(subject: Subject) -> float:
