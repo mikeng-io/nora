@@ -1,0 +1,48 @@
+kind: design_index
+title: "Self-Reference — canonical visual identity for self-aware image generation"
+description: >
+  Nora gains a canonical visual identity: an appearance doctrine file
+  (appearance.md, kind: identity) describing her look, ONE canonical media
+  asset marked provenance.role=self (v1 pins no operator asset — operator
+  decision 2026-09-16), a narrow custody exemption so that handle resolves
+  in any conversation, and doctrine-driven reference rules including a
+  deterministic no-guess rule for ambiguous user photos — which is the sole
+  cover for the operator-photo ambiguity class in v1, since no operator
+  handle is pinned. Addresses the 2026-08-27 cow-avatar failure (Nora
+  confused a 牛來 meme with Miles's avatar when asked to merge his photo
+  into a rainy scene).
+status: proposed
+decisions:
+  reserved: "DEC-193 — CLAIMED AT MERGE. Registered in design/09-decision-index.md and marked 'Designed, not built': no doctrine file, no resolver code and no test exists for it yet. Drafted as DEC-139, renumbered 141 -> 193 (master already held 141-144, the trace series)."
+  index: null
+governance: pre-governance-input
+timestamp: '2026-08-27'
+revision: '2026-08-27 — adversarial review (Hermes delegate) of the earlier single-file draft returned REQUEST CHANGES; all findings addressed: operator canonical asset added + deterministic no-guess rule (03), test_doctrine_assembly.py added to files-touched (04), authority fields specified (01), ingest-before-doctrine ordering + handle-pinning test (02, 04), resolver precedence pinned (02), 3-slot cap relabelled tool-surface convention (01), no-migration wording (02), appearance tag-only mirroring silence (04). Restructured from a single proposed/ document into this bundle (Miles: design bundle, not design document).'
+revision_2026_09_16: 'Scope narrowed to self-only (operator: 「no need operator, just nora」) — the operator canonical asset is dropped from v1 and the operator-photo ambiguity class is carried by the ask rule alone; the canonical self image (assets/nora-canonical-self.png, 1024x1536, sha256 4b8825fe…) is accepted and the multi-panel sheet is reclassified as the descriptive source, not an asset.'
+origin: "self-reference design discussion with miles after the 2026-08-27 cow-avatar image failure"
+members:
+  - 00-overview.md
+  - 01-appearance-doctrine.md
+  - 02-canonical-assets.md
+  - 03-reference-rules.md
+  - 04-tests-and-files.md
+edges:
+  - {src: 01-appearance-doctrine, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 02-canonical-assets, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 03-reference-rules, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 03-reference-rules, dst: 02-canonical-assets, rel: depends_on, provenance: asserted}
+  - {src: 04-tests-and-files, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 04-tests-and-files, dst: 01-appearance-doctrine, rel: depends_on, provenance: asserted}
+  - {src: 04-tests-and-files, dst: 02-canonical-assets, rel: depends_on, provenance: asserted}
+  - {src: 04-tests-and-files, dst: 03-reference-rules, rel: depends_on, provenance: asserted}
+scope:
+  v1:
+    - "appearance.md doctrine file (kind: identity, order 15) describing Nora's visual form + recognition/conflict rules"
+    - "One canonical media asset marked provenance.role=self via the operator ingest script (no operator asset in v1)"
+    - "Resolver custody exemption: the canonical-role row resolves cross-conversation; conversation-first precedence; full-sha canonical matching"
+    - "Doctrine reference rules incl. deterministic no-guess rule for ambiguous user photos"
+    - "Doctrine/test updates: test_doctrine_content/assembly/audiences include appearance.md"
+  deferred:
+    - "Any other canonical character assets (video, pets, etc.) — the role pattern extends naturally, future DEC"
+    - "Tool-level intent detection for draw-self (rejected: pronoun ambiguity, slot cost)"
+    - "appearance.md for heartbeat audiences (default [tag] only)"

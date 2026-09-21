@@ -113,6 +113,13 @@ export function createController({
       channel_id: lifecycle.channelId(),
       playback_id: a.playback_id,
       player: a.player,
+      // Ground truth for "is sound actually moving", alongside
+      // `player.position_ms`: see the arbiter's snapshot for why status
+      // alone cannot answer it.
+      autopaused: a.autopaused,
+      subscribers: a.subscribers,
+      playable: a.playable,
+      pending_reaps: a.pending_reaps,
       speech_queue: a.speech_queue,
       crossfade_seconds: 0,
     };

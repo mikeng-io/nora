@@ -232,6 +232,25 @@ def _tracked_markdown_files() -> list[str]:
 # the operator; do not mass-rewrite the docs to clear it, and do not add to it
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
+    # --- the self-reference bundle, DEC-193 (merged 2026-09-22) ---
+    #
+    # Both are this gate's own stated case: "a design brief predating the code
+    # it describes, not a broken link to fix by editing prose". DEC-193 is
+    # registered and marked **Designed, not built** — nothing in the bundle
+    # exists as code, so its forward references cannot resolve yet, and
+    # rewriting them to pretend otherwise is the opposite of the fix.
+    #
+    # DROP EACH LINE when the file lands; the gate checks a fixed pin is
+    # removed, so neither can rot here silently.
+    ("design/self-reference/02-canonical-assets.md", "scripts/ingest_self_asset.py"): (
+        "not built — the operator ingest script DEC-193 owes; drop this pin "
+        "when it lands (design/self-reference/04-tests-and-files.md)"
+    ),
+    ("design/self-reference/00-overview.md", "design/proposed/31-self-reference.md"): (
+        "the single-file draft this bundle replaced; deleted when it was "
+        "restructured into design/self-reference/, and the line records that "
+        "history (see _index.yaml `revision`)"
+    ),
     # --- the one-path rebuild, 2026-09-21 (design/evaluation/11 §1.3) ---
     #
     # The old harness `evals/rebuilt/runner.py` and the pre-port corpus copies

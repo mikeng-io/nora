@@ -75,6 +75,29 @@ class _HistogramSpec(NamedTuple):
 # was invisible in the other three): nora_tags_total, nora_replies_total,
 # nora_silent_failures_total, nora_errors_total.
 _COUNTERS: tuple[_CounterSpec, ...] = (
+    # Music liveness (2026-09-22). There was NO music metric of any kind
+    # before this — not "not collected", never declared — so no alert rule
+    # could exist and a wedged controller sat green for days. This is the
+    # series that makes "the room is hearing nothing" alertable.
+    #
+    # `verdict` is the decided answer, not a raw state: ok | wedged | ended |
+    # paused | unknown. `unknown` is its own value and must never be read as
+    # healthy — it means nora could not reach the controller at all.
+    _CounterSpec(
+        "nora_music_liveness_total",
+        "Music liveness polls, by decided verdict "
+        "(ok|wedged|ended|paused|unknown). A wedged verdict means nora "
+        "believes a track is playing and the controller is provably "
+        "producing no sound; unknown means she could not read it.",
+        ("guild_id", "verdict"),
+    ),
+    _CounterSpec(
+        "nora_music_stream_failed_total",
+        "Streams that failed after nora believed they were playing, by "
+        "reason. Carries the controller's own reason string, plus the "
+        "liveness-* reasons the watch raises itself.",
+        ("guild_id", "reason"),
+    ),
     _CounterSpec("nora_messages_total", "Ambient messages ingested, by platform.", ("platform",)),
     _CounterSpec(
         "nora_tags_total", "Tags detected and accepted for handling.", ("platform",),
@@ -2082,6 +2105,23 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
+    # The divergence itself, which IS the failure rather than a proxy for
+    # it: nora's belief on one side, the controller's own report on the
+    # other. Both 1 = agreement. expected=1 with controller=0 sustained is
+    # the shape that went unnoticed for days.
+    _GaugeSpec(
+        "nora_music_expected_playing",
+        "1 when nora believes a track is currently playing for the guild.",
+        ("guild_id",),
+    ),
+    _GaugeSpec(
+        "nora_music_controller_playing",
+        "1 when the audio controller reports audio actually moving for the "
+        "guild (status playing, position advancing, not autopaused). 0 when "
+        "it reports otherwise. ABSENT, never 0, when nora could not read it "
+        "— a gauge that cannot be measured must not assert a value.",
+        ("guild_id",),
+    ),
     _GaugeSpec(
         "nora_standing_watermark_gap",
         "Rows behind a conversation's standing watermark, as the event "

@@ -7,6 +7,8 @@ accounting turns a NAMED test red.
 """
 
 import numpy as np
+import pytest
+
 from wakegate.audio import OWW_CHUNK
 from wakegate.gate import WakeGate
 
@@ -155,3 +157,45 @@ def test_flush_while_listening_is_a_no_op():
     gate.feed(LOUD)
     assert gate.flush() is None
     assert not gate.collecting
+
+
+def test_the_listening_peak_is_reported_and_reset_so_a_silent_gate_is_measurable():
+    """A gate that never fires must still say what it is SEEING.
+
+    Four days of live running produced 37 armed gates and 0 fires, with no
+    number anywhere to say whether the model was scoring near-misses or
+    scoring nothing — and those two need opposite fixes. The peak over a
+    window is that number.
+    """
+    scores = iter([0.02, 0.41, 0.07, 0.0, 0.0])
+    gate = WakeGate(score=lambda _chunk: next(scores), threshold=0.5)
+    chunk = np.zeros(OWW_CHUNK, dtype=np.int16)
+
+    for _ in range(3):
+        assert gate.feed(chunk) is None  # nothing crossed 0.5
+
+    # The near-miss is visible even though the gate never fired.
+    assert gate.take_listening_peak() == pytest.approx(0.41)
+    assert gate.last_score == pytest.approx(0.07)
+
+    # Taking it resets the window, so the next report is about the next
+    # window and not a running maximum that can never come back down.
+    for _ in range(2):
+        gate.feed(chunk)
+    assert gate.take_listening_peak() == pytest.approx(0.0)
+
+
+def test_the_listening_peak_ignores_scores_seen_while_collecting():
+    """Every chunk is scored, including during COLLECTING, but only LISTENING
+    scores answer "would this have woken her" — the rest are the tail of an
+    utterance already being captured."""
+    scores = iter([0.9, 0.99, 0.95])
+    gate = WakeGate(score=lambda _chunk: next(scores), threshold=0.5, silence_tail_chunks=99)
+    chunk = np.zeros(OWW_CHUNK, dtype=np.int16)
+
+    gate.feed(chunk)  # 0.9 -> crosses, LISTENING peak is 0.9
+    assert gate.collecting
+    gate.feed(chunk)  # 0.99 while COLLECTING — must not raise the peak
+    gate.feed(chunk)  # 0.95 while COLLECTING
+
+    assert gate.take_listening_peak() == pytest.approx(0.9)

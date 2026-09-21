@@ -10,6 +10,8 @@ edges:
   - {dst: 08-state, rel: extends, provenance: asserted}
 ---
 
+> **PARTLY DEPRECATED 2026-09-16 — §5.4's dateless aging describes a lane the tier is now organised AROUND, not an exception to a dated one.** §5.4 reads «no anchor, so expiry does nothing» as a gap in a date-based architecture; the operator's 2026-09-16 reframe makes time an optional PROPERTY of a note rather than the tier's axis, so a dateless note is an ordinary note and the strike ceiling is its lane's own retirement route rather than a fallback. §5.3's `revisit_at` policy and §5.5's metrics are unaffected and are exactly what the dateless lane runs on. The evidence that decided it is in [41-note-tier-time-is-optional.md](41-note-tier-time-is-optional.md) §0–§3.2, which also records that the retirement ACTION at the ceiling still does not exist — `nora.language.note_curator` logs and counts the crossing and does nothing else. See issue #118.
+
 > **PARTLY DEPRECATED 2026-09-08 — the curator's MERGE half is deleted.** §2.1's `merge_groups`, §4.1's first of three reads, §5.1's cap and the M7 note at the end all describe a verb that could not run once the knowledge tier stopped minting entities (`note_entity` never populated, every group refused by construction), and it was removed rather than left wired-and-inert. The consolidation this node argues — the revisitor's selection, evidence grounding and wake/strike bookkeeping folded into the curator — is unaffected and is the whole of what the curator does now.
 
 # The Note Dreamer, Consolidated — Revisitor into Curator

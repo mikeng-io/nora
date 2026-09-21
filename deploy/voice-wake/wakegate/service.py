@@ -42,6 +42,7 @@ from aiohttp import web
 from .audio import BLOCK_48K, OWW_CHUNK, downsample_to_16k, pcm16_to_wav, stereo_to_mono
 from .codec import FrameParser
 from .gate import Utterance, WakeGate
+from .selftest import log_self_test, run_self_test
 from .stt import forward_utterance, transcribe
 
 log = logging.getLogger("wakegate.service")
@@ -88,6 +89,8 @@ class _UserState:
     pending48: np.ndarray  # 48 kHz mono int16 not yet downsampled (< one block)
     frames: int = 0
     bytes_in: int = 0
+    chunks: int = 0            # 80 ms blocks actually scored
+    reported_chunks: int = 0   # chunks at the last scoring report
     wakes: int = 0
     utterances: int = 0
     last_seen: float = field(default_factory=time.time)
@@ -105,6 +108,15 @@ def _load_model(model_path: str):
     return Model(wakeword_model_paths=[model_path])
 
 
+#: 80 ms chunks per scoring report — 50 is one line per 4 s of speech per
+#: speaker, enough to see a near-miss and too few to drown the log.
+_SCORE_REPORT_CHUNKS = 50
+
+#: Seconds between `wake summary` lines. Five minutes: frequent enough that a
+#: dead gate is visible the same day, rare enough to grep a week of them.
+_SUMMARY_INTERVAL_S = 300.0
+
+
 class WakeService:
     def __init__(self, config: Config) -> None:
         self._cfg = config
@@ -118,6 +130,8 @@ class WakeService:
         self._clients = 0
         self._server: asyncio.AbstractServer | None = None
         self._model_available = Path(config.model_path).is_file()
+        self._selftest = None  # SelfTestResult once boot has run it
+        self._last_summary = 0.0
         if not self._model_available:
             log.warning("wake model %s absent — scoring disabled (healthy-but-idle)",
                         config.model_path)
@@ -171,10 +185,34 @@ class WakeService:
             block, state.pending48 = state.pending48[:BLOCK_48K], state.pending48[BLOCK_48K:]
             chunk = downsample_to_16k(block)
             assert chunk.size == OWW_CHUNK
+            state.chunks += 1
             utterance = state.gate.feed(chunk)
             if utterance is not None:
                 self._fire(key, utterance, state)
+        self._report_scoring(key, state)
         self._arm_inactivity(key, state)
+
+    def _report_scoring(self, key: tuple[str, str], state: _UserState) -> None:
+        """What the model is SEEING, sampled.
+
+        The gate scored every chunk and reported nothing unless it crossed the
+        threshold, so a gate that stopped firing was indistinguishable from a
+        gate hearing nothing: 37 arms and 0 fires over four days with no number
+        anywhere to say which. The peak over a window separates the two cases
+        that need opposite fixes -- a peak near 0 means the audio reaching the
+        model is not speech (a pipeline fault), a peak just under the threshold
+        means it is speech the model nearly matched (a model or mic fault).
+
+        Sampled per window, never per chunk: one line every 80 ms would be
+        12.5 lines a second per speaker."""
+        if state.chunks - state.reported_chunks < _SCORE_REPORT_CHUNKS:
+            return
+        state.reported_chunks = state.chunks
+        peak = state.gate.take_listening_peak()
+        log.info(
+            "wake scoring: user=%s guild=%s chunks=%d window_peak=%.3f threshold=%.2f",
+            key[1], key[0], state.chunks, peak, self._cfg.threshold,
+        )
 
     def _fire(self, key: tuple[str, str], utterance: Utterance, state: _UserState) -> None:
         state.wakes += 1
@@ -293,6 +331,10 @@ class WakeService:
             # what it was doing.
             "guilds": sorted({g for g, _ in self._users}),
             "uptime_seconds": round(time.time() - self._started_at, 1),
+            # Whether a KNOWN wake clip still wakes this process. `status:
+            # "fail"` with everything else green is the exact state that went
+            # unnoticed for three days in Sep 2026.
+            "selftest": self._selftest.as_json() if self._selftest is not None else None,
             "users": {
                 f"{guild_id}/{user_id}": {
                     "frames": s.frames,
@@ -306,6 +348,65 @@ class WakeService:
 
     # --- lifecycle ----------------------------------------------------------
 
+    async def _run_boot_self_test(self) -> None:
+        """Prove the wake path can wake, once, before any user speaks.
+
+        Uses the REAL model and the real conditioning — see selftest.py for
+        why a stub would defeat the purpose. Never fatal: a gate that cannot
+        self-test still serves, and the operator's signal is the log line and
+        /health rather than a crash loop that would destroy the evidence."""
+        if not self._model_available:
+            return  # healthy-but-idle: there is no scorer to test
+        try:
+            model = await asyncio.to_thread(_load_model, self._cfg.model_path)
+
+            def score(chunk: np.ndarray, _model=model) -> float:
+                return float(list(_model.predict(chunk).values())[0])
+
+            self._selftest = await asyncio.to_thread(
+                run_self_test, score=score, threshold=self._cfg.threshold,
+            )
+        except Exception as exc:  # noqa: BLE001
+            from .selftest import SelfTestResult
+
+            self._selftest = SelfTestResult(
+                status="error", peak=0.0, threshold=self._cfg.threshold,
+                detail=f"self-test could not run: {type(exc).__name__}: {exc}",
+                elapsed_ms=0.0,
+            )
+        log_self_test(self._selftest)
+
+    def _log_summary(self) -> None:
+        """One greppable line saying whether the feature is alive.
+
+        `wake summary` answers "is it dead?" without correlating anything: a
+        line with arms climbing and wakes stuck at 0 IS the failure, and it is
+        emitted whether or not anyone is speaking."""
+        now = time.time()
+        if now - self._last_summary < _SUMMARY_INTERVAL_S:
+            return
+        self._last_summary = now
+        arms = sum(1 for _ in self._users)
+        log.info(
+            "wake summary: gates=%d clients=%d frames=%d chunks=%d wakes=%d "
+            "utterances=%d selftest=%s uptime_s=%d",
+            arms, self._clients,
+            sum(s.frames for s in self._users.values()),
+            sum(s.chunks for s in self._users.values()),
+            sum(s.wakes for s in self._users.values()),
+            sum(s.utterances for s in self._users.values()),
+            self._selftest.status if self._selftest is not None else "none",
+            round(now - self._started_at),
+        )
+
+    async def _summary_loop(self) -> None:
+        while True:
+            await asyncio.sleep(_SUMMARY_INTERVAL_S)
+            try:
+                self._log_summary()
+            except Exception:  # noqa: BLE001 — telemetry must never kill the seam
+                log.exception("wake summary failed")
+
     async def run(self) -> None:
         health_app = web.Application()
         health_app.router.add_get("/health", lambda request: web.json_response(self._health_payload()))
@@ -316,6 +417,11 @@ class WakeService:
             self._on_client, self._cfg.listen_host, self._cfg.listen_port,
         )
         asyncio.create_task(self._reap_idle_users())
+        asyncio.create_task(self._summary_loop())
+        # AFTER the listeners are up: the seam must not miss a sidecar that
+        # reconnects while the model is loading, and /health must answer
+        # during it. The result lands in the log and /health when it lands.
+        asyncio.create_task(self._run_boot_self_test())
         log.info(
             "wake gate listening on %s:%s (model %s, threshold %.2f, -> %s)",
             self._cfg.listen_host, self._cfg.listen_port,
