@@ -1,4 +1,4 @@
 {
   "type": "none",
-  "reason": "A design bundle and one decision-index row. No code, no doctrine file, no test — DEC-193 is registered and explicitly marked 'Designed, not built'. Nothing a member of a room can observe."
+  "reason": "A design bundle, one decision-index row, and two pins in an architecture gate's known-dangling list. No runtime code, no doctrine file, no behaviour — DEC-193 is registered and explicitly marked 'Designed, not built'. Nothing a member of a room can observe."
 }
