@@ -35,7 +35,7 @@ from nora.domain.ports import MediaSource, PlatformAdapter, PlatformIdentity
 from nora.infra.voice.hub import VoiceControllerHub
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.music_manager import MusicPlayerManager
-from nora.platform.discord.music_notify import ResolveMusicChannel, no_music_room
+from nora.platform.discord.music_notify import ResolveMusicChannel, no_music_channel
 from nora.platform.signal.account import AccountError, derive_account
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.self_id import MetricsSink
@@ -127,7 +127,7 @@ class AdapterRegistry:
         discord_speaker: Any = None,
         voice_hub: VoiceControllerHub | None = None,
         voice_guild_ids: frozenset[str] = frozenset(),
-        resolve_music_channel: ResolveMusicChannel = no_music_room,
+        resolve_music_channel: ResolveMusicChannel = no_music_channel,
     ) -> AdapterRegistry:
         """Build+resolve every enabled platform — Signal, Discord, WhatsApp;
         each one more `if platforms.<x>.enabled:` block, not a rewrite of this
@@ -158,9 +158,9 @@ class AdapterRegistry:
 
         `resolve_music_channel` (design/discord-music/10-notification-routing.md)
         maps a guild id to the channel its music announcements belong in, from
-        `policy.toml`'s `music = true`. Threaded, never consulted here — same
-        posture as `music_manager`. The default answers `None` for every
-        guild, which is the pre-flag behaviour (announce where the session
+        a `policy.toml` room's `music_channel`. Threaded, never consulted here
+        — same posture as `music_manager`. The default answers `None` for every
+        guild, which is the pre-field behaviour (announce where the session
         started), so a harness that builds a registry without it is
         unaffected."""
         adapters: dict[str, PlatformAdapter] = {}

@@ -474,74 +474,118 @@ def test_voice_defaults_to_false(tmp_path):
     assert all(not c.voice for c in policy.conversations)
 
 
-# --- `music = true` -----------------------------------------------------------
-# design/discord-music/10-notification-routing.md: a guild's music
-# ANNOUNCEMENTS are posted in the ONE room that claims them, resolved by GUILD.
-# The same shape as `voice = true` above, with one deliberate difference — an
-# unclaimed guild falls BACK (announce where the session started) rather than
-# refusing, which is why `test_an_unmarked_guild_has_no_music_room` reads
-# differently from its voice twin.
+# --- `music_channel` ----------------------------------------------------------
+# design/discord-music/10-notification-routing.md: a guild's music ANNOUNCEMENTS
+# are posted in the SIBLING channel one of its rooms names, resolved by GUILD.
+#
+# A FIELD, not a `voice = true`-style flag, and the two reasons are what these
+# tests are really pinning: a dedicated music channel is not the discussion
+# room, so a flag would need a SECOND room per guild — DEC-105 forbids it, and
+# a listed room is a room Nora RECORDS.
 
 MUSIC_GUILD = "100000000000000203"
-MUSIC_ROOM = f"{MUSIC_GUILD}/100000000000000204"
+MUSIC_DECLARING_ROOM = f"{MUSIC_GUILD}/100000000000000204"
+MUSIC_CHANNEL = "1480387369830973999"
 
 
-def _music_toml(*, extra: str = "", music_line: str = "music = true") -> str:
+def _music_toml(
+    *, extra: str = "", music_line: str = f'music_channel = "{MUSIC_CHANNEL}"',
+) -> str:
     return f"""
 default = "deny"
 
 [[conversations]]
 platform = "discord"
-id       = "{MUSIC_ROOM}"
-label    = "Ridgeline #music"
+id       = "{MUSIC_DECLARING_ROOM}"
+label    = "Ridgeline #discussion"
 persons  = ["miles"]
 {music_line}
 {extra}
 """
 
 
-def test_a_guilds_music_resolves_to_the_room_that_claims_it(tmp_path):
+def test_a_guilds_music_resolves_to_the_channel_its_room_names(tmp_path):
     policy = load_policy(_write(tmp_path, _music_toml()))
 
-    room = policy.music_room("discord", MUSIC_GUILD)
-
-    assert room is not None
-    assert room.primary_id == MUSIC_ROOM
-    assert room.music is True
+    assert policy.music_channel_for("discord", MUSIC_GUILD) == MUSIC_CHANNEL
 
 
-def test_an_unmarked_guild_has_no_music_room(tmp_path):
+def test_a_music_channel_that_is_itself_a_listed_room_refuses_to_start(tmp_path):
+    """The invariant the whole field-vs-flag argument rests on, ENFORCED
+    rather than documented. A `[[conversations]]` entry answers questions
+    about people; an announcement channel is written to and never read, so
+    pointing one at a listed room puts the announcements back inside ingest
+    and makes the argument false.
+
+    This replaces a test that asserted the same property by comparing two of
+    this module's own literals — it could not fail, and meanwhile the loader
+    accepted exactly the configuration it claimed was impossible (audit,
+    2026-09-21)."""
+    extra = f"""
+[[conversations]]
+platform = "discord"
+id       = "{MUSIC_GUILD}/{MUSIC_CHANNEL}"
+label    = "Ridgeline #music, listed by mistake"
+persons  = ["miles"]
+"""
+    with pytest.raises(PolicyError, match="itself a listed conversation"):
+        load_policy(_write(tmp_path, _music_toml(extra=extra)))
+
+
+def test_the_declaring_rooms_own_channel_is_refused_too(tmp_path):
+    """The declaring room is a listed conversation like any other, so naming
+    its own channel hits the same refusal. Not a special case — the rule is
+    "the destination is not a room", and the room writing the line is one."""
+    own_channel = MUSIC_DECLARING_ROOM.partition("/")[2]
+    with pytest.raises(PolicyError, match="itself a listed conversation"):
+        load_policy(
+            _write(tmp_path, _music_toml(music_line=f'music_channel = "{own_channel}"')),
+        )
+
+
+def test_the_destination_is_not_a_listed_room_in_the_accepted_case(tmp_path):
+    """The positive half of the refusal above: what a VALID config resolves to
+    is a channel this file does not list."""
+    policy = load_policy(_write(tmp_path, _music_toml()))
+
+    resolved = policy.music_channel_for("discord", MUSIC_GUILD)
+
+    assert resolved == MUSIC_CHANNEL
+    assert policy.conversation("discord", f"{MUSIC_GUILD}/{resolved}") is None
+
+
+def test_an_unset_guild_has_no_music_channel(tmp_path):
     """`None` is the FALLBACK, not a refusal (contrast `voice_room`): the
     announcement goes to the channel the session started in, which is what
-    every deployment did before this flag existed."""
+    every deployment did before this field existed."""
     policy = load_policy(_write(tmp_path, _music_toml(music_line="")))
 
-    assert policy.music_room("discord", MUSIC_GUILD) is None
+    assert policy.music_channel_for("discord", MUSIC_GUILD) is None
 
 
-def test_a_different_guild_has_no_music_room(tmp_path):
+def test_a_different_guild_has_no_music_channel(tmp_path):
     policy = load_policy(_write(tmp_path, _music_toml()))
 
-    assert policy.music_room("discord", "999999999999999999") is None
+    assert policy.music_channel_for("discord", "999999999999999999") is None
 
 
-def test_two_music_rooms_in_one_guild_refuse_to_start(tmp_path):
-    """A guild has one voice connection and one player, so two rooms claiming
-    its announcements is the operator having written two answers — refused at
-    startup rather than resolved by picking the first."""
+def test_two_rooms_naming_a_music_channel_in_one_guild_refuse_to_start(tmp_path):
+    """A guild has one voice connection and one player, so two answers to
+    "where do its announcements go" is the operator having written two —
+    refused at startup rather than resolved by picking the first."""
     extra = f"""
 [[conversations]]
 platform = "discord"
 id       = "{MUSIC_GUILD}/1785459208793411409"
 label    = "Ridgeline #other"
 persons  = ["miles"]
-music = true
+music_channel = "1154499909661864825"
 """
-    with pytest.raises(PolicyError, match="two music rooms"):
+    with pytest.raises(PolicyError, match="two music channels"):
         load_policy(_write(tmp_path, _music_toml(extra=extra)))
 
 
-def test_music_on_a_non_discord_room_refuses_to_start(tmp_path):
+def test_music_channel_on_a_non_discord_room_refuses_to_start(tmp_path):
     body = f"""
 default = "deny"
 
@@ -550,71 +594,145 @@ platform = "signal"
 id       = "{GROUP}"
 label    = "Ridgeline"
 persons  = ["miles"]
-music = true
+music_channel = "{MUSIC_CHANNEL}"
 """
     with pytest.raises(PolicyError, match="no other platform"):
         load_policy(_write(tmp_path, body))
 
 
-def test_music_on_an_id_without_a_guild_half_refuses_to_start(tmp_path):
-    """The guild half matches the session and the channel half receives the
-    post, so a bare id can never be reached — and `_music_channel_of` relies
-    on this refusal to know its partition always yields both."""
-    body = """
-default = "deny"
-
-[[conversations]]
-platform = "discord"
-id       = "100000000000000204"
-label    = "bare channel id"
-persons  = ["miles"]
-music = true
-"""
-    with pytest.raises(PolicyError, match="not \\\"<guild_id>/<channel_id>\\\""):
-        load_policy(_write(tmp_path, body))
-
-
-def test_music_defaults_to_false(tmp_path):
-    """A policy.toml that has never heard of the key loads exactly as before,
-    and claims no guild's announcements."""
-    policy = load_policy(_write(tmp_path, TOML))
-
-    assert all(not c.music for c in policy.conversations)
-
-
-def test_voice_and_music_can_name_different_rooms_in_one_guild(tmp_path):
-    """The two flags are independent grants over the same guild: speech is
-    RECORDED in the room that holds the conversation, and announcements can be
-    posted somewhere they will not interrupt it. Nothing couples them, and a
-    startup error for the pair would be inventing a constraint."""
+@pytest.mark.parametrize(
+    "declaring_id",
+    [
+        "100000000000000204",   # no guild half at all
+        "/100000000000000204",  # empty guild half
+        "100000000000000203/",  # empty CHANNEL half — the asymmetry the audit
+                                 # found: the voice block refused this and the
+                                 # music block did not, so `id = "<guild>/"`
+                                 # could declare a music_channel
+    ],
+)
+def test_a_malformed_declaring_room_id_refuses_to_start(tmp_path, declaring_id):
+    """The DECLARING room's guild half is what a playing session matches on,
+    and its channel half is what makes it a reachable room at all."""
     body = f"""
 default = "deny"
 
 [[conversations]]
 platform = "discord"
-id       = "{MUSIC_GUILD}/100000000000000204"
-label    = "Ridgeline #discussion"
+id       = "{declaring_id}"
+label    = "malformed"
 persons  = ["miles"]
-voice = true
-
-[[conversations]]
-platform = "discord"
-id       = "{MUSIC_GUILD}/1785459208793411409"
-label    = "Ridgeline #music"
-persons  = ["miles"]
-music = true
+music_channel = "{MUSIC_CHANNEL}"
 """
-    policy = load_policy(_write(tmp_path, body))
-
-    voice = policy.voice_room("discord", MUSIC_GUILD)
-    music = policy.music_room("discord", MUSIC_GUILD)
-
-    assert voice is not None and music is not None
-    assert voice.primary_id != music.primary_id
+    with pytest.raises(PolicyError, match='not \\"<guild_id>/<channel_id>\\"'):
+        load_policy(_write(tmp_path, body))
 
 
-def test_the_permissive_policy_claims_no_music_room(tmp_path):
+#: Arabic-Indic digits spelling a plausible snowflake. `str.isdigit()` says yes
+#: AND `int()` parses them, so under the first implementation this routed —
+#: silently, while reading as something else entirely.
+_ARABIC_INDIC = "".join(chr(0x660 + int(d)) for d in "148038736983097399")
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        f"{MUSIC_GUILD}/{MUSIC_CHANNEL}",  # a pair would post outside this guild
+        "#music",                          # a name is not a stable id
+        "music",
+        "1480387369830973999x",            # not all digits
+        "\u00b2",                              # superscripts: `str.isdigit()` said YES and
+        "\u00b9\u00b2\u00b3",                            # `int()` says no, so the line could never
+                                           # route and failed at send time looking exactly
+                                           # like a deleted channel — PASS standing in for
+                                           # ERROR (audit, 2026-09-21)
+        _ARABIC_INDIC,
+        "0",                               # parses; too short to be a snowflake
+        "1" * 30,                          # parses; too long
+    ],
+)
+def test_a_music_channel_that_is_not_a_bare_snowflake_refuses_to_start(tmp_path, bad):
+    """ASCII decimal digits, 17-20 of them. The `<guild>/<channel>` pair is
+    the dangerous-looking one — it reads plausibly — but the digit-lookalikes
+    are the ones that got past `str.isdigit()`, which is what this replaced."""
+    with pytest.raises(PolicyError, match="not a Discord channel id"):
+        load_policy(_write(tmp_path, _music_toml(music_line=f'music_channel = "{bad}"')))
+
+
+@pytest.mark.parametrize("length", [17, 18, 19, 20])
+def test_a_snowflake_of_plausible_length_is_accepted(tmp_path, length):
+    """The boundary, stated: 17-20 digits inclusive. A 19-digit string of
+    zeros is SHAPE-valid and deliberately accepted — it names no channel, but
+    that is a send-time fact the fallback covers, not something the loader can
+    know."""
+    value = "1" + "0" * (length - 2) + "9"
+    policy = load_policy(
+        _write(tmp_path, _music_toml(music_line=f'music_channel = "{value}"')),
+    )
+
+    assert policy.music_channel_for("discord", MUSIC_GUILD) == value
+
+
+def test_the_loader_and_the_sender_agree_on_what_a_snowflake_is():
+    """Two copies of the predicate exist because `nora.policy` and
+    `nora.platform` may not import each other (the import-linter contract).
+    Two copies drift, so this is the test that says they have not: the loader
+    must never accept a value the sender will refuse, which would be a startup
+    PASS for a line that can never route."""
+    from nora.platform.discord.music_notify import is_snowflake
+    from nora.policy import _is_snowflake
+
+    cases = [
+        "1" * 17, "1" * 20, "1" * 16, "1" * 21, "0", "", "12x", "\u00b2",
+        _ARABIC_INDIC, "1480387369830973999",
+    ]
+    assert [_is_snowflake(c) for c in cases] == [is_snowflake(c) for c in cases]
+
+
+def test_surrounding_whitespace_is_stripped_not_refused(tmp_path):
+    """`music_channel = " 155... "` is a copy-paste, not an error. The same
+    validator that turns `""` into absent strips this first, so the snowflake
+    check never sees the whitespace — otherwise a stray space would refuse
+    startup over a correct id."""
+    policy = load_policy(
+        _write(tmp_path, _music_toml(music_line=f'music_channel = " {MUSIC_CHANNEL} "')),
+    )
+
+    assert policy.music_channel_for("discord", MUSIC_GUILD) == MUSIC_CHANNEL
+
+
+def test_a_blank_music_channel_is_absent_not_an_error(tmp_path):
+    """`music_channel = ""` is the operator writing nothing. Two spellings of
+    "no destination" is how one of them reaches the snowflake check and
+    refuses startup over a line that meant nothing."""
+    policy = load_policy(_write(tmp_path, _music_toml(music_line='music_channel = ""')))
+
+    assert policy.music_channel_for("discord", MUSIC_GUILD) is None
+
+
+def test_music_channel_defaults_to_absent(tmp_path):
+    """A policy.toml that has never heard of the key loads exactly as before,
+    and claims no guild's announcements."""
+    policy = load_policy(_write(tmp_path, TOML))
+
+    assert all(c.music_channel is None for c in policy.conversations)
+
+
+def test_one_room_can_carry_both_voice_and_a_music_channel(tmp_path):
+    """The realistic deployment, and the shape a flag could not express: the
+    guild's ONE room records its speech AND names where announcements go,
+    without the guild gaining a second room in its unit (DEC-105)."""
+    policy = load_policy(
+        _write(tmp_path, _music_toml(extra="voice = true")),
+    )
+
+    assert policy.voice_room("discord", MUSIC_GUILD) is not None
+    assert policy.music_channel_for("discord", MUSIC_GUILD) == MUSIC_CHANNEL
+    assert len(policy.conversations) == 1
+
+
+def test_the_permissive_policy_names_no_music_channel(tmp_path):
     """`permissive_policy` overrides `voice_room` because `None` there would
-    refuse; it deliberately does NOT override `music_room`, because `None`
-    here is the fallback a harness wants."""
-    assert permissive_policy().music_room("discord", MUSIC_GUILD) is None
+    refuse; it deliberately does NOT override `music_channel_for`, because
+    `None` here is the fallback a harness wants."""
+    assert permissive_policy().music_channel_for("discord", MUSIC_GUILD) is None

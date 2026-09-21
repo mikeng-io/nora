@@ -54,6 +54,13 @@ this bundle, both accepted rather than solved:
 
 ## Auto-advance posts a "Now playing" notification, to the channel it started in
 
+**SUPERSEDED for an opted-in guild, 2026-09-21 — `10-notification-routing.md`.**
+The "whichever text channel the session's first `/music play` was invoked
+from" rule below is now the FALLBACK, not the destination: a guild one of
+whose `policy.toml` rooms names a `music_channel` announces there instead,
+resolved per-post in `music_notify.make_notify` rather than captured at
+session start. A guild naming none behaves exactly as written below.
+
 Every slash command already replies in Discord (`/music play`, `/music
 skip`, ...) — the one transition with no reply of its own is a track
 finishing NATURALLY and the next one auto-starting (`MusicPlayer.

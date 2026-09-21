@@ -1233,10 +1233,29 @@ async def build_dependencies(cfg: Config) -> Dependencies:
     )
     # Where a guild's music ANNOUNCEMENTS go (design/discord-music/
     # 10-notification-routing.md). Built from the room policy, not from
-    # `cfg.music`: the answer is a room, so it belongs beside the room's
-    # trust flags — and routing through `policy.toml` is what makes the
-    # announcement channel one Nora is already allowed to speak in.
+    # `cfg.music`: the answer is about a room's people, so it belongs beside
+    # the room's trust flags. The channel it names is a DESTINATION, not a
+    # room — see `Conversation.music_channel` for why a room entry was wrong.
     resolve_music_channel = _music_channel_of(allowlist)
+    # A `music_channel` named for a guild that has no audio-controller is DEAD
+    # CONFIGURATION: `[speech.tts] sidecars` — not `policy.toml` — is what
+    # gates `/music play` (`voice_gate`), so nothing will ever announce for
+    # that guild. Both values are in scope here, seventeen lines apart, and
+    # neither was checked (audit, 2026-09-21). A warning rather than a startup
+    # error: the two files legitimately change on different cadences, and an
+    # operator who names the channel before wiring the sidecar has written
+    # something correct-but-early, not something wrong.
+    for convo in allowlist.conversations:
+        if convo.music_channel is None:
+            continue
+        music_guild, _, _ = convo.primary_id.partition("/")
+        if music_guild not in voice_guild_ids:
+            log.warning(
+                "%s names music_channel %s but guild %s has no audio-controller "
+                "in [speech.tts] sidecars — music cannot play there, so the "
+                "channel will never be announced into",
+                convo.label or convo.primary_id, convo.music_channel, music_guild,
+            )
     try:
         registry = await AdapterRegistry.from_config(
             cfg.platforms, metrics=metrics, discord_token=discord_token,
@@ -3870,22 +3889,13 @@ def _music_channel_of(policy: Policy) -> Callable[[str], str | None]:
     """A Discord `guild_id` → the CHANNEL id its music announcements are
     posted in, or `None` (design/discord-music/10-notification-routing.md).
 
-    Returns the channel half, not the `conversation_id`, because the consumer
-    is `discord.Client.get_channel` — `_voice_room_of` returns the whole id
-    because ITS consumer records a room. Same free-function-so-the-`None`-
-    branch-is-nameable reason, and `None` means something different here: not
-    a refusal but the fallback to where the session started, which
-    `music_notify.make_notify` holds.
-
-    `load_policy` has already refused two rooms claiming one guild and any
-    `music = true` id without a `<guild>/<channel>` shape, so the partition
-    below cannot come back empty for a room that reached here."""
+    A thin bind of `Policy.music_channel_for`, for `_voice_room_of`'s reason:
+    the platform layer must not learn that `nora.policy` exists, and the
+    `None` branch has to be nameable. `None` means something different here
+    than in `_voice_room_of` — not a refusal but the fallback to where the
+    session started, which `music_notify.make_notify` holds."""
 
     def _resolve(guild_id: str) -> str | None:
-        convo = policy.music_room("discord", guild_id)
-        if convo is None:
-            return None
-        _guild, _, channel_id = convo.primary_id.partition("/")
-        return channel_id or None
+        return policy.music_channel_for("discord", guild_id)
 
     return _resolve

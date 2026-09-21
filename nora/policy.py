@@ -30,6 +30,31 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 EVERYONE = "*"
 
 
+#: A Discord snowflake is a 64-bit id — 17-20 decimal digits in practice. The
+#: length bound is a sanity check on a hand-copied value, not a parser.
+_SNOWFLAKE_DIGITS = range(17, 21)
+
+
+def _is_snowflake(value: str) -> bool:
+    """Whether `value` can name a Discord channel.
+
+    ASCII decimal digits only, and NOT `str.isdigit()` — that was the first
+    implementation and is fail-open in both directions (audit, 2026-09-21):
+    it accepts superscripts (`"²"`), which `int()` then refuses, so a line
+    that can NEVER route passed startup and failed at send time
+    indistinguishably from a deleted channel; and it accepts Arabic-Indic
+    digits, which `int()` DOES parse, so such an id silently routed while
+    reading as something else. `nora.platform.discord.music_notify.
+    is_snowflake` is the same predicate at the other end of the wire — two
+    copies because `nora.policy` and `nora.platform` may not import each
+    other, pinned by a test that asserts they agree."""
+    return (
+        value.isascii()
+        and value.isdecimal()
+        and len(value) in _SNOWFLAKE_DIGITS
+    )
+
+
 class PolicyError(Exception):
     """A policy problem that must stop the process at startup."""
 
@@ -147,8 +172,9 @@ class Conversation:
     # At most one per guild; a second is a startup error, not a guess — the
     # same shape as `home_room`.
     voice: bool = False
-    # WHERE THIS GUILD'S MUSIC NOTIFICATIONS LAND
-    # (design/discord-music/10-notification-routing.md). Default False.
+    # WHERE THIS GUILD'S MUSIC ANNOUNCEMENTS LAND — a SIBLING channel id, not
+    # this room's own (design/discord-music/10-notification-routing.md).
+    # `None` (the default) keeps the where-it-started fallback.
     #
     # The system's own music announcements — `Now playing:` on a natural
     # track-end, `Autoplaying:`, the next track after a skip, the
@@ -159,21 +185,35 @@ class Conversation:
     # unbounded: `/music play` is gated by GUILD, never by room, so the
     # channel it captured need not be an allowlisted room at all.
     #
-    # `music = true` names the channel instead of discovering it. Same shape
-    # as `voice` above and for the same reason — the player is per-GUILD
-    # (Discord allows one voice connection per guild), so "which channel" is
-    # a guild-level question with exactly one answer. Routing through
-    # `policy.toml` rather than `config.toml` additionally makes the answer
-    # a room Nora is already allowed to speak in, by construction.
+    # A FIELD ON THIS ROOM, NOT A FLAG CLAIMING IT. `voice = true`'s shape was
+    # tried first and is wrong here, and only naming a real channel showed it
+    # (operator, 2026-09-21 — see the design node): a DEDICATED music channel
+    # is by definition NOT the guild's discussion room, so a flag claiming the
+    # declaring room's own channel forces a SECOND `[[conversations]]` entry
+    # per guild.
     #
-    # This is the SYSTEM announcements only. A slash command still replies
-    # where it was invoked (the person who typed it is looking there), and
-    # Nora's conversational reply on the tag path still lands in the room
-    # she was tagged in. Unset leaves the old where-it-started behaviour as
-    # the fallback, so a deployment that never sets it is unchanged.
+    # An announcement destination is an OUTBOUND target, not a conversation.
+    # A `[[conversations]]` entry is a bundle of answers ABOUT PEOPLE —
+    # `persons`, `unit`, `location`, `relevance_gate`, `proactive`,
+    # `home_room` — and every one of them is meaningless for a channel that is
+    # written to and never read. Listing one means inventing trust answers
+    # about a non-conversation; it also puts a second room in the guild's
+    # unit, which DEC-105 says holds at most one room per platform, and makes
+    # Nora RECORD whatever else is said there — her OWN posts are dropped
+    # before ingest (`parser.py`), but nobody else's are, and `persons` gates
+    # ANSWERING rather than recording. That is why the loader REFUSES a `music_channel` that
+    # is itself a listed conversation, rather than merely discouraging it.
     #
-    # At most one per guild; a second is a startup error, not a guess.
-    music: bool = False
+    # Still resolved by GUILD with exactly one answer, because Discord allows
+    # one voice connection per guild and so `MusicPlayerManager` holds one
+    # player per guild: at most one room per guild may carry this, and a
+    # second is a startup error rather than a guess.
+    #
+    # SYSTEM announcements only. A slash command still replies where it was
+    # invoked (the person who typed it is looking there), and Nora's
+    # conversational reply on the tag path still lands in the room she was
+    # tagged in.
+    music_channel: str | None = None
 
 
 @dataclass(frozen=True)
@@ -208,21 +248,29 @@ class Policy:
         silently picked the wrong one."""
         return self._voice_by_guild.get((platform, guild_id))
 
-    def music_room(self, platform: str, guild_id: str) -> Conversation | None:
-        """The room `guild_id`'s music announcements belong in, or `None`.
+    def music_channel_for(self, platform: str, guild_id: str) -> str | None:
+        """The CHANNEL id `guild_id`'s music announcements are posted in, or
+        `None`.
 
-        Unlike `voice_room`, `None` is a FALLBACK rather than a refusal: the
-        music bot worked for weeks before this flag existed, announcing into
-        the channel its session started in, and a guild that has not opted in
-        keeps exactly that behaviour (`design/discord-music/10-notification-
-        routing.md`). Speech has no such prior — there was never a place to
+        Returns the id rather than the declaring `Conversation` — unlike
+        `voice_room`, whose caller records INTO the room it gets back. Here
+        the room is only where the operator wrote the answer down; the answer
+        itself is a sibling channel that is not a room at all (see
+        `Conversation.music_channel`), so handing back the declaring room
+        would invite a caller to treat it as the destination.
+
+        `None` is a FALLBACK rather than a refusal: the music bot worked for
+        weeks before this field existed, announcing into the channel its
+        session started in, and a guild that has not opted in keeps exactly
+        that behaviour. Speech has no such prior — there was never a place to
         put an utterance other than the room the operator named — which is
-        why the two answer `None` differently.
+        why `voice_room`'s `None` is a 400 and this one is not.
 
         Explicit rather than inferred from "the only room in that guild", for
         `voice_room`'s reason: inference works right up until it silently
         picks the wrong one."""
-        return self._music_by_guild.get((platform, guild_id))
+        convo = self._music_by_guild.get((platform, guild_id))
+        return convo.music_channel if convo is not None else None
 
     def home_rooms(self) -> dict[str, Conversation]:
         """Unit -> its home room (39 D2), for every unit that named
@@ -312,10 +360,10 @@ class _PermissivePolicy(Policy):
         have."""
         return self.conversation(platform, f"{guild_id}/voice")
 
-    # NO `music_room` override, deliberately: the inherited one answers `None`
-    # for every guild, and `None` is music's FALLBACK (announce where the
-    # session started), not its refusal. Inventing a room here would route a
-    # harness's music announcements at a channel id nothing can send to —
+    # NO `music_channel_for` override, deliberately: the inherited one answers
+    # `None` for every guild, and `None` is music's FALLBACK (announce where
+    # the session started), not its refusal. Inventing a channel here would
+    # route a harness's announcements at an id nothing can send to —
     # `voice_room` overrides precisely because `None` there WOULD refuse.
 
     def proactive_allowed(self, *, platform: str, conversation_id: str) -> bool:
@@ -360,17 +408,29 @@ class _ConversationEntry(BaseModel):
     # 2026-09-17): every voice channel in THIS room's guild speaks into this
     # room. Default False — a room takes no speech until the operator says so.
     voice: bool = False
-    # See `Conversation.music` (design/discord-music/10-notification-routing.md):
-    # this guild's music announcements land in this room. Default False — an
-    # unset guild keeps announcing where its session started, so a policy.toml
-    # that has never heard of the key behaves exactly as before.
-    music: bool = False
+    # See `Conversation.music_channel` (design/discord-music/10-notification-
+    # routing.md): the SIBLING channel id this guild's music announcements are
+    # posted in. Absent is the default — an unset guild keeps announcing where
+    # its session started, so a policy.toml that has never heard of the key
+    # behaves exactly as before.
+    music_channel: str | None = None
     # See `Conversation.description` (issue #161): what kind of room this is,
     # in the operator's own words. Absent is the default and the shipped
     # state — `extra = "forbid"` is in force here, so this entry is what makes
     # the key legal at all, and a policy.toml that has never heard of it loads
     # exactly as before.
     description: str | None = None
+
+    @field_validator("music_channel")
+    @classmethod
+    def _blank_music_channel_is_absent(cls, value: str | None) -> str | None:
+        """`music_channel = ""` is the operator writing nothing, and it must
+        arrive as `None`: two spellings of "no destination" is how one of them
+        reaches `isdigit()` and refuses startup over a line that meant
+        nothing. Same reason `description` normalises."""
+        if value is None:
+            return None
+        return value.strip() or None
 
     @field_validator("description")
     @classmethod
@@ -442,7 +502,8 @@ def load_policy(path: Path) -> Policy:
             primary_id=entry.id, unit=entry.unit,
             relevance_gate=entry.relevance_gate,
             home_room=entry.home_room, proactive=entry.proactive,
-            description=entry.description, voice=entry.voice, music=entry.music,
+            description=entry.description, voice=entry.voice,
+            music_channel=entry.music_channel,
         )
         conversations.append(convo)
         for cid in ids:
@@ -518,11 +579,11 @@ def load_policy(path: Path) -> Policy:
     # room nobody chose.
     music_by_guild: dict[tuple[str, str], Conversation] = {}
     for convo in conversations:
-        if not convo.music:
+        if convo.music_channel is None:
             continue
         if convo.platform != "discord":
             raise PolicyError(
-                f"{convo.label or convo.primary_id!r} sets music = true on "
+                f"{convo.label or convo.primary_id!r} sets music_channel on "
                 f"platform {convo.platform!r}. Music is a Discord voice-channel "
                 "capability and is resolved by GUILD; no other platform reaches "
                 "this path at all."
@@ -530,21 +591,56 @@ def load_policy(path: Path) -> Policy:
         guild_id, sep, channel_id = convo.primary_id.partition("/")
         if not sep or not guild_id or not channel_id:
             raise PolicyError(
-                f"{convo.label or convo.primary_id!r} sets music = true but its "
-                f"id {convo.primary_id!r} is not \"<guild_id>/<channel_id>\". "
-                "The guild half is what a playing session is matched on and the "
-                "channel half is where the announcement is posted, so an id "
-                "without both can never be reached."
+                f"{convo.label or convo.primary_id!r} sets music_channel but its "
+                f"OWN id {convo.primary_id!r} is not \"<guild_id>/<channel_id>\". "
+                "The guild half of the declaring room is what a playing session "
+                "is matched on, so a room without one can never be reached."
+            )
+        if not _is_snowflake(convo.music_channel):
+            raise PolicyError(
+                f"{convo.label or convo.primary_id!r} sets music_channel = "
+                f"{convo.music_channel!r}, which is not a Discord channel id. It "
+                "is a bare channel snowflake — ASCII digits, 17-20 of them — in "
+                "THIS room's guild. Not a \"<guild>/<channel>\" pair and not a "
+                "channel name, because names are not stable ids. (A bare id from "
+                "ANOTHER guild has the same shape and cannot be told apart here; "
+                "`music_notify` checks the channel's actual guild at send time, "
+                "which is the first moment that is knowable.)"
+            )
+        # The destination must NOT be a listed room. The whole reason this is a
+        # field rather than a `voice = true`-shaped flag is that an
+        # announcement channel is an OUTBOUND target and not a conversation —
+        # `[[conversations]]` carries `persons`, `unit`, `location`,
+        # `proactive`, `relevance_gate`, `home_room`, and every one of them is
+        # an answer about people that a write-only channel has no business
+        # having. Pointing `music_channel` at a listed room puts the
+        # announcements back inside ingest and makes that argument false, so it
+        # is refused rather than merely discouraged (audit, 2026-09-21: the
+        # claim was documented in five places and enforced in none).
+        destination = (convo.platform, f"{guild_id}/{convo.music_channel}")
+        listed = by_id.get(destination)
+        if listed is not None:
+            raise PolicyError(
+                f"{convo.label or convo.primary_id!r} sets music_channel = "
+                f"{convo.music_channel}, but that channel is itself a listed "
+                f"conversation ({listed.label or listed.primary_id!r}). An "
+                "announcement channel is written to and never read from, so it "
+                "must not be a room: a room carries persons/unit/location/"
+                "proactive answers that mean nothing for it, and Nora would "
+                "ingest whatever else is said there. Point it at a channel that "
+                "is not in this file — or omit it, which announces where each "
+                "session started."
             )
         key = (convo.platform, guild_id)
         other = music_by_guild.get(key)
         if other is not None:
             raise PolicyError(
-                f"guild {guild_id} names two music rooms "
-                f"({other.label or other.primary_id!r} and "
+                f"guild {guild_id} names two music channels "
+                f"({other.music_channel} on {other.label or other.primary_id!r} "
+                f"and {convo.music_channel} on "
                 f"{convo.label or convo.primary_id!r}). A guild has one voice "
-                "connection and one player, so its announcements land in "
-                "exactly one room; mark one."
+                "connection and one player, so its announcements land in exactly "
+                "one channel; keep one."
             )
         music_by_guild[key] = convo
 

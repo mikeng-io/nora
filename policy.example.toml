@@ -120,33 +120,55 @@ persons  = ["miles", "ada"]
                              # At most one room per guild may set it; a second is a startup
                              # error. A guild with none refuses speech outright (400) rather
                              # than guessing a room.
-# music = true               # (optional, default false) WHERE THIS GUILD'S MUSIC
-                             # ANNOUNCEMENTS LAND. The system's own music posts —
+# music_channel = "1480387369830973999"
+                             # (optional, no default) WHERE THIS GUILD'S MUSIC
+                             # ANNOUNCEMENTS GO — a SIBLING channel in this room's
+                             # server, named by id. The system's own music posts —
                              # 「Now playing:」 on a natural track-end, 「Autoplaying:」,
                              # the next track after a skip, the connection-lost
-                             # teardown — go to THIS channel, for every session in this
-                             # room's guild.
+                             # teardown — are posted THERE, for every session in this
+                             # room's server.
                              #
                              # Without it the destination is discovered instead of
                              # named: whichever text channel the session's FIRST play
                              # happened to run in, captured once and never moved. That
                              # is invisible (nothing shows you where it points), sticky
                              # (persisted, survives a restart, no command changes it)
-                             # and unbounded — `/music play` is gated by GUILD, never by
-                             # room, so it can capture a channel that is not an
-                             # allowlisted room at all. Naming it here fixes all three
-                             # at once, because a room in this file is by construction
-                             # one Nora may speak in.
+                             # and unbounded — `/music play` is gated by SERVER, never
+                             # by room, so it can capture a channel that is not listed
+                             # in this file at all.
+                             #
+                             # A FIELD HERE, NOT A ROOM OF ITS OWN, and it may NOT name
+                             # a channel this file lists — that is a startup error. A
+                             # `[[conversations]]` entry is a bundle of answers about
+                             # PEOPLE: who may trigger her, which rooms are one social
+                             # unit, whose positions may be disclosed, whether she may
+                             # speak uncalled. Every one of them is meaningless for a
+                             # channel that is written to and never read, so listing an
+                             # announcement channel means inventing trust answers about
+                             # a non-conversation. It would also put a second room in
+                             # this server's unit (DEC-105 allows one per platform) and
+                             # make Nora record whatever ELSE is said there — her own
+                             # posts are dropped before ingest, but nobody else's are.
+                             #
+                             # Digits only, 17-20 of them: a bare channel id in THIS
+                             # room's server. Not 「<guild>/<channel>」 and not a channel
+                             # NAME (names are not stable ids). A bare id from ANOTHER
+                             # server cannot be told apart here, so the guild is checked
+                             # when the announcement is actually sent — a mismatch falls
+                             # back and logs rather than posting outside the server. At
+                             # most one room per server may carry it; a second is a
+                             # startup error.
+                             #
+                             # Changing it needs a restart, like every other line here.
                              #
                              # SYSTEM ANNOUNCEMENTS ONLY. A slash command still replies
                              # where you typed it — you are looking there — and her
                              # conversational reply still lands in the room you tagged
                              # her in. This moves the posts nobody asked for.
                              #
-                             # Like `voice` above: the GUILD is what is matched, at most
-                             # one room per guild may set it, and a second is a startup
-                             # error. A guild with none keeps the where-it-started
-                             # fallback, so leaving this out changes nothing.
+                             # Omit it entirely to keep the where-it-started fallback,
+                             # so leaving this out changes nothing.
 # location = true            # same switch as Signal, same meaning — see below.
 description = "a games room; 2200 is when people log on, not an appointment"
                              # (optional, no default) WHAT KIND OF ROOM THIS IS, in your own

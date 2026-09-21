@@ -10,6 +10,13 @@ edges:
 
 # Discord Music — Session Persistence
 
+**`notify_channel_id` is the FALLBACK since 2026-09-21, not the destination**
+(`10-notification-routing.md`). The column is still written and still means "the
+channel where it started"; what changed is that a guild whose `policy.toml`
+names a `music_channel` announces there instead, resolved per-post rather than
+read from this row. No migration — every "the notify channel" below should read
+"the notify FALLBACK channel".
+
 **Status: both stages built.** Stage 1 is the write-through half — every
 state transition `MusicPlayer` makes is persisted to Postgres. Stage 2
 (below) makes Nora actually reconnect and resume on boot, guarded by the

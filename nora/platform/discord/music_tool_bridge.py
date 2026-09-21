@@ -28,7 +28,7 @@ from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.platform.discord.music_notify import (
     ResolveMusicChannel,
     make_notify,
-    no_music_room,
+    no_music_channel,
 )
 from nora.platform.discord.voice_gate import voice_join_decision
 
@@ -61,7 +61,7 @@ class DiscordMusicToolBridge:
         manager: MusicPlayerManager,
         hub: VoiceControllerHub | None = None,
         voice_guild_ids: frozenset[str] = frozenset(),
-        resolve_music_channel: ResolveMusicChannel = no_music_room,
+        resolve_music_channel: ResolveMusicChannel = no_music_channel,
     ) -> None:
         self._adapter = adapter
         self._manager = manager
@@ -114,8 +114,8 @@ class DiscordMusicToolBridge:
 
     def _notify(self, conversation_id: str):
         """The announcement destination for a session started by `play_music`:
-        the guild's `music = true` room if one is set, else the room she was
-        tagged in — resolved per-post by `music_notify.make_notify`, the ONE
+        the guild's `music_channel` if one of its rooms names one, else the
+        room she was tagged in — resolved per-post by `music_notify.make_notify`, the ONE
         place any surface decides this (design/discord-music/10-notification-
         routing.md). `current_client` is passed as the getter, not called:
         this closure outlives a gateway reconnect."""

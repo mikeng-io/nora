@@ -52,7 +52,7 @@ scope:
     - "Auto-disconnect on empty voice channel or idle timeout"
     - "Discord-only Nora agent tools (play_music/skip_music/top_music/stop_music/music_status) for conversational control"
     - "Autoplay: seed YouTube's own Mix recommendations when the queue empties, config-gated (08-autoplay.md)"
-    - "A dedicated music channel per guild, named by policy.toml's `music = true` (10-notification-routing.md); unset keeps the where-it-started fallback"
+    - "A dedicated music channel per guild, named by a room's `music_channel` in policy.toml (10-notification-routing.md); unset keeps the where-it-started fallback"
   deferred:
     - "Saved/named playlists"
     - "Persistent audio library / cache"
