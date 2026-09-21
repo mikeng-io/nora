@@ -34,7 +34,7 @@ CLI leaks upward until nobody can say what Nora is allowed to look at.
 
 ```
    MESSAGING AXIS                          SOCIAL AXIS
-   PlatformAdapter                         SocialSource
+   PlatformAdapter                         SocialProvider
    ───────────────                         ────────────
    rooms, senders, messages,               profile, stories, posts,
    mentions, replies, media                search
@@ -129,7 +129,7 @@ policy machinery at all.
 
 - **No social verb on `PlatformAdapter`.** The messaging adapter never grows
   `get_story`. A room is not a lens on a profile.
-- **No platform knowledge in the social port.** `SocialSource` takes a
+- **No platform knowledge in the social port.** `SocialProvider` takes a
   network, a verb and a subject. Which library serves it is invisible above
   the bridge, exactly as DEC-151 already requires for its allowlist.
 - **No implicit tier escalation.** A Tier 0 read may not follow a link into
@@ -139,7 +139,12 @@ policy machinery at all.
   Nothing polls a profile, because a poll has no subject in the room and no
   reason at the moment it fires. This is the difference between an agent in a
   circle and a monitoring system pointed at people.
-- **Social reads never persist** (`06-retention-and-custody.md`). The tier
+- **Social reads never persist** (`06-retention-and-custody.md`) — **with one
+  known exception that is not yet closed**: the comprehension step
+  (`media_fetch`) writes to the durable content-addressed cache, so the worked
+  story flow persists a frame today. `10` §"The content" states the three
+  candidate fixes and `11` scopes the decision out of M4, which means M4 would
+  ship with this invariant known-broken unless it is gated on one. The tier
   ladder bounds *what* she may look at; retention bounds *what survives*.
   Both are needed: a Tier 0 read with durable custody would quietly build a
   dossier on a friend out of nothing but permitted acts.

@@ -102,7 +102,14 @@ than crash on:
  "connected": true, "seq": 22, "detail": "..."}
 ```
 
-## Degradation — the change that must land FIRST
+## Degradation — lands WITH the adapter (M2), not before it
+
+**Ordering corrected 2026-09-22.** An earlier revision of this section, and
+`00`'s sequencing, said this must land "before any Go is written". `11` is
+right and they were wrong: a degradation path with no adapter to degrade is
+machinery with no user, which this repo has an explicit rule against (ADR
+0008). The bridge (M1) has shipped and `registry.py` still has no `instagram`
+block — the tree already follows `11`.
 
 `nora/platform/registry.py` is fail-fast by design: `from_config` raises
 `AdapterRegistryError` for any enabled platform that cannot be built or

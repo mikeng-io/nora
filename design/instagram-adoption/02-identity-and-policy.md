@@ -152,7 +152,11 @@ and reaches Dreamer notes, including by people who are not in `persons`.
    it is a social handle rather than a messaging address?** The schema
    (`design/10-identity-and-policy-schema.md`) treats identifiers as a flat
    set, which admits both, but the two are used by different subsystems.
-2. **Phase 2 reads are per-person, not per-room.** Policy today is room-shaped
+2. **ANSWERED by `07`, 2026-09-22 — this no longer blocks Phase 2.** The tier
+   ladder resolves it: the per-person policy gap blocks **Tier 1 only**, and
+   Tier 0 — every person in a room Nora is in, which is all Phase 2 was asked
+   for — needs no new policy at all. Kept for the reasoning. Original text:
+   **Phase 2 reads are per-person, not per-room.** Policy today is room-shaped
    (`voice`, `relevance_gate`, `music`). Reading someone's stories is a
    capability against a *person*, and there is no precedent for that in
    `policy.toml`. This needs its own decision before Phase 2, not during it.

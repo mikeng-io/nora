@@ -284,10 +284,27 @@ Per item: media type, a directly playable CDN url, and `taken_at`. Per reel:
 `expiring_at`, which is the natural retention bound — a story is gone in 24
 hours and anything Nora keeps outlives its source.
 
-### Reading a story does NOT register as watching it
+### Reading a story and the viewer list — WITHDRAWN, the instrument was wrong
 
-This was the open ethical question and it is decidable, because `ReelInfo`
-carries the viewer's own `seen` watermark.
+**This section claimed, from 2026-09-21 to 2026-09-22, that reading a story is
+invisible to its author. That claim is withdrawn.** It is recorded rather than
+deleted because the operator approved story reads partly on the strength of
+it.
+
+The reasoning was: `ReelInfo` carries a `seen` watermark, it did not advance
+across two `FetchReel` calls, therefore the read left no trace. The flaw is
+named in this bundle's own node 10: **`seen` tracks the account holder's app
+usage** — what the logged-in human viewed in Instagram — which Nora neither
+controls nor participates in. If that reading is right, `seen` *could not*
+move for a Nora-side read whatever Instagram did, so an unchanged value
+measures nothing at all.
+
+The property that matters is **what the author sees in their own viewer
+list**, and it was never read. It is cheap to settle: read a story from Nora's
+account, then look at the viewer list on the author's phone. Until then this
+is UNMEASURED, and the ethical question it was thought to close is open.
+
+What the original measurement *does* support, stated narrowly:
 
 Measured: two `FetchReel` calls twenty seconds apart both returned
 `seen=1789935673` (2026-09-20 20:21:13), while item 2 — posted 2026-09-21

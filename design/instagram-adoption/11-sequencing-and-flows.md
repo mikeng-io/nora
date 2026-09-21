@@ -161,7 +161,8 @@ Nora ── keeps running. Signal and Discord unaffected.
 operator ── re-auths in a browser, drops fresh cookies in the session dir
         │
         ▼
-bridge ── LoadState resume; no re-backfill needed
+bridge ── resume from the persisted state AND the persisted seq
+         (LoadState alone does NOT restore the seq — see 01)
 ```
 
 Under today's `AdapterRegistry`, a checkpoint at **boot** raises
@@ -185,7 +186,8 @@ taking Signal and Discord with it. That is the single behaviour M0 changes.
 
 Session longevity. It determines **re-auth cadence**, which is a runbook
 number, not an architectural one — the design already absorbs session loss at
-every layer (pairing as a field, degradation, `LoadState` resume). An earlier
+every layer (pairing as a field, degradation, and a resume that persists the seq
+separately from the state — `01`). An earlier
 revision of this bundle said no bridge should be written until the soak
 produced a number; that was over-cautious and is withdrawn. The soak keeps
 running and its number tunes operations.

@@ -136,7 +136,7 @@ All on the **same authenticated session**, no second credential:
 |---|---|---|
 | `GetProfile(igid)` | PASS, thin | 14 fields, messaging-oriented; **no** follower/following/media counts or biography |
 | `FetchReel([igid])` | PASS | full `user_reel`: per-item media type, playable CDN url, `taken_at`; per-reel `expiring_at`, `media_ids`, `seen` |
-| story read marks it viewed? | **NO** | `seen` unchanged across two reads 20s apart, with a newer item outside the watermark both times |
+| story read marks it viewed? | **UNMEASURED** — see below | `seen` was unchanged across two reads, but that instrument cannot see the property |
 | member → igid join | PASS | `GetThread` → `Users[].ID` is the igid `FetchReel`/`GetProfile` take |
 | multi-sender attribution (3-person room) | PASS | each message's `sender_fbid` matches that member's roster `interop_messaging_user_fbid` |
 | member added to the room | PASS | `ADD_PARTICIPANT_XMAT`, attributed to the member who did the adding |

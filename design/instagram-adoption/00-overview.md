@@ -87,8 +87,8 @@ Full evidence, including the exact wire payloads, is in
    wrong for ambient presence.
 2. **Same author, same shape as whatsmeow**, which is the substrate the
    WhatsApp ecosystem already trusts. `pkg/instameow` is that pattern applied
-   to Instagram: MQTT socket, thrift codecs, `DumpState`/`LoadState` session
-   resume, an event handler, and a complete send surface.
+   to Instagram: MQTT socket, thrift codecs, `DumpState`/`LoadState` plus a
+   separately-persisted sequence id for session resume, an event handler, and a complete send surface.
 3. **It is genuinely separable.** `instameow` does import
    `maunium.net/go/mautrix/bridgev2`, but every one of those references is
    confined to `login_*.go` and is a plain descriptive struct
@@ -160,8 +160,10 @@ reusing the existing OpenCLI runtime rather than widening this bridge's
 surface. Phase 2 and 3 are **not greenfield**: DEC-151's `social_fetch`
 already covers Instagram profile/posts/search through OpenCLI, behind a
 host-side allowlist that is the security boundary. The recommendation is to
-keep that tool and add instameow as a *backend* behind it, closing two of its
-recorded limitations and adding stories. See
+keep that tool and add instameow as a *backend* behind it for the one verb
+OpenCLI structurally cannot serve — stories. It closes **none** of DEC-151's
+three recorded limitations: `FetchMedia` was measured failing (`05`), and
+search and Threads gain nothing. See
 `05-phase2-social-and-opencli.md`.
 
 ## Known restrictions (parked)
@@ -218,8 +220,9 @@ Discord a bot is visibly a bot. Here it is not, unless the operator says so.
    WhatsApp v1.
 4. Phase 2 social reads, behind their own policy flag.
 5. Phase 2 needs **one** operator answer: whether story reads are permitted
-   at all, since a story read is visible to its author and no existing Nora
-   read is. The account question is settled — `opencli instagram whoami`
+   at all. Whether a story read is visible to its author is **UNMEASURED** —
+   the instrument used to settle it could not see the property
+   (`05` §Reading a story and the viewer list). The account question is settled — `opencli instagram whoami`
    confirms the social browser profile holds the same `@not_____nora`
    account, so adopting instameow removes a session rather than adding one.
    See `05-phase2-social-and-opencli.md`.
