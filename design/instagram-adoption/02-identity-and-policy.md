@@ -79,7 +79,7 @@ Verified on a three-person room (2026-09-21), after a second member joined:
 
 ```
 member @nka_bpumvg        interop_fbid=110966695387753     ID=221731317
-member @gemini_.xoxo.04   interop_fbid=12116372067347151   ID=70503037937
+member @second_member   interop_fbid=12116372067347151   ID=70503037937
 ```
 
 Every message's `sender_fbid` matched that member's `interop_messaging_user_fbid`

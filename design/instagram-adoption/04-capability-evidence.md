@@ -152,7 +152,7 @@ All on the **same authenticated session**, no second credential:
 | member → igid join | PASS | `GetThread` → `Users[].ID` is the igid `FetchReel`/`GetProfile` take |
 | multi-sender attribution (3-person room) | PASS | each message's `sender_fbid` matches that member's roster `interop_messaging_user_fbid` |
 | member added to the room | PASS | `ADD_PARTICIPANT_XMAT`, attributed to the member who did the adding |
-| message from a member other than the operator | PASS | `@gemini_.xoxo.04` text and image, both correctly attributed |
+| message from a member other than the operator | PASS | `@second_member` text and image, both correctly attributed |
 | one member `@`-mentioning ANOTHER (not Nora) | PASS | `"@nka_bpumvg GH"` from a third party — `mentions[].user_fbid=110966695387753`, not Nora's |
 | Nora distinguishes "tagged me" from "tagged someone else" | PASS | same room, same sender: one mention carries Nora's `GetOwnFBID()`, the other does not |
 | `SearchUsers(query)` | PASS | 2,941 bytes of results |
