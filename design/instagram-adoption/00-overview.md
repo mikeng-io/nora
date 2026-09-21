@@ -13,6 +13,7 @@ edges:
   - {dst: 03-transport-contract.md, rel: details, provenance: asserted}
   - {dst: 04-capability-evidence.md, rel: evidence, provenance: measured}
   - {dst: 05-phase2-social-and-opencli.md, rel: details, provenance: asserted}
+  - {dst: 06-retention-and-custody.md, rel: details, provenance: asserted}
 ---
 
 # Instagram Adoption — Overview, Verdict & Phases

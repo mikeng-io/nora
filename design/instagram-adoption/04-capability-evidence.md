@@ -7,6 +7,7 @@ timestamp: '2026-09-21'
 edges:
   - {dst: 00-overview.md, rel: parent, provenance: asserted}
   - {dst: 02-identity-and-policy.md, rel: details, provenance: asserted}
+  - {dst: 06-retention-and-custody.md, rel: constrains, provenance: asserted}
 ---
 
 # Instagram Capability Matrix — Measured
@@ -44,6 +45,8 @@ protocol's behaviour — two of them turned out not to match the wire.
 | sticker / animated | PASS | `ct=INSTAGRAM_MESSAGING_ANIMATED_IMAGE` → `animated_media`, external CDN url |
 | one-time (view-once) image | **PARTIAL** | `ct=RAVEN_IMAGE` arrives, but `attachment` is **`null`** — see below |
 | emoji reaction from another member | UNMEASURED | probe armed; none sent during the window |
+| voice note from another member | UNMEASURED (structurally supported) | `SlideMessageAudiosContent` → `AudioAttachment{AttachmentCDNURL, PlayableDurationMS, WaveformData}` |
+| one-time media fetch is visible to sender? | **UNMEASURED** | earlier asserted as "yes"; that was inference, and the story `seen` result shows such inference failing |
 | typing notification | PASS (type exists) | `slidetypes.TypingNotification` |
 
 ### Inbound media is four shapes, not one
