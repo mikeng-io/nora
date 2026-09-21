@@ -66,6 +66,30 @@ export const FFMPEG_ARGS = (url, startOffsetMs = 0) => [
 
 const STDERR_TAIL_BYTES = 2048;
 
+// Why every `player.stop()` in this file passes `force: true`.
+//
+// Measured 2026-09-22 (Node 22.17 and 26.8, @discordjs/voice 0.19.2 read out
+// of the running container). `stop(false)` on an AUTOPAUSED player does not
+// stop it: `AudioPlayer.stop` returns early after setting `silenceRemaining`
+// when the state is not Idle, so the player stays AutoPaused, never calls
+// `resource.read()`, and never destroys `playStream`. ffmpeg's stdout then
+// sits in a back-pressured pipeline nothing drains:
+//
+//   PIPED-unread   {"exited":true,"closed":false,"stdoutPaused":true,"buffered":65536}
+//   NOT-piped      {"exited":true,"closed":true,"stdoutPaused":false,"buffered":0}
+//
+// A killed child whose piped stdout is back-pressured NEVER emits 'close'.
+// `s.closed` never settles, `pendingReaps` never empties, and every later
+// play is deferred on a barrier that can no longer be crossed — no spawn, no
+// log, no event, for the life of the process. That is the 2026-09-21 wedge:
+// two `play_requested` lines, no ffmpeg process, and silence until restart.
+//
+// `force: true` sets Idle immediately, which destroys `playStream`, which
+// propagates through the pipeline to `proc.stdout` and lets 'close' fire.
+// Every call site here is a HARD CUT (supersede, fail, speech preemption,
+// teardown) — the silence padding `force: false` buys is worth nothing to
+// any of them.
+
 //: The volume a fresh connection starts music at, as a percent of source.
 //: `/music volume` overrides it for the life of that connection.
 export const DEFAULT_VOLUME_PERCENT = 25;
@@ -83,6 +107,15 @@ export function createArbiter({
   // Every accepted play must reach sound or report a failure within this
   // window. See the start-deadline block below for what it is actually for.
   startDeadlineMs = 60_000,
+  // How long a play may wait behind speech before it is called wedged. Much
+  // longer than `startDeadlineMs`: waiting its turn behind a bounded speech
+  // queue is legitimate, and `maxSpeechQueue + 1` clips of TTS can genuinely
+  // run past a minute. Anything approaching this is a queue that will never
+  // drain.
+  parkedDeadlineMs = 300_000,
+  // How long the no-overlap reap barrier may hold a spawn. Past the
+  // SIGTERM -> SIGKILL escalation there is no live process left to overlap.
+  reapBarrierMs = 5_000,
   maxSpeechQueue = 4,
 }) {
   let player = null;
@@ -170,6 +203,16 @@ export function createArbiter({
     } catch {
       /* already dead */
     }
+    // Belt and braces for the same failure the force-stop above prevents,
+    // independent of any @discordjs/voice internals: a back-pressured pipe
+    // holds the child's stdio socket open and 'close' never fires. Destroy
+    // them ourselves so the reap can always complete.
+    try {
+      proc.stdout?.destroy();
+      proc.stderr?.destroy();
+    } catch {
+      /* already torn down */
+    }
     s.killTimer = clock.setTimeout(() => {
       s.killTimer = null;
       try {
@@ -188,7 +231,7 @@ export function createArbiter({
     if (activeKind === 'music' && s.resource) {
       activeKind = null;
       try {
-        player?.stop();
+        player?.stop(true);
       } catch {
         /* player gone */
       }
@@ -223,7 +266,7 @@ export function createArbiter({
     if (activeKind === 'music') {
       activeKind = null;
       try {
-        player?.stop();
+        player?.stop(true);
       } catch {
         /* player gone */
       }
@@ -267,9 +310,9 @@ export function createArbiter({
   // deadline fails as `start-timeout`. That is a real `stream-failed`, so
   // nora's bounded re-resolve (music_manager.on_stream_failed) retries the
   // track and then advances, instead of the queue silently dying.
-  function armStartDeadline(s) {
+  function armStartDeadline(s, ms = startDeadlineMs) {
     clearStartDeadline(s);
-    s.startTimer = clock.setTimeout(() => onStartDeadline(s), startDeadlineMs);
+    s.startTimer = clock.setTimeout(() => onStartDeadline(s), ms);
   }
 
   function clearStartDeadline(s) {
@@ -281,7 +324,12 @@ export function createArbiter({
 
   function onStartDeadline(s) {
     s.startTimer = null;
-    if (s.superseded || s.failed) return;
+    if (s.failed) return;
+    // `superseded` alone does NOT mean dead: `suspendMusic` sets it to kill a
+    // preempted slot's ffmpeg while keeping that slot parked for revival. So
+    // the parked slot is judged by whether it is STILL the parked slot, and
+    // only a slot that is neither current nor parked is a stale timer.
+    if (suspendedSlot !== s && (s.superseded || slot !== s)) return;
     failStream(s, 'start-timeout');
   }
 
@@ -431,8 +479,38 @@ export function createArbiter({
     };
     // Never overlap two live ffmpegs: wait for killed processes to reap
     // before spawning the replacement.
+    //
+    // BOUNDED, because this barrier is what wedged the pipeline on
+    // 2026-09-21. An unsettleable `closed` promise made `Promise.all` a
+    // permanent block on a liveness-critical path, and the deferral was
+    // invisible — `begin` simply never ran. A reap that has not completed
+    // well past the SIGKILL escalation is Node bookkeeping, not a live
+    // process: `docker top` showed no ffmpeg at all while the barrier held.
     if (pendingReaps.size) {
-      void Promise.all([...pendingReaps]).then(begin, begin);
+      log('ffmpeg_start_deferred', {
+        playback_id: s.playbackId,
+        request_id: s.requestId,
+        pending_reaps: pendingReaps.size,
+      });
+      let settled = false;
+      const proceed = (timedOut) => {
+        if (settled) return;
+        settled = true;
+        if (timedOut) {
+          log('error', {
+            event: 'reap_barrier_timeout',
+            playback_id: s.playbackId,
+            request_id: s.requestId,
+            pending_reaps: pendingReaps.size,
+          });
+          // A promise that outlived the barrier will never settle; leaving
+          // it in the set makes every later play pay the timeout too.
+          pendingReaps.clear();
+        }
+        begin();
+      };
+      void Promise.all([...pendingReaps]).then(() => proceed(false), () => proceed(false));
+      clock.setTimeout(() => proceed(true), reapBarrierMs);
     } else {
       begin();
     }
@@ -448,11 +526,16 @@ export function createArbiter({
       if (activeKind === 'music') {
         activeKind = null;
         try {
-          player?.stop();
+          player?.stop(true);
         } catch {
           /* player gone */
         }
       }
+      // A track suspended by speech is parked on the same terms as a play
+      // that arrived during speech: if the queue never drains, nothing will
+      // ever revive it. e3fe4394 armed only the arriving play, so a track
+      // that was ALREADY playing could still be stranded in silence.
+      armStartDeadline(s, parkedDeadlineMs);
       suspendedSlot = s;
     }
     state = 'suspended';
@@ -461,6 +544,9 @@ export function createArbiter({
   function reviveSuspended() {
     const s = suspendedSlot;
     suspendedSlot = null;
+    // The revived slot is a NEW object; the parked one's deadline would
+    // otherwise outlive it and fire against a slot nothing references.
+    clearStartDeadline(s);
     if (!s || s.invalidated) {
       state = 'stopped';
       return;
@@ -632,7 +718,7 @@ export function createArbiter({
       player.removeListener('error', onPlayerError);
       player.removeListener('stateChange', onPlayerStateChange);
       try {
-        player.stop();
+        player.stop(true);
       } catch {
         /* already idle */
       }
@@ -659,7 +745,7 @@ export function createArbiter({
       // parks every subsequent play forever, which is one of the three ways
       // the pipeline used to wedge in silence.
       suspendedSlot = s;
-      armStartDeadline(s);
+      armStartDeadline(s, parkedDeadlineMs);
       state = 'suspended';
     } else {
       slot = s;
@@ -780,6 +866,11 @@ export function createArbiter({
         current: current ? { title: current.title, url: current.streamUrl } : null,
       },
       speech_queue: speechQueue.length + (speechActive ? 1 : 0),
+      // The read-back for the 2026-09-21 wedge. A non-zero count while
+      // nothing is playing means a kill never reaped and every future spawn
+      // is being deferred behind it — provable in one `curl`, where before
+      // it could only be inferred from an absence of log lines.
+      pending_reaps: pendingReaps.size,
     };
   }
 

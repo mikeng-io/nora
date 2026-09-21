@@ -5,7 +5,7 @@
     "The audio controller answered /music/play the instant a play was accepted — before ffmpeg was spawned — and several guards between that accept and the first byte of sound could then abandon the play with no event, no error and no state change. Found live 2026-09-21: two play_requested lines, no ffmpeg process in the container at all, zero follow-up events, and a room told 'Now playing' that heard nothing for 25 hours.",
     "Every accepted play is now held to a start deadline. One that has produced no sound by then fails as start-timeout, which is a real stream-failed, so nora's bounded re-resolve retries the track and then advances instead of the queue dying quietly.",
     "A play that arrives with no attached player fails as no-player and says so, rather than returning from the spawn path in silence.",
-    "A play deferred behind a speech queue that never drains is covered by the same deadline; previously it parked as the suspended slot forever.",
+    "A play that ARRIVES while speech is queued is covered by the same deadline; previously it parked as the suspended slot forever. A track that was already playing when speech preempted it was NOT covered — that gap is closed in the following change, not this one.",
     "The already-connected join path re-asserts the arbiter's player, which was only ever wired on a fresh join. Re-attaching the player it already holds is a no-op, so nothing that is playing is disturbed."
   ],
   "limitations": [

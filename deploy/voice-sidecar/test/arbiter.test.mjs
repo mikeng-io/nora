@@ -637,7 +637,9 @@ test('a play with no attached player fails loudly instead of vanishing', async (
 });
 
 test('a play parked behind a speech queue that never drains fails at the deadline', async () => {
-  const { arbiter, clock, events } = makeArbiter({ startDeadlineMs: 60_000 });
+  // The PARKED deadline, not the spawn one: waiting behind a bounded speech
+  // queue is legitimate and `maxSpeechQueue + 1` clips can run past a minute.
+  const { arbiter, clock, events } = makeArbiter({ parkedDeadlineMs: 300_000 });
   // Speech takes the player and never finishes (no player.finish()), so
   // speechBusy() stays true and every later play parks as the suspended slot.
   assert.equal(arbiter.enqueueSpeech({ audio: Buffer.from('tts'), mediaType: 'ogg/opus' }), true);
@@ -645,7 +647,10 @@ test('a play parked behind a speech queue that never drains fails at the deadlin
   assert.equal(arbiter.state(), 'suspended');
   assert.equal(events.filter((e) => e.type === 'stream-failed').length, 0); // still legitimately waiting
 
-  clock.advance(60_000);
+  clock.advance(120_000); // well past the SPAWN deadline — still legitimately waiting
+  assert.equal(events.filter((e) => e.type === 'stream-failed').length, 0);
+
+  clock.advance(180_000); // past the parked deadline
 
   const failed = events.filter((e) => e.type === 'stream-failed');
   assert.equal(failed.length, 1);
@@ -700,4 +705,153 @@ test('re-attaching the same player is a no-op, not a teardown', async () => {
   assert.equal(arbiter.statusSnapshot().playback_id, a.playbackId);
   assert.deepEqual(a.proc.signals, []); // the live ffmpeg was never killed
   assert.equal(events.filter((e) => e.type === 'stream-failed').length, 0);
+});
+
+// --- the 2026-09-21 root cause: an unreapable kill wedged the barrier ------
+// Measured: a killed ffmpeg whose piped stdout is back-pressured never emits
+// 'close', because an AutoPaused AudioPlayer never drains the pipeline and
+// `stop(false)` cannot leave AutoPause. `s.closed` never settled, so
+// `pendingReaps` never emptied and EVERY later spawn was deferred on a
+// barrier that could not be crossed — no ffmpeg, no log, no event, until the
+// process was restarted.
+
+// A process that dies at the OS level but never reports 'close' — exactly the
+// shape `createFakeProc` cannot produce, and exactly the shape that wedged.
+function createUnreapableProc() {
+  const proc = new EventEmitter();
+  const stdout = new EventEmitter();
+  stdout.unshift = () => {};
+  stdout.destroyed = 0;
+  stdout.destroy = () => { stdout.destroyed += 1; };
+  const stderr = new EventEmitter();
+  stderr.destroyed = 0;
+  stderr.destroy = () => { stderr.destroyed += 1; };
+  proc.stdout = stdout;
+  proc.stderr = stderr;
+  proc.signals = [];
+  proc.kill = (signal) => { proc.signals.push(signal); return true; }; // never emits 'close'
+  proc.data = (chunk = Buffer.from('pcm')) => {
+    stdout.emit('readable');
+    if (chunk != null) stdout.emit('data', chunk);
+  };
+  return proc;
+}
+
+test('an unreapable kill does not wedge the next play forever', async () => {
+  const clock = createFakeClock();
+  const player = createFakePlayer();
+  const procs = [];
+  const events = [];
+  const arbiter = createArbiter({
+    spawn: () => { const p = createUnreapableProc(); procs.push(p); return p; },
+    createMusicResource: (stream) => createFakeResource(stream),
+    createSpeechResource: (audio, mediaType) => ({ audio, mediaType, playbackDuration: 0 }),
+    clock,
+    emitEvent: (type, fields) => events.push({ type, ...fields }),
+    getGeneration: () => 'gen1',
+    log: () => {},
+    reapBarrierMs: 5_000,
+  });
+  arbiter.attach(player);
+
+  arbiter.playMusic({ streamUrl: 'https://cdn.test/a', title: 'A' });
+  procs[0].data();
+  assert.equal(arbiter.state(), 'playing');
+
+  // Replace it. The old proc is killed but will NEVER emit 'close'.
+  arbiter.playMusic({ streamUrl: 'https://cdn.test/b', title: 'B' });
+  assert.deepEqual(procs[0].signals, ['SIGTERM']);
+  await tick();
+  assert.equal(procs.length, 1); // B is deferred on the barrier, as designed
+
+  clock.advance(5_000); // the barrier's bound
+  await tick();
+
+  assert.equal(procs.length, 2); // B spawned anyway — the wedge is broken
+  procs[1].data();
+  assert.equal(arbiter.state(), 'playing');
+  assert.equal(arbiter.statusSnapshot().pending_reaps, 0);
+});
+
+test('killProc destroys the pipes so a reap can always complete', async () => {
+  const clock = createFakeClock();
+  const player = createFakePlayer();
+  const procs = [];
+  const arbiter = createArbiter({
+    spawn: () => { const p = createUnreapableProc(); procs.push(p); return p; },
+    createMusicResource: (stream) => createFakeResource(stream),
+    createSpeechResource: () => ({ playbackDuration: 0 }),
+    clock,
+    getGeneration: () => 'gen1',
+    log: () => {},
+  });
+  arbiter.attach(player);
+  arbiter.playMusic({ streamUrl: 'https://cdn.test/a', title: 'A' });
+  procs[0].data();
+
+  arbiter.stopMusic();
+
+  // The back-pressured pipe is what held the stdio socket open and kept
+  // 'close' from firing; tearing it down ourselves is independent of any
+  // @discordjs/voice behaviour.
+  assert.equal(procs[0].stdout.destroyed, 1);
+  assert.equal(procs[0].stderr.destroyed, 1);
+});
+
+test('every hard cut stops the player with force, or AutoPause survives it', async () => {
+  const { arbiter, player, procs, playToPlaying } = makeArbiter();
+  const forced = [];
+  player.stop = (force) => { forced.push(force); player.state = { status: 'idle' }; player.emit('idle'); return true; };
+
+  playToPlaying();
+  arbiter.stopMusic();
+  void procs;
+
+  // `stop(false)` on an AUTOPAUSED player returns early without leaving
+  // AutoPause (@discordjs/voice 0.19.2) — the resource is never drained and
+  // the killed ffmpeg's 'close' never fires. Only force reaches Idle.
+  assert.ok(forced.length > 0, 'the player was stopped');
+  assert.ok(forced.every((f) => f === true), `every stop passed force, got ${JSON.stringify(forced)}`);
+});
+
+test('a track suspended by speech that never drains fails at the parked deadline', async () => {
+  // e3fe4394 armed the ARRIVING play but not a track that was already
+  // playing when speech preempted it, so that one could still be stranded.
+  const { arbiter, clock, events, playToPlaying } = makeArbiter({
+    parkedDeadlineMs: 300_000,
+    stallMs: 10_000_000,
+  });
+  const a = playToPlaying();
+  assert.equal(arbiter.state(), 'playing');
+
+  // Speech preempts the track and never finishes (no player.finish()).
+  assert.equal(arbiter.enqueueSpeech({ audio: Buffer.from('tts'), mediaType: 'ogg/opus' }), true);
+  assert.equal(arbiter.state(), 'suspended');
+
+  clock.advance(300_000);
+
+  const failed = events.filter((e) => e.type === 'stream-failed');
+  assert.equal(failed.length, 1);
+  assert.equal(failed[0].reason, 'start-timeout');
+  assert.equal(failed[0].playback_id, a.playbackId);
+});
+
+test('reviving a suspended track does not leave the parked deadline armed', async () => {
+  const { arbiter, clock, events, player, procs, playToPlaying } = makeArbiter({
+    parkedDeadlineMs: 300_000,
+    stallMs: 10_000_000,
+  });
+  playToPlaying();
+  arbiter.enqueueSpeech({ audio: Buffer.from('tts'), mediaType: 'ogg/opus' });
+  assert.equal(arbiter.state(), 'suspended');
+
+  player.finish(); // speech ends, the track revives
+  await tick();
+  procs[procs.length - 1].data();
+  assert.equal(arbiter.state(), 'playing');
+
+  clock.advance(600_000); // the parked slot's timer must not outlive it
+
+  assert.equal(events.filter((e) => e.type === 'stream-failed').length, 0);
+  assert.equal(arbiter.state(), 'playing');
 });
