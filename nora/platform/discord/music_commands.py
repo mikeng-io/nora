@@ -32,6 +32,12 @@ from nora.infra.voice.hub import VoiceControllerHub
 from nora.platform.discord import music_messages as m
 from nora.platform.discord.discord_commands import DiscordCommands
 from nora.platform.discord.music_manager import Connect, MusicPlayerManager
+from nora.platform.discord.music_notify import (
+    ClientGetter,
+    ResolveMusicChannel,
+    make_notify,
+    no_music_channel,
+)
 from nora.platform.discord.music_player import PlayerStatus, PlayOutcome, VoiceSession
 from nora.platform.discord.voice_gate import voice_join_decision
 
@@ -50,29 +56,35 @@ _QUEUE_VIEW_TIMEOUT_SECONDS = 180.0
 _CONTROLS_VIEW_TIMEOUT_SECONDS = 900.0
 
 
-def _notify_factory(interaction: discord.Interaction):
-    """Captures the channel `/music play` was invoked FROM -- the manager
-    only actually uses this the moment it starts a fresh session (`03-
-    state-and-persistence.md`'s "where it started"), so a no-op fallback
-    here for the rare non-messageable channel is fine: nothing calls it in
-    the ordinary case anyway."""
-    channel = interaction.channel
+def _notify_factory(
+    interaction: discord.Interaction,
+    guild_id: str,
+    *,
+    client: ClientGetter,
+    resolve_music_channel: ResolveMusicChannel,
+):
+    """The announcement destination for a session started by `/music play`:
+    the `music_channel` one of this guild's `policy.toml` rooms names, else
+    the channel this command was invoked from (`03-state-and-persistence.md`'s
+    "where it started"). Both halves live in `music_notify.make_notify` — the
+    ONE place any surface decides where a music announcement goes
+    (design/discord-music/10-notification-routing.md).
 
-    async def notify(text: str) -> None:
-        if isinstance(channel, discord.abc.Messageable):
-            # Silent: a "Now playing" line on every auto-advance is useful
-            # to have in the channel, not worth a push notification/ping
-            # every few minutes.
-            log.info("music notify: sending %r to channel %s", text, getattr(channel, "id", "?"))
-            await channel.send(text, silent=True)
-            return
-        log.warning(
-            "music notify: channel %r is NOT Messageable — auto-advance "
-            "notification dropped (text: %r)",
-            channel, text,
-        )
-
-    return notify
+    `client` is the ADAPTER's getter, deliberately not `interaction.client`
+    (audit, 2026-09-21): this closure is stored in `MusicPlayerManager._notify`
+    and outlives the connection attempt the interaction belonged to, and a
+    closed `discord.Client` keeps its channel cache — so a captured one
+    resolves a channel and then fails at `send`, on every announcement for the
+    rest of the session, with nothing re-registering the closure. Only the
+    channel id is taken off the interaction."""
+    return make_notify(
+        client=client,
+        guild_id=guild_id,
+        fallback_channel_id=(
+            str(interaction.channel_id) if interaction.channel_id else None
+        ),
+        resolve_music_channel=resolve_music_channel,
+    )
 
 
 def _connect_factory(hub: VoiceControllerHub | None, guild_id: str, channel_id: str) -> Connect:
@@ -293,11 +305,19 @@ class MusicCommands(app_commands.Group):
         *,
         hub: VoiceControllerHub | None = None,
         voice_guild_ids: frozenset[str] = frozenset(),
+        resolve_music_channel: ResolveMusicChannel = no_music_channel,
+        client: ClientGetter | None = None,
     ) -> None:
         super().__init__(name="music", description="Play music in a voice channel.")
         self._manager = manager
         self._hub = hub
         self._voice_guild_ids = voice_guild_ids
+        self._resolve_music_channel = resolve_music_channel
+        # `None` only in a harness that registers commands without an adapter;
+        # production always passes `DiscordAdapter.current_client`. Falling
+        # back to the interaction's own client keeps such a harness working
+        # while production gets the getter that survives a reconnect.
+        self._client = client
 
     @app_commands.command(
         name="play", description="Play a track, or queue it if one's already playing.",
@@ -352,7 +372,11 @@ class MusicCommands(app_commands.Group):
             outcome = await self._manager.play(
                 guild_id=guild_id, query_or_url=query, requested_by=str(interaction.user.id),
                 added_at=discord.utils.utcnow(), connect=connect,
-                notify=_notify_factory(interaction),
+                notify=_notify_factory(
+                    interaction, guild_id,
+                    client=self._client or (lambda: interaction.client),
+                    resolve_music_channel=self._resolve_music_channel,
+                ),
                 voice_channel_id=voice_channel_id,
                 notify_channel_id=notify_channel_id,
             )
@@ -545,6 +569,8 @@ async def register(
     *,
     hub: VoiceControllerHub | None = None,
     voice_guild_ids: frozenset[str] = frozenset(),
+    resolve_music_channel: ResolveMusicChannel = no_music_channel,
+    client_getter: ClientGetter | None = None,
 ) -> None:
     """Built and synced fresh inside `DiscordAdapter.listen()`, same
     lifecycle as `client` itself — a fresh `discord.Client` per connection
@@ -561,7 +587,11 @@ async def register(
     to `/app/v1/voice/event` (design/voice-channel/07 §10, B10) — nora no
     longer holds a voice client to watch."""
     tree = app_commands.CommandTree(client)
-    tree.add_command(MusicCommands(manager, hub=hub, voice_guild_ids=voice_guild_ids))
+    tree.add_command(MusicCommands(
+        manager, hub=hub, voice_guild_ids=voice_guild_ids,
+        resolve_music_channel=resolve_music_channel,
+        client=client_getter,
+    ))
     tree.add_command(
         DiscordCommands(hub=hub, voice_guild_ids=voice_guild_ids, manager=manager)
     )
@@ -573,6 +603,8 @@ async def resume_persisted_sessions(
     manager: MusicPlayerManager,
     *,
     hub: VoiceControllerHub | None,
+    resolve_music_channel: ResolveMusicChannel = no_music_channel,
+    client_getter: ClientGetter | None = None,
 ) -> None:
     """Boot-time resume (design/discord-music/06-session-persistence.md
     stage 2): reconnects a guild's session ONLY if its voice channel still
@@ -607,17 +639,24 @@ async def resume_persisted_sessions(
             await manager.discard_persisted_session(session.guild_id)
             continue
 
-        notify_channel = client.get_channel(int(session.notify_channel_id))
-
-        async def notify(text: str, *, _channel=notify_channel) -> None:
-            if isinstance(_channel, discord.abc.Messageable):
-                await _channel.send(text, silent=True)
-
         try:
             await manager.resume_persisted_session(
                 session,
                 connect=_connect_factory(hub, session.guild_id, session.voice_channel_id),
-                notify=notify,
+                # The persisted `notify_channel_id` is the FALLBACK, not the
+                # destination: a resume re-reads `policy.toml`'s `music_channel`
+                # like every other post does, so an operator who set one while
+                # Nora was down gets it honoured on the way back up
+                # (design/discord-music/10-notification-routing.md).
+                notify=make_notify(
+                    # The adapter's getter, not the `on_ready` client this
+                    # scan is running under — see `_notify_factory` for what a
+                    # captured, later-closed client costs.
+                    client=client_getter or (lambda: client),
+                    guild_id=session.guild_id,
+                    fallback_channel_id=session.notify_channel_id,
+                    resolve_music_channel=resolve_music_channel,
+                ),
             )
         except Exception:
             log.exception("failed to resume music session for guild %s", session.guild_id)

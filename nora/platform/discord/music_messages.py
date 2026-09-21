@@ -15,9 +15,16 @@ Language policy (D4 of the design node): system announcements are fixed
 English strings — deterministic, locale-independent, and the slash surface
 carries no LLM to localise. Nora's conversational reply on the tag path is
 her own doctrine-register wording and is deliberately NOT rendered here;
-with the agent path suppressing the system's session-start post
-(`MusicPlayerManager.play(notify_on_play=False)`), her reply is the one
-announcement a tag-path play produces.
+since `MusicPlayerManager.play` never posts a session-start line at all, her
+reply is the one announcement a tag-path play produces. (There is no
+`notify_on_play=False` parameter, and there never was — 09's own
+"announcement contract" section withdrew that plan on reading `play()`, and
+this docstring described it as shipped for three weeks.)
+
+WHERE a message lands is `music_notify.py`, not here (design/discord-music/
+10-notification-routing.md): this module owns the wording, that one owns the
+destination, and the two are separate for the same reason each is single-
+owner — a surface can only change either by changing one file.
 """
 
 from __future__ import annotations
