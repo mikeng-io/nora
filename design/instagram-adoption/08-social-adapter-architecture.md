@@ -139,6 +139,49 @@ must pin **both** allowlists, and the `SocialProvider` contract suite the port
 docstring already calls for is where the two implementations are held to the
 same behaviour.
 
+## The routing rule: the axis split is the DEFAULT, not a tie-break
+
+The operator's boundary is the rule, and it is stated first because everything
+below is an exception to it:
+
+> **Social reads go through the OpenCLI bridge. The Go package does messaging.**
+
+`SocialRouter` exists to serve a short, justified **exception list**, not to
+pick a favourite backend per verb. A row belongs on that list only when:
+
+1. OpenCLI **structurally cannot** serve it — not "serves it worse", not
+   "is flaky today", but has no such command; and
+2. the capability is actually wanted by a named use case; and
+3. the exception is recorded here with the measurement that established (1).
+
+**Today the list has exactly one row: `instagram/story`.** OpenCLI 1.8.7's
+`instagram` surface marks `story` as `[write]` — it posts a story — and has no
+story read anywhere. `FetchReel` is the only path that exists.
+
+Two things this rule deliberately excludes, though instameow can do both:
+
+- **`friendship_status`** (does this account follow them, are we blocked) —
+  real, and OpenCLI has no equivalent, but **no use case has asked for it**.
+  Fails test (2). It stays unrouted until something needs it.
+- **`latest_reel_media`** as a cheap "do they have a story up" check — an
+  optimisation of a row that is already routed. Fails test (1): it is not a
+  capability, it is a faster way to do one.
+
+The rule matters more than the row. A router whose entries are chosen by
+"which backend is better here" drifts into two parallel integrations within a
+year, because every verb has a better backend on some axis. A router whose
+entries each carry a proof of impossibility cannot drift: the list shrinks if
+OpenCLI grows a verb, and grows only against evidence.
+
+### Why the exception cannot be closed upstream
+
+OpenCLI is **`@jackwener/opencli`**, a third-party npm package (1.8.7,
+installed under `~/.hermes/node`). It is not ours to extend, so "add a story
+read to OpenCLI" is not an available move and the exception is not a temporary
+workaround awaiting a patch we control. If upstream ever ships a story read,
+test (1) fails and the row is removed — that is the only way the list
+shrinks.
+
 ## Responsibilities: instameow vs OpenCLI, per use case
 
 Measured, not preferred. instameow's complete social surface is `FetchReel`,
@@ -148,15 +191,14 @@ posts one.
 
 | Use case | Backend | Why |
 |---|---|---|
-| "what's on X's story right now" | **instameow** | `FetchReel(igid)`, person-keyed. No other path exists anywhere. |
-| "does this person follow us / are we blocked" | **instameow** | `friendship_status`, absent from the browser path |
-| "has this person posted a story" (cheap check) | **instameow** | `latest_reel_media` on the profile, one call |
-| "show me their profile — bio, follower count" | **OpenCLI** | instameow's `GetProfile` carries none of those fields |
-| "list this person's recent posts" | **OpenCLI** | instameow has no such call at all |
-| "read this specific post someone linked" | **OpenCLI**; instameow unproven | `FetchMedia` returned HTTP 400 on the one id tried |
-| "search for a user by name" | either | equivalent; both users-only |
-| anything on **X** | **OpenCLI** | instameow is Instagram-only |
-| Threads, later | neither yet | joins as a third backend behind the same port |
+| "what's on X's story right now" | **instameow** — the one exception | `FetchReel(igid)`. OpenCLI has no story read; its `story` verb posts one. |
+| "show me their profile — bio, follower count" | OpenCLI | default; and instameow's `GetProfile` carries none of those fields anyway |
+| "list this person's recent posts" | OpenCLI | default; instameow has no such call at all |
+| "read this specific post someone linked" | OpenCLI | default. `instagram/post` is `unavailable` on both paths today; `FetchMedia` returned HTTP 400 on the one id tried, so it is not a candidate exception until proven |
+| "search for a user by name" | OpenCLI | default; the two are equivalent, so there is no case for an exception |
+| anything on **X** | OpenCLI | default; instameow is Instagram-only |
+| "does this person follow us" | *unrouted* | instameow-only, but no use case asks for it — see the rule above |
+| Threads, later | neither yet | joins as a further backend behind the same port |
 
 Two structural conclusions the operator asked for directly:
 
@@ -164,11 +206,13 @@ Two structural conclusions the operator asked for directly:
   and not at all while X is wanted. The hoped-for prize — deleting the VNC
   desktop and headed Chrome — costs X *and* posts *and* profile fields
   together.
-- **instameow cannot be avoided.** Stories exist on no other path, and
-  stories are what Phase 2 was actually asked for.
+- **instameow cannot be avoided**, but its social footprint is one verb.
+  Stories exist on no other path and are what Phase 2 was actually asked for;
+  everything else stays on the default side of the boundary.
 
-They are complements with almost no overlap, which is a comfortable place to
-be: there is little to arbitrate and no duplicated capability to keep in sync.
+The overlap is therefore almost nil by construction rather than by luck: the
+exception list admits only what the default backend cannot do, so there is
+nothing to arbitrate and no duplicated capability to keep in sync.
 
 ## Failure semantics differ per backend, and the router must not hide it
 
@@ -190,7 +234,10 @@ router that improvises is a router that lies about what it looked at.
 Nothing above the port. Specifically:
 
 1. `social_fetch`'s vocabulary gains `story` (one row); the tool is otherwise
-   untouched.
+   untouched. The host `READ_ONLY_ALLOWLIST` keeps its existing 7 rows
+   (`x` × post/profile/posts/search, `instagram` × profile/posts/search)
+   unchanged — `story` is the only pair that does not appear there, which is
+   exactly why it is the exception.
 2. `SocialRouter` is added as a `SocialProvider` and composed in
    `build_dependencies` where `OpenCliBridgeClient` is today.
 3. `InstagramSocialClient` is added as the second `SocialProvider`.
@@ -207,6 +254,9 @@ Nothing above the port. Specifically:
 - **No backend name in the model's vocabulary.** If a prompt ever says
   "instameow" or "opencli", the boundary has already failed.
 - **No failover between backends.** See above.
+- **No exception without a proof.** A verb moves to instameow only against a
+  recorded measurement that OpenCLI cannot serve it. "Better", "faster" and
+  "working today" are not proofs.
 - **No second Instagram session.** The bridge owns exactly one.
 - **No social read without a subject in a permitted tier**
   (`07-social-boundary-and-scope.md`). Architecture bounds *how*; the tier
