@@ -314,6 +314,35 @@ structurally; `-deviant` guards it by content using real data; `-chronicle`
 tests the representation claim the tier is named for. Only the last costs the
 rule anything.
 
+### 1.6 What is owed, and what it is waiting on (2026-09-22)
+
+Written down because three sessions were working on this at once and two of
+them ended. Anything below that is not started is not started by ANYONE; the
+peer sessions that raised these items are gone, and their branches, not their
+memories, are the record.
+
+| owed | waiting on | who raised it |
+|---|---|---|
+| the four culture arms + the owed `blocks_empty` test | the block, on `mikeng-io/culture-step5-production` — they land in ONE merge, never separately (#294 reverted #284 for shipping the block alone) | culture session |
+| S2 wiring — a traced task through `experiment_for`, the SDK trajectory evaluator, expected tool in `metadata` | nothing. `traced_nora_task` EXISTS and has one caller: its own unit test | tool-catalogue session |
+| tool-selection cases, incl. a no-tool-at-all case | S2 wiring above. Anchor the pairs against the catalogue branch — the `where_is` line only reads "RIGHT NOW" there, and master's still says "was last seen", which is the defect rather than the fix | tool-catalogue session |
+| the tool-result seam (§7.2) — 13 unanchored cases | its hook is in `nora/agent/`, the catalogue work's own area | this bundle |
+| the Discord adapter divergence — 3 unanchored cases | an adapter present without a live `GET /users/@me` | this bundle |
+| R1 made mechanical | an extraction that can say a tier is EMPTY rather than UNREAD. Reminders landed 2026-09-22; Honcho and note candidates have not | this bundle |
+
+**The owed `blocks_empty` test must pin BOTH directions.** A room whose culture
+head was folded before the instant means `culture` is NOT in
+`nora.prefill.blocks_empty`; a room with no head means it IS. Asserting only
+the first passes on a build where the block is unconditionally present — a
+different defect that fails the same way, which is what #294 was about.
+
+**One baseline caveat for whoever re-measures.** `[culture] enabled` is one
+flag with two effects and has a READ side as of that branch. Only
+`participation.yaml` is affected — the tag assembler contains `culture` zero
+times and `FirePath` gates the read on `kind == "participation"` — so the
+re-baseline is one corpus of thirteen, not the whole suite. Take it on that
+branch so before and after are one measurement.
+
 ### Where the suite runs — DECIDED 2026-09-21: on the deploy host
 
 Not a preference. Measured: with the deployment's features on, composition
