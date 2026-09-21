@@ -18,6 +18,7 @@ edges:
   - {dst: 08-social-adapter-architecture.md, rel: details, provenance: asserted}
   - {dst: 09-tool-surface-and-naming.md, rel: details, provenance: asserted}
   - {dst: 10-discovery-retrieval-and-paging.md, rel: details, provenance: asserted}
+  - {dst: 11-sequencing-and-flows.md, rel: details, provenance: asserted}
 ---
 
 # Instagram Adoption — Overview, Verdict & Phases
@@ -208,10 +209,11 @@ Discord a bot is visibly a bot. Here it is not, unless the operator says so.
 ## Sequencing
 
 1. Make Instagram's absence survivable in `AdapterRegistry` (no new deps).
-2. Measure session longevity. A soak is running on norty since 2026-09-21
-   (`~/workspace/ig-soak/`, `status.sh` for a fail-closed read-back). **No
-   bridge should be written until this produces a number** — it decides
-   whether the thing is operable or merely possible.
+2. Measure session longevity — **in parallel, gating nothing**. The soak on
+   norty (`~/workspace/ig-soak/`, `status.sh`) tunes re-auth cadence, which is
+   a runbook number rather than an architectural one. An earlier revision said
+   no bridge should be written until it produced a number; that was
+   over-cautious and is withdrawn (`11-sequencing-and-flows.md`).
 3. Phase 1 bridge + adapter, group-only, deny-by-default on DMs, mirroring
    WhatsApp v1.
 4. Phase 2 social reads, behind their own policy flag.
