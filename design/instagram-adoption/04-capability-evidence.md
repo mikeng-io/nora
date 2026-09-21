@@ -25,10 +25,10 @@ protocol's behaviour — two of them turned out not to match the wire.
 | send text | PASS | `SendMessage` → `mid.$gAASG4nvQLWim9MCLrWgw3tChgAAq` |
 | send with mention | PASS | mention structure round-tripped in the echo delta |
 | send reply | PASS | `replied_to_message` present in the echo |
-| send reaction | PASS | `SendReaction`, emoji 👍 accepted |
+| send reaction | **FAIL with the LONG id** | measured 2026-09-22: accepted, then **absent from the thread on read-back**. With the SHORT id the reaction is present. "Accepted" was not "arrived" |
 | edit message | PASS | `EditMessage` accepted |
 | unsend message | PASS | 5 of 5 probe messages removed |
-| typing indicator | PASS | `SetTyping` accepted |
+| typing indicator | **UNVERIFIED** | `SetTyping` accepted; arrival never read back, and upstream addresses it with the SHORT id |
 | upload image bytes | PASS | 140-byte PNG → attachment fbid `2280432885466163` |
 | send image to group | PASS | `SendMedia` with that attachment fbid |
 | caption on media | **impossible** | `SendMediaRequest` has **no text field at all** |
@@ -69,6 +69,29 @@ parser default. v1 surfaces `{"kind": "one_time", "url": null}`.
 The remaining UNMEASURED row is a Phase 1 requirement. It is listed as
 unmeasured rather than inferred from `capabilities.go`, because the two rows
 below show what inference costs.
+
+### The thread id is MIXED per verb, not uniform — measured 2026-09-22
+
+`03-transport-contract.md` said every send needs the LONG `thread_igid`. That
+is wrong for at least one verb, and the failure is silent.
+
+| verb | LONG | SHORT | how established |
+|---|---|---|---|
+| `SendMessage` | **works** | (upstream uses it) | echo delta + thread history |
+| `SendMedia` | **works** | — | image appeared in the thread |
+| `UnsendMessage` | **works** | — | every probe cleanup succeeded |
+| **`SendReaction`** | **accepted, NEVER ARRIVES** | **works** | one carrier message, 👍 with long then 🔥 with short; only 🔥 present on read-back |
+| `SetTyping` | unverified | (upstream uses it) | never read back |
+
+`mautrix`'s own connector passes the SHORT id (`meta.IGID`) for `SendMessage`,
+`SendMedia`, reactions and typing, and the LONG one only for unsend. The
+measurement says send and media tolerate either while **reactions do not**.
+
+**The lesson is the method, not the table.** This row read PASS for a day
+because the probe checked the API's answer instead of the thread. An
+acknowledgement is a claim about a request; only a read-back is a claim about
+the world. Every other outbound row above was verified by echo or history —
+this one was not, and it was the one that was wrong.
 
 ## Where the declared capabilities were wrong
 
