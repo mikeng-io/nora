@@ -38,7 +38,7 @@ The two halves of the old sentence are preserved — do not perform, do not
 linger in the room — and the third thing, that the *thread* ends with the
 message, is removed.
 
-**DEC-163. Operator-only. This gates the bundle** (`00 §7`). Every change in
+**DEC-163. Operator-only. This gates the bundle** (`00 §7`). **TAKEN by the operator 2026-09-22** — the bundle is unblocked. `identity.md` on master is unchanged; the decision authorises the rewrite above, and the edit lands with the build. Every change in
 `03`–`06` is a change the doctrine above it will overrule at runtime while this
 sentence stands; `01 §1` is the measurement of exactly that.
 

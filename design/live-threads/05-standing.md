@@ -27,6 +27,28 @@ in place and is capped at 1200 characters, so anything not restated is gone.
 memory, the current state is a note, and the position is neither. Recorded so
 nobody proposes Standing as the home for accumulation.
 
+> **Re-read 2026-09-22, after the operator took DEC-163.** Two numbers in
+> this section moved between writing and merge, and neither changes the
+> finding.
+>
+> - **The ceiling is 4,000 characters, not 1,200.**
+>   `STANDING_BODY_CEILING_CHARS = 4000` (`nora/domain/standing.py:46`),
+>   which `standing_body_fits_the_ceiling_check` reads rather than
+>   hardcodes (`nora/infra/sql/schema.py:2218-2221`). A bigger cap makes
+>   the position hold more of a busy room, not a different kind of thing.
+> - **History is no longer lost — the HEAD still rewrites in place.**
+>   `standing_revision` landed in #352 (migration `0059_standing_revision`,
+>   merged 2026-09-20, nine days after this node was written): an
+>   append-only chain written in the fold's own transaction, with
+>   point-in-time reconstruction ("the position this room held at
+>   `before_ms`"). So "anything not restated is gone" is now true of the
+>   position and false of the record behind it.
+>
+> The routing conclusion stands either way: a chain of positions is a
+> history of what she *thought*, not an accumulator of what the room
+> *said*, and `01 §4.2` needs the second. Standing is still not the home
+> for accumulation.
+
 ## 3. Finding 2 — it is per-room, and stalling is per-thread
 
 Standing is one paragraph for a whole conversation, rendered with its age:

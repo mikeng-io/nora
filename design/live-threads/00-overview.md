@@ -130,7 +130,7 @@ paid for the alternative twice.
 ## 8. What this is not
 
 - Not a new tier. Every mechanism needed already exists — revisions, retirement,
-  a per-workspace index, two turns reading the same store. What is missing is
+  a per-unit index, two turns reading the same store. What is missing is
   what those mechanisms are *allowed to hold*.
 - Not a relaxation of R-14 or the anti-nagging rules. A thing already answered
   has no gap left to close, and that is the same test, not a weaker one

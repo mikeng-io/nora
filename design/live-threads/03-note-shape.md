@@ -109,7 +109,7 @@ their own retention, their own writer, and their own index.
 
 - Every mechanism a state needs already exists on notes: accumulating revisions
   (`append_revision`), retirement as a status rather than a delete, a
-  per-workspace index, both a strike counter and a scheduled revisit.
+  per-unit index, both a strike counter and a scheduled revisit.
 - **Both turns already read notes.** `prefill._notes_block` → `render_notes`
   for the tag and participation path; the proactive pass builds its own index
   off the same store. A third store means wiring both again, and means the two

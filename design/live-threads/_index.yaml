@@ -47,8 +47,8 @@ decisions:
   reserved: "DEC-163 .. DEC-175"
   index: 07-decisions-and-migration.md
 open_questions:
-  - "BLOCKED — everything downstream of identity: DEC-163 is operator-only and nothing below it can be judged until it is answered"
-  - "BLOCKED — no eval case exists for a dateless-but-live note, a state, or the participation exit; #158 says the suite cannot currently decide a prompt change at all"
+  - "ANSWERED 2026-09-22 — DEC-163 TAKEN by the operator. `identity.md`'s «then you're done» becomes «stopping talking is not the same as being finished»; the bundle is unblocked and 02 §1 carries the replacement text. Nothing is built: the doctrine file itself is unchanged on master, and the decision is registered at build time, not here."
+  - "BLOCKED — no eval case exists for a dateless-but-live note, a state, or the participation exit. #158 measured this on the OLD suite, which #334 deleted (merged 2026-09-22): cases now drive the deployment's own graph through four entry points, so #158's reading must be retaken before it is cited against a prompt change."
   - "UNDECIDED — whether a state is a note shape or a third store (03 §4 states the case for both)"
   - "UNDECIDED — whether Standing becomes per-thread or stays per-room (05 §5)"
   - "OUT OF SCOPE — the fire path's missing TagTrace, which blocks Standing writes on participation and proactive turns; named in 05, owned elsewhere"
