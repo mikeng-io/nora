@@ -186,12 +186,62 @@ This needs a decision before Phase 2 ships. Three shapes, none free:
 Left open deliberately rather than decided here: it is a change to a shared
 tool, so it belongs to whoever owns `media_fetch`, not to this bundle.
 
-**2. Instagram CDN URLs are signed and expire.** A story URL carries `oe=` and
+**2. Instagram CDN URLs need no authentication — measured.** The concern that
+`media_fetch` would fail because it carries no session is **unfounded**, and
+worth recording because the way it fails when you get it wrong is misleading.
+
+| fetch | result |
+|---|---|
+| story video URL, **no cookies, no UA, no referer** | `200`, `video/mp4`, 1,402,828 bytes |
+| group-message image URL, same | `200`, `image/png` |
+
+The URLs are signed (`oh=`, `oe=`, `_nc_sid`), and the signature is the
+authorization — a session is not required and adds nothing.
+
+**The trap:** a URL taken out of the raw JSON without decoding it carries
+`\u0026` where `&` belongs, and Instagram answers `403 Bad URL hash`. That is
+a *signature* error, not an auth error, but it reads exactly like one and will
+send whoever hits it looking for a cookie problem that does not exist. It cost
+this investigation two wrong conclusions before the URL was compared byte for
+byte. Any client that JSON-**decodes** rather than regex-scrapes never sees
+it — which the bridge will do — so this is a note for whoever debugs a 403,
+not a design constraint.
+
+**3. Instagram CDN URLs are signed and expire.** A story URL carries `oe=` and
 `oh=` parameters; it is valid for a window, not indefinitely. So a URL is only
 useful promptly, and a URL stored anywhere is a dead link later. This cuts in
 the design's favour — it reinforces that social reads are ephemeral by nature
 — but it means a two-step "list now, look later" flow must be *soon* after,
 and that a cursor must never be assumed to keep its URLs alive.
+
+## Worked example: "Nora, read my latest story"
+
+The concrete path, with the measured values from this study.
+
+| # | Step | What happens |
+|---|---|---|
+| 1 | **ingest** | the message arrives on whatever platform; `sender_fbid 110966695387753` resolves to person `miles` through the person index |
+| 2 | **engage** | Nora is addressed, the engagement pipeline decides to answer, an agent turn starts |
+| 3 | **resolve subject** | "my" = the speaker = person `miles` → `persons.miles.instagram.igid = 221731317`. The model never supplies a handle. **No entry → `ambiguous`, never a guess from the name** |
+| 4 | **authorize** | `miles` is a known person in a room Nora is in → tier 0. Story reads are permitted (operator, 2026-09-21). Tier 3 would refuse here |
+| 5 | **route** | `(instagram, story)` is the one exception row → instameow, through the instagram-bridge, which re-checks its own allowlist before reading |
+| 6 | **discover** | `GetProfile(221731317).latest_reel_media` — one cheap call, no media. Nothing there → `nothing_found` ("no story up") and the turn stops here |
+| 7 | **retrieve** | `FetchReel(["221731317"])`, newest first, clamped to `limit=1` for "latest" → one item |
+| 8 | **return references** | `{status:"ok", items:[{id, kind:"video", taken_at, url}], expires_at}` — no bytes, no description |
+| 9 | **comprehend** | the model calls `media_fetch(url=…)` for that one item. Measured: fetches `200` unauthenticated. **This is the step that collides with retention — see below** |
+| 10 | **answer** | Nora says what the story shows, in the room |
+| 11 | **bookkeep** | Nora's own cursor for `(miles, story)` advances to that item's `taken_at`. Nothing else survives: not the bytes, not the URL (it expires anyway) |
+
+Three things to notice about the shape:
+
+- **"Latest" is cheap.** Step 6 answers "is there anything" without touching
+  media, and a `limit=1` at step 7 means one item even if the reel holds
+  fifteen.
+- **The model spends deliberately.** Steps 7 and 9 are separate calls; a story
+  can be *listed* without anything looking at it, which is what makes "does
+  Miles have a story up" a different cost from "what is in it".
+- **Step 9 is the only durable risk in the whole path**, and it is durable by
+  accident rather than by design.
 
 ## The steps, end to end
 
