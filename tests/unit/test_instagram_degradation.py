@@ -76,8 +76,18 @@ class _PlatformsCfg:
 @pytest.fixture
 async def bridge():
     """`(box, base_url)` — an instagram-bridge whose `/health` says whatever
-    the test needs, including the 200-with-a-checkpoint the real one serves."""
+    the test needs, including the 200-with-a-checkpoint the real one serves.
+
+    It also serves `/send` and `/react` **successfully**, and records every
+    call. That is what makes the refusal tests below bite: pointed at a dead
+    port, a degraded adapter that had LOST its refusal would still answer
+    `ok=False` — from the connection error — and the assertion would pass
+    while measuring nothing. Against a bridge that says yes, only the refusal
+    itself can produce a failure, and `box["calls"]` proves nothing left the
+    process.
+    """
     box: dict = {
+        "calls": [],
         "body": {
             "ok": True, "session": "authenticated", "connected": True, "seq": 1,
             "self": {"fbid": NORA_FBID, "igid": "79597894900", "username": "not_____nora"},
@@ -87,8 +97,15 @@ async def bridge():
     async def health(request: web.Request) -> web.Response:
         return web.json_response(box["body"])
 
+    async def accept(request: web.Request) -> web.Response:
+        box["calls"].append(request.path)
+        return web.json_response({"ok": True, "id": "mid.$x", "timestamp_ms": 1})
+
     app = web.Application()
     app.router.add_get("/health", health)
+    app.router.add_post("/send", accept)
+    app.router.add_post("/send-media", accept)
+    app.router.add_post("/react", accept)
     server = TestServer(app)
     await server.start_server()
     yield box, str(server.make_url("")).rstrip("/")
@@ -169,26 +186,30 @@ async def test_a_DISABLED_instagram_is_built_by_no_one():
 # --- the adapter: what "degraded" is defined to mean -------------------------
 
 
-def _degraded_adapter() -> InstagramAdapter:
-    adapter = InstagramAdapter("http://127.0.0.1:1")
+def _degraded_adapter(base_url: str = "http://127.0.0.1:1") -> InstagramAdapter:
+    adapter = InstagramAdapter(base_url)
     adapter.degrade("InstagramIdentityError: session is 'checkpointed'")
     return adapter
 
 
-async def test_a_degraded_adapter_REFUSES_TO_SEND_without_an_http_call():
-    """Not retryable: a checkpoint is cleared by a human, and a caller that
-    backed off and retried would hammer a challenged account — which is how a
+async def test_a_degraded_adapter_REFUSES_TO_SEND_without_an_http_call(bridge):
+    """Against a bridge that would ACCEPT the send — see the fixture. Not
+    retryable either: a checkpoint is cleared by a human, and a caller that
+    backed off and retried would hammer a challenged account, which is how a
     captcha becomes a ban."""
-    adapter = _degraded_adapter()
+    box, base_url = bridge
+    adapter = _degraded_adapter(base_url)
 
     result = await adapter.send(target=GROUP, text="hello")
 
     assert result.ok is False
     assert result.retryable is False
+    assert box["calls"] == [], "the refusal must not reach the wire"
 
 
-async def test_a_degraded_adapter_places_NO_reaction():
-    adapter = _degraded_adapter()
+async def test_a_degraded_adapter_places_NO_reaction(bridge):
+    box, base_url = bridge
+    adapter = _degraded_adapter(base_url)
 
     result = await adapter.react(
         target=GROUP, emoji="❤️", to_author="x", to_timestamp=1, to_message_id="mid.$a",
@@ -196,6 +217,7 @@ async def test_a_degraded_adapter_places_NO_reaction():
 
     assert result.ok is False
     assert result.supported is False
+    assert box["calls"] == []
 
 
 async def test_a_degraded_adapter_EMITS_NO_EVENTS_and_NEVER_RETURNS():
@@ -239,12 +261,17 @@ async def test_a_HEALTHY_adapter_reports_no_degradation():
     assert health.detail == ""
 
 
-async def test_a_session_checkpointed_AFTER_startup_degrades_the_LIVE_adapter():
+async def test_a_session_checkpointed_AFTER_startup_degrades_the_LIVE_adapter(bridge):
     """Startup and runtime are two ways to lose the session and `from_config`
     only sees one of them. Without this, an adapter that was authenticated at
-    boot and checkpointed at 4am reads as connected and merely quiet."""
-    adapter = InstagramAdapter("http://127.0.0.1:1")
+    boot and checkpointed at 4am reads as connected and merely quiet.
+
+    The bridge here ACCEPTS sends, so the refusal below is the adapter's own
+    and not a connection error wearing its clothes."""
+    _box, base_url = bridge
+    adapter = InstagramAdapter(base_url)
     assert adapter.degraded is False
+    assert (await adapter.send(target=GROUP, text="before")).ok is True
 
     adapter._listener._absorb_heartbeat(
         {"kind": "heartbeat", "ts_ms": 1, "session": "checkpointed"}
@@ -252,5 +279,4 @@ async def test_a_session_checkpointed_AFTER_startup_degrades_the_LIVE_adapter():
 
     assert adapter.degraded is True
     assert (await adapter.health()).degraded is True
-    result = await adapter.send(target=GROUP, text="hello")
-    assert result.ok is False
+    assert (await adapter.send(target=GROUP, text="after")).ok is False
