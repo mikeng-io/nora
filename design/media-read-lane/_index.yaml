@@ -38,7 +38,7 @@ scope:
     - "Per-call vision budget raised: `media_fetch` budget 4 → 3, `vision_timeout_seconds` → 90 (derived 48 s)"
     - "Audio/video prompt reworked so verbatim speech is IN SCOPE, with the egress screen still applying"
   deferred:
-    - "Concurrent `media_fetch` tool calls inside one agent turn (whether Strands parallelises multiple tool_use blocks is UNTESTED)"
+    - "Concurrent `media_fetch` tool calls inside one agent turn — **ANSWERED as of 2026-09-23: they DO parallelise, and already have** (seven real batches with 2–3 media reads in one model turn, Langfuse). The ceiling on how many run at once is **design/tool-concurrency/ (DEC-196)**, not this bundle."
     - "Per-modality chunk geometry (audio-bearing clips may want a different chunk than silent ones)"
     - "Instagram Reels/Story retrieval itself — that is design/instagram-adoption/, not this bundle"
     - "Local/offline audio transcription — the shipped `stt` service is a separate lane (voice-note ingest)"
