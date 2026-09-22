@@ -62,9 +62,15 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from typing import Protocol
 
-from nora.domain.blocks import ContextBlock, render_messages, speaker_name
+from nora.domain.blocks import (
+    BlockKey,
+    ContextBlock,
+    render_messages,
+    speaker_name,
+)
 from nora.domain.culture import BODY_MAX_CHARS, CultureProposal, CultureRevision
 from nora.domain.errors import NoraError
 from nora.domain.models import TranscriptRow
@@ -376,6 +382,39 @@ def _parse(item: Mapping[str, object]) -> CultureProposal | None:
     return CultureProposal(body=body)
 
 
+#: What this pass carries, declared as data
+#: (`design/context-assembly/01-the-registry.md`) rather than left as the
+#: `parts` list `CultureAdaptor.inputs` builds by hand.
+#:
+#: **Two rows the design bundle's own survey missed.** `00-overview.md`'s
+#: table lists this occasion as `previous_account, room, room_messages` —
+#: three — because it read `ContextBlock(name=...)` literals in this file
+#: alone. `inputs` also renders `standing` (via
+#: `nora.language.standing_render.render_standing`) and `notes` (via
+#: `nora.language.note_render.render_notes`) when their inputs resolve, both
+#: shared with other occasions. The same gap found in `proactive`
+#: (`loop_decisions`) and `note_candidates` (`notes`) — a survey of literal
+#: `ContextBlock(name=...)` calls misses a block built by a call to a shared
+#: function.
+#:
+#: `order` records the append sequence in `inputs`; nothing sorts by it —
+#: this pass concatenates by hand. `key="turn"` throughout: no established
+#: cache boundary, nothing routes on `key` yet either way.
+_BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
+    ("room", 10, "turn"),
+    ("previous_account", 20, "turn"),
+    ("standing", 30, "turn"),
+    ("notes", 40, "turn"),
+    ("room_messages", 50, "turn"),
+)
+
+#: `name -> (order, key)`, derived so no call site restates a row `_BLOCKS`
+#: already gives it.
+_ROW: dict[str, tuple[int, BlockKey]] = {
+    name: (order, key) for name, order, key in _BLOCKS
+}
+
+
 class CultureAdaptor:
     """One account per room per day, appended to a chain — see the module
     docstring."""
@@ -514,9 +553,10 @@ class CultureAdaptor:
         parts: list[str] = [self._room_block(key)]
         previous = await self._culture.head(key=key)
         if previous is not None:
+            account_order, account_key = _ROW["previous_account"]
             parts.append(
                 ContextBlock(
-                    name="previous_account",
+                    name="previous_account", order=account_order, key=account_key,
                     # HERS, not the room's — the account she wrote last time.
                     # See #314: the marker names the wrong axis, and this block
                     # is one of the two the culture chain drops it across.
@@ -535,7 +575,13 @@ class CultureAdaptor:
                 platform=platform, conversation_id=conversation_id,
             ))
             if block is not None:
-                parts.append(block.render())
+                # RESTAMPED, like `nora.agent.prefill._restamp`: `render_standing`
+                # is shared with the tag path and builds an unstamped block.
+                standing_order, standing_key_tier = _ROW["standing"]
+                parts.append(
+                    replace(block, order=standing_order, key=standing_key_tier)
+                    .render()
+                )
         # WHAT THE ROOM HAS OPEN. `NoteCandidateAdaptor.inputs`' own read, same
         # verb and same key translation (DEC-105: the note store is keyed by
         # UNIT, so a scope key must be resolved and never guessed).
@@ -557,7 +603,12 @@ class CultureAdaptor:
                 today=_batch_day(batch, tz=self._tz),
             )
             if index is not None:
-                parts.append(index.render())
+                # RESTAMPED, like `render_standing` above: `render_notes` is
+                # shared with the tag path and builds an unstamped block.
+                notes_order, notes_key = _ROW["notes"]
+                parts.append(
+                    replace(index, order=notes_order, key=notes_key).render()
+                )
         if standing_key is None or unit is None:
             # A key that names no policy conversation. Not silent — but not
             # counted here either, because `RegistryToolSource.build` counts
@@ -598,7 +649,8 @@ class CultureAdaptor:
             # be. Merging them shipped «`n` is the real row» into this prompt,
             # where it is false (#314).
             ContextBlock(
-                name="room_messages",
+                name="room_messages", order=_ROW["room_messages"][0],
+                key=_ROW["room_messages"][1],
                 body=_render_batch(batch),
             ).render()
         )
@@ -630,8 +682,9 @@ class CultureAdaptor:
         # THROUGH THE INJECTOR (#292). This block arrived hand-written while
         # the conversion was in flight, which is the census doing its job on a
         # module it had already cleared.
+        room_order, room_key = _ROW["room"]
         block = ContextBlock(
-            name="room", attrs=(("label", room),),
+            name="room", order=room_order, key=room_key, attrs=(("label", room),),
             # The OPERATOR's sentence and the room's own name — neither is
             # member-authored, and this block is what tells the model how to
             # read the ones that are.

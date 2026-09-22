@@ -101,8 +101,74 @@ records what the code already does.
    unnoticed and surface the day routing lands.
 5. Falsified: reverting the merge reddens a named test.
 
-**Unmeasured today:** which of the four are identical. That measurement is the
-first task of S3 and costs nothing but a fixture.
+**Measured 2026-09-22, one name merged and three kept separate — recorded
+here rather than left as "unmeasured", because that was the whole point of
+doing the diff first.**
+
+* **`self_card` — MERGED, byte-identical.** `prefill._self_card_block`
+  (`TagContext.self_card`) and `proactive._self_card`
+  (`Recollection.conclusions`) were both, verbatim,
+  `ContextBlock(name="self_card", body=render_bullets(conclusions))` over a
+  `tuple[str, ...]` of the same shape. Not a coincidence discovered by
+  running fixtures side by side — reading the two functions was the diff, and
+  it showed the same computation written twice with nothing comparing them.
+  Now `nora.language.self_card_render.render_self_card`, one builder, both
+  occasions call it and stamp their own order/key after. No eval run: S3
+  acceptance #2 applies directly.
+
+* **`notes` — three of four ALREADY shared, the fourth genuinely differs, NOT
+  merged.** `prefill._notes_block`, `note_candidates.inputs` and
+  `culture.inputs` all call `nora.language.note_render.render_notes` directly
+  — this was never actually a "prefill vs one other" duplicate the way `00`'s
+  original claim read; three occasions already share one function. The real
+  divergence is `proactive._open_notes_block`, which does NOT call
+  `render_notes`: it renders through `render_note_rows` with an `extra`
+  callback adding `revisit`/`raised` attributes `render_notes` has no
+  parameter for, and it falls back to `<notes>(none)</notes>` when nothing is
+  standing rather than dropping the block the way `render_notes` (via
+  `assemble`) does. Two real content differences, not one. Per acceptance
+  #3, this is a prompt change on the pass that decides whether to speak
+  unprompted — not something to fold in on the strength of a shared name, and
+  not merged here.
+
+* **`standing` — prefill and culture ALREADY share `render_standing`; the
+  gate's is NOT merged, and the difference is deliberate.**
+  `prefill._standing_block` and `culture.inputs` both call
+  `nora.language.standing_render.render_standing`, so — same correction as
+  `notes` — this was already one builder in two of the three places `00`
+  implied were separate. `relevance_gate.render_context` hand-builds its own:
+  `render_standing` returns `None` (block dropped) when there is no position,
+  while the gate's docstring states outright that `<standing>` renders
+  `(none)` rather than nothing because "the instruction leans on this block
+  being the only thing that can establish what she owes the room, so its
+  absence has to be READABLE." That is acceptance #4's exact scenario — a
+  content difference that exists for a stated reason, on the one occasion
+  `02` already holds to a higher bar than the rest. Kept separate rather than
+  renamed: the gate's `<standing>` already documents, in its own module, why
+  it is not the shared renderer, which is what "the tag stops lying" is
+  asking for — a rename would be a second way of saying the same fact, spent
+  on the gate's hottest path for no new information.
+
+* **`group_transcript` — NOT merged; three deliberate differences, not
+  drift.** `prefill._transcript_block` and the gate's `render_context` both
+  call `nora.domain.blocks.render_messages`, but configured differently on
+  purpose: the gate substitutes a neutral `"assistant"` for Nora's own
+  messages where prefill substitutes her display name (the gate's
+  determination is meant to read as unbranded admission control, not as
+  Nora), the gate passes no `replying_to` resolver at all (the gate does not
+  need reply-chain structure for a go/no-go verdict), and the gate
+  pre-filters rows that collapse to nothing while prefill does not. Each is
+  argued for in its own module's comments; none reads as an accident. Per
+  acceptance #3, kept separate rather than merged or renamed, for the same
+  reason as `standing` above.
+
+**What this means for S4.** Only one occasion (proactive) still hand-builds a
+`notes`-shaped block outside the shared renderer, and it is not a candidate
+for a quick fold-in — extending `render_notes` with an optional `extra`
+parameter to absorb it, or accepting the two renderers as permanently
+separate, is a real design question with its own measurement, not a
+mechanical merge. It is out of this bundle's S3, which only merges what a
+diff shows to be free.
 
 ## S4 — Widen
 

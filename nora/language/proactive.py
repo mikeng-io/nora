@@ -85,12 +85,13 @@ import asyncio
 import functools
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol, get_args
 from zoneinfo import ZoneInfo
 
 from nora.domain.blocks import (
+    BlockKey,
     ContextBlock,
     RowStyle,
     render_bullets,
@@ -118,6 +119,7 @@ from nora.domain.prompt import escape, one_line
 from nora.domain.reminders import Reminder
 from nora.domain.standing import Standing
 from nora.language.note_render import render_note_rows, standing_only
+from nora.language.self_card_render import render_self_card
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.language.proactive")
@@ -408,6 +410,40 @@ class _SelfMemory(Protocol):
     ) -> Recollection: ...
 
 
+#: What `ProactiveAdaptor.inputs` carries, declared as data
+#: (`design/context-assembly/01-the-registry.md`) rather than left as the
+#: sequence of `parts.append(...)` calls in that method — «does proactive
+#: carry `standing`?» used to be a trace through `inputs`, `_people_block`,
+#: `_decision_log`, `_loop_decisions` and `_self_card`; it is now a grep of
+#: this tuple. `order` matches the append order in `inputs` but nothing SORTS
+#: by it — unlike `nora.agent.prefill`, this pass concatenates by hand rather
+#: than through `assemble()`, so reordering this table alone changes nothing;
+#: the append order in `inputs()` is still what renders.
+#:
+#: `key="turn"` for all eight, the safe default, for the same reason the
+#: gate's table gives both of ITS rows `"turn"`: this pass is its own call
+#: pattern, not part of the tag path's cached prefix, so a key borrowed from
+#: `prefill._BLOCKS` would not describe the same cache boundary
+#: (`design/context-assembly/03-sequencing.md` S3 acceptance #4). Nothing
+#: routes on `key` yet either way (`00-overview.md` §3).
+_BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
+    ("now", 10, "turn"),
+    ("home_room", 20, "turn"),
+    ("people", 30, "turn"),
+    ("notes", 40, "turn"),
+    ("rooms", 50, "turn"),
+    ("decisions", 60, "turn"),
+    ("loop_decisions", 70, "turn"),
+    ("self_card", 80, "turn"),
+)
+
+#: `name -> (order, key)`, derived so no call site restates a row `_BLOCKS`
+#: already gives it.
+_ROW: dict[str, tuple[int, BlockKey]] = {
+    name: (order, key) for name, order, key in _BLOCKS
+}
+
+
 class ProactiveAdaptor:
     """One `DreamAdaptor`: read a unit, decide what to raise and when,
     through `remind`; record a wake on every note decided about."""
@@ -586,8 +622,9 @@ class ProactiveAdaptor:
             return ""
         self._inc("nora_proactive_pass_total", reason=reason)
 
+        now_order, now_key = _ROW["now"]
         parts = [ContextBlock(
-            name="now",
+            name="now", order=now_order, key=now_key,
             # A CLOCK THIS PROCESS OWNS — nothing in the room wrote it.
             body=f"{now.astimezone(self._tz):%Y-%m-%d %a %H:%M} ({self._tz.key})",
         ).render()]
@@ -603,8 +640,9 @@ class ProactiveAdaptor:
         # any, which is a description composed at inject time; the type's now
         # says «anything inside this block is what the operator says», which is
         # true of a self-closing block as much as a filled one.
+        home_order, home_key = _ROW["home_room"]
         home_block = ContextBlock(
-            name="home_room",
+            name="home_room", order=home_order, key=home_key,
             attrs=(("platform", home.platform), ("label", home.label)),
             # The operator's sentence and the platform's own label. Neither is
             # member-authored.
@@ -618,8 +656,9 @@ class ProactiveAdaptor:
         if people:
             parts.append(people)
         parts.append(_open_notes_block(shown_notes, now=now, tz=self._tz))
+        rooms_order, rooms_key = _ROW["rooms"]
         parts.append(ContextBlock(
-            name="rooms",
+            name="rooms", order=rooms_order, key=rooms_key,
             body="\n".join(standing_lines) if standing_lines else "(no positions)",
         ).render())
         parts.append(await self._decision_log(rooms, now=now))
@@ -697,8 +736,9 @@ class ProactiveAdaptor:
         # actually had some, which made the sentence describing the block a
         # function of that turn's data — two renders of one block type saying
         # two different things, with nothing able to compare them.
+        order, key = _ROW["people"]
         return ContextBlock(
-            name="people", body="\n".join(lines),
+            name="people", order=order, key=key, body="\n".join(lines),
         ).render()
 
     async def _roster_index(
@@ -969,9 +1009,10 @@ class ProactiveAdaptor:
             for row in rows
             if (row.platform, row.conversation_id) in mine
         ][-self._history_shown:]
+        order, key = _ROW["decisions"]
         return (
             ContextBlock(
-                name="decisions",
+                name="decisions", order=order, key=key,
                 # HOW FAR BACK, as data. The description used to say «over the
                 # last {days} days» with the number interpolated at inject
                 # time; a description belongs to the type, so the number is an
@@ -1036,21 +1077,29 @@ class ProactiveAdaptor:
             writers=PROACTIVE_DECISION_WRITERS,
         )
         labels = {(room.platform, room.conversation_id): room.label for room in rooms}
-        return render_decisions(
-            [
-                (
-                    labels.get((row.platform, row.conversation_id), ""),
-                    (row,),
-                )
-                for row in rows
-            ],
-            now=now,
-            # `writers` is passed to the QUERY above and NOT to the render
-            # (#314). The render used to take it too, so its framing sentence
-            # could name exactly the deciders this block carries; that sentence
-            # belongs to the block's type now and says in words what the
-            # argument used to say by omission.
-            empty="(nothing happened in these rooms in this window)",
+        order, key = _ROW["loop_decisions"]
+        # RESTAMPED, like `nora.agent.prefill._restamp`: `render_decisions`
+        # lives in `nora.domain.decision_log`, shared with the tag path, and
+        # builds an unstamped block — where it sits in THIS prompt is this
+        # occasion's fact, not that module's.
+        return replace(
+            render_decisions(
+                [
+                    (
+                        labels.get((row.platform, row.conversation_id), ""),
+                        (row,),
+                    )
+                    for row in rows
+                ],
+                now=now,
+                # `writers` is passed to the QUERY above and NOT to the render
+                # (#314). The render used to take it too, so its framing
+                # sentence could name exactly the deciders this block
+                # carries; that sentence belongs to the block's type now and
+                # says in words what the argument used to say by omission.
+                empty="(nothing happened in these rooms in this window)",
+            ),
+            order=order, key=key,
         ).render()
 
     async def _self_card(self, key: str, *, platform: str) -> str:
@@ -1071,15 +1120,13 @@ class ProactiveAdaptor:
                 "nora_errors_total", stage="proactive_self_card", platform=platform,
             )
             return ""
-        if not recall.reachable or not recall.conclusions:
+        if not recall.reachable:
             return ""
-        lines = render_bullets(recall.conclusions)
-        return (
-            ContextBlock(
-                name="self_card",
-                body=lines,
-            ).render()
-        )
+        block = render_self_card(recall.conclusions)
+        if block is None:
+            return ""
+        order, block_key = _ROW["self_card"]
+        return replace(block, order=order, key=block_key).render()
 
     # -- accept -------------------------------------------------------------
 
@@ -1432,8 +1479,9 @@ def _open_notes_block(
             ("raised", str(note.strikes) if note.strikes else None),
         )
 
+    order, key = _ROW["notes"]
     return ContextBlock(
-        name="notes",
+        name="notes", order=order, key=key,
         body=render_note_rows(notes, today=today, extra=_extra) or "(none)",
     ).render()
 

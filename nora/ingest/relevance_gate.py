@@ -84,6 +84,7 @@ from xml.sax.saxutils import escape
 from pydantic import BaseModel, Field
 
 from nora.domain.blocks import (
+    BlockKey,
     ContextBlock,
     assemble,
     render_messages,
@@ -405,6 +406,32 @@ def build_system_prompt(instruction: str, capabilities: str = "") -> str:
 _GATE_SELF_NAME = "assistant"
 
 
+#: The two blocks the gate is allowed to see, and no third
+#: (`design/context-assembly/02-the-gate-stays-closed.md`). Declared as data
+#: for the same reason `nora.agent.prefill._BLOCKS` is: so «what does the gate
+#: carry» is a table to read rather than a trace through `render_context`, and
+#: so a third row can be caught by a test rather than noticed by a reviewer.
+#:
+#: `key="turn"` for both, matching what this function already did before this
+#: table existed (`ContextBlock.key` defaults to `"turn"`) — S1 changes no
+#: output. Whether either belongs at `prefill`'s `"room"` instead is a
+#: separate, later question: the gate's prompt is not part of the tag path's
+#: cached prefix at all, so a key copied from prefill would not mean the same
+#: thing here (`03-sequencing.md` S3 acceptance #4).
+_BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
+    ("group_transcript", 10, "turn"),
+    ("standing", 20, "turn"),
+)
+
+#: `name -> (order, key)`, derived so `render_context` cannot restate a row
+#: `_BLOCKS` already gives it — the drift `nora.agent.prefill._ROW`'s own
+#: comment records (`_BLOCKS` and `_ROW` disagreeing once shipped two blocks
+#: with no entry at all).
+_ROW: dict[str, tuple[int, BlockKey]] = {
+    name: (order, key) for name, order, key in _BLOCKS
+}
+
+
 def render_context(
     transcript: tuple[TranscriptRow, ...],
     standing: tuple[str, int] | str | None,
@@ -493,9 +520,11 @@ def render_context(
     # the only thing that can establish what she owes the room, so its absence
     # has to be READABLE. An empty body would be dropped by `assemble` and the
     # sentence explaining what its absence means would go with it.
+    transcript_order, transcript_key = _ROW["group_transcript"]
+    standing_order, standing_key = _ROW["standing"]
     return assemble((
         ContextBlock(
-            name="group_transcript", order=10,
+            name="group_transcript", order=transcript_order, key=transcript_key,
             # `window` is what the caller READ, not what it rendered, and the
             # two differ: a row with nothing left after the collapse is dropped
             # above. «How far back you were shown» is the question this answers
@@ -509,7 +538,7 @@ def render_context(
             body=transcript_block,
         ),
         ContextBlock(
-            name="standing", order=20,
+            name="standing", order=standing_order, key=standing_key,
             attrs=(
                 (("written", _age(written, clock)),) if written is not None
                 else ()
