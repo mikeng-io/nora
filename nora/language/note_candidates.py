@@ -236,13 +236,14 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import ClassVar, Protocol
 
 from nora.domain.blocks import (
     BlockKey,
     ContextBlock,
     render_elements,
+    restamp,
     speaker_name,
 )
 from nora.domain.models import TranscriptRow
@@ -1048,13 +1049,10 @@ class NoteCandidateAdaptor:
             if index is not None:
                 # `.render()` — the block builds its own tag now, and this pass
                 # assembles a flat prompt rather than a `build_prefill` one.
-                # RESTAMPED, like `nora.agent.prefill._restamp`: `render_notes`
-                # is shared with the tag path and builds an unstamped block —
-                # where it sits in THIS prompt is this occasion's fact.
-                notes_order, notes_key = _ROW["notes"]
-                parts.append(
-                    replace(index, order=notes_order, key=notes_key).render()
-                )
+                # RESTAMPED: `render_notes` is shared with the tag path and
+                # builds an unstamped block — where it sits in THIS prompt is
+                # this occasion's fact.
+                parts.append(restamp(index, _ROW).render())
         return "\n\n".join(parts)
 
     # -- accept -----------------------------------------------------------

@@ -62,13 +62,13 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import replace
 from typing import Protocol
 
 from nora.domain.blocks import (
     BlockKey,
     ContextBlock,
     render_messages,
+    restamp,
     speaker_name,
 )
 from nora.domain.culture import BODY_MAX_CHARS, CultureProposal, CultureRevision
@@ -575,13 +575,9 @@ class CultureAdaptor:
                 platform=platform, conversation_id=conversation_id,
             ))
             if block is not None:
-                # RESTAMPED, like `nora.agent.prefill._restamp`: `render_standing`
-                # is shared with the tag path and builds an unstamped block.
-                standing_order, standing_key_tier = _ROW["standing"]
-                parts.append(
-                    replace(block, order=standing_order, key=standing_key_tier)
-                    .render()
-                )
+                # RESTAMPED: `render_standing` is shared with the tag path
+                # and builds an unstamped block.
+                parts.append(restamp(block, _ROW).render())
         # WHAT THE ROOM HAS OPEN. `NoteCandidateAdaptor.inputs`' own read, same
         # verb and same key translation (DEC-105: the note store is keyed by
         # UNIT, so a scope key must be resolved and never guessed).
@@ -605,10 +601,7 @@ class CultureAdaptor:
             if index is not None:
                 # RESTAMPED, like `render_standing` above: `render_notes` is
                 # shared with the tag path and builds an unstamped block.
-                notes_order, notes_key = _ROW["notes"]
-                parts.append(
-                    replace(index, order=notes_order, key=notes_key).render()
-                )
+                parts.append(restamp(index, _ROW).render())
         if standing_key is None or unit is None:
             # A key that names no policy conversation. Not silent — but not
             # counted here either, because `RegistryToolSource.build` counts

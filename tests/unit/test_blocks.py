@@ -21,6 +21,7 @@ from nora.domain.blocks import (
     RowStyle,
     render_elements,
     render_rows,
+    restamp,
 )
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.prompt import escape_attr
@@ -623,3 +624,31 @@ def test_the_reply_mark_is_collapsed_like_everything_else():
     )
     assert len(out.splitlines()) == 2, out
     assert "I already sent it" in out
+
+
+# --- restamp: a shared builder's block, stamped for the caller's own prompt
+
+
+def test_restamp_carries_the_row_the_name_maps_to():
+    """`design/context-assembly/01-the-registry.md` S3: the pattern four
+    modules each wrote by hand (`order, key = _ROW[name]; replace(...)`),
+    once. `nora.agent.prefill._restamp` is now a one-line wrapper over this."""
+    block = ContextBlock(name="notes", body="- one open thing")
+    stamped = restamp(block, {"notes": (55, "unit")})
+    assert stamped is not None
+    assert stamped.order == 55
+    assert stamped.key == "unit"
+    # Nothing else moved.
+    assert stamped.name == block.name and stamped.body == block.body
+
+
+def test_restamp_of_none_is_none():
+    assert restamp(None, {"notes": (55, "unit")}) is None
+
+
+def test_restamp_refuses_a_name_the_caller_never_declared():
+    """A block reaching a prompt with no row is a declaration bug, not a
+    block quietly served with `order=0` — `KeyError`, not a silent default."""
+    block = ContextBlock(name="notes", body="- one open thing")
+    with pytest.raises(KeyError):
+        restamp(block, {"standing": (60, "room")})

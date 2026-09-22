@@ -9,7 +9,6 @@ for its own injected XML, with the label replaced by the sentence (#314).
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import replace
 from datetime import datetime
 
 from ..domain.blocks import (
@@ -18,6 +17,7 @@ from ..domain.blocks import (
     assemble,
     render_bullets,
     render_messages,
+    restamp,
     speaker_name,
 )
 from ..domain.decision_log import (
@@ -184,7 +184,9 @@ _TAG_MESSAGE_BLOCKS: tuple[tuple[str, int], ...] = (
 
 #: `name -> (order, key)`, derived from the table above so a block
 #: function can look up its own row instead of repeating it.
-_ROW = {name: (order, key) for name, order, key in _BLOCKS}
+_ROW: dict[str, tuple[int, BlockKey]] = {
+    name: (order, key) for name, order, key in _BLOCKS
+}
 
 
 def _block(
@@ -227,11 +229,16 @@ def _restamp(block: ContextBlock | None) -> ContextBlock | None:
     that was the same defect one level up: a description a prompt could
     override is a description that means something different in each prompt.
     It now comes from the type and there is nothing here to stamp it with.
+
+    **A thin wrapper over `nora.domain.blocks.restamp` since S3** (`design/
+    context-assembly/03-sequencing.md`): this module's OWN `_ROW` is the only
+    thing specific to prefill, so it is the only argument this wraps. Three
+    other occasions did the same three lines by hand; kept as a named function
+    here rather than inlined at each of prefill's four call sites, because
+    `_restamp(...)` at a call site is more legible than `restamp(..., _ROW)`
+    repeated four times in one function.
     """
-    if block is None:
-        return None
-    order, key = _ROW[block.name]
-    return replace(block, order=order, key=key)
+    return restamp(block, _ROW)
 
 
 def _declared(rendered: Sequence[ContextBlock | None]) -> list[ContextBlock]:
