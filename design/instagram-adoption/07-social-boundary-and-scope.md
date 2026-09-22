@@ -75,6 +75,39 @@ the host-side bridge, per `(network, verb)`, and nothing above it knows:
 | `posts` | opencli (instameow has no such call) | opencli |
 | `search` | either | opencli |
 
+> **PROBE RUN 2026-09-22. THE ROWS STAND — the hypothesis is FALSIFIED.**
+> `GET /accounts/{igid}` now issues `web_profile_info` with the DM session's
+> own credentials. Against two real accounts it returned **HTTP 429**, the same
+> status OpenCLI's browser scrape gets, while the operator's real browser on
+> the same account is served normally.
+>
+> The request was not malformed: `BuildHeaders` calls `addInstagramHeaders`,
+> so it carried `x-ig-app-id`, `x-csrftoken`, `x-mid` and `x-ig-www-claim`, and
+> the copied `sec-fetch-*` set is `FetchReel`'s — a call that works against
+> this session today. So this is **not** the browser-versus-app request shape,
+> which is what the note below assumed. Instagram is refusing this endpoint to
+> BOTH of Nora's non-browser clients.
+>
+> **One variable is left untested and it is not cheap:** `X-Web-Session-ID`,
+> which `FetchReel` sets from `c.configs.WebSessionID` — unexported, so
+> reaching it needs a library change rather than a probe. Recorded as the only
+> remaining candidate, not as a plan.
+>
+> **What this costs, precisely.** `is_private` and the follower/following
+> counts stay unreadable from instameow, so the operator's "public or followed"
+> rule keeps only its FOLLOWED half observable. That is less bad than it
+> sounds: Instagram enforces the rule server-side against Nora's own session,
+> so she never needed `is_private` to DECIDE — only to EXPLAIN. And the posts
+> list arrives on the same refused endpoint, so `posts` has no working backend
+> on either path, which was already true.
+>
+> What the route still buys in production: the messaging half answers, and
+> `social_available: false` with the status in `social_error` is what keeps a
+> rate limit from reading as "this account has no biography".
+>
+> The original note, kept because the reasoning was right and the answer was
+> not:
+>
 > **CONTESTED 2026-09-22, pending ONE named probe.** The `posts` row's reason
 > — "instameow has no such call" — is true of the client METHODS and false of
 > the API. `web_profile_info` is declared in `messagix/endpoints/instagram.go`
