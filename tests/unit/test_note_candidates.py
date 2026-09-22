@@ -19,6 +19,7 @@ from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.notes import BODY_MAX_CHARS
 from nora.domain.ports import Proposal
 from nora.language.note_candidates import (
+    _BLOCKS,
     GATE_ACTIONS,
     STAGING_OUTCOMES,
     UNNAMED_ROOM,
@@ -170,6 +171,21 @@ def test_a_declared_tool_would_be_refused_at_startup():
 # ---------------------------------------------------------------------------
 # inputs
 # ---------------------------------------------------------------------------
+
+
+def test_the_registered_blocks_are_exactly_what_this_pass_carries():
+    """`design/context-assembly/01-the-registry.md` S1: what this pass
+    carries is a table, not a trace through `inputs` and `_room_block`.
+
+    A third row the design bundle's own survey missed: `00-overview.md`
+    counted `batch, room` — two — because it read `ContextBlock(name=...)`
+    literals and missed the `notes` block `inputs` appends from
+    `nora.language.note_render.render_notes`, shared with the tag path. All
+    three render in `test_inputs_renders_the_batch_and_the_standing_note_
+    index` just below.
+    """
+    names = {name for name, _order, _key in _BLOCKS}
+    assert names == {"room", "batch", "notes"}
 
 
 async def test_inputs_is_blank_for_an_empty_batch():

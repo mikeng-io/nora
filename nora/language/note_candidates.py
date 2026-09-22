@@ -236,10 +236,15 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import ClassVar, Protocol
 
-from nora.domain.blocks import ContextBlock, render_elements, speaker_name
+from nora.domain.blocks import (
+    BlockKey,
+    ContextBlock,
+    render_elements,
+    speaker_name,
+)
 from nora.domain.models import TranscriptRow
 from nora.domain.notes import (
     BODY_MAX_CHARS,
@@ -624,6 +629,36 @@ def _media_placeholder(row: TranscriptRow) -> str:
 UNNAMED_ROOM = "unnamed room"
 
 
+#: What this pass carries, declared as data
+#: (`design/context-assembly/01-the-registry.md`) rather than left as the
+#: `parts` list `NoteCandidateAdaptor.inputs` builds by hand.
+#:
+#: **A third row the design bundle's own survey missed.** `00-overview.md`'s
+#: table lists this occasion as `batch, room` — two — but `inputs` also
+#: appends `nora.language.note_render.render_notes`' block when `unit is not
+#: None`, sharing a builder and a name (`notes`) with the tag path's
+#: `prefill._BLOCKS` row. The same gap this bundle found in `proactive`
+#: (`loop_decisions`, not counted in `00`'s seven either) — a survey done by
+#: reading `ContextBlock(name=...)` literals misses a block built by a call
+#: to a shared function.
+#:
+#: `order` records the append sequence in `inputs`; nothing sorts by it —
+#: this pass concatenates by hand, like `proactive` and the note curator.
+#: `key="turn"` throughout, for the same reason as those two: no established
+#: cache boundary, nothing routes on `key` yet either way.
+_BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
+    ("room", 10, "turn"),
+    ("batch", 20, "turn"),
+    ("notes", 30, "turn"),
+)
+
+#: `name -> (order, key)`, derived so no call site restates a row `_BLOCKS`
+#: already gives it.
+_ROW: dict[str, tuple[int, BlockKey]] = {
+    name: (order, key) for name, order, key in _BLOCKS
+}
+
+
 def _room_block(*, room: str, description: str | None) -> str:
     """The ONE block that says what room this batch is from — rendered above
     the batch, once, never per line.
@@ -649,8 +684,9 @@ def _room_block(*, room: str, description: str | None) -> str:
     name is the half that always exists, and a room with no prose about it
     must still be a different room from its neighbour.
     """
+    order, key = _ROW["room"]
     block = ContextBlock(
-        name="room", attrs=(("label", room),),
+        name="room", order=order, key=key, attrs=(("label", room),),
         # The OPERATOR's sentence and the room's own name. Neither is
         # member-authored, so the marker would be false — and this block is
         # what tells the model how to read the ones that are.
@@ -967,6 +1003,7 @@ class NoteCandidateAdaptor:
                 f"... and {len(omitted)} more messages "
                 f"(ids {omitted[0].id}..{omitted[-1].id}) not shown"
             )
+        batch_order, batch_key = _ROW["batch"]
         parts = [
             # FIRST, and once: what room this is and what the operator says
             # it is. Before the batch, because it is how the batch is meant
@@ -979,7 +1016,7 @@ class NoteCandidateAdaptor:
             # room block and the note index rather than inside anything. The
             # container gives every member-authored byte a parent.
             ContextBlock(
-                name="batch",
+                name="batch", order=batch_order, key=batch_key,
                 body="\n".join(lines),
             ).render(),
         ]
@@ -1011,7 +1048,13 @@ class NoteCandidateAdaptor:
             if index is not None:
                 # `.render()` — the block builds its own tag now, and this pass
                 # assembles a flat prompt rather than a `build_prefill` one.
-                parts.append(index.render())
+                # RESTAMPED, like `nora.agent.prefill._restamp`: `render_notes`
+                # is shared with the tag path and builds an unstamped block —
+                # where it sits in THIS prompt is this occasion's fact.
+                notes_order, notes_key = _ROW["notes"]
+                parts.append(
+                    replace(index, order=notes_order, key=notes_key).render()
+                )
         return "\n\n".join(parts)
 
     # -- accept -----------------------------------------------------------
