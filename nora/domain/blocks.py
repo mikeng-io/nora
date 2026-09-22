@@ -36,10 +36,10 @@ entries carries the argument.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from datetime import datetime, tzinfo
-from typing import Literal, TypeVar
+from typing import Literal, TypeVar, overload
 
 from nora.domain.block_types import BLOCK_TYPES
 from nora.domain.prompt import age, escape, escape_attr, one_line
@@ -399,6 +399,41 @@ def assemble(blocks: Sequence[ContextBlock]) -> str:
     """
     chosen = sorted((b for b in blocks if b.body), key=lambda b: b.order)
     return "".join(b.render() + "\n" for b in chosen)
+
+
+@overload
+def restamp(
+    block: ContextBlock, row: Mapping[str, tuple[int, BlockKey]],
+) -> ContextBlock: ...
+@overload
+def restamp(
+    block: None, row: Mapping[str, tuple[int, BlockKey]],
+) -> None: ...
+def restamp(
+    block: ContextBlock | None, row: Mapping[str, tuple[int, BlockKey]],
+) -> ContextBlock | None:
+    """A block built OUTSIDE this prompt's own table, stamped with THIS
+    prompt's `order` and `key` for its name — and with nothing else
+    (`design/context-assembly/01-the-registry.md`).
+
+    `nora.language.note_render.render_notes`, `standing_render.render_standing`
+    and `nora.domain.decision_log.render_decisions` each live in their own
+    module and have callers that assemble nothing of their own — a block's
+    IDENTITY and content are theirs, and where it sits in THIS caller's prompt
+    is not. `row` is that caller's own `_BLOCKS`-derived table, keyed by name;
+    `row[block.name]` is refused (`KeyError`) for a name the caller never
+    declared, which is the point — a block reaching a prompt with no row is a
+    declaration bug, not a block quietly served with `order=0`.
+
+    Was four call sites' own three-line `order, key = _ROW[name]; replace(...)`
+    (`nora.agent.prefill._restamp`, and inline in `nora.language.proactive`,
+    `note_candidates` and `culture`) before this existed — the same pattern,
+    hand-copied once per occasion that restamps a shared builder's output.
+    """
+    if block is None:
+        return None
+    order, key = row[block.name]
+    return replace(block, order=order, key=key)
 
 
 # **There is no `catalogue()`, and its deletion is the point** (#314).

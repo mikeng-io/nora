@@ -85,7 +85,7 @@ import asyncio
 import functools
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol, get_args
 from zoneinfo import ZoneInfo
@@ -96,6 +96,7 @@ from nora.domain.blocks import (
     RowStyle,
     render_bullets,
     render_rows,
+    restamp,
 )
 from nora.domain.decision_log import (
     PROACTIVE_DECISION_WRITERS,
@@ -1077,12 +1078,10 @@ class ProactiveAdaptor:
             writers=PROACTIVE_DECISION_WRITERS,
         )
         labels = {(room.platform, room.conversation_id): room.label for room in rooms}
-        order, key = _ROW["loop_decisions"]
-        # RESTAMPED, like `nora.agent.prefill._restamp`: `render_decisions`
-        # lives in `nora.domain.decision_log`, shared with the tag path, and
-        # builds an unstamped block — where it sits in THIS prompt is this
-        # occasion's fact, not that module's.
-        return replace(
+        # RESTAMPED: `render_decisions` lives in `nora.domain.decision_log`,
+        # shared with the tag path, and builds an unstamped block — where it
+        # sits in THIS prompt is this occasion's fact, not that module's.
+        block = restamp(
             render_decisions(
                 [
                     (
@@ -1099,8 +1098,9 @@ class ProactiveAdaptor:
                 # says in words what the argument used to say by omission.
                 empty="(nothing happened in these rooms in this window)",
             ),
-            order=order, key=key,
-        ).render()
+            _ROW,
+        )
+        return block.render()
 
     async def _self_card(self, key: str, *, platform: str) -> str:
         """`<self_card>`, DEC-96's own framing: Honcho's `(nora -> nora)`
@@ -1122,11 +1122,10 @@ class ProactiveAdaptor:
             return ""
         if not recall.reachable:
             return ""
-        block = render_self_card(recall.conclusions)
+        block = restamp(render_self_card(recall.conclusions), _ROW)
         if block is None:
             return ""
-        order, block_key = _ROW["self_card"]
-        return replace(block, order=order, key=block_key).render()
+        return block.render()
 
     # -- accept -------------------------------------------------------------
 
