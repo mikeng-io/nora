@@ -1,0 +1,45 @@
+kind: design_index
+title: "Media Read Lane — parallel chunks, audible video, a third provider, and the timeout that was already too small"
+description: >
+  Four changes to how Nora reads video and audio, decided together because they
+  interact: chunk reads become concurrent, the video path stops discarding the
+  audio track, a third describer provider (OpenCode Go, direct) is added for
+  MiMo v2.6 Flash, and the derived per-call vision budget is raised because
+  measured video latency already exceeds it. Operator directive 2026-09-22:
+  «四個同步做» — do all four in one change, and «audio 亦都 enable 佢啦，直接
+  啟動佢 override 之前個 decision».
+status: proposed
+governance: pre-governance-input
+timestamp: '2026-09-22'
+revision: 'unreleased — bundle drafted from the 2026-09-22 benchmark; adversarial review not yet dispatched.'
+origin: "operator session 2026-09-22 — Miles challenged a router-based benchmark («are you bypassing omniroute?»), which invalidated the first verdict and produced the corrected measurement set this bundle is built on. Measurements + raw JSON: ~/workspace/nora-bench/."
+members:
+  - 00-overview.md
+  - 01-chunk-parallelism.md
+  - 02-audio-in-the-video-path.md
+  - 03-opencode-go-provider-lane.md
+  - 04-timeout-and-models.md
+  - 05-decisions-and-index.md
+edges:
+  - {src: 01-chunk-parallelism, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 02-audio-in-the-video-path, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 03-opencode-go-provider-lane, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 04-timeout-and-models, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 04-timeout-and-models, dst: 01-chunk-parallelism, rel: depends_on, provenance: asserted}
+  - {src: 04-timeout-and-models, dst: 03-opencode-go-provider-lane, rel: depends_on, provenance: asserted}
+  - {src: 05-decisions-and-index, dst: 00-overview, rel: realizes, provenance: asserted}
+scope:
+  v1:
+    - "Chunk reads run concurrently (`asyncio.gather`) instead of a sequential for-loop, with order preserved"
+    - "The video path keeps its audio track; `-an` is removed for the describer lane"
+    - "`[media.describe.audio]` enabled — the previous «no verbatim transcript» decision is overridden by operator direction"
+    - "A third describer provider `\"opencode-go\"`: direct client to zen/go/v1, mandatory `x-opencode-session` header"
+    - "`[media.describe.video]` model → MiMo v2.6 Flash; `vision_max_tokens` 1024 → 4096"
+    - "Per-call vision budget raised: `media_fetch` budget 4 → 3, `vision_timeout_seconds` → 90 (derived 48 s)"
+    - "Audio/video prompt reworked so verbatim speech is IN SCOPE, with the egress screen still applying"
+  deferred:
+    - "Concurrent `media_fetch` tool calls inside one agent turn (whether Strands parallelises multiple tool_use blocks is UNTESTED)"
+    - "Per-modality chunk geometry (audio-bearing clips may want a different chunk than silent ones)"
+    - "Instagram Reels/Story retrieval itself — that is design/instagram-adoption/, not this bundle"
+    - "Local/offline audio transcription — the shipped `stt` service is a separate lane (voice-note ingest)"
+    - "Speaker diarisation or per-speaker identification"
