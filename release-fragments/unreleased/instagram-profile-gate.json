@@ -1,0 +1,15 @@
+{
+  "type": "feature",
+  "summary": "The bridge can now read an Instagram account and say whether its content may be fetched at all. The rule is the operator's: if the account is public, or Nora follows it, it can be read.",
+  "details": [
+    "This replaces a four-tier scheme that asked what a person's relationship to Nora's rooms was. That question had to be answered in configuration, one person at a time, and one of its tiers was blocked outright because there was nowhere to put the answer. The new question — what has this account already agreed to show — is answered by Instagram itself on every read, for free, and stays correct on its own when somebody unfollows or makes their account private.",
+    "Whether Nora follows an account comes back as a real field and is reliable. The route also forwards every other thing Instagram sends that the library does not have a name for, because the public-or-private half of the rule may be in there and dropping it would have made the rule impossible to apply while still looking like it worked.",
+    "The route also says whether the account has a story up right now. That is there so Nora can decide NOT to fetch one: fetching somebody's story tells them she watched it, and an unnecessary look cannot be taken back.",
+    "A failed read is never reported as a refusal. If the bridge cannot look, it says so — \"I could not check\" and \"they do not allow it\" are different sentences, and only one of them is about the person."
+  ],
+  "limitations": [
+    "Nothing calls this yet. It is the gate that the story and post reads will ask, and those are not built — a shared reel in a room is still invisible to her, and asking for someone's story still fails.",
+    "Whether Instagram actually sends the public-or-private flag on this read is not yet known. The route is built so the answer can be seen if it is there, but it has not been measured against the live account, so the public half of the rule may still need a second source.",
+    "It answers about one account at a time and caches nothing. A future caller asking about a whole room would make one call per member."
+  ]
+}
