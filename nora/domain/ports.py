@@ -345,11 +345,34 @@ class Mention:
     design that substituted the id into the string would have shipped a mute
     Nora, while one that leaked it would have shipped R-18's exact exposure.
     Carrying it in a parallel field is what makes both impossible.
+
+    `handle` is a FOURTH, OPTIONAL fact, and it exists for exactly one
+    platform today (Instagram) for a reason none of Signal, Discord or
+    WhatsApp shares: those three render the chip off `recipient` alone — the
+    text at `start:length` may be anything, including the display name Nora
+    actually wrote — but Instagram's own mention API renders a chip only when
+    that span reads, LITERALLY, `"@" + the account's own username` (confirmed
+    against upstream mautrix-meta, `igconv/from-matrix.go` +
+    `textfmt/from-matrix.go`: it constructs the request text as `"@" +
+    mention.Name` and sizes `Length` off that same string, never off the
+    sender's drafted name for them). Nora writes a mention the way a person
+    writes one — by the name she knows them by — so on Instagram the drafted
+    span and the wire span are two different strings, and `handle` is the
+    second one: `nora.platform.instagram.send` splices it in, over the SAME
+    span `start`/`length` still name, immediately before the request leaves,
+    which is deliberately downstream of `nora.agent.outbound.OutboundComposer`
+    (`compose` owns the final TEXT this module's docstring is about; it does
+    not own every platform's final WIRE BYTES, and Instagram's alone need a
+    second string here). `None` — every other platform, and Instagram until
+    an operator records a `username` for this account (design/instagram-
+    adoption/02) — means exactly what it always meant: the span stays
+    whatever Nora wrote.
     """
 
     start: int
     length: int
     recipient: str
+    handle: str | None = None
 
 
 class Style(StrEnum):

@@ -155,6 +155,71 @@ async def test_a_mention_is_FORWARDED_as_fbid_offset_length(bridge):
     assert body["mentions"] == [{"fbid": "1784", "offset": 0, "length": 5}]
 
 
+async def test_a_mention_with_a_handle_REWRITES_the_text_to_the_username(bridge):
+    """The bug, measured live 2026-09-22: a correctly-resolved fbid still went
+    out as plain text ("@Miles Novak…") with no ping, because Instagram's mention
+    API renders a chip only when the span at `offset:offset+length` reads,
+    literally, `"@" + the account's own username` — confirmed against
+    upstream mautrix-meta (module docstring). A `Mention.handle` is the fix:
+    the WIRE text must read `"@nka_bpumvg"`, not the display name Nora wrote,
+    and the offset/length that ride beside it must describe THAT string.
+
+    PROBE: delete the `if m.handle:` branch in `_apply_mention_handles` (fall
+    through to the `else`) and this goes red — `body["text"]` keeps the
+    display name and `length` stays 8, not 11.
+    """
+    box, sender = bridge
+    mention = Mention(start=0, length=len("@Miles Novak"), recipient="1784", handle="nka_bpumvg")
+
+    await sender.send(GROUP, "@Miles Novak 同一條友嚟㗎，唔使歡迎兩次", mentions=(mention,))
+
+    _path, body = box["calls"][0]
+    assert body["text"] == "@nka_bpumvg 同一條友嚟㗎，唔使歡迎兩次"
+    assert body["mentions"] == [{"fbid": "1784", "offset": 0, "length": len("@nka_bpumvg")}]
+
+
+async def test_a_mention_with_no_handle_is_forwarded_with_the_text_unchanged(bridge):
+    """No `username` on file for this fbid yet (the ordinary state until an
+    operator opts a person in) — today's degraded-but-not-wrong behaviour:
+    the metadata still names the right fbid, the text stays whatever Nora
+    wrote, and no chip renders."""
+    box, sender = bridge
+    mention = Mention(start=0, length=len("@Miles Novak"), recipient="1784", handle=None)
+
+    await sender.send(GROUP, "@Miles Novak 你好", mentions=(mention,))
+
+    _path, body = box["calls"][0]
+    assert body["text"] == "@Miles Novak 你好"
+    assert body["mentions"] == [{"fbid": "1784", "offset": 0, "length": 8}]
+
+
+async def test_two_mentions_one_substituted_shifts_the_LATER_offset_correctly(bridge):
+    """The cascading case: `"@Miles Novak"` (8 units) becomes `"@nka_bpumvg"` (11
+    units), 3 units LONGER — so the second mention, unsubstituted, has to
+    report an offset 3 units further right than the one it was drafted at, or
+    it would point at the middle of "and " instead of "@Ada Lam".
+
+    PROBE: revert `_apply_mention_handles` to the naive per-mention `m.start`
+    (no running `delta`) and this goes red — the second mention's `offset`
+    comes back 13, not 16, and no longer names its own span in the rewritten
+    text.
+    """
+    box, sender = bridge
+    miles = Mention(start=0, length=len("@Miles Novak"), recipient="1784", handle="nka_bpumvg")
+    ada = Mention(start=13, length=len("@Ada Lam"), recipient="2222", handle=None)
+
+    await sender.send(GROUP, "@Miles Novak and @Ada Lam hi", mentions=(miles, ada))
+
+    _path, body = box["calls"][0]
+    assert body["text"] == "@nka_bpumvg and @Ada Lam hi"
+    assert body["mentions"] == [
+        {"fbid": "1784", "offset": 0, "length": len("@nka_bpumvg")},
+        {"fbid": "2222", "offset": 16, "length": len("@Ada Lam")},
+    ]
+    offset, length = body["mentions"][1]["offset"], body["mentions"][1]["length"]
+    assert body["text"][offset:offset + length] == "@Ada Lam"
+
+
 async def test_a_mention_naming_NOBODY_is_dropped_rather_than_sent_empty(bridge):
     box, sender = bridge
 

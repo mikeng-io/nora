@@ -34,21 +34,56 @@ as WhatsApp's — the bridge heals that one on its own.
 500 is the fail-closed default the bridge chose deliberately: 503 is a CLAIM
 that retrying will work, and an unclassifiable refusal has not earned it.
 
-## 3. `mentions` are FORWARDED, not ignored
+## 3. `mentions` are FORWARDED, not ignored — and the TEXT is rewritten to match
 
 WhatsApp v1 accepts and ignores them. Instagram's `/send` takes
 `mentions: [{fbid, offset, length}]` and `02` measured the round trip, so the
 field is filled — a decoration parameter that the wire supports and the
 adapter dropped would be a capability lost at the last inch.
 
-**The offset unit is an open ambiguity and is reported as one.** `Mention.
-start`/`length` are UTF-16 code units (signal-cli's documented unit, and the
-one `nora.domain.utf16` computes). `03` pins the field NAMES and never states
-Instagram's unit, and no probe measured a mention past a non-BMP character.
-They are passed through unchanged, which is right if the units agree and puts
-the span a few characters off if they do not. Nothing composes an Instagram
-mention today (`mention_resolve` is Discord's), so the exposure is zero until
-one does — and when one does, this is the line to measure before trusting.
+**Forwarding the fbid was not enough — measured live, 2026-09-22.** Nora sent
+`"@Miles Novak 同一條友嚟㗎，唔使歡迎兩次"` with a correctly-resolved `mentions`
+entry (fbid right, offsets right) and it rendered as PLAIN TEXT, no ping.
+Confirmed against upstream mautrix-meta (`igconv/from-matrix.go` +
+`textfmt/from-matrix.go`): the reference client builds the request text as
+`"@" + mention.Name` — the account's OWN username — and sizes `offset`/
+`length` off THAT string, never off whatever the sender typed. Instagram
+renders a mention chip only when the span at `offset:offset+length` reads,
+literally, `"@" + username`; a display name in that span (all `identity.toml`
+gives a model to write with — `nora.agent.outbound`'s whole `_handle_index`
+vocabulary is names, first names and aliases, never a handle) is accepted and
+silently not a mention.
+
+So `_apply_mention_handles` below SPLICES the text before it leaves: every
+`Mention` carrying a `.handle` (`nora.agent.outbound._mentions` populates it
+from `Persons.instagram_handle`, an operator-authored `username` beside the
+matching `fbid` in `identity.toml`) has its `start:length` span rewritten to
+`"@" + handle`, left to right, carrying forward how much every earlier
+rewrite grew or shrank the string — see that function's own docstring for why
+this is the one place in the codebase that needs the OPPOSITE direction from
+`nora.platform.discord.mention_resolve.splice_composed_mentions`: Discord's
+splice never has to report an offset back, and this one does, for every
+mention in the message, substituted or not. A `Mention` with no `.handle` (no
+`username` on file yet) is forwarded with its span unchanged, only its
+`offset` corrected for any earlier rewrite in the same message — today's
+degraded-but-not-wrong behaviour: the fbid still rides in `mentions`, the text
+just stays whatever Nora wrote and no chip renders.
+
+**The offset unit is a narrower ambiguity than it was.** `Mention.start`/
+`length` are UTF-16 code units (signal-cli's documented unit, and the one
+`nora.domain.utf16` computes); `03` pins the field NAMES and never states
+Instagram's own unit. `utf16_index` is what turns a `Mention`'s UTF-16 offset
+into the Python string index this module slices the ORIGINAL text with — the
+same conversion Discord's splice needs and for the same reason (`nora.domain.
+utf16`'s own docstring) — so a rewritten mention's span is correct in Python
+terms whatever the platform's wire unit turns out to be; what remains
+unmeasured is only whether Instagram's OWN `offset`/`length` on the WIRE want
+UTF-16 units or something else, and that is still true of every Mention this
+module has ever forwarded, substituted or not. No probe has isolated it, and
+none was run for this fix (composing a live Instagram mention to find out is
+exactly the write this repo's Hard Limits forbid taking against a real
+account) — this is the line to measure first if a chip ever renders over the
+wrong span.
 
 `styles` and `preview` stay accepted-and-IGNORED: the port's own docstring
 says a platform with no such concept ignores them, and this wire has neither.
@@ -60,7 +95,7 @@ what this can catch: the inbound event carries no group/DM discriminator
 (`parser` docstring), so an Instagram DM arrives typed `group` and this guard
 never sees it. It still fires for every caller that builds a
 `ConversationTarget` itself.
-"""
+"""  # noqa: RUF002 — the quoted live message keeps its fullwidth Cantonese comma
 
 from __future__ import annotations
 
@@ -78,6 +113,7 @@ from ...domain.ports import (
     SendResult,
     TextStyle,
 )
+from ...domain.utf16 import utf16_index, utf16_len
 
 log = logging.getLogger("nora.instagram.send")
 
@@ -111,22 +147,62 @@ def _sent_timestamp(body: object) -> int | None:
     return value
 
 
-def _mention_payload(mentions: tuple[Mention, ...]) -> list[dict[str, object]]:
-    """`Mention(start, length, recipient)` → `{fbid, offset, length}`.
+def _apply_mention_handles(
+    text: str, mentions: tuple[Mention, ...],
+) -> tuple[str, list[dict[str, object]]]:
+    """Rewrite `text` for every `Mention` that carries a `.handle`, and return
+    the (possibly rewritten) text alongside the wire's `{fbid, offset,
+    length}` list — see the module docstring for WHY Instagram needs the text
+    itself rewritten and not merely the metadata forwarded.
 
-    `recipient` carries the interop fbid here, the same number
-    `mentions[].fbid` arrives as inbound — see the module docstring for the
-    offset-unit ambiguity this does NOT resolve. An entry with no recipient is
-    dropped rather than sent with an empty fbid: a mention that names nobody
-    is not a mention, and the bridge would have to guess what it meant.
+    **LEFT to right, sorted by `start` ascending — the OPPOSITE of `nora.
+    platform.discord.mention_resolve.splice_composed_mentions`, deliberately.**
+    Discord's splice never has to report an offset back (`<@id>` carries its
+    own identity inline), so splicing right-to-left and leaving every
+    UNTOUCHED span's `Mention.start` alone is sufficient there. This function
+    also has to hand the BRIDGE a `{offset, length}` for the string it is
+    about to become, and a substituted handle is rarely the same UTF-16 length
+    as the name Nora drafted (`"@Miles Novak"` is 8 units, `"@nka_bpumvg"` is 11)
+    — so the SECOND mention in one message needs an offset shifted by however
+    much the FIRST one's substitution grew or shrank the string, and going
+    right-to-left would report that first (leftmost) mention's own offset
+    correctly while leaving every mention AFTER it wrong by exactly that
+    delta. Going left to right and carrying `delta` — the running UTF-16
+    length change every earlier substitution introduced — forward is what
+    keeps `offset` correct for every mention in the message, substituted or
+    not (an unsubstituted mention's own SPAN does not move, but its POSITION
+    still shifts if an earlier one in the same message grew or shrank).
+
+    A `Mention` with no `recipient` is dropped rather than sent with an empty
+    fbid, unchanged from before this function existed: a mention that names
+    nobody is not a mention, and the bridge would have to guess what it meant.
     """
-    out: list[dict[str, object]] = []
-    for m in mentions:
+    if not mentions:
+        return text, []
+    ordered = sorted(range(len(mentions)), key=lambda i: mentions[i].start)
+    payload_by_index: dict[int, dict[str, object]] = {}
+    delta = 0
+    for i in ordered:
+        m = mentions[i]
         recipient = (m.recipient or "").strip()
         if not recipient:
             continue
-        out.append({"fbid": recipient, "offset": m.start, "length": m.length})
-    return out
+        offset = m.start + delta          # shifted by every EARLIER rewrite
+        if m.handle:
+            wire_text = f"@{m.handle}"
+            start = utf16_index(text, offset)
+            end = utf16_index(text, offset + m.length)
+            text = text[:start] + wire_text + text[end:]
+            new_length = utf16_len(wire_text)
+            payload_by_index[i] = {"fbid": recipient, "offset": offset, "length": new_length}
+            delta += new_length - m.length
+        else:
+            payload_by_index[i] = {"fbid": recipient, "offset": offset, "length": m.length}
+    # Restore arrival order — `ordered` walked left to right for the splice,
+    # which is a REQUIREMENT (the delta above depends on it), but the wire
+    # list itself has no ordering contract of its own, and returning it in
+    # the order `mentions` arrived in is one less thing to explain later.
+    return text, [payload_by_index[i] for i in range(len(mentions)) if i in payload_by_index]
 
 
 class InstagramSender:
@@ -195,13 +271,27 @@ class InstagramSender:
         # id sends unthreaded — a reply that lost its thread is still a reply.
         reply_to = quote.platform_message_id if quote is not None else None
 
+        # Rewritten HERE, not upstream: `nora.agent.outbound.OutboundComposer`
+        # owns the drafted TEXT (audited, guarded, identical for every
+        # platform) and must keep owning it — see `Mention.handle`'s own
+        # docstring for why the wire-only substitution belongs on this side of
+        # that boundary. The row `nora.agent.guards.Deliverer` already wrote
+        # to A9 before this call still holds the drafted `"@Miles Novak"` form,
+        # which is deliberate: it is what Nora MEANT, in the name she and the
+        # transcript already use for this person, and it is what Honcho's
+        # memory should read back — not a bare `nka_bpumvg` handle a future
+        # rename could orphan. The exact precedent already on file for
+        # "the audited string and the wire string may differ" is `send_gif`'s
+        # `record_text` (`tests/architecture/test_outbound_offsets_are_
+        # computed_last.py`); this is the same shape one layer further out.
+        text, mention_payload = _apply_mention_handles(text, mentions)
+
         result = SendResult(ok=True)
         # `or not attachments` so a text-less, attachment-less send still makes
         # the call and the bridge decides. Returning `ok=True` for a send that
         # never left the process would be a delivery status Nora invented.
         if text or not attachments:
             payload: dict[str, object] = {"room_id": target.conversation_id, "text": text}
-            mention_payload = _mention_payload(mentions)
             if mention_payload:
                 payload["mentions"] = mention_payload
             if reply_to:

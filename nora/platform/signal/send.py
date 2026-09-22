@@ -233,10 +233,42 @@ _DECORATION_KEYS = ("mention", "textStyle", "previewUrl", "previewTitle",
                     "previewDescription", "previewImage")
 
 
+#: Seconds allowed for a send that CARRIES BYTES, as opposed to one that
+#: carries a sentence.
+#:
+#: Measured 2026-09-22, five consecutive failures in the Friends room: an
+#: `image_gen` picture was generated, `send` raised `TimeoutError` about ten
+#: seconds later, and **the image arrived in the group anyway**. The flat 10 s
+#: below is sized for a text send, which returns in well under a second; an
+#: attachment rides as a base64 `data:` URI in the JSON-RPC body, so a
+#: megabyte-scale picture is two orders of magnitude more to serialize, ship
+#: and have signal-cli hand to the service. It regularly needs longer than ten
+#: seconds and it is not stuck.
+#:
+#: The cost of the old value was not a lost picture — it was a LIE. `send`
+#: returned `ok=False`, `send_reply` reported a failure, and Nora then told the
+#: room that it was stuck for the fifth time and the path was genuinely
+#: broken, then described the image in words instead. She was being honest
+#: about what she had been told; what she
+#: had been told was false.
+#:
+#: 60 s is the wall for "signal-cli is genuinely wedged", not a budget anybody
+#: is waiting against: nothing blocks on this send, and a picture that takes 40
+#: seconds is still a picture that arrives.
+ATTACHMENT_TIMEOUT_SECONDS = 60.0
+
+
 class SignalSender:
     def __init__(self, base_url: str, *, timeout: float = 10.0) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout)
+        # A SECOND budget rather than one raised for everything: a text send
+        # that has not answered in ten seconds IS wedged, and waiting a minute
+        # on it would hold a reply the room is actually waiting for. The two
+        # sends have different shapes and deserve different patience.
+        self._attachment_timeout = aiohttp.ClientTimeout(
+            total=max(timeout, ATTACHMENT_TIMEOUT_SECONDS),
+        )
 
     async def send(
         self,
@@ -292,9 +324,14 @@ class SignalSender:
             "params": params,
             "id": request_id or "nora",
         }
+        # Chosen off the payload actually being sent, not off the caller's
+        # intent: a retry that has DROPPED its decoration still carries its
+        # attachments, and picking the budget here means the two can never
+        # disagree about which kind of send this is.
+        timeout = self._attachment_timeout if attachments else self._timeout
         try:
             async with (
-                aiohttp.ClientSession(timeout=self._timeout) as session,
+                aiohttp.ClientSession(timeout=timeout) as session,
                 session.post(f"{self._base_url}/api/v1/rpc", json=payload) as resp,
             ):
                 if resp.status == 429:
@@ -307,6 +344,28 @@ class SignalSender:
                               resp.status, target.conversation_id, request_id)
                     return SendResult(ok=False)
                 body = await resp.json()
+        except TimeoutError:
+            # ITS OWN BRANCH, and the log line says the thing the old one hid:
+            # a timeout is «I stopped waiting», never «it did not arrive», and
+            # on 2026-09-22 the message HAD arrived every time. `SendResult`
+            # carries no third state, so this still returns `ok=False` and the
+            # model is still told it failed — the honest fix for that is a
+            # `confirmed` axis on `SendResult`, which every caller on four
+            # platforms would have to learn, and which must NOT be `retryable`,
+            # because retrying a send that already landed posts the picture
+            # twice. Recorded here rather than done hastily.
+            #
+            # What the wider budget above buys is that this branch stops firing
+            # for the ordinary case, which is what actually made her announce a
+            # broken path to the room.
+            log.error(
+                "send timed out after %ss — the message may STILL have arrived; "
+                "this is not evidence it did not (conversation=%s, id=%s, "
+                "attachments=%d)",
+                (timeout.total if timeout else None),
+                target.conversation_id, request_id, len(attachments),
+            )
+            return SendResult(ok=False)
         except Exception as exc:               # noqa: BLE001 — a send failure is never fatal
             log.error("send failed: %s (conversation=%s, id=%s)",
                       type(exc).__name__, target.conversation_id, request_id)

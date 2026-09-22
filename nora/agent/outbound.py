@@ -389,6 +389,20 @@ class OutboundComposer:
                 # lands next to an orphan `@`.
                 length=utf16_len(text[start_char:start_char + 1 + handle_len]),
                 recipient=recipient,
+                # Instagram-only (`Mention.handle`'s own docstring): the
+                # account's OWN username, if the operator recorded one beside
+                # this exact fbid. Looked up here, not in `send.py`, because
+                # this method already resolved `recipient` against THIS room's
+                # live roster — `nora.platform.instagram.send` gets a value
+                # already tied to the right account, never a second identity
+                # lookup one layer down. `None` on every other platform
+                # (`self._platform != "instagram"` short-circuits before the
+                # dict read) and `None` on Instagram until an operator opts a
+                # person in — both leave the span exactly as Nora wrote it.
+                handle=(
+                    self._persons.instagram_handle(recipient)
+                    if self._platform == "instagram" else None
+                ),
             ))
             self._metrics.inc("nora_outbound_mentions_total", outcome="sent")
         return tuple(out)
