@@ -76,6 +76,7 @@ from nora.domain.media import (
     MediaObject,
     MediaRef,
     body_with_handles,
+    ground_media_type,
     label_for,
     resolve_media_type,
 )
@@ -367,6 +368,14 @@ async def _take(
     # the rendered label can never disagree about what this is, and the strip is
     # driven off the registered top-level type, not a byte sniff.
     media_type = resolve_media_type(declared=ref.media_type, filename=ref.filename)
+    # A WILDCARD subtype is ground against the bytes, here and nowhere else,
+    # because here is where the bytes first exist. Instagram's wire carries no
+    # mimetype, so its parser honestly records `image/*`; that classifies fine
+    # everywhere (the label and the handle are unaffected) and then breaks in
+    # the comprehension pass, which builds a `data:image/*;base64,…` URI no
+    # decoder can act on. Inert for every platform that declares a real
+    # subtype — see `ground_media_type` for both fail-closed rules.
+    media_type = ground_media_type(declared=media_type, data=fetched.data)
     # Strip EXIF/embedded metadata from images BEFORE hashing (DEC-47). The
     # content key is the sha256 of THESE bytes, so stripping first is what makes
     # the key the key of the PICTURE — the same photo with different GPS dedups

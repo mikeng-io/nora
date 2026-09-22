@@ -160,7 +160,19 @@ def _content_block(
     The original split changed WHICH MODEL was asked and left every modality in
     an `image_url` block, so enabling audio shipped `data:audio/aac;…` as an
     image. The shape is the other half of routing, and it lives here.
+
+    A WILDCARD subtype is refused here, before any request. `image/*` is what a
+    platform that declares no mimetype honestly records (Instagram's wire
+    carries none), and `nora.domain.ground_media_type` resolves it from the
+    bytes at custody time — but when nothing recognises the container the
+    wildcard survives, and `data:image/*;base64,…` declares a container no
+    decoder can act on. A model handed one answers ANYWAY, wrong, at a rate
+    nothing reports; the audio branch below already fails closed on the same
+    input by accident, because there is no `input_audio` format named `*`.
+    Same answer for all three modalities, deliberately.
     """
+    if subtype == "*":
+        raise UnsupportedPayloadError(f"{top}/* names no container a payload can declare")
     if top == "image":
         return {"type": "image_url", "image_url": {"url": data_uri}}
     if top == "audio":

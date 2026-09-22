@@ -1,4 +1,5 @@
-"""`MediaSource` has two implementations, so it gets one suite both pass (DEC-43).
+"""`MediaSource` has three implementations, so it gets one suite they all pass
+(DEC-43).
 
 `nora.platform.signal.media.SignalMediaSource` runs against a real aiohttp
 daemon serving the JSON-RPC shapes signal-cli actually returns;
@@ -36,6 +37,8 @@ from aiohttp import web
 
 from nora.domain.media import MediaRef
 from nora.platform.discord.media import DiscordMediaSource
+from nora.platform.instagram import media as instagram_media
+from nora.platform.instagram.media import InstagramMediaSource
 from nora.platform.signal.media import SignalMediaSource
 from nora.testing import FakeMediaSource
 
@@ -526,3 +529,217 @@ async def test_discord_refuses_a_chunked_body_over_the_ceiling(aiohttp_server):
 
     assert got.available is False
     assert got.reason == "too_large"
+
+
+# --- Instagram: `InstagramMediaSource`, the port's third implementation -----
+
+IG_PHOTO = b"\xff\xd8\xff\xe0 instagram jpeg"
+
+# Every host observed serving media to this account in one week. They differ in
+# the PoP segment, which is why the allowlist matches a suffix — an exact set
+# goes stale the first time the account is served from another edge, and it
+# goes stale as a silent loss of every image.
+MEASURED_CDN_HOSTS = (
+    "scontent.fhkg3-1.fna.fbcdn.net",
+    "instagram.fhkg3-1.fna.fbcdn.net",
+    "scontent.cdninstagram.com",
+    "external.fhkg3-1.fna.fbcdn.net",
+)
+
+
+class _NoSocketSession:
+    """A `ClientSession` that cannot be constructed without being noticed.
+
+    The allowlist's whole claim is that a refused host is refused BEFORE a
+    socket opens. A test that only reads `reason` cannot tell a pre-flight
+    refusal from a connection that was attempted and failed, so the session
+    itself is the instrument: every construction is recorded, and a refused
+    host must record none.
+    """
+
+    def __init__(self, *args, **kwargs):
+        raise AssertionError("a socket was opened for a host the allowlist refuses")
+
+
+def _watch_sockets(monkeypatch) -> list[str]:
+    """Replace the module's `aiohttp.ClientSession` with a recorder."""
+    opened: list[str] = []
+
+    class _Recorder:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        def get(self, url):
+            opened.append(url)
+            raise RuntimeError("no network in this test")
+
+    monkeypatch.setattr(instagram_media.aiohttp, "ClientSession", _Recorder)
+    return opened
+
+
+async def test_instagram_fetches_an_attachment_by_its_own_cdn_url(aiohttp_server):
+    """The bridge emits a directly fetchable CDN url on `media.url` — measured
+    returning 200 with no cookies, no user-agent and no referer, so the
+    signature in the url is the authorization and the url IS the handle. The
+    allowlist is pointed at the test server's loopback host, since a real
+    `scontent.*.fbcdn.net` socket cannot be opened from a test."""
+    async def cdn(request):
+        return web.Response(body=IG_PHOTO, content_type="image/jpeg")
+
+    app = web.Application()
+    app.router.add_get("/v/t51.2885-15/photo.jpg", cdn)
+    server = await aiohttp_server(app)
+    url = server.make_url("/v/t51.2885-15/photo.jpg")
+    source = InstagramMediaSource(attachment_host_suffixes={url.host})
+
+    got = await source.fetch(ref=MediaRef(
+        platform_id="970288316113989", media_type="image/*",
+        fetch_token=f"attachment:{url}"))
+
+    assert got.available is True
+    assert got.data == IG_PHOTO
+
+
+async def test_instagram_refuses_a_url_off_its_own_cdn_without_opening_a_socket(
+    monkeypatch,
+):
+    """The token is built from something the EVENT supplied (`media.url`), so
+    a forged payload is a fetcher pointed anywhere. It must be refused before
+    a socket opens — proven by the session, not by the reason alone."""
+    monkeypatch.setattr(
+        instagram_media.aiohttp, "ClientSession", _NoSocketSession,
+    )
+    source = InstagramMediaSource()
+
+    got = await source.fetch(ref=MediaRef(
+        platform_id="2", media_type="image/*",
+        fetch_token="attachment:https://evil.example/steal.jpg"))  # noqa: S106
+
+    assert got.available is False
+    assert got.reason == "bad_token"
+
+
+@pytest.mark.parametrize("host", [
+    # A domain that merely ENDS with the right letters, and one that merely
+    # CONTAINS the allowed domain — the two forgeries a substring check waves
+    # through.
+    "notfbcdn.net",
+    "fbcdn.net.evil.example",
+    "cdninstagram.com.evil.example",
+    "evil.example",
+    "localhost",
+])
+async def test_instagram_refuses_a_lookalike_host_without_opening_a_socket(
+    monkeypatch, host,
+):
+    monkeypatch.setattr(
+        instagram_media.aiohttp, "ClientSession", _NoSocketSession,
+    )
+    source = InstagramMediaSource()
+
+    got = await source.fetch(ref=MediaRef(
+        platform_id="2", media_type="image/*",
+        fetch_token=f"attachment:https://{host}/x.jpg"))
+
+    assert got.available is False
+    assert got.reason == "bad_token"
+
+
+@pytest.mark.parametrize("host", MEASURED_CDN_HOSTS)
+async def test_instagram_admits_every_measured_cdn_host(monkeypatch, host):
+    """The four hosts measured on the live account all reach the socket step.
+    An exact-host allowlist would have admitted none of them a week later."""
+    opened = _watch_sockets(monkeypatch)
+    source = InstagramMediaSource()
+
+    got = await source.fetch(ref=MediaRef(
+        platform_id="2", media_type="image/*",
+        fetch_token=f"attachment:https://{host}/v/t51.2885-15/photo.jpg"))
+
+    assert opened == [f"https://{host}/v/t51.2885-15/photo.jpg"]
+    # The recorder raises instead of connecting, so the honest answer past the
+    # allowlist is a transport failure — never `bad_token`.
+    assert got.reason == "unreachable"
+
+
+async def test_instagram_refuses_one_time_media_because_it_carries_no_url():
+    """`RAVEN_*` arrives with `attachment: null`, so the parser records no
+    token. Fetching view-once media IS viewing it and is visible to the
+    sender — an operator's consent decision, never a fetcher's default. This
+    must read as `not_supported` (nothing to fetch), not as the CDN failing."""
+    source = InstagramMediaSource()
+
+    got = await source.fetch(ref=MediaRef(platform_id="", media_type=""))
+
+    assert got.available is False
+    assert got.reason == "not_supported"
+
+
+async def test_instagram_reports_a_missing_attachment_as_not_found(aiohttp_server):
+    app = web.Application()
+    server = await aiohttp_server(app)
+    url = server.make_url("/v/t51.2885-15/gone.jpg")
+    source = InstagramMediaSource(attachment_host_suffixes={url.host})
+
+    got = await source.fetch(ref=MediaRef(
+        platform_id="2", media_type="image/*", fetch_token=f"attachment:{url}"))
+
+    assert got.available is False
+    assert got.reason == "not_found"
+
+
+async def test_instagram_refuses_an_oversize_attachment(aiohttp_server):
+    async def cdn(request):
+        return web.Response(body=b"x" * 4096, content_type="image/jpeg")
+
+    app = web.Application()
+    app.router.add_get("/v/t51.2885-15/big.jpg", cdn)
+    server = await aiohttp_server(app)
+    url = server.make_url("/v/t51.2885-15/big.jpg")
+    source = InstagramMediaSource(
+        max_bytes=1024, attachment_host_suffixes={url.host},
+    )
+
+    got = await source.fetch(ref=MediaRef(
+        platform_id="2", media_type="image/*", fetch_token=f"attachment:{url}"))
+
+    assert got.available is False
+    assert got.reason == "too_large"
+
+
+async def test_instagram_reads_a_chunked_body_to_completion(aiohttp_server):
+    """`InstagramMediaSource._read_limited` is a COPY of Discord's, and the
+    defect it encodes (2026-08-31: a 2.3 MB image stored as its first 1.4 KB
+    packet) is the one thing that must never be re-derived from scratch. This
+    is the same case run against the second copy, so a drift between them is
+    red rather than silent."""
+    body = b"".join(bytes([i % 251]) * 1000 for i in range(10))  # 10 KB in 10 chunks
+
+    async def cdn(request):
+        resp = web.StreamResponse(status=200, headers={"Content-Type": "image/jpeg"})
+        await resp.prepare(request)
+        for i in range(10):
+            await resp.write(body[i * 1000:(i + 1) * 1000])
+            await asyncio.sleep(0.01)
+        await resp.write_eof()
+        return resp
+
+    app = web.Application()
+    app.router.add_get("/v/t51.2885-15/photo.jpg", cdn)
+    server = await aiohttp_server(app)
+    url = server.make_url("/v/t51.2885-15/photo.jpg")
+    source = InstagramMediaSource(
+        max_bytes=1024 * 1024, attachment_host_suffixes={url.host},
+    )
+
+    got = await source.fetch(ref=MediaRef(
+        platform_id="2", media_type="image/*", fetch_token=f"attachment:{url}"))
+
+    assert got.available is True
+    assert got.data == body

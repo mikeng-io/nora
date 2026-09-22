@@ -154,6 +154,7 @@ from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.media import DiscordMediaSource
 from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.platform.discord.music_tool_bridge import DiscordMusicToolBridge
+from nora.platform.instagram.media import InstagramMediaSource
 from nora.platform.registry import AdapterRegistry, AdapterRegistryError, MediaSourceRegistry
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.media import SignalMediaSource
@@ -3913,6 +3914,17 @@ async def _build_media_custody(
             max_bytes=media.max_bytes,
         ),
         DiscordMediaSource(
+            timeout_seconds=media.timeout_seconds,
+            max_bytes=media.max_bytes,
+        ),
+        # Unconditional, like its two siblings and NOT gated on
+        # `[platforms.instagram] enabled`: the registry is keyed by platform,
+        # so a fetcher for a platform producing no messages costs nothing,
+        # while a gate here would make custody depend on two settings instead
+        # of one. Absent one, `stages.media` counts every Instagram
+        # attachment `not_supported` — which is precisely what shipped, and
+        # what recorded a bare `[image]` in the live room.
+        InstagramMediaSource(
             timeout_seconds=media.timeout_seconds,
             max_bytes=media.max_bytes,
         ),

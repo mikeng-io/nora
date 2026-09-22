@@ -378,6 +378,22 @@ async def test_an_audio_format_the_api_cannot_name_fails_closed(mimo):
     assert mimo.requests == []
 
 
+async def test_a_wildcard_subtype_is_refused_before_the_request(mimo):
+    """`image/*` is what a platform declaring no mimetype honestly records —
+    Instagram's wire carries none anywhere. `nora.domain.media.
+    ground_media_type` resolves it from the bytes at custody time; when
+    nothing recognises the container the wildcard survives, and a
+    `data:image/*;base64,…` URI declares a container no decoder can act on.
+    A model handed one answers anyway, wrong, at a rate nothing reports — so
+    this fails closed before the round trip, the way `audio/*` already did by
+    accident (there is no `input_audio` format named `*`)."""
+    for media_type in ("image/*", "video/*", "audio/*"):
+        result = await _client(mimo).describe(data=RED_PNG, media_type=media_type)
+        assert not result.available, media_type
+        assert result.reason == "unsupported_payload", media_type
+    assert mimo.requests == []
+
+
 async def test_each_modalitys_prompt_reaches_the_gateway(mimo):
     """`DESCRIBE_PROMPTS` had no test at all: `media_fetch` never passes a
     prompt, so selection happens inside this client — and every test that saw a
