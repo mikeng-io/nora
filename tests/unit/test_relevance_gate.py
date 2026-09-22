@@ -24,6 +24,7 @@ from nora.domain.block_types import BLOCK_TYPES
 from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
 from nora.domain.standing import Standing
 from nora.ingest.relevance_gate import (
+    _BLOCKS,
     CAPABILITY_HEADER,
     GATE_AUDIENCE,
     GATE_ERROR_KINDS,
@@ -221,6 +222,30 @@ def _gate(client: ModelClient, **kw) -> RelevanceGate:
 
 
 # --- the prompt is a CLOSED set -------------------------------------------
+
+
+def test_the_registered_blocks_are_exactly_the_two_the_gate_is_allowed_to_see():
+    """The closure asserted at the ROW level, not the rendered one.
+
+    `test_the_prompt_holds_exactly_two_injected_blocks` below counts what
+    RENDERED — it cannot see a registered third row whose builder happens to
+    return nothing under its fixtures. Only asserting `_BLOCKS` itself closes
+    that gap (`design/context-assembly/02-the-gate-stays-closed.md`).
+
+    Fails loudly rather than as a bare set diff: `#144`/`#147` measured the
+    gate getting WORSE when given more context, and `#216` (n=5, closed by
+    PR #262) found the turn behind it false-speaking on 4 of 5 silence twins.
+    Widening this set is a decision with its own measurement (`02`), not a
+    row somebody adds while unifying the other five occasions.
+    """
+    names = {name for name, _order, _key in _BLOCKS}
+    assert names == {"standing", "group_transcript"}, (
+        f"the gate's registered blocks are {names}, not exactly "
+        "{'standing', 'group_transcript'}. Widening what the gate sees "
+        "measured WORSE (#144/#147) and produced false-speaking 4/5 on "
+        "silence twins (#216) — see design/context-assembly/"
+        "02-the-gate-stays-closed.md before adding a row here."
+    )
 
 
 async def test_the_prompt_is_exactly_the_instruction_plus_the_two_rendered_blocks():

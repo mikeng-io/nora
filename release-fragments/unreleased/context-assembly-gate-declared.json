@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Context-assembly design (design/context-assembly), step S1+S2 for the relevance gate. The gate's two model-facing blocks, standing and group_transcript, are now declared as a small (name, order, key) table instead of being written directly into render_context's ContextBlock(...) calls, mirroring the table nora.agent.prefill already keeps for the tag/participation path. Rendered output is byte-identical -- the table only names what the code already did, with a new test asserting the gate's registered blocks are exactly those two, so a third block cannot be added without deleting the assertion that names why the set is closed (measured worse with more context: #144/#147, #216). No behaviour change; nothing a person or the model sees is different.",
+  "details": [],
+  "limitations": []
+}
