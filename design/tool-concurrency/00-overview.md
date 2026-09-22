@@ -14,7 +14,7 @@ edges: []
 Nora's agent loop runs on Strands, whose default execution strategy fans out every
 `tool_use` block a model emits in a single turn. Nothing in Nora overrides it, and
 the library's concurrent executor has no ceiling of its own — one `create_task` per
-block, however many blocks there are.
+block, however many blocks there are. **This bundle is DEC-196.**
 
 This was not accepted as a reading of the code. It was checked against the live
 Langfuse store, per the operator's instruction, and the traces make it concrete:
