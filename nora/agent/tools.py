@@ -8769,19 +8769,35 @@ Args:
         return {"status": "ok"}
 
     async def send_to(platform: str, text: str) -> dict:
-        """Relay a message from somebody here into this group's room on ANOTHER
-        platform.
+        """Pass something somebody here said into this same group's room
+        somewhere else.
 
-        Use when somebody here asks you to tell the others somewhere you are
-        not — "tell the Signal lot we're starting" while you are on Discord.
-        This group has one room per platform, so naming the platform is enough.
+        Use this when somebody here asks you to tell the others in a place
+        you are not —
+        "tell the Signal lot we're starting", "ask the IG group if anyone's
+        free tonight". This is one group with one room on each network, so the
+        network is the only thing you need to name.
 
-        It NEVER speaks as you: what arrives says who asked for it. Answer the
-        person here afterwards with `send_reply`, saying whether it went.
+        **`platform` names a NETWORK, not a room.** People will call it
+        whatever they call it — IG, the gram, WhatsApp, WA, Discord, the
+        server, Signal. Work out which of the four networks they mean and pass
+        that. If what they said genuinely does not name one of the four, say
+        so; do not refuse because their wording was not one of these words.
+
+        **Passing it on is not speaking for them and not pretending to be
+        them.** What arrives is marked as coming from the person who asked,
+        under their name, exactly as a relayed message should be — that is the
+        point of this tool, not a reason to avoid it. You are not impersonating
+        anyone and you are not putting words in their mouth. If you would
+        rather not carry a particular message, that is a judgement about the
+        message, and say that instead.
+
+        Afterwards, tell the person here whether it went, with `send_reply`.
 
         Args:
-            platform: Where to send it — "signal", "discord", "whatsapp" or "instagram".
-            text: What to relay, in the asker's words.
+            platform: Which network — "signal", "discord", "whatsapp" or
+                "instagram". Map whatever they called it onto one of these.
+            text: What to pass on, in their words.
         """
         if relay is None:
             return {
