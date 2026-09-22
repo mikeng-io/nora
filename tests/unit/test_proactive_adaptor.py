@@ -25,6 +25,7 @@ from nora.domain.ports import DreamAdaptor, Proposal, Recollection
 from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import Standing
 from nora.language.proactive import (
+    _BLOCKS,
     PASS_CLOCK_NAME,
     PROACTIVE_TOOLS,
     WAKE_CLOCK_NAME,
@@ -144,6 +145,26 @@ def test_the_declared_shape_is_the_designs():
     assert "remind" in adaptor.tools
     for forbidden in ("send_reply", "send_to", "note_create", "note_update", "load_transcript"):
         assert forbidden not in adaptor.tools, forbidden
+
+
+def test_the_registered_blocks_are_exactly_what_this_pass_carries():
+    """`design/context-assembly/01-the-registry.md` S1: what this pass
+    carries is a table, not a trace through `inputs`, `_people_block`,
+    `_decision_log`, `_loop_decisions` and `_self_card`.
+
+    Each of the eight is rendered somewhere in this file:
+    `test_inputs_renders_the_index_the_rooms_the_log_and_the_self_card`
+    (`now`, `home_room`, `people`, `notes`, `rooms`, `decisions`,
+    `self_card`) and the `<loop_decisions>` group further down (issue #199).
+    This test pins the DECLARATION rather than re-asserting every render; a
+    name added to one without the other is either a block nobody can find by
+    reading the table or a row for a block that does not exist.
+    """
+    names = {name for name, _order, _key in _BLOCKS}
+    assert names == {
+        "now", "home_room", "people", "notes", "rooms",
+        "decisions", "loop_decisions", "self_card",
+    }
 
 
 def test_the_adaptor_can_resolve_a_nickname_without_searching_memory_for_it():
