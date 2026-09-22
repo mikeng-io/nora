@@ -94,7 +94,17 @@ it is the substance of the clip, and summarised when it is not. The `audio`
 prompt's prohibition («Do NOT write out a word-for-word transcript») is likewise
 revised — but see §5, which is the part that needs care.
 
-## 5. 🔴 BLOCKING — and the review corrected my question, not just my answer
+## 5. ⏸️ CARRIED, NOT BLOCKING (status: operator-parked 2026-09-23) — and the review corrected my question, not just my answer
+
+> **Status update 2026-09-23.** This was the bundle's second blocker. The operator
+> parked it — «唔好俾呢一個 PII 呢一嚿嘢成為 blocker» — and the findings were moved to
+> `~/workspace/nora-bench/spikes/pii-layer/` (README, harness, prototype; nothing
+> production). The operator's direction on the substance: block **identity-bearing**
+> values (phone, HK ID, account), **not** addresses by content, because «既然我哋呢啲
+> group 都係 trusted 嘅 content» — and the two-part answer is `pii.engineer` plus an
+> HKID pattern. **The section below stays because the gap it describes is real and
+> pre-existing**; what changed is that it no longer gates this bundle. Its own
+> consequence for THIS bundle is stated at the end of the section.
 
 **The first version of this section asked the wrong question.** It asked *does the
 screen run on this path?* The review answered: **yes, it does** — screens already run

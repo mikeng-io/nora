@@ -144,22 +144,17 @@ three consequences this bundle has to absorb:
    arm (content 342 chars). §4's raise to 4096 is necessary but **not always
    sufficient**; the ceiling is still reachable.
 
-### What must be decided (revised)
+### What must be decided (revised) → ✅ DECIDED in §3c
 
-The earlier recommendation (`budget` 4 → 3) is **not enough on its own** — it addresses
-the median and not the tail. The options are now:
+The options below were the pre-decision framing, kept so the path to the decision is
+visible. **The operator chose none of them verbatim** — A was too weak (150 s still
+sits below the 120.8 s tail plus compound), and B and C were rejected as evasions.
+The settled settings are in **§3c above**: timeout 120, loop 360, budget held at 4.
 
-- **A. Raise the timeout to cover the tail:** `vision_timeout_seconds` → 150, and
-  `[llm].timeout_seconds` 240 → 360+. Cost: a slow turn blocks the loop.
-- **B. Raise the timeout moderately and reduce concurrency exposure:** `budget` 4 → 2
-  (derived 72 s) **and** `vision_timeout_seconds` → 150, accepting that a >72 s window
-  still returns `unavailable` and is reported honestly by `cut.note()`.
-- **C. Cap what one tool invocation may read** so the tail cannot compound across
-  windows — bounds the per-invocation budget directly instead of bounding each call.
-
-**B or C, not A alone.** The measured variance is upstream and outside our control, so
-the design must fail honestly at the tail (which `cut.note()` already does) rather than
-assume the tail away. **This is an operator decision with the distribution attached.**
+- ~~**A.** `vision_timeout_seconds` → 150, `[llm].timeout_seconds` → 360+.~~
+- ~~**B.** `budget` 4 → 2 and `vision_timeout_seconds` → 150.~~ **REJECTED** — kills the
+  four-video post.
+- ~~**C.** Cap what one tool invocation may read.~~ **REJECTED** — same reason.
 
 ### Measurement caveats (so this is not over-read)
 
@@ -197,6 +192,39 @@ the second is worse. `vision_timeout_seconds` must clear the tail it intends to 
 and the loop budget must clear `waves × tail × calls`.
 
 
+
+## 3c. ✅ SETTLED — the operator's decision, 2026-09-23
+
+The three coupled numbers, decided together after B and C were both rejected as
+avoiding the problem rather than solving it («你 B 同 C，你係斬腳趾避沙蟲啫»):
+
+| layer | was | **decided** | why |
+|---|---|---|---|
+| agent loop `[llm].timeout_seconds` | 240 | **360** | must clear `waves × latency × calls`, not one call |
+| `media_fetch` budget | 4 | **4 (held)** | counts MEDIA, not model calls; a four-video post needs four reads |
+| `vision_timeout_seconds` | 40 (derived 36) | **120** | must clear the measured tail (120.8 s), not the median (41.6 s) |
+
+**Why the budget is held, and what was wrong with lowering it.** `media_fetch`'s
+budget is `NativeTool(4, …)` at `nora/agent/tools.py:727` — a ceiling on how many
+media items one turn may read, **not** on how many model calls it may make. The
+operator's own case is a post carrying four videos; `budget` 4 → 2 makes that post
+*unreadable*, which is the defect the bundle set out to remove, re-introduced as a
+"mitigation". Option C (cap what one invocation reads) fails the same way.
+
+**Why the correction belongs in the arithmetic, not the config.** `derive_vision_timeout`
+computes `loop × 0.6 / budget` and calls the result "per-call" — it divides a loop
+allowance by a count of MEDIA ITEMS. The two quantities are not the same unit: one
+`media_fetch` can occupy `ceil(N/C)` waves of model calls. So the derived number was
+never a per-call figure, and the fix is to stop deriving the timeout from the item
+count at all: **set it to cover the measured tail (120 s) and raise the loop to clear
+the concurrency requirement (360 s).** `VISION_LOOP_SHARE = 0.6` remains a design
+assumption, not a measurement; §3b's distribution is what supersedes it as the input.
+
+**The forward path is a ceiling, not a budget cut.** The risk the operator named —
+«budget raise 到 10 → 10 個 concurrent» — is answered by
+`design/tool-concurrency/` (DEC-196), which bounds how many tool calls run at once
+independently of how many are permitted. That is the right place for it: the budget
+may then rise without the fan-out rising with it.
 
 ## 4. `vision_max_tokens` must rise for MiMo
 

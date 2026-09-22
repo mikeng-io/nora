@@ -38,11 +38,18 @@ the existing table format with its test column):
 > request quota than K3, with comparable accuracy. **(4)** The derived per-call
 > vision budget was 36 s against measured 57 s-clip latency of 46.2 s on the
 > INCUMBENT model — a defect on master, not a consequence of this change — so
-> `media_fetch` budget 4 → 3 and `vision_timeout_seconds` → 90 (derived 48 s),
-> keeping `budget × derived < loop`. Plus `vision_max_tokens` 1024 → 4096, without
+> **`vision_timeout_seconds` → 120 and `[llm].timeout_seconds` 240 → 360, with
+> `media_fetch`'s budget HELD at 4** (operator 2026-09-23). Lowering the budget was
+> the first recommendation and the operator rejected it: a post with four videos
+> needs four reads, and «你 B 同 C，你係斬腳趾避沙蟲啫» — a ceiling that makes the
+> target case unreadable is not a fix. The budget is a count of MEDIA, not of model
+> calls; the timeout arithmetic that treated it as the latter is corrected in 04 §3c.
+> Plus `vision_max_tokens` 1024 → 4096, without
 > which MiMo returns `finish_reason="length"` on every long clip.
-> **The egress treatment of transcribed speech is an open blocking check (§4),
-> not a settled property of this decision.**
+> **The egress treatment of transcribed speech was an open check and is now PARKED
+> by operator direction (2026-09-23), not a gate on this decision** (§4); the gap is
+> pre-existing — `-an` never protected the video's own on-screen text. Findings:
+> `~/workspace/nora-bench/spikes/pii-layer/`.
 
 ## 2. Supersessions — named, never deleted
 
@@ -142,7 +149,9 @@ headline settings were never validated at production shape. These come first:
    The same file returned 28.5 s and 120.8 s → **the tail is upstream variance, not
    payload cost**, so the timeout cannot be set from a median. See `04 §3b`.
 2. **The per-invocation budget:** `ceil(N/C)` waves × per-call latency × concurrent
-   tool calls must fit `[llm].timeout_seconds`. **Open, and now the harder problem:**
+   tool calls must fit `[llm].timeout_seconds`. ✅ **RESOLVED 2026-09-23** — loop 240 →
+   360, timeout 120, budget held at 4 (`04 §3c`); the fan-out itself is bounded by
+   `design/tool-concurrency/` (DEC-196). The measurement that drove it:**
    3 waves × 41.6 s median × 3 calls = 374 s vs a 240 s loop; on the 120.8 s tail one
    call alone is 362 s. `budget` 4→3 is insufficient. Options B/C in `04 §3b §"What
    must be decided"`.

@@ -143,7 +143,11 @@ still rejects `finish_reason="length"` after the token raise.
 
 ## Open questions
 
-1. ⚠️ **RE-OPENED — the audible 90 s window is measured, and 48 s does NOT hold.**
+1. ✅ **SETTLED 2026-09-23 — timeout 120 s, loop 360 s, budget held at 4** (`04 §3c`).
+   The measurement below is what forced it; the earlier "48 s holds" reading was
+   over-fitted to one clip and is corrected, not deleted.
+
+   ~~⚠️ RE-OPENED — the audible 90 s window is measured, and 48 s does NOT hold.~~
    Across four production-shaped sources and **n=16 runs**: **min 28.5 s, median
    41.6 s, max 120.8 s.** **6/16 exceed a 48 s derived budget; 10/16 exceed today's
    36 s.** The *same file* returned 28.5 s and 120.8 s, so **latency is not bounded by
@@ -162,7 +166,9 @@ still rejects `finish_reason="length"` after the token raise.
 
 2. **Will Strands issue concurrent `tool_use` blocks?** If it does, three
    Instagram stories in one turn parallelise for free. Untested.
-3. **Does the egress screen cover speech inside a video description?** The
-   transcript is model-generated text derived from untrusted media, so the
-   existing `dream_screen`/identifier screen *should* apply — but "should" is
-   not verified for this new content class. Flagged as a blocking check in 02 §5.
+3. **Does the egress screen cover speech inside a video description?** ⏸️ **PARKED by
+   operator 2026-09-23 — no longer gates this bundle** («唔好俾呢一個 PII 呢一嚿嘢成為
+   blocker»); findings live in `~/workspace/nora-bench/spikes/pii-layer/`. The gap is
+   real (`scan_identifiers` requires a `+`, so a bare local number passes) but it is
+   **pre-existing, not created here**: `-an` never protected it, because a video's
+   own text was always read and STT is a separate lane. See 02 §5.
