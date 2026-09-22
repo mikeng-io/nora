@@ -78,6 +78,68 @@ type fakeIG struct {
 	// it is here so the DEGRADATION can be exercised, because a test that can
 	// only reach the confirmed path is a test that cannot fail.
 	unconfirmedUnsend bool
+
+	// --- the roster read ---------------------------------------------------
+	//
+	// getThreadIDs records every thread id GetThread was addressed with, so
+	// the id-space choice is asserted against what went out rather than
+	// against the bridge's own intent.
+	getThreadIDs []string
+	// threadUsers overrides the measured member list. nil means "the live
+	// three-person room", which is what every roster test that is not about a
+	// malformed shape wants.
+	threadUsers []*slidetypes.User
+	// threadUsersSet distinguishes "not overridden" from "deliberately empty",
+	// because an empty Users[] is one of the shapes the route must refuse and
+	// a nil check alone cannot express it.
+	threadUsersSet bool
+	threadErr      error
+	// noThread makes GetThread answer 200 with the thread absent — the shape a
+	// GraphQL read takes when it finds nothing, which is NOT an error.
+	noThread bool
+}
+
+// The measured three-person room, as `Users[]` actually returns it: TWO rows,
+// because Instagram carries the viewer separately and Nora is not in her own
+// member list. The fbids are the ones 02-identity-and-policy.md measured — 15
+// and 17 digits, the second sharing Nora's `1784…` prefix — which is why no
+// length or prefix rule may ever be used to tell an fbid from an igid.
+var measuredUsers = []*slidetypes.User{
+	{InteropMessagingUserFBID: 110966695387753, ID: "60739041440", Username: "nka_bpumvg", FullName: "Miles"},
+	{InteropMessagingUserFBID: 12116372067347151, ID: "74340223606", Username: "third_member", FullName: ""},
+}
+
+// GetThread answers ONLY for the short thread id.
+//
+// That discrimination is the point: a roster read addressed with the long id
+// must fail rather than be shrugged at, the same way the reaction fake refuses
+// to mutate on the long id. A fake with no opinion about the id space cannot
+// fail when the bridge picks the wrong one.
+func (f *fakeIG) GetThread(_ context.Context, req *slidetypes.GetThreadInfoRequest) (*slidetypes.ThreadInfoResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.getThreadIDs = append(f.getThreadIDs, req.ThreadFBID)
+	if f.threadErr != nil {
+		return nil, f.threadErr
+	}
+	if f.noThread || req.ThreadFBID != threadShort {
+		// The thread is absent from the response and there is no error. This
+		// is what the wire does, and it is why the route has to check.
+		return &slidetypes.ThreadInfoResponse{}, nil
+	}
+	users := measuredUsers
+	if f.threadUsersSet {
+		users = f.threadUsers
+	}
+	return &slidetypes.ThreadInfoResponse{
+		ThreadInfo: slidetypes.WrappedThreadInfo{
+			ID: threadLong,
+			AsIGDirectThread: &slidetypes.ThreadInfo{
+				ThreadFBID: threadShort, ThreadTitle: "the group", IsGroup: true,
+				Users: users,
+			},
+		},
+	}, nil
 }
 
 func (f *fakeIG) SendMessage(_ context.Context, req *slidetypes.SendTextRequest) (*slidetypes.SendTextResponse, error) {

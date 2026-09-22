@@ -2476,6 +2476,17 @@ async def build_dependencies(
     if "discord" in registry:
         from nora.platform.discord.roster import DiscordRoster
         rosters["discord"] = DiscordRoster(discord_token)
+    if "instagram" in registry:
+        # Built for a DEGRADED adapter too, and that is deliberate: M0 registers
+        # an Instagram adapter that could not authenticate rather than refusing
+        # to start (`nora.platform.registry`), and a checkpoint clears without a
+        # restart. A roster withheld on the startup state would then stay
+        # withheld for the life of the process — the room-scoped tools silently
+        # unavailable long after the session came back. The read itself is what
+        # fails closed: a checkpointed bridge answers 409 and the roster is
+        # `available=False` for exactly as long as that is true.
+        from nora.platform.instagram.roster import InstagramRoster
+        rosters["instagram"] = InstagramRoster(cfg.platforms.instagram.base_url)
     if presence_store is not None:
         # The R-21/R-31 startup invariant (design/19 §7.7, wired with `whereis`
         # per DEC-54(4)): alarm the day a policy conversation is no longer a

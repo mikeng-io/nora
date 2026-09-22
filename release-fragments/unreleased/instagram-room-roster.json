@@ -1,0 +1,14 @@
+{
+  "type": "feature",
+  "summary": "Nora can tell who is in an Instagram group. Asking \"who's here\" answers instead of refusing, location works in an Instagram room, and tagging someone back now actually pings them.",
+  "details": [
+    "The bridge gained a read that returns the group's members. It carries both of the numbers Instagram gives an account — the one a tag is addressed with and the public one — under their own names, because neither can be worked out from the other and confusing them fails silently.",
+    "Nora is not in her own room's member list, by design. Instagram leaves the account doing the asking out of it, and counting herself as a member would make her a stranger in her own group.",
+    "A member list that cannot be read in full is refused outright rather than returned short. A room that is quietly missing somebody is one the location guard would approve without ever seeing the person it should have refused over.",
+    "Tagging back was landed earlier and inert — it needed the member list to confirm someone is actually in the room before it would address them. It is live now."
+  ],
+  "limitations": [
+    "Location will still refuse in the Instagram group while a member is missing from identity.toml. That is the guard working, not the roster failing: an account nobody can name cannot be checked against the location circle. Map the account and it clears.",
+    "An Instagram challenge makes the member list unreadable for as long as it stands, and the room-scoped answers degrade to \"I can't check right now\" until a human clears it."
+  ]
+}

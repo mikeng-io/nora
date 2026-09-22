@@ -1,7 +1,8 @@
 package main
 
-// The HTTP surface. Seven routes, exactly the table in
-// design/instagram-adoption/03-transport-contract.md.
+// The HTTP surface. The table in
+// design/instagram-adoption/03-transport-contract.md, plus GET /roster
+// (roster.go), which the contract document does not carry yet.
 //
 // The status mapping is the load-bearing part and it is NOT a generic
 // success/failure split. The adapter's retry decision reads it directly:
@@ -48,6 +49,10 @@ func (b *bridge) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", b.handleHealth)
 	mux.HandleFunc("GET /events", b.handleEvents)
+	// The one READ route that answers about PEOPLE rather than about the
+	// bridge. GET with the room key in the query string, because it has no
+	// side effect — see roster.go.
+	mux.HandleFunc("GET /roster", b.handleRoster)
 	mux.HandleFunc("POST /send", b.handleSend)
 	mux.HandleFunc("POST /send-media", b.handleSendMedia)
 	mux.HandleFunc("POST /react", b.handleReact)

@@ -1,7 +1,9 @@
-"""`RosterSource` has THREE implementations, so it gets one suite all three pass.
+"""`RosterSource` has FOUR implementations, so it gets one suite all four pass.
 
 `nora.platform.signal.roster.SignalRoster` (over a real aiohttp daemon serving
-the shapes signal-cli actually returns) and `nora.testing.FakeRosterSource`.
+the shapes signal-cli actually returns), `DiscordRoster`, `InstagramRoster`
+(both over a stand-in for their real HTTP endpoint) and
+`nora.testing.FakeRosterSource`.
 CLAUDE.md's rule — "a port never gains a second implementation, INCLUDING a
 test fake, without a shared contract suite" — exists because of the three
 no-ops this codebase shipped green: each had a fake that answered every request
@@ -21,6 +23,7 @@ import pytest
 from aiohttp import web
 
 from nora.platform.discord.roster import DiscordRoster
+from nora.platform.instagram.roster import InstagramRoster
 from nora.platform.signal.roster import SignalRoster
 from nora.testing import FakeRosterSource
 
@@ -89,7 +92,43 @@ async def _discord(aiohttp_server, *, members: list[dict], status: int = 200):
     return DiscordRoster("tok", base_url=str(server.make_url("")).rstrip("/"))
 
 
-@pytest.fixture(params=["signal", "discord", "fake"])
+INSTAGRAM_ROOM = "1009543911792316"
+INSTAGRAM_OTHER = "9999999999999999"
+# The measured three-person room: TWO rows, because `Users[]` excludes the
+# viewer and Nora is not a member of her own room. Both id spaces are on the
+# wire; only the messaging fbid becomes a membership token (see the roster
+# module's docstring).
+INSTAGRAM_MEMBERS = [
+    {"fbid": "110966695387753", "igid": "60739041440", "username": "nka_bpumvg"},
+    {"fbid": "12116372067347151", "igid": "74340223606", "username": "third"},
+]
+
+
+async def _instagram(aiohttp_server, *, members: list[dict], status: int = 200):
+    """An `InstagramRoster` pointed at a stand-in for the bridge's `GET /roster`.
+
+    Routed on the room id, so asking about a thread the bridge cannot resolve
+    genuinely 500s the way the real one does (`thread_lookup_failed`) — the
+    `wrong_group` case has to be reachable the way it really is, not simulated
+    by handing back an empty list.
+    """
+    async def handler(request: web.Request) -> web.Response:
+        if request.query.get("room_id") != INSTAGRAM_ROOM:
+            return web.json_response(
+                {"ok": False, "error": "thread_lookup_failed"}, status=500,
+            )
+        if status != 200:
+            return web.json_response({"ok": False, "error": "boom"}, status=status)
+        return web.json_response({"ok": True, "room_id": INSTAGRAM_ROOM,
+                                  "is_group": True, "members": members})
+
+    app = web.Application()
+    app.router.add_get("/roster", handler)
+    server = await aiohttp_server(app)
+    return InstagramRoster(str(server.make_url("")).rstrip("/"))
+
+
+@pytest.fixture(params=["signal", "discord", "instagram", "fake"])
 async def sources(request, aiohttp_server):
     """One (healthy, unreadable, wrong_group) set per implementation, plus the
     facts that legitimately DIFFER between platforms.
@@ -133,6 +172,27 @@ async def sources(request, aiohttp_server):
             "unreadable": await _discord(aiohttp_server, members=[], status=500),
             "wrong_group": await _discord(aiohttp_server, members=member_rows),
         }
+    if request.param == "instagram":
+        return {
+            "platform": "instagram",
+            "conversation": INSTAGRAM_ROOM,
+            "members": (
+                frozenset({"110966695387753"}),
+                frozenset({"12116372067347151"}),
+            ),
+            # ONE, and not because Instagram has one id kind — it has two, and
+            # both are on the wire. Only the messaging fbid is a membership
+            # token: an @-mention can carry nothing else, and the id forms are
+            # indistinguishable by shape, so a public igid in the same frozenset
+            # would be a coin toss on addressing a tag with a number no mention
+            # accepts.
+            "ids_per_account": 1,
+            "healthy": await _instagram(aiohttp_server, members=INSTAGRAM_MEMBERS),
+            "unreadable": await _instagram(
+                aiohttp_server, members=INSTAGRAM_MEMBERS, status=503,
+            ),
+            "wrong_group": await _instagram(aiohttp_server, members=INSTAGRAM_MEMBERS),
+        }
     return {
         "platform": "signal",
         "conversation": GROUP,
@@ -144,9 +204,16 @@ async def sources(request, aiohttp_server):
     }
 
 
+#: A conversation each implementation will NOT resolve. Per platform because a
+#: Signal group id is not a thing Discord or Instagram could even be asked
+#: about — handing one over would make `wrong_group` pass on a malformed-id
+#: branch instead of on the one it is written for.
+_UNRESOLVABLE = {"discord": DISCORD_OTHER, "instagram": INSTAGRAM_OTHER}
+
+
 def _other(sources) -> str:
     """A conversation this source will NOT resolve."""
-    return DISCORD_OTHER if sources["platform"] == "discord" else GROUP
+    return _UNRESOLVABLE.get(sources["platform"], GROUP)
 
 
 async def test_a_readable_group_reports_available_with_its_members(sources):

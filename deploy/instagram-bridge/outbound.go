@@ -76,6 +76,11 @@ type igClient interface {
 	UnsendMessage(context.Context, *slidetypes.UnsendMessageRequest) (*slidetypes.UnsendMessageResponse, error)
 	SetTyping(ctx context.Context, threadID string, typing bool) error
 	FetchThreadID(ctx context.Context, threadFBID int64) (*instameow.ThreadIGIDs, error)
+	// GetThread is the one READ on this interface. It belongs here rather
+	// than on a second narrowing because the fake that stands in for a live
+	// session has to be ONE object: a bridge holding two fakes could have
+	// them disagree about which threads exist.
+	GetThread(context.Context, *slidetypes.GetThreadInfoRequest) (*slidetypes.ThreadInfoResponse, error)
 }
 
 // uploader is SendMercuryUploadRequest, extracted as a function value for the
