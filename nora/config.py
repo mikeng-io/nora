@@ -694,6 +694,18 @@ class StoreConfig(BaseModel):
     data_dir: Path
     max_per_conversation: int
     context_window: int
+    # How far PAST `context_window` a reply's quote may pull the transcript
+    # back, when the quoted row would otherwise fall outside it (design/11
+    # §2.5, amended 2026-09-22 — see that document). `recent(limit=...)` is
+    # re-sized to `depth_to(quoted_ts) + quote_margin`, capped at
+    # `context_window * quote_window_multiplier`; beyond the cap the reply
+    # renders exactly as it does today, unthreaded — no regression, just no
+    # expansion. `quote_margin` is the operator's number (2026-09-22 decision);
+    # it exists as its own key rather than a literal because it is a judgement
+    # about how much SURROUNDING context a resolved quote deserves, not a
+    # mechanism constant.
+    quote_margin: int = 10
+    quote_window_multiplier: int = 3
     # Whether the retention sweep runs AT ALL. `max_per_conversation` is the
     # window when it does; this is the switch, and the two are separate keys on
     # purpose — «keep everything» is not expressible as a number. Widening the

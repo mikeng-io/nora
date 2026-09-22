@@ -145,6 +145,28 @@ class SqlRecordStore:
         )
         return [self._row(r) for r in reversed(kept)]
 
+    async def depth_to(self, *, conversation_id: str, ts: int) -> int | None:
+        """See `nora.domain.ports.RecordStore.depth_to`.
+
+        One indexed query, `idx_messages_conv_ts (conversation_id, ts DESC)` —
+        the same index `recent` already seeks. `count(*) FILTER (WHERE ts >=
+        :ts)` is `recent`'s own `ts DESC, id DESC` depth to the OLDEST row
+        carrying this timestamp (a duplicated `ts` sorts its lowest-`id` row
+        last within the tie, which is also `nora.agent.prefill._by_ts`'s
+        tie-break — the two must agree, or this would size a window that
+        still excludes the row `_parent_of` actually resolves to).
+        `count(*) FILTER (WHERE ts = :ts)` is the existence check: zero means
+        no row here carries `ts` at all, so `depth` above answers nothing and
+        must not be handed back as though it does.
+        """
+        stmt = sa.select(
+            sa.func.count().filter(MESSAGES.c.ts >= ts).label("depth"),
+            sa.func.count().filter(MESSAGES.c.ts == ts).label("matches"),
+        ).where(MESSAGES.c.conversation_id == conversation_id)
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(stmt)).one()
+        return int(row.depth) if row.matches else None
+
     async def since(
         self, *, conversation_id: str, after_id: int, limit: int
     ) -> list[TranscriptRow]:

@@ -56,6 +56,7 @@ from nora.domain.ports import (
     RosterSource,
     StandingStore,
 )
+from nora.domain.quote_window import QuoteWindow
 from nora.engagement.context import StandingNotesReader
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.slots import ConversationSlots
@@ -89,6 +90,7 @@ def build_offline_pipeline(
     notes: StandingNotesReader | None = None,
     standing: StandingStore | None = None,
     media_join: MediaJoin | None = None,
+    quote_window: QuoteWindow | None = None,
     participation: ParticipationTrigger | None = None,
     extra_engage_policies: tuple[EngagePolicy, ...] = (),
     participation_runner: Any = None,
@@ -151,6 +153,11 @@ def build_offline_pipeline(
         # prompt builds a `MediaJoin` over `nora.testing.FakeMediaObjectStore`,
         # exactly as it passes its own doubles for `notes`/`standing`.
         media_join=media_join,
+        # DEC-195's shared quote-window resolver. `None` is the pre-2026-09-22
+        # shape (plain `context_window`, no growth); an eval exercising the
+        # threading fix builds one over the SAME `audit` this module already
+        # takes.
+        quote_window=quote_window,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -240,6 +247,8 @@ def build_offline_pipeline(
             # prompt shows what an eval's tag prompt shows (the parity gate
             # `tests/architecture/test_assembler_parity.py` enforces).
             media_join=media_join,
+            # Same reason, same instance, for DEC-195's resolver.
+            quote_window=quote_window,
             doctrine_store=doctrine_store, metrics=metrics,
             runner=runner, adapters={adapter.platform: adapter},
             registry=tool_registry,

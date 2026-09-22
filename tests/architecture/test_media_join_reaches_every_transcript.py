@@ -68,6 +68,16 @@ _NOT_A_BUILDER = {
     # side, and the input side of a case is `know()`, which WRITES rows and
     # reads none.
     "nora/subject/knowledge.py": "reads Nora's own rows back as the outcome, never into a prompt",
+    # DEC-195's shared resolver: `recent_for_quote`/`recent_for_window` size
+    # and fetch the window, then hand the rows straight back to whichever of
+    # `nora/engagement/context.py` or `nora/app/fire.py` called it — both
+    # already BUILDERS above, both already joining the rows THIS module
+    # returns them. Joining here too would run `MediaJoin.enrich` twice over
+    # the same rows for no reader that does not already get it once.
+    "nora/domain/quote_window.py": (
+        "hands rows straight back to its caller (context.py or fire.py), "
+        "which is already a listed builder and joins them itself"
+    ),
 }
 
 #: Modules that BUILD a transcript and that `_discovered_readers` structurally

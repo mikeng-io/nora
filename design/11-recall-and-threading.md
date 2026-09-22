@@ -476,12 +476,116 @@ the author comes from a row Nora stored, not from an absent `authorName`.
    by `idx_messages_conv_ts` (`conversation_id`, `ts DESC`) as an index seek. One
    extra SELECT per tag, on the reply path, against a table capped at 500 rows per
    conversation (`config.toml:46`).
-   **An out-of-window parent contributes an ATTRIBUTION, never TEXT.** The window is
-   a context budget; threading must not be a hole through it.
+   **~~An out-of-window parent contributes an ATTRIBUTION, never TEXT.~~ SUPERSEDED
+   2026-09-22 — see the amendment below.** The window is a context budget; threading
+   must not be a hole through it.
 3. **Unresolvable** (pruned, pre-migration, or a foreign conversation) — render a
    plain `[who]: body` with no arrow. **Never `↳ ?`.** Teaching the model that a
    symbol can mean "unknown" invites it to emit one. Silent degradation, consistent
    with R-5's temperament.
+
+### Amendment 2026-09-22 — superseded by full-text window growth, `by_timestamps` never shipped
+
+**Point 2 above was never built.** `RecordStore.by_timestamps` does not exist in
+the codebase. Step 5 of this document's own build order — "out-of-window
+resolution... both polish. Last." — was deferred indefinitely, and the deferred
+half is exactly the failure a live transcript surfaced 2026-09-22 (issue
+raised in conversation, room `MP4OD…`): a reply quoted a message 56 rows back
+against `context_window=40`. `_parent_of` (unchanged since this document,
+`nora/agent/prefill.py:425`) found no parent in the window, the reply rendered
+as a plain unthreaded line, and Nora answered as though it were a non
+sequitur — attributing "6點後" to her own most recent open question instead
+of the 27th-dinner plan it actually answered. She only corrected herself after
+being told directly.
+
+**The decision changes, not by re-arguing point 2's premise, but by rejecting
+it.** Point 2 held that an out-of-window parent should contribute attribution
+only, never text, "so threading must not be a hole through" the context
+budget. The 2026-09-22 decision (operator) is the opposite call for the common
+case: when the quoted parent is findable within a bounded, explicitly capped
+re-fetch, show the actual TEXT, not just who said it — because attribution
+alone ("↳ Aaron") was not enough for Nora to recover the right topic in the
+observed failure; she needed to see what "6點後" was answering, not just who
+said it.
+
+**Mechanism — `RecordStore.depth_to`, not `by_timestamps`.** Rather than a
+side lookup that hands back an isolated parent row, `TranscriptInjection._recent`
+(`nora/engagement/context.py`) asks `depth_to(conversation_id, quoted_ts)` —
+one indexed `COUNT(*) FILTER (...)` over the same `idx_messages_conv_ts` this
+section already cites — for how many rows deep `recent()` would have to reach
+to include the parent. If that depth exceeds `context_window`, the window is
+re-fetched at `depth + quote_margin` (default 10, `[store] quote_margin`),
+capped at `context_window * quote_window_multiplier` (default 3,
+`[store] quote_window_multiplier`). One `recent(limit=...)` call at the new
+size naturally includes every row between the parent and now — the "margin"
+plus everything else — which is what the operator asked for: "load the window
+to that quoted message and add a 10-message margin."
+
+**Point 3's rule is now the cap's fallback, not a separate case.** Beyond the
+cap, or when `depth_to` finds nothing (pruned, pre-migration, a foreign
+conversation), the fetch stays at the plain `context_window` and the reply
+renders exactly as it did before this amendment — unthreaded, no `↳ ?`. Not a
+regression: this is the SAME outcome a quote this far back already had.
+
+**What is deliberately NOT built by this amendment — the beyond-cap case
+stays a gap.** A reply to something past the cap still gets no cue that
+there was anything to look up, even though `load_transcript` (the renamed
+`read_buffer`, `nora/agent/tools.py:2854`, max 60 rows) already exists and
+would often reach it — the 56-row live case would have fit inside it. The
+missing piece is not a new tool; it is a reason for her to reach for the one
+that exists, or for `design/proposed/18-context-budget-and-handles.md`'s
+`read_thread(handle)` + `ContextBudget` (also never built) to replace it with
+something bounded and legible. Left for follow-up, per operator decision
+2026-09-22.
+
+**`window` attribute correctness.** `_transcript_block` (`nora/agent/prefill.py`)
+used to render the CONFIGURED `context_window`, not the actual row count shown.
+That was already a latent R-15 violation in the harmless direction (a room
+with fewer than 40 total messages ever would claim a wider window than it
+had); once the window can grow past 40, the same static value would understate
+it — the dangerous direction, since R-15 exists so she can trust the stated
+boundary. Fixed alongside this amendment: the attribute is now
+`len(ctx.transcript)`, always.
+
+**Unified with the fire path — `nora.domain.quote_window.QuoteWindow`, same
+day.** The tag path was the first fix; the fire path's `FirePath.build_context`
+(`nora/app/fire.py`) reads the same `context_window`-sized transcript for
+every unprompted turn, including participation — and a row INSIDE that
+window can quote a parent outside it whether or not the turn itself was
+triggered by one message in particular (a participation occasion carries
+none: `participation_occasion`'s `body=""`, `person_id=None` — she owes the
+turn to no one row). Building the fix into `TranscriptInjection` alone would
+have repeated exactly the split `nora.domain.media_join`'s own docstring
+records for issue #116 — a collaborator built for the first consumer and
+left there. `QuoteWindow` is constructed ONCE
+(`nora.app.composition.build_dependencies`) and shared, the same pattern
+`MediaJoin` already uses, with two entry shapes for the two callers:
+
+- `recent_for_quote(quote=...)` — the tag path's shape, one KNOWN quote,
+  checked before any fetch (exactly the mechanism above).
+- `recent_for_window()` — the fire path's shape, no single quote: reads the
+  plain window first, then chases the MOST RECENT row inside it whose own
+  `quoted_ts` does not resolve against what was just read. Single hop only
+  (§2.7 still rejects a transitive chain).
+
+Both degrade to the plain `context_window` fetch exactly as `_recent` always
+has, on the same conditions (beyond the cap, or an unresolvable `ts`).
+`quote_window=None` (any construction site that predates this, or a harness
+that has not opted in) is the pre-2026-09-22 shape everywhere, unchanged.
+
+Change list: `nora/domain/ports.py` (`RecordStore.depth_to`), `nora/infra/sql/audit.py`
+(`SqlRecordStore.depth_to`), `nora/testing/fakes.py` (`FakeRecordStore.depth_to`),
+`nora/domain/quote_window.py` (**new** — `QuoteWindow`, shared), `nora/engagement/context.py`
+(`TranscriptInjection._recent` delegates), `nora/app/fire.py`
+(`FirePath.build_context` delegates), `nora/agent/prefill.py`
+(`_transcript_block`'s `window` attribute), `nora/config.py` + `config.example.toml`
+(`StoreConfig.quote_margin`, `.quote_window_multiplier`), `nora/app/assembler.py` +
+`nora/app/composition.py` + `tests/offline_pipeline.py` (construction and wiring,
+both parity-checked construction sites). Tests: `tests/contract/test_audit_store_contract.py`
+(`depth_to`, both implementations), `tests/unit/test_engagement_context.py` (window
+growth, the cap, the two fallbacks), `tests/unit/test_fire_path.py` (the
+`recent_for_window` shape, and the no-`quote_window`-wired no-op), `tests/test_prefill.py`
+(`window` attribute).
 
 ## 2.6 Interaction with `read_buffer`
 

@@ -138,10 +138,16 @@ def test_header_states_what_is_already_present(R15=None):
     # she must not go looking for context she already has, which needs a
     # number: here it is `window` on `<group_transcript>`, a per-render value
     # and so an attribute rather than part of a type's description.
+    # `window` is how many rows she was ACTUALLY shown, not the configured
+    # cap (design/11 §2.5, amended 2026-09-22) — one row here, so `"1"`, even
+    # though `context_window=40` is passed in. The cap and the render can
+    # diverge in the other direction too, when a reply's quote pulls the
+    # window past the cap; either way R-15's promise is about what is in
+    # front of her, not what the config file says.
     body = build_prefill(
         _ctx(_rows("hi")), display_name="Nora", context_window=40,
     )[1]["content"][0]["text"]
-    assert 'window="40"' in _opening_tag(body, "group_transcript")
+    assert 'window="1"' in _opening_tag(body, "group_transcript")
     assert "further back than you were shown" in _opening_tag(
         body, "group_transcript")
 

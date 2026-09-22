@@ -495,6 +495,14 @@ database_url_env = "DATABASE_URL"
 data_dir = "~/workspace/nora/data"
 max_per_conversation = 500
 context_window = 40
+# How far a reply's quote may pull the transcript window back, past
+# `context_window`, when the quoted message would otherwise fall outside it
+# (design/11 §2.5, amended 2026-09-22). The window is re-sized to reach the
+# quoted row plus this many rows of surrounding context, capped at
+# `context_window * quote_window_multiplier` — beyond that the reply renders
+# unthreaded, same as before this existed.
+quote_margin = 10
+quote_window_multiplier = 3
 # Whether the retention sweep runs at all. Defaults TRUE (this file's convention:
 # a config.toml written before a key existed keeps its behaviour), so leaving it
 # out prunes to `max_per_conversation` above every 300s.

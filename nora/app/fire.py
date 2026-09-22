@@ -116,6 +116,7 @@ from nora.domain.ports import (
     StandingStore,
 )
 from nora.domain.prompt import one_line
+from nora.domain.quote_window import QuoteWindow
 from nora.domain.reminders import Recurrence, Reminder, remaining_occurrences
 from nora.domain.standing import (
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
@@ -782,6 +783,7 @@ class FirePath:
         timeout_seconds: float,
         clock: Callable[[], datetime],
         media_join: MediaJoin | None = None,
+        quote_window: QuoteWindow | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
         preview_source: LinkPreviewSource | None = None,
         llm_state: Any = None,
@@ -895,6 +897,11 @@ class FirePath:
         self._policy = policy
         self._persons = persons
         self._records = records
+        # The shared quote-window resolver (DEC-195, design/11 §2.5's
+        # amendment). `None` (every construction site predating it, and any
+        # harness that has not opted in) keeps `build_context`'s plain
+        # `context_window` fetch — the exact pre-2026-09-22 behaviour.
+        self._quote_window = quote_window
         # The shared media join (issue #116). A fire turn renders the SAME
         # transcript block through the SAME prefill as a tag, so leaving it out
         # here would reintroduce the two-consumer split on exactly the path
@@ -1051,18 +1058,35 @@ class FirePath:
         )
 
         transcript: tuple[TranscriptRow, ...] = ()
-        try:
-            transcript = tuple(await self._records.recent(
-                conversation_id=occasion.conversation_id, limit=self._context_window,
-            ))
-        except Exception:
-            # `TranscriptInjection`'s behaviour, deliberately copied: a thinner
-            # turn beats no turn (R-5-adjacent). The counter is what says the
-            # turn ran blind.
-            log.exception("fire context read failed; continuing with an empty transcript")
-            self._metrics.inc(
-                "nora_errors_total", stage="fire_context", platform=occasion.platform,
+        if self._quote_window is not None:
+            # DEC-195 (design/11 §2.5's amendment). A fire occasion carries no
+            # single triggering message — `participation_occasion`'s
+            # `body=""`, `person_id=None`: she owes the turn to no one row —
+            # so there is no ONE quote to check the way the tag path has.
+            # `recent_for_window` reads the plain window first and, if a row
+            # INSIDE it quotes a parent that window does not itself resolve,
+            # grows to reach it — the same condition `_parent_of`
+            # (`nora.agent.prefill`) would otherwise fail on when this
+            # transcript is rendered. Its own failure handling matches what
+            # this method did before it existed (`stage="fire_context"`).
+            transcript = await self._quote_window.recent_for_window(
+                conversation_id=occasion.conversation_id,
+                context_window=self._context_window,
+                platform=occasion.platform, stage="fire_context",
             )
+        else:
+            try:
+                transcript = tuple(await self._records.recent(
+                    conversation_id=occasion.conversation_id, limit=self._context_window,
+                ))
+            except Exception:
+                # `TranscriptInjection`'s behaviour, deliberately copied: a thinner
+                # turn beats no turn (R-5-adjacent). The counter is what says the
+                # turn ran blind.
+                log.exception("fire context read failed; continuing with an empty transcript")
+                self._metrics.inc(
+                    "nora_errors_total", stage="fire_context", platform=occasion.platform,
+                )
 
         # The same one-name-space projection the tag path applies (DEC-80). A fire
         # turn renders the SAME transcript block through the SAME prefill, so

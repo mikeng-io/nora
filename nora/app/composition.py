@@ -83,6 +83,7 @@ from nora.domain.ports import (
     SteamPresenceProvider,
     VoicePresenceSource,
 )
+from nora.domain.quote_window import QuoteWindow
 from nora.domain.reminders import ReminderCaps, ReminderStore
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.engagement.pipeline import EngagementPipeline
@@ -1121,6 +1122,20 @@ async def build_dependencies(
         # that fires and the outer stays the backstop it was written as.
         timeout_seconds=cfg.media.join_timeout_seconds,
     )
+    # ONE quote-aware window resolver for the whole process (DEC-195,
+    # design/11 §2.5's amendment, 2026-09-22), handed to every transcript
+    # read that can grow past `context_window` to resolve a reply's quote:
+    # the tag assembler AND the fire path's `build_context` — the same
+    # `MediaJoin` precedent immediately above, for the same reason. Built
+    # from `audit` (this process's ONE `RecordStore`) rather than each
+    # caller constructing its own, so `quote_margin`/`quote_window_multiplier`
+    # cannot drift between the two paths the way nothing else here is allowed
+    # to.
+    quote_window = QuoteWindow(
+        audit=audit, metrics=metrics,
+        quote_margin=cfg.store.quote_margin,
+        quote_window_multiplier=cfg.store.quote_window_multiplier,
+    )
     # The per-turn verdict's store (26 §3). Built unconditionally beside
     # `standing_store` for the same reason: it costs one attribute with
     # the tier off, and the debrief's own `store_verdict is None` guard
@@ -1534,6 +1549,9 @@ async def build_dependencies(
         # one `media_fetch` serves, and eight copies of that decision would be
         # eight chances to disagree about what a picture shows.
         media_join=media_join,
+        # The shared quote-window resolver (DEC-195). Same instance
+        # `FirePath` below is given — the point of building it once.
+        quote_window=quote_window,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -2673,6 +2691,13 @@ async def build_dependencies(
         fire_path = FirePath(
             persons=persons, records=audit, memory=memory,
             media_join=media_join,
+            # The shared quote-window resolver (DEC-195, design/11 §2.5's
+            # amendment). The SAME instance `build_assembler` above holds —
+            # a fire turn reads the same `context_window`-sized transcript a
+            # tag reply does, and a reply INSIDE that window can still quote
+            # a parent outside it, whether or not this particular turn was
+            # triggered by one message in particular.
+            quote_window=quote_window,
             doctrine_store=doctrine_store, metrics=metrics,
             runner=runner, adapters=dict(registry.adapters), registry=tool_registry,
             canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,

@@ -750,6 +750,26 @@ class RecordStore(Protocol):
 
     async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]: ...
 
+    async def depth_to(self, *, conversation_id: str, ts: int) -> int | None:
+        """How many of this conversation's rows are `ts DESC` at-or-newer than
+        `ts` — i.e. the `recent(limit=...)` size that would just reach the row
+        carrying this timestamp. `None` if no row in this conversation carries
+        it (pruned, pre-migration, or a foreign conversation).
+
+        Exists for one caller: a reply whose `quoted_ts` falls outside the
+        prefill's default window (design/11 §2.5's out-of-window case). Rather
+        than a bounded lookup that hands back attribution only, the caller
+        re-reads `recent` sized to `depth_to(...) + margin`, so the resolved
+        parent's actual TEXT is in the window, not just its author. See
+        `nora.engagement.context.TranscriptInjection._recent`.
+
+        Same tie-break as `recent` (`ts DESC, id DESC`) — a duplicated
+        timestamp still answers a well-defined question, «how many rows would
+        `recent` return before reaching this one», even though `_parent_of`
+        may then resolve to a different row sharing that `ts`.
+        """
+        ...
+
     async def since(
         self, *, conversation_id: str, after_id: int, limit: int
     ) -> list[TranscriptRow]:
