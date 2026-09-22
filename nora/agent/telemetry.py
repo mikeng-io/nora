@@ -53,6 +53,7 @@ from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from typing import Any
 
+from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.sampling import Sampler
@@ -89,13 +90,39 @@ def setup_agent_tracing(
     keeping Nora's own sampler.
 
     `StrandsTelemetry.__init__` takes an optional pre-built
-    `tracer_provider`; passed one, it registers it as-is and skips building
-    its own (`strands/telemetry/config.py`) — which is exactly the seam that
-    lets Nora's R-76 sampler keep deciding what reaches the collector while
-    Strands' own exporter-setup methods do the rest. Passing NO provider
-    would build one with no sampler override (OTel's default,
-    `ParentBased(root=ALWAYS_ON)`), which would export every ingest-plumbing
-    span R-76 exists to drop.
+    `tracer_provider` — the seam that lets Nora's R-76 sampler keep deciding
+    what reaches the collector while Strands' own exporter-setup methods do
+    the rest. Passing NO provider would build one with no sampler override
+    (OTel's default, `ParentBased(root=ALWAYS_ON)`), which would export every
+    ingest-plumbing span R-76 exists to drop.
+
+    ## `set_tracer_provider` IS OURS TO CALL, and a missing line cost 14 hours
+
+    An earlier version of this docstring said Strands "registers it as-is".
+    **It does not.** Read from the installed source, 2026-09-22:
+
+        if tracer_provider:
+            self.tracer_provider = tracer_provider   # kept, never registered
+        else:
+            self._initialize_tracer()                # THIS sets the global
+
+    Its own docstring states the same thing from the other side — "If None, a
+    new one will be created *and set as global*" — so the registration is the
+    thing you give up by supplying a provider, which is exactly what Nora does
+    to keep its sampler.
+
+    Without the explicit `set_tracer_provider` below, the process global stays
+    `ProxyTracerProvider`, whose tracers are NO-OPS. Every `nora.obs.tracing.
+    span(...)` in the codebase then records nothing and exports nothing —
+    **and raises nothing, logs nothing and fails no test**, because a no-op
+    tracer is a perfectly well-behaved tracer. Measured live: Langfuse and
+    Jaeger both last saw a `nora` span at 2026-09-21T18:21Z and were still
+    silent 13 hours later, while the app ran normally and answered messages.
+
+    That is the whole shape of the failure worth remembering: the collector was
+    healthy, the endpoint resolved, a POST to it returned 200, and the
+    try/except around this call never fired. Everything reported success
+    because nothing had been asked to do anything.
     """
     if exporter not in ("console", "file", "otlp_http"):
         raise ValueError(f"unknown tracing exporter: {exporter!r}")
@@ -123,6 +150,12 @@ def setup_agent_tracing(
         telemetry.setup_otlp_exporter(
             endpoint=endpoint, headers=resolve_otlp_headers(headers_env),
         )
+
+    # LAST, and unconditional: after whichever exporter was attached above, so
+    # the provider that becomes global is one that can actually ship a span.
+    # See the docstring — supplying a provider is precisely what stops Strands
+    # doing this, and nothing anywhere complains when it is missing.
+    trace.set_tracer_provider(provider)
 
 
 def start_raw_model_span(
