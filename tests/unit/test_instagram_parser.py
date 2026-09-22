@@ -356,17 +356,18 @@ def test_the_sharers_words_come_before_the_shared_post():
     """In the order they happened: somebody typed something, about a post,
     which carries a thumbnail. The placeholder run must stay TRAILING, because
     `body_with_handles` rewrites it in place once custody has the bytes."""
+    url = "https://cdn.example/thumb.jpg"
     msg = parse_event(_event(
         text="look at this",
         shared={"author": "someaccount", "caption": "the caption"},
-        media={"kind": "image", "url": "https://cdn.example/thumb.jpg"},
+        media={"kind": "image", "url": url},
     ))
 
     assert msg is not None
     assert msg.body == "look at this [shared post by someaccount — the caption] [image]"
     # The thumbnail is fetchable, which is what makes the middle depth possible
     # at all: she can say what the reel looks like without fetching the video.
-    assert msg.media[0].fetch_token == "attachment:https://cdn.example/thumb.jpg"
+    assert msg.media[0].fetch_token == f"attachment:{url}"
 
 
 def test_the_shared_author_is_not_the_sender():
