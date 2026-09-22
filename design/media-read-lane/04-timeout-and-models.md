@@ -97,31 +97,81 @@ multi-wave clip. **The budget must be established per tool invocation — coveri
 waves and preprocessing — not per model call.** That is a measurement obligation, not
 a config value, and it is now item 1 of §7.
 
-## 3b. ✅ MEASURED — the audible 90 s production window (was the missing number)
+## 3b. ⚠️ CORRECTED AGAIN — 48 s does NOT hold. Latency is not bounded by the window.
 
-The first version called 43.8 s (a **35 s** audible clip) sufficient for a "60 s Story".
-That was a **projection, not a measurement** — the review caught the attribution.
+> **This section has now been wrong twice, in opposite directions, and both errors are
+> kept.** v1 projected 43.8 s was sufficient (no measurement). v2 measured a single
+> 90 s audible window at 34.0 / 41.2 / 42.0 s and concluded 48 s holds "with ~6 s of
+> margin". **v3 (this one) shows v2 was over-fitted to one clip:** the same window shape
+> measured across four sources and n=16 runs spans **28.5 s → 120.8 s**.
 
-Measured, on this bundle's own numbers:
+### What is actually measured
 
-| clip | measured latency | vs a 48 s derived budget |
+All rows are 90 s windows at the **exact production shape** (`preprocess.py:186-200`:
+`scale='min(720,iw)':-2`, `fps=2`, `libx264 -preset veryfast -crf 26`, `-t 90`) with the
+**audio track kept** (the proposed DEC-195 shape). MiMo v2.6 Flash, OpenCode Go direct,
+`max_tokens=4096`. Every result below returned HTTP 200 and non-empty content.
+
+| source | resolution | latency (s) |
 |---|---|---|
-| 35 s + audio | 43.8 s | fits, with 4 s of margin |
-| 57 s | **46.2 s** (K3) / **up to 56 s** (MiMo) | **exceeds it** |
-| **90 s audible, production shape** | **34.0 / 41.2 / 42.0 s** (min/med/max, n=4) | **fits** |
-| 100 s real source, unpreprocessed | 68.0 / 71.6 / 85.7 s | exceeds it |
+| Big Buck Bunny | 720p | 28.5 · 31.7 · **120.8** |
+| Big Buck Bunny (prod re-cut) | 720p | 30.2 · 39.0 · 42.2 |
+| Big Buck Bunny (finish-check arm) | 720p | 34.0 · 34.5 · 41.2 · 42.0 |
+| montage (real) | 720p | 30.7 · 48.8 · 58.0 |
+| looped 57 s clip | 360p | 49.1 · 55.7 · 61.6 |
 
-**Measurement (2026-09-22), and it reverses this section's earlier expectation.**
-Source: a **real 100 s YouTube clip** (720p60, aac stereo — `yt-dlp`, single encode),
-cut through the exact production chain (`preprocess.py:186-200`: `scale='min(720,iw)':-2,fps=2`,
-`libx264 -preset veryfast -crf 26`, `-t 90`) **with the audio track kept** — i.e. the
-proposed DEC-195 shape. Model MiMo v2.6 Flash, OpenCode Go direct, `max_tokens=4096`.
+**Pooled: n=16, min 28.5 s, median 41.6 s, mean 46.8 s, max 120.8 s.**
+**6 of 16 runs exceed the 48 s derived budget (38%).**
+**10 of 16 exceed today's 36 s derived budget (63%).**
 
-**Result: 4/4 usable at `finish_reason="stop"`, non-empty content (1,123–1,663 chars).**
-Latency **34.0 / 41.2 / 42.0 s** (min/median/max). **48 s holds, with ~6 s of margin.**
+### The finding that matters
 
-`vision_max_tokens=4096` was the correct raise — at 1024 the reasoning budget would
-consume everything, as §4 records.
+**Latency is not a function of window duration.** The *same file* — identical bytes,
+identical chain, identical prompt — returned **28.5 s and 120.8 s**. Same for the
+720p Big Buck Bunny arm: 30.2 s and 42.2 s. Output tokens do not explain it either
+(the 120.8 s run produced only 1,707 completion tokens).
+
+So the tail is **upstream scheduling/generation variance, not payload cost**. That has
+three consequences this bundle has to absorb:
+
+1. **A 48 s derived budget fails ~38% of the time** at production shape. At the current
+   36 s it fails ~63%. Nora would return `unavailable` on a large fraction of 90 s
+   windows — worse than the pre-existing defect it set out to fix, not better.
+2. **The §3a wave arithmetic must be recomputed on the tail, not the median.** With the
+   measured 120.8 s worst case and `budget=4, C=4`: 10 windows → 3 waves → **362 s per
+   tool call**, against a 240 s loop — before any second or third call in the turn.
+3. **`finish_reason="length"` at `completion_tokens=4096` occurred** on the 360p looped
+   arm (content 342 chars). §4's raise to 4096 is necessary but **not always
+   sufficient**; the ceiling is still reachable.
+
+### What must be decided (revised)
+
+The earlier recommendation (`budget` 4 → 3) is **not enough on its own** — it addresses
+the median and not the tail. The options are now:
+
+- **A. Raise the timeout to cover the tail:** `vision_timeout_seconds` → 150, and
+  `[llm].timeout_seconds` 240 → 360+. Cost: a slow turn blocks the loop.
+- **B. Raise the timeout moderately and reduce concurrency exposure:** `budget` 4 → 2
+  (derived 72 s) **and** `vision_timeout_seconds` → 150, accepting that a >72 s window
+  still returns `unavailable` and is reported honestly by `cut.note()`.
+- **C. Cap what one tool invocation may read** so the tail cannot compound across
+  windows — bounds the per-invocation budget directly instead of bounding each call.
+
+**B or C, not A alone.** The measured variance is upstream and outside our control, so
+the design must fail honestly at the tail (which `cut.note()` already does) rather than
+assume the tail away. **This is an operator decision with the distribution attached.**
+
+### Measurement caveats (so this is not over-read)
+
+- Sources: one 100 s YouTube clip, one montage, one looped 57 s clip, plus a re-cut.
+  **All animated/montage content.** No speech-heavy 90 s source was obtained — the
+  "talky vlog" fetch returned a 19 s clip, which is **not** a 90 s window and is
+  excluded from the table. A speech-heavy source could plausibly sit at the high end
+  (more output tokens), so the tail may be under-sampled, not over-sampled.
+- n=16 across 4 sources is a **distribution sketch, not a latency SLO**. The 120.8 s
+  point is a single observation and is not characterised (no repeat).
+- Cached vs uncached is not the driver: the 120.8 s run had `cached_tokens=16640`.
+
 
 ### ⚠️ A construction artifact that nearly produced a wrong verdict
 
@@ -135,19 +185,17 @@ which would have forced a chunk-size change.
 90 s audible window returns 200/`finish="stop"` 4/4. **Lesson: size the timeout only
 against footage that is production-shaped.** Never benchmark with a synthetic join.
 
-### The concurrency requirement is still open
+### The concurrency requirement compounds the tail
 
-`04 §3a`'s wave arithmetic stands: a tool invocation takes `ceil(N/C)` waves. With the
-measured 42.0 s worst case and `budget=4`, `C=4`: 10 windows → 3 waves → **126 s per
-tool call**; three such calls → **378 s vs a 240 s loop.** The per-call latency fits a
-48 s window; the **per-invocation** budget still does not fit the loop:
+`04 §3a`'s wave arithmetic stands: a tool invocation takes `ceil(N/C)` waves. On the
+**measured median** (41.6 s) with `budget=4, C=4`: 10 windows → 3 waves → **125 s per
+tool call**; three such calls → **374 s vs a 240 s loop.** On the **measured tail**
+(120.8 s): **362 s for one call**, before any second call.
 
-- `budget` 4 → 3 (→ 64 s derived) and `vision_timeout_seconds` → 90, **or**
-- `[llm].timeout_seconds` 240 → 360.
+So the per-call timeout and the per-invocation budget are **two separate failures**, and
+the second is worse. `vision_timeout_seconds` must clear the tail it intends to serve,
+and the loop budget must clear `waves × tail × calls`.
 
-This is the remaining decision, and it is arithmetic on a measured number now, not a
-projection. `vision_timeout_seconds` must also be validated against the 42.0 s worst
-case — a 48 s derived budget clears it by ~6 s, which is thin for a cold call.
 
 
 ## 4. `vision_max_tokens` must rise for MiMo

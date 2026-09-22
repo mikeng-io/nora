@@ -136,18 +136,23 @@ headline settings were never validated at production shape. These come first:
 1. **A successful read at production shape:** an **audible 90 s window** (the real
    production chunk size), on real footage, through the exact production filter chain,
    with `finish_reason` and usable content checked — not merely HTTP 200.
-   ✅ **DONE 2026-09-22** — real 100 s YouTube clip, production chain, audio kept:
-   **4/4 usable, `finish="stop"`, 1,123–1,663 chars, latency 34.0 / 41.2 / 42.0 s.**
-   See `04 §3b`.
+   ⚠️ **DONE 2026-09-22, and the answer is NOT what v2 of `04 §3b` claimed.**
+   n=16 across four production-shaped sources: **min 28.5 s / median 41.6 s / max
+   120.8 s**, 6/16 exceeding a 48 s derived budget, 10/16 exceeding today's 36 s.
+   The same file returned 28.5 s and 120.8 s → **the tail is upstream variance, not
+   payload cost**, so the timeout cannot be set from a median. See `04 §3b`.
 2. **The per-invocation budget:** `ceil(N/C)` waves × per-call latency × concurrent
-   tool calls must fit `[llm].timeout_seconds`. **Still open** — 3 waves × 42 s × 3
-   calls = 378 s vs a 240 s loop. Decide `budget` 3 or loop 360.
+   tool calls must fit `[llm].timeout_seconds`. **Open, and now the harder problem:**
+   3 waves × 41.6 s median × 3 calls = 374 s vs a 240 s loop; on the 120.8 s tail one
+   call alone is 362 s. `budget` 4→3 is insufficient. Options B/C in `04 §3b §"What
+   must be decided"`.
 3. **A construction rule, learned the hard way:** synthetic concat joins are not valid
    footage for this measurement. Use a real single-encode clip. (An earlier pass built
    "90 s" windows by concatenating Signal clips; the resulting VFR stream drew `400`s
    above 45 s and would have forced a wrong chunk-size change.)
-4. **The per-invocation budget**, covering queued waves and preprocessing — see
-   `04-§3a`: the invariant is proven over model calls, not tool invocations.
+4. **A sampling rule, learned the hard way:** **n=1 per source is not a measurement.**
+   Four runs on one YouTube clip produced a tight-looking 34–42 s band that a single
+   repeat falsified at 120.8 s. Report min/median/max across sources, never a point.
 5. **Observability.** `docs/observability.md:480-489` records that vision reads export
    **zero token usage and no per-window spans**, and `client.py:355-358,403-405` applies
    the shared ceiling to *both* text synthesis and media reads. So the new token-cost
