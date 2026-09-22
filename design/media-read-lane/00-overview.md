@@ -77,12 +77,49 @@ circular reasoning, and it produced a confident wrong answer.
 |---|---|
 | Benchmark | ✅ done, both rounds, raw data retained |
 | Chunk concurrency | designed here, unbuilt |
-| Audio in video path | designed here, **overrides a prior decision** — see 02 §4 |
-| OpenCode Go lane | designed here, unbuilt; kimi lane is the exact precedent |
+| Audio in video path | designed here, **overrides DEC-161 and DEC-114(3)** — see 02 §4–5 |
+| OpenCode Go lane | designed here, unbuilt; kimi lane is the near-precedent (see 03 §3) |
 | Timeout raise | designed here, unbuilt; **fixes a defect that exists on master today** |
-| Adversarial review | ❌ not dispatched |
-| Release fragment | ❌ not written |
-| DEC row | ❌ not yet added to `design/09-decision-index.md` (see 05) |
+| Adversarial review | ✅ **round 1 dispatched (Codex, read-only) — REQUEST CHANGES**; all findings addressed |
+| Release fragment | ✅ written, both gates green |
+| DEC row | ❌ DEC-195 not yet added to `design/09-decision-index.md` (see 05) |
+| **Measurement obligations** | ❌ **open — see 05 §4. The recommended settings are NOT yet validated at production shape; do these before implementing.** |
+
+### What the adversarial review changed
+
+Round 1 returned **REQUEST CHANGES** with 2 BLOCKING, 5 MAJOR and 3 MINOR findings.
+The substantive corrections, all applied in place with the original text retained so the
+change is visible:
+
+- **The timeout proof was over the wrong unit.** `budget × derived < loop` bounds
+  *model calls*; a tool invocation with concurrent windows takes `ceil(N/C)` waves. One
+  10-window clip is up to 3 waves; three such reads in a turn is 432 s against a 240 s
+  loop. A pre-existing defect the bundle had not exposed. See `04 §3a`.
+- **48 s was below this bundle's own measurements** (46.2 s K3 / up to 56 s MiMo on a
+  57 s clip), and the 90 s production window size was never measured at all. See `04 §3b`.
+- **The egress blocker was the wrong question.** The screen *does* run; what it
+  *detects* is the issue — `egress.py` deliberately skips bare digit runs and its E.164
+  pattern requires a `+`. The "keep it on the video lane" fallback I proposed was not a
+  mitigation at all. And **DEC-114 clause (3) is a safety decision I had mislabelled as
+  scope** — a materially worse error than a wrong number. See `02 §5`, `05 §2`.
+- **Two prompt families, not one.** Editing `client.py` alone implements nothing for
+  automatic comprehension (`COMPREHEND_QUESTIONS`), which is where Instagram media is
+  read. See `02 §6`.
+- **Already-comprehended media is never re-read** — the headline benefit would not
+  appear on anything already in the store. See `02 §8`.
+- **A pre-existing coverage defect:** a capped read with a *middle* gap claims it
+  «watched the first N» — `covered_seconds` is a duration sum, not an interval set. See
+  `01 §5a`.
+- **A per-read semaphore bounds nothing globally** — ingest already runs 4 concurrent
+  jobs, so the true ceiling is 4 × concurrency. See `01 §3`.
+- **`create_client` has no header seam** — the "follow the kimi precedent" recipe as
+  written would never send the mandatory header. See `03 §3`.
+
+**What the review confirmed as correct:** DEC-161's two clauses are quoted accurately;
+window order IS recoverable from `VideoWindow.start_seconds`; ordinary per-window
+failure already degrades locally; the scalar timeout arithmetic is right; there is no
+fourth provider map; storage hashes are unaffected by ffmpeg output; and `_checked`
+still rejects `finish_reason="length"` after the token raise.
 
 ## Reading order
 

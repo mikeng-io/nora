@@ -94,51 +94,110 @@ it is the substance of the clip, and summarised when it is not. The `audio`
 prompt's prohibition («Do NOT write out a word-for-word transcript») is likewise
 revised — but see §5, which is the part that needs care.
 
-## 5. ⚠️ Blocking check — the egress/PII surface widens
+## 5. 🔴 BLOCKING — and the review corrected my question, not just my answer
 
-**This is the one part of the bundle that can be wrong in a way that matters, and
-it is not yet verified.**
+**The first version of this section asked the wrong question.** It asked *does the
+screen run on this path?* The review answered: **yes, it does** — screens already run
+at `nora/agent/tools.py:5489`, `nora/domain/media_join.py:254` and
+`nora/ingest/comprehension.py:474`. The reachability question is closed.
 
-Transcribed speech is a **new content class** in Nora's answers. Before it
-ships, one question must be answered with evidence:
+**The real problem is what the screen DETECTS, and the answer is already written down
+in this repo** — in DEC-114 itself, which I mis-characterised as a scope decision:
 
-> Does the existing identifier/egress screen cover model-generated speech
-> transcripts, or only literal text the humans typed?
+> **DEC-114 (3):** «The audio prompt asks for the GIST, never a transcript, and that
+> is a **safety decision not a style one.** STT is excluded here because a verbatim
+> transcript is a materially larger R-18/R-28 egress surface — `_serve_media`'s own
+> docstring records that **`scan_identifiers` does not catch a bare local number**,
+> and people say addresses and phone numbers aloud.»
 
-The screens named in this repo (`scan_identifiers`, `dream_screen`, the
-note-tier egress screen) were built against *authored* content. A transcript is
-derived from untrusted media and arrives as a model's string — structurally the
-same shape as a description, which the screens already handle, but that is an
-inference. **Verify before enabling, do not assume.**
+And in code, `nora/agent/egress.py:45-46` and `:67`:
 
-Concretely, the risks audio newly admits:
+```
+Deliberately NOT matched here:
+* Free-standing digit runs.  …
+_E164 = re.compile(r"\+\d{8,15}\b")   # Requires the +, so "call me at 12345678" stays sendable
+```
 
-- A phone number, address, or account number **spoken** in a clip now reaches
-  the description, where before it could not.
-- Cantonese speech about a named third party becomes quotable text.
-- The `[media.describe.audio]` prompt's current guard against repeating
-  «phone number, address or account number» is prompt-level, not a screen —
-  prompt instructions are not a security boundary.
+So the gap is precise and pre-existing:
 
-**Recommended shape:** route the transcript through the same screen the
-identifier path uses *before* it enters `body`, and add a test that a spoken
-digit-string does not survive into a rendered description. If that proves
-infeasible, the fallback is to keep transcription on for the *video* lane (where
-speech is ambient and the ask is "what is this clip about") and leave
-`[media.describe.audio]` off — a narrower override. **Operator gets this choice
-with the finding attached; it is not for the implementer to decide.**
+| spoken form | screened? |
+|---|---|
+| `+85290000103` (E.164, with `+`) | ✅ matched |
+| `9000 0103` — a bare **local** number | ❌ **deliberately not matched** |
+| an address spoken in Cantonese | ❌ not in scope |
+| account number, or a number said as words | ❌ not in scope |
 
-## 6. Prompt changes required
+**Enabling transcription therefore widens a surface DEC-114 already assessed and
+deliberately closed.** That is not a wiring question that a test can settle; it is a
+decision. **The «keep it on the video lane» fallback I proposed does NOT mitigate it** —
+video transcription carries the same bare-local-number exposure, as the review pointed
+out. So the fallback as written was not a mitigation at all.
 
-Both modality prompts are authored constants near `client.py:59`:
+**What the bundle now requires:**
 
-| prompt | today | change |
+1. **Record DEC-114 clause (3) as superseded**, not "extended". Operator direction
+   (「直接啟動佢 override 之前個 decision」) covers it — but it must be named as the
+   safety decision it is, so the override is visible to whoever reads the index later.
+   A row that says "extended, not changed" would hide exactly the change that matters.
+2. **Decide the screen's coverage for spoken content** — extend the pattern (a bare
+   10-digit local number, HK formats, spoken-word digits) or accept transcription with
+   the known exposure stated. **This is an operator decision with the finding attached,
+   not an implementer's call.**
+3. The named test is *not* "a spoken digit string does not survive" (the current code
+   guarantees it *will* survive for a bare local number). It is: **a bare local number
+   in a transcript either does not reach the description, or the accepted exposure is
+   documented in the DEC row.**
+
+**This supersedes the section's earlier text, which is retained below only to show what
+was wrong.** My original framing — "verify whether the screen covers speech transcripts,
+and if not, narrow the scope" — treated a decided safety boundary as an unknown wiring
+detail. That is the error worth remembering: *a repo that writes down WHY it excluded
+something is telling you what breaks when you include it.*
+
+## 6. Prompt changes required — BOTH prompt families
+
+The first version of this section listed only `client.py`'s prompts. **That misses the
+automatic path, which is the one that matters most for Instagram** — the review caught it.
+
+**There are TWO prompt families, and they are separate constants:**
+
+| family | location | who uses it |
 |---|---|---|
-| `video` | summarise speech | transcribe speech when it carries the clip; keep on-screen text |
-| `audio` | gist only, **no verbatim** | gist **plus** verbatim where it is the point |
+| `_PROMPTS` (per modality) | `nora/infra/vision/client.py:59-90` | live `media_fetch`, the deliberate look |
+| `COMPREHEND_QUESTIONS` | `nora/infra/vision/comprehend.py:105-113` | **automatic ingest comprehension** |
 
-The `video` prompt is the one that runs for the Instagram lane, so it is the
-higher-consequence of the two.
+The automatic video question today (`comprehend.py:105-107`):
+
+```
+"video": (
+    "Describe what happens in this segment of a video, and transcribe any "
+    "text on screen."
+)
+```
+
+— **on-screen text only, no speech at all.** Automatic audio
+(`comprehend.py:109-113`) asks for the gist and explicitly says *"Do not repeat any
+phone number, address or account number you hear."* And the automatic video read
+**re-templates the question at the call site** (`comprehend.py:314-318`), appending
+"Answer in plain prose, not JSON" — so editing the constant alone is not sufficient
+care either.
+
+**Editing only `client.py` would therefore implement nothing for the automatic path**,
+which is where an Instagram Story/Reel actually gets read. Both families need the
+change, and both need a behavioural check through the real entry points.
+
+**Related trap:** `_describe_models` requires **enabled AND a named model**
+(`composition.py:610-613`). So «enable audio» alone leaves it `unavailable`, and naming a
+model without also setting `provider` sends it down the OmniRoute route — which drops
+nothing for audio but is a different transport than intended. **The complete audio
+change is three settings**, not one:
+
+```toml
+[media.describe.audio]
+enabled  = true
+model    = "mimo-v2.6-flash"
+provider = "opencode-go"
+```
 
 ## 7. Cost
 
@@ -153,3 +212,32 @@ Also: `VIDEO_CRF = 26` (`preprocess.py:69`) is a *video* quality knob. Re-encodi
 audio should specify its own codec and bitrate explicitly (the benchmark used
 `-c:a aac -b:a 64k`) rather than inheriting ffmpeg's default, which differs by
 container and would make token cost depend on the input format.
+
+## 8. ⚠️ Already-comprehended media will keep its old silent description
+
+**Raised by the review; I had not considered it.** Turning audio on and moving the
+provider does **not** re-read anything already comprehended:
+
+- Automatic comprehension **skips existing readings** — `nora/ingest/comprehension.py:285-291`
+  and `:496-509`.
+- The live path's layer-one **returns stored comprehensions** before reaching the
+  describer — `nora/agent/tools.py:5213-5224`.
+- The video exclusion from the vision cache (`tools.py:5298`, `cacheable_modality`) does
+  **not** cover either of those.
+
+So the same clip can keep returning its old silent description indefinitely, and the
+change's headline benefit ("Nora can hear video now") will appear not to work on any
+clip already in the store. Conversely, **reverting** the provider or prompts does not
+remove transcripts already persisted.
+
+**This is a persisted-data policy the bundle was missing.** It needs a stated
+treatment — re-read on demand, a one-time backfill, or explicit acceptance that
+history keeps its old readings — plus tests for both directions. No schema migration is
+inherently required, which is presumably why it was easy to overlook.
+
+## 9. Rollback
+
+Reverting requires more than restoring `config.toml`: under `extra="forbid"`
+(`nora/config.py:745-749`) an older build **refuses to start** if the config carries the
+new `provider` Literal value or the new `chunk_concurrency` key. Rollback is therefore
+**config-and-image together**, not config alone. State this in the PR body.

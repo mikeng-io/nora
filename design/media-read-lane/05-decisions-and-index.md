@@ -73,17 +73,43 @@ This bundle deliberately takes the opposite trade — a new provider *is* the ch
 provider field itself is **DEC-114's** design, so adding a third value *extends*
 DEC-114 rather than contradicting it.
 
+### DEC-114 clause (3) — the one I mislabelled, and the review caught it
+
+```
+design/09-decision-index.md (DEC-114): «The audio prompt asks for the GIST, never a
+transcript, and that is a SAFETY DECISION NOT A STYLE ONE. STT is excluded here
+because a verbatim transcript is a materially larger R-18/R-28 egress surface —
+`_serve_media`'s own docstring records that `scan_identifiers` does not catch a
+bare local number, and people say addresses and phone numbers aloud.»
+```
+
+**The first version of this bundle said DEC-114 was "extended, not changed". That was
+wrong, and dangerously so** — it flattened a decided *safety* boundary into a scope
+limit. Enabling transcription supersedes this clause, and the override must be visible:
+**DEC-114 gets a `DEPRECATED IN PART 2026-09-22 — see DEC-195` prefix on clause (3)**,
+and the row must say *why* the boundary moved, so a later reader sees a deliberate
+safety override rather than an accident.
+
+Operator direction covers the override; it does not remove the obligation to state the
+residual exposure (`02-§5`: a bare local number, an address, or a number spoken as
+words is **not** caught, by design).
+
 ### Not superseded — restate what stands
 
 - **DEC-161's core guarantee is untouched and must survive this build:** a partial
   read is never presented as a complete one; `describe_coverage` measures against
   windows a *model* actually described; the `chunk_max` ceiling is recorded in
-  `provenance` and said in the description. §3 below adds tests for the
-  concurrent rewrite precisely because these properties are the ones a `gather`
-  could quietly break.
-- **DEC-114** (per-modality describers) — extended, not changed.
+  `provenance` and said in the description. **⚠️ But see `01-§5a` — the review showed
+  the caveat is currently WRONG in a combined-failure case, so "preserve today's
+  behaviour" preserves a pre-existing inaccuracy.** The build owes a fix, not a
+  preservation.
+- **DEC-114 (1), (2), (4), (5)** — the modality split, the content-block shape, the
+  one-client-one-budget rule, and the optional/defaulted table discipline all stand.
+  Only clause (3) moves.
 - **DEC-160** (one model pass per medium, three fields) — untouched.
-- **DEC-138** (media as one content-addressed index) — untouched; no storage change.
+- **DEC-138** (media as one content-addressed index) — untouched. The review confirmed
+  blob keys hash the **original plaintext bytes** (`nora/infra/blobs/filesystem.py:100-113`),
+  so ffmpeg output and the added audio track do not affect storage identity.
 
 ## 3. R-rules affected
 
@@ -101,22 +127,29 @@ rule for an already-covered case is the over-specification this design should
 avoid. **If the adversarial review finds an unconstrained behaviour, that is the
 finding most worth having.**
 
-## 4. ⚠️ Blocking check before the build is complete
+## 4. Measurement obligations — the gate this bundle now carries
 
-**Does an identifier/screen cover model-generated speech transcripts?**
+**Added after adversarial review.** The reviewer's sharpest structural point was that
+the bundle had *test* obligations but no *measurement* obligations, and that the
+headline settings were never validated at production shape. These come first:
 
-This is stated in `02-audio-in-the-video-path.md §5` and repeated here because it
-is the one item that can be *wrong in a way that matters*. It is a verification
-task, not a design decision:
-
-1. Trace whether `scan_identifiers` / the render-time screen (`R-90`'s clause)
-   receives the comprehension text on the path a description travels.
-2. If yes — add a named test: a spoken digit-string in a video's audio does not
-   survive into a rendered description.
-3. If no — **stop and return to the operator.** The fallback is to keep audio on
-   the *video* lane (where the ask is "what is this clip about") and leave
-   `[media.describe.audio]` off, which is a narrower override than directed.
-   Do not silently ship a widening of the egress surface.
+1. **A successful read at production shape:** an **audible 90 s window** (the real
+   chunk size — a 60 s Story is *below* it, so it is not the worst case), the proposed
+   timeout, bounded concurrency, checking **`finish_reason` and usable content** — not
+   just HTTP 200. The existing concurrency probe used a 600 s client timeout and
+   recorded only status + prompt tokens, so it proved requests *overlap*, not that a
+   production read *succeeds*.
+2. **The per-invocation budget**, covering queued waves and preprocessing — see
+   `04-§3a`: the invariant is proven over model calls, not tool invocations.
+3. **Observability.** `docs/observability.md:480-489` records that vision reads export
+   **zero token usage and no per-window spans**, and `client.py:355-358,403-405` applies
+   the shared ceiling to *both* text synthesis and media reads. So the new token-cost
+   claim **cannot currently be substantiated from production**, and queueing, per-window
+   latency and preprocessing cannot be told apart. Either add the emission, or state
+   explicitly that cost and concurrency remain unmeasured.
+4. **`vision_max_tokens` is a per-request ceiling**, and raising it to 4096 affects
+   images, audio, video windows *and* synthesis — not only MiMo video. Say so, and note
+   that it is an allowance per request, not an aggregate budget.
 
 ## 5. Test obligations — the named tests this build owes
 
@@ -126,25 +159,44 @@ New (concurrency):
 - `::test_segments_keep_window_order_under_concurrent_reads`
 - `::test_one_refused_window_does_not_fail_its_siblings_when_read_concurrently`
 - `::test_the_fan_out_never_exceeds_the_configured_concurrency`
+- `::test_a_cancelled_read_while_windows_are_complete_does_not_report_a_whole_clip`
+  *(the missed case: `return_exceptions=True` does not make cancellation yield a
+  partial `(segments, read)`)*
+- `::test_a_capped_read_with_a_middle_gap_does_not_claim_it_watched_the_first_n_seconds`
+  *(`01-§5a` — the pre-existing caveat defect)*
 
 New (audio):
 
 - `tests/unit/test_vision_preprocess.py::test_the_video_view_keeps_its_audio_track`
 - `::test_a_clip_with_no_audio_stream_still_produces_a_chunk`
-- `tests/unit/test_media_comprehender.py::test_a_spoken_identifier_does_not_reach_the_description` *(pending §4)*
+- `tests/unit/test_media_comprehender.py::test_the_automatic_comprehension_question_asks_for_speech`
+  *(the `COMPREHEND_QUESTIONS` family — `02-§6`)*
+- `::test_a_bare_local_number_in_a_transcript_either_does_not_reach_the_description_or_is_documented`
+  *(see §6 — the test cannot be "it never survives", because the current screen
+  guarantees it survives)*
 
 New (provider):
 
 - `tests/contract/test_vision_client_contract.py::test_a_provider_with_no_key_fails_closed_and_never_falls_back`
-- `::test_the_opencode_go_lane_sends_its_session_header`
-- `tests/architecture/test_config_comes_from_the_template.py` — new keys present **and**
-  the template-key-discipline gate for `OPENCODE_GO_API_KEY` + `chunk_concurrency`
+- `::test_the_client_built_by_composition_sends_the_session_header`
+  *(built by **composition**, not constructed in the test — `03-§3`)*
+
+New (persisted data — `02-§8`):
+
+- `::test_an_already_comprehended_video_is_not_silently_re_read_after_audio_is_enabled`
+- `::test_reverting_the_provider_leaves_persisted_transcripts_in_a_defined_state`
 
 New (budget):
 
 - `tests/test_composition.py::test_the_derived_vision_timeout_never_exceeds_the_loop`
 - `::test_moving_the_media_fetch_budget_moves_the_derived_timeout_with_it`
-  *(the invariant DEC-10/ToolRegistry.budgets already encodes — pin it)*
+
+**Corrected gate names.** The first version cited
+`tests/architecture/test_config_comes_from_the_template.py` for new-key presence. That
+file checks *how tests obtain config* (`:22-34`), not template parity — it can pass
+while a new setting is absent from the template. The actual parity checks are
+**`tests/test_env_template.py:293-336`**, and note those can **skip** without a
+deployment config (`:71-94`): a skip is not a pass, so report them distinctly.
 
 Re-verify (existing, must still pass):
 
@@ -153,13 +205,26 @@ Re-verify (existing, must still pass):
 - `test_a_tool_never_raises_into_the_agent_loop`
 - the three `describe_*` map-gate tests (a modality appears only when enabled AND named)
 
-## 6. Release fragment
+## 6. The egress residue — recorded, decided by the operator
+
+See `02-§5` for the finding. Summary: the screen runs on this path (that question is
+closed), but `nora/agent/egress.py:45-46` **deliberately does not match
+free-standing digit runs** and its `_E164` pattern at `:67` **requires a `+`** — so a
+bare local number said aloud is not caught, which is exactly what DEC-114 clause (3)
+said when it chose gist-over-transcript.
+
+**This is the operator's call, with the finding attached.** Either the pattern is
+extended for spoken content (bare HK-format numbers, digits-as-words), or the residual
+exposure is accepted and documented in the DEC-114 prefix. **Do not let the build
+silently pick the second by writing a test that asserts current behaviour.**
+
+## 7. Release fragment
 
 Required by the repo gate even for a design-only branch (`type: "none"`), and
 `scripts/check_release_fragments.py --base master` + `scripts/render_release_notes.py`
 must both run green. Suggested slug: `media-read-lane.json`.
 
-## 7. Checklist before merge
+## 8. Checklist before merge
 
 - [ ] Independent adversarial sub-agent review dispatched (**never self-reviewed** — conventions §2)
 - [ ] Every `file:line` re-grepped on the final tree (conventions §5); the anchor table in `04` was built by grepping symbols, and must be re-grepped, not carried

@@ -60,22 +60,70 @@ Verified arithmetic against the 240 s loop:
 | budget | configured | derived | aggregate | safe |
 |---|---|---|---|---|
 | 4 (today) | 40 | **36 s** | 144 s | ✅ but below real latency |
-| **3** | **90** | **48 s** | 144 s | ✅ **recommended** |
+| **3** | **90** | **48 s** | 144 s | ⚠️ **arithmetically safe, but see §3a — 48 s is too small** |
 | 2 | 90 | 72 s | 144 s | ✅ more headroom, fewer reads/turn |
 
-**Recommended: `[llm.budgets] media_fetch = 3`, `[media].vision_timeout_seconds = 90`
-→ derived 48 s.** Rationale: it covers a 60 s Story *with audio* (measured
-43.8 s, the worst single-chunk case this bundle creates) while keeping the
-aggregate at 144 s < 240 s, and it costs one media read per turn (4 → 3) against
-a gain of 12 s of per-call headroom.
+## 3a. ⚠️ CORRECTED AFTER ADVERSARIAL REVIEW — the aggregate proof is over the wrong unit
 
-**Alternative, if 4 reads/turn matters more:** raise `[llm].timeout_seconds`
-240 → 360. Then `360 × 0.6 / 4 = 54 s` with the budget unchanged. Rejected as the
-default because it is the *tag path's* loop timeout — a genuinely hung tool would
-hold a turn for six minutes — whereas the budget lever only affects media.
+The first version of this section claimed "three reads aggregate to 144 s, under the
+240 s loop". **The adversarial review found this is a proof about MODEL CALLS applied
+to a TOOL INVOCATION**, and it is wrong in two ways:
 
-Whichever is chosen, **both numbers must move in the same commit** and the
-invariant table above should be re-derived, not assumed.
+**(a) The derived timeout is per REQUEST, not per tool call.**
+`derive_vision_timeout`'s value is applied at `client.py:314-318`:
+
+```python
+text = await asyncio.wait_for(
+    self._describe_with_retry(...), timeout=self._timeout)
+```
+
+…i.e. once **inside every `describe()` call**. The original `budget × derived < loop`
+argument was written when `media_fetch` issued at most `budget` calls *sequentially
+inside one invocation*. Concurrency changes the arithmetic: N windows at concurrency C
+take `ceil(N/C)` **waves**, and each wave can consume the full per-call timeout.
+
+- 10 windows (the `chunk_max` ceiling) at concurrency 4 = **3 waves → up to 3 × 48 s =
+  144 s for ONE tool invocation**
+- Three such invocations in a turn = **432 s**, against a 240 s loop
+
+**(b) This is a pre-existing defect that concurrency does not fix.** On today's
+sequential loop, one 10-window clip is `10 × 36 s = 360 s` — already past the loop.
+`gather` reduces it (3 waves instead of 10) but the *proof* was never valid for
+multi-chunk clips, and nothing in the bundle made that visible.
+
+**What this means for the recommendation:** the 48 s figure is arithmetically safe
+under the invariant as written, but the invariant is not the binding constraint for a
+multi-wave clip. **The budget must be established per tool invocation — covering queued
+waves and preprocessing — not per model call.** That is a measurement obligation, not
+a config value, and it is now item 1 of §7.
+
+## 3b. ⚠️ CORRECTED — 48 s is below the latencies this bundle itself measured
+
+The first version called 43.8 s (a **35 s** audible clip) sufficient for a "60 s Story".
+That was a **projection, not a measurement** — the review caught the attribution.
+
+Measured, on this bundle's own numbers:
+
+| clip | measured latency | vs a 48 s derived budget |
+|---|---|---|
+| 35 s + audio | 43.8 s | fits, with 4 s of margin |
+| 57 s | **46.2 s** (K3) / **up to 56 s** (MiMo) | **exceeds it** |
+| 60 s Story | not measured | extrapolates past it |
+| **90 s (production chunk)** | **not measured** | unknown |
+
+**Production chunk size is 90 s, and a 90 s audible chunk has never been measured.**
+A 60-second Story is also *below* the configured chunk size, so it is not the worst
+case — a clip longer than 90 s produces 90 s windows, which is.
+
+**Required before these settings ship:** a successful read at the production request
+shape, the proposed timeout, an **audible 90 s** window, and the bounded concurrency —
+checking `finish_reason` and usable content, not merely HTTP 200. The concurrency probe
+behind `01-§4` used a 600 s client timeout and recorded only status + prompt tokens: it
+established that requests **overlap**, not that a production read **succeeds**.
+
+**Likely outcome:** the derived budget needs to be larger than 48 s, which means either
+`budget` 3 → 2 (→ 72 s) or `[llm].timeout_seconds` 240 → 360 (→ 54 s at budget 4).
+Decide from the 90 s measurement, not from this table.
 
 ## 4. `vision_max_tokens` must rise for MiMo
 

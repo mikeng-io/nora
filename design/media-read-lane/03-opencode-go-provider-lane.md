@@ -75,10 +75,24 @@ header injection. Two acceptable shapes:
   transport detail into a call whose whole design says the modality picks the
   transport, `client.py:340`).
 
+**⚠️ Added after adversarial review.** The preferred shape above is **not reachable
+today**: the construction seam it depends on does not accept headers.
+`nora/agent/factory.py:71-74` builds a client from `base_url` and `api_key` only —
+there is no header parameter. So the integration table must include that file, and the
+build must either extend `create_client` or wrap the constructed client. As written,
+"follow the kimi precedent" produces a client that never sends the mandatory header.
+
+**Session lifetime is also unresolved.** Only fresh-per-request sessions were measured
+(`ses_<uuid4hex>`, one per call). Whether the provider prefers a stable session for
+affinity, and whether one client should reuse a session, is **unverified** — the probe
+saw no penalty for fresh sessions, which is not the same as knowing reuse is neutral.
+
+**The verification obligation is specific:** test the client that **composition**
+builds, not an independently constructed test client. A unit test with its own client
+would pass while the wired path cannot send the header at all.
+
 The session value is an opaque per-request identifier; it is **not** a secret and
-**not** a conversation id. Generate per call (`ses_<uuid4hex>`), or reuse one per
-client if the provider prefers affinity — **this is unverified**; the probe used a
-fresh session per request and saw no penalty for it.
+**not** a conversation id.
 
 ## 4. Integration surface — follow the kimi precedent exactly
 
@@ -88,10 +102,12 @@ rather than inventing a second pattern:
 | file | change |
 |---|---|
 | `nora/config.py:749` | `Literal["omniroute","kimi"]` → `+ "opencode-go"` |
+| **`nora/agent/factory.py:71-74`** | **`create_client` accepts only `base_url`/`api_key` — must gain a header seam or the client must be wrapped. MISSED in the first version; added after review.** |
 | `nora/app/composition.py:1727` | build the direct client; `create_client(base_url="https://opencode.ai/zen/go/v1", api_key=…)` |
 | `nora/app/composition.py:_kimi_api_key_env` | generalise — the env-name resolver must know the new provider's default |
 | `nora/infra/vision/client.py:~399` | route `"opencode-go"` to its client; inject the session header |
 | `config.toml` `[media.describe.video]` | `provider = "opencode-go"`, `model = "mimo-v2.6-flash"` |
+| `config.toml` `[media.describe.audio]` | `enabled = true`, `model = "mimo-v2.6-flash"`, `provider = "opencode-go"` (see `02-§6`) |
 | `docker-compose.yml` / `.env.example` | inject `OPENCODE_GO_API_KEY` |
 
 **Fail-closed is mandatory** and already the house pattern: a provider whose key
