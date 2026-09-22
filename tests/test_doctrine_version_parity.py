@@ -140,13 +140,24 @@ PINNED: dict[str, tuple[int, str]] = {
     # nothing has moved since.
     # v4: dashes out (7), no other change.
     "silence": (4, "f60ae519df1a0dae7bc24d5c15c6be002e84ff345d4bb13c9f6ac652819d6d6d"),
-    # v26: compression, 7,654 -> 6,631 chars. Three pairs of sections said one
-    # thing twice and are now one each: what she remembers about a person and
-    # what she recommends from it; the three write verbs and what they need; the
-    # hedge-free answer in Honesty and in Getting to an answer. Every clause the
-    # content tests pin is intact, which is the point — what came out is
-    # restatement, not rules.
-    "conduct": (26, "f4a686355a85775b6b2f8cd05368b0828315b323458e6d30625d8bbf306b5762"),
+    # v26: compression. Three pairs of sections said one thing twice and became
+    # one each: what she remembers about a person and what she recommends from
+    # it; the three write verbs and what they need; the hedge-free answer in
+    # Honesty and in Getting to an answer. Every clause the content tests pin is
+    # intact, which is the point: what came out is restatement, not rules.
+    #
+    # v27 (2026-09-22, operator): the file is English throughout. It describes
+    # what she DOES, so which language a clause was in recorded who wrote it and
+    # when, and nothing else; voice.md stays Cantonese because that file IS a
+    # specimen of the register it teaches. Quoted SPEECH stays Cantonese
+    # («你自己搞啦», «記唔到», «我去睇返», «聽日»), because an utterance is a
+    # specimen too. Measured on one tokenizer, conduct's body: v25 2,781 ->
+    # v26 2,312 -> v27 2,217. The first English draft was +65 against v26; the
+    # padding that draft introduced is what the trim took back out, so the
+    # honest reading is that the language change is roughly token-neutral and
+    # the saving is the compression. Four tests re-pointed to the English
+    # prose, each noted at its own docstring.
+    "conduct": (27, "c6a9197ba0feb75414352ee1c0b27a6a56ef76531de1f0640f56ccca6fe884ec"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —

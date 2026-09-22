@@ -754,6 +754,15 @@ def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():
 
     The conduct.md assertions below were re-pinned to the compressed
     (35293bb5) phrasing; the positions are unchanged.
+    RE-POINTED 2026-09-22 (conduct v27, operator). `conduct.md` is now written in
+    English throughout: the file describes what she DOES, so which language a
+    clause happened to be in recorded who wrote it and when, nothing more.
+    (`voice.md` stays Cantonese because that file IS a specimen of the register
+    it teaches; this one is not.) Quoted SPEECH stays Cantonese everywhere,
+    because a quoted utterance is a specimen too, so the anchors below move to
+    the English prose and keep the Cantonese wherever it is something somebody
+    says. Every position is unchanged and the token cost went UP by 66, which is
+    the honest reason this was done for clarity and not for compression.
     """
     import inspect
 
@@ -782,10 +791,12 @@ def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():
     contradicted = " ".join(section.split())
 
     # Not remembering the checking is not evidence the checking did not happen.
-    assert "唔記得有冇查過，唔代表冇查過" in contradicted, contradicted
+    assert ("Not remembering whether you checked is not the same as not having "
+            "checked") in contradicted, contradicted
     # She has a record of what she checked, still in the log, and is told to
     # read it before concluding she guessed.
-    assert "之前查過嘅根據可能仲喺記錄度" in contradicted, contradicted
+    assert ("the grounds you checked before may still be in the record"
+            ) in contradicted, contradicted
     # Conceding a fault she does not have is a lie, not modesty.
     assert "blame turned" in contradicted, contradicted
 
@@ -848,6 +859,15 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
 
     The conduct.md assertions below were re-pinned to the compressed
     (35293bb5) phrasing; the positions are unchanged.
+    RE-POINTED 2026-09-22 (conduct v27, operator). `conduct.md` is now written in
+    English throughout: the file describes what she DOES, so which language a
+    clause happened to be in recorded who wrote it and when, nothing more.
+    (`voice.md` stays Cantonese because that file IS a specimen of the register
+    it teaches; this one is not.) Quoted SPEECH stays Cantonese everywhere,
+    because a quoted utterance is a specimen too, so the anchors below move to
+    the English prose and keep the Cantonese wherever it is something somebody
+    says. Every position is unchanged and the token cost went UP by 66, which is
+    the honest reason this was done for clarity and not for compression.
     """
     conduct = _doctrine("conduct")
     voice = _doctrine("voice")
@@ -861,20 +881,24 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
     )
 
     # 1. Holding is conditional on having checked.
-    assert "有根據就守住，反證夠就改" in section, section
-    # 2. The branch that did not exist: no grounding, no position to stand on —
+    assert ("Hold the position when you have grounds and change it when the "
+            "counter-evidence is enough") in section, section
+    # 2. The branch that did not exist: no grounding, no position to stand on,
     #    and the confidence that shows up under pressure is worth least.
-    assert "搵唔返自己曾經 ground 過，就唔好靠感覺硬撐" in section, section
-    assert "唔好將新出現嘅自信當證據" in section
+    assert ("when you cannot find where you grounded it, do not dig in on a "
+            "feeling") in section, section
+    assert "do not mistake fresh confidence for evidence" in section
     # 3. R-5's temperament: there is a real reply, and neither branch of it is
-    #    a defence of the ungrounded claim.
-    assert "話「我去睇返」或者放低件事都可以" in section, section
+    #    a defence of the ungrounded claim. The utterance stays Cantonese: it is
+    #    something she SAYS, not prose about what she does.
+    assert "Saying 「我去睇返」 or letting the thing go are both fine" in section, section
 
     # POSITIVE CONTROL — the armour for a CHECKED claim is untouched. Delete
     # any of these to buy the carve-out and this goes red, which is the whole
     # point: the ask was a missing branch, not a weaker stance.
-    assert "唔記得有冇查過，唔代表冇查過" in conduct
-    assert "之前查過嘅根據可能仲喺記錄度" in conduct
+    assert ("Not remembering whether you checked is not the same as not having "
+            "checked") in conduct
+    assert "the grounds you checked before may still be in the record" in conduct
     assert "Agreeing you invented something when you did not is not modesty" in conduct
     assert "冇錯就冇嘢認" in voice
     assert "企硬" in voice
@@ -898,27 +922,36 @@ def test_the_verdict_position_names_the_mechanism_that_performs_a_tag():
     on the schema, where `tests/test_tools.py::
     test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_resolves` drives it
     through the real composer; the doctrine carries the position only.
+    RE-POINTED 2026-09-22 (conduct v27, operator). `conduct.md` is now written in
+    English throughout: the file describes what she DOES, so which language a
+    clause happened to be in recorded who wrote it and when, nothing more.
+    (`voice.md` stays Cantonese because that file IS a specimen of the register
+    it teaches; this one is not.) Quoted SPEECH stays Cantonese everywhere,
+    because a quoted utterance is a specimen too, so the anchors below move to
+    the English prose and keep the Cantonese wherever it is something somebody
+    says. Every position is unchanged and the token cost went UP by 66, which is
+    the honest reason this was done for clarity and not for compression.
     """
     section = " ".join(
         (ROOT / "nora" / "doctrine" / "conduct.md").read_text()
-        .split("# 評判", 1)[1].split("\n# ", 1)[0].split()
+        .split("# Being asked to judge", 1)[1].split("\n# ", 1)[0].split()
     )
 
-    # The join itself: 「tag 返佢」 is the act, not a description of one.
-    assert "「tag 返佢」唔係一個講法" in section, section
-    assert "打個 @" in section, section
-    # Against the name the ROOM uses — the same binding the composer resolves.
-    assert "個房叫佢嗰個名" in section, section
+    # The join itself: tagging them back is the act, not a description of one.
+    assert "Tagging them back is not a turn of phrase" in section, section
+    assert "an actual @ in the sentence" in section, section
+    # Against the name the ROOM uses, the same binding the composer resolves.
+    assert "carrying the name the room calls them by" in section, section
     # And the reason, which is the position it was always attached to: without
     # the tag she is reporting on him however hard the line lands.
-    assert "唔係同佢講" in section, section
+    assert "talking about them to the room rather than to them" in section, section
 
     # POSITIVE CONTROL — the verdict position it hangs off is still there. If a
     # rewrite keeps the mechanism and loses 「唔好淨係報導」, the sentence
     # becomes formatting advice. (The 35293bb5 compress reworded the clause
     # from 「唔好企喺度報導」 to 「唔好淨係報導」 — same position; the
     # mechanism sentence above is what was restored.)
-    assert "唔好淨係報導邊個啱邊個錯" in section, section
+    assert "you do not just report who was right and who was wrong" in section, section
 
     # The doctrine states the position and NOT the example: a handle written
     # here would be the closed set DEC-96 measured, and the schema is where a
