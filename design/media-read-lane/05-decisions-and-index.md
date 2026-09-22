@@ -134,20 +134,27 @@ the bundle had *test* obligations but no *measurement* obligations, and that the
 headline settings were never validated at production shape. These come first:
 
 1. **A successful read at production shape:** an **audible 90 s window** (the real
-   chunk size — a 60 s Story is *below* it, so it is not the worst case), the proposed
-   timeout, bounded concurrency, checking **`finish_reason` and usable content** — not
-   just HTTP 200. The existing concurrency probe used a 600 s client timeout and
-   recorded only status + prompt tokens, so it proved requests *overlap*, not that a
-   production read *succeeds*.
-2. **The per-invocation budget**, covering queued waves and preprocessing — see
+   production chunk size), on real footage, through the exact production filter chain,
+   with `finish_reason` and usable content checked — not merely HTTP 200.
+   ✅ **DONE 2026-09-22** — real 100 s YouTube clip, production chain, audio kept:
+   **4/4 usable, `finish="stop"`, 1,123–1,663 chars, latency 34.0 / 41.2 / 42.0 s.**
+   See `04 §3b`.
+2. **The per-invocation budget:** `ceil(N/C)` waves × per-call latency × concurrent
+   tool calls must fit `[llm].timeout_seconds`. **Still open** — 3 waves × 42 s × 3
+   calls = 378 s vs a 240 s loop. Decide `budget` 3 or loop 360.
+3. **A construction rule, learned the hard way:** synthetic concat joins are not valid
+   footage for this measurement. Use a real single-encode clip. (An earlier pass built
+   "90 s" windows by concatenating Signal clips; the resulting VFR stream drew `400`s
+   above 45 s and would have forced a wrong chunk-size change.)
+4. **The per-invocation budget**, covering queued waves and preprocessing — see
    `04-§3a`: the invariant is proven over model calls, not tool invocations.
-3. **Observability.** `docs/observability.md:480-489` records that vision reads export
+5. **Observability.** `docs/observability.md:480-489` records that vision reads export
    **zero token usage and no per-window spans**, and `client.py:355-358,403-405` applies
    the shared ceiling to *both* text synthesis and media reads. So the new token-cost
    claim **cannot currently be substantiated from production**, and queueing, per-window
    latency and preprocessing cannot be told apart. Either add the emission, or state
    explicitly that cost and concurrency remain unmeasured.
-4. **`vision_max_tokens` is a per-request ceiling**, and raising it to 4096 affects
+6. **`vision_max_tokens` is a per-request ceiling**, and raising it to 4096 affects
    images, audio, video windows *and* synthesis — not only MiMo video. Say so, and note
    that it is an allowance per request, not an aggregate budget.
 

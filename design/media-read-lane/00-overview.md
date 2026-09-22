@@ -96,7 +96,10 @@ change is visible:
   10-window clip is up to 3 waves; three such reads in a turn is 432 s against a 240 s
   loop. A pre-existing defect the bundle had not exposed. See `04 §3a`.
 - **48 s was below this bundle's own measurements** (46.2 s K3 / up to 56 s MiMo on a
-  57 s clip), and the 90 s production window size was never measured at all. See `04 §3b`.
+  57 s clip). **Now measured at the real production shape:** an audible 90 s window
+  built from a real 100 s YouTube clip reads in **34.0 / 41.2 / 42.0 s** (n=4, 4/4
+  usable), so 48 s holds. The open item is the **per-invocation** budget (3 waves ×
+  42 s × 3 calls = 378 s vs a 240 s loop). See `04 §3b`.
 - **The egress blocker was the wrong question.** The screen *does* run; what it
   *detects* is the issue — `egress.py` deliberately skips bare digit runs and its E.164
   pattern requires a `+`. The "keep it on the video lane" fallback I proposed was not a
@@ -140,10 +143,20 @@ still rejects `finish_reason="length"` after the token raise.
 
 ## Open questions
 
-1. **Does audio-bearing video need a different chunk size?** A 90 s chunk at
-   43.8 s latency is close to a 48 s derived budget; shorter chunks with audio
-   would cut per-call latency but raise the call count. Not measured — a spike,
-   not a guess, per the repo's measurement convention.
+1. ✅ **CLOSED — the audible 90 s window is measured: 34.0 / 41.2 / 42.0 s**
+   (min/median/max, n=4, 4/4 usable at `finish_reason="stop"`) on a **real 100 s
+   YouTube clip** cut through the exact production chain with audio kept. 48 s holds
+   with ~6 s margin. The question as first written — "does audio-bearing video need a
+   different chunk size?" — is answered **no**, 90 s is fine.
+   **The per-invocation budget is still open:** 3 waves × 42 s = 126 s/call, ×3 calls
+   = 378 s vs the 240 s loop. That is the remaining arithmetic, on a measured number.
+   See `04 §3b`.
+
+   ⚠️ An earlier attempt measured this with **concatenated** Signal clips and got
+   `400` above 45 s. That was a **VFR construction artifact**, not a model limit —
+   it was discarded, not reported. Real footage is mandatory for this class of
+   measurement.
+
 2. **Will Strands issue concurrent `tool_use` blocks?** If it does, three
    Instagram stories in one turn parallelise for free. Untested.
 3. **Does the egress screen cover speech inside a video description?** The

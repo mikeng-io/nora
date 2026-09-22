@@ -97,7 +97,7 @@ multi-wave clip. **The budget must be established per tool invocation — coveri
 waves and preprocessing — not per model call.** That is a measurement obligation, not
 a config value, and it is now item 1 of §7.
 
-## 3b. ⚠️ CORRECTED — 48 s is below the latencies this bundle itself measured
+## 3b. ✅ MEASURED — the audible 90 s production window (was the missing number)
 
 The first version called 43.8 s (a **35 s** audible clip) sufficient for a "60 s Story".
 That was a **projection, not a measurement** — the review caught the attribution.
@@ -108,22 +108,47 @@ Measured, on this bundle's own numbers:
 |---|---|---|
 | 35 s + audio | 43.8 s | fits, with 4 s of margin |
 | 57 s | **46.2 s** (K3) / **up to 56 s** (MiMo) | **exceeds it** |
-| 60 s Story | not measured | extrapolates past it |
-| **90 s (production chunk)** | **not measured** | unknown |
+| **90 s audible, production shape** | **34.0 / 41.2 / 42.0 s** (min/med/max, n=4) | **fits** |
+| 100 s real source, unpreprocessed | 68.0 / 71.6 / 85.7 s | exceeds it |
 
-**Production chunk size is 90 s, and a 90 s audible chunk has never been measured.**
-A 60-second Story is also *below* the configured chunk size, so it is not the worst
-case — a clip longer than 90 s produces 90 s windows, which is.
+**Measurement (2026-09-22), and it reverses this section's earlier expectation.**
+Source: a **real 100 s YouTube clip** (720p60, aac stereo — `yt-dlp`, single encode),
+cut through the exact production chain (`preprocess.py:186-200`: `scale='min(720,iw)':-2,fps=2`,
+`libx264 -preset veryfast -crf 26`, `-t 90`) **with the audio track kept** — i.e. the
+proposed DEC-195 shape. Model MiMo v2.6 Flash, OpenCode Go direct, `max_tokens=4096`.
 
-**Required before these settings ship:** a successful read at the production request
-shape, the proposed timeout, an **audible 90 s** window, and the bounded concurrency —
-checking `finish_reason` and usable content, not merely HTTP 200. The concurrency probe
-behind `01-§4` used a 600 s client timeout and recorded only status + prompt tokens: it
-established that requests **overlap**, not that a production read **succeeds**.
+**Result: 4/4 usable at `finish_reason="stop"`, non-empty content (1,123–1,663 chars).**
+Latency **34.0 / 41.2 / 42.0 s** (min/median/max). **48 s holds, with ~6 s of margin.**
 
-**Likely outcome:** the derived budget needs to be larger than 48 s, which means either
-`budget` 3 → 2 (→ 72 s) or `[llm].timeout_seconds` 240 → 360 (→ 54 s at budget 4).
-Decide from the 90 s measurement, not from this table.
+`vision_max_tokens=4096` was the correct raise — at 1024 the reasoning budget would
+consume everything, as §4 records.
+
+### ⚠️ A construction artifact that nearly produced a wrong verdict
+
+An earlier attempt built "90 s" clips by **concatenating heterogeneous real Signal
+clips**. That join produced a VFR stream, and the upstream rejected the audible arms
+with `400 Invalid request parameters` at 60 s and 90 s — **while 45 s passed and a real
+57 s clip passed.** Read naively, that says "audible windows above ~45 s are rejected",
+which would have forced a chunk-size change.
+
+**It was the artifact, not the model.** Rebuilt from a single real encode, the same
+90 s audible window returns 200/`finish="stop"` 4/4. **Lesson: size the timeout only
+against footage that is production-shaped.** Never benchmark with a synthetic join.
+
+### The concurrency requirement is still open
+
+`04 §3a`'s wave arithmetic stands: a tool invocation takes `ceil(N/C)` waves. With the
+measured 42.0 s worst case and `budget=4`, `C=4`: 10 windows → 3 waves → **126 s per
+tool call**; three such calls → **378 s vs a 240 s loop.** The per-call latency fits a
+48 s window; the **per-invocation** budget still does not fit the loop:
+
+- `budget` 4 → 3 (→ 64 s derived) and `vision_timeout_seconds` → 90, **or**
+- `[llm].timeout_seconds` 240 → 360.
+
+This is the remaining decision, and it is arithmetic on a measured number now, not a
+projection. `vision_timeout_seconds` must also be validated against the 42.0 s worst
+case — a 48 s derived budget clears it by ~6 s, which is thin for a cold call.
+
 
 ## 4. `vision_max_tokens` must rise for MiMo
 
