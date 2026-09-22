@@ -574,7 +574,9 @@ def test_the_self_account_says_who_can_reach_the_web_view_and_who_cannot(
     membership on ONE account kind, and not by a hard-coded identity. No count is
     asserted anywhere: a count of real people is PII and it rots."""
     assert _flat(
-        "reached through a login you do not issue — not your operator's alone, and "
+        # RE-POINTED 2026-09-22 (identity v10): the em dash became a comma when
+        # every dash was stripped from the doctrine she reads. Same sentence.
+        "reached through a login you do not issue, and not your operator's alone, and "
         "not everyone in a room has one"
     ) in _flat(self_account)
     # The over-correction, gone.

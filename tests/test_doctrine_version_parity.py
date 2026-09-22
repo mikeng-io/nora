@@ -102,17 +102,87 @@ PINNED: dict[str, tuple[int, str]] = {
     # does. `not_here` widened from "no capability claims" to "no instance of
     # anything", which is #227's actual failure: she answered a question about a
     # website by naming pages.
-    "identity": (9, "cddee24792e17de30c2d79f43128ae4cad91506c0a275038996ac12657e88b18"),
+    # ---------------------------------------------------------------------
+    # 2026-09-22, the em-dash pass (operator). Every doctrine file changed on
+    # one axis: the em dash is gone from all five, replaced by a comma, a colon
+    # or a sentence break. MEASURED cause, on trace `0cfb9fea` (Discord,
+    # 2026-09-21 17:45): the doctrine showed her 44 em dashes and the prefill
+    # block descriptions another 13, on every turn, while `voice.md` said
+    # nothing about the mark at all. In the 40-message window of that same
+    # trace she used one in 13 of her 22 messages; the humans used none in 18.
+    # An instruction cannot win 1:57 against a demonstration, so the
+    # demonstration moved too. `tests/test_doctrine_audiences.py::SILENCE` was
+    # re-pointed for the same reason.
+    #
+    # NOT MEASURED: whether any of this moves her output. DEC-78/DEC-92's
+    # finding stands — prose alone has not been shown to move behaviour, and
+    # nothing here overturns it. The dash count in the INPUT is a fact; the
+    # dash count in her REPLIES is the thing still owed, and it needs the eval
+    # suite, not this table.
+    # ---------------------------------------------------------------------
+    # v10: dashes out (16 of them), no other change.
+    "identity": (10, "dc9ebe6588d399fb26742ee149dfd1ebc0613d7a049059f8fde16d019a8b9715"),
     # v19 (2026-09-10): same room-name removal as identity v8.
-    "voice": (19, "5c0bbfcc170307b600b10c3ef9a4bd01193ef63b0ee677b0d10c2a6601aecd58"),
+    # v20: the REVISION half of the same pass, and the only file that grew.
+    # Three positions it did not carry: the dash is a written-register
+    # connector and chat has its own pauses; naming somebody is an act, not an
+    # opener (13 of 22 replies opened on the alias, the one personal hook she
+    # was given); and a tease is made of what is in front of her AND is spent
+    # once used (she told the same sleep joke on two adjacent turns). The
+    # offer-shaped ending («講聲我幫你換») was widened from the banned PHRASE to
+    # the banned MOVE: 8 of 22 replies still ended by handing it back.
+    # v21 (2026-09-22): the audit found the naming rule had become a CLOSED SET of
+    # three occasions that omitted the one conduct.md mandates (tagging the loser of
+    # a verdict), so the two files disagreed and the concrete English one would have
+    # won. It is now a default plus a test, 「個名要做到嘢先至叫」, with the occasions
+    # marked 譬如 so they read as instances. Tease reuse is defined at target plus
+    # premise rather than at wording, because rephrasing the same joke was the
+    # measured failure. The dash rule lost its 「通常」, which was an exception the
+    # model could take.
+    "voice": (21, "b6fc1844cd7aa2a10f573604ee1d917d56c47cc77c07a19dbd1c02731b1f3075"),
     # conduct v25 / silence v3 (2026-09-10, `14a55ab8`): that commit edited both
     # bodies and bumped both versions in their front matter, and never came back
     # here. So the contract held in the direction that matters -- the version a
     # human reads did move with the body -- and only the pin was left behind.
     # Repinned to the version each file already carries; NOT bumped again, because
     # nothing has moved since.
-    "silence": (3, "2d64dfcc9322920c6ae45aa7af7186870e45b2cf60ab74599ff1698ce788d172"),
-    "conduct": (25, "3b8a7bf7d1231f0da871936d4521ed98612152c6d674337662ac0e47b1581423"),
+    # v4: dashes out (7), no other change.
+    "silence": (4, "f60ae519df1a0dae7bc24d5c15c6be002e84ff345d4bb13c9f6ac652819d6d6d"),
+    # v26: compression. Three pairs of sections said one thing twice and became
+    # one each: what she remembers about a person and what she recommends from
+    # it; the three write verbs and what they need; the hedge-free answer in
+    # Honesty and in Getting to an answer. Every clause the content tests pin is
+    # intact, which is the point: what came out is restatement, not rules.
+    #
+    # v27 (2026-09-22, operator): the file is English throughout. It describes
+    # what she DOES, so which language a clause was in recorded who wrote it and
+    # when, and nothing else; voice.md stays Cantonese because that file IS a
+    # specimen of the register it teaches. Quoted SPEECH stays Cantonese
+    # («你自己搞啦», «記唔到», «我去睇返», «聽日»), because an utterance is a
+    # specimen too. Measured on one tokenizer, conduct's body: v25 2,781 ->
+    # v26 2,312 -> v27 2,217. The first English draft was +65 against v26; the
+    # padding that draft introduced is what the trim took back out, so the
+    # honest reading is that the language change is roughly token-neutral and
+    # the saving is the compression. Four tests re-pointed to the English
+    # prose, each noted at its own docstring.
+    #
+    # v28 (2026-09-22): the Kimi 0.40.1 audit of the compression. It was asked to
+    # FALSIFY the claim "I deleted restatement, not rules", and the claim failed:
+    # eight behavioural rules had been deleted rather than restated. Restored, and
+    # each is a rule a later compression must not mistake for duplication again:
+    # the retrieve-before-you-accuse procedure in the verdict section (the highest
+    # -stakes place she attributes words to a person, and the banter section's
+    # anti-fabrication rule does not reach it); "hold it as undecided rather than
+    # acting as though it closed"; "pick what fits the moment rather than what
+    # performs", which is the clause that governed the over-teasing in the first
+    # place; "wrong practical advice costs more than a flat joke", the tie-breaker
+    # that says which way to err; what you could not check staying unchecked on
+    # LATER turns; "do not perform a familiarity you do not have", of which the
+    # invented-preference rule is only the narrowest instance; and not re-arguing
+    # the defence after conceding. One mistranslation was corrected: 「唔講點解 fit」
+    # is an ARTICULATION duty and the English "no reason it fits" had softened it
+    # to an existence condition, so the rule now says SAY why.
+    "conduct": (28, "265cdbe06d92adf2f5e88de0a70b6cbdb7fa5f24ddba92e3fe761970ecb8bcdb"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —
@@ -139,7 +209,17 @@ PINNED: dict[str, tuple[int, str]] = {
     # open, so on a proactive turn the highest-authority file in the prompt
     # forbade the turn — and proactive silence is the healthy outcome, so that
     # would never have shown up as a failure.
-    "constraints": (9, "2d8bace08c5435956445ef2d28f49ee3af1031d054a54b88c80814677280ee06"),
+    # v10: compression, 5,750 -> 5,279 chars, plus 15 dashes out. The picture
+    # rules were three sections repeating each other and are now one; nothing
+    # that may never happen was touched.
+    # v11 (2026-09-22), the same audit: the compression had dropped the literal
+    # placeholder syntax, which is a RECOGNISER and not a repertoire, so DEC-96's
+    # closed-set rule does not apply to it and she needs it to spot the pattern in a
+    # transcript. It had also dropped the targeted re-read affordance, and it had
+    # moved the "quick and usually free" claim so that it read onto the UNREAD
+    # lookup, which is the operation the file prices separately as always a real
+    # look and a real wait. "Quiet is not a question" is back.
+    "constraints": (11, "b7269c4e154a7e06039340f9a7d3a017a121265a8e256cf3977ecedc8db9a49f"),
 }
 
 

@@ -675,7 +675,9 @@ def test_the_day_boundary_is_a_position_and_not_an_hour():
     """
     import re
 
-    section = _conduct().split("# 幾點先算第二日", 1)[1]
+    # RE-POINTED 2026-09-22 (conduct v27): the heading is English now, with
+    # the file. 「聽日」 stays in the body because the rule is about that word.
+    section = _conduct().split("# When one day becomes the next", 1)[1]
     assert not re.search(r"\b(\d{1,2})\s*(am|pm|a\.m\.|p\.m\.|:00)\b", section, re.I), (
         "the day boundary must not be legislated as a clock time"
     )

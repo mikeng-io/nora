@@ -174,7 +174,12 @@ MULTI_MESSAGE = "a genuinely separate act"
 # file that reaches heartbeat, hard-wrapped across two lines, and without the
 # collapse `SILENCE not in _bodies("heartbeat")` passes while the claim is
 # being served. Measured both ways.
-SILENCE = "silence is a complete answer — a success, not a failure"
+# RE-POINTED 2026-09-22 (silence v4): the em dash became a comma when every
+# dash was stripped out of the doctrine she reads. Measured cause: she was shown
+# 44 em dashes in the doctrine and 13 more in the prefill block descriptions on
+# every turn, and emitted one in 13 of 22 replies where the humans in the same
+# window emitted none in 18. The sentence is otherwise unchanged.
+SILENCE = "silence is a complete answer, a success rather than a failure"
 
 
 def _bodies(store: DoctrineStore, audience: str) -> str:
