@@ -34,6 +34,7 @@ from nora.domain.ports import Proposal
 from nora.domain.standing import Standing
 from nora.infra.sql.schema import CULTURE_BODY_CEILING_CHARS
 from nora.language.culture import (
+    _BLOCKS,
     CULTURE_ADAPTOR_NAME,
     CULTURE_OUTCOMES,
     CULTURE_TOOLS,
@@ -45,6 +46,24 @@ from nora.obs.metrics import Metrics
 
 T0 = 1_757_000_000_000
 KEY = "discord/g1"
+
+
+def test_the_registered_blocks_are_exactly_what_this_pass_carries():
+    """`design/context-assembly/01-the-registry.md` S1: what this pass
+    carries is a table, not a trace through `inputs` and `_room_block`.
+
+    Two rows the design bundle's own survey missed: `00-overview.md`
+    counted `previous_account, room, room_messages` — three — because it
+    read `ContextBlock(name=...)` literals in this file alone, and missed
+    `standing` (`nora.language.standing_render.render_standing`) and `notes`
+    (`nora.language.note_render.render_notes`), both shared with other
+    occasions. `test_the_previous_account_precedes_standing_notes_AND_the_
+    batch` below exercises all five together.
+    """
+    names = {name for name, _order, _key in _BLOCKS}
+    assert names == {
+        "room", "previous_account", "standing", "notes", "room_messages",
+    }
 
 
 class _Store:
