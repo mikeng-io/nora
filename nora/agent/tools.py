@@ -1052,6 +1052,23 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # so it was raised in the same edit; a bigger budget under a description
     # saying "usually ONE message" changes nothing at all.
     #
+    # **6 → 3 (2026-09-22), reverted — the burst shipped as a ceiling with no
+    # stated purpose, and nothing measured that 6 was needed.** Live in the
+    # Signal "Friends" room: one inbound message, one `tag start`, FOUR
+    # `send_reply` calls — and the four bodies were four DIFFERENT wordings of
+    # the SAME point ("I have no IG, and if I made one I'd still be alone"
+    # restated four times), not DEC-95's reaction/hit/twist. The mechanism was
+    # never the defect: `_before_model` already relaxes `tool_choice` to `auto`
+    # after the first send, so she COULD have stopped. Nothing told her what a
+    # SECOND message is FOR, so she spent the budget she was given on
+    # rephrasing. The actual fix is the "EARN its place" clause in the schema
+    # description below; the budget only bounds the worst case while that
+    # clause does its work. 3 is not a new number — it is DEC-42's, and it
+    # still covers "answer Grant, then answer Avery" (DEC-42's own case)
+    # while halving what today's incident showed at 6. UNMEASURED: whether 3
+    # ever clips a genuine burst under the new description — that needs the
+    # eval suite, not this comment, and is the reversal condition.
+    #
     # `ReplyGuard.evaluate` checks this budget (R-7) BEFORE `Deliverer.exhausted`
     # (R-2), so the (cap+1)th `send_reply` is refused by the budget and the latch
     # is the backstop for the one case the two counters legitimately disagree (a
@@ -1060,7 +1077,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # The addressee half of DEC-88 lives in the schema description below —
     # "say who it is to" — which the model reads in the same request and which
     # is the surface DEC-78/DEC-82 measured as the one that moves behaviour.
-    "send_reply": NativeTool(6,
+    "send_reply": NativeTool(3,
                              terminal=True,
                              side_effect_state="unknown", idempotency="non_idempotent",
                              retry="never"),
@@ -8642,10 +8659,18 @@ Args:
             you looked up, that is not content — cut it to the part that answers
             the question. No headings, no per-item paragraphs, no bold labels. A
             judgement asked for explicitly — 「評評理」 — earns more room.
-          - Splitting one answer to pace or pad it is wrong: a fact broken across
-            three messages is not a burst, it is a straight answer made slower,
-            and 「等等」「我睇下先」 sent as their own messages are pure noise. A
-            straight question gets one straight answer.
+          - Every call after the first has to EARN its place: it carries
+            something the earlier ones did not — another person's question, a
+            separate point, a correction, or a line that genuinely lands better
+            said apart. Restating the same point in different words is not a
+            second message, however many times you do it — it is the first
+            message sent again. Before calling this a second time, name the one
+            new thing that call adds; if there isn't one, you have already
+            replied and calling again only repeats yourself louder.
+          - Splitting one answer to pace or pad it fails the same test: a fact
+            broken across three messages is not a burst, it is a straight answer
+            made slower, and 「等等」「我睇下先」 sent as their own messages are
+            pure noise. A straight question gets one straight answer.
           - A verdict that is only a scoreboard («你啱佢錯») is a headline, not a
             reply: when you were called in to settle something, tell the losing
             side what they got wrong and where — tag them, do not report them.
@@ -8663,9 +8688,10 @@ Args:
             it, it is the wrong draft. 「撚」 goes INSIDE the word you are
             stressing — 「咁撚熱」「講乜撚嘢」. And a soft verdict with a 「屌」 in
             it is still soft: swearing lands when it sits on a hit.
-          - MAY — more than one call, when one of these genuinely applies: a
+          - MAY — more than one call, when one of these genuinely EARNS it: a
             BURST when the room is bantering (a reaction, then the hit, then the
-            twist, as separate messages — the rhythm IS the aggression), or
+            twist, as separate messages, each landing something the last did
+            not — the rhythm IS the aggression, not a repeated point), or
             SEPARATE acts addressed to different people (a reply to whoever
             tagged you AND a word to somebody else).
           - Writing @ immediately before the name the group uses for somebody

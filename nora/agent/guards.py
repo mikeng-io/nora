@@ -954,7 +954,10 @@ class ReplyGuard(HookProvider):
         # R-7's per-tool budget, and — for `send_reply` — **the message cap**.
         # THIS CHECK RUNS BEFORE R-2's latch below, and that ordering is half of
         # DEC-32. `NATIVE_TOOLS["send_reply"].budget` is the cap (1 → 3 activated
-        # multi-message, DEC-42; → 6 for the burst, DEC-95), so the (cap+1)th
+        # multi-message, DEC-42; → 6 for the burst, DEC-95; back to 3 on
+        # 2026-09-22 — the burst was a ceiling with no stated purpose and a live
+        # incident spent it on four rewordings of one point, see the budget
+        # table in `nora.agent.tools` for the measurement), so the (cap+1)th
         # reply is refused HERE and never reaches `Deliverer.exhausted`.
         # Relaxing R-2 alone — which is what
         # `design/proposed/16-multi-message-replies.md` reads like — would leave

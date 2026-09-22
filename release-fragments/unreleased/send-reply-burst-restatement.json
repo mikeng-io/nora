@@ -1,0 +1,13 @@
+{
+  "type": "fix",
+  "summary": "Nora is told what a second message is for, and the most she can send to one tag drops from six back to three.",
+  "details": [
+    "Live 2026-09-22 in the Signal \"Friends\" room, one inbound message produced one tag and FOUR replies in a row, seconds apart. All four said the same thing in different words -- she was not answering four things, she was rephrasing one answer because nothing told her a second message needed a reason to exist.",
+    "The tool she sends through now says plainly that a further message has to carry something the earlier ones did not -- a different point, another person's question, a correction, or a line that genuinely reads better on its own. Saying the same thing again is not a second message, however many times it happens.",
+    "The most messages she can send to one tag is back down to three (it had been raised to six in August for a different reason -- letting a joke land in a reaction/punchline/twist rhythm). Three still covers answering two different people in one turn; it halves how bad a repeat-yourself burst like this one can get if it happens again."
+  ],
+  "limitations": [
+    "The wording change is a judgement call, not a measured one -- it has not been run against the eval suite, which is the instrument that actually tells us whether a prompt change on this path helps or hurts. That run is someone else's to do.",
+    "The cap change only bounds how bad a repeat looks; it does not stop the underlying cause by itself. If she still rephrases rather than stopping, the next fix is the wording, not the number."
+  ]
+}
