@@ -102,17 +102,51 @@ PINNED: dict[str, tuple[int, str]] = {
     # does. `not_here` widened from "no capability claims" to "no instance of
     # anything", which is #227's actual failure: she answered a question about a
     # website by naming pages.
-    "identity": (9, "cddee24792e17de30c2d79f43128ae4cad91506c0a275038996ac12657e88b18"),
+    # ---------------------------------------------------------------------
+    # 2026-09-22, the em-dash pass (operator). Every doctrine file changed on
+    # one axis: the em dash is gone from all five, replaced by a comma, a colon
+    # or a sentence break. MEASURED cause, on trace `0cfb9fea` (Discord,
+    # 2026-09-21 17:45): the doctrine showed her 44 em dashes and the prefill
+    # block descriptions another 13, on every turn, while `voice.md` said
+    # nothing about the mark at all. In the 40-message window of that same
+    # trace she used one in 13 of her 22 messages; the humans used none in 18.
+    # An instruction cannot win 1:57 against a demonstration, so the
+    # demonstration moved too. `tests/test_doctrine_audiences.py::SILENCE` was
+    # re-pointed for the same reason.
+    #
+    # NOT MEASURED: whether any of this moves her output. DEC-78/DEC-92's
+    # finding stands — prose alone has not been shown to move behaviour, and
+    # nothing here overturns it. The dash count in the INPUT is a fact; the
+    # dash count in her REPLIES is the thing still owed, and it needs the eval
+    # suite, not this table.
+    # ---------------------------------------------------------------------
+    # v10: dashes out (16 of them), no other change.
+    "identity": (10, "dc9ebe6588d399fb26742ee149dfd1ebc0613d7a049059f8fde16d019a8b9715"),
     # v19 (2026-09-10): same room-name removal as identity v8.
-    "voice": (19, "5c0bbfcc170307b600b10c3ef9a4bd01193ef63b0ee677b0d10c2a6601aecd58"),
+    # v20: the REVISION half of the same pass, and the only file that grew.
+    # Three positions it did not carry: the dash is a written-register
+    # connector and chat has its own pauses; naming somebody is an act, not an
+    # opener (13 of 22 replies opened on the alias, the one personal hook she
+    # was given); and a tease is made of what is in front of her AND is spent
+    # once used (she told the same sleep joke on two adjacent turns). The
+    # offer-shaped ending («講聲我幫你換») was widened from the banned PHRASE to
+    # the banned MOVE: 8 of 22 replies still ended by handing it back.
+    "voice": (20, "ae8b7965203a8fb11d72bdafacb696fa6ddfbf130f1593102b99b0fa2ee7e93b"),
     # conduct v25 / silence v3 (2026-09-10, `14a55ab8`): that commit edited both
     # bodies and bumped both versions in their front matter, and never came back
     # here. So the contract held in the direction that matters -- the version a
     # human reads did move with the body -- and only the pin was left behind.
     # Repinned to the version each file already carries; NOT bumped again, because
     # nothing has moved since.
-    "silence": (3, "2d64dfcc9322920c6ae45aa7af7186870e45b2cf60ab74599ff1698ce788d172"),
-    "conduct": (25, "3b8a7bf7d1231f0da871936d4521ed98612152c6d674337662ac0e47b1581423"),
+    # v4: dashes out (7), no other change.
+    "silence": (4, "f60ae519df1a0dae7bc24d5c15c6be002e84ff345d4bb13c9f6ac652819d6d6d"),
+    # v26: compression, 7,654 -> 6,631 chars. Three pairs of sections said one
+    # thing twice and are now one each: what she remembers about a person and
+    # what she recommends from it; the three write verbs and what they need; the
+    # hedge-free answer in Honesty and in Getting to an answer. Every clause the
+    # content tests pin is intact, which is the point — what came out is
+    # restatement, not rules.
+    "conduct": (26, "f4a686355a85775b6b2f8cd05368b0828315b323458e6d30625d8bbf306b5762"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —
@@ -139,7 +173,10 @@ PINNED: dict[str, tuple[int, str]] = {
     # open, so on a proactive turn the highest-authority file in the prompt
     # forbade the turn — and proactive silence is the healthy outcome, so that
     # would never have shown up as a failure.
-    "constraints": (9, "2d8bace08c5435956445ef2d28f49ee3af1031d054a54b88c80814677280ee06"),
+    # v10: compression, 5,750 -> 5,279 chars, plus 15 dashes out. The picture
+    # rules were three sections repeating each other and are now one; nothing
+    # that may never happen was touched.
+    "constraints": (10, "c3099108d37f4bf5b0e82690d2fd07f98b0b1ca28f588e05cd3ccf780878e277"),
 }
 
 
