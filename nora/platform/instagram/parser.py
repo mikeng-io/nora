@@ -100,12 +100,27 @@ def _media_ref(media: dict) -> MediaRef | None:
     because `NormalizedMessage.media` is a tuple everywhere and a
     platform-shaped exception would push the difference into every consumer.
 
-    `platform_id` and `fetch_token` are EMPTY, the same as WhatsApp's and for
-    the same reason: the event carries the FACT of media, and the bridge has
-    no media-fetch route, so a handle recorded here would name something no
-    code can resolve. `attachment_fbid` and the CDN url are real handles — for
-    the bridge — and they stay in `raw`, where custody can find them the day
-    that route exists.
+    **`fetch_token` IS the CDN url**, and it took a live defect to get here.
+    This function recorded an empty `platform_id` and an empty `fetch_token`
+    on the reasoning that the bridge exposes no media-fetch route, so a handle
+    would name something no code could resolve. The premise is true and the
+    conclusion did not follow: `media.url` is a directly fetchable url whose
+    query string carries its own signature, measured returning `200` with no
+    cookies, no user-agent and no referer. There is nothing to ask the bridge
+    for — the url IS the handle, and `InstagramMediaSource` is what resolves
+    it. Until it was recorded, every image Miles sent landed as a bare
+    `[image]` with no handle and Nora could not read one of them.
+
+    `platform_id` is `attachment_fbid` when the delta carried one: Instagram's
+    own id for the stored attachment, the same KIND of thing signal-cli's
+    attachment id is. Nothing fetches by it — the url does that — so it is
+    recorded and never rendered, exactly as `MediaRef` says.
+
+    A `one_time` (`RAVEN_*`) delta carries `attachment: null` and so has NO
+    url by design; it therefore gets no token and stays unfetchable, which is
+    the decision `03-transport-contract.md` made and not an oversight. On
+    Instagram, fetching view-once media IS viewing it and is visible to the
+    sender.
 
     `voice_note` is FALSE even for `kind: "audio"`. The bridge added that kind
     for voice notes, but Instagram does not distinguish a shared song from
@@ -117,10 +132,19 @@ def _media_ref(media: dict) -> MediaRef | None:
     kind = media.get("kind")
     if not isinstance(kind, str) or not kind:
         return None
+    url = media.get("url")
+    fbid = media.get("attachment_fbid")
     return MediaRef(
-        platform_id="",
+        # A STRING on the wire (`inbound.go`'s `AttachmentFBID string`), so a
+        # number here is a contract drift and not something to coerce quietly.
+        platform_id=fbid if isinstance(fbid, str) else "",
         media_type=_MEDIA_TYPE_BY_KIND.get(kind, ""),
         sticker=(kind == "animated"),
+        # `attachment:` is the same prefix `DiscordMediaSource` reads, because
+        # it is the same shape: a url off the event rather than one derived
+        # from an id. An absent or non-string url leaves the token empty and
+        # the ref unfetchable, which is what `one_time` needs.
+        fetch_token=f"attachment:{url}" if isinstance(url, str) and url else "",
     )
 
 

@@ -366,12 +366,22 @@ def sniff_media_type(data: bytes) -> str:
     outside image/video/audio before any model call, and an unresolved sticker
     resolves to `""`.
 
-    Deliberately a sniff of a closed, small set of magic numbers observed on
-    real Signal stickers (spec §1's evidence table), not a general-purpose
-    format detector: `RIFF`...`WEBP` (animated or static WebP), the PNG
-    signature, and the GIF89a/GIF87a `GIF8` prefix. An unrecognised signature
-    is never guessed at — the caller falls back to whatever was already
-    resolved from the declared type.
+    Instagram is the second caller and widened it: that wire carries no
+    mimetype at all, so `ground_media_type` reads the subtype off the bytes
+    for a type declared `image/*` — which needs the one signature the sticker
+    set never had a use for, JPEG, since no sticker is one and most photos
+    are.
+
+    Deliberately a sniff of a closed, small set of magic numbers, not a
+    general-purpose format detector: `RIFF`...`WEBP` (animated or static
+    WebP), the PNG signature, the GIF89a/GIF87a `GIF8` prefix — all three
+    observed on real Signal stickers (spec §1's evidence table) — plus the
+    JPEG SOI marker and the ISO base media `ftyp` box. The first three are
+    measured; the last two are format definitions rather than observations on
+    this deployment, which is why `ground_media_type` discards a sniff that
+    contradicts the declared top-level type instead of trusting it. An
+    unrecognised signature is never guessed at — the caller falls back to
+    whatever was already resolved from the declared type.
     """
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "image/webp"
@@ -379,7 +389,53 @@ def sniff_media_type(data: bytes) -> str:
         return "image/png"
     if data[:4] == b"GIF8":
         return "image/gif"
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[4:8] == b"ftyp":
+        # ISO base media format (ISO/IEC 14496-12): the `ftyp` box names the
+        # brand, and the brand is the only thing separating an .m4a from an
+        # .mp4 — the container is identical. `M4A`/`M4B` are the registered
+        # audio brands; everything else here (`isom`, `mp42`, `avc1`, `qt  `)
+        # is a video container. That distinction is from the brand registry,
+        # NOT measured on this deployment, which is exactly why
+        # `ground_media_type` refuses a sniff that disagrees with the
+        # top-level type the platform declared.
+        return "audio/mp4" if data[8:11] in (b"M4A", b"M4B") else "video/mp4"
     return ""
+
+
+def ground_media_type(*, declared: str, data: bytes) -> str:
+    """A declared WILDCARD subtype replaced by what the BYTES say it is.
+
+    `image/*` is a real answer and a half of one: Instagram's wire carries no
+    mimetype anywhere, so its parser records the top level it observed and
+    refuses to invent the subtype (`nora.platform.instagram.parser`). That
+    half survives everything that classifies — `parse_media_type` reads it,
+    `label_for` labels it `image`, the handle is unaffected — and then breaks
+    at the one place a type is not classified but USED: the comprehension pass
+    builds a `data:` URI out of it, and `data:image/*;base64,…` is not a media
+    type any decoder can act on. For `audio/*` it fails harder and more
+    honestly, with no `input_audio` format for subtype `*` at all.
+
+    So the wildcard is ground against the fetched bytes at custody time, where
+    the bytes are in hand for the first time. **Fail-closed, two ways**: a
+    sniff that recognises nothing leaves the declared wildcard exactly as it
+    was (the observed half is still true, and inventing `jpeg` because most
+    images are would be a guess the record would then carry), and a sniff
+    whose TOP-LEVEL disagrees with the declaration is discarded rather than
+    allowed to overrule the platform — an `audio/*` delta whose bytes look
+    like a video container stays `audio/*`.
+
+    A declared type with a real subtype is returned untouched, so this is
+    inert for Signal, Discord and WhatsApp, which all declare one.
+    """
+    top, subtype = parse_media_type(declared)
+    if subtype != "*":
+        return declared
+    sniffed_top, sniffed_subtype = parse_media_type(sniff_media_type(data))
+    if not sniffed_top or sniffed_top != top:
+        return declared
+    return f"{sniffed_top}/{sniffed_subtype}"
 
 
 def label_from_media_type(media_type: str) -> str:

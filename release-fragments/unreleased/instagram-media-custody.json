@@ -1,0 +1,13 @@
+{
+  "type": "fix",
+  "summary": "Nora can read images sent to her Instagram group. They were arriving as a bare `[image]` — a label with nothing behind it — so when she was asked about one she answered, correctly, that the image had no code she could read.",
+  "details": [
+    "Signal and Discord record a label and a handle; Instagram recorded only the label. The parser deliberately dropped the CDN url on the reasoning that the bridge exposes no media-fetch route, which is true and does not follow: the url is directly fetchable and carries its own signature, measured answering with no cookies, no browser identity and no referer. The url is the handle, and a fetcher now resolves it.",
+    "Photos, videos and GIFs sent to the group are now copied into Nora's own custody like every other platform's, so she can look at them, and so the record can produce what it claims to hold.",
+    "View-once media stays unfetched, by decision and not by omission: on Instagram, fetching it IS viewing it and the sender is told. The turn still records that something arrived and that Nora cannot see it.",
+    "The fetcher only ever follows Instagram's own two media domains, including new edge servers it has never seen, and refuses anything else before it opens a connection — the url comes off the message, so a forged one would otherwise point it anywhere."
+  ],
+  "limitations": [
+    "Instagram's wire states no file type for an attachment, so the type is read from the bytes themselves. A container none of the known signatures match is still held and still handled, but it is not sent to be looked at — an honest miss, counted, rather than a guess."
+  ]
+}

@@ -321,6 +321,49 @@ def _discord_composer(
     )
 
 
+IG_FBID = "110966695387753"
+IG_CONVERSATION = "1009543911792316"
+
+
+def _instagram_persons(**extra: PersonRef) -> Persons:
+    by_person = {"tyler_cortez": _tyler(), **extra}
+    index = {("instagram", IG_FBID): "tyler_cortez"}
+    return Persons(by_person=by_person, index=index)
+
+
+def _instagram_composer(*, roster=None, persons=None, metrics=None) -> OutboundComposer:
+    return OutboundComposer(
+        platform="instagram", conversation_id=IG_CONVERSATION,
+        persons=persons if persons is not None else _instagram_persons(),
+        metrics=metrics or Metrics(),
+        roster_source=roster,
+    )
+
+
+async def test_an_instagram_fbid_is_accepted_as_the_preferred_recipient_form():
+    """The same defect #211 fixed for Discord, reached again by the fourth
+    platform. An Instagram messaging fbid is a bare digit string, so it
+    matched neither the UUID nor the E.164 pattern and `_preferred_recipient`
+    returned None for every Instagram mention — Nora wrote "@Name" as plain
+    text, no ping, `status: sent`, nothing logged.
+
+    Found by audit rather than by anybody noticing, because the failure is
+    silent on the wire: `nora/platform/instagram/send.py` builds the mention
+    payload correctly and was simply never given one.
+
+    PROBE: revert `_preferred_recipient`'s instagram branch and this goes red —
+    `out.mentions` comes back empty.
+    """
+    metrics = Metrics()
+    roster = FakeRosterSource(groups={IG_CONVERSATION: (frozenset({IG_FBID}),)})
+    composer = _instagram_composer(roster=roster, metrics=metrics)
+
+    out = await composer.compose(_draft("@Tyler Cortez 食咗飯未"))
+
+    (mention,) = out.mentions
+    assert mention.recipient == IG_FBID
+
+
 async def test_a_discord_snowflake_is_accepted_as_the_preferred_recipient_form():
     """#211's mechanism: `_preferred_recipient` used to accept only a UUID or
     an E.164 number, so a Discord snowflake was refused even though the

@@ -1,0 +1,12 @@
+{
+  "type": "fix",
+  "summary": "On Instagram, Nora's replies now thread onto the message she is answering, and she can tag people back. Both were failing silently — the reply arrived and the tag went out as plain text, with nothing logged and no error anywhere.",
+  "details": [
+    "A threaded reply reads the platform's own id out of the stored event. Three platforms key that `id` and Instagram keys it `message_id`, so every reply Nora threaded on Instagram lost its quote on the way out and arrived as an ordinary message.",
+    "A mention has to resolve the recipient to an id form the wire accepts. An Instagram id is bare digits, which matched neither the pattern written for Signal nor the one added for Discord, so every mention resolved to nobody and Nora wrote the name as plain text. The wire-level support was already correct and was simply never handed anything to send.",
+    "The cross-room relay tool told the model only Signal and Discord exist. The code was never limited to them."
+  ],
+  "limitations": [
+    "Tagging back also needs the room roster, which Instagram does not have yet — so this half is wired and inert until that lands."
+  ]
+}

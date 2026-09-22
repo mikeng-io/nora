@@ -256,18 +256,51 @@ def test_view_once_media_says_something_arrived_and_claims_nothing_about_it():
     assert msg.media[0].media_type == ""
 
 
-def test_media_carries_no_platform_handle_because_nothing_can_resolve_one():
-    """The bridge has no media-fetch route. A handle recorded here would name
-    something no code can fetch — the same posture WhatsApp's parser takes."""
+def test_media_carries_the_cdn_url_as_its_fetch_token():
+    """The live defect this replaced: recording no token made every image Miles
+    sent a bare `[image]` with no handle, and Nora answered — correctly — that
+    the image had no code she could read. The bridge has no media-fetch route,
+    which is true and is not the same as there being nothing to fetch:
+    `media.url` is directly fetchable and `InstagramMediaSource` resolves it.
+    `attachment_fbid` is Instagram's own id for the stored attachment."""
     msg = parse_event(_event(media={
-        "kind": "image", "url": "https://cdn/x", "attachment_fbid": "970288316113989",
+        "kind": "image",
+        "url": "https://scontent.fhkg3-1.fna.fbcdn.net/v/t51.2885-15/x.jpg?oh=00_AF",
+        "attachment_fbid": "970288316113989",
     }))
 
     assert msg is not None
-    assert msg.media[0].platform_id == ""
+    url = "https://scontent.fhkg3-1.fna.fbcdn.net/v/t51.2885-15/x.jpg?oh=00_AF"
+    assert msg.media[0].fetch_token == f"attachment:{url}"
+    assert msg.media[0].platform_id == "970288316113989"
+
+
+def test_one_time_media_gets_no_token_because_it_carries_no_url():
+    """`RAVEN_*` arrives with `attachment: null` and the bridge emits
+    `url: null` for it. Fetching view-once media IS viewing it and is visible
+    to the sender, so the ref must stay unfetchable — this is the decision,
+    not a gap to close later."""
+    msg = parse_event(_event(text="", media={
+        "kind": "one_time", "url": None, "one_time": True, "view_mode": 0,
+    }))
+
+    assert msg is not None
     assert msg.media[0].fetch_token == ""
-    # The real handles are still recoverable — they stay in the envelope.
-    assert msg.raw["media"]["attachment_fbid"] == "970288316113989"
+    assert msg.media[0].platform_id == ""
+
+
+def test_an_animated_sticker_is_fetchable_by_the_same_token_shape():
+    """Unlike a Discord sticker, whose url is DERIVED from an id, an Instagram
+    animated image is a url like any other attachment — so there is no second
+    token shape and no branch in the fetcher."""
+    msg = parse_event(_event(text="", media={
+        "kind": "animated", "url": "https://external.fhkg3-1.fna.fbcdn.net/x.mp4",
+    }))
+
+    assert msg is not None
+    assert msg.media[0].sticker is True
+    url = "https://external.fhkg3-1.fna.fbcdn.net/x.mp4"
+    assert msg.media[0].fetch_token == f"attachment:{url}"
 
 
 def test_a_media_object_with_no_kind_is_not_invented_into_one():

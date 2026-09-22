@@ -211,6 +211,13 @@ def _is_word(ch: str) -> bool:
     return ch.isascii() and (ch.isalnum() or ch == "_")
 
 
+#: An Instagram messaging fbid: bare digits, no `+` and no hyphens, the same
+#: shape as a Discord snowflake. Kept as its own name rather than reusing
+#: `_SNOWFLAKE_RE` because the two are the same REGEX and not the same RULE —
+#: a change to Discord's id grammar must not silently re-grammar Instagram's.
+_INSTAGRAM_FBID_RE = re.compile(r"[0-9]{5,25}")
+
+
 def _preferred_recipient(ids: frozenset[str], *, platform: str) -> str | None:
     """The id form to put on the wire, out of the ones the ROSTER confirmed.
 
@@ -248,6 +255,21 @@ def _preferred_recipient(ids: frozenset[str], *, platform: str) -> str | None:
     if platform == "discord":
         snowflakes = sorted(v for v in ids if _SNOWFLAKE_RE.fullmatch(v))
         return snowflakes[0] if snowflakes else None
+    if platform == "instagram":
+        # The same shape as Discord's, and reached for the same reason: an
+        # Instagram fbid is a bare digit string, so it matched NEITHER pattern
+        # below and every Instagram mention resolved to `None` — Nora writing
+        # "@Name" as plain text with no ping, `status: sent`, nothing logged.
+        #
+        # Two id kinds exist for an Instagram account and only ONE is a
+        # mention: `fbid` (interop_messaging_user_fbid) is what a mention
+        # carries, `igid` is the public id that profile and story reads take.
+        # Both are bare digits — measured at 15 and 17 digits with a shared
+        # leading `1784` — so no length or prefix rule separates them. The
+        # ROSTER is what disambiguates: it reports the messaging id, and
+        # `_recipient` has already intersected away everything it did not.
+        fbids = sorted(v for v in ids if _INSTAGRAM_FBID_RE.fullmatch(v))
+        return fbids[0] if fbids else None
     uuids = sorted(v for v in ids if _UUID_RE.fullmatch(v))
     if uuids:
         return uuids[0]

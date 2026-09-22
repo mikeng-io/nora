@@ -8608,7 +8608,9 @@ Args:
         platform_message_id: str | None = None
         if row.raw_json:
             try:
-                platform_message_id = str(json.loads(row.raw_json).get("id") or "") or None
+                platform_message_id = platform_message_id_of(
+                    json.loads(row.raw_json)
+                )
             except (ValueError, TypeError, AttributeError):
                 platform_message_id = None
         return OutboundQuote(
@@ -8778,7 +8780,7 @@ Args:
         person here afterwards with `send_reply`, saying whether it went.
 
         Args:
-            platform: Where to send it — "signal" or "discord".
+            platform: Where to send it — "signal", "discord", "whatsapp" or "instagram".
             text: What to relay, in the asker's words.
         """
         if relay is None:
@@ -8896,6 +8898,37 @@ Args:
         _spec("search_gifs", search_gifs),
         _spec("send_gif", send_gif),
     )
+
+
+
+def platform_message_id_of(raw: object) -> str | None:
+    """The platform's own id for a stored row, out of its raw event.
+
+    TWO spellings, because the platforms genuinely disagree and a quote is
+    dropped SILENTLY when the wrong one is read. Discord and WhatsApp key it
+    `id`; Instagram's bridge event keys it `message_id`
+    (`design/instagram-adoption/03-transport-contract.md`).
+
+    Reading only `id` meant every threaded reply the model made on Instagram
+    went out UNTHREADED — `status: sent`, message delivered, nothing logged,
+    and no visual thread in the app. `nora/platform/instagram/send.py` warns
+    that a quote without this id "sends unthreaded"; the warning was right and
+    the id was being thrown away one layer above it.
+
+    A module-level function rather than a closure so the disagreement it
+    encodes is testable on its own. Anything unparseable is None: a quote is
+    an enhancement, and guessing an id would thread the reply onto the wrong
+    message.
+    """
+    if not isinstance(raw, dict):
+        return None
+    for key in ("id", "message_id"):
+        value = raw.get(key)
+        if isinstance(value, (str, int)) and not isinstance(value, bool):
+            text = str(value)
+            if text:
+                return text
+    return None
 
 
 def build_tools(

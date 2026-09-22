@@ -465,6 +465,69 @@ async def test_the_recorded_size_is_measured_not_the_platforms_claim():
     assert out.media_blobs[0].size == len(JPEG)
 
 
+async def test_a_wildcard_subtype_is_ground_against_the_bytes():
+    """Instagram's wire carries no mimetype anywhere, so its parser records
+    the half it observed — `image/*` — and refuses to invent the subtype. That
+    half classifies fine (the label and the handle are unaffected) and then
+    breaks at the one place a type is USED rather than classified: the
+    comprehension pass builds a `data:image/*;base64,…` URI no decoder can act
+    on. Custody is where the bytes first exist, so it is where the wildcard is
+    ground."""
+    out = await media_stage.run(
+        message=_msg(body="[image]", refs=(
+            MediaRef(platform_id="att1", media_type="image/*"),
+        ), platform="signal"),
+        sources=MediaSourceRegistry([FakeMediaSource({"att1": JPEG})]),
+        blobs=FakeBlobStore(), metrics=Metrics(),
+    )
+    assert out.media_blobs[0].media_type == "image/jpeg"
+    assert out.body == f"[image {JPEG_SHA[:6]}]"
+
+
+async def test_a_wildcard_the_sniff_cannot_read_keeps_the_half_that_was_observed():
+    """Fail-closed: nothing recognised the container, so the declared
+    top-level stands and no subtype is invented. `image/*` is still a true
+    statement about what arrived; `image/jpeg` because most images are would
+    be a guess the record would then carry forever."""
+    unknown = b"\x00\x01\x02\x03 not a container anything here knows"
+    out = await media_stage.run(
+        message=_msg(body="[image]", refs=(
+            MediaRef(platform_id="att1", media_type="image/*"),
+        )),
+        sources=MediaSourceRegistry([FakeMediaSource({"att1": unknown})]),
+        blobs=FakeBlobStore(), metrics=Metrics(),
+    )
+    assert out.media_blobs[0].media_type == "image/*"
+    assert label_for(MediaRef(platform_id="att1", media_type="image/*")) == "image"
+
+
+async def test_a_sniff_that_contradicts_the_declared_top_level_is_discarded():
+    """The platform declared a top-level type and the bytes say otherwise. The
+    sniff loses: an `audio/*` delta whose container reads as video stays
+    `audio/*` rather than being overruled by a signature table."""
+    out = await media_stage.run(
+        message=_msg(body="[audio]", refs=(
+            MediaRef(platform_id="att1", media_type="audio/*"),
+        )),
+        sources=MediaSourceRegistry([FakeMediaSource({"att1": JPEG})]),
+        blobs=FakeBlobStore(), metrics=Metrics(),
+    )
+    assert out.media_blobs[0].media_type == "audio/*"
+
+
+async def test_a_declared_subtype_is_never_second_guessed_by_the_bytes():
+    """Inert for Signal, Discord and WhatsApp, which all declare a real
+    subtype: grounding only ever replaces a `*`."""
+    out = await media_stage.run(
+        message=_msg(body="[image]", refs=(
+            MediaRef(platform_id="att1", media_type="image/png"),
+        )),
+        sources=MediaSourceRegistry([FakeMediaSource({"att1": JPEG})]),
+        blobs=FakeBlobStore(), metrics=Metrics(),
+    )
+    assert out.media_blobs[0].media_type == "image/png"
+
+
 async def test_an_unfetchable_attachment_records_the_message_without_a_claim():
     """Degrade honestly: the row still says an image arrived, it just never
     claims Nora has it — and the loss is counted with its reason."""

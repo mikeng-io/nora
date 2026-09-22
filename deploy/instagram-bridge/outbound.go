@@ -349,6 +349,13 @@ var errReactionNotApplied = errors.New("reaction mutation was accepted but the r
 // unverifiable reaction is exactly the defect above, one layer up.
 var errReactionUnverifiable = errors.New("cannot verify the reaction: own fbid is unknown")
 
+// errReactionUnconfirmed is NOT a failure. The mutation was accepted and this
+// response's post-state did not show it — measured in production to happen on
+// every reaction while the reaction itself landed correctly in the thread. The
+// route answers 200 with `confirmed: false`, because reporting a working
+// acknowledgement as an error turns every tag into an incident.
+var errReactionUnconfirmed = errors.New("reaction accepted; post-state did not confirm it")
+
 // sendReaction posts (or retracts) one reaction and then CHECKS IT LANDED.
 //
 // shortThreadID, not the long one — see the table at the top of this file.
@@ -392,9 +399,30 @@ func sendReaction(
 		}
 	}
 	if mine == remove {
-		// create + absent, or remove + still present. Either way the wire
-		// said yes and the thread disagrees.
-		return fmt.Errorf("%w (remove=%t)", errReactionNotApplied, remove)
+		// The wire said yes and this response disagrees. Measured in
+		// production 2026-09-22: this fired on EVERY reaction while the
+		// reaction itself landed correctly in the thread — verified by
+		// reading the thread back, which is the only instrument that can
+		// settle it. So the post-state in THIS response is not a reliable
+		// witness, and a 500 here was reporting a working mutation as broken.
+		//
+		// The likeliest cause is the one that has bitten this integration
+		// three times already: `SenderFBID` on a reaction may not be the same
+		// id space as `GetOwnFBID()`. The observed senders are logged rather
+		// than guessed at, so the next person has the number instead of the
+		// theory.
+		//
+		// Degraded, not failed: the caller gets its 200 and an explicit
+		// `confirmed: false`, the same shape unsend uses for the same reason.
+		// A false failure on an acknowledgement reaction is worse than an
+		// unconfirmed success — it turns every tag into an error report.
+		seen := make([]int64, 0, len(resp.Message.Reactions))
+		for _, r := range resp.Message.Reactions {
+			seen = append(seen, r.SenderFBID)
+		}
+		logf("reaction post-state did not confirm (remove=%t own=%d seen=%v)",
+			remove, ownFBID, seen)
+		return errReactionUnconfirmed
 	}
 	return nil
 }

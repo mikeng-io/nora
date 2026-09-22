@@ -19,6 +19,7 @@ from nora.config import load
 from nora.domain.models import NormalizedMessage
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.platform.discord.media import DiscordMediaSource
+from nora.platform.instagram.media import InstagramMediaSource
 from nora.platform.registry import MediaSourceRegistry
 from nora.platform.signal.media import SignalMediaSource
 from nora.policy import load_policy
@@ -311,6 +312,13 @@ async def test_a_valid_key_turns_media_custody_on_with_an_encrypting_store(cfg, 
     assert isinstance(deps.ingest._media_sources, MediaSourceRegistry)
     assert isinstance(deps.ingest._media_sources.for_platform("signal"), SignalMediaSource)
     assert isinstance(deps.ingest._media_sources.for_platform("discord"), DiscordMediaSource)
+    # Instagram is wired UNCONDITIONALLY, like its two siblings: without a
+    # fetcher here `nora.ingest.stages.media` counts every Instagram
+    # attachment `not_supported` and records a bare `[image]` with no handle,
+    # which is exactly what the live room saw.
+    assert isinstance(
+        deps.ingest._media_sources.for_platform("instagram"), InstagramMediaSource,
+    )
     assert isinstance(deps.ingest._blobs, FilesystemBlobStore)
 
 
