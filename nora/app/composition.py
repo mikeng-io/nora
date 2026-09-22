@@ -2718,6 +2718,23 @@ async def build_dependencies(
             # the fire path writes no position, because S1 is blocked on it
             # retaining a `TagTrace` at all (see `FirePath.__init__`).
             standing=standing_store if cfg.standing.enabled else None,
+            # THE CULTURE HEAD'S READ HALF (design/culture-tier, step 5 of
+            # `02-measurement §5`). `None` while `[culture] enabled = false`,
+            # the shipped default, so `<culture>` renders nothing at all.
+            #
+            # UNLIKE `standing` directly above, this one keys on `primary_id`
+            # and therefore DOES need the policy this path already holds: a
+            # Dreamer adaptor is handed `scopes()`, so that is what it wrote
+            # under, and reading it with the arriving thread's id would match
+            # zero rows and render as «this room has no account» — a real
+            # state, so nothing would report the miss.
+            #
+            # Wired ONLY here and not on the tag assembler: `01-the-adaptor §6`
+            # authorises one consumer, and the read itself is gated on
+            # `occasion.kind == "participation"` in `FirePath._read_culture`
+            # for the reason `self_card_conclusions` below is — a second gate
+            # here would be a place for the two to disagree.
+            culture=SqlCultureStore(engine) if cfg.culture.enabled else None,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
             # The participation turn's memory reads (issue #210). ONE knob set,
             # read at the composition root exactly as the tag assembler reads
