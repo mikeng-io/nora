@@ -94,3 +94,31 @@ Assert the fallback is the configured value, not `None`/`inf`.
   one executor across agents, 03 §6's separate-pools property is lost and the
   inheritance semantics change with it — worth an assertion in the config/identity
   test suite rather than a comment.
+
+## 5b. Test F — fail-fast abandonment (ADDED 2026-09-23)
+
+> **Why this was missing:** the first version of this document named the
+> stop_event/naive-await risk as *"the single most likely implementation defect"* and
+> pointed at **§2 C as its guard**. But §2 C asserts that budget-refusal **messages**
+> are unchanged — it does not assert that a failing call abandons its queued
+> siblings. **The behaviour the bundle itself calls most fragile had no test.**
+> (06-review-round-1 §M7.)
+
+**Test F — a failing call abandons the calls still waiting on a slot.**
+
+With the ceiling held at 1 and a batch of three calls where the FIRST raises,
+assert that:
+
+1. the second and third **never executed** (instrument the tool, not the log — a
+   counter the tool itself increments);
+2. the first call's exception **propagates** (it is not swallowed by the `finally`);
+3. the **slot is released** on the failure path — a following call acquires it
+   without deadlock (this is what catches a missing `finally`).
+
+**Why it matters:** `ConcurrentToolExecutor._execute` cancels every task in its
+`finally` (`concurrent.py:87-90`). A subclass overriding `_task` adds an
+acquire/release around it, and the natural mistake — acquiring outside the
+try/finally, or catching the exception to "tidy up" — either leaks a slot
+permanently or silently converts a hard failure into a batch that runs to
+completion. **Holding the ceiling at 1 is what makes it observable**: with a higher
+limit the abandoned calls would simply have started first and the bug would hide.

@@ -30,6 +30,14 @@ is yes, unboundedly, and the budget is not the thing that would stop it.
 ## What this change is
 
 **One ceiling on simultaneous tool execution, shared by every tool, inherited by
+sub-agents** — ⚠️ **read the scope carefully: the ceiling is per AGENT, not
+process-wide** (`03 §6`). A parent and each of its sub-agents hold **separate pools
+of the same size**, so N overlapping agents can still reach 4×N concurrent calls,
+and the operator's question («budget 升到 10，佢就同我 10 個 concurrent 一齊 run?») is
+answered **per agent** — no single agent runs 10 — not **system-wide**. Whether one
+global pool is required instead is **deferred in `03 §6` and should be decided
+explicitly rather than left implicit here.** (Flagged 06-review-round-1 §M3.)
+
 sub-agents.** A custom `ToolExecutor` wraps the library's concurrent one and holds
 one `asyncio.Semaphore`; it is injected at both `Agent(...)` construction sites
 (`factory.py:402`, `factory.py:496`). It **queues** a call that would exceed the

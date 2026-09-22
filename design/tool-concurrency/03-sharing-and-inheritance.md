@@ -28,7 +28,14 @@ scope *across tools*; "inherited" is about scope *across the agent tree*. A desi
 that only gets the first is a config value read at each site; one that gets the
 second is a value that **propagates**.
 
-## 2. The tree this has to cross
+## 2. Who is at risk
+
+> **⚠️ CORRECTED 2026-09-23** — the first version listed **`debrief`** as an
+> at-risk sub-agent. **It is not.** `debrief` runs through `ask_text`, which builds
+> `Agent(tools=[])` (`nora/agent/structured.py:49`, `:172`) — an agent with no tools
+> cannot emit a tool call, so it adds nothing to the exposure surface.
+> (06-review-round-1 §m2.) The critic/author claims survive, since those run
+> through the dream adaptors. The tree this has to cross
 
 ```bash
 $ grep -nE "^def create_|^async def create_" nora/agent/factory.py
@@ -65,6 +72,32 @@ tokens = _CONCURRENCY_LIMIT.set(cfg.agent.max_concurrent_tools)
 # the executor reads the CURRENT value, not a captured one
 limit = _CONCURRENCY_LIMIT.get()
 ```
+
+> **⚠️ PARTLY CORRECTED 2026-09-23 — two problems.** (06-review-round-1 §M2,
+> §m6.)
+>
+> **(1) This contradicts §02.** `02`'s constructor takes `max_concurrent: int` — a
+> threaded parameter. This section says the executor reads the *current* contextvar.
+> Both cannot be true. **The resolution is that they are different layers, and the
+> document now says so:** the contextvar is the *inheritance* mechanism (a sub-agent
+> sees the parent's value); the constructor argument is the *initial* value a
+> top-level agent is built with. An implementer must wire the first to the second.
+>
+> **(2) The “no signature change” claim is FALSE for a top-level agent.** This
+> repo's contracts forbid reaching for config below the composition layer
+> (`factory.py:18-19` “Takes explicit scalars, never `nora.config` objects”;
+> `agent_runner.py:113` “no config object below”). A process-startup `.set()` does
+> not reach a per-turn task, so the limit **must** arrive at the per-turn `set()` site
+> as a threaded scalar — i.e. exactly the signature change this section claimed to
+> avoid. The contextvar buys inheritance *downward* (parent → sub-agent), it does
+> **not** buy a change-free top-level path. The real `set()` site must be named in
+> the build.
+>
+> **(3) Today it is prophylactic, not load-bearing** (§m6): tag and dream roots are
+> top-level loops, and the only agents built inside a turn's context are
+> `tools=[]` agents that cannot emit tool calls. So the inheritance property has no
+> production edge to exercise yet; the config default alone delivers identical
+> behaviour today. Stated so the operator does not over-read its immediate effect.
 
 A sub-agent built inside the parent's task reads the parent's value without a
 single parameter being threaded through `create_agent` / `create_dream_agent` — no
@@ -111,6 +144,8 @@ has a concrete consequence for scope:
   agent turn (whether Strands parallelises multiple tool_use blocks is UNTESTED)"*.
   **This bundle answers that question** — they do parallelise, and here is the
   ceiling — so that deferred item should be amended to point here rather than
+  (**already DONE — the media branch amended it in `ee2855c8`; this is a verify,
+  not an assign. Flagged 06-review-round-1 §m3.**)
   left as an open question. That amendment is a one-line edit in the other
   bundle, listed as a delivery obligation in 05 §3, not a merge of the two.
 

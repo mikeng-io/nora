@@ -64,9 +64,25 @@ dream run (`factory.py:496`).
 on 2026-09-23 (51,452 observations, `2026-07-12 14:26` → `2026-09-22 19:30`,
 `type='TOOL'` spans grouped by `parent_observation_id`): **2,622 of 9,998 turns
 (26.2%) emit more than one tool call; 159 batches exceeded four; 16 exceeded eight;
+
+> ⚠️ **Denominator (2026-09-23):** "9,998 turns" means 9,998 **tool-emitting model
+> generations**, not all conversation turns — the bucket rows sum to 9,998. Also, the
+> batch count is **method-dependent**: it clusters TOOL spans by a **100 ms** start-time
+> window, and a different threshold yields different bucket counts — and fast
+> *sequential* tools (<100 ms each, e.g. the 5 ms wall-time batches) cluster
+> identically to concurrent ones. Treat the distribution as an upper bound on
+> fan-out, not an exact histogram. (06-review-round-1 §m1.)
 the maximum was 76 tool calls emitted within 104 ms** (parent
-`cc333f839bcf8ccc`, whose children span 128,776 ms end-to-end — they genuinely ran
-together).
+`cc333f839bcf8ccc`, all 76 starting within 104 ms of each other).
+
+> **⚠️ CORRECTED 2026-09-23** — the first version ended “whose children span
+> 128,776 ms end-to-end — **they genuinely ran together**”. That inference was
+> retracted after independent audit: the widest child (128,730 ms) **IS** the span
+> (99.96% of it), so the span is one long call's duration and proves nothing about
+> overlap. `01 §2` carries the correction; **this decision record was still
+> carrying the retracted evidence** (flagged by 06-review-round-1 §M1). The
+> concurrency conclusion stands on the **104 ms start-clustering** — impossible
+> for a sequential executor — plus ≥8 children overlapping at 40–52 s each.
 
 `nora/agent/call_ledger.py` already closes the **count** half of this exposure: it
 reserves a call in-flight so a parallel batch cannot all clear the pre-batch budget
@@ -99,7 +115,7 @@ against the live store and `origin/master`.
 ## 3. Delivery obligations
 
 1. **Inject at BOTH `Agent(...)` sites** — `factory.py:402` and `factory.py:496`.
-   Missing either leaves a whole path (`dreamer:fact-adjudication`, observed
+   Missing either leaves a whole path (⚠️ **the adaptor that motivated this, `dreamer:fact-adjudication`, is DELETED — see the note at `02 §5`; a surviving adaptor must be identified and re-measured before this anchors an obligation.** Historical observation, 16 calls, 
    reaching batches of 16) under the unbounded default.
 2. **Amend `design/media-read-lane/`'s deferred list.** It currently carries
    *"Concurrent `media_fetch` tool calls inside one agent turn (whether Strands

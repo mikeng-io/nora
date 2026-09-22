@@ -16,20 +16,69 @@ edges:
 One custom executor, wrapping the library's, holding one semaphore:
 
 ```python
-class BoundedToolExecutor(ToolExecutor):
+class BoundedToolExecutor(ConcurrentToolExecutor):
     """Strands' concurrent executor, with a ceiling on how many run at once.
 
-    Wraps rather than replaces: the library still decides HOW to run a batch
-    (task per block, results in input order, stop_event on first failure). This
-    adds the one thing it does not have — a bound on simultaneity.
+    Subclasses rather than composes, and that is forced, not preferred — see the
+    CORRECTION below.
     """
 
-    def __init__(self, *, max_concurrent: int, inner: ToolExecutor | None = None) -> None:
-        self._inner = inner or ConcurrentToolExecutor()
-        self._slots = asyncio.Semaphore(max(1, max_concurrent))
+    def __init__(self, *, max_concurrent: int) -> None:
+        super().__init__()
+        self._slots = asyncio.Semaphore(max(1, max_concurrent)) if max_concurrent > 0 else None
 
-    # ... delegate to self._inner, with acquire/release around the task
+    async def _task(self, *args, **kwargs):
+        if self._slots is None:            # 0 = unbounded = the off switch
+            return await super()._task(*args, **kwargs)
+        async with self._slots:
+            return await super()._task(*args, **kwargs)
 ```
+
+> **❌ CORRECTED 2026-09-23 — the original sketch was UNBUILDABLE.** It showed a
+> compositional wrapper holding `self._inner = ConcurrentToolExecutor()` with the
+> comment “delegate to `self._inner`, with acquire/release around the task”.
+> **That seam does not exist.** Verified by reading
+> `strands/tools/executors/concurrent.py` in full: `_execute` creates **all** tasks
+> itself via `asyncio.create_task(self._task(...))` at `:54-71` and drains them
+> through `task_queue` / `task_events` / `stop_event`. A compositional wrapper can
+> only wrap the **whole batch**, so it could acquire once and bound nothing, or
+> chunk the batch (which §2 of this document already rejects). **A wrapper cannot
+> acquire per task.**
+>
+> The two shapes that DO work, and the trade they make:
+> - **(a) subclass `ConcurrentToolExecutor` and override the private `_task`** —
+>   what this document now specifies. Acquire in the task, release in its `finally`;
+>   all tasks are still created up front so ordering and `stop_event` are inherited
+>   unchanged. **Cost: it binds Nora to a private method of a pinned SDK.** That
+>   dependency must be stated and checked on upgrade (— `strands-agents` pin in
+>   `pyproject.toml`); if upstream renames `_task`, this breaks at upgrade time, and
+>   test A (§4) is what catches it.
+> - **(b) copy `_execute`'s drain loop** with an acquire added — rejected: it is
+>   exactly the duplication this section forbids itself.
+>
+> (Flagged by 06-review-round-1 §B1. The `max_concurrent > 0` clause also answers
+> §M5: **0 is now the explicit off switch**, which the original clamp
+> `max(1, max_concurrent)` made impossible.)
+
+### The construction sites — all of them, not just the factory's (CORRECTED 2026-09-23)
+
+The first version said the executor is injected at “both `Agent(...)` sites”
+(`factory.py:402`, `:496`). Those two are correct and `grep tool_executor nora/` is
+clean — **but the repo constructs `Agent(` in four places, not two** (06-review-round-1 §M6):
+
+| site | tools | ruling |
+|---|---|---|
+| `nora/agent/factory.py:402` (`create_agent`) | full registry | **IN** — inject here |
+| `nora/agent/factory.py:496` (`create_dream_agent`) | full registry | **IN** — inject here |
+| `nora/agent/structured.py:172`, `:248` | `tools=[]` | **OUT, with reason** — cannot emit tool calls, so a ceiling is meaningless |
+| `nora/compute/smith/agent.py:223` | **seven real tools** | **UNRESOLVED — must be ruled on** |
+
+**Smith builds an `Agent` with `run_python`, `register_artifact`, `render_mermaid`,
+`render_markdown`, `render_map`, `render_html_report`, `geocode_address` and no
+executor.** If Smith runs in-process, this bundle's “one limit for ALL tools” is
+false the day it ships. Smith appears to carry its own vendored `.venv`, which
+*suggests* a separate runtime — but that is **inference, not proof**, and this
+document did not mention Smith at all. **It must be resolved before merge.**
 
 Three deliberate properties:
 
@@ -115,7 +164,7 @@ return Agent(
 ```
 
 Injecting only at `create_agent` would leave every dreamer sub-agent — including
-`dreamer:fact-adjudication`, which the traces show reaching batches of 16 — under
+`dreamer:fact-adjudication`, which the traces show reaching batches of 16 (⚠️ **see the correction below — this adaptor is DELETED** — under
 the unbounded default. Both sites, same executor construction, one helper.
 
 ## 6. Non-goals
@@ -128,3 +177,19 @@ the unbounded default. Both sites, same executor construction, one helper.
   no data shows `media_fetch` needing a different bound than `web_search`.
 - **Not** a change to the model's batching behaviour. See 04 §4 for why that is
   deliberately deferred.
+
+> ⚠️ **CORRECTED 2026-09-23 — the 16-call batch's adaptor no longer exists.**
+> `nora/agent/dreamer.py:826` and `:838` both describe
+> `fact-adjudication.md` as **"(since deleted)"**, and `:882` refers to "the deleted
+> `fact-adjudication`". So the observed 16-call batch is a **historical** observation
+> from the 2026-08-28 measurement, not a property of a currently-registered adaptor
+> — and it was headlining this section and `05 §3`'s first delivery obligation.
+> (06-review-round-1 §m4.)
+>
+> **What must happen before this anchors a decision:** identify which *currently
+> registered* Dreamer adaptor can still emit a large batch, and re-measure it. If
+> none can, the 16 is not evidence for the ceiling's default on the dream path and
+> should be marked historical with the surviving path named instead. **The ceiling's
+> justification does not collapse** — the room-facing `media_fetch` batches (2–3) and
+> the 76-call code-comprehension fan-out are independently observed — but the
+> specific number 16 must not stand as a live risk.
