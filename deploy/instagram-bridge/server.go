@@ -306,8 +306,19 @@ func (b *bridge) handleReact(w http.ResponseWriter, r *http.Request) {
 	// (measured 2026-09-22), where a SEND was measured arriving either way.
 	// The long id is still resolved first: that lookup is what validates the
 	// room exists and what warms the reverse cache /typing reads.
-	if err := sendReaction(r.Context(), cli, thread.Short,
-		req.MessageID, req.Emoji, req.Remove, b.ownFBID()); err != nil {
+	err := sendReaction(r.Context(), cli, thread.Short,
+		req.MessageID, req.Emoji, req.Remove, b.ownFBID())
+	if errors.Is(err, errReactionUnconfirmed) {
+		// 200 with the confirmation withheld, not a failure. The mutation was
+		// accepted; only this response's post-state stayed silent about it,
+		// which production showed happening on every reaction while the
+		// reaction itself landed. The field's PRESENCE is the signal — a
+		// confirmed reaction omits it, so `confirmed: false` means something
+		// rather than being a default nobody set.
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "confirmed": false})
+		return
+	}
+	if err != nil {
 		b.failSend(w, "react", req.RoomID, err)
 		return
 	}

@@ -68,6 +68,11 @@ type fakeIG struct {
 	// emptySend makes a send return a null message with NO error, which is how
 	// the wire produced `{"ok":true}` with no id.
 	emptySend bool
+	// reactPostStateSilent models what production does: the mutation is
+	// accepted and the response's post-state does not list the new reaction,
+	// while the reaction IS on the message when the thread is read back.
+	// Measured 2026-09-22 — it fired on every reaction Nora made.
+	reactPostStateSilent bool
 	// unconfirmedUnsend makes `direct_unsend_message` come back false even for
 	// a correctly addressed unsend. No probe has ever seen the field do that;
 	// it is here so the DEGRADATION can be exercised, because a test that can
@@ -128,8 +133,12 @@ func (f *fakeIG) SendReaction(_ context.Context, req *slidetypes.CreateReactionR
 		}
 		f.reactions[id] = kept
 	}
+	post := f.reactions[id]
+	if f.reactPostStateSilent {
+		post = nil
+	}
 	return &slidetypes.SendReactionResponse{
-		Message: slidetypes.ReactionUpdateMessage{ID: id, Reactions: f.reactions[id]},
+		Message: slidetypes.ReactionUpdateMessage{ID: id, Reactions: post},
 	}, nil
 }
 
@@ -645,4 +654,24 @@ func TestMessageIDIsReadFromEitherSpelling(t *testing.T) {
 func fieldExists(v any, name string) bool {
 	_, ok := reflect.TypeOf(v).FieldByName(name)
 	return ok
+}
+
+// TestAnUnconfirmedReactionIsNotAFailure pins the production finding: the
+// mutation is accepted, this response's post-state does not show it, and the
+// reaction IS on the message when the thread is read back. Reporting that as a
+// failure turned every acknowledgement reaction into a 500 — ten of them in
+// twelve minutes, which is how Sentry found it.
+//
+// Reverting the degradation makes this red, and it is deliberately separate
+// from the unverifiable case: an unknown own-fbid is a real inability to
+// check, while this is a check that answered and was wrong.
+func TestAnUnconfirmedReactionIsNotAFailure(t *testing.T) {
+	f := &fakeIG{reactPostStateSilent: true}
+	err := sendReaction(context.Background(), f, threadShort, "mid.$abc", "👀", false, 4242)
+	if !errors.Is(err, errReactionUnconfirmed) {
+		t.Fatalf("err = %v, want errReactionUnconfirmed", err)
+	}
+	if errors.Is(err, errReactionNotApplied) {
+		t.Fatal("an unconfirmed reaction must not read as a failed one")
+	}
 }

@@ -1,0 +1,11 @@
+{
+  "type": "fix",
+  "summary": "Nora's acknowledgement reaction in an Instagram room no longer reports itself as a failure. The reaction was landing correctly the whole time; only the bridge's own confirmation check was wrong, and it turned every tag into an error.",
+  "details": [
+    "The bridge asked Instagram's reply to a reaction whether the reaction was now on the message, and treated silence as proof it had failed. In production the reply was silent every time while the reaction was visibly there when the thread was read back — ten errors in twelve minutes, found in Sentry rather than by anyone noticing the reaction.",
+    "It now answers success with the confirmation explicitly withheld, the same shape retraction already used. A reaction that cannot be confirmed is not a reaction that failed, and reporting it as one made an acknowledgement into an incident."
+  ],
+  "limitations": [
+    "Why the reply stays silent is still unknown. The likeliest cause is the one that has caught this integration three times: the reaction's sender may be recorded under a different id than the one being compared against. The senders it does return are now logged, so the next person has the number rather than the theory."
+  ]
+}
