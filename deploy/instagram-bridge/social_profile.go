@@ -104,21 +104,41 @@ var errProfileGraphQL = errors.New("profile query returned a GraphQL error")
 // `Unrecognized`-style dead weight — see the file header for what was
 // measured and why the rest was left out.
 type profileUserWire struct {
-	IsPrivate             bool    `json:"is_private"`
-	Biography             string  `json:"biography"`
-	ExternalURL           string  `json:"external_url"`
-	FollowerCount         int     `json:"follower_count"`
-	FollowingCount        int     `json:"following_count"`
-	MutualFollowersCount  int     `json:"mutual_followers_count"`
-	MediaCount            int     `json:"media_count"`
-	TotalClipsCount       int     `json:"total_clips_count"`
-	IsBusiness            bool    `json:"is_business"`
-	IsProfessionalAccount bool    `json:"is_professional_account"`
+	IsPrivate            bool   `json:"is_private"`
+	Biography            string `json:"biography"`
+	ExternalURL          string `json:"external_url"`
+	FollowerCount        int    `json:"follower_count"`
+	FollowingCount       int    `json:"following_count"`
+	MutualFollowersCount int    `json:"mutual_followers_count"`
+	MediaCount           int    `json:"media_count"`
+	TotalClipsCount      int    `json:"total_clips_count"`
+	IsBusiness           bool   `json:"is_business"`
+	// IsProfessionalAccount is a POINTER, unlike every other bool on this
+	// struct. Measured `null` on a real account (2026-09-22) — a personal
+	// account, where the field means "not applicable" — and `null` into a
+	// bare `bool` unmarshals to `false` with no error, which would make
+	// "measured not-professional" and "Instagram did not say" the same
+	// value. `Category` two fields below already drew this line for the
+	// same reason; this field just did not follow it the first time.
+	IsProfessionalAccount *bool   `json:"is_professional_account"`
 	Category              *string `json:"category"`
 	ProfilePicURL         string  `json:"profile_pic_url"`
 	FriendshipStatus      struct {
 		FollowedBy bool `json:"followed_by"`
 	} `json:"friendship_status"`
+}
+
+// graphQLIssuer is the one method this file needs off `*httpclient.HTTPClient`
+// — narrow on purpose. The concrete type has no interface of its own, so
+// depending on the full type (as this file's first version did, via
+// `socialClient.GetHTTP()`) left `readSocialProfile` with no seam a test
+// could stand in for: nothing here could assert WHICH VALUE a call was
+// actually keyed with, only what a hand-built response byte string parses
+// to. `*httpclient.HTTPClient` satisfies this interface structurally, so
+// production needs no adapter; `readProfile`'s tests use a fake that
+// implements only this.
+type graphQLIssuer interface {
+	MakeGraphQLRequest(ctx context.Context, name string, variables any) (*http.Response, []byte, error)
 }
 
 // readSocialProfile issues the SAME GraphQL document `GetProfile` uses and
@@ -127,15 +147,9 @@ type profileUserWire struct {
 // username-keyed (wrong field) and status-only error detection (missed the
 // GraphQL envelope's own `errors`).
 func readSocialProfile(
-	ctx context.Context, cli socialClient, igid string,
+	ctx context.Context, issuer graphQLIssuer, igid string,
 ) (socialProfile, int, error) {
-	h := cli.GetHTTP()
-	if h == nil {
-		return socialProfile{}, http.StatusServiceUnavailable,
-			fmt.Errorf("%w: no http client", errNotConnected)
-	}
-
-	resp, raw, err := h.MakeGraphQLRequest(
+	resp, raw, err := issuer.MakeGraphQLRequest(
 		ctx, "PolarisProfilePageContentQuery", slidetypes.MakeProfilePageRequest(igid),
 	)
 	if err != nil {

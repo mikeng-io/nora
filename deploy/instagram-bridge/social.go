@@ -182,8 +182,11 @@ type socialProfile struct {
 	// IsBusiness and IsProfessionalAccount are account-type facts a social
 	// dreamer needs to tell a friend's account from a brand's before it
 	// spends a "genuine connection" turn on one.
-	IsBusiness            bool `json:"is_business"`
-	IsProfessionalAccount bool `json:"is_professional_account"`
+	IsBusiness bool `json:"is_business"`
+	// IsProfessionalAccount is a pointer for the same reason Category is:
+	// measured `null` on a personal account (2026-09-22), and `null` is not
+	// the same fact as "measured false".
+	IsProfessionalAccount *bool `json:"is_professional_account,omitempty"`
 	// Category is the account's declared category (nil for a personal
 	// account with none set) — forwarded as a pointer because "not set" and
 	// "set to empty" are different facts on this field.
@@ -309,11 +312,11 @@ func readProfile(ctx context.Context, cli igClient, igid string) (profileBody, e
 	// ordering problem — a username was going into a field that wanted an id,
 	// and the failure was invisible until the envelope's `errors` array was
 	// actually read.
-	social, ok := cli.(socialClient)
-	if !ok {
-		out.SocialError = "this client cannot issue raw requests"
+	issuer, err := socialIssuerFor(cli)
+	if err != nil {
+		out.SocialError = err.Error()
 	} else {
-		s, status, err := readSocialProfile(ctx, social, canonical)
+		s, status, err := readSocialProfile(ctx, issuer, canonical)
 		if err != nil {
 			// Logged with the STATUS, because telling a 429 from a challenge
 			// page from a parse failure is the entire reason this half exists
@@ -326,6 +329,31 @@ func readProfile(ctx context.Context, cli igClient, igid string) (profileBody, e
 		}
 	}
 	return out, nil
+}
+
+// socialIssuerFor resolves the raw GraphQL issuer off an igClient — a
+// package VARIABLE rather than an ordinary function, so a test can replace
+// it with a fake that records what `readProfile` handed it and returns a
+// canned response, entirely bypassing `*httpclient.HTTPClient`, which has no
+// interface seam of its own to fake against directly.
+//
+// This is the seam that makes the actual regression this file fixes
+// testable at all: whether `readProfile` keys the social call with
+// `canonical` (correct) or `u.Username` (the original bug) is a question
+// about what VALUE reaches `readSocialProfile`'s second argument, not about
+// how a response byte string parses — `parseSocialProfile`'s own tests
+// cannot see it, because by the time bytes exist to parse, the wrong value
+// has already been sent.
+var socialIssuerFor = func(cli igClient) (graphQLIssuer, error) {
+	social, ok := cli.(socialClient)
+	if !ok {
+		return nil, errors.New("this client cannot issue raw requests")
+	}
+	h := social.GetHTTP()
+	if h == nil {
+		return nil, fmt.Errorf("%w: no http client", errNotConnected)
+	}
+	return h, nil
 }
 
 // --- /story -------------------------------------------------------------------
