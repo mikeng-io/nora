@@ -18,7 +18,12 @@ Dropped before a `NormalizedMessage` is built:
   is not inferring its own echo from a config value;
 - a turn carrying neither text nor media, which is how the system deltas
   (`ADD_PARTICIPANT_XMAT` and friends — they arrive as ordinary messages,
-  measured 02) leave without a special case;
+  measured 02) leave without a special case. **A shared reel used to leave
+  through this same line and it was a bug, not a drop**: `MessageContentXMA`
+  had no case in the bridge's content switch, so it produced no text and no
+  media and was discarded here — Nora did not fail to read the reel, she never
+  learned one had been posted. The bridge now emits `shared`, and
+  `_shared_line` turns it into text, so these turns survive;
 - a `room_id` that is missing or empty. There is no `is_broadcast` sibling to
   check: Instagram has no status feed or newsletter address in this transport,
   so the WhatsApp parser's two feed drops have no analogue here.
@@ -148,6 +153,71 @@ def _media_ref(media: dict) -> MediaRef | None:
     )
 
 
+def _shared_line(shared: object) -> str:
+    """A SHARED reel or post, rendered as text the model can read for free.
+
+    The bridge's `shared` object (`deploy/instagram-bridge/inbound.go`'s
+    `eventShared`) is the caption and the author of something posted elsewhere
+    on Instagram and sent into the room. It is the FREE depth of
+    `design/instagram-adoption/13`: both values are already in the delta, so a
+    room where people share reels all day costs nothing extra to follow — no
+    fetch, no model call, no vision pass. Only a direct question about one
+    particular post reaches for the thumbnail or the video.
+
+    Until this existed, a shared reel arrived with no text and no media and was
+    dropped for having neither, so Nora never learned anything had been posted
+    at all. That is why this renders even when there is no caption: «somebody
+    shared a reel» is a fact about the room, and it was previously invisible.
+
+    ## The author is NOT the sender, and the wording has to keep them apart
+
+    `sender` is who shared it; `shared.author` is whose post it is. They are
+    different people and the render says so explicitly, because a line that
+    blurred them would attribute a stranger's content to a member of the room
+    — the same class of error as calling a shared song a voice note.
+
+    ## It is quoted, and marked as somebody else's words
+
+    The caption is written by whoever posted the reel, who is very often
+    outside the room and outside `identity.toml` entirely. It is wrapped the
+    way `social_fetch`'s results are wrapped, for the same reason: it is text
+    from a stranger arriving inside Nora's context, and it must not read as
+    something a member said or as an instruction.
+
+    Returns `""` when there is nothing to say, so the caller's `parts` list is
+    unchanged and a non-XMA message keeps exactly the body it had.
+    """
+    # An EMPTY dict is not the same as a dict whose values are empty, and the
+    # difference decides whether a claim is made. `{}` carries no keys at all
+    # and is indistinguishable from the field being absent, so it renders
+    # nothing. A dict WITH keys whose values happen to be blank is the bridge
+    # saying "there was a shared post here and I could not read its text",
+    # which still deserves the bare `[shared post]` below. Collapsing the two
+    # put `[shared post]` on ordinary messages — caught by
+    # `test_a_message_with_no_shared_object_is_unchanged`, which is the test
+    # that matters most here because it fires on EVERY message rather than on
+    # the rare one this function was written for.
+    if not isinstance(shared, dict) or not shared:
+        return ""
+    author = str(shared.get("author") or "").strip()
+    caption = str(shared.get("caption") or "").strip()
+    if not caption:
+        # `title` is sometimes the only text on the delta — the library
+        # declares both and no probe has shown which a live one populates.
+        caption = str(shared.get("title") or "").strip()
+    if not author and not caption:
+        # The bridge answers `null` rather than an empty object for an XMA it
+        # could not read, so reaching here means a shape it read but that
+        # carried neither name nor words. Still worth a line: something WAS
+        # shared, and silence is what this whole function exists to end.
+        return "[shared post]"
+    if not author:
+        return f"[shared post — {caption}]"
+    if not caption:
+        return f"[shared post by {author}]"
+    return f"[shared post by {author} — {caption}]"
+
+
 def _mentioned_ids(entries: object) -> frozenset[str]:
     """Every fbid a `mentions[]` entry names a PERSON with.
 
@@ -214,6 +284,14 @@ def parse_event(event: dict) -> NormalizedMessage | None:
         text = str(event.get("text") or "").strip()
         if text:
             parts.append(text)
+        # BETWEEN the sharer's own words and the media placeholder, because
+        # that is the order they happened in: somebody typed something, about
+        # a post, which carries a thumbnail. The placeholder run has to stay
+        # TRAILING (`body_with_handles` rewrites it in place), so this cannot
+        # go after it.
+        shared = _shared_line(event.get("shared"))
+        if shared:
+            parts.append(shared)
         # Placeholders LAST — the same load-bearing trailing run
         # `nora.domain.media.body_with_handles` rewrites on the Signal side
         # once custody has the bytes. A media-only turn survives through this

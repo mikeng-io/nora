@@ -319,3 +319,94 @@ def test_the_bridges_is_group_field_is_HONOURED_when_present():
     this parser already reads it — there is no second place to change."""
     assert parse_event(_event(is_group=False)).conversation_type == "dm"
     assert parse_event(_event(is_group=True)).conversation_type == "group"
+
+
+# --- shared reels and posts (the bridge's `shared` object) --------------------
+#
+# The failure these cover is the invisible one. `MessageContentXMA` had no case
+# in the bridge's content switch, so a shared reel produced no text and no
+# media, and `parse_event` dropped the turn for having neither. Nora did not
+# fail to READ the reel — she never learned one had been posted, and nothing
+# anywhere recorded that anything had happened.
+#
+# The rendered line is the FREE depth of design/instagram-adoption/13: caption
+# and author are already in the delta, so a room where people share reels all
+# day costs nothing extra to follow. Only a direct question about one post
+# reaches for the thumbnail or the video.
+
+
+def test_a_shared_reel_is_no_longer_dropped():
+    """The whole point. Before `shared`, this event had no text and no media
+    and left through the "neither text nor media" line as if nothing had been
+    said."""
+    msg = parse_event(_event(
+        text="",
+        shared={
+            "author": "someaccount",
+            "caption": "the caption as its author wrote it",
+            "target_url": "https://www.instagram.com/reel/ABC123/",
+        },
+    ))
+
+    assert msg is not None, "a shared reel with no covering text was dropped"
+    assert msg.body == "[shared post by someaccount — the caption as its author wrote it]"
+
+
+def test_the_sharers_words_come_before_the_shared_post():
+    """In the order they happened: somebody typed something, about a post,
+    which carries a thumbnail. The placeholder run must stay TRAILING, because
+    `body_with_handles` rewrites it in place once custody has the bytes."""
+    msg = parse_event(_event(
+        text="look at this",
+        shared={"author": "someaccount", "caption": "the caption"},
+        media={"kind": "image", "url": "https://cdn.example/thumb.jpg"},
+    ))
+
+    assert msg is not None
+    assert msg.body == "look at this [shared post by someaccount — the caption] [image]"
+    # The thumbnail is fetchable, which is what makes the middle depth possible
+    # at all: she can say what the reel looks like without fetching the video.
+    assert msg.media[0].fetch_token == "attachment:https://cdn.example/thumb.jpg"
+
+
+def test_the_shared_author_is_not_the_sender():
+    """`sender` shared it; `shared.author` posted it. They are different people
+    and the body has to keep them apart — a line that blurred them would
+    attribute a stranger's reel to a member of the room."""
+    msg = parse_event(_event(
+        text="",
+        shared={"author": "a_stranger", "caption": "not mine"},
+    ))
+
+    assert msg is not None
+    assert msg.sender_id == SENDER_FBID
+    assert "a_stranger" in msg.body
+    assert SENDER_FBID not in msg.body
+
+
+def test_a_shared_post_renders_with_whatever_half_it_has():
+    """XMA is unmeasured, so every partial shape has to produce a sentence
+    rather than an exception or an empty body."""
+    cases = {
+        "[shared post by someaccount]": {"author": "someaccount"},
+        "[shared post — just words]": {"caption": "just words"},
+        # `title` is sometimes the only text present; the library declares both
+        # and no probe has shown which a live delta populates.
+        "[shared post — a title]": {"title": "a title"},
+        # Something WAS shared. Silence is what this function exists to end.
+        "[shared post]": {"author": "", "caption": ""},
+    }
+    for want, shared in cases.items():
+        msg = parse_event(_event(text="", shared=shared))
+        assert msg is not None, f"dropped for {shared}"
+        assert msg.body == want, f"{shared} rendered {msg.body!r}"
+
+
+def test_a_message_with_no_shared_object_is_unchanged():
+    """Every non-XMA message must keep exactly the body it had. A renderer that
+    leaked an empty marker into ordinary traffic would be worse than the bug it
+    replaced, because it would fire on every message rather than on reels."""
+    for shared in (None, "", [], {}, 0):
+        msg = parse_event(_event(text="hello", shared=shared))
+        assert msg is not None
+        assert msg.body == "hello", f"shared={shared!r} changed an ordinary body"

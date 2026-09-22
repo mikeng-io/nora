@@ -121,6 +121,60 @@ type eventMedia struct {
 	ViewMode *int `json:"view_mode,omitempty"`
 }
 
+// eventShared is a SHARED POST — a reel, a feed post or a profile that
+// somebody sent into the room from elsewhere on Instagram, rather than
+// something they attached.
+//
+// It arrives as `MessageContentXMA`, which until now fell through
+// `extractMedia`'s switch with no case: no text, no media, and so the adapter
+// dropped the turn for having neither. A reel landing in the room was
+// therefore not merely unreadable, it was INVISIBLE — Nora had no idea
+// anything had been posted, which is the worst of the available failures
+// because nothing anywhere reported it.
+//
+// # Nothing here is inferred, and no vocabulary is invented
+//
+// **XMA is UNMEASURED.** No probe has captured one, so the fields below are
+// forwarded exactly as the library decodes them and this bridge classifies
+// NOTHING. In particular there is deliberately no `kind: "reel" | "post"`:
+// the discriminator would have to come from `__typename` or
+// `preview_layout_type`, whose value sets have not been observed, and a
+// guessed vocabulary is worse than a raw one — it reads as measured, and the
+// consumer that trusts it has no way to find out it was a guess.
+// `typename` and `layout` therefore ride verbatim, and naming the kinds is a
+// decision to make against a captured delta, not against this struct.
+//
+// The same reasoning as `MessageContentMultiMedia`'s branch, which says it out
+// loud: handled anyway, because dropping it produces a message that looks
+// EMPTY rather than one that looks UNPARSED, and only the second kind gets
+// investigated.
+type eventShared struct {
+	// Caption is `caption_body_text`: the post's own caption, as its author
+	// wrote it. This is the free depth — it is already in the delta, so a
+	// room can be followed at zero cost with no fetch and no model call
+	// (design/instagram-adoption/13, "three depths, three costs").
+	Caption string `json:"caption,omitempty"`
+	// Author is who posted the thing being shared, NOT who shared it. The
+	// sharer is `sender`, and conflating the two would attribute a stranger's
+	// reel to a member of the room.
+	Author string `json:"author,omitempty"`
+	// Subtitle is `subtitle_text` — usually the audio track or a view count. Kept
+	// because it is free and it is often the only thing distinguishing two
+	// otherwise identical rows in a log.
+	Subtitle string `json:"subtitle,omitempty"`
+	// Title is `title_text`, which is NOT the caption and is sometimes the
+	// only text present.
+	Title string `json:"title,omitempty"`
+	// TargetURL is the permalink — the deepest depth, fetched only when
+	// somebody actually asks about this specific post.
+	TargetURL string `json:"target_url,omitempty"`
+	// Typename and Layout are Instagram's own discriminators, passed through
+	// UNINTERPRETED. See the type comment: classifying them here would invent
+	// a vocabulary nothing has measured.
+	Typename string `json:"typename,omitempty"`
+	Layout   string `json:"layout,omitempty"`
+}
+
 type messageEvent struct {
 	Kind        string         `json:"kind"`
 	RoomID      string         `json:"room_id"`
@@ -132,6 +186,13 @@ type messageEvent struct {
 	Mentions    []eventMention `json:"mentions"`
 	ReplyTo     *eventReply    `json:"reply_to"`
 	Media       *eventMedia    `json:"media"`
+	// Shared is non-nil ONLY for a shared post/reel. It is a sibling of
+	// Media rather than part of it because the two answer different
+	// questions: Media is "what bytes came with this message", Shared is
+	// "what thing elsewhere on Instagram is this message pointing at". A
+	// shared reel has both, and they are not the same object — the media is
+	// a THUMBNAIL of the shared thing, not the thing.
+	Shared *eventShared `json:"shared,omitempty"`
 	// ContentType is Instagram's own `content_type` (TEXT, IMAGES, VIDEOS,
 	// RAVEN_IMAGE, ADD_PARTICIPANT_XMAT, …) passed through unchanged. It is
 	// not part of the contract's field list; it is here because the system
@@ -192,7 +253,57 @@ func normalizeMessage(threadFBID string, msg *slidetypes.Message, ownFBID int64)
 	}
 
 	ev.ReplyTo = replyOf(msg)
+	ev.Shared = sharedOf(msg)
+	// A shared post's own text lives on the XMA wrapper, not in `text_body`,
+	// which is empty for these. Without this the message reaches the adapter
+	// with no text AND a thumbnail that is not the point, and reads as a bare
+	// `[image]` — worse than the old drop, because it looks like somebody sent
+	// a picture.
+	if ev.Text == "" {
+		if xma, ok := msg.Content.Content.(*slidetypes.MessageContentXMA); ok && xma != nil {
+			ev.Text = xma.XMATextBody
+		}
+	}
 	return ev
+}
+
+// sharedOf extracts the shared post, or nil for every other content type.
+//
+// Both field families are read — `title_text`/`header_title_text` AND
+// `xmaTitle`/`xmaHeaderTitle` — because the library declares both and no probe
+// has shown which one a live delta populates. Preferring one and ignoring the
+// other would produce an empty author on half the possible shapes, silently.
+func sharedOf(msg *slidetypes.Message) *eventShared {
+	content, ok := msg.Content.Content.(*slidetypes.MessageContentXMA)
+	if !ok || content == nil || content.XMA == nil {
+		return nil
+	}
+	x := content.XMA
+	author := x.HeaderTitleText
+	if author == "" {
+		author = x.XMATitle
+	}
+	title := x.TitleText
+	if title == "" && author != x.XMATitle {
+		title = x.XMATitle
+	}
+	out := &eventShared{
+		Caption:   x.CaptionBodyText,
+		Author:    author,
+		Subtitle:  x.SubtitleText,
+		Title:     title,
+		TargetURL: x.TargetURL,
+		Typename:  x.Typename,
+		Layout:    x.PreviewLayoutType,
+	}
+	if *out == (eventShared{}) {
+		// An XMA that carried nothing readable. Returning an all-empty object
+		// would tell the adapter "a post was shared" on no evidence at all,
+		// which is a claim; nil says "not a shared post as far as I can tell",
+		// which is the truth.
+		return nil
+	}
+	return out
 }
 
 func senderOf(msg *slidetypes.Message) eventSender {
@@ -270,6 +381,15 @@ func extractMedia(msg *slidetypes.Message) *eventMedia {
 	case *slidetypes.MessageContentRavenVideo:
 		return fromRaven(mediaVideo, c.ViewMode, c.Attachment)
 
+	case *slidetypes.MessageContentXMA:
+		// The THUMBNAIL of a shared post, not the post. It is a real, fetchable
+		// image and it is the middle of design/13's three depths: cheap enough
+		// to take at ingest, and enough for Nora to say what a reel looks like
+		// without fetching the video. `kind` is image even for a shared VIDEO,
+		// because these bytes are a still — calling it a video would make her
+		// describe a frame as if she had watched the clip.
+		return fromXMAPreview(c)
+
 	case *slidetypes.MessageContentMultiMedia:
 		// UNMEASURED. `ordered_photo_video_attachments` is a fifth nesting the
 		// probes never saw, so the kind is INFERRED from the presence of a
@@ -283,6 +403,42 @@ func extractMedia(msg *slidetypes.Message) *eventMedia {
 		return fromAttachment(mediaImage, att)
 	}
 	return nil
+}
+
+// fromXMAPreview is the shared post's preview image.
+//
+// `preview_image` and `xmaPreviewImage` are both declared and neither has been
+// observed, so both are tried — see sharedOf for why preferring one silently
+// is the failure mode to avoid. `fallback_url` is taken the same way
+// fromAttachment takes `AttachmentCDNFallbackURL`.
+//
+// Returns nil rather than an empty-url media when there is no preview. The
+// message still survives, because sharedOf gives it a caption and an author;
+// a media object with no url would be a handle naming nothing.
+func fromXMAPreview(c *slidetypes.MessageContentXMA) *eventMedia {
+	if c == nil || c.XMA == nil {
+		return nil
+	}
+	preview := c.XMA.PreviewImage
+	if preview == nil {
+		preview = c.XMA.XMAPreviewImage
+	}
+	if preview == nil {
+		return nil
+	}
+	url := preview.URL
+	if url == "" {
+		url = preview.FallbackURL
+	}
+	if url == "" {
+		return nil
+	}
+	return &eventMedia{
+		Kind:   mediaImage,
+		URL:    &url,
+		Width:  preview.Width,
+		Height: preview.Height,
+	}
 }
 
 func firstAttachment(atts []*slidetypes.Attachment) *slidetypes.Attachment {

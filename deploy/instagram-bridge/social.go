@@ -69,6 +69,8 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+
+	"go.mau.fi/mautrix-meta/pkg/messagix/responses"
 )
 
 // profileBody is the 200 shape.
@@ -212,4 +214,224 @@ func readProfile(ctx context.Context, cli igClient, igid string) (profileBody, e
 		LatestReelMedia: u.LatestReelMedia,
 		Extra:           u.Unrecognized,
 	}, nil
+}
+
+// --- /story -------------------------------------------------------------------
+//
+// Stories exist on NO other path. OpenCLI's `instagram story` verb POSTS one;
+// there is no story read anywhere in its surface, verified against the live
+// tool. `FetchReel` is the only way to read somebody's story, which is why
+// 07-social-boundary-and-scope.md's routing table has `story → instameow
+// (only path anywhere)` and why this route is on this bridge rather than the
+// social one.
+//
+// # A story read is VISIBLE to its author, and that changes the rules
+//
+// Every other read in this system is invisible to the person being read.
+// Fetching a story puts Nora in the author's viewer list, and it cannot be
+// taken back. Two consequences are built into the route rather than left to
+// the caller:
+//
+//  1. it takes exactly ONE igid and never a list, although `FetchReel` accepts
+//     several. A batched read would view several people's stories to answer a
+//     question about one, and each of them would see it;
+//  2. `has_story` on /profile exists so a caller can decide NOT to call this.
+//     Checking first is free and invisible; calling and finding nothing is
+//     neither.
+//
+// # Private plus followed is a NORMAL success, not an exception
+//
+// The operator's rule — public, or followed — is not enforced here. It is
+// enforced by INSTAGRAM, against this session's own credentials: the bridge is
+// authenticated as Nora, so Instagram serves exactly what Nora may see. A
+// private account she follows returns its story in full; one she does not
+// follow returns nothing. There is no gate for the bridge to apply, and adding
+// one would be a second opinion about a decision that has already been made
+// correctly one layer down.
+//
+// What that does mean is that an EMPTY result is ambiguous on its own — no
+// story up, or not permitted to see it — and the route says which by carrying
+// `found`. Collapsing the two would let "I'm not allowed" be reported as
+// "they haven't posted anything", which is a claim about a person made from a
+// permission error.
+
+// storyItem is one frame of a story.
+type storyItem struct {
+	// ID is Instagram's media id (`pk`), carried for provenance. Nothing
+	// fetches by it — the url does that.
+	ID string `json:"id"`
+	// Kind is derived from `media_type` (1 image, 2 video), and defaults to
+	// image, because `image_versions2` is populated for BOTH: a video story
+	// carries its own cover frame. A frame described as a video would have
+	// Nora talk about a clip she only saw one still of.
+	Kind string `json:"kind"`
+	// URL is the best candidate: the video when there is one and the caller
+	// asked for depth, otherwise the largest still. Directly fetchable — the
+	// CDN url carries its own signature and needs no cookies, which is what
+	// lets `media_fetch` take it with no special case.
+	URL string `json:"url"`
+	// ThumbnailURL is always the still, even for a video. A caller that only
+	// wants to know what a story LOOKS like fetches this and never the clip.
+	ThumbnailURL string `json:"thumbnail_url,omitempty"`
+	TakenAt      int    `json:"taken_at,omitempty"`
+	// ExpiringAt is the natural retention bound and the reason 06's "social
+	// reads are not kept" rule has a number behind it: a story is gone in 24
+	// hours, so anything Nora kept would outlive its source.
+	ExpiringAt int `json:"expiring_at,omitempty"`
+	// Caption is the author's own words on the frame, when there are any.
+	Caption string `json:"caption,omitempty"`
+	// AltText is `accessibility_caption` — Instagram's own description of the
+	// image. Free, already on the delta, and often enough to answer a question
+	// without any fetch or vision call at all.
+	AltText string `json:"alt_text,omitempty"`
+}
+
+// storyBody is the 200 shape.
+type storyBody struct {
+	OK   bool   `json:"ok"`
+	IGID string `json:"igid"`
+	// Found distinguishes "this account has no story up" from "this account
+	// has one and Nora may not see it". Both come back as zero items, and
+	// reporting the second as the first would state something about a person
+	// on the strength of a permission error.
+	Found bool `json:"found"`
+	// Username is off the reel's own user row, not echoed from the request.
+	Username string `json:"username,omitempty"`
+	// ExpiringAt is the reel's, which bounds the whole set.
+	ExpiringAt int `json:"expiring_at,omitempty"`
+	// Seen is Instagram's own cursor: the timestamp of the last frame this
+	// account viewed. It is NOT Nora's unread cursor — 10 §"Unread must be
+	// Nora's own cursor" is explicit that hers has to be hers — but it is the
+	// evidence that a view was recorded, which an operator auditing "what did
+	// she look at" needs.
+	Seen  int         `json:"seen,omitempty"`
+	Items []storyItem `json:"items"`
+}
+
+var errNoReel = errors.New("story read returned no reel")
+
+// handleStory answers GET /story?igid=<igid>.
+func (b *bridge) handleStory(w http.ResponseWriter, r *http.Request) {
+	igid := r.URL.Query().Get("igid")
+	if igid == "" {
+		badRequest(w, "igid is required")
+		return
+	}
+	cli, ok := b.ready(w)
+	if !ok {
+		return
+	}
+	body, err := readStory(r.Context(), cli, igid)
+	if err != nil {
+		status := statusForError(err)
+		if errors.Is(err, errBadIGID) {
+			status = http.StatusBadRequest
+		}
+		logf("story failed (igid=%s status=%d): %v", igid, status, err)
+		writeJSON(w, status, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, body)
+}
+
+// readStory reads one account's current story.
+func readStory(ctx context.Context, cli igClient, igid string) (storyBody, error) {
+	n, err := strconv.ParseInt(igid, 10, 64)
+	if err != nil || n <= 0 {
+		return storyBody{}, fmt.Errorf("%w: %q", errBadIGID, igid)
+	}
+	canonical := strconv.FormatInt(n, 10)
+
+	// ONE id, never a list. See the file header: each extra id is another
+	// person who sees that Nora watched.
+	resp, err := cli.FetchReel(ctx, []string{canonical}, "")
+	if err != nil {
+		return storyBody{}, err
+	}
+	if resp == nil {
+		return storyBody{}, fmt.Errorf("%w: %s", errNoReel, canonical)
+	}
+
+	reel, found := resp.Reels[canonical]
+	if !found {
+		// Also try the flat form: the response declares BOTH `reels` (a map)
+		// and `reels_media` (a list), and which one arrives has not been
+		// measured for this call. Reading only one would report "no story" for
+		// a shape that carried one.
+		for _, candidate := range resp.ReelsMedia {
+			if candidate.ID == canonical || candidate.StrongID == canonical {
+				reel, found = candidate, true
+				break
+			}
+		}
+	}
+
+	out := storyBody{OK: true, IGID: canonical, Found: found, Items: []storyItem{}}
+	if !found {
+		// Not an error. Either they have no story up, or Nora may not see it,
+		// and `found: false` says exactly that much and no more.
+		return out, nil
+	}
+	out.ExpiringAt = reel.ExpiringAt
+	out.Seen = reel.Seen
+	if reel.User != nil {
+		out.Username = reel.User.Username
+	}
+	for _, item := range reel.Items {
+		if item == nil {
+			continue
+		}
+		frame := storyFrame(item)
+		if frame.URL == "" {
+			// A frame with no fetchable url is a handle naming nothing. Skipped
+			// rather than refused: the OTHER frames are still readable, and a
+			// story short by one frame is not the safety problem a roster short
+			// by one member is — nothing gates a disclosure on it.
+			logf("story (igid=%s) frame %s had no url; skipped", canonical, item.ID)
+			continue
+		}
+		out.Items = append(out.Items, frame)
+	}
+	return out, nil
+}
+
+// storyFrame reduces one reel item to what a caller can act on.
+func storyFrame(item *responses.ReelItem) storyItem {
+	out := storyItem{
+		ID:         item.Pk,
+		Kind:       mediaImage,
+		TakenAt:    item.TakenAt,
+		ExpiringAt: item.ExpiringAt,
+		Caption:    item.Caption.Text,
+		AltText:    item.AccessibilityCaption,
+	}
+	if out.ID == "" {
+		out.ID = item.ID
+	}
+	// The largest still. `image_versions2.candidates` is populated for a VIDEO
+	// story too — it is the cover frame — which is why the thumbnail is set
+	// before the kind is decided.
+	best := 0
+	for _, c := range item.ImageVersions2.Candidates {
+		if c.URL != "" && c.Width >= best {
+			best, out.ThumbnailURL = c.Width, c.URL
+		}
+	}
+	out.URL = out.ThumbnailURL
+
+	// media_type 2 is a video. Checked against the presence of an actual video
+	// url rather than the integer alone, so a delta that says "video" and
+	// carries no clip degrades to its cover frame instead of promising bytes
+	// that are not there.
+	bestVideo := 0
+	videoURL := ""
+	for _, v := range item.VideoVersions {
+		if v.URL != "" && v.Width >= bestVideo {
+			bestVideo, videoURL = v.Width, v.URL
+		}
+	}
+	if videoURL != "" {
+		out.Kind, out.URL = mediaVideo, videoURL
+	}
+	return out
 }

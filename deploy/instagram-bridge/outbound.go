@@ -63,6 +63,7 @@ import (
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
 	"go.mau.fi/mautrix-meta/pkg/messagix/methods"
+	"go.mau.fi/mautrix-meta/pkg/messagix/responses"
 	"go.mau.fi/mautrix-meta/pkg/messagix/types"
 )
 
@@ -85,6 +86,10 @@ type igClient interface {
 	// one fake, not two, so a test cannot have the roster and the profile
 	// disagree about who exists.
 	GetProfile(ctx context.Context, igid string) (*slidetypes.ProfilePageResponse, error)
+	// FetchReel is the ONLY path to a story anywhere — OpenCLI's `story`
+	// verb posts one rather than reading one, verified against the live
+	// tool. See social.go's /story section.
+	FetchReel(ctx context.Context, reelIDs []string, mediaID string) (*responses.ReelInfoResponse, error)
 }
 
 // uploader is SendMercuryUploadRequest, extracted as a function value for the

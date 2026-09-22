@@ -578,3 +578,175 @@ func TestFromMeIsAnsweredOrExplicitlyUnknownOnEveryEvent(t *testing.T) {
 		t.Fatalf("edit serialized from_me as something other than null: %s", blob)
 	}
 }
+
+// --- shared posts and reels (XMA) ------------------------------------------
+//
+// The failure this fixes is the quiet kind: `MessageContentXMA` had no case in
+// extractMedia's switch, so a shared reel produced no text and no media, and
+// the Python parser dropped the turn for having neither. Nora did not fail to
+// READ the reel — she never learned one had been posted. Nothing logged it and
+// nothing counted it.
+//
+// XMA is unmeasured, so these tests assert the two things that hold whatever
+// the live shape turns out to be: the message must SURVIVE, and the bridge
+// must not invent a classification it cannot observe.
+
+func xmaMessage(x *slidetypes.XMAContent, textBody string) *slidetypes.Message {
+	return &slidetypes.Message{
+		MessageID:   "mid.$xma",
+		ThreadFBID:  threadShort,
+		SenderFBID:  110966695387753,
+		ContentType: "XMA",
+		Content: slidetypes.MessageContentWrapper{
+			Content: &slidetypes.MessageContentXMA{XMA: x, XMATextBody: textBody},
+		},
+	}
+}
+
+// The free depth: caption and author, with no fetch and no model call. This is
+// what makes a spammy room affordable to follow at all — every shared reel
+// costs exactly this unless somebody asks about one.
+func TestSharedReelCarriesCaptionAndAuthorForFree(t *testing.T) {
+	ev := normalizeMessage(threadShort, xmaMessage(&slidetypes.XMAContent{
+		HeaderTitleText: "someaccount",
+		CaptionBodyText: "the caption as its author wrote it",
+		SubtitleText:    "original audio",
+		TargetURL:       "https://www.instagram.com/reel/ABC123/",
+		Typename:        "XMAMessageExtensibleAttachment",
+	}, "look at this"), 0)
+
+	if ev == nil {
+		t.Fatal("a shared reel normalized to nil — this is the invisible drop")
+	}
+	if ev.Shared == nil {
+		t.Fatal("shared was nil for an XMA message")
+	}
+	if ev.Shared.Caption != "the caption as its author wrote it" {
+		t.Errorf("caption = %q", ev.Shared.Caption)
+	}
+	if ev.Shared.Author != "someaccount" {
+		t.Errorf("author = %q; this is who POSTED the reel, not who shared it",
+			ev.Shared.Author)
+	}
+	if ev.Shared.TargetURL != "https://www.instagram.com/reel/ABC123/" {
+		t.Errorf("target_url = %q", ev.Shared.TargetURL)
+	}
+	// The sharer and the author are different people and must stay different
+	// fields. Attributing a stranger's reel to a member of the room is the one
+	// wrong answer here that reads as a right one.
+	if ev.Sender.FBID != "110966695387753" {
+		t.Errorf("sender = %q, want the person who shared it", ev.Sender.FBID)
+	}
+}
+
+// The bridge must classify NOTHING. `__typename` and `preview_layout_type`
+// ride verbatim: their value sets have never been observed, and a guessed
+// `kind: "reel"` would read as measured to every consumer downstream.
+func TestSharedPostIsNotClassifiedByTheBridge(t *testing.T) {
+	ev := normalizeMessage(threadShort, xmaMessage(&slidetypes.XMAContent{
+		XMATitle:          "someaccount",
+		Typename:          "SomeTypenameNobodyHasSeen",
+		PreviewLayoutType: "SOME_LAYOUT",
+	}, ""), 0)
+
+	if ev == nil || ev.Shared == nil {
+		t.Fatal("a shared post normalized to nothing")
+	}
+	if ev.Shared.Typename != "SomeTypenameNobodyHasSeen" {
+		t.Errorf("typename = %q, want it passed through uninterpreted",
+			ev.Shared.Typename)
+	}
+	if ev.Shared.Layout != "SOME_LAYOUT" {
+		t.Errorf("layout = %q, want it passed through uninterpreted", ev.Shared.Layout)
+	}
+	// XMATitle is the only name present, so it must reach `author` — reading
+	// only header_title_text would leave the author empty on this shape, and
+	// silently.
+	if ev.Shared.Author != "someaccount" {
+		t.Errorf("author = %q; both title field families must be read, because "+
+			"no probe has shown which one a live delta populates", ev.Shared.Author)
+	}
+}
+
+// The thumbnail is the middle depth: an image, taken at ingest, enough to say
+// what a reel looks like without fetching the video. It is an IMAGE even for a
+// shared video, because a still is what these bytes are.
+func TestSharedReelThumbnailIsAnImageNotAVideo(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		xma  *slidetypes.XMAContent
+	}{
+		{"preview_image", &slidetypes.XMAContent{
+			CaptionBodyText: "c",
+			PreviewImage:    &slidetypes.XMAPreviewImage{URL: "https://cdn/thumb.jpg", Width: 640, Height: 640},
+		}},
+		{"xmaPreviewImage", &slidetypes.XMAContent{
+			CaptionBodyText: "c",
+			XMAPreviewImage: &slidetypes.XMAPreviewImage{URL: "https://cdn/thumb.jpg", Width: 640, Height: 640},
+		}},
+		{"fallback_url only", &slidetypes.XMAContent{
+			CaptionBodyText: "c",
+			PreviewImage:    &slidetypes.XMAPreviewImage{FallbackURL: "https://cdn/thumb.jpg"},
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ev := normalizeMessage(threadShort, xmaMessage(tc.xma, ""), 0)
+			if ev == nil || ev.Media == nil {
+				t.Fatal("no media for a shared post carrying a preview")
+			}
+			if ev.Media.Kind != mediaImage {
+				t.Errorf("kind = %q, want image — these bytes are a still, and "+
+					"calling them a video would have her describe one frame as "+
+					"if she had watched the clip", ev.Media.Kind)
+			}
+			if ev.Media.URL == nil || *ev.Media.URL != "https://cdn/thumb.jpg" {
+				t.Errorf("url = %v", ev.Media.URL)
+			}
+		})
+	}
+}
+
+// A shared post with no preview still survives on its caption alone. Returning
+// an empty-url media would be a handle naming nothing; dropping the message
+// would be the original bug.
+func TestSharedPostSurvivesWithNoThumbnail(t *testing.T) {
+	ev := normalizeMessage(threadShort, xmaMessage(&slidetypes.XMAContent{
+		CaptionBodyText: "no preview on this one",
+	}, ""), 0)
+
+	if ev == nil {
+		t.Fatal("dropped")
+	}
+	if ev.Media != nil {
+		t.Errorf("media = %+v, want nil rather than a url-less handle", ev.Media)
+	}
+	if ev.Shared == nil || ev.Shared.Caption != "no preview on this one" {
+		t.Errorf("shared = %+v", ev.Shared)
+	}
+}
+
+// An XMA carrying nothing readable must answer nil, not an empty object. An
+// all-empty `shared` would tell the adapter "a post was shared here" on no
+// evidence, which is a claim; nil is the truth.
+func TestEmptyXMAIsNotReportedAsASharedPost(t *testing.T) {
+	ev := normalizeMessage(threadShort, xmaMessage(&slidetypes.XMAContent{}, ""), 0)
+	if ev != nil && ev.Shared != nil {
+		t.Errorf("shared = %+v, want nil for an XMA with nothing in it", ev.Shared)
+	}
+}
+
+// The shared post's own text lives on the XMA wrapper, not in `text_body`.
+// Without this the message arrives with a thumbnail and no words and reads as
+// somebody having sent a picture.
+func TestSharedPostTextComesOffTheXMAWrapper(t *testing.T) {
+	ev := normalizeMessage(threadShort, xmaMessage(&slidetypes.XMAContent{
+		CaptionBodyText: "c",
+	}, "what the sharer typed"), 0)
+
+	if ev == nil {
+		t.Fatal("dropped")
+	}
+	if ev.Text != "what the sharer typed" {
+		t.Errorf("text = %q, want the XMA text body", ev.Text)
+	}
+}
