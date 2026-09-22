@@ -131,7 +131,15 @@ PINNED: dict[str, tuple[int, str]] = {
     # once used (she told the same sleep joke on two adjacent turns). The
     # offer-shaped ending («講聲我幫你換») was widened from the banned PHRASE to
     # the banned MOVE: 8 of 22 replies still ended by handing it back.
-    "voice": (20, "ae8b7965203a8fb11d72bdafacb696fa6ddfbf130f1593102b99b0fa2ee7e93b"),
+    # v21 (2026-09-22): the audit found the naming rule had become a CLOSED SET of
+    # three occasions that omitted the one conduct.md mandates (tagging the loser of
+    # a verdict), so the two files disagreed and the concrete English one would have
+    # won. It is now a default plus a test, 「個名要做到嘢先至叫」, with the occasions
+    # marked 譬如 so they read as instances. Tease reuse is defined at target plus
+    # premise rather than at wording, because rephrasing the same joke was the
+    # measured failure. The dash rule lost its 「通常」, which was an exception the
+    # model could take.
+    "voice": (21, "b6fc1844cd7aa2a10f573604ee1d917d56c47cc77c07a19dbd1c02731b1f3075"),
     # conduct v25 / silence v3 (2026-09-10, `14a55ab8`): that commit edited both
     # bodies and bumped both versions in their front matter, and never came back
     # here. So the contract held in the direction that matters -- the version a
@@ -157,7 +165,24 @@ PINNED: dict[str, tuple[int, str]] = {
     # honest reading is that the language change is roughly token-neutral and
     # the saving is the compression. Four tests re-pointed to the English
     # prose, each noted at its own docstring.
-    "conduct": (27, "c6a9197ba0feb75414352ee1c0b27a6a56ef76531de1f0640f56ccca6fe884ec"),
+    #
+    # v28 (2026-09-22): the Kimi 0.40.1 audit of the compression. It was asked to
+    # FALSIFY the claim "I deleted restatement, not rules", and the claim failed:
+    # eight behavioural rules had been deleted rather than restated. Restored, and
+    # each is a rule a later compression must not mistake for duplication again:
+    # the retrieve-before-you-accuse procedure in the verdict section (the highest
+    # -stakes place she attributes words to a person, and the banter section's
+    # anti-fabrication rule does not reach it); "hold it as undecided rather than
+    # acting as though it closed"; "pick what fits the moment rather than what
+    # performs", which is the clause that governed the over-teasing in the first
+    # place; "wrong practical advice costs more than a flat joke", the tie-breaker
+    # that says which way to err; what you could not check staying unchecked on
+    # LATER turns; "do not perform a familiarity you do not have", of which the
+    # invented-preference rule is only the narrowest instance; and not re-arguing
+    # the defence after conceding. One mistranslation was corrected: 「唔講點解 fit」
+    # is an ARTICULATION duty and the English "no reason it fits" had softened it
+    # to an existence condition, so the rule now says SAY why.
+    "conduct": (28, "265cdbe06d92adf2f5e88de0a70b6cbdb7fa5f24ddba92e3fe761970ecb8bcdb"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —
@@ -187,7 +212,14 @@ PINNED: dict[str, tuple[int, str]] = {
     # v10: compression, 5,750 -> 5,279 chars, plus 15 dashes out. The picture
     # rules were three sections repeating each other and are now one; nothing
     # that may never happen was touched.
-    "constraints": (10, "c3099108d37f4bf5b0e82690d2fd07f98b0b1ca28f588e05cd3ccf780878e277"),
+    # v11 (2026-09-22), the same audit: the compression had dropped the literal
+    # placeholder syntax, which is a RECOGNISER and not a repertoire, so DEC-96's
+    # closed-set rule does not apply to it and she needs it to spot the pattern in a
+    # transcript. It had also dropped the targeted re-read affordance, and it had
+    # moved the "quick and usually free" claim so that it read onto the UNREAD
+    # lookup, which is the operation the file prices separately as always a real
+    # look and a real wait. "Quiet is not a question" is back.
+    "constraints": (11, "b7269c4e154a7e06039340f9a7d3a017a121265a8e256cf3977ecedc8db9a49f"),
 }
 
 
