@@ -33,7 +33,10 @@ Today's inputs, all read live on the clean base:
 
 The invariant is `budget × derived < loop_timeout_seconds`, and the docstring's
 point is that it is *"one nobody can violate if it is never written down twice"* —
-which is why `composition.py:1751` **resolves** the budget through
+which is why `composition.py:1771` **resolves** the budget through
+(**anchor corrected 2026-09-23: the first version cited :1751, which is the surrounding
+comment; the resolving call `budget_overrides=cfg.llm.budgets).budgets()["media_fetch"]`
+is at :1770-1771**)
 `ToolRegistry.budgets()` rather than reading the constant, so an operator moving
 `[llm.budgets]` cannot silently break the bound.
 
@@ -107,10 +110,32 @@ a config value, and it is now item 1 of §7.
 
 ### What is actually measured
 
-All rows are 90 s windows at the **exact production shape** (`preprocess.py:186-200`:
-`scale='min(720,iw)':-2`, `fps=2`, `libx264 -preset veryfast -crf 26`, `-t 90`) with the
-**audio track kept** (the proposed DEC-195 shape). MiMo v2.6 Flash, OpenCode Go direct,
+All rows are 90 s windows at the **production filter chain** (`preprocess.py:185-199`:
+`scale='min(720,iw)':-2`, `libx264 -preset veryfast -crf 26`, audio kept) **except on
+one parameter, corrected below**. MiMo v2.6 Flash, OpenCode Go direct,
 `max_tokens=4096`. Every result below returned HTTP 200 and non-empty content.
+
+> **⚠️ CORRECTED 2026-09-23 (independent audit): the bench chain used `fps=2`; production uses
+> `VIDEO_FPS_CAP = 24`.** `preprocess.py:52` sets 24 and applies it at `:191`
+> (`f"fps={VIDEO_FPS_CAP}"`); the *bench* scripts hardcoded `fps=2`
+> (`bench_90s_multi.py:62`, `bench_90s_prod.py:45`). So the table below was measured at
+> **1/12th of production frame rate**, and the earlier phrase "exact production shape"
+> was false on the parameter that most changes payload size and token count.
+>
+> **Re-measured at the real fps** (`bench_90s_fps.py`, same 100 s YouTube source, same
+> chain, fps the only variable, n=3 each):
+>
+> | fps | MB | latency (s) | ctok max |
+> |---|---|---|---|
+> | 2 (what the table below used) | 4.30 | 37.1 · 49.2 · 55.5 | 1,835 |
+> | **24 (production)** | 4.94 | **36.3 · 41.1 · 42.7** | 2,245 |
+>
+> **The correction does not move the conclusion.** fps=24 produced *slightly more*
+> output tokens (2,245 vs 1,835 max) and the same latency band, so the pooled
+> distribution — and the 120 s timeout derived from it — stands. What changes is the
+> claim's strength: the numbers below are a **lower-bound-ish proxy** measured at the
+> wrong fps, not "exact production shape". Any future re-measurement must use `fps=24`.
+
 
 | source | resolution | latency (s) |
 |---|---|---|
@@ -123,6 +148,27 @@ All rows are 90 s windows at the **exact production shape** (`preprocess.py:186-
 **Pooled: n=16, min 28.5 s, median 41.6 s, mean 46.8 s, max 120.8 s.**
 **6 of 16 runs exceed the 48 s derived budget (38%).**
 **10 of 16 exceed today's 36 s derived budget (63%).**
+
+> **⚠️ AMENDED 2026-09-23 (independent audit) — two selection problems, both now stated.**
+>
+> **(a) "Four sources" overstates the diversity.** `bbb_720p` (multi), the prod arm and
+> the finish arm all read the **same file** (`corpus_yt/prod90_audio.mp4`), so **10 of the
+> 16 pooled observations are one clip**. Distinct footage is **three**: Big Buck Bunny,
+> the montage, and the looped 57 s clip. The caveat below already said "plus a re-cut";
+> the headline "n=16 across four sources" was still more independent-sounding than the
+> pool is.
+>
+> **(b) Three valid runs were silently excluded.** `out_90s_final.json` holds three more
+> HTTP-200, `ok:true`, audible-90 s runs of the looped source (**62.0 / 62.6 / 68.7 s**)
+> that do not appear in the pool and were not mentioned as excluded. Including them:
+> **n=19, min 28.5 s, median 42.2 s, max 120.8 s — 9/19 exceed 48 s (47%), 13/19 exceed
+> 36 s (68%)**. That is a **stronger** tail than published. The selection was not wrong
+> (the excluded runs are the same source as an included arm) but it was silent, and
+> silence in a sample selection is the thing to fix. **The n=19 figures are the more
+> conservative input for any future decision that consumes this distribution.**
+>
+> **Neither problem changes the settled settings**, which were chosen to clear the tail
+> rather than a median — but a reader must not treat n=16 as "16 independent samples".
 
 ### The finding that matters
 

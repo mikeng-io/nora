@@ -25,6 +25,21 @@ of every video Nora has ever described was silent. She has only ever been able t
 `state/signal-cli/attachments/`, **9 carry an `aac` audio stream**; only 3 have
 none. This is the common case, not an edge case.
 
+> **⚠️ CORRECTED 2026-09-23 (independent audit) — the counts above do not add up and
+> do not reproduce.** 9 + 3 = 12, not 11. Worse, a live probe of that directory today
+> finds **164 video-capable files, 8 with an audio stream and 156 without** — the
+> opposite ratio from the sentence above. The original count is not reproducible and
+> its arithmetic is impossible, so **treat "audio is the common case" as UNVERIFIED
+> for the stored-clip population.** What IS measured and does not depend on this
+> count: the 9-of-11 statement came from an early survey whose scope was not
+> recorded, and the ingest population has plainly grown since (164 files now).
+>
+> **The design does not rest on this number.** The argument for keeping audio is that
+> (a) the flag is unconditional by construction (`-an` with no branch), (b) the
+> measured token delta on a real audible clip is small (§2), and (c) the operator
+> directed it. The clip-ratio sentence was supporting colour and is now marked as
+> unreliable rather than quietly dropped.
+
 ## 2. What is being thrown away — measured
 
 Same 35-second clip, same 720p/24fps/CRF26 geometry, one variable changed:
@@ -132,10 +147,28 @@ So the gap is precise and pre-existing:
 
 | spoken form | screened? |
 |---|---|
-| `+85290000103` (E.164, with `+`) | ✅ matched |
+| `+85290000103` — E.164 with `+`, **digits unbroken** | ✅ matched |
+| `+852 9000 0103` — E.164 **with spaces** | ❌ **NOT matched** (`\+\d{8,15}` cannot span a space) |
+| `+852****1730` — the operator's masked form | ❌ **NOT matched** |
 | `9000 0103` — a bare **local** number | ❌ **deliberately not matched** |
 | an address spoken in Cantonese | ❌ not in scope |
 | account number, or a number said as words | ❌ not in scope |
+
+> **⚠️ CORRECTED 2026-09-23 (independent audit).** The first version of this table
+> said `+852****1730` was **matched**. **It is not, and neither is the spaced form**
+> — verified by executing the real function (`nora.agent.egress.scan_identifiers`,
+> repo venv): the 12-char masked string and the 14-char spaced string both return
+> `None`, while the unspaced 12-char form returns `phone`. `\+\d{8,15}` is a
+> contiguous digit run; **any separator kills the match.**
+>
+> **The finding is therefore worse than the bundle originally claimed, not better:**
+> Miles's own business number written in its normal human format
+> (`+852 ` + `6763` + ` ` + `1730`) is **not screened at all**, and the masked form the
+> bundle cited as its "matched" control also is not. The gap this section describes
+> is wider than stated — the only form the screen catches is the one nobody writes.
+> (Method note: printing phone-shaped literals in this repo's stdout gets them
+> redacted by the log layer, which made one run look self-contradictory; the
+> corrected test printed lengths and verdicts only.)
 
 **Enabling transcription therefore widens a surface DEC-114 already assessed and
 deliberately closed.** That is not a wiring question that a test can settle; it is a

@@ -68,8 +68,12 @@ on the 57 s clip). But 3 is not 10, and the host is a 27 GB box already running
 appears to bound.** A semaphore constructed *inside* `read_video_windows` is created
 fresh per call, so it bounds windows within one read and nothing else:
 
-- **Ingest already runs up to 4 concurrent comprehension jobs** — `nora/config.py:964`
-  (`DEFAULT_MAX_CONCURRENT`) and `nora/ingest/comprehension.py:156`
+- **Ingest already runs up to 4 concurrent comprehension jobs** — the constant is
+  `DEFAULT_MAX_CONCURRENT = 4` at `nora/ingest/comprehension.py:97`, defaulted into the
+  constructor at `:141` and applied as the semaphore at `:156`; the config field
+  `comprehension_max_concurrent = 4` is `nora/config.py:964` (**anchor corrected
+  2026-09-23: the first version put the symbol at config.py:964; line 964 is the config
+  FIELD, so the symbol/line pairing was wrong, same value**)
   (`asyncio.Semaphore(max(1, max_concurrent))`).
 - Four jobs × one clip each × 4 window slots = **16 concurrent window requests**,
   plus any deliberate `media_fetch` reads on top.
