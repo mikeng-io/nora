@@ -165,13 +165,15 @@ def test_budgets_match_todays_table():
         # scan of a tuple already in hand — so round trips are the only currency.
         "who_said": 4,
         "now": 4, "load_transcript": 4,
-        # 6 — the cap on how many messages one tag may send. 1→3 activated
-        # multi-message (DEC-42); 3→6 (DEC-95) makes the BURST first-class —
-        # a reaction, the hit, the twist as separate sends — which 3 could not
-        # hold alongside a word to a second person. Still the spam cap: `turns`
-        # and the token ceiling are far away, so this number is the only thing
-        # bounding one inbound message's outbound volume.
-            "send_reply": 6, "search_gifs": 1, "send_gif": 1,
+        # 3 — the cap on how many messages one tag may send. 1→3 activated
+        # multi-message (DEC-42); 3→6 (DEC-95) made the BURST first-class, then
+        # 6→3 (2026-09-22, reverted) after a live incident spent all six on
+        # four rewordings of one point — the burst was a ceiling with no
+        # stated purpose and nothing had measured 6 was needed. 3 still holds
+        # a word to a second person alongside the first reply. Still the spam
+        # cap: `turns` and the token ceiling are far away, so this number is
+        # the only thing bounding one inbound message's outbound volume.
+            "send_reply": 3, "search_gifs": 1, "send_gif": 1,
             # DEC-105. Two, not six: relaying is a deliberate act somebody
             # asked for, not a register she can fall into.
             "send_to": 2,

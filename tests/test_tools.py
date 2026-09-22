@@ -609,6 +609,34 @@ async def test_the_tag_form_the_model_is_told_to_write_is_the_one_the_composer_r
         assert (await absent.compose(render_markdown(line))).mentions == ()
 
 
+async def test_send_reply_schema_says_a_second_call_must_earn_its_place(wiring):
+    """The burst-restatement defect, measured live 2026-09-22 in the Signal
+    "Friends" room: one inbound message produced ONE `tag start` and FOUR
+    `send_reply` calls, all four restating the same point
+    ("I have no IG, and if I made one I'd still be alone") in different
+    wordings — not DEC-95's reaction/hit/twist burst.
+
+    The budget was never the defect: `ReplyGuard._before_model` already
+    relaxes `tool_choice` to `auto` after the first send, so the model could
+    already have stopped. Nothing told it what a SECOND call is FOR, so it
+    spent the budget it had on rephrasing. This does not measure whether the
+    new wording changes model behaviour on the live route — that needs the
+    eval suite, not a unit test — it pins that the schema the model actually
+    reads carries the judgement at all, so a future edit cannot silently
+    drop it back to the shape that shipped this incident.
+    """
+    description = wiring["tools"]["send_reply"].tool_spec["description"]
+    lowered = description.lower()
+    assert "earn its place" in lowered, (
+        "send_reply's schema must tell the model a further call has to earn "
+        "its place, not just fill the budget"
+    )
+    assert "restating the same point" in lowered, (
+        "send_reply's schema must say plainly that restating the same point "
+        "in different words is not a second message"
+    )
+
+
 async def test_send_reply_is_the_only_tool_that_can_send(wiring):
     await _call(wiring["tools"]["load_transcript"], limit=40)
     await _call(wiring["tools"]["group_members"])
