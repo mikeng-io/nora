@@ -1,0 +1,13 @@
+{
+  "type": "fix",
+  "summary": "Instagram profile reads (privacy, follower/following counts, bio, follow-back) now come from the same authenticated session as messaging, in one call, instead of being split off to a separately-throttled backend.",
+  "details": [
+    "The profile route's second call was keyed on the account's username. The GraphQL document it issues does not take one — it declares a single numeric addressing field — and a username sent through it failed every time with a query-level error, not a transport one.",
+    "That failure was invisible from outside the call: a failed GraphQL document still answers HTTP 200, with an errors array in place of the profile. The prior code checked only the transport status, so every one of those failures had been recording itself as a successful read of an empty profile.",
+    "With both fixed, one call now returns everything the operator's public-or-followed gate needs plus reach signals a future social routine can use without a separate fetch: privacy, both directions of follow state, follower/following/mutual counts, post and reel counts, account type, biography and profile picture.",
+    "The account's own posts as a LIST is unchanged and still has no path from this session; only the count of them does."
+  ],
+  "limitations": [
+    "Listing a user's recent posts still has no working call anywhere in this session's surface, only a count of how many exist."
+  ]
+}
