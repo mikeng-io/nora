@@ -40,12 +40,12 @@ MEMBERS = [
 
 @pytest.fixture
 async def bridge(aiohttp_server):
-    """A stand-in for the bridge's `GET /roster` that distinguishes its own
+    """A stand-in for the bridge's `GET /threads/{thread_fbid}/members` that distinguishes its own
     failure modes instead of answering everything identically."""
     state: dict = {"status": 200, "body": None, "text": None, "rooms": []}
 
     async def handler(request: web.Request) -> web.Response:
-        state["rooms"].append(request.query.get("room_id"))
+        state["rooms"].append(request.match_info.get("thread_fbid"))
         if state["text"] is not None:
             return web.Response(text=state["text"], content_type="application/json")
         if state["status"] != 200:
@@ -57,7 +57,7 @@ async def bridge(aiohttp_server):
         return web.json_response(body)
 
     app = web.Application()
-    app.router.add_get("/roster", handler)
+    app.router.add_get("/threads/{thread_fbid}/members", handler)
     server = await aiohttp_server(app)
     server.state = state
     return server

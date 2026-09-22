@@ -1,6 +1,6 @@
 package main
 
-// GET /roster, tested for the three things that can go wrong silently:
+// GET /threads/{thread_fbid}/members, tested for the three things that can go wrong silently:
 //
 //  1. the WRONG ID SPACE goes out, and Instagram answers 200 with nothing —
 //     the same failure shape that made the reaction bug invisible for a month;
@@ -27,7 +27,7 @@ import (
 
 func getRoster(t *testing.T, b *bridge, query string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/roster"+query, nil)
+	req := httptest.NewRequest(http.MethodGet, "/threads/"+query+"/members", nil)
 	rec := httptest.NewRecorder()
 	b.routes().ServeHTTP(rec, req)
 	return rec
@@ -51,10 +51,10 @@ func decodeRoster(t *testing.T, rec *httptest.ResponseRecorder) rosterBody {
 func TestRosterCarriesBothIDSpacesPerMember(t *testing.T) {
 	b := newTestBridge(t, &fakeIG{})
 
-	rec := getRoster(t, b, "?room_id="+threadShort)
+	rec := getRoster(t, b, threadShort)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("/roster answered %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("members read answered %d: %s", rec.Code, rec.Body.String())
 	}
 	body := decodeRoster(t, rec)
 	want := []rosterMember{
@@ -85,16 +85,16 @@ func TestRosterReadsTheShortThreadID(t *testing.T) {
 	f := &fakeIG{}
 	b := newTestBridge(t, f)
 
-	if rec := getRoster(t, b, "?room_id="+threadShort); rec.Code != http.StatusOK {
-		t.Fatalf("/roster answered %d", rec.Code)
+	if rec := getRoster(t, b, threadShort); rec.Code != http.StatusOK {
+		t.Fatalf("members read answered %d", rec.Code)
 	}
 	if len(f.getThreadIDs) != 1 || f.getThreadIDs[0] != threadShort {
 		t.Fatalf("GetThread was addressed with %v, want [%s]", f.getThreadIDs, threadShort)
 	}
 	// And the long id never crosses the HTTP boundary in either direction: a
 	// caller that sends it is refused, not served.
-	if rec := getRoster(t, b, "?room_id="+threadLong); rec.Code == http.StatusOK {
-		t.Fatalf("/roster served the LONG thread id: %s", rec.Body.String())
+	if rec := getRoster(t, b, threadLong); rec.Code == http.StatusOK {
+		t.Fatalf("members read served the LONG thread id: %s", rec.Body.String())
 	}
 }
 
@@ -105,10 +105,10 @@ func TestRosterCanonicalizesTheRoomID(t *testing.T) {
 	f := &fakeIG{}
 	b := newTestBridge(t, f)
 
-	rec := getRoster(t, b, "?room_id=0"+threadShort)
+	rec := getRoster(t, b, "0"+threadShort)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("/roster answered %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("members read answered %d: %s", rec.Code, rec.Body.String())
 	}
 	if body := decodeRoster(t, rec); body.RoomID != threadShort {
 		t.Errorf("room_id echoed as %q, want the canonical %q", body.RoomID, threadShort)
@@ -125,7 +125,7 @@ func TestRosterCanonicalizesTheRoomID(t *testing.T) {
 func TestRosterDoesNotInventSelfAsAMember(t *testing.T) {
 	b := newTestBridge(t, &fakeIG{})
 
-	body := decodeRoster(t, getRoster(t, b, "?room_id="+threadShort))
+	body := decodeRoster(t, getRoster(t, b, threadShort))
 
 	for _, member := range body.Members {
 		if member.FBID == b.selfSnapshot().FBID {
@@ -148,7 +148,7 @@ func TestRosterDropsSelfIfTheWireEverIncludesIt(t *testing.T) {
 	)}
 	b := newTestBridge(t, f)
 
-	body := decodeRoster(t, getRoster(t, b, "?room_id="+threadShort))
+	body := decodeRoster(t, getRoster(t, b, threadShort))
 
 	if len(body.Members) != len(measuredUsers) {
 		t.Fatalf("roster returned %d members, want %d: %+v",
@@ -170,7 +170,7 @@ func TestRosterRefusesAnEmptyMemberList(t *testing.T) {
 	f := &fakeIG{threadUsersSet: true, threadUsers: nil}
 	b := newTestBridge(t, f)
 
-	rec := getRoster(t, b, "?room_id="+threadShort)
+	rec := getRoster(t, b, threadShort)
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("an empty roster answered %d, want 500: %s", rec.Code, rec.Body.String())
@@ -183,7 +183,7 @@ func TestRosterRefusesAnEmptyMemberList(t *testing.T) {
 func TestRosterRefusesAThreadThatReadsBackAbsent(t *testing.T) {
 	b := newTestBridge(t, &fakeIG{noThread: true})
 
-	rec := getRoster(t, b, "?room_id="+threadShort)
+	rec := getRoster(t, b, threadShort)
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("an absent thread answered %d, want 500: %s", rec.Code, rec.Body.String())
@@ -207,7 +207,7 @@ func TestRosterRefusesRatherThanUnderReportTheRoom(t *testing.T) {
 	}}
 	b := newTestBridge(t, f)
 
-	rec := getRoster(t, b, "?room_id="+threadShort)
+	rec := getRoster(t, b, threadShort)
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("an unaccountable member answered %d, want 500: %s", rec.Code, rec.Body.String())
@@ -228,25 +228,42 @@ func TestRosterStatusMapping(t *testing.T) {
 		want  int
 	}{
 		{
-			name:  "no room_id at all is the caller's error",
+			// 404, not 400, and the change is deliberate. `/threads//members`
+			// is not a path this router serves, so the refusal now happens
+			// BEFORE the handler — which is the stronger place for it: a
+			// missing resource id cannot reach code that might read it as
+			// empty-but-present. The old `?room_id=` shape could carry an
+			// empty value all the way in, and the handler had to catch it.
+			name:  "no thread id at all is not a resource this server has",
 			query: "",
-			want:  http.StatusBadRequest,
+			// 307, and it is worth knowing WHY rather than just pinning it:
+			// `/threads//members` has an empty segment, and `http.ServeMux`
+			// CLEANS the path and redirects to `/threads/members` — which this
+			// server does not serve either. So a caller that builds a URL with
+			// a missing id gets a redirect to a 404 rather than a 400.
+			//
+			// Pinned as-is rather than "fixed" to 400: the refusal now happens
+			// in the ROUTER, before any handler can read the id as
+			// empty-but-present, and that is the stronger place for it. The
+			// handler's own empty check is belt-and-braces now, not the
+			// mechanism.
+			want: http.StatusTemporaryRedirect,
 		},
 		{
 			name:  "a room_id that is not a decimal thread_fbid",
-			query: "?room_id=not-a-thread",
+			query: "not-a-thread",
 			want:  http.StatusBadRequest,
 		},
 		{
 			name:  "checkpointed: a human must clear it, never retry",
 			setup: func(b *bridge, _ *fakeIG) { b.setState(stateCheckpointed, "captcha") },
-			query: "?room_id=" + threadShort,
+			query: threadShort,
 			want:  http.StatusConflict,
 		},
 		{
 			name:  "logged out: same — new cookies, not a retry",
 			setup: func(b *bridge, _ *fakeIG) { b.setState(stateLoggedOut, "gone") },
-			query: "?room_id=" + threadShort,
+			query: threadShort,
 			want:  http.StatusConflict,
 		},
 		{
@@ -254,13 +271,13 @@ func TestRosterStatusMapping(t *testing.T) {
 			setup: func(_ *bridge, f *fakeIG) {
 				f.threadErr = httpclient.ErrCheckpointRequired
 			},
-			query: "?room_id=" + threadShort,
+			query: threadShort,
 			want:  http.StatusConflict,
 		},
 		{
 			name:  "the session is being re-established: retryable",
 			setup: func(b *bridge, _ *fakeIG) { b.out = nil },
-			query: "?room_id=" + threadShort,
+			query: threadShort,
 			want:  http.StatusServiceUnavailable,
 		},
 		{
@@ -268,7 +285,7 @@ func TestRosterStatusMapping(t *testing.T) {
 			setup: func(_ *bridge, f *fakeIG) {
 				f.threadErr = errors.New("something nobody has a name for")
 			},
-			query: "?room_id=" + threadShort,
+			query: threadShort,
 			want:  http.StatusInternalServerError,
 		},
 	} {
@@ -292,7 +309,7 @@ func TestRosterDoesNotReachInstagramWhileCheckpointed(t *testing.T) {
 	b := newTestBridge(t, f)
 	b.setState(stateCheckpointed, "captcha")
 
-	getRoster(t, b, "?room_id="+threadShort)
+	getRoster(t, b, threadShort)
 
 	if len(f.getThreadIDs) != 0 {
 		t.Fatalf("a checkpointed session still read the thread: %v", f.getThreadIDs)

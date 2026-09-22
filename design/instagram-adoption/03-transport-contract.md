@@ -153,7 +153,20 @@ sent — the wire has nowhere to put it.
 
 ## The roster route
 
-`GET /roster?room_id=<short>` — a GET, because it is the only read with no
+> **RENAMED 2026-09-22 to `GET /threads/{thread_fbid}/members`.** The read
+> hangs off the THREAD, which is the resource; `?room_id=` made it look like a
+> filter over a collection of rosters. Done while it was free — `/profile` and
+> `/story` had no caller at all and this had exactly one. The trigger was a
+> proposed `/profile-social`, a path named after which BACKEND a field came
+> from, which would have been the fourth spelling of one noun.
+>
+> One behavioural consequence, pinned by test rather than assumed: an ABSENT
+> id is now refused by the ROUTER (`/threads//members` is path-cleaned and
+> redirected, 307) instead of reaching the handler's 400. Stronger — the id
+> can no longer arrive empty-but-present — but it is a different status and
+> callers see a redirect, not a bad request.
+
+`GET /threads/{thread_fbid}/members?room_id=<short>` — a GET, because it is the only read with no
 side effect besides `/health` and `/events`. It passes the same session gate
 and room resolution the send routes use, so the status mapping is inherited
 rather than re-derived.

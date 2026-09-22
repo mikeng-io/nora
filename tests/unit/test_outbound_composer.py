@@ -373,7 +373,7 @@ async def test_the_REAL_instagram_roster_is_what_lets_a_mention_resolve(aiohttp_
     landed and could confirm nobody's membership, so on the live account Nora
     still wrote «@Name» as plain text with no ping. This runs the composer over
     the REAL `InstagramRoster` against a stand-in for the bridge's own
-    `GET /roster`, which is the only arrangement that measures that.
+    `GET /threads/{thread_fbid}/members`, which is the only arrangement that measures that.
 
     The bridge sends BOTH id spaces per member. The recipient asserted here is
     the MESSAGING fbid: an @-mention can carry nothing else, and the public
@@ -382,13 +382,13 @@ async def test_the_REAL_instagram_roster_is_what_lets_a_mention_resolve(aiohttp_
     from nora.platform.instagram.roster import InstagramRoster
 
     async def handler(request):
-        assert request.query["room_id"] == IG_CONVERSATION
+        assert request.match_info["thread_fbid"] == IG_CONVERSATION
         return web.json_response({"ok": True, "members": [
             {"fbid": IG_FBID, "igid": "60739041440", "username": "nka_bpumvg"},
         ]})
 
     app = web.Application()
-    app.router.add_get("/roster", handler)
+    app.router.add_get("/threads/{thread_fbid}/members", handler)
     server = await aiohttp_server(app)
     metrics = Metrics()
     composer = _instagram_composer(

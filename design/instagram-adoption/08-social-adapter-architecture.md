@@ -221,7 +221,8 @@ timeouts are indistinguishable from a broken probe.
 
 Measured, not preferred. instameow's complete social surface is `FetchReel`,
 `GetProfile`, `SearchUsers`, `GetUserForNewDM`, `FetchMedia` — **there is no
-list-a-user's-posts call**. OpenCLI has no story *read*; its `story` verb
+list-a-user's-posts METHOD** (the endpoint exists and returns the timeline —
+see 07's contested-rows note, 2026-09-22). OpenCLI has no story *read*; its `story` verb
 posts one.
 
 | Use case | Backend | Why |

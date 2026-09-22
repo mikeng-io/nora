@@ -64,6 +64,20 @@ It answers "who is this person in messaging terms, and do they have a story
 up" — not "what does their profile look like". OpenCLI's browser-scraped
 profile returns the social fields; this does not replace it.
 
+> **CORRECTION 2026-09-22: `interop_messaging_user_fbid` is NOT on this
+> response.** The 14-key list above says it is. Read live through the bridge's
+> `/profile` route against three real accounts, `fbid` came back EMPTY on all
+> three. Those keys were measured on a DIFFERENT call — plausibly a thread
+> read, whose `Users[]` does carry it — and written up as this one's.
+>
+> The paragraph's real claim survives. What `GetProfile` actually returns,
+> measured: `username`, `full_name`, `id`, `is_verified`,
+> `latest_reel_media`, and a `friendship_status` of exactly three booleans —
+> `following`, `blocking`, `is_restricted`. **No `is_private`.**
+>
+> The generalisable error is the one worth keeping: a field set read off one
+> call and attributed to another looks exactly like a measurement.
+
 What it does add that OpenCLI has no notion of: `friendship_status` (does this
 account follow them, are they restricted or blocking) and `latest_reel_media`
 / `reel_media_seen_timestamp`, which are the story hooks.
@@ -200,6 +214,20 @@ social bridge  READ_ONLY_ALLOWLIST          ← unchanged security boundary
 ### Live state of the browser path, 2026-09-21
 
 Measured minutes after OpenCLI came back up, and it is **partially broken**:
+
+> **RE-MEASURED 2026-09-22, and the failure is now a different and more
+> diagnostic one.** `profile` no longer fails with "Navigation rejected"; it
+> returns **HTTP 429 on `web_profile_info`**, sustained across five hours,
+> and so does `following`, which calls the same endpoint. `whoami` and
+> `search` answer fine from the SAME CLI and the SAME session, and the
+> operator reports the account working normally in a browser at the same
+> time.
+>
+> So this is **not the account being throttled and not a transient**: it is
+> Instagram refusing OpenCLI's REQUEST SHAPE. `@jackwener/opencli` is at
+> 1.8.7, which is also the latest on the registry (published 2026-08-23), so
+> waiting for upstream is not a plan. `user` fails differently again —
+> served an HTML login/challenge page rather than a 429.
 
 | command | result |
 |---|---|
