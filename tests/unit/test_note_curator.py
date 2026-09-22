@@ -35,6 +35,7 @@ from nora.domain.notes import (
 )
 from nora.domain.ports import Proposal
 from nora.language.note_curator import (
+    _BLOCKS,
     CURATOR_DROPS,
     NoteCuratorAdaptor,
     _note_block,
@@ -55,6 +56,23 @@ DAY_MS = 86_400_000
 # reasoning, carried over).
 PASSED_ANCHOR = 20260101
 FUTURE_ANCHOR = 20991231
+
+
+def test_the_registered_blocks_are_exactly_what_this_pass_carries():
+    """`design/context-assembly/01-the-registry.md` S1: what this pass
+    carries is a table, not a trace through `inputs`, `_note_block`,
+    `_render_evidence` and `_render_own_sends`.
+
+    Not four siblings: `today` is the only top-level block, and `note`
+    repeats once per due/expired note, nesting `evidence`, which nests
+    `own_sends`. This test pins the DECLARATION; the actual rendering of
+    all four is exercised by `test_inputs_renders_an_expired_note_and_
+    not_a_future_one` (`today`, `note`), `test_a_note_with_no_evidence_
+    still_renders_and_says_so` (`evidence`), and the own-sends tests
+    further down this file.
+    """
+    names = {name for name, _order, _key in _BLOCKS}
+    assert names == {"today", "note", "evidence", "own_sends"}
 
 
 def _after(anchor_date: int) -> int:

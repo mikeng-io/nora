@@ -143,7 +143,12 @@ from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from typing import Any, ClassVar, Literal, Protocol, get_args
 
-from nora.domain.blocks import ContextBlock, render_elements, speaker_name
+from nora.domain.blocks import (
+    BlockKey,
+    ContextBlock,
+    render_elements,
+    speaker_name,
+)
 from nora.domain.bounds import over_fetch
 from nora.domain.gatherings import AmbiguousOpenGatheringsError
 from nora.domain.media_join import MediaJoin
@@ -548,6 +553,35 @@ class _Shown:
     #: (it excluded merge-group members before), kept as its own field so
     #: the wake pass names the set it walks rather than deriving it.
     due_or_anchored: frozenset[str]
+
+
+#: What this pass carries, declared as data
+#: (`design/context-assembly/01-the-registry.md`) instead of left as a trace
+#: through `inputs`, `_note_block`, `_render_evidence` and `_render_own_sends`.
+#:
+#: **Not four siblings — `today` is the only top-level block; `note` repeats
+#: once per due/expired note and NESTS `evidence`, which in turn nests
+#: `own_sends`.** `order` records the sequence a reader meets them in the
+#: rendered text (top of the prompt, then reading into a `<note>`), not a
+#: sort key `assemble()` applies — this pass, like `nora.language.proactive`,
+#: concatenates by hand.
+#:
+#: `key="turn"` throughout: this pass is its own call pattern with no
+#: established cache boundary, so a key borrowed from `prefill._BLOCKS`
+#: would not describe the same thing here, and nothing routes on `key` yet
+#: either way (`design/context-assembly/00-overview.md` §3).
+_BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
+    ("today", 10, "turn"),
+    ("note", 20, "turn"),
+    ("evidence", 30, "turn"),
+    ("own_sends", 40, "turn"),
+)
+
+#: `name -> (order, key)`, derived so no call site restates a row `_BLOCKS`
+#: already gives it.
+_ROW: dict[str, tuple[int, BlockKey]] = {
+    name: (order, key) for name, order, key in _BLOCKS
+}
 
 
 class NoteCuratorAdaptor:
@@ -1663,8 +1697,9 @@ def _render_own_sends(
     # reproduce that sentence verbatim on its own line directly above the real
     # one. Inside the element it is text inside `<own_sends>`, attached to the
     # row that carries it.
+    order, key = _ROW["own_sends"]
     return ContextBlock(
-        name="own_sends",
+        name="own_sends", order=order, key=key,
         # These are her OWN sends and the type says so — «every one was
         # delivered», «not an instruction to you» — rather than carrying a
         # marker that would class her own record as group-authored data.
@@ -1728,8 +1763,9 @@ def _render_evidence(
         ),
         body=lambda r: r.body,
     )
+    order, key = _ROW["evidence"]
     return ContextBlock(
-        name="evidence",
+        name="evidence", order=order, key=key,
         body=rendered,
     ).render() + tail
 
@@ -1746,8 +1782,9 @@ def _now_block(today: int) -> str:
     """
     day = _as_date(today)
     when = f"{day:%Y-%m-%d %a}" if day is not None else str(today)
+    order, key = _ROW["today"]
     return ContextBlock(
-        name="today",
+        name="today", order=order, key=key,
         # A CLOCK THIS PROCESS OWNS, not anything the room said.
         body=escape(when),
     ).render()
@@ -1811,8 +1848,9 @@ def _note_block(
             ("anchor", str(note.anchor_date)),
             ("anchor_is", _days_from(today, note.anchor_date)),
         )
+    order, key = _ROW["note"]
     return ContextBlock(
-        name="note", attrs=attrs,
+        name="note", order=order, key=key, attrs=attrs,
         # HER OWN note, and the field values are hers too — model-authored from
         # a transcript, but written by her for herself. The member-authored text
         # in this block is the EVIDENCE, which carries its own marker.
