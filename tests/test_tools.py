@@ -1322,3 +1322,38 @@ def test_the_handle_still_ignores_case_and_surrounding_space():
     model that types the line back with a trailing space, or in another case,
     has not named a different note."""
     assert note_handle("  Dinner & Drinks  ") == note_handle("dinner & drinks")
+
+
+def test_a_quote_finds_the_platform_id_under_EITHER_spelling():
+    """Discord and WhatsApp key the platform's own message id `id`; Instagram's
+    bridge event keys it `message_id`. Reading only `id` meant every threaded
+    reply the model made on Instagram went out UNTHREADED — delivered, marked
+    `sent`, no visual thread, and nothing logged, because a missing quote id is
+    a documented degradation rather than an error.
+
+    Found by audit, not by anyone noticing, which is what a silent degradation
+    earns you.
+
+    PROBE: drop `message_id` from the tuple and the Instagram case reds.
+    """
+    from nora.agent.tools import platform_message_id_of
+
+    assert platform_message_id_of({"id": "1234567890"}) == "1234567890"
+    assert platform_message_id_of({"message_id": "mid.$gAASG4nv"}) == "mid.$gAASG4nv"
+    # `id` wins when both are present: it is the older spelling and the one
+    # three platforms already store, so a row carrying both is not Instagram's.
+    assert platform_message_id_of({"id": "a", "message_id": "b"}) == "a"
+
+
+def test_a_quote_id_is_never_guessed_from_an_unusable_row():
+    """A quote is an enhancement. Threading a reply onto the WRONG message is
+    worse than not threading it, so anything unusable is None rather than
+    coerced — including `True`, which `str()` would happily turn into the
+    message id "True"."""
+    from nora.agent.tools import platform_message_id_of
+
+    assert platform_message_id_of({}) is None
+    assert platform_message_id_of({"id": ""}) is None
+    assert platform_message_id_of({"id": True, "message_id": "mid.$real"}) == "mid.$real"
+    assert platform_message_id_of("not a dict") is None
+    assert platform_message_id_of(None) is None
