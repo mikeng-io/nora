@@ -12,6 +12,7 @@ import (
 	"go.mau.fi/mautrix-meta/pkg/instameow"
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
+	"go.mau.fi/mautrix-meta/pkg/messagix/responses"
 	"go.mau.fi/mautrix-meta/pkg/messagix/types"
 )
 
@@ -111,6 +112,18 @@ type fakeIG struct {
 	// 404 rather than an empty profile.
 	profileUserSet bool
 	profileErr     error
+
+	// --- the story read ----------------------------------------------------
+	//
+	// reelIDs records every CALL's id list, not a flattened set, so the "one
+	// igid, never a batch" rule can actually be asserted. A story read is
+	// visible to its author, and a batched one would put Nora in several
+	// people's viewer lists to answer a question about one.
+	reelIDs [][]string
+	// reelResp overrides the answer. nil means "the measured reel".
+	reelResp *responses.ReelInfoResponse
+	reelSet  bool
+	reelErr  error
 }
 
 // The measured three-person room, as `Users[]` actually returns it: TWO rows,
@@ -193,6 +206,59 @@ func (f *fakeIG) GetProfile(_ context.Context, igid string) (*slidetypes.Profile
 		User:   user,
 		Viewer: &slidetypes.User{ID: "79597894900", Username: "not_____nora"},
 	}, nil
+}
+
+// The measured reel shape: a two-frame story, one image and one video, with
+// the video also carrying a cover still. That combination is the point — the
+// route must call the video a video AND keep the still as the thumbnail, so a
+// caller can look without downloading a clip.
+func measuredReel() *responses.ReelInfoResponse {
+	image := &responses.ReelItem{ExpiringAt: 1790097673}
+	image.Pk = "3575332932625258692"
+	image.TakenAt = 1790000432
+	image.MediaType = 1
+	image.AccessibilityCaption = "a photo of a plate"
+	image.ImageVersions2.Candidates = []responses.Candidates{
+		{Width: 640, Height: 1136, URL: "https://cdn/small.jpg"},
+		{Width: 1080, Height: 1920, URL: "https://cdn/large.jpg"},
+	}
+
+	video := &responses.ReelItem{ExpiringAt: 1790097673}
+	video.Pk = "3993554204431792593"
+	video.TakenAt = 1790011844
+	video.MediaType = 2
+	video.ImageVersions2.Candidates = []responses.Candidates{
+		{Width: 1080, Height: 1920, URL: "https://cdn/cover.jpg"},
+	}
+	video.VideoVersions = []responses.VideoVersions{
+		{Width: 480, URL: "https://cdn/small.mp4"},
+		{Width: 1080, URL: "https://cdn/large.mp4"},
+	}
+
+	return &responses.ReelInfoResponse{
+		Reels: map[string]responses.ReelInfo{
+			"221731317": {
+				ID:         "221731317",
+				ExpiringAt: 1790097673,
+				Seen:       1789935673,
+				User:       &responses.User{Username: "nka_bpumvg"},
+				Items:      []*responses.ReelItem{image, video},
+			},
+		},
+	}
+}
+
+func (f *fakeIG) FetchReel(_ context.Context, reelIDs []string, _ string) (*responses.ReelInfoResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reelIDs = append(f.reelIDs, reelIDs)
+	if f.reelErr != nil {
+		return nil, f.reelErr
+	}
+	if f.reelSet {
+		return f.reelResp, nil
+	}
+	return measuredReel(), nil
 }
 
 func (f *fakeIG) SendMessage(_ context.Context, req *slidetypes.SendTextRequest) (*slidetypes.SendTextResponse, error) {

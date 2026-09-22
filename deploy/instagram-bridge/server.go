@@ -56,6 +56,9 @@ func (b *bridge) routes() http.Handler {
 	// The second, and the only route whose answer is a DECISION rather than
 	// a fact: may this account's content be fetched at all. See social.go.
 	mux.HandleFunc("GET /profile", b.handleProfile)
+	// The only path to a story anywhere, and the only read that is VISIBLE
+	// to the person being read. See social.go.
+	mux.HandleFunc("GET /story", b.handleStory)
 	mux.HandleFunc("POST /send", b.handleSend)
 	mux.HandleFunc("POST /send-media", b.handleSendMedia)
 	mux.HandleFunc("POST /react", b.handleReact)

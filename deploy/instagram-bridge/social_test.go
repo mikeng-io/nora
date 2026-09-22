@@ -26,6 +26,7 @@ import (
 
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
+	"go.mau.fi/mautrix-meta/pkg/messagix/responses"
 )
 
 func getProfile(t *testing.T, b *bridge, query string) *httptest.ResponseRecorder {
@@ -220,5 +221,198 @@ func TestProfileWithNoMessagingIDStillAnswers(t *testing.T) {
 	}
 	if !body.OK {
 		t.Error("ok was false; a missing join key is not a failed read")
+	}
+}
+
+// --- GET /story ---------------------------------------------------------------
+//
+// A story read is the ONLY read in this system that the person being read can
+// see. That makes two things testable that are not testable anywhere else: the
+// route must never batch, and it must never report "not permitted" as "nothing
+// posted".
+
+func getStory(t *testing.T, b *bridge, query string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/story"+query, nil)
+	rec := httptest.NewRecorder()
+	b.routes().ServeHTTP(rec, req)
+	return rec
+}
+
+func decodeStory(t *testing.T, rec *httptest.ResponseRecorder) storyBody {
+	t.Helper()
+	var body storyBody
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("story body did not decode: %v (%s)", err, rec.Body.String())
+	}
+	return body
+}
+
+// ONE igid per call, never a list, although FetchReel accepts several. Each
+// extra id in a batch is another person who sees that Nora watched their story
+// — paid to answer a question about somebody else.
+func TestStoryNeverBatchesTheRead(t *testing.T) {
+	f := &fakeIG{}
+	b := newTestBridge(t, f)
+
+	if rec := getStory(t, b, "?igid=221731317"); rec.Code != http.StatusOK {
+		t.Fatalf("/story answered %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(f.reelIDs) != 1 {
+		t.Fatalf("FetchReel called %d times, want 1", len(f.reelIDs))
+	}
+	if len(f.reelIDs[0]) != 1 || f.reelIDs[0][0] != "221731317" {
+		t.Errorf("FetchReel was addressed with %v, want exactly one igid — a "+
+			"batched read is visible to everybody in the batch", f.reelIDs[0])
+	}
+}
+
+// A video frame must be called a video AND keep its still. A caller that only
+// wants to know what a story looks like fetches the thumbnail and never
+// downloads the clip; one that reported the still as the media would have Nora
+// describe a single frame as if she had watched it.
+func TestStoryFramesKeepBothTheClipAndTheStill(t *testing.T) {
+	b := newTestBridge(t, &fakeIG{})
+
+	rec := getStory(t, b, "?igid=221731317")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/story answered %d: %s", rec.Code, rec.Body.String())
+	}
+	body := decodeStory(t, rec)
+	if !body.Found {
+		t.Fatal("found was false for a reel that is present")
+	}
+	if len(body.Items) != 2 {
+		t.Fatalf("got %d frames, want 2", len(body.Items))
+	}
+
+	image := body.Items[0]
+	if image.Kind != mediaImage {
+		t.Errorf("frame 1 kind = %q, want image", image.Kind)
+	}
+	if image.URL != "https://cdn/large.jpg" {
+		t.Errorf("frame 1 url = %q, want the LARGEST candidate", image.URL)
+	}
+	if image.AltText != "a photo of a plate" {
+		t.Errorf("frame 1 alt_text = %q; Instagram's own description is free "+
+			"and often answers the question with no fetch at all", image.AltText)
+	}
+
+	video := body.Items[1]
+	if video.Kind != mediaVideo {
+		t.Errorf("frame 2 kind = %q, want video", video.Kind)
+	}
+	if video.URL != "https://cdn/large.mp4" {
+		t.Errorf("frame 2 url = %q, want the largest VIDEO", video.URL)
+	}
+	if video.ThumbnailURL != "https://cdn/cover.jpg" {
+		t.Errorf("frame 2 thumbnail = %q; image_versions2 is populated for a "+
+			"video story too and that cover frame is what makes a cheap look "+
+			"possible", video.ThumbnailURL)
+	}
+	// The retention bound. A story is gone in 24 hours, so anything kept
+	// outlives its source — 06's rule with a number behind it.
+	if video.ExpiringAt == 0 || body.ExpiringAt == 0 {
+		t.Error("expiring_at was dropped; it is the natural retention bound")
+	}
+}
+
+// "media_type says video" and "there is a clip" are different facts. A delta
+// claiming video with no video url must degrade to its cover frame rather than
+// promise bytes that are not there.
+func TestStoryVideoWithNoClipDegradesToItsCover(t *testing.T) {
+	item := &responses.ReelItem{}
+	item.Pk = "1"
+	item.MediaType = 2
+	item.ImageVersions2.Candidates = []responses.Candidates{
+		{Width: 1080, URL: "https://cdn/cover.jpg"},
+	}
+	f := &fakeIG{reelSet: true, reelResp: &responses.ReelInfoResponse{
+		Reels: map[string]responses.ReelInfo{
+			"221731317": {ID: "221731317", Items: []*responses.ReelItem{item}},
+		},
+	}}
+	b := newTestBridge(t, f)
+
+	rec := getStory(t, b, "?igid=221731317")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/story answered %d: %s", rec.Code, rec.Body.String())
+	}
+	body := decodeStory(t, rec)
+	if len(body.Items) != 1 {
+		t.Fatalf("got %d frames, want 1", len(body.Items))
+	}
+	if body.Items[0].Kind != mediaImage {
+		t.Errorf("kind = %q; media_type alone is not evidence a clip exists",
+			body.Items[0].Kind)
+	}
+	if body.Items[0].URL != "https://cdn/cover.jpg" {
+		t.Errorf("url = %q, want the cover frame", body.Items[0].URL)
+	}
+}
+
+// The distinction the whole route turns on. "No story up" and "Nora may not
+// see it" BOTH come back as zero frames, and reporting the second as the first
+// states something about a person on the strength of a permission error.
+//
+// `found` is what separates them, and a caller has to be able to read it.
+func TestStoryEmptyIsNotAClaimThatNothingWasPosted(t *testing.T) {
+	f := &fakeIG{reelSet: true, reelResp: &responses.ReelInfoResponse{
+		Reels: map[string]responses.ReelInfo{},
+	}}
+	b := newTestBridge(t, f)
+
+	rec := getStory(t, b, "?igid=221731317")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/story answered %d: %s", rec.Code, rec.Body.String())
+	}
+	body := decodeStory(t, rec)
+	if body.Found {
+		t.Error("found was true for a reel that is not in the response")
+	}
+	if len(body.Items) != 0 {
+		t.Errorf("items = %v, want none", body.Items)
+	}
+	if !body.OK {
+		t.Error("ok was false; an account with no visible story is not an error")
+	}
+}
+
+// The response declares BOTH `reels` (a map) and `reels_media` (a list) and
+// which one arrives has not been measured for this call. Reading only the map
+// would report "no story" for a shape that carried one — a silent false
+// negative about a person.
+func TestStoryReadsTheFlatReelsMediaShapeToo(t *testing.T) {
+	item := &responses.ReelItem{}
+	item.Pk = "1"
+	item.ImageVersions2.Candidates = []responses.Candidates{{Width: 1080, URL: "https://cdn/a.jpg"}}
+	f := &fakeIG{reelSet: true, reelResp: &responses.ReelInfoResponse{
+		ReelsMedia: []responses.ReelInfo{
+			{ID: "221731317", Items: []*responses.ReelItem{item}},
+		},
+	}}
+	b := newTestBridge(t, f)
+
+	rec := getStory(t, b, "?igid=221731317")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/story answered %d: %s", rec.Code, rec.Body.String())
+	}
+	body := decodeStory(t, rec)
+	if !body.Found || len(body.Items) != 1 {
+		t.Errorf("the flat shape was not read: found=%v items=%d",
+			body.Found, len(body.Items))
+	}
+}
+
+func TestStoryRefusesABadIGID(t *testing.T) {
+	b := newTestBridge(t, &fakeIG{})
+	for _, q := range []string{"", "?igid=", "?igid=nka_bpumvg", "?igid=0"} {
+		if rec := getStory(t, b, q); rec.Code != http.StatusBadRequest {
+			t.Errorf("/story%s answered %d, want 400", q, rec.Code)
+		}
 	}
 }
