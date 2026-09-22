@@ -97,6 +97,20 @@ type fakeIG struct {
 	// noThread makes GetThread answer 200 with the thread absent — the shape a
 	// GraphQL read takes when it finds nothing, which is NOT an error.
 	noThread bool
+
+	// --- the profile read --------------------------------------------------
+	//
+	// profileIGIDs records every igid GetProfile was addressed with, for
+	// getThreadIDs' reason: the route's id-space choice is asserted against
+	// what actually went out, not against what the handler meant to send.
+	profileIGIDs []string
+	// profileUser overrides the answer. nil means "the measured account".
+	profileUser *slidetypes.User
+	// profileUserSet distinguishes "not overridden" from "deliberately no
+	// user", which is the 200-with-nothing shape the route must turn into a
+	// 404 rather than an empty profile.
+	profileUserSet bool
+	profileErr     error
 }
 
 // The measured three-person room, as `Users[]` actually returns it: TWO rows,
@@ -139,6 +153,45 @@ func (f *fakeIG) GetThread(_ context.Context, req *slidetypes.GetThreadInfoReque
 				Users: users,
 			},
 		},
+	}, nil
+}
+
+// The measured profile account: public-side fields, a `friendship_status`
+// Nora DOES follow, and an `Unrecognized` map carrying a key the library does
+// not model. That last part is the one that matters — `is_private` is not on
+// `slidetypes.User`, and if it ever arrives it arrives in here, so the fake
+// has to be able to produce it or the route's `extra` passthrough is untested.
+var measuredProfile = &slidetypes.User{
+	InteropMessagingUserFBID: 110966695387753,
+	ID:                       "221731317",
+	Username:                 "nka_bpumvg",
+	FullName:                 "Miles Novak",
+	LatestReelMedia:          1789935673,
+	FriendshipStatus: struct {
+		IsRestricted bool `json:"is_restricted"`
+		Blocking     bool `json:"blocking"`
+		Following    bool `json:"following"`
+	}{Following: true},
+	Unrecognized: map[string]any{"is_private": true},
+}
+
+func (f *fakeIG) GetProfile(_ context.Context, igid string) (*slidetypes.ProfilePageResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.profileIGIDs = append(f.profileIGIDs, igid)
+	if f.profileErr != nil {
+		return nil, f.profileErr
+	}
+	user := measuredProfile
+	if f.profileUserSet {
+		user = f.profileUser
+	}
+	// Viewer is ALWAYS populated, because the wire always populates it. The
+	// route dropping it is a decision the fake must be able to catch it not
+	// making.
+	return &slidetypes.ProfilePageResponse{
+		User:   user,
+		Viewer: &slidetypes.User{ID: "79597894900", Username: "not_____nora"},
 	}, nil
 }
 

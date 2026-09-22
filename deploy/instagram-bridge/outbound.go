@@ -81,6 +81,10 @@ type igClient interface {
 	// session has to be ONE object: a bridge holding two fakes could have
 	// them disagree about which threads exist.
 	GetThread(context.Context, *slidetypes.GetThreadInfoRequest) (*slidetypes.ThreadInfoResponse, error)
+	// GetProfile is the second read, and it is here for GetThread's reason:
+	// one fake, not two, so a test cannot have the roster and the profile
+	// disagree about who exists.
+	GetProfile(ctx context.Context, igid string) (*slidetypes.ProfilePageResponse, error)
 }
 
 // uploader is SendMercuryUploadRequest, extracted as a function value for the

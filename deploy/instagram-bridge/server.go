@@ -53,6 +53,9 @@ func (b *bridge) routes() http.Handler {
 	// bridge. GET with the room key in the query string, because it has no
 	// side effect — see roster.go.
 	mux.HandleFunc("GET /roster", b.handleRoster)
+	// The second, and the only route whose answer is a DECISION rather than
+	// a fact: may this account's content be fetched at all. See social.go.
+	mux.HandleFunc("GET /profile", b.handleProfile)
 	mux.HandleFunc("POST /send", b.handleSend)
 	mux.HandleFunc("POST /send-media", b.handleSendMedia)
 	mux.HandleFunc("POST /react", b.handleReact)
