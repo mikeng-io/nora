@@ -75,10 +75,38 @@ the host-side bridge, per `(network, verb)`, and nothing above it knows:
 | `posts` | opencli (instameow has no such call) | opencli |
 | `search` | either | opencli |
 
+> **CONTESTED 2026-09-22, pending ONE named probe.** The `posts` row's reason
+> — "instameow has no such call" — is true of the client METHODS and false of
+> the API. `web_profile_info` is declared in `messagix/endpoints/instagram.go`
+> and its response is fully typed in `messagix/responses/profile.go`, carrying
+> `is_private`, `followed_by_viewer`, `follows_viewer`, `id`, `fbid`,
+> `biography`, the follower/following counts, AND
+> `edge_owner_to_timeline_media` — the posts list itself. No client method
+> calls it, but `Client.GetHTTP()` and `Client.GetEndpoint()` are exported, so
+> the bridge can issue it with the DM SESSION'S OWN headers rather than a
+> browser's.
+>
+> That matters because the OpenCLI half of these two rows does not currently
+> work: `profile` and `following` have returned HTTP 429 on that same endpoint
+> all day, from a browser-scraped request, while the account itself is fine in
+> a real browser (05 §"Live state of the browser path"). Same endpoint, same
+> account, different request shape.
+>
+> **The rows are NOT flipped here.** Whether Instagram answers the DM session
+> where it refuses the scrape is unmeasured, and writing "instameow" in on a
+> declared type would repeat the exact error the correction in `05` records —
+> a capability inferred from a struct rather than read off a wire. The probe
+> is one route, `GET /profile-social?igid=`, and its result flips these rows
+> or restores them WITH the evidence attached.
+>
+> `story` and `search` are unaffected. X is permanently OpenCLI: instameow is
+> Instagram-only, so no probe can change that row.
+
 Measured facts behind those rows, so the table is not a preference:
 instameow's entire social surface is `FetchReel`, `GetProfile`, `SearchUsers`,
-`GetUserForNewDM` and `FetchMedia` — **there is no list-a-user's-posts call at
-all**, and `GetProfile` returns no follower, following or media counts and no
+`GetUserForNewDM` and `FetchMedia` — **no client METHOD lists a user's posts**
+(an earlier revision said "no such call at all", a stronger and different
+claim; see the note above), and `GetProfile` returns no follower, following or media counts and no
 biography. OpenCLI has no story read; its `story` verb posts one.
 
 Two consequences the operator should hold onto:

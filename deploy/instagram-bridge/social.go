@@ -120,6 +120,42 @@ type profileBody struct {
 	// reading something nothing guarantees will be there next week, and should
 	// treat an absent key as unknown rather than as false.
 	Extra map[string]any `json:"extra,omitempty"`
+
+	// --- the SOCIAL half ----------------------------------------------------
+	//
+	// `web_profile_info`'s fields, merged into this account rather than given a
+	// path of their own (social_profile.go says why). A SECOND upstream call,
+	// so it fails independently — and `SocialAvailable` is what keeps that
+	// failure honest: without it, a 429 and a genuinely empty biography are the
+	// same empty string, and «this account has no bio» would be asserted from a
+	// rate limit. R-27's three states, one field down.
+	SocialAvailable bool `json:"social_available"`
+	// SocialError is why the social half is missing, for an operator. Present
+	// only when `SocialAvailable` is false.
+	SocialError string         `json:"social_error,omitempty"`
+	Social      *socialProfile `json:"social,omitempty"`
+}
+
+// socialProfile is what `web_profile_info` adds over `GetProfile`.
+type socialProfile struct {
+	// IsPrivate is the half of the operator's public-or-followed rule that
+	// `GetProfile` does not carry — measured absent from its wire on three
+	// real accounts, 2026-09-22.
+	IsPrivate bool `json:"is_private"`
+	// FollowedByViewer is the SAME fact `friendship_status.following` carries.
+	// Both are returned rather than one trusted: two reads agreeing is
+	// evidence, and two disagreeing is worth knowing about.
+	FollowedByViewer bool   `json:"followed_by_viewer"`
+	FollowsViewer    bool   `json:"follows_viewer"`
+	Biography        string `json:"biography"`
+	Followers        int    `json:"followers"`
+	Following        int    `json:"following"`
+	// PostCount and PostsReturned stay SEPARATE: the first is what the account
+	// claims, the second is how many rows this page actually held. A timeline
+	// reporting 400 and returning 0 is the interesting failure, and collapsing
+	// them would hide it.
+	PostCount     int `json:"post_count"`
+	PostsReturned int `json:"posts_returned"`
 }
 
 var (
@@ -133,7 +169,7 @@ var (
 	errBadIGID = errors.New("igid is not a decimal instagram id")
 )
 
-// handleProfile answers GET /profile?igid=<igid>.
+// handleProfile answers GET /accounts/{igid}.
 //
 // The IGID, not the fbid — this is the social id space, and it is the one
 // `GetProfile` takes. 02-identity-and-policy.md opens on exactly this
@@ -141,7 +177,7 @@ var (
 // anywhere: a messaging fbid is also a decimal string, so it validates, and
 // then names a different account or none at all.
 func (b *bridge) handleProfile(w http.ResponseWriter, r *http.Request) {
-	igid := r.URL.Query().Get("igid")
+	igid := r.PathValue("igid")
 	if igid == "" {
 		badRequest(w, "igid is required")
 		return
@@ -200,7 +236,7 @@ func readProfile(ctx context.Context, cli igClient, igid string) (profileBody, e
 	if u.InteropMessagingUserFBID != 0 {
 		fbid = strconv.FormatInt(u.InteropMessagingUserFBID, 10)
 	}
-	return profileBody{
+	out := profileBody{
 		OK:              true,
 		IGID:            id,
 		Username:        u.Username,
@@ -213,7 +249,34 @@ func readProfile(ctx context.Context, cli igClient, igid string) (profileBody, e
 		HasStory:        u.LatestReelMedia != 0,
 		LatestReelMedia: u.LatestReelMedia,
 		Extra:           u.Unrecognized,
-	}, nil
+	}
+
+	// THE SECOND CALL, and it may fail on its own. `GetProfile` has already
+	// answered by here, so a social failure degrades this read rather than
+	// losing it: the caller still gets the username, the follow state and
+	// `has_story`, with `social_available: false` saying what is missing and
+	// why. Keyed on the USERNAME the first call just returned, so a caller
+	// only ever supplies an igid.
+	social, ok := cli.(socialClient)
+	switch {
+	case !ok:
+		out.SocialError = "this client cannot issue raw requests"
+	case u.Username == "":
+		out.SocialError = "no username on the messaging profile to key the social read with"
+	default:
+		s, status, err := readSocialProfile(ctx, social, u.Username)
+		if err != nil {
+			// Logged with the STATUS, because telling a 429 from a challenge
+			// page from a parse failure is the entire reason this half exists
+			// as a measurement before it exists as a feature.
+			logf("social profile read failed (username=%s status=%d): %v",
+				u.Username, status, err)
+			out.SocialError = fmt.Sprintf("%d: %v", status, err)
+		} else {
+			out.SocialAvailable, out.Social = true, &s
+		}
+	}
+	return out, nil
 }
 
 // --- /story -------------------------------------------------------------------
@@ -310,9 +373,9 @@ type storyBody struct {
 
 var errNoReel = errors.New("story read returned no reel")
 
-// handleStory answers GET /story?igid=<igid>.
+// handleStory answers GET /accounts/{igid}/story.
 func (b *bridge) handleStory(w http.ResponseWriter, r *http.Request) {
-	igid := r.URL.Query().Get("igid")
+	igid := r.PathValue("igid")
 	if igid == "" {
 		badRequest(w, "igid is required")
 		return

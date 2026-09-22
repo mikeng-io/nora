@@ -113,7 +113,7 @@ async def _instagram(aiohttp_server, *, members: list[dict], status: int = 200):
     by handing back an empty list.
     """
     async def handler(request: web.Request) -> web.Response:
-        if request.query.get("room_id") != INSTAGRAM_ROOM:
+        if request.match_info.get("thread_fbid") != INSTAGRAM_ROOM:
             return web.json_response(
                 {"ok": False, "error": "thread_lookup_failed"}, status=500,
             )
@@ -123,7 +123,7 @@ async def _instagram(aiohttp_server, *, members: list[dict], status: int = 200):
                                   "is_group": True, "members": members})
 
     app = web.Application()
-    app.router.add_get("/roster", handler)
+    app.router.add_get("/threads/{thread_fbid}/members", handler)
     server = await aiohttp_server(app)
     return InstagramRoster(str(server.make_url("")).rstrip("/"))
 

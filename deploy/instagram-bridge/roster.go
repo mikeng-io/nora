@@ -116,10 +116,10 @@ var (
 	errEmptyRoster = errors.New("thread read returned no members")
 )
 
-// handleRoster answers GET /roster?room_id=<short thread_fbid>.
+// handleRoster answers GET /threads/{thread_fbid}/members.
 //
-// A GET with the room key in the query string rather than a POST body, because
-// it is a read with no side effect — the same shape /health and /events have,
+// A GET on the thread's own path rather than a POST body, because it is a read
+// with no side effect — the same shape /health and /events have,
 // and the opposite of the six mutating routes. The room key is the SHORT
 // thread id, exactly as every other route takes it; the long id never crosses
 // this boundary in either direction.
@@ -132,9 +132,13 @@ var (
 // 500 for anything the bridge cannot classify — never a 200 with a partial
 // answer.
 func (b *bridge) handleRoster(w http.ResponseWriter, r *http.Request) {
-	roomID := r.URL.Query().Get("room_id")
+	// The path value, not a query string: the thread is the RESOURCE this
+	// read hangs off, and `?room_id=` made it look like a filter on a
+	// collection of rosters. Still the SHORT thread_fbid, exactly as every
+	// other route takes it.
+	roomID := r.PathValue("thread_fbid")
 	if roomID == "" {
-		badRequest(w, "room_id is required")
+		badRequest(w, "thread_fbid is required")
 		return
 	}
 	cli, ok := b.ready(w)

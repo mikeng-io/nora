@@ -1,7 +1,7 @@
 package main
 
 // The HTTP surface. The table in
-// design/instagram-adoption/03-transport-contract.md, plus GET /roster
+// design/instagram-adoption/03-transport-contract.md, plus the thread and account reads
 // (roster.go), which the contract document does not carry yet.
 //
 // The status mapping is the load-bearing part and it is NOT a generic
@@ -52,13 +52,29 @@ func (b *bridge) routes() http.Handler {
 	// The one READ route that answers about PEOPLE rather than about the
 	// bridge. GET with the room key in the query string, because it has no
 	// side effect — see roster.go.
-	mux.HandleFunc("GET /roster", b.handleRoster)
-	// The second, and the only route whose answer is a DECISION rather than
-	// a fact: may this account's content be fetched at all. See social.go.
-	mux.HandleFunc("GET /profile", b.handleProfile)
-	// The only path to a story anywhere, and the only read that is VISIBLE
-	// to the person being read. See social.go.
-	mux.HandleFunc("GET /story", b.handleStory)
+	// --- RESOURCES ---------------------------------------------------------
+	//
+	// Two nouns — a THREAD and an ACCOUNT — and the reads hang off them. The
+	// first four routes above are the bridge talking about ITSELF (health,
+	// its event stream) and the mutations below are verbs on a thread; these
+	// are the reads, and they are the ones that were drifting.
+	//
+	// They were `GET /roster`, `GET /profile` and `GET /story`, plus a
+	// proposed `GET /profile-social` — a path named after which BACKEND a
+	// field came from, which is not a resource and would have been the fourth
+	// spelling of one noun. Renamed 2026-09-22 while it was still free:
+	// `/profile` and `/story` had no caller at all, and `/roster` had exactly
+	// one.
+	mux.HandleFunc("GET /threads/{thread_fbid}/members", b.handleRoster)
+	// ONE account resource. `web_profile_info`'s fields are not a second
+	// noun — they are more of this one — so they are merged into this read
+	// rather than given a path of their own. The response says which upstream
+	// halves answered; see social.go.
+	mux.HandleFunc("GET /accounts/{igid}", b.handleProfile)
+	// The only path to a story anywhere, and the only read VISIBLE to the
+	// person being read. A sub-resource of the account, because that is what
+	// it is.
+	mux.HandleFunc("GET /accounts/{igid}/story", b.handleStory)
 	mux.HandleFunc("POST /send", b.handleSend)
 	mux.HandleFunc("POST /send-media", b.handleSendMedia)
 	mux.HandleFunc("POST /react", b.handleReact)

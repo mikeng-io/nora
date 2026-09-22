@@ -1,5 +1,5 @@
 """`InstagramRoster` — who is in one Instagram group, over the bridge's
-`GET /roster`.
+`GET /threads/{thread_fbid}/members`.
 
 `nora.domain.ports.RosterSource`'s fourth implementation. Closer to
 `nora.platform.discord.roster.DiscordRoster` than to Signal's, because the read
@@ -134,8 +134,12 @@ class InstagramRoster:
         # belt, not this module's braces.
         room_id = conversation_id.strip() if isinstance(conversation_id, str) else ""
         if not room_id:
-            # A wiring fault, not an empty room — and it must not reach the
-            # network, where it would become an indistinguishable 400.
+            # A wiring fault, not an empty room, and it must not reach the
+            # network. Since the route became `/threads/{id}/members` an empty
+            # id would build `/threads//members`, which the bridge's router
+            # CLEANS and redirects — so aiohttp would follow it and read a 404
+            # for a different path. That is a confusing failure to debug and an
+            # even worse one to mistake for "this thread has no members".
             log.warning("empty instagram conversation_id; roster unavailable")
             return Roster(available=False)
 
@@ -143,7 +147,7 @@ class InstagramRoster:
             async with (
                 aiohttp.ClientSession(timeout=self._timeout) as session,
                 session.get(
-                    f"{self._base_url}/roster", params={"room_id": room_id},
+                    f"{self._base_url}/threads/{room_id}/members",
                 ) as resp,
             ):
                 if resp.status == 409:

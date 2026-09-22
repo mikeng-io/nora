@@ -31,7 +31,7 @@ import (
 
 func getProfile(t *testing.T, b *bridge, query string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/profile"+query, nil)
+	req := httptest.NewRequest(http.MethodGet, "/accounts/"+query, nil)
 	rec := httptest.NewRecorder()
 	b.routes().ServeHTTP(rec, req)
 	return rec
@@ -47,7 +47,7 @@ func getProfile(t *testing.T, b *bridge, query string) *httptest.ResponseRecorde
 func TestProfileCarriesTheGateIncludingUnmodelledKeys(t *testing.T) {
 	b := newTestBridge(t, &fakeIG{})
 
-	rec := getProfile(t, b, "?igid=221731317")
+	rec := getProfile(t, b, "221731317")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/profile answered %d: %s", rec.Code, rec.Body.String())
@@ -85,7 +85,7 @@ func TestProfileCarriesTheGateIncludingUnmodelledKeys(t *testing.T) {
 func TestProfileDoesNotLeakTheViewer(t *testing.T) {
 	b := newTestBridge(t, &fakeIG{})
 
-	rec := getProfile(t, b, "?igid=221731317")
+	rec := getProfile(t, b, "221731317")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/profile answered %d: %s", rec.Code, rec.Body.String())
@@ -124,13 +124,13 @@ func TestProfileFailureIsNeverAZeroValueGate(t *testing.T) {
 			name:  "no user in the response",
 			fake:  &fakeIG{profileUserSet: true, profileUser: nil},
 			want:  http.StatusNotFound,
-			query: "?igid=221731317",
+			query: "221731317",
 		},
 		{
 			name:  "transport error",
 			fake:  &fakeIG{profileErr: errors.New("connection reset")},
 			want:  http.StatusInternalServerError,
-			query: "?igid=221731317",
+			query: "221731317",
 		},
 		{
 			// A human has to clear this one, and a retry hammers a challenged
@@ -138,20 +138,22 @@ func TestProfileFailureIsNeverAZeroValueGate(t *testing.T) {
 			name:  "checkpointed session",
 			fake:  &fakeIG{profileErr: httpclient.ErrCheckpointRequired},
 			want:  http.StatusConflict,
-			query: "?igid=221731317",
+			query: "221731317",
 		},
 		{
 			name:  "not a decimal id",
 			fake:  &fakeIG{},
 			want:  http.StatusBadRequest,
-			query: "?igid=nka_bpumvg",
+			query: "nka_bpumvg",
 		},
 		{
-			// A username is the obvious wrong thing to pass; so is an empty
-			// one, and it must not reach the network as a 400 from Instagram.
+			// An empty id is now refused by the ROUTER, not the handler:
+			// `/accounts/` matches no route, so it is a 404 rather than the
+			// old 400. Stronger, because the id can no longer arrive
+			// empty-but-present at code that might read it.
 			name:  "no igid at all",
 			fake:  &fakeIG{},
-			want:  http.StatusBadRequest,
+			want:  http.StatusNotFound,
 			query: "",
 		},
 	} {
@@ -187,7 +189,7 @@ func TestProfileAddressesTheIGIDSpaceAndCanonicalizes(t *testing.T) {
 
 	// Leading zeros: the same account, spelled two ways. Left alone it would
 	// be two cache keys and two identities for one person.
-	if rec := getProfile(t, b, "?igid=0221731317"); rec.Code != http.StatusOK {
+	if rec := getProfile(t, b, "0221731317"); rec.Code != http.StatusOK {
 		t.Fatalf("/profile answered %d: %s", rec.Code, rec.Body.String())
 	}
 	if len(f.profileIGIDs) != 1 || f.profileIGIDs[0] != "221731317" {
@@ -206,7 +208,7 @@ func TestProfileWithNoMessagingIDStillAnswers(t *testing.T) {
 	}}
 	b := newTestBridge(t, f)
 
-	rec := getProfile(t, b, "?igid=276321323")
+	rec := getProfile(t, b, "276321323")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/profile answered %d: %s", rec.Code, rec.Body.String())
@@ -233,7 +235,7 @@ func TestProfileWithNoMessagingIDStillAnswers(t *testing.T) {
 
 func getStory(t *testing.T, b *bridge, query string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/story"+query, nil)
+	req := httptest.NewRequest(http.MethodGet, "/accounts/"+query+"/story", nil)
 	rec := httptest.NewRecorder()
 	b.routes().ServeHTTP(rec, req)
 	return rec
@@ -255,7 +257,7 @@ func TestStoryNeverBatchesTheRead(t *testing.T) {
 	f := &fakeIG{}
 	b := newTestBridge(t, f)
 
-	if rec := getStory(t, b, "?igid=221731317"); rec.Code != http.StatusOK {
+	if rec := getStory(t, b, "221731317"); rec.Code != http.StatusOK {
 		t.Fatalf("/story answered %d: %s", rec.Code, rec.Body.String())
 	}
 	if len(f.reelIDs) != 1 {
@@ -274,7 +276,7 @@ func TestStoryNeverBatchesTheRead(t *testing.T) {
 func TestStoryFramesKeepBothTheClipAndTheStill(t *testing.T) {
 	b := newTestBridge(t, &fakeIG{})
 
-	rec := getStory(t, b, "?igid=221731317")
+	rec := getStory(t, b, "221731317")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/story answered %d: %s", rec.Code, rec.Body.String())
@@ -335,7 +337,7 @@ func TestStoryVideoWithNoClipDegradesToItsCover(t *testing.T) {
 	}}
 	b := newTestBridge(t, f)
 
-	rec := getStory(t, b, "?igid=221731317")
+	rec := getStory(t, b, "221731317")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/story answered %d: %s", rec.Code, rec.Body.String())
@@ -364,7 +366,7 @@ func TestStoryEmptyIsNotAClaimThatNothingWasPosted(t *testing.T) {
 	}}
 	b := newTestBridge(t, f)
 
-	rec := getStory(t, b, "?igid=221731317")
+	rec := getStory(t, b, "221731317")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/story answered %d: %s", rec.Code, rec.Body.String())
@@ -396,7 +398,7 @@ func TestStoryReadsTheFlatReelsMediaShapeToo(t *testing.T) {
 	}}
 	b := newTestBridge(t, f)
 
-	rec := getStory(t, b, "?igid=221731317")
+	rec := getStory(t, b, "221731317")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/story answered %d: %s", rec.Code, rec.Body.String())
@@ -410,9 +412,16 @@ func TestStoryReadsTheFlatReelsMediaShapeToo(t *testing.T) {
 
 func TestStoryRefusesABadIGID(t *testing.T) {
 	b := newTestBridge(t, &fakeIG{})
-	for _, q := range []string{"", "?igid=", "?igid=nka_bpumvg", "?igid=0"} {
+	// A MALFORMED id is the handler's 400. An ABSENT one is the router's
+	// refusal — `/accounts//story` has an empty segment, which `http.ServeMux`
+	// cleans and redirects (307) to a path this server does not serve. Both
+	// are refusals; only one reaches this code.
+	for _, q := range []string{"nka_bpumvg", "0"} {
 		if rec := getStory(t, b, q); rec.Code != http.StatusBadRequest {
-			t.Errorf("/story%s answered %d, want 400", q, rec.Code)
+			t.Errorf("/accounts/%s/story answered %d, want 400", q, rec.Code)
 		}
+	}
+	if rec := getStory(t, b, ""); rec.Code != http.StatusTemporaryRedirect {
+		t.Errorf("an absent igid answered %d, want the router's 307", rec.Code)
 	}
 }
