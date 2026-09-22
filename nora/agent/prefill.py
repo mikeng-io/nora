@@ -25,6 +25,7 @@ from ..domain.decision_log import (
 )
 from ..domain.models import TagContext, TranscriptRow
 from ..domain.prompt import escape
+from ..language.culture_render import render_culture
 from ..language.note_render import render_notes
 from ..language.standing_render import render_standing
 from ..obs.tracing import annotate, span
@@ -149,6 +150,16 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("people_in_window", 35, "room"),
     ("notes", 40, "unit"),
     ("loop_decisions", 50, "unit"),
+    # CULTURE (#324, rebased 2026-09-22). The catalogue line #324 carried
+    # here is gone — #314 made every block say what it is from its own
+    # type, so a fourth column would be a second copy of that sentence and
+    # the drift `_ROW` already cost us once.
+    #
+    # The ROW is unconditional and the BLOCK is not: it renders only where
+    # `TagContext.culture` is filled, which is the participation occasion
+    # alone (`FirePath._read_culture`). A row that varied per turn would
+    # end the cached prefix's hit rate for everything after it.
+    ("culture", 55, "room"),
     ("standing", 60, "room"),
     ("group_transcript", 70, "room"),
 )
@@ -752,6 +763,34 @@ def _standing_block(ctx: TagContext) -> ContextBlock | None:
     return render_standing(ctx.standing)
 
 
+def _culture_block(ctx: TagContext, *, now: datetime) -> ContextBlock | None:
+    """What this ROOM is like, as `<culture>` (design/culture-tier).
+
+    **The only block in this prompt that is about the room rather than about a
+    moment in it.** Its neighbours all answer «what has happened»: the
+    transcript is what was said, `<notes>` what is unsettled, `<standing>` where
+    she had got to. This one answers «what is this place, and why is it like
+    that» — and that difference is the tier's entire reason to exist, because
+    the memory system already produces the other shape and a chronicle of
+    dynasties and their dates is not a culture.
+
+    `None` on every turn but the participation occasion's, and that restriction
+    is a DECISION rather than an unfinished wiring: `01-the-adaptor §6`
+    authorises exactly one consumer and `02-measurement §5` step 5 says the
+    block ships with its measurement arm, so a second consumer is a second
+    measurement nobody has taken. `FirePath._read_culture` is where the gate
+    actually is; this renderer is blind to it and renders whatever the context
+    carries.
+
+    `None` also until the room has been folded at least once, which is the
+    ordinary state for a while after the tier is enabled — a fold needs new
+    messages and a day. `render_culture` emits no block rather than an empty
+    one, for `render_standing`'s reason: a room she has never folded is not a
+    room she looked at and found featureless.
+    """
+    return render_culture(ctx.culture, now=now)
+
+
 def _decisions_block(ctx: TagContext, *, now: datetime) -> ContextBlock | None:
     """What NORA'S OWN LOOP already did across this UNIT, as
     `<loop_decisions>` (issue #199). `""` when there is nothing — which is
@@ -857,6 +896,7 @@ def build_prefill(
             _people_in_window_block(ctx),
             _restamp(_notes_block(ctx, now=clock)),
             _restamp(_decisions_block(ctx, now=clock)),
+            _restamp(_culture_block(ctx, now=clock)),
             _restamp(_standing_block(ctx)),
             _transcript_block(ctx, display_name, clock, context_window),
         ])

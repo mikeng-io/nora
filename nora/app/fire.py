@@ -71,7 +71,7 @@ import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol
 
 from nora.agent.guards import ReplyGuard
 from nora.agent.outbound import OutboundComposer
@@ -86,6 +86,7 @@ from nora.doctrine.loader import DoctrineStore
 from nora.domain import audience as audience_names
 from nora.domain.blocks import RowStyle, render_rows
 from nora.domain.compute import ComputeJob
+from nora.domain.culture import CultureRevision
 from nora.domain.decision_log import (
     PARTICIPATION_DECISION_WRITERS,
     PROACTIVE_ACT_DECISION_WRITERS,
@@ -719,6 +720,41 @@ def _mirror_window(d: Determination) -> str:
     )
 
 
+class CultureReader(Protocol):
+    """The ONE verb a PROMPT is allowed on the culture store (design/culture-tier).
+
+    A Protocol here rather than `SqlCultureStore` itself, for
+    `StandingNotesReader`'s reason one module over: the concrete store also
+    exposes `append` and `chain`, and naming only what is called makes «no turn
+    ever writes a culture row» a fact a type checker enforces rather than a
+    habit a later edit could quietly break. That matters more on this tier than
+    on its neighbours — the tier's whole claim is that the account is written by
+    a background fold reading a whole batch, never by a turn reacting to one
+    window.
+
+    It lives HERE, beside its one consumer, and not in `nora/domain/ports.py`:
+    `01-the-adaptor §6` authorises exactly one reader of this store and a port
+    declared for everyone reads as an invitation for the second.
+
+    **`key` is a `primary_id`, NOT a `conversation_id`** (DEC-181). A Dreamer
+    adaptor is handed `scopes()`, so that is what it wrote under, and the caller
+    resolves the arriving thread through the policy first — see
+    `FirePath._read_culture`. The parameter is named `key` rather than
+    `conversation_id` so that a call site passing the wrong one has to say so.
+
+    **Never raises for an absent row.** `None` is a first-class state: a room
+    nobody has folded yet has no account, and that is the ORDINARY state for a
+    while after the tier is enabled, because a fold needs new messages and a
+    day. Implementations still raise on a genuine store failure — the caller
+    decides what an unreachable store means, and for a prompt that is a thinner
+    prompt plus a counter, never a silent «no account».
+    """
+
+    async def head(self, *, key: str) -> CultureRevision | None:
+        """This scope's current account, or `None` if it has none yet."""
+        ...
+
+
 class FirePath:
     """One fire turn, end to end. Every collaborator arrives through `__init__`.
 
@@ -753,6 +789,7 @@ class FirePath:
         reasoning_strip_store: Any = None,
         event_registry: Mapping[str, EventFactory] | None = None,
         standing: StandingStore | None = None,
+        culture: CultureReader | None = None,
         standing_store_timeout_seconds: float = DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
         # The participation turn's memory reads (issue #210). All four default
         # to the inert shape — `0` renders no block, so a construction site
@@ -801,6 +838,23 @@ class FirePath:
         # `AgentRunner.invoke` hands back, a Phase 1 deferral flagged in that
         # method — and there is nothing to fold without it.
         self._standing = standing
+        # THE CULTURE HEAD (design/culture-tier), and the ONE consumer this
+        # tier has: `01-the-adaptor §6` authorises "the participation turn is a
+        # straightforward consumer" and authorises nothing else, so the read is
+        # gated on `occasion.kind == "participation"` inside `_read_culture`
+        # exactly as issue #210's memory reads are. A previous attempt (PR #284,
+        # reverted by #294) wired the tag path as well; that prompt is the
+        # highest-traffic one in the system and no decision in the bundle
+        # admits a block to it.
+        #
+        # Read-only by TYPE — a `CultureReader` has `head` and nothing else — so
+        # no fire-path turn can write a culture row. That matters more here than
+        # anywhere: the tier's whole claim is that the account is written by a
+        # background pass reading a whole batch, never by a turn reacting to one
+        # window.
+        #
+        # `None` while `[culture] enabled = false`, the shipped default.
+        self._culture = culture
         # BOUNDED, for the reason the debrief stage's own store calls are:
         # the heartbeat holds this conversation's slot around the whole fire
         # turn (`heartbeat.py` try_acquire -> release_and_dispatch), and
@@ -1063,6 +1117,7 @@ class FirePath:
             self_card=self_card,
             people_in_window=people,
             standing=await self._read_standing(occasion),
+            culture=await self._read_culture(occasion),
             notes=await self._read_notes(occasion, unit),
             decisions=await self._read_decisions(occasion, unit),
         )
@@ -1417,6 +1472,62 @@ class FirePath:
                 platform=occasion.platform,
             )
             return ()
+
+    async def _read_culture(self, occasion: Event) -> CultureRevision | None:
+        """This room's current account, or `None` (design/culture-tier).
+
+        **Participation only, and the restriction is the decision** —
+        `_read_memory`'s rule, one tier over. `01-the-adaptor §6` names exactly
+        one consumer for this block; a reminder or a gathering firing was
+        decided when its row was written, and a proactive act turn is keyed on a
+        WORKSPACE while culture is keyed on a room, so fitting it there means
+        either N accounts in one prompt or silently picking the home room's — a
+        design question, not wiring. This is the turn deciding whether to speak
+        into a room nobody addressed her in, which is the only fire occasion for
+        which «what is this room like» changes the answer, and the only one
+        `02-measurement §6`'s decision check has been run against.
+
+        **Resolved through the policy to a `primary_id`**, not read with the
+        occasion's `conversation_id`. A Dreamer adaptor is handed `scopes()`, so
+        that is the key it wrote under; reading with the arriving thread's id
+        matches zero rows on any conversation carrying more than one, and
+        renders as «this room has no account yet» — a REAL state, so nothing
+        anywhere would report the miss. Today every live conversation holds
+        exactly one id, which is why this has to be written down: the two keys
+        are equal by accident of data (issue #229), not by construction.
+
+        `None` covers five situations and collapsing them is right for
+        `_read_standing`'s reason — the prompt cannot express the difference:
+        not the participation occasion, no store (the dormant default), no
+        policy conversation, no account yet (the ORDINARY state for a while
+        after the tier is enabled, since a fold needs new messages and a day),
+        and a failed read. Only the last is counted, because a head that exists
+        and could not be fetched reported as «there is none» is `unavailable`
+        substituted for `nothing_found`, which is what R-27 exists to prevent.
+
+        Bounded by the same timeout as the standing read: a background tier's
+        store must never be able to hold the turn open.
+        """
+        if occasion.kind != "participation":
+            return None
+        if self._culture is None or self._policy is None:
+            return None
+        convo = self._policy.conversation(
+            occasion.platform, occasion.conversation_id)
+        if convo is None or not convo.primary_id:
+            return None
+        try:
+            return await asyncio.wait_for(
+                self._culture.head(key=convo.primary_id),
+                timeout=self._standing_store_timeout_seconds,
+            )
+        except Exception:
+            log.exception("fire culture read failed; continuing without it")
+            self._metrics.inc(
+                "nora_errors_total", stage="fire_culture",
+                platform=occasion.platform,
+            )
+            return None
 
     async def _read_standing(self, occasion: Event) -> Standing | None:
         """This conversation's position, or `None` (S5).

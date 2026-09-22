@@ -297,6 +297,18 @@ def build_offline_pipeline(
             # FirePath read emptier tiers than its tag path would grade the
             # knowledge-cut cases against a prompt production never builds.
             notes=notes,
+            # The culture head (design/culture-tier), named here because
+            # `test_assembler_parity` pins this call's keyword NAMES to the
+            # composition root's: a collaborator production passes and the
+            # harness does not means every participation eval measures a
+            # prompt production never builds — the #210 defect this tier's own
+            # measurement arm exists to avoid reproducing.
+            #
+            # `None` is the right value here rather than a gap: the rebuilt
+            # harness reconstructs a room's real culture at a real instant
+            # (`evals/corpora/participation.yaml`), so this seam does not
+            # supply one, and a case with no account should see no block.
+            culture=None,
             policy=permissive_policy(),
             participation_runner=participation_runner,
             # The proactive act turn's runner (39 D12): the SAME auto-runner

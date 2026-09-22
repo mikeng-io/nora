@@ -195,8 +195,98 @@ that override stays approximate until someone does.
    `FOR UPDATE`; and the no-dates property turned out to be held DOUBLY, so
    every single mutation of it survived.
 5. The participation turn reads culture. Measured. **SHIPPED 2026-09-17 as
-   PR #284 and REVERTED the same day — still to do, and the four reasons it
-   came back out are the acceptance criteria for the next attempt.**
+   PR #284 and REVERTED the same day** — the four reasons it came back out
+   became the acceptance criteria, and **re-shipped 2026-09-17 with its arm
+   (§5.1 carries the numbers).**
+
+   ### 5.1 The decision check, run 2026-09-17
+
+   Three windows × four arms — no account, an ACCOUNT, the same account
+   pointing the OTHER WAY (the control), and the same facts as a CHRONICLE —
+   `sample: 5`, live, `--model nora` through the deployment's OmniRoute,
+   `effort=low`, `doctrine 0f5dfb78`. `evals/corpora/participation.yaml`. **The path changed and the arm did
+   not**: it was written against `evals/cases/participation/culture.yaml`,
+   which the eval rebuild (#334/#368) deleted along with `harness.py` and
+   `run.py`. The cases were re-homed into the corpus above, where the
+   harness reconstructs a room's real culture at a real instant rather
+   than reading an authored one, and `evals/scenarios.py`'s
+   `COUNTERFACTUAL_TIERS = {"culture"}` is where the CHRONICLE arm now
+   lives. The reading below is unchanged — it is the result of the run
+   that happened, not a claim about a file.
+   The suite is `participation_culture` and it is **not a gate**: its reading
+   is the per-arm speak RATES, per §6's "read rates, never PASS counts".
+
+   **W1 + W2 — can an account SUPPRESS a speak? No, and nothing separated.**
+   Both windows are one mechanism: a question she can answer from a seeded note
+   goes unanswered and is re-asked. Pooled, 10 samples per arm, 40/40 runs
+   reached the model:
+
+   | arm | spoke | vs no-culture |
+   |---|---|---|
+   | no culture | 7/10 | — |
+   | account («silence is normal here») | **10/10** | p = 0.21 |
+   | account, reversed (control) | 8/10 | p = 1.00 |
+   | chronicle | 9/10 | p = 0.58 |
+
+   Nothing is distinguishable at this power, and the one directional hint runs
+   **opposite** to the prediction: every culture arm spoke at least as often as
+   the baseline whatever it said. Two readings, and the second is the one to
+   act on. (a) A block's PRESENCE, not its content, may be what moves this
+   decider — the mirror image of #144/#147 on the gate, same class of artifact.
+   (b) **The windows are badly built**, and that is the more likely
+   explanation: the judged line is the asker RE-ASKING, which falsifies the
+   account's own claim that the asker answers their own question. An account
+   the window contradicts cannot move a verdict, and a null from a case like
+   that is not evidence about culture.
+
+   **And the obvious repair does not exist.** Leave the question hanging with
+   unrelated talk after it and `participation.md:105` decides the whole shape —
+   "an unanswered question with unrelated talk after it is a question the room
+   dropped" — so that variant saturates at SILENCE instead. Both natural
+   variants of the hanging-question mechanism are settled by the taxonomy
+   before a baseline gets a look in. **That is §7's concern arriving in the one
+   experiment that needed the room**, and it is a finding about the suite, not
+   about the tier.
+
+   **W3 — can an account ADMIT a silence? Yes, and the chronicle cannot.**
+   Different mechanism, added after reading W1/W2 and labelled as such. The
+   judged line is BANTER (the `inside-joke` pure-No shape); the account decodes
+   the room's own coined word into a live logistics problem she holds the
+   answer to. Pooled over **three independent runs**:
+
+   | arm | spoke | vs no-culture |
+   |---|---|---|
+   | no culture | 0/15 | — |
+   | **account** (decodes 「飛」 as a live problem) | **7/11** | **p = 0.0005** |
+   | account, reversed — «it is pure catchphrase» (control) | 3/15 | p = 0.22 |
+   | **chronicle** (the same instances, dated) | **1/15** | p = 1.00 |
+
+   `account` vs `chronicle` **p = 0.0033**; `account` vs the reversed control
+   **p = 0.043**. So on this window the block moves the decision, the movement
+   is in the CONTENT and not merely in the block's presence, and **a chronicle
+   of the same instances does not do it** — which is the one comparison §6 says
+   the tier's existence rests on, answered in the tier's favour for the first
+   time.
+
+   **Three caveats, and the first is not optional.** Every W3 run FAILED the
+   suite's own Measurement 0: 4 of 15 `-account` samples never reached the
+   model (`APIError` in the agent loop), always on that arm and never on the
+   other three. The likely reason is mechanical rather than case-specific — it
+   is the only arm whose turns actually go multi-turn, so it makes the most
+   provider calls per run — but **an operational fault at that rate on the
+   speaking path deserves its own issue, and it has one: #325.** The table above EXCLUDES those
+   samples; counted as silence instead, `account` is 7/15 and still p = 0.0063.
+   Second, n is small and the power ceiling of §6 stands: this detects a large
+   effect and would miss a real 0.20. Third, decoding a room's coined word is
+   ground the MEMORY tier already covers (`admin-joke`, +0.35 from a one-line
+   flat fact) — so W3 shows the block CAN move this decision and not yet that
+   it buys anything a conclusion would not.
+
+   **What that leaves for the operator.** The block moves a labelled metric on
+   one consumer, in one direction, on one mechanism, and a chronicle does not
+   reproduce it. §6's bar — "if it cannot move a labelled metric, the honest
+   conclusion is that it does not ship into that prompt" — is cleared, on that
+   scope and no wider. Nothing here licenses a second consumer.
 
    **The chronicle-vs-account arm cannot be built BEFORE this step, and an
    earlier reading of §6 implied it could.** `evals/cases/participation/
@@ -361,6 +451,25 @@ what to change. Both of those stay true at any price.
 compares a chronicle against an account; #215's arms compare a seeded string
 against nothing. Before culture is judged, the suite needs
 *chronicle-only vs chronicle-plus-culture* on cases where the two differ.
+
+> **BUILT AND RUN, 2026-09-17 — §5.1.** `evals/cases/participation/
+> culture.yaml`, suite `participation_culture`: three windows × four arms, the
+> fourth of which is the chronicle this paragraph asked for, carrying the SAME
+> instances as the account in `[when] what happened` shape. On the one window
+> where the doctrine's taxonomy leaves the decision open, the account moved the
+> verdict (7/11 vs 0/15, p = 0.0005) and the chronicle did not (1/15; account
+> vs chronicle p = 0.0033). On the two windows where it does not, nothing
+> separated — and §7's shape problem, one section down, is why.
+>
+> Two things this paragraph did not anticipate and a reader should carry
+> forward. **A four-arm design is the minimum, not a three-arm one**: without
+> the account REVERSED as a control, "culture moved it" cannot be told from "a
+> block moved it", and the first live run is why that is not hypothetical —
+> across W1/W2 every culture arm spoke at least as often as the baseline
+> whatever it said. And **an arm is only a measurement once the seed is proven
+> to reach the prompt**; `tests/test_evals_participation.py::
+> test_the_seeded_culture_reaches_the_participation_prompt` is that proof, it
+> runs in `make gate`, and PR #284 is what shipping without it looks like.
 
 ## 7. What the suite has never had
 

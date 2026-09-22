@@ -10,6 +10,7 @@ from nora.agent.prefill import (
     escape,
 )
 from nora.domain.block_types import BLOCK_TYPES
+from nora.domain.culture import CultureRevision
 from nora.domain.decision_log import DecisionRow
 from nora.domain.models import (
     DeliveryStatus,
@@ -26,11 +27,11 @@ from nora.domain.standing import Standing
 
 def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None, self_card=(),
          quote=None, platform="signal", tagger_card=(), notes=(),
-         standing=None, decisions=(), people_in_window=()) -> TagContext:
+         standing=None, decisions=(), people_in_window=(), culture=None) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
                             quote=quote)
     kwargs = {"tagger_card": tuple(tagger_card),
-              "notes": tuple(notes), "standing": standing,
+              "notes": tuple(notes), "standing": standing, "culture": culture,
               "decisions": tuple(decisions),
               "people_in_window": tuple(people_in_window)}
     return TagContext("tag-1", msg, tagger, tuple(transcript), tuple(peer_card), 0.0,
@@ -55,6 +56,23 @@ def _decisions() -> tuple[tuple[str, tuple[DecisionRow, ...]], ...]:
 def _standing(body="They are deciding where to eat; nobody has picked yet.") -> Standing:
     return Standing(platform="signal", conversation_id="g1", body=body,
                     fold_count=3, updated_at=1)
+
+
+def _culture(body=(
+    "They talk in dense Cantonese shorthand and decide by attrition: somebody "
+    "floats a plan and the rest poke at it until it survives or everyone stops "
+    "replying."
+)) -> CultureRevision:
+    """One culture head, so `_full_prefill_body` renders `<culture>`.
+
+    A fixture that omits a block makes every «all of them» assertion silently
+    narrower than its name — `_decisions`' own finding, one block over, and the
+    reason this exists rather than the block being left to default `None`.
+    """
+    return CultureRevision(
+        id="0191f2c4-0000-7000-8000-0000000000cc", culture_key="g1", body=body,
+        written_at=1, established_by="culture",
+    )
 
 
 def _note(title="9 Sept dinner") -> Note:
@@ -201,7 +219,7 @@ def _full_prefill_body() -> str:
     ctx = _ctx(
         _rows("hello"), peer_card=("likes espresso",), self_card=("nora said a thing",),
         tagger_card=("asked about dinner",), tagger=PersonRef("miles", "Miles", "miles"),
-        notes=(_note(),), standing=_standing(), decisions=_decisions(),
+        notes=(_note(),), standing=_standing(), culture=_culture(), decisions=_decisions(),
         people_in_window=(("Grant", ("asked about dinner",)),),
     )
     return build_prefill(ctx, display_name="Nora", context_window=40)[1]["content"][0]["text"]
@@ -268,7 +286,6 @@ def test_every_injected_block_says_it_is_not_an_instruction():
         assert any(
             p in _opening_tag(body, name) for p in _NOT_AN_INSTRUCTION
         ), name
-
 
 
 
@@ -1089,7 +1106,7 @@ def test_the_order_she_meets_the_blocks_is_the_order_the_table_declares():
     msgs = build_prefill(
         _ctx(_rows("hi"), peer_card=("c",), self_card=("s",),
              tagger=PersonRef("miles", "Miles", "miles"), notes=(_note(),),
-             standing=_standing(), decisions=_decisions(),
+             standing=_standing(), culture=_culture(), decisions=_decisions(),
              people_in_window=(("Grant", ("asked about dinner",)),)),
         display_name="Nora", context_window=40,
     )
@@ -1270,7 +1287,7 @@ def test_the_prefill_span_names_which_blocks_were_built_and_at_what_size(
     ctx = _ctx(
         _rows("hello"), peer_card=("likes espresso",), self_card=("nora said a thing",),
         tagger_card=("asked about dinner",), tagger=PersonRef("miles", "Miles", "miles"),
-        notes=(_note(),), standing=_standing(), decisions=_decisions(),
+        notes=(_note(),), standing=_standing(), culture=_culture(), decisions=_decisions(),
         people_in_window=(("Grant", ("asked about dinner",)),),
     )
     build_prefill(ctx, display_name="Nora", context_window=40)
@@ -1321,7 +1338,7 @@ def _whole_turn() -> tuple[tuple[str, str], ...]:
         peer_card=("likes espresso",), self_card=("nora said a thing",),
         tagger_card=("asked about dinner",),
         tagger=PersonRef("miles", "Miles", "miles"), notes=(_note(),),
-        standing=_standing(), decisions=_decisions(),
+        standing=_standing(), culture=_culture(), decisions=_decisions(),
         people_in_window=(("Grant", ("asked about dinner",)),),
         # A RESOLVABLE quote, so `<replying_to>` actually renders — an
         # unresolvable one omits the block and the gate would pass by rendering
