@@ -91,9 +91,36 @@ FROM observations WHERE parent_observation_id='cc333f839bcf8ccc' GROUP BY type
 -- GENERATION 1                <- one model generation as the parent
 ```
 
-The 76 calls also genuinely overlapped in wall time: the parent's children span
-128,776 ms from first start to last end, while the widest single child was far
-shorter — they ran together.
+The 76 calls were also emitted together, and they did overlap in wall time:
+
+```sql
+SELECT name, dateDiff('millisecond', start_time, end_time) AS dur_ms
+FROM observations WHERE parent_observation_id='cc333f839bcf8ccc'
+ORDER BY dur_ms DESC LIMIT 5
+-- chat                     442,667   (the parent generation)
+-- explore_codebase         128,730
+-- query_conversation_memory 52,354
+-- query_conversation_memory 48,318
+-- query_conversation_memory 45,617
+```
+
+> **⚠️ CORRECTED 2026-09-23 (independent audit).** The first version read "the widest
+> single child was far shorter — they ran together". **That inference was wrong.** The
+> widest child (`explore_codebase`, 128,730 ms) *is* the 128,776 ms span — 99.96% of
+> it. So the span length is **one long call's duration**, not proof that the batch ran
+> concurrently.
+>
+> **The fan-out is still real, on better evidence:** all 76 calls *started* within
+> **104 ms** of each other (a sequential executor could not do that), and at least
+> **8 of them overlapped** while running 40–52 s each (the four `query_conversation_memory`
+> calls plus others). What is corrected is only the sentence doing the work — the
+> concurrency conclusion rests on the start-time clustering and the overlap, not on
+> comparing the span to its widest child.
+>
+> Context the operator should have: this batch is a **2026-07-14 code-comprehension
+> turn** (`explore_codebase` / `grep_source` / `list_source_units`), not an agent-loop
+> media turn. It is a legitimate demonstration of what the executor permits, not of
+> what a room-facing turn does.
 
 ## 3. The COUNT half is already closed; the CONCURRENCY half is not
 
