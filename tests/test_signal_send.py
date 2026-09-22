@@ -524,3 +524,93 @@ async def test_an_undecorated_rejection_is_not_retried(aiohttp_server):
 
     assert result.ok is False
     assert calls == 1
+
+
+# --- the attachment timeout ---------------------------------------------------
+#
+# Measured 2026-09-22, five consecutive times in the Friends room: an image was
+# generated, `send` raised `TimeoutError` ~10s later, and the picture arrived in
+# the group ANYWAY. The flat 10s budget is sized for a text send; an attachment
+# rides as a base64 `data:` URI in the JSON-RPC body, so a megabyte-scale
+# picture is two orders of magnitude more to serialize and ship.
+#
+# The cost was not a lost picture, it was a LIE: `ok=False` reached
+# `send_reply`, and Nora told the room the path was broken and described the
+# image in words instead. She was honest about what she had been told.
+
+
+async def test_an_attachment_send_gets_a_longer_budget_than_a_text_send():
+    """A SLOW send must not be reported as a failed one.
+
+    Asserted on the CLIENT TIMEOUTS rather than by making a server sleep: a
+    sleep test would have to outlast the real 60s budget to prove anything, and
+    a shorter one would pass whatever the budget was — the silent-match failure
+    inside the instrument meant to find it.
+    """
+    from nora.platform.signal.send import ATTACHMENT_TIMEOUT_SECONDS
+
+    sender = SignalSender("http://signal-cli:18080")
+
+    assert sender._timeout.total == 10.0, "the text budget should be unchanged"
+    assert sender._attachment_timeout.total == ATTACHMENT_TIMEOUT_SECONDS
+    assert sender._attachment_timeout.total > sender._timeout.total, (
+        "an attachment send needs more patience than a sentence — with one flat "
+        "budget a picture that takes 12s is reported as a failed send, and the "
+        "picture arrives anyway"
+    )
+
+
+async def test_a_configured_timeout_never_shrinks_the_attachment_budget():
+    """`max(...)`, not a plain override. An operator raising `timeout` for a
+    slow daemon must not accidentally be given a SHORTER attachment budget than
+    the default, which a bare assignment would do for any value under 60."""
+    from nora.platform.signal.send import ATTACHMENT_TIMEOUT_SECONDS
+
+    assert SignalSender("http://x", timeout=5.0)._attachment_timeout.total == (
+        ATTACHMENT_TIMEOUT_SECONDS
+    )
+    assert SignalSender("http://x", timeout=90.0)._attachment_timeout.total == 90.0
+
+
+async def test_the_attachment_budget_is_chosen_off_the_payload(
+    rpc_server, monkeypatch,
+):
+    """The budget ACTUALLY HANDED to the session, per send.
+
+    A first version of this test asserted only that both kinds of send
+    returned `ok=True` against the fake server. It passed with the selection
+    line deleted — the fake answers instantly, so every budget works and the
+    test could not fail on the defect it was written for. Recording that here
+    because the shape is the trap, not the line: asserting an OUTCOME that any
+    timeout produces proves nothing about which timeout was used.
+
+    So this records the `timeout=` each `ClientSession` is constructed with,
+    which is the only place the choice is observable.
+    """
+    import nora.platform.signal.send as mod
+    from nora.platform.signal.send import ATTACHMENT_TIMEOUT_SECONDS
+
+    seen: list[float | None] = []
+    real_session = mod.aiohttp.ClientSession
+
+    def record(*args, **kwargs):
+        timeout = kwargs.get("timeout")
+        seen.append(timeout.total if timeout is not None else None)
+        return real_session(*args, **kwargs)
+
+    monkeypatch.setattr(mod.aiohttp, "ClientSession", record)
+    sender = SignalSender(str(rpc_server.make_url("")).rstrip("/"))
+
+    assert await sender.send(TARGET, "text only") == SendResult(ok=True)
+    attachment = OutboundAttachment(b"GIF89a", "image/gif", "pic.gif")
+    assert await sender.send(
+        TARGET, "with a picture", attachments=(attachment,),
+    ) == SendResult(ok=True)
+
+    assert seen == [10.0, ATTACHMENT_TIMEOUT_SECONDS], (
+        f"budgets handed to the session were {seen}; a picture sent on the "
+        f"text budget is the live defect — it times out at 10s and arrives "
+        f"anyway, and the model is told it failed"
+    )
+    assert "attachments" not in rpc_server.calls[0]["params"]
+    assert len(rpc_server.calls[1]["params"]["attachments"]) == 1

@@ -1,0 +1,15 @@
+{
+  "type": "fix",
+  "summary": "Nora sent a picture, was told the send had failed, and told the room the connection was broken — while the picture was sitting in the chat.",
+  "details": [
+    "Sending a picture was given the same ten seconds as sending a sentence. A picture travels inside the message as encoded text, so it is hundreds of times larger and regularly needs longer than that. The wait ran out, the send was reported as failed, and the picture arrived anyway.",
+    "It happened five times in a row. Each time she was told it had failed, so she said the connection was genuinely broken and described the picture in words instead. She was being honest about what she had been told; what she had been told was wrong.",
+    "Sending with a picture attached now gets a minute, while a plain message keeps its ten seconds — a plain message that has not gone in ten seconds really is stuck, and waiting a minute on it would hold up a reply somebody is waiting for. If an operator has already set a longer wait, that is kept rather than shortened.",
+    "The log line for a timed-out send now says the message may still have arrived, instead of implying it did not."
+  ],
+  "limitations": [
+    "A send that times out is still reported to her as a failure, because there is no way yet to say 'I could not confirm this'. Properly fixing that means teaching every platform a third answer, and it must never retry — retrying a send that already arrived posts the picture twice. Left for its own change rather than rushed.",
+    "A minute is a judgement, not a measurement. The failures seen were around ten seconds, so there is a lot of room, but nobody has measured how long the largest picture actually takes.",
+    "The five failures were all on Signal. Whether the other platforms have the same mismatch has not been checked."
+  ]
+}
