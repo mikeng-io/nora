@@ -101,3 +101,69 @@ def test_resolve_headers_is_none_when_the_named_env_var_is_absent(monkeypatch):
 def test_resolve_headers_parses_the_otel_header_env_shape(monkeypatch):
     monkeypatch.setenv("NORA_TEST_OTLP_HEADERS", "Authorization=Basic%20abc123")
     assert resolve_otlp_headers("NORA_TEST_OTLP_HEADERS") == {"authorization": "Basic abc123"}
+
+
+def test_setup_agent_tracing_registers_the_provider_globally(monkeypatch):
+    """THE MISSING LINE, and the reason it went unnoticed for 13 hours.
+
+    `StrandsTelemetry.__init__` does NOT register a provider it is handed:
+
+        if tracer_provider:
+            self.tracer_provider = tracer_provider   # kept, never registered
+        else:
+            self._initialize_tracer()                # THIS sets the global
+
+    Nora hands it one, to keep the R-76 sampler. So registration is ours, and
+    without it the process global stays `ProxyTracerProvider` — whose tracers
+    are NO-OPS. Every `nora.obs.tracing.span(...)` then records nothing and
+    exports nothing, while raising nothing, logging nothing and failing no
+    test. Measured live: Langfuse and Jaeger both last saw a `nora` span at
+    2026-09-21T18:21Z and were still silent 13 hours later, with the app
+    running normally and answering messages.
+
+    **Every other test in this file calls `setup_agent_tracing` and asserts
+    nothing**, which is exactly why the defect survived them: "it did not
+    crash" is true of a no-op. This one asserts the effect.
+
+    `set_tracer_provider` is patched rather than called for real because it is
+    ONE-SHOT per process (a second call is ignored with a warning) — see
+    `tests/conftest.py::exported_spans`. Asserting the CALL is order
+    independent and leaves the global untouched for every test after it.
+    """
+    from opentelemetry.sdk.trace import TracerProvider
+
+    import nora.agent.telemetry as telemetry
+
+    registered: list[object] = []
+    monkeypatch.setattr(
+        telemetry.trace, "set_tracer_provider", registered.append, raising=True,
+    )
+
+    setup_agent_tracing(
+        sampler=build_sampler(), service_name="nora", exporter="otlp_http",
+        endpoint="http://127.0.0.1:1/v1/traces", headers_env="",
+    )
+
+    assert len(registered) == 1, (
+        "setup_agent_tracing did not register a tracer provider; the global "
+        "stays ProxyTracerProvider and every nora span becomes a silent no-op"
+    )
+    provider = registered[0]
+    assert isinstance(provider, TracerProvider), (
+        f"registered {type(provider).__name__}, want the SDK TracerProvider"
+    )
+    # It must be the one carrying Nora's sampler, not a bare default: a
+    # provider registered without `build_sampler()` would export every
+    # ingest-plumbing span R-76 exists to drop, which is the opposite failure
+    # and just as invisible.
+    # `ParentBased{root:NoraPlumbingIsNotATrace,…}`, not the bare rule: the
+    # wrapper is the point, because a child must never re-decide what its root
+    # was given (`_PlumbingIsNotATrace`'s own docstring). Matching on the ROOT
+    # inside it asserts Nora's rule is the one in force while leaving the
+    # wrapper's exact spelling to OTel.
+    description = provider.sampler.get_description()
+    assert "NoraPlumbingIsNotATrace" in description, (
+        f"registered a provider sampling with {description!r} — a default "
+        f"sampler would export every ingest-plumbing span R-76 exists to drop, "
+        f"which is the opposite failure and just as invisible"
+    )
