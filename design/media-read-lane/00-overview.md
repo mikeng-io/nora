@@ -164,8 +164,12 @@ still rejects `finish_reason="length"` after the token raise.
    it was discarded, not reported. Real footage is mandatory for this class of
    measurement.
 
-2. **Will Strands issue concurrent `tool_use` blocks?** If it does, three
-   Instagram stories in one turn parallelise for free. Untested.
+2. **Will Strands issue concurrent `tool_use` blocks?** ✅ **ANSWERED 2026-09-23 —
+   yes, and they already do** (seven real batches carrying 2–3 `media_fetch` calls in
+   one model turn, Langfuse). The ceiling on *how many* run at once is
+   **`design/tool-concurrency/` (DEC-196)**, not this bundle. *(This entry said
+   “Untested” after the Langfuse check had already answered it — corrected
+   2026-09-23; see 06-review-round-2 §M3.)*
 3. **Does the egress screen cover speech inside a video description?** ⏸️ **PARKED by
    operator 2026-09-23 — no longer gates this bundle** («唔好俾呢一個 PII 呢一嚿嘢成為
    blocker»); findings live in `~/workspace/nora-bench/spikes/pii-layer/`. The gap is

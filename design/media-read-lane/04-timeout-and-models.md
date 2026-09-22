@@ -56,7 +56,12 @@ Nora answers `unavailable` («I couldn't check») on a perfectly good video. Thi
 is not introduced by anything in this bundle — it exists on master right now, and
 enabling audio (§`02`) and reading Instagram Reels will make it bite harder.
 
-## 3. The safe settings
+## 3. ❌ WITHDRAWN — "The safe settings" (kept for the record; do NOT use)
+
+> **WITHDRAWN.** §3a and §3b both falsified the table below, and the settled
+> value is in §3c. It is retained only so the error stays visible. **If you are
+> reading for current advice, skip to §3c.** (Flagged by 06-review-round-2 §m4:
+> this was the one retained correction with no withdrawal marker.)
 
 Verified arithmetic against the 240 s loop:
 
@@ -239,7 +244,44 @@ and the loop budget must clear `waves × tail × calls`.
 
 
 
-## 3c. ✅ SETTLED — the operator's decision, 2026-09-23
+## 3c. ⛔ SETTLED IN INTENT, **BLOCKED IN EFFECT** — review round 2, 2026-09-23
+
+> **⛔ The settings below are the operator's decision and remain the intent. They are
+> NOT yet effective, for two reasons found by independent review and re-verified
+> against the code (see `06-review-round-2.md` §B1, §B2).**
+>
+> **B1 — the configured 120 s is INERT. The effective cap is 54 s.**
+> `derive_vision_timeout` is still in the path and still wins:
+> `min(configured, loop × 0.6 / budget)` = `min(120, 360 × 0.6 / 4)` = **54 s**
+> (`nora/infra/vision/client.py:210-211`). Nothing in this bundle removes or bypasses
+> it, and §5 below even mandates tests that *pin* it. Against this bundle's own n=19
+> pool, **7/19 ≈ 37% of runs exceed 54 s** — so the tail this decision exists to
+> clear still fails, at 54 s instead of 36 s. **A decision is needed on the
+> derivation itself** (remove the `/budget` division, remove the `min`, or replace the
+> invariant with a wave-based one), not on the number.
+>
+> **B2 — the numbers do not compose, and the failure is SILENT.**
+> `4 invocations × ceil(10/4)=3 waves × 120 s = 1,440 s` against a 360 s loop; even
+> one wave per call is `4 × 120.8 = 483 s > 360`. The bundle's own median product
+> already exceeds the loop it chose (`3 × 41.6 × 3 = 374 s`, §4.2). And when the loop
+> fires, `nora/engagement/stages/invoke.py:171-179` abandons the turn wholesale — logs
+> `invocation_timeout`, increments `nora_silent_failures_total`, returns a blank
+> trace, **user gets nothing**. That converts the honest per-window `_UNREAD_MARKER`
+> degradation into **silent turn death** — the "unreadable post" outcome the operator
+> rejected budget-lowering to avoid, one layer up with a worse failure mode.
+> **The same unit error §3a found in the code, repeated in this bundle's own loop
+> arithmetic: it computed `waves × tail` for ONE call and never multiplied by the
+> held budget.**
+>
+> **Also open (cross-bundle):** DEC-196's ceiling **queues**, so it bounds
+> *concurrency*, not *wall-clock* — four queued 3-wave invocations still consume
+> their sum inside the same `wait_for`. §3c leaned on it for the latency question; it
+> does not answer that question, and `01 §3`'s hand-off ("cross-clip queueing must be
+> priced into §04's invocation budget") has **no queueing term in §04 at all**.
+
+### 3c-i. The operator's decision, as given (intent — unchanged)
+
+
 
 The three coupled numbers, decided together after B and C were both rejected as
 avoiding the problem rather than solving it («你 B 同 C，你係斬腳趾避沙蟲啫»):

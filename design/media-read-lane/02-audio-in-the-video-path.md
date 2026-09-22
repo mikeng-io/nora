@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Audio in the Video Path — the `-an` that throws away half the evidence"
-description: "Every video Nora sends is silent by construction: `_video_args` passes `-an` unconditionally. 9 of 11 stored clips carry an audio stream. The operator has directed that audio be enabled, overriding the earlier no-verbatim-transcript decision."
+description: "Every video Nora sends is silent by construction: `_video_args` passes `-an` unconditionally. Audio is present in real clips (see the CORRECTED note in SS1: the original 9-of-11 count was unreproducible and its arithmetic impossible). The operator has directed that audio be enabled, overriding the earlier no-verbatim-transcript decision."
 tags: [nora, media, video, audio, stt, egress, pii, superseded]
 timestamp: '2026-09-22'
 edges:
