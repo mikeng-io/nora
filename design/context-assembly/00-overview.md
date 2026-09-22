@@ -20,14 +20,28 @@ Six occasions build a model-facing prompt. Measured 2026-09-22 by reading every
 | occasion | blocks it assembles | declared? |
 |---|---|---|
 | **tag / participation** (`agent/prefill.py`) | `self_card` `peer_card` `peer_history` `people_in_window` `notes` `loop_decisions` **`culture`** `standing` `group_transcript` `replying_to` `tag_message` | **YES** — `_BLOCKS`, with order and `BlockKey` |
-| **proactive** (`language/proactive.py`) | `self_card` `notes` `decisions` `people` `rooms` `home_room` `now` | no |
-| **note curator** (`language/note_curator.py`) | `note` `evidence` `own_sends` `today` | no |
-| **note candidates** (`language/note_candidates.py`) | `batch` `room` | no |
-| **culture** (`language/culture.py`) | `previous_account` `room` `room_messages` | no |
-| **relevance gate** (`ingest/relevance_gate.py`) | `standing` `group_transcript` | no — **closed on purpose**, see `02` |
+| **proactive** (`language/proactive.py`) | `self_card` `notes` `decisions` `people` `rooms` `home_room` `now` `loop_decisions` | **YES** (S1, 2026-09-22) |
+| **note curator** (`language/note_curator.py`) | `note` `evidence` `own_sends` `today` | **YES** (S1, 2026-09-22) |
+| **note candidates** (`language/note_candidates.py`) | `batch` `room` `notes` | **YES** (S1, 2026-09-22) |
+| **culture** (`language/culture.py`) | `previous_account` `room` `room_messages` `standing` `notes` | **YES** (S1, 2026-09-22) |
+| **relevance gate** (`ingest/relevance_gate.py`) | `standing` `group_transcript` | **YES** (S1+S2, 2026-09-22) — closed on purpose, see `02` |
 
 `nora.domain.blocks.ContextBlock` is imported by all of them and by seven more
 modules. **The brick is already shared.** What is not shared is the wall.
+
+> **CORRECTED 2026-09-22, during S1.** The bold `loop_decisions`/`notes`/
+> `standing` cells above were missing from the table when this document was
+> written and reviewed. The original survey read every literal
+> `ContextBlock(name=...)` construction in each occasion's own file — that is
+> what "reading every `ContextBlock(...)` construction" meant in practice —
+> and missed three blocks built by a call to a builder SHARED with another
+> occasion (`nora.domain.decision_log.render_decisions`,
+> `nora.language.note_render.render_notes`,
+> `nora.language.standing_render.render_standing`), which is not a literal
+> `ContextBlock(name=...)` in the occasion's own module. Found while declaring
+> each occasion's `_BLOCKS` table, which forced enumerating what actually
+> renders rather than what the file's own literals show. The corrected counts
+> are what `_BLOCKS` in each module now asserts, each pinned by a test.
 
 ## What that costs, concretely
 

@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "design/context-assembly docs-only update recording S3's diff findings. 00-overview.md's occasion table undercounted proactive, note-candidates and culture by one block each (loop_decisions, notes, standing+notes) -- corrected with an explanation of why (a survey of literal ContextBlock(name=...) calls per file misses a block built through a shared function call). 03-sequencing.md's S3 section is filled in with the actual per-name outcome: self_card merged (byte-identical, see the code commit); notes and standing turned out to already be shared by three of four occasions each, with the fourth (proactive's notes, the gate's standing) genuinely differing for stated reasons and not merged; group_transcript differs between prefill and the gate by three deliberate, documented choices and is not merged. No code changed in this commit.",
+  "details": [],
+  "limitations": []
+}
