@@ -20,6 +20,7 @@ edges:
   - {dst: 10-discovery-retrieval-and-paging.md, rel: details, provenance: asserted}
   - {dst: 11-sequencing-and-flows.md, rel: details, provenance: asserted}
   - {dst: 12-external-review.md, rel: review, provenance: asserted}
+  - {dst: 13-shared-posts-and-reels.md, rel: details, provenance: asserted}
 ---
 
 # Instagram Adoption — Overview, Verdict & Phases

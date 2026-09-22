@@ -151,6 +151,54 @@ WhatsApp bridge's precedent rather than a raw body, so one JSON shape covers
 every route. `/send-media` carries **no caption field** and ignores one if
 sent — the wire has nowhere to put it.
 
+## The roster route
+
+`GET /roster?room_id=<short>` — a GET, because it is the only read with no
+side effect besides `/health` and `/events`. It passes the same session gate
+and room resolution the send routes use, so the status mapping is inherited
+rather than re-derived.
+
+```json
+{"members": [
+  {"fbid": "110966695387753", "igid": "221731317",
+   "username": "…", "full_name": "…"}
+]}
+```
+
+**Both ids, named separately, because they are different id spaces and
+different consumers need different ones.** `fbid` is
+`interop_messaging_user_fbid` — what a mention carries and what `sender_fbid`
+is, and therefore what membership means for `@`-tagging and for R-12.
+`igid` is the public id the Phase 2 social reads take.
+
+`Users[]` **excludes self** (measured). The route filters by own fbid anyway,
+so the contract is true by construction rather than by a library version's
+behaviour, and logs the day that filter ever fires.
+
+**Fail-closed in the under-report direction.** An absent thread, an empty
+member list, or a member carrying no messaging id refuses the whole read. A
+roster short by one member is worse than no roster: `Whereis` decides
+disclosure by checking every account in the room against the location circle,
+so a silently missing member is a disclosure made against a room nobody
+checked.
+
+Consumed by `nora/platform/instagram/roster.py`, which carries the **fbid
+only** into `Roster.members`. Both kinds are bare digit strings, and
+`_preferred_recipient` accepts any bare digit string by design — `02` forbids
+validating an id by shape, because the two measured fbids are themselves 15
+and 17 digits and no length or prefix rule separates real members from each
+other. So admitting the igid into the membership set would make a tag a coin
+toss on addressing a number no mention can carry: the exact silent no-ping
+failure the roster exists to end.
+
+**Corrected 2026-09-22.** An earlier revision of this paragraph justified the
+decision with "both kinds share a `1784` prefix". That measurement is real but
+is about two **fbids** — `110966695387753` and `12116372067347151`, the latter
+sharing Nora's own leading digits (`02` §measured). Every measured **igid** is
+11 digits and none begins `1784`. The decision is unchanged; the evidence
+cited for it was borrowed from a different point, which is worth correcting
+because a later reader would re-derive the decision from it.
+
 ## The social route — specified here, NOT YET IMPLEMENTED
 
 `08` routes `(instagram, story)` to the bridge, and `11` scopes social routes

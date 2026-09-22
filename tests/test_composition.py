@@ -322,6 +322,49 @@ async def test_a_valid_key_turns_media_custody_on_with_an_encrypting_store(cfg, 
     assert isinstance(deps.ingest._blobs, FilesystemBlobStore)
 
 
+async def test_an_enabled_instagram_gets_its_own_roster_even_while_degraded(cfg):
+    """ONE ROSTER PER PLATFORM, and Instagram's is built for a DEGRADED adapter.
+
+    The map used to hold Signal and Discord only, so every Instagram room was
+    looked up in nothing at all: `group_members` answered `unavailable`,
+    `where_is` could not establish the room and refused, and every outbound
+    @-mention resolved to nobody and went out as plain text with no ping.
+
+    The adapter here IS degraded — the bridge base_url refuses instantly, so
+    `resolve_identity()` fails and M0 registers it anyway. That is the point:
+    an Instagram checkpoint clears without a restart, so a roster withheld on
+    the startup state would stay withheld for the life of the process, with the
+    room-scoped tools silently unavailable long after the session came back.
+    The READ is what fails closed — a checkpointed bridge answers 409 and the
+    roster is `available=False` for exactly as long as that is true.
+    """
+    from nora.platform.instagram.roster import InstagramRoster
+
+    deps = await build_dependencies(override_config(cfg, {
+        "platforms.instagram.enabled": True,
+        "platforms.instagram.base_url": "http://127.0.0.1:1",
+    }))
+
+    assert "instagram" in deps.registry
+    assert deps.registry.get("instagram").degraded, "the fixture cannot reach a bridge"
+    roster = deps.engagement._rosters.get("instagram")
+    assert isinstance(roster, InstagramRoster)
+    assert roster.platform == "instagram"
+    # Not Signal's, which has never heard of an Instagram thread id and would
+    # answer `available=False` forever — fail-closed, and therefore invisible.
+    assert deps.engagement._rosters["signal"] is not roster
+
+
+async def test_a_disabled_instagram_gets_no_roster(cfg):
+    """A roster for a platform with no adapter would be a client nothing can
+    use — and `Room` reads `rosters.get(platform)`, so a stray entry would be
+    reached by nothing but a misconfiguration."""
+    deps = await build_dependencies(cfg)
+
+    assert "instagram" not in deps.registry
+    assert "instagram" not in deps.engagement._rosters
+
+
 async def test_rustfs_disabled_keeps_the_filesystem_store(cfg, monkeypatch):
     """`[media.rustfs].enabled` defaults False (DEC-136) — a config.toml
     written before this existed must keep writing to the filesystem exactly

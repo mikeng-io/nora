@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "design/instagram-adoption/ gains node 13, on shared reels and posts. It records a live gap — a reel shared into a group currently arrives as an EMPTY message, because the bridge does not handle the XMA content type — and the three depths at which one can be read: the caption and author, which ride in the delta for free and are what 'reading a reel' means in almost every case; the thumbnail, fetched at ingest and comprehended only on demand; and the video, left to an explicit ask. Design only; no behaviour ships.",
+  "details": [],
+  "limitations": []
+}
