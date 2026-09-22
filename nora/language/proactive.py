@@ -119,6 +119,7 @@ from nora.domain.prompt import escape, one_line
 from nora.domain.reminders import Reminder
 from nora.domain.standing import Standing
 from nora.language.note_render import render_note_rows, standing_only
+from nora.language.self_card_render import render_self_card
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.language.proactive")
@@ -1119,16 +1120,13 @@ class ProactiveAdaptor:
                 "nora_errors_total", stage="proactive_self_card", platform=platform,
             )
             return ""
-        if not recall.reachable or not recall.conclusions:
+        if not recall.reachable:
             return ""
-        lines = render_bullets(recall.conclusions)
-        order, key = _ROW["self_card"]
-        return (
-            ContextBlock(
-                name="self_card", order=order, key=key,
-                body=lines,
-            ).render()
-        )
+        block = render_self_card(recall.conclusions)
+        if block is None:
+            return ""
+        order, block_key = _ROW["self_card"]
+        return replace(block, order=order, key=block_key).render()
 
     # -- accept -------------------------------------------------------------
 

@@ -27,6 +27,7 @@ from ..domain.models import TagContext, TranscriptRow
 from ..domain.prompt import escape
 from ..language.culture_render import render_culture
 from ..language.note_render import render_notes
+from ..language.self_card_render import render_self_card
 from ..language.standing_render import render_standing
 from ..obs.tracing import annotate, span
 
@@ -610,12 +611,10 @@ def _self_card_block(ctx: TagContext) -> ContextBlock | None:
     own date and would be read as if it were. Saying «undated» is the true
     statement, and it is the one that closes the failure.
     """
-    if not ctx.self_card:
+    block = render_self_card(ctx.self_card)
+    if block is None:
         return None
-    return _block(
-        "self_card",
-        body=render_bullets(ctx.self_card),
-    )
+    return _block("self_card", body=block.body)
 
 
 def _peer_history_block(ctx: TagContext) -> ContextBlock | None:
