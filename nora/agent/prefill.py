@@ -539,9 +539,17 @@ def _transcript_block(
     # move into the DESCRIPTION either — it is a per-render value and a
     # description belongs to the type. An attribute is what it always was:
     # data about this block, on this block.
+    #
+    # `len(ctx.transcript)`, NOT the `context_window` parameter (design/11 §2.5,
+    # amended 2026-09-22). `TranscriptInjection._recent` now sizes the fetch
+    # PAST `context_window` to chase a reply's quote outside it, so the
+    # configured default understates what she was actually shown — the wrong
+    # direction for R-15, which exists so she can trust the boundary she is
+    # told. `context_window` stays a parameter here for the caller's own
+    # bookkeeping; this block no longer reads it.
     return _block(
         "group_transcript",
-        attrs=(("window", str(context_window)),),
+        attrs=(("window", str(len(ctx.transcript))),),
         body=rows,
     )
 

@@ -88,6 +88,44 @@ async def test_recent_with_a_negative_limit_is_empty(store):
     assert await store.recent(conversation_id="g1", limit=-1) == []
 
 
+async def test_depth_to_counts_the_recent_size_that_reaches_that_ts(store):
+    """`depth_to` answers the same question `recent`'s own ordering does: how
+    large a `recent(limit=...)` call must be to include the row carrying this
+    `ts`. Five rows, asking about the third-newest (`ts=2`) must report 3 —
+    `recent(limit=3)` is exactly the smallest window that reaches it."""
+    for i in range(5):
+        await store.append(message=_msg(body=f"m{i}", ts=i))
+    assert await store.depth_to(conversation_id="g1", ts=2) == 3
+
+
+async def test_depth_to_is_none_for_a_ts_no_row_carries(store):
+    await store.append(message=_msg(ts=1))
+    assert await store.depth_to(conversation_id="g1", ts=999) is None
+
+
+async def test_depth_to_is_scoped_to_the_conversation(store):
+    """A `ts` that exists, but only in a DIFFERENT conversation, must answer
+    `None` here too — the same conversation-scoping every other verb on this
+    port holds, and the one this exists to serve (a reply's quote must never
+    resolve across a conversation boundary)."""
+    await store.append(message=_msg(conv="g1", ts=1))
+    await store.append(message=_msg(conv="g2", ts=5))
+    assert await store.depth_to(conversation_id="g1", ts=5) is None
+
+
+async def test_depth_to_on_a_duplicated_ts_matches_recents_own_tie_break(store):
+    """Two rows can legitimately share a `ts` (design/11 §2.2's own caveat).
+    `depth_to` must count through to the LAST of them in `recent`'s own
+    `ts DESC, id DESC` order — the older row by insertion, since a smaller
+    `id` sorts after a larger one for a tied `ts` — because that is the row
+    `nora.agent.prefill._by_ts` resolves a quote to (`setdefault` over an
+    oldest-first list keeps the first-seen, i.e. lowest-id, row)."""
+    await store.append(message=_msg(body="older", ts=5))
+    await store.append(message=_msg(body="newer-same-ts", ts=5))
+    await store.append(message=_msg(body="after", ts=6))
+    assert await store.depth_to(conversation_id="g1", ts=5) == 3
+
+
 async def test_appended_rows_default_to_pending(store):
     await store.append(message=_msg())
     assert (await store.recent(conversation_id="g1", limit=1))[0].delivery_status \

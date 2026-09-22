@@ -171,6 +171,15 @@ class FakeRecordStore:
         window = matching[-limit:] if limit > 0 else []
         return [self._transcript_row(r) for r in window]
 
+    async def depth_to(self, *, conversation_id: str, ts: int) -> int | None:
+        """Mirrors `SqlRecordStore.depth_to`: `None` when no row in this
+        conversation carries `ts`, otherwise the `recent(limit=...)` size that
+        would just reach it."""
+        matching = [r for r in self.rows if r["conversation_id"] == conversation_id]
+        if not any(r["ts"] == ts for r in matching):
+            return None
+        return sum(1 for r in matching if r["ts"] >= ts)
+
     async def since(
         self, *, conversation_id: str, after_id: int, limit: int
     ) -> list[TranscriptRow]:

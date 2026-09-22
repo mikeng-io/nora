@@ -24,6 +24,7 @@ from nora.domain.ports import (
     RecordStore,
     StandingStore,
 )
+from nora.domain.quote_window import QuoteWindow
 from nora.engagement.context import (
     StandingNotesReader,
     TranscriptInjection,
@@ -44,10 +45,18 @@ def build_assembler(
     notes: StandingNotesReader | None = None,
     standing: StandingStore | None = None,
     media_join: MediaJoin | None = None,
+    quote_window: QuoteWindow | None = None,
 ) -> TranscriptInjection:
     return TranscriptInjection(
         audit=audit, memory=memory, persons=persons,
         context_window=cfg.store.context_window, metrics=metrics,
+        # SHARED (DEC-195) with `nora.app.fire.FirePath`, not built here from
+        # `cfg.store.quote_margin`/`.quote_window_multiplier` — those two
+        # config values are read ONCE, at the composition root, into the ONE
+        # `QuoteWindow` instance both paths hold. `None` (a harness that
+        # predates this, or has not opted in) is the pre-2026-09-22 shape:
+        # the plain `context_window` fetch, no quote-aware growth.
+        quote_window=quote_window,
         ai_peer=cfg.memory.ai_peer,
         self_card_conclusions=cfg.memory.self_card_conclusions,
         tagger_card_conclusions=cfg.memory.tagger_card_conclusions,

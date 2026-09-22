@@ -15,6 +15,7 @@ from __future__ import annotations
 from nora.domain.models import (
     NormalizedMessage,
     PersonRef,
+    Quote,
 )
 from nora.domain.notes import Note
 from nora.domain.ports import (
@@ -24,6 +25,7 @@ from nora.domain.ports import (
     MemoryHealth,
     Recollection,
 )
+from nora.domain.quote_window import QuoteWindow
 from nora.engagement.context import TranscriptInjection
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
@@ -152,6 +154,155 @@ async def test_the_transcript_is_oldest_first_and_window_bounded():
     ctx = await assembler.assemble(request=_request())
 
     assert [row.body for row in ctx.transcript] == ["m2", "m3", "m4"]  # bounded, oldest-first
+
+
+async def _seeded(
+    count: int, *, context_window: int, quote: Quote | None = None,
+    quote_window: QuoteWindow | None = None,
+):
+    """A store with `count` rows (`ts`/`id` 0..count-1, bodies `m0`..`m{count-1}`)
+    and an assembler over it. The tagging message is the LAST row's
+    successor — not itself one of the seeded rows, matching how a live reply
+    arrives after what it quotes. `quote_window=None` (the default) exercises
+    the pre-DEC-195 fallback shape; pass a real `QuoteWindow` to exercise the
+    growth this module tests."""
+    store = FakeRecordStore()
+    for i in range(count):
+        await store.append(message=NormalizedMessage(
+            platform="signal", conversation_id="g1", conversation_type="group",
+            sender_id="+852111", sender_name="Miles", timestamp=i, body=f"m{i}", raw={},
+        ))
+    assembler = TranscriptInjection(
+        audit=store, memory=FakeMemory(), persons=_MILES,
+        context_window=context_window, metrics=Metrics(), quote_window=quote_window,
+    )
+    msg = NormalizedMessage(
+        platform="signal", conversation_id="g1", conversation_type="group",
+        sender_id="+852111", sender_name="Miles", timestamp=count, body="reply", raw={},
+        quote=quote,
+    )
+    return await assembler.assemble(request=_request(msg))
+
+
+def _quote_window(store: FakeRecordStore, **kw) -> QuoteWindow:
+    return QuoteWindow(audit=store, metrics=Metrics(), **kw)
+
+
+async def test_a_quote_outside_the_window_pulls_the_parent_back_into_it():
+    """The live bug (2026-09-22): a reply's quote pointed at a message 56 rows
+    back against `context_window=40`; the parent fell out of the window,
+    `_parent_of` resolved to nothing, and Nora answered as though the reply
+    were unthreaded. 25 rows seeded, `quoted_ts=5` — `depth_to` is 20
+    (ts 5..24), past `context_window=10`, so this grows to `depth + margin`
+    = 30, which reaches every row (25 < 30)."""
+    store = FakeRecordStore()
+    for i in range(25):
+        await store.append(message=NormalizedMessage(
+            platform="signal", conversation_id="g1", conversation_type="group",
+            sender_id="+852111", sender_name="Miles", timestamp=i, body=f"m{i}", raw={},
+        ))
+    assembler = TranscriptInjection(
+        audit=store, memory=FakeMemory(), persons=_MILES, context_window=10, metrics=Metrics(),
+        quote_window=_quote_window(store),
+    )
+    msg = NormalizedMessage(
+        platform="signal", conversation_id="g1", conversation_type="group",
+        sender_id="+852111", sender_name="Miles", timestamp=25, body="reply", raw={},
+        quote=Quote(author_id="x", text="", quoted_ts=5),
+    )
+
+    ctx = await assembler.assemble(request=_request(msg))
+
+    assert ctx.transcript[0].body == "m0"          # margin reached the start
+    assert any(row.body == "m5" for row in ctx.transcript)   # and the parent itself
+
+
+async def test_no_quote_window_wired_is_the_pre_dec_195_fallback():
+    """`quote_window=None` (a harness that predates DEC-195, or has not opted
+    in) must behave EXACTLY as before it existed: plain `context_window`
+    fetch, no growth, even when the quote's parent is out of range."""
+    ctx = await _seeded(25, context_window=10, quote=Quote(author_id="x", text="", quoted_ts=5))
+    assert [row.body for row in ctx.transcript] == [f"m{i}" for i in range(15, 25)]
+
+
+async def test_a_resolvable_quote_inside_the_window_does_not_grow_it():
+    """A quote whose parent is already inside the plain window must leave the
+    window exactly as it would render without one — `depth_to` finding it
+    still in range (`depth=2` against `context_window=10`) must not somehow
+    shrink or reorder it."""
+    store = FakeRecordStore()
+    for i in range(5):
+        await store.append(message=NormalizedMessage(
+            platform="signal", conversation_id="g1", conversation_type="group",
+            sender_id="+852111", sender_name="Miles", timestamp=i, body=f"m{i}", raw={},
+        ))
+    assembler = TranscriptInjection(
+        audit=store, memory=FakeMemory(), persons=_MILES, context_window=10, metrics=Metrics(),
+        quote_window=_quote_window(store),
+    )
+    msg = NormalizedMessage(
+        platform="signal", conversation_id="g1", conversation_type="group",
+        sender_id="+852111", sender_name="Miles", timestamp=5, body="reply", raw={},
+        quote=Quote(author_id="x", text="", quoted_ts=3),
+    )
+
+    ctx = await assembler.assemble(request=_request(msg))
+
+    assert [row.body for row in ctx.transcript] == ["m0", "m1", "m2", "m3", "m4"]
+
+
+async def test_a_quote_beyond_the_cap_falls_back_to_the_plain_window():
+    """`quote_window_multiplier` bounds the growth. depth = 100 rows back
+    against `context_window=10`, `quote_window_multiplier=2` (cap 20): even
+    with the margin, `depth + margin` exceeds the cap, so this degrades to
+    EXACTLY today's behaviour — the plain 10-row window, parent unresolved,
+    reply renders unthreaded. Not a regression: this is the same outcome a
+    reply to something 100 rows back already had before `depth_to` existed."""
+    store = FakeRecordStore()
+    for i in range(105):
+        await store.append(message=NormalizedMessage(
+            platform="signal", conversation_id="g1", conversation_type="group",
+            sender_id="+852111", sender_name="Miles", timestamp=i, body=f"m{i}", raw={},
+        ))
+    assembler = TranscriptInjection(
+        audit=store, memory=FakeMemory(), persons=_MILES, context_window=10, metrics=Metrics(),
+        quote_window=_quote_window(store, quote_window_multiplier=2),
+    )
+    msg = NormalizedMessage(
+        platform="signal", conversation_id="g1", conversation_type="group",
+        sender_id="+852111", sender_name="Miles", timestamp=105, body="reply", raw={},
+        quote=Quote(author_id="x", text="", quoted_ts=5),
+    )
+
+    ctx = await assembler.assemble(request=_request(msg))
+
+    assert len(ctx.transcript) == 10
+    assert not any(row.body == "m5" for row in ctx.transcript)
+
+
+async def test_a_quote_with_no_resolvable_parent_falls_back_to_the_plain_window():
+    """`depth_to` answers `None` for a `ts` no row carries (pruned,
+    pre-migration, a foreign conversation) — the fetch must not blow up or
+    silently return everything; it degrades to the plain window."""
+    store = FakeRecordStore()
+    for i in range(5):
+        await store.append(message=NormalizedMessage(
+            platform="signal", conversation_id="g1", conversation_type="group",
+            sender_id="+852111", sender_name="Miles", timestamp=i, body=f"m{i}", raw={},
+        ))
+    assembler = TranscriptInjection(
+        audit=store, memory=FakeMemory(), persons=_MILES, context_window=3, metrics=Metrics(),
+        quote_window=_quote_window(store),
+    )
+    msg = NormalizedMessage(
+        platform="signal", conversation_id="g1", conversation_type="group",
+        sender_id="+852111", sender_name="Miles", timestamp=5, body="reply", raw={},
+        quote=Quote(author_id="x", text="", quoted_ts=999),
+    )
+
+    ctx = await assembler.assemble(request=_request(msg))
+
+    assert [row.body for row in ctx.transcript] == ["m2", "m3", "m4"]
 
 
 async def test_the_transcript_carries_the_identity_name_not_the_profile_name():

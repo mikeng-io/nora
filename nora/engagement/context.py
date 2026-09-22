@@ -37,6 +37,7 @@ from nora.domain.ports import (
     RecordStore,
     StandingStore,
 )
+from nora.domain.quote_window import QuoteWindow
 from nora.domain.standing import Standing
 from nora.persons import Persons
 from nora.policy import Policy
@@ -82,6 +83,7 @@ class TranscriptInjection:
         persons: Persons,
         context_window: int,
         metrics: Any,
+        quote_window: QuoteWindow | None = None,
         ai_peer: str = "",
         self_card_conclusions: int = 0,
         tagger_card_conclusions: int = 0,
@@ -94,6 +96,7 @@ class TranscriptInjection:
         self._memory = memory
         self._persons = persons
         self._context_window = context_window
+        self._quote_window = quote_window
         self._metrics = metrics
         self._ai_peer = ai_peer
         self._self_card_conclusions = self_card_conclusions
@@ -212,7 +215,23 @@ class TranscriptInjection:
         )
 
     async def _recent(self, msg: NormalizedMessage) -> tuple[TranscriptRow, ...]:
-        """The transcript, or an empty one — a thinner reply beats no reply."""
+        """The transcript, or an empty one — a thinner reply beats no reply.
+
+        Delegates to `QuoteWindow.recent_for_quote` (DEC-195, design/11 §2.5's
+        amendment) when one was wired in, which is the tag path's own
+        shape — `msg.quote` is the ONE quote to check, known before any
+        fetch. `quote_window is None` (no construction site has opted in, or
+        this is a harness that predates it) falls back to the plain
+        `context_window` fetch exactly as it always was — the failure mode
+        this method has kept since `Handler._collect_context`: a thinner
+        reply beats no reply (R-5-adjacent).
+        """
+        if self._quote_window is not None:
+            return await self._quote_window.recent_for_quote(
+                conversation_id=msg.conversation_id,
+                context_window=self._context_window,
+                quote=msg.quote, platform=msg.platform, stage="context",
+            )
         try:
             return tuple(await self._audit.recent(
                 conversation_id=msg.conversation_id,

@@ -187,6 +187,83 @@ async def test_an_unmapped_requester_leaves_the_tagger_none(
     assert ctx.tagger is None
 
 
+async def test_build_context_chases_an_unresolved_quote_within_the_window(
+    persons: Persons, record_store: FakeRecordStore, memory_store: FakeMemoryStore,
+    doctrine_store, metrics: Metrics,
+) -> None:
+    """DEC-195 (design/11 §2.5's amendment) on the fire path's shape: a
+    participation occasion carries no single triggering message
+    (`participation_occasion`'s `body=""`, `person_id=None`), so there is no
+    ONE quote to check the way the tag path has. `recent_for_window` reads
+    the plain `context_window` first and, finding a row INSIDE it whose OWN
+    `quoted_ts` points outside what was read, grows to reach it — the exact
+    condition `_parent_of` (`nora.agent.prefill`) would otherwise fail to
+    resolve when this transcript renders.
+
+    25 rows seeded (`ts`/id 0..24), `context_window=10` — row 24 (the most
+    recent) quotes `ts=5`, 20 rows back, outside the plain 15..24 window.
+    `depth_to(5)` is 20, past `context_window`, so this grows to
+    `depth + margin` (default 10) = 30, reaching every row."""
+    from nora.domain.models import NormalizedMessage, Quote
+    from nora.domain.quote_window import QuoteWindow
+
+    for i in range(24):
+        await record_store.append(message=NormalizedMessage(
+            platform="signal", conversation_id="conv-1", conversation_type="group",
+            sender_id="+85212345678", sender_name="Miles", timestamp=i, body=f"m{i}", raw={},
+        ))
+    await record_store.append(message=NormalizedMessage(
+        platform="signal", conversation_id="conv-1", conversation_type="group",
+        sender_id="+85212345678", sender_name="Miles", timestamp=24, body="m24", raw={},
+        quote=Quote(author_id="x", text="", quoted_ts=5),
+    ))
+    path = FirePath(
+        persons=persons, records=record_store, memory=memory_store,
+        doctrine_store=doctrine_store, metrics=metrics,
+        runner=None, adapters={}, registry=None,                 # type: ignore[arg-type]
+        canary="test-canary", display_name="Nora",
+        ai_peer="nora", context_window=10, limits={},
+        timeout_seconds=120.0, clock=lambda: T0,
+        quote_window=QuoteWindow(audit=record_store, metrics=metrics),
+    )
+
+    ctx = await path.build_context(participation_occasion(
+        platform="signal", conversation_id="conv-1",
+    ))
+
+    assert ctx.transcript[0].body == "m0"
+    assert any(row.body == "m5" for row in ctx.transcript)
+
+
+async def test_build_context_with_no_quote_window_wired_is_unchanged(
+    fire_path: FirePath, record_store: FakeRecordStore,
+) -> None:
+    """The `fire_path` fixture (`context_window=40`) passes no `quote_window`
+    — every other test in this file relies on that being a genuine no-op, not
+    an accident this one pins directly. 50 rows seeded, the most recent
+    quoting `ts=5` (35 rows back, outside a 40-row window's OLDEST edge is
+    `ts=10`): with no `QuoteWindow` wired this must stay at the plain
+    40-row window rather than grow to reach it."""
+    from nora.domain.models import NormalizedMessage, Quote
+
+    for i in range(49):
+        await record_store.append(message=NormalizedMessage(
+            platform="signal", conversation_id="conv-1", conversation_type="group",
+            sender_id="+85212345678", sender_name="Miles", timestamp=i, body=f"m{i}", raw={},
+        ))
+    await record_store.append(message=NormalizedMessage(
+        platform="signal", conversation_id="conv-1", conversation_type="group",
+        sender_id="+85212345678", sender_name="Miles", timestamp=49, body="m49", raw={},
+        quote=Quote(author_id="x", text="", quoted_ts=5),
+    ))
+
+    ctx = await fire_path.build_context(participation_occasion(
+        platform="signal", conversation_id="conv-1",
+    ))
+
+    assert [row.body for row in ctx.transcript] == [f"m{i}" for i in range(10, 50)]
+
+
 def _inbound(conversation_id: str, body: str):
     from nora.domain.models import NormalizedMessage
     return NormalizedMessage(
