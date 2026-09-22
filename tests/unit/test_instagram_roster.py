@@ -215,3 +215,21 @@ async def test_the_platform_it_is_bound_to_is_declared():
     """`roster()` takes no `platform` — an implementation is bound to one,
     exactly as `PlatformAdapter` is, and `composition` keys the map on it."""
     assert InstagramRoster("http://x").platform == "instagram"
+
+
+async def test_a_conversation_id_that_is_not_a_string_never_raises():
+    """The port's rule is absolute: `roster()` must never raise, because the
+    caller is a tool inside a live turn and an exception there is a broken
+    turn rather than a degraded answer.
+
+    `.strip()` sat outside the try, so a non-str conversation_id left through
+    an AttributeError. Both call sites wrap it today — that is their belt, not
+    this module's braces, and a third caller would not inherit it.
+
+    PROBE: drop the isinstance guard and this raises instead of degrading.
+    """
+    source = InstagramRoster(base_url="http://127.0.0.1:1")
+    for bad in (None, 12345, object(), b"1009543911792316"):
+        out = await source.roster(conversation_id=bad)  # type: ignore[arg-type]
+        assert out.available is False
+        assert out.members == ()

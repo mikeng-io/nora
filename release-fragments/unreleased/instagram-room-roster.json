@@ -8,7 +8,9 @@
     "Tagging back was landed earlier and inert — it needed the member list to confirm someone is actually in the room before it would address them. It is live now."
   ],
   "limitations": [
-    "Location will still refuse in the Instagram group while a member is missing from identity.toml. That is the guard working, not the roster failing: an account nobody can name cannot be checked against the location circle. Map the account and it clears.",
-    "An Instagram challenge makes the member list unreadable for as long as it stands, and the room-scoped answers degrade to \"I can't check right now\" until a human clears it."
+    "Whether an unmapped member in the room blocks a location answer depends on that room's `location` flag, and the flag is ON for the Instagram group this ships into. With it on, an account nobody can name does NOT refuse the answer — it is disclosed and the waiver is counted. An earlier draft of this note said the opposite, which would have told the operator he was protected by a gate he had already chosen to waive.",
+    "An Instagram challenge makes the member list unreadable for as long as it stands, and the room-scoped answers degrade to \"I can't check right now\" until a human clears it.",
+    "Because that flag is on, the completeness of this roster is not what stops a location disclosure in that room — only an unreadable roster does. The read stays fail-closed anyway, refusing rather than serving a room short by one member, but the margin is smaller than the code comments claim.",
+    "Membership is assumed to arrive whole. The wire carries no cursor and mautrix's own connector treats it as complete, but it has only been observed on a three-person group. Nothing in the code would detect a larger group arriving truncated."
   ]
 }

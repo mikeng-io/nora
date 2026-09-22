@@ -25,8 +25,14 @@ different ones. Exactly one of them belongs in `Roster.members`:
 * **A mention can only carry the fbid.** `nora.agent.outbound._recipient`
   intersects `identity.toml`'s ids with the ones the ROSTER just reported and
   hands the result to `_preferred_recipient`, whose Instagram branch accepts a
-  bare digit string — which is what BOTH id kinds are, measured at 15 and 17
-  digits with a shared leading `1784`. So an igid sitting in the same frozenset
+  bare digit string — which is what BOTH id kinds are. It accepts any bare
+  digit string BY DESIGN: `design/instagram-adoption/02` forbids validating an
+  Instagram id by shape, because the two measured fbids are themselves 15 and
+  17 digits and no length or prefix rule separates real members from each
+  other. (An earlier version of this comment cited a "shared `1784` prefix" as
+  evidence; that measurement is about two fbids, not about fbid-vs-igid, and
+  every measured igid is 11 digits. The decision is unchanged.)
+  So an igid sitting in the same frozenset
   is not inert: it is a coin toss on addressing a mention with a number no
   mention can carry, which is the silent no-ping failure this module exists to
   end, re-introduced one layer down.
@@ -57,6 +63,20 @@ location circle, so disclosing a fix in that room would be disclosing to a
 stranger. A member missing from `identity.toml` therefore makes location refuse
 — that is the guard working, and the remedy is to map the account, never to
 loosen this module.
+
+**But read the room's `location` flag before relying on that.** DEC-79 made
+the flag waive the `unnamed > 0` refusal outright, and it is ON in the
+Instagram room this ships into (operator, 2026-09-22, answering "why does one
+unidentified person disable it entirely"). There, an unnamed account does not
+refuse: the answer is disclosed and the waiver is counted on
+`nora_presence_disclosure_waived_total`. So in THAT room this roster's
+completeness is not what stops a disclosure — only a roster that cannot be
+read at all is, and that asymmetry is deliberate (`whereis.py`: an unnamed
+account is a measurement the operator may overrule, an unreadable roster is no
+measurement to overrule).
+
+The read stays fail-closed regardless. A smaller margin is a reason to keep
+this module strict, not a licence to relax it.
 """
 
 from __future__ import annotations
@@ -106,7 +126,13 @@ class InstagramRoster:
         roster, because a room Nora could not look into and a room with nobody
         in it must never produce the same value.
         """
-        room_id = conversation_id.strip()
+        # `.strip()` on a non-str raises, and this line is OUTSIDE the try
+        # below — so a caller handing a non-string conversation_id would take
+        # `roster()` out through an AttributeError, which the port forbids
+        # outright ("It must never raise — the caller is a tool inside a live
+        # turn"). Both call sites happen to wrap it today; that is their
+        # belt, not this module's braces.
+        room_id = conversation_id.strip() if isinstance(conversation_id, str) else ""
         if not room_id:
             # A wiring fault, not an empty room — and it must not reach the
             # network, where it would become an indistinguishable 400.

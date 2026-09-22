@@ -46,14 +46,22 @@ package main
 //
 // # Fail closed, never under-report
 //
-// An under-reported roster is the one dangerous direction here, and it is
-// dangerous in a specific way: `Whereis` refuses a room that holds an account
-// it cannot name (design/19 §5), so a roster that has quietly FORGOTTEN
-// somebody is one the disclosure gate will happily approve. Every shape this
-// route cannot fully account for — no thread, no users, a user with no
-// messaging id — is a 500 with a named error, never a short list and never an
-// empty one. `Roster(available=false)` on the Python side costs an honest
-// «I couldn't look»; a silently short list costs a disclosure.
+// An under-reported roster is the one dangerous direction here. `Whereis`
+// decides disclosure by checking every account this route reports against the
+// location circle, so a roster that has quietly FORGOTTEN somebody is a
+// disclosure made against a room nobody checked. Every shape this route
+// cannot fully account for — no thread, no users, a user with no messaging id
+// — is a 500 with a named error, never a short list and never an empty one.
+// `Roster(available=false)` on the Python side costs an honest «I couldn't
+// look»; a silently short list costs a disclosure.
+//
+// One correction to the argument above, made 2026-09-22 after the room this
+// ships into set `location = true`: that flag waives the `unnamed > 0`
+// refusal (DEC-79), so in THAT room an account nobody can name no longer
+// stops a disclosure either. The refusal this paragraph leans on is disarmed
+// there. Nothing below changes — a smaller margin is a reason to stay strict,
+// not a licence to relax — but the claim should not be read as stronger than
+// it is.
 
 import (
 	"context"

@@ -183,10 +183,21 @@ so a silently missing member is a disclosure made against a room nobody
 checked.
 
 Consumed by `nora/platform/instagram/roster.py`, which carries the **fbid
-only** into `Roster.members`. Both id kinds are bare digits with a shared
-`1784` prefix, so `_preferred_recipient` cannot tell them apart; admitting the
-igid would make a tag a coin toss on addressing a number no mention can
-carry — the exact silent no-ping failure the roster exists to end.
+only** into `Roster.members`. Both kinds are bare digit strings, and
+`_preferred_recipient` accepts any bare digit string by design — `02` forbids
+validating an id by shape, because the two measured fbids are themselves 15
+and 17 digits and no length or prefix rule separates real members from each
+other. So admitting the igid into the membership set would make a tag a coin
+toss on addressing a number no mention can carry: the exact silent no-ping
+failure the roster exists to end.
+
+**Corrected 2026-09-22.** An earlier revision of this paragraph justified the
+decision with "both kinds share a `1784` prefix". That measurement is real but
+is about two **fbids** — `110966695387753` and `12116372067347151`, the latter
+sharing Nora's own leading digits (`02` §measured). Every measured **igid** is
+11 digits and none begins `1784`. The decision is unchanged; the evidence
+cited for it was borrowed from a different point, which is worth correcting
+because a later reader would re-derive the decision from it.
 
 ## The social route — specified here, NOT YET IMPLEMENTED
 
