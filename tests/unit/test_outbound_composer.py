@@ -402,6 +402,73 @@ async def test_the_REAL_instagram_roster_is_what_lets_a_mention_resolve(aiohttp_
     assert metrics.get("nora_outbound_mentions_total", outcome="sent") == 1
 
 
+async def test_an_instagram_mention_carries_the_operator_recorded_handle():
+    """The fbid alone is not enough for Instagram to RENDER a mention — see
+    `nora.platform.instagram.send`'s module docstring for the live evidence
+    (2026-09-22): a correctly-resolved fbid still sent as plain text, because
+    Instagram's own API requires the message TEXT at the mention's span to
+    read `"@" + the account's own username`, never the display name Nora
+    wrote. `Persons.instagram_handle` is where that username comes from
+    (identity.toml's `username` metadata, keyed on this exact fbid), and this
+    is the one place in the composer allowed to read it — see `Mention.
+    handle`'s own docstring for why the substitution itself happens one layer
+    further out, in `nora.platform.instagram.send`.
+
+    PROBE: delete the `handle=` line in `OutboundComposer._mentions` and this
+    goes red — `mention.handle` comes back `None` even though `Persons` has
+    the username on file.
+    """
+    metrics = Metrics()
+    roster = FakeRosterSource(groups={IG_CONVERSATION: (frozenset({IG_FBID}),)})
+    persons = _instagram_persons()
+    persons._instagram_handles[IG_FBID] = "nka_bpumvg"
+    composer = _instagram_composer(roster=roster, persons=persons, metrics=metrics)
+
+    out = await composer.compose(_draft("@Tyler Cortez 食咗飯未"))
+
+    (mention,) = out.mentions
+    assert mention.recipient == IG_FBID
+    assert mention.handle == "nka_bpumvg"
+    assert out.text == "@Tyler Cortez 食咗飯未"    # unchanged — see module docstring
+
+
+async def test_an_instagram_mention_with_no_recorded_username_carries_no_handle():
+    """The ordinary, until-the-operator-opts-in state: the mention still
+    resolves (the fbid is right, the ping metadata is right) and `.handle`
+    stays `None` — `nora.platform.instagram.send` then forwards the span
+    unchanged, today's degraded-but-not-wrong behaviour."""
+    metrics = Metrics()
+    roster = FakeRosterSource(groups={IG_CONVERSATION: (frozenset({IG_FBID}),)})
+    composer = _instagram_composer(roster=roster, metrics=metrics)
+
+    out = await composer.compose(_draft("@Tyler Cortez 食咗飯未"))
+
+    (mention,) = out.mentions
+    assert mention.handle is None
+
+
+async def test_a_discord_mention_never_carries_a_handle_even_with_matching_metadata():
+    """`Mention.handle` is gated on `self._platform == "instagram"` — not
+    merely on whether `Persons` happens to have a matching entry — because
+    Discord's own mechanism (`nora.platform.discord.mention_resolve.
+    splice_composed_mentions`) works off `.recipient` alone and a stray
+    `.handle` would be a second, contradictory instruction reaching a
+    consumer that was never meant to read it. `TYLER_SNOWFLAKE` is reused
+    here as a would-be instagram fbid on the SAME `Persons` instance the
+    Discord composer is handed, to prove the platform gate does the work,
+    not merely the absence of data."""
+    metrics = Metrics()
+    roster = FakeRosterSource(groups={DISCORD_CONVERSATION: (frozenset({TYLER_SNOWFLAKE}),)})
+    persons = _discord_persons()
+    persons._instagram_handles[TYLER_SNOWFLAKE] = "would_be_a_handle"
+    composer = _discord_composer(roster=roster, persons=persons, metrics=metrics)
+
+    out = await composer.compose(_draft("@Tyler Cortez 柯屎係你嘅 escape plan"))
+
+    (mention,) = out.mentions
+    assert mention.handle is None
+
+
 async def test_a_discord_snowflake_is_accepted_as_the_preferred_recipient_form():
     """#211's mechanism: `_preferred_recipient` used to accept only a UUID or
     an E.164 number, so a Discord snowflake was refused even though the

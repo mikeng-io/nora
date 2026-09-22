@@ -68,6 +68,17 @@ class Persons:
     # bare required field) so every existing direct `Persons(...)` fixture in
     # the test suite that predates this task keeps constructing without it.
     _subject_aliases: dict[str, str] = field(default_factory=dict)
+    # fbid -> the Instagram `username` metadata recorded beside it, ONE
+    # account's pairing at a time (design/instagram-adoption/02; `username`
+    # has been an accepted, never-matchable `instagram` metadata key since
+    # that design landed — `nora.domain.identity.metadata_keys("instagram")`
+    # — this is the first reader of it). Keyed on the fbid, not the
+    # person_id, because a person may hold more than one Instagram account
+    # with different handles (a `label`-disambiguated personal/business
+    # pair); `nora.agent.outbound._mentions` already knows exactly which
+    # fbid THIS room's own roster resolved to, so `instagram_handle` reads
+    # off that SAME account rather than guessing among a person's several.
+    _instagram_handles: dict[str, str] = field(default_factory=dict)
 
     def subject_id_for(self, person_id: str) -> str:
         """The stable id to derive analytics under. Resolves a RETIRED
@@ -136,6 +147,25 @@ class Persons:
             if plat == platform and pid == person_id
         )
 
+    def instagram_handle(self, fbid: str) -> str | None:
+        """The Instagram `username` the operator recorded beside `fbid`, or
+        `None` — the literal wire text (`nora.platform.instagram.send`)
+        Instagram's own mention API requires at a mention's span to render it
+        as a chip, and never renders (confirmed against upstream mautrix-meta,
+        `igconv/from-matrix.go` + `textfmt/from-matrix.go`: it builds the
+        request as `"@" + mention.Name` over the recipient's OWN username, not
+        the sender's display name for them) if that span is the display name
+        Nora's prose names them by, which is all `identity.toml` guarantees on
+        its own.
+
+        `None` — no `username` on file for this exact fbid, or an fbid this
+        file never heard of — is the ordinary, EXPECTED answer until an
+        operator opts a person in; the caller degrades to today's behaviour
+        (the mention metadata still carries the fbid, the rendered text stays
+        whatever Nora wrote), never an error.
+        """
+        return self._instagram_handles.get(fbid)
+
     def display_name(self, msg: NormalizedMessage) -> str:
         ref = self.resolve(msg.platform, msg.sender_id)
         if ref:
@@ -193,6 +223,7 @@ def load_persons(path: Path) -> Persons:
     by_person: dict[str, PersonRef] = {}
     index: dict[tuple[str, str], str] = {}
     life360: list[Life360Membership] = []
+    instagram_handles: dict[str, str] = {}
     for person_id, entry in parsed.persons.items():
         # `name` is what Nora calls them out loud. Fall back through the
         # structured parts before the person_id, so a file that gives only
@@ -228,6 +259,21 @@ def load_persons(path: Path) -> Persons:
                         member_id=str(account["member_id"]),
                         circle_id=str(circle) if circle is not None else None,
                     ))
+                if (
+                    platform == "instagram"
+                    and "fbid" in account
+                    and "username" in account
+                ):
+                    # Paired within THIS block, deliberately — `username` is
+                    # metadata (never matched on, §3.1), but it names a handle
+                    # for ONE account, and a person may hold several with
+                    # different ones. Reading it off the same `account` dict
+                    # the `fbid` came from is what keeps the pairing correct
+                    # for a personal/business pair; a person-level dict could
+                    # not tell the two apart. `fbid` is already the unique,
+                    # duplicate-checked index key below, so this needs no
+                    # collision check of its own.
+                    instagram_handles[str(account["fbid"])] = str(account["username"])
                 for kind, id_value in account.items():
                     if kind == ACCOUNT_LABEL_KEY or kind in metadata:
                         continue          # non-matchable: label / life360 circle_id
@@ -295,5 +341,5 @@ def load_persons(path: Path) -> Persons:
 
     return Persons(
         by_person=by_person, index=index, life360=tuple(life360),
-        _subject_aliases=subject_aliases,
+        _subject_aliases=subject_aliases, _instagram_handles=instagram_handles,
     )
