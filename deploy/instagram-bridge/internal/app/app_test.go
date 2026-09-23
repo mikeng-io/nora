@@ -30,6 +30,8 @@ type fakePorts struct {
 	searchErr  error
 	searchHits []domain.AccountSummary
 	posts      []string
+	reactedID  string
+	unsentID   string
 }
 
 func (f *fakePorts) ResolveThread(_ context.Context, short domain.ThreadFBID) (domain.ThreadRef, error) {
@@ -49,7 +51,8 @@ func (f *fakePorts) SendMedia(context.Context, domain.ThreadRef, domain.Upload, 
 	return domain.Sent{ID: "mid.$media"}, nil
 }
 
-func (f *fakePorts) React(context.Context, domain.ThreadRef, string, string, bool) (bool, error) {
+func (f *fakePorts) React(_ context.Context, _ domain.ThreadRef, messageID, _ string, _ bool) (bool, error) {
+	f.reactedID = messageID
 	return true, nil
 }
 
@@ -58,7 +61,8 @@ func (f *fakePorts) Typing(context.Context, domain.ThreadRef, bool) error {
 	return nil
 }
 
-func (f *fakePorts) Unsend(context.Context, domain.ThreadRef, string) (bool, error) {
+func (f *fakePorts) Unsend(_ context.Context, _ domain.ThreadRef, messageID string) (bool, error) {
+	f.unsentID = messageID
 	return f.unsendOK, nil
 }
 
@@ -103,21 +107,57 @@ func ready() *fakeSession {
 
 func service(s *fakeSession, p *fakePorts) *Service { return New(s, p, p) }
 
-// The session gate runs BEFORE the id is parsed: a checkpointed session is
-// "a human must act", whatever the id looks like, and nothing reaches a port.
-func TestTheSessionGateComesBeforeTheIDParse(t *testing.T) {
+func mustThread(t *testing.T, s string) domain.ThreadFBID {
+	t.Helper()
+	id, err := domain.ParseThreadFBID(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func mustIGID(t *testing.T, s string) domain.IGID {
+	t.Helper()
+	id, err := domain.ParseIGID(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func mustMessageID(t *testing.T, s string) domain.MessageID {
+	t.Helper()
+	id, err := domain.ParseMessageID(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+const synthRoom = "100000000000042"
+
+// The session gate is the FIRST thing every Instagram-facing use case does:
+// a checkpointed session is "a human must act", and nothing reaches a port.
+// Since P14 the use cases take PARSED ids (the HTTP edge parses them, so a
+// malformed id is 400 before this gate runs), so every case here hands in a
+// well-formed id and the gate alone is what refuses.
+func TestTheSessionGateComesFirstInEveryUseCase(t *testing.T) {
 	for _, state := range []domain.SessionState{domain.StateCheckpointed, domain.StateLoggedOut} {
 		p := &fakePorts{}
 		svc := service(&fakeSession{snap: domain.Session{State: state, Detail: "captcha", HasClient: true}}, p)
+		room, msg := mustThread(t, synthRoom), mustMessageID(t, "mid.$synthetic")
 		checks := map[string]error{}
-		_, checks["send"] = svc.SendText(t.Context(), "not-a-thread", "hi", nil, "")
-		_, _, checks["members"] = svc.Members(t.Context(), "not-a-thread")
-		_, checks["account"] = svc.ReadAccount(t.Context(), "nka_bpumvg")
-		_, checks["story"] = svc.ReadStory(t.Context(), "nka_bpumvg")
+		_, checks["send"] = svc.SendText(t.Context(), room, "hi", nil, "")
+		_, checks["send_media"] = svc.SendMedia(t.Context(), room, domain.Upload{Data: []byte("x")}, "")
+		_, checks["react"] = svc.React(t.Context(), room, msg, "x", false)
+		_, checks["unsend"] = svc.Unsend(t.Context(), room, msg)
+		_, checks["members"] = svc.Members(t.Context(), room)
+		_, checks["account"] = svc.ReadAccount(t.Context(), mustIGID(t, "10000001"))
+		_, checks["story"] = svc.ReadStory(t.Context(), mustIGID(t, "10000001"))
 		_, checks["search"] = svc.SearchAccounts(t.Context(), "someone")
 		_, checks["lookup_by_username"] = svc.LookupAccountByUsername(t.Context(), mustUsername(t, "someone"))
 		_, checks["post"] = svc.ReadPost(t.Context(), mustShortcode(t, "CmiJBr2LAAB"))
-		checks["typing"] = svc.Typing(t.Context(), "not-a-thread", true)
+		checks["typing"] = svc.Typing(t.Context(), room, true)
 		for name, err := range checks {
 			var nr *NotReadyError
 			if !errors.As(err, &nr) || nr.State != state || nr.Detail != "captcha" {
@@ -137,24 +177,9 @@ func TestTheSessionGateComesBeforeTheIDParse(t *testing.T) {
 // must clear.
 func TestASessionBeingRebuiltIsUnavailable(t *testing.T) {
 	svc := service(&fakeSession{snap: domain.Session{State: domain.StateAuthenticated}}, &fakePorts{})
-	_, err := svc.SendText(t.Context(), "1009543911792316", "hi", nil, "")
+	_, err := svc.SendText(t.Context(), mustThread(t, synthRoom), "hi", nil, "")
 	if !errors.Is(err, ErrRebuilding) || !errors.Is(err, domain.ErrUnavailable) {
 		t.Errorf("err = %v, want ErrRebuilding (ErrUnavailable)", err)
-	}
-}
-
-// A malformed id is refused before a port: the caller's 400, never a lookup.
-func TestAMalformedIDNeverReachesAPort(t *testing.T) {
-	p := &fakePorts{}
-	svc := service(ready(), p)
-	if _, err := svc.SendText(t.Context(), "340282366841710301281152937372201004392", "hi", nil, ""); !errors.Is(err, domain.ErrInvalidID) {
-		t.Errorf("a long thread id as a room key gave %v, want ErrInvalidID", err)
-	}
-	if _, err := svc.ReadAccount(t.Context(), "nka_bpumvg"); !errors.Is(err, domain.ErrInvalidID) {
-		t.Errorf("a username as an igid gave %v, want ErrInvalidID", err)
-	}
-	if len(p.resolved)+len(p.accounts) != 0 {
-		t.Errorf("a malformed id reached a port: %v %v", p.resolved, p.accounts)
 	}
 }
 
@@ -162,7 +187,7 @@ func TestAMalformedIDNeverReachesAPort(t *testing.T) {
 // igid. The social half keyed on the username was a real bug (2026-09-22).
 func TestBothHalvesOfAnAccountReadUseTheParsedIGID(t *testing.T) {
 	p := &fakePorts{}
-	read, err := service(ready(), p).ReadAccount(t.Context(), "0221731317")
+	read, err := service(ready(), p).ReadAccount(t.Context(), mustIGID(t, "0221731317"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,13 +207,13 @@ func TestOnlyTypingNeedsTheSocket(t *testing.T) {
 	s.snap.Connected = false
 	p := &fakePorts{}
 	svc := service(s, p)
-	if err := svc.Typing(t.Context(), "1009543911792316", true); !errors.Is(err, ErrSocketDown) {
+	if err := svc.Typing(t.Context(), mustThread(t, synthRoom), true); !errors.Is(err, ErrSocketDown) {
 		t.Errorf("typing with the socket down gave %v, want ErrSocketDown", err)
 	}
 	if p.typed != 0 {
 		t.Error("typing reached the port with the socket down")
 	}
-	if _, err := svc.SendText(t.Context(), "1009543911792316", "hi", nil, ""); err != nil {
+	if _, err := svc.SendText(t.Context(), mustThread(t, synthRoom), "hi", nil, ""); err != nil {
 		t.Errorf("a send with the socket down failed: %v", err)
 	}
 }
@@ -197,18 +222,38 @@ func TestOnlyTypingNeedsTheSocket(t *testing.T) {
 // keeps its kind, so a checkpoint discovered there still reads as one.
 func TestAFailedThreadLookupKeepsItsKind(t *testing.T) {
 	p := &fakePorts{lookupErr: domain.Classify(domain.ErrNeedsHuman, errors.New("checkpoint"))}
-	_, err := service(ready(), p).SendText(t.Context(), "1009543911792316", "hi", nil, "")
+	_, err := service(ready(), p).SendText(t.Context(), mustThread(t, synthRoom), "hi", nil, "")
 	var lookup *ThreadLookupError
 	if !errors.As(err, &lookup) || !errors.Is(err, domain.ErrNeedsHuman) {
 		t.Errorf("err = %v, want a ThreadLookupError that is ErrNeedsHuman", err)
 	}
 }
 
-// Members answers with the canonical room key the answer is about.
-func TestMembersEchoesTheCanonicalRoom(t *testing.T) {
-	room, thread, err := service(ready(), &fakePorts{}).Members(t.Context(), "01009543911792316")
-	if err != nil || room.String() != "1009543911792316" || len(thread.Members) != 1 {
-		t.Errorf("Members = %v, %+v, %v", room, thread, err)
+// Members resolves the room it was handed, already canonical from the parse.
+func TestMembersResolvesTheParsedRoom(t *testing.T) {
+	p := &fakePorts{}
+	thread, err := service(ready(), p).Members(t.Context(), mustThread(t, "0"+synthRoom))
+	if err != nil || len(thread.Members) != 1 {
+		t.Fatalf("Members = %+v, %v", thread, err)
+	}
+	if len(p.resolved) != 1 || p.resolved[0] != synthRoom {
+		t.Errorf("resolved %v, want the canonical [%s]", p.resolved, synthRoom)
+	}
+}
+
+// React and Unsend hand the port the message id they were given, unchanged.
+func TestReactAndUnsendForwardTheMessageID(t *testing.T) {
+	p := &fakePorts{}
+	svc := service(ready(), p)
+	msg := mustMessageID(t, "mid.$synthetic")
+	if _, err := svc.React(t.Context(), mustThread(t, synthRoom), msg, "x", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Unsend(t.Context(), mustThread(t, synthRoom), msg); err != nil {
+		t.Fatal(err)
+	}
+	if p.reactedID != msg.String() || p.unsentID != msg.String() {
+		t.Errorf("port saw react=%q unsend=%q, want %q for both", p.reactedID, p.unsentID, msg)
 	}
 }
 

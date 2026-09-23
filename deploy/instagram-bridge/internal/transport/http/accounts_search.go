@@ -24,20 +24,16 @@ package httptransport
 // two or more cannot happen for a real username and answers 502
 // `upstream_rejected`.
 //
-// # The NEW response conventions, from day one
+// # The response conventions
 //
-// Every other route in this package still answers the body it had before
-// `16`: `{"ok": ..., "error": "..."}`. This route has no old body to keep
-// compatible, so it is the first one on `16`'s real conventions:
+// This was the FIRST route on `16`'s conventions, before P14 moved every
+// other route onto them:
 //
 //   - success is `{"items": [...], "next_cursor": null}` — no `ok` field, the
 //     SAME shape for both `?query=` and `?username=` (0 or 1 items);
-//   - failure is one envelope, `{"error": {"code": "...", "message": "..."}}`,
-//     `code` drawn from the closed domain set, at the FULL status table `16`
-//     specifies (400/404/409/413/500/501/502/503) — not the older
-//     `statusForError` in reads.go, which still answers 500 for
-//     ErrUpstreamRejected and has no 501 or 502. That table moves onto the
-//     old routes in P14, in the same PR that moves the Python client.
+//   - failure is the one envelope (errors.go), `{"error": {"code": "...",
+//     "message": "..."}}`, `code` drawn from the closed domain set, at the
+//     one status table every route shares (400/404/409/413/500/501/502/503).
 //
 // # Validation, before any use case runs — INCLUDING the session gate
 //
@@ -55,10 +51,9 @@ package httptransport
 // checked first inside every Instagram-facing use case). That is deliberate
 // ordering, not an accident of where the code happens to sit: design 16
 // §Resources says "a malformed id is 400 before any use case runs", and a
-// malformed or missing `query`/`username` is exactly that. The OLD routes
-// answer the session gate (409) before a request-shape problem in some
-// cases — that is P14's reorder debt on THEM, not a pattern this route
-// copies. See TestAccountsSearchValidationRunsBeforeSessionGate.
+// malformed or missing `query`/`username` is exactly that. P14 moved every
+// other route onto the same order. See
+// TestAccountsSearchValidationRunsBeforeSessionGate.
 //
 // # The query text and the username
 //
@@ -80,14 +75,10 @@ package httptransport
 // needs, and it says nothing about who was searched for.
 
 import (
-	"context"
-	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
 
-	"instagram-bridge/internal/app"
 	"instagram-bridge/internal/domain"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -102,103 +93,6 @@ import (
 // instameow itself documents — nothing has measured the library's own
 // ceiling, so this is deliberately conservative and may move if that changes.
 const maxSearchQueryLength = 64
-
-// errorBody is the ONE failure shape every new-convention route answers:
-// `code` from the closed domain set, `message` for an operator.
-type errorBody struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
-type errorEnvelope struct {
-	Error errorBody `json:"error"`
-}
-
-func writeErrorEnvelope(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, errorEnvelope{Error: errorBody{Code: code, Message: message}})
-}
-
-// statusForDomainError is design 16's FULL status table for the new
-// conventions — 400/404/409/413/500/501/502/503 — which differs from the
-// older statusForError in reads.go (500 for ErrUpstreamRejected, no 501, no
-// 502) only because the old routes have not migrated onto it yet (P14).
-func statusForDomainError(err error) int {
-	switch {
-	case err == nil:
-		return http.StatusOK
-	case errors.Is(err, domain.ErrInvalidID):
-		return http.StatusBadRequest
-	case errors.Is(err, domain.ErrNotFound):
-		return http.StatusNotFound
-	case errors.Is(err, domain.ErrNeedsHuman):
-		return http.StatusConflict
-	case errors.Is(err, domain.ErrTooLarge):
-		// Checked BEFORE ErrUpstreamRejected: ErrTooLarge refines it
-		// (domain/errors.go), so errors.Is against the parent would also
-		// match here and this route would lose the 413.
-		return http.StatusRequestEntityTooLarge
-	case errors.Is(err, domain.ErrUnsupported):
-		return http.StatusNotImplemented
-	case errors.Is(err, domain.ErrUpstreamRejected):
-		return http.StatusBadGateway
-	case errors.Is(err, domain.ErrUnavailable):
-		return http.StatusServiceUnavailable
-	default:
-		// Fail closed: an unclassified failure is 500, never a status that
-		// claims to know whether retrying would help.
-		return http.StatusInternalServerError
-	}
-}
-
-// errorCode names the closed set's member for the envelope's `code`. It
-// mirrors statusForDomainError's classification exactly, so a status and a
-// code can never disagree about what happened.
-func errorCode(err error) string {
-	switch {
-	case errors.Is(err, domain.ErrInvalidID):
-		return "invalid_id"
-	case errors.Is(err, domain.ErrNotFound):
-		return "not_found"
-	case errors.Is(err, domain.ErrNeedsHuman):
-		return "needs_human"
-	case errors.Is(err, domain.ErrTooLarge):
-		return "too_large"
-	case errors.Is(err, domain.ErrUnsupported):
-		return "unsupported"
-	case errors.Is(err, domain.ErrUpstreamRejected):
-		return "upstream_rejected"
-	case errors.Is(err, domain.ErrUnavailable):
-		return "unavailable"
-	default:
-		return "internal"
-	}
-}
-
-// failEnvelope writes a use case's error in the new envelope, and logs the
-// STATUS and CODE only — never the query, and never `err.Error()` raw. By
-// the time an error reaches here it is either a NotReadyError (state/detail,
-// no query involved) or something that passed through searchAccounts'
-// upstreamSearchError wrapper, whose text is already fixed — but this
-// function does not rely on that upstream guarantee holding forever; it logs
-// the classification, not the message, so a future error source cannot
-// reintroduce a leak here by surprise. The same holds for `GET
-// /posts/{shortcode}` (posts.go): its gateway errors are fixed texts, and a
-// caption never reaches an error at all. `route` names the log line.
-func failEnvelope(ctx context.Context, w http.ResponseWriter, route string, err error) {
-	var notReady *app.NotReadyError
-	if errors.As(err, &notReady) {
-		msg := string(notReady.State)
-		if notReady.Detail != "" {
-			msg = msg + ": " + notReady.Detail
-		}
-		slog.WarnContext(ctx, route+" failed", "status", http.StatusConflict, "code", "needs_human")
-		writeErrorEnvelope(w, http.StatusConflict, "needs_human", msg)
-		return
-	}
-	status, code := statusForDomainError(err), errorCode(err)
-	slog.WarnContext(ctx, route+" failed", "status", status, "code", code)
-	writeErrorEnvelope(w, status, code, err.Error())
-}
 
 // --- GET /accounts?query= ------------------------------------------------
 

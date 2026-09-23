@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -156,5 +157,29 @@ func TestTooLargeRefinesUpstreamRejected(t *testing.T) {
 	}
 	if errors.Is(Classify(ErrUpstreamRejected, errors.New("x")), ErrTooLarge) {
 		t.Error("every upstream rejection reads as too large")
+	}
+}
+
+// A message id is opaque (Instagram documents no shape), so the parse refuses
+// only what cannot be one, and its error never echoes the input, because the
+// value arrives as a path segment a caller controls.
+func TestMessageIDParse(t *testing.T) {
+	for _, ok := range []string{"mid.$synthetic0001", "mid.$a+b/c=d_e-f", strings.Repeat("m", 256)} {
+		id, err := ParseMessageID(ok)
+		if err != nil || id.String() != ok {
+			t.Errorf("ParseMessageID(%q) = %q, %v; want the value back", ok, id, err)
+		}
+	}
+	for _, bad := range []string{"", " ", "mid.$a b", "mid.$a\tb", "mid.$a\x00", "mid.$é", strings.Repeat("m", 257)} {
+		_, err := ParseMessageID(bad)
+		if !errors.Is(err, ErrInvalidID) {
+			t.Errorf("ParseMessageID(%q) = %v, want ErrInvalidID", bad, err)
+			continue
+		}
+		// Inputs of a byte or two are substrings of any English sentence;
+		// the echo check is meaningful only for the longer ones.
+		if len(bad) > 2 && strings.Contains(err.Error(), bad) {
+			t.Errorf("ParseMessageID(%q) echoed its input: %v", bad, err)
+		}
 	}
 }

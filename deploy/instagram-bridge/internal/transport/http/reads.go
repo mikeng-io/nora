@@ -5,46 +5,18 @@ package httptransport
 //
 // Every shape here is built from DOMAIN types (internal/domain), never from
 // Instagram's wire structs, which stay inside internal/gateway/instameow
-// (design/instagram-adoption/16 §Layers). The JSON field names are unchanged:
-// this is where the contract the Python side reads is decided, once.
+// (design/instagram-adoption/16 §Layers). This is where the contract the
+// Python side reads is decided, once.
+//
+// No success body carries an `ok` field (P14, 16 §Resources: "success is the
+// resource"). The STATUS says whether a request succeeded; a failure is the
+// envelope in errors.go. The bodies here lost `ok` in P14 and nothing else.
 
 import (
-	"errors"
 	"fmt"
-	"net/http"
 
 	"instagram-bridge/internal/domain"
 )
-
-// statusForError is the status mapping, and it reads the closed domain error
-// set and nothing else: every kind maps onto exactly one status. It is the
-// fail-closed half too — an error with no kind becomes 500, never 200 and
-// never 503. 503 is a claim that retrying will work, and making that claim on
-// an unknown failure is how a permanent error turns into an infinite retry
-// loop.
-//
-// ErrUpstreamRejected answers 500 as it always has; the design's 502 for it
-// (and 501 reaching a caller) move with the resource paths in P14.
-func statusForError(err error) int {
-	switch {
-	case err == nil:
-		return http.StatusOK
-	case errors.Is(err, domain.ErrInvalidID):
-		return http.StatusBadRequest
-	case errors.Is(err, domain.ErrNotFound):
-		return http.StatusNotFound
-	case errors.Is(err, domain.ErrNeedsHuman):
-		return http.StatusConflict
-	case errors.Is(err, domain.ErrTooLarge):
-		return http.StatusRequestEntityTooLarge
-	case errors.Is(err, domain.ErrUnavailable):
-		return http.StatusServiceUnavailable
-	case errors.Is(err, domain.ErrUnsupported):
-		return http.StatusNotImplemented
-	default:
-		return http.StatusInternalServerError
-	}
-}
 
 // --- small shapes -------------------------------------------------------------
 
@@ -55,26 +27,26 @@ type selfBody struct {
 	Username string `json:"username"`
 }
 
-// mentionBody is one outbound mention on /send. Only fbid/offset/length are
-// read: a caller cannot ask for an @everyone through it.
+// mentionBody is one outbound mention on a text message
+// (`POST /threads/{thread_fbid}/messages`). Only fbid/offset/length are read:
+// a caller cannot ask for an @everyone through it.
 type mentionBody struct {
 	FBID   string `json:"fbid"`
 	Offset int    `json:"offset"`
 	Length int    `json:"length"`
 }
 
-func mentionsOf(in []mentionBody) []domain.Mention {
-	out := make([]domain.Mention, 0, len(in))
-	for _, m := range in {
-		out = append(out, domain.Mention{FBID: m.FBID, Offset: m.Offset, Length: m.Length})
-	}
-	return out
-}
-
-// sentBody is a send's 200: {ok, id, timestamp_ms}.
+// sentBody is a message's 200: the message Instagram accepted AND named.
+//
+// `id` is never empty on a 200: a send Instagram accepted without naming the
+// message is a 502 (the gateway's errNoMessageID), because a message Nora
+// cannot name she can neither react to, unsend, nor quote. `timestamp_ms` is
+// the platform's own sent-timestamp, the field Nora's sender reads (it is
+// what a later reply's quote resolves against), and it is OMITTED rather than
+// sent as 0 when Instagram gave none: Nora records a 0 as a real timestamp
+// and an absent one as unknown.
 type sentBody struct {
-	OK          bool   `json:"ok"`
-	ID          string `json:"id,omitempty"`
+	ID          string `json:"id"`
 	TimestampMS int64  `json:"timestamp_ms,omitempty"`
 }
 
@@ -106,10 +78,9 @@ type rosterMember struct {
 }
 
 // rosterBody is the 200 shape. `members` is never null and never empty on a
-// 200 — see the fail-closed note in the file header — so a consumer that sees
-// `ok: true` has a list it can act on.
+// 200 (the use case refuses a short or empty read), so a consumer that sees a
+// 200 has a list it can act on.
 type rosterBody struct {
-	OK     bool   `json:"ok"`
 	RoomID string `json:"room_id"`
 	Title  string `json:"title"`
 	// IsGroup is passed through rather than enforced. The bridge is transport;
@@ -124,7 +95,7 @@ func rosterOf(room string, t domain.Thread) rosterBody {
 	for _, m := range t.Members {
 		members = append(members, rosterMember(m))
 	}
-	return rosterBody{OK: true, RoomID: room, Title: t.Title, IsGroup: t.IsGroup, Members: members}
+	return rosterBody{RoomID: room, Title: t.Title, IsGroup: t.IsGroup, Members: members}
 }
 
 // --- GET /accounts/{igid} -----------------------------------------------------
@@ -138,7 +109,6 @@ func rosterOf(room string, t domain.Thread) rosterBody {
 // lives. A bridge that pre-decided it would hide the reason from the layer
 // that has to explain itself to a person.
 type profileBody struct {
-	OK       bool   `json:"ok"`
 	IGID     string `json:"igid"`
 	Username string `json:"username"`
 	FullName string `json:"full_name"`
@@ -255,7 +225,6 @@ type socialProfile struct {
 
 func profileOf(a domain.Account, social domain.SocialRead) profileBody {
 	out := profileBody{
-		OK:              true,
 		IGID:            a.IGID,
 		Username:        a.Username,
 		FullName:        a.FullName,
@@ -281,7 +250,7 @@ func profileOf(a domain.Account, social domain.SocialRead) profileBody {
 		// no response at all it is the status this bridge would have answered.
 		status := social.Status
 		if status == 0 {
-			status = statusForError(social.Err)
+			status = statusForDomainError(social.Err)
 		}
 		out.SocialError = fmt.Sprintf("%d: %v", status, social.Err)
 	}
@@ -323,7 +292,6 @@ type storyItem struct {
 
 // storyBody is the 200 shape.
 type storyBody struct {
-	OK   bool   `json:"ok"`
 	IGID string `json:"igid"`
 	// Found distinguishes "this account has no story up" from "this account
 	// has one and Nora may not see it". Both come back as zero items, and
@@ -343,14 +311,14 @@ type storyBody struct {
 	Items []storyItem `json:"items"`
 }
 
-// handleStory answers GET /accounts/{igid}/story.
+// storyOf is the story's 200 body.
 func storyOf(s domain.Story) storyBody {
 	items := make([]storyItem, 0, len(s.Items))
 	for _, it := range s.Items {
 		items = append(items, storyItem(it))
 	}
 	return storyBody{
-		OK: true, IGID: s.IGID, Found: s.Found, Username: s.Username,
+		IGID: s.IGID, Found: s.Found, Username: s.Username,
 		ExpiringAt: s.ExpiringAt, Seen: s.Seen, Items: items,
 	}
 }

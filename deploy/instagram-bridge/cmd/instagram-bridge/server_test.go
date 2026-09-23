@@ -74,89 +74,129 @@ func TestHealthCarriesOwnIdentity(t *testing.T) {
 
 // --- the status mapping -------------------------------------------------------
 
+// writeRoutes is each write route with a well-formed request for the measured
+// room, so the only thing that can refuse it is what the test arranges.
+func writeRoutes(t *testing.T, b *testBridge) map[string]func() *httptest.ResponseRecorder {
+	return map[string]func() *httptest.ResponseRecorder{
+		"send text":  func() *httptest.ResponseRecorder { return sendMessage(t, b, threadShort, map[string]any{"text": "hi"}) },
+		"send media": func() *httptest.ResponseRecorder { return sendMessage(t, b, threadShort, mediaOf([]byte("x"), "", "")) },
+		"reaction": func() *httptest.ResponseRecorder {
+			return putReaction(t, b, threadShort, "mid.$x", map[string]any{"emoji": "👍"})
+		},
+		"typing": func() *httptest.ResponseRecorder { return putTyping(t, b, threadShort, map[string]any{"typing": true}) },
+		"unsend": func() *httptest.ResponseRecorder { return unsendMessage(t, b, threadShort, "mid.$x") },
+	}
+}
+
 // 409 means "a human must act". Mapping this to 503 would make the adapter
 // retry a challenged account forever, which is the documented way to turn a
 // checkpoint into a ban.
-func TestCheckpointedSessionRefusesSendsWith409(t *testing.T) {
+func TestCheckpointedSessionRefusesWritesWith409(t *testing.T) {
 	for _, state := range []domain.SessionState{domain.StateCheckpointed, domain.StateLoggedOut} {
 		f := &fakeIG{}
 		b := newTestBridge(t, f, withState(state, "challenge required"))
-		for _, route := range []string{"/send", "/send-media", "/react", "/typing", "/unsend"} {
-			rec := post(t, b, route, map[string]any{
-				"room_id": threadShort, "text": "hi", "message_id": "mid.$x",
-				"emoji": "👍", "data_base64": base64.StdEncoding.EncodeToString([]byte("x")),
-			})
+		for name, call := range writeRoutes(t, b) {
+			rec := call()
 			if rec.Code != http.StatusConflict {
-				t.Errorf("session %q: %s answered %d, want 409", state, route, rec.Code)
+				t.Errorf("session %q: %s answered %d, want 409", state, name, rec.Code)
+				continue
+			}
+			if env := decodeEnvelope(t, rec); env.Error.Code != "needs_human" ||
+				env.Error.Message != string(state)+": challenge required" {
+				t.Errorf("session %q: %s envelope = %+v", state, name, env)
 			}
 		}
-		if f.TextReq != nil || f.MediaReq != nil || f.ReactReq != nil || f.Unsend != nil || len(f.Typing) > 0 {
+		if f.TextReq != nil || f.MediaReq != nil || f.ReactReq != nil || f.Unsend != nil || len(f.Typing) > 0 || f.Fetches > 0 {
 			t.Errorf("session %q: a request reached Instagram while checkpointed", state)
 		}
 	}
 }
 
-// /typing is the only route that genuinely needs the realtime socket:
+// Typing is the only route that genuinely needs the realtime socket:
 // SetTyping publishes over the MQTT-bypass stream, while everything else is a
 // GraphQL call over plain HTTPS that works while the socket reconnects.
-// Answering 503 on the other five would report a condition that does not
+// Answering 503 on the others would report a condition that does not
 // actually stop them.
 func TestOnlyTypingRequiresTheRealtimeSocket(t *testing.T) {
 	f := &fakeIG{}
 	b := newTestBridge(t, f, withConnected(false))
 
-	if rec := post(t, b, "/typing", map[string]any{"room_id": threadShort, "typing": true}); rec.Code != http.StatusServiceUnavailable {
-		t.Errorf("/typing answered %d with the socket down, want 503", rec.Code)
+	if rec := putTyping(t, b, threadShort, map[string]any{"typing": true}); rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("typing answered %d with the socket down, want 503", rec.Code)
+	} else if env := decodeEnvelope(t, rec); env.Error.Code != "unavailable" {
+		t.Errorf("typing envelope = %+v", env)
 	}
-	if rec := post(t, b, "/send", map[string]any{"room_id": threadShort, "text": "hi"}); rec.Code != http.StatusOK {
-		t.Errorf("/send answered %d with the socket down, want 200 — a GraphQL send does "+
+	if rec := sendMessage(t, b, threadShort, map[string]any{"text": "hi"}); rec.Code != http.StatusOK {
+		t.Errorf("a send answered %d with the socket down, want 200: a GraphQL send does "+
 			"not need the realtime stream", rec.Code)
 	}
 }
 
-func TestMalformedRequestsAre400(t *testing.T) {
-	b := newTestBridge(t, &fakeIG{})
+func TestMalformedWritesAre400(t *testing.T) {
+	f := &fakeIG{}
+	b := newTestBridge(t, f)
 	cases := []struct {
-		route string
-		body  any
-		why   string
+		why  string
+		call func() *httptest.ResponseRecorder
 	}{
-		{"/send", map[string]any{"room_id": threadShort}, "no text"},
-		{"/send", map[string]any{"room_id": "not-a-thread", "text": "hi"}, "room_id is not a thread_fbid"},
-		{"/send", map[string]any{"room_id": threadLong, "text": "hi"}, "room_id is the LONG id"},
-		{"/send-media", map[string]any{"room_id": threadShort}, "no bytes"},
-		{"/send-media", map[string]any{"room_id": threadShort, "data_base64": "!!!!"}, "not base64"},
-		{"/send-media", map[string]any{"room_id": threadShort, "data_base64": ""}, "empty bytes"},
-		{"/react", map[string]any{"room_id": threadShort, "emoji": "👍"}, "no message_id"},
-		{"/react", map[string]any{"room_id": threadShort, "message_id": "mid.$x"}, "no emoji"},
-		{"/unsend", map[string]any{"room_id": threadShort}, "no message_id"},
+		{"no text", func() *httptest.ResponseRecorder { return sendMessage(t, b, threadShort, map[string]any{}) }},
+		{"room is not a thread_fbid", func() *httptest.ResponseRecorder {
+			return sendMessage(t, b, "not-a-thread", map[string]any{"text": "hi"})
+		}},
+		{"room is the LONG id", func() *httptest.ResponseRecorder {
+			return sendMessage(t, b, threadLong, map[string]any{"text": "hi"})
+		}},
+		{"media with no bytes", func() *httptest.ResponseRecorder {
+			return sendMessage(t, b, threadShort, map[string]any{"media": map[string]any{}})
+		}},
+		{"media not base64", func() *httptest.ResponseRecorder {
+			return sendMessage(t, b, threadShort, map[string]any{"media": map[string]any{"data_base64": "!!!!"}})
+		}},
+		{"text and media at once", func() *httptest.ResponseRecorder {
+			body := mediaOf([]byte("x"), "", "")
+			body["text"] = "hi"
+			return sendMessage(t, b, threadShort, body)
+		}},
+		{"reaction with no emoji", func() *httptest.ResponseRecorder {
+			return putReaction(t, b, threadShort, "mid.$x", map[string]any{})
+		}},
+		{"reaction removal with no emoji", func() *httptest.ResponseRecorder {
+			return putReaction(t, b, threadShort, "mid.$x", map[string]any{"remove": true})
+		}},
+		{"typing with no field", func() *httptest.ResponseRecorder {
+			return putTyping(t, b, threadShort, map[string]any{})
+		}},
+		{"a message id with a space", func() *httptest.ResponseRecorder {
+			return unsendMessage(t, b, threadShort, "mid.$a b")
+		}},
+		{"invalid json", func() *httptest.ResponseRecorder {
+			return sendMessage(t, b, threadShort, "{not json")
+		}},
 	}
 	for _, c := range cases {
-		if rec := post(t, b, c.route, c.body); rec.Code != http.StatusBadRequest {
-			t.Errorf("%s (%s) answered %d, want 400", c.route, c.why, rec.Code)
+		rec := c.call()
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s answered %d, want 400: %s", c.why, rec.Code, rec.Body.String())
+			continue
+		}
+		if env := decodeEnvelope(t, rec); env.Error.Code != "invalid_id" {
+			t.Errorf("%s: envelope = %+v", c.why, env)
 		}
 	}
-}
-
-func TestInvalidJSONIs400NotAPanic(t *testing.T) {
-	b := newTestBridge(t, &fakeIG{})
-	req := httptest.NewRequest(http.MethodPost, "/send", strings.NewReader("{not json"))
-	rec := httptest.NewRecorder()
-	b.routes().ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("answered %d, want 400", rec.Code)
+	if f.TextReq != nil || f.MediaReq != nil || f.ReactReq != nil || f.Unsend != nil || len(f.Typing) > 0 || f.Fetches > 0 {
+		t.Error("a malformed request reached Instagram")
 	}
 }
 
 func TestOversizeBodyIs413(t *testing.T) {
 	b := newTestBridge(t, &fakeIG{})
 	huge := strings.Repeat("x", maxJSONBody+1024)
-	req := httptest.NewRequest(http.MethodPost, "/send",
-		strings.NewReader(`{"room_id":"`+threadShort+`","text":"`+huge+`"}`))
-	rec := httptest.NewRecorder()
-	b.routes().ServeHTTP(rec, req)
+	rec := sendMessage(t, b, threadShort, `{"text":"`+huge+`"}`)
 	if rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("answered %d, want 413", rec.Code)
+	}
+	if env := decodeEnvelope(t, rec); env.Error.Code != "too_large" {
+		t.Errorf("envelope = %+v", env)
 	}
 }
 
@@ -166,9 +206,12 @@ func TestOversizeBodyIs413(t *testing.T) {
 func TestMessageTooLongMapsTo413(t *testing.T) {
 	f := &fakeIG{SendErr: errorString("Message Too Long")}
 	b := newTestBridge(t, f)
-	rec := post(t, b, "/send", map[string]any{"room_id": threadShort, "text": "x"})
+	rec := sendMessage(t, b, threadShort, map[string]any{"text": "x"})
 	if rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("answered %d, want 413", rec.Code)
+	}
+	if env := decodeEnvelope(t, rec); env.Error.Code != "too_large" {
+		t.Errorf("envelope = %+v", env)
 	}
 }
 
@@ -178,9 +221,12 @@ func TestMessageTooLongMapsTo413(t *testing.T) {
 func TestUnknownSendFailureIs500NotRetryable(t *testing.T) {
 	f := &fakeIG{SendErr: errorString("some new graphql error nobody has seen")}
 	b := newTestBridge(t, f)
-	rec := post(t, b, "/send", map[string]any{"room_id": threadShort, "text": "x"})
+	rec := sendMessage(t, b, threadShort, map[string]any{"text": "x"})
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("answered %d, want 500", rec.Code)
+	}
+	if env := decodeEnvelope(t, rec); env.Error.Code != "internal" {
+		t.Errorf("envelope = %+v", env)
 	}
 }
 
@@ -190,40 +236,76 @@ func TestUnknownSendFailureIs500NotRetryable(t *testing.T) {
 func TestCheckpointDuringASendStillMapsTo409(t *testing.T) {
 	f := &fakeIG{SendErr: httpclient.ErrCheckpointRequired}
 	b := newTestBridge(t, f)
-	rec := post(t, b, "/send", map[string]any{"room_id": threadShort, "text": "x"})
+	rec := sendMessage(t, b, threadShort, map[string]any{"text": "x"})
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("answered %d, want 409", rec.Code)
+	}
+	if env := decodeEnvelope(t, rec); env.Error.Code != "needs_human" || env.Error.Stage != "" {
+		t.Errorf("envelope = %+v, want needs_human with no lookup stage", env)
+	}
+}
+
+// A checkpoint discovered in the room's route LOOKUP is still 409, and says
+// that it was the lookup: the old body's `thread_lookup_failed`, kept as a
+// stage beside the kind.
+func TestACheckpointInTheRoomLookupIs409AtTheLookupStage(t *testing.T) {
+	f := &fakeIG{FetchErr: httpclient.ErrCheckpointRequired}
+	b := newTestBridge(t, f)
+	rec := sendMessage(t, b, threadShort, map[string]any{"text": "x"})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("answered %d, want 409", rec.Code)
+	}
+	if env := decodeEnvelope(t, rec); env.Error.Code != "needs_human" || env.Error.Stage != "thread_lookup" {
+		t.Errorf("envelope = %+v, want needs_human at stage thread_lookup", env)
+	}
+	if f.TextReq != nil {
+		t.Error("the send went out after its room lookup failed")
 	}
 }
 
 // --- the success bodies -------------------------------------------------------
 
-func TestSendReturnsTheContractResultShape(t *testing.T) {
+func TestSendReturnsTheMessageItSent(t *testing.T) {
 	f := &fakeIG{}
 	b := newTestBridge(t, f)
-	rec := post(t, b, "/send", map[string]any{
-		"room_id": threadShort, "text": "hello",
+	rec := sendMessage(t, b, threadShort, map[string]any{
+		"text":     "hello",
 		"mentions": []map[string]any{{"fbid": "110966695387753", "offset": 0, "length": 9}},
 		"reply_to": "mid.$parent",
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("answered %d: %s", rec.Code, rec.Body.String())
 	}
-	var body map[string]any
+	var raw map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, has := raw["ok"]; has {
+		t.Errorf("the send result still carries `ok`: %s", rec.Body.String())
+	}
+	var body sentBody
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body["ok"] != true || body["id"] != "mid.$sent" {
-		t.Fatalf("result = %v", body)
+	// The sent message's id: what a reaction, an unsend and a quote address.
+	if body.ID != "mid.$sent" {
+		t.Fatalf("id = %q, want the message Instagram named", body.ID)
 	}
-	// The SHORT id is what /send carries — measured arriving 2026-09-22, and
-	// what upstream uses — and the long id never appears on the wire the
+	// The SHORT id is what a send carries (measured arriving 2026-09-22, and
+	// what upstream uses), and the long id never appears on the wire the
 	// caller sees, in either direction.
 	if f.TextReq.IGThreadIGID == nil || *f.TextReq.IGThreadIGID != threadShort {
 		t.Errorf("send used %v, want the short id", f.TextReq.IGThreadIGID)
 	}
 	if strings.Contains(rec.Body.String(), threadLong) {
 		t.Error("the long thread id leaked into the HTTP response")
+	}
+	// The mention and the reply rode through.
+	if len(f.TextReq.Mentions) != 1 || f.TextReq.Mentions[0].FBID != 110966695387753 {
+		t.Errorf("mentions = %+v", f.TextReq.Mentions)
+	}
+	if f.TextReq.ReplyToMessageID == nil || *f.TextReq.ReplyToMessageID != "mid.$parent" {
+		t.Errorf("reply_to = %v", f.TextReq.ReplyToMessageID)
 	}
 }
 
@@ -232,15 +314,12 @@ func TestSendReturnsTheContractResultShape(t *testing.T) {
 func TestSendMediaCarriesNoCaption(t *testing.T) {
 	f := &fakeIG{}
 	b := newTestBridge(t, f)
-	rec := post(t, b, "/send-media", map[string]any{
-		"room_id":     threadShort,
-		"data_base64": base64.StdEncoding.EncodeToString([]byte("\x89PNG\r\n")),
-		"filename":    "x.png", "mimetype": "image/png",
-		// A caller that copied the WhatsApp shape would send this. It must be
-		// ignored rather than silently turned into a second message or an
-		// error, because the adapter's correct behaviour is to call /send first.
-		"caption": "this is not a field",
-	})
+	body := mediaOf([]byte("\x89PNG\r\n"), "x.png", "image/png")
+	// A caller that copied the WhatsApp shape would send this. It must be
+	// ignored rather than silently turned into a second message or an error,
+	// because the adapter's correct behaviour is to send the text first.
+	body["caption"] = "this is not a field"
+	rec := sendMessage(t, b, threadShort, body)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("answered %d: %s", rec.Code, rec.Body.String())
 	}
@@ -248,34 +327,34 @@ func TestSendMediaCarriesNoCaption(t *testing.T) {
 		t.Errorf("media thread = %q, want the short id", f.MediaReq.ThreadID)
 	}
 	if f.TextReq != nil {
-		t.Error("/send-media also sent a text message")
+		t.Error("a media message also sent a text message")
+	}
+	var sent sentBody
+	if err := json.Unmarshal(rec.Body.Bytes(), &sent); err != nil || sent.ID != "mid.$media" {
+		t.Errorf("media result = %s", rec.Body.String())
 	}
 }
 
 // FOUR VERBS SHORT, ONE LONG, and the route table is where that stops being a
-// comment and starts being behaviour. /react is the verb that DISCRIMINATES —
-// the long id is accepted and the reaction never lands — so the fake refuses
-// the other spelling the way the wire does, and a route that swaps them fails
-// here rather than in a group chat. /unsend is the one that is genuinely long,
-// on both sides.
+// comment and starts being behaviour. The reaction is the verb that
+// DISCRIMINATES (the long id is accepted and the reaction never lands), so the
+// fake refuses the other spelling the way the wire does, and a route that
+// swaps them fails here rather than in a group chat. Unsend is the one that is
+// genuinely long, on both sides.
 func TestReactAndUnsendSucceedOnTheirOwnIDSpaces(t *testing.T) {
 	f := &fakeIG{}
 	b := newTestBridge(t, f)
-	if rec := post(t, b, "/react", map[string]any{
-		"room_id": threadShort, "message_id": "mid.$x", "emoji": "👍",
-	}); rec.Code != http.StatusOK {
-		t.Fatalf("/react answered %d: %s", rec.Code, rec.Body.String())
+	if rec := putReaction(t, b, threadShort, "mid.$x", map[string]any{"emoji": "👍"}); rec.Code != http.StatusOK {
+		t.Fatalf("reaction answered %d: %s", rec.Code, rec.Body.String())
 	}
-	if rec := post(t, b, "/unsend", map[string]any{
-		"room_id": threadShort, "message_id": "mid.$x",
-	}); rec.Code != http.StatusOK {
-		t.Fatalf("/unsend answered %d: %s", rec.Code, rec.Body.String())
+	if rec := unsendMessage(t, b, threadShort, "mid.$x"); rec.Code != http.StatusOK {
+		t.Fatalf("unsend answered %d: %s", rec.Code, rec.Body.String())
 	}
 	if f.ReactReq.Input.ThreadID != threadShort {
-		t.Errorf("/react addressed %q, want the SHORT id", f.ReactReq.Input.ThreadID)
+		t.Errorf("reaction addressed %q, want the SHORT id", f.ReactReq.Input.ThreadID)
 	}
 	if f.Unsend.SendData.ThreadID != threadLong {
-		t.Errorf("/unsend addressed %q, want the LONG id", f.Unsend.SendData.ThreadID)
+		t.Errorf("unsend addressed %q, want the LONG id", f.Unsend.SendData.ThreadID)
 	}
 	// The reaction is on the message afterwards. This is the read-back, not
 	// the request: it is what makes the assertion above fail rather than pass
@@ -285,18 +364,48 @@ func TestReactAndUnsendSucceedOnTheirOwnIDSpaces(t *testing.T) {
 	}
 }
 
-// A /react that Instagram accepts and does not apply must NOT answer 200. The
-// bridge cannot tell the difference from the request, only from the post-state
-// the mutation returns, so this drives the failure through the whole route.
+// A message id is a PATH SEGMENT now, and it carries `$` and may carry `/` or
+// `+`. Escaped by the caller, it must reach Instagram byte for byte, and a
+// `/` inside it must not be read as a deeper path.
+func TestAMessageIDSurvivesThePath(t *testing.T) {
+	const mid = "mid.$gA+b/c=d_e-f"
+	f := &fakeIG{}
+	b := newTestBridge(t, f)
+	if rec := putReaction(t, b, threadShort, mid, map[string]any{"emoji": "👍"}); rec.Code != http.StatusOK {
+		t.Fatalf("reaction answered %d: %s", rec.Code, rec.Body.String())
+	}
+	if rec := unsendMessage(t, b, threadShort, mid); rec.Code != http.StatusOK {
+		t.Fatalf("unsend answered %d: %s", rec.Code, rec.Body.String())
+	}
+	if f.ReactReq.Input.MessageID != mid || f.Unsend.MessageID != mid {
+		t.Errorf("Instagram was addressed with %q / %q, want %q", f.ReactReq.Input.MessageID, f.Unsend.MessageID, mid)
+	}
+}
+
+// A reaction that Instagram accepts and does not apply must NOT answer 200.
+// The bridge cannot tell the difference from the request, only from the
+// post-state the mutation returns, so this drives the failure through the
+// whole route.
 func TestReactThatDoesNotLandIsNotA200(t *testing.T) {
 	f := &fakeIG{}
 	// An own fbid of 0 makes the read-back unverifiable, which is an ERROR.
 	b := newTestBridge(t, f, withSelf(domain.Self{IGID: "79597894900", Username: "not_____nora"}))
-	rec := post(t, b, "/react", map[string]any{
-		"room_id": threadShort, "message_id": "mid.$x", "emoji": "👍",
-	})
+	rec := putReaction(t, b, threadShort, "mid.$x", map[string]any{"emoji": "👍"})
 	if rec.Code == http.StatusOK {
 		t.Fatalf("an unverifiable reaction answered 200: %s", rec.Body.String())
+	}
+	decodeEnvelope(t, rec)
+}
+
+// An unconfirmed reaction is the production finding: accepted, landed, and
+// this response's post-state silent about it. 200, with `confirmed: false`.
+func TestAnUnconfirmedReactionAnswers200AndSaysSo(t *testing.T) {
+	b := newTestBridge(t, &fakeIG{ReactPostStateSilent: true})
+	rec := putReaction(t, b, threadShort, "mid.$x", map[string]any{"emoji": "👍"})
+	var body confirmedBody
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &body) != nil ||
+		body.Confirmed == nil || *body.Confirmed {
+		t.Fatalf("answered %d %s, want 200 {confirmed:false}", rec.Code, rec.Body.String())
 	}
 }
 
@@ -305,45 +414,41 @@ func TestReactThatDoesNotLandIsNotA200(t *testing.T) {
 // strands probe messages in a real group; the field has never been observed
 // against an unsend known to have failed, and upstream discards it.
 func TestAnUnconfirmedUnsendStillAnswers200AndSaysSo(t *testing.T) {
-	// The route resolves room_id to the LONG id, which the fake confirms, so
+	// The route resolves the room to the LONG id, which the fake confirms, so
 	// the unconfirmed path can only be reached by making the MUTATION answer
-	// false — which is the thing being tested. Driving it any other way would
-	// be a test that cannot fail.
+	// false, which is the thing being tested.
 	b := newTestBridge(t, &fakeIG{UnconfirmedUnsend: true})
-	rec := post(t, b, "/unsend", map[string]any{"room_id": threadShort, "message_id": "mid.$x"})
+	rec := unsendMessage(t, b, threadShort, "mid.$x")
 	if rec.Code != http.StatusOK {
-		t.Fatalf("/unsend answered %d, want 200: %s", rec.Code, rec.Body.String())
+		t.Fatalf("unsend answered %d, want 200: %s", rec.Code, rec.Body.String())
 	}
-	var body map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
+	var body confirmedBody
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body.Confirmed == nil || *body.Confirmed {
+		t.Fatalf("body = %s, want an explicit confirmed:false", rec.Body.String())
 	}
-	if body["ok"] != true {
-		t.Fatalf("body = %v", body)
-	}
-	if body["confirmed"] != false {
-		t.Fatalf("confirmed = %v, want an explicit false", body["confirmed"])
+	if strings.Contains(rec.Body.String(), `"ok"`) {
+		t.Errorf("the unsend result still carries `ok`: %s", rec.Body.String())
 	}
 
-	// And a CONFIRMED unsend does not carry the field, so its presence means
-	// something rather than being noise on every call.
-	ok := post(t, newTestBridge(t, &fakeIG{}), "/unsend",
-		map[string]any{"room_id": threadShort, "message_id": "mid.$x"})
-	if strings.Contains(ok.Body.String(), "confirmed") {
-		t.Fatalf("a confirmed unsend still reported confirmed: %s", ok.Body.String())
+	// And a CONFIRMED unsend says so explicitly: with no `ok` beside it, the
+	// field is the whole answer.
+	ok := unsendMessage(t, newTestBridge(t, &fakeIG{}), threadShort, "mid.$x")
+	body = confirmedBody{}
+	if err := json.Unmarshal(ok.Body.Bytes(), &body); err != nil || body.Confirmed == nil || !*body.Confirmed {
+		t.Fatalf("a confirmed unsend answered %s, want confirmed:true", ok.Body.String())
 	}
 }
 
 // PINNED, NOT GROUNDED, and labelled so on purpose. Typing arrival was never
 // measured in either id space, so there is no read-back to check and no fake
 // behaviour that could be honest about it. What this asserts is only that the
-// bridge follows upstream (handlematrix.go:484, `meta.IGID` = the short id) —
-// if typing is ever measured, this test is the thing to replace, not to trust.
+// bridge follows upstream (handlematrix.go:484, `meta.IGID` = the short id).
+// If typing is ever measured, this test is the thing to replace, not to trust.
 func TestTypingFollowsUpstreamAndUsesTheShortThreadID(t *testing.T) {
 	f := &fakeIG{}
 	b := newTestBridge(t, f)
-	if rec := post(t, b, "/typing", map[string]any{"room_id": threadShort, "typing": true}); rec.Code != http.StatusOK {
-		t.Fatalf("/typing answered %d", rec.Code)
+	if rec := putTyping(t, b, threadShort, map[string]any{"typing": true}); rec.Code != http.StatusOK {
+		t.Fatalf("typing answered %d", rec.Code)
 	}
 	if len(f.Typing) != 1 || f.Typing[0] != threadShort {
 		t.Fatalf("typing addressed %v, want the short id", f.Typing)
@@ -351,17 +456,41 @@ func TestTypingFollowsUpstreamAndUsesTheShortThreadID(t *testing.T) {
 }
 
 // A send Instagram accepted without naming the message must not reach the
-// adapter as 200 {"ok":true}: the contract promises {ok,id,timestamp_ms}.
+// adapter as a 200: the body promises the sent message's id, and a message
+// Nora cannot name she can neither react to, unsend, nor quote.
 func TestSendWithoutAMessageIDDoesNotAnswer200(t *testing.T) {
-	for _, route := range []string{"/send", "/send-media"} {
+	for name, body := range map[string]any{
+		"text":  map[string]any{"text": "hi"},
+		"media": mediaOf([]byte("x"), "", ""),
+	} {
 		b := newTestBridge(t, &fakeIG{EmptySend: true})
-		rec := post(t, b, route, map[string]any{
-			"room_id": threadShort, "text": "hi",
+		rec := sendMessage(t, b, threadShort, body)
+		if rec.Code != http.StatusBadGateway {
+			t.Errorf("%s answered %d with no message id, want 502: %s", name, rec.Code, rec.Body.String())
+			continue
+		}
+		if env := decodeEnvelope(t, rec); env.Error.Code != "upstream_rejected" {
+			t.Errorf("%s: envelope = %+v", name, env)
+		}
+	}
+}
+
+// The verb paths are DELETED (17 §P14). Each answers the mux's own 404 and no
+// request reaches Instagram through one.
+func TestTheOldVerbPathsAnswer404(t *testing.T) {
+	f := &fakeIG{}
+	b := newTestBridge(t, f)
+	for _, path := range []string{"/send", "/send-media", "/react", "/typing", "/unsend"} {
+		rec := request(t, b, http.MethodPost, path, map[string]any{
+			"room_id": threadShort, "text": "hi", "message_id": "mid.$x", "emoji": "👍", "typing": true,
 			"data_base64": base64.StdEncoding.EncodeToString([]byte("x")),
 		})
-		if rec.Code == http.StatusOK {
-			t.Errorf("%s answered 200 with no message id: %s", route, rec.Body.String())
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("POST %s answered %d, want 404", path, rec.Code)
 		}
+	}
+	if f.TextReq != nil || f.MediaReq != nil || f.ReactReq != nil || f.Unsend != nil || len(f.Typing) > 0 || f.Fetches > 0 {
+		t.Error("an old verb path reached Instagram")
 	}
 }
 

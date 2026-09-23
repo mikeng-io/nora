@@ -489,11 +489,12 @@ class InstagramSocialClient(SocialProvider):
         status, payload = await self._get(f"/accounts/{igid}")
         if status == 404:
             # `errNoProfile`: the igid names no account — a fact about the
-            # subject. But only when it is the HANDLER's 404, which is a JSON
-            # `{"ok": false, …}`; Go's mux answers an unmatched path with a
-            # plain-text 404, and reading THAT as «no such account» would turn
-            # a wrong base URL into a confident claim about a person.
-            if isinstance(payload, dict) and payload.get("ok") is False:
+            # subject. But only when it is the HANDLER's 404, which is the
+            # error envelope with code `not_found` (P14; it was `{"ok": false}`
+            # before); Go's mux answers an unmatched path with a plain-text
+            # 404, and reading THAT as «no such account» would turn a wrong
+            # base URL into a confident claim about a person.
+            if isinstance(payload, dict) and _error_code(payload) == "not_found":
                 return dict(NOTHING_FOUND)
             log.warning("instagram bridge 404 was not the account route's own")
             return dict(UNAVAILABLE)
