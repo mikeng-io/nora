@@ -46,16 +46,28 @@ never sees a `person_id`, has no `SocialSubjectIndex`, and cannot produce
 anything is dispatched. It does check the igid's SHAPE before putting it in a
 URL path: a decimal id or no call, so no target can name a different route.
 
-## A story result carries REFERENCES, never content
+## A story result carries the TEXT LAYER and references, never what the media shows
 
-An item is `{id, kind, taken_at, url}` and is BUILT FIELD BY FIELD from the
-body rather than passed through, so the `caption` and `alt_text` the bridge
-DOES forward (measured in the contract fixture) cannot leak into a result.
-`social_fetch` finds out *that* something exists and where; `media_fetch`
-finds out *what it is*. The moment a story result carries the content inline
-it has absorbed `media_fetch`'s job and the model stops spending
-deliberately — "does Miles have a story up" must stay a different cost from
-"what is in it".
+Every frame carries its text layer — the author's `caption`, Instagram's own
+`alt_text` (`accessibility_caption`, «a photo of a plate»), the author, when
+it was posted, its kind — and its media URL (design/instagram-adoption/18
+§"Listing and reading one item"). That text is what lets Nora answer «is she
+at the beach?» without a vision call. What the media SHOWS is not here:
+`social_fetch` finds out *that* something exists, where, and what its author
+and Instagram said about it; `media_fetch` finds out *what it is*.
+
+**Where the text goes is the whole safety argument.** The caption and alt text
+are stranger-written prose, so they go down exactly ONE path, the one the
+profile bio already uses: type-checked as `str`, whitespace-collapsed onto one
+line (so a caption cannot forge a frame line of its own), rendered into
+`text`, then `wrap_outside_text` (R-13) and `clamp_chars`. They are NOT copied
+into `items`: `social_fetch` hands the whole result dict to the model, so a
+caption in `items` would be stranger prose OUTSIDE the untrusted wrap and
+outside the clamp. `items` stays `{id, kind, taken_at, url}` — the
+machine-usable handoff to `media_fetch(url=…)`, which needs nothing else.
+`author` also rides the result top-level, because it is shape-checked as an
+Instagram handle and so cannot carry prose. A non-string caption is dropped,
+never `str()`-ed.
 
 **A whitelist of KEY NAMES is not that rule — it is a third of it.** An
 adversarial audit (2026-09-22) executed the three value channels the key
@@ -67,8 +79,10 @@ so `id={"caption": "at the beach with tyler"}` put that caption in the result
 while the guard test — which asserted the key SET and that "beach" was not in
 `text` — stayed green on both counts. So every value is bound to its own
 shape: nothing the bridge writes lands in `note`, the URL host must be a
-MEASURED Instagram CDN host, and the id must look like an id. A key whitelist
-answers "which fields"; only a value check answers "carrying what".
+MEASURED Instagram CDN host, the id must look like an id, and the only
+free-text fields (caption, alt text) are strings that reach the model inside
+the wrap and nowhere else. A key whitelist answers "which fields"; only a
+value check answers "carrying what".
 
 ## A profile result is the account's OWN words, wrapped
 
@@ -181,14 +195,16 @@ _SERVES: frozenset[tuple[str, str]] = frozenset({
     ("instagram", "profile"),
 })
 
-#: An igid, as the bridge parses one (`strconv.ParseInt`, base 10). Checked
+#: An igid, as the bridge parses one (`domain.ParseIGID`: a positive int64,
+#: so at most 19 digits). Checked
 #: BEFORE it is put in a URL path: a target that is not a decimal id could
 #: otherwise name a different route (`../send`), which is a much worse wiring
 #: gap than a 400.
-_IGID_RE = re.compile(r"[0-9]{1,20}")
+_IGID_RE = re.compile(r"[0-9]{1,19}")
 
 #: What an Instagram username may look like. It is rendered into the text the
-#: model reads, so it is shape-checked rather than trusted.
+#: model reads (and a story's author rides the result unwrapped), so it is
+#: shape-checked rather than trusted.
 _USERNAME_RE = re.compile(r"[A-Za-z0-9._]{1,30}")
 
 #: Story media kinds, normalised. An unrecognised kind becomes `"media"`
@@ -315,7 +331,8 @@ class InstagramSocialClient(SocialProvider):
             # documented shape — a wiring gap, never read as a miss.
             log.warning("instagram bridge story body carried no boolean `found`")
             return dict(UNAVAILABLE)
-        items = _items(payload.get("items"), limit=limit)
+        frames = _items(payload.get("items"), limit=limit)
+        items = [item for item, _words in frames]
         if not items:
             # `found: true` with nothing usable in it is a wiring gap, NOT «no
             # story» — the route has a dedicated `found: false` for that and
@@ -323,7 +340,8 @@ class InstagramSocialClient(SocialProvider):
             # a claim about the subject out of our own failure to read a body.
             log.warning("instagram bridge found a story with no usable items")
             return dict(UNAVAILABLE)
-        text, truncated = clamp_chars(_render(items), self._content_max_chars)
+        author = _username(payload.get("username"))
+        text, truncated = clamp_chars(_render(frames, author), self._content_max_chars)
         out: dict[str, Any] = {
             "status": "ok",
             # WHAT this is, explicitly. A story result that says only «here
@@ -334,8 +352,13 @@ class InstagramSocialClient(SocialProvider):
             # The framing, beside the timestamps it is about. `note` is Nora's
             # own instruction slot — nothing from the bridge ever lands in one.
             "note": _STORY_FRAMING,
+            # References only. The caption and alt text are NOT here: this
+            # dict reaches the model whole, and prose in `items` would sit
+            # outside the untrusted wrap and the clamp (module docstring).
             "items": items,
-            # The rendered form, because the model reads text natively. The
+            # The rendered form, because the model reads text natively — and
+            # the ONLY place the frames' text layer (caption, alt text) goes.
+            # The
             # `[video <url>]` marker is `media_fetch`'s own documented shape,
             # so the model can hand a row straight to `media_fetch(url=…)`.
             # WRAPPED and CLAMPED, as `SocialProvider` requires of every
@@ -345,6 +368,9 @@ class InstagramSocialClient(SocialProvider):
             "text": wrap_outside_text("social_post", "instagram story", text),
             "truncated": truncated,
         }
+        if author is not None:
+            # Shape-checked as a handle, so it cannot carry prose.
+            out["author"] = author
         # The reel's `expiring_at` bounds the whole set; it is named
         # `expires_at` in the result, beside the note that refers to it.
         expires_at = _as_int(payload.get("expiring_at"))
@@ -411,8 +437,8 @@ def _render_profile(body: dict[str, Any]) -> str | None:
     `bool` and a count that is not an `int` are simply left out, never
     guessed. Neither id is rendered. The caller wraps and clamps.
     """
-    username = body.get("username")
-    if not isinstance(username, str) or not _USERNAME_RE.fullmatch(username):
+    username = _username(body.get("username"))
+    if username is None:
         return None
     full_name = body.get("full_name")
     head = f"@{username}"
@@ -488,15 +514,21 @@ def _count(value: Any) -> int | None:
     return value
 
 
-def _items(raw: Any, *, limit: int) -> list[dict[str, Any]]:
-    """The story body's `items` → at most `limit` reference rows.
+def _items(
+    raw: Any, *, limit: int,
+) -> list[tuple[dict[str, Any], dict[str, str]]]:
+    """The story body's `items` → at most `limit` frames, each a pair:
+    `(reference row, text layer)`.
 
     **Built field by field, never copied, and every value bound to a shape.**
-    This is the enforcement of "no content in a `social_fetch` result": an
-    envelope that grows a `caption`, an `ocr_text` or a `description` cannot
-    leak it here, because nothing reads an unlisted key — and nothing renders
-    an unchecked VALUE either, which is the half a key whitelist does not
-    cover (module docstring).
+    The reference row is `{id, kind, taken_at, url}` and nothing else; the
+    text layer is `{caption, alt_text}`, each present only when the bridge
+    sent a non-empty STRING. The two are kept apart because they go to
+    different places: the row into `items` (unwrapped, machine-usable), the
+    text layer only into the wrapped, clamped `text` (module docstring). A
+    body that grows an `ocr_text` or a `description` still cannot leak it,
+    because nothing reads an unlisted key — and nothing renders an unchecked
+    VALUE either, which is the half a key whitelist does not cover.
 
     A malformed row is DROPPED rather than failing the whole read — one
     unparseable frame in a two-frame reel should still let the model look at
@@ -515,7 +547,7 @@ def _items(raw: Any, *, limit: int) -> list[dict[str, Any]]:
     if not isinstance(raw, list):
         return []
     cap = _cap(limit)
-    out: list[dict[str, Any]] = []
+    out: list[tuple[dict[str, Any], dict[str, str]]] = []
     for row in raw:
         if not isinstance(row, dict):
             continue
@@ -548,7 +580,12 @@ def _items(raw: Any, *, limit: int) -> list[dict[str, Any]]:
             # with no time in it answers anyway, wrong, at a rate nothing
             # reports. Absent rather than guessed when the bridge omits it.
             item["taken_at"] = taken_at
-        out.append(item)
+        words = {
+            key: text
+            for key in ("caption", "alt_text")
+            if (text := _one_line(row.get(key))) is not None
+        }
+        out.append((item, words))
         if len(out) >= cap:
             break
     return out
@@ -591,12 +628,17 @@ def _media_id(value: Any) -> str | None:
     return text if _ID_RE.fullmatch(text) else None
 
 
-def _render(items: list[dict[str, Any]]) -> str:
-    """Items → the marker lines the model reads, newest first (the bridge's
-    own order, preserved rather than re-sorted — it is the protocol's).
+def _render(
+    frames: list[tuple[dict[str, Any], dict[str, str]]], author: str | None,
+) -> str:
+    """Frames → the text the model reads, newest first (the bridge's own
+    order, preserved rather than re-sorted — it is the protocol's).
 
-    Deliberately thin: a kind, a time and a link per row. The caller WRAPS and
-    CLAMPS what comes back (R-13) — this function only builds the lines.
+    One block per frame: the `[kind url]` marker with its age, then the
+    caption and Instagram's alt text when there are any. Blocks are separated
+    by a blank line so `clamp_chars` cuts between frames, never through one.
+    The caller WRAPS and CLAMPS what comes back (R-13) — this function only
+    builds the lines.
 
     That wrap used to be argued away here, on the grounds that there is no
     stranger-written PROSE in a story reference and wrapping four
@@ -609,11 +651,37 @@ def _render(items: list[dict[str, Any]]) -> str:
     today and a wrapper is what makes it not matter.
     """
     now = int(time.time())
-    lines = []
-    for item in items:
+    blocks = [f"Story by @{author}"] if author is not None else []
+    for item, words in frames:
         when = _age(item.get("taken_at"), now)
-        lines.append(f"[{item['kind']} {item['url']}]{when}")
-    return "\n".join(lines)
+        lines = [f"[{item['kind']} {item['url']}]{when}"]
+        if "caption" in words:
+            lines.append(f"caption: {words['caption']}")
+        if "alt_text" in words:
+            lines.append(f"Instagram's description: {words['alt_text']}")
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
+
+
+def _one_line(value: Any) -> str | None:
+    """A free-text field (caption, alt text) → one line of text, or `None`.
+
+    Only a `str` is accepted: anything else is dropped, never `str()`-ed, for
+    the same reason `_media_id` refuses a dict — `str()` is how a structure
+    becomes content nobody checked. Whitespace, newlines included, collapses
+    to single spaces, so a caption cannot start a line of its own and pass
+    itself off as a `[video https://…]` marker for another frame."""
+    if not isinstance(value, str):
+        return None
+    text = " ".join(value.split())
+    return text or None
+
+
+def _username(value: Any) -> str | None:
+    """An Instagram handle, or `None` for anything that is not one."""
+    if isinstance(value, str) and _USERNAME_RE.fullmatch(value):
+        return value
+    return None
 
 
 def _age(taken_at: Any, now: int) -> str:
