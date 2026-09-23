@@ -1,0 +1,12 @@
+{
+  "type": "fix",
+  "summary": "Nora notices an edit when she re-reads the room, and can tell whether her reply came before or after it.",
+  "details": [
+    "Re-reading older messages now shows which ones were edited and what they first said; before, an edited message looked unchanged there.",
+    "Asking who said something now also finds words that were in a message before its sender edited them.",
+    "An edited message now names the last message sent before the edit, so a reply to the old version is recognisable even when both happened within the same minute."
+  ],
+  "limitations": [
+    "@-mentions in re-read Signal messages still show as a placeholder rather than a name."
+  ]
+}
