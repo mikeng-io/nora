@@ -42,6 +42,7 @@ import {
   createSilentLogger,
   ensureDir,
   extractMessageEvent,
+  getMessageContent,
   invertLidMap,
   isValidTargetJid,
   jidUserDigits,
@@ -250,7 +251,17 @@ async function startSocket() {
       if (!msg?.key?.id || !msg.message) continue;
       recentMessages.remember(msg);
       const event = extractMessageEvent(msg, { lidToPhone, phoneToLid, recentCache: recentMessages });
-      if (!event) continue;
+      if (!event) {
+        // WHAT WAS DROPPED, by SHAPE only — the message's own keys and the
+        // unwrapped content's, never a value. A phone's edit produced no event
+        // at all on 2026-09-24 and nothing here said what it had looked like,
+        // so there was no way to tell a wrapper this function does not unwrap
+        // from an encrypted payload it cannot read.
+        const outer = Object.keys(msg.message || {}).join(',');
+        const inner = Object.keys(getMessageContent(msg) || {}).join(',');
+        log(`dropped id=${msg.key.id} chat=${redactJid(msg.key.remoteJid)} outer=[${outer}] inner=[${inner}]`);
+        continue;
+      }
       log(`message id=${event.id || '?'} chat=${redactJid(event.chat_jid)} from=${redactJid(event.sender_jid)} group=${event.is_group} from_me=${event.from_me} edit=${!!event.edit_of} media=${event.media.length} buffered=${sseClients.size === 0}`);
       emitEvent(event);
     }
