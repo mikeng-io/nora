@@ -8,6 +8,7 @@ this suite and the bridge is a contract failure rather than a judgment call.
 
 from __future__ import annotations
 
+from nora.domain.media import body_with_handles, label_for
 from nora.domain.models import EditTarget
 from nora.platform.instagram.parser import parse_event
 
@@ -365,10 +366,11 @@ def test_the_bridges_is_group_field_is_HONOURED_when_present():
 # fail to READ the reel — she never learned one had been posted, and nothing
 # anywhere recorded that anything had happened.
 #
-# The rendered line is the FREE depth of design/instagram-adoption/13: caption
-# and author are already in the delta, so a room where people share reels all
-# day costs nothing extra to follow. Only a direct question about one post
-# reaches for the thumbnail or the video.
+# The rendered line is the FREE depth of design/instagram-adoption/13: the
+# kind, the author and the link are already in the delta, so a room where
+# people share reels all day costs nothing extra to follow. The caption is
+# rendered when a delta carries one; measured 2026-09-24, live shares did not.
+# Only a direct question about one post reaches for the thumbnail or the video.
 
 
 def test_a_shared_reel_is_no_longer_dropped():
@@ -385,7 +387,10 @@ def test_a_shared_reel_is_no_longer_dropped():
     ))
 
     assert msg is not None, "a shared reel with no covering text was dropped"
-    assert msg.body == "[shared post by someaccount — the caption as its author wrote it]"
+    assert msg.body == (
+        "[shared reel by @someaccount https://www.instagram.com/reel/ABC123/"
+        " — the caption as its author wrote it]"
+    )
 
 
 def test_the_sharers_words_come_before_the_shared_post():
@@ -400,7 +405,7 @@ def test_the_sharers_words_come_before_the_shared_post():
     ))
 
     assert msg is not None
-    assert msg.body == "look at this [shared post by someaccount — the caption] [image]"
+    assert msg.body == "look at this [shared post by @someaccount — the caption] [image]"
     # The thumbnail is fetchable, which is what makes the middle depth possible
     # at all: she can say what the reel looks like without fetching the video.
     assert msg.media[0].fetch_token == f"attachment:{url}"
@@ -425,7 +430,7 @@ def test_a_shared_post_renders_with_whatever_half_it_has():
     """XMA is unmeasured, so every partial shape has to produce a sentence
     rather than an exception or an empty body."""
     cases = {
-        "[shared post by someaccount]": {"author": "someaccount"},
+        "[shared post by @someaccount]": {"author": "someaccount"},
         "[shared post — just words]": {"caption": "just words"},
         # `title` is sometimes the only text present; the library declares both
         # and no probe has shown which a live delta populates.
@@ -447,3 +452,165 @@ def test_a_message_with_no_shared_object_is_unchanged():
         msg = parse_event(_event(text="hello", shared=shared))
         assert msg is not None
         assert msg.body == "hello", f"shared={shared!r} changed an ordinary body"
+
+
+# --- the kind and the link, read off `target_url` (measured 2026-09-24) --------
+#
+# A live shared reel and a live shared story each carried only `author`,
+# `target_url` and `typename`, and `typename` was the SAME string for both. The
+# url's PATH is the only field that tells a reel from a story, and its QUERY
+# carries tracking flags plus, on a story, `reel_owner_id`: the owner's igid.
+# Every value below is synthetic.
+
+OWNER_IGID = "4242424242"
+STORY_PK = "3000000000000000001"
+REEL_URL = (
+    "https://www.instagram.com/reel/SynthReel01/"
+    "?id=5151515151&halc_post_trigger_flags=1&is_clips_ad=0&utm_source=ig_web"
+)
+STORY_URL = (
+    f"https://www.instagram.com/stories/some.account/{STORY_PK}"
+    f"?reel_id=5151515151&reel_owner_id={OWNER_IGID}&utm_source=ig_story_item_share"
+)
+POST_URL = "https://www.instagram.com/p/SynthPost_2/?igsh=c3ludGhldGlj"
+# The one typename the live capture saw on BOTH kinds.
+TYPENAME = "SlideMessagePortraitXMA"
+
+
+def _shared(url: object, **extra) -> dict:
+    return {"author": "someaccount", "target_url": url, "typename": TYPENAME, **extra}
+
+
+def test_each_kind_is_labelled_from_the_url_path():
+    """The live shape: no caption, one typename for every kind. A story used
+    to render as «shared post», which told the room something untrue about
+    what had been shared."""
+    cases = {
+        REEL_URL: "[shared reel by @someaccount https://www.instagram.com/reel/SynthReel01/]",
+        STORY_URL: (
+            "[shared story by @someaccount "
+            f"https://www.instagram.com/stories/some.account/{STORY_PK}/]"
+        ),
+        POST_URL: "[shared post by @someaccount https://www.instagram.com/p/SynthPost_2/]",
+        # `/reels/` is the plural spelling Instagram also serves; the link is
+        # rebuilt on the singular form.
+        "https://www.instagram.com/reels/SynthReel01/":
+            "[shared reel by @someaccount https://www.instagram.com/reel/SynthReel01/]",
+    }
+    for url, want in cases.items():
+        msg = parse_event(_event(text="", shared=_shared(url)))
+        assert msg is not None
+        assert msg.body == want, f"{url} rendered {msg.body!r}"
+
+
+def test_the_link_carries_no_query_string():
+    """The query is tracking flags and ids. None of it reaches the body: not a
+    parameter name, not a value, not the `?` that would start one."""
+    for url in (REEL_URL, STORY_URL, POST_URL):
+        body = parse_event(_event(text="", shared=_shared(url))).body
+        assert "?" not in body, body
+        assert "utm_source" not in body
+        assert "halc_post_trigger_flags" not in body
+        assert "5151515151" not in body, "reel_id / id leaked from the query"
+        # Positive control: the link IS there, so the absence above is the
+        # query being dropped and not the whole link.
+        assert "https://www.instagram.com/" in body
+
+
+def test_the_story_owners_igid_never_reaches_the_body():
+    """R-18. `reel_owner_id` is the owner's igid, and the story url is the one
+    shape that carries it."""
+    msg = parse_event(_event(text="", shared=_shared(STORY_URL),
+                             media={"kind": "image", "url": "https://cdn.example/t.jpg"}))
+
+    assert msg is not None
+    assert OWNER_IGID not in msg.body
+    assert "reel_owner_id" not in msg.body
+    # Positive control: the story IS rendered, with its own pk, so the absence
+    # above is the query being dropped and not the link being dropped.
+    assert f"/stories/some.account/{STORY_PK}/" in msg.body
+
+
+def test_a_url_that_fails_validation_leaves_no_link_at_all():
+    """Anything outside the strict shape leaves the link OUT, never a raw one:
+    a host that is not Instagram, a segment outside its charset, a port,
+    credentials, an unknown path. The kind still comes from the path shape."""
+    cases = {
+        "https://evil.example/reel/SynthReel01/": "[shared reel by @someaccount]",
+        "https://www.instagram.com/reel/bad%20code/": "[shared reel by @someaccount]",
+        "https://www.instagram.com/reel/bad.code/": "[shared reel by @someaccount]",
+        "https://www.instagram.com:8443/reel/SynthReel01/": "[shared reel by @someaccount]",
+        "https://someone:secret@www.instagram.com/reel/SynthReel01/":
+            "[shared reel by @someaccount]",
+        "javascript://www.instagram.com/reel/SynthReel01/": "[shared reel by @someaccount]",
+        "https://www.instagram.com/stories/some.account/notdigits":
+            "[shared story by @someaccount]",
+        "https://www.instagram.com/stories/bad/user/name/1": "[shared post by @someaccount]",
+        "https://www.instagram.com/explore/": "[shared post by @someaccount]",
+        "https://www.instagram.com/reel/SynthReel01/extra/": "[shared post by @someaccount]",
+        "/reel/SynthReel01/": "[shared reel by @someaccount]",
+        "not a url at all": "[shared post by @someaccount]",
+        "": "[shared post by @someaccount]",
+        12345: "[shared post by @someaccount]",
+    }
+    for url, want in cases.items():
+        body = parse_event(_event(text="", shared=_shared(url))).body
+        assert body == want, f"{url!r} rendered {body!r}"
+
+
+def test_the_link_sits_before_the_caption_and_the_placeholder_stays_trailing():
+    """Inside the bracket, before the stranger's caption, and never after the
+    `[image]` run — `body_with_handles` rewrites that run in place once
+    custody holds the thumbnail, and a link after it would leave the thumbnail
+    with no handle."""
+    msg = parse_event(_event(
+        text="look",
+        shared=_shared(REEL_URL, caption="a caption"),
+        media={"kind": "image", "url": "https://cdn.example/t.jpg"},
+    ))
+    assert msg.body == (
+        "look [shared reel by @someaccount https://www.instagram.com/reel/SynthReel01/"
+        " — a caption] [image]"
+    )
+
+    labels = tuple(label_for(r) for r in msg.media)
+    rewritten = body_with_handles(msg.body, labels, ("abc123",))
+
+    assert rewritten == (
+        "look [shared reel by @someaccount https://www.instagram.com/reel/SynthReel01/"
+        " — a caption] [image abc123]"
+    )
+
+
+def test_an_author_already_spelled_with_an_at_gets_exactly_one():
+    body = parse_event(_event(text="", shared=_shared(REEL_URL, author="@someaccount"))).body
+    assert body.startswith("[shared reel by @someaccount ")
+
+
+def test_an_empty_shared_object_is_still_nothing():
+    """`{}` is indistinguishable from no share, so it renders nothing and marks
+    no media on-demand — the ordinary-message path, unchanged."""
+    msg = parse_event(_event(text="hello", shared={},
+                             media={"kind": "image", "url": "https://cdn.example/p.jpg"}))
+    assert msg.body == "hello [image]"
+    assert msg.media[0].on_demand is False
+
+
+# --- the thumbnail is read on demand, never at ingest --------------------------
+
+
+def test_a_shared_items_thumbnail_is_marked_on_demand():
+    """The media on a shared item is its PREVIEW. Custody keeps it — the token
+    is still the CDN url — but the ingest read must not run on it."""
+    url = "https://cdn.example/thumb.jpg"
+    msg = parse_event(_event(text="", shared=_shared(REEL_URL),
+                             media={"kind": "image", "url": url}))
+
+    assert msg.media[0].on_demand is True
+    assert msg.media[0].fetch_token == f"attachment:{url}"
+
+
+def test_a_photo_somebody_sends_directly_is_not_on_demand():
+    """The positive control: a direct photo is read at ingest, as before."""
+    msg = parse_event(_event(text="", media={"kind": "image", "url": "https://cdn.example/p.jpg"}))
+    assert msg.media[0].on_demand is False

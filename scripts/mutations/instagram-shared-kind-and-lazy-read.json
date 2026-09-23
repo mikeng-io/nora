@@ -1,0 +1,86 @@
+[
+  {
+    "name": "the query string is not stripped: the raw target_url is rendered",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "    return kind, f\"https://www.instagram.com{clean}\"",
+    "new": "    return kind, target_url.strip()",
+    "target": "tests/unit/test_instagram_parser.py -k no_query_string"
+  },
+  {
+    "name": "the query string is re-appended to the rebuilt link (reel_owner_id leaks)",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "    return kind, f\"https://www.instagram.com{clean}\"",
+    "new": "    return kind, f\"https://www.instagram.com{clean}?{parts.query}\"",
+    "target": "tests/unit/test_instagram_parser.py -k owners_igid"
+  },
+  {
+    "name": "the kind is always post",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "    line = f\"shared {kind}\"",
+    "new": "    line = \"shared post\"",
+    "target": "tests/unit/test_instagram_parser.py -k labelled_from_the_url_path"
+  },
+  {
+    "name": "a story is classified as a post",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "        kind = \"story\"",
+    "new": "        kind = \"post\"",
+    "target": "tests/unit/test_instagram_parser.py -k labelled_from_the_url_path"
+  },
+  {
+    "name": "the host is not validated",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "            and parts.hostname in _INSTAGRAM_HOSTS",
+    "new": "            and True",
+    "target": "tests/unit/test_instagram_parser.py -k fails_validation"
+  },
+  {
+    "name": "a shortcode is not validated against its charset",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "        kind, valid = \"reel\", bool(_SHORTCODE.fullmatch(segments[1]))",
+    "new": "        kind, valid = \"reel\", True",
+    "target": "tests/unit/test_instagram_parser.py -k fails_validation"
+  },
+  {
+    "name": "the eager-read skip is removed: an on-demand ref is still scheduled",
+    "file": "nora/ingest/stages/media.py",
+    "old": "            if not ref.on_demand:\n                subjects.append(Subject(",
+    "new": "            if True:\n                subjects.append(Subject(",
+    "target": "tests/unit/test_instagram_shared_on_demand.py -k never_sent_to_the_interpreter"
+  },
+  {
+    "name": "the parser never marks a shared thumbnail on-demand",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "            ref = replace(ref, on_demand=True)",
+    "new": "            ref = replace(ref, on_demand=False)",
+    "target": "tests/unit/test_instagram_shared_on_demand.py -k never_sent_to_the_interpreter"
+  },
+  {
+    "name": "the skip is applied to direct photos too (stage skips every subject)",
+    "file": "nora/ingest/stages/media.py",
+    "old": "            if not ref.on_demand:\n                subjects.append(Subject(",
+    "new": "            if False:\n                subjects.append(Subject(",
+    "target": "tests/unit/test_instagram_shared_on_demand.py -k directly_is_still_read"
+  },
+  {
+    "name": "the skip is applied to direct photos too (parser marks every media on-demand)",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "        if ref is not None and shared:\n",
+    "new": "        if ref is not None:\n",
+    "target": "tests/unit/test_instagram_shared_on_demand.py -k directly_is_still_read"
+  },
+  {
+    "name": "dedupe keys on the row existing rather than on it having been read",
+    "file": "nora/ingest/comprehension.py",
+    "old": "        if existing is not None and self._already_read(existing, label):",
+    "new": "        if existing is not None:",
+    "target": "tests/unit/test_instagram_shared_on_demand.py -k same_bytes_sent_directly"
+  },
+  {
+    "name": "media_fetch serves an unread index row instead of looking",
+    "file": "nora/agent/tools.py",
+    "old": "            if stored is not None and stored.comprehended:\n                return _serve_media(",
+    "new": "            if stored is not None:\n                return _serve_media(",
+    "target": "tests/test_media_fetch.py -k shared_items_thumbnail"
+  }
+]
