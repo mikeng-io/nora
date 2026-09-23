@@ -160,6 +160,26 @@ Record the exact-match rate. **If it misses accounts outside her contacts,
 P10 needs a different mechanism, found first**, and the plan stops here for a
 decision.
 
+**Measured 2026-09-24: it does.** Run through the bridge's own
+`GET /accounts?query=` (#415, deployed), one query per username, with a case-
+insensitive exact match on `username`:
+
+| Set | n | exact match | at rank 0 | igid matches the person index |
+|---|---|---|---|---|
+| mapped friends | 11 | 11 | 11 | 11 |
+| large public accounts, never messaged | 6 | 6 | 6 | — |
+| private accounts she does not follow (found by profile read) | 4 | 4 | **3** | — |
+| usernames that cannot exist | 3 | 0 (0 items returned) | — | — |
+
+So the contact picker's search reaches accounts outside her contacts, private
+ones included, and returns nothing for a name that does not exist. **One exact
+match was not the first result**, so P10 filters on an exact, case-insensitive
+`username` and never takes `items[0]`. Zero exact matches means
+`nothing_found`, and two or more cannot happen for a unique username but would
+be `ambiguous`. The query text was absent from every span of the run (checked
+against Jaeger). n is small and every case agreed; P10 proceeds on this
+mechanism.
+
 ## P10: Links, and the username lookup
 
 - **Bridge**: `GET /accounts?username=` returns 0 or 1 accounts, in the same
