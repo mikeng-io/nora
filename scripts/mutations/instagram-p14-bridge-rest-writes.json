@@ -73,7 +73,7 @@
     "name": "a non-numeric mention fbid passes the edge",
     "file": "deploy/instagram-bridge/internal/transport/http/messages.go",
     "old": "\t\tif err != nil || m.Offset < 0 || m.Length < 0 {",
-    "new": "\t\tif m.Offset < 0 || m.Length < 0 {",
+    "new": "\t\tif (err != nil && false) || m.Offset < 0 || m.Length < 0 {",
     "target": "go:deploy/instagram-bridge ./... -run TestMalformedRequestsAre400BeforeTheSessionGate"
   },
   {
