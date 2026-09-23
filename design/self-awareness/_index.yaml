@@ -37,7 +37,8 @@ scope:
   v1:
     - "<presence>: generated per-turn block replacing _where_line; this room, this unit's other rooms with transport state, and other units per D1"
     - "_PLATFORM_NAMES gains WhatsApp and Instagram"
-    - "<accounts>: her own handles (@nora.000 on Signal; @noraexample on WhatsApp, X, Instagram, Threads), declared in config.toml, rendered as a global block in the cached prefix, checked against each adapter's self identity at startup; never in identity.md, whose not_here forbids addresses"
+    - "Her own handles (@nora.000 on Signal; @noraexample on WhatsApp, X, Instagram, Threads) as a line in <presence>, read live from each adapter's self report; a config table only for X and Threads (no adapter); never in identity.md, whose not_here forbids addresses"
+    - "<presence> is a ContextBlock row in prefill._BLOCKS (key turn) and replaces proactive's home_room row (D2)"
     - "my_rooms, room_activity, read_room, each with its own disclosure tier; R-27 statuses, no ids (R-18), read_room output untrusted (R-13)"
   not_in_scope:
     - "Editing identity.md. Its not_here rule is kept, not relaxed"
