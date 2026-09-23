@@ -12,6 +12,7 @@
  * allowlist/mode gating, polls, and the Hermes env coupling.
  */
 
+import { createDecipheriv, hkdfSync } from 'node:crypto';
 import { mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -157,6 +158,11 @@ export function createRecentMessageCache(limit = 1000) {
       sender_jid: msg.key.participant || msg.key.remoteJid || null,
       from_me: Boolean(msg.key.fromMe),
       timestamp_ms: timestampMs(msg.messageTimestamp),
+      // The per-message secret an EDIT of this message is encrypted with
+      // (`secretEncryptedMessage`, see `decryptSecretEdit`), and the sender's
+      // other JID form, which the key derivation may have used instead.
+      message_secret: messageSecretOf(msg),
+      sender_alt: msg.key.participantAlt || msg.key.remoteJidAlt || null,
       key: {
         id,
         remoteJid: msg.key.remoteJid,
@@ -178,6 +184,121 @@ export function createRecentMessageCache(limit = 1000) {
   }
 
   return { remember, get, get size() { return byId.size; } };
+}
+
+// -- Secret-encrypted edits (`secretEncryptedMessage`, MESSAGE_EDIT) -------
+
+/**
+ * WhatsApp phones now send an edit ENCRYPTED with the original message's
+ * `messageContextInfo.messageSecret`, not as a plain `protocolMessage`
+ * (measured live 2026-09-24: `outer=[messageContextInfo,
+ * secretEncryptedMessage]`). Baileys up to rc14 does not decrypt it, so the
+ * bridge does, porting whatsmeow's `decryptMsgSecret` (msgsecret.go):
+ *
+ *   key = HKDF-SHA256(ikm = messageSecret, salt = none,
+ *                     info = origId + origSender + editor + "Message Edit", 32)
+ *   plaintext = AES-256-GCM(key, encIv, encPayload), no additional data
+ *
+ * with both JIDs in their non-device form. WhatsApp is mid-migration to LIDs,
+ * so which form (phone or LID) each side used is not knowable in advance;
+ * every candidate pair is tried and GCM's tag rejects a wrong key, so trying
+ * is safe. The secret comes from the recent-message cache: an edit of a
+ * message older than the cache, or from before a bridge restart, cannot be
+ * decrypted and is reported as such. `bridge.test.mjs` pins the derivation
+ * against a vector whatsmeow itself produced.
+ */
+export const SECRET_ENC_MESSAGE_EDIT = 2;
+const MESSAGE_EDIT_USE_CASE = 'Message Edit';
+
+export function messageSecretOf(msg) {
+  const secret = msg?.message?.messageContextInfo?.messageSecret
+    || getMessageContent(msg)?.messageContextInfo?.messageSecret;
+  if (!secret) return null;
+  if (typeof secret === 'string') return Buffer.from(secret, 'base64');
+  return Buffer.from(secret);
+}
+
+export function deriveEditKey(secret, origId, origSender, editor) {
+  const info = Buffer.from(`${origId}${origSender}${editor}${MESSAGE_EDIT_USE_CASE}`, 'utf8');
+  return Buffer.from(hkdfSync('sha256', secret, Buffer.alloc(0), info, 32));
+}
+
+function gcmOpen(key, iv, payload) {
+  const data = Buffer.from(payload);
+  if (data.length < 17) return null;
+  try {
+    const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(iv));
+    decipher.setAuthTag(data.subarray(data.length - 16));
+    return Buffer.concat([decipher.update(data.subarray(0, data.length - 16)), decipher.final()]);
+  } catch {
+    return null;                        // wrong key (tag mismatch) or malformed
+  }
+}
+
+function jidForms(jid, lidToPhone, phoneToLid) {
+  const out = new Set();
+  const base = normalizeJid(jid);
+  if (!base) return out;
+  out.add(base);
+  const id = resolveIdentity(base, lidToPhone, phoneToLid);
+  if (id.phone) out.add(`${id.phone}@s.whatsapp.net`);
+  if (id.lid) out.add(`${id.lid}@lid`);
+  return out;
+}
+
+/**
+ * A `secretEncryptedMessage` MESSAGE_EDIT → `{ msg }`, a Baileys-shaped message
+ * carrying the plain `protocolMessage` edit `extractMessageEvent` already
+ * understands; or `{ reason }` saying why it could not be. `decode` is
+ * Baileys' `proto.Message.decode`, injected so this module stays pure.
+ */
+export function decryptSecretEdit(msg, { recentCache, decode, lidToPhone = {}, phoneToLid = {} } = {}) {
+  const sem = getMessageContent(msg)?.secretEncryptedMessage;
+  if (!sem) return { reason: 'not_secret_encrypted' };
+  if (Number(sem.secretEncType) !== SECRET_ENC_MESSAGE_EDIT) return { reason: 'not_a_message_edit' };
+  const target = sem.targetMessageKey || {};
+  const cached = recentCache ? recentCache.get(target.id) : null;
+  if (!target.id || !cached || !cached.message_secret) return { reason: 'secret_unknown' };
+  if (!sem.encIv || !sem.encPayload) return { reason: 'malformed' };
+
+  const origForms = new Set([
+    ...jidForms(target.participant || target.remoteJid, lidToPhone, phoneToLid),
+    ...jidForms(cached.sender_jid, lidToPhone, phoneToLid),
+    ...jidForms(cached.sender_alt, lidToPhone, phoneToLid),
+  ]);
+  const editorForms = new Set([
+    ...jidForms(msg.key.participant || msg.key.remoteJid, lidToPhone, phoneToLid),
+    ...jidForms(msg.key.participantAlt || msg.key.remoteJidAlt, lidToPhone, phoneToLid),
+  ]);
+  for (const orig of origForms) {
+    for (const editor of editorForms) {
+      const plain = gcmOpen(deriveEditKey(cached.message_secret, target.id, orig, editor),
+        sem.encIv, sem.encPayload);
+      if (!plain) continue;
+      let edited;
+      try {
+        edited = decode(plain);
+      } catch {
+        return { reason: 'undecodable' };
+      }
+      const seconds = toNumber(msg.messageTimestamp);
+      return {
+        msg: {
+          ...msg,
+          message: {
+            protocolMessage: {
+              type: 14,
+              key: { id: target.id, remoteJid: target.remoteJid, fromMe: Boolean(target.fromMe),
+                ...(target.participant ? { participant: target.participant } : {}) },
+              editedMessage: edited,
+              ...(seconds !== null ? { timestampMs: seconds * 1000 } : {}),
+            },
+          },
+        },
+      };
+    }
+  }
+  return { reason: 'undecryptable' };
 }
 
 // -- Bounded event buffer with drop-and-count (contract §dropped) ----------
