@@ -36,6 +36,10 @@ async def test_derive_identity_returns_the_bots_own_id_and_never_its_username(me
     # stable. The /users/@me response DOES carry a username (the fixture
     # returns one), so this asserts it is dropped, not merely absent.
     assert {i.kind for i in identifiers} == {"user_id"}
+    # Value-level, not just kind-level: a mistake that added the username as
+    # a SECOND "user_id"-kind identifier would pass the kind check above
+    # while still smuggling it into self_aliases(). Pin the value set too.
+    assert {i.value for i in identifiers} == {"100000000000000100"}
 
 
 async def test_derive_identity_also_returns_the_rendered_handle(me_server):
