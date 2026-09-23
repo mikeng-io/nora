@@ -59,7 +59,7 @@ different backend could do it.
 | Story | `GET /accounts/{igid}/story` | ❌ **never reached**: the Python Instagram backend is not wired (`nora/app/composition.py` hard-codes it to `None`) because no `SocialSubjectIndex` implementation exists, so the router answers `unavailable`; and the client it would use targets `POST /social/story` with a `status` envelope the bridge never implemented | implement the subject index (its blocker, igids in `identity.toml`, is met since 2026-09-22); rewrite the client to the bridge's real contract |
 | User search | none | ❌ Python routes `search` to OpenCLI | bridge route over `SearchUsers` |
 | One post from a link | none | ❌ | bridge route over `FetchMedia`; never tried on a real post |
-| List someone's posts | none | ❌ | **no known mechanism**: the Go library's full GraphQL registry (28 documents, all DM plus one profile query) has none; OpenCLI's `user` returns Instagram's HTML shell even from its own browser |
+| List someone's posts | none | ❌ | **no known mechanism**: the Go library's full GraphQL registry (`pkg/messagix/graphql/docs.go`, 35 documents: 31 DM, 3 transport, 1 profile) has none; OpenCLI's `user` returns Instagram's HTML shell even from its own browser |
 | List someone's reels | none | ❌ | same as posts |
 | Followers / following | none | ❌ | not investigated |
 
@@ -83,6 +83,15 @@ in the file at all.
 The username lookup is a search, invisible to the account it finds, so it may
 run before the Tier 0 decision; the story fetch, which is visible, runs only
 after it.
+
+**A link's reach check runs on the igid the link named, never a re-derived
+one.** The forward path (`person_id` → `igid_for`) answers `ambiguous` for a
+person with two Instagram accounts, correctly, because nothing says which one
+was meant. A link *does* say: it named one account. So the link path goes
+`igid → person` (reverse, `person_for_igid`) → `is_tier_zero(person)`, and reads
+the story of the igid it already holds. Re-deriving through `igid_for` would
+turn a multi-account friend's story link into `ambiguous`. An igid that maps to
+no person is not in any room: `refused`.
 
 Until the lookup route exists, a link answers `unavailable` (R-27), never a
 guess and never OpenCLI.

@@ -1,13 +1,13 @@
 ---
 type: design
 title: "instagram-bridge as an Application — layers, domain, REST resources, tracing and logging"
-description: "The bridge is a second HTTP application: 7.7k lines in one Go package with no tracing and printf logging. Every bug this bundle has recorded was a missing boundary. This fixes the boundaries — Clean Architecture layers, a small domain with typed ids, one upstream-call helper, REST resources, and OpenTelemetry into the existing collector — and migrates to them incrementally, observability first."
+description: "The bridge is a second HTTP application: 8,012 lines in one Go package with no tracing and printf logging. Every bug this bundle has recorded was a missing boundary. This fixes the boundaries — Clean Architecture layers, a small domain with typed ids, one upstream-call helper, REST resources, and OpenTelemetry into the existing collector — and migrates to them incrementally, observability first."
 tags: [nora, instagram, bridge, architecture, clean-architecture, ddd, rest, opentelemetry, jaeger, logging, conventions]
 timestamp: '2026-09-23'
 edges:
   - {dst: 00-overview.md, rel: parent, provenance: asserted}
   - {dst: 15-bridge-is-the-only-entry.md, rel: realizes, provenance: asserted}
-  - {dst: 03-transport-contract.md, rel: extends, provenance: asserted}
+  - {dst: 03-transport-contract.md, rel: supersedes, provenance: asserted}
   - {dst: 10-discovery-retrieval-and-paging.md, rel: constrained-by, provenance: asserted}
 ---
 
@@ -17,7 +17,8 @@ edges:
 
 `15` makes the bridge the only way Nora reaches Instagram. That turns it from a
 small transport shim into Nora's second HTTP application, and it is not built
-like one. Measured 2026-09-23: 7,696 lines, 17 files, all in `package main`,
+like one. Measured 2026-09-23 on master after #387: 18 Go files, 8,012 lines
+(4,033 of them non-test), all in `package main`,
 no tracing at all, and logging through `log.Printf` (`logf`). The only other
 Go service in `deploy/` is this one (`whatsapp-bridge` is Node), so whatever
 this document sets is the Go convention.

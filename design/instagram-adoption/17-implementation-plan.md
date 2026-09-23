@@ -85,7 +85,11 @@ decimal strings: the `02` trap again.
 - `is_tier_zero(person_id)` → the person is **listed** in `persons` of at
   least one configured room. **A `persons = "*"` room does not count**: an
   open room admits anyone and asserts nobody's membership. Fail closed.
-- **Tests**: including the `*` negative and the two-account `ambiguous`.
+- `person_for_igid(igid)` → the person that igid belongs to, or `None`: the
+  reverse lookup the link path needs (`15` §Links), added to the
+  `SocialSubjectIndex` port. Backed by `Persons.resolve("instagram", igid)`.
+- **Tests**: including the `*` negative, the two-account `ambiguous`, and an
+  igid mapping to no person.
 
 ## P4: Nora's Instagram client, on the bridge's real contract
 
@@ -93,9 +97,15 @@ decimal strings: the `02` trap again.
 `/social/story` and expects a `status` envelope the bridge never had.
 
 - `story` → `GET /accounts/{igid}/story`; `profile` → `GET /accounts/{igid}`.
-- Status mapping: 200 with `found` → `ok`; 200 with `found: false` →
-  `nothing_found`; 404 (no such account) → `nothing_found`; 409 and 503 →
-  `unavailable`; anything else → `unavailable`.
+- Status mapping, per route (they differ today):
+  - `profile`: 200 → `ok`; 404 (`errNoProfile`, the igid names no account)
+    → `nothing_found`; 409 and 503 → `unavailable`; anything else →
+    `unavailable`.
+  - `story`: 200 with `found: true` → `ok`; 200 with `found: false` →
+    `nothing_found`. The story route has **no** "no such account" path; an
+    unknown igid is `found: false` as well. Acceptable, because a story igid
+    comes only from the person index or from a lookup that just found the
+    account. 409 and 503 → `unavailable`; anything else → `unavailable`.
 - Profile rendered from the curated fields (`is_private`, both follow
   directions, counts, bio) into the same untrusted wrap as story. The
   existing hardening stays: the bridge's text never reaches `note`, and output
@@ -114,14 +124,18 @@ backend`, since `15` superseded the rule they encode.
 |---|---|---|
 | `instagram/story` | bridge | `person_id` → resolve + Tier 0 reach |
 | `instagram/profile` | bridge | `person_id` → resolve only. A username or link answers `unavailable` until P10 |
-| `instagram/posts` | bridge | `unavailable` until P13. OpenCLI's `user` returns Instagram's HTML page, so nothing working is lost |
+| `instagram/posts` | bridge client, **no route behind it** | the client answers `unavailable` itself without calling the bridge (the row is not in its served set) until P13 adds a route. The row is bridge-owned now so it can never fall back to OpenCLI. OpenCLI's `user` returns Instagram's HTML page, so nothing working is lost |
 | `instagram/search` | **OpenCLI, the last Instagram row there** | named; moves in P11 |
 | `x/*` | OpenCLI | named |
 
 - **`nora/infra/social/bridge_server.py`**: `instagram/profile` and
   `instagram/posts` leave `READ_ONLY_ALLOWLIST`.
-- **`tests/test_acceptance_rules.py::test_r86_…`** derives from `ROUTES`;
-  `tests/unit/test_social_router.py` follows.
+- **`tests/test_acceptance_rules.py::test_r86_…`** is **rewritten**, not
+  repointed. Its current disjointness assertion (`EXCEPTION_ROUTES &
+  READ_ONLY_ALLOWLIST == ∅`) has no meaning over one dict. The new
+  invariants: every pair the tool can construct is a key of `ROUTES`;
+  OpenCLI-routed pairs ⊆ `READ_ONLY_ALLOWLIST`; bridge-routed pairs ∩
+  `READ_ONLY_ALLOWLIST` = ∅. `tests/unit/test_social_router.py` follows.
 - **`nora/app/composition.py`** builds `InstagramSocialClient` and
   `PersonsSubjectIndex` under `[social.instagram] enabled`, replacing the
   hard-coded `None`.
@@ -168,6 +182,9 @@ decision.
 - **Negative test**: a story link to someone in none of her rooms is
   `refused`, and **no story request reaches the bridge** (asserted on the
   bridge's recorded calls).
+- **Multi-account test**: a friend with two Instagram accounts; a story link
+  to one of them reads *that* account's story, while a `person_id` request for
+  the same friend stays `ambiguous`.
 
 ## P11: Search onto the bridge
 
@@ -191,5 +208,8 @@ planned until one is measured.
 
 `POST /threads/{id}/messages`, `DELETE …/messages/{id}`,
 `PUT …/messages/{id}/reaction`, `PUT /threads/{id}/typing`; the error envelope
-on every route. The Python adapter (`nora/platform/instagram/`) moves in the
-**same PR**, and the old verb-shaped paths are deleted in it.
+on every route. That includes `GET /accounts/{igid}` and
+`GET /accounts/{igid}/story`: their paths do not change, but their bodies
+(`profileBody`, `storyBody`) lose the `ok` field. The Python adapter
+(`nora/platform/instagram/`) and `nora/infra/social/instagram_client.py` move
+in the **same PR**, and the old verb-shaped paths are deleted in it.

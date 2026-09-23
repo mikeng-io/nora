@@ -20,6 +20,13 @@ defined; drift is a contract-test failure, not a judgment call.
 
 ## HTTP surface (bound on the private `nora` net)
 
+> **PARTLY SUPERSEDED 2026-09-23.** The verb-shaped paths in the surface
+> table below (`/send`, `/send-media`, `/react`, `/typing`, `/unsend`) and
+> the response bodies' `ok` field are replaced by the resource paths and the
+> single error envelope in `16-bridge-architecture-and-observability.md`
+> §Resources (migrated in `17-implementation-plan.md` P14). The id
+> normalization, inbound event shapes and status meanings below still hold.
+
 | Route | Purpose |
 |---|---|
 | `GET /health` | liveness + session state as a FIELD (see `01-bridge-container.md`) |
@@ -213,6 +220,12 @@ cited for it was borrowed from a different point, which is worth correcting
 because a later reader would re-derive the decision from it.
 
 ## The social route — specified here, NOT YET IMPLEMENTED
+
+> **SUPERSEDED 2026-09-23 — this route will never be implemented.** The
+> bridge serves stories at `GET /accounts/{igid}/story` (`15`, `16`
+> §Resources), and Nora's client moves to it in `17` P4. The contract below
+> is the one `nora/infra/social/instagram_client.py` was written against,
+> which is why that client has never had a route to call.
 
 `08` routes `(instagram, story)` to the bridge, and `11` scopes social routes
 out of M1, so the bridge has **no `/social/*` route today**. The Python client
