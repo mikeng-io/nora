@@ -1125,6 +1125,52 @@ async def test_saved_places_unavailable_when_presence_not_wired(persons):
     assert out["status"] == "unavailable"
 
 
+async def test_every_non_ok_saved_places_carries_a_dash_free_note(persons):
+    """ADR 0015 §3/§6: the description only NAMES `unavailable`; what to say
+    is the result's `note`. Both unavailable paths (unwired, failed read)."""
+    unwired = {t.tool_name: t for t in build_tools(
+        store=None, conversation_id=GROUP, conversation_type="group",
+        persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
+        room=_room(persons, members=(MILES, NORA)),
+        transit_source=None, question="", context_window=40,
+    )}["saved_places"]
+    failed = _saved_places_tool(persons, _ThrowingPresence(), members=(MILES, GRANT, NORA))
+    for case, tool in (("unwired", unwired), ("failed", failed)):
+        out = await tool._tool_func()
+        assert out["status"] == "unavailable", case
+        assert isinstance(out.get("note"), str) and out["note"].strip(), case
+        assert "—" not in out["note"] and "–" not in out["note"], case
+
+
+async def test_a_saved_places_ok_note_carries_the_rules_its_list_needs(persons, store):
+    """How to use the list left the description and rides with it: the
+    match-and-pass clause only when there are names, the ask-instead clause
+    only when there are none, and the address clause only with `addresses`."""
+    await store.replace_places(circle_id=CIRCLE_ID, places=[_saved("Home")])
+    named = await _saved_places_tool(persons, store, members=(MILES, GRANT, NORA))._tool_func()
+    assert named["names"] == ["Home"]
+    assert "pass that name to route" in named["note"]
+    assert "no saved names" not in named["note"]
+    assert "street address" not in named["note"]          # no `addresses` here
+
+    empty = await _saved_places_tool(
+        persons, store, members=(MILES, GRANT, STRANGER, NORA),
+    )._tool_func()
+    assert empty["names"] == []
+    assert "no saved names" in empty["note"]
+    assert "pass that name to route" not in empty["note"]
+
+    await store.replace_places(circle_id=CIRCLE_ID, places=[
+        SavedPlace(circle_id=CIRCLE_ID, place_id="p-work", name="Work", lat=22.44,
+                   lng=114.02, radius_m=300.0, updated_ms=NOW, address="1 Main St"),
+    ])
+    addressed = await _saved_places_tool(persons, store, members=(MILES, GRANT, NORA))._tool_func()
+    assert addressed["addresses"] == {"Work": "1 Main St"}
+    assert "street address" in addressed["note"]
+    for out in (named, empty, addressed):
+        assert "—" not in out["note"] and "–" not in out["note"]
+
+
 # ---------------------------------------------------------------------------
 # R-47 — the circle is who may be ASKED ABOUT; the room is only the audience
 # ---------------------------------------------------------------------------

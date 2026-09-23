@@ -162,3 +162,62 @@ async def test_parking_client_no_status_when_basic_unavailable(monkeypatch):
     out = await client.vacancy(name="西貢政府合署停車場")
     assert "status" not in out
     assert out["vacancy"] == 30  # vacancy survives the basic-info miss
+
+
+# ---- the parking_status TOOL: ADR 0015 §3, reporting rides in the result ----
+
+
+def _parking_status_tool(parking_source):
+    from nora.agent.tools import build_tool_specs
+    from nora.obs.metrics import Metrics
+
+    specs = build_tool_specs(
+        store=None, conversation_id="c", conversation_type="group",
+        persons=None, honcho=None, deliverer=None, room=None,
+        transit_source=None, parking_source=parking_source, metrics=Metrics(),
+    )
+    return next(s for s in specs if s.name == "parking_status")
+
+
+class _FeedDown:
+    """Fault-only: the feed raising, which the tool must fold to `unavailable`."""
+
+    async def vacancy(self, *, name, strict=False):
+        raise RuntimeError("feed down")
+
+
+@pytest.mark.asyncio
+async def test_every_non_ok_parking_status_carries_a_dash_free_note(monkeypatch):
+    """The description only NAMES `unavailable`; what to say (never «no
+    spaces», never a guessed number) is the result's `note`, on every path:
+    unwired, a name the real client cannot match, and a raising feed."""
+    monkeypatch.setattr("aiohttp.ClientSession", _FakeSession)
+    for case, source, name in (("unwired", None, "西貢"),
+                               ("miss", ParkingClient(), "月球停車場"),
+                               ("raised", _FeedDown(), "西貢")):
+        out = await _parking_status_tool(source).call(name=name)
+        assert out["status"] == "unavailable", case
+        assert out["note"].strip(), case
+        assert "—" not in out["note"] and "–" not in out["note"], case
+
+
+@pytest.mark.asyncio
+async def test_a_parking_status_ok_note_carries_the_age_only_with_lastupdate(monkeypatch):
+    """«Carry the count's age» left the description; it arrives only when the
+    feed gave a `lastupdate`. Driven through the real client over the feed's
+    captured shape, with and without the timestamp."""
+    monkeypatch.setattr("aiohttp.ClientSession", _FakeSession)
+    dated = await _parking_status_tool(ParkingClient()).call(name="西貢政府合署停車場")
+    assert dated["status"] == "ok" and dated["vacancy"] == 30
+    assert dated["lastupdate"] and "lastupdate" in dated["note"]
+    assert "parking_id" in dated["note"]
+
+    undated_feed = {"car_park": [{"park_id": "tdc10p1", "vehicle_type": [{
+        "type": "P", "service_category": [{
+            "category": "HOURLY", "vacancy_type": "A", "vacancy": 30}]}]}]}
+    monkeypatch.setattr("aiohttp.ClientSession",
+                        lambda *a, **k: _FakeSession(vacancy=undated_feed))
+    undated = await _parking_status_tool(ParkingClient()).call(name="西貢政府合署停車場")
+    assert undated["status"] == "ok" and not undated.get("lastupdate")
+    assert "lastupdate" not in undated["note"]
+    assert "Never invent a number" in undated["note"]

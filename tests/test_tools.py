@@ -807,6 +807,29 @@ async def test_calculate_needs_none_of_the_tags_collaborators(wiring):
     assert out["split"]["leftover"] == "0.02"
 
 
+async def test_every_calculate_refusal_carries_a_dash_free_note_with_the_retry_rule(wiring):
+    """ADR 0015 §3/§6: the description only NAMES `refused`; what to do with
+    one is the result's `note`. Every refusal path in `arithmetic` is driven
+    here, so a path that loses its sentence, or the tool's retry rule, reds."""
+    for expression in ("2**9999999999", "(1).__class__", "1 +", "", "1/0",
+                       "x", "lambda: 1", "(" * 5000 + "1" + ")" * 5000, "9" * 400,
+                       "abs(1)", "10 ** 30 * 10 ** 30"):
+        out = await _call(wiring["tools"]["calculate"], expression=expression)
+        assert out["status"] == "refused", expression
+        assert "—" not in out["note"] and "–" not in out["note"], expression
+        assert "call calculate again" in out["note"], expression
+
+
+async def test_a_calculate_ok_note_appears_only_with_a_split(wiring):
+    """The leftover rule that left the description arrives with the `split` it
+    is about, and an even answer carries no note at all."""
+    split = await _call(wiring["tools"]["calculate"], expression="1485/7")
+    assert "leftover" in split["note"]
+    even = await _call(wiring["tools"]["calculate"], expression="1485/5")
+    assert even["status"] == "ok" and "split" not in even
+    assert "note" not in even
+
+
 async def test_weather_is_unavailable_without_a_provider(wiring):
     """The wiring path the review flagged: this fixture wires no `weather_source`
     (the offline/`[weather]` off shape), so the closure must answer `unavailable`

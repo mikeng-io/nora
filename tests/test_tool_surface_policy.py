@@ -253,18 +253,18 @@ LEVEL_CEILINGS = {1: 80, 2: 160, 3: 320}
 #: the ADR can never be exempted here. A rewrite batch removes its tools in the
 #: same commit that rewrites them.
 _NOT_YET_REWRITTEN = frozenset({
-    "about", "ask_memory", "calculate", "cancel_event", "cancel_reminder",
-    "create_event", "find_parking", "generate_image", "group_members",
+    "about", "ask_memory", "cancel_event", "cancel_reminder",
+    "create_event", "generate_image", "group_members",
     "list_events", "list_reminders", "load_tools", "load_transcript",
     "lookup_person", "make_artifact", "media_fetch", "media_search",
     "media_send", "music_status", "note_create", "note_read", "note_search",
-    "note_update", "now", "parking_status", "place_info",
-    "play_music", "recall_lookups", "remember", "reverse_geocode",
-    "route", "rsvp_event", "saved_places", "search_gifs", "search_memory",
+    "note_update",
+    "play_music", "recall_lookups", "remember",
+    "rsvp_event", "search_gifs", "search_memory",
     "search_memory_workspace", "send_gif", "send_reply", "send_to",
     "set_music_volume", "skip_music", "stop_music",
-    "suggest_venue", "top_music", "transit", "update_event", "version",
-    "weather", "web_fetch", "web_search", "who_said",
+    "suggest_venue", "top_music", "update_event", "version",
+    "web_fetch", "web_search", "who_said",
 })
 
 #: A run of CJK, kana or hangul. ADR 0015 §3's unit: a distinct maximal run,

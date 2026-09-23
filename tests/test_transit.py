@@ -758,3 +758,77 @@ async def test_the_tool_never_echoes_an_identifier_from_the_near_argument(operat
     out = await _call(wiring["transit"], route="68X", near="+85290000101")
     assert "asked" not in out["near"]
     assert out["near"]["status"] == "not_found"
+
+
+# ---- ADR 0015 §3: how to report a status rides in the result ----------------
+
+_DASHES = ("—", "–")
+
+
+async def test_every_non_ok_answer_carries_a_dash_free_note(operators):
+    """ADR 0015 §3/§6: the description only NAMES the statuses and the `near`
+    outcomes; what to say for each is the result's `note`. Every non-ok branch
+    of `describe` (and each `near` suffix) is driven here, so a branch that
+    loses its sentence goes red."""
+    # First: the catalogue is cached once read, so its outage must come first.
+    operators.csv_status = 503
+    catalogue_down = await operators.client.arrivals("ZZZ999")
+    operators.csv_status = 200
+    no_such = await operators.client.arrivals("ZZZ999")
+    no_service = await operators.client.arrivals("K74")
+    operators.stop_eta_empty = True
+    stop_quiet = await operators.client.arrivals("68X", near="灰沙圍")
+    operators.stop_eta_empty = False
+    not_on_route = await operators.client.arrivals("K73", near="大學站")
+    nowhere = await operators.client.arrivals("K73", near="銀河站")
+    ambiguous = await operators.client.arrivals("K73", near="輕鐵")
+    operators.stops_status = 503
+    stops_down = await operators.client.arrivals("K73", near="天恆")
+    operators.stops_status = 200
+    operators.mtr_status = 503
+    eta_down = await operators.client.arrivals("K73")
+    operators.mtr_status = 200
+
+    class _Exploding:
+        async def arrivals(self, route: str, near: str = "") -> dict:
+            raise RuntimeError("transit is on fire")
+
+    exploded = await _call(_tool_wiring(_Exploding())["transit"], route="K73")  # type: ignore[arg-type]
+
+    cases = {
+        "nothing_found/no_such_route": no_such,
+        "nothing_found/no_service": no_service,
+        "nothing_found/stop_quiet": stop_quiet,
+        "ok/not_on_route": not_on_route,
+        "ok/near_not_found": nowhere,
+        "ok/near_ambiguous": ambiguous,
+        "ok/near_unavailable": stops_down,
+        "unavailable/eta": eta_down,
+        "unavailable/catalogue": catalogue_down,
+        "unavailable/raised": exploded,
+    }
+    for case, out in cases.items():
+        assert out["status"] == case.split("/")[0], (case, out)
+        assert isinstance(out.get("note"), str) and out["note"].strip(), case
+        assert not any(d in out["note"] for d in _DASHES), case
+
+
+def _scheduled(out: dict) -> bool:
+    return any(dep["scheduled"] for d in out["directions"] for dep in d["departures"])
+
+
+async def test_an_ok_note_carries_the_rules_its_answer_needs(operators):
+    """The reporting rules that left the description arrive with the answer
+    they are about: «from the start of the direction» only when the times are
+    not at a named stop, and the timetable clause only when a departure in
+    THIS answer came off a timetable."""
+    origin = await operators.client.arrivals("K73")
+    assert origin["status"] == "ok"
+    assert "START" in origin["note"]
+    assert ("timetable" in origin["note"]) == _scheduled(origin)
+
+    at_stop = await operators.client.arrivals("68X", near="灰沙圍")
+    assert at_stop["status"] == "ok" and at_stop["near"]["status"] == "ok"
+    assert "AT the stop" in at_stop["note"]
+    assert "START" not in at_stop["note"]
+    assert ("timetable" in at_stop["note"]) == _scheduled(at_stop)

@@ -258,7 +258,7 @@ def _eval(node: ast.AST, source: str) -> Decimal:
         raise _RefusalError(f"«{op.__name__}» is not arithmetic. I can only do + and - here.")
     raise _RefusalError(
         f"«{type(node).__name__}» is not arithmetic. Write plain numbers and "
-        "brackets with + - * / // % and ** — nothing else."
+        "brackets with + - * / // % and **, nothing else."
     )
 
 
@@ -373,7 +373,7 @@ def evaluate(expression: str) -> dict:
         return {
             "status": "refused", "expression": expression,
             "note": "I could not read that as a calculation. Write it as a plain "
-                    "expression like «(1200 + 285) / 6» — numbers, brackets, and "
+                    "expression like «(1200 + 285) / 6»: numbers, brackets, and "
                     "+ - * / // % ** only.",
         }
 
@@ -406,7 +406,7 @@ def evaluate(expression: str) -> dict:
         # already catch. Legible, and never an exception into the turn.
         return {
             "status": "refused", "expression": expression,
-            "note": "That calculation has no answer — check the numbers and try a "
+            "note": "That calculation has no answer. Check the numbers and try a "
                     "simpler form of it.",
         }
 

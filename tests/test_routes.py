@@ -738,3 +738,92 @@ async def test_place_info_tool_answers_a_real_place(google):
     out = await _call(wiring["place_info"], name="Yoho Mall")
     assert out["status"] == "ok"
     assert out["rating"] == 4.2
+
+
+# ── ADR 0015 §3: how to report a status rides in the result ─────────────────
+
+_DASHES = ("—", "–")
+
+
+def _assert_noted(case: str, out: dict) -> None:
+    assert out["status"] == case.split("/")[0], (case, out)
+    assert isinstance(out.get("note"), str) and out["note"].strip(), case
+    assert not any(d in out["note"] for d in _DASHES), case
+
+
+async def test_every_non_ok_route_carries_a_dash_free_note(google):
+    """The description only NAMES route's statuses; what to say for each is
+    the result's `note`. Every non-ok branch, the tool's own and the client's,
+    is driven here, so one that loses its sentence goes red."""
+    class _Exploding:
+        async def route(self, origin, destination, mode="TRANSIT", arrive_by="", **_kw):
+            raise RuntimeError("route is on fire")
+
+    live = _tool_wiring(google.client)["route"]
+    cases = {
+        "refused/identifier": (live, {"origin": "+85290000101", "destination": "Yoho Mall"}),
+        "refused/coordinate": (live, {"origin": "22.4471,114.0228", "destination": "Yoho Mall"}),
+        "refused/person": (live, {"origin": "阿豹", "destination": "Yoho Mall"}),
+        "unavailable/unwired": (_tool_wiring(None)["route"],
+                                {"origin": "天水圍站", "destination": "Yoho Mall"}),
+        "unavailable/raised": (_tool_wiring(_Exploding())["route"],
+                               {"origin": "天水圍站", "destination": "Yoho Mall"}),
+        "no_route/not_found": (live, {"origin": "天水圍站", "destination": "nowhere-at-all"}),
+        "no_route/ambiguous": (live, {"origin": "天水圍站", "destination": "打邊爐"}),
+    }
+    notes = {}
+    for case, (tool, kwargs) in cases.items():
+        out = await _call(tool, **kwargs)
+        _assert_noted(case, out)
+        notes[case] = out["note"]
+    # Each refusal reached its OWN branch, not a shared fallback.
+    assert "identifier" in notes["refused/identifier"]
+    assert "coordinate" in notes["refused/coordinate"]
+    assert "person" in notes["refused/person"]
+    google.no_route = True
+    _assert_noted("no_route/google", await _call(live, origin="天水圍站", destination="孤島"))
+    google.no_route = False
+    google.routes_status = 500
+    _assert_noted("unavailable/google",
+                  await _call(live, origin="天水圍站", destination="Yoho Mall"))
+
+
+async def test_an_ok_route_note_carries_the_link_rule_with_the_link(google):
+    """«Paste maps_url exactly» left the description; it arrives with the
+    link it is about, beside the client's own leg-reading note."""
+    out = await _call(_tool_wiring(google.client)["route"],
+                      origin="天水圍站", destination="Yoho Mall")
+    assert out["status"] == "ok" and "maps_url" in out
+    assert "maps_url" in out["note"] and "exactly" in out["note"]
+    assert "about" in out["note"]                    # the client's schedule clause
+    assert not any(d in out["note"] for d in _DASHES)
+
+
+async def test_every_non_ok_place_info_carries_a_dash_free_note(google):
+    """The client answers `ambiguous`, `not_found` and `unavailable` bare; the
+    tool adds how to report each, and the refusals keep theirs."""
+    live = _tool_wiring(google.client)["place_info"]
+    _assert_noted("refused/person", await _call(live, name="陳生"))
+    _assert_noted("refused/identifier", await _call(live, name="+85290000101"))
+    _assert_noted("ambiguous", await _call(live, name="打邊爐"))
+    _assert_noted("not_found", await _call(live, name="no-such-place-anywhere-xyz"))
+    _assert_noted("unavailable/unwired", await _call(_tool_wiring(None)["place_info"],
+                                                     name="Yoho Mall"))
+    google.places_status = 500
+    _assert_noted("unavailable/google", await _call(live, name="Yoho Mall"))
+
+
+async def test_a_place_info_ok_note_follows_whether_there_is_a_rating(google):
+    """«Quote it as Google's» only when there is a rating; «it has no score
+    yet, never invent one» only when there is not."""
+    rated = await _call(_tool_wiring(google.client)["place_info"], name="Yoho Mall")
+    assert rated["status"] == "ok" and rated["rating"] == 4.2
+    assert "Google gives" in rated["note"] and "no score" not in rated["note"]
+    assert "maps_url" in rated["note"]
+
+    class _Unrated:
+        async def place_info(self, name: str) -> dict:
+            return {"status": "ok", "name": "K73 Tin Heng", "place_id": "p1"}
+
+    unrated = await _call(_tool_wiring(_Unrated())["place_info"], name="天恆")
+    assert "no score" in unrated["note"] and "Google gives" not in unrated["note"]
