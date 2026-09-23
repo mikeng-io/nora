@@ -60,7 +60,7 @@ Twenty engagement turns, 2026-09-22 to 09-23, read from Langfuse along with
 every `turn_verdict` row in the database.
 
 **The verdict does not discriminate, and when it fires it is usually reading a
-fragment.** All-time: 380 `grounded=true`, 25 `false`. In the 20-turn sample,
+fragment.** All-time: 381 `grounded=true`, 25 `false` (406 turns). In the 20-turn sample,
 19 true and 1 false. The false one flagged her own public handles as "no
 source". They were in `<presence>`, which the tag turn reads and the verdict
 call does not. Of the 25 all-time, **17 (68%) came from a turn with a tool
@@ -108,7 +108,10 @@ time. `<standing>` in the tag turn already renders `written` as an age.
    re-affirming it.
 3. Showing the fold the turn's tool results at a size that carries them, and
    telling it that those results survive only through what it writes, lets it
-   keep unsent findings. Nothing else changes about what belongs in standing.
+   keep unsent findings. Nothing else changes about what belongs in standing
+   — but every reader of standing (the tag turn's `<standing>`, proactive
+   decide, culture, and the Relevance Gate when it is on) now also reads
+   those findings, and 20-verification §3 watches for that.
 
 What would falsify each is in [20-verification](20-verification.md).
 

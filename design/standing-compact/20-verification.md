@@ -73,6 +73,17 @@ samples, never as a rate from one draw.
 | `nora_standing_overflow_refusals_total` | occasional | constant: the working set crowds the cap; revisit `max_chars` or what belongs |
 | stale clauses in `standing` | none older than a few days re-affirmed as current | the ratchet §10-changes §1 names: reconsider a bound |
 | `nora_debrief_clips_total{block="tool_result"}` | falls sharply from today's rate | unchanged: the bound is not where the results are |
+| `nora_dream_screened_total{adaptor="debrief"}` and `nora_debrief_total{outcome="screened"}` | rare | rising: findings are carrying identifiers and whole folds are being dropped (the prior stands, but nothing new lands) |
+| tag-turn replies that act on a finding in `<standing>` as though it were a commitment or a fact she established | never | any: the finding/commitment line in the objective is not holding (security review, 10-changes §5) |
+
+## 4. Running the master arm
+
+Master has no standing entry point. The master arm is master's production code
+with the harness applied on top (`evals/`, `nora/subject/standing_fold.py`,
+applied cleanly as of 2026-09-24), run from its own checkout; the corpus header
+says how. The sandbox seeds `turn_verdict` as of each case's instant, so on
+master the verdict-triggered re-derivation happens where it happened in
+production.
 
 ## Status / Checkpoint
 

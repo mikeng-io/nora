@@ -42,11 +42,13 @@ in the database. Code goes, schema stays, as with the fact tier.
 `<standing_prior>` gains `written`, rendered as an age (`nora.domain.prompt.age`,
 the same vocabulary `<standing>` already uses in the tag turn) against the
 turn's own time, on both the tag path and the event rollup. The block type
-annotates it: *"how long before this fold you wrote it: a relative time inside
-it (tomorrow, tonight, now) meant that relative to then, not to now."*
+annotates it: *"how long before this fold you wrote it. A relative time inside
+it (today, tomorrow, tonight, now) meant that relative to when you wrote it,
+not to now"*.
 
-The instruction gains one sentence in the same register: keep a time as a date,
-never as a relative word, because the next fold reads it days later.
+The instruction gains one sentence in the same register: a clause that depends
+on a day keeps it as a date, not a relative word, because the next fold reads
+it days later (scoped in §5).
 
 ## 3. The turn's steps, as they are
 
@@ -80,13 +82,56 @@ others. It is not a menu of cases:
 > what I found or worked out on this turn and have not yet given the room, and
 > when I found it, while it is still useful to someone here.
 
-The existing exclusions stand: anything that must survive goes in a note, and
-no addresses, numbers or ids. A restaurant's name is a finding. Its street
-address is not.
+The exclusions stand, narrowed so they cannot be read against the new
+bullet: the DETAIL of something settled (the venue chosen, the date agreed)
+goes in a note, while a plan still open keeps its date; no addresses, numbers
+or ids. A restaurant's name is a finding. Its street address is not.
 
 The intro's description of the input changes from "your own reasoning and tool
 calls (`<reasoning>`)" to "your own steps on the turn (`<steps>`)", and says that
 the prior carries when it was written.
+
+## 5. Amended after review (2026-09-24, five parallel reviewers)
+
+**Every row carries its date.** The fold's transcript and stretch rendered
+`at="22:12"`: a 40-row watermark batch can span days, and the rollup had no
+`<turn at=…>` at all, so the instruction to write dates had nothing to write
+them from. Rows now render `%Y-%m-%d %H:%M`, and the rollup's `<conversation>`
+carries `at` (when it is folding).
+
+**A finding is a finding.** The objective says a finding carries when and
+where it was found, and that what a page, a search or a tool says is never
+something she committed to or concluded. What she owes is only what she said
+to the room. This answers the security review's first finding: web text
+shown at 4000 characters could otherwise be written as her own promise, and
+a promise in `<standing>` is read on every later turn as hers.
+
+**The dated rule is scoped.** «Write every time as a date» contradicted the
+worked example («而家», «下次») and the exclusion of settled dates. It now
+applies to a clause that depends on a day. The RECAP example's explanation
+now says the post's content was already sent. It had read as «drop tool
+content», against §4's bullet.
+
+**A third consolidation rank.** Concluded or committed > found and unshared >
+room-said. Unranked, the finding was always the most recent clause and so the
+last to go, and it evicted older commitments first.
+
+**The screen covers more, on both outputs.** `dream_screen` refused four
+patterns (the reply floor's). It now also refuses an email, a 15+-digit
+platform id, and a labelled latitude/longitude pair in any shape, including a
+`where_is` result's `{'lat': …, 'lng': …}`. These map onto the existing
+`identifier`/`coordinate` labels. Street addresses are still not screened:
+no pattern for them is reliable in two languages. The fold's NOTE proposals
+went to the sink unscreened (true on master too). They are screened now under
+their own adaptor label, `debrief_note`.
+
+**Step text is escaped once.** `_block` escaped each step and
+`render_elements` escaped it again, so `<` reached the fold as `&amp;lt;`.
+Harmless at 600 characters of mostly ASCII, and garbling at 4000 characters
+of web content.
+
+**Thinking has its own clip label.** `nora_debrief_clips_total{block}` gains
+`thinking`, so a cut at 4000 reads apart from narration cut at 600.
 
 ## Status / Checkpoint
 

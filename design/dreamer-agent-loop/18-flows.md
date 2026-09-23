@@ -296,13 +296,14 @@ choices.
         │  raw completion — no tools, no loop           │
         └───────────────────────────────────────────────┘
                       │
-        ┌─────────────┼─────────────┐
-        ▼             ▼             ▼
-     Standing     TurnVerdict   NoteProposal
-   (in place)     (append)       (to notes)
+        ┌─────────────┴─────────────┐
+        ▼                           ▼
+     Standing                  NoteProposal
+   (in place)                   (to notes)
         │
         └──renders──▶ <standing>
 ```
+(TurnVerdict deleted 2026-09-24 — design/standing-compact/.)
 
 1. **Fires when** — a tag turn **completes**, in every terminal state: success,
    silence, veto, timeout. Not gated on whether she spoke.
@@ -318,10 +319,13 @@ choices.
    says Standing does not.
 6. **Ends when** — the completion returns. A `finish_reason` of length maps to
    `unavailable`, never a partial parse.
-7. **Returns** — a revised Standing, a verdict, and a note proposal.
+7. **Returns** — a revised Standing and a note proposal. (The verdict this
+   returned alongside them was deleted 2026-09-24 — design/standing-compact/.)
 8. **Code does** — dispose. The fast path is append-only; only a background pass
    may invalidate.
-9. **Lands in** — `standing` (**updated in place**), `turn_verdict` (append).
+9. **Lands in** — `standing` (**updated in place**). `turn_verdict` is no
+   longer written (deleted 2026-09-24 — design/standing-compact/); the table
+   stays in the schema.
 10. **Read back by** — `<standing>` in later turns; and whether the position
     ever *changed*, which is the only evidence the fold is doing anything.
 

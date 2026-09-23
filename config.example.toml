@@ -1520,8 +1520,10 @@ store_timeout_seconds = 5.0
 # new: 45, not over), which makes the merge safe in ANY order rather than only
 # in the intended one. It is a CEILING an operator sets, not a measurement — a
 # loose ceiling is true, and this comment is where the real bound is stated.
-# `StandingConfig`'s own default is already 45, so a config omitting this key
-# gets the tight value; only the shipped files are held.
+# `StandingConfig`'s own default is 60 (45 -> 60 on 2026-08-28, kept at 60 on
+# 2026-09-08 by the operator — see the default's own comment in
+# `nora/config.py`), so a config omitting this key gets that value; only the
+# shipped files are held at the tighter 45.
 #
 # The follow-up that drops both files to 45 is safe once the image carrying the
 # new validator is deployed and read back (cold review, 2026-08-28).
