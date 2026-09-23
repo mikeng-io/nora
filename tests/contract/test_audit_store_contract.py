@@ -614,6 +614,29 @@ async def test_a_second_signal_edit_naming_the_first_edits_timestamp_finds_the_m
         conversation_id="g1", target=EditTarget(sent_ts=7), sender_id="+852111",
     )
     assert found is not None and found.id == row and found.body == "v2"
-    assert await store.find_edited(
-        conversation_id="g1", target=EditTarget(sent_ts=7), sender_id="+852999",
-    ) is None
+
+
+async def test_a_signal_lookup_prefers_the_same_sender_but_does_not_require_it(store):
+    """signal-cli can name one sender by phone on a message and by ACI on its
+    edit, so an exact-id filter orphaned the edit. The lookup PREFERS the
+    same id when two messages share a millisecond, and otherwise returns the
+    message for the caller to judge authorship by person."""
+    a = await store.append(message=_msg(body="from a", ts=50, sender="+852111"))
+    b = await store.append(message=_msg(body="from b", ts=50, sender="+852999"))
+    for sender, expected in (("+852111", a), ("+852999", b), ("aci-of-a", a)):
+        found = await store.find_edited(
+            conversation_id="g1", target=EditTarget(sent_ts=50), sender_id=sender,
+        )
+        assert found is not None and found.id == expected, sender
+
+
+async def test_quoted_ts_of_points_a_revision_at_its_message(store):
+    """Signal quotes the revision the replier saw; the transcript keeps the
+    message at its original ts. An exact message match always wins."""
+    row = await store.append(message=_msg(body="v1", ts=1))
+    await store.append_edit(message_id=row, message=_edit("v2", 7))
+    await store.append(message=_msg(body="other", ts=9))
+    assert await store.quoted_ts_of(conversation_id="g1", ts=7) == 1
+    assert await store.quoted_ts_of(conversation_id="g1", ts=9) == 9
+    assert await store.quoted_ts_of(conversation_id="g1", ts=12345) == 12345
+    assert await store.quoted_ts_of(conversation_id="g2", ts=7) == 7

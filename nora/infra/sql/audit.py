@@ -49,8 +49,6 @@ def _latest_edit(*, edits_before: int | None = None) -> Any:
     """The newest `message_edit` of the `messages` row in the enclosing
     query, as a LATERAL subquery — one backwards seek on
     `idx_message_edit_message_ts` per row read (design/message-edits/01 §3).
-    `id DESC` breaks a shared millisecond the same way `recent` does.
-
     `edits_before` is the as-of bound `nora.infra.sql.snapshot` reads at: an
     edit made after the instant being reconstructed had not happened yet."""
     stmt = sa.select(
@@ -59,8 +57,14 @@ def _latest_edit(*, edits_before: int | None = None) -> Any:
     ).where(MESSAGE_EDIT.c.message_id == MESSAGES.c.id)
     if edits_before is not None:
         stmt = stmt.where(MESSAGE_EDIT.c.ts <= edits_before)
+    # NEWEST BY ARRIVAL, not by the edit's own clock. Ingest refuses an edit
+    # older than the one on record (`edit_stale`) except where the platform
+    # itself says it is newer — a Signal edit naming the latest revision, from
+    # a device whose clock is behind — so the last row written IS the current
+    # version, and ordering on `ts` would put a skewed-clock edit behind the
+    # one it replaced.
     return (
-        stmt.order_by(MESSAGE_EDIT.c.ts.desc(), MESSAGE_EDIT.c.id.desc())
+        stmt.order_by(MESSAGE_EDIT.c.id.desc())
         .limit(1)
         .lateral("latest_edit")
     )
@@ -315,6 +319,7 @@ class SqlRecordStore:
         query. Should two rows match — a platform re-delivering a message, a
         duplicated millisecond — the EARLIEST wins, `prefill._by_ts`'s rule:
         an edit changes something that already existed."""
+        prefer: Any = sa.literal(0)
         if target.message_id:
             match = MESSAGES.c.platform_message_id == target.message_id
         elif target.sent_ts is not None and sender_id:
@@ -327,10 +332,13 @@ class SqlRecordStore:
                 MESSAGE_EDIT.c.message_id == MESSAGES.c.id,
                 MESSAGE_EDIT.c.ts == target.sent_ts,
             )
-            match = sa.and_(
-                MESSAGES.c.sender_id == sender_id,
-                sa.or_(MESSAGES.c.ts == target.sent_ts, edited_at_that_ts),
-            )
+            # The author PREFERRED, not required: signal-cli can name one
+            # sender by phone on the message and by ACI on its edit, and an
+            # exact-id filter turned that into an orphan. The caller decides
+            # authorship (`edit_target._same_author`), which resolves both
+            # forms to one person; this lookup only has to find the message.
+            match = sa.or_(MESSAGES.c.ts == target.sent_ts, edited_at_that_ts)
+            prefer = sa.case((MESSAGES.c.sender_id == sender_id, 0), else_=1)
         else:
             return None
         latest = _latest_edit()
@@ -345,13 +353,14 @@ class SqlRecordStore:
                 MESSAGES.c.id, MESSAGES.c.ts, MESSAGES.c.sender_id,
                 MESSAGES.c.person_id, MESSAGES.c.is_nora, MESSAGES.c.body,
                 MESSAGES.c.mentions_json, MESSAGES.c.platform_message_id,
+                MESSAGES.c.media_json,
                 latest.c.ts.label("edit_ts"), latest.c.body.label("edit_body"),
                 latest.c.mentions_json.label("edit_mentions_json"),
                 replies_to_nora.label("replies_to_nora"),
             )
             .select_from(MESSAGES.outerjoin(latest, sa.true()))
             .where(MESSAGES.c.conversation_id == conversation_id, match)
-            .order_by(MESSAGES.c.id.asc())
+            .order_by(prefer, MESSAGES.c.id.asc())
             .limit(1)
         )
         async with self._engine.connect() as conn:
@@ -370,7 +379,26 @@ class SqlRecordStore:
             platform_message_id=r.platform_message_id or "",
             replies_to_nora=bool(r.replies_to_nora),
             edited_ts=r.edit_ts,
+            media_json=r.media_json,
         )
+
+    async def quoted_ts_of(self, *, conversation_id: str, ts: int) -> int:
+        """See `nora.domain.ports.RecordStore.quoted_ts_of`."""
+        exact = sa.select(MESSAGES.c.ts).where(
+            MESSAGES.c.conversation_id == conversation_id, MESSAGES.c.ts == ts,
+        ).limit(1)
+        via_edit = (
+            sa.select(MESSAGES.c.ts)
+            .select_from(MESSAGES.join(MESSAGE_EDIT, MESSAGE_EDIT.c.message_id == MESSAGES.c.id))
+            .where(MESSAGES.c.conversation_id == conversation_id, MESSAGE_EDIT.c.ts == ts)
+            .order_by(MESSAGES.c.id.asc())
+            .limit(1)
+        )
+        async with self._engine.connect() as conn:
+            if (await conn.execute(exact)).first() is not None:
+                return ts
+            row = (await conn.execute(via_edit)).first()
+        return int(row.ts) if row is not None else ts
 
     async def append_edit(self, *, message_id: int, message: NormalizedMessage) -> None:
         """See `nora.domain.ports.RecordStore.append_edit`. One INSERT; the

@@ -293,6 +293,10 @@ class EditedMessage:
     platform_message_id: str = ""
     replies_to_nora: bool = False
     edited_ts: int | None = None
+    # The `messages.media_json` of the original: the handles an edit's
+    # attachment placeholders are given back, instead of re-fetching bytes
+    # Nora already holds (`nora.ingest.stages.edit_media`).
+    media_json: str | None = None
 
 
 def mentions_json(mentions: frozenset[str]) -> str:

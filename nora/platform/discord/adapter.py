@@ -9,6 +9,7 @@ REST calls instead of signal-cli's JSON-RPC.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import time
@@ -199,10 +200,25 @@ class DiscordAdapter:
             client, self._token, on_ready_extra=_register_music_commands,
         )
 
+        # ONE EVENT AT A TIME PER CHANNEL. discord.py dispatches every gateway
+        # event as its own task, so a message and its edit could be ingested
+        # CONCURRENTLY — and a new message's insert waits on attachment custody
+        # and transcription, so an edit made in that window found nothing and
+        # was dropped as an orphan (audit, 2026-09-24). Signal, WhatsApp and
+        # Instagram already ingest one event at a time off a single stream;
+        # this gives Discord the same order within a channel, which is the only
+        # order an edit depends on, without serialising unrelated channels.
+        channel_locks: dict[str, asyncio.Lock] = {}
+
+        def _lock_for(raw_message: Any) -> asyncio.Lock:
+            key = str(getattr(getattr(raw_message, "channel", None), "id", ""))
+            return channel_locks.setdefault(key, asyncio.Lock())
+
         async def _on_discord_message(raw_message: Any) -> None:
             message = parse_discord_message(raw_message, own_id=self._own_id)
             if message is not None:
-                await on_message(message)
+                async with _lock_for(raw_message):
+                    await on_message(message)
 
         # An edit reaches the SAME `on_message` as a new message: it is a
         # `NormalizedMessage` with `edit_of` set, and ingest routes it
@@ -210,7 +226,8 @@ class DiscordAdapter:
         async def _on_discord_edit(raw_message: Any) -> None:
             message = parse_discord_edit(raw_message, own_id=self._own_id)
             if message is not None:
-                await on_message(message)
+                async with _lock_for(raw_message):
+                    await on_message(message)
 
         try:
             await self._listener.listen(_on_discord_message, _on_discord_edit)

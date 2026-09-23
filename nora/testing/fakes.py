@@ -175,9 +175,9 @@ class FakeRecordStore:
         return row_id
 
     def _latest_edit(self, row_id: int) -> dict[str, Any] | None:
-        """Mirrors `audit._latest_edit`: newest by `(ts, id)`."""
+        """Mirrors `audit._latest_edit`: newest by arrival (`id`)."""
         mine = [e for e in self.edits if e["message_id"] == row_id]
-        return max(mine, key=lambda e: (e["ts"], e["id"])) if mine else None
+        return max(mine, key=lambda e: e["id"]) if mine else None
 
     async def find_edited(
         self, *, conversation_id: str, target: EditTarget, sender_id: str,
@@ -190,17 +190,18 @@ class FakeRecordStore:
         elif target.sent_ts is not None and sender_id:
             def match(r: dict[str, Any]) -> bool:
                 # Mirrors the SQL: the original's ts, or one of its edits'.
-                return r["sender_id"] == sender_id and (
+                return (
                     r["ts"] == target.sent_ts
                     or any(e["message_id"] == r["id"] and e["ts"] == target.sent_ts
                            for e in self.edits)
                 )
         else:
             return None
+        # The sender PREFERRED, then the earliest — mirrors the SQL ordering.
         found = sorted(
             (r for r in self.rows
              if r["conversation_id"] == conversation_id and match(r)),
-            key=lambda r: r["id"],
+            key=lambda r: (r["sender_id"] != sender_id, r["id"]),
         )
         if not found:
             return None
@@ -222,7 +223,18 @@ class FakeRecordStore:
                 for q in self.rows
             ),
             edited_ts=latest["ts"] if latest else None,
+            media_json=r["media_json"],
         )
+
+    async def quoted_ts_of(self, *, conversation_id: str, ts: int) -> int:
+        """Mirrors `SqlRecordStore.quoted_ts_of`."""
+        rows = [r for r in self.rows if r["conversation_id"] == conversation_id]
+        if any(r["ts"] == ts for r in rows):
+            return ts
+        for r in sorted(rows, key=lambda r: r["id"]):
+            if any(e["message_id"] == r["id"] and e["ts"] == ts for e in self.edits):
+                return int(r["ts"])
+        return ts
 
     async def append_edit(self, *, message_id: int, message: NormalizedMessage) -> None:
         self.edits.append({
