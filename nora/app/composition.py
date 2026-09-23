@@ -119,7 +119,7 @@ from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.sql.turn_verdicts import SqlTurnVerdictStore
 from nora.infra.version import OK as VERSION_OK
 from nora.infra.version import VersionManifest
-from nora.infra.vision import MediaComprehender, VisionClient, derive_vision_timeout
+from nora.infra.vision import MediaComprehender, VisionClient
 from nora.infra.voice.http_controller import VoiceControllerClient
 from nora.infra.voice.hub import VoiceControllerHub
 from nora.ingest.comprehension import MediaComprehension
@@ -1748,28 +1748,25 @@ async def build_dependencies(
         max_tokens=cfg.media.vision_max_tokens,
         reasoning_effort=cfg.media.vision_reasoning_effort,
         max_bytes=cfg.media.vision_max_bytes,
-        timeout_seconds=derive_vision_timeout(
-            loop_timeout_seconds=tier.timeout_seconds,
-            configured=cfg.media.vision_timeout_seconds,
-            # The tool's OWN budget (DEC-10, one number): `budget` calls share the
-            # loop, so the per-call ceiling divides by it — two image reads still
-            # leave headroom for the text turns (both reviews 2026-08-07).
-            #
-            # RESOLVED, not read off the table. This said
-            # `NATIVE_TOOL_BUDGETS["media_fetch"]` until `[llm.budgets]` shipped,
-            # at which point it became the SECOND reader of a number the new
-            # config knob could move — and `derive_vision_timeout`'s whole
-            # argument is that `budget * derived < loop_timeout_seconds` "is one
-            # nobody can violate if it is never written down twice". An operator
-            # setting `media_fetch = 8` would have raised R-7's ceiling to 8
-            # while the per-call timeout stayed derived from 4: 8 x 18 s = 144 s
-            # against a 120 s loop, which is R-33's silent `invocation_timeout`
-            # coming back. A throwaway registry is how this file already reads
-            # `tool_names()`; `budgets()` is the one
-            # resolver, so this asks it.
-            budget=ToolRegistry(
-                budget_overrides=cfg.llm.budgets).budgets()["media_fetch"],
-        ),
+        # THE DERIVATION'S INPUTS, NOT ITS RESULT. This used to call
+        # `derive_vision_timeout` here and hand the client one number. It cannot
+        # any more: the divisor is now the SERIAL factor — how many 90-second
+        # windows one invocation reads in sequence — and `cut_video` only
+        # produces that per request, at read time, a process after this line
+        # runs. The client derives per call instead (`VisionClient._call_timeout`).
+        #
+        # The budget is GONE from this wiring, deliberately. It said
+        # `ToolRegistry(budget_overrides=…).budgets()["media_fetch"]` so the
+        # divisor tracked the `[llm.budgets]` knob — but the divisor was the
+        # wrong quantity in the first place: budgeted calls run CONCURRENTLY and
+        # occupy `max(their durations)` of wall clock, never their sum, so at
+        # loop 360 / configured 120 / budget 4 it derived 54 s and the operator's
+        # configured 120 never took effect (design/media-read-lane/
+        # 07-timeout-derivation.md). `budget` still bounds refusals — R-7's
+        # ceiling still comes from `budgets()`, at `tool_registry` below — it
+        # just no longer bounds elapsed time.
+        timeout_seconds=cfg.media.vision_timeout_seconds,
+        loop_timeout_seconds=tier.timeout_seconds,
     )
     # The sticker IDENTITY ladder — custody, not description (issue #116). Its
     # model rung moved to the spawned comprehension job below, so this needs no

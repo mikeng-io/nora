@@ -889,13 +889,20 @@ class MediaConfig(BaseModel):
     # with an honest note rather than shipping a nine-figure request
     # (downscaling is a later option, not this build). 8 MiB → ~10.7 MiB body.
     vision_max_bytes: int = 8 * 1024 * 1024
-    # A CEILING on the per-call vision timeout, not the timeout itself: the tool
-    # derives the real budget as the smaller of this and a fixed fraction of
-    # `llm.timeout_seconds` (`nora.infra.vision.derive_vision_timeout`), so it is
-    # provably shorter than the loop's `asyncio.wait_for` budget and a hung MiMo
-    # call becomes this tool's `unavailable` rather than the loop's silent
-    # `invocation_timeout` (DEC-56, the way `factory.build_retry_policy` derives
-    # its backoff from the same timeout).
+    # A CEILING on the per-call vision timeout, not the timeout itself: the
+    # client derives the real budget as the smaller of this and a fixed fraction
+    # of `llm.timeout_seconds` divided by the WAVES one read runs in sequence
+    # (`nora.infra.vision.derive_vision_timeout`), so it is provably shorter than
+    # the loop's `asyncio.wait_for` budget and a hung MiMo call becomes this
+    # tool's `unavailable` rather than the loop's silent `invocation_timeout`
+    # (DEC-56, the way `factory.build_retry_policy` derives its backoff from the
+    # same timeout).
+    #
+    # A single-view read — every image, every clip of 90 s or less — is ONE wave,
+    # so this value is honoured in full there. A ten-window clip divides it by
+    # ten. Which means the number set here is the ceiling an Instagram Reel
+    # actually gets, not a figure something else quietly divides
+    # (design/media-read-lane/07-timeout-derivation.md).
     vision_timeout_seconds: float = 20.0
     # The per-modality describers. `vision_model` above stays as the IMAGE
     # model's deprecated alias so a config written before this split keeps

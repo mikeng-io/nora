@@ -8,12 +8,15 @@ from .cache import VisionCache
 from .client import (
     DESCRIBE_PROMPTS,
     VISION_LOOP_SHARE,
+    VISION_WINDOW_CONCURRENCY,
     VisionClient,
     VisionResult,
     derive_vision_timeout,
+    vision_waves,
 )
 from .comprehend import (
     COMPREHEND_QUESTIONS,
+    AskWindow,
     MediaComprehender,
     comprehension_provenance,
     describe_coverage,
@@ -26,6 +29,8 @@ __all__ = [
     "COMPREHEND_QUESTIONS",
     "DESCRIBE_PROMPTS",
     "VISION_LOOP_SHARE",
+    "VISION_WINDOW_CONCURRENCY",
+    "AskWindow",
     "MediaComprehender",
     "VideoCut",
     "VideoWindow",
@@ -38,4 +43,5 @@ __all__ = [
     "describe_coverage",
     "parse_comprehension",
     "read_video_windows",
+    "vision_waves",
 ]
