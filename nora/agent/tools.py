@@ -452,9 +452,13 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # instant by definition and is stale for any other one. It is the second
     # live-only tool and the older of the two, which is worth stating here
     # rather than letting `transit` look like a special case.
+    #
+    # `level=1` (ADR 0015 §3): what + when + what it returns. It returns a plain
+    # string with no status, so there is no result `note` to carry.
     "now": NativeTool(4,
                       time_shiftable=False, source_tier="confirmed", read_only=True,
-                      side_effect_state="none", idempotency="idempotent", retry="safe"),
+                      side_effect_state="none", idempotency="idempotent", retry="safe",
+                      level=1),
     # 4, and the only budget here NOT sized by what a call costs. This is the
     # cheapest tool in the set by a wide margin — a pure function over a
     # string, no network, no clock, no daemon, measured at well under a
@@ -470,9 +474,15 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `time_shiftable` has no meaning for this tool in either direction, which
     # is worth stating rather than leaving ambiguous: unlike `now`, the answer
     # to `1485/7` is the same whenever it is asked.
+    #
+    # `level=2` (ADR 0015 §3): its MUST (never state a computed number that did
+    # not come from here) restates the when-to-call; the one constraint is
+    # that it checks the arithmetic, not the question (count first). The
+    # leftover rule rides in a `split` answer's `note`, the retry rule in a
+    # refusal's.
     "calculate": NativeTool(8, read_only=True,
                             side_effect_state="none", idempotency="idempotent", retry="safe",
-                            output_contract="three_state"),
+                            output_contract="three_state", level=2),
     # 2, and sized the way `lookup_person` is — by model round trips, not by
     # work. One message routinely names two routes (「68X 定 K73 快啲」), and two
     # calls plus a reply still leaves half the turn. A third route in one
@@ -484,11 +494,15 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # hours away is confidently, checkably wrong. `route()`'s `arrive_by` is
     # what answers that question, and it is not built yet — which is exactly
     # why this field exists before it does.
+    #
+    # `level=2` (ADR 0015 §3): L1 plus one constraint (live only, never a bus
+    # time from anywhere else). The status and `near` outcomes are explained in
+    # the notes `nora.infra.transit.arrivals` builds.
     "transit": NativeTool(4,
                           time_shiftable=False, source_tier="confirmed", cacheable=True,
                           read_only=True,
                           side_effect_state="none", idempotency="idempotent", retry="safe",
-                          output_contract="three_state"),
+                          output_contract="three_state", level=2),
     # 2, sized like `transit`: one message can name a route to plan for two
     # people leaving from two places, and two calls plus a reply still leave
     # half the turn. Each call is one or two Google Places lookups plus one
@@ -500,11 +514,16 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # about a departure hours from now — 「夜晚八點去到」 asked at three in the
     # afternoon. `terminal=False`: a route is the middle of an answer, not the
     # end of one; she still has to say it.
+    #
+    # `level=2` (ADR 0015 §3): L1 plus one constraint (a personal place name
+    # goes through `saved_places` first, never guessed). A person, coordinate or
+    # identifier argument is `refused`, and that refusal's `note` says what to
+    # ask for; the old prose saying so in advance is gone.
     "route": NativeTool(8,
                         time_shiftable=True, source_tier="confirmed", cacheable=True,
                         read_only=True,
                         side_effect_state="none", idempotency="idempotent", retry="safe",
-                        output_contract="three_state"),
+                        output_contract="three_state", level=2),
     # 2, and HELD at 2 through the budget doubling (Kimi audit 2026-08-08): each
     # call is no longer a cheap local read — with the DEC-67 live refresh it can
     # BLOCK up to `refresh_timeout_seconds` (~8-10s) pinging the phone, so a
@@ -530,26 +549,37 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # has no time dimension the way `route` does — «幾好食» is the same question
     # whenever asked (a stale open_now is the one caveat, and Google returns it
     # fresh per call). `terminal=False`: a rating is the middle of an answer.
+    #
+    # `level=1` (ADR 0015 §3): what + when + what it returns. The rating and
+    # maps_url rules ride in the `ok` result's `note`.
     "place_info": NativeTool(4,
                              source_tier="confirmed", cacheable=True, read_only=True,
                              side_effect_state="none", idempotency="idempotent", retry="safe",
-                             output_contract="three_state"),
+                             output_contract="three_state", level=1),
     # 1, like `group_members`: it lists a small fixed set for THIS room, and
     # calling it twice in a turn returns the same list. `time_shiftable=None`:
     # the household's saved names don't decay. Not terminal.
+    #
+    # `level=2` (ADR 0015 §3): L1 plus one selection constraint (where someone
+    # works or lives is this tool, not `about` or `search_memory`). How to use
+    # the names rides in the `ok` result's `note`.
     "saved_places": NativeTool(1,
                                source_tier="remembered", read_only=True,
                                side_effect_state="none", idempotency="idempotent", retry="safe",
-                               output_contract="three_state"),
+                               output_contract="three_state", level=2),
     # 2, like `where_is`: the group can ask after two coordinates in one turn
     # («呢個同呢個係邊度»), each one reverse-geocode call (cached — a repeat
     # of the same spot costs the cache, not Google). `time_shiftable=None`:
     # an address for a coordinate is the same answer whenever asked. Not
     # terminal — an address is the middle of an answer.
+    #
+    # `level=2` (ADR 0015 §3): L1 plus one pre-call constraint (the coordinate
+    # exactly as a presence tool gave it, never from anywhere else). "Never read
+    # the coordinate aloud" rides in the `ok` result's `note`.
     "reverse_geocode": NativeTool(2,
                                   time_shiftable=None, source_tier="confirmed", read_only=True,
                                   side_effect_state="none", idempotency="idempotent", retry="safe",
-                                  output_contract="three_state"),
+                                  output_contract="three_state", level=2),
     # 4, sized like `transit`/`place_info` (the presence-analytics P1 spec
     # §4.4, DEC-155): the calls are cheap local SELECTs (no network, no
     # live-refresh block — unlike `where_is`'s held-2 refresh cost), so the
@@ -873,27 +903,37 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # (typhoon/rainstorm) + today's outlook always; the 9-day forecast on request.
     # Warnings ride EVERY answer so a signal in force is never missed. Budget 2 —
     # one HKO round is usually enough; a second covers a follow-up.
+    #
+    # `level=1` (ADR 0015 §3): what + when + what it returns. Lead-with-the-
+    # warning and nearest-station ride in the `ok` result's `note`.
     "weather": NativeTool(2,
                           source_tier="confirmed", cacheable=True, read_only=True,
                           side_effect_state="none", idempotency="idempotent", retry="safe",
-                          output_contract="three_state"),
+                          output_contract="three_state", level=1),
     # TD open-data feed, keyless like transit — `parking_status` answers a
     # named car park's live vacancy. Budget 2: one index+vacancy round is
     # enough; a second covers a follow-up (a different venue name).
+    #
+    # `level=1` (ADR 0015 §3): what + when + what it returns. Carrying the
+    # count's age rides in the `ok` result's `note`.
     "parking_status": NativeTool(2,
                                  source_tier="confirmed", cacheable=False, read_only=True,
                                  side_effect_state="none", idempotency="idempotent", retry="safe",
-                                 output_contract="three_state"),
+                                 output_contract="three_state", level=1),
     # `find_parking` (2026-08-31): Google Places Nearby Search for parking.
     # Budget 3 — one resolve (or one presence read) + one nearby call + up to
     # N vacancy cross-references. `terminal=False`? No — it TRANSMITS a place
     # name or uses a position internally; the place name came from the group,
     # and the position never leaves the process. Google key comes from
     # `route_source` (already restricted to Places).
+    #
+    # `level=1` (ADR 0015 §3): what + when + what it returns. The vacancy,
+    # distance and street-meter rules ride in the `ok` result's `note`, each only
+    # when its field is there.
     "find_parking": NativeTool(3,
                                source_tier="confirmed", cacheable=False, read_only=True,
                                side_effect_state="none", idempotency="idempotent", retry="safe",
-                               output_contract="three_state"),
+                               output_contract="three_state", level=1),
     # design/discord-music/07-agent-tool.md. Discord-only by construction — every
     # body checks `room.platform != "discord"` first and answers `unavailable`,
     # never guessing a channel on a platform with no voice concept at all.
@@ -2564,10 +2604,14 @@ def _social_tweet_id(target: str) -> str | None:
     if _SOCIAL_TWEET_ID_RE.fullmatch(stripped) is not None:
         return stripped
     return None
+_PLACE_INFO_UNAVAILABLE = (
+    "I can't look places up right now. Say you couldn't check, and don't guess a "
+    "rating."
+)
 _WEATHER_OFF: Mapping[str, object] = {
     "status": "unavailable",
-    "note": "I couldn't reach the weather service just now. Say you couldn't check "
-            "— don't invent a temperature or forecast.",
+    "note": "I couldn't reach the weather service just now. Say you couldn't check, "
+            "and don't invent a temperature or forecast.",
 }
 # design/discord-music/07-agent-tool.md — the platform gate every music tool
 # checks FIRST, before ever touching `music`/`room.tagger`. Signal (or any
@@ -2641,9 +2685,19 @@ def _weather_result(obs: WeatherObservation) -> dict[str, object]:
         "as_of": obs.as_of,
         "warnings": list(obs.warnings),   # always present (may be []); lead with it
         "temperatures": [{"place": p, "c": c} for p, c in obs.temperatures],
-        "note": "Temperatures are HKO stations across HK — use the one nearest the "
-                "place asked about, don't list them all. Lead with any warning.",
     }
+    # ADR 0015 §3: how to report it, per field present. The warning clause
+    # leads when there is one: a signal in force outranks the temperature.
+    note = []
+    if obs.warnings:
+        note.append("Lead with the warnings: a typhoon signal or rainstorm matters "
+                    "more than the temperature, so never call the weather fine "
+                    "while one is up.")
+    if obs.temperatures:
+        note.append("temperatures are HKO stations across HK: use the one nearest "
+                    "the place asked about, and don't read them all out.")
+    if note:
+        result["note"] = " ".join(note)
     if obs.humidity_pct is not None:
         result["humidity_pct"] = obs.humidity_pct
     for key, value in (
@@ -3723,11 +3777,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         """The current date and time, in Hong Kong time. Call this before
         answering anything that depends on when it is.
 
-        Call this before answering anything that depends on when it is — how
-        long until something, whether a place is still open, what "tonight" or
-        "yesterday" refers to, or how long ago a message was sent.
-
-        Returns: the weekday, date, time and timezone.
+        That includes how long until something, whether a place is still open,
+        and what "tonight" or "yesterday" means. Returns the weekday, date, time
+        and timezone.
         """
         moment = datetime.now(_HKT)
         # The clock reading stays in the line — it is a fact about Nora's own
@@ -3739,32 +3791,18 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
     async def calculate(expression: str) -> dict:
         """Work out a number exactly. Use this for ALL arithmetic, however easy
-        it looks — call it whenever a number needs computing.
+        it looks: call it whenever a number needs computing.
 
-        Never do a calculation in your head and never state a number you did not get
-        from here. A wrong total sounds exactly like a right one and the group has no
-        way to check it — 「每人 $247.50」 reads the same either way.
+        Never state a computed number that did not come from here. It checks the
+        arithmetic, not the question: divide by 5 when six people ate and you get
+        an exact answer to the wrong sum, so count first.
 
-        Write the whole thing as one expression: numbers, brackets, and + - * / // % **.
-        A service charge is `1350 * 1.1`; a split is `1485 / 7`; both together are
-        `(1350 * 1.1) / 7`. No names, no functions, no units, no currency signs.
-
-        `status` is `ok` or `refused`, and a refusal tells you what to fix — read it
-        and try again rather than answering from your own arithmetic.
-
-        On `ok` you get `result` (exact), and then at most one of:
-          - `rounded_to_cents`, when the exact answer has more digits than money does.
-          - `split`, when the division does not come out evenly. `each` is what
-            everyone pays, `leftover` is what that still leaves owing, and
-            `settles_as` is how to make it come out exactly. Say the leftover out
-            loud — do not quietly drop it, and do not multiply it back yourself.
-
-        This gets the arithmetic right. It does NOT check that you asked the right
-        question: if you divide by 5 when six people ate, you get an exact answer to
-        the wrong sum. Count the people first.
+        Returns `status`: ok or refused, with a `note` on how to report it.
 
         Args:
-            expression: The calculation, e.g. "(1350 * 1.1) / 7".
+            expression: The whole calculation as one expression: numbers,
+                brackets, and + - * / // % **. No names, functions, units or
+                currency signs.
         """
         # The evaluator is pure and documented never to raise (see
         # `nora.agent.arithmetic`), so there is no try/except here and no
@@ -3782,6 +3820,21 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # arithmetic, here or at egress.
         if scan_identifiers(expression) is not None:
             out.pop("expression", None)
+        # ADR 0015 §3: how to report the answer rides in the result. A refusal
+        # already says what to fix (`arithmetic`'s own sentence); the tool adds
+        # the retry rule. An `ok` gets a note only when it has a `split`, the one
+        # field the old description carried a reporting rule for.
+        if out["status"] == "refused":
+            out["note"] = (
+                f"{out.get('note', '')} Fix the expression and call calculate "
+                "again; never answer from your own arithmetic."
+            ).strip()
+        elif "split" in out:
+            out["note"] = (
+                "The division does not come out evenly. Say the leftover out loud, "
+                "and use settles_as for who pays the extra cent; never drop it or "
+                "multiply it back yourself."
+            )
         # COUNTS and status, never the expression — `_log_call`'s rule, and
         # `data/nora.log` is a worse place for a model-supplied string than a
         # tool result is, because nothing scans it on the way out. The
@@ -3795,48 +3848,19 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
     async def transit(route: str, near: str = "") -> dict:
         """When the next buses leave on a Hong Kong bus or feeder route. Call
-this for ANY question about a bus by number.
+        this for ANY question about a bus by number.
 
-Call this for ANY question about a bus by number — 「K73 幾時到」,
-「68X 仲有幾耐」, whether the last bus has gone. Never state a bus time
-you worked out yourself or remember from before; you have no way to
-know it and the group has no way to check it.
+        It is live only: it answers about right now, never about a bus later
+        today. Never state a bus time that did not come from here.
 
-It is LIVE ONLY. It answers about right now and nothing else, so never
-use it for a bus later today — if somebody is asking about a trip this
-evening, say you can only see what is running at the moment.
+        Returns `status`: ok, nothing_found or unavailable (plus `near.status`
+        when you passed `near`), with a `note` on how to report it.
 
-You give it a route number. It works out which company runs that
-route on its own, and it does not know which stop anybody is standing
-at, so do not name a stop — unless the person themselves NAMED a
-place, in which case pass that name as `near` exactly as they said it
-(「K73 幾時到天恆」 is route «K73», near «天恆») and the times come
-back AT that stop.
-
-`status` is one of three and they are three DIFFERENT answers:
-  - `ok` — `directions` has, for each way the route runs, where it is
-    heading and the next times. With a resolved `near` these are AT
-    that stop; otherwise they are from the start of the direction and
-    a bus reaches a stop further along later than that. `scheduled`
-    true means the time came off a timetable rather than off a bus
-    anyone can see; say so if you quote it.
-  - `nothing_found` — read `known_route`. True means the route is real
-    and nothing is showing right now (the last bus has probably
-    gone). False means there is no such route number at all — say you
-    cannot find it and ask them to check, and do NOT say there are no
-    buses.
-  - `unavailable` — you could not check. Say that. Never report it as
-    «no buses» and never as «no such route».
-
-If you passed `near`, read `near.status` too — `ok`, `not_on_route`
-(a real stop this route does not serve — worth saying), `not_found`,
-`ambiguous` (`near.could_be` lists candidates; ask which), or
-`unavailable` — and phrase each the way `note` says.
-
-Args:
-    route: The route number exactly as it was said, e.g. «68X» or «K73».
-    near: The stop or place name exactly as the person said it, e.g.
-        «天恆». Leave it out unless they named one."""
+        Args:
+            route: The route number exactly as it was said.
+            near: The stop or place name exactly as the person said it, for times
+                at that stop. Leave it out unless they named one.
+        """
         try:
             out = await transit_source.arrivals(route, near=near)
         except Exception:
@@ -3848,8 +3872,8 @@ Args:
             # served as «there is nothing».
             log.exception("transit failed")
             out = {"status": "unavailable",
-                   "note": "I could not check the buses just now. Say so — do not "
-                           "say there are no buses and do not guess a time."}
+                   "note": "I could not check the buses just now. Say so, and do "
+                           "not say there are no buses or guess a time."}
         # The same hole `_asked_about` and `calculate` exist for, in the third
         # place a MODEL-SUPPLIED string is handed straight back. `route` is
         # already narrowed to `[A-Z0-9]{1,7}` before it reaches a URL, so
@@ -3894,68 +3918,40 @@ Args:
     _disclosed_live_addresses: set[str] = set()
 
     async def route(
-        origin: str, destination: str, mode: str = "TRANSIT", arrive_by: str = "",
-        by: str = "", prefer: str = "", depart_after: str = "",
+        origin: str, destination: str,
+        mode: Literal["TRANSIT", "DRIVE", "WALK"] = "TRANSIT", arrive_by: str = "",
+        by: Literal["bus", "mtr", "light_rail", "tram", "train"] | None = None,
+        prefer: Literal["less_walking", "fewer_transfers"] | None = None,
+        depart_after: str = "",
     ) -> dict:
         """How to get from one place to another, and how long it takes. Call
         this for ANY «how do I get from A to B».
 
-        Call this for ANY «how do I get from A to B», «which way is fastest»,
-        «how long to get there» — by bus and rail (the default), by car, or on
-        foot. Unlike the live bus times, this one CAN answer about a later
-        moment: if the trip is for tonight or tomorrow, give `arrive_by` and it
-        plans for that arrival instead of for now.
+        Give places as they were named; it looks each one up itself. For a
+        PERSONAL place name (home, someone's home, work), call `saved_places`
+        first and pass the saved name; never guess one from earlier messages.
+        An `address` that `where_is` gave you MAY be the origin.
 
-        Give it PLACES, the way the person named them — a mall, a building, a
-        station, a restaurant («Yoho Mall», «黃大仙祠», «天水圍站»). It looks
-        each place up itself; you do not give it coordinates or a stop code.
-        The one exception: an `address` `where_is` just gave you for someone IN
-        THIS conversation may be the origin, toward a `saved_places`
-        destination, for a real ETA — some rooms don't extend that trust, and
-        this refuses with `untrusted_position` rather than routing it.
-
-        If they name a place by a PERSONAL name — «屋企», «home», «阿媽屋企»,
-        «Tyler 屋企», «公司» — call `saved_places` FIRST, match their words to
-        one of the saved names, and pass that saved name here. That routes from
-        the exact spot this household saved. Never guess a home or a personal
-        place from earlier messages — check `saved_places`, and if nothing fits,
-        ask where they mean.
-
-        NEVER put a person where a place goes. «從陳生屋企» is not a place, and
-        this tool will refuse a route that names someone rather than somewhere —
-        ask for the actual place instead.
-
-        `status` is one of four and they mean different things:
-          - `ok` — `duration_seconds` is the whole trip. For transit, `legs` is
-            each vehicle to board in order (`line`, `vehicle`, `departure_stop`,
-            `departure_time`, `headsign`). Times are Google's schedule — say
-            «about» when you quote one. `maps_url` is a Google Maps link for
-            the same trip — include it in your reply when they want to open the
-            map themselves («俾條 link 我»), pasted EXACTLY as given.
-          - `no_route` — read the note. Either Google found no way between the
-            two places by that mode, or a place could not be pinned to ONE spot
-            (`origin_could_be` / `destination_could_be` list the possibilities;
-            ask which they mean rather than guessing).
-          - `unavailable` — you could not check. Say so; never report it as «no
-            route».
-          - `refused` — the query named a person, not a place. Ask for the place.
+        Returns `status`: ok, no_route, unavailable or refused, with a `note` on
+        how to report it.
 
         Args:
             origin: Where the trip STARTS, as a place name the way it was said.
             destination: Where the trip ENDS, as a place name.
-            mode: TRANSIT (default), DRIVE, or WALK.
+            mode: TRANSIT (bus and rail, the default), DRIVE or WALK.
             arrive_by: Optional. When they need to ARRIVE, as a full timestamp
-                (e.g. "2026-08-07T20:00:00+08:00"). Only used for transit; get
-                it from the clock, never invent one.
-            depart_after: Optional. When they want to LEAVE («八點出發»), as a full
-                timestamp. Transit only; get it from the clock, never invent one.
-                Do not give both this and arrive_by — pick the one they meant.
-            by: Optional, and ONLY if the person named a way to travel: "bus",
-                "mtr", "light_rail", "tram", or "train". Leave it out when they
-                just want the best route. Transit only.
-            prefer: Optional. "less_walking" («唔想行咁遠») or "fewer_transfers"
-                («唔想轉車»), only if they said so. Transit only.
+                with offset. Transit only; get it from the clock, never invent
+                one.
+            depart_after: Optional. When they want to LEAVE, as a full timestamp.
+                Transit only. Give this or arrive_by, not both.
+            by: Optional, and ONLY if the person named a way to travel. Transit
+                only.
+            prefer: Optional, only if they asked for less walking or fewer
+                transfers. Transit only.
         """
+        # `by`/`prefer` are typed optional (ADR 0015 §3: fixed options are a
+        # `Literal`); the client's own contract is an empty string for "none".
+        by_mode, preference = by or "", prefer or ""
         # R-28, BEFORE anything leaves the host. Identifiers first (the shared
         # floor), then the routing-specific person block. Neither the offending
         # argument nor which one it was is echoed back — the refusal says what
@@ -3965,8 +3961,8 @@ Args:
                 _record(metrics, "route", "refused", reason="identifier")
                 return {
                     "status": "refused",
-                    "note": "That looks like an identifier, not a place. Give me a "
-                            "place name — a building, a stop, a mall.",
+                    "note": "That looks like an identifier, not a place. Ask for "
+                            "a place name: a building, a stop, a mall.",
                 }
             if _looks_like_coordinate(place):
                 # A stored presence position must never leave in a tool argument
@@ -3976,13 +3972,13 @@ Args:
                 return {
                     "status": "refused",
                     "note": "That's a raw coordinate, not a place I can route from. "
-                            "Give me the place by name — a building, a stop, a mall.",
+                            "Ask for the place by name: a building, a stop, a mall.",
                 }
             if _names_a_person(place, _route_person_names):
                 _record(metrics, "route", "refused", reason="person")
                 return {
                     "status": "refused",
-                    "note": "I can't look up a route from or to a person — tell me "
+                    "note": "I can't look up a route from or to a person. Ask for "
                             "the actual place (a building, a mall, a stop), not who "
                             "is there.",
                 }
@@ -4000,8 +3996,8 @@ Args:
                 return {
                     "status": "refused",
                     "note": "That's somebody's live position, not a place I can "
-                            "route from in this room. Give me a place by name, or "
-                            "just report the position without a travel time.",
+                            "route from in this room. Do not retry: report the "
+                            "position and its age without a travel time.",
                 }
         if route_source is None:
             # No client wired (offline/eval compositions, or a deployment with
@@ -4010,8 +4006,8 @@ Args:
             _record(metrics, "route", "unavailable")
             return {
                 "status": "unavailable",
-                "note": "I can't work out routes right now. Say you couldn't check — "
-                        "do not say there is no way to get there.",
+                "note": "I can't work out routes right now. Say you couldn't check, "
+                        "not that there is no way to get there.",
             }
         # The household saved-places layer (design/23 §4, DEC-60): built per
         # room HERE — the guard needs the room, which the process-wide client
@@ -4042,7 +4038,7 @@ Args:
         try:
             out = await route_source.route(
                 origin, destination, mode=mode, arrive_by=arrive_by,
-                by=by, prefer=prefer, depart_after=depart_after,
+                by=by_mode, prefer=preference, depart_after=depart_after,
                 local_places=local_places,
             )
         except Exception:
@@ -4052,8 +4048,8 @@ Args:
             log.exception("route failed")
             out = {
                 "status": "unavailable", "origin": origin, "destination": destination,
-                "note": "I could not reach the routing service just now. Say so — do "
-                        "not say there is no route and do not guess a time.",
+                "note": "I could not reach the routing service just now. Say so, "
+                        "and do not say there is no route or guess a time.",
             }
         # The echoed origin/destination are the model's own words, already past
         # the R-28 identifier screen above, so this is belt-and-braces; the
@@ -4086,34 +4082,40 @@ Args:
                 short = await shortener.shorten(out["maps_url"])
                 if short:
                     out["maps_url"] = short
+            # ADR 0015 §3: the link's reporting rule rides with the link.
+            out["note"] = " ".join(filter(None, (
+                str(out.get("note") or ""),
+                "maps_url links this trip: paste it exactly as given when they "
+                "want to open the map.",
+            )))
         _record(
             metrics, "route", out["status"],
             mode=out.get("mode"), legs=len(out.get("legs") or ()),
         )
         return out
 
+    def _place_info_ok_note(*, has_rating: bool) -> str:
+        """How to report a `place_info` `ok` (ADR 0015 §3), with the rating
+        clause chosen by whether Google had a rating at all."""
+        rating = (
+            'Quote the rating as the one Google gives, with "about" in front of it.'
+            if has_rating else
+            "Google has no rating for this place yet: say you found it but it has "
+            "no score, and never invent one."
+        )
+        return f"{rating} Include maps_url in your reply so they can tap through."
+
     async def place_info(name: str) -> dict:
-        """How good, how pricey, and whether-open a place is — from Google.
+        """How good, how pricey, and whether-open a place is, from Google.
         Call this for anything Google Maps knows.
 
-        Call this for «X 好唔好食», «邊間好啲», «幾點開門/幾點關門», «仲開唔開門», «貴唔貴» about a
-        shop, a restaurant, a clinic, a mall — anything Google Maps knows. Give
-        it the place the way it was named. This is the RIGHT tool for a rating:
-        it returns Google's own number, not a guess and not a scraped page.
+        For a rating, use this: it returns Google's own number.
 
-        `status` is one of four:
-          - `ok` — the place, with whatever Google had: `rating` (out of 5),
-            `price_level`, `open_now`, and `maps_url` (a Google Maps link to the
-            place — include it in your reply so they can tap through). A place
-            may have NO rating (a bus stop, a new shop) — then say you found the
-            place but it has no score yet, never invent one. Quote the rating as
-            Google's, and «about».
-          - `ambiguous` — several places match; `could_be` lists them. Ask which.
-          - `not_found` — Google knows no such place. Say so.
-          - `unavailable` — you couldn't check. Say so; don't guess a rating.
+        Returns `status`: ok, ambiguous, not_found, unavailable or refused, with
+        a `note` on how to report it.
 
         Args:
-            name: The place, as it was said («泰斗», «Yoho Mall 嘅譚仔»).
+            name: The place, as it was said.
         """
         # The FULL R-28 screen-call-screen sandwich (Fix I4) — outbound
         # identifier/coordinate/person screen, the actual call wrapped in
@@ -4128,8 +4130,8 @@ Args:
             if result.reason == "person":
                 return {
                     "status": "refused",
-                    "note": "I can only look up a PLACE — a shop or a restaurant — "
-                            "not a person.",
+                    "note": "I can only look up a PLACE, such as a shop or a "
+                            "restaurant, not a person. Ask which place they mean.",
                 }
             return {
                 "status": "refused",
@@ -4140,8 +4142,7 @@ Args:
             _record(metrics, "place_info", "unavailable")
             return {
                 "status": "unavailable",
-                "note": "I can't look places up right now. Say you couldn't check — "
-                        "don't guess a rating.",
+                "note": _PLACE_INFO_UNAVAILABLE,
             }
         out = result.data
         if out is None:
@@ -4151,12 +4152,20 @@ Args:
             _record(metrics, "place_info", "unavailable")
             return {
                 "status": "unavailable",
-                "note": "I can't look places up right now. Say you couldn't check — "
-                        "don't guess a rating.",
+                "note": _PLACE_INFO_UNAVAILABLE,
             }
         if isinstance(out.get("could_be"), list):
             out["could_be"] = [c for c in out["could_be"]
                                if scan_identifiers(str(c)) is None]
+        # ADR 0015 §3: the client answers these three bare; how to report each
+        # rides in the result, not in the description.
+        if out.get("status") == "ambiguous":
+            out["note"] = ("Several places match that name; could_be lists them. "
+                           "Ask which one they mean.")
+        elif out.get("status") == "not_found":
+            out["note"] = "Google knows no such place. Say so, and do not guess one."
+        elif out.get("status") != "ok":
+            out["note"] = _PLACE_INFO_UNAVAILABLE
         if out.get("status") == "ok":
             # A Google Maps link to the PLACE (search deep link, keyless), built
             # from the asked name — never a resolved coordinate (R-28, the same
@@ -4186,44 +4195,27 @@ Args:
             # them — widen only on another measurement.
             link_carry.offer(anchor=name, url=maps_url)
             link_carry.offer(anchor=str(out.get("name", "")), url=maps_url)
+            out["note"] = _place_info_ok_note(has_rating=out.get("rating") is not None)
         _record(metrics, "place_info", out["status"], rating=out.get("rating"))
         return out
 
     async def saved_places() -> dict:
         """The names this household has saved for places, for THIS conversation.
-        Call this the moment someone routes to — or asks WHERE — a place by a
+        Call this the moment someone routes to, or asks WHERE, a place by a
         PERSONAL name.
 
-        Call this the moment someone routes to — or asks WHERE — a place by a
-        PERSONAL name rather than a public one: «屋企», «home», «我屋企», «阿媽
-        屋企», «Tyler 屋企», «公司», «我邊度返工» (where do I work), «返學». Google
-        doesn't know those; this household does. Asked where someone works or
-        lives, this is the tool — not `about` (that's what a person is LIKE) and
-        not `search_memory` (old words); a saved place is a place, not a memory.
+        A personal name is one Google doesn't know: home, someone's home, work,
+        school. Asked where someone works or lives, use this, not `about` or
+        `search_memory`.
 
-        You get a list of `names` («Home», «Miles Home», «阿媽屋企») — pick
-        the one they meant and pass THAT as the origin or destination to `route`
-        (or the place to `place_info`), and the exact saved spot is used.
-        When Life360 stores a street address for a name, `addresses` carries it
-        (name → address), so a question like «我返工嗰度個地址係咩» can be
-        answered from what you already hold — no need to look the address up.
-
-        `status`:
-          - `ok` — `names` is the list (may be empty if nothing is saved). Match
-            their words to a name; if none fits, don't force it — ask «邊度?» or
-            use a public place name, but NEVER lift a place out of old messages.
-          - `unavailable` — you can't see saved places here (nobody in this
-            conversation shares location with you, or none is configured). Don't
-            invent one; ask where they mean.
-
-        These are just NAMES — the actual spot stays private machinery you never
-        see. Use a name only for THIS conversation; don't carry it elsewhere.
+        Returns `status`: ok or unavailable, with a `note` on how to report it.
         """
         if presence_source is None or not presence_circles:
             _record(metrics, "saved_places", "unavailable")
             return {
                 "status": "unavailable",
-                "note": "I can't see any saved places in this conversation.",
+                "note": "I can't see any saved places in this conversation. Say "
+                        "so and ask where they mean; don't invent one.",
             }
         places = await resolvable_places(
             room=room, circles=presence_circles, presence=presence_source,
@@ -4238,7 +4230,7 @@ Args:
             return {
                 "status": "unavailable",
                 "note": "I couldn't check the saved places just now. Say you "
-                        "couldn't look — don't say there aren't any.",
+                        "couldn't look, not that there aren't any.",
             }
         # Names only — the coordinate is never model-facing (DEC-24/60). Empty
         # in a non-subset room (resolvable_places fell through), which is the
@@ -4251,8 +4243,21 @@ Args:
         # Never a coordinate — address only.
         addresses = {p.name: p.address for p in places if p.address}
         _record(metrics, "saved_places", "ok", count=len(names))
+        # ADR 0015 §3: how to use the list rides with it, per field present.
+        if names:
+            note = ("Match their words to one of these names and pass that name "
+                    "to route or place_info, which uses the exact saved spot. If "
+                    "none fits, ask where they mean.")
+        else:
+            note = ("There are no saved names you may use here. Ask where they "
+                    "mean, or use a public place name.")
+        note += " Never take a place from old messages."
+        if addresses:
+            note += (" addresses gives the street address for some names: answer "
+                     "an address question from it.")
+        note += " Use these names only in this conversation."
         return {"status": "ok", "names": names,
-                "addresses": addresses or None}
+                "addresses": addresses or None, "note": note}
 
     async def where_is(person: str) -> dict:
         """Where somebody in this conversation is RIGHT NOW: a live reading, not a pattern.
@@ -5208,26 +5213,11 @@ Args:
         """What place is this coordinate? Call this when a `where_been` or
         `where_is` result carried `lat`/`lng`.
 
-        The DEC-156 fetch surface. It is for when the group wants the actual
-        spot — 「呢個係邊度?」
-        「呢個座標係咩地方?」. Give it the coordinate EXACTLY as the other
-        tool gave it. Do not guess or round the numbers, and do not call this
-        with coordinates from anywhere else: a person TYPING a coordinate is
-        not how this tool is meant to be used (that ask is refused downstream
-        by design — coordinates come from the presence tools, never from
-        chat).
+        Pass them exactly as that result gave them, never rounded, and never a
+        coordinate from anywhere else (one typed in chat is refused).
 
-        `status` is one of three:
-          - `ok` — `address` is the bilingual formatted address
-            (「中文 / English」); say it in your reply. `lat`/`lng` echo
-            what you passed.
-          - `not_found` — the geocoder knows no address there (open sea, a
-            dead zone). Say you couldn't pin a place to it — never guess one.
-          - `unavailable` — no geocoder wired, or the lookup failed. Say you
-            couldn't check — do not invent a place.
-
-        The coordinate NEVER enters your reply — an address does. (R-28's
-        speech half; the reply screen blocks the pair.)
+        Returns `status`: ok, not_found or unavailable, with a `note` on how to
+        report it.
 
         Args:
             lat: The latitude, exactly as a where_been/where_is result gave it.
@@ -5241,7 +5231,7 @@ Args:
             return {
                 "status": "unavailable",
                 "note": "I can't look up coordinates right now. Say you couldn't "
-                        "check — do not guess a place.",
+                        "check, and do not guess a place.",
             }
         try:
             lat_f = float(lat)
@@ -5261,7 +5251,7 @@ Args:
             _record(metrics, "reverse_geocode", "not_found")
             return {
                 "status": "not_found",
-                "note": "I couldn't pin a place to that coordinate. Say so — "
+                "note": "I couldn't pin a place to that coordinate. Say so, and "
                         "do not guess one.",
             }
         _record(metrics, "reverse_geocode", "ok")
@@ -5269,7 +5259,9 @@ Args:
         # STORED POSITION `route` must screen for — an untrusted room cannot
         # launder a live coordinate into a route origin through this tool.
         _disclosed_live_addresses.add(address.strip().casefold())
-        return {"status": "ok", "address": address, "lat": lat_f, "lng": lng_f}
+        return {"status": "ok", "address": address, "lat": lat_f, "lng": lng_f,
+                "note": "Say the address in your reply. The coordinate never goes "
+                        "in it."}
 
     # ---- media_fetch: read a stored image back through MiMo (DEC-56) ---------
     #
@@ -6868,28 +6860,17 @@ Args:
         return {**out, "person": ref.name}
 
     async def weather(place: str | None = None, forecast: bool = False) -> dict:
-        """The weather in Hong Kong — current conditions, any warnings, the outlook.
+        """The weather in Hong Kong: current conditions, any warnings, the outlook.
         Call this for anything about HK weather.
 
-        Call this for anything about HK weather: 「今日天氣」, 「而家幾多度」, 「會唔會落雨」,
-        「有冇打風 / 幾號風球」, 「呢幾日點」. One call gives you the current temperatures
-        across HK, the humidity, ANY warnings in force (typhoon signal, rainstorm,
-        very-hot), and today's outlook. Set `forecast=True` when they ask about the
-        days ahead (「聽日 / 呢幾日」) to also get the 9-day forecast.
+        One call gives temperatures across HK, humidity, any warnings in force and
+        today's outlook. Set `forecast=True` when they ask about the days ahead.
 
-        `temperatures` is a list of station readings across Hong Kong — HKO has no
-        one «Tin Shui Chi» station, so pick the reading NEAREST the place asked
-        about («元朗公園» or «屯門» for «天水圍», say) rather than reading them all out.
-        **If `warnings` is non-empty, lead with it** — a typhoon signal or rainstorm
-        matters more than the temperature, and you must not answer 「天氣幾好」 with one
-        up.
-
-        `status`: `ok` with the reading, or `unavailable` (couldn't reach the
-        observatory — say so, don't invent a temperature).
+        Returns `status`: ok or unavailable, with a `note` on how to report it.
 
         Args:
             place: the district or place they asked about, in their words (optional).
-            forecast: True to include the multi-day forecast; default False.
+            forecast: True to add the 9-day forecast; default False.
         """
         if weather_source is None:
             _record(metrics, "weather", "unavailable")
@@ -6907,31 +6888,12 @@ Args:
 
     async def parking_status(name: str) -> dict:
         """How many spaces are free at a named car park, RIGHT NOW. Call this
-        when somebody asks whether a car park / venue has parking.
+        when somebody asks whether a car park or venue has parking.
 
-        Call this when somebody asks whether a car park / venue has parking (「而家仲有
-        冇車位?」「泊車貴唔貴?」) — the live feed answers vacancy directly, where
-        `web_search` cannot (real-time vacancy is not in search results).
+        It reads the live vacancy feed, which web_search cannot. Give the venue or
+        car park the way they named it.
 
-        Give it the venue or car park the way they named it — the feed's
-        index maps venue names (「太古廣場」, Pacific Place, «科學園 P1») to one
-        parking record. `vacancy` is the number of spaces free; `lastupdate`
-        is when the operator reported it — ALWAYS carry that age into your
-        reply («大概 11:35 更新, 仲有 30 個位»), a count without its age
-        reads as «right now», which you do not know. `opening_status` is the
-        operator's OWN opening status from the feed's basic info (`OPEN` /
-        `CLOSED` — present only when the feed carries it, never guessed);
-        `address` is the street address when the feed carries one; `fee` is
-        the operator's rate table when the feed carries one — these are
-        bonuses, say them only when present. The exact
-        spot stays private machinery — never
-        echo a parking id back at the group, never invent a number.
-
-        `status`: `ok` with `parking_id`, `name`, `vacancy`, `lastupdate`,
-        `opening_status`, `address`; `nothing_found` when no car park matches the
-        name — say you couldn't find it, don't guess a nearby one;
-        `unavailable` when the feed is unreachable — say you couldn't check,
-        NEVER that there are no spaces.
+        Returns `status`: ok or unavailable, with a `note` on how to report it.
 
         Args:
             name: the venue or car park name, in the group's words.
@@ -6939,7 +6901,8 @@ Args:
         if parking_source is None:
             _record(metrics, "parking_status", "unavailable")
             return {"status": "unavailable",
-                    "note": "Parking isn't configured here."}
+                    "note": "Parking isn't set up here. Say you couldn't check, "
+                            "and don't guess a number."}
         try:
             data = await parking_source.vacancy(name=name)
         except Exception:  # a tool never raises into the loop (R-5)
@@ -6953,49 +6916,60 @@ Args:
             # through this provider. (A richer provider MAY distinguish.)
             _record(metrics, "parking_status", "unavailable")
             return {"status": "unavailable",
-                    "note": "I couldn't reach the parking feed just now. Say "
-                            "you couldn't check — don't guess a number."}
+                    "note": "I couldn't find that car park in the feed, or couldn't "
+                            "reach it. Say you couldn't check, never that there are "
+                            "no spaces, and don't guess a number or a nearby car "
+                            "park."}
         _record(metrics, "parking_status", "ok")
-        return {"status": "ok", **data}
+        # ADR 0015 §3: how to report a count rides with it, per field present.
+        note = []
+        if data.get("lastupdate"):
+            note.append("Say when the count was updated (lastupdate): a count "
+                        "without its time sounds like right now, which you do "
+                        "not know.")
+        if "parking_id" in data:
+            note.append("Never read parking_id aloud.")
+        note.append("Never invent a number.")
+        return {"status": "ok", **data, "note": " ".join(note)}
+
+    def _find_parking_ok_note(car_parks: list[dict], *, street: bool) -> str:
+        """How to report a `find_parking` `ok` (ADR 0015 §3), per field present:
+        the vacancy clauses only when an entry has (or lacks) a live count, the
+        street clause only when `street_parking` came back."""
+        parts = ["Say each car park's distance (distance_m); don't rank them "
+                 "silently."]
+        if any("vacancy" in c for c in car_parks):
+            parts.append("An entry with vacancy is the live answer: quote it with "
+                         "its lastupdate time, and don't call parking_status for "
+                         "that lot.")
+        if any("vacancy" not in c for c in car_parks):
+            parts.append("An entry without vacancy has no live count here (private "
+                         "lots usually don't); parking_status can check one only "
+                         "if they name it.")
+        if street:
+            parts.append("street_parking counts the metered bays a short walk away "
+                         "and how many are vacant now, by street.")
+        return " ".join(parts)
 
     async def find_parking(place: str = "") -> dict:
         """Where the nearest car parks are, around a spot the group names. Call
         this when somebody wants parking near somewhere.
 
-        Call this when somebody wants parking near somewhere — «嚟緊去食飯嗰
-        度附近有冇停車場», «我而家喺呢度，附近邊度泊車?». Give it the place in
-        their words (「銅鑼灣」, a restaurant name, or empty for "where I am
-        now" — the asker's own last position). It returns the nearest car
-        parks with name, street address, and how FAR each is (「300 米」;
-        each is a walk from the spot — say the distance, don't rank silently).
+        Give `place` in their words; empty means where the asker is. Returns up
+        to five, with distance and any live vacancy.
 
-        Each entry may carry live vacancy if the Transport Department's feed
-        covers it (`vacancy` + `lastupdate` — the feed covers public car
-        parks, so a private mall's lot usually has none; that is honest, not
-        a missing feature). When an entry ALREADY carries vacancy, that IS
-        the live answer — do not call `parking_status` again for the same
-        lot; only a lot WITHOUT vacancy in this result needs its own
-        `parking_status` lookup, and `parking_status` needs the user to name
-        the spot, not «the one you just found». `street_parking` (present
-        when the street-meters feed is reachable) says how many metered
-        bays are within a short walk and how many are VACANT right now, on
-        which streets — on-street parking has no name to look up, so this
-        is the answer to «街邊有冇位泊». ALWAYS carry a quoted
-        vacancy's age into your
-        reply («大概 11:35 更新, 仲有 30 個位»); a vacancy without its age
-        reads as right now, which you do not know. `nothing_found` when
-        there are no car parks within range, and never invent one;
-        `unavailable` when the lookup itself failed — say you couldn't
-        check. Never echo a Google place id or a coordinate back at the
-        group.
+        Returns `status`: ok, ambiguous, not_found, nothing_found or unavailable,
+        with a `note` on how to report it.
 
         Args:
-            place: the spot to search around, in their words; empty = the asker's current position.
-        """  # noqa: RUF002 — the Cantonese examples keep their fullwidth comma
+            place: the spot to search around, in their words; empty means the
+                asker's current position.
+        """
         if route_source is None:
             _record(metrics, "find_parking", "unavailable")
             return {"status": "unavailable",
-                    "note": "Parking search isn't configured here."}
+                    "note": "Parking search isn't set up here. Say you couldn't "
+                            "check, and don't guess a car park."}
         if place.strip():
             # The R-28 outbound screen (shared with route / place_info):
             # an identifier, a raw coordinate, or a known person's name
@@ -7025,11 +6999,13 @@ Args:
             if resolved is None:
                 _record(metrics, "find_parking", "unavailable")
                 return {"status": "unavailable",
-                        "note": "I couldn't look that place up just now."}
+                        "note": "I couldn't look that place up just now. Say you "
+                                "couldn't check."}
             if resolved.status == "ambiguous":
                 _record(metrics, "find_parking", "ambiguous")
                 return {"status": "ambiguous",
-                        "note": "That name matches several places.",
+                        "note": "That name matches several places; could_be "
+                                "lists them. Ask which one they mean.",
                         "could_be": list(resolved.could_be)}
             if resolved.status != "ok" or resolved.place is None:
                 _record(metrics, "find_parking", "not_found")
@@ -7102,11 +7078,12 @@ Args:
             _record(metrics, "find_parking", "unavailable")
             return {"status": "unavailable",
                     "note": "I couldn't reach the parking search just now. Say you "
-                            "couldn't check — don't guess a spot."}
+                            "couldn't check, and don't guess a spot."}
         if not parking:
             _record(metrics, "find_parking", "nothing_found")
             return {"status": "nothing_found",
-                    "note": "No car parks nearby. Say so plainly — don't invent one."}
+                    "note": "No car parks nearby. Say so plainly, and don't invent "
+                            "one."}
         out = []
         for p in parking[:5]:  # nearest five is what a person can act on
             entry: dict[str, object] = {
@@ -7145,6 +7122,7 @@ Args:
                     "streets": list(street.streets),
                 }
         _record(metrics, "find_parking", "ok", count=len(out))
+        result["note"] = _find_parking_ok_note(out, street="street_parking" in result)
         return result
 
     def _music_sender_ids() -> frozenset[str]:

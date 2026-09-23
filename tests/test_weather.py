@@ -178,3 +178,56 @@ def test_render_no_warnings_still_carries_an_empty_list():
     result = _weather_result(obs)
     assert result["warnings"] == []                      # present, empty
     assert "humidity_pct" not in result                  # None dropped
+
+
+# ---- ADR 0015 §3: how to report a status rides in the result ----------------
+
+
+def test_an_ok_note_leads_with_a_warning_only_when_there_is_one():
+    """«Lead with the warning» and «use the nearest station» left the
+    description; each arrives only with the field it is about."""
+    from nora.agent.tools import _weather_result
+    from nora.domain.models import WeatherObservation
+
+    def obs(warnings, temperatures):
+        return WeatherObservation(
+            as_of="t", temperatures=temperatures, humidity_pct=None,
+            warnings=warnings, general_situation="", today_forecast="", outlook="",
+            typhoon="", forecast_days=(),
+        )
+
+    warned = _weather_result(obs(("酷熱天氣警告",), (("HKO", 34.0),)))
+    assert warned["note"].startswith("Lead with the warnings")
+    assert "nearest" in warned["note"]
+
+    calm = _weather_result(obs((), (("HKO", 30.0),)))
+    assert "warning" not in calm["note"]
+    assert "nearest" in calm["note"]
+
+    bare = _weather_result(obs((), ()))
+    assert "note" not in bare
+    for out in (warned, calm):
+        assert "—" not in out["note"] and "–" not in out["note"]
+
+
+async def test_every_non_ok_weather_carries_a_dash_free_note():
+    """Both `unavailable` paths (unwired, provider down) carry a note. The
+    provider is a fault-only double: the tool folds a raise and a `None` into
+    the same `_WEATHER_OFF`."""
+    from nora.agent.tools import build_tool_specs
+    from nora.obs.metrics import Metrics
+
+    class _Down:
+        async def current(self, *, place=None, forecast=False):
+            raise RuntimeError("HKO is down")
+
+    for source in (None, _Down()):
+        specs = build_tool_specs(
+            store=None, conversation_id="c", conversation_type="group",
+            persons=None, honcho=None, deliverer=None, room=None,
+            transit_source=None, weather_source=source, metrics=Metrics(),
+        )
+        out = await next(s for s in specs if s.name == "weather").call()
+        assert out["status"] == "unavailable"
+        assert out["note"].strip()
+        assert "—" not in out["note"] and "–" not in out["note"]

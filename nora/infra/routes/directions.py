@@ -155,7 +155,7 @@ _NOTE_OK_TRANSIT = (
 )
 _NOTE_OK_PLAIN = (
     "`duration_seconds` and `distance_meters` are the whole journey for this "
-    "mode. There are no boarding steps to report — it is one continuous trip."
+    "mode. There are no boarding steps to report: it is one continuous trip."
 )
 
 
@@ -183,14 +183,14 @@ def describe(
         return {
             "status": "unavailable", "origin": origin, "destination": destination,
             "note": "I could not reach the routing service just now, so I don't know "
-                    "the way or how long it takes. Say you couldn't check — do not "
-                    "say there is no route.",
+                    "the way or how long it takes. Say you couldn't check, not that "
+                    "there is no route.",
         }
     if journey is None:
         return {
             "status": "no_route", "origin": origin, "destination": destination,
             "note": "Google could not find a way to get between those two places by "
-                    "that mode. Say so — it is different from not being able to check.",
+                    "that mode. Say so; that is different from not being able to check.",
         }
     is_transit = mode == "TRANSIT"
     out: dict[str, Any] = {

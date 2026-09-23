@@ -253,12 +253,11 @@ LEVEL_CEILINGS = {1: 80, 2: 160, 3: 320}
 #: the ADR can never be exempted here. A rewrite batch removes its tools in the
 #: same commit that rewrites them.
 _NOT_YET_REWRITTEN = frozenset({
-    "calculate", "find_parking", "generate_image", "make_artifact",
-    "media_fetch", "media_search", "media_send", "now", "parking_status",
-    "place_info", "reverse_geocode", "route", "saved_places", "search_gifs",
-    "send_gif", "send_reply", "send_to", "transit", "weather", "web_fetch",
-    "web_search",
+    "generate_image", "make_artifact", "media_fetch", "media_search",
+    "media_send", "search_gifs", "send_gif", "send_reply", "send_to",
+    "web_fetch", "web_search",
 })
+
 
 
 #: A run of CJK, kana or hangul. ADR 0015 §3's unit: a distinct maximal run,
