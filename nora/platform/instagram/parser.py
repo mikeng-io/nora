@@ -199,7 +199,7 @@ def _shared_target(target_url: object, author: str = "") -> tuple[str, str]:
     """
     if not isinstance(target_url, str) or not target_url.strip():
         return "post", ""
-    kind = link_shape(target_url)
+    kind = link_shape(target_url, story_ring=False)
     if kind not in ("reel", "post", "story"):
         # A profile link, an unknown path, or no path at all: the label this
         # renders has always been `post` for those, with no link.

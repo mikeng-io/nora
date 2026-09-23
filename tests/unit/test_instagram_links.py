@@ -34,6 +34,9 @@ _PK = "3000000000000000001"
          "https://www.instagram.com/reel/SynthReel01/"),
         (f"https://www.instagram.com/stories/Some.Account/{_PK}?reel_owner_id=4242424242",
          "story", "Some.Account", f"https://www.instagram.com/stories/Some.Account/{_PK}/"),
+        # A story-ring share names the account's whole current story.
+        ("https://www.instagram.com/stories/some.account/?utm_source=ig_story_ring",
+         "story", "some.account", "https://www.instagram.com/stories/some.account/"),
     ],
 )
 def test_each_supported_link_becomes_its_kind_and_key(url, kind, key, clean):
@@ -59,6 +62,12 @@ def test_a_story_link_carries_its_pk():
         "https://www.instagram.com/direct/inbox/",
         "https://www.instagram.com/p/",
         "https://www.instagram.com/p/bad.code/",
+        # A saved highlight: `highlights` passes the username charset, and it
+        # is not an account whose story this reads.
+        "https://www.instagram.com/stories/highlights/17800000000000001/",
+        "https://www.instagram.com/stories/HIGHLIGHTS/17800000000000001/",
+        "https://www.instagram.com/stories/highlights/",
+        "https://www.instagram.com/stories/4242424242/",
         "https://www.instagram.com/reel/bad%20code/",
         "https://www.instagram.com/4242424242/",
         "https://notinstagram.com/some.account/",
@@ -88,3 +97,19 @@ def test_the_shape_is_a_label_and_never_a_licence():
 )
 def test_a_handle_has_a_non_digit_and_only_its_charset(value, ok):
     assert is_handle(value) is ok
+
+
+def test_a_story_ring_link_has_no_frame_id():
+    link = parse_link("https://www.instagram.com/stories/some.account/")
+    assert link == InstagramLink("story", "some.account", "")
+
+
+def test_the_transcript_render_keeps_its_measured_shapes():
+    """The adapter passes `story_ring=False`: a shared item's kind was measured
+    on the three-segment story form only, so a two-segment one keeps the
+    label it always had (none, which the adapter renders as `post`)."""
+    ring = "https://www.instagram.com/stories/some.account/"
+    assert link_shape(ring) == "story"
+    assert link_shape(ring, story_ring=False) is None
+    frame = f"https://www.instagram.com/stories/some.account/{_PK}/"
+    assert link_shape(frame, story_ring=False) == "story"

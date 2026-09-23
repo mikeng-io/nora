@@ -86,12 +86,16 @@ NO_SUCH_HANDLE: dict[str, Any] = {
 #: names the listing, not "the rooms I'm in": someone can be IN the chat and
 #: not listed, and "outside my rooms" would be false about them. Since P10 it
 #: also answers a story named by a typed handle or a pasted link whose account
-#: maps to nobody listed, which covers a stranger: the same boundary, so the
-#: same sentence.
+#: maps to nobody listed, which covers a stranger, or to someone listed only
+#: through another room and not on this conversation's roster: the same
+#: boundary, so the same sentence, and nothing in it says which case it was
+#: (a different sentence would tell the room who is in Nora's other rooms).
+#: Reworded 2026-09-24 to «people in this conversation whom the operator has
+#: listed», which is true of every case it covers.
 REFUSED: dict[str, Any] = {
     "status": "refused",
-    "note": "I only open stories of people the operator has listed in one of "
-            "my rooms. Say it's a boundary.",
+    "note": "I only open the stories of people in this conversation whom the "
+            "operator has listed. Say it's a boundary.",
 }
 
 

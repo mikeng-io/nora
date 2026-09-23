@@ -91,7 +91,14 @@ a duplicated authorization rule is one that diverges.
   NAMED, reversed to a person (`person_for_igid`), never re-derived through
   `igids_for`: a friend with two accounts is `ambiguous` by name, and a link
   to one of them says which (15 §Links). An igid that maps to nobody is
-  `refused`, and the story is never requested.
+  `refused`, and the story is never requested. Since 2026-09-24 that person
+  must also be on the ASKING room's roster (`room_people`), the scope a
+  spoken name resolves in, so a handle cannot reach further than a name
+  can and a story link is not an oracle for who is in her other rooms.
+* **Not here: the asked-turn rule.** A story, post or reel is opened only in
+  a turn a person asked for. `instagram_read` enforces that, because only
+  it holds the turn's provenance; a caller reaching this router directly
+  bypasses the rule unless it enforces its own (see `read`).
 
 Writing both as tables rather than as an `if what == "story"` is the point:
 the absence of a check is spelled, dated and tested, so the next row added has
@@ -316,8 +323,26 @@ class SocialRouter(SocialProvider):
     async def read(
         self, *, platform: str, what: str, target: str, limit: int,
         target_kind: TargetKind = TARGET_NAMED,
+        room_people: frozenset[str] | None = None,
     ) -> dict[str, Any]:
         """Route one read. NEVER raises (R-5), NEVER fails over.
+
+        `room_people` is the person ids on the asking room's roster, the
+        scope a spoken name resolves in, or `None` when that roster could not
+        be read. Only a Tier 0 read by `handle` uses it (a story named by a
+        typed handle or a link): its person must be on this roster too, or it
+        is `refused` (18, 2026-09-24, operator's conservative default). A
+        `person` read is already room-scoped, because the tool resolved the
+        name in the room.
+
+        **What this router does NOT hold: the asked-turn rule.** A story, a
+        post or a reel is opened only in a turn a person asked for, never in
+        a fire turn or a Dreamer pass (18 §"A story is opened only when a
+        person asks"). That rule lives in `instagram_read`, which holds the
+        turn's provenance (`fire_turn`, `dream_adaptor`); this router is
+        handed no provenance and cannot tell a background turn from an asked
+        one. A future caller that reaches this router directly bypasses that
+        rule unless it enforces its own.
 
         Three steps, in this order: **pick, resolve-and-authorize, dispatch.**
 
@@ -350,6 +375,7 @@ class SocialRouter(SocialProvider):
             return not_set_up(platform)
         authorized = await self._authorize(
             platform=platform, what=what, target=target, target_kind=target_kind,
+            room_people=room_people,
         )
         if isinstance(authorized, dict):
             return authorized
@@ -367,6 +393,7 @@ class SocialRouter(SocialProvider):
 
     async def _authorize(
         self, *, platform: str, what: str, target: str, target_kind: str,
+        room_people: frozenset[str] | None = None,
     ) -> str | dict[str, Any]:
         """Resolution, then the reach check, before dispatch. Returns the
         `target` the backend should be given, or the PAYLOAD to answer
@@ -397,7 +424,9 @@ class SocialRouter(SocialProvider):
             )
             return dict(UNAVAILABLE)
         if target_kind == TARGET_HANDLE:
-            return await self._resolve_handle(platform=platform, what=what, username=target)
+            return await self._resolve_handle(
+                platform=platform, what=what, username=target, room_people=room_people,
+            )
         if target_kind == TARGET_NAMED:
             # Allowed as-is, and the index is deliberately NOT consulted.
             # «Never resolved implicitly» is the clause of node 07 that code
@@ -447,6 +476,7 @@ class SocialRouter(SocialProvider):
 
     async def _resolve_handle(
         self, *, platform: str, what: str, username: str,
+        room_people: frozenset[str] | None,
     ) -> str | dict[str, Any]:
         """A typed handle or a link's username → the igid to read, or the
         payload to answer instead (15 §Links, 18 §"What the router has to
@@ -463,7 +493,15 @@ class SocialRouter(SocialProvider):
           `ambiguous` by name, but a handle or a link names one of them, and
           re-deriving would lose which. An igid that maps to nobody (a
           stranger, or an account nobody put in `identity.toml`) is
-          `refused`, and so is a person listed in no room.
+          `refused`, and so is a person listed in no room;
+        * and that person must ALSO be on the asking room's roster
+          (`room_people`), the scope a spoken name resolves in. Otherwise
+          `refused`, with the SAME payload as every other story refusal, so
+          nothing tells a stranger apart from a friend in another room (18,
+          2026-09-24). Without that check a pasted story link would be a
+          membership oracle: «read» for anyone listed in any of her rooms,
+          «refused» for the rest. A roster that could not be read (`None`)
+          is `unavailable`, and the lookup is not even made.
 
         The lookup runs BEFORE the reach decision because the reach decision
         needs the igid; it is a search, invisible to the account it finds
@@ -471,6 +509,10 @@ class SocialRouter(SocialProvider):
         """
         if self._accounts is None:
             # Said once at construction. «I couldn't check», never a boundary.
+            return dict(UNAVAILABLE)
+        if (platform, what) in TIER_ZERO_READS and room_people is None:
+            # No roster to scope the reach check to: «I couldn't check», and
+            # nothing is looked up.
             return dict(UNAVAILABLE)
         try:
             found = await self._accounts.igid_for_username(username=username)
@@ -492,7 +534,9 @@ class SocialRouter(SocialProvider):
             return dict(UNAVAILABLE)
         try:
             person = await self._subjects.person_for_igid(igid=igid)
-            if person is None or not await self._subjects.is_tier_zero(person_id=person):
+            if person is None or person not in (room_people or frozenset()):
+                return dict(REFUSED)
+            if not await self._subjects.is_tier_zero(person_id=person):
                 return dict(REFUSED)
         except Exception:
             log.exception("social subject index raised")

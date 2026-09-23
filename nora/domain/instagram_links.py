@@ -78,6 +78,13 @@ _RESERVED_FIRST_SEGMENTS = frozenset({
     "privacy", "reel", "reels", "session", "stories", "terms", "tv", "web",
 })
 
+#: The second segment of a `/stories/...` path that names no account.
+#: `/stories/highlights/<id>/` is a saved highlight, addressed by the
+#: highlight's own id, and `highlights` passes the username charset, so
+#: without this it would read as a story by `@highlights`. No route reads a
+#: highlight, so the link is unsupported.
+_NOT_A_STORY_OWNER = frozenset({"highlights"})
+
 
 def is_handle(value: str) -> bool:
     """A string that can stand as an Instagram handle: the username charset,
@@ -93,9 +100,11 @@ class InstagramLink:
     """A validated Instagram link: its kind and the segments that name it.
 
     `key` is the username for a `profile` or a `story`, the shortcode for a
-    `post` or a `reel`. `story_pk` is set for a story only. Every field has
-    passed its charset, so each is safe to put in a URL path or a bridge
-    query as it is.
+    `post` or a `reel`. `story_pk` is set for a story link that names one
+    frame (`/stories/<user>/<pk>/`) and empty for a story-ring link
+    (`/stories/<user>/`, the whole current story). Every field has passed
+    its charset, so each is safe to put in a URL path or a bridge query as
+    it is.
     """
 
     kind: LinkKind
@@ -112,8 +121,10 @@ class InstagramLink:
             path = f"/reel/{self.key}/"
         elif self.kind == "post":
             path = f"/p/{self.key}/"
-        else:
+        elif self.story_pk:
             path = f"/stories/{self.key}/{self.story_pk}/"
+        else:
+            path = f"/stories/{self.key}/"
         return f"https://www.instagram.com{path}"
 
 
@@ -133,24 +144,32 @@ def _split(url: object) -> tuple[SplitResult, list[str]] | None:
     return parts, segments
 
 
-def _shape(segments: list[str]) -> LinkKind | None:
+def _shape(segments: list[str], *, story_ring: bool = True) -> LinkKind | None:
     if len(segments) == 2 and segments[0] in ("reel", "reels"):
         return "reel"
     if len(segments) == 2 and segments[0] == "p":
         return "post"
     if len(segments) == 3 and segments[0] == "stories":
         return "story"
+    if story_ring and len(segments) == 2 and segments[0] == "stories":
+        return "story"
     if len(segments) == 1 and segments[0] and segments[0].lower() not in _RESERVED_FIRST_SEGMENTS:
         return "profile"
     return None
 
 
-def link_shape(url: object) -> LinkKind | None:
+def link_shape(url: object, *, story_ring: bool = True) -> LinkKind | None:
     """The kind `url`'s PATH is shaped like, or `None`. No segment, host or
     charset is checked: this is a label, never a licence to read. Act only
-    on `parse_link`."""
+    on `parse_link`.
+
+    `story_ring=False` keeps a two-segment `/stories/<user>/` path out of
+    the `story` shape. The transcript render passes it: a shared item's
+    kind was measured only on the three-segment form (13 §2026-09-24), and
+    what it renders for anything else did not change when this module
+    learned the ring form for `instagram_read`."""
     split = _split(url)
-    return None if split is None else _shape(split[1])
+    return None if split is None else _shape(split[1], story_ring=story_ring)
 
 
 def _origin_ok(parts: SplitResult) -> bool:
@@ -183,8 +202,14 @@ def parse_link(url: object) -> InstagramLink | None:
         code = segments[1]
         return InstagramLink(kind, code) if SHORTCODE_RE.fullmatch(code) else None
     if kind == "story":
-        user, pk = segments[1], segments[2]
-        if is_handle(user) and STORY_PK_RE.fullmatch(pk):
+        # `/stories/<user>/<pk>/` names one frame; `/stories/<user>/` (a
+        # story-ring share) names the account's whole current story. Both
+        # read the same thing, the current story, under the same checks.
+        user = segments[1]
+        pk = segments[2] if len(segments) == 3 else ""
+        if user.lower() in _NOT_A_STORY_OWNER:
+            return None
+        if is_handle(user) and (not pk or STORY_PK_RE.fullmatch(pk)):
             return InstagramLink("story", user, pk)
         return None
     user = segments[0]

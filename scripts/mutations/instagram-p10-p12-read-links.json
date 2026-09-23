@@ -9,15 +9,15 @@
   {
     "name": "a handle story checks only that the igid maps to SOMEONE, not that they are listed",
     "file": "nora/infra/social/router.py",
-    "old": "            if person is None or not await self._subjects.is_tier_zero(person_id=person):",
-    "new": "            if person is None:",
+    "old": "            if not await self._subjects.is_tier_zero(person_id=person):\n                return dict(REFUSED)",
+    "new": "            if False:\n                return dict(REFUSED)",
     "target": "tests/unit/test_instagram_read_links.py -k listed_nowhere"
   },
   {
     "name": "a handle is resolved through the person index instead of the username lookup",
     "file": "nora/infra/social/router.py",
-    "old": "        if target_kind == TARGET_HANDLE:\n            return await self._resolve_handle(platform=platform, what=what, username=target)",
-    "new": "        if target_kind == TARGET_HANDLE:\n            target_kind = TARGET_PERSON",
+    "old": "        if target_kind == TARGET_HANDLE:\n            return await self._resolve_handle(",
+    "new": "        if target_kind == TARGET_HANDLE:\n            target_kind = TARGET_PERSON\n        if False:\n            return await self._resolve_handle(",
     "target": "tests/unit/test_instagram_read_links.py -k one_of_two_accounts"
   },
   {
@@ -44,8 +44,8 @@
   {
     "name": "the igid rides the refusal of a stranger's story",
     "file": "nora/infra/social/router.py",
-    "old": "            if person is None or not await self._subjects.is_tier_zero(person_id=person):\n                return dict(REFUSED)",
-    "new": "            if person is None or not await self._subjects.is_tier_zero(person_id=person):\n                return {**REFUSED, \"note\": REFUSED[\"note\"] + \" \" + igid}",
+    "old": "            if person is None or person not in (room_people or frozenset()):\n                return dict(REFUSED)",
+    "new": "            if person is None or person not in (room_people or frozenset()):\n                return {**REFUSED, \"note\": REFUSED[\"note\"] + \" \" + igid}",
     "target": "tests/unit/test_instagram_read_links.py -k none_of_her_rooms"
   },
   {
@@ -72,8 +72,8 @@
   {
     "name": "a link whose kind contradicts what is guessed at",
     "file": "nora/agent/tools.py",
-    "old": "            if what is not None and what != read:",
-    "new": "            if False:",
+    "old": "            elif what is not None and (what not in _INSTAGRAM_READ_WHATS or what != read):",
+    "new": "            elif False:",
     "target": "tests/unit/test_instagram_read_links.py -k not_guessed_at"
   },
   {
@@ -88,6 +88,76 @@
     "file": "nora/domain/instagram_links.py",
     "old": "            and parts.hostname in INSTAGRAM_HOSTS",
     "new": "            and (parts.hostname or \"\").endswith(\"instagram.com\")",
+    "target": "tests/unit/test_instagram_parser.py -k fails_validation"
+  },
+  {
+    "name": "review 1: a link's username skips the egress screen a typed handle gets",
+    "file": "nora/agent/tools.py",
+    "old": "        if kind == \"handle\" and scan_identifiers(target) is not None:",
+    "new": "        if source == \"handle\" and scan_identifiers(target) is not None:",
+    "target": "tests/unit/test_instagram_read_links.py -k key_shaped"
+  },
+  {
+    "name": "review 2: the roster check is dropped (a story reaches anyone listed in any room)",
+    "file": "nora/infra/social/router.py",
+    "old": "            if person is None or person not in (room_people or frozenset()):",
+    "new": "            if person is None:",
+    "target": "tests/unit/test_instagram_read_links.py -k listed_in_another_room_only"
+  },
+  {
+    "name": "review 2: the tool hands the router an empty roster when it could not read one",
+    "file": "nora/agent/tools.py",
+    "old": "            if story_view.available and not story_view.degraded:",
+    "new": "            if True:",
+    "target": "tests/unit/test_instagram_read_links.py -k unreadable_roster"
+  },
+  {
+    "name": "review 2: the router reads a handle story with no roster at all",
+    "file": "nora/infra/social/router.py",
+    "old": "        if (platform, what) in TIER_ZERO_READS and room_people is None:",
+    "new": "        if False:",
+    "target": "tests/unit/test_social_router.py -k no_readable_roster"
+  },
+  {
+    "name": "review 3: a highlight link parses as a story by @highlights",
+    "file": "nora/domain/instagram_links.py",
+    "old": "        if user.lower() in _NOT_A_STORY_OWNER:\n            return None",
+    "new": "",
+    "target": "tests/unit/test_instagram_links.py::test_anything_else_is_unsupported"
+  },
+  {
+    "name": "review 4: a `*` room makes its members Tier 0",
+    "file": "nora/infra/social/subjects.py",
+    "old": "                convo.persons is not None and person_id in convo.persons",
+    "new": "                convo.persons is None or person_id in convo.persons",
+    "target": "tests/unit/test_instagram_read_links.py -k open_room_makes_nobody"
+  },
+  {
+    "name": "review 5: a profile link with what=story is refused as a contradiction",
+    "file": "nora/agent/tools.py",
+    "old": "            if parsed.kind == \"profile\" and what == \"story\":",
+    "new": "            if False:",
+    "target": "tests/unit/test_instagram_read_links.py -k profile_link_asked_for_its_story"
+  },
+  {
+    "name": "review 5: `what` beside a link is compared, not checked against the enum",
+    "file": "nora/agent/tools.py",
+    "old": "(what not in _INSTAGRAM_READ_WHATS or what != read)",
+    "new": "(what != read)",
+    "target": "tests/unit/test_instagram_read_links.py -k outside_the_enum"
+  },
+  {
+    "name": "review 6: a story-ring link is unsupported",
+    "file": "nora/domain/instagram_links.py",
+    "old": "    if story_ring and len(segments) == 2 and segments[0] == \"stories\":\n        return \"story\"",
+    "new": "    if story_ring and len(segments) == 2 and segments[0] == \"stories\":\n        return None",
+    "target": "tests/unit/test_instagram_read_links.py -k story_ring"
+  },
+  {
+    "name": "review 6: the transcript render learns the story-ring shape too",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "    kind = link_shape(target_url, story_ring=False)",
+    "new": "    kind = link_shape(target_url)",
     "target": "tests/unit/test_instagram_parser.py -k fails_validation"
   }
 ]

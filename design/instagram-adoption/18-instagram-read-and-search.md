@@ -55,7 +55,9 @@ tools for one network map onto one backend.
 > against master at `c893e581`. About 20 of the 84 are the four
 > `"default": null` entries Strands writes for an optional parameter. The
 > text Strands sends is 205 tokens (was 183; Level 3 ceiling 320), with no
-> dash and no non-Latin character in its spec.
+> dash and no non-Latin character in its spec. After the #446 review's
+> `what="story"`-with-a-profile-link clause: schema **388**, resident total
+> **27,506 (+106 over 27,400)**, description 214.
 
 > **ADR 0015 (proposed 2026-09-24), met from the first commit.** Both tools
 > declare `level=3` on `NativeTool` (the field was added here, ADR 0015 §3).
@@ -124,6 +126,25 @@ instagram_read(what: str | None = None, person: str | None = None,
 > (P13), and a word in the schema is a word advertising it. A link given
 > without a scheme (`instagram.com/p/...`) gains `https://` before it is
 > parsed; the parser still decides everything else.
+>
+> **Amended 2026-09-24 (#446 review): `what="story"` with a PROFILE link is
+> allowed** and reads that account's current story: «what's on her story
+> <profile link>» names the account by link and the read by `what`. It goes
+> down the handle path exactly, under every story check (asked turn, egress
+> screen, Tier 0, the asking room's roster). Every other mismatch between
+> `what` and a link stays `unavailable`, and `what` beside a link is checked
+> against the enum at runtime, so `what="post"` with a post link is
+> `unavailable` too, not a match.
+>
+> **Also 2026-09-24:** a story-ring link, `/stories/<user>/` with no frame
+> id, reads that user's current story under the same checks (the link parser
+> returns it with an empty `story_pk`). `/stories/highlights/<id>/` is a
+> saved highlight, addressed by the highlight's own id, and is refused by the
+> parser: `highlights` passes the username charset and would otherwise read
+> as a story by `@highlights`. The transcript render keeps its measured
+> shapes: it asks the parser with `story_ring=False`, so a shared ring link
+> is labelled as before. The egress screen (`scan_identifiers`) runs on EVERY
+> username about to leave, a link's as well as a typed handle's.
 
 **Exactly one of `person`, `link`, `handle`.** Three parameters, not one
 overloaded `target`: a person's name and an Instagram handle are the same
@@ -268,6 +289,12 @@ check (story only) produce them. The body is the curated DTO (`16`
 > «outside the rooms I'm in» was false. A backend that is not composed (its
 > flag is off) answers one stable `unavailable` sentence, «Instagram isn't
 > set up», and logs once at boot rather than on every call.
+>
+> **Superseded wording, later 2026-09-24 (#446 review).** The sentence is now
+> «I only open the stories of people in this conversation whom the operator
+> has listed». The old one stopped being true once a story by handle or link
+> was scoped to the asking room: a friend listed in ANOTHER room is refused
+> too, and «listed in one of my rooms» would be false about them.
 
 > **2026-09-24, P10 and P12 as built.** A handle nobody holds is
 > `nothing_found`, «Instagram has no account with that username; don't guess
@@ -287,6 +314,15 @@ check (story only) produce them. The body is the curated DTO (`16`
 > `unavailable` saying a retry will not help, and every other failure is
 > `unavailable`. No igid, fbid or person id is in any of it, notes and
 > errors included; the shortcode the bridge echoes is not read back.
+>
+> **UNMEASURED (2026-09-24): whether the CDN urls carry account ids.** Every
+> item url is handed to the model (it is `media_fetch`'s input), and
+> Instagram CDN urls carry opaque query parameters such as `efg` (a
+> base64-encoded JSON blob) and `ig_cache_key`. Whether either encodes the
+> owner's igid, or any account id, has not been measured. The client checks
+> the HOST only. It is to be read back live at deploy; until then R-18's «no
+> id reaches the model» holds for every field this client builds and is
+> unverified for the url's query.
 
 ## A story is opened only when a person asks (operator safety rule, 2026-09-24)
 
@@ -306,7 +342,10 @@ the operator decides otherwise.**
 > a handle or a link, and a post or reel link: the operator's rule that Nora
 > reads shared content only when asked (13 §2026-09-24). In a fire turn or a
 > Dreamer pass all of them are `refused` before any name, handle or link is
-> resolved, so no lookup and no read reaches the bridge. A profile, by any
+> resolved, so no lookup and no read reaches the bridge. The rule lives in
+> the TOOL, the one layer holding the turn's provenance; `SocialRouter`'s
+> `read` docstring says so, because a future caller that reaches the router
+> directly would bypass it. A profile, by any
 > input, stays allowed everywhere. Pinned by
 > `test_a_background_turn_is_refused_a_story_post_or_reel_before_any_call`
 > (`tests/unit/test_instagram_read_links.py`).
@@ -378,6 +417,30 @@ and P10 (for `link` / `handle`), not a detail left to either:
   input named, never re-derived through `igids_for`** (`15` §Links). An igid
   that maps to nobody is not in any room: `refused`, and no story request is
   sent. `profile` and `post` need resolution only.
+
+  > **Current rule, 2026-09-24 (operator's conservative default, #446
+  > review): a story by handle or link is scoped to the ASKING room.** Its
+  > person must be Tier 0 AND on the roster of the conversation the question
+  > was asked in, the same scope a spoken name resolves in. Anything else is
+  > `refused`, with no story request, and with the one `refused` sentence every
+  > story refusal uses («I only open the stories of people in this conversation
+  > whom the operator has listed»), so a stranger, a friend listed nowhere and
+  > a friend listed only in another room get byte-identical answers. An
+  > unreadable roster is `unavailable` and nothing is looked up. A profile, a
+  > post and a reel are unaffected.
+  >
+  > **OPEN operator decision: widen it to «Tier 0 in any group room»?** That is
+  > what this section first said, and it has a cost the first draft did not
+  > see: it makes a pasted story link a **cross-room membership oracle**.
+  > Anyone in any room could paste `instagram.com/stories/<username>/` for a
+  > candidate and learn, from «read» versus «refused», whether that account
+  > belongs to someone listed in one of Nora's OTHER rooms, which the
+  > person-name path deliberately refuses to disclose (design/12 §3: «not in
+  > this room» and «does not exist» answer identically). Scoping to the asking
+  > room's roster closes it, because the answer then depends only on who is in
+  > the room the asker is already in. Widening is a one-line change in the
+  > router (`room_people`); whether the convenience is worth the disclosure is
+  > the operator's call.
 
   > **Tier 0 note, 2026-09-24.** `is_tier_zero` counts any `[[conversations]]`
   > entry that lists the person, and does not ask whether that entry is a

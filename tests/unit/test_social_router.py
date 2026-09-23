@@ -561,10 +561,15 @@ def _handle_router(*, subjects=None, accounts=None):
     return router, instagram
 
 
-def _by_handle(what: str, username: str) -> dict:
+#: The asking room's roster: everyone in the fake index is on it, so the
+#: roster check passes unless a test narrows it.
+_HERE = frozenset({"miles", "robin"})
+
+
+def _by_handle(what: str, username: str, room_people=_HERE) -> dict:
     return {
         "platform": "instagram", "what": what, "target": username, "limit": 5,
-        "target_kind": TARGET_HANDLE,
+        "target_kind": TARGET_HANDLE, "room_people": room_people,
     }
 
 
@@ -693,3 +698,36 @@ async def test_a_post_by_person_or_handle_is_not_served(kind):
     )
     assert out["status"] == "unavailable"
     assert instagram.calls == []
+
+
+async def test_a_handle_story_of_a_listed_person_in_another_room_only_is_refused():
+    """The operator's conservative default (18, 2026-09-24): a story by handle
+    or link must name someone on the ASKING room's roster, the scope a name
+    resolves in. Miles is Tier 0, and is not in this room: `refused`, with the
+    SAME payload as a stranger's, so the answer does not reveal that he is in
+    one of her other rooms. The positive control is the same read with him on
+    the roster."""
+    router, instagram = _handle_router()
+
+    elsewhere = await router.read(**_by_handle("story", "example_friend", frozenset({"robin"})))
+    stranger = await router.read(**_by_handle("story", "some.stranger"))
+    assert elsewhere["status"] == "refused"
+    assert elsewhere == stranger
+    assert instagram.calls == []
+
+    assert (await router.read(**_by_handle("story", "example_friend")))["status"] == "ok"
+    assert instagram.calls == [("instagram", "story", "10000001", 5)]
+
+
+async def test_a_handle_story_with_no_readable_roster_is_unavailable_and_looks_nothing_up():
+    """No roster to scope the reach check to is «I couldn't check», never a
+    boundary, and the username is not even looked up. A profile needs no
+    roster."""
+    accounts = FakeInstagramAccountLookup(_HANDLES)
+    router, instagram = _handle_router(accounts=accounts)
+
+    out = await router.read(**_by_handle("story", "example_friend", None))
+    assert out["status"] == "unavailable"
+    assert accounts.asked == [] and instagram.calls == []
+
+    assert (await router.read(**_by_handle("profile", "example_friend", None)))["status"] == "ok"

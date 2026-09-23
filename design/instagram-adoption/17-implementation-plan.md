@@ -224,6 +224,15 @@ and `test_a_story_link_to_one_of_two_accounts_reads_that_account`
 18 has the as-built detail. Still open for "done": the deploy, the routing
 eval run, and the live Jaeger read-back.
 
+**#446 review, 2026-09-24:** a story by handle or link must also name
+someone on the ASKING room's roster, or it is `refused` with the one story
+refusal sentence (operator's conservative default; widening to «any group
+room» is an OPEN decision, 15 §Links and 18 say why: it would make a story
+link a cross-room membership oracle). A profile link with `what="story"`
+reads that account's story, a story-ring link `/stories/<user>/` reads the
+current story, and a highlight link is refused. The egress screen now runs
+on a link's username as well as a typed handle.
+
 ## P11: Search onto the bridge
 
 `GET /accounts?query=`. The `instagram/search` row leaves OpenCLI. After this
@@ -283,6 +292,11 @@ call, as a story is. The bridge's 404 is `nothing_found`, 501 is
 `unavailable` («can't read that kind of post link yet»). The bridge half's
 live probe on a real post is still outstanding, so the Nora half is tested
 on the generated fixtures only.
+
+**UNMEASURED: whether the CDN item urls carry account ids** (their `efg`
+and `ig_cache_key` query parameters). The urls reach the model as
+`media_fetch` input, and the client checks their host only. To be read back
+live at deploy (18 has the note).
 
 ## P13: Posts and reels lists (investigation, not a build)
 
