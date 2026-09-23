@@ -409,9 +409,10 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        name="what you call them"),
     # UNCONDITIONAL, and that is the change #314 forces. Both this and
     # `home_room` (since replaced by `presence`) used to append their second
-    # half only when the block had the content it describes — a description composed at inject time, which is
-    # the thing the registry abolishes. Phrased so it is true either way («a
-    # «·» line, where there is one»), because a type describes the block's
+    # half only when the block had the content it describes — a description
+    # composed at inject time, which is the thing the registry abolishes.
+    # Phrased so it is true either way («a «·» line, where there is one»),
+    # because a type describes the block's
     # SHAPE and a particular render is one instance of it.
     _t("people",
        "who is in the room you are in, and the names they are called by "
