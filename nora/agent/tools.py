@@ -634,13 +634,17 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # (`room_<verb>`). Both are reads: they resolve this turn's unit through
     # the presence reader and never cross it (D1 = B).
     #
+    # `time_shiftable=False` on both: connection state, member counts and
+    # recent activity describe THIS instant, like `now` and `weather`, and
+    # neither tool accepts a target time.
+    #
     # `room_list`, 2: one call answers the question; a second is for a turn
     # that sent something and wants to see whether a transport came back.
     # `confirmed`: policy, live health and a live roster, not something she
     # remembers. Intended ADR 0015 level 1 (the field is not on this table
     # yet).
     "room_list": NativeTool(2,
-                            source_tier="confirmed", read_only=True,
+                            time_shiftable=False, source_tier="confirmed", read_only=True,
                             side_effect_state="none", idempotency="idempotent", retry="safe",
                             output_contract="three_state"),
     # `room_read`, 3: «what are they saying on WhatsApp and on Discord» is two
@@ -650,7 +654,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # wrong room name is a real outcome, and it must read as `nothing_found`,
     # never as an empty list. Intended level 2.
     "room_read": NativeTool(3,
-                            source_tier="remembered", read_only=True,
+                            time_shiftable=False, source_tier="remembered", read_only=True,
                             side_effect_state="none", idempotency="idempotent", retry="safe",
                             output_contract="three_state"),
     # The three room-scoped tools. Every budget here is chosen against ONE

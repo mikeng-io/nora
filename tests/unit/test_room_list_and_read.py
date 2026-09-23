@@ -425,6 +425,8 @@ def test_the_room_tools_are_declared_read_only_three_state_and_not_hot(name):
         "none", "idempotent", "safe",
     )
     assert declared.output_contract == "three_state"
+    # They describe this instant and take no target time (like `now`).
+    assert declared.time_shiftable is False
     assert name not in HOT_TOOLS
 
 
