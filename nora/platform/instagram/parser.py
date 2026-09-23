@@ -468,8 +468,10 @@ def parse_event(event: dict) -> NormalizedMessage | None:
             mentions=_mentioned_ids(event.get("mentions")),
             quote=_quoted(event.get("reply_to")),
             media=refs,
-            # `mid.$…` — what `POST /react` and `POST /unsend` address a
-            # message by. `(author, timestamp)` means nothing to either.
+            # `mid.$…` — what a reaction and an unsend address a message by
+            # (`/threads/{thread_fbid}/messages/{message_id}`, and its
+            # `/reaction`), and what a reply's `reply_to` names.
+            # `(author, timestamp)` means nothing to any of them.
             message_id=str(event.get("message_id") or ""),
         )
     except Exception:

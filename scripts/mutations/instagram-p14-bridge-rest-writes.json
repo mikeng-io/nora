@@ -114,8 +114,8 @@
   {
     "name": "the social client's not-found check still reads the old `ok: false`",
     "file": "nora/infra/social/instagram_client.py",
-    "old": "            if isinstance(error, dict) and error.get(\"code\") == \"not_found\":",
-    "new": "            if isinstance(payload, dict) and payload.get(\"ok\") is False:",
+    "old": "            if isinstance(payload, dict) and _error_code(payload) == \"not_found\":\n                return dict(NOTHING_FOUND)",
+    "new": "            if isinstance(payload, dict) and payload.get(\"ok\") is False:\n                return dict(NOTHING_FOUND)",
     "target": "tests/unit/test_instagram_social_client.py"
   },
   {
