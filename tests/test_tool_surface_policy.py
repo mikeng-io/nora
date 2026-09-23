@@ -254,17 +254,17 @@ LEVEL_CEILINGS = {1: 80, 2: 160, 3: 320}
 #: same commit that rewrites them.
 _NOT_YET_REWRITTEN = frozenset({
     "about", "ask_memory", "calculate", "cancel_event", "cancel_reminder",
-    "create_event", "find_parking", "generate_image", "group_members",
+    "create_event", "find_parking", "group_members",
     "list_events", "list_reminders", "load_tools", "load_transcript",
-    "lookup_person", "make_artifact", "media_fetch", "media_search",
-    "media_send", "music_status", "note_create", "note_read", "note_search",
+    "lookup_person",
+    "music_status", "note_create", "note_read", "note_search",
     "note_update", "now", "parking_status", "place_info",
     "play_music", "recall_lookups", "remember", "reverse_geocode",
-    "route", "rsvp_event", "saved_places", "search_gifs", "search_memory",
-    "search_memory_workspace", "send_gif", "send_reply", "send_to",
+    "route", "rsvp_event", "saved_places", "search_memory",
+    "search_memory_workspace", "send_reply",
     "set_music_volume", "skip_music", "stop_music",
     "suggest_venue", "top_music", "transit", "update_event", "version",
-    "weather", "web_fetch", "web_search", "who_said",
+    "weather", "who_said",
 })
 
 #: A run of CJK, kana or hangul. ADR 0015 §3's unit: a distinct maximal run,

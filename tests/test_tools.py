@@ -1221,6 +1221,199 @@ async def test_generate_image_auth_maps_to_a_plain_note(wiring):
     assert "re-authorise" in result["note"].lower()
 
 
+# ---- ADR 0015 §3: how to report a status rides in the result ---------------
+# generate_image, media_search, media_send, search_gifs and send_gif name their
+# statuses in the description; what to say for each is the result's `note`.
+
+_DASHES = ("—", "–")
+
+
+def _assert_noted(case: str, out: dict, status: str) -> None:
+    assert out["status"] == status, (case, out)
+    assert isinstance(out.get("note"), str) and out["note"].strip(), case
+    assert not any(d in out["note"] for d in _DASHES), case
+
+
+def _deliverer(wiring, *, adapter=None, send_permitted: bool = True) -> Deliverer:
+    """A deliverer that holds every send (`send_permitted=False`, the review
+    mode) or one over an adapter that refuses attachments."""
+    return Deliverer(
+        store=wiring["store"], adapter=adapter or SinkSender(), target=TARGET,
+        doctrine=wiring["doctrine"], canary="C", tag_id="t-noted",
+        nora_sender_id="nora", message_cap=NATIVE_TOOL_BUDGETS["send_reply"],
+        audience="tag", metrics=Metrics(), send_permitted=send_permitted,
+    )
+
+
+def _tools_over(wiring, deliverer, **extra) -> dict:
+    return {t.tool_name: t for t in build_tools(
+        store=wiring["store"], conversation_id="g1", conversation_type="group",
+        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=deliverer,
+        metrics=Metrics(), room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
+        **extra,
+    )}
+
+
+class _RaisingGenerator:
+    async def generate(self, **kwargs) -> ImageResult:
+        raise RuntimeError("provider on fire")
+
+
+async def test_every_non_ok_generate_image_status_carries_a_note(wiring):
+    """Every non-ok path of `generate_image`, so a path that loses its note
+    (the reporting rule for that status) goes red."""
+    held = _deliverer(wiring, send_permitted=False)
+    refusing = _deliverer(wiring, adapter=_NoAttachmentsSink())
+    cases = {
+        "unavailable/unwired": (_with_image_tools(wiring, generator=None), {}),
+        "unavailable/refs_off": (
+            _with_image_tools(wiring, generator=_ImageGenerator()),
+            {"reference": "a3f2c1"},
+        ),
+        "nothing_found/link": (
+            _with_image_tools(wiring, generator=_ImageGenerator(), refs_allowed=True),
+            {"reference": "https://example.com/a3f2c1.png"},
+        ),
+        "nothing_found/marker": (
+            _with_image_tools(wiring, generator=_ImageGenerator(), refs_allowed=True),
+            {"reference": "??"},
+        ),
+        "unavailable/raised": (_with_image_tools(wiring, generator=_RaisingGenerator()), {}),
+        "nothing_found/refused": (_with_image_tools(wiring, generator=_ImageGenerator(
+            result=ImageResult(status="nothing_found", provider="xai"))), {}),
+        "unavailable/unhosted": (_with_image_tools(wiring, generator=_ImageGenerator(
+            result=ImageResult(status="ok", artifact="data:image/png;base64,AA==",
+                               provider="xai"))), {}),
+        "held_for_review": (_tools_over(wiring, held, image_generator=_ImageGenerator()), {}),
+        "unavailable/not_sent": (
+            _tools_over(wiring, refusing, image_generator=_ImageGenerator()), {},
+        ),
+    }
+    for reason in ("quota", "auth", "rate_limited", "down", "other"):
+        cases[f"unavailable/{reason}"] = (_with_image_tools(wiring, generator=_ImageGenerator(
+            result=ImageResult(status="unavailable", reason=reason, provider="xai"))), {})
+    for case, (tools, kwargs) in cases.items():
+        out = await _call(tools["generate_image"], prompt="a cat", **kwargs)
+        _assert_noted(case, out, case.split("/")[0])
+
+
+async def test_a_sent_image_note_names_the_photos_only_when_they_were_used(wiring):
+    """The `ok` rules that left the description (no handle, no stale link)
+    arrive with the sent image, and «say it was made from their photos» only
+    when references were passed. A hosted-url `ok` carries no sent note."""
+    plain = await _call(_with_image_tools(wiring, generator=_ImageGenerator())
+                        ["generate_image"], prompt="a cat")
+    assert plain["status"] == "ok" and plain["sent"] is True
+    assert "stale" in plain["note"]
+    assert "their photos" not in plain["note"]
+    assert not any(d in plain["note"] for d in _DASHES)
+
+    edited = await _call(
+        _with_image_tools(wiring, generator=_ImageGenerator(), refs_allowed=True)
+        ["generate_image"], prompt="edit", reference="a3f2c1",
+    )
+    assert edited["status"] == "ok" and "their photos" in edited["note"]
+
+    hosted = await _call(_with_image_tools(wiring, generator=_ImageGenerator(
+        result=ImageResult(status="ok", artifact="https://drop.example/i.png",
+                           provider="xai"))
+    )["generate_image"], prompt="a cat")
+    assert hosted == {"status": "ok", "url": "https://drop.example/i.png"}
+
+
+class _BrokenMediaStore(FakeMediaObjectStore):
+    async def search(self, **kwargs):
+        raise RuntimeError("index down")
+
+    async def by_prefix(self, **kwargs):
+        raise RuntimeError("index down")
+
+
+async def test_every_non_ok_media_library_status_carries_a_note(wiring):
+    """`media_search` and `media_send`: every non-ok path returns a note."""
+    one = FakeMediaObjectStore([_make_image()])
+    two = FakeMediaObjectStore([
+        _make_image(sha256="aabbcc14924244741244445555667788" * 2, prompt="cat one"),
+        _make_image(sha256="aabbcc99998888777766665555444433" * 2, prompt="cat two"),
+    ])
+    full = FakeBlobStore()
+    full.blobs[_make_image().sha256] = b"PNGDATA"
+    held = _deliverer(wiring, send_permitted=False)
+    refusing = _deliverer(wiring, adapter=_NoAttachmentsSink())
+    search_cases = {
+        "unavailable/unwired": _with_image_tools(wiring, media_store=None),
+        "unavailable/raised": _with_image_tools(wiring, media_store=_BrokenMediaStore([])),
+    }
+    for case, tools in search_cases.items():
+        _assert_noted(case, await _call(tools["media_search"], query="cat"),
+                      case.split("/")[0])
+    send_cases = {
+        "unavailable/unwired": (_with_image_tools(wiring, media_store=one), "aabbcc"),
+        "nothing_found/not_a_handle": (
+            _with_image_tools(wiring, media_store=one, blob_store=full), "zz"),
+        "nothing_found/absent": (
+            _with_image_tools(wiring, media_store=one, blob_store=full), "ffffff"),
+        "ambiguous": (_with_image_tools(wiring, media_store=two, blob_store=full), "aabbcc"),
+        "unavailable/raised": (_with_image_tools(
+            wiring, media_store=_BrokenMediaStore([]), blob_store=full), "aabbcc"),
+        "unavailable/no_bytes": (
+            _with_image_tools(wiring, media_store=one, blob_store=FakeBlobStore()), "aabbcc"),
+        "held_for_review": (
+            _tools_over(wiring, held, media_store=one, blob_store=full), "aabbcc"),
+        "unavailable/not_sent": (
+            _tools_over(wiring, refusing, media_store=one, blob_store=full), "aabbcc"),
+    }
+    for case, (tools, handle) in send_cases.items():
+        _assert_noted(case, await _call(tools["media_send"], handle=handle),
+                      case.split("/")[0])
+
+
+async def test_a_media_search_note_follows_whether_anything_matched(wiring):
+    """«Never claim an image the search did not return» rides with the `ok`,
+    and an empty list says plainly that nothing matched."""
+    found = await _call(_with_image_tools(
+        wiring, media_store=FakeMediaObjectStore([_make_image()]))["media_search"],
+        query="cat")
+    assert found["results"] and "each result" in found["note"]
+    empty = await _call(_with_image_tools(
+        wiring, media_store=FakeMediaObjectStore([]))["media_search"], query="cat")
+    assert empty["results"] == [] and "Nothing in the library matched" in empty["note"]
+
+
+async def test_every_non_ok_gif_status_carries_a_note(wiring):
+    """`search_gifs` and `send_gif`. A failed GIF fetch or send RAISES, so the
+    agent falls back to words; that path has no dict and is pinned by
+    `test_gif_send_failure_raises_so_the_agent_can_send_a_text_reply`."""
+    class _Empty(_GifSource):
+        async def search(self, *, query: str):
+            return ()
+
+    unwired = _tools_over(wiring, wiring["deliverer"])
+    _assert_noted("search/unwired",
+                  await _call(unwired["search_gifs"], query="slow clap"), "unavailable")
+    _assert_noted("search/identifier", await _call(
+        _tools_over(wiring, wiring["deliverer"], giphy_source=_GifSource())["search_gifs"],
+        query="+85290000101"), "unavailable")
+    _assert_noted("search/empty", await _call(
+        _tools_over(wiring, wiring["deliverer"], giphy_source=_Empty())["search_gifs"],
+        query="slow clap"), "nothing_found")
+    _assert_noted("send/unknown_id", await _call(
+        _tools_over(wiring, wiring["deliverer"], giphy_source=_GifSource())["send_gif"],
+        candidate_id="nope"), "unavailable")
+    held = _tools_over(wiring, _deliverer(wiring, send_permitted=False),
+                       giphy_source=_GifSource())
+    await _call(held["search_gifs"], query="happy dance")
+    _assert_noted("send/held", await _call(held["send_gif"], candidate_id="happy-1"),
+                  "held_for_review")
+
+
+async def test_the_gif_candidates_carry_the_untrusted_metadata_note(wiring):
+    tools = _tools_over(wiring, wiring["deliverer"], giphy_source=_GifSource())
+    found = await _call(tools["search_gifs"], query="happy dance")
+    assert found["status"] == "ok"
+    assert "untrusted" in found["note"] and "only from these" in found["note"]
+
+
 class _RecordingHoncho:
     """`FakeMemoryStore` records the query but not the SCOPE, and the scope is the
     whole point of this verb: `conversation_id=None` is what makes the search
@@ -1512,3 +1705,11 @@ def test_a_quote_id_is_never_guessed_from_an_unusable_row():
     assert platform_message_id_of({"id": True, "message_id": "mid.$real"}) == "mid.$real"
     assert platform_message_id_of("not a dict") is None
     assert platform_message_id_of(None) is None
+
+
+async def test_send_to_with_no_relay_wired_carries_a_note(wiring):
+    """`send_to`'s own unwired path; every relay outcome is pinned in
+    `tests/test_relay.py`."""
+    out = await _call(_tools_over(wiring, wiring["deliverer"])["send_to"],
+                      platform="signal", text="we're starting")
+    _assert_noted("send_to/unwired", out, "unavailable")

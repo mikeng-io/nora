@@ -1003,7 +1003,16 @@ async def test_make_artifact_unavailable_when_compute_backend_not_configured():
 
     result = await tools["make_artifact"](task="write a haiku")
 
-    assert result == {"status": "unavailable"}
+    assert result == {"status": "unavailable", "note": tools_module._ARTIFACT_OFF["note"]}
+
+
+async def test_make_artifacts_unavailable_note_is_a_plain_instruction():
+    """ADR 0015 §3: both `unavailable` paths (no backend, nobody to deliver to)
+    carry the same non-empty, dash-free `note`; the exact-dict tests around
+    this one pin that it is present."""
+    note = tools_module._ARTIFACT_OFF["note"]
+    assert isinstance(note, str) and note.strip()
+    assert "—" not in note and "–" not in note
 
 
 async def test_make_artifact_returns_the_result_inline_when_fast():
@@ -1045,7 +1054,11 @@ async def test_make_artifact_falls_back_to_still_working_when_slow(monkeypatch):
 
     result = await tools["make_artifact"](task="a long research task")
 
-    assert result == {"status": "ok", "still_working": True}
+    assert result == {
+        "status": "ok", "still_working": True,
+        "note": "It is still being built. Tell them you are working on it "
+                "and that it will follow as a separate message once ready.",
+    }
     assert len(jobs._jobs) == 1  # a durable row was written
     [job] = jobs._jobs.values()
     assert job.task == "a long research task"
@@ -1080,7 +1093,7 @@ async def test_make_artifact_unavailable_when_slow_and_no_tagger(monkeypatch):
 
     result = await tools["make_artifact"](task="a long research task")
 
-    assert result == {"status": "unavailable"}
+    assert result == {"status": "unavailable", "note": tools_module._ARTIFACT_OFF["note"]}
     assert jobs._jobs == {}
     assert backend.launched == []
 
