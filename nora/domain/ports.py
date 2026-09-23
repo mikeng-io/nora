@@ -2346,6 +2346,13 @@ class ImageReference:
     refused by the port's implementations: Nora never fetches an image
     *because* the user asked to edit it; the user must have already sent it
     (design/proposed/29-image-generation §5.1).
+
+    **One exemption (DEC-193, `design/self-reference/`).** The media row whose
+    `provenance.role` is exactly `"self"` — her canonical picture, written only
+    by the operator's `scripts/ingest_self_asset.py` — resolves in ANY
+    conversation, matched on its FULL sha256 and only when the conversation's
+    own window has no match. It is her own operator-provided asset, so nothing
+    external enters and nothing leaves that she did not already hold.
     """
 
     marker_code: str
@@ -2353,7 +2360,8 @@ class ImageReference:
 
 # Resolves a marker code to bytes — the custody check. The CALLER (the tool
 # closure) supplies it per turn: it reads the caller's own conversation store,
-# so a code from another conversation resolves to nothing. Domain keeps the
+# so a code from another conversation resolves to nothing — except the one
+# canonical self row (DEC-193, `ImageReference` above). Domain keeps the
 # alias so the port can type the per-call resolver.
 ReferenceResolver = Callable[[str], Awaitable[bytes | None]]
 

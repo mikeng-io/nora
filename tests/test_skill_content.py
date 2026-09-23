@@ -85,13 +85,148 @@ def test_every_skill_names_no_scenario(skills):
                 f"{skill.name} names a scenario: {scenario!r}")
 
 
+#: A skill whose ceiling is not the default 30, each with its reason. The list
+#: is short on purpose: a raised ceiling is a claim that no lower layer owns
+#: the content, and it has to be argued here, where the number is.
+_LINE_CEILINGS: dict[str, int] = {
+    # DEC-193 (operator, 2026-09-23). Her whole visual spec lives here and
+    # nowhere else: it is not doctrine (needed only when she makes an image,
+    # design/12's placement rule) and not the tool schema (it is about HER,
+    # not the tool). The operator ruled completeness over brevity for a skill
+    # that loads only on an image turn, and no rule of the spec may be dropped.
+    # Measured at 49 when written; the ceiling leaves room for one more model
+    # section, which is how this skill is meant to grow.
+    "image-generation": 60,
+}
+
+
 def test_every_skill_stays_small(skills):
     """Most of what looks like skill content belongs a layer up or down; what is
     left is genuinely small. A large skill is stealing a lower layer's job."""
     for skill in skills:
         lines = [ln for ln in skill.instructions.splitlines() if ln.strip()]
-        assert len(lines) <= 30, (
-            f"{skill.name} skill body has {len(lines)} non-blank lines")
+        ceiling = _LINE_CEILINGS.get(skill.name, 30)
+        assert len(lines) <= ceiling, (
+            f"{skill.name} skill body has {len(lines)} non-blank lines (ceiling {ceiling})")
+
+
+# --- image-generation (DEC-193): her canonical self, her look, the models -------
+
+_IMAGE_SKILL = "image-generation"
+_CANONICAL_ASSET = Path(__file__).resolve().parents[1] / "assets" / "nora-canonical-self.png"
+
+
+def _image_skill(store: SkillStore):
+    skill = store.resolve(_IMAGE_SKILL)
+    assert skill is not None, "the image-generation skill must ship and be discoverable"
+    return skill
+
+
+def test_the_image_skill_is_discoverable_and_triggers_on_any_image(store):
+    """It is loaded on demand, so its description is the only part she sees
+    before deciding: it has to fire on making or editing ANY image, not only
+    on drawing herself — the in-the-picture judgement is inside it."""
+    assert _IMAGE_SKILL in {s.name for s in store.available()}
+    desc = _flat(_image_skill(store).description).lower()
+    assert "make or edit any image" in desc
+
+
+def test_the_image_skill_names_the_canonical_asset_by_its_full_sha(store):
+    """The handle in the body IS the asset's content address. A re-rendered
+    asset changes its bytes, and this goes red instead of the skill naming a
+    picture nobody holds."""
+    import hashlib
+
+    body = _image_skill(store).instructions
+    handles = set(re.findall(r"\[image ([0-9a-f]{64})\]", body))
+    assert handles == {hashlib.sha256(_CANONICAL_ASSET.read_bytes()).hexdigest()}
+
+
+def test_the_image_skill_puts_the_in_the_picture_judgement_first(store):
+    """Operator, 2026-09-23: the first thing she decides is whether she herself
+    appears in the picture asked for, with the reason each way, as a judgement
+    and not a list of trigger phrases. Her picture is never a default."""
+    body = _flat(_image_skill(store).instructions)
+    first = body.split("## ", 2)[1]
+    assert first.startswith("Are you in the picture?")
+    assert "decide whether you yourself appear in the picture" in first
+    assert "keeps you recognisable" in first
+    assert "puts you where you were not asked to be" in first
+    assert "never a default" in first
+    # A menu of phrases is the shape the operator ruled out.
+    for phrase in ("draw yourself", "draw me", "us with you"):
+        assert phrase not in first.lower()
+
+
+def test_the_image_skill_keeps_the_user_photo_and_no_guess_rules(store):
+    body = _flat(_image_skill(store).instructions)
+    assert "A photo of a person in the room is not you" in body
+    assert "ask which one; never guess" in body
+
+
+def test_the_image_skill_carries_every_anchor_and_rule_of_the_spec(store):
+    """`design/self-reference/05-visual-identity-spec.md` is the source; these
+    are its load-bearing clauses, one needle each. Compressing the prose is how
+    a rule gets deleted as «restatement», so each one is pinned."""
+    body = _flat(_image_skill(store).instructions)
+    for needle in (
+        # identity rule
+        "there is no human or photoreal version",
+        "a character that exists digitally, not an illustration imitating a real person",
+        # form and the proportion constraint
+        "2.5 to 3 heads tall", "never a shrunken real person",
+        "Your proportions are identity",
+        "when anatomy and the head-to-body ratio disagree, the ratio wins",
+        # face
+        "oval eyes, no visible iris or white", "pink blush on both cheeks",
+        "slightly deadpan", "never over-acted or conventionally anime",
+        # hair, clothes, earphones, backpack
+        "messy high bun", "face-framing strands", "side-parted",
+        "light-grey zip hoodie", "plain white top", "blue-grey jeans, never fitted",
+        "white low-top sneakers", "no logos, text, jewellery",
+        "White wired earphones are permanent", "inline remote",
+        "never by default",
+        # rendering
+        "soft matte skin", "Not photorealism", "Pixar-style exaggeration",
+        "generic AI-girl",
+        # the eight anchors
+        "Eight anchors",
+    ):
+        assert needle in body, needle
+    anchors = body.split("Eight anchors", 1)[1].split(":", 1)[1].split(".", 1)[0]
+    assert len([a for a in anchors.split(";") if a.strip()]) == 8
+
+
+def test_the_image_skill_has_one_section_per_configured_model(store, example_config):
+    """A new model or provider adds a section rather than rewriting the skill;
+    the ones present are the models the config template configures."""
+    xai = example_config.image_gen.xai
+    headings = [ln for ln in _image_skill(store).instructions.splitlines()
+                if ln.startswith("### ")]
+    for model in (xai.model, xai.quality_model):
+        assert any(model in h for h in headings), model
+
+
+def test_the_image_skill_does_not_restate_the_tool_description(store):
+    """DEC-150: the schema is the one place a tool is described. The prompt
+    recipe and the three-slot limit live in `generate_image`'s docstring."""
+    body = _image_skill(store).instructions
+    for restated in ("[what the photos show]", "reference_2", "up to 3", "UP TO 3"):
+        assert restated not in body, restated
+
+
+def test_the_image_skill_is_not_in_the_assembled_doctrine():
+    """It is on demand. If its body reached the always-loaded prompt it would be
+    paid for on every turn, which is the placement the operator ruled out."""
+    from nora.doctrine.loader import DoctrineStore
+    from nora.obs.metrics import Metrics
+
+    store = DoctrineStore(ROOT / "nora" / "doctrine", canary="C", metrics=Metrics())
+    for audience in ("tag", "heartbeat", "participation", "proactive"):
+        text = store.get(applies_to=audience).doctrine_text
+        assert "Eight anchors" not in text
+        assert "[image 535e4da5" not in text
+    assert not (ROOT / "nora" / "doctrine" / "appearance.md").exists()
 
 
 # --- The self-account's factual claims, and the reads that make them true -------
