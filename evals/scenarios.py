@@ -30,6 +30,7 @@ import yaml
 from strands_evals import Case, Experiment
 
 from evals.backbone import SNAPSHOT_KEYS, MeetsGrader, Spec, ToolRouteGrader, nora_task
+from nora.subject.transport import TRANSPORT_STATES
 
 _CORPORA = Path(__file__).parent / "corpora"
 
@@ -50,7 +51,15 @@ PARKING_REASONS = frozenset({"P-A"})
 COUNTERFACTUAL_KEYS = frozenset({"varies", "why"})
 #: The tiers a case may vary. Closed, because the whole value of this state is
 #: that it names a small, argued set rather than becoming a general override.
-COUNTERFACTUAL_TIERS = frozenset({"culture"})
+#:
+#: `transport` joined 2026-09-24 (design/self-awareness/05): whether a network's
+#: connection is working when she is asked to relay to it. Health at an
+#: anchor's instant is recorded nowhere — the sandbox HOLDS it at what
+#: production renders on an ordinary turn (every network up,
+#: `nora.subject.transport`) — so «Discord is down right now» cannot be a real
+#: moment and can only be a varied one. The varied states ride in
+#: `metadata.transport`, which no other case may state.
+COUNTERFACTUAL_TIERS = frozenset({"culture", "transport"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,6 +159,21 @@ def _check(name: str, row: dict[str, Any]) -> None:
                 "CLOSED on purpose — a general override is what this state "
                 "exists instead of"
             )
+    varied = (row.get("metadata") or {}).get("transport")
+    if varied is not None and (counterfactual or {}).get("varies") != "transport":
+        raise ValueError(
+            f"{name}: case {row['name']!r} states `metadata.transport` without "
+            "being a counterfactual that varies `transport`. The tier is held "
+            "at production's ordinary value for every other case; a case that "
+            "changes it is a manipulation and is counted as one"
+        )
+    if varied is not None:
+        bad = {k: v for k, v in dict(varied).items() if v not in TRANSPORT_STATES}
+        if not varied or bad:
+            raise ValueError(
+                f"{name}: case {row['name']!r}'s `metadata.transport` must map "
+                f"networks to one of {sorted(TRANSPORT_STATES)}; got {varied!r}"
+            )
     parked = row.get("parked") or {}
     if parked:
         if counterfactual:
@@ -237,6 +261,10 @@ CORPUS_ENTRY: dict[str, str] = {
     "proactive_decide": "dreamer",
     "proactive_act": "proactive_act",
     "tool_selection": "tag",
+    # design/self-awareness/05: what she says about WHERE she is. A tag, and
+    # judged — "did she reply" says nothing about whether the reply named the
+    # right networks, or recited them unasked.
+    "presence": "tag",
 }
 
 #: S2 — graded on WHICH TOOL ran, not on whether she replied
@@ -247,11 +275,11 @@ ROUTED_CORPORA = frozenset({"tool_selection"})
 
 #: S3 (grounding)/S9 (injection) — "did she reply" is structural; "was the
 #: reply right" needs a judge (`10-the-scenario-map.md` §3). Every case in
-#: these five corpora expects `reply`, so judging unconditionally (once a
+#: these six corpora expects `reply`, so judging unconditionally (once a
 #: judge is configured) adds no second selection rule.
 JUDGED_CORPORA = frozenset({
     "being_contradicted", "identity_grounding", "source_scope",
-    "injections", "transcript_injection",
+    "injections", "transcript_injection", "presence",
 })
 
 

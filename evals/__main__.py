@@ -48,6 +48,7 @@ CORPUS_CLASS: dict[str, str] = {
     "participation": "S7",
     "injections": "S9",
     "transcript_injection": "S9",
+    "presence": "S3",
 }
 
 
