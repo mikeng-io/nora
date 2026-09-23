@@ -26,8 +26,9 @@ bound to `nora.platform.signal.roster.SignalRoster` by
 (`SocialProvider`, bound to `nora.infra.social`'s THREE implementations —
 `OpenCliBridgeClient`, `InstagramSocialClient` and the `SocialRouter` in front
 of them — by `tests/contract/test_social_provider_contract.py`, which also
-drives `FakeSocialSubjectIndex` (`SocialSubjectIndex`, whose production
-implementation does not exist yet — see that class's docstring). Adding such a
+drives `FakeSocialSubjectIndex` (`SocialSubjectIndex`, bound to
+`nora.infra.social.PersonsSubjectIndex` by
+`tests/contract/test_social_subject_index_contract.py`). Adding such a
 fake without one is a project rule violation, not a shortcut.
 
 `FakeArtifactIngest` is still also exercised on its own by
