@@ -83,6 +83,11 @@ _SPECS_ONLY = frozenset({
     # `ToolRegistry.build`, and never touched by `build_tools`' non-Dreamer
     # callers.
     "origin_rooms",
+    # design/tool-catalogue/02: `load_tools`' per-turn shelf. Created and
+    # stocked inside `ToolRegistry.surface()`, which is the only thing that
+    # knows what was deferred; a `build_tools` caller has no shelf to pass,
+    # and `load_tools` answers `unavailable` without one.
+    "shelf",
 })
 
 

@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Phase B of design/tool-catalogue: every loop (tag, fire, Dreamer) now takes its tools from one builder, ToolRegistry.surface(), and a load_tools verb exists for deferred loading. Nothing defers yet (defer=False everywhere), so every turn is handed exactly the tools it was before; the switch is phase C."
+}

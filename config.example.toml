@@ -259,6 +259,12 @@ temperature = 0.7
 #
 # `high` → `low` (operator, 2026-08-21).
 reasoning_effort = "low"
+# design/tool-catalogue phase C. true: only the six hot tools ship with full
+# schemas; every other tool is one line in <tool_catalogue>, loaded on demand
+# with `load_tools` (and `[llm.limits] turns` rises by one for that call).
+# false: every schema resident, as before. Tag and fire paths only — the
+# Dreamer never defers.
+defer_tools = false
 # 30 → 60 (2026-08-07): a REAL photo through MiMo measures 12.9 s in-container,
 # and the vision per-call budget derives from THIS value — at 30 it computed 9 s,
 # so every real image timed out while the tiny probe PNG passed.

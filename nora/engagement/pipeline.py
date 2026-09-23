@@ -203,6 +203,7 @@ class EngagementPipeline:
         context_window: int,
         timeout_seconds: float,
         limits: dict[str, Any],
+        defer_tools: bool = False,
         metrics: Any,
         spawn: Callable[[Coroutine[Any, Any, None]], Any],
         slots: ConversationSlots,
@@ -247,6 +248,7 @@ class EngagementPipeline:
         self._context_window = context_window
         self._timeout_seconds = timeout_seconds
         self._limits = limits
+        self._defer_tools = defer_tools
         self._metrics = metrics
         self._spawn = spawn
         self._reactions = reactions
@@ -722,7 +724,9 @@ class EngagementPipeline:
                 # switched off, and `about` must do the real lookup in both.
                 tagger_card_injected=bool(ctx.tagger_card),
             )
-            tools = self._tool_registry.build(
+            surface = self._tool_registry.surface(
+                # design/tool-catalogue phase C: `[llm] defer_tools`.
+                defer=self._defer_tools,
                 store=self._audit, conversation_id=msg.conversation_id,
                 conversation_type=msg.conversation_type, persons=self._persons,
                 honcho=self._memory, deliverer=handle.deliverer,
@@ -756,6 +760,7 @@ class EngagementPipeline:
             # construction.
             pre_fill = build_prefill(
                 ctx, display_name=self._display_name, context_window=self._context_window,
+                catalogue=surface.prompt_catalogue,
             )
             tag_message = build_tag_message(
                 ctx, tagger_name=tagger_name, display_name=self._display_name,
@@ -777,10 +782,11 @@ class EngagementPipeline:
                    "nora.note_index_entries": len(ctx.notes)},
             ):
                 ok, llm_elapsed, stop_reason, final_text, trace = await invoke.run(
-                    runner=self._runner, doctrine=doctrine, tools=tools, pre_fill=pre_fill,
+                    runner=self._runner, doctrine=doctrine, tools=surface.tools, pre_fill=pre_fill,
                     guard=handle.guard, tool_call_log=handle.tool_call_log,
                     reasoning_watch=handle.reasoning_watch,
-                    tag_message=tag_message, limits=self._limits, ctx=ctx,
+                    tool_hooks=surface.hooks,
+                    tag_message=tag_message, limits=surface.limits(self._limits), ctx=ctx,
                     timeout_seconds=self._timeout_seconds, metrics=self._metrics,
                     # This pipeline IS the tag path; the NAME stays at the
                     # call site rather than becoming a default so an omitted

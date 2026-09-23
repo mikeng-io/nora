@@ -83,6 +83,7 @@ class AgentRunner(Protocol):
         guard: Any,
         tool_call_log: Any = None,
         reasoning_watch: Any = None,
+        tool_hooks: tuple[Any, ...] = (),
         tag_message: str,
         limits: dict[str, Any],
         ctx: TagContext,
@@ -110,6 +111,7 @@ async def run(
     guard: Any,
     tool_call_log: Any = None,
     reasoning_watch: Any = None,
+    tool_hooks: tuple[Any, ...] = (),
     tag_message: str,
     limits: dict[str, Any],
     ctx: TagContext,
@@ -158,6 +160,7 @@ async def run(
             runner.invoke(
                 doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
                 tool_call_log=tool_call_log, reasoning_watch=reasoning_watch,
+                tool_hooks=tool_hooks,
                 tag_message=tag_message, limits=limits, ctx=ctx,
                 trace_attributes=build_trace_attributes(ctx, doctrine),
             ),

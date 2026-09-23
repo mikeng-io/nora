@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -339,6 +340,7 @@ def create_agent(
     guard: ReplyGuard,
     tool_call_log: ToolCallLog | None = None,
     reasoning_watch: HookProvider | None = None,
+    tool_hooks: Sequence[HookProvider] = (),
     trace_attributes: dict,
     retry: RetryPolicy,
     skills_dir: str | Path | None = None,
@@ -387,6 +389,11 @@ def create_agent(
     hooks: list[HookProvider | HookCallback[Any]] = [guard]
     if tool_call_log is not None:
         hooks.append(tool_call_log)
+    # AFTER the guard: `BeforeToolCallEvent` dispatches in registration order,
+    # and a tool-surface hook (`ShelfLoader`) must see the guard's verdict so
+    # it never loads a tool the guard cancelled. Before `reasoning_watch`,
+    # which must stay last for its own reason (below).
+    hooks.extend(tool_hooks)
     # LAST, and the position is load-bearing rather than tidy.
     # `BeforeModelCallEvent` dispatches in REGISTRATION order (only the After
     # events reverse), so a watch registered after `ReplyGuard` reads an

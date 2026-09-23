@@ -85,8 +85,13 @@ is where they ARE"). Its first sentence needs to carry the liveness.
 
 ## Where it sits
 
-The doctrine's tier order, at the slot the capability block used to occupy
-(order 35, between `conduct` and `constraints`). It is a **derived** kind, so:
+**Revised 2026-09-23** — a context block through the context-assembly registry,
+rendered per scope from `ToolSurface.catalogue`; see `04` §6. The catalogue
+varies by room and by Dreamer adaptor, which a lane-static doctrine tier
+cannot express. The original plan follows for the record:
+
+~~The doctrine's tier order, at the slot the capability block used to occupy
+(order 35, between `conduct` and `constraints`).~~ It would have been a **derived** kind, so:
 
 - It cannot be authored as a file — `check_kind_boundaries` already refuses a
   file claiming a derived kind.

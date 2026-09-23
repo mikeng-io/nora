@@ -299,6 +299,7 @@ def _build_pipeline(
     tag_trace_store=None,
     debrief_wiring=None,
     decisions=None,
+    defer_tools: bool = False,
 ):
     # Always a real (fake) store, never `None`: every scenario below can read
     # `pipeline._tag_trace_store.saved` (mirroring how `pipeline._slots` is
@@ -332,6 +333,7 @@ def _build_pipeline(
         context_window=10,
         timeout_seconds=timeout_seconds,
         limits=LIMITS,
+        defer_tools=defer_tools,
         metrics=metrics,
         spawn=background.spawn,
         llm_state=llm_state,
@@ -412,6 +414,52 @@ async def test_authorized_conversation_receives_pulse_tools():
     await _drain(background)
     delivered_tools = pipeline._runner.calls[-1]["tools"]
     assert any(t.tool_name == "pulse_server_status" for t in delivered_tools)
+
+
+# ---------------------------------------------------------------------------
+# design/tool-catalogue phase C — `[llm] defer_tools` on the tag path.
+# ---------------------------------------------------------------------------
+
+
+def _prompt_text(call: dict) -> str:
+    return "\n".join(
+        block.get("text", "")
+        for message in call["pre_fill"] for block in message["content"]
+    )
+
+
+async def test_deferring_ships_the_hot_set_the_loader_and_the_catalogue():
+    """The switch, end to end through the pipeline: the model is handed the
+    hot tools plus `load_tools`, the prompt carries `<tool_catalogue>`, and
+    the loop gets one more turn for the load. All three come from ONE
+    `ToolSurface`, so they cannot disagree about what was deferred."""
+    from nora.agent.tools import HOT_TOOLS, LOADER_TOOL
+
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(defer_tools=True)
+    await pipeline.run(_request())
+    await _drain(background)
+    call = pipeline._runner.calls[-1]
+    names = {t.tool_name for t in call["tools"]}
+    assert names == (HOT_TOOLS | {LOADER_TOOL})
+    assert "<tool_catalogue" in _prompt_text(call)
+    assert "weather" in _prompt_text(call)  # a shelved tool is still NAMED
+    assert call["limits"]["turns"] == LIMITS["turns"] + 1
+
+
+async def test_without_deferral_nothing_changes():
+    """`defer_tools = false` is the pre-phase-C turn: every admitted schema,
+    no loader, no catalogue block, the configured turn ceiling."""
+    from nora.agent.tools import LOADER_TOOL
+
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline()
+    await pipeline.run(_request())
+    await _drain(background)
+    call = pipeline._runner.calls[-1]
+    names = {t.tool_name for t in call["tools"]}
+    assert LOADER_TOOL not in names
+    assert "weather" in names
+    assert "<tool_catalogue" not in _prompt_text(call)
+    assert call["limits"] == LIMITS
 
 
 # ---------------------------------------------------------------------------

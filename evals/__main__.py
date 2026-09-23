@@ -139,11 +139,23 @@ def _print_spend() -> None:
     if spend["truncated"]:
         line += f"   TRUNCATED: {spend['truncated']}"
     print(line)
+    # The SUBJECT'S OWN TURNS only — the calls under her `invoke_agent` span,
+    # without background passes the drive also spawns (the standing fold).
+    # This is the per-turn unit `design/tool-catalogue/05` §3 gates on.
+    turn = spend.get("turn") or {}
+    if turn.get("turns"):
+        n = turn["turns"]
+        print(
+            f"  turn:  {turn['calls']} call(s) over {n} turn(s) "
+            f"({turn['calls'] / n:.2f}/turn), in/turn={turn['input'] // n} "
+            f"(fresh {turn['fresh'] // n}, cached {turn['cached'] // n}), "
+            f"out/turn={turn['output'] // n}"
+        )
 
 
 def _run_one(
     name: str, *, source_url: str, judge: Judge | None, sample: int,
-    only: frozenset[str] | None = None,
+    only: frozenset[str] | None = None, all_reasons: bool = False,
 ) -> bool:
     experiment, task = experiment_for(
         name, source_url=source_url, judge=judge, sample=sample, only=only,
@@ -163,7 +175,7 @@ def _run_one(
         reasons: dict[str, list[str]] = {}
         for case_row, outputs in zip(report.cases, report.detailed_results, strict=True):
             for out in outputs:
-                if getattr(out, "label", None) != PASS:
+                if all_reasons or getattr(out, "label", None) != PASS:
                     reasons.setdefault(base_name(case_row["name"]), []).append(
                         f"{out.label}: {out.reason}"
                     )
@@ -233,6 +245,11 @@ def main() -> int:
             f"judge draws per case (default {DEFAULT_SAMPLES}). MEASURED at "
             "~211s a draw — lower it deliberately for a cheap run and say so"
         ),
+    )
+    ap.add_argument(
+        "--reasons", action="store_true",
+        help="print every case's grader reason, PASS included — for a "
+             "routing corpus that is the list of tools each draw executed",
     )
     ap.add_argument(
         "--sample", type=int, default=1,
@@ -309,7 +326,7 @@ def main() -> int:
     for name in names:
         ok = _run_one(
             name, source_url=source_url, judge=judge, sample=args.sample,
-            only=only,
+            only=only, all_reasons=args.reasons,
         ) and ok
     return 0 if ok else 1
 

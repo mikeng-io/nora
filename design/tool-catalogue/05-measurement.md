@@ -112,6 +112,79 @@ this is invisible to a log grep — no tool logged its own name, so zero was
 consistent with "every turn" and with "never". Measure it on the eval suite
 with the counter from `04` §7, not from production logs.
 
+**2f — Per-turn accounting. The building block exists; the wiring does not.**
+
+**Corrected 2026-09-22, same day it was written.** An earlier version of this
+section said "the instrument exists; do not build one." That was wrong, and
+the way it went wrong is worth keeping: a peer named `traced_nora_task`, I
+verified that it exists and that a test pins it, and I did not check whether
+anything CALLS it. Verifying the artefact named is not verifying the claim
+made.
+
+`evals/scenarios.py:231` is the whole correction:
+
+```python
+experiment = Experiment(cases=cases, evaluators=[MeetsGrader()])
+return experiment, nora_task(spec)          # UNTRACED
+```
+
+Every corpus runs the untraced task under a single `MeetsGrader`.
+`traced_nora_task` has exactly one caller in the tree — its own unit test. **No
+corpus produces a trajectory today**, so nothing can count `InferenceSpan`s
+yet.
+
+What that changes: gate 2f is **not closed**, it is **owned**, by the eval
+suite's session. It is real work — a traced task path, the SDK evaluator, and
+an expected-tool label (which fits in the free-form `metadata`, so no corpus
+format change). Not a dict entry.
+
+What is still true, and is why this is wiring rather than construction:
+
+`evals/backbone.py:649` `traced_nora_task(spec)` is
+`eval_task(TracedHandler())(nora_task(spec))`. `TracedHandler.after()` does
+`processed.setdefault("trajectory", session)` and `nora_task`'s dict never
+sets that key, so it **adds a `Session` onto the same
+`output`/`environment_state` shape every other grader already reads** — no
+custom evaluator, no second path. Pinned by
+`tests/unit/test_eval_backbone.py:309`.
+
+From that trajectory, per TURN and by construction:
+
+| want | read |
+|---|---|
+| model calls per turn | count the `InferenceSpan`s |
+| end-to-end turn latency | the single `AgentInvocationSpan`'s duration |
+| which tools were selected | `ToolExecutionSpan`s — and `ToolSelectionAccuracyEvaluator` / `ToolParameterAccuracyEvaluator` / `ToolCalled` ship in the SDK and read `actual_trajectory` directly |
+
+Constraint carried by `traced_nora_task`'s own docstring: the caller must hold
+`handler` for the run's lifetime (one shared exporter) and pass
+`max_workers=1` — serial only.
+
+**The 2c baseline must be taken on BOTH sides of the switch.** Changing which
+schemas are resident changes the prompt, so any number measured before PR C is
+incomparable to one measured after — and the prefix cache invalidates with it,
+which surfaces as cost rather than as an error. The same anchored cases run
+either side, before and after, or the comparison is not one.
+
+**A caution on the 3-vs-4 call question.** A driven case recorded in
+`design/evaluation/10-the-scenario-map.md` §13 shows **four** `InferenceSpan`s
+in one turn. That is a `participation` case, not a tag turn, and the tag trace
+this bundle measured (`836eda48…`) ran **three** `chat` generations. So the
+baseline is lane-dependent and n=1 on the participation side. **Measure the
+baseline on the same lane and the same entry point as the change**, before
+attributing a 4th call to `load_tools`.
+
+**Reading `10-the-scenario-map.md`: §13 supersedes the §1 table.** The table
+(line 32) records S2 coverage as "0 — `Outcome` carries no tool calls"; §13
+records S2 as built 2026-09-19. The table is stale and was repeated to the
+operator and onto issue #297 before being caught. `Outcome` itself
+(`evals/rebuilt/domain.py:129-144`) genuinely carries no tool calls — the
+trajectory is a separate channel, which is how the row reads false while
+being literally true about `Outcome`.
+
+**Ownership:** the suite belongs to another session. Nothing under `evals/`
+is written here without their decision — see `§5`.
+
 **2e — Cache.** Before/after on `cache_read_input_tokens` across ≥20 real
 turns, split by whether the turn called `load_tools`. Expectation: the stable
 resident prefix caches at least as well; post-`load_tools` calls may miss. An
@@ -144,6 +217,52 @@ regression however good the token numbers look.
 The per-turn token target is deliberately ~30% rather than the ~50% the
 per-call arithmetic suggests — that gap IS the extra round trip, priced in
 rather than assumed away.
+
+## 3a. The result — measured 2026-09-23/24, and the switch stays OFF
+
+`evals/corpora/tool_selection.yaml`, 16 routing cases on one anchored Signal
+room, `python -m evals tool_selection --sample N --reasons`, graded on what
+EXECUTED (`ToolRouteGrader`). Per-turn numbers are the subject's own calls
+only (`_model_calls(agent=…)`, after fixing a double count). Five arms, the
+same build except the named variable:
+
+| arm | schemas | catalogue line | direct-call hook | n | routing | calls/turn | uncached in/turn | cached in/turn |
+|---|---|---|---|---|---|---|---|---|
+| A2 | all resident | first sentence | — | 3 | 48/48 | 3.54 | 6.7k | 114.7k |
+| B2 | 6 hot + catalogue | first sentence | no | 3 | 45/48 | 5.15 | 14.0k | 78.3k |
+| C | 6 hot + catalogue | first sentence | yes | 3 | 46/48 | 4.73 | 13.3k | 72.1k |
+| A′ | all resident | L1 (what + when) | — | 5 | **80/80** | 3.56 | 10.3k | 113.6k |
+| D | 6 hot + catalogue | L1 (what + when) | yes | 5 | 79/80 | 4.92 | 19.5k | 73.0k |
+
+**What it says.**
+
+- Deferring saves ~36% of input tokens and moves them from CACHED to
+  UNCACHED: the tools array changes after a load, so the prefix misses. The
+  resident prompt already caches ~92–94%. D is cheaper than A′ only if a
+  cached token costs more than ~23% of an uncached one
+  (10.3 + 113.6r = 19.5 + 73.0r); at the usual cache discounts it costs more,
+  and it adds ~1.4 model calls a turn. **§3's per-turn gate fails; the switch
+  (`[llm] defer_tools`) stays `false`.**
+- The per-call framing in §0/§3 was the error this whole section warned
+  about, one level down: tokens were measured, PRICE was assumed.
+- The first-sentence catalogue line was the selection defect: 2 of 55 lines
+  carried a when-to-call clause, and B2/C lost `calculate`. Redefining the
+  line as ADR 0007's L1 (gated by `test_the_opening_paragraph_is_an_l1`) fixed
+  it (D 5/5) and was neutral with every schema resident (A′ 80/80) — ADR 0007
+  §3's re-measure for 40 opening rewrites.
+- With the hook she still often calls a shelved tool twice: the first call's
+  arguments are guessed from the catalogue line and fail validation.
+- D's one miss: `online_now` lost to the always-resident `pulse_*` MCP tools.
+
+**What ships regardless of the switch:** one builder (`ToolRegistry.surface`,
+`ToolScope`, `ToolSurface`) for every loop; the L1 opening convention and its
+gate; the catalogue derived from both; `tool_selection` and the eval-spend
+fixes. `load_tools` and `ShelfLoader` stay built, tested and switched off.
+
+**When to re-measure:** the tool set grows with the per-network social split
+(`instagram_read`/`instagram_search`, then X and Threads), which raises the
+resident cost; or the provider's cache discount changes. Either can move
+the break-even — the same corpus, both arms, one command.
 
 ## 4. After it ships
 

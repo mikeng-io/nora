@@ -2661,7 +2661,8 @@ async def build_dependencies(
         debounce=debounce, canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
         ai_peer=cfg.memory.ai_peer,
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,
-        limits=limits, metrics=metrics, spawn=background.spawn, llm_state=llm_state,
+        limits=limits, defer_tools=cfg.llm.defer_tools,
+        metrics=metrics, spawn=background.spawn, llm_state=llm_state,
         reactions=cfg.engagement.reactions.enabled,
         rosters=rosters,
         preview_source=preview_source,
@@ -2757,7 +2758,7 @@ async def build_dependencies(
             canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
                 ai_peer=cfg.memory.ai_peer,
             context_window=cfg.store.context_window,
-            limits=limits,
+            limits=limits, defer_tools=cfg.llm.defer_tools,
             # `[heartbeat]`, not `[llm]`: nobody is waiting on a fire turn, so
             # the 60s chosen for a person staring at a group chat is the wrong
             # bound (§5.4).

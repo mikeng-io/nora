@@ -54,7 +54,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
-from typing import Literal, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -143,6 +143,7 @@ from .links import LinkCarry
 from .ports import ToolSpec, adapt
 from .relay import Relay
 from .room import Room, RoomView, _key, _names_of, find_by_name
+from .surface import ToolShelf, load_onto
 from .whereis import DisclosureGuard, Whereis, _dedupe, resolvable_places
 
 log = logging.getLogger("nora.tools")
@@ -1175,6 +1176,23 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # conservative declaration rather than a guessed one. The reading that
     # would change it is the plugin's activation being shown to write nothing
     # outside the turn, which would make it `none`.
+    # `load_tools` (design/tool-catalogue/02) — registry plumbing, not a fact
+    # source. 3 is sized on measured cold-tool demand: p90 is 2 distinct
+    # cold tools per turn, and `LOAD_TOOLS_MAX_NAMES` (4 per call) means three
+    # calls cover p90 with a retry after an `unknown` to spare. `read_only`
+    # because it reads the registry and changes nothing outside the turn — the
+    # tool it registers lives in THIS turn's agent and dies with it — which
+    # also keeps it inside the Dreamer's ceiling. `three_state` because its
+    # result carries R-27's status axis and must be validated fail-closed like
+    # every other dict a tool hands the model — which would make it a LOOKUP
+    # for R-97 by the derivation in `ToolRegistry.lookup_tools`, so that
+    # method names it as the one exception: «did I load a schema» is not «did
+    # this turn come back with something».
+    "load_tools": NativeTool(3,
+                             terminal=False, time_shiftable=None, read_only=True,
+                             source_tier=None,
+                             side_effect_state="none", idempotency="idempotent", retry="safe",
+                             output_contract="three_state"),
     "skills": NativeTool(2,
                          terminal=False, time_shiftable=None, plugin=True,
                          side_effect_state="unknown", idempotency="non_idempotent", retry="never"),
@@ -1187,6 +1205,39 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
 NATIVE_TOOL_BUDGETS: Mapping[str, int] = {
     name: spec.budget for name, spec in NATIVE_TOOLS.items()
 }
+
+
+# The tools that stay RESIDENT — full schema in every prompt, never fetched.
+#
+# ONE declaration, read by both the catalogue renderer (which marks these) and
+# the builder (which ships them). A marker saying a tool is already loaded
+# while the builder did not load it is worse than no marker at all, so the two
+# must not be able to disagree; `tests/unit/test_tool_catalogue.py` pins that.
+#
+# MEASURED, not chosen. Langfuse, 2,000 tool calls over 2026-08-12 → 09-21:
+# `web_search` 497 (24.9%), `send_reply` 195 (9.8%), `note_read` 152 (7.6%),
+# `web_fetch` 135 (6.8%), `now` 63 (3.1%), `search_memory` 59 (3.0%) — 55.2%
+# of all calls, for 2,606 tokens of schema. Those turns never fetch anything.
+# Re-derive it when a tool's share moves; it is a fact about 2026-08/09, not a
+# constant. The next two candidates are `play_music` (3.5%, but already
+# Discord-scoped so it is free there and absent elsewhere) and `where_is`
+# (3.2%).
+#
+# `send_reply` is here REGARDLESS of its share. It is the terminal verb —
+# `ReplyGuard` ends the turn by observing it (DEC-21/DEC-32) — so a turn that
+# had to fetch it before it could reply is a turn that can fail to end.
+#
+# A short window lies here: over 3 days `web_search` barely registers and
+# `note_read` leads. Size this on 30+ days or it names the wrong six.
+HOT_TOOLS: frozenset[str] = frozenset({
+    "web_search", "send_reply", "note_read", "web_fetch", "now", "search_memory",
+})
+
+# The loader's name, for the few places that must treat it as plumbing rather
+# than a capability: it is never on the shelf it loads from, never a catalogue
+# line (the catalogue's header already says how to load), and never resident
+# unless something is deferred.
+LOADER_TOOL = "load_tools"
 
 # `load_transcript`'s clamp, and the single source both the clamp and the
 # model-facing docstring below read from — `tests/test_tools.py::
@@ -2573,6 +2624,7 @@ def build_tool_specs(
     # (every tag-path caller, and a unit with no proactive wiring) keeps
     # the home-room behaviour — the honest, unchanged default.
     origin_rooms: Mapping[str, OriginRoom] | None = None,
+    shelf: ToolShelf | None = None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -2739,7 +2791,8 @@ def build_tool_specs(
         return int(now_fn().timestamp() * 1000)
 
     async def who_said(words: str) -> dict:
-        """Check who said something, in the messages you can see right now.
+        """Check who said something, in the messages you can see right now. Call
+        this BEFORE you put words in somebody's mouth.
 
         Call this BEFORE you tell anybody 「你話咗 X」, 「佢頭先話 Y」, or put words in
         somebody's mouth — attributing a line to the wrong person is worse than not
@@ -2869,7 +2922,8 @@ def build_tool_specs(
                 {"status": "ok", "said_by": hits, **_asked_about(words)})
 
     async def load_transcript(limit: int = LOAD_TRANSCRIPT_DEFAULT) -> dict:
-        """Read older messages from this conversation.
+        """Read older messages from this conversation. Only call this if you need
+        to look further back than what you were shown.
 
         You already have the most recent messages in front of you. Only call this if you
         need to look further back than what you were shown. `messages` holds them,
@@ -2993,8 +3047,10 @@ def build_tool_specs(
 
     async def group_members() -> dict:
         """Who is in this conversation right now. Call this when somebody asks
-who is here, who is in the group, how many people are in it, or whether a
-particular person is around.
+who is here or whether a particular person is around.
+
+Call this when somebody asks who is here, who is in the group, how many
+people are in it, or whether a particular person is around.
 
 SHOULD — how to use it well: do NOT guess from the transcript; people
 who have not spoken recently are still here, and people mentioned in a
@@ -3022,7 +3078,8 @@ cannot tell you about anyone outside it."""
         }
 
     async def lookup_person(name: str) -> dict:
-        """Work out who a name or nickname in this conversation refers to.
+        """Work out who a name or nickname in this conversation refers to. Call
+        this when a message uses a name you do not recognise.
 
         Call this when a message uses a name you do not recognise — a nickname,
         a Chinese name, a handle — and knowing who it is changes your answer.
@@ -3069,6 +3126,7 @@ cannot tell you about anyone outside it."""
 
     async def about(person: str, query: str | None = None) -> dict:
         """What you know about someone in this conversation — their standing profile.
+        Call this when your answer depends on knowing somebody.
 
         Call this when your answer depends on knowing somebody — what they do,
         what they like, how they usually are — and you were not already given
@@ -3261,10 +3319,11 @@ cannot tell you about anyone outside it."""
         })
 
     async def ask_memory(person: str, depth: str = "low", query: str | None = None) -> dict:
-        """Work out an answer about someone from what you've come to understand
-        of them — a specific QUESTION, not a profile dump.
+        """Work out an answer about someone — a specific QUESTION, not a profile
+        dump. Reach for it when a profile lookup is not enough.
 
-        This REASONS over everything you've gathered about the person and
+        The answer comes from what you've come to understand of them: this
+        REASONS over everything you've gathered about the person and
         synthesises an answer, where `about` only hands back the raw notes. Reach
         for it when a profile lookup is not enough — «would he be up for hotpot?»,
         «does she usually run late?», «how does he get to work?» — a judgement
@@ -3366,9 +3425,10 @@ cannot tell you about anyone outside it."""
 
     async def search_memory(query: str) -> dict:
         """Find where something was actually SAID in this group's history — the
-        exact words, further back than load_transcript reaches.
+        exact words. Use it to recall a specific thing somebody said a long time
+        ago.
 
-        Use it to recall a specific thing somebody said a long time ago —
+        It reaches further back than load_transcript does. Examples:
         «邊個話要book枱», «我哋幾時講過去日本» — when you need the words themselves,
         not a profile (`about`) or a reasoned answer (`ask_memory`). It searches
         what people in THIS group have said and hands back the matching lines.
@@ -3442,7 +3502,8 @@ cannot tell you about anyone outside it."""
         )
 
     async def now() -> str:
-        """The current date and time, in Hong Kong time.
+        """The current date and time, in Hong Kong time. Call this before
+        answering anything that depends on when it is.
 
         Call this before answering anything that depends on when it is — how
         long until something, whether a place is still open, what "tonight" or
@@ -3515,7 +3576,8 @@ cannot tell you about anyone outside it."""
         return out
 
     async def transit(route: str, near: str = "") -> dict:
-        """When the next buses leave on a Hong Kong bus or feeder route.
+        """When the next buses leave on a Hong Kong bus or feeder route. Call
+this for ANY question about a bus by number.
 
 Call this for ANY question about a bus by number — 「K73 幾時到」,
 「68X 仲有幾耐」, whether the last bus has gone. Never state a bus time
@@ -3617,7 +3679,8 @@ Args:
         origin: str, destination: str, mode: str = "TRANSIT", arrive_by: str = "",
         by: str = "", prefer: str = "", depart_after: str = "",
     ) -> dict:
-        """How to get from one place to another, and how long it takes.
+        """How to get from one place to another, and how long it takes. Call
+        this for ANY «how do I get from A to B».
 
         Call this for ANY «how do I get from A to B», «which way is fastest»,
         «how long to get there» — by bus and rail (the default), by car, or on
@@ -3813,6 +3876,7 @@ Args:
 
     async def place_info(name: str) -> dict:
         """How good, how pricey, and whether-open a place is — from Google.
+        Call this for anything Google Maps knows.
 
         Call this for «X 好唔好食», «邊間好啲», «幾點開門/幾點關門», «仲開唔開門», «貴唔貴» about a
         shop, a restaurant, a clinic, a mall — anything Google Maps knows. Give
@@ -3909,6 +3973,8 @@ Args:
 
     async def saved_places() -> dict:
         """The names this household has saved for places, for THIS conversation.
+        Call this the moment someone routes to — or asks WHERE — a place by a
+        PERSONAL name.
 
         Call this the moment someone routes to — or asks WHERE — a place by a
         PERSONAL name rather than a public one: «屋企», «home», «我屋企», «阿媽
@@ -3971,7 +4037,8 @@ Args:
                 "addresses": addresses or None}
 
     async def where_is(person: str) -> dict:
-        """Where somebody in this conversation was last seen.
+        """Where somebody in this conversation is RIGHT NOW — a live reading, not a pattern.
+        Call this when somebody asks where a person is.
 
         Call this when somebody asks where a person is («佢喺邊», «阿媽返咗
         屋企未»). Give it the person the way they were named — a name or
@@ -4108,6 +4175,7 @@ Args:
         what: str, name: str | None = None, days: int = 7, date: str | None = None,
     ) -> dict:
         """Where somebody in this conversation HAS BEEN — today, usually, repeatedly.
+        Call this for HISTORY questions about movement patterns.
 
         Call this for HISTORY questions about movement patterns — never about
         where someone is RIGHT NOW:
@@ -4519,10 +4587,12 @@ Args:
     _online_arms = ("online", "playing", "voice")
 
     async def online_now(what: str, names: list[str] | None = None) -> dict:
-        """Live digital activity for the people in this room — who is online,
-        who is in a voice channel, who is playing what. Call this when a
+        """Live digital activity for the people in this room. Call this when a
         question or a decision turns on whether someone is actually present
         or playing right now.
+
+        That covers who is online, who is in a voice channel, and who is
+        playing what.
 
         One of three arms, exactly one per call:
           - `what="online"` — 「Blake 而家 online 嗎」「而家有冇人喺度」: who is
@@ -4912,10 +4982,11 @@ Args:
     # the coordinate it came from never does.
 
     async def reverse_geocode(lat: float, lng: float) -> dict:
-        """What place is this coordinate? — the DEC-156 fetch surface.
+        """What place is this coordinate? Call this when a `where_been` or
+        `where_is` result carried `lat`/`lng`.
 
-        Call this when a `where_been` or `where_is` result carried
-        `lat`/`lng` and the group wants the actual spot — 「呢個係邊度?」
+        The DEC-156 fetch surface. It is for when the group wants the actual
+        spot — 「呢個係邊度?」
         「呢個座標係咩地方?」. Give it the coordinate EXACTLY as the other
         tool gave it. Do not guess or round the numbers, and do not call this
         with coordinates from anywhere else: a person TYPING a coordinate is
@@ -4988,7 +5059,8 @@ Args:
     _media_window = context_window + LOAD_TRANSCRIPT_MAX
 
     async def media_fetch(code: str = "", url: str = "", question: str = "") -> dict:
-        """Look at an image or video and say what it shows.
+        """Look at an image or video and say what it shows. Call this when
+        answering means knowing what is IN a picture or a video.
 
         Call this when answering means knowing what is IN a picture or a
         video: what a photo shows, what a screenshot or whiteboard says, what
@@ -5566,7 +5638,8 @@ Args:
         quality: str | None = None,
     ) -> dict:
         """Make an image from a text prompt, and optionally from photos already
-        in this conversation.
+        in this conversation. Call this when somebody asks you to make, draw, or
+        generate a picture.
 
         Call this when somebody asks you to make, draw, or generate a picture —
         an illustration, a logo, a birthday card, a meme, "turn this photo
@@ -5925,7 +5998,9 @@ Args:
     # inbound (other people's photos are not Nora's library).
 
     async def media_search(query: str = "") -> dict:
-        """Find previously stored media in Nora's own library.
+        """Find previously stored media in Nora's own library. Use this when
+        somebody asks you to resend, reuse, or point at an image you made or
+        fetched earlier.
 
         Use this when somebody asks you to resend, reuse, or point at an
         image you made or fetched earlier (even days ago). Search by words
@@ -6092,16 +6167,18 @@ Args:
     _search_person_names = _known_names(persons)
 
     async def web_search(query: str) -> dict:
-        """Look something up on the web — ranked results, each a title, a link and a snippet.
+        """Look something up on the web. Call this when the answer is not in the
+        conversation and is not something another tool already covers.
 
-        Call this when the answer is not in the conversation and is not something
-        another tool already covers — not a bus (`transit`), not a route
+        Results are ranked, each a title, a link and a snippet. The other tools
+        come first — not a bus (`transit`), not a route
         (`route`), not the weather (`weather`), not a person you know (`about`),
         and not a place you can look up: a shop or mall's hours, rating or whether
         it's open is `place_info`, not this.
         Good for a fact, a news item, a product, a how-to — anything on the open
-        web that no dedicated tool owns. (Real-time carpark vacancy has no
-        dedicated tool, so it belongs here.)
+        web that no dedicated tool owns. Real-time carpark vacancy is NOT this:
+        a named car park is `parking_status`, car parks near a spot are
+        `find_parking`.
 
         Do NOT search a specific post's ID (a tweet/video ID, a status number) —
         the search engine cannot resolve an opaque ID and returns junk. Read the
@@ -6202,7 +6279,8 @@ Args:
     # runs here, over the DECODED url, so `?n=%2B85212345678` cannot smuggle
     # what a raw-string scan on the un-decoded form would miss.
     async def web_fetch(url: str) -> dict:
-        """Open a specific web page and read what's actually on it.
+        """Open a specific web page and read what's actually on it. Call this
+        when somebody shares a LINK and asks about it.
 
         Call this when somebody shares a LINK and asks about it, or when a
         `web_search` snippet is not enough to answer — a specific article, a
@@ -6286,6 +6364,7 @@ Args:
     # (design/instagram-adoption/08).
     async def social_fetch(platform: str, what: str, target: str, limit: int = 5) -> dict:
         """Read a post, profile, or search results from X or Instagram. READ-ONLY.
+        Call this when somebody links or asks about something on X or Instagram.
 
         Call this when somebody links or asks about something on X (Twitter) or
         Instagram — what a post says, who an account is, what someone has been
@@ -6479,6 +6558,7 @@ Args:
 
     async def weather(place: str | None = None, forecast: bool = False) -> dict:
         """The weather in Hong Kong — current conditions, any warnings, the outlook.
+        Call this for anything about HK weather.
 
         Call this for anything about HK weather: 「今日天氣」, 「而家幾多度」, 「會唔會落雨」,
         「有冇打風 / 幾號風球」, 「呢幾日點」. One call gives you the current temperatures
@@ -6516,7 +6596,9 @@ Args:
 
     async def parking_status(name: str) -> dict:
         """How many spaces are free at a named car park, RIGHT NOW. Call this
-        when somebody asks whether a car park / venue has parking (「而家仲有
+        when somebody asks whether a car park / venue has parking.
+
+        Call this when somebody asks whether a car park / venue has parking (「而家仲有
         冇車位?」「泊車貴唔貴?」) — the live feed answers vacancy directly, where
         `web_search` cannot (real-time vacancy is not in search results).
 
@@ -6566,7 +6648,8 @@ Args:
         return {"status": "ok", **data}
 
     async def find_parking(place: str = "") -> dict:
-        """Where the nearest car parks are, around a spot the group names.
+        """Where the nearest car parks are, around a spot the group names. Call
+        this when somebody wants parking near somewhere.
 
         Call this when somebody wants parking near somewhere — «嚟緊去食飯嗰
         度附近有冇停車場», «我而家喺呢度，附近邊度泊車?». Give it the place in
@@ -6771,7 +6854,8 @@ Args:
         return persons.platform_ids(room.platform, tagger.person_id)
 
     async def play_music(query: str) -> dict:
-        """Play something in the Discord voice channel you're already in.
+        """Play something in the Discord voice channel you're already in. Call
+        this when someone asks Nora to play music.
 
         Call this when someone asks Nora to play music — a direct request
         ("play apt", "play some jazz") or a link they shared. `query` takes
@@ -6940,8 +7024,10 @@ when somebody asks what song is on.
         return _music_result(outcome)
 
     async def set_music_volume(percent: int) -> dict:
-        """Set the Discord music-player volume, when someone asks her to
-        turn the music up or down (「較細聲啲」, 「大聲啲」).
+        """Set the Discord music-player volume, up or down. Reach for it when
+        someone asks.
+
+        Reach for it when someone asks (「較細聲啲」, 「大聲啲」).
 
         `percent` is the volume as a whole number 0-200 (100 = normal).
         Only reachable when Nora can hear a music session in the room's
@@ -7378,7 +7464,8 @@ when somebody asks what song is on.
         return result
 
     async def list_reminders() -> dict:
-        """What you are still holding for THIS conversation, soonest first.
+        """What you are still holding for THIS conversation, soonest first. Call
+        this when somebody asks what's set, or before cancelling one.
 
         Call this when somebody asks what's set, or before cancelling one — the ids
         here are the only ones cancel_reminder accepts. It covers this conversation
@@ -7592,9 +7679,10 @@ Args:
         title: str, when: str = "", venue_text: str = "",
     ) -> dict:
         """Propose a NEW gathering in this conversation — call this when the
-room wants to arrange something that is not open yet. Call list_events FIRST:
-if one is already open (status "proposed"), call update_event against it
-instead of creating a second one.
+room wants to arrange something that is not open yet.
+
+Call list_events FIRST: if one is already open (status "proposed"), call
+update_event against it instead of creating a second one.
 
 Outcomes: `ok` with the id; `refused` with a note (two or more
 events are already open here — ask which one is meant, do not
@@ -7772,7 +7860,9 @@ Args:
     async def suggest_venue(event_id: str) -> dict:
         """Suggest a venue for an event already proposed here, drawn from
 what people in this conversation have said they like. Call this when somebody
-wants a place to hold an open event.
+wants a place.
+
+Call this when somebody wants a place to hold an open event.
 
 Outcomes: `ok` with `candidates` (name, address, rating,
 price_level, maps_url, and why it was suggested); `nothing_found`
@@ -7834,9 +7924,11 @@ Args:
         }
 
     async def recall_lookups(limit: int = RECALL_LOOKUPS_DEFAULT) -> dict:
-        """Pull back facts you (or an earlier turn) already looked up in
-        THIS conversation, within the last 7 days — a place's rating, a
-        route's duration, a web search's results. It is your RECORD of what
+        """Pull back what you already looked up in THIS conversation, within the last 7 days.
+        Reach for it before re-running something that might already be known.
+
+        A place's rating, a route's duration, a web search's results. It is
+        your RECORD of what
         you actually checked, in this conversation: reach for it before
         re-running place_info/route/web_search/weather/transit for
         something that might already be known — reusing what you already
@@ -8001,16 +8093,17 @@ Args:
         }
 
     async def note_read(title: str) -> dict:
-        """Read what a note in <notes> actually says.
+        """Read what a note in <notes> actually says — the only way to reach the
+        note itself. Call this before note_update, always.
 
         <notes> gives you every note's title and one line about it. That is
         enough to know a note EXISTS; it is nowhere near enough to know what is
         in it. This is the only way to reach the note itself, so pass the title
         exactly as the index shows it.
 
-        Call this before note_update, always. A note's worth is how it is
-        arranged — appending to a body you have not read rewrites structure you
-        cannot see, and you will be stopped if you try.
+        A note's worth is how it is arranged — appending to a body you have not
+        read rewrites structure you cannot see, and you will be stopped if you
+        try.
 
         Outcomes: `ok` with the note's contents; `nothing_found` when no note
         answers to that title — the titles in <notes> are the only ones there
@@ -8065,7 +8158,8 @@ Args:
         }
 
     async def note_search(query: str) -> dict:
-        """Look INSIDE notes for something their titles don't say.
+        """Look INSIDE notes for something their titles don't say. Reach for it
+        when somebody mentions a detail that might already be written down.
 
         <notes> already shows you every title, so there is nothing to gain from
         searching those. This searches note CONTENTS — reach for it when
@@ -8142,10 +8236,10 @@ Args:
 
     async def search_memory_workspace(query: str) -> dict:
         """Find where something was actually SAID, across EVERY room of this
-        workspace — not just the one in front of you.
+        workspace. Call this when the words you need could have been said
+        anywhere the same people talk.
 
-        Call this when the words you need could have been said anywhere the
-        same people talk: `search_memory` searches one conversation's history,
+        Not just the one room in front of you: `search_memory` searches one conversation's history,
         this reaches the whole workspace's. Same rules about quoting: only
         words from a NAMED person ever come back, and a line you may not
         repeat is counted and withheld rather than quoted.
@@ -8225,8 +8319,10 @@ Args:
 
     async def remember(content: str) -> dict:
         """Record a settled fact about the person speaking. Call this when
-somebody tells you something about themselves that is now just TRUE —
-«我屋企有兩隻貓», «我下個月開始返新工» — and being able to recall it later is
+somebody tells you something about themselves that is now just TRUE.
+
+Call this when somebody tells you something about themselves that is now just
+TRUE — «我屋企有兩隻貓», «我下個月開始返新工» — and being able to recall it later is
 the whole point. This writes it into your long-term memory about THAT person;
 `about` and `ask_memory` read that same store back, so what lands here is
 what you will "remember" tomorrow. Nothing else in your toolset can write a
@@ -8521,11 +8617,13 @@ Args:
         task: str, context: list[dict] | None = None, artifact_id: str | None = None,
     ) -> dict:
         """Build or research something and hand back a link to it — a report, a
-        chart, a document. Use this when someone wants a FILE, not just an
-        answer in chat. Takes anywhere from seconds to minutes; you may get the
-        result back immediately, or a "still working" status if it's taking
-        longer — in that case, tell them you're working on it and the result
-        will follow as a separate message once it's ready.
+        chart, a document. Use this when someone wants a FILE.
+
+        Use this when someone wants a FILE, not just an answer in chat. Takes
+        anywhere from seconds to minutes; you may get the result back
+        immediately, or a "still working" status if it's taking longer — in
+        that case, tell them you're working on it and the result will follow as
+        a separate message once it's ready.
 
         Args:
             task: what to build, in your own words — a clear, self-contained
@@ -8612,7 +8710,8 @@ Args:
         return {"status": "ok", "still_working": True}
 
     async def version(which: str = "") -> dict:
-        """Which version of you is running, and what was in it.
+        """Which version of you is running, and what was in it. Call this the
+        moment somebody asks about YOU as software.
 
         Call this the moment somebody asks about YOU as software — 「你而家咩
         version」, 「你更新咗啲咩」, 「V2 有咩」, 「上個version做過咩」. It reads the
@@ -8720,9 +8819,11 @@ Args:
 
     async def send_reply(text: str, reply_to: int | None = None) -> str:
         """Send a message to the group — the ONLY delivery mechanism for your reply.
-        You MUST call this tool exactly once whenever you produce a reply; do not
-        return the reply as the assistant's final message instead of calling it
-        (that path is an emergency fallback, never a proactive choice). If you
+        You MUST call this tool exactly once whenever you produce a reply.
+
+        Do not return the reply as the assistant's final message instead of
+        calling it (that path is an emergency fallback, never a proactive
+        choice). If you
         never call this, nothing is sent; it always goes to the conversation you
         were tagged in — you do not choose where.
 
@@ -8840,8 +8941,11 @@ Args:
 
     async def send_gif(candidate_id: str, caption: str = "") -> dict:
         """Send one GIF returned by `search_gifs`, optionally with a
-caption. Call this when a reaction GIF fits the reply and you already picked
-a candidate from `search_gifs` this turn.
+caption. Call this when you already picked a candidate from `search_gifs` this
+turn.
+
+Call this when a reaction GIF fits the reply and you already picked a candidate
+from `search_gifs` this turn.
 
 Pick the candidate whose title, description, and tags fit the reply. Do not
 invent an id or send a GIF whose metadata does not match your intended reaction.
@@ -8879,7 +8983,8 @@ Args:
 
     async def send_to(platform: str, text: str) -> dict:
         """Pass something somebody here said into this same group's room
-        somewhere else.
+        somewhere else. Use this when somebody here asks you to tell the others
+        in a place you are not.
 
         Use this when somebody here asks you to tell the others in a place
         you are not —
@@ -8921,56 +9026,36 @@ Args:
             from_conversation_id=conversation_id,
         )
 
-    # Music verbs are Discord-only by construction (their bodies gate on
-    # `room.platform != "discord"` first) — but the BODY gate still ships
-    # them in every non-Discord catalog, costing prompt tokens for a tool
-    # that can only ever answer "unavailable" there. 2026-09-16 operator
-    # decision (set_music_volume add): filter at CATALOG level, so a Signal
-    # (or any non-Discord) turn never sees the six music verbs at all.
-    # `room is None` appears on the REGISTRY-table path — ToolRegistry.specs()
-    # is called by tests/test_guards_terminal.py with room=None to compare
-    # specs against terminal_tools() — and keeps that caller's full table
-    # (a caller asking "what is declared" wants everything, not one room's
-    # catalog). The web catalog's full table comes from _catalog_room()
-    # returning platform="discord", not from None.
-    # `search_memory_workspace` is DREAMER-ONLY, and now actually is (#350).
-    # Its own body says why — "this verb exists for the Dreamer, whose output
-    # is verdicts, never a quote into any room" — and that sentence was false:
-    # it sat in the unconditional list, so every tag and every fire turn
-    # carried it, in every room. What it returns there is VERBATIM lines,
-    # attributed by name, from Honcho's WORKSPACE `/search`: the whole
-    # deployment, every unit. The only filter is identity.toml's entire
-    # address book (`PersonRef` has no unit, so that filter cannot be
-    # unit-shaped). A room whose policy entry names one unit could surface
-    # words said by people who are in none of its units — the crossing
-    # `send_to` refuses outright (R-49), and R-21 exists because she once
-    # listed people who had never been members.
-    #
-    # Gated on `dream_adaptor` rather than a new flag: it is already the
-    # provenance meaning "`RegistryToolSource` built this set", `""` for every
-    # tag and every fire turn. `room is None` keeps the REGISTRY-TABLE
-    # caller's full table for the same reason the music block below does — a
-    # caller asking "what is DECLARED" wants everything, not one room's
-    # catalog.
-    #
-    # Measured before removing it (Langfuse, 2026-09-03..18): 49 calls over 17
-    # traces, 44 of them Dreamer, 5 across 3 `engagement` traces. The tag path
-    # loses roughly three turns a fortnight.
-    unit_memory_specs: tuple[ToolSpec, ...] = ()
-    if dream_adaptor or room is None:
-        unit_memory_specs = (
-            _spec("search_memory_workspace", search_memory_workspace),
-        )
-    music_specs: tuple[ToolSpec, ...] = ()
-    if room is not None and room.platform == "discord":
-        music_specs = (
-            _spec("play_music", play_music),
-            _spec("skip_music", skip_music),
-            _spec("top_music", top_music),
-            _spec("stop_music", stop_music),
-            _spec("music_status", music_status),
-            _spec("set_music_volume", set_music_volume),
-        )
+    # WHICH of these a turn sees is not decided here. The music verbs'
+    # Discord-only cut and `search_memory_workspace`'s Dreamer-only gate (#350)
+    # used to be two filters in this function; they are `ToolScope`'s now
+    # (`nora.agent.surface`), beside the Dreamer's grant ceiling and read by
+    # the one builder every loop uses, `ToolRegistry.surface()`. This function
+    # builds every closure; the scope admits.
+
+    async def load_tools(names: list[str], tool_context: Any) -> dict:
+        """Call this before using any tool your catalogue lists without a *.
+
+        Your catalogue lists everything you can do, one line each. The ones
+        marked * are already loaded; anything else, ask for here by its exact
+        name first, then call it as usual on your next step. Ask for every
+        tool you expect to need in one call (up to 4).
+
+        `status` is `ok` when at least one name is ready (`loaded`, or
+        `already_loaded`); `unknown` names are not in your catalogue — read it
+        again rather than retrying the same name; `refused` were over the
+        limit — ask for those next. `nothing_found` means none of the names
+        exist. `unavailable` means loading is not possible right now; say so
+        rather than guessing what the tool would have said.
+
+        Args:
+            names: Tool names exactly as your catalogue spells them.
+        """
+        if shelf is None:
+            return {"status": "unavailable", "loaded": [], "already_loaded": [],
+                    "unknown": [], "refused": []}
+        return load_onto(getattr(tool_context, "agent", None), shelf, names)
+
     return (
         _spec("now", now),
         _spec("calculate", calculate),
@@ -9000,7 +9085,12 @@ Args:
         _spec("weather", weather),
         _spec("parking_status", parking_status),
         _spec("find_parking", find_parking),
-        *music_specs,
+        _spec("play_music", play_music),
+        _spec("skip_music", skip_music),
+        _spec("top_music", top_music),
+        _spec("stop_music", stop_music),
+        _spec("music_status", music_status),
+        _spec("set_music_volume", set_music_volume),
         _spec("remind", remind),
         _spec("list_reminders", list_reminders),
         _spec("cancel_reminder", cancel_reminder),
@@ -9010,7 +9100,7 @@ Args:
         _spec("rsvp_event", rsvp_event),
         _spec("cancel_event", cancel_event),
         _spec("suggest_venue", suggest_venue),
-        *unit_memory_specs,
+        _spec("search_memory_workspace", search_memory_workspace),
         _spec("note_read", note_read),
         _spec("note_search", note_search),
         _spec("note_create", note_create),
@@ -9022,6 +9112,7 @@ Args:
         _spec("send_to", send_to),
         _spec("search_gifs", search_gifs),
         _spec("send_gif", send_gif),
+        _spec("load_tools", load_tools),
     )
 
 

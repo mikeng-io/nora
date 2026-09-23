@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Adds `[llm] defer_tools`, default false and kept false by measurement (design/tool-catalogue 05 \u00a73a). Deferring cut input tokens ~36% but moved them from cached to uncached and added ~1.4 model calls a turn, so it is off and nothing a member of a room sees changes. Rewrites 40 tool-description openings so each states what the tool does AND when to call it (ADR 0007's L1), measured neutral with every schema resident: 80/80 routing draws. Fixes two eval-suite spend bugs."
+}

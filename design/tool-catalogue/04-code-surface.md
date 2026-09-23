@@ -49,9 +49,12 @@ becomes a gated surface.
 
 ## 3. The `load_tools` verb — `nora/agent/tools.py`, `NATIVE_TOOLS`
 
-One `NativeTool` entry with every field stated (`02` has the table and the
-reasoning): `budget=3`, `terminal=False`, `time_shiftable=None`,
-`read_only=True`, `source_tier=None`, `plugin=False`.
+**Built (phase B, 2026-09-23).** One `NativeTool` entry with every field
+stated (`02` has the table and the reasoning): `budget=3`, `terminal=False`,
+`time_shiftable=None`, `read_only=True`, `source_tier=None`, `plugin=False`,
+`output_contract` unset. Its closure takes `tool_context` — `adapt()` passes
+Strands `context=True` when a closure declares that parameter, so the model is
+never asked for it — and delegates to `nora.agent.surface.load_onto`.
 
 `_spec()` raises `KeyError` on a name absent from `NATIVE_TOOLS` — R-7's
 default-deny arriving at build time. That covers registration; nothing extra
@@ -61,11 +64,15 @@ The closure resolves names against the registry and returns the R-27 shape
 from `02`. A partial resolve is `ok` with non-empty `unknown`, never
 `nothing_found`.
 
-## 4. Deferred loading — `nora/agent/registry.py` `specs()` / `build()`
+## 4. Deferred loading — `ToolRegistry.surface()` (built, phase B)
 
-`build()` returns `list[Any]` for `Agent(tools=...)`. Today it adapts every
-spec. It must now return the hot set + `load_tools` + any MCP groups, and hold
-the rest — adapted but unregistered — for `load_tools` to register.
+**Superseded shape, 2026-09-23.** This section first planned deferral inside
+`build()`. Operator direction was one builder for every loop, so it is
+`ToolRegistry.surface()` (`02` §"One builder for every loop"): `ToolScope`
+admits, the admitted set splits into resident (`HOT_TOOLS` when `defer=True`,
+everything when not) and a per-turn `ToolShelf`, and `load_tools` is appended
+only when the shelf holds something. `build()` is `surface(...).tools`. Every
+caller passes `defer=False` until phase C.
 
 **Use Strands' own dynamic-tool path** (`02` §"The mechanism", verified in the
 installed 1.50.2 and by the spike in `05` §2b):
@@ -82,19 +89,27 @@ either dict (`registry.py:570`). Loading a hot tool, or the same cold tool
 twice, must therefore be a no-op in the closure, not an exception — return it
 in `tools` as already-loaded.
 
-**The closure needs the agent's registry.** `ToolSpec.call` closures today
-receive their collaborators at build time; this one needs the live
-`tool_registry`. Wire it the way `deliverer` is wired, not by reaching for a
-global — and keep `strands` imports inside `nora.agent.**` (ADR 0008
-constraint).
+**The closure needs the agent's registry** — and the agent does not exist yet
+when the tools are built. Resolved with Strands' own `ToolContext`: the
+framework hands `load_tools` the running agent at call time, so nothing is
+late-bound and nothing global is reached for. `nora/agent/surface.py` imports
+no `strands` (ADR 0008).
 
-**Lifetime is the turn.** `ToolRegistry` is constructed per turn by `build()`
-and must stay that way: a shared registry accumulating `dynamic_tools` leaks
+**Lifetime is the turn.** *Corrected 2026-09-23:* Nora's `ToolRegistry` is
+per-PROCESS; what is per-turn is the Strands agent (and its `dynamic_tools`)
+and the `ToolShelf`, both created fresh each turn. That must stay true: a shared registry accumulating `dynamic_tools` leaks
 tool availability between concurrent rooms and silently regrows the resident
 set over the process's life while every per-call measurement still looks
 right. §7 adds the gauge that catches it.
 
-## 5. Turn ceilings — `nora/config.py`
+## 5. Turn ceilings — `ToolSurface.limits` (built, phase C)
+
+**Built 2026-09-23.** `[llm.limits] turns` rises by ONE when the surface has
+anything on its shelf (`ToolSurface.limits`), on the tag and fire paths alike.
+One rather than the 0.8 mean: a turn loads or it does not, and the loader's own
+`budget: 3` bounds how many of its calls a turn may make. Token caps are left
+alone — a deferred prompt is smaller. The switch is `[llm] defer_tools`
+(default `false`), so both arms of §2c run the same build.
 
 `load_tools` spends from the shared ceiling like any verb. `turns` defaults to
 6 and `tool_calls` is a per-name dict (`nora/config.py:2630`).
@@ -108,10 +123,19 @@ change silently costs a real tool call — the failure recorded in
 ~2578): stating a hard cap in words cost one case 5/5 → 1/5, because a model
 told it has a hard cap declines the work rather than spending less.
 
-## 6. Doctrine tier — `nora/doctrine/loader.py`
+## 6. Where the catalogue is placed — phase C
 
-The catalogue is a **derived** kind at order 35, between `conduct` and
-`constraints` — the slot DEC-150 vacated.
+**Revised 2026-09-23, operator-approved.** The catalogue is now per-SCOPE —
+a Discord room's differs from a Signal room's, and each Dreamer adaptor's from
+the tag path's — and doctrine is lane-static and operator-owned. So the
+catalogue is placed as a **context block declared through the context-assembly
+registry** (`design/context-assembly/`), rendered from `ToolSurface.catalogue`,
+not as a doctrine tier. It still caches: one room's catalogue does not change
+turn to turn. The doctrine-tier plan below is kept for the record of what it
+would have cost; it is not the plan.
+
+~~The catalogue is a **derived** kind at order 35, between `conduct` and
+`constraints` — the slot DEC-150 vacated.~~
 
 - `DERIVED_KINDS` (line 77) is `("situation",)`; add the catalogue's kind.
 - `AUTHORITY_TERMINALS` (line 103) and the `authority_above`/`authority_below`
@@ -132,6 +156,16 @@ become wrong the moment this lands; update them rather than leaving prose that
 reads as current. (`a-late-reversal-is-not-landed-until-every-quoting-file-changes`.)
 
 ## 7. Observability — `nora/obs/`
+
+**Phase C status, 2026-09-23.** Not added as production series yet, and the
+reasons differ per item. *Resident tokens per call* existed to catch a
+registry leaking `dynamic_tools` across turns; with the agent and the shelf
+both built per turn (`02` §"Persistence"), that leak is structurally absent,
+so the gauge would watch a failure the construction already excludes.
+*Calls per turn* and *per-turn tokens* are what §2c/§2f gate on, and the eval
+suite measures them per case (`NORA_CALLS`, `NORA_INPUT_TOKENS`) — the gate is
+decided there, not in Prometheus. `nora_tool_calls_total{tool="load_tools"}`
+exists for free. The DEC-28 counter is still owed.
 
 - `nora_tool_calls_total{tool="load_tools"}` — free, the existing counter.
 - **A counter for the DEC-28 failure**: turns that ended without a reply while
