@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "Design bundle for giving Nora a generated sense of where she is and what she can do.",
+  "details": [],
+  "limitations": [],
+  "reason": "Design documents only (design/self-awareness/); nothing Nora does in a room changes. Proposes a generated per-turn <presence> block from the room table and adapter health, and three room-awareness tools with separate disclosure tiers. Operator decisions recorded: other groups are disclosed by existence only, and the block also renders on the proactive loop. The new tools wait for the tool catalogue."
+}
