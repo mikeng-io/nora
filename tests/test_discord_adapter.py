@@ -510,3 +510,35 @@ async def test_a_recorded_guild_with_no_controller_is_never_synthesized(aiohttp_
     assert speaker.calls == [], "no synthesis is paid for"
     assert result.ok is True
     assert posted == ["/channels/333/messages"], "the room still gets the answer"
+
+
+async def test_a_channels_message_and_its_edit_are_ingested_in_order(monkeypatch):
+    """discord.py runs each gateway event as its own task. A message whose
+    ingest is still running (custody, transcription) must finish before its
+    edit is looked up, or the edit finds nothing and is dropped as an orphan."""
+    import asyncio
+    import datetime as _dt
+
+    adapter = DiscordAdapter("tok")
+    adapter._identity = PlatformIdentity(platform="discord", primary="999")
+    adapter._own_id = "999"
+    guild, channel = FakeGuild(id=1), FakeChannel(id=2)
+    original = FakeMessage(id=4, author=FakeUser(id=42), guild=guild, channel=channel,
+                           content="v1")
+    edited = FakeMessage(id=4, author=FakeUser(id=42), guild=guild, channel=channel,
+                         content="v2")
+    edited.edited_at = _dt.datetime(2026, 9, 24, tzinfo=_dt.UTC)
+    order: list[str] = []
+
+    async def _fake_listen(self, on_message_cb, on_edit_cb=None):
+        # Both dispatched at once, as discord.py does.
+        await asyncio.gather(on_message_cb(original), on_edit_cb(edited))
+
+    async def _slow_ingest(message):
+        order.append(f"start {message.body}")
+        await asyncio.sleep(0.05 if message.edit_of is None else 0)
+        order.append(f"end {message.body}")
+
+    monkeypatch.setattr(DiscordListener, "listen", _fake_listen)
+    await adapter.listen(on_message=_slow_ingest)
+    assert order == ["start v1", "end v1", "start v2", "end v2"]

@@ -351,6 +351,37 @@ decision that actually lands gets a `design/09-decision-index.md` entry; an open
 issue is a candidate, not a decision. Example: #4 (per-conversation rolling
 summary — update-in-place, separate from the Dreamer and Honcho).
 
+## Adding or changing a tool
+
+Read **`docs/adr/0015-tool-surface-policy-v2.md` before writing one line** of a
+tool's name, docstring or result, and 0004 and 0007, which it extends and
+partly supersedes. A tool's text is the model's routing surface on every call.
+0007's length and language rules had no test, and they were not met even on
+the day they were written. 0015 §6 lists which rule is checked how.
+
+Enforced today:
+
+- **Name:** `<domain>_<verb>`, with the verb from the list in
+  `tests/architecture/test_tool_names.py` (`instagram_read`, `room_list`). A
+  new verb goes into that list in a PR that says why. Never rename an existing
+  tool without a `tool_selection` measurement (0004).
+- **First paragraph:** what the tool does and when to call it, as a catalogue
+  line of at most 40 tokens (name included). Checked by
+  `tests/test_tool_surface_policy.py`.
+
+Policy now; its tests land with the first rewrite batch (0015 §5):
+
+- A `level` field on `NativeTool` with a token ceiling per level.
+- Result interpretation in the RESULT, not the description.
+- `Literal` types for fixed options.
+- At most one non-English string (a trigger word only).
+- No em or en dashes.
+
+Process: write, run the `humanizer` skill if the session has it, `make gate`,
+then measure before and after. Routing is
+`python -m evals tool_selection --sample 5 --reasons`; reporting needs the
+judged corpus 0015 §4 describes. Put the numbers in the PR.
+
 ## Never (one line each — the war-story behind each is in `docs/CONVENTIONS.md`)
 
 - **Never `pip install`** — dependencies via `uv add` (operational constraint 5).

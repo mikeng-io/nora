@@ -15,8 +15,8 @@ tools wait for the catalogue. Work that adds no tool does not.
 | **1** | `_PLATFORM_NAMES` gains WhatsApp and Instagram | nothing | no |
 | **2** | `<presence>` replaces `_where_line` and proactive's `home_room`, handles included (`02`) | D1, D2 | no |
 | **3** | Tool catalogue lands (separate session, its own bundle) | — | — |
-| **4** | `my_rooms`, `room_activity` (`03`) | 2, 3 | yes |
-| **5** | `read_room` (`03`) | 4, D1 | yes |
+| **4** | `room_list` (`03`) | 2, 3 | yes |
+| **5** | `room_read` (`03`) | 4, D1 | yes |
 
 Steps 1 and 2 can start now. Step 2 is the largest
 change for her behaviour and adds no tool at all.
@@ -47,7 +47,7 @@ she starts reciting it, the framing is wrong.
 ## What would falsify the design
 
 - If the "which groups" case passes as well **without** `<presence>` once the
-  catalogue lists `my_rooms`, the per-turn block is unnecessary and step 3
+  catalogue lists `room_list`, the per-turn block is unnecessary and step 3
   should shrink to the network line alone.
 - If the negative case fails (she volunteers the room list), the block is
   worded as a topic and must be reworded before shipping, not after.
