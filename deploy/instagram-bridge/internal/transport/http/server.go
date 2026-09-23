@@ -87,6 +87,11 @@ func (s *Server) Routes() http.Handler {
 	// field came from, which is not a resource and would have been the fourth
 	// spelling of one noun. Renamed 2026-09-22 while it was still free.
 	mux.HandleFunc("GET /threads/{thread_fbid}/members", observability.Route("GET /threads/{thread_fbid}/members", s.handleRoster))
+	// Account search: P11's route, built early to be P9's probe instrument
+	// (design/instagram-adoption/17 P9, P11). The FIRST route on the new
+	// response conventions (accounts_search.go) — no old body to migrate, so
+	// it starts there rather than joining the old routes' {"ok": ...} shape.
+	mux.HandleFunc("GET /accounts", observability.Route("GET /accounts", s.handleAccountsSearch))
 	// ONE account resource. The social fields are not a second noun — they
 	// are more of this one — so they are merged into this read rather than
 	// given a path of their own. The response says which upstream halves

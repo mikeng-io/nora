@@ -722,7 +722,7 @@ async def test_the_ingest_trace_is_opened_and_populated_before_it_is_dropped(
     exported = unfiltered_spans.get_finished_spans()
     assert {s.name for s in exported} == {
         "ingest", "ingest.scope", "ingest.identity", "ingest.media",
-        "ingest.audit", "ingest.memory_feed", "ingest.gate",
+        "ingest.quote_target", "ingest.audit", "ingest.memory_feed", "ingest.gate",
     }
     assert len({s.context.trace_id for s in exported}) == 1
     root = _only_root(unfiltered_spans)

@@ -78,8 +78,8 @@ Six endings, on `nora_ingest_outcomes_total`:
 |---|---|---|
 | `edit_recorded` | folded onto its original | `message_edit` row, Honcho feed |
 | `edit_engaged` | as above, and it newly addresses her | same, plus a turn |
-| `edit_unchanged` | the text equals the version it replaces | nothing |
-| `edit_stale` | no newer than the newest edit on record (a redelivery, or out of order) | nothing |
+| `edit_unchanged` | text AND mentions equal the version it replaces | the row only when newer (a Signal chain needs it); no feed, no turn. A true duplicate (same time, same text) writes nothing |
+| `edit_stale` | strictly older than the newest edit on record, decided before custody | nothing |
 | `edit_orphaned` | no original on record | nothing |
 | `edit_refused` | the original is Nora's own, or its sender differs from the editor's | nothing |
 
@@ -107,3 +107,45 @@ is not a way to put words under someone else's row.
 
 **No standing event.** The event-driven standing fold counts new messages; an
 edit is not one.
+
+## 5. Cross-platform audit (2026-09-24)
+
+An independent audit of all four networks after the first live tests. What it
+changed, each pinned by a test that fails when the fix is reverted:
+
+- **Signal replies to an edited message** quote the REVISION's timestamp
+  (norty row 2167). `quote_target` rewrites such a pointer to the edited
+  message's own `ts` at ingest, so every reader resolves the parent as before.
+- **Signal edit chains.** A second edit names the previous revision's
+  timestamp (norty row 2201), so `find_edited` matches an edit's `ts` too;
+  and an edit that changes nothing visible is still WRITTEN when newer, or the
+  next edit, which names it, would be an orphan.
+- **Mentions are a change on their own**: in a Signal body every mention is
+  one placeholder character.
+- **Stale** is decided before custody: an edit whose timestamp is already on
+  record is a redelivery (on Signal a timestamp IS an edit's identity), and
+  one older than the NEWEST CLOCK on record is out of order — except a Signal
+  edit naming the latest revision, which is newer by definition whatever its
+  device's clock says. The fold picks the newest edit by ARRIVAL. A review of
+  the first version of this rule (judged against the version shown, not the
+  maximum) found that a skewed edit let a redelivered older one bring old
+  text back.
+- **Attachments** keep the original's handles; nothing is re-fetched unless
+  the counts differ or the original held a gap (a bare placeholder), where
+  handles are not positional.
+- **A zero edit time** is stamped on arrival; the render tests `is not None`.
+- **Instagram** edits record mentions as unknown (the delta carries none);
+  the gate still compares against the original's. The trade, stated: an
+  Instagram message's SECOND and later edits never open a turn
+  (`edit_previous_unknown`). Fail-safe (a missed turn, never a second
+  answer); comparing text alone for Instagram would recover it and is the
+  reading that would reopen this.
+- **Quote remapping is Signal-only**: only Signal quotes a revision, and
+  elsewhere the lookup could only move a reply onto an unrelated message.
+- **Signal sender id form**: the lookup prefers the same id and falls back to
+  any author at that timestamp; `_same_author` then decides by person.
+- **WhatsApp phone edits** arrive wrapped in `editedMessage`; the bridge now
+  unwraps it (it dropped them silently before) and uses the edit's
+  millisecond clock.
+- **Discord** ingests one event at a time per channel, so an edit can no
+  longer race the message it edits.

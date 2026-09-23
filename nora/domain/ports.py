@@ -815,6 +815,15 @@ class RecordStore(Protocol):
         """
         ...
 
+    async def quoted_ts_of(self, *, conversation_id: str, ts: int) -> int:
+        """The `ts` a reply's quote should point at. Signal quotes an edited
+        message by the timestamp of the REVISION the replier saw, while the
+        transcript keeps the message at its original `ts`; so a `ts` no
+        message carries but one of its edits does resolves to that message's
+        own `ts`. Any other `ts` comes back unchanged — an exact message match
+        always wins (design/message-edits/01 §3)."""
+        ...
+
     async def append_edit(self, *, message_id: int, message: NormalizedMessage) -> None:
         """Record one edit of the `messages` row `message_id`. Append-only:
         the row it edits is never updated (A9); the transcript reads fold the

@@ -66,6 +66,31 @@ type Account struct {
 	Extra map[string]any
 }
 
+// AccountSummary is one hit from `GET /accounts?query=` — the account-search
+// resource (16 §Resources, 17 P9, P11). It is the OmniPicker's own shape
+// (`slidetypes.SearchResult`, behind `SearchUsers` /
+// `IGDOmniPickerSearchResultsListQuery`), not the fuller GetProfile read that
+// backs Account above.
+//
+// There is NO IsPrivate field here, unlike the task that named this entity
+// expected: `slidetypes.SearchResult` carries `interop_messaging_user_fbid`,
+// `username`, `full_name`, `pk`, `profile_pic_url` and `is_verified` and
+// nothing else — measured against the library's own struct
+// (go.mau.fi/mautrix-meta/pkg/instameow/slidetypes/user.go). `is_private` is
+// on `PolarisProfilePageContentQuery`'s `data.user` (SocialProfile below),
+// a different document. Leaving it off is the "do not invent fields" rule
+// applied to a field the search genuinely does not return; a bool defaulting
+// to false here would read as "measured public" for every hit.
+type AccountSummary struct {
+	IGID     string
+	Username string
+	FullName string
+	// FBID is the messaging id, or "" when the search has no row for it — a
+	// missing join key, not a failed read, same as Account.FBID above.
+	FBID       string
+	IsVerified bool
+}
+
 // SocialProfile is the named subset of `PolarisProfilePageContentQuery`'s
 // `data.user` that GetProfile's own response type throws away.
 type SocialProfile struct {

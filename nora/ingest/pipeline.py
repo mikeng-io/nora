@@ -51,12 +51,14 @@ from nora.policy import Policy
 
 from .stages import audit as audit_stage
 from .stages import edit_gate as edit_gate_stage
+from .stages import edit_media as edit_media_stage
 from .stages import edit_record as edit_record_stage
 from .stages import edit_target as edit_target_stage
 from .stages import gate as gate_stage
 from .stages import identity as identity_stage
 from .stages import media as media_stage
 from .stages import memory_feed as memory_feed_stage
+from .stages import quote_target as quote_target_stage
 from .stages import scope as scope_stage
 from .stages import standing_event as standing_event_stage
 
@@ -87,8 +89,8 @@ IngestOutcome = Literal[
     # rate of edits is a different question from a rate of messages.
     "edit_recorded",        # folded onto the message it edits
     "edit_engaged",         # folded, and it newly addresses her — a turn
-    "edit_unchanged",       # the text did not change (a link preview, a pin); nothing written
-    "edit_stale",           # no newer than the edit on record (a redelivery); nothing written
+    "edit_unchanged",       # text and mentions unchanged; no turn, no feed
+    "edit_stale",           # older than the edit on record (a redelivery); nothing written
     "edit_orphaned",        # no original on record; dropped, whoever sent it
     "edit_refused",         # the original is hers, or its author is not the editor
 ]
@@ -350,6 +352,13 @@ class IngestPipeline:
                 # resolves identity nor reads it for anything else.
                 person=person, language=self._language,
             )
+        # A reply to an EDITED message quotes the revision's timestamp on
+        # Signal; point it at the row the transcript holds before it is
+        # written, so every reader resolves the parent as it always has.
+        with span("ingest.quote_target"):
+            message = await quote_target_stage.run(
+                message=message, audit=self._audit, metrics=m,
+            )
         with span("ingest.audit"):
             recorded = await audit_stage.run(
                 message=message, audit=self._audit, metrics=m, person=person
@@ -439,20 +448,25 @@ class IngestPipeline:
                 message=message, persons=self._persons, metrics=m
             )
         annotate(**{"nora.person_known": person is not None})
-        with span("ingest.media"):
-            message = await media_stage.run(
-                message=message, sources=self._media_sources, blobs=self._blobs,
+        async def _custody(msg: NormalizedMessage) -> NormalizedMessage:
+            return await media_stage.run(
+                message=msg, sources=self._media_sources, blobs=self._blobs,
                 media_store=self._media_store, metrics=m,
                 stickers=self._stickers, transcriber=self._transcriber,
                 comprehension=self._comprehension,
                 person=person, language=self._language,
+            )
+
+        with span("ingest.media"):
+            message = await edit_media_stage.run(
+                message=message, original=original, custody=_custody,
             )
         with span("ingest.edit_record"):
             recorded = await edit_record_stage.run(
                 message=message, original=original, audit=self._audit, metrics=m,
             )
         if recorded != "recorded":
-            _outcome(m, message, recorded)
+            _outcome(m, message, "edit_unchanged" if recorded == "recorded_unchanged" else recorded)
             return IngestResult(message=None, decision=None)
         with span("ingest.memory_feed"):
             await memory_feed_stage.run(

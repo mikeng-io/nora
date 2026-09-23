@@ -226,6 +226,43 @@ async def test_resolve_identity_returns_a_platform_identity(aiohttp_server):
     assert Identifier("discord", "user_id", "555") in identity.identifiers
 
 
+async def test_own_handle_reuses_the_startup_users_me_call(aiohttp_server):
+    """design/self-awareness/02/06: no extra per-turn network call — Discord's
+    `own_handle` must answer from the SAME `/users/@me` response
+    `resolve_identity()` fetches once, not a fresh request each time."""
+    calls = 0
+
+    async def handler(request):
+        nonlocal calls
+        calls += 1
+        return web.json_response({"id": "555", "username": "nora", "discriminator": "4214"})
+
+    app = web.Application()
+    app.router.add_get("/users/@me", handler)
+    server = await aiohttp_server(app)
+
+    adapter = DiscordAdapter("tok", base_url=str(server.make_url("")).rstrip("/"))
+    first = await adapter.own_handle()
+    second = await adapter.own_handle()
+
+    assert first == "@nora#0000"
+    assert second == "@nora#0000"
+    assert calls == 1, "own_handle must reuse resolve_identity()'s single call, never re-fetch"
+
+
+async def test_own_handle_drops_the_tag_for_a_migrated_discriminator(aiohttp_server):
+    async def handler(request):
+        return web.json_response({"id": "555", "username": "nora", "discriminator": "0"})
+
+    app = web.Application()
+    app.router.add_get("/users/@me", handler)
+    server = await aiohttp_server(app)
+
+    adapter = DiscordAdapter("tok", base_url=str(server.make_url("")).rstrip("/"))
+
+    assert await adapter.own_handle() == "@nora"
+
+
 class _FakeSpeaker:
     """The minimal shape `DiscordAdapter._send_voice` reads — same seam the
     production wiring uses (`nora.infra.tts.MiniMaxTtsSpeaker`)."""
@@ -473,3 +510,35 @@ async def test_a_recorded_guild_with_no_controller_is_never_synthesized(aiohttp_
     assert speaker.calls == [], "no synthesis is paid for"
     assert result.ok is True
     assert posted == ["/channels/333/messages"], "the room still gets the answer"
+
+
+async def test_a_channels_message_and_its_edit_are_ingested_in_order(monkeypatch):
+    """discord.py runs each gateway event as its own task. A message whose
+    ingest is still running (custody, transcription) must finish before its
+    edit is looked up, or the edit finds nothing and is dropped as an orphan."""
+    import asyncio
+    import datetime as _dt
+
+    adapter = DiscordAdapter("tok")
+    adapter._identity = PlatformIdentity(platform="discord", primary="999")
+    adapter._own_id = "999"
+    guild, channel = FakeGuild(id=1), FakeChannel(id=2)
+    original = FakeMessage(id=4, author=FakeUser(id=42), guild=guild, channel=channel,
+                           content="v1")
+    edited = FakeMessage(id=4, author=FakeUser(id=42), guild=guild, channel=channel,
+                         content="v2")
+    edited.edited_at = _dt.datetime(2026, 9, 24, tzinfo=_dt.UTC)
+    order: list[str] = []
+
+    async def _fake_listen(self, on_message_cb, on_edit_cb=None):
+        # Both dispatched at once, as discord.py does.
+        await asyncio.gather(on_message_cb(original), on_edit_cb(edited))
+
+    async def _slow_ingest(message):
+        order.append(f"start {message.body}")
+        await asyncio.sleep(0.05 if message.edit_of is None else 0)
+        order.append(f"end {message.body}")
+
+    monkeypatch.setattr(DiscordListener, "listen", _fake_listen)
+    await adapter.listen(on_message=_slow_ingest)
+    assert order == ["start v1", "end v1", "start v2", "end v2"]

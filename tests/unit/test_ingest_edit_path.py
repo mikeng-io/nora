@@ -125,19 +125,164 @@ async def test_an_edit_is_recorded_beside_its_original_not_as_a_new_message():
     assert result.decision is not None and not result.decision.engage
 
 
-async def test_an_edit_whose_text_did_not_change_writes_nothing():
-    """Discord's link-preview and pin updates, and any redelivery: same text,
-    no edit. Compared against the CURRENT version, so re-sending an earlier
-    edit's text is also nothing."""
+async def test_an_unchanged_edit_opens_no_turn_and_feeds_nothing_but_keeps_the_chain():
+    """Same text and mentions (a style-only Signal edit): no correction for
+    Honcho, no turn — but the row IS written when it is newer, because the
+    sender's next edit names THIS edit's timestamp, and leaving it unrecorded
+    made every later edit an orphan (audit, 2026-09-24)."""
+    store = FakeRecordStore()
+    memory = RecordingMemory()
+    spawned: list = []
+    metrics = Metrics()
+    await store.append(
+        message=_msg("@nora hi", mentions=frozenset({NORA})), person_id="miles",
+    )
+    pipe = _pipeline(store, memory=memory, spawned=spawned, metrics=metrics)
+    style_only = await pipe.run(message=_edit("@nora hi", ts=5, mentions=frozenset({NORA})))
+    await _drain(spawned)
+    assert style_only.decision is None
+    assert memory.fed == []
+    assert [e["ts"] for e in store.edits] == [5]
+    assert metrics.get("nora_ingest_outcomes_total", outcome="edit_unchanged") == 1
+
+    # ...so the NEXT edit, naming that revision, still finds the message.
+    await pipe.run(message=_edit(
+        "@nora hi there", ts=9, mentions=frozenset({NORA}), target=EditTarget(sent_ts=5),
+    ))
+    assert [e["body"] for e in store.edits] == ["@nora hi", "@nora hi there"]
+
+
+async def test_an_exact_redelivery_writes_nothing():
+    """The same time and the same text as the version on record — a bridge
+    reconnect, a Discord pin of an edited message."""
     store = FakeRecordStore()
     metrics = Metrics()
     await store.append(message=_msg("dinner at 7"), person_id="miles")
-    await _pipeline(store, metrics=metrics).run(message=_edit("dinner at 7"))
-    await _pipeline(store, metrics=metrics).run(message=_edit("dinner at 8"))
-    await _pipeline(store, metrics=metrics).run(message=_edit("dinner at 8", ts=9))
-
+    pipe = _pipeline(store, metrics=metrics)
+    await pipe.run(message=_edit("dinner at 8", ts=5))
+    await pipe.run(message=_edit("dinner at 8", ts=5))
     assert [e["body"] for e in store.edits] == ["dinner at 8"]
-    assert metrics.get("nora_ingest_outcomes_total", outcome="edit_unchanged") == 2
+    assert metrics.get("nora_ingest_outcomes_total", outcome="edit_stale") == 1
+
+
+async def test_a_mention_only_change_is_a_change():
+    """In a Signal body every mention is one placeholder character, so
+    «@Alice hi» → «@Nora hi» is identical as TEXT. It is still an edit — and
+    here one that newly addresses her."""
+    store = FakeRecordStore()
+    await store.append(
+        message=_msg("\ufffc hi", mentions=frozenset({"+852000"})), person_id="miles",
+    )
+    result = await _pipeline(store).run(
+        message=_edit("\ufffc hi", mentions=frozenset({NORA})),
+    )
+    assert [e["body"] for e in store.edits] == ["\ufffc hi"]
+    assert result.decision is not None and result.decision.engage
+
+
+async def test_an_edit_whose_timestamp_is_on_record_is_a_redelivery():
+    """On Signal an edit's timestamp IS its identity; on every network a
+    repeated one is a redelivery. Recording it again flipped the fold back to
+    older text (review, 2026-09-24)."""
+    store = FakeRecordStore()
+    metrics = Metrics()
+    await store.append(message=_msg("v0", message_id="m1"), person_id="miles")
+    pipe = _pipeline(store, metrics=metrics)
+    await pipe.run(message=_edit("v1", ts=5000, target=EditTarget(message_id="m1")))
+    await pipe.run(message=_edit("v2", ts=6000, target=EditTarget(message_id="m1")))
+    await pipe.run(message=_edit("v1", ts=5000, target=EditTarget(message_id="m1")))
+    rows = await store.recent(conversation_id="g1", limit=5)
+    assert rows[0].body == "v2"
+    assert metrics.get("nora_ingest_outcomes_total", outcome="edit_stale") == 1
+
+
+async def test_a_skewed_clock_edit_cannot_let_a_redelivery_bring_back_old_text():
+    """Phone edits at 1000 (v1); a desktop 200 ms behind edits v1 at 800
+    (v2, admitted by the waiver). Signal then redelivers the phone's edit.
+    Judged against the version SHOWN (800) it looked newer and resurrected
+    v1, fed to Honcho as a correction. Judged against the newest clock on
+    record, and by its timestamp already being there, it is stale."""
+    store = FakeRecordStore()
+    memory = RecordingMemory()
+    spawned: list = []
+    await store.append(message=_msg("v0", ts=100), person_id="miles")
+    pipe = _pipeline(store, memory=memory, spawned=spawned)
+    await pipe.run(message=_edit("v1", ts=1000, target=EditTarget(sent_ts=100)))
+    await pipe.run(message=_edit("v2", ts=800, target=EditTarget(sent_ts=1000)))
+    await _drain(spawned)
+    fed_before = len(memory.fed)
+    await pipe.run(message=_edit("v1", ts=1000, target=EditTarget(sent_ts=100)))
+    await _drain(spawned)
+    rows = await store.recent(conversation_id="g1", limit=5)
+    assert rows[0].body == "v2"
+    assert len(memory.fed) == fed_before, "a redelivery must not be fed as a correction"
+
+
+async def test_a_quote_on_another_platform_is_never_re_pointed():
+    """Only Signal quotes a revision. Elsewhere a quote carries its parent's
+    own timestamp, so a reply to a message Nora never recorded whose
+    timestamp collides with some edit must keep its pointer."""
+    store = FakeRecordStore()
+    wa = {"platform": "whatsapp"}
+    await store.append(
+        message=dataclasses.replace(_msg("alice", ts=100, message_id="m1"), **wa),
+        person_id="miles",
+    )
+    await _pipeline(store).run(message=dataclasses.replace(
+        _edit("alice fixed", ts=7000, target=EditTarget(message_id="m1")), **wa,
+    ))
+    reply = dataclasses.replace(
+        _msg("yes", ts=8000), quote=Quote(author_id="x", text="", quoted_ts=7000), **wa,
+    )
+    await _pipeline(store).run(message=reply)
+    assert store.rows[-1]["quoted_ts"] == 7000
+
+
+async def test_a_signal_edit_naming_the_latest_revision_wins_even_from_a_slow_clock():
+    """Each Signal device stamps its own sends. An edit from a linked desktop
+    whose clock is behind names the latest revision by ITS timestamp, so it
+    is newer by definition — and it becomes the version shown."""
+    store = FakeRecordStore()
+    await store.append(message=_msg("v1"), person_id="miles")
+    pipe = _pipeline(store)
+    await pipe.run(message=_edit("v2", ts=100))
+    await pipe.run(message=_edit("v3", ts=50, target=EditTarget(sent_ts=100)))
+    rows = await store.recent(conversation_id="g1", limit=5)
+    assert rows[0].body == "v3"
+
+
+async def test_an_edit_with_no_time_is_stamped_on_arrival():
+    """Zero would render no `edited` marker and lose to every other edit."""
+    store = FakeRecordStore()
+    await store.append(message=_msg("v1"), person_id="miles")
+    await _pipeline(store).run(message=_edit("v2", ts=0))
+    rows = await store.recent(conversation_id="g1", limit=5)
+    assert rows[0].edit is not None and rows[0].edit.ts > 1_700_000_000_000
+
+
+async def test_signal_finds_the_message_when_the_sender_id_form_changed():
+    """signal-cli can name one sender by phone on the message and by ACI on
+    the edit. The lookup prefers the same id but does not require it;
+    authorship is then decided by person."""
+    store = FakeRecordStore()
+    await store.append(message=_msg("v1"), person_id="miles")
+    await _pipeline(store).run(message=_edit("v2", sender="lid:111"))
+    assert [e["body"] for e in store.edits] == ["v2"]
+
+
+async def test_a_reply_quoting_an_edits_timestamp_points_at_the_message():
+    """Signal quotes the REVISION the replier saw. The transcript keeps the
+    edited message at its original ts, so the pointer is rewritten once, at
+    ingest, and the reply resolves its parent (norty, row 2167)."""
+    store = FakeRecordStore()
+    await store.append(message=_msg("dinner at 7", ts=1), person_id="miles")
+    await _pipeline(store).run(message=_edit("dinner at 8", ts=5))
+    reply = dataclasses.replace(
+        _msg("ok", ts=9, sender="+852000"),
+        quote=Quote(author_id="+852111", text="dinner at 8", quoted_ts=5),
+    )
+    await _pipeline(store).run(message=reply)
+    assert store.rows[-1]["quoted_ts"] == 1
 
 
 async def test_an_orphan_is_dropped_even_when_the_platform_names_its_sender():
@@ -175,11 +320,10 @@ async def test_a_redelivered_or_out_of_order_edit_is_stale():
     pipe = _pipeline(store, memory=memory, spawned=spawned, metrics=metrics)
     await pipe.run(message=_edit("dinner at 9", ts=9))
     await pipe.run(message=_edit("dinner at 8", ts=5))
-    await pipe.run(message=_edit("dinner at 9", ts=9))
     await _drain(spawned)
     assert [e["body"] for e in store.edits] == ["dinner at 9"]
     assert len(memory.fed) == 1
-    assert metrics.get("nora_ingest_outcomes_total", outcome="edit_stale") == 2
+    assert metrics.get("nora_ingest_outcomes_total", outcome="edit_stale") == 1
 
 
 # ── whose words ──────────────────────────────────────────────────────────────
@@ -323,10 +467,11 @@ async def test_adding_a_mention_to_a_reply_she_already_answered_does_not_answer_
     assert result.decision == EngageDecision(engage=False, reason="edit_already_addressed")
 
 
-async def test_an_edit_that_cannot_see_mentions_carries_the_originals():
-    """Instagram's edit delta has no mentions. The original's are carried
-    forward and recorded as known — never «mentioned nobody», which the
-    platform did not say — so a LATER edit is still compared honestly."""
+async def test_an_edit_that_cannot_see_mentions_records_unknown_and_is_judged_honestly():
+    """Instagram's edit delta has no mentions. The gate borrows the original's
+    to compare against, but the edit row records «unknown»: nobody observed
+    what this version mentions. So the NEXT edit refuses rather than being
+    judged against a guess (R-5)."""
     store = FakeRecordStore()
     await store.append(
         message=_msg("@nora dinnr?", message_id="m1", mentions=frozenset({NORA})),
@@ -334,12 +479,12 @@ async def test_an_edit_that_cannot_see_mentions_carries_the_originals():
     )
     blind = EditTarget(message_id="m1", mentions_known=False)
     first = await _pipeline(store).run(message=_edit("@nora dinner?", sender="", target=blind))
-    assert store.edits[0]["mentions_json"] == f'["{NORA}"]'
+    assert store.edits[0]["mentions_json"] is None
     second = await _pipeline(store).run(message=_edit(
         f"{TRIGGER} dinner??", sender="", ts=9, target=blind,
     ))
     assert first.decision is not None and not first.decision.engage
-    assert second.decision == EngageDecision(engage=False, reason="edit_already_addressed")
+    assert second.decision == EngageDecision(engage=False, reason="edit_previous_unknown")
 
 
 async def test_an_edit_that_cannot_see_mentions_of_an_unknown_original_records_unknown():
@@ -432,3 +577,80 @@ async def test_an_edit_does_not_count_toward_the_standing_fold(monkeypatch):
     await pipe.run(message=_msg("dinner at 7"))
     await pipe.run(message=_edit("dinner at 8"))
     assert calls == ["dinner at 7"]
+
+
+async def test_an_edited_caption_keeps_the_attachment_handle_without_refetching():
+    """No network lets an edit ADD media, so an edit with as many attachments
+    as the original holds gets the original's handles back — nothing is
+    downloaded. Re-running custody (the first draft) re-fetched on every
+    update, and a failed re-fetch left `[image]` where the record said
+    `[image a3f2c1]`: compared as a change, and the handle vanished."""
+    from nora.domain.media import MediaBlob, MediaRef, label_for, render_placeholder
+
+    ref = MediaRef(platform_id="att1", media_type="image/png")
+    blob = MediaBlob(sha256="a3f2c1" + "0" * 58, media_type="image/png", size=10)
+    held = f"look {render_placeholder(label_for(ref), blob.handle)}"
+    store = FakeRecordStore()
+    await store.append(
+        message=dataclasses.replace(_msg(held), media=(ref,), media_blobs=(blob,)),
+        person_id="miles",
+    )
+    edit = dataclasses.replace(
+        _edit(f"look here {render_placeholder(label_for(ref))}"), media=(ref,),
+    )
+    # No media sources wired: custody, had it run, could only leave a bare
+    # placeholder — so a handle in the fold proves it was carried, not fetched.
+    await _pipeline(store).run(message=edit)
+    rows = await store.recent(conversation_id="g1", limit=5)
+    assert rows[0].body == f"look here {render_placeholder(label_for(ref), blob.handle)}"
+
+
+async def test_handles_are_not_reused_when_the_original_did_not_hold_every_attachment():
+    """`media_json` lists only held blobs — a failed download is a gap — so
+    it is positional only when every placeholder in the original carried a
+    handle. Otherwise a removed attachment could hand its neighbour's handle
+    to the wrong placeholder; custody runs instead."""
+    from nora.domain.media import MediaBlob, MediaRef, label_for, render_placeholder
+
+    a = MediaRef(platform_id="a", media_type="image/png")
+    b = MediaRef(platform_id="b", media_type="image/png")
+    blob_b = MediaBlob(sha256="b" * 64, media_type="image/png", size=1)
+    bare_a = render_placeholder(label_for(a))
+    original_body = f"pics {bare_a} {render_placeholder(label_for(b), blob_b.handle)}"
+    store = FakeRecordStore()
+    await store.append(
+        message=dataclasses.replace(_msg(original_body), media=(a, b), media_blobs=(blob_b,)),
+        person_id="miles",
+    )
+    edit = dataclasses.replace(_edit(f"pics {render_placeholder(label_for(a))}"), media=(a,))
+    await _pipeline(store).run(message=edit)
+    rows = await store.recent(conversation_id="g1", limit=5)
+    assert blob_b.handle not in (rows[0].body or ""), "b's handle given to a's placeholder"
+
+
+async def test_a_redelivery_at_the_newest_timestamp_is_caught_by_its_timestamp():
+    """Not older than the newest clock — it IS the newest clock — but already
+    on record, so a redelivery: a different text at a timestamp Nora holds
+    must not flip the fold."""
+    store = FakeRecordStore()
+    await store.append(message=_msg("v0", message_id="m1"), person_id="miles")
+    pipe = _pipeline(store)
+    await pipe.run(message=_edit("v1", ts=5000, target=EditTarget(message_id="m1")))
+    await pipe.run(message=_edit("v2", ts=6000, target=EditTarget(message_id="m1")))
+    await pipe.run(message=_edit("v1 again", ts=6000, target=EditTarget(message_id="m1")))
+    rows = await store.recent(conversation_id="g1", limit=5)
+    assert rows[0].body == "v2"
+
+
+async def test_an_out_of_order_edit_is_judged_against_the_newest_clock_not_the_shown_one():
+    """After a skewed desktop edit (800) of a phone edit (1000), an older
+    edit at 900 that names the ORIGINAL is out of order: older than the
+    newest clock on record, though newer than the version shown."""
+    store = FakeRecordStore()
+    await store.append(message=_msg("v0", ts=100), person_id="miles")
+    pipe = _pipeline(store)
+    await pipe.run(message=_edit("v1", ts=1000, target=EditTarget(sent_ts=100)))
+    await pipe.run(message=_edit("v2", ts=800, target=EditTarget(sent_ts=1000)))
+    await pipe.run(message=_edit("stale", ts=900, target=EditTarget(sent_ts=100)))
+    rows = await store.recent(conversation_id="g1", limit=5)
+    assert rows[0].body == "v2"

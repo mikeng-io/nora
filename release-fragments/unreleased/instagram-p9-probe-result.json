@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "Recorded the P9 probe: Instagram's account search finds accounts by exact username, beyond Nora's contacts.",
+  "details": [],
+  "limitations": [],
+  "reason": "Design document only (design/instagram-adoption/17 §P9). Nothing Nora does changes. The measurement decides how P10's username lookup is built: filter the search on an exact username, never take the first result."
+}

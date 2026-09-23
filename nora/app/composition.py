@@ -234,15 +234,21 @@ def _presence_reader(
 
     Her handles come from two places and the order is the design: `[agent.
     handles]` is the DECLARED fallback, and any adapter that can report its own
-    handle overrides it, read live on every turn. Today that is Instagram
-    alone — its bridge's `/health` carries `self.username`. Signal and
-    Discord derive ids and drop the username by design, and WhatsApp's bridge
-    exposes none, so theirs stay declared until an adapter can say.
+    handle overrides it. Instagram's `own_handle` reads its bridge's `/health`
+    live, per call. Discord's reuses the ONE `/users/@me` response
+    `resolve_identity()` already fetched at startup instead of a second call
+    per turn (design/self-awareness/02/06) — `DiscordAdapter.own_handle`
+    answers from that cache. Signal derives an id and drops the username by
+    design, and WhatsApp's bridge exposes none, so theirs stay declared until
+    an adapter can say.
     """
     live: dict[str, Callable[[], Awaitable[str | None]]] = {}
     instagram = registry.adapters.get("instagram")
     if isinstance(instagram, InstagramAdapter):
         live["instagram"] = instagram.own_handle
+    discord_adapter = registry.adapters.get("discord")
+    if isinstance(discord_adapter, DiscordAdapter):
+        live["discord"] = discord_adapter.own_handle
     return PresenceReader(
         policy=allowlist, adapters=dict(registry.adapters),
         handles=cfg.agent.handles, live_handles=live,

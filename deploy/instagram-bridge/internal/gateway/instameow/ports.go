@@ -175,3 +175,13 @@ func (b *Bridge) Story(ctx context.Context, igid domain.IGID) (domain.Story, err
 	}
 	return readStory(ctx, cli, igid)
 }
+
+// SearchAccounts searches Instagram accounts by free text, in the library's
+// own order (16 §Resources, 17 P9, P11).
+func (b *Bridge) SearchAccounts(ctx context.Context, query string) ([]domain.AccountSummary, error) {
+	cli, err := b.client()
+	if err != nil {
+		return nil, err
+	}
+	return searchAccounts(ctx, cli, query)
+}

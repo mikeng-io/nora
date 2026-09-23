@@ -32,6 +32,10 @@ type Client interface {
 	// verb posts one rather than reading one, verified against the live
 	// tool. See social.go's story section.
 	FetchReel(ctx context.Context, reelIDs []string, mediaID string) (*responses.ReelInfoResponse, error)
+	// SearchUsers is the OmniPicker's own search
+	// (`IGDOmniPickerSearchResultsListQuery`), named `search_messenger_contact_v2`
+	// on the wire. See search.go for what it returns and does not.
+	SearchUsers(ctx context.Context, query string) (*slidetypes.SearchResponse, error)
 }
 
 // Uploader is SendMercuryUploadRequest, extracted as a function value for the
