@@ -22,10 +22,11 @@ log = logging.getLogger("nora.infra.sql.video_readings")
 def _matches(key: VideoReadingKey) -> sa.ColumnElement[bool]:
     return sa.and_(
         VIDEO_READINGS.c.sha256 == key.sha256,
+        VIDEO_READINGS.c.provider == key.provider,
         VIDEO_READINGS.c.model == key.model,
         VIDEO_READINGS.c.chunk_seconds == key.chunk_seconds,
         VIDEO_READINGS.c.chunk_max == key.chunk_max,
-        VIDEO_READINGS.c.prompt_digest == key.prompt_digest,
+        VIDEO_READINGS.c.reading_digest == key.reading_digest,
     )
 
 
@@ -53,8 +54,9 @@ class SqlVideoReadingStore:
             # next ask into a hit on nothing.
             return
         insert = pg_insert(VIDEO_READINGS).values(
-            sha256=key.sha256, model=key.model, chunk_seconds=key.chunk_seconds,
-            chunk_max=key.chunk_max, prompt_digest=key.prompt_digest,
+            sha256=key.sha256, provider=key.provider, model=key.model,
+            chunk_seconds=key.chunk_seconds, chunk_max=key.chunk_max,
+            reading_digest=key.reading_digest,
             reading=reading,
         )
         # The same key is the same inputs, so a later reading replaces an
@@ -62,9 +64,9 @@ class SqlVideoReadingStore:
         # both write, and either answer is a reading of those inputs.
         stmt = insert.on_conflict_do_update(
             index_elements=[
-                VIDEO_READINGS.c.sha256, VIDEO_READINGS.c.model,
-                VIDEO_READINGS.c.chunk_seconds, VIDEO_READINGS.c.chunk_max,
-                VIDEO_READINGS.c.prompt_digest,
+                VIDEO_READINGS.c.sha256, VIDEO_READINGS.c.provider,
+                VIDEO_READINGS.c.model, VIDEO_READINGS.c.chunk_seconds,
+                VIDEO_READINGS.c.chunk_max, VIDEO_READINGS.c.reading_digest,
             ],
             set_={"reading": insert.excluded.reading, "created_at": sa.text("now()")},
         )

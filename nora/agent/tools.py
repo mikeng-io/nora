@@ -138,6 +138,7 @@ from ..infra.vision.preprocess import (
     cut_video,
     download_media,
     preprocess_media,
+    video_encode_signature,
 )
 from ..obs.tracing import annotate, span
 from .arithmetic import evaluate as evaluate_expression
@@ -5354,10 +5355,12 @@ Args:
                             "do not describe what it might have shown.",
                 }
             sha256 = hashlib.sha256(data).hexdigest()
-            # URL bytes are described on the fly and NEVER stored in this
-            # conversation's media_json, so there is no reusable code to hand
-            # back — a code that cannot resolve on a later call would be a
-            # lie to the model (external audit finding, 2026-08-31).
+            # URL BYTES are NEVER stored in this conversation's media_json, so
+            # there is no reusable code to hand back — a code that cannot
+            # resolve on a later call would be a lie to the model (external
+            # audit finding, 2026-08-31). The READING may be cached (by
+            # content hash, and for a video in `video_readings`); the bytes
+            # never are.
             serve_code: str | None = None
         else:
             # ---- code path: resolve within this conversation (§1) -------
@@ -5531,12 +5534,10 @@ Args:
         # the rest» is served from the durable table forever, about a clip that
         # is now read whole.
         #
-        # So the geometry-dependent modality opts out, exactly as layer 2 does
-        # and for the same reason. What a video costs on a repeat is a
-        # re-read; what it would cost cached is a wrong answer nobody can see
-        # is wrong. The durable comprehension in `media_objects` is the right
-        # cache for a clip — it stores the caveat WITH the reading (layer 1),
-        # so it cannot come apart.
+        # So the geometry-dependent modality opts out of THIS cache. A video
+        # has its own below (DEC-198), keyed on everything its reading depends
+        # on — geometry included — with the caveat stored in the reading, so
+        # the two cannot come apart there either.
         cacheable_modality = modality != "video"
         cached_description = (
             await vision_cache.aget(sha256)
@@ -5561,11 +5562,19 @@ Args:
         # ask. A `question` read bypasses it for layer 2's reason.
         video_key: VideoReadingKey | None = None
         if modality == "video" and not question and video_readings is not None:
+            # Everything the model's VIEW depends on besides the key's own
+            # columns: the question (a question-less read resolves
+            # `DESCRIBE_PROMPTS["video"]` in the client), the declared media
+            # type, the reasoning effort and every encode setting.
+            view = "\x1f".join((
+                DESCRIBE_PROMPTS["video"], media_type,
+                str(getattr(vision_source, "reasoning_effort", "")),
+                video_encode_signature(),
+            ))
             video_key = VideoReadingKey(
-                sha256=sha256, model=describe_model,
+                sha256=sha256, provider=describe_provider, model=describe_model,
                 chunk_seconds=video_chunk_seconds, chunk_max=video_max_chunks,
-                prompt_digest=hashlib.sha256(
-                    DESCRIBE_PROMPTS["video"].encode("utf-8")).hexdigest()[:16],
+                reading_digest=hashlib.sha256(view.encode("utf-8")).hexdigest()[:32],
             )
             try:
                 cached_reading = await video_readings.get(key=video_key)
@@ -5580,8 +5589,8 @@ Args:
         if url:
             # URL path: the bytes are already in hand from the download; no
             # blob decrypt step exists for them (custody is untouched — a
-            # fetched URL is described on the fly, never written into the
-            # conversation's store).
+            # fetched URL's bytes are never written into the conversation's
+            # store; only its reading may be cached).
             data_for_vision = data
         else:
             # Decrypt the blob Nora already holds. `store.get` returns None
@@ -5689,10 +5698,10 @@ Args:
                     "have watched all of it.)"
                 )
                 result = one
-                # The one view reached a model; what it could not cover is a
-                # fact about the BYTES (ffmpeg cannot measure them), not about
-                # this attempt, so the same inputs give the same answer.
-                video_read_whole = True
+                # NOT cached: ffmpeg failing to cut at all can be a timeout or
+                # a killed process as easily as a clip it cannot decode, and a
+                # cached «I could not tell how long this clip is» would outlive
+                # the hiccup that caused it (DEC-198 review).
             else:
                 segments, read_windows = await read_video_windows(
                     cut=cut, media_type=media_type, ask=_ask,
@@ -5707,12 +5716,16 @@ Args:
                 description = "\n".join(segments)
                 coverage = describe_coverage(cut=cut, read=read_windows)
                 result = None
-                # Cacheable only when every window ffmpeg CUT reached a model.
-                # A window the chunk ceiling or ffmpeg left out is a fact about
-                # the inputs and repeats; a window the MODEL refused (a timeout,
-                # a cut-off) is a fact about THIS attempt, and caching the
-                # caveat would freeze a transient miss into every later answer.
-                video_read_whole = len(read_windows) == len(cut.windows)
+                # Cacheable only when the read is one the same inputs would
+                # ALWAYS produce: an intact cut (measured, no window dropped,
+                # none fallen back to silent — any of which can be a transient
+                # ffmpeg failure) and every window reaching a model (a timeout
+                # or cut-off is a fact about THIS attempt). A window the chunk
+                # CEILING left out is a fact about the inputs, and that caveat
+                # is cached with the reading.
+                video_read_whole = (
+                    not cut.degraded and len(read_windows) == len(cut.windows)
+                )
         else:
             # Preprocess (scale/re-encode via ffmpeg) BEFORE the vision call:
             # a 4K still carries many times the bytes — and tokens — of the

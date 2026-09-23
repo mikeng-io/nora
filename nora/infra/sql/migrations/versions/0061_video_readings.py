@@ -6,8 +6,9 @@ as a complete one (issue #117). So every look at a clip -- a Reel or Story by
 URL, or a room clip with no ingest reading -- paid a full video read, 60-120 s
 a window, on every ask.
 
-This table keys the reading on EVERYTHING it depends on: the bytes, the
-describer model, the chunk geometry and a digest of the prompt. It is not
+This table keys the reading on EVERYTHING it depends on: the bytes, the lane
+and describer model, the chunk geometry, and a digest of the rest of the
+model's view (the prompt, media type, reasoning effort and encode settings). It is not
 `media_objects`, whose row promises the bytes are held: a clip read by URL has
 no blob, and a key wider than a sha256 cannot sit in a table that handle
 lookups and search read as one.
@@ -32,17 +33,19 @@ def upgrade() -> None:
     op.create_table(
         "video_readings",
         sa.Column("sha256", sa.Text, nullable=False),
+        sa.Column("provider", sa.Text, nullable=False),
         sa.Column("model", sa.Text, nullable=False),
         sa.Column("chunk_seconds", sa.Integer, nullable=False),
         sa.Column("chunk_max", sa.Integer, nullable=False),
-        sa.Column("prompt_digest", sa.Text, nullable=False),
+        sa.Column("reading_digest", sa.Text, nullable=False),
         sa.Column("reading", sa.Text, nullable=False),
         sa.Column(
             "created_at", sa.DateTime(timezone=True), nullable=False,
             server_default=sa.text("now()"),
         ),
         sa.PrimaryKeyConstraint(
-            "sha256", "model", "chunk_seconds", "chunk_max", "prompt_digest",
+            "sha256", "provider", "model", "chunk_seconds", "chunk_max",
+            "reading_digest",
         ),
     )
 

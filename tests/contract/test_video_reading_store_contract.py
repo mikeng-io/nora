@@ -18,8 +18,8 @@ from nora.infra.sql.video_readings import SqlVideoReadingStore
 from nora.testing import FakeVideoReadingStore
 
 KEY = VideoReadingKey(
-    sha256="c" * 64, model="mimo-v2.6-flash", chunk_seconds=90, chunk_max=10,
-    prompt_digest="0123456789ab",
+    sha256="c" * 64, provider="opencode-go", model="mimo-v2.6-flash",
+    chunk_seconds=90, chunk_max=10, reading_digest="0123456789ab",
 )
 
 
@@ -36,6 +36,9 @@ async def store(request):
 
 
 async def test_an_unread_clip_is_a_miss(store):
+    """Against a NON-EMPTY store: an empty one misses for every key and would
+    pass this for a store that ignored the key entirely (review finding)."""
+    await store.put(key=KEY, reading="0:00 — a stage at night")
     assert await store.get(key=dataclasses.replace(KEY, sha256="d" * 64)) is None
 
 
@@ -45,8 +48,8 @@ async def test_a_put_reading_comes_back_for_the_same_key(store):
 
 
 @pytest.mark.parametrize("field,value", [
-    ("chunk_max", 20), ("chunk_seconds", 60), ("model", "k3-256k"),
-    ("prompt_digest", "ba9876543210"),
+    ("sha256", "d" * 64), ("provider", "omniroute"), ("model", "k3-256k"),
+    ("chunk_max", 20), ("chunk_seconds", 60), ("reading_digest", "ba9876543210"),
 ])
 async def test_any_other_input_is_a_miss_not_a_stale_hit(store, field, value):
     await store.put(key=KEY, reading="0:00 — a stage at night")

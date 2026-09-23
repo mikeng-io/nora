@@ -222,9 +222,21 @@ def _video_args(
     ]
 
 
+def video_encode_signature() -> str:
+    """Every encode setting a video window is cut with, as one stable string.
+
+    A cached reading is a function of the view the model saw, not only of the
+    bytes: change the resolution, frame cap, CRF or audio encode and the same
+    clip reads differently. This string goes into the reading cache's key
+    (DEC-198), so such a change MISSES instead of serving a reading of a view
+    that no longer exists.
+    """
+    return " ".join(_video_args(start=0.0, seconds=float(VIDEO_CHUNK_SECONDS)))
+
+
 async def _encode_window(
     run: Runner, *, start: float, seconds: float, budget_seconds: float, data: bytes,
-) -> tuple[int | None, bytes]:
+) -> tuple[int | None, bytes, bool]:
     """One window, WITH its audio — and silent if the audible encode fails.
 
     Keeping the audio track must never cost a clip that used to be readable
@@ -236,14 +248,19 @@ async def _encode_window(
     returncode, out, _err = await run(
         _video_args(start=start, seconds=seconds), budget_seconds, data)
     if returncode == 0 and out:
-        return returncode, out
+        return returncode, out, True
     log.warning(
         "ffmpeg refused the audible encode (rc=%s); retrying the window silent",
         returncode,
     )
     returncode, out, _err = await run(
         _video_args(start=start, seconds=seconds, audio=False), budget_seconds, data)
-    return returncode, out
+    # The third value says whether the window kept its SOUND. A silent retry
+    # can succeed after an audible encode that merely timed out, and the
+    # reading of that window is then a reading of the picture alone —
+    # `VideoCut.degraded` carries that forward so it is never cached as the
+    # audible reading its key promises.
+    return returncode, out, False
 
 
 def _probe_args() -> list[str]:
@@ -325,6 +342,13 @@ class VideoCut:
     covered_seconds: float
     capped: bool
     reason: str = ""
+    # True when this cut is not the one the same bytes would ALWAYS produce:
+    # the duration could not be measured, a window was dropped, or a window
+    # fell back to a silent encode. Any of those can be a transient ffmpeg
+    # failure (a timeout, a killed process) as easily as a fact about the
+    # clip, and nothing here can tell them apart — so a reading of a degraded
+    # cut is served, but never cached (DEC-198).
+    degraded: bool = False
 
     @property
     def chunks(self) -> tuple[bytes, ...]:
@@ -424,30 +448,32 @@ async def cut_video(
         # and `duration_seconds=None` is what stops the caller claiming it read
         # the whole thing. Degrading to the old shape is right; degrading to
         # the old SILENCE is what this issue exists to end.
-        returncode, out = await _encode_window(
+        returncode, out, _audible = await _encode_window(
             run, start=0.0, seconds=float(chunk_seconds), budget_seconds=timeout, data=data)
         if returncode != 0 or not out:
             return VideoCut(windows=(), duration_seconds=None, covered_seconds=0.0,
-                            capped=False, reason="ffmpeg")
+                            capped=False, reason="ffmpeg", degraded=True)
         return VideoCut(
             windows=(VideoWindow(
                 start_seconds=0.0, seconds=float(chunk_seconds), data=out),),
             duration_seconds=None, covered_seconds=float(chunk_seconds),
-            capped=False, reason="unmeasured",
+            capped=False, reason="unmeasured", degraded=True,
         )
 
     wanted = math.ceil(duration / chunk_seconds)
     taken = min(wanted, max_chunks)
     windows: list[VideoWindow] = []
     covered = 0.0
+    degraded = False
     for index in range(taken):
         start = float(index * chunk_seconds)
         length = min(float(chunk_seconds), duration - start)
         if length <= 0:
             break
-        returncode, out = await _encode_window(
+        returncode, out, audible = await _encode_window(
             run, start=start, seconds=length, budget_seconds=timeout, data=data)
         if returncode != 0 or not out:
+            degraded = True
             # One refused window is not a refused read. Skipping it keeps the
             # windows that DID reach a model and shortens what the caller may
             # claim to have seen; failing the whole read would throw away
@@ -458,6 +484,7 @@ async def cut_video(
             continue
         windows.append(VideoWindow(start_seconds=start, seconds=length, data=out))
         covered += length
+        degraded = degraded or not audible
     return VideoCut(
         windows=tuple(windows),
         duration_seconds=duration,
@@ -467,6 +494,7 @@ async def cut_video(
         # `complete` reads both, which is why `note()` keys on `complete`.
         capped=wanted > max_chunks,
         reason="" if windows else "ffmpeg",
+        degraded=degraded,
     )
 
 
@@ -493,7 +521,7 @@ async def preprocess_media(
     run: Runner = runner if runner is not None else _run
     if top == "video":
         run = runner if runner is not None else _run_video
-        returncode, out = await _encode_window(
+        returncode, out, _audible = await _encode_window(
             run, start=0.0, seconds=VIDEO_MAX_SECONDS, budget_seconds=timeout, data=data)
     else:
         run = runner if runner is not None else _run

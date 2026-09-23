@@ -810,15 +810,21 @@ class VideoReadingKey:
     so video was excluded from it entirely. Every input goes in the key instead:
 
     * `sha256` — the bytes.
+    * `provider`, `model` — the lane and describer that read it. BOTH: the
+      same model name through OmniRoute answers «I cannot see any video» as a
+      200 (it drops `video_url`), and that must never be served once the lane
+      moves to a direct provider.
     * `chunk_seconds`, `chunk_max` — the geometry; raising `chunk_max` must
       miss, or a stale «I have not seen the rest» is served forever.
-    * `model` — the describer that read it; moving the lane (K3 → MiMo) misses.
-    * `prompt_digest` — what it was asked; turning on speech (DEC-197) misses,
-      so an old SILENT reading is never served for a clip that now has sound.
+    * `reading_digest` — everything else the model's view depends on: the
+      question it was asked, the declared media type, the reasoning effort and
+      every encode setting (`preprocess.video_encode_signature`). Turning on
+      speech (DEC-197), or changing the resolution or audio encode, misses.
     """
 
     sha256: str
+    provider: str
     model: str
     chunk_seconds: int
     chunk_max: int
-    prompt_digest: str
+    reading_digest: str

@@ -893,17 +893,18 @@ MEDIA_OBJECTS = sa.Table(
 )
 
 # Question-less VIDEO readings (migration 0061), keyed on everything a
-# reading depends on — bytes, describer, chunk geometry, prompt. Not in
+# reading depends on — bytes, lane, describer, geometry, view digest. Not in
 # `media_objects`: that row promises the bytes are held, and a URL clip has no
 # blob. See `nora.domain.media.VideoReadingKey`.
 VIDEO_READINGS = sa.Table(
     "video_readings",
     METADATA,
     sa.Column("sha256", sa.Text, primary_key=True),
+    sa.Column("provider", sa.Text, primary_key=True),
     sa.Column("model", sa.Text, primary_key=True),
     sa.Column("chunk_seconds", sa.Integer, primary_key=True),
     sa.Column("chunk_max", sa.Integer, primary_key=True),
-    sa.Column("prompt_digest", sa.Text, primary_key=True),
+    sa.Column("reading_digest", sa.Text, primary_key=True),
     sa.Column("reading", sa.Text, nullable=False),
     sa.Column(
         "created_at", sa.DateTime(timezone=True), nullable=False,
