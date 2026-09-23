@@ -1,5 +1,6 @@
 """`SocialRouter` — one `SocialProvider` in front of two, dispatching per
-`(platform, what)` (design/instagram-adoption/08-social-adapter-architecture).
+`(platform, what)` (design/instagram-adoption/08-social-adapter-architecture,
+/15-bridge-is-the-only-entry, /18-instagram-read-and-search).
 
 The router exists so **the model never names a backend**. It names
 `(platform, what, target)`; the router decides. That is what keeps "OpenCLI
@@ -8,33 +9,27 @@ between — a choice it would make badly and inconsistently, and which would
 leak the topology into the prompt. If a doctrine line or a tool docstring ever
 says "instameow" or "opencli", this boundary has already failed.
 
-## The rule: the default is the RULE, the table is the EXCEPTION
+It is the single choke point for EVERY social tool, old and new: `social_fetch`
+(X, and Instagram account search until P11) and `instagram_read` (18) both
+hand their reads to this one object, so neither tool carries its own copy of a
+routing or an authorization rule.
 
-    Social reads go through the OpenCLI bridge. The Go package does messaging.
+## The rule: X goes to OpenCLI, Instagram goes to the bridge
 
-`EXCEPTION_ROUTES` is a short, justified exception list, NOT a per-verb
-preference. A row belongs on it only when all three hold:
+    X reads go through the OpenCLI bridge. Every Instagram read goes through
+    instagram-bridge's HTTP API (15, operator, 2026-09-23).
 
-1. OpenCLI **structurally cannot** serve it — not "serves it worse", not "is
-   flaky today", but has no such command;
-2. a named use case actually wants the capability;
-3. the exception is recorded in the design node with the measurement that
-   established (1).
-
-Today the list has exactly one row, and both halves of the proof are
-recorded: OpenCLI 1.8.7's `instagram` surface marks `story` as `[write]` — it
-POSTS a story — and has no story read anywhere, while instameow's `FetchReel`
-is the only path that exists. Two things this deliberately EXCLUDES although
-instameow can do them: `friendship_status` (real, OpenCLI has no equivalent,
-but no use case has asked — fails test 2) and `latest_reel_media` as a cheap
-"is a story up" probe (an optimisation of a row that is already routed — fails
-test 1: it is not a capability, it is a faster way to do one).
-
-The rule matters more than the row. A router whose entries are chosen by
-"which backend is better here" drifts into two parallel integrations within a
-year, because every verb has a better backend on some axis. A router whose
-entries each carry a proof of impossibility cannot drift: the list SHRINKS if
-OpenCLI grows a verb, and grows only against evidence.
+`EXCEPTION_ROUTES` is the list of rows the instagram-bridge serves, and it
+still carries its old name because the dispatch shape did not change: those
+rows resolve against it FIRST and never fall through to the default. What
+changed is the admission rule. It used to be «OpenCLI structurally cannot
+serve it», a proof of impossibility per row; since 15 the rule is that the
+bridge is the only door for Instagram, so a row joins the list when its bridge
+route works END TO END and leaves OpenCLI in the same change (15's per-verb
+cutover). `instagram/story` and `instagram/profile` are on it
+(`instagram_read`, P5). `instagram/search` is the one Instagram verb still on
+OpenCLI, until P11 lands its bridge route; nothing else Instagram is served
+anywhere, and `instagram/posts` has no mechanism at all (P13).
 
 ## No failover, and it is structural rather than a comment
 
@@ -54,48 +49,38 @@ would have silently routed every story read to OpenCLI the moment the
 Instagram backend was not composed — which is exactly the substitution the
 design forbids, wearing the costume of a sensible default.
 
-## The router also AUTHORIZES, and that is why it is worth having
+## The router also RESOLVES and AUTHORIZES, and that is why it is worth having
 
 Dispatch alone would not justify a class. The reason subject resolution and
-the tier check live here — moved out of `InstagramSocialClient` on 2026-09-22
+the reach check live here — moved out of `InstagramSocialClient` on 2026-09-22
 (design/instagram-adoption/10 §"Who owns what") — is that this is the single
 choke point every social read passes through: below the tool, so the model
 cannot bypass it; above the backends, so no backend carries its own copy of an
-authorization rule. A second backend would otherwise duplicate the tier check,
-and a duplicated authorization rule is one that diverges.
+authorization rule. A second backend would otherwise duplicate the check, and
+a duplicated authorization rule is one that diverges.
 
-The consequence that actually mattered is not the story row. It is that a
-check inside the Instagram client **structurally could not reach the other
-seven rows** (`x` post/profile/posts/search, `instagram` profile/posts/search),
-which therefore had NO subject authorization at all while node 07 says the
-ladder governs *all* social reads. `SUBJECT_TIERS` closes that by being TOTAL:
-every pair the tool can construct names its tier here, and a pair that does
-not is `unavailable` rather than served.
+**Resolution and authorization are two questions with two keys** (15
+§"Resolution is not authorization", 18 §"What the router has to learn"):
 
-## The seven default rows are Tier 2, and "allowed" is a decision, not a gap
+* **Resolution is keyed on `(platform, what, input kind)`** — `SUBJECT_INPUTS`.
+  A `named` target is a handle, a post URL or a search query a person in the
+  conversation typed (node 07's Tier 2, «allowed, never resolved
+  implicitly»): it reaches the backend UNTOUCHED and the person index is never
+  consulted — asserted as a negative in `tests/unit/test_social_router.py`,
+  because "we did not look anything up" is invisible in a status. A `person`
+  target is a `person_id` the TOOL resolved from a spoken name inside the room
+  (only the tool holds the turn's room); the person index turns it into the
+  igid, and no single igid is `ambiguous`. A triple that is not in the table
+  is not served.
+* **Authorization is keyed on the READ, never the input** — `TIER_ZERO_READS`.
+  Only a story read is visible to the person read (it lands in their viewer
+  list), so only `instagram/story` has a reach check: the person must be
+  Tier 0, listed in a group room Nora is in on any network. A profile needs
+  resolution alone.
 
-Node 07's ladder classifies a subject by **how its identity was obtained**:
-
-* **Tier 0 — the room.** `instagram/story`'s `target` is a `person_id`, turned
-  into an igid by the person index. The room is the grant, so the check is
-  «is this person in a room Nora is in», answered by `SocialSubjectIndex`.
-* **Tier 2 — the named.** The other seven take a handle, a post URL or a
-  search query *typed by a person in the conversation*. Node 07: «allowed,
-  never resolved implicitly.»
-
-So Tier 2 is allowed AS IS — and the half that is enforceable here is the
-second clause, not the first. Whether a human typed the handle is a fact about
-the conversation that no code below the tool can see; whether Nora RESOLVED
-one herself is a fact about this function, and it is the one the ladder
-actually forbids («the model may not invent a subject»). A Tier 2 row
-therefore passes its `target` through UNTOUCHED and the subject index is never
-consulted for it — asserted as a negative in
-`tests/unit/test_social_router.py`, because "we did not look anything up" is
-invisible in a status.
-
-Writing that as a table entry rather than as an `if what == "story"` is the
-point: the absence of a check is now spelled, dated and tested, so the next
-row added has to say which tier it is in or it does not get served.
+Writing both as tables rather than as an `if what == "story"` is the point:
+the absence of a check is spelled, dated and tested, so the next row added has
+to say how its subject resolves or it does not get served.
 """
 
 from __future__ import annotations
@@ -103,82 +88,97 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Literal
 
 from ...domain.ports import SocialProvider, SocialSubjectIndex
 from .results import AMBIGUOUS, REFUSED, UNAVAILABLE
 
 log = logging.getLogger("nora.social.router")
 
-#: The exception list, frozen: `(platform, what)` pairs the DEFAULT backend
-#: structurally cannot serve. This constant is the single source of truth for
-#: the routing rule — `tests/test_acceptance_rules.py::test_r86_…` derives the
-#: tool's vocabulary against it plus the host allowlist, so a row added here
-#: without a matching vocabulary row (or vice versa) goes red rather than
-#: shipping a pair that resolves to no backend at all.
+#: The rows the instagram-bridge serves, frozen: `(platform, what)` pairs that
+#: resolve against this list FIRST and never fall through to the OpenCLI
+#: default. The name is historical (module docstring); the admission rule is
+#: 15's — an Instagram verb joins when its bridge route works end to end, and
+#: leaves OpenCLI in the same change. `tests/test_acceptance_rules.py::
+#: test_r86_…` derives every social tool's vocabulary against this plus the
+#: host allowlist, so a row added here without a tool that constructs it (or
+#: the reverse) goes red.
 EXCEPTION_ROUTES: frozenset[tuple[str, str]] = frozenset({
+    ("instagram", "story"),
+    ("instagram", "profile"),
+})
+
+#: The two input kinds a target can arrive as (18 §"What the router has to
+#: learn"). P10 adds `handle` and `link` for Instagram.
+#:
+#: * `named` — a string a person in the conversation typed: a handle, a post
+#:   URL or id, a search query. Node 07's Tier 2: allowed, NEVER resolved.
+#: * `person` — a `person_id` the tool resolved from a spoken name within the
+#:   room. Only the person index may turn it into a network id.
+TargetKind = Literal["named", "person"]
+TARGET_NAMED: TargetKind = "named"
+TARGET_PERSON: TargetKind = "person"
+
+#: RESOLUTION, keyed on `(platform, what, input kind)`: every triple a tool may
+#: send, and so how its target becomes what a backend is handed. TOTAL by
+#: test — `tests/unit/test_social_router.py` derives the servable rows from
+#: `READ_ONLY_ALLOWLIST | EXCEPTION_ROUTES` and requires each to appear here —
+#: and fail-closed by construction: a triple not listed is `unavailable`.
+#:
+#: The Instagram rows admit `person` only, and that is the whole of P5's
+#: input surface: a `named` string for `instagram/story` or `instagram/profile`
+#: would be a handle nobody resolved, and until P10's username lookup exists
+#: nothing may turn one into an igid.
+SUBJECT_INPUTS: frozenset[tuple[str, str, str]] = frozenset({
+    ("x", "post", TARGET_NAMED),
+    ("x", "profile", TARGET_NAMED),
+    ("x", "posts", TARGET_NAMED),
+    ("x", "search", TARGET_NAMED),
+    ("instagram", "search", TARGET_NAMED),
+    ("instagram", "profile", TARGET_PERSON),
+    ("instagram", "story", TARGET_PERSON),
+})
+
+#: AUTHORIZATION, keyed on the READ alone: the reads with a Tier 0 reach check.
+#: Only a story — its author sees who viewed it (15 §"Resolution is not
+#: authorization"). Tier 0 is a property of the PERSON (listed in a group room
+#: on any network, never a `*` room, never a DM), answered by
+#: `SocialSubjectIndex.is_tier_zero` and by nothing else.
+TIER_ZERO_READS: frozenset[tuple[str, str]] = frozenset({
     ("instagram", "story"),
 })
 
-#: Tier 0 — «the room». The subject is a PERSON Nora already knows, named by
-#: `person_id`, and the network id behind them is a fact in the person index.
-#: The room is the grant, so the authorization question is «is this person in
-#: a room I am in» and `SocialSubjectIndex` is the only thing allowed to
-#: answer it (design/instagram-adoption/07 §tiers).
-TIER_ROOM = 0
-
-#: Tier 2 — «the named». The subject is a handle, a post URL or a search query
-#: that a person in the conversation typed. Allowed as-is; the ladder's
-#: clause that bites down here is "never resolved implicitly", which means the
-#: `target` rides through UNTOUCHED and the person index is never asked about
-#: it. Nora may look at a handle someone gave her; she may not turn a NAME
-#: into a handle herself.
-TIER_NAMED = 2
-
-#: Every `(platform, what)` the tool can construct and a backend can serve,
-#: against the tier its SUBJECT sits in. TOTAL by construction and by test:
-#: `tests/unit/test_social_router.py` derives its key set from
-#: `READ_ONLY_ALLOWLIST | EXCEPTION_ROUTES`, so a row that reaches a backend
-#: without a tier goes red rather than being read unauthorized.
-#:
-#: This table is the whole reason the check moved up here. Living in
-#: `InstagramSocialClient` it could only ever govern one row; the other seven
-#: had no subject authorization at all, which is not "Tier 2 is allowed" — it
-#: is an absence that happens to look like one.
-SUBJECT_TIERS: Mapping[tuple[str, str], int] = MappingProxyType({
-    ("instagram", "story"): TIER_ROOM,
-    ("x", "post"): TIER_NAMED,
-    ("x", "profile"): TIER_NAMED,
-    ("x", "posts"): TIER_NAMED,
-    ("x", "search"): TIER_NAMED,
-    ("instagram", "profile"): TIER_NAMED,
-    ("instagram", "posts"): TIER_NAMED,
-    ("instagram", "search"): TIER_NAMED,
-})
+#: The rows that cannot be served without a person index: every row with a
+#: `person` input (resolution) and every Tier 0 read (reach). Derived, so the
+#: constructor's check below cannot drift from the two tables it guards.
+_NEEDS_INDEX: frozenset[tuple[str, str]] = frozenset(
+    {(platform, what) for platform, what, kind in SUBJECT_INPUTS if kind == TARGET_PERSON}
+    | TIER_ZERO_READS
+)
 
 
 class SocialRouter(SocialProvider):
     """Dispatch per `(platform, what)`; itself a `SocialProvider`.
 
     Composed at the composition root in the position `OpenCliBridgeClient`
-    held alone, so `nora.agent.registry` and `social_fetch` are unchanged and
-    unaware — the whole point of the port.
+    held alone, so `nora.agent.registry` is unchanged and unaware — the whole
+    point of the port. `read` accepts one argument the port does not carry,
+    `target_kind`, with the port's own meaning as its default (`named`): the
+    input kind is consumed HERE, by resolution, and a backend only ever sees
+    the resolved target, so the backends' port has nothing to learn from it.
 
     `default` and each exception backend are OPTIONAL, because "not wired" is
     an ordinary state for both and they switch on independently: `[social]
-    enabled` gates the OpenCLI path, and the Instagram path additionally needs
-    a bridge and a subject index that the platform-adapter milestone has not
-    landed yet. An absent backend answers `unavailable` for ITS OWN rows only
-    — it never widens or narrows the other's reach.
+    enabled` gates the OpenCLI path, `[social.instagram] enabled` the bridge
+    path. An absent backend answers `unavailable` for ITS OWN rows only — it
+    never widens or narrows the other's reach.
 
     `subjects` is OPTIONAL and yet REQUIRED, which is not a contradiction: it
-    may be absent, but not while a backend that would serve a Tier 0 row is
-    wired. That pairing is checked at CONSTRUCTION for the same reason the
-    exception list is — a router that serves an unauthorized read on one rare
-    verb is discovered by a wrong answer in a room, and «refuses to start» is
-    the cheaper failure. Today nothing wires the Instagram backend, so nothing
-    needs an index; the moment something does, it cannot be composed without
-    one.
+    may be absent, but not while a backend is wired for a row that needs it
+    (a `person` input, or a Tier 0 read). That pairing is checked at
+    CONSTRUCTION for the same reason the exception list is — a router that
+    serves an unauthorized read on one rare verb is discovered by a wrong
+    answer in a room, and «refuses to start» is the cheaper failure.
     """
 
     def __init__(
@@ -191,19 +191,18 @@ class SocialRouter(SocialProvider):
         unknown = sorted(set(exceptions or {}) - EXCEPTION_ROUTES)
         if unknown:
             # A composition root cannot invent an exception row. The list is a
-            # design artifact carrying a proof of impossibility per entry
-            # (module docstring); letting a caller pass an arbitrary pair would
-            # move the routing rule from code somebody reviews to a wiring line
-            # somebody edits, which is how the "two parallel integrations"
-            # failure actually arrives. Raising at CONSTRUCTION, not at read
-            # time: this is a boot-time wiring error, and a mis-wired router
-            # that only misbehaves on one rare verb is worse than one that
-            # refuses to start.
+            # design artifact (module docstring); letting a caller pass an
+            # arbitrary pair would move the routing rule from code somebody
+            # reviews to a wiring line somebody edits, which is how the "two
+            # parallel integrations" failure actually arrives. Raising at
+            # CONSTRUCTION, not at read time: this is a boot-time wiring
+            # error, and a mis-wired router that only misbehaves on one rare
+            # verb is worse than one that refuses to start.
             raise ValueError(
                 f"{unknown} is not on the social exception list "
-                f"{sorted(EXCEPTION_ROUTES)} — a verb moves to a second "
-                "backend only against a recorded measurement that the default "
-                "cannot serve it (design/instagram-adoption/08)"
+                f"{sorted(EXCEPTION_ROUTES)} — an Instagram verb moves to the "
+                "bridge only when its route works end to end "
+                "(design/instagram-adoption/15)"
             )
         self._default = default
         self._exceptions: Mapping[tuple[str, str], SocialProvider] = (
@@ -211,22 +210,23 @@ class SocialRouter(SocialProvider):
         )
         self._subjects = subjects
         if subjects is None:
-            # A Tier 0 row is authorized by the person index and by nothing
-            # else. Composing a backend that serves one WITHOUT an index would
-            # leave the check to a fallback — and the only two fallbacks are
-            # «allow», which is an unauthorized read, and «deny», which is a
-            # boundary reported for a wiring gap. Neither is a thing to
-            # discover in production, so it is a boot error instead.
+            # A person-keyed row is resolved, and a Tier 0 row authorized, by
+            # the person index and by nothing else. Composing a backend that
+            # serves one WITHOUT an index would leave the check to a fallback
+            # — and the only two fallbacks are «allow», which is an
+            # unauthorized read, and «deny», which is a boundary reported for
+            # a wiring gap. Neither is a thing to discover in production, so
+            # it is a boot error instead.
             ungoverned = sorted(
-                row for row, tier in SUBJECT_TIERS.items()
-                if tier == TIER_ROOM and self._provider_for(row) is not None
+                row for row in _NEEDS_INDEX if self._provider_for(row) is not None
             )
             if ungoverned:
                 raise ValueError(
-                    f"{ungoverned} is a Tier 0 social row and a backend for "
-                    "it is wired, but no SocialSubjectIndex was given — the "
-                    "person index is the only thing that may resolve a "
-                    "subject or decide reach (design/instagram-adoption/07)"
+                    f"{ungoverned} needs the person index (a person input, or "
+                    "a Tier 0 reach check) and a backend for it is wired, but "
+                    "no SocialSubjectIndex was given — the person index is the "
+                    "only thing that may resolve a subject or decide reach "
+                    "(design/instagram-adoption/07, /18)"
                 )
 
     def _provider_for(self, row: tuple[str, str]) -> SocialProvider | None:
@@ -240,21 +240,22 @@ class SocialRouter(SocialProvider):
 
     async def read(
         self, *, platform: str, what: str, target: str, limit: int,
+        target_kind: TargetKind = TARGET_NAMED,
     ) -> dict[str, Any]:
         """Route one read. NEVER raises (R-5), NEVER fails over.
 
-        Three steps, in this order: **pick, authorize, dispatch.**
+        Three steps, in this order: **pick, resolve-and-authorize, dispatch.**
 
         Picking first looks like the wrong order for an authorization check
         and is not: choosing a backend touches nothing and reaches nobody, so
-        nothing has happened yet when the tier is decided. What it buys is
+        nothing has happened yet when the reach is decided. What it buys is
         that an UNWIRED backend still answers `unavailable` — «I couldn't
         check» — rather than a boundary or a missing-index sentence about a
         read that was never possible in the first place. The property that
         matters is that authorization happens before DISPATCH, and it does.
 
-        Beyond `unavailable` for an unwired backend and the two tier answers
-        it owns outright (`ambiguous`, `refused`), the router adds no states:
+        Beyond `unavailable` for an unwired backend and the two answers it
+        owns outright (`ambiguous`, `refused`), the router adds no states:
         whatever the chosen backend answers is returned VERBATIM, because the
         router's job is to pick and to authorize, not to interpret. Re-mapping
         a backend's status here would put a second opinion about what
@@ -264,18 +265,19 @@ class SocialRouter(SocialProvider):
         if provider is None:
             # Not wired. For an exception row this is also the no-failover
             # rule doing its work: the request does NOT fall through to
-            # `default`, which is the backend that structurally cannot serve
-            # it, so sending it there would produce a refusal that reads like
-            # an answer about the subject.
+            # `default`, which is a backend that must not serve it, so sending
+            # it there would produce a refusal that reads like an answer about
+            # the subject.
             log.warning("social router: no backend for %s/%s", platform, what)
             return dict(UNAVAILABLE)
-        authorized = await self._authorize(platform=platform, what=what, target=target)
+        authorized = await self._authorize(
+            platform=platform, what=what, target=target, target_kind=target_kind,
+        )
         if isinstance(authorized, dict):
             return authorized
-        target = authorized
         try:
             return await provider.read(
-                platform=platform, what=what, target=target, limit=limit,
+                platform=platform, what=what, target=authorized, limit=limit,
             )
         except Exception:
             # Every implementation is documented never to raise; this is the
@@ -286,60 +288,72 @@ class SocialRouter(SocialProvider):
             return dict(UNAVAILABLE)
 
     async def _authorize(
-        self, *, platform: str, what: str, target: str,
+        self, *, platform: str, what: str, target: str, target_kind: str,
     ) -> str | dict[str, Any]:
-        """The tier ladder, before dispatch. Returns the `target` the backend
-        should be given, or the REFUSAL PAYLOAD to answer instead.
+        """Resolution, then the reach check, before dispatch. Returns the
+        `target` the backend should be given, or the PAYLOAD to answer
+        instead.
 
         Two return types rather than a bool plus an out-parameter because the
-        two outcomes carry different values: an allowed Tier 0 read continues
-        with a DIFFERENT target than it arrived with — the person index turned
-        a `person_id` into a network id, which is the whole point of the
-        resolution step — and a blocked one carries the sentence Nora says.
+        two outcomes carry different values: an allowed `person` read
+        continues with a DIFFERENT target than it arrived with — the person
+        index turned a `person_id` into a network id, which is the whole point
+        of the resolution step — and a blocked one carries the sentence Nora
+        says.
 
         Fail-closed everywhere, including on the two paths that are not a
-        decision at all: an unclassified row and an index that is missing
-        under a Tier 0 row are both `unavailable` («I couldn't check»), which
-        is true of a wiring gap, and never `refused`, which would report a
-        developer's omission as a boundary the operator set.
+        decision at all: an unadmitted triple and an index that is missing
+        under a `person` row are both `unavailable` («I couldn't check»),
+        which is true of a wiring gap, and never `refused`, which would report
+        a developer's omission as a boundary the operator set.
         """
-        tier = SUBJECT_TIERS.get((platform, what))
-        if tier == TIER_NAMED:
+        if (platform, what, target_kind) not in SUBJECT_INPUTS:
+            # No resolution row. A triple reaching a backend without one is a
+            # vocabulary that grew without a resolution decision — the exact
+            # drift the table exists to make impossible — so it is not
+            # served. `unavailable`, and logged at ERROR because somebody has
+            # to fix it.
+            log.error(
+                "social router: no resolution for %s/%s by %s",
+                platform, what, target_kind,
+            )
+            return dict(UNAVAILABLE)
+        if target_kind == TARGET_NAMED:
             # Allowed as-is, and the index is deliberately NOT consulted.
             # «Never resolved implicitly» is the clause of node 07 that code
             # below the tool can actually hold: whether a human typed this
             # handle is a fact about the conversation, but whether Nora
-            # invented it is a fact about this line.
+            # invented it is a fact about this line. No Tier 0 read admits a
+            # `named` input (`SUBJECT_INPUTS`), so no reach check is skipped.
             return target
-        if tier == TIER_ROOM:
-            if self._subjects is None:
-                # Unreachable through the constructor, which refuses this
-                # pairing at boot. Kept because it is the fail-closed half of
-                # that check and costs one branch: a router reaching here with
-                # no index must not read.
-                log.error("social router: a Tier 0 row with no subject index")
-                return dict(UNAVAILABLE)
-            try:
-                # RESOLVE before AUTHORIZE: a tier is a property of a person,
-                # so there is nothing to authorize until the subject is one.
-                # The order also keeps the two answers distinct — «who?» and
-                # «not them» are different sentences and the model says a
-                # different thing for each.
-                igid = await self._subjects.igid_for(person_id=target)
-                if not igid:
-                    return dict(AMBIGUOUS)
-                if not await self._subjects.is_tier_zero(person_id=target):
-                    return dict(REFUSED)
-            except Exception:
-                # The port documents both methods as never raising and as
-                # failing CLOSED; this is the belt for those braces, and it
-                # lands on `unavailable` rather than on a read.
-                log.exception("social subject index raised")
-                return dict(UNAVAILABLE)
-            return igid
-        # No tier. A pair reaching a backend without one is a vocabulary that
-        # grew without an authorization decision — the exact drift the table
-        # exists to make impossible — so it is not served. `unavailable`, and
-        # logged at ERROR because somebody has to fix it.
-        log.error("social router: no subject tier for %s/%s", platform, what)
-        return dict(UNAVAILABLE)
+        if self._subjects is None:
+            # Unreachable through the constructor, which refuses this pairing
+            # at boot. Kept because it is the fail-closed half of that check
+            # and costs one branch: a router reaching here with no index must
+            # not read.
+            log.error("social router: a person-keyed row with no subject index")
+            return dict(UNAVAILABLE)
+        try:
+            # RESOLVE before AUTHORIZE: a tier is a property of a person, so
+            # there is nothing to authorize until the subject is one account.
+            # The order also keeps the two answers distinct — «which account?»
+            # and «not them» are different sentences and the model says a
+            # different thing for each. `None` is zero accounts or several;
+            # both are «I don't know which account is theirs, so I didn't
+            # look» and neither is ever a pick.
+            igid = await self._subjects.igid_for(person_id=target)
+            if not igid:
+                return dict(AMBIGUOUS)
+            # REACH, keyed on the read and never on the input kind: a story
+            # view lands in its author's viewer list, a profile read does not.
+            if (platform, what) in TIER_ZERO_READS and not await self._subjects.is_tier_zero(
+                person_id=target,
+            ):
+                return dict(REFUSED)
+        except Exception:
+            # The port documents both methods as never raising and as failing
+            # CLOSED; this is the belt for those braces, and it lands on
+            # `unavailable` rather than on a read.
+            log.exception("social subject index raised")
+            return dict(UNAVAILABLE)
+        return igid

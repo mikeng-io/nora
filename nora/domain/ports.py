@@ -1607,7 +1607,8 @@ class SteamPresenceProvider(Protocol):
 @runtime_checkable
 class SocialProvider(Protocol):
     """`{platform, what, target, limit} -> {status, ...}` social reads, behind
-    the `social_fetch` tool (DEC-151). NEVER raises — a transport failure of
+    the `social_fetch` (DEC-151) and `instagram_read`
+    (design/instagram-adoption/18) tools. NEVER raises — a transport failure of
     the bridge call is `{"status": "unavailable"}`, never an exception into
     the loop (R-5), and the R-27 three states apply end to end: an error is
     never a `nothing_found`.
@@ -1621,8 +1622,9 @@ class SocialProvider(Protocol):
     `tests/contract/test_social_provider_contract.py`, and all three pass it.
 
     Two DECLARED status extensions ride beside the core three on this port,
-    both of them only reachable on the Instagram story row, and both named
-    here so they cannot arrive silently (`nora.agent.ports
+    both of them produced by `SocialRouter` on a PERSON-keyed Instagram read
+    (`ambiguous` on profile and story, `refused` on story only), and both
+    named here so they cannot arrive silently (`nora.agent.ports
     .DECLARED_STATUS_EXTENSIONS` is where the vocabulary is declared):
 
       * `ambiguous` — the subject did not resolve. `target` is a `person_id`

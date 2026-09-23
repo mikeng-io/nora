@@ -80,6 +80,11 @@ _EXCEPTION_READ = {
 #: (design/instagram-adoption/10 §"Who owns what"), so the client no longer
 #: has an index and a `person_id` arriving there would be a routing bug.
 _BACKEND_READ = {**_EXCEPTION_READ, "target": "10000001"}
+#: The same read as `instagram_read` sends it: a PERSON input, which the router
+#: resolves through the index (design/instagram-adoption/18). `target_kind` is
+#: the router's own argument, not the port's — the backends only ever see a
+#: resolved target — so it rides only the reads handed to a router.
+_ROUTER_EXCEPTION_READ = {**_EXCEPTION_READ, "target_kind": "person"}
 #: The person index as the story arm needs it: `miles` resolves and is in a
 #: room Nora is in, which is Tier 0 and the only tier v1 serves.
 _SUBJECTS = {"miles": "10000001"}
@@ -170,7 +175,7 @@ async def arm(request):
         )
         built = (
             router,
-            _DEFAULT_READ if request.param == "router/default" else _EXCEPTION_READ,
+            _DEFAULT_READ if request.param == "router/default" else _ROUTER_EXCEPTION_READ,
         )
     yield (fake, *built)
     await server.close()
@@ -193,7 +198,7 @@ def dead_arm(request):
         exceptions={("instagram", "story"): instagram},
         subjects=FakeSocialSubjectIndex(_SUBJECTS),
     )
-    return router, _EXCEPTION_READ
+    return router, _ROUTER_EXCEPTION_READ
 
 
 # ---- the port's shape ------------------------------------------------------
@@ -341,7 +346,7 @@ async def test_the_tier_ladder_answers_outside_r27s_three_states(subjects, expec
         exceptions={("instagram", "story"): client},
         subjects=subjects,
     )
-    out = await router.read(**_EXCEPTION_READ)
+    out = await router.read(**_ROUTER_EXCEPTION_READ)
     assert out["status"] == expected
     assert expected not in R27_CORE_STATES   # positive control: it is an extension
 
@@ -350,7 +355,7 @@ async def test_the_tier_ladder_answers_outside_r27s_three_states(subjects, expec
     ("read", "exceptions"),
     [
         (_DEFAULT_READ, False),
-        (_EXCEPTION_READ, True),
+        (_ROUTER_EXCEPTION_READ, True),
     ],
 )
 async def test_the_router_passes_a_backends_status_through_verbatim(read, exceptions):

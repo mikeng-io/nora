@@ -2025,8 +2025,9 @@ async def build_dependencies(
                 cfg.search.provider,
                 cfg.search.api_key_env,
             )
-    # `social_fetch` (DEC-151) gets ONE `SocialProvider` — `SocialRouter` —
-    # and the registry stays unaware that there are two backends under it
+    # `social_fetch` (DEC-151) and `instagram_read` (design/instagram-
+    # adoption/18) get ONE `SocialProvider` — `SocialRouter` — and the
+    # registry stays unaware that there are two backends under it
     # (design/instagram-adoption/08). Each backend is wired independently and
     # there is NO credential on either, so `enabled` alone is the gate (the
     # `[preview]` shape); an unwired backend answers `unavailable` for ITS OWN
@@ -2044,38 +2045,38 @@ async def build_dependencies(
             timeout_seconds=cfg.social.timeout_seconds,
             content_max_chars=cfg.social.content_max_chars,
         )
-    # The EXCEPTION backend serves the one row OpenCLI structurally cannot
-    # (`instagram/story`). It is not built yet, and the reason is a real
-    # dependency rather than an omission: that row is Tier 0, so the ROUTER
-    # needs a `SocialSubjectIndex` — `person_id -> igid`, plus the reach check
-    # — and that needs the `instagram` id kind (`fbid` + `igid`) in
-    # `identity.toml`, which belongs to the platform-adapter milestone
-    # (design/instagram-adoption/11 M2) and is ITS schema to define, not the
-    # social axis's. `SocialRouter` refuses to be constructed with a Tier 0
-    # backend and no index, so this is not a discipline to remember.
+    # The INSTAGRAM backend serves every Instagram read the bridge has a route
+    # for — `instagram/story` and `instagram/profile`, `instagram_read`'s two
+    # (design/instagram-adoption/15, /18, P5). Both rows take a PERSON, so the
+    # router needs a `SocialSubjectIndex`: `PersonsSubjectIndex` resolves
+    # person -> igid off `identity.toml` (kind-aware; none or several is
+    # `ambiguous`) and answers Tier 0 off `policy.toml`'s group rooms (a `*`
+    # room and `[dm]` never count). `SocialRouter` refuses to be constructed
+    # with that backend and no index, so the pairing is not a discipline to
+    # remember.
     #
-    # Wiring it with a resolver that answers `None` for everybody would be
-    # worse than not wiring it: the tool would say `ambiguous` («I don't know
-    # whose account that is») about people Nora knows perfectly well, which is
-    # a false statement about HER OWN index manufactured out of a wiring gap.
-    # Unwired, the router answers `unavailable` — «I couldn't check» — which
-    # is true. `[social.instagram] enabled` exists so turning it on is a
-    # one-line change once the index can answer.
+    # Its own `enabled`, because the two backends are provisioned and fail
+    # independently: turning Instagram on must not need the host's OpenCLI
+    # service, and a checkpointed Instagram session must not take X with it.
     instagram_social: SocialProvider | None = None
+    social_subjects = None
     if cfg.social.instagram.enabled:
-        log.warning(
-            "[social.instagram] is enabled but no subject index exists yet — "
-            "Instagram story reads stay unavailable until the person index "
-            "carries igids (design/instagram-adoption/11 M2)",
+        from nora.infra.social import InstagramSocialClient, PersonsSubjectIndex
+        instagram_social = InstagramSocialClient(
+            base_url=cfg.social.instagram.base_url,
+            timeout_seconds=cfg.social.instagram.timeout_seconds,
+            content_max_chars=cfg.social.content_max_chars,
         )
+        social_subjects = PersonsSubjectIndex(persons, allowlist)
     if opencli_client is not None or instagram_social is not None:
-        from nora.infra.social import SocialRouter
+        from nora.infra.social import EXCEPTION_ROUTES, SocialRouter
         social_client = SocialRouter(
             default=opencli_client,
             exceptions=(
-                {("instagram", "story"): instagram_social}
+                dict.fromkeys(EXCEPTION_ROUTES, instagram_social)
                 if instagram_social is not None else {}
             ),
+            subjects=social_subjects,
         )
     # `weather` (DEC-70) is wired on `[weather] enabled` alone — the HK Observatory
     # provider is KEYLESS, so unlike `route`/`search` there is no key to resolve;
