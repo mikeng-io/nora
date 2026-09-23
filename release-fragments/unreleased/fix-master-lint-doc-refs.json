@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "Line-length fix in a test file.",
+  "details": [],
+  "limitations": [],
+  "reason": "Test-only: a 102-column line added by #391 in tests/architecture/test_doc_references_resolve.py made `make lint` fail on master. Wrapped; no behaviour changes."
+}
