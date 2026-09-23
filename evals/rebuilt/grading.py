@@ -170,14 +170,21 @@ class Judge:
             )
             return answer.choices[0].message.content or ""
 
-        # CONCURRENT, not one after another (2026-09-24): the samples are
-        # independent draws of one prompt, and serially three of them made the
-        # judge the longest part of every judged case — 859s for one draw on
-        # the presence corpus, most of it waiting on the judge.
+        # ONE AFTER ANOTHER, and it stays that way. Tried concurrently on
+        # 2026-09-24 to cut judged-draw time; the judge alias's provider
+        # answered three simultaneous large prompts with «All credentials
+        # … are cooling down (HTTP 429)» and fell back to a provider that
+        # timed out, so 16 of 21 draws came back ERROR on an otherwise idle
+        # host. Stops at the first failure: a failed sample is an ERROR about
+        # the instrument, and asking again after it is only more load.
+        answers: list[str | BaseException] = []
         try:
-            answers = await asyncio.gather(
-                *(one_sample() for _ in range(self.samples)), return_exceptions=True,
-            )
+            for _ in range(self.samples):
+                try:
+                    answers.append(await one_sample())
+                except Exception as exc:                      # noqa: BLE001
+                    answers.append(exc)
+                    break
         finally:
             await client.close()
         raws = [a for a in answers if isinstance(a, str)]
