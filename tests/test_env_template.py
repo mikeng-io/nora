@@ -355,7 +355,7 @@ def test_config_example_still_loads_through_the_config_model(tmp_path, monkeypat
     # gained its `:0731` catalog tag and the loop timeout went 120 → 240.
     assert cfg.llm.model == "ollamacloud/deepseek-v4-flash:0731"
     assert cfg.llm.reasoning_effort == "low"
-    assert cfg.llm.timeout_seconds == 240
+    assert cfg.llm.timeout_seconds == 360
 
 
 def test_both_config_files_agree_on_the_dreamer_runtime_shape(tmp_path, monkeypatch):

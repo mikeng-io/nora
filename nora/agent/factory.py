@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import httpx
 from openai import AsyncOpenAI
 from strands import Agent, ModelRetryStrategy
 from strands.agent.conversation_manager import NullConversationManager
@@ -70,10 +71,16 @@ DEFAULT_DREAM_AGENT_NAME = "dreamer"
 RETRY_BACKOFF_FRACTION = 0.25
 
 
-def create_client(*, base_url: str, api_key: str) -> AsyncOpenAI:
+def create_client(
+    *, base_url: str, api_key: str, http_client: httpx.AsyncClient | None = None,
+) -> AsyncOpenAI:
+    """`http_client` is the transport seam a direct describer lane needs when
+    its endpoint wants something on EVERY request that the SDK does not send —
+    OpenCode Go's mandatory `x-opencode-session` (DEC-197). `None` keeps the
+    SDK's own client, so every existing caller is unchanged."""
     if not api_key:
         raise RuntimeError("api_key is empty — refusing to start")
-    return AsyncOpenAI(api_key=api_key, base_url=base_url)
+    return AsyncOpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
 
 
 def create_model_provider(

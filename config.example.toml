@@ -289,7 +289,17 @@ defer_tools = false
 # sequence instead, and the invariant is waves × derived < loop × 0.6
 # (design/media-read-lane/07-timeout-derivation.md). This value still bounds the
 # whole turn; it just no longer sets the vision ceiling for a short clip.
-timeout_seconds = 240
+# 240 → 360 (DEC-197, operator 2026-09-23, applied live 2026-09-24): the
+# settled pair with `vision_timeout_seconds = 120`. 360 × 0.6 = 216 s is the
+# loop share one media read may spend, so a one-window clip gets the full 120
+# and a ten-window clip 21.6 s a window. The 90 s audible window measured
+# min 28.5 / median 41.6 / max 120.8 s (n=16), so 36-40 s timed half of them
+# out. KNOWN LIMIT, unchanged by this: windows are read one after another, so
+# a clip of 8+ windows (over ~10.5 min) derives a per-window ceiling below the
+# fastest audible read measured (28.5 s) and cannot finish a window; 6-7
+# windows sit below the median. Concurrent windows
+# (design/media-read-lane/01-chunk-parallelism.md) are the fix.
+timeout_seconds = 360
 
 # The three caps around the WHOLE agent loop for one tag — all measured
 # 2026-08-06, all three previously wrong in the same direction.
@@ -586,7 +596,12 @@ timeout_seconds = 8.0     # ingest path: a wedged daemon costs seconds, never th
 # GLM 5.3 Flash 2-4s vs M3-style 5-26s per image, accuracy parity except
 # hyphens/punctuation in dense OCR — verified through OmniRoute).
 vision_model = "ollamacloud/glm-5.3-flash"
-vision_max_tokens = 1024
+# 1024 → 4096 (DEC-197): MiMo v2.6 Flash transcribing a clip's speech runs
+# past 1024 and returns `finish_reason="length"`, which `_checked` turns into
+# `unavailable` (a truncated description reads like a complete one). This is a
+# PER-REQUEST allowance, not an aggregate budget, and it is shared: images,
+# audio, every video window and the text pass all get it.
+vision_max_tokens = 4096
 vision_reasoning_effort = "low"
 vision_max_bytes = 8388608   # 8 MiB → ~10.7 MiB base64 body
 # 20 → 40 (2026-08-30, operator): the per-call vision budget derives as
@@ -611,7 +626,11 @@ vision_max_bytes = 8388608   # 8 MiB → ~10.7 MiB base64 body
 # caught by independent review 2026-09-23.) A fifteen-minute clip therefore
 # still fits the loop; it just does not get this number divided by ten.
 # The note above is kept as history: its arithmetic was true of the old formula.
-vision_timeout_seconds = 40.0
+# 40 → 120 (DEC-197, operator 2026-09-23, applied live 2026-09-24): with the
+# serial divisor a one-window read is ONE wave, so this number now binds —
+# min(120, 360 × 0.6 / 1) = 120 s. Sized on the measured tail of an audible
+# 90 s window (120.8 s), not its median.
+vision_timeout_seconds = 120.0
 # Whether STICKERS are among the media that get read (sticker spec §6, rescoped
 # by issue #116).
 #
@@ -2145,9 +2164,11 @@ headers_env = ""                      # same shape/var as obs.tracing.headers_en
 # because OmniRoute drops `video_url` content blocks (probe 2026-08-30: router
 # prompt tokens 95 vs native 3164 for the same payload). A kimi provider whose
 # key is unset answers `unavailable`, never a silent omniroute fallback.
-# `api_key_env` (optional, kimi only) NAMES the env var holding the direct
-# lane's key (DEC-8 — the value never lands here); empty falls back to
-# `KIMI_CODE_API_KEY`.
+# `"opencode-go"` (DEC-197) travels DIRECT to `opencode.ai/zen/go/v1` using
+# `OPENCODE_GO_API_KEY`, for MiMo v2.6 Flash (video with sound, and audio).
+# `api_key_env` (optional, direct lanes only) NAMES the env var holding the
+# direct lane's key (DEC-8 — the value never lands here); empty falls back to
+# the lane's own default, `KIMI_CODE_API_KEY` or `OPENCODE_GO_API_KEY`.
 [media.describe.image]
 enabled = true
 # ollamacloud/minimax-m3 → ollamacloud/glm-5.3-flash (2026-08-30, benchmark:
@@ -2156,9 +2177,15 @@ model = "ollamacloud/glm-5.3-flash"
 provider = "omniroute"
 
 [media.describe.audio]
-enabled = false
-model = ""
-provider = "omniroute"
+# ENABLED 2026-09-24 (DEC-197, operator: «audio 亦都 enable 佢啦，直接啟動佢
+# override 之前個 decision») — MiMo v2.6 Flash, DIRECT through OpenCode Go.
+# Three settings, not one: `enabled` alone leaves it unavailable (no model),
+# and a model without `provider` would travel OmniRoute. This is the audio
+# DESCRIBER — `media_fetch` on an audio blob, and automatic comprehension of an
+# audio file. A voice note's words still come from the STT lane at ingest.
+enabled = true
+model = "mimo-v2.6-flash"
+provider = "opencode-go"
 
 [media.describe.video]
 # ENABLED 2026-08-30 — kimi DIRECT provider, NOT omniroute: OmniRoute drops
@@ -2168,9 +2195,18 @@ provider = "omniroute"
 # injected (docker-compose.yml) or this answers `unavailable` — never a
 # silent omniroute fallback. k3-256k over k3 (1M): same video token cost,
 # ~2x faster, half the quota (benchmark 2026-08-30).
+#
+# k3-256k/kimi → mimo-v2.6-flash/opencode-go (DEC-197, 2026-09-24): OpenCode
+# Go's OWN endpoint serves MiMo v2.6 Flash with video AND its audio track
+# (OmniRoute drops `video_url`; api.kimi.com does not serve MiMo). 2.7x fewer
+# video tokens than K3 and ~30,100 req / 5 h of quota against K3's 110 —
+# comparable accuracy, so a cost/quota change, not an accuracy upgrade. Needs
+# `OPENCODE_GO_API_KEY` injected (docker-compose.yml); the endpoint requires an
+# `x-opencode-session` header, which the lane's client stamps per request.
+# K3 stays the documented fallback: `model = "k3-256k"`, `provider = "kimi"`.
 enabled = true
-model = "k3-256k"
-provider = "kimi"
+model = "mimo-v2.6-flash"
+provider = "opencode-go"
 # Video bytes are routinely far larger than a still image; the shared
 # `vision_max_bytes` (8 MiB, chosen for images) would turn a real clip into
 # `too_large`. Set to the SAME 100 MiB as `[media] max_bytes` — the custody

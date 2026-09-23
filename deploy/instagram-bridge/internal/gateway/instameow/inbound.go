@@ -151,9 +151,11 @@ type eventMedia struct {
 // investigated.
 type eventShared struct {
 	// Caption is `caption_body_text`: the post's own caption, as its author
-	// wrote it. This is the free depth — it is already in the delta, so a
-	// room can be followed at zero cost with no fetch and no model call
-	// (design/instagram-adoption/13, "three depths, three costs").
+	// wrote it, passed through when a delta carries one. It is NOT the free
+	// depth: measured 2026-09-24, a live shared reel and a live shared story
+	// carried no caption at all (design/instagram-adoption/13, the dated
+	// section). What is free is the author and TargetURL, from which the
+	// adapter reads the kind and a clean link.
 	Caption string `json:"caption,omitempty"`
 	// Author is who posted the thing being shared, NOT who shared it. The
 	// sharer is `sender`, and conflating the two would attribute a stranger's

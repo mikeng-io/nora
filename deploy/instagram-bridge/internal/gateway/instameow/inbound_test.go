@@ -603,9 +603,11 @@ func xmaMessage(x *slidetypes.XMAContent, textBody string) *slidetypes.Message {
 	}
 }
 
-// The free depth: caption and author, with no fetch and no model call. This is
-// what makes a spammy room affordable to follow at all — every shared reel
-// costs exactly this unless somebody asks about one.
+// Caption and author, passed through with no fetch and no model call, when the
+// XMA carries them. This fixture is the fullest shape the library declares; a
+// live share measured 2026-09-24 carried the author and TargetURL and NO
+// caption, so the caption is not the free depth
+// (design/instagram-adoption/13, the dated section).
 func TestSharedReelCarriesCaptionAndAuthorForFree(t *testing.T) {
 	ev := normalizeMessage(threadShort, xmaMessage(&slidetypes.XMAContent{
 		HeaderTitleText: "someaccount",

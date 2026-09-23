@@ -101,17 +101,20 @@ enabled = false
 [media]
 encryption_key_env = "MEDIA_ENCRYPTION_KEY"
 vision_model = "a-vision-model"
-vision_timeout_seconds = 40.0
+vision_timeout_seconds = 120.0
+vision_max_tokens = 4096
 sticker_descriptions = true
 [media.describe.audio]
-enabled = false
+enabled = true
+model = "an-audio-model"
+provider = "opencode-go"
 [media.describe.image]
 enabled = true
 model = "a-describe-model"
 [media.describe.video]
 enabled = true
 model = "a-video-model"
-provider = "kimi"
+provider = "opencode-go"
 max_bytes = 104857600
 [image_gen.xai]
 model = "an-image-model"

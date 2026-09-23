@@ -209,7 +209,7 @@ def test_config_uses_the_target_shape(toml_path):
     # `tests/test_env_template.py` is what keeps the template and
     # config.toml from drifting apart again.
     assert cfg.llm.model == "ollamacloud/deepseek-v4-flash:0731"
-    assert cfg.llm.timeout_seconds == 240
+    assert cfg.llm.timeout_seconds == 360  # 240 → 360, DEC-197 (2026-09-24)
     assert cfg.llm.limits.turns == 20
     assert cfg.llm.max_tokens == 2000
     # engagement owns the trigger; policy is declared even though only one exists

@@ -278,3 +278,22 @@ async def test_this_stage_labels_both_llm_series_audience_tag():
     ) == 0
     assert len(metrics.observations("nora_llm_latency_seconds", audience="tag")) == 1
     assert metrics.observations("nora_llm_latency_seconds", audience="heartbeat") == []
+
+
+async def test_the_turn_publishes_its_deadline_to_the_tools_it_runs():
+    """DEC-197 review: a tool spending wall clock on its own model call (the
+    vision describer) must see how much of THIS turn is left. The runner is
+    inside the `wait_for`, so what it reads is what every tool reads."""
+    from nora.domain.turn_deadline import seconds_left
+
+    seen: list[float | None] = []
+
+    class _Reads(_FakeRunner):
+        async def invoke(self, **kwargs):
+            seen.append(seconds_left())
+            return await super().invoke(**kwargs)
+
+    await _run(_Reads(), timeout_seconds=42.0)
+
+    assert seen[0] is not None and 41.0 < seen[0] <= 42.0, seen
+    assert seconds_left() is None

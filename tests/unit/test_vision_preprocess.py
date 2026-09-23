@@ -275,17 +275,106 @@ async def test_a_long_clip_is_read_in_order_and_seeked_per_window():
             assert args.index("-ss") < args.index("-i"), "seek the INPUT"
 
 
-async def test_the_chunks_stay_silent():
-    """`-an` strips the audio track, exactly as the single-view path did before
-    this change. Issue #117 explicitly does NOT change that: extracting the
-    audio and running STT over it was proposed and rejected as scope."""
+async def test_every_window_is_encoded_with_its_audio_track():
+    """DEC-197 overrode DEC-161's silent-chunk clause: no window may be cut
+    with `-an`, and each names its audio encode rather than inheriting
+    ffmpeg's per-container default (so token cost cannot depend on which
+    container a clip arrived in)."""
     run = _runner(duration="100.0")
 
     await cut_video(b"video", chunk_seconds=90, max_chunks=10, runner=run)
 
-    for args in run.calls:
-        if args[0] == "ffmpeg":
-            assert "-an" in args
+    encodes = [args for args in run.calls if args[0] == "ffmpeg"]
+    assert encodes, "the cut must have encoded at least one window"
+    for args in encodes:
+        assert "-an" not in args
+        assert args[args.index("-c:a") + 1] == "aac"
+        assert args[args.index("-b:a") + 1] == "64k"
+        assert args[args.index("-ac") + 1] == "2", "stereo at most, never 7.1"
+
+
+async def test_an_undecodable_audio_track_still_gets_a_silent_window():
+    """DEC-197 review: a selected audio stream ffmpeg cannot decode fails the
+    AUDIBLE encode outright, where the old `-an` encode succeeded — so keeping
+    audio would have turned a readable clip into `unavailable`. Such a window
+    is retried once without audio, on both the chunked read and the single
+    view `media_fetch` falls back to."""
+    calls: list[list[str]] = []
+
+    async def run(args, timeout_seconds, data):
+        calls.append(args)
+        if args[0] == "ffprobe":
+            return 0, b"30.0", b""
+        if "-c:a" in args:
+            return 234, b"", b"Decoding requested, but no decoder found"
+        return 0, b"silent-window", b""
+
+    cut = await cut_video(b"video", chunk_seconds=90, max_chunks=10, runner=run)
+    assert [w.data for w in cut.windows] == [b"silent-window"]
+    assert cut.complete is True
+
+    view = await preprocess_media(b"video", "video/mp4", runner=run)
+    assert view == b"silent-window", "not the ORIGINAL bytes passed through"
+    encodes = [a for a in calls if a[0] == "ffmpeg"]
+    assert ["-an" in a for a in encodes] == [False, True, False, True]
+
+
+_HAS_FFMPEG = __import__("shutil").which("ffmpeg") is not None
+
+
+async def _synth_clip(*, with_audio: bool) -> bytes:
+    """A real 2 s MP4 from lavfi — with a sine tone, or with no audio stream."""
+    inputs = ["-f", "lavfi", "-i", "testsrc2=size=320x240:rate=10:duration=2"]
+    if with_audio:
+        inputs += ["-f", "lavfi", "-i", "sine=frequency=440:duration=2"]
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg", "-hide_banner", "-loglevel", "error", *inputs,
+        "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        *(["-c:a", "aac"] if with_audio else []),
+        "-f", "mp4", "-movflags", "frag_keyframe+empty_moov", "pipe:1",
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    out, err = await proc.communicate()
+    assert proc.returncode == 0 and out, f"could not synthesize a clip: {err!r}"
+    return out
+
+
+async def _stream_types(data: bytes) -> list[str]:
+    proc = await asyncio.create_subprocess_exec(
+        "ffprobe", "-hide_banner", "-loglevel", "error",
+        "-show_entries", "stream=codec_type", "-of", "csv=p=0", "pipe:0",
+        stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    out, _err = await proc.communicate(data)
+    return sorted(out.decode().split())
+
+
+@pytest.mark.skipif(not _HAS_FFMPEG, reason="real ffmpeg not installed in this environment")
+async def test_the_video_view_keeps_its_audio_track():
+    """Through REAL ffmpeg: a clip that has sound reaches the describer with
+    it. Before DEC-197 every window was silent by construction, so Nora could
+    see a clip but never hear it."""
+    clip = await _synth_clip(with_audio=True)
+    assert await _stream_types(clip) == ["audio", "video"], "fixture must carry audio"
+
+    cut = await cut_video(clip, chunk_seconds=90, max_chunks=10)
+
+    assert len(cut.windows) == 1
+    assert await _stream_types(cut.windows[0].data) == ["audio", "video"]
+
+
+@pytest.mark.skipif(not _HAS_FFMPEG, reason="real ffmpeg not installed in this environment")
+async def test_a_clip_with_no_audio_stream_still_produces_a_chunk():
+    """The other half: naming an audio codec must not make a SILENT clip (most
+    stored ones) fail to encode — it gets a video-only window, not `ffmpeg`."""
+    clip = await _synth_clip(with_audio=False)
+    assert await _stream_types(clip) == ["video"], "fixture must be silent"
+
+    cut = await cut_video(clip, chunk_seconds=90, max_chunks=10)
+
+    assert len(cut.windows) == 1
+    assert await _stream_types(cut.windows[0].data) == ["video"]
 
 
 async def test_the_cap_binding_is_recorded_and_said():

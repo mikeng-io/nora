@@ -66,6 +66,7 @@ from typing import Any, Protocol
 from nora.domain.errors import PartialReplyError
 from nora.domain.models import TagContext
 from nora.domain.tag_trace import TagTrace
+from nora.domain.turn_deadline import turn_deadline
 from nora.obs.tracing import trace_attributes as build_trace_attributes
 
 log = logging.getLogger("nora.engagement.invoke")
@@ -156,16 +157,20 @@ async def run(
     final_text = ""
     trace: TagTrace
     try:
-        stop_reason, final_text, trace = await asyncio.wait_for(
-            runner.invoke(
-                doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
-                tool_call_log=tool_call_log, reasoning_watch=reasoning_watch,
-                tool_hooks=tool_hooks,
-                tag_message=tag_message, limits=limits, ctx=ctx,
-                trace_attributes=build_trace_attributes(ctx, doctrine),
-            ),
-            timeout=timeout_seconds,
-        )
+        # The SAME number the `wait_for` enforces, published to every tool
+        # the turn runs, so a tool that spends wall clock on its own model
+        # call (the vision describer) can see how much of it is left.
+        with turn_deadline(timeout_seconds):
+            stop_reason, final_text, trace = await asyncio.wait_for(
+                runner.invoke(
+                    doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
+                    tool_call_log=tool_call_log, reasoning_watch=reasoning_watch,
+                    tool_hooks=tool_hooks,
+                    tag_message=tag_message, limits=limits, ctx=ctx,
+                    trace_attributes=build_trace_attributes(ctx, doctrine),
+                ),
+                timeout=timeout_seconds,
+            )
         # The runner has no access to the assembled transcript window (only
         # to `agent`), so it always hands back `transcript=()` — filled in
         # here, the one place that holds both the trace and `ctx`.
