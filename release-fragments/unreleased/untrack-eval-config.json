@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "config.evaluation.toml is untracked again, as .gitignore says it must be.",
+  "details": [],
+  "limitations": [],
+  "reason": "Repository hygiene only; nothing Nora does changes. The file is generated per test session and per eval run from config.example.toml plus the deployment's own config.toml, and .gitignore forbids committing it because on the deploy host it carries the doctrine canary, room ids and internal endpoints. It was committed by accident on 2026-09-22 (f8879e22). Every committed version was checked and holds only placeholders, but on norty the regenerated copy holds real values and showed as modified, one git add away from a commit."
+}
