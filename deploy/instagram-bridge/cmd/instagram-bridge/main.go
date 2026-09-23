@@ -78,16 +78,13 @@ func main() {
 	}
 
 	store := session.Store{Dir: *sessionDir}
-	hub := stream.NewHub()
 	self, _ := store.LoadSelf()
-	gw := gateway.NewBridge(gateway.Options{
+	gw, handler := wire(gateway.Options{
 		Store:  store,
-		Sink:   hub,
 		State:  domain.StateLoggedOut,
 		Detail: "starting",
 		Self:   self,
-	})
-	srvState := &server{gw: gw, hub: hub, startedAt: time.Now()}
+	}, stream.NewHub(), time.Now())
 
 	// instameow's own log output, as JSON on the same stream and with slog's
 	// field names, so an operator reads one format.
@@ -112,7 +109,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", *port),
-		Handler: srvState.routes(),
+		Handler: handler,
 		// No write timeout: /events is a long-lived SSE stream and any write
 		// deadline would sever it on a quiet room. Read timeouts are set
 		// instead, since request bodies are bounded and fast.

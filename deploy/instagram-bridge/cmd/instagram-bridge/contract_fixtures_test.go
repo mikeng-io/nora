@@ -18,7 +18,10 @@ package main
 //
 // Regenerate after an intended contract change, then review the diff:
 //
-//	go test -run TestContractFixtures -update ./...
+//	go test ./cmd/instagram-bridge -run TestContractFixtures -update
+//
+// (from deploy/instagram-bridge; the package goes BEFORE -update, which only
+// this package defines)
 
 import (
 	"bytes"
@@ -44,8 +47,8 @@ var updateFixtures = flag.Bool("update", false,
 	"rewrite tests/fixtures/instagram_bridge from the handlers")
 
 // fixtureDir is the repository's shared fixture directory, relative to this
-// package.
-const fixtureDir = "../../tests/fixtures/instagram_bridge"
+// package (cmd/instagram-bridge).
+const fixtureDir = "../../../../tests/fixtures/instagram_bridge"
 
 // skipOutsideTheRepo skips the fixture checks in ONE place only: the image
 // build, whose context is this directory, so `tests/fixtures` is not in it.

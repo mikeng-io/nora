@@ -18,10 +18,11 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
-COPY *.go ./
-# The layered packages (design/instagram-adoption/16 §Layers). Copied as a
-# tree: a `*.go` glob would silently leave them out and the build would fail
-# on an import it cannot resolve.
+# The source is a TREE (design/instagram-adoption/16 §Layers): the composition
+# root in cmd/ and the layers in internal/. Copied as directories, because a
+# `*.go` glob at the root would copy nothing and the build would fail on an
+# import it cannot resolve.
+COPY cmd ./cmd
 COPY internal ./internal
 
 # CGO off, so the result is a static binary that runs on a slim runtime with no
@@ -30,13 +31,14 @@ COPY internal ./internal
 # `go vet` and the tests run HERE, in the build, rather than only in someone's
 # shell. Nothing in this bridge can be verified against the live account — it
 # is a real account in daily use — so the unit suite is the only gate there is,
-# and a gate that has to be remembered is not a gate.
+# and a gate that has to be remembered is not a gate. That includes the layer
+# rule: cmd/instagram-bridge/architecture_test.go runs `go list -deps` here.
 #
 # IG_BRIDGE_IMAGE_BUILD=1 tells ONE test where it is: the shared contract
 # fixtures (tests/fixtures/instagram_bridge) are outside this build context,
 # so contract_fixtures_test.go skips here and runs wherever the repo is.
 RUN go vet ./... && IG_BRIDGE_IMAGE_BUILD=1 go test ./... && \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/instagram-bridge .
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/instagram-bridge ./cmd/instagram-bridge
 
 FROM debian:bookworm-slim
 
