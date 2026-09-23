@@ -87,7 +87,10 @@ Roughly 80–100 tokens. The last line is the D1 = B wording.
   (`nora/agent/prefill.py`, the per-turn message). Replacing it removes that
   special case. One builder; no occasion builds its own copy.
 - **Occasions:** tag, participation, and proactive (D2, decided yes
-  2026-09-23): the proactive loop decides *where* to raise something, and it
+  2026-09-23). As built, reminders and the proactive ACT turn get it too:
+  they share participation's `FirePath.build_context` and render through the
+  same prefill, so the block rides every fire turn rather than only the
+  participation one. The proactive loop decides *where* to raise something, and it
   cannot choose a room it does not know exists. The proactive prompt has
   its own `_BLOCKS` table (`nora/language/proactive.py`), and it already
   carries part of this: `home_room` (platform, label, the operator's
