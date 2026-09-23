@@ -51,6 +51,7 @@ class _RecordingStubVisionClient:
     async def describe(
         self, *, data: bytes, media_type: str, prompt: str = "", model: str = "",
         provider: str = "omniroute", max_bytes: int | None = None,
+        windows: int | None = None,
     ) -> VisionResult:
         self.prompts.append(prompt)
         return VisionResult(available=True, description=_JSON % "a cartoon cat")
@@ -74,6 +75,7 @@ class _StubVisionClient:
     async def describe(
         self, *, data: bytes, media_type: str, prompt: str = "", model: str = "",
         provider: str = "omniroute", max_bytes: int | None = None,
+        windows: int | None = None,
     ) -> VisionResult:
         # Every keyword the real `VisionClient.describe` accepts. A double in
         # tests/contract/ that does not accept what the real thing accepts is

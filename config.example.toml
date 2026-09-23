@@ -263,6 +263,12 @@ reasoning_effort = "low"
 # media_fetch budget). A video upload+inference cannot fit. Raising the loop to
 # 240 recomputes per_call = 240 × 0.6 / 4 = 36 s, still under `vision_timeout_seconds`
 # 40 raised alongside. Invariant budget × derived < loop still holds: 4 × 36 < 240.
+# SUPERSEDED as a DERIVATION (2026-09-23): the vision per-call ceiling no longer
+# divides by the media_fetch budget, so raising this loop to reach a per-call
+# number is not the lever any more. It divides by the waves one read runs in
+# sequence instead, and the invariant is waves × derived < loop × 0.6
+# (design/media-read-lane/07-timeout-derivation.md). This value still bounds the
+# whole turn; it just no longer sets the vision ceiling for a short clip.
 timeout_seconds = 240
 
 # The three caps around the WHOLE agent loop for one tag — all measured
@@ -534,9 +540,10 @@ timeout_seconds = 8.0     # ingest path: a wedged daemon costs seconds, never th
 # Reading a stored image back through MiMo-V2.5 (the `media_fetch` tool, DEC-56).
 # All defaulted; these are the READ half's knobs. vision_max_bytes is the ceiling
 # on bytes sent to MiMo — far below max_bytes on purpose (a 100 MiB blob is a
-# ~133 MiB base64 body). vision_timeout_seconds is a CEILING: the tool derives the
-# real per-call budget as the smaller of it and half of llm.timeout_seconds, so a
-# slow model becomes the tool's `unavailable`, never the loop's silent timeout.
+# ~133 MiB base64 body). vision_timeout_seconds is a CEILING: the client derives
+# the real per-call budget as the smaller of it and llm.timeout_seconds × 0.6
+# divided by the WAVES one read runs in sequence, so a slow model becomes the
+# tool's `unavailable`, never the loop's silent timeout.
 # DEPRECATED NAME, kept so a config written before DEC-114 keeps
 # loading: this is the IMAGE describer's model, and
 # `[media.describe.image] model` overrides it when both are set.
@@ -555,6 +562,22 @@ vision_max_bytes = 8388608   # 8 MiB → ~10.7 MiB base64 body
 # at 20 would cap the budget at 20 s and real 13.4 MB videos would keep timing
 # out. 40 keeps the configured ceiling above the derived budget so the derived
 # number is the true cap.
+#
+# THE DIVISOR CHANGED (2026-09-23, operator; design/media-read-lane/
+# 07-timeout-derivation.md). It is no longer the `media_fetch` budget — budgeted
+# calls run CONCURRENTLY and occupy max(their durations) of wall clock, never
+# their sum, so dividing a wall-clock ceiling by them shrank the result by a
+# factor corresponding to no elapsed time. It is now the SERIAL factor: the
+# 90-second windows one read awaits in sequence. Every image and every clip of
+# `chunk_seconds` or less is ONE wave, so the derived ceiling is
+# `min(this, llm.timeout_seconds * 0.6)` there — this value binds exactly when
+# it is no larger than the loop's own 0.6 share. A multi-window clip divides
+# the LOOP SHARE, not this number: ten windows of a 240 s loop give
+# 240 * 0.6 / 10 = 14.4 s whatever is set here. (An earlier version of this
+# note said «honoured IN FULL», which is only true under that condition —
+# caught by independent review 2026-09-23.) A fifteen-minute clip therefore
+# still fits the loop; it just does not get this number divided by ten.
+# The note above is kept as history: its arithmetic was true of the old formula.
 vision_timeout_seconds = 40.0
 # Whether STICKERS are among the media that get read (sticker spec §6, rescoped
 # by issue #116).

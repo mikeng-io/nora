@@ -1548,11 +1548,9 @@ class FakeSocialSubjectIndex:
     `tests/contract/test_social_provider_contract.py` through `SocialRouter`,
     which is where the tier ladder lives (design/instagram-adoption/10 §"Who
     owns what"; it used to live in `InstagramSocialClient` and could only
-    govern that backend's one row from there) — the port has no production
-    implementation yet (it needs the `instagram` id kind in `identity.toml`,
-    which belongs to the platform-adapter milestone), so this is its first,
-    and the suite that binds it is the one that drives the router's three
-    outcomes through it.
+    govern that backend's one row from there), and held to the SAME answers
+    as the production `nora.infra.social.PersonsSubjectIndex` by
+    `tests/contract/test_social_subject_index_contract.py`.
 
     **It does not answer every request the same way.** The three outcomes it
     can produce are the three the tier ladder produces, and collapsing any two
@@ -1596,3 +1594,11 @@ class FakeSocialSubjectIndex:
         if self.unavailable:
             return False
         return person_id in self.igids and person_id not in self.out_of_reach
+
+    async def person_for_igid(self, *, igid: str) -> str | None:
+        """The reverse of `igids`: the person holding exactly this igid, or
+        `None` for one nobody holds (and for an unreadable index — fail
+        closed)."""
+        if self.unavailable:
+            return None
+        return next((pid for pid, held in self.igids.items() if held == igid), None)

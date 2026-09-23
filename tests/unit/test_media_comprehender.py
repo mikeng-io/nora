@@ -33,13 +33,21 @@ class _ChunkingVision:
     def __init__(self, *, answers: list[str] | None = None) -> None:
         self.answers = answers
         self.calls: list[bytes] = []
+        #: The `windows` argument each call was handed. The per-call vision
+        #: ceiling divides by `ceil(windows / concurrency)`, so a double that
+        #: swallowed the argument would let a regression that stopped passing it
+        #: pass silently — this is the same reasoning as `calls` above, which
+        #: records the bytes to prove each window was its own call.
+        self.windows: list[int | None] = []
         self.completions: list[str] = []
 
     async def describe(
         self, *, data: bytes, media_type: str, prompt: str = "", model: str = "",
         provider: str = "omniroute", max_bytes: int | None = None,
+        windows: int | None = None,
     ) -> VisionResult:
         self.calls.append(data)
+        self.windows.append(windows)
         if self.answers is None:
             return VisionResult(
                 available=True, description=f"segment {len(self.calls)}")
@@ -149,6 +157,14 @@ async def test_a_whole_read_adds_no_caveat():
     assert got.provenance is not None
     assert got.provenance["video_complete"] is True
     assert "media_caveat" not in got.provenance
+    # EVERY window call carries the read's TOTAL window count — the serial
+    # factor the per-call ceiling divides by. Two windows here, so each of the
+    # two calls must say 2: not 1 (which would hand each window a ceiling
+    # derived for a single-view read and blow the loop on a long clip), and not
+    # the running index (which is a different quantity entirely).
+    assert client.windows == [2, 2], (
+        f"the window count did not reach the describer: {client.windows}"
+    )
 
 
 async def test_a_capped_video_says_so_in_the_description_and_in_provenance():
