@@ -76,7 +76,7 @@ for something in the conversation, `url` for an address).
 
 | Input | Means | Resolved by |
 |---|---|---|
-| `person` | a person, named the way the message named them (a nickname is fine) | the same room-scoped name resolution `about` uses (`room.scope().find`), then the person index to their Instagram account. No match → `nothing_found`; several people or several accounts → `ambiguous`. **No tool hands Nora a person id**, so the tool never asks for one |
+| `person` | a person, named the way the message named them (a nickname is fine) | **the tool** resolves the name with the same room-scoped lookup `about` uses (`room.scope().find`), because only the tool holds the turn's `room`; the router then takes the resolved person through the person index to their Instagram account. No match → `nothing_found`; several people or several accounts → `ambiguous`. **No tool hands Nora a person id**, so the tool never asks for one |
 | `link` | a pasted Instagram URL | the link parser; the LINK decides the read (profile, post, reel or story, `15` §Links) |
 | `handle` | an Instagram username someone typed (no `@`) | the bridge (`GET /accounts?username=`) |
 
@@ -92,7 +92,7 @@ answers `unavailable` (a profile or a story has no next page, `10`).
 | `profile` | the account: bio, private or public, follow state both ways, follower / following / post / reel counts |
 | `story` | the current story as a list of frames (whole; no paging) |
 | `posts` (when it exists, P13) | a paged list of recent posts: `items` plus `next_cursor` (`10`'s cursor rule: opaque, `null` is the end) |
-| a post / reel link | that one item |
+| (a post or reel `link`: the link decides, no `what`) | that one item |
 
 Every item, listed or single, carries the **text layer** and **references**:
 caption, author, when it was posted, Instagram's own alt text
@@ -154,13 +154,17 @@ check (story only) produce them. The body is the curated DTO (`16`
 | Concern | Owner |
 |---|---|
 | parse the link, pick the read | the link parser, a new module under nora/infra/social (P10) |
-| resolve person → igid, igid → person | `SocialSubjectIndex` (`17` P3) |
+| resolve a NAME → person | the tool, with the turn's `room` (the lookup `about` uses) |
+| resolve person → igid, igid → person | `SocialSubjectIndex` (`17` P3), called by the router |
 | authorize (Tier 0, story only) | `SocialRouter`, the single choke point for EVERY social tool, old and new |
 | call the bridge | `InstagramSocialClient` (`17` P4) |
 | the model-facing contracts | the two tools in `nora/agent/tools.py` |
 
-The tools stay thin: validate arguments, call the router, return its answer.
-Neither resolves nor authorizes. A tool with its own authorization copy is
+The tools stay thin: validate arguments, resolve a spoken name to a person
+(the one resolution that needs the conversation, and the tool is the only
+layer that has it, exactly as `about` does today), call the router, return
+its answer. Neither resolves an account nor authorizes: both stay in the
+router, which is composed once and holds no per-conversation state. A tool with its own authorization copy is
 the drift `10` §"Who owns what" forbids.
 
 ### What the router has to learn
@@ -172,7 +176,8 @@ router changes, and the change is part of the tool's first PR (for `person`)
 and P10 (for `link` / `handle`), not a detail left to either:
 
 - **Resolution is keyed on `(platform, what, input kind)`.**
-  - `person` → room-scoped name resolution → `igid_for`. Any read.
+  - `person` → the tool has already resolved the name to a person id →
+    `igid_for`. Any read.
   - `handle` → the bridge's username lookup → igid.
   - `link` → the parser → (read, username or shortcode) → as for `handle`, or
     straight to the post route.
@@ -201,8 +206,8 @@ three layers from one vocabulary table covering every social tool.
 Each item is an existing test that goes red, applied to both tools:
 
 - **Catalogue line = the docstring's first sentence**, ≤40 tokens (cl100k),
-  mean ≤25 across tools, no identical lines (the gate as built in #393,
-  raised from the bundle's original 20 after measurement). The catalogue
+  mean ≤25 across tools, no identical lines (the gate as built in #367,
+  raised from the bundle's original 20 after measurement; #393 stacks on it). The catalogue
   session measured an earlier `instagram_read` draft at 25 tokens and
   `instagram_search`'s at 12 against the real renderer, with the block at
   about 1,056 of its 1,400 ceiling. Each PR's line is re-measured by the gate
@@ -216,7 +221,8 @@ Each item is an existing test that goes red, applied to both tools:
   `media_fetch`, and each other). Drafts:
   - `instagram_read`, first PR: *"Read a person's Instagram profile or current
     story, by their name."* From P10: *"Read Instagram: a person's profile or
-    story, or what a pasted Instagram link points to."* `posts` joins the line
+    story by name or handle, or what a pasted Instagram link points to."*
+    `posts` joins the line
     only with P13.
   - `instagram_search`: *"Search Instagram for accounts by name or handle."*
 - **The opening** contains a `WHEN_TRIGGERS` phrase

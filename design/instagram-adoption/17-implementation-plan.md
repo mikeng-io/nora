@@ -168,13 +168,13 @@ decision.
   `(kind, key)`: profile, post, reel, story. The router resolves per
   `15` §Links: a story link resolves username → igid → person and must pass
   Tier 0, or it is `refused`.
-- `profile` accepts a person id, a username, or a profile link.
+- `profile` accepts a person (by name), a handle, or a profile link (`18` §`instagram_read`).
 - **Negative test**: a story link to someone in none of her rooms is
   `refused`, and **no story request reaches the bridge** (asserted on the
   bridge's recorded calls).
 - **Multi-account test**: a friend with two Instagram accounts; a story link
-  to one of them reads *that* account's story, while a `person_id` request for
-  the same friend stays `ambiguous`.
+  to one of them reads *that* account's story, while a request naming the same
+  friend by `person` stays `ambiguous`.
 
 ## P11: Search onto the bridge
 
