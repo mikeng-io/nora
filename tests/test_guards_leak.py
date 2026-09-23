@@ -99,5 +99,7 @@ def test_a_recital_of_what_the_model_was_shown_is_caught_across_a_dash(tmp_path)
     write(d, "constraints.md", name="guardrails", order=40, body=body)
     guard = LeakGuard(DoctrineStore(d, canary="C", metrics=Metrics()).get(), canary="C",
                       min_span=40)
-    shown = "failure here, when you cannot answer properly, you say nothing"
+    # 44 characters with the comma at 20: every 40-character window crosses it.
+    shown = "never a failure here, when you cannot answer"
+    assert len(shown) == 44
     assert guard.check(shown) == "doctrine_span"
