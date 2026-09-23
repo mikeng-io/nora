@@ -130,6 +130,54 @@ against the live store and `origin/master`.
 5. **The tests in `04` §2 A–E**, of which A (the bound is provably binding, not
    merely present) and D (inheritance) are the load-bearing ones.
 
+## 3b. ⚠️ The invariant this ceiling creates with the media lane (ADDED 2026-09-23)
+
+This ceiling does not exist in isolation. **Because it QUEUES rather than refuses**
+(`02 §1`: "queues the call; it runs when a slot frees"), it converts simultaneity
+into serialization — so once a turn requests more tool calls than the ceiling
+admits, the wall clock those calls consume stops being `max(per_call)` and becomes
+`ceil(n / ceiling) × per_call`.
+
+That matters because the vision per-call timeout is a large number. Measured
+against the settled settings from `design/media-read-lane/` (`vision_timeout`
+120 s, loop 360 s, `media_fetch` budget 4):
+
+| `media_fetch` budget | this ceiling | waves | wall clock | vs the 360 s loop |
+|---|---|---|---|---|
+| 4 | 4 (equal) | 1 | 120 s | **fits** |
+| 10 | 4 | 3 | **360 s** | exceeds (boundary) |
+| 10 | 2 | 5 | **600 s** | **exceeds — silent turn death** |
+
+**The row the operator actually asked about is the middle one.** «budget 升到 10，
+佢就同我 10 個 concurrent 一齊 run 吖？» — this ceiling stops the 10 running at once,
+correctly. But it stops them by **making 6 of them wait**, and the wait is what
+pushes the turn past the loop. When the loop's `wait_for` fires,
+`nora/engagement/stages/invoke.py:171-179` abandons the turn whole — log,
+`nora_silent_failures_total`, blank trace, **the user gets nothing**.
+
+**The invariant:**
+
+```
+ceil(media_fetch_budget / tool_concurrency) × vision_timeout < [llm].timeout_seconds
+```
+
+Today (`4 / 4 = 1`, `1 × 120 < 360`) it holds with 240 s of room. **Nothing in the
+repo asserts it**, so a future budget raise or a ceiling change fails **silently at
+runtime** instead of at startup. This is the same class of guard
+`derive_vision_timeout`'s own docstring argues for — an invariant "nobody can
+violate if it is never written down twice" — and this one is currently written down
+nowhere.
+
+**Recommended:** assert it as a config-validation test spanning **both** keys
+(`[llm.budgets].media_fetch` and this ceiling), so an operator raising the budget
+gets a startup failure naming the two numbers rather than losing turns quietly.
+Cross-referenced from `design/media-read-lane/07-timeout-derivation.md` §6, which
+records the same finding from the media side.
+
+**Status:** recommended, not yet decided. The alternative is to accept the residual
+risk explicitly — which is a decision, and must be recorded as one rather than
+left implicit.
+
 ## 4. Deferred
 
 - **The value above 4.** Needs traffic under the ceiling; a saturation counter
