@@ -238,7 +238,7 @@ def test_the_opening_paragraph_is_an_l1(tool: str, doc: str) -> None:
     )
 
 
-# ---- ADR 0015 §3 / §6 (DEC-197): level, ceiling, language, punctuation --------
+# ---- ADR 0015 §3 / §6 (DEC-199): level, ceiling, language, punctuation --------
 #
 # Counted over the description Strands SENDS (`ToolRegistry._descriptions()`:
 # the docstring minus `Args:`), not the AST docstring the tests above read:

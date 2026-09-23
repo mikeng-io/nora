@@ -80,6 +80,7 @@ from ..domain.media import (
     GifCandidate,
     MediaBlob,
     MediaObject,
+    VideoReadingKey,
     resolve_media_type,
     sniff_media_type,
 )
@@ -129,6 +130,7 @@ from ..domain.reminders import (
 from ..domain.tool_call_log import ToolCallLogStore
 from ..infra.version import NOTHING_FOUND as VERSION_NOTHING_FOUND
 from ..infra.version import UNAVAILABLE as VERSION_UNAVAILABLE
+from ..infra.vision.client import DESCRIBE_PROMPTS
 from ..infra.vision.comprehend import describe_coverage, read_video_windows
 from ..infra.vision.preprocess import (
     VIDEO_CHUNK_SECONDS,
@@ -136,6 +138,7 @@ from ..infra.vision.preprocess import (
     cut_video,
     download_media,
     preprocess_media,
+    video_encode_signature,
 )
 from ..obs.tracing import annotate, span
 from .arithmetic import evaluate as evaluate_expression
@@ -391,7 +394,7 @@ class NativeTool:
     # the second definition CLAUDE.md's label rule exists to prevent. See
     # `OUTPUT_CONTRACTS` / `OUTPUT_STATUSES` there.
     output_contract: str | None = None
-    # `level` (ADR 0015 §3, DEC-197): how much the description may carry. 1 is
+    # `level` (ADR 0015 §3, DEC-199): how much the description may carry. 1 is
     # what + when + what it returns (80 tokens), 2 adds one behaviour-changing
     # constraint (160), 3 adds a contract of statuses or refusals she must act
     # on differently (320), counted over the description Strands sends (the
@@ -2941,6 +2944,7 @@ def build_tool_specs(
     vision_source=None,
     blob_store=None,
     vision_cache=None,
+    video_readings=None,
     describe_models: Mapping[str, str] | None = None,
     describe_providers: Mapping[str, str] | None = None,
     describe_max_bytes: Mapping[str, int] | None = None,
@@ -5470,10 +5474,12 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                             "do not describe what it might have shown.",
                 }
             sha256 = hashlib.sha256(data).hexdigest()
-            # URL bytes are described on the fly and NEVER stored in this
-            # conversation's media_json, so there is no reusable code to hand
-            # back — a code that cannot resolve on a later call would be a
-            # lie to the model (external audit finding, 2026-08-31).
+            # URL BYTES are NEVER stored in this conversation's media_json, so
+            # there is no reusable code to hand back — a code that cannot
+            # resolve on a later call would be a lie to the model (external
+            # audit finding, 2026-08-31). The READING may be cached (by
+            # content hash, and for a video in `video_readings`); the bytes
+            # never are.
             serve_code: str | None = None
         else:
             # ---- code path: resolve within this conversation (§1) -------
@@ -5647,12 +5653,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # the rest» is served from the durable table forever, about a clip that
         # is now read whole.
         #
-        # So the geometry-dependent modality opts out, exactly as layer 2 does
-        # and for the same reason. What a video costs on a repeat is a
-        # re-read; what it would cost cached is a wrong answer nobody can see
-        # is wrong. The durable comprehension in `media_objects` is the right
-        # cache for a clip — it stores the caveat WITH the reading (layer 1),
-        # so it cannot come apart.
+        # So the geometry-dependent modality opts out of THIS cache. A video
+        # has its own below (DEC-198), keyed on everything its reading depends
+        # on — geometry included — with the caveat stored in the reading, so
+        # the two cannot come apart there either.
         cacheable_modality = modality != "video"
         cached_description = (
             await vision_cache.aget(sha256)
@@ -5664,11 +5668,48 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 sha256, cached_description, cached=True, code=serve_code,
             )
 
+        # THE VIDEO READING CACHE (migration 0061) — video's own, keyed on
+        # EVERYTHING the reading depends on rather than the sha256 alone: the
+        # bytes, the describer, the chunk geometry and the question it was
+        # asked. That is what makes it sound where the sha256 cache above was
+        # not (#117): raising `chunk_max`, moving the lane or turning on speech
+        # changes the key and MISSES, so a stale «I have not seen the rest» or
+        # an old silent reading is never served. It covers both halves — a
+        # Reel or Story by URL, which has no blob and so no stored
+        # comprehension, and a room clip whose ingest reading never landed —
+        # which until now paid a full video read (60-120 s a window) on every
+        # ask. A `question` read bypasses it for layer 2's reason.
+        video_key: VideoReadingKey | None = None
+        if modality == "video" and not question and video_readings is not None:
+            # Everything the model's VIEW depends on besides the key's own
+            # columns: the question (a question-less read resolves
+            # `DESCRIBE_PROMPTS["video"]` in the client), the declared media
+            # type, the reasoning effort and every encode setting.
+            view_inputs = "\x1f".join((
+                DESCRIBE_PROMPTS["video"], media_type,
+                str(getattr(vision_source, "reasoning_effort", "")),
+                video_encode_signature(),
+            ))
+            video_key = VideoReadingKey(
+                sha256=sha256, provider=describe_provider, model=describe_model,
+                chunk_seconds=video_chunk_seconds, chunk_max=video_max_chunks,
+                reading_digest=hashlib.sha256(view_inputs.encode("utf-8")).hexdigest()[:32],
+            )
+            try:
+                cached_reading = await video_readings.get(key=video_key)
+            except Exception:
+                log.exception("media_fetch could not read the video reading cache")
+                cached_reading = None
+            if cached_reading:
+                return _serve_media(
+                    sha256, cached_reading, cached=True, code=serve_code,
+                )
+
         if url:
             # URL path: the bytes are already in hand from the download; no
             # blob decrypt step exists for them (custody is untouched — a
-            # fetched URL is described on the fly, never written into the
-            # conversation's store).
+            # fetched URL's bytes are never written into the conversation's
+            # store; only its reading may be cached).
             data_for_vision = data
         else:
             # Decrypt the blob Nora already holds. `store.get` returns None
@@ -5729,6 +5770,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 return None
 
         coverage = ""
+        video_read_whole = False
         if modality == "video":
             # **THE DELIBERATE LOOK CHUNKS TOO** (issue #117). This path used
             # to run `preprocess_media`, whose single view is capped at
@@ -5775,6 +5817,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     "have watched all of it.)"
                 )
                 result = one
+                # NOT cached: ffmpeg failing to cut at all can be a timeout or
+                # a killed process as easily as a clip it cannot decode, and a
+                # cached «I could not tell how long this clip is» would outlive
+                # the hiccup that caused it (DEC-198 review).
             else:
                 segments, read_windows = await read_video_windows(
                     cut=cut, media_type=media_type, ask=_ask,
@@ -5789,6 +5835,16 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 description = "\n".join(segments)
                 coverage = describe_coverage(cut=cut, read=read_windows)
                 result = None
+                # Cacheable only when the read is one the same inputs would
+                # ALWAYS produce: an intact cut (measured, no window dropped,
+                # none fallen back to silent — any of which can be a transient
+                # ffmpeg failure) and every window reaching a model (a timeout
+                # or cut-off is a fact about THIS attempt). A window the chunk
+                # CEILING left out is a fact about the inputs, and that caveat
+                # is cached with the reading.
+                video_read_whole = (
+                    not cut.degraded and len(read_windows) == len(cut.windows)
+                )
         else:
             # Preprocess (scale/re-encode via ffmpeg) BEFORE the vision call:
             # a 4K still carries many times the bytes — and tokens — of the
@@ -5817,6 +5873,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # alone. Storing it would make the next room asking "what is this"
             # get an answer to a question it never asked.
             return _serve_media(sha256, description, cached=False, code=serve_code)
+        if video_key is not None and video_read_whole:
+            # The reading WITH its coverage sentence, so the two cannot come
+            # apart — the half of #117 a sha256-keyed cache got wrong. The
+            # identifier screen still runs on every serve, cached or not.
+            try:
+                await video_readings.put(key=video_key, reading=description)
+            except Exception:
+                log.exception("media_fetch could not write the video reading cache")
         if vision_cache is not None and cacheable_modality:
             # Store the RAW description, at both tiers; the screen runs on
             # every serve, not here. `model` is the describer THIS modality
@@ -9450,6 +9514,7 @@ def build_tools(
     vision_source=None,
     blob_store=None,
     vision_cache=None,
+    video_readings=None,
     describe_models: Mapping[str, str] | None = None,
     describe_providers: Mapping[str, str] | None = None,
     describe_max_bytes: Mapping[str, int] | None = None,
@@ -9509,6 +9574,7 @@ def build_tools(
         persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
         room=room, transit_source=transit_source, route_source=route_source,
         vision_source=vision_source, blob_store=blob_store, vision_cache=vision_cache,
+        video_readings=video_readings,
         describe_models=describe_models,
         describe_providers=describe_providers,
         search_source=search_source, weather_source=weather_source,

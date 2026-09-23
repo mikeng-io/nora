@@ -119,6 +119,7 @@ from nora.infra.sql.tag_debounce import SqlTagDebounceStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.sql.turn_verdicts import SqlTurnVerdictStore
+from nora.infra.sql.video_readings import SqlVideoReadingStore
 from nora.infra.version import OK as VERSION_OK
 from nora.infra.version import VersionManifest
 from nora.infra.vision import MediaComprehender, VisionClient
@@ -223,6 +224,9 @@ def _unit_rooms(allowlist: Policy) -> dict[str, tuple[UnitRoom, ...]]:
                 # the SAME `policy.toml` field the note candidates pass reads,
                 # so the two passes cannot hold two ideas of what a room is.
                 description=conv.description,
+                # The same two facts `origin_rooms` keys `remind`'s refusal on,
+                # so the notes list and the refusal cannot disagree.
+                proactive=conv.proactive, ids=tuple(sorted(conv.ids)),
             ),
         )
     return rooms_by_unit
@@ -678,8 +682,8 @@ def _describe_providers(cfg: Config) -> dict[str, str]:
     when it can actually describe — so the two maps cannot disagree about which
     modalities are live. The provider DEFAULT is `"omniroute"` everywhere: a
     config written before the field existed describes through the process-wide
-    gateway client exactly as before. Only a modality whose config names
-    `provider = "kimi"` routes direct.
+    gateway client exactly as before. Only a modality whose config names a
+    DIRECT provider (`"kimi"`, `"opencode-go"`) routes direct.
     """
     resolved: dict[str, str] = {}
     for modality in ("image", "audio", "video"):
@@ -689,13 +693,48 @@ def _describe_providers(cfg: Config) -> dict[str, str]:
     return resolved
 
 
-def _kimi_api_key_env(cfg: Config) -> str:
-    """The env var name a kimi describer's direct lane reads its key from.
+@dataclass(frozen=True)
+class _DirectLane:
+    """One DIRECT describer transport: where it goes, and whose key it reads.
+
+    `session_header` is OpenCode Go's mandatory `x-opencode-session` (DEC-197):
+    its endpoint answers `400 MissingSessionID` without one, so its client is
+    built on `opencode_go_http_client`, which stamps a fresh id per request.
+    """
+
+    base_url: str
+    default_key_env: str
+    session_header: bool = False
+
+
+# Provider name (`DescriberConfig.provider`) → its direct lane. `"omniroute"`
+# is NOT here: it is the process-wide gateway client, built once above for
+# every model call, not a describer lane.
+_DIRECT_LANES = {
+    # OmniRoute drops `video_url` content blocks (probe 2026-08-30), so video
+    # needs a lane of its own; Kimi's endpoint serves K3 with base64 video.
+    "kimi": _DirectLane(
+        base_url="https://api.kimi.com/coding/v1",
+        default_key_env="KIMI_CODE_API_KEY",
+    ),
+    # MiMo v2.6 Flash, which Kimi's endpoint does not serve and OmniRoute
+    # cannot carry video to (design/media-read-lane/03).
+    "opencode-go": _DirectLane(
+        base_url="https://opencode.ai/zen/go/v1",
+        default_key_env="OPENCODE_GO_API_KEY",
+        session_header=True,
+    ),
+}
+
+
+def _direct_lane_key_env(cfg: Config, provider: str) -> str:
+    """The env var name `provider`'s direct lane reads its key from.
 
     `DescriberConfig.api_key_env` NAMES the variable (DEC-8 — the value never
-    lands in config.toml); empty falls back to `KIMI_CODE_API_KEY` exactly as
-    the field's docstring promises. When several modalities select kimi, the
-    first enabled one's name wins — one direct client, one key source.
+    lands in config.toml); empty falls back to the lane's own default exactly as
+    the field's docstring promises. When several modalities select the same
+    provider, the first enabled one's name wins — one direct client per lane,
+    one key source.
     """
     for modality in ("image", "audio", "video"):
         describer = cfg.media.describer_for(modality)
@@ -703,10 +742,42 @@ def _kimi_api_key_env(cfg: Config) -> str:
             describer is not None
             and describer.enabled
             and describer.model
-            and describer.provider == "kimi"
+            and describer.provider == provider
         ):
-            return describer.api_key_env or "KIMI_CODE_API_KEY"
-    return "KIMI_CODE_API_KEY"
+            return describer.api_key_env or _DIRECT_LANES[provider].default_key_env
+    return _DIRECT_LANES[provider].default_key_env
+
+
+def _direct_describer_clients(cfg: Config) -> dict[str, AsyncOpenAI]:
+    """Provider → its direct client, for every lane some live describer selects.
+
+    Built only for a lane something USES, so a deployment that stays on
+    omniroute builds nothing new and needs no extra key. A selected lane whose
+    key is unset is left OUT, and `VisionClient._create` refuses a provider it
+    has no client for — the modality answers `unavailable`, never a silent
+    OmniRoute fallback that would drop the video and answer anyway.
+    """
+    from nora.agent.factory import create_client
+    from nora.infra.vision.client import opencode_go_http_client
+
+    clients: dict[str, AsyncOpenAI] = {}
+    for provider in sorted(set(_describe_providers(cfg).values()) & set(_DIRECT_LANES)):
+        lane = _DIRECT_LANES[provider]
+        key_env = _direct_lane_key_env(cfg, provider)
+        api_key = os.environ.get(key_env, "")
+        if not api_key:
+            log.warning(
+                "media describer provider %r selected but %s is unset — "
+                "its modalities answer unavailable",
+                provider, key_env,
+            )
+            continue
+        clients[provider] = create_client(
+            base_url=lane.base_url,
+            api_key=api_key,
+            http_client=opencode_go_http_client() if lane.session_header else None,
+        )
+    return clients
 
 
 def _describe_max_bytes(cfg: Config) -> dict[str, int]:
@@ -1797,34 +1868,15 @@ async def build_dependencies(
     # lifecycle; a second `create_sql_engine` would fork the pool and its own
     # `aclose()` would dispose the engine everything else is still using).
     media_descriptions = SqlMediaDescriptionStore(engine)
-    # The per-modality DIRECT lanes (provider-aware describers, 2026-08-30):
-    # a describer configured `provider = "kimi"` travels through a client
-    # pointed at `api.kimi.com/coding/v1`, NOT the process-wide OmniRoute
+    # The per-modality DIRECT lanes (provider-aware describers, 2026-08-30;
+    # OpenCode Go added by DEC-197): a describer configured with a direct
+    # provider travels through its own client, NOT the process-wide OmniRoute
     # client — OmniRoute drops `video_url` content blocks (probe 2026-08-30:
     # router prompt tokens 95 vs native 3164 for the same payload), so a
-    # video described through it would reach the model as text only. Built
-    # only when SOME describer selects kimi, so a deployment that stays on
-    # omniroute builds nothing new and needs no KIMI_CODE_API_KEY.
-    describe_providers = _describe_providers(cfg)
-    kimi_direct_client: AsyncOpenAI | None = None
-    if "kimi" in describe_providers.values():
-        from nora.agent.factory import create_client
-        kimi_key_env = _kimi_api_key_env(cfg)
-        kimi_api_key = os.environ.get(kimi_key_env, "")
-        if not kimi_api_key:
-            log.warning(
-                "media describer provider 'kimi' selected but %s "
-                "is unset — kimi-modality describers answer unavailable",
-                kimi_key_env,
-            )
-        else:
-            kimi_direct_client = create_client(
-                base_url="https://api.kimi.com/coding/v1",
-                api_key=kimi_api_key,
-            )
+    # video described through it would reach the model as text only.
     vision_client = VisionClient(
         client=client,
-        direct_client=kimi_direct_client,
+        direct_clients=_direct_describer_clients(cfg),
         model=cfg.media.vision_model,
         max_tokens=cfg.media.vision_max_tokens,
         reasoning_effort=cfg.media.vision_reasoning_effort,
@@ -1885,7 +1937,7 @@ async def build_dependencies(
             interpreter=MediaComprehender(
                 client=vision_client,
                 describe_models=_describe_models(cfg),
-                describe_providers=describe_providers,
+                describe_providers=_describe_providers(cfg),
                 describe_max_bytes=_describe_max_bytes(cfg),
                 text_model=cfg.media.comprehension_text_model,
                 chunk_seconds=cfg.media.describe.video.chunk_seconds,
@@ -2464,7 +2516,8 @@ async def build_dependencies(
         video_max_chunks=cfg.media.describe.video.chunk_max,
         media_join=media_join,
         describe_max_bytes=_describe_max_bytes(cfg),
-        blobs=blobs, descriptions=media_descriptions, search=search_client,
+        blobs=blobs, descriptions=media_descriptions,
+        video_readings=SqlVideoReadingStore(engine), search=search_client,
         social=social_client,
         weather=weather_client,
         presence=presence_store, circles=presence_circles,

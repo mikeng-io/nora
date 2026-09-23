@@ -184,3 +184,36 @@ type Sent struct {
 	ID          string
 	TimestampMS int64
 }
+
+// Post is one feed post or reel, read by its shortcode (`GET
+// /posts/{shortcode}`, 17 P12): who posted it, what they wrote, when, and
+// EVERY item in it, in the author's order. A carousel is the reason this read
+// exists: a shared post carries only its cover thumbnail, so without this a
+// ten-image carousel reads as one image.
+//
+// Only fields `FetchMedia`'s response carries (responses.FetchMediaResponse):
+// `user.username`, `caption.text`, `taken_at`, and per item the chosen
+// `image_versions2` / `video_versions` candidate and `video_duration`. No ids
+// cross into it: the shortcode is what the caller asked with, and the numeric
+// ids are the gateway's business.
+type Post struct {
+	Shortcode string
+	Author    string
+	// Caption is the author's free text. It must not enter a span, a log
+	// line or an error (16 §Tracing's never-list).
+	Caption string
+	// TakenAt is Unix seconds, as Instagram sends it.
+	TakenAt int64
+	Items   []PostItem
+}
+
+// PostItem is one image or video of a post. For a video, URL is the clip and
+// Width/Height are the clip's; DurationSeconds is set only when Instagram
+// sent a duration.
+type PostItem struct {
+	Kind            string
+	URL             string
+	Width           int
+	Height          int
+	DurationSeconds *float64
+}

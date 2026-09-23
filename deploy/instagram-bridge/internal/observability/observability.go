@@ -123,6 +123,26 @@ func Route(pattern string, h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// PatternOnlyRoute is Route for a path whose variable segment must not be
+// recorded. otelhttp puts the RAW path into `url.path` when it opens the
+// server span, and sets nothing path-shaped afterwards, so overwriting it here
+// with the pattern leaves the span carrying `/posts/{shortcode}` and never
+// the shortcode. (An igid in `url.path` is allowed, 16 §Tracing; a post's
+// shortcode is not, which is why this is not simply Route.)
+func PatternOnlyRoute(pattern string, h http.HandlerFunc) http.HandlerFunc {
+	path := pattern
+	if _, rest, ok := strings.Cut(pattern, " "); ok {
+		path = rest
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		trace.SpanFromContext(r.Context()).SetAttributes(
+			attribute.String("http.route", path),
+			attribute.String("url.path", path),
+		)
+		h(w, r)
+	}
+}
+
 // SetupLogging makes every log line JSON on stdout, carrying the trace and
 // span ids of the context it was logged in, so a span in Jaeger and its log
 // lines join on one id. slog.SetDefault also routes the standard `log`

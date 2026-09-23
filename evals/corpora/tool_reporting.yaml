@@ -1,4 +1,4 @@
-# S3 reporting (ADR 0015 §4, DEC-197): what she SAYS after a tool returns.
+# S3 reporting (ADR 0015 §4, DEC-199): what she SAYS after a tool returns.
 #
 # THE QUESTION: is what the reply says about the thing asked worth exactly what
 # the tool results were worth? A rewrite that moves how a status is read out of

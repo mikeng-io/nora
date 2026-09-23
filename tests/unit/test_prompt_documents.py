@@ -545,7 +545,7 @@ SHAPES = {
 <now description>
 <presence description>
 <notes description fields>
-  <note about n title>
+  <note about n room title unprompted>
 <rooms description>
 <decisions days description fields>""",
     "relevance_gate": """

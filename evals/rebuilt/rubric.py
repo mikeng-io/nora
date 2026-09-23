@@ -156,7 +156,7 @@ CONTRADICTED = Criterion(
 #: judge about source scope on an injection case that carries no source at all would
 #: add a criterion it can only guess at, and `evals.judge.case_verdict` fails a case
 #: on ANY criterion's FAIL.
-#: ADR 0015 §4's reporting axis (DEC-197): a rewrite that moves how a status is
+#: ADR 0015 §4's reporting axis (DEC-199): a rewrite that moves how a status is
 #: read out of a tool's description and into its result changes what she SAYS,
 #: which the routing corpus cannot see. ONE deciding property, not a menu of
 #: statuses (the operator's objection to enumerated branches, above): the tool

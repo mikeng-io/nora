@@ -43,6 +43,8 @@ type Social interface {
 	SocialProfile(ctx context.Context, igid domain.IGID) domain.SocialRead
 	Story(ctx context.Context, igid domain.IGID) (domain.Story, error)
 	SearchAccounts(ctx context.Context, query string) ([]domain.AccountSummary, error)
+	// Post reads one post by its shortcode, with every carousel item.
+	Post(ctx context.Context, code domain.Shortcode) (domain.Post, error)
 }
 
 // --- stage errors -------------------------------------------------------------
@@ -262,4 +264,17 @@ func (s *Service) SearchAccounts(ctx context.Context, query string) ([]domain.Ac
 		return nil, err
 	}
 	return s.social.SearchAccounts(ctx, query)
+}
+
+// ReadPost reads one post by its shortcode (17 P12).
+//
+// It takes the PARSED shortcode: the HTTP layer parses it at the edge, so a
+// malformed one is 400 before this runs, whatever the session's state, as
+// `GET /accounts?query=` does. The session gate comes next, before anything
+// reaches Instagram.
+func (s *Service) ReadPost(ctx context.Context, code domain.Shortcode) (domain.Post, error) {
+	if _, err := s.ready(); err != nil {
+		return domain.Post{}, err
+	}
+	return s.social.Post(ctx, code)
 }

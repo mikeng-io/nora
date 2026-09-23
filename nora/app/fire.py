@@ -124,6 +124,7 @@ from nora.domain.standing import (
     Standing,
 )
 from nora.domain.tool_call_log import ToolCallLogStore
+from nora.domain.turn_deadline import turn_deadline
 from nora.engagement.context import StandingNotesReader
 from nora.engagement.mentions import MentionRenderer
 from nora.engagement.self_presence import PresenceReader
@@ -2241,16 +2242,20 @@ class FirePath:
             # module still has none of that plumbing. Discarded rather than
             # threaded further for now; a fire turn is a real invocation too
             # and picking it up is a flagged follow-up, not a silent gap.
-            stop_reason, final_text, _trace = await asyncio.wait_for(
-                runner.invoke(
-                    doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
-                    tool_call_log=tool_call_log, reasoning_watch=reasoning_watch,
-                    tool_hooks=tool_hooks,
-                    tag_message=tag_message, limits=limits, ctx=ctx,
-                    trace_attributes=trace_attributes(ctx, doctrine),
-                ),
-                timeout=self._timeout_seconds,
-            )
+            # `[heartbeat].timeout_seconds`, published to the turn's tools:
+            # the vision describer was built from the `[llm]` loop and would
+            # otherwise spend a heartbeat's whole budget on one read.
+            with turn_deadline(self._timeout_seconds):
+                stop_reason, final_text, _trace = await asyncio.wait_for(
+                    runner.invoke(
+                        doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
+                        tool_call_log=tool_call_log, reasoning_watch=reasoning_watch,
+                        tool_hooks=tool_hooks,
+                        tag_message=tag_message, limits=limits, ctx=ctx,
+                        trace_attributes=trace_attributes(ctx, doctrine),
+                    ),
+                    timeout=self._timeout_seconds,
+                )
         except TimeoutError:
             log.error("fire turn invocation_timeout (tag=%s)", ctx.tag_id)
             self._metrics.inc(
