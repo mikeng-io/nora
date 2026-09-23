@@ -55,20 +55,19 @@ deleted the last generated capability block for exactly that reason.
 - `<presence>`: a generated per-turn block extending `_where_line` (`02`)
 - three room-awareness tools, `my_rooms`, `room_activity`, `read_room`, each
   with its own disclosure tier (`03`)
-- splitting `social_fetch` by action, with Threads as a backend row (`04`)
 - the order, and how to prove each part helps (`05`)
 
 **Out:**
 - rewriting `identity.md`. Its rule is kept, not relaxed.
 - any tool built before the tool catalogue lands (`05` says why)
-- a posts/reels **list** for Instagram. No backend can serve one today;
-  `04` records that plainly rather than designing around it.
+- social fetching (`social_fetch` and any split of it). That is a separate
+  topic, in `design/instagram-adoption/`.
 
 ## Open decisions (operator)
 
 - **D1, the unit boundary.** In the friends group, may `<presence>` and
   `my_rooms` show that ridgeline rooms exist? May `read_room` read one? `03`
-  sets out the options and recommends one. Nothing in `02`–`04` is buildable
+  sets out the options and recommends one. Nothing in `02`–`03` is buildable
   until this is decided, because every block and tool's content depends on it.
 - **D2, heartbeat and proactive.** Does `<presence>` render on the proactive
   loop too, or only on turns that answer a person? `02` recommends both.

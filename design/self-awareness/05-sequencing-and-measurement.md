@@ -2,7 +2,7 @@
 
 ## Dependency: the tool catalogue first
 
-Every tool in `03` and `04` is new. Added before the tool catalogue
+Every tool in `03` is new. Added before the tool catalogue
 (`design/tool-catalogue/`), each costs about 400 tokens on every turn, on top of
 the 22,130 the 54 existing schemas already take. Added after, about 18. So new
 tools wait for the catalogue. Work that adds no tool does not.
@@ -12,17 +12,14 @@ tools wait for the catalogue. Work that adds no tool does not.
 | Step | What | Needs | Adds a tool? |
 |---|---|---|---|
 | **0** | Operator decides D1 (unit boundary) and D2 (proactive) | — | — |
-| **1** | Instagram wiring: merge PR #387; point `social_fetch`'s `story` and `profile` at the bridge's `/accounts/*` | nothing | no |
-| **2** | `_PLATFORM_NAMES` gains WhatsApp and Instagram | nothing | no |
-| **3** | `<presence>` replaces `_where_line` (`02`) | D1, D2 | no |
-| **4** | Tool catalogue lands (separate session, its own bundle) | — | — |
-| **5** | `my_rooms`, `room_activity` (`03`) | 3, 4 | yes |
-| **6** | `read_room` (`03`) | 5, D1 | yes |
-| **7** | `social_*` split (`04`); `social_fetch` removed in the same change | 1, 4 | yes |
-| **8** | `social_post` on Instagram: try `FetchMedia` on a real post link | 7 | no |
+| **1** | `_PLATFORM_NAMES` gains WhatsApp and Instagram | nothing | no |
+| **2** | `<presence>` replaces `_where_line` (`02`) | D1, D2 | no |
+| **3** | Tool catalogue lands (separate session, its own bundle) | — | — |
+| **4** | `my_rooms`, `room_activity` (`03`) | 2, 3 | yes |
+| **5** | `read_room` (`03`) | 4, D1 | yes |
 
-Steps 1–3 can start now. Step 3 is the largest change for her behaviour and
-adds no tool at all.
+Step 1 can start now; step 2 once D1 and D2 are decided. Step 2 is the largest
+change for her behaviour and adds no tool at all.
 
 ## How to prove it
 

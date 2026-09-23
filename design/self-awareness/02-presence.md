@@ -29,7 +29,7 @@ after.
 <presence description="where you are right now. Generated each turn from
   the rooms you are configured for and your live connections; not something
   you remember, so trust it over any memory that disagrees.">
-You are in ~67~嘉怡傑麗明建 on Instagram.
+You are in <room name> on Instagram.
 This group also has rooms on Signal, WhatsApp and Discord.
 Discord is reconnecting right now; the others are up.
 You are also in other groups, which you do not discuss here.

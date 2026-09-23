@@ -10,9 +10,8 @@ description: >
   that knows each fact, in three layers: WHO (identity.md, unchanged), WHERE
   (a generated <presence> block from the room table and AdapterHealth, plus
   three room tools with separate disclosure tiers), WHAT (the tool catalogue,
-  which already is the capability layer). Also splits social_fetch by action,
-  never by network, keeping one router and one read-only allowlist, so Threads
-  joins as a backend row rather than a tool.
+  which already is the capability layer). Social fetching (Instagram and the
+  per-network split) is a separate topic and lives in design/instagram-adoption/.
 status: proposed
 governance: draft
 timestamp: '2026-09-23'
@@ -27,13 +26,11 @@ members:
   - 01-three-layers.md
   - 02-presence.md
   - 03-room-tools.md
-  - 04-social-verbs.md
   - 05-sequencing-and-measurement.md
 edges:
   - {src: 01-three-layers, dst: 00-overview, rel: realizes, provenance: asserted}
   - {src: 02-presence, dst: 01-three-layers, rel: realizes, provenance: asserted}
   - {src: 03-room-tools, dst: 01-three-layers, rel: realizes, provenance: asserted}
-  - {src: 04-social-verbs, dst: 00-overview, rel: realizes, provenance: measured}
   - {src: 05-sequencing-and-measurement, dst: 00-overview, rel: verifies, provenance: asserted}
   - {src: 03-room-tools, dst: 02-presence, rel: depends_on, provenance: asserted}
 scope:
@@ -41,16 +38,11 @@ scope:
     - "<presence>: generated per-turn block replacing _where_line; this room, this unit's other rooms with transport state, and other units per D1"
     - "_PLATFORM_NAMES gains WhatsApp and Instagram"
     - "my_rooms, room_activity, read_room, each with its own disclosure tier; R-27 statuses, no ids (R-18), read_room output untrusted (R-13)"
-    - "social_fetch split by action into social_profile / social_story / social_posts / social_post / social_search over one SocialRouter and one allowlist"
-    - "Instagram wiring fix ahead of the split: story and profile routed to the bridge's /accounts/* (PR #387)"
-  deferred:
-    - "Instagram posts/reels LIST — no backend can serve it (Go library's full query registry has none; OpenCLI's user returns Instagram's HTML shell). The verb ships as unavailable for Instagram"
-    - "Threads — a backend row in SocialRouter when a backend exists; no model-facing change"
-    - "social_post on Instagram via FetchMedia — never tried on a real post"
   not_in_scope:
     - "Editing identity.md. Its not_here rule is kept, not relaxed"
     - "A generated capability block — the tool catalogue is that layer (DEC-150)"
     - "Any new tool before the tool catalogue lands"
+    - "Social fetching (social_fetch, its per-network split, Instagram wiring) — design/instagram-adoption/"
 open_decisions:
   - "D1 unit boundary for <presence>/my_rooms/room_activity/read_room — recommended B: this unit by name, other units by existence only, read_room never crosses a unit"
   - "D2 whether <presence> renders on the proactive loop — recommended yes"
