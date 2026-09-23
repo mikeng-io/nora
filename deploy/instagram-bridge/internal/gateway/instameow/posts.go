@@ -26,9 +26,9 @@ package instameow
 //
 // # Unmeasured
 //
-// No live response to this call has been recorded. The fixtures in
-// posts_test.go are built from the library's struct tags, not captured bytes,
-// and are labelled so. Four things are the live probe's to confirm:
+// No live response to this call has been recorded. The literal-byte fixtures
+// in fakeig/posts.go are built from the library's struct tags, not captured
+// bytes, and are labelled so. Four things are the live probe's to confirm:
 //
 //  1. that a shortcode decodes to the id this endpoint accepts (the identity
 //     check below turns a wrong decode into a refused read, never into a
