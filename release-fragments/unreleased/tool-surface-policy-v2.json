@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Docs and a code comment only. ADR 0015 (proposed) sets the naming, description and content policy for tools, with a named test for each rule and a humanize, gate and measure process. It supersedes ADR 0007 §3.5 and §5. AGENTS.md gains an 'Adding or changing a tool' section pointing at it, and NATIVE_TOOLS carries the same pointer. No tool text changes yet, so nothing a member of a room sees changes."
+}
