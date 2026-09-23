@@ -50,6 +50,39 @@ groups:
             The listener may have died without the connection closing. Compare
             against /health's per-platform last_event_age_seconds.
 
+      # Presence is UP but not collecting — the shape TargetDown cannot see.
+      # 2026-09-24: Life360 stopped accepting the collector's login at 00:12
+      # and every read after was refused for hours. The container stayed
+      # healthy, nothing alerted, and the first sign was Nora telling a member
+      # they had been home through a ride she never recorded. The gauge climbs
+      # from each circle's last SUCCESSFUL read (from boot, if none yet).
+      # 1800s: a healthy circle succeeds every 5-60s, so half an hour is a
+      # collector that has stopped, never a quiet circle.
+      - alert: PresenceCollectionStalled
+        expr: nora_presence_last_collection_age_seconds > 1800
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: "presence has not collected circle {{ $labels.circle }} for {{ $value | humanizeDuration }}"
+          description: >-
+            Everything Nora says about where people are or have been stops at
+            the last successful read. Check the presence container log for
+            `life360 auth failed` / `banned/refused` before restarting it.
+
+      # WHY the collection stopped, when the cause is Life360 refusing us. Each
+      # increment is a refused login (`auth_403`), a ban-class read (`banned`),
+      # or the app-update challenge page (`challenge`) — never a stale token
+      # that one re-auth fixed. A refused login does not heal on its own.
+      - alert: PresenceAuthRefused
+        expr: sum by (reason) (increase(nora_presence_auth_alarms_total[15m])) > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Life360 is refusing the presence collector ({{ $labels.reason }})"
+          description: >-
+            auth_403 means the stored login no longer works (password changed,
+            or the account signed out); it needs the operator, not a restart.
+
   - name: nora-r27
     rules:
       # R-27's third state, as an alert. `unavailable` means "I could not
