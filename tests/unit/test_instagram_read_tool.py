@@ -44,6 +44,7 @@ _U_QUINN = "00000000-0000-4000-8000-000000000001"
 _U_ROBIN = "00000000-0000-4000-8000-000000000002"
 _U_SKY = "00000000-0000-4000-8000-000000000003"
 _U_RIVER = "00000000-0000-4000-8000-000000000004"
+_U_ZED = "00000000-0000-4000-8000-000000000005"
 
 #: The ids the fixtures and the identity file carry. None of them may appear in
 #: anything the model is handed (R-18): the igid and fbid are the bridge's
@@ -88,6 +89,14 @@ uuid = "{_U_RIVER}"
 [[persons.p_river.instagram]]
 fbid = "100000000000004"
 igid = "10000004"
+
+[persons.p_zed]
+name = "Zed"
+[[persons.p_zed.signal]]
+uuid = "{_U_ZED}"
+[[persons.p_zed.instagram]]
+fbid = "100000000000005"
+igid = "10000005"
 '''
 
 #: The room the tag happened in, as the platform reports it: all four are
@@ -100,6 +109,11 @@ _ROSTER = {"g1": tuple(frozenset({u}) for u in (_U_QUINN, _U_ROBIN, _U_SKY, _U_R
 _G1 = Conversation(
     platform="signal", ids=frozenset({"g1"}),
     persons=frozenset({"p_quinn", "p_robin", "p_sky"}),
+)
+#: Another room, which lists Zed. Zed is Tier 0 THROUGH IT, is in
+#: `identity.toml`, and is NOT in `g1`'s roster — the room-scope negative.
+_G2 = Conversation(
+    platform="signal", ids=frozenset({"g2"}), persons=frozenset({"p_zed"}),
 )
 
 
@@ -152,7 +166,9 @@ def persons(tmp_path):
     return load_persons(path)
 
 
-def _tools(persons, social, *, roster=None, metrics=None) -> dict:
+def _tools(
+    persons, social, *, roster=None, metrics=None, fire_turn=False, dream_adaptor="",
+) -> dict:
     room = Room(
         platform="signal", conversation_id="g1",
         roster_source=roster if roster is not None else FakeRosterSource(groups=_ROSTER),
@@ -162,6 +178,7 @@ def _tools(persons, social, *, roster=None, metrics=None) -> dict:
         store=_NoStore(), conversation_id="g1", conversation_type="group",
         persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
         metrics=metrics or Metrics(), room=room,
+        fire_turn=fire_turn, dream_adaptor=dream_adaptor,
     )
     return {spec.name: spec.call for spec in specs}
 
@@ -178,7 +195,7 @@ def world(bridge, persons):
     test is about."""
     fake, root = bridge
 
-    def make(*rooms: Conversation, dm: frozenset[str] = frozenset()):
+    def make(*rooms: Conversation, dm: frozenset[str] = frozenset(), **turn):
         router = SocialRouter(
             default=None,
             exceptions={
@@ -189,7 +206,7 @@ def world(bridge, persons):
                 persons, Policy(conversations=rooms or (_G1,), dm_persons=dm),
             ),
         )
-        return fake, _tools(persons, router)["instagram_read"]
+        return fake, _tools(persons, router, **turn)["instagram_read"]
 
     return make
 
@@ -248,21 +265,25 @@ async def test_a_person_with_two_accounts_is_ambiguous_never_a_pick(world, what)
     out = await read(what=what, person="Robin")
 
     assert out["status"] == "ambiguous"
+    assert "more than one account" in out["note"]
+    assert "ask" not in out["note"].lower()   # the room cannot settle it; only the file can
     assert fake.calls == []
     assert (await read(what=what, person="Quinn"))["status"] == "ok"
     assert len(fake.calls) == 1
 
 
-async def test_a_person_with_no_instagram_account_is_ambiguous_not_nothing_found(world):
-    """18's table gives `nothing_found` for a NAME that matches nobody. A person
-    who matched and holds no igid is the port's other `None`: «I don't know
-    which account is theirs, so I didn't look». `nothing_found` would say the
-    read ran and found nothing, and nothing ran."""
+@pytest.mark.parametrize("what", ["profile", "story"])
+async def test_a_person_with_no_instagram_account_is_nothing_found_saying_so(world, what):
+    """Sky matched and has no igid on file. `nothing_found` — there is nothing
+    to read — with a note that says WHAT the nothing is («no account on file,
+    so I didn't look»), so the model does not report «no story up» about an
+    account nobody recorded, and does not guess one from the name. Until
+    2026-09-24 this was `ambiguous`, whose sentence told the model to ask."""
     fake, read = world()
-    out = await read(what="profile", person="Sky")
+    out = await read(what=what, person="Sky")
 
-    assert out["status"] == "ambiguous"
-    assert out["status"] != "nothing_found"
+    assert out["status"] == "nothing_found"
+    assert "on file" in out["note"]
     assert fake.calls == []
 
 
@@ -285,6 +306,9 @@ async def test_a_story_for_someone_in_no_room_is_refused_and_never_requested(wor
     out = await read(what="story", person="River")
 
     assert out["status"] == "refused"
+    # The sentence is true of River, who is IN the chat and not listed: it
+    # names the operator's listing, not "outside the rooms I'm in".
+    assert "listed" in out["note"] and "outside" not in out["note"]
     assert fake.calls == []
     # Positive control: River resolves fine, and a PROFILE — which has no
     # reach check — does reach the bridge. So the empty log above is the
@@ -325,6 +349,57 @@ async def test_a_listing_in_a_group_room_on_another_network_is_tier_zero(world):
 
     assert out["status"] == "ok"
     assert fake.calls == [("GET", "/accounts/10000004/story")]
+
+
+# ---- the room bounds the name ------------------------------------------------
+
+
+@pytest.mark.parametrize("what", ["profile", "story"])
+async def test_a_person_known_elsewhere_but_not_in_this_room_is_nothing_found(world, what):
+    """Zed is in `identity.toml`, is Tier 0 through ANOTHER room, and is not a
+    member of this one. A name resolves within THIS room only (the lookup
+    `about` uses), so «Zed» here is nobody: `nothing_found`, with the same
+    payload as a name that exists nowhere (design/12 §3 — a difference would
+    disclose who is in Nora's other rooms), and nothing is sent.
+
+    The positive control is that Zed IS Tier 0 in this world: a story for
+    them, were the name resolved identity-wide, would be read — so the empty
+    request log is the room bound and not the reach check."""
+    fake, read = world(_G1, _G2)
+    out = await read(what=what, person="Zed")
+    unknown = await read(what=what, person="Nobody Atall")
+
+    assert out["status"] == "nothing_found"
+    assert {k: v for k, v in out.items() if k != "asked_about"} == {
+        k: v for k, v in unknown.items() if k != "asked_about"
+    }
+    assert fake.calls == []
+
+
+# ---- a story is opened only for a person who asked ------------------------------
+
+
+@pytest.mark.parametrize(
+    "turn",
+    [{"fire_turn": True}, {"dream_adaptor": "proactive"}],
+    ids=["fire_turn", "dreamer"],
+)
+async def test_a_story_is_never_opened_in_a_turn_nobody_asked_for(world, turn):
+    """A story view lands in its author's viewer list, so a background pass —
+    a reminder or proactive fire turn, a Dreamer run with a home room — must
+    never open one: Quinn would see Nora looked, unprompted. `refused` before
+    anything is resolved or sent (design/instagram-adoption/18, 2026-09-24).
+
+    Positive control: the SAME turn reads Quinn's profile, which is invisible
+    to the account and stays allowed, so the empty story log is the rule and
+    not a turn that cannot reach the bridge at all."""
+    fake, read = world(**turn)
+    out = await read(what="story", person="Quinn")
+
+    assert out["status"] == "refused"
+    assert fake.calls == []
+    assert (await read(what="profile", person="Quinn"))["status"] == "ok"
+    assert fake.calls == [("GET", f"/accounts/{_QUINN_IGID}")]
 
 
 # ---- the bridge's own states --------------------------------------------------
@@ -395,13 +470,22 @@ async def test_no_igid_fbid_or_person_id_is_in_the_model_facing_result(world, wh
     """R-18. The bridge's bodies carry both Instagram ids and the tool holds
     the person id; none of them is something to say. The positive control is
     that the read happened and the NAME did come back."""
-    _fake, read = world()
+    fake, read = world()
     out = await read(what=what, person="Quinn")
     wire = json.dumps(out, ensure_ascii=False)
 
     assert out["status"] == "ok" and out["person"] == "Quinn"
     for identifier in (_QUINN_IGID, _QUINN_FBID, "p_quinn"):
         assert identifier not in wire, identifier
+    if what == "story":
+        # The generated fixture's third frame has no `pk`, so the bridge's id
+        # for it is `<pk>_<owner igid>` — the owner's igid in a reference
+        # field. Frames carry no id at all, and the frame itself still arrives.
+        frames = fake.story["body"]["items"]
+        leaky = next(f for f in frames if f["id"].endswith("_" + _QUINN_IGID))
+        assert leaky["url"] in [i["url"] for i in out["items"]]
+        assert all("id" not in i for i in out["items"])
+        assert leaky["id"] not in wire
 
 
 async def test_every_request_the_client_makes_is_a_get_on_an_account_resource(world):
@@ -451,6 +535,7 @@ async def test_an_unreadable_room_is_unavailable_never_nothing_found(persons, br
 async def test_unwired_is_unavailable(persons):
     out = await _tools(persons, None)["instagram_read"](what="profile", person="Quinn")
     assert out["status"] == "unavailable"
+    assert "isn't set up" in out["note"]
 
 
 async def test_an_unwired_instagram_backend_never_fails_over_to_the_default(persons):
@@ -462,6 +547,7 @@ async def test_an_unwired_instagram_backend_never_fails_over_to_the_default(pers
     out = await _tools(persons, router)["instagram_read"](what="profile", person="Quinn")
 
     assert out["status"] == "unavailable"
+    assert "Instagram isn't set up" in out["note"]
     assert default.calls == []
 
 

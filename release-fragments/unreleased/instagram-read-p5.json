@@ -2,14 +2,14 @@
   "type": "feature",
   "summary": "Nora has her own tool for Instagram: ask about someone by name and she can read their Instagram profile or what is on their story right now, through the Instagram bridge only.",
   "details": [
-    "You name the person the way you would in the room, nickname included. She works out who that is among the people in the conversation, then which Instagram account is theirs from the person index. If two people answer to the name, or the person has no account on file or more than one, she asks rather than guessing, because guessing wrong reads somebody else's account.",
-    "A story is read only for someone listed in one of the group rooms she is in, on any network. For anyone else she declines and says it is a boundary, and the story is never requested at all, since the person would otherwise see her in their viewer list. An open room that admits anyone does not count, and neither does a DM.",
+    "You name the person the way you would in the room, nickname included. She works out who that is among the people in this conversation, then which Instagram account is theirs from the person index. If two people answer to the name she asks which one. If the person has no account on file she says so, and if they have more than one she says she can't tell which. She never guesses, because guessing wrong reads somebody else's account.",
+    "A story is read only for someone the operator has listed in one of her group rooms, on any network, and only when a person actually asked her. For anyone else she declines and says it is a boundary, and the story is never requested at all, because the person would see her in their viewer list. An open room that admits anyone does not count, and neither does a DM. Reminders, proactive messages and background passes never open a story.",
     "A profile gives the bio, whether the account is private, whether they and Nora follow each other, and the follower and post counts. A story comes back as its frames with when each was posted and Instagram's own description, plus a link each; looking at a picture is still a separate, deliberate step.",
     "Instagram profiles and stories no longer go through the general social reader. It keeps X, and Instagram account search until that moves to the bridge too. Asked there for an Instagram profile or story, it points to the new tool instead of answering."
   ],
   "limitations": [
     "Only by name, and only profiles and stories for now. Pasted Instagram links and typed handles come next; reading someone's posts waits until a way to list them exists.",
-    "Off by default. Turning it on needs the Instagram bridge running and each person's Instagram id recorded in the person index; until then she says she couldn't check.",
+    "Off by default. Turning it on needs the Instagram bridge running and each person's Instagram id recorded in the person index; until then she says Instagram isn't set up.",
     "In a room she cannot see the member list of, she can only resolve the person who asked, so a question about anyone else is answered 'couldn't check' rather than a guess."
   ]
 }

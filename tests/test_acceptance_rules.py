@@ -1029,14 +1029,21 @@ def test_r86_social_fetch_is_read_only_at_three_layers():
         "has two backends"
     )
 
-    # Every other pair in `social_fetch`'s closed product is DECLARED
-    # unsupported, so it is answered by the tool and never reaches a backend.
-    product = {
-        (platform, what)
-        for platform in tools_module._SOCIAL_PLATFORMS
-        for what in tools_module._SOCIAL_WHATS
-    }
-    assert product - fetch == tools_module._SOCIAL_UNSUPPORTED
+    # A pair `social_fetch` declares unsupported must NOT be one its own
+    # backend serves: that is a working OpenCLI row the tool can never reach —
+    # a cutover done on one side only (the tool dropped the verb, the
+    # allowlist kept it, and the host still spawns it for anything that asks).
+    # And one served by the bridge must be another tool's read. (This replaced
+    # `product - fetch == _SOCIAL_UNSUPPORTED`, which held by construction:
+    # `fetch` IS `product - _SOCIAL_UNSUPPORTED`, so it could only fail if
+    # the declaration named a pair outside the product.)
+    unsupported = tools_module._SOCIAL_UNSUPPORTED
+    assert not (unsupported & set(bridge_server.READ_ONLY_ALLOWLIST)), (
+        "social_fetch declares a pair unsupported that OpenCLI still serves"
+    )
+    assert unsupported & EXCEPTION_ROUTES <= read, (
+        "social_fetch declares a bridge pair unsupported that no tool reads"
+    )
 
     # Layer 3: the declaration the Dreamer's ceiling is derived from.
     for tool in vocabulary:

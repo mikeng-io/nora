@@ -147,6 +147,29 @@ async def test_an_unwired_exception_backend_does_not_fall_through_either():
     assert default.calls == []
 
 
+async def test_an_unwired_backend_answers_one_stable_sentence_and_logs_nothing_per_call(
+    caplog,
+):
+    """A backend that is not composed is CONFIGURATION — its flag is off — so
+    the answer is the same every time and says what is true («Instagram isn't
+    set up»), not «I couldn't read that just now», which invites a retry that
+    cannot help. It is said once at boot, never as a warning per question."""
+    with caplog.at_level("DEBUG", logger="nora.social.router"):
+        router = _router(default=FakeSocialProvider(), instagram=None)
+        # Positive control: the unwired rows ARE reported — once, at boot.
+        assert [r.getMessage() for r in caplog.records
+                if r.name == "nora.social.router"] != []
+        caplog.clear()
+        first = await router.read(**_STORY)
+        second = await router.read(**_PROFILE)
+
+    assert first == second
+    assert first["status"] == "unavailable"
+    assert "Instagram isn't set up" in first["note"]
+    assert "just now" not in first["note"]
+    assert [r for r in caplog.records if r.name == "nora.social.router"] == []
+
+
 async def test_an_unwired_default_does_not_reach_the_exception_backend():
     """And the mirror image, so the isolation is proved in both directions:
     `[social] enabled = false` must not turn the Instagram backend into a
@@ -335,15 +358,37 @@ async def test_the_default_input_kind_is_named():
     assert instagram.calls == []
 
 
-async def test_an_unresolved_subject_is_ambiguous_and_nothing_is_dispatched():
-    """«I don't know which account that is» — NOT a handle guessed from the
-    name, and not `nothing_found`, because nothing was looked at. The backend
-    never being called is the assertion that says the read did not happen."""
+async def test_no_account_on_file_is_nothing_found_and_nothing_is_dispatched():
+    """The index was read and holds no igid for them: «no account on file, so
+    I didn't look» — `nothing_found` with a note that says so, NOT a handle
+    guessed from the name and NOT `ambiguous`, whose sentence is about
+    choosing between accounts that exist. The backend never being called is
+    what says no read happened."""
     instagram = FakeSocialProvider({row: {"status": "ok"} for row in EXCEPTION_ROUTES})
     router = _router(instagram=instagram, subjects=FakeSocialSubjectIndex())
 
-    assert (await router.read(**_STORY))["status"] == "ambiguous"
-    assert (await router.read(**_PROFILE))["status"] == "ambiguous"
+    for read in (_STORY, _PROFILE):
+        out = await router.read(**read)
+        assert out["status"] == "nothing_found"
+        assert "on file" in out["note"]
+    assert instagram.calls == []
+
+
+async def test_several_accounts_on_file_is_ambiguous_and_never_a_pick():
+    """Two igids for one person and nothing to say which was meant. The note
+    tells the model to say so, NOT to ask: the person in the room cannot
+    settle it, only the operator's file can."""
+    instagram = FakeSocialProvider({row: {"status": "ok"} for row in EXCEPTION_ROUTES})
+    router = _router(
+        instagram=instagram,
+        subjects=FakeSocialSubjectIndex({"miles": frozenset({"10000001", "10000002"})}),
+    )
+
+    for read in (_STORY, _PROFILE):
+        out = await router.read(**read)
+        assert out["status"] == "ambiguous"
+        assert "more than one account" in out["note"]
+        assert "ask" not in out["note"].lower()
     assert instagram.calls == []
 
 
@@ -362,20 +407,22 @@ async def test_an_out_of_tier_subject_is_refused_and_nothing_is_dispatched():
     assert instagram.calls == []
 
 
-async def test_an_index_that_cannot_be_read_is_never_a_read():
-    """The port fails CLOSED and so does this: an index that answers nothing
-    costs a read that should have happened rather than granting one that
-    should not have. It lands on `ambiguous` — «I don't know whose account»,
-    which is true of an index nobody could read — and never on a dispatch.
-    Pinned as ONE status, not a set: «either of these is fine» is how a
-    fail-closed path quietly stops being one."""
+async def test_an_index_that_cannot_be_read_is_unavailable_and_never_a_read():
+    """The port fails CLOSED and so does this: an index that could not be read
+    (`None`) costs a read that should have happened rather than granting one
+    that should not have. It is `unavailable` — «I couldn't check» — and not
+    `ambiguous` or `nothing_found`, which are claims about the person's
+    accounts that nobody could make. Until 2026-09-24 this pinned `ambiguous`,
+    because the port's single `None` could not tell the cases apart. Pinned as
+    ONE status: «either of these is fine» is how a fail-closed path quietly
+    stops being one."""
     instagram = FakeSocialProvider({("instagram", "story"): {"status": "ok"}})
     router = _router(
         instagram=instagram,
         subjects=FakeSocialSubjectIndex(_SUBJECTS, unavailable=True),
     )
 
-    assert (await router.read(**_STORY))["status"] == "ambiguous"
+    assert (await router.read(**_STORY))["status"] == "unavailable"
     assert instagram.calls == []
 
 
@@ -386,7 +433,7 @@ async def test_a_raising_index_does_not_become_a_read():
     unauthorized read — the one failure mode where «carry on» is worst."""
 
     class _RaisingIndex:
-        async def igid_for(self, *, person_id):
+        async def igids_for(self, *, person_id):
             raise RuntimeError("index on fire")
 
         async def is_tier_zero(self, *, person_id):

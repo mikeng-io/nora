@@ -69,9 +69,10 @@ a duplicated authorization rule is one that diverges.
   consulted — asserted as a negative in `tests/unit/test_social_router.py`,
   because "we did not look anything up" is invisible in a status. A `person`
   target is a `person_id` the TOOL resolved from a spoken name inside the room
-  (only the tool holds the turn's room); the person index turns it into the
-  igid, and no single igid is `ambiguous`. A triple that is not in the table
-  is not served.
+  (only the tool holds the turn's room); the person index returns every igid
+  on file for them. Exactly one is read; none is `nothing_found` («no account
+  on file»), several is `ambiguous`, and an unreadable index is
+  `unavailable`. A triple that is not in the table is not served.
 * **Authorization is keyed on the READ, never the input** — `TIER_ZERO_READS`.
   Only a story read is visible to the person read (it lands in their viewer
   list), so only `instagram/story` has a reach check: the person must be
@@ -91,7 +92,7 @@ from types import MappingProxyType
 from typing import Any, Literal
 
 from ...domain.ports import SocialProvider, SocialSubjectIndex
-from .results import AMBIGUOUS, REFUSED, UNAVAILABLE
+from .results import AMBIGUOUS, NO_ACCOUNT, REFUSED, UNAVAILABLE, not_set_up
 
 log = logging.getLogger("nora.social.router")
 
@@ -147,6 +148,12 @@ SUBJECT_INPUTS: frozenset[tuple[str, str, str]] = frozenset({
 TIER_ZERO_READS: frozenset[tuple[str, str]] = frozenset({
     ("instagram", "story"),
 })
+
+#: Every `(platform, what)` a resolution row names — what the router could
+#: ever dispatch.
+_SERVABLE_ROWS: frozenset[tuple[str, str]] = frozenset(
+    (platform, what) for platform, what, _kind in SUBJECT_INPUTS
+)
 
 #: The rows that cannot be served without a person index: every row with a
 #: `person` input (resolution) and every Tier 0 read (reach). Derived, so the
@@ -209,6 +216,15 @@ class SocialRouter(SocialProvider):
             MappingProxyType(dict(exceptions or {}))
         )
         self._subjects = subjects
+        # Which rows have no backend is a CONFIGURATION fact, fixed here, so it
+        # is said once at boot and not as a warning on every call — a flag
+        # left off would otherwise fill the log with one line per question.
+        unwired = sorted(
+            row for row in (_SERVABLE_ROWS | EXCEPTION_ROUTES)
+            if self._provider_for(row) is None
+        )
+        if unwired:
+            log.info("social router: no backend composed for %s", unwired)
         if subjects is None:
             # A person-keyed row is resolved, and a Tier 0 row authorized, by
             # the person index and by nothing else. Composing a backend that
@@ -268,8 +284,11 @@ class SocialRouter(SocialProvider):
             # `default`, which is a backend that must not serve it, so sending
             # it there would produce a refusal that reads like an answer about
             # the subject.
-            log.warning("social router: no backend for %s/%s", platform, what)
-            return dict(UNAVAILABLE)
+            #
+            # A STABLE answer, and no log line: this is configuration (the
+            # backend's flag is off), said once at construction. «I couldn't
+            # read that just now» would invite a retry that cannot help.
+            return not_set_up(platform)
         authorized = await self._authorize(
             platform=platform, what=what, target=target, target_kind=target_kind,
         )
@@ -336,14 +355,20 @@ class SocialRouter(SocialProvider):
         try:
             # RESOLVE before AUTHORIZE: a tier is a property of a person, so
             # there is nothing to authorize until the subject is one account.
-            # The order also keeps the two answers distinct — «which account?»
-            # and «not them» are different sentences and the model says a
-            # different thing for each. `None` is zero accounts or several;
-            # both are «I don't know which account is theirs, so I didn't
-            # look» and neither is ever a pick.
-            igid = await self._subjects.igid_for(person_id=target)
-            if not igid:
+            # Four answers, and each is a different sentence for the model
+            # (design/instagram-adoption/18, 2026-09-24):
+            #   * `None` — the index could not be read: `unavailable`;
+            #   * no igid on file: `nothing_found`, saying so (NO_ACCOUNT);
+            #   * several: `ambiguous`, and NEVER a pick;
+            #   * exactly one: that is the account.
+            igids = await self._subjects.igids_for(person_id=target)
+            if igids is None:
+                return dict(UNAVAILABLE)
+            if not igids:
+                return dict(NO_ACCOUNT)
+            if len(igids) > 1:
                 return dict(AMBIGUOUS)
+            (igid,) = igids
             # REACH, keyed on the read and never on the input kind: a story
             # view lands in its author's viewer list, a profile read does not.
             if (platform, what) in TIER_ZERO_READS and not await self._subjects.is_tier_zero(

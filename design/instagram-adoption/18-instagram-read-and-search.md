@@ -94,7 +94,7 @@ for something in the conversation, `url` for an address).
 
 | Input | Means | Resolved by |
 |---|---|---|
-| `person` | a person, named the way the message named them (a nickname is fine) | **the tool** resolves the name with the same room-scoped lookup `about` uses (`room.scope().find`), because only the tool holds the turn's `room`; the router then takes the resolved person through the person index to their Instagram account. No match → `nothing_found`; several people or several accounts → `ambiguous`; a person with NO igid is `ambiguous` too (the port's `None` is «none or several», and `nothing_found` would claim a read ran). An unreadable room roster is `unavailable`. **No tool hands Nora a person id**, so the tool never asks for one |
+| `person` | a person, named the way the message named them (a nickname is fine) | **the tool** resolves the name with the same room-scoped lookup `about` uses (`room.scope().find`), because only the tool holds the turn's `room`; the router then takes the resolved person through the person index to their Instagram account. No match → `nothing_found`; several people → `ambiguous` (ask which). Then the index (`igids_for`, 2026-09-24) returns every igid on file: none → `nothing_found` with a note saying no account is on file and nothing was looked at; several → `ambiguous`, «I can't tell which, so I didn't look» (never a pick, and not «ask» — the room cannot settle it, only the file can); an unreadable index → `unavailable`. An unreadable room roster is `unavailable`. **No tool hands Nora a person id**, so the tool never asks for one |
 | `link` | a pasted Instagram URL | the link parser; the LINK decides the read (profile, post, reel or story, `15` §Links) |
 | `handle` | an Instagram username someone typed (no `@`) | the bridge (`GET /accounts?username=`) |
 
@@ -116,6 +116,13 @@ Every item, listed or single, carries the **text layer** and **references**:
 caption, author, when it was posted, Instagram's own alt text
 (`accessibility_caption`, e.g. "a photo of a plate"), kind (image / video /
 carousel), and media URLs. It does **not** carry what the media shows.
+
+> **2026-09-24: no item `id`.** A story item is `{kind, taken_at, url}` and
+> the text layer. The frame id was never used (`media_fetch` takes the URL),
+> and it leaked: when a reel item has no `pk`, the bridge's `storyFrame`
+> falls back to `item.ID`, shaped `<pk>_<owner igid>`, so the story owner's
+> igid reached the model (R-18). The client no longer reads the field; the
+> shared fixture `story_found.json` carries a frame of that shape.
 
 **Seeing an image or video is `media_fetch(url=…)`**, called on the one item
 that matters, exactly as `10-discovery-retrieval-and-paging.md` divides it:
@@ -167,6 +174,34 @@ The same envelope as every social read: R-27's `ok`, `nothing_found`,
 check (story only) produce them. The body is the curated DTO (`16`
 §Resources), never Instagram's raw response, wrapped as untrusted and clamped.
 
+> **2026-09-24, as built.** `refused` says «I only open stories of people the
+> operator has listed in one of my rooms», which is true of everyone it
+> covers — including someone who is IN the chat but not listed, about whom
+> «outside the rooms I'm in» was false. A backend that is not composed (its
+> flag is off) answers one stable `unavailable` sentence, «Instagram isn't
+> set up», and logs once at boot rather than on every call.
+
+## A story is opened only when a person asks (operator safety rule, 2026-09-24)
+
+A story view is VISIBLE to its author: it lands in their viewer list. So
+`instagram_read(what="story")` is answered `refused`, before any name is
+resolved or any request is sent, in every turn that does not answer a person
+— a fire turn (reminder, proactive, participation) or a Dreamer pass. It runs
+only in a turn a person addressed (a tag or a reply). The tool knows which
+it is from provenance its builder already carries (`fire_turn`,
+`dream_adaptor`), not from a guess. A profile read is invisible to the
+account and stays allowed wherever the tool is. Pinned by
+`test_a_story_is_never_opened_in_a_turn_nobody_asked_for`. **This holds until
+the operator decides otherwise.**
+
+`side_effect_state` stays `none`, and the `NativeTool` comment says why that
+is not the whole truth: ADR 0008 §1 binds `read_only=True` to `none` (a
+tested invariant), and the honest `unknown` would make `instagram_read` an
+act verb — removing it from the Relevance Gate's digest, from R-97's lookup
+set and from the Dreamer's ceiling for the invisible profile read as well.
+The visible half is held by the rule above instead. Changing that trade is an
+ADR 0008 decision, not a flag on this tool.
+
 ## Where each concern lives
 
 | Concern | Owner |
@@ -195,16 +230,23 @@ and P10 (for `link` / `handle`), not a detail left to either:
 
 - **Resolution is keyed on `(platform, what, input kind)`.**
   - `person` → the tool has already resolved the name to a person id →
-    `igid_for`. Any read.
+    `igids_for` (exactly one is read). Any read.
   - `handle` → the bridge's username lookup → igid.
   - `link` → the parser → (read, username or shortcode) → as for `handle`, or
     straight to the post route.
 - **Authorization stays keyed on the read, not the input.** Only `story` has
   a reach check. For `person` it is `is_tier_zero(person)`. For `link` and
   `handle` it is `igid → person_for_igid → is_tier_zero`, **on the igid the
-  input named, never re-derived through `igid_for`** (`15` §Links). An igid
+  input named, never re-derived through `igids_for`** (`15` §Links). An igid
   that maps to nobody is not in any room: `refused`, and no story request is
   sent. `profile` and `post` need resolution only.
+
+  > **Tier 0 note, 2026-09-24.** `is_tier_zero` counts any `[[conversations]]`
+  > entry that lists the person, and does not ask whether that entry is a
+  > group: a direct-chat entry would make its person Tier 0. The policy parser
+  > cannot produce one today (Nora does not accept DMs, and `[dm] persons` is
+  > a separate field that never counts), so this is recorded rather than
+  > fixed.
 - **The port gains `cursor` and the input kind.** `SocialProvider.read` and
   `SocialRouter.read` take `(platform, what, target, limit)` today; both grow
   a cursor and a typed target, and the contract suite

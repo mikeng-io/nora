@@ -82,23 +82,22 @@ def test_every_declared_extension_is_named_and_documented() -> None:
     assert undocumented == [], f"declared with no meaning: {undocumented}"
 
 
-def test_ambiguous_declares_both_senses_it_is_actually_used_in() -> None:
+def test_ambiguous_declares_the_sense_it_is_actually_used_in() -> None:
     """A declared meaning that has fallen behind the use is worse than none.
 
     `ambiguous` was declared as "several candidates, cannot pick one" while
-    the Instagram story row had been using it for "no index entry AT ALL" —
-    a subject-keyed read whose `target` is a person id, where the honest
-    sentence is «I don't know which account that is, so I didn't look» and
-    guessing a handle from a name reads a different human's stories. The
-    declaration is the thing a reader checks a status against; if it names one
-    of the two senses in use, a reviewer reading the other one has no way to
-    tell a drift from a design. Both senses are named now, and this asserts
-    both, because asserting only "non-empty" is what let the gap live.
+    the Instagram rows used it for "no index entry AT ALL" too; for a while
+    the declaration named both senses. On 2026-09-24 the second sense left the
+    word (design/instagram-adoption/18): the person index now returns every
+    igid on file, and NONE is `nothing_found` with a note saying no account is
+    on file. So the declaration names the one sense in use and says, in so
+    many words, that the other is not this word — a reviewer reading an old
+    trace that used it can then tell a retired sense from a drift.
     """
     meaning = DECLARED_STATUS_EXTENSIONS["ambiguous"]
-    assert "several candidates" in meaning, "the original sense is gone"
-    assert "NO entry at all" in meaning, "the subject-resolution sense is missing"
-    assert "nothing_found" in meaning, "it must say which word it is NOT"
+    assert "several candidates" in meaning, "the sense in use is gone"
+    assert "NOT «no entry at all»" in meaning, "the retired sense is not named as retired"
+    assert "nothing_found" in meaning, "it must say which word that sense answers now"
 
 
 def test_the_vocabulary_is_derived_from_the_core_and_the_extensions() -> None:

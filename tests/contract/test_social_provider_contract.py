@@ -222,10 +222,10 @@ def test_read_takes_every_argument_keyword_only(impl):
 
 
 def test_the_subject_index_port_is_keyword_only():
-    """The other half of the same argument. `igid_for(person_id=…)` is handed
+    """The other half of the same argument. `igids_for(person_id=…)` is handed
     a `person_id` and must never be handed an igid or a handle by a caller
     that got the order right by accident."""
-    for method in (SocialSubjectIndex.igid_for, SocialSubjectIndex.is_tier_zero):
+    for method in (SocialSubjectIndex.igids_for, SocialSubjectIndex.is_tier_zero):
         params = inspect.signature(method).parameters
         assert params["person_id"].kind is inspect.Parameter.KEYWORD_ONLY
 
@@ -322,15 +322,16 @@ async def test_no_result_carries_a_content_key(arm):
 @pytest.mark.parametrize(
     ("subjects", "expected"),
     [
-        (FakeSocialSubjectIndex(), "ambiguous"),
+        (FakeSocialSubjectIndex({"miles": frozenset({"10000001", "10000002"})}),
+         "ambiguous"),
         (FakeSocialSubjectIndex(_SUBJECTS, out_of_reach=frozenset({"miles"})),
          "refused"),
     ],
 )
 async def test_the_tier_ladder_answers_outside_r27s_three_states(subjects, expected):
-    """`target` is a `person_id`. No index entry means Nora does NOT fall back
-    to treating the string as a handle — a wrong binding does not degrade the
-    answer, it reads a different human's stories silently. Out of tier is
+    """`target` is a `person_id`. Several accounts on file means Nora does NOT
+    pick one — a wrong binding does not degrade the answer, it reads a
+    different human's stories silently. Out of tier is
     `refused`: «I may not look him up» and «I couldn't look» are different
     claims, one a boundary the operator set and the other an outage somebody
     should fix.

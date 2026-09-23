@@ -151,6 +151,19 @@ func synthReel() *responses.ReelInfoResponse {
 		{Width: 1080, URL: "https://instagram.fxxx1-1.fbcdn.net/v/t50/synthetic-2.mp4?oh=00_C&oe=0"},
 	}
 
+	// A frame with NO `pk`. `storyFrame` then falls back to `item.ID`, which
+	// Instagram shapes as `<pk>_<owner igid>` — so the frame's `id` carries
+	// the story OWNER's igid. The Python client must never hand that to the
+	// model (design/instagram-adoption/18, R-18); this row is what it is
+	// tested against.
+	fallback := &responses.ReelItem{ExpiringAt: 1700086400}
+	fallback.ID = "900000000000000003_" + synthIGID
+	fallback.TakenAt = 1700007200
+	fallback.MediaType = 1
+	fallback.ImageVersions2.Candidates = []responses.Candidates{
+		{Width: 1080, Height: 1920, URL: "https://scontent.cdninstagram.com/v/t51/synthetic-3.jpg?oh=00_D&oe=0"},
+	}
+
 	return &responses.ReelInfoResponse{
 		Reels: map[string]responses.ReelInfo{
 			synthIGID: {
@@ -158,7 +171,7 @@ func synthReel() *responses.ReelInfoResponse {
 				ExpiringAt: 1700086400,
 				Seen:       0,
 				User:       &responses.User{Username: synthUsername},
-				Items:      []*responses.ReelItem{image, video},
+				Items:      []*responses.ReelItem{image, video, fallback},
 			},
 		},
 	}

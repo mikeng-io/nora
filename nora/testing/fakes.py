@@ -1587,14 +1587,17 @@ class FakeSocialSubjectIndex:
     can produce are the three the tier ladder produces, and collapsing any two
     of them is the defect the port exists to prevent:
 
-    * a person it holds an igid for, in reach → that igid, Tier 0 true;
-    * a person it holds an igid for, out of reach → the igid, Tier 0 false,
+    * a person it holds one igid for, in reach → `{igid}`, Tier 0 true;
+    * a person it holds one igid for, out of reach → `{igid}`, Tier 0 false,
       which is `refused` at the router — a boundary, not an outage;
-    * a person it has never heard of → `None`, which is `ambiguous` — and
-      NEVER a handle derived from the id, because a wrong binding does not
-      degrade the answer, it reads a different human's stories silently.
+    * a person it holds several igids for (a `frozenset` value) → all of
+      them, which is `ambiguous` at the router — never a pick;
+    * a person it has never heard of → the EMPTY set, which is «no account on
+      file» (`nothing_found`) — and NEVER a handle derived from the id,
+      because a wrong binding does not degrade the answer, it reads a
+      different human's stories silently.
 
-    Both methods fail CLOSED and neither raises, exactly as the port requires:
+    Every method fails CLOSED and none raises, exactly as the port requires:
     `unavailable=True` models an index that cannot be read at all and answers
     `None` / `False`, which costs a read that should have happened rather than
     granting one that should not have.
@@ -1605,21 +1608,26 @@ class FakeSocialSubjectIndex:
 
     def __init__(
         self,
-        igids: dict[str, str] | None = None,
+        igids: dict[str, str | frozenset[str]] | None = None,
         *,
         out_of_reach: frozenset[str] = frozenset(),
         unavailable: bool = False,
     ) -> None:
-        self.igids = dict(igids or {})
+        # One igid (a str) or several (a frozenset) per person, normalised to
+        # sets so every method reads one shape.
+        self.igids: dict[str, frozenset[str]] = {
+            pid: frozenset({held}) if isinstance(held, str) else frozenset(held)
+            for pid, held in (igids or {}).items()
+        }
         self.out_of_reach = out_of_reach
         self.unavailable = unavailable
         self.asked: list[str] = []
 
-    async def igid_for(self, *, person_id: str) -> str | None:
+    async def igids_for(self, *, person_id: str) -> frozenset[str] | None:
         self.asked.append(person_id)
         if self.unavailable:
             return None
-        return self.igids.get(person_id)
+        return self.igids.get(person_id, frozenset())
 
     async def is_tier_zero(self, *, person_id: str) -> bool:
         if self.unavailable:
@@ -1632,4 +1640,4 @@ class FakeSocialSubjectIndex:
         closed)."""
         if self.unavailable:
             return None
-        return next((pid for pid, held in self.igids.items() if held == igid), None)
+        return next((pid for pid, held in self.igids.items() if igid in held), None)
