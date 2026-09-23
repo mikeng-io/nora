@@ -59,7 +59,13 @@ cases:
     expect: reply
     mention: true
     input: 銅鑼灣附近有冇車位？
-    metadata: {tools: [find_parking], not_tools: [parking_status]}
+    # NO `not_tools`, corrected 2026-09-23 after the first run: on every draw
+    # of BOTH arms she called `find_parking` first and then `parking_status`
+    # on the car parks it returned — a chain, not a misroute. Forbidding the
+    # sibling graded a correct follow-up as the error the pair exists to
+    # catch. The label was wrong in the same way on both arms, so the
+    # comparison between them was unaffected.
+    metadata: {tools: [find_parking]}
     snapshot: *room_a
 
   - name: route_parking_status_named
