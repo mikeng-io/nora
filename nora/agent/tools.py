@@ -421,6 +421,11 @@ RETRY_POLICIES: frozenset[str] = frozenset({"safe", "unsafe_without_key", "never
 # (`skills` was on that list and is not: it was raised to 2 in 2026-09-03, and
 # its repeat call is the one on this table that returns DIFFERENT content —
 # the argument picks which body loads. `guards.py`'s ceiling branch says so.)
+# ADDING OR CHANGING A TOOL: read docs/adr/0015-tool-surface-policy-v2.md first
+# (and 0004 and 0007, which it extends and partly supersedes). The name, the
+# first paragraph of the docstring, the declared level, where result
+# interpretation lives, and the humanize, gate and measure process are all set
+# there, and `tests/test_tool_surface_policy.py` enforces them.
 NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # Cheap, local, and the answer changes every second, so there is no reason
     # to ration it — but a budget is still required: R-7 default-denies any
