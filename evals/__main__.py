@@ -139,6 +139,18 @@ def _print_spend() -> None:
     if spend["truncated"]:
         line += f"   TRUNCATED: {spend['truncated']}"
     print(line)
+    # The SUBJECT'S OWN TURNS only — the calls under her `invoke_agent` span,
+    # without background passes the drive also spawns (the standing fold).
+    # This is the per-turn unit `design/tool-catalogue/05` §3 gates on.
+    turn = spend.get("turn") or {}
+    if turn.get("turns"):
+        n = turn["turns"]
+        print(
+            f"  turn:  {turn['calls']} call(s) over {n} turn(s) "
+            f"({turn['calls'] / n:.2f}/turn), in/turn={turn['input'] // n} "
+            f"(fresh {turn['fresh'] // n}, cached {turn['cached'] // n}), "
+            f"out/turn={turn['output'] // n}"
+        )
 
 
 def _run_one(

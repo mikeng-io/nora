@@ -279,8 +279,16 @@ def drain_spend() -> dict[str, Any]:
         for reason in str(x[NORA_STOPS] or "").split(","):
             if reason and reason not in stops:
                 stops.append(reason)
+    turn = {
+        key: sum(int(x.get(f"turn.{name}") or 0) for x in _SPEND)
+        for key, name in (("calls", NORA_CALLS), ("input", NORA_INPUT_TOKENS),
+                          ("cached", NORA_CACHED_TOKENS), ("output", NORA_OUTPUT_TOKENS))
+    }
+    turn["fresh"] = turn["input"] - turn["cached"]
+    turn["turns"] = sum(1 for x in _SPEND if f"turn.{NORA_CALLS}" in x)
     _SPEND.clear()
     return {
+        "turn": turn,
         "calls": calls, "input": inp, "output": out, "cached": cached,
         "fresh": inp - cached, "stops": stops,
         # NAMED, not inferred. A `max_tokens` finish reason is the truncation
@@ -290,18 +298,48 @@ def drain_spend() -> dict[str, Any]:
     }
 
 
-def _model_calls(exporter: InMemorySpanExporter) -> dict[str, Any]:
+def _model_calls(exporter: InMemorySpanExporter, *, agent: str | None = None) -> dict[str, Any]:
     """What the model calls captured so far spent, and how they stopped.
 
-    A span counts as a model call when it carries `gen_ai.usage.output_tokens`
-    — the attribute Strands sets on exactly those (`telemetry/tracer.py`), so
-    no span name has to be matched and a rename cannot silently empty this.
+    **One span per model call: `gen_ai.operation.name == "chat"`.** This used
+    to count every span carrying `gen_ai.usage.output_tokens`, on the claim
+    that Strands sets it on model calls alone. It does not: the enclosing
+    `invoke_agent` span carries the AGENT's accumulated usage too, so every
+    call was counted twice and every agent's tokens once more on top.
+    Measured 2026-09-23 on one tag case: 16 `chat` spans, 10+2+1
+    `invoke_agent` spans, all 29 counted. Matching the operation name is
+    Strands' own convention (`_get_common_attributes`), not a span name.
+
+    `agent`, when given, keeps only the calls made UNDER that agent's
+    `invoke_agent` span — the subject's own turn, without the background
+    passes the same drive spawns (the standing fold alone was 10 of those
+    29). A per-TURN comparison (`design/tool-catalogue/05` §3) is meaningless
+    with them mixed in.
     """
+    spans = exporter.get_finished_spans()
+    if agent is not None:
+        by_id = {span.context.span_id: span for span in spans}
+        roots = {
+            span.context.span_id for span in spans
+            if (span.attributes or {}).get("gen_ai.operation.name") == "invoke_agent"
+            and (span.attributes or {}).get("gen_ai.agent.name") == agent
+        }
+
+        def _under(span: Any) -> bool:
+            parent = span.parent
+            while parent is not None:
+                if parent.span_id in roots:
+                    return True
+                up = by_id.get(parent.span_id)
+                parent = up.parent if up is not None else None
+            return False
+
+        spans = [span for span in spans if _under(span)]
     calls = inp = out = cached = 0
     stops: list[str] = []
-    for span in exporter.get_finished_spans():
+    for span in spans:
         attrs = span.attributes or {}
-        if "gen_ai.usage.output_tokens" not in attrs:
+        if attrs.get("gen_ai.operation.name") != "chat":
             continue
         calls += 1
         inp += int(attrs.get("gen_ai.usage.input_tokens") or 0)
@@ -616,6 +654,12 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
             # BEFORE the judge: these describe what the SUBJECT spent, and a
             # judge's draws are the eval layer's own cost.
             spend = _model_calls(exporter)
+            # A subject that names no agent (a test fake) reports no turn
+            # subset rather than a guessed one.
+            agent_name = getattr(getattr(subject.cfg, "agent", None), "name", None)
+            if agent_name:
+                turn = _model_calls(exporter, agent=agent_name)
+                spend.update({f"turn.{k}": v for k, v in turn.items()})
             tools_called = _tools_called(exporter)
             _SPEND.append(spend)
             outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)

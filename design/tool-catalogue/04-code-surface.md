@@ -102,7 +102,14 @@ tool availability between concurrent rooms and silently regrows the resident
 set over the process's life while every per-call measurement still looks
 right. §7 adds the gauge that catches it.
 
-## 5. Turn ceilings — `nora/config.py`
+## 5. Turn ceilings — `ToolSurface.limits` (built, phase C)
+
+**Built 2026-09-23.** `[llm.limits] turns` rises by ONE when the surface has
+anything on its shelf (`ToolSurface.limits`), on the tag and fire paths alike.
+One rather than the 0.8 mean: a turn loads or it does not, and the loader's own
+`budget: 3` bounds how many of its calls a turn may make. Token caps are left
+alone — a deferred prompt is smaller. The switch is `[llm] defer_tools`
+(default `false`), so both arms of §2c run the same build.
 
 `load_tools` spends from the shared ceiling like any verb. `turns` defaults to
 6 and `tool_calls` is a per-name dict (`nora/config.py:2630`).
@@ -149,6 +156,16 @@ become wrong the moment this lands; update them rather than leaving prose that
 reads as current. (`a-late-reversal-is-not-landed-until-every-quoting-file-changes`.)
 
 ## 7. Observability — `nora/obs/`
+
+**Phase C status, 2026-09-23.** Not added as production series yet, and the
+reasons differ per item. *Resident tokens per call* existed to catch a
+registry leaking `dynamic_tools` across turns; with the agent and the shelf
+both built per turn (`02` §"Persistence"), that leak is structurally absent,
+so the gauge would watch a failure the construction already excludes.
+*Calls per turn* and *per-turn tokens* are what §2c/§2f gate on, and the eval
+suite measures them per case (`NORA_CALLS`, `NORA_INPUT_TOKENS`) — the gate is
+decided there, not in Prometheus. `nora_tool_calls_total{tool="load_tools"}`
+exists for free. The DEC-28 counter is still owed.
 
 - `nora_tool_calls_total{tool="load_tools"}` — free, the existing counter.
 - **A counter for the DEC-28 failure**: turns that ended without a reply while

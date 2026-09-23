@@ -61,3 +61,43 @@ def test_tools_are_read_in_execution_order_from_tool_spans():
             return [_Span("send_reply", 3), _Span("model", 1, attrs=False), _Span("where_is", 2)]
 
     assert _tools_called(_Exporter()) == ("where_is", "send_reply")
+
+
+def test_spend_counts_model_calls_once_and_the_turn_apart_from_background():
+    """`_model_calls` counted every span carrying usage, and Strands puts the
+    agent's accumulated usage on `invoke_agent` too — so every call was
+    counted twice (measured: 29 spans for one case, 16 of them real calls).
+    And a per-turn number must exclude background passes the drive spawns."""
+    from types import SimpleNamespace
+
+    from evals.backbone import NORA_CALLS, NORA_INPUT_TOKENS, _model_calls
+
+    def span(sid, parent, op, agent=None, tokens=0):
+        attrs = {"gen_ai.operation.name": op, "gen_ai.usage.output_tokens": 1,
+                 "gen_ai.usage.input_tokens": tokens}
+        if agent:
+            attrs["gen_ai.agent.name"] = agent
+        return SimpleNamespace(
+            context=SimpleNamespace(span_id=sid),
+            parent=SimpleNamespace(span_id=parent) if parent else None,
+            attributes=attrs,
+        )
+
+    spans = [
+        span(1, None, "invoke_agent", agent="nora", tokens=300),
+        span(2, 1, "chat", tokens=100),
+        span(3, 1, "chat", tokens=200),
+        span(4, None, "invoke_agent", agent="standing.event_fold", tokens=50),
+        span(5, 4, "chat", tokens=50),
+    ]
+
+    class _Exporter:
+        def get_finished_spans(self):
+            return spans
+
+    everything = _model_calls(_Exporter())
+    assert everything[NORA_CALLS] == 3
+    assert everything[NORA_INPUT_TOKENS] == 350
+    turn = _model_calls(_Exporter(), agent="nora")
+    assert turn[NORA_CALLS] == 2
+    assert turn[NORA_INPUT_TOKENS] == 300
