@@ -27,19 +27,34 @@ not a platform mention, or answer "what's your IG?".
 from `not_____nora` to `noraexample` between 2026-09-22 (measured on the live
 session) and 2026-09-23 (operator). A copy in config would have been wrong
 from that moment, silently: the failure `identity.md`'s `not_here` names
-("no page name… no address"), moved from prose into TOML. So for a network
-with an adapter, the handle comes from that adapter's own report of the
-logged-in account (the Instagram bridge's `GET /health` already carries it
-under `self`; the other adapters' `self_id` modules derive her identifiers
-per platform and are extended to carry the username where the platform has
-one). Only X and Threads, which have no adapter, take a declared value from
-a small config table. A handle an adapter cannot report is rendered from
-nothing, not guessed.
+("no page name… no address"), moved from prose into TOML. So the handle
+is read live wherever something can report it, and declared only where
+nothing can:
 
-**Inside `<presence>`, not a block of its own in the cached head.** The head
-(`_context_header`) is prose with no `ContextBlock` in it, and
-`test_no_block_in_this_table_belongs_in_the_cached_head` keeps every
-`_BLOCKS` row out of it. A `global` block for about 20 tokens would need a
+| Network | Source today | Why |
+|---|---|---|
+| Instagram | live: the bridge's `GET /health` carries `self.username` (`design/instagram-adoption/03-transport-contract.md`); `nora/platform/instagram/self_id.py` reads that response and ignores the field today, so the build reads it | the adapter knows the logged-in account |
+| Signal, Discord | declared, until the build confirms the adapter can report it | each `self_id.py` derives her ids and deliberately drops the username (below); whether the transport exposes her own handle is a build-time check, not assumed here |
+| WhatsApp | declared | the bridge contract (`design/whatsapp-adoption/03-transport-contract.md`) exposes `{phone, lid}` only; there is no handle to read |
+| X, Threads | declared | no adapter |
+
+A declared handle is a copy, with exactly the risk above. It is the fallback,
+not the design, and each declared row is replaced by a live read the day its
+adapter can report one. A handle neither source has is rendered from nothing,
+not guessed.
+
+**This does not reopen the no-username rule.** `nora/domain/identity.py`
+(operator, 2026-08-14): no `username` is ever INDEXED on any platform,
+because a handle is re-assignable and matching on it resolves a stranger
+as a known person. That rule is about recognising other people. Her own
+handle here is display text in her prompt: it is never an `Identifier`,
+never matched against a sender, and never enters `self_aliases()`, so
+mention detection stays on her immutable ids.
+
+**Inside `<presence>`, not a block of its own in the cached head.** The head is
+one fixed `context_header` block (`_context_header`), and no `_BLOCKS` row is
+served there (`test_no_block_in_this_table_belongs_in_the_cached_head`
+rejects a `global` key). A `global` block for about 20 tokens would need a
 new head-assembly path, and a live-read value would break the prefix cache
 on every rename anyway. One line per turn is the cheaper shape.
 
