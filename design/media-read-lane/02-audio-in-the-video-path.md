@@ -101,7 +101,7 @@ so the chunks are silent: audio extraction plus STT was proposed and rejected as
 scope."* Note the *reasoning* there was scope discipline, not a safety or quality
 objection — so overriding it on operator direction is legitimate. **The scope
 argument is not being refuted, it is being superseded by a later decision**, and
-DEC-161 must carry a `DEPRECATED IN PART 2026-09-22` prefix pointing at DEC-195
+DEC-161 must carry a `DEPRECATED IN PART 2026-09-22` prefix pointing at DEC-197
 (see `05-decisions-and-index.md §2`).
 
 **What replaces it:** a video prompt that asks for speech to be transcribed when

@@ -12,15 +12,26 @@ edges:
 
 ## 1. The DEC row
 
-**DEC-195** is the next free number — verified against `design/09-decision-index.md`
-(the table ends at DEC-194) and against a repo-wide grep for `DEC-195` in both
+**DEC-197** is this bundle's number — verified against `design/09-decision-index.md`
+on `origin/master` (the table ends at DEC-195) and against a repo-wide grep for
+`DEC-197` (**no match**).
+
+> **⚠️ RENUMBERED 195 → 197 on 2026-09-23.** This bundle originally claimed
+> **DEC-195**, which was genuinely free when the branch was cut (`e3a646b4` — the
+> index ended at DEC-194). `origin/master` then allocated DEC-195 to a different
+> decision (`722d56be`, the threading quote-window), which is **not an ancestor of
+> this branch's cut point**. So the collision is a scheduling artifact, not a defect
+> in this bundle — but the number is taken, and this bundle merged after would have
+> duplicated it. Highest DEC on `origin/master` is now 195; DEC-196 belongs to
+> `design/tool-concurrency/`. **This bundle is DEC-197.**
+(the table ends at DEC-194) and against a repo-wide grep for `DEC-197` in both
 `design/` and `nora/`, which returned nothing. Per the bundle conventions, the
 number comes from the index, never from counting files.
 
 Proposed row text (to be added to `design/09-decision-index.md` at PR time, in
 the existing table format with its test column):
 
-> **DEC-195 — The media read lane reads its windows concurrently, keeps the video
+> **DEC-197 — The media read lane reads its windows concurrently, keeps the video
 > path's audio, gains a third describer provider, and raises the per-call vision
 > budget to a value measured latency already required** (operator 2026-09-22,
 > `design/media-read-lane/`). Four changes decided together because they share one
@@ -64,7 +75,7 @@ silent: audio extraction plus STT was proposed and rejected as scope."
 佢啦，直接啟動佢 override 之前個 decision」. The reasoning in DEC-161 was *scope
 discipline* — a deliberate bound on one change, not a claim that audio is
 undesirable or unsafe. It is therefore superseded by a later decision rather than
-refuted, and the row should carry a `DEPRECATED IN PART 2026-09-22 — see DEC-195`
+refuted, and the row should carry a `DEPRECATED IN PART 2026-09-22 — see DEC-197`
 prefix in the established style (compare DEC-133, DEC-75), **not** be rewritten.
 
 ### DEC-161, clause «no new provider»
@@ -93,7 +104,7 @@ bare local number, and people say addresses and phone numbers aloud.»
 **The first version of this bundle said DEC-114 was "extended, not changed". That was
 wrong, and dangerously so** — it flattened a decided *safety* boundary into a scope
 limit. Enabling transcription supersedes this clause, and the override must be visible:
-**DEC-114 gets a `DEPRECATED IN PART 2026-09-22 — see DEC-195` prefix on clause (3)**,
+**DEC-114 gets a `DEPRECATED IN PART 2026-09-22 — see DEC-197` prefix on clause (3)**,
 and the row must say *why* the boundary moved, so a later reader sees a deliberate
 safety override rather than an accident.
 
@@ -262,7 +273,7 @@ must both run green. Suggested slug: `media-read-lane.json`.
 - [ ] Independent adversarial sub-agent review dispatched (**never self-reviewed** — conventions §2)
 - [ ] Every `file:line` re-grepped on the final tree (conventions §5); the anchor table in `04` was built by grepping symbols, and must be re-grepped, not carried
 - [ ] §4's egress check resolved, or the narrowed fallback taken with the operator told
-- [ ] DEC-161 carries its `DEPRECATED IN PART` prefix pointing at DEC-195
-- [ ] DEC-195 row added to `design/09-decision-index.md` with its test column
+- [ ] DEC-161 carries its `DEPRECATED IN PART` prefix pointing at DEC-197
+- [ ] DEC-197 row added to `design/09-decision-index.md` with its test column
 - [ ] Release fragment written, both gates green
 - [ ] All commits in the worktree branch — master receives only an approved merge

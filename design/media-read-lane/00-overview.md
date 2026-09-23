@@ -82,7 +82,7 @@ circular reasoning, and it produced a confident wrong answer.
 | Timeout raise | designed here, unbuilt; **fixes a defect that exists on master today** |
 | Adversarial review | ✅ **round 1 dispatched (Codex, read-only) — REQUEST CHANGES**; all findings addressed |
 | Release fragment | ✅ written, both gates green |
-| DEC row | ❌ DEC-195 not yet added to `design/09-decision-index.md` (see 05) |
+| DEC row | ❌ DEC-197 not yet added to `design/09-decision-index.md` (see 05) |
 | **Measurement obligations** | ❌ **open — see 05 §4. The recommended settings are NOT yet validated at production shape; do these before implementing.** |
 
 ### What the adversarial review changed

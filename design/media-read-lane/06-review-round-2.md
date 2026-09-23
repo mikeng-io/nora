@@ -150,13 +150,13 @@ multiplies B2's product.
 ### M4. ✅ CONFIRMED — the R-rule register still carries a twice-withdrawn number.
 
 `05 §3` R-33: *"The 'own timeout' becomes **48 s** instead of 36 s."* Settled is 120
-— or 54 effective (B1). The register DEC-195 will point at states the withdrawn v2
+— or 54 effective (B1). The register DEC-197 will point at states the withdrawn v2
 recommendation as current.
 
 ### M5. ✅ CONFIRMED — the persisted-data policy is raised, then not decided, while the overview claims scope completeness.
 
 `02 §8` finds that already-comprehended media keeps its silent description
-indefinitely and says it "needs a stated treatment". None is stated; the DEC-195 row
+indefinitely and says it "needs a stated treatment". None is stated; the DEC-197 row
 is silent on it; `00-overview` still says "no schema change, no new table, no
 migration" as if the lane were fully specified. An open policy at merge time means
 the headline benefit (audio) visibly **doesn't work on every existing clip** and
