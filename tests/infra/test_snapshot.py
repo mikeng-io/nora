@@ -656,3 +656,36 @@ async def test_another_rooms_reminder_does_not_leak_in(engine: Any) -> None:
         conv=OTHER_CONV,
     )
     assert "someone else's" not in await _texts(engine, T0 + 5 * MINUTE)
+
+
+async def test_an_edit_folds_only_once_it_had_happened(engine: Any) -> None:
+    """design/message-edits/01 §3. The transcript reads fold a message's
+    newest edit onto it; the reconstruction must fold only an edit made AT OR
+    BEFORE the instant — a message corrected five minutes later still said
+    its first text one minute in, and a snapshot that showed the correction
+    there would be today's room wearing a past timestamp."""
+    import dataclasses
+
+    from nora.domain.models import EditTarget
+
+    row = await _say(engine, "dinner at 7", at=T0)
+    await SqlRecordStore(engine).append_edit(
+        message_id=row,
+        message=dataclasses.replace(
+            NormalizedMessage(
+                platform=PLATFORM, conversation_id=CONV, conversation_type="group",
+                sender_id="+852111", sender_name="Miles", timestamp=T0 + 5 * MINUTE,
+                body="dinner at 8", raw={},
+            ),
+            edit_of=EditTarget(sent_ts=T0),
+        ),
+    )
+
+    before = await _at(engine, T0 + MINUTE)
+    assert [r.body for r in before.transcript] == ["dinner at 7"]
+    assert before.transcript[0].edit is None
+
+    after = await _at(engine, T0 + 10 * MINUTE)
+    assert [r.body for r in after.transcript] == ["dinner at 8"]
+    assert after.transcript[0].edit is not None
+    assert after.transcript[0].edit.was == "dinner at 7"
