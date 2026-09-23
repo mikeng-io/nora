@@ -739,3 +739,34 @@ async def test_a_failed_standing_read_is_counted_rather_than_swallowed():
     assert ctx.standing is None
     assert metrics.get(
         "nora_errors_total", stage="standing", platform="signal") == 1
+
+
+async def test_the_tag_path_reads_presence_at_turn_start():
+    """design/self-awareness/02: the assembler hands the reader the turn's
+    own room, and what it returns reaches `TagContext.presence` — the one
+    field `<presence>` renders from. Without a reader the field stays `None`
+    and the prefill falls back to the network alone."""
+    from nora.domain.self_presence import Presence
+
+    asked: list[tuple[str, str, bool]] = []
+
+    class _Reader:
+        async def read(self, *, platform: str, conversation_id: str, direct: bool = False):
+            asked.append((platform, conversation_id, direct))
+            return Presence(platform=platform, label="Friends", here_state="up")
+
+    wired = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(), presence=_Reader(),
+    )
+    bare = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(),
+    )
+
+    ctx = await wired.assemble(request=_request())
+    bare_ctx = await bare.assemble(request=_request())
+
+    assert asked == [("signal", "g1", False)]
+    assert ctx.presence == Presence(platform="signal", label="Friends", here_state="up")
+    assert bare_ctx.presence is None

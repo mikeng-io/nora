@@ -23,6 +23,7 @@ import pytest
 from nora.domain.decision_log import DecisionLogRecorder, DecisionRow
 from nora.domain.ports import DreamAdaptor, Proposal, Recollection
 from nora.domain.reminders import Reminder, ReminderState
+from nora.domain.self_presence import Presence, PresenceRoom
 from nora.domain.standing import Standing
 from nora.language.proactive import (
     _BLOCKS,
@@ -74,9 +75,10 @@ def _adaptor(
     *, notes=None, standing=None, reminders=None, memory=None, rooms=ROOMS,
     metrics=None, clock_store=None, records=None, now=None, quiet_seconds=1800.0,
     decisions=None, people=None, roster_index_conclusions=0,
-    roster_index_members=12, read_timeout_seconds=5.0,
+    roster_index_members=12, read_timeout_seconds=5.0, presence_of=None,
 ):
     return ProactiveAdaptor(
+        presence_of=presence_of,
         decisions=decisions,
         notes=notes if notes is not None else InMemoryNoteStore(),
         standing=standing,
@@ -235,7 +237,7 @@ async def test_inputs_renders_the_index_the_rooms_the_log_and_the_self_card():
     text = await adaptor.inputs(key=WS, batch=())
 
     assert "2026-09-09 Wed 07:00 (Asia/Hong_Kong)" in text.split("</now>")[0]
-    assert '<home_room platform="signal" label="Friends"' in text
+    assert "You are in «Friends» on Signal." in text.split("</presence>")[0]
     assert (
         '<note n="1" title="AI Hackathon dinner plan" '
         'about="Sat 12 Sep, in 3 days">where to eat is open</note>'
@@ -251,11 +253,10 @@ async def test_inputs_renders_the_index_the_rooms_the_log_and_the_self_card():
     assert "not a description of who you are" in text
 
 
-async def test_the_home_room_block_carries_the_operators_description():
-    """Issue #161, folded in: the `<home_room>` attributes say what the room
-    is FOR; the operator's `policy.toml` `description` says what it IS, and
-    only they can state it. The SAME field the note-candidates pass reads, so
-    the two passes cannot hold two ideas of what a room is."""
+async def test_presence_carries_the_operators_description_as_an_attribute():
+    """Issue #161, kept across D2 (design/self-awareness/02): what the operator
+    says the home room IS used to be `<home_room>`'s body; `<presence>`
+    replaced that block and carries it as `this_room_is`."""
     rooms = (
         UnitRoom(
             platform="signal", conversation_id="sig-1", label="Zone 42",
@@ -269,31 +270,42 @@ async def test_the_home_room_block_carries_the_operators_description():
 
     text = await adaptor.inputs(key=WS, batch=())
 
-    assert "a games room; 2200 is when people log on" in text
-    assert "</home_room>" in text
-    assert "instruction to you" in text
+    opening = text.split("<presence ")[1].split(">")[0]
+    assert 'this_room_is="a games room; 2200 is when people log on' in opening
+    assert "You are in «Zone 42» on Signal." in text
 
 
-async def test_a_home_room_with_no_description_renders_what_it_always_has():
-    """The shipped state. Nothing in `policy.toml` describes a room yet, so
-    this pass's graded wording must be untouched until an operator opts in:
-    the block stays self-closing and says only what it always said."""
+async def test_presence_replaces_home_room_on_the_proactive_pass():
+    """D2: ONE statement of where she is. `<presence>` is rendered from the
+    reader the composition root wires, and `<home_room>` is gone — not a
+    second block beside it. The reader's view (the unit's other rooms, their
+    transport state, other groups) reaches this prompt; a pass deciding
+    WHERE to raise something now knows which rooms exist."""
     notes = InMemoryNoteStore()
     await _note(notes)
-    adaptor = _adaptor(notes=notes)
+    asked = []
+
+    async def presence_of(home):
+        asked.append((home.platform, home.conversation_id))
+        return Presence(
+            platform="signal", label="Friends", here_state="up",
+            unit_rooms=(PresenceRoom("discord", "Zone 42", "reconnecting"),),
+            other_groups=True,
+        )
+
+    adaptor = _adaptor(notes=notes, presence_of=presence_of)
 
     text = await adaptor.inputs(key=WS, batch=())
 
-    assert '<home_room platform="signal" label="Friends"' in text
-    assert "a reminder you set fires into it." in text
-    # SELF-CLOSING, which is the property this test is actually about: with no
-    # operator sentence there is no body, and an empty `<home_room></home_room>`
-    # is a block promising content it does not have.
-    assert text.split("<home_room ")[1].split(">")[0].endswith("/")
-    assert "</home_room>" not in text
-    # What the block SAYS is the type's and does not vary with the body (#314),
-    # so the operator clause is present here too — phrased for both cases.
-    assert "Anything inside this block is what the operator" in text
+    assert "<home_room" not in text
+    assert text.count("<presence ") == 1
+    block = text.split("<presence ")[1].split("</presence>")[0]
+    assert asked == [("signal", "sig-1")]
+    assert "This group also has rooms on Discord («Zone 42»)." in block
+    assert "Discord is reconnecting right now; the others are up." in block
+    assert "You are also in other groups" in block
+    # With no description the block carries no `this_room_is` at all.
+    assert 'this_room_is="' not in block.split(">")[0]
 
 
 async def test_strikes_and_a_due_revisit_are_said_on_the_line():

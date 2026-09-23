@@ -25,8 +25,8 @@ from ..domain.decision_log import (
 )
 from ..domain.models import TagContext, TranscriptRow
 from ..domain.prompt import escape
-from ..language.culture_render import render_culture
 from ..domain.self_presence import Presence
+from ..language.culture_render import render_culture
 from ..language.note_render import render_notes
 from ..language.presence_render import render_presence
 from ..language.self_card_render import render_self_card

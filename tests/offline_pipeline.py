@@ -42,7 +42,6 @@ from typing import Any
 from nora.agent import factory
 from nora.agent.registry import ToolRegistry
 from nora.app.assembler import build_assembler
-from nora.engagement.self_presence import PresenceReader
 from nora.app.dispatch import Dispatcher
 from nora.app.fire import FirePath, gathering_occasion, proactive_occasion, reminder_occasion
 from nora.app.participation import ParticipationTrigger
@@ -60,6 +59,7 @@ from nora.domain.ports import (
 from nora.domain.quote_window import QuoteWindow
 from nora.engagement.context import StandingNotesReader
 from nora.engagement.pipeline import EngagementPipeline
+from nora.engagement.self_presence import PresenceReader
 from nora.engagement.slots import ConversationSlots
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import CompositePolicy, RelevanceGatePolicy, TriggerTextPolicy
