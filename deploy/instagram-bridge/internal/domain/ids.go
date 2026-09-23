@@ -139,6 +139,38 @@ func ParseUsername(s string) (Username, error) {
 
 func (u Username) String() string { return u.s }
 
+// MessageID is one message's platform id (`mid.$…`): what a reaction, an
+// unsend and a threaded reply address. Instagram documents no shape for it,
+// so it is OPAQUE and the parse refuses only what cannot be one: an empty
+// value, a byte outside printable ASCII (whitespace and control bytes
+// included), or anything longer than maxMessageIDLength. The measured ids are
+// about 40 characters.
+//
+// It arrives as a PATH SEGMENT on the message routes
+// (`/threads/{thread_fbid}/messages/{message_id}`), so the parse is what
+// makes it a value before any use case runs (16 §Resources: "a malformed id
+// is 400 before any use case runs").
+type MessageID struct{ s string }
+
+const maxMessageIDLength = 256
+
+// ParseMessageID accepts 1–256 printable, non-space ASCII bytes. Its error
+// text is FIXED and does not echo the input.
+func ParseMessageID(s string) (MessageID, error) {
+	if s == "" || len(s) > maxMessageIDLength {
+		return MessageID{}, invalid("message_id must be 1-%d printable characters", maxMessageIDLength)
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] <= ' ' || s[i] > '~' {
+			return MessageID{}, invalid("message_id must be 1-%d printable characters", maxMessageIDLength)
+		}
+	}
+	return MessageID{s: s}, nil
+}
+
+func (id MessageID) String() string { return id.s }
+func (id MessageID) IsZero() bool   { return id.s == "" }
+
 func parsePositive(s string) (int64, bool) {
 	n, err := strconv.ParseInt(s, 10, 64)
 	return n, err == nil && n > 0

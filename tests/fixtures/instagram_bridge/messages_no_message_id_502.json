@@ -1,0 +1,22 @@
+{
+  "route": "POST /threads/{thread_fbid}/messages",
+  "path": "/threads/100000000000042/messages",
+  "request": {
+    "mentions": [
+      {
+        "fbid": "100000000000001",
+        "length": 15,
+        "offset": 0
+      }
+    ],
+    "reply_to": "mid.$syntheticparent",
+    "text": "@example_friend synthetic message text"
+  },
+  "status": 502,
+  "body": {
+    "error": {
+      "code": "upstream_rejected",
+      "message": "send was accepted but returned no message id"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "route": "PUT /threads/{thread_fbid}/messages/{message_id}/reaction",
+  "path": "/threads/100000000000042/messages/mid.$synthetic0001/reaction",
+  "request": {
+    "emoji": "❤️",
+    "remove": false
+  },
+  "status": 200,
+  "body": {
+    "confirmed": true
+  }
+}

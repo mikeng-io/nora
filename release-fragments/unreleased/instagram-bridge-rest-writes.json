@@ -1,0 +1,17 @@
+{
+  "type": "change",
+  "summary": "instagram-bridge: sending, reacting, unsending and typing move onto thread resources, and every route answers one error envelope. The bridge and Nora must be deployed together.",
+  "details": [
+    "New write routes (design/instagram-adoption/16 §Resources, 17 §P14): POST /threads/{thread_fbid}/messages takes a text message or one attachment and replaces POST /send and POST /send-media; DELETE /threads/{thread_fbid}/messages/{message_id} replaces POST /unsend; PUT /threads/{thread_fbid}/messages/{message_id}/reaction replaces POST /react; PUT /threads/{thread_fbid}/typing replaces POST /typing. The old paths are deleted and answer 404.",
+    "No success body carries an ok field any more, including GET /threads/{thread_fbid}/members, GET /accounts/{igid} and GET /accounts/{igid}/story. A sent message answers {id, timestamp_ms}; an unsend or a reaction answers {confirmed}; typing answers {typing}.",
+    "Every failure is {\"error\": {\"code\", \"message\"}} at one status table: 400, 404, 409 (needs a human), 413, 500, 501, 502 (Instagram refused) and 503 (retryable). An Instagram refusal is now 502 on every route; the old routes answered 500. A failed room lookup keeps its own mark as \"stage\": \"thread_lookup\" beside its code.",
+    "Path ids and request bodies are checked before the session gate, so a malformed request is 400 even while the session is checkpointed. A non-numeric mention fbid is now a 400 rather than a 500.",
+    "A failed send never carries the message text: the bridge replaces the upstream error's text with a fixed one before it reaches a span, a log line or the error envelope, and keeps its classification (too long is still 413, a checkpoint still 409).",
+    "Nora's Instagram sender, reactor and roster read, and the social client's not-found check, moved in the same change. Both sides are tested against the same generated fixtures in tests/fixtures/instagram_bridge/, requests included."
+  ],
+  "limitations": [
+    "The two images must be deployed together, bridge first and nora immediately after. Between the two, every Instagram send and reaction from Nora fails (the old paths 404), and a profile read of an unknown account reads as unavailable rather than not found.",
+    "Unsend and typing have no caller in Nora; their routes and fixtures exist for the first one.",
+    "The closed error set has no code for a malformed request body, so every 400 answers invalid_id, as the account search route already did."
+  ]
+}

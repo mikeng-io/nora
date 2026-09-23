@@ -40,6 +40,16 @@ Table format, a JSON list of objects:
       }
     ]
 
+A `target` starting with `go:` is a Go test run instead of a pytest selector,
+for the Go services under `deploy/` (the instagram-bridge):
+
+        "target": "go:deploy/instagram-bridge ./cmd/instagram-bridge -run TestX|TestY"
+
+The first word after `go:` is the Go module's directory; the rest are
+`go test` arguments (no shell, so a `-run` regex needs no quoting). The same
+two rules hold: "collected" counts the `=== RUN` lines, so a mutant that no
+longer COMPILES collects nothing and is a BROKEN ENTRY, never a caught one.
+
 Two harness rules are baked in, both learned the hard way on that branch:
 
 * **pytest exit code 5 is «nothing collected», not «failed».** A typo'd `-k`
@@ -67,12 +77,32 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 _COLLECTED = re.compile(r"(\d+) (?:passed|failed|error)")
 
 
+# `go test -v`'s per-test start line, e.g. "=== RUN   TestX".
+_GO_RAN = re.compile(r"^=== RUN\s", re.MULTILINE)
+
+
+def run_go(target: str) -> tuple[bool, int]:
+    """`(green, collected)` for one `go:<module dir> <go test args>` target.
+
+    A build failure prints no `=== RUN` line, so it is zero collected: a
+    mutant must die from its behaviour, not from failing to compile.
+    """
+    module, *args = target.split()
+    proc = subprocess.run(  # noqa: S603 - fixed go argv, repo-local only
+        ["go", "test", "-count=1", "-v", *args],  # noqa: S607
+        cwd=ROOT / module, capture_output=True, text=True, check=False,
+    )
+    return proc.returncode == 0, len(_GO_RAN.findall(proc.stdout))
+
+
 def run(target: str) -> tuple[bool, int]:
-    """`(green, collected)` for one pytest selector.
+    """`(green, collected)` for one pytest selector, or a `go:` target.
 
     Exit code 5 is «no tests ran» and is reported as zero collected — NOT as a
     red, which is what let a typo'd selector look like a caught mutation.
     """
+    if target.startswith("go:"):
+        return run_go(target.removeprefix("go:"))
     proc = subprocess.run(  # noqa: S603 - fixed pytest argv, repo-local only
         ["uv", "run", "pytest", "-q", "--no-header", "-p", "no:randomly",  # noqa: S607
          *target.split()],

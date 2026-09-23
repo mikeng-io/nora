@@ -49,10 +49,12 @@ async def bridge(aiohttp_server):
         if state["text"] is not None:
             return web.Response(text=state["text"], content_type="application/json")
         if state["status"] != 200:
-            return web.json_response({"ok": False, "error": "no"}, status=state["status"])
+            return web.json_response(
+                {"error": {"code": "internal", "message": "no"}}, status=state["status"],
+            )
         body = state["body"]
         if body is None:
-            body = {"ok": True, "room_id": ROOM, "title": "the group",
+            body = {"room_id": ROOM, "title": "the group",
                     "is_group": True, "members": MEMBERS}
         return web.json_response(body)
 
@@ -149,7 +151,7 @@ async def test_an_unreachable_bridge_never_raises():
 async def test_malformed_json_is_unavailable_and_never_raises(bridge):
     """A 200 whose body is not JSON at all. `resp.json()` raises for this, and
     an exception escaping here is exactly what the port forbids."""
-    bridge.state["text"] = '{"ok": true, "members": [{'
+    bridge.state["text"] = '{"room_id": "1", "members": [{'
 
     roster = await _roster(bridge).roster(conversation_id=ROOM)
 
@@ -159,9 +161,9 @@ async def test_malformed_json_is_unavailable_and_never_raises(bridge):
 
 @pytest.mark.parametrize("body", [
     pytest.param([], id="a list where an object was expected"),
-    pytest.param({"ok": True}, id="no members key at all"),
-    pytest.param({"ok": True, "members": {}}, id="members is not a list"),
-    pytest.param({"ok": True, "members": []}, id="members is empty"),
+    pytest.param({"room_id": "1"}, id="no members key at all"),
+    pytest.param({"room_id": "1", "members": {}}, id="members is not a list"),
+    pytest.param({"room_id": "1", "members": []}, id="members is empty"),
 ])
 async def test_a_body_that_cannot_be_read_as_a_room_is_unavailable(bridge, body):
     """Including the EMPTY list, which is the one that looks like an answer.
@@ -189,7 +191,6 @@ async def test_a_member_with_no_fbid_refuses_the_WHOLE_roster(bridge, caplog):
     read is refused instead, which costs an honest «I couldn't look».
     """
     bridge.state["body"] = {
-        "ok": True,
         "members": [MEMBERS[0], {"igid": "74340223606", "username": "third_member"}],
     }
 

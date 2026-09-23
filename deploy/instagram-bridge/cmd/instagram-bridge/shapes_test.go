@@ -26,7 +26,6 @@ type rosterMember struct {
 }
 
 type rosterBody struct {
-	OK      bool           `json:"ok"`
 	RoomID  string         `json:"room_id"`
 	Title   string         `json:"title"`
 	IsGroup bool           `json:"is_group"`
@@ -34,7 +33,6 @@ type rosterBody struct {
 }
 
 type profileBody struct {
-	OK              bool           `json:"ok"`
 	IGID            string         `json:"igid"`
 	Username        string         `json:"username"`
 	FullName        string         `json:"full_name"`
@@ -63,7 +61,6 @@ type storyItem struct {
 }
 
 type storyBody struct {
-	OK         bool        `json:"ok"`
 	IGID       string      `json:"igid"`
 	Found      bool        `json:"found"`
 	Username   string      `json:"username"`
@@ -75,10 +72,11 @@ type storyBody struct {
 // maxJSONBody is the HTTP layer's bound on a control route's body (1 MiB).
 const maxJSONBody = 1 << 20
 
-// --- the NEW response conventions (design/instagram-adoption/16 §Resources) --
+// --- the response conventions (design/instagram-adoption/16 §Resources) ------
 //
-// GET /accounts?query= is the first route on these shapes: no "ok" field on
-// success, and one error envelope rather than {"ok":false,"error":...}.
+// Every route answers these since P14: no "ok" field on success, and one
+// error envelope on failure. /health alone keeps its "ok", as an operational
+// path rather than a resource.
 
 type accountSummary struct {
 	IGID       string `json:"igid"`
@@ -113,6 +111,19 @@ type postBody struct {
 type errorBody struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	Stage   string `json:"stage"`
+}
+
+// POST /threads/{thread_fbid}/messages: the message Instagram accepted and
+// named. `timestamp_ms` is the field Nora's sender reads.
+type sentBody struct {
+	ID          string `json:"id"`
+	TimestampMS *int64 `json:"timestamp_ms"`
+}
+
+// DELETE .../messages/{message_id} and PUT .../reaction.
+type confirmedBody struct {
+	Confirmed *bool `json:"confirmed"`
 }
 
 type errorEnvelope struct {

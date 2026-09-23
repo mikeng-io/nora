@@ -313,3 +313,21 @@ on every route. That includes `GET /accounts/{igid}` and
 (`profileBody`, `storyBody`) lose the `ok` field. The Python adapter
 (`nora/platform/instagram/`) and `nora/infra/social/instagram_client.py` move
 in the **same PR**, and the old verb-shaped paths are deleted in it.
+
+**2026-09-24: built** (branch `mikeng-io/instagram-bridge-rest-writes`, not
+merged, not deployed). The four write routes and the envelope are on every
+route, the legacy status table is deleted, every path id parses before the
+session gate, and a failed send's error text is fixed before it reaches a span
+(`sendTextError`), classified first so too long stays 413. What Nora reads
+from a write response, listed from the callers before the move: from a send's
+200 only `timestamp_ms` (`send.py` `_sent_timestamp`); from a reaction, a
+roster failure and every send failure only the status; from the members 200
+only `members[].fbid`; from the profile 404 the envelope's `code`
+(`not_found`, formerly `ok: false`). The sent message's `id` is not read by
+Nora; the bridge keeps it and its tests pin it. Nora has no unsend or typing
+caller. Shared fixtures `members_*`, `messages_*`, `reaction_*`, `unsend_*`
+and `typing_*` carry the request each write was generated from, and the
+adapter's tests assert it sends exactly that body. 16 §Migration step 5 lists
+what did not fit 16 as written. **Deploy: both images together, bridge first,
+then nora immediately**; between the two every Instagram send and reaction
+fails on a 404. The PR body carries the runbook and the no-send read-back.

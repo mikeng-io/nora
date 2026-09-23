@@ -500,3 +500,39 @@ func TestAnUnconfirmedReactionIsNotAFailure(t *testing.T) {
 		t.Fatal("an unconfirmed reaction must not read as a failed one")
 	}
 }
+
+// A failed send never carries its message text out, and keeps its kind.
+// An upstream refusal can quote what it refused; the words Nora was sending
+// must not reach the span (RecordError writes err.Error() into it), the log
+// or the envelope, while "too long" must still read as ErrTooLarge (413, never
+// retried) and a checkpoint as ErrNeedsHuman (409). Both are decided off the
+// RAW error, so the fixed text must be applied after classifying, not before.
+func TestAFailedSendCarriesNoTextAndKeepsItsKind(t *testing.T) {
+	const words = "the-words-nora-was-sending-5d1e"
+	for _, tc := range []struct {
+		name string
+		err  error
+		kind error
+	}{
+		{"too long", errors.New("Message Too Long: " + words), domain.ErrTooLarge},
+		{"checkpoint", errors.Join(httpclient.ErrCheckpointRequired, errors.New(words)), domain.ErrNeedsHuman},
+		{"graphql refusal", (&types.ErrorResponse{Errors: []*types.GraphQLError{{Message: words}}}).AsError(), domain.ErrUpstreamRejected},
+		{"unnamed", errors.New("boom " + words), nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := sendText(t.Context(), &fakeIG{SendErr: tc.err}, threadShort, words, nil, "")
+			if err == nil {
+				t.Fatal("a failed send returned no error")
+			}
+			if strings.Contains(err.Error(), words) {
+				t.Errorf("the error text carries the message: %q", err.Error())
+			}
+			if got := domain.KindOf(err); got != domain.KindOf(tc.kind) {
+				t.Errorf("kind = %v, want %v", got, domain.KindOf(tc.kind))
+			}
+			if tc.kind == domain.ErrTooLarge && !errors.Is(err, domain.ErrTooLarge) {
+				t.Error("a too-long refusal lost its 413 refinement")
+			}
+		})
+	}
+}

@@ -1,0 +1,12 @@
+{
+  "route": "GET /threads/{thread_fbid}/members",
+  "path": "/threads/100000000000042/members",
+  "status": 409,
+  "body": {
+    "error": {
+      "code": "needs_human",
+      "message": "checkpoint required",
+      "stage": "thread_lookup"
+    }
+  }
+}

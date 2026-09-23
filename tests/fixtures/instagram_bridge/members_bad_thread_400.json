@@ -1,0 +1,11 @@
+{
+  "route": "GET /threads/{thread_fbid}/members",
+  "path": "/threads/not-a-thread/members",
+  "status": 400,
+  "body": {
+    "error": {
+      "code": "invalid_id",
+      "message": "thread_fbid must be a positive decimal thread id (the SHORT id)"
+    }
+  }
+}

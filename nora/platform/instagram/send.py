@@ -1,5 +1,27 @@
-"""instagram-bridge send: `POST /send` and `POST /send-media`
-(design/instagram-adoption/03-transport-contract.md). Never raises.
+"""instagram-bridge send: `POST /threads/{thread_fbid}/messages`, once for the
+text and once per attachment (design/instagram-adoption/16 §Resources, 17 §P14).
+Never raises.
+
+**The route.** One resource, a thread's messages, takes either a text message
+`{text, mentions?, reply_to?}` or one attachment `{media: {data_base64,
+filename, mimetype}, reply_to?}`, never both. It replaced `POST /send` and
+`POST /send-media` on 2026-09-24 (P14), and the bridge DELETED those paths in
+the same change, so this module and the bridge deploy together. The room key is
+the SHORT thread id, in the path. A 200 is the message the bridge sent,
+`{id, timestamp_ms}`, with no `ok` field: the status says it succeeded. A
+failure is the envelope `{"error": {code, message}}`, and only its STATUS is
+read here. The bodies are pinned by `tests/fixtures/instagram_bridge/messages_*`,
+which the bridge's own handlers generate.
+
+**What is read from a 200: `timestamp_ms`, and nothing else.** It is the
+platform's own sent-timestamp, which `Deliverer` records and a later reply's
+quote resolves against. The bridge also returns the sent message's `id`
+(`mid.$…`), and nothing in Nora reads it today: `SendResult` has no field for
+it, a `reply_to` is taken from an INGESTED row's own `mid.$…` (someone else's
+message, off `/events`; the parser drops Nora's own echoes as `from_me`), and
+no Nora code reacts to or unsends her own Instagram message. The bridge keeps
+`id` in the body and its tests pin it, so the first caller that needs it has
+it.
 
 Mirrors `nora.platform.whatsapp.send.WhatsAppSender`'s contract — same session
 construction, same "log and return" discipline — because the reader who has
@@ -10,14 +32,14 @@ one is a real difference on the wire rather than a stylistic choice.
 
 `slidetypes.SendMediaRequest` has fields for attachment, thread, threading id
 and reply — and **no text field of any kind** (`03` §"Outbound"). A caption
-cannot be expressed on this wire; `POST /send-media` carries no caption field
-and ignores one if sent.
+cannot be expressed on this wire; a media message carries no caption field, and
+the bridge answers 400 to a body carrying both `text` and `media`.
 
 WhatsApp's sender puts the reply text in `caption` on the first attachment and
-DELIBERATELY SKIPS `/send`, so the group does not hear the reply twice.
+DELIBERATELY SKIPS its text send, so the group does not hear the reply twice.
 Copying that shape here silently drops the text — the message goes out as a
-bare image and the words are gone, with a 200 on every call. So on Instagram:
-`POST /send` with the text first, then one `POST /send-media` per attachment.
+bare image and the words are gone. So on Instagram: the text as one message
+first, then one media message per attachment.
 
 The text goes FIRST on purpose. If the media upload fails, the group has
 already heard what Nora said; the reverse order would leave an image with no
@@ -25,18 +47,22 @@ explanation of why it arrived.
 
 ## 2. 409 is a checkpoint and is NOT retryable
 
-`03`'s status table: 409 means the Instagram session is checkpointed or logged
-out, and clearing it needs a human. Retrying a 409 is how a captcha becomes a
+The bridge's status table (`16` §Resources): 409 means the Instagram session is
+checkpointed or logged out, and clearing it needs a human. Retrying a 409 is how a captcha becomes a
 ban, so it is `ok=False` with `retryable=False` and an error line that says a
 human is needed. 503 (socket down or reconnecting) stays retryable, the same
 as WhatsApp's — the bridge heals that one on its own.
 
 500 is the fail-closed default the bridge chose deliberately: 503 is a CLAIM
-that retrying will work, and an unclassifiable refusal has not earned it.
+that retrying will work, and an unclassifiable refusal has not earned it. 413
+(Instagram refused the text as too long, or the body is over the bridge's
+limit) and 502 (Instagram answered with an error, or accepted the message
+without naming it) are not retryable either: the same message would be refused
+the same way.
 
 ## 3. `mentions` are FORWARDED, not ignored — and the TEXT is rewritten to match
 
-WhatsApp v1 accepts and ignores them. Instagram's `/send` takes
+WhatsApp v1 accepts and ignores them. Instagram's text message takes
 `mentions: [{fbid, offset, length}]` and `02` measured the round trip, so the
 field is filled — a decoration parameter that the wire supports and the
 adapter dropped would be a capability lost at the last inch.
@@ -101,6 +127,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import urllib.parse
 
 import aiohttp
 
@@ -133,7 +160,7 @@ def _retry_after_seconds(value: str | None) -> float | None:
 
 
 def _sent_timestamp(body: object) -> int | None:
-    """`timestamp_ms` out of the bridge's `{ok, id, timestamp_ms}` result.
+    """`timestamp_ms` out of the bridge's `{id, timestamp_ms}` result.
 
     The PLATFORM's own sent-timestamp — what a later reply's quote resolves
     against, the same lesson `nora.platform.signal.send._sent_timestamp`
@@ -206,18 +233,27 @@ def _apply_mention_handles(
     return text, [payload_by_index[i] for i in range(len(mentions)) if i in payload_by_index]
 
 
+def messages_path(conversation_id: str) -> str:
+    """`/threads/{thread_fbid}/messages` for one room. The id is quoted as ONE
+    path segment, so no conversation id can address a different route."""
+    return f"/threads/{urllib.parse.quote(conversation_id, safe='')}/messages"
+
+
 class InstagramSender:
     def __init__(self, base_url: str, *, timeout: float = 10.0) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout)
 
-    async def _post(self, path: str, payload: dict, *, conversation_id: str) -> SendResult:
-        """One POST against the bridge, with the contract's status mapping."""
+    async def _post(self, payload: dict, *, conversation_id: str) -> SendResult:
+        """One message POSTed to the room's messages, with the bridge's status
+        mapping. Every request carries the turn's trace context
+        (`propagation_headers`), so the bridge's spans join Nora's trace."""
         try:
             async with (
                 aiohttp.ClientSession(timeout=self._timeout) as session,
                 session.post(
-                    f"{self._base_url}{path}", json=payload, headers=propagation_headers(),
+                    f"{self._base_url}{messages_path(conversation_id)}",
+                    json=payload, headers=propagation_headers(),
                 ) as resp,
             ):
                 if resp.status == 200:
@@ -226,7 +262,8 @@ class InstagramSender:
                     # A CHECKPOINT. Explicitly NOT retryable: the session is
                     # challenged and only a human can clear it, and hammering
                     # a challenged account is how a captcha becomes a ban
-                    # (`03`, and the bridge's own status-mapping comment).
+                    # (the bridge's status table, `errors.go`). Found in the
+                    # room's lookup or in the send itself, it reads the same.
                     log.error(
                         "send refused: instagram session is checkpointed or logged out "
                         "(conversation=%s) — a human has to clear it; retrying would not",
@@ -244,6 +281,12 @@ class InstagramSender:
                     log.error("send failed: bridge not connected (conversation=%s)",
                               conversation_id)
                     return SendResult(ok=False, retryable=True)
+                if resp.status == 413:
+                    # Too long for Instagram, or over the bridge's body limit.
+                    # The same message would be refused the same way.
+                    log.error("send refused as too large: HTTP 413 (conversation=%s)",
+                              conversation_id)
+                    return SendResult(ok=False)
                 log.error("send failed: HTTP %s (conversation=%s)",
                           resp.status, conversation_id)
                 return SendResult(ok=False)
@@ -294,14 +337,12 @@ class InstagramSender:
         # the call and the bridge decides. Returning `ok=True` for a send that
         # never left the process would be a delivery status Nora invented.
         if text or not attachments:
-            payload: dict[str, object] = {"room_id": target.conversation_id, "text": text}
+            payload: dict[str, object] = {"text": text}
             if mention_payload:
                 payload["mentions"] = mention_payload
             if reply_to:
                 payload["reply_to"] = reply_to
-            result = await self._post(
-                "/send", payload, conversation_id=target.conversation_id,
-            )
+            result = await self._post(payload, conversation_id=target.conversation_id)
             if not result.ok:
                 # The words did not land. Sending the attachments anyway would
                 # put an image in the room with nothing explaining it, and
@@ -312,14 +353,15 @@ class InstagramSender:
 
         for a in attachments:
             media_result = await self._post(
-                "/send-media",
                 {
-                    "room_id": target.conversation_id,
-                    "data_base64": base64.b64encode(a.content).decode("ascii"),
-                    "filename": a.filename,
-                    "mimetype": a.media_type,
-                    # No `caption` key, ever: the wire has nowhere to put one
-                    # and the bridge ignores it. See the module docstring.
+                    "media": {
+                        "data_base64": base64.b64encode(a.content).decode("ascii"),
+                        "filename": a.filename,
+                        "mimetype": a.media_type,
+                    },
+                    # No `text` and no `caption`, ever: the wire has nowhere
+                    # to put either, and the bridge refuses a body carrying
+                    # both text and media. See the module docstring.
                     **({"reply_to": reply_to} if reply_to else {}),
                 },
                 conversation_id=target.conversation_id,

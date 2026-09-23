@@ -1,15 +1,21 @@
 """`nora.platform.instagram.react.InstagramReactor` against the bridge's
-`POST /react` (design/instagram-adoption/03-transport-contract.md, and the
-route as `deploy/instagram-bridge/server.go` implements it).
+`PUT /threads/{thread_fbid}/messages/{message_id}/reaction`
+(design/instagram-adoption/16 §Resources, 17 §P14, and the route as
+`deploy/instagram-bridge/internal/transport/http/messages.go` implements it).
 
-The stand-in bridge RECORDS THE BODY and reproduces the route's own
-wrong-call shape: `handleReact` 400s an empty emoji *even on a removal*,
+The stand-in bridge RECORDS THE PATH AND THE BODY and reproduces the route's
+own wrong-call shape: `handleReaction` 400s an empty emoji *even on a removal*,
 because Instagram's mutation names WHICH reaction is being retracted. A fake
 that accepted anything would let a retraction regress to a 400 on every call,
-green.
+green. It serves ONLY the new route, so a reactor still on `POST /react` gets
+aiohttp's 404 and the success tests go red; its answers are the bridge's own
+bodies from `tests/fixtures/instagram_bridge/reaction_*`.
 """
 
 from __future__ import annotations
+
+import json
+from pathlib import Path
 
 import pytest
 from aiohttp import web
@@ -24,24 +30,36 @@ DM = ConversationTarget("instagram", ROOM, "dm")
 MID = "mid.$gAASG4nvQLWim9MCLrWgw3tChgAAq"
 
 
+_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "instagram_bridge"
+
+
+def _fixture(name: str) -> dict:
+    return json.loads((_FIXTURES / name).read_text())
+
+
 @pytest.fixture
 async def bridge():
-    """`(box, reactor)`. The handler mirrors the real one's required fields."""
+    """`(box, reactor)`. The handler mirrors the real one's required fields.
+    `box["calls"]` is `[(room, message_id, body), …]`."""
     box: dict = {"status": 200, "calls": []}
 
     async def handler(request: web.Request) -> web.Response:
         body = await request.json()
-        box["calls"].append(body)
-        # The route's OWN validation, reproduced: message_id and emoji are
-        # both required, the emoji also when `remove` is true.
-        if not body.get("message_id") or not body.get("emoji"):
-            return web.json_response({"error": "emoji is required"}, status=400)
+        box["calls"].append(
+            (request.match_info["thread_fbid"], request.match_info["message_id"], body),
+        )
+        # The route's OWN validation, reproduced: the emoji is required, also
+        # when `remove` is true. The refusal is the bridge's own envelope.
+        if not body.get("emoji"):
+            fx = _fixture("reaction_no_emoji_400.json")
+            return web.json_response(fx["body"], status=fx["status"])
         if box["status"] != 200:
-            return web.json_response({"error": "boom"}, status=box["status"])
-        return web.json_response({"ok": True})
+            fx = _fixture("reaction_checkpointed_409.json")
+            return web.json_response(fx["body"], status=box["status"])
+        return web.json_response(_fixture("reaction_ok.json")["body"])
 
     app = web.Application()
-    app.router.add_post("/react", handler)
+    app.router.add_put("/threads/{thread_fbid}/messages/{message_id}/reaction", handler)
     server = TestServer(app)
     await server.start_server()
     yield box, InstagramReactor(str(server.make_url("")).rstrip("/"))
@@ -58,9 +76,7 @@ async def test_a_reaction_posts_the_short_room_id_and_the_message_id(bridge):
 
     assert result.ok is True
     assert result.supported is True
-    assert box["calls"] == [
-        {"room_id": ROOM, "message_id": MID, "emoji": "❤️", "remove": False},
-    ]
+    assert box["calls"] == [(ROOM, MID, {"emoji": "❤️", "remove": False})]
 
 
 async def test_a_REMOVAL_still_carries_the_emoji(bridge):
@@ -72,9 +88,41 @@ async def test_a_REMOVAL_still_carries_the_emoji(bridge):
     result = await reactor.react(target=GROUP, emoji="❤️", to_message_id=MID, remove=True)
 
     assert result.ok is True
-    assert box["calls"][0] == {
-        "room_id": ROOM, "message_id": MID, "emoji": "❤️", "remove": True,
-    }
+    assert box["calls"][0] == (ROOM, MID, {"emoji": "❤️", "remove": True})
+
+
+async def test_an_UNCONFIRMED_reaction_is_still_a_success():
+    """`{"confirmed": false}`: accepted, and the mutation's own post-state was
+    silent, which production showed on every reaction while it landed. The
+    status is 200, so it is a success; only the status is read."""
+
+    async def unconfirmed(request: web.Request) -> web.Response:
+        fx = _fixture("reaction_unconfirmed.json")
+        return web.json_response(fx["body"], status=fx["status"])
+
+    app = web.Application()
+    app.router.add_put("/threads/{thread_fbid}/messages/{message_id}/reaction", unconfirmed)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await InstagramReactor(str(server.make_url("")).rstrip("/")).react(
+            target=GROUP, emoji="❤️", to_message_id=MID,
+        )
+    finally:
+        await server.close()
+    assert result.ok is True
+
+
+async def test_a_message_id_is_ONE_path_segment(bridge):
+    """A `mid.$…` carries `$` and nothing promises it never carries `/`; it is
+    quoted into its own segment and arrives byte for byte."""
+    box, reactor = bridge
+    odd = "mid.$gA+b/c=d"
+
+    result = await reactor.react(target=GROUP, emoji="❤️", to_message_id=odd)
+
+    assert result.ok is True
+    assert box["calls"][0][1] == odd
 
 
 async def test_no_message_id_is_UNSUPPORTED_not_a_failure(bridge):

@@ -234,7 +234,14 @@ func sendText(
 		req.RepliedToItemID = &replyTo
 	}
 	resp, err := call(ctx, "instagram.SendMessage", nil, func(ctx context.Context) (*slidetypes.SendTextResponse, error) {
-		return cli.SendMessage(ctx, req)
+		resp, err := cli.SendMessage(ctx, req)
+		if err != nil {
+			// Sanitized BEFORE it reaches call(): endUpstream records whatever
+			// this returns (RecordError writes err.Error() into the span), and
+			// the HTTP layer puts the text in the envelope. See sendTextError.
+			return nil, newSendTextError(err)
+		}
+		return resp, nil
 	})
 	if err != nil {
 		return domain.Sent{}, err
@@ -243,6 +250,38 @@ func sendText(
 		return domain.Sent{}, errNoMessageID
 	}
 	return resultOf(resp.GetMessage())
+}
+
+// sendTextError replaces a SendMessage failure's TEXT with a fixed one, so the
+// message Nora was sending never reaches a span, a log line or an error
+// envelope (16 §Tracing's never-list; P14). An upstream refusal can quote what
+// it refused, the same shape `upstreamSearchError` exists for on the search
+// path.
+//
+// The CLASSIFICATION is taken from the raw error first, because two kinds are
+// read off its text or identity: "Message Too Long" is ErrTooLarge (413,
+// never retried) only by its words (isTooLarge), and a checkpoint is
+// ErrNeedsHuman (409) by its sentinel. Once classified, `classify` returns the
+// error as it is, so the fixed text is what everything downstream sees.
+// `Unwrap` still reaches the cause, so `errors.Is` against a library sentinel
+// keeps working.
+type sendTextError struct {
+	cause error
+	msg   string
+}
+
+func (e *sendTextError) Error() string { return e.msg }
+func (e *sendTextError) Unwrap() error { return e.cause }
+
+func newSendTextError(err error) error {
+	switch kind := classify(err); {
+	case errors.Is(kind, domain.ErrTooLarge):
+		return domain.Classify(domain.ErrTooLarge, &sendTextError{cause: err, msg: "instagram refused the message as too long"})
+	case domain.KindOf(kind) != nil:
+		return domain.Classify(domain.KindOf(kind), &sendTextError{cause: err, msg: "instagram refused the message (" + errorType(err) + ")"})
+	default:
+		return &sendTextError{cause: err, msg: "instagram message send failed"}
+	}
 }
 
 // sendMedia uploads bytes and then sends the resulting attachment.

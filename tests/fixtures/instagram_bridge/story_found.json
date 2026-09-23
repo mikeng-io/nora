@@ -3,7 +3,6 @@
   "path": "/accounts/10000001/story",
   "status": 200,
   "body": {
-    "ok": true,
     "igid": "10000001",
     "found": true,
     "username": "example_friend",

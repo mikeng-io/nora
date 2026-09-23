@@ -202,7 +202,7 @@ class InstagramAdapter:
             # that backed off and retried would hammer a challenged account.
             return SendResult(ok=False)
         # `quote` IS honoured here, unlike WhatsApp's, because this bridge's
-        # `/send` and `/send-media` both take `reply_to` — see `send.py`.
+        # text and media messages both take `reply_to` — see `send.py`.
         return await self._sender.send(
             target, text, mentions=mentions, styles=styles, preview=preview,
             attachments=attachments, quote=quote,
