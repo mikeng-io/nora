@@ -534,6 +534,12 @@ class ToolRegistry:
         return frozenset(
             name for name, spec in NATIVE_TOOLS.items()
             if spec.read_only and spec.output_contract == "three_state"
+            # The one named exception. `load_tools` is read-only and carries a
+            # status, so the derivation admits it — but what it reports is
+            # whether a SCHEMA loaded, and counting that as the turn having
+            # found something would let a successful load silence a reply
+            # after a lookup that came back empty (design/tool-catalogue/02).
+            and name != LOADER_TOOL
         )
 
     def read_only_tools(self) -> frozenset[str]:

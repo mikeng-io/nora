@@ -1182,14 +1182,17 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # calls cover p90 with a retry after an `unknown` to spare. `read_only`
     # because it reads the registry and changes nothing outside the turn — the
     # tool it registers lives in THIS turn's agent and dies with it — which
-    # also keeps it inside the Dreamer's ceiling. `output_contract` is left
-    # unset on purpose: a three_state read-only tool counts as a LOOKUP for
-    # R-97 (`ToolRegistry.lookup_tools`), and «did I load a schema» is not
-    # «did this turn come back with something».
+    # also keeps it inside the Dreamer's ceiling. `three_state` because its
+    # result carries R-27's status axis and must be validated fail-closed like
+    # every other dict a tool hands the model — which would make it a LOOKUP
+    # for R-97 by the derivation in `ToolRegistry.lookup_tools`, so that
+    # method names it as the one exception: «did I load a schema» is not «did
+    # this turn come back with something».
     "load_tools": NativeTool(3,
                              terminal=False, time_shiftable=None, read_only=True,
                              source_tier=None,
-                             side_effect_state="none", idempotency="idempotent", retry="safe"),
+                             side_effect_state="none", idempotency="idempotent", retry="safe",
+                             output_contract="three_state"),
     "skills": NativeTool(2,
                          terminal=False, time_shiftable=None, plugin=True,
                          side_effect_state="unknown", idempotency="non_idempotent", retry="never"),
@@ -8960,12 +8963,12 @@ Args:
     # builds every closure; the scope admits.
 
     async def load_tools(names: list[str], tool_context: Any) -> dict:
-        """Load the tools you named from your catalogue, so you can call them next.
+        """Call this before using any tool your catalogue lists without a *.
 
         Your catalogue lists everything you can do, one line each. The ones
         marked * are already loaded; anything else, ask for here by its exact
-        name first, then call it as usual. Ask for every tool you expect to
-        need in one call (up to 4).
+        name first, then call it as usual on your next step. Ask for every
+        tool you expect to need in one call (up to 4).
 
         `status` is `ok` when at least one name is ready (`loaded`, or
         `already_loaded`); `unknown` names are not in your catalogue — read it

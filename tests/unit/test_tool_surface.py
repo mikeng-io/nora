@@ -280,3 +280,13 @@ async def test_a_shelved_tool_is_absent_then_loaded_then_dispatched():
     assert {"status": "ok", "loaded": ["calculate"], "already_loaded": [],
             "unknown": [], "refused": []} in model.results
     assert any(r.get("result") == "42" for r in model.results)
+
+
+def test_a_loaded_schema_is_never_a_lookup_for_r97():
+    """`load_tools` is read-only AND `three_state`, which is exactly what
+    `lookup_tools()` derives a lookup from. R-97 asks whether a turn came back
+    with something; a successful load answering «yes» would let it silence a
+    reply after a lookup that found nothing."""
+    lookups = ToolRegistry().lookup_tools()
+    assert LOADER_TOOL not in lookups
+    assert "web_search" in lookups  # positive control: the derivation still runs

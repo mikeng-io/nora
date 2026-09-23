@@ -1113,7 +1113,9 @@ def test_the_digest_is_derived_from_the_registry_and_read_only():
     named = {line.split(" — ")[0].removeprefix("- ").strip()
              for line in digest.splitlines() if line.strip()}
 
-    assert named == set(registry.read_only_tools())
+    # Minus the loader (design/tool-catalogue/02): read-only, but registry
+    # plumbing — whether it can LOAD a tool is never whether an answer exists.
+    assert named == set(registry.read_only_tools()) - {"load_tools"}
     # The two the live miss turned on, and the one #145 grants the Dreamer.
     assert "weather" in named
     assert "lookup_person" in named
