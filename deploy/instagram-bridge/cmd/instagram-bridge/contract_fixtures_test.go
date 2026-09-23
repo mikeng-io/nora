@@ -37,6 +37,7 @@ import (
 	"testing"
 
 	gateway "instagram-bridge/internal/gateway/instameow"
+	"instagram-bridge/internal/gateway/instameow/fakeig"
 
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
@@ -253,6 +254,37 @@ func contractCases() []contractCase {
 		},
 		{
 			file: "accounts_search_username_not_built_501.json", route: "GET /accounts", path: "/accounts?username=example",
+			fake: func() *fakeIG { return &fakeIG{} },
+		},
+		// GET /posts/{shortcode} (17 P12), on the new conventions. The
+		// upstream bytes behind these are UNMEASURED and synthetic
+		// (fakeig/posts.go): a carousel of three, mixed, in order.
+		{
+			file: "posts_carousel_ok.json", route: "GET /posts/{shortcode}", path: "/posts/" + fakeig.CarouselShortcode,
+			fake: func() *fakeIG { return &fakeIG{} },
+		},
+		{
+			// A shortcode outside base64url: refused at the edge.
+			file: "posts_bad_shortcode_400.json", route: "GET /posts/{shortcode}", path: "/posts/not.a.shortcode",
+			fake: func() *fakeIG { return &fakeIG{} },
+		},
+		{
+			// Instagram answered 404 for the decoded id.
+			file: "posts_not_found_404.json", route: "GET /posts/{shortcode}", path: "/posts/C3L9IQOygAE",
+			fake: func() *fakeIG { return &fakeIG{} },
+		},
+		{
+			// Any other refusal, including a failure inside an HTTP 200. A
+			// deleted post and a private one Nora does not follow are
+			// expected to land here or at 404; which, is the live probe's.
+			file: "posts_upstream_rejected_502.json", route: "GET /posts/{shortcode}", path: "/posts/" + fakeig.CarouselShortcode,
+			fake: func() *fakeIG {
+				return &fakeIG{MediaErr: fakeig.LibraryStatusError(fakeig.CarouselMediaID, 400)}
+			},
+		},
+		{
+			// Longer than 11 characters: well formed, no decoding known.
+			file: "posts_long_shortcode_501.json", route: "GET /posts/{shortcode}", path: "/posts/" + fakeig.CarouselShortcode + "xyz",
 			fake: func() *fakeIG { return &fakeIG{} },
 		},
 	}

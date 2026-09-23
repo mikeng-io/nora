@@ -101,6 +101,11 @@ func (s *Server) Routes() http.Handler {
 	// person being read. A sub-resource of the account, because that is what
 	// it is.
 	mux.HandleFunc("GET /accounts/{igid}/story", observability.Route("GET /accounts/{igid}/story", s.handleStory))
+	// One post, every item in it (17 P12). A post is its own noun: a link
+	// names it by shortcode, with no account in the path. On the new
+	// conventions (posts.go), and traced by PATTERN ONLY: the shortcode names
+	// somebody's post and never becomes a span attribute value.
+	mux.HandleFunc("GET /posts/{shortcode}", observability.PatternOnlyRoute("GET /posts/{shortcode}", s.handlePost))
 	mux.HandleFunc("POST /send", observability.Route("POST /send", s.handleSend))
 	mux.HandleFunc("POST /send-media", observability.Route("POST /send-media", s.handleSendMedia))
 	mux.HandleFunc("POST /react", observability.Route("POST /react", s.handleReact))

@@ -93,6 +93,23 @@ type searchAccountsBody struct {
 	NextCursor *string          `json:"next_cursor"`
 }
 
+// GET /posts/{shortcode}: the post itself, no "ok", no ids.
+type postItem struct {
+	Kind            string   `json:"kind"`
+	URL             string   `json:"url"`
+	Width           int      `json:"width"`
+	Height          int      `json:"height"`
+	DurationSeconds *float64 `json:"duration_seconds"`
+}
+
+type postBody struct {
+	Shortcode string     `json:"shortcode"`
+	Author    string     `json:"author"`
+	Caption   string     `json:"caption"`
+	TakenAt   int64      `json:"taken_at"`
+	Items     []postItem `json:"items"`
+}
+
 type errorBody struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`

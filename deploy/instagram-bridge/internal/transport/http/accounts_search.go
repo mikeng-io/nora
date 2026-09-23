@@ -165,20 +165,22 @@ func errorCode(err error) string {
 // upstreamSearchError wrapper, whose text is already fixed — but this
 // function does not rely on that upstream guarantee holding forever; it logs
 // the classification, not the message, so a future error source cannot
-// reintroduce a leak here by surprise.
-func failEnvelope(ctx context.Context, w http.ResponseWriter, err error) {
+// reintroduce a leak here by surprise. The same holds for `GET
+// /posts/{shortcode}` (posts.go): its gateway errors are fixed texts, and a
+// caption never reaches an error at all. `route` names the log line.
+func failEnvelope(ctx context.Context, w http.ResponseWriter, route string, err error) {
 	var notReady *app.NotReadyError
 	if errors.As(err, &notReady) {
 		msg := string(notReady.State)
 		if notReady.Detail != "" {
 			msg = msg + ": " + notReady.Detail
 		}
-		slog.WarnContext(ctx, "accounts_search failed", "status", http.StatusConflict, "code", "needs_human")
+		slog.WarnContext(ctx, route+" failed", "status", http.StatusConflict, "code", "needs_human")
 		writeErrorEnvelope(w, http.StatusConflict, "needs_human", msg)
 		return
 	}
 	status, code := statusForDomainError(err), errorCode(err)
-	slog.WarnContext(ctx, "accounts_search failed", "status", status, "code", code)
+	slog.WarnContext(ctx, route+" failed", "status", status, "code", code)
 	writeErrorEnvelope(w, status, code, err.Error())
 }
 
@@ -264,7 +266,7 @@ func (s *Server) handleAccountsSearch(w http.ResponseWriter, r *http.Request) {
 
 	results, err := s.app.SearchAccounts(r.Context(), trimmed)
 	if err != nil {
-		failEnvelope(r.Context(), w, err)
+		failEnvelope(r.Context(), w, "accounts_search", err)
 		return
 	}
 	// A result COUNT is allowed where the query text is not (file header).

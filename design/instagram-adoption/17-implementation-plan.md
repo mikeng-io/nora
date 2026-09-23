@@ -214,6 +214,11 @@ Probe first: `FetchMedia` on a real feed post, not the story id that returned
 400; derive the media id from the shortcode. Then `GET /posts/{shortcode}`,
 wired to post and reel links.
 
+**The bridge half is built (2026-09-24) and awaits the live probe**:
+`GET /posts/{shortcode}` over `FetchMedia` (REST `media/{id}/info/`), the id
+decoded from the shortcode in `domain`, on synthetic unmeasured fixtures; the
+Nora half (wiring post and reel links) is not started.
+
 ## P13: Posts and reels lists (investigation, not a build)
 
 The routes return `501` (`ErrUnsupported`), which Nora says as `unavailable`

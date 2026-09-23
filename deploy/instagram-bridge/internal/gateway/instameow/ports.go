@@ -185,3 +185,13 @@ func (b *Bridge) SearchAccounts(ctx context.Context, query string) ([]domain.Acc
 	}
 	return searchAccounts(ctx, cli, query)
 }
+
+// Post reads one post by its shortcode, every carousel item in order
+// (17 P12). See posts.go.
+func (b *Bridge) Post(ctx context.Context, code domain.Shortcode) (domain.Post, error) {
+	cli, err := b.client()
+	if err != nil {
+		return domain.Post{}, err
+	}
+	return readPost(ctx, cli, code)
+}
