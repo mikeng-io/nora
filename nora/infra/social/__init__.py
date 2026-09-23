@@ -5,8 +5,8 @@ READ-ONLY, over two backends the model never learns the names of.
 `SocialRouter` is what the composition root injects; it is itself a
 `SocialProvider`, so `nora.agent.registry` is unchanged and unaware. Below it,
 X goes to OpenCLI and Instagram to the instagram-bridge (`15`): the bridge's
-rows are `instagram/story`, `instagram/profile` and, since P11,
-`instagram/search`. OpenCLI serves X only. See `router.py`.
+rows are `instagram/story`, `instagram/profile`, `instagram/search` (P11) and
+`instagram/post` (P12). OpenCLI serves X only. See `router.py`.
 
 The OpenCLI half has a loopback HTTP seam between two halves of THIS package:
 
@@ -22,8 +22,10 @@ The OpenCLI half has a loopback HTTP seam between two halves of THIS package:
 The Instagram half has no host-side half here at all:
 
 * `instagram_client.py::InstagramSocialClient` — `GET /accounts/{igid}`,
-  `GET /accounts/{igid}/story` and `GET /accounts?query=` on the
-  instagram-bridge container, over the
+  `GET /accounts/{igid}/story`, `GET /accounts?query=` and
+  `GET /posts/{shortcode}` on the instagram-bridge container, and the
+  username lookup `GET /accounts?username=` the router resolves a handle or
+  a link with (P10), over the
   private `nora` network. The bodies are pinned by shared fixtures the Go
   handlers generate (`tests/fixtures/instagram_bridge/`).
 
@@ -53,6 +55,7 @@ from .instagram_client import InstagramSocialClient
 from .router import (
     EXCEPTION_ROUTES,
     SUBJECT_INPUTS,
+    TARGET_HANDLE,
     TARGET_NAMED,
     TARGET_PERSON,
     TIER_ZERO_READS,
@@ -64,6 +67,7 @@ from .subjects import PersonsSubjectIndex
 __all__ = [
     "EXCEPTION_ROUTES",
     "SUBJECT_INPUTS",
+    "TARGET_HANDLE",
     "TARGET_NAMED",
     "TARGET_PERSON",
     "TIER_ZERO_READS",

@@ -576,28 +576,6 @@ async def test_the_call_is_counted_under_its_status(persons):
 # ---- the surface ----------------------------------------------------------------
 
 
-def test_the_schema_takes_a_read_and_a_person_and_nothing_else(persons):
-    """18 §"Verbs join only when they work end to end": a parameter in the
-    schema is a word advertising an input, so `link` and `handle` (P10) and
-    `limit`/`cursor` (P13's posts) are absent until they work, not present
-    and answering «not yet». Read off the schema the model is actually SENT,
-    and `what` is an enum (ADR 0015 §3: allowed values are types)."""
-    from nora.agent.ports import adapt
-
-    room = Room(platform="signal", conversation_id="g1", roster_source=None, persons=persons)
-    (spec,) = [
-        s for s in ToolRegistry().specs(
-            store=_NoStore(), conversation_id="g1", conversation_type="group",
-            persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
-            metrics=Metrics(), room=room,
-        ) if s.name == "instagram_read"
-    ]
-    schema = adapt(spec).tool_spec["inputSchema"]["json"]
-    assert set(schema["properties"]) == {"what", "person"}
-    assert set(schema["required"]) == {"what", "person"}
-    assert schema["properties"]["what"]["enum"] == ["profile", "story"]
-
-
 def test_the_description_meets_adr_0015():
     """ADR 0015 §3 for a NEW tool, from its first commit: a declared level,
     the text Strands sends (the docstring minus `Args:`) within that level's

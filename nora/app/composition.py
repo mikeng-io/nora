@@ -2093,7 +2093,8 @@ async def build_dependencies(
         )
     # The INSTAGRAM backend serves every Instagram read the bridge has a route
     # for — `instagram/story` and `instagram/profile`, `instagram_read`'s two
-    # (design/instagram-adoption/15, /18, P5), and `instagram/search`,
+    # (design/instagram-adoption/15, /18, P5), `instagram/post`, its read of a
+    # pasted post or reel link (P12), and `instagram/search`,
     # `instagram_search`'s (P11), which takes free text and needs no index.
     # The two read rows take a PERSON, so the router needs a
     # `SocialSubjectIndex`: `PersonsSubjectIndex` resolves
@@ -2106,7 +2107,7 @@ async def build_dependencies(
     # Its own `enabled`, because the two backends are provisioned and fail
     # independently: turning Instagram on must not need the host's OpenCLI
     # service, and a checkpointed Instagram session must not take X with it.
-    instagram_social: SocialProvider | None = None
+    instagram_social = None
     social_subjects = None
     if cfg.social.instagram.enabled:
         from nora.infra.social import InstagramSocialClient, PersonsSubjectIndex
@@ -2125,6 +2126,11 @@ async def build_dependencies(
                 if instagram_social is not None else {}
             ),
             subjects=social_subjects,
+            # P10: a typed handle or a pasted link names a USERNAME, and the
+            # bridge's exact lookup is the only thing that turns one into an
+            # igid (design/instagram-adoption/15 §Links). The same client:
+            # the lookup is a GET on the same bridge.
+            accounts=instagram_social,
         )
     # `weather` (DEC-70) is wired on `[weather] enabled` alone — the HK Observatory
     # provider is KEYLESS, so unlike `route`/`search` there is no key to resolve;

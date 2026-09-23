@@ -1735,6 +1735,49 @@ class SocialSubjectIndex(Protocol):
     async def person_for_igid(self, *, igid: str) -> str | None: ...
 
 
+@dataclass(frozen=True)
+class UsernameLookup:
+    """The answer to «which igid holds this Instagram username?»
+    (design/instagram-adoption/15 §Links, /17 P9, P10).
+
+    Three states, kept apart because each is a different sentence:
+
+    * `found`: exactly one account holds the username, exactly (ASCII,
+      case-insensitive); `igid` is its id, and it never leaves the router;
+    * `none`: the lookup ran and no account holds it, which is `nothing_found`;
+    * `unavailable`: the lookup could not be made or answered in a shape
+      nothing can trust, which is `unavailable`, never «no such account».
+    """
+
+    status: Literal["found", "none", "unavailable"]
+    igid: str = ""
+
+
+@runtime_checkable
+class InstagramAccountLookup(Protocol):
+    """`username -> igid`, over the instagram-bridge's exact lookup
+    (`GET /accounts?username=`, design/instagram-adoption/15 §Links).
+
+    The RESOLUTION half of a typed handle or a pasted link. It is not the
+    person index: `identity.toml`'s `username` is display metadata, read and
+    never matched, because handles rename, and a link usually names someone
+    who is not in the file at all (15). Only `SocialRouter` calls it, and the
+    igid it answers is handed to a backend or to
+    `SocialSubjectIndex.person_for_igid`, never to the model (R-18).
+
+    **Never raises**, and fails closed: anything it cannot answer is
+    `unavailable`. **Never re-picks**: an answer is `found` only for an
+    account whose username IS the one asked for, whatever order the bridge
+    listed accounts in (17 P9 measured an exact match that was not first).
+
+    The production implementation is
+    `nora.infra.social.InstagramSocialClient`; `nora.testing
+    .FakeInstagramAccountLookup` is the fake.
+    """
+
+    async def igid_for_username(self, *, username: str) -> UsernameLookup: ...
+
+
 @runtime_checkable
 class LinkPreviewSource(Protocol):
     """`url -> LinkPreview | None` — the OpenGraph read behind an outbound

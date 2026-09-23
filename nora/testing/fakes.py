@@ -55,6 +55,7 @@ from nora.domain.ports import (
     SendResult,
     SttResult,
     TextStyle,
+    UsernameLookup,
 )
 from nora.domain.presence import haversine_distance_m
 from nora.domain.tool_call_log import (
@@ -1677,3 +1678,38 @@ class FakeSocialSubjectIndex:
         if self.unavailable:
             return None
         return next((pid for pid, held in self.igids.items() if igid in held), None)
+
+
+class FakeInstagramAccountLookup:
+    """In-memory `InstagramAccountLookup` (design/instagram-adoption/15
+    §Links, P10), held to the SAME answers as the production
+    `nora.infra.social.InstagramSocialClient` by
+    `tests/contract/test_instagram_account_lookup_contract.py`.
+
+    **It does not answer every request the same way.** Its three answers are
+    the port's three:
+
+    * a username it holds, matched exactly and ASCII case-insensitively, with
+      one leading `@` ignored (the bridge's own rule) → `found` with its igid;
+    * a username it does not hold → `none`, «no such account»;
+    * `unavailable=True` → `unavailable` for everything, the bridge that
+      cannot be reached or answered a body nobody can trust.
+
+    It never picks a near match: `example_friend2` is not `example_friend`.
+    `asked` records every username, so a test can prove a refusal happened
+    before any lookup, or that no lookup was made at all.
+    """
+
+    def __init__(
+        self, accounts: dict[str, str] | None = None, *, unavailable: bool = False,
+    ) -> None:
+        self.accounts = {name.lower(): igid for name, igid in (accounts or {}).items()}
+        self.unavailable = unavailable
+        self.asked: list[str] = []
+
+    async def igid_for_username(self, *, username: str) -> UsernameLookup:
+        self.asked.append(username)
+        if self.unavailable:
+            return UsernameLookup("unavailable")
+        igid = self.accounts.get(username.strip().removeprefix("@").lower())
+        return UsernameLookup("found", igid) if igid else UsernameLookup("none")

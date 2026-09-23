@@ -236,6 +236,41 @@ cases:
     metadata: {tools: [instagram_search], not_tools: [social_fetch, web_search]}
     snapshot: *room_a
 
+  # P10 and P12: a pasted link and a typed handle are read by `instagram_read`
+  # (the link decides the read); finding an account from a name stays
+  # `instagram_search`. Every handle and shortcode here is synthetic.
+  - name: route_instagram_read_reel_link
+    entry: tag
+    expect: reply
+    mention: true
+    input: https://www.instagram.com/reel/SynthReel01/ 呢條reel入面有咩？
+    metadata: {tools: [instagram_read], not_tools: [web_fetch, social_fetch, instagram_search]}
+    snapshot: *room_a
+
+  - name: route_instagram_read_profile_link
+    entry: tag
+    expect: reply
+    mention: true
+    input: https://www.instagram.com/synth.example/ 呢個係邊個？
+    metadata: {tools: [instagram_read], not_tools: [web_fetch, social_fetch]}
+    snapshot: *room_a
+
+  - name: route_instagram_read_handle
+    entry: tag
+    expect: reply
+    mention: true
+    input: who is @synth.example on IG?
+    metadata: {tools: [instagram_read], not_tools: [social_fetch, web_search]}
+    snapshot: *room_a
+
+  - name: route_instagram_search_find_name_en
+    entry: tag
+    expect: reply
+    mention: true
+    input: find Taylor Example on Instagram
+    metadata: {tools: [instagram_search], not_tools: [instagram_read, social_fetch]}
+    snapshot: *room_a
+
   - name: route_social_fetch_x_search
     entry: tag
     expect: reply

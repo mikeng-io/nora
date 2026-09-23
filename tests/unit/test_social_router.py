@@ -34,13 +34,18 @@ import pytest
 from nora.infra.social import (
     EXCEPTION_ROUTES,
     SUBJECT_INPUTS,
+    TARGET_HANDLE,
     TARGET_NAMED,
     TARGET_PERSON,
     TIER_ZERO_READS,
     SocialRouter,
 )
 from nora.infra.social.bridge_server import READ_ONLY_ALLOWLIST
-from nora.testing import FakeSocialProvider, FakeSocialSubjectIndex
+from nora.testing import (
+    FakeInstagramAccountLookup,
+    FakeSocialProvider,
+    FakeSocialSubjectIndex,
+)
 
 #: Both Instagram rows arrive as a PERSON — the tool resolved a spoken name to
 #: this person id inside the room (design/instagram-adoption/18).
@@ -76,6 +81,7 @@ def test_the_exception_list_has_exactly_the_rows_the_design_records():
     reason."""
     assert frozenset({
         ("instagram", "story"), ("instagram", "profile"), ("instagram", "search"),
+        ("instagram", "post"),
     }) == EXCEPTION_ROUTES
 
 
@@ -235,13 +241,17 @@ def test_every_row_a_backend_can_serve_says_how_its_subject_resolves():
     servable = set(READ_ONLY_ALLOWLIST) | EXCEPTION_ROUTES
     assert {(platform, what) for platform, what, _kind in SUBJECT_INPUTS} == servable
     # And the split is the one 07 and 18 describe: every OpenCLI row takes a
-    # string a human typed; every bridge READ takes a PERSON (until P10 adds
-    # the typed handle and the pasted link), and the bridge's SEARCH takes
-    # the free text a person typed (P11).
+    # string a human typed; the bridge's profile and story take a PERSON (P5)
+    # or a HANDLE (P10: typed, or a link's username), never a bare string;
+    # the bridge's SEARCH takes the free text a person typed (P11) and its
+    # POST the shortcode of a pasted link (P12), neither ever resolved.
     named = {(p, w) for p, w, k in SUBJECT_INPUTS if k == TARGET_NAMED}
     person = {(p, w) for p, w, k in SUBJECT_INPUTS if k == TARGET_PERSON}
-    assert named == set(READ_ONLY_ALLOWLIST) | {("instagram", "search")}
-    assert person == EXCEPTION_ROUTES - {("instagram", "search")}
+    handle = {(p, w) for p, w, k in SUBJECT_INPUTS if k == TARGET_HANDLE}
+    assert named == set(READ_ONLY_ALLOWLIST) | {("instagram", "search"), ("instagram", "post")}
+    assert person == {("instagram", "profile"), ("instagram", "story")}
+    assert handle == person
+    assert not (named & person), "a bridge read took both a bare string and a person"
     # Reach is keyed on the read, and only a story has one.
     assert frozenset({("instagram", "story")}) == TIER_ZERO_READS
 
@@ -315,11 +325,12 @@ async def test_a_profile_has_no_reach_check():
 
 @pytest.mark.parametrize("read", [_STORY, _PROFILE], ids=["story", "profile"])
 async def test_a_typed_handle_on_a_bridge_row_is_not_served(read):
-    """Until P10's username lookup exists, nothing may turn a handle into an
-    igid, so a `named` target on an Instagram bridge row is not admitted: it
-    would be a handle nobody resolved, and for a story it would skip the reach
-    check entirely (a handle names no person to check). `unavailable`, and
-    nothing is dispatched or looked up."""
+    """A `named` target on an Instagram profile or story row is not
+    admitted, even with P10's username lookup: a handle must arrive AS a
+    `handle`, which the lookup resolves and the reach check covers. A bare
+    `named` string would be a handle nobody resolved, and for a story it would
+    skip the reach check entirely (a handle names no person to check).
+    `unavailable`, and nothing is dispatched or looked up."""
     subjects = FakeSocialSubjectIndex(_SUBJECTS)
     instagram = FakeSocialProvider({row: {"status": "ok"} for row in EXCEPTION_ROUTES})
     router = _router(instagram=instagram, subjects=subjects)
@@ -469,7 +480,9 @@ async def test_a_row_with_no_resolution_is_not_served():
     assert default.calls == []   # it was not served, not merely not answered
 
 
-@pytest.mark.parametrize("row", sorted(EXCEPTION_ROUTES - {("instagram", "search")}))
+@pytest.mark.parametrize(
+    "row", sorted({(p, w) for p, w, k in SUBJECT_INPUTS if k == TARGET_PERSON}),
+)
 def test_a_person_keyed_backend_cannot_be_wired_without_a_subject_index(row):
     """Boot-time, for the same reason the exception list is: the only two
     fallbacks for «person row, no index» are allow — an unauthorized read, or
@@ -483,6 +496,18 @@ def test_a_person_keyed_backend_cannot_be_wired_without_a_subject_index(row):
             exceptions={row: FakeSocialProvider()},
             subjects=None,
         )
+
+
+def test_the_post_row_alone_needs_no_index():
+    """`instagram/post` (P12) takes the shortcode of a pasted link: no
+    person resolved and no reach checked, so like the search row it composes
+    without an index."""
+    router = SocialRouter(
+        default=None,
+        exceptions={("instagram", "post"): FakeSocialProvider()},
+        subjects=None,
+    )
+    assert isinstance(router, SocialRouter)
 
 
 def test_the_search_row_alone_needs_no_index():
@@ -505,3 +530,204 @@ def test_the_default_backend_alone_needs_no_index():
     outage for a feature it does not use."""
     router = SocialRouter(default=FakeSocialProvider(), subjects=None)
     assert isinstance(router, SocialRouter)
+
+
+# ---- a handle or a link's username (P10) -----------------------------------
+#
+# Resolved by the bridge's EXACT username lookup, never the person index
+# (15 §Links: `identity.toml`'s username is display metadata). A story's
+# reach check then runs on the igid the handle NAMED, reversed to a person,
+# never re-derived through `igids_for`.
+
+_ROBIN_A, _ROBIN_B = "10000002", "10000003"
+_HANDLES = {
+    "example_friend": "10000001",   # miles's one account
+    "robin.personal": _ROBIN_A,      # robin has two
+    "robin.work": _ROBIN_B,
+    "some.stranger": "10000099",     # nobody in the file
+}
+
+
+def _handle_router(*, subjects=None, accounts=None):
+    instagram = FakeSocialProvider({row: {"status": "ok"} for row in EXCEPTION_ROUTES})
+    router = SocialRouter(
+        default=None,
+        exceptions=dict.fromkeys(EXCEPTION_ROUTES, instagram),
+        subjects=subjects if subjects is not None else FakeSocialSubjectIndex(
+            {"miles": "10000001", "robin": frozenset({_ROBIN_A, _ROBIN_B})},
+        ),
+        accounts=accounts if accounts is not None else FakeInstagramAccountLookup(_HANDLES),
+    )
+    return router, instagram
+
+
+#: The asking room's roster: everyone in the fake index is on it, so the
+#: roster check passes unless a test narrows it.
+_HERE = frozenset({"miles", "robin"})
+
+
+def _by_handle(what: str, username: str, room_people=_HERE) -> dict:
+    return {
+        "platform": "instagram", "what": what, "target": username, "limit": 5,
+        "target_kind": TARGET_HANDLE, "room_people": room_people,
+    }
+
+
+async def test_a_handle_profile_reaches_the_backend_as_the_looked_up_igid():
+    """The VALUE the backend is handed is the igid the lookup answered, and
+    the person index is never consulted for a profile: no reach check, and
+    no name was resolved."""
+    subjects = FakeSocialSubjectIndex({"miles": "10000001"})
+    accounts = FakeInstagramAccountLookup(_HANDLES)
+    router, instagram = _handle_router(subjects=subjects, accounts=accounts)
+
+    assert (await router.read(**_by_handle("profile", "some.stranger")))["status"] == "ok"
+    assert instagram.calls == [("instagram", "profile", "10000099", 5)]
+    assert accounts.asked == ["some.stranger"]
+    assert subjects.asked == []
+
+
+async def test_a_handle_nobody_holds_is_nothing_found_and_nothing_is_dispatched():
+    router, instagram = _handle_router()
+    out = await router.read(**_by_handle("profile", "no.such.account"))
+
+    assert out["status"] == "nothing_found"
+    assert "no account with that username" in out["note"]
+    assert instagram.calls == []
+
+
+@pytest.mark.parametrize("what", ["profile", "story"])
+async def test_a_lookup_that_cannot_be_made_is_unavailable_never_a_miss(what):
+    router, instagram = _handle_router(
+        accounts=FakeInstagramAccountLookup(_HANDLES, unavailable=True),
+    )
+    out = await router.read(**_by_handle(what, "example_friend"))
+
+    assert out["status"] == "unavailable"
+    assert instagram.calls == []
+
+
+async def test_a_handle_with_no_lookup_composed_is_unavailable():
+    """Not a boot error: without the lookup a handle resolves to nothing, so
+    nothing is read; the `person` path of the same rows keeps working."""
+    instagram = FakeSocialProvider({row: {"status": "ok"} for row in EXCEPTION_ROUTES})
+    router = _router(instagram=instagram)
+
+    out = await router.read(**_by_handle("profile", "example_friend"))
+    assert out["status"] == "unavailable"
+    assert instagram.calls == []
+    assert (await router.read(**_PROFILE))["status"] == "ok"
+
+
+async def test_a_handle_story_of_a_listed_person_is_read_on_that_igid():
+    router, instagram = _handle_router()
+    out = await router.read(**_by_handle("story", "example_friend"))
+
+    assert out["status"] == "ok"
+    assert instagram.calls == [("instagram", "story", "10000001", 5)]
+
+
+async def test_a_handle_story_of_a_stranger_is_refused_and_never_requested():
+    """The NEGATIVE the design names (17 P10): an account that maps to nobody
+    is in no room, so its story is `refused` and no story request is made.
+    The lookup DID run (it had to, to know whose account this is), and the
+    same stranger's PROFILE is read: the empty dispatch log is the reach
+    check, not a resolution failure."""
+    accounts = FakeInstagramAccountLookup(_HANDLES)
+    router, instagram = _handle_router(accounts=accounts)
+
+    out = await router.read(**_by_handle("story", "some.stranger"))
+    assert out["status"] == "refused"
+    assert "listed" in out["note"]
+    assert instagram.calls == []
+    assert accounts.asked == ["some.stranger"]
+
+    assert (await router.read(**_by_handle("profile", "some.stranger")))["status"] == "ok"
+    assert instagram.calls == [("instagram", "profile", "10000099", 5)]
+
+
+async def test_a_handle_story_of_a_person_listed_in_no_room_is_refused():
+    router, instagram = _handle_router(
+        subjects=FakeSocialSubjectIndex({"miles": "10000001"}, out_of_reach=frozenset({"miles"})),
+    )
+    assert (await router.read(**_by_handle("story", "example_friend")))["status"] == "refused"
+    assert instagram.calls == []
+
+
+async def test_a_handle_to_one_of_two_accounts_reads_that_account_by_name_it_is_ambiguous():
+    """15 §Links: a handle NAMES one account, so a friend with two accounts is
+    read on the one named, never re-derived through `igids_for` (which would
+    answer `ambiguous`). Asked BY NAME the same friend stays `ambiguous`. The
+    index's forward lookup is asked only for the by-name read."""
+    subjects = FakeSocialSubjectIndex({"robin": frozenset({_ROBIN_A, _ROBIN_B})})
+    router, instagram = _handle_router(subjects=subjects)
+
+    assert (await router.read(**_by_handle("story", "robin.work")))["status"] == "ok"
+    assert (await router.read(**_by_handle("story", "robin.personal")))["status"] == "ok"
+    assert instagram.calls == [
+        ("instagram", "story", _ROBIN_B, 5), ("instagram", "story", _ROBIN_A, 5),
+    ]
+    assert subjects.asked == []
+
+    by_name = await router.read(**{**_STORY, "target": "robin"})
+    assert by_name["status"] == "ambiguous"
+    assert len(instagram.calls) == 2
+    assert subjects.asked == ["robin"]
+
+
+async def test_a_post_shortcode_reaches_the_backend_untouched_and_resolves_nothing():
+    """`instagram/post` is `named`: the shortcode of a pasted link, never
+    resolved. Neither the index nor the lookup is consulted."""
+    subjects = FakeSocialSubjectIndex({"miles": "10000001"})
+    accounts = FakeInstagramAccountLookup(_HANDLES)
+    router, instagram = _handle_router(subjects=subjects, accounts=accounts)
+
+    out = await router.read(platform="instagram", what="post", target="SynthReel01", limit=20)
+    assert out["status"] == "ok"
+    assert instagram.calls == [("instagram", "post", "SynthReel01", 20)]
+    assert subjects.asked == [] and accounts.asked == []
+
+
+@pytest.mark.parametrize("kind", [TARGET_PERSON, TARGET_HANDLE])
+async def test_a_post_by_person_or_handle_is_not_served(kind):
+    """A post names no person: there is no `person` or `handle` row for it,
+    so neither is resolved and nothing is dispatched."""
+    router, instagram = _handle_router()
+    out = await router.read(
+        platform="instagram", what="post", target="miles", limit=5, target_kind=kind,
+    )
+    assert out["status"] == "unavailable"
+    assert instagram.calls == []
+
+
+async def test_a_handle_story_of_a_listed_person_in_another_room_only_is_refused():
+    """The operator's conservative default (18, 2026-09-24): a story by handle
+    or link must name someone on the ASKING room's roster, the scope a name
+    resolves in. Miles is Tier 0, and is not in this room: `refused`, with the
+    SAME payload as a stranger's, so the answer does not reveal that he is in
+    one of her other rooms. The positive control is the same read with him on
+    the roster."""
+    router, instagram = _handle_router()
+
+    elsewhere = await router.read(**_by_handle("story", "example_friend", frozenset({"robin"})))
+    stranger = await router.read(**_by_handle("story", "some.stranger"))
+    assert elsewhere["status"] == "refused"
+    assert elsewhere == stranger
+    assert instagram.calls == []
+
+    assert (await router.read(**_by_handle("story", "example_friend")))["status"] == "ok"
+    assert instagram.calls == [("instagram", "story", "10000001", 5)]
+
+
+async def test_a_handle_story_with_no_readable_roster_is_unavailable_and_looks_nothing_up():
+    """No roster to scope the reach check to is «I couldn't check», never a
+    boundary, and the username is not even looked up. A profile needs no
+    roster."""
+    accounts = FakeInstagramAccountLookup(_HANDLES)
+    router, instagram = _handle_router(accounts=accounts)
+
+    out = await router.read(**_by_handle("story", "example_friend", None))
+    assert out["status"] == "unavailable"
+    assert accounts.asked == [] and instagram.calls == []
+
+    assert (await router.read(**_by_handle("profile", "example_friend", None)))["status"] == "ok"
