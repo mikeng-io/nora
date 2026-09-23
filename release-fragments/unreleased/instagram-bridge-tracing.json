@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "instagram-bridge is traced and logs as JSON, and Nora's calls to it join her own traces.",
+  "details": [],
+  "limitations": [],
+  "reason": "Observability only; nothing Nora does in a room changes (design/instagram-adoption/17 P1). The bridge exports OpenTelemetry spans to the host collector: one server span per request, named by route pattern and continuing the caller's trace, and one client span per Instagram call, marked failed on transport errors and on a GraphQL error inside an HTTP 200. /health and /events are not traced. Message text, captions, cookies and signed URLs never enter a span. Logging moves from printf to slog JSON on stdout with trace_id/span_id on every line inside a request; instameow's own log output is JSON on the same stream. Nora injects a W3C traceparent on every call to the bridge (send, react, roster, social read) and never on the Instagram CDN fetch."
+}

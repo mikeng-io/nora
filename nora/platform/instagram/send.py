@@ -114,6 +114,7 @@ from ...domain.ports import (
     TextStyle,
 )
 from ...domain.utf16 import utf16_index, utf16_len
+from ...infra.trace_propagation import propagation_headers
 
 log = logging.getLogger("nora.instagram.send")
 
@@ -215,7 +216,9 @@ class InstagramSender:
         try:
             async with (
                 aiohttp.ClientSession(timeout=self._timeout) as session,
-                session.post(f"{self._base_url}{path}", json=payload) as resp,
+                session.post(
+                    f"{self._base_url}{path}", json=payload, headers=propagation_headers(),
+                ) as resp,
             ):
                 if resp.status == 200:
                     return SendResult(ok=True, timestamp=_sent_timestamp(await resp.json()))

@@ -39,6 +39,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -131,12 +132,13 @@ func main() {
 		verbose    = flag.Bool("v", false, "log the protocol client's own output")
 	)
 	flag.Parse()
+	setupLogging(*verbose)
 
 	log.SetFlags(log.LstdFlags | log.LUTC)
 	log.SetPrefix("[bridge] ")
 
 	if err := os.MkdirAll(*sessionDir, 0o700); err != nil {
-		log.Printf("FATAL cannot create session dir %s: %v", *sessionDir, err)
+		slog.Error("cannot create session dir", "dir", *sessionDir, "error", err)
 		os.Exit(2)
 	}
 
@@ -161,14 +163,26 @@ func main() {
 		b.self = self
 	}
 
-	libLog := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.TimeOnly}).
-		Level(zerolog.ErrorLevel).With().Timestamp().Logger()
+	// instameow's own log output, as JSON on the same stream and with slog's
+	// field names, so an operator reads one format.
+	zerolog.MessageFieldName = "msg"
+	zerolog.TimeFieldFormat = time.RFC3339Nano
+	libLog := zerolog.New(os.Stdout).
+		Level(zerolog.ErrorLevel).With().Timestamp().Str("logger", "instameow").Logger()
 	if *verbose {
 		libLog = libLog.Level(zerolog.DebugLevel)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	shutdownTracing, err := setupTracing(ctx)
+	if err != nil {
+		// Tracing is observability, not function: a bridge that cannot export
+		// spans still serves messages. Logged loudly and carried on without it.
+		slog.Error("tracing setup failed; continuing untraced", "error", err)
+		shutdownTracing = func(context.Context) error { return nil }
+	}
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", *port),
@@ -197,18 +211,19 @@ func main() {
 	}()
 
 	go func() {
-		log.Printf("listening on :%d (session dir %s)", *port, *sessionDir)
+		slog.Info("listening", "port", *port, "session_dir", *sessionDir)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("FATAL http server: %v", err)
+			slog.Error("http server failed", "error", err)
 			stop()
 		}
 	}()
 
 	<-ctx.Done()
-	log.Printf("shutting down")
+	slog.Info("shutting down")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shutdownCtx)
+	_ = shutdownTracing(shutdownCtx)
 	if cli := b.currentClient(); cli != nil {
 		cli.Disconnect()
 	}
@@ -249,7 +264,7 @@ func (b *bridge) supervise(ctx context.Context, libLog zerolog.Logger) {
 			} else {
 				backoff = min(backoff*2, reconnectCeiling)
 			}
-			log.Printf("session setup failed (%s, retrying in %s): %v", b.currentState(), wait, err)
+			slog.WarnContext(ctx, "session setup failed", "state", b.currentState(), "retry_in", wait.String(), "error", err)
 			if !sleepOrDone(ctx, wait) {
 				return
 			}
@@ -263,7 +278,7 @@ func (b *bridge) supervise(ctx context.Context, libLog zerolog.Logger) {
 			// would be a hot loop, so it is backed off like any other failed
 			// pass rather than trusted not to happen.
 			backoff = min(backoff*2, reconnectCeiling)
-			log.Printf("session setup reported success with no client (retrying in %s)", backoff)
+			slog.WarnContext(ctx, "session setup reported success with no client", "retry_in", backoff.String())
 			if !sleepOrDone(ctx, backoff) {
 				return
 			}
@@ -290,7 +305,7 @@ func (b *bridge) supervise(ctx context.Context, libLog zerolog.Logger) {
 		// the request rate against a service that bans for exactly this.
 		next := nextBackoff(backoff, lasted)
 		if next != reconnectFloor || backoff != reconnectFloor {
-			log.Printf("realtime socket lasted %s (retrying in %s)", lasted.Truncate(time.Millisecond), next)
+			slog.InfoContext(ctx, "realtime socket ended", "lasted", lasted.Truncate(time.Millisecond).String(), "retry_in", next.String())
 		}
 		backoff = next
 		if !sleepOrDone(ctx, backoff) {
@@ -370,9 +385,9 @@ func (b *bridge) ensureSession(ctx context.Context, libLog zerolog.Logger) error
 				// instameow refuses state older than 24h (ErrCachedStateTooOld).
 				// That is not an error condition — it is the documented signal
 				// to do a full LoadIndex — so it is logged and stepped over.
-				log.Printf("cached state not usable, will re-read index: %v", err)
+				slog.WarnContext(ctx, "cached state not usable, will re-read index", "error", err)
 			} else {
-				log.Printf("loaded reconnection state (seq=%d)", seq)
+				slog.InfoContext(ctx, "loaded reconnection state", "seq", seq)
 			}
 		}
 		b.setClient(cli)
@@ -385,7 +400,9 @@ func (b *bridge) ensureSession(ctx context.Context, libLog zerolog.Logger) error
 
 	loadCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	viewer, mailbox, err := cli.LoadIndex(loadCtx)
+	indexCtx, indexSpan := startUpstream(loadCtx, "instagram.LoadIndex")
+	viewer, mailbox, err := cli.LoadIndex(indexCtx)
+	endUpstream(indexSpan, err)
 	if err != nil {
 		state := classifyAuthError(err)
 		b.setState(state, err.Error())
@@ -412,14 +429,14 @@ func (b *bridge) ensureSession(ctx context.Context, libLog zerolog.Logger) error
 	if mailbox != nil {
 		b.setSeq(mailbox.UQSeqID)
 		if err := b.store.saveSeq(mailbox.UQSeqID, time.Now()); err != nil {
-			log.Printf("could not persist seq id: %v", err)
+			slog.WarnContext(ctx, "could not persist seq id", "error", err)
 		}
 	}
 	b.clearReindex()
 	b.setState(stateAuthenticated, "")
 	b.flushCookies()
 	self := b.selfSnapshot()
-	log.Printf("authenticated as @%s (fbid=%s igid=%s)", self.Username, self.FBID, self.IGID)
+	slog.InfoContext(ctx, "authenticated", "username", self.Username, "fbid", self.FBID, "igid", self.IGID)
 	return nil
 }
 
@@ -438,7 +455,7 @@ func (b *bridge) onEvent(ctx context.Context, evt slidetypes.ClientEvent) error 
 	case *slidetypes.Connected:
 		b.setConnected(true)
 		b.setSeq(e.LatestSeqID)
-		log.Printf("realtime socket connected (subscribed_seq=%d latest_seq=%d)", e.SubscribedSeqID, e.LatestSeqID)
+		slog.InfoContext(ctx, "realtime socket connected", "subscribed_seq", e.SubscribedSeqID, "latest_seq", e.LatestSeqID)
 
 	case *slidetypes.Disconnected:
 		b.setConnected(false)
@@ -446,7 +463,7 @@ func (b *bridge) onEvent(ctx context.Context, evt slidetypes.ClientEvent) error 
 		if e.Error != nil {
 			detail = e.Error.Error()
 		}
-		log.Printf("socket disconnected (failures=%d): %s", e.FailureCount, detail)
+		slog.WarnContext(ctx, "socket disconnected", "failures", e.FailureCount, "detail", detail)
 
 	case *slidetypes.AuthError:
 		// The single most important branch in the file. Instagram rejected the
@@ -470,7 +487,7 @@ func (b *bridge) onEvent(ctx context.Context, evt slidetypes.ClientEvent) error 
 		}
 		b.setState(state, detail)
 		b.invalidateSeq()
-		log.Printf("session %s: %s", state, detail)
+		slog.ErrorContext(ctx, "session rejected by instagram", "state", state, "detail", detail)
 		if cli := b.currentClient(); cli != nil {
 			go cli.Disconnect()
 		}
@@ -478,7 +495,7 @@ func (b *bridge) onEvent(ctx context.Context, evt slidetypes.ClientEvent) error 
 	case *slidetypes.SeqIDUpdate:
 		b.setSeq(e.SeqID)
 		if err := b.store.saveSeq(e.SeqID, e.Timestamp); err != nil {
-			log.Printf("could not persist seq id: %v", err)
+			slog.WarnContext(ctx, "could not persist seq id", "error", err)
 		}
 
 	case *slidetypes.ReconnectionStateUpdate:
@@ -486,7 +503,7 @@ func (b *bridge) onEvent(ctx context.Context, evt slidetypes.ClientEvent) error 
 		// restart a resume instead of a fresh login, and a fresh login is
 		// exactly the event that provokes a trust check.
 		if err := b.store.saveState(e.State); err != nil {
-			log.Printf("could not persist reconnection state: %v", err)
+			slog.WarnContext(ctx, "could not persist reconnection state", "error", err)
 		}
 
 	case *slidetypes.ResnapshotRequired:
@@ -495,7 +512,7 @@ func (b *bridge) onEvent(ctx context.Context, evt slidetypes.ClientEvent) error 
 		// that stops the NEXT pass from trusting the cached sequence id — and
 		// that has to reach the disk, not just the in-memory flag. See
 		// invalidateSeq.
-		log.Printf("resnapshot required, will re-read index")
+		slog.InfoContext(ctx, "resnapshot required, will re-read index")
 		b.invalidateSeq()
 
 	case *slidetypes.TypingNotification:
@@ -611,7 +628,7 @@ func (b *bridge) flushCookies() {
 	}
 	if err := b.store.saveCookies(jar); err != nil {
 		// Expected and harmless while logged out; noisy only if it persists.
-		log.Printf("cookie flush skipped: %v", err)
+		slog.Warn("cookie flush skipped", "error", err)
 	}
 }
 
@@ -629,8 +646,8 @@ func (b *bridge) setClient(cli *instameow.Client) {
 		b.out, b.up = nil, nil
 		return
 	}
-	b.out = cli
-	b.up = cli.GetHTTP().SendMercuryUploadRequest
+	b.out = traceClient(cli)
+	b.up = traceUpload(cli.GetHTTP().SendMercuryUploadRequest)
 }
 
 func (b *bridge) currentClient() *instameow.Client {
@@ -705,14 +722,14 @@ func (b *bridge) recordSelf(fbid int64, igid, username string) {
 		self.FBID = strconv.FormatInt(fbid, 10)
 		b.setSelf(self)
 		if err := b.store.saveSelf(self); err != nil {
-			log.Printf("could not cache own identity: %v", err)
+			slog.Warn("could not cache own identity", "error", err)
 		}
 		return
 	}
 	cached := b.selfSnapshot()
-	log.Printf("ERROR GetOwnFBID() returned 0 for @%s: KEEPING the cached identity (fbid=%q) and "+
-		"NOT overwriting self.json. from_me, self-tag detection and the /react "+
-		"read-back all bind on this value.", username, cached.FBID)
+	slog.Error("GetOwnFBID() returned 0: KEEPING the cached identity and NOT overwriting "+
+		"self.json. from_me, self-tag detection and the /react read-back all bind on this value.",
+		"username", username, "cached_fbid", cached.FBID)
 	if cached.FBID == "" {
 		// Nothing to protect. Record what LoadIndex did give us so /health can
 		// report the username, but leave the file alone: an identity with no
@@ -751,7 +768,7 @@ func (b *bridge) forceReindex() {
 func (b *bridge) invalidateSeq() {
 	b.forceReindex()
 	if err := b.store.clearSeq(); err != nil {
-		log.Printf("ERROR could not clear the stale seq id (a restart may resume from it): %v", err)
+		slog.Error("could not clear the stale seq id (a restart may resume from it)", "error", err)
 	}
 	b.mu.Lock()
 	b.seq = 0

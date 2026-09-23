@@ -56,6 +56,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"sync"
 
@@ -434,8 +435,8 @@ func sendReaction(
 		for _, r := range resp.Message.Reactions {
 			seen = append(seen, r.SenderFBID)
 		}
-		logf("reaction post-state did not confirm (remove=%t own=%d seen=%v)",
-			remove, ownFBID, seen)
+		slog.WarnContext(ctx, "reaction post-state did not confirm",
+			"remove", remove, "own_fbid", ownFBID, "seen", seen)
 		return errReactionUnconfirmed
 	}
 	return nil

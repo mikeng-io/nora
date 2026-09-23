@@ -67,6 +67,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -236,7 +237,8 @@ func (b *bridge) handleProfile(w http.ResponseWriter, r *http.Request) {
 		// The igid is logged and NOT echoed into the body: it is a person's
 		// identifier and the error text crosses a boundary, while the log
 		// stays on the host an operator already has.
-		logf("profile failed (igid=%s status=%d): %v", igid, status, err)
+		slog.WarnContext(r.Context(), "profile failed",
+			"igid", igid, "status", status, "error", err)
 		writeJSON(w, status, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
@@ -321,8 +323,8 @@ func readProfile(ctx context.Context, cli igClient, igid string) (profileBody, e
 			// Logged with the STATUS, because telling a 429 from a challenge
 			// page from a parse failure is the entire reason this half exists
 			// as a measurement before it exists as a feature.
-			logf("social profile read failed (igid=%s status=%d): %v",
-				canonical, status, err)
+			slog.WarnContext(ctx, "social profile read failed",
+				"igid", canonical, "status", status, "error", err)
 			out.SocialError = fmt.Sprintf("%d: %v", status, err)
 		} else {
 			out.SocialAvailable, out.Social = true, &s
@@ -353,7 +355,7 @@ var socialIssuerFor = func(cli igClient) (graphQLIssuer, error) {
 	if h == nil {
 		return nil, fmt.Errorf("%w: no http client", errNotConnected)
 	}
-	return h, nil
+	return tracedIssuer{inner: h}, nil
 }
 
 // --- /story -------------------------------------------------------------------
@@ -467,7 +469,8 @@ func (b *bridge) handleStory(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, errBadIGID) {
 			status = http.StatusBadRequest
 		}
-		logf("story failed (igid=%s status=%d): %v", igid, status, err)
+		slog.WarnContext(r.Context(), "story failed",
+			"igid", igid, "status", status, "error", err)
 		writeJSON(w, status, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
@@ -527,7 +530,8 @@ func readStory(ctx context.Context, cli igClient, igid string) (storyBody, error
 			// rather than refused: the OTHER frames are still readable, and a
 			// story short by one frame is not the safety problem a roster short
 			// by one member is — nothing gates a disclosure on it.
-			logf("story (igid=%s) frame %s had no url; skipped", canonical, item.ID)
+			slog.WarnContext(ctx, "story frame had no url; skipped",
+				"igid", canonical, "frame", item.ID)
 			continue
 		}
 		out.Items = append(out.Items, frame)
