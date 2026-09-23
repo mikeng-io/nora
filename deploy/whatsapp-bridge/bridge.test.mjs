@@ -422,6 +422,32 @@ test('MESSAGE_EDIT protocol message becomes an event with edit_of set', () => {
   assert.equal(event.id, 'E1');
 });
 
+test('a phone edit wrapped in editedMessage is unwrapped into an edit event', () => {
+  // The shape a phone sends (Baileys rc13 normalizeMessageContent unwraps it
+  // the same way). Before, this produced NO event at all.
+  const event = extractMessageEvent({
+    key: { id: 'E2', remoteJid: '176569@g.us', participant: '85202411020@s.whatsapp.net', fromMe: false },
+    messageTimestamp: 1756963250,
+    message: {
+      editedMessage: {
+        message: {
+          protocolMessage: {
+            type: 14,
+            key: { id: 'ORIG2', remoteJid: '176569@g.us', fromMe: false },
+            editedMessage: { conversation: 'fixed text' },
+            timestampMs: '1756963250123',
+          },
+        },
+      },
+    },
+  }, {});
+
+  assert.ok(event, 'a wrapped edit must not be dropped');
+  assert.equal(event.edit_of, 'ORIG2');
+  assert.equal(event.text, 'fixed text');
+  assert.equal(event.timestamp_ms, 1756963250123, 'the edit\'s own millisecond clock');
+});
+
 test('non-edit protocol messages and contentless messages produce no event', () => {
   assert.equal(extractMessageEvent({
     key: { id: 'P1', remoteJid: '176569@g.us', participant: '1@s.whatsapp.net' },

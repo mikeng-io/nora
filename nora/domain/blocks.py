@@ -780,9 +780,9 @@ def render_messages(
             ("age", age(ts, clock) if ts is not None else None),
             ("from", one_line(speaker(row))),
             ("replying_to", None if parent is None else str(parent)),
-            ("edited", age(changed, clock) if changed else None),
-            ("edited_after", _edited_after(i, changed) if changed else None),
-            ("was", was(row) if changed else None),
+            ("edited", age(changed, clock) if changed is not None else None),
+            ("edited_after", _edited_after(i, changed) if changed is not None else None),
+            ("was", was(row) if changed is not None else None),
         )
 
     return render_elements(rows, tag=tag, attrs=_attrs, body=body)

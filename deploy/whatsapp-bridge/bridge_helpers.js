@@ -285,13 +285,33 @@ export function createReconnectScheduler(startFn, {
 
 // -- Inbound message extraction (contract §message event) -------------------
 
-/** Unwrap ephemeral / view-once / document-with-caption shells. */
+/**
+ * Unwrap the "future-proof" shells — ephemeral, view-once, document-with-
+ * caption, and `editedMessage` — as many levels deep as they nest.
+ *
+ * `editedMessage` is how a PHONE sends an edit: `{editedMessage: {message:
+ * {protocolMessage: {type: MESSAGE_EDIT, …}}}}`. Baileys' own
+ * `normalizeMessageContent` unwraps it in a bounded loop (rc13,
+ * `Utils/messages.js`); this function unwrapped one fixed level and not that
+ * shell at all, so a phone's edit reached `extractMessageEvent` with no
+ * `protocolMessage`, no text and no media, and was dropped as an empty turn —
+ * silently, before Nora could see it (design/message-edits audit, 2026-09-24).
+ * Bounded at 5 like Baileys', so a malformed self-nesting message cannot loop.
+ */
 export function getMessageContent(msg) {
-  const content = msg?.message || {};
-  if (content.ephemeralMessage?.message) return content.ephemeralMessage.message;
-  if (content.viewOnceMessage?.message) return content.viewOnceMessage.message;
-  if (content.viewOnceMessageV2?.message) return content.viewOnceMessageV2.message;
-  if (content.documentWithCaptionMessage?.message) return content.documentWithCaptionMessage.message;
+  let content = msg?.message || {};
+  for (let i = 0; i < 5; i++) {
+    const inner = (
+      content.ephemeralMessage ||
+      content.viewOnceMessage ||
+      content.viewOnceMessageV2 ||
+      content.viewOnceMessageV2Extension ||
+      content.documentWithCaptionMessage ||
+      content.editedMessage
+    )?.message;
+    if (!inner) break;
+    content = inner;
+  }
   return content;
 }
 
@@ -465,7 +485,10 @@ export function extractMessageEvent(msg, { lidToPhone = {}, phoneToLid = {}, rec
     sender_lid: sender.lid,
     push_name: msg.pushName || null,
     text,
-    timestamp_ms: timestampMs(msg.messageTimestamp),
+    // An edit's own clock when it carries one: `protocolMessage.timestampMs`
+    // is milliseconds, where `messageTimestamp` is whole seconds — two edits
+    // in one second would otherwise tie, and the later could be discarded.
+    timestamp_ms: (editOf && toNumber(proto?.timestampMs)) || timestampMs(msg.messageTimestamp),
     mentioned,
     quoted,
     media,

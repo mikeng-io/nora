@@ -734,6 +734,27 @@ def media_json(blobs: tuple[MediaBlob, ...]) -> str | None:
     ])
 
 
+def blobs_from_media_json(text: str | None) -> tuple[MediaBlob, ...]:
+    """`media_json`'s inverse, total: NULL or anything malformed is `()`."""
+    if not text:
+        return ()
+    try:
+        items = json.loads(text)
+    except (TypeError, ValueError):
+        return ()
+    if not isinstance(items, list):
+        return ()
+    out = []
+    for item in items:
+        if not isinstance(item, dict) or not isinstance(item.get("sha256"), str):
+            return ()
+        out.append(MediaBlob(
+            sha256=item["sha256"], media_type=str(item.get("media_type") or ""),
+            size=int(item.get("size") or 0), filename=item.get("filename"),
+        ))
+    return tuple(out)
+
+
 def body_with_handles(
     body: str,
     labels: tuple[str, ...],
