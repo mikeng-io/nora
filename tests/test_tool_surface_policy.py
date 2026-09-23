@@ -262,7 +262,7 @@ _NOT_YET_REWRITTEN = frozenset({
     "play_music", "recall_lookups", "remember", "reverse_geocode",
     "route", "rsvp_event", "saved_places", "search_gifs", "search_memory",
     "search_memory_workspace", "send_gif", "send_reply", "send_to",
-    "set_music_volume", "skills", "skip_music", "stop_music",
+    "set_music_volume", "skip_music", "stop_music",
     "suggest_venue", "top_music", "transit", "update_event", "version",
     "weather", "web_fetch", "web_search", "who_said",
 })
@@ -316,7 +316,12 @@ def _sent_specs() -> dict[str, str]:
 def _rewritten() -> list[str]:
     from nora.agent.tools import NATIVE_TOOLS
 
-    return sorted(n for n in NATIVE_TOOLS if n not in _NOT_YET_REWRITTEN)
+    # A plugin tool (`skills`) is built and described by its plugin, not by
+    # this repo, so there is no text of ours for these rules to govern.
+    return sorted(
+        n for n, spec in NATIVE_TOOLS.items()
+        if n not in _NOT_YET_REWRITTEN and not spec.plugin
+    )
 
 
 def test_the_allowlist_only_shrinks() -> None:
