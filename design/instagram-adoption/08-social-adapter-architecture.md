@@ -154,18 +154,29 @@ pick a favourite backend per verb. A row belongs on that list only when:
 2. the capability is actually wanted by a named use case; and
 3. the exception is recorded here with the measurement that established (1).
 
-**Today the list has exactly one row: `instagram/story`.** OpenCLI 1.8.7's
-`instagram` surface marks `story` as `[write]` — it posts a story — and has no
-story read anywhere. `FetchReel` is the only path that exists.
+**The list had one row (`instagram/story`) when this section was written; it
+has three as of the 2026-09-22 correction below: story, profile (`GET
+/accounts/{igid}`, folding in `is_private`/counts/`followed_by`), and
+post/reel counts.** OpenCLI 1.8.7's `instagram` surface marks `story` as
+`[write]` — it posts a story — and has no story read anywhere. `FetchReel`
+is the only path that exists for that row; the other two are the
+`08`/`07`/`05` profile correction, which reads on test (1) as OpenCLI's
+`web_profile_info` being sustainedly throttled (five-plus hours, both
+request shapes) while the GraphQL document instameow already used for
+messaging answers the same session normally — not "flaky today", a
+persistent refusal of that specific endpoint.
 
-Two things this rule deliberately excludes, though instameow can do both:
+One thing this rule still deliberately excludes, though instameow can do it:
 
-- **`friendship_status`** (does this account follow them, are we blocked) —
-  real, and OpenCLI has no equivalent, but **no use case has asked for it**.
-  Fails test (2). It stays unrouted until something needs it.
 - **`latest_reel_media`** as a cheap "do they have a story up" check — an
   optimisation of a row that is already routed. Fails test (1): it is not a
   capability, it is a faster way to do one.
+
+(`friendship_status` — does this account follow them, are we blocked — was
+previously excluded here on the same "no use case has asked for it" ground.
+It is now routed as part of the profile row above: `following` and
+`followed_by` are both in the same response the operator's gate already
+needed, so carrying them cost nothing additional once that call existed.)
 
 The rule matters more than the row. A router whose entries are chosen by
 "which backend is better here" drifts into two parallel integrations within a
@@ -227,24 +238,47 @@ posts one.
 
 | Use case | Backend | Why |
 |---|---|---|
-| "what's on X's story right now" | **instameow** — the one exception | `FetchReel(igid)`. OpenCLI has no story read; its `story` verb posts one. |
-| "show me their profile — bio, follower count" | OpenCLI | default; and instameow's `GetProfile` carries none of those fields anyway |
-| "list this person's recent posts" | OpenCLI | default; instameow has no such call at all |
+| "what's on X's story right now" | **instameow** — an exception | `FetchReel(igid)`. OpenCLI has no story read; its `story` verb posts one. |
+| "show me their profile — bio, follower count" | **instameow** — an exception (reversed 2026-09-22) | `PolarisProfilePageContentQuery`, issued raw, keyed on the numeric igid. See the correction below. |
+| "list this person's recent posts" | OpenCLI | default; instameow has a COUNT (`media_count`, `total_clips_count`) but still no listing call |
 | "read this specific post someone linked" | OpenCLI | default. `instagram/post` is `unavailable` on both paths today; `FetchMedia` returned HTTP 400 on the one id tried, so it is not a candidate exception until proven |
 | "search for a user by name" | OpenCLI | default; the two are equivalent, so there is no case for an exception |
 | anything on **X** | OpenCLI | default; instameow is Instagram-only |
-| "does this person follow us" | *unrouted* | instameow-only, but no use case asks for it — see the rule above |
+| "does this person follow us" | **instameow** — an exception (reversed 2026-09-22) | `friendship_status.followed_by` on the same profile call above |
 | Threads, later | neither yet | joins as a further backend behind the same port |
 
-Two structural conclusions the operator asked for directly:
+> **CORRECTION 2026-09-22.** The profile and follow-back rows above were
+> written when `GetProfile`'s TYPED response was the only measurement:
+> `slidetypes.ProfilePageResponse` carries `user`/`viewer` only, so its
+> unmodelled ~50 fields never reached this document as a possibility. A
+> second call to the same GraphQL document (`PolarisProfilePageContentQuery`,
+> not `web_profile_info` — that REST endpoint is genuinely and separately
+> throttled), issued raw and keyed on the numeric igid, returns `data.user`
+> whole: 65 keys, including `is_private`, `follower_count`, `following_count`,
+> `mutual_followers_count`, `media_count`, `total_clips_count`, `biography`,
+> `is_business`, `is_professional_account`, `followed_by`. Full detail and
+> the two implementation mistakes it took two more rounds to find (a
+> username sent into a numeric-id field; a GraphQL `errors` envelope read as
+> success because only the HTTP status was checked) are in `05`'s and `07`'s
+> matching corrections and `deploy/instagram-bridge/social_profile.go`.
+>
+> **"List this person's recent posts" is UNCHANGED by this correction** —
+> `media_count` is a count, not a feed, and no instameow client method pages
+> a timeline. That row, and the structural conclusion about OpenCLI below,
+> stand for posts-as-a-list specifically.
 
-- **OpenCLI cannot be dropped.** Not for Instagram posts or profile fields,
-  and not at all while X is wanted. The hoped-for prize — deleting the VNC
-  desktop and headed Chrome — costs X *and* posts *and* profile fields
-  together.
-- **instameow cannot be avoided**, but its social footprint is one verb.
-  Stories exist on no other path and are what Phase 2 was actually asked for;
-  everything else stays on the default side of the boundary.
+Two structural conclusions the operator asked for directly, one of them now
+narrower than when it was written:
+
+- **OpenCLI cannot be dropped**, but its Instagram job shrank to
+  posts-as-a-list only (plus `instagram/post`, unproven either way). Not
+  "Instagram posts or profile fields" any more — profile fields moved to
+  instameow above. OpenCLI is still not droppable at all while X is wanted.
+- **instameow cannot be avoided**, and its social footprint is now three
+  exceptions — story, profile (incl. `is_private` and the follow-back
+  fact), and post/reel counts — not one. Everything that remains on the
+  default side of the boundary is genuinely absent from instameow's client
+  surface: a posts LIST, and `instagram/post` by permalink.
 
 The overlap is therefore almost nil by construction rather than by luck: the
 exception list admits only what the default backend cannot do, so there is

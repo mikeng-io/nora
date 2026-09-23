@@ -168,15 +168,31 @@ one — it does not exist. So:
 | Person-keyed read | instameow | OpenCLI |
 |---|---|---|
 | their **stories** | **yes** — the only path anywhere | no story read at all |
-| their **profile** | yes, but no follower/following/media counts or biography | yes, the social fields |
-| their **posts** | **no such call** | `instagram user <username>` |
-| their friendship status to us | yes | no |
+| their **profile, incl. social fields** | **yes, all of it — see correction below** | yes, but 429 all day |
+| their **posts, as a count** | **yes** (`media_count`, `total_clips_count`) | `instagram user <username>` |
+| their **posts, as a list** | **no such call** | `instagram user <username>` |
+| their friendship status to us | yes, both directions (`following`, `followed_by`) | no |
 | X, anything | no — Instagram only | yes |
 
-So OpenCLI cannot be dropped for Instagram: it is the only person-keyed path
-to someone's posts, and the only path to the social profile fields. And it
-cannot be dropped at all while X reads are wanted, since instameow is
-Instagram-only and X is half of `social_fetch`'s vocabulary.
+> **CORRECTION 2026-09-22 (later the same day this table was written).** The
+> "profile" row above read `yes, but no follower/following/media counts or
+> biography` — true of `GetProfile`'s typed response, false of what the
+> underlying document actually carries. A second call to the same document
+> (`PolarisProfilePageContentQuery`), issued raw and keyed on the numeric
+> igid rather than the username the first working version wrongly used,
+> returns all of it: `is_private`, `follower_count`, `following_count`,
+> `mutual_followers_count`, `media_count`, `total_clips_count`, `biography`,
+> `is_business`, `is_professional_account`, `followed_by`. Full account,
+> `deploy/instagram-bridge/social_profile.go` and `07`'s matching correction.
+>
+> **Posts-as-a-LIST is unaffected** — `media_count` is a count, not a feed,
+> and instameow's client surface still has no call that pages a user's
+> posts. OpenCLI keeps that job, along with X.
+
+So OpenCLI's remaining job for Instagram is posts-as-a-list only, plus X
+entirely (instameow is Instagram-only, and X is half of `social_fetch`'s
+vocabulary). It cannot be dropped, but the "profile fields" reason for
+keeping it — the reason this section gave twice — no longer holds.
 
 The defensible split is therefore not "one tool wins" but a per-row backend
 choice, which is what the routing table below encodes. The prize the operator
@@ -204,9 +220,10 @@ social bridge  READ_ONLY_ALLOWLIST          ← unchanged security boundary
         │
         ├── x/*                  → opencli (unchanged)
         ├── instagram/story      → instameow  FetchReel   (NEW row; opencli cannot)
-        ├── instagram/profile    → opencli (social fields) + instameow (friendship,
-        │                          story hooks) — NEITHER alone is the whole answer
-        ├── instagram/posts      → opencli (instameow unproven)
+        ├── instagram/profile    → instameow, one call (REVERSED 2026-09-22 —
+        │                          see the correction above; was opencli+instameow)
+        ├── instagram/posts      → instameow for the COUNT, opencli for the LIST
+        │                          (instameow still has no listing call)
         ├── instagram/post       → still unavailable, both paths
         └── instagram/search     → either; equivalent, users only
 ```

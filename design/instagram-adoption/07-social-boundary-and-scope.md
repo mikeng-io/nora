@@ -71,10 +71,59 @@ the host-side bridge, per `(network, verb)`, and nothing above it knows:
 | verb | Instagram | X |
 |---|---|---|
 | `story` | instameow (only path anywhere) | — |
-| `profile` | opencli (social fields) | opencli |
-| `posts` | opencli (instameow has no such call) | opencli |
+| `profile` | **instameow, one call** (reversed — see below) | opencli |
+| `posts` (counts only) | **instameow** (`media_count`, `total_clips_count`; no listing — see below) | opencli |
 | `search` | either | opencli |
 
+> **REVERSED 2026-09-22 (later the same day). The FALSIFIED verdict below was
+> measured against the WRONG ENDPOINT.** That probe called `web_profile_info`
+> — REST — with the DM session's own headers, got HTTP 429, and concluded
+> Instagram refuses the endpoint to both of Nora's non-browser clients. True,
+> and beside the point: `GetProfile` does not use that endpoint. It calls
+> `PolarisProfilePageContentQuery` (GraphQL), the same document the real web
+> app uses for a profile page, and **that document works against this
+> session** — the REST throttle sits on `web_profile_info` specifically, not
+> on the account and not on the session.
+>
+> Issuing `PolarisProfilePageContentQuery` a second time, raw, to reach past
+> `slidetypes.ProfilePageResponse`'s typed fields surfaced two more mistakes,
+> both now fixed and both regression-tested against literal bytes
+> (`deploy/instagram-bridge/social_profile_test.go`):
+>
+> 1. **The second call was keyed on the account's username.** The document
+>    does not take one — `slidetypes.GetProfilePageRequest` declares a single
+>    addressing field, `ID`, and a username sent through it answers
+>    `field_exception` on `path: ["user"]`. Measured 4/4 keyed on the numeric
+>    igid succeeding, 4/4 keyed on the username failing, in the same requests
+>    — call ORDER was never the variable, despite an earlier commit on this
+>    branch recording it as "deterministic… order is the only structural
+>    difference". It looked that way because of the next bug.
+> 2. **A failed GraphQL document is still an HTTP 200**, with an `errors`
+>    array where `data` would be. The bridge checked only the transport
+>    status, so every username-keyed `field_exception` above recorded itself
+>    as a successful read of an empty profile — `social_available: true`,
+>    every field zero. There was no ordering effect to explain; there was an
+>    error this code was never looking at.
+>
+> With both fixed, `data.user` on a real account (igid `221731317`, measured
+> whole rather than through the typed struct) carries **65 keys**, including
+> `is_private`, `followed_by` (friendship_status), `follower_count`,
+> `following_count`, `mutual_followers_count`, `media_count`,
+> `total_clips_count`, `is_business`, `is_professional_account`,
+> `biography`, `external_url` and `profile_pic_url` — everything the
+> operator's public-or-followed gate needed and everything this section
+> below had recorded as unreachable from instameow.
+>
+> **What is still true, and what this does not fix:** there is no listing
+> call for a user's posts anywhere in instameow's surface — `media_count`
+> and `total_clips_count` are counts, not a feed. That gap (§"no client
+> METHOD lists a user's posts", below) stands exactly as recorded. `story`
+> and `search` are unaffected by any of this.
+>
+> The PROBE RUN note immediately below is kept for the record — it is a
+> correctly-measured dead end on the wrong endpoint, not a wrong measurement
+> — followed by the CONTESTED note it was answering, also kept.
+>
 > **PROBE RUN 2026-09-22. THE ROWS STAND — the hypothesis is FALSIFIED.**
 > `GET /accounts/{igid}` now issues `web_profile_info` with the DM session's
 > own credentials. Against two real accounts it returned **HTTP 429**, the same

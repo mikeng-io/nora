@@ -18,6 +18,7 @@ package main
 //  4. `viewer` must not reach the body. It is Nora on every call.
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -223,6 +224,64 @@ func TestProfileWithNoMessagingIDStillAnswers(t *testing.T) {
 	}
 	if !body.OK {
 		t.Error("ok was false; a missing join key is not a failed read")
+	}
+}
+
+// fakeGraphQLIssuer records what it was asked for and answers with canned
+// bytes — the seam that stands in for `*httpclient.HTTPClient`, which has
+// no interface of its own to fake against directly (see `socialIssuerFor`'s
+// doc comment in social.go).
+type fakeGraphQLIssuer struct {
+	sawIGID   []string
+	sawFields any
+	body      []byte
+}
+
+func (f *fakeGraphQLIssuer) MakeGraphQLRequest(
+	_ context.Context, _ string, variables any,
+) (*http.Response, []byte, error) {
+	f.sawFields = variables
+	if req, ok := variables.(*slidetypes.GetProfilePageRequest); ok {
+		f.sawIGID = append(f.sawIGID, req.ID)
+	}
+	return &http.Response{StatusCode: http.StatusOK}, f.body, nil
+}
+
+// The regression this bundle actually fixed: the social call must be keyed
+// on the account's numeric igid, not its username. `parseSocialProfile`'s
+// own tests cannot see this — they start from response bytes, and this bug
+// is about what goes INTO the request that produces them. Only
+// `socialIssuerFor`'s injected seam can watch the value as it leaves
+// `readProfile`.
+func TestProfileKeysTheSocialCallOnTheIGIDNotTheUsername(t *testing.T) {
+	issuer := &fakeGraphQLIssuer{body: []byte(`{"data":{"user":{"is_private":true}}}`)}
+	restore := socialIssuerFor
+	socialIssuerFor = func(igClient) (graphQLIssuer, error) { return issuer, nil }
+	t.Cleanup(func() { socialIssuerFor = restore })
+
+	// measuredProfile carries ID "221731317" and Username "nka_bpumvg" — two
+	// different strings, so a test that only checked "some string was sent"
+	// could not tell a regression to the old, wrong behaviour from a pass.
+	f := &fakeIG{}
+	b := newTestBridge(t, f)
+
+	rec := getProfile(t, b, "221731317")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/profile answered %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(issuer.sawIGID) != 1 || issuer.sawIGID[0] != "221731317" {
+		t.Fatalf("social call keyed on %v, want [221731317] — the numeric igid, "+
+			"not measuredProfile's username %q", issuer.sawIGID, "nka_bpumvg")
+	}
+	var body profileBody
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("profile body did not decode: %v", err)
+	}
+	if !body.SocialAvailable {
+		t.Errorf("social_available was false with SocialError %q; the fake issuer "+
+			"answered 200 with a user, so this can only mean the wrong value was "+
+			"sent and the fake refused to recognize it", body.SocialError)
 	}
 }
 

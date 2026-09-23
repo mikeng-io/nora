@@ -136,26 +136,64 @@ type profileBody struct {
 	Social      *socialProfile `json:"social,omitempty"`
 }
 
-// socialProfile is what `web_profile_info` adds over `GetProfile`.
+// socialProfile is the named subset of `data.user`, chosen from a real
+// measurement rather than guessed ahead of it.
+//
+// The prior version of this type returned raw key LISTS instead of fields,
+// because what the document carries was the open question. It has now been
+// asked: `data.user` on this account holds 65 keys (measured 2026-09-22,
+// captured whole via a temporarily uncapped response dump). Most are display
+// plumbing this bridge has no caller for — `ring_creator_metadata`,
+// `regulated_news_in_locations`, `text_post_app_badge_label` — and are left
+// out on purpose rather than carried as more `Unrecognized`-style dead
+// weight. What is named below is what a caller measured in this bundle
+// actually needs: the operator's public-or-followed gate, and the reach and
+// freshness signals a social dreamer would read before deciding whether
+// there is anything new to look at.
 type socialProfile struct {
 	// IsPrivate is the half of the operator's public-or-followed rule that
-	// `GetProfile` does not carry — measured absent from its wire on three
-	// real accounts, 2026-09-22.
+	// `GetProfile` does not carry (see the file header). Present here,
+	// confirmed on the wire.
 	IsPrivate bool `json:"is_private"`
-	// FollowedByViewer is the SAME fact `friendship_status.following` carries.
-	// Both are returned rather than one trusted: two reads agreeing is
-	// evidence, and two disagreeing is worth knowing about.
-	FollowedByViewer bool   `json:"followed_by_viewer"`
-	FollowsViewer    bool   `json:"follows_viewer"`
-	Biography        string `json:"biography"`
-	Followers        int    `json:"followers"`
-	Following        int    `json:"following"`
-	// PostCount and PostsReturned stay SEPARATE: the first is what the account
-	// claims, the second is how many rows this page actually held. A timeline
-	// reporting 400 and returning 0 is the interesting failure, and collapsing
-	// them would hide it.
-	PostCount     int `json:"post_count"`
-	PostsReturned int `json:"posts_returned"`
+	// FollowedBy is Instagram's own answer to "does this account follow
+	// Nora back" — `friendship_status.followed_by` on this query, a
+	// different fact from `following` (does Nora follow THEM), which
+	// `GetProfile` already carries. Neither implies the other.
+	FollowedBy bool `json:"followed_by"`
+	// Biography is the account's own words. Empty is a real answer here,
+	// not a failure — `SocialAvailable` on the caller is what tells an
+	// empty bio from a read that never happened.
+	Biography string `json:"biography,omitempty"`
+	// ExternalURL is the one link a profile is allowed to carry outside its
+	// bio.
+	ExternalURL string `json:"external_url,omitempty"`
+	// FollowerCount, FollowingCount and MutualFollowersCount are reach
+	// signals — a social dreamer comparing two reads apart in time can tell
+	// growth from noise without re-fetching anything else.
+	FollowerCount        int `json:"follower_count"`
+	FollowingCount       int `json:"following_count"`
+	MutualFollowersCount int `json:"mutual_followers_count"`
+	// MediaCount and TotalClipsCount are POST and REEL counts respectively.
+	// A caller diffing these against its own last-seen count learns "has
+	// this account posted since I last looked" for the price of one call,
+	// with no per-post fetch.
+	MediaCount      int `json:"media_count"`
+	TotalClipsCount int `json:"total_clips_count"`
+	// IsBusiness and IsProfessionalAccount are account-type facts a social
+	// dreamer needs to tell a friend's account from a brand's before it
+	// spends a "genuine connection" turn on one.
+	IsBusiness bool `json:"is_business"`
+	// IsProfessionalAccount is a pointer for the same reason Category is:
+	// measured `null` on a personal account (2026-09-22), and `null` is not
+	// the same fact as "measured false".
+	IsProfessionalAccount *bool `json:"is_professional_account,omitempty"`
+	// Category is the account's declared category (nil for a personal
+	// account with none set) — forwarded as a pointer because "not set" and
+	// "set to empty" are different facts on this field.
+	Category *string `json:"category,omitempty"`
+	// ProfilePicURL is fetchable directly, the same as a story or post CDN
+	// url: no cookies, no special case.
+	ProfilePicURL string `json:"profile_pic_url,omitempty"`
 }
 
 var (
@@ -255,28 +293,67 @@ func readProfile(ctx context.Context, cli igClient, igid string) (profileBody, e
 	// answered by here, so a social failure degrades this read rather than
 	// losing it: the caller still gets the username, the follow state and
 	// `has_story`, with `social_available: false` saying what is missing and
-	// why. Keyed on the USERNAME the first call just returned, so a caller
-	// only ever supplies an igid.
-	social, ok := cli.(socialClient)
-	switch {
-	case !ok:
-		out.SocialError = "this client cannot issue raw requests"
-	case u.Username == "":
-		out.SocialError = "no username on the messaging profile to key the social read with"
-	default:
-		s, status, err := readSocialProfile(ctx, social, u.Username)
+	// why.
+	//
+	// Keyed on `canonical` — the numeric igid — NOT `u.Username`. The first
+	// version of this keyed on the username, on the theory that
+	// `PolarisProfilePageContentQuery` is handle-addressed the way
+	// `web_profile_info` is. It is not:
+	// `slidetypes.GetProfilePageRequest.ID` (requests.go) is what the document
+	// declares, and Instagram answers a username sent through that field with
+	// `field_exception` on `path: ["user"]` — measured 4/4 on this account,
+	// 2026-09-22, while the same call keyed on `canonical` succeeded 4/4 in
+	// the same requests. The two probes that first surfaced this call order
+	// as the suspect variable were both looking at a false signal: this
+	// function's earlier version treated a 200-with-`errors` GraphQL envelope
+	// as success (see readSocialProfile's own history), so every prior
+	// username-keyed failure had been silently recorded as
+	// `social_available: true` with empty key lists. There was never an
+	// ordering problem — a username was going into a field that wanted an id,
+	// and the failure was invisible until the envelope's `errors` array was
+	// actually read.
+	issuer, err := socialIssuerFor(cli)
+	if err != nil {
+		out.SocialError = err.Error()
+	} else {
+		s, status, err := readSocialProfile(ctx, issuer, canonical)
 		if err != nil {
 			// Logged with the STATUS, because telling a 429 from a challenge
 			// page from a parse failure is the entire reason this half exists
 			// as a measurement before it exists as a feature.
-			logf("social profile read failed (username=%s status=%d): %v",
-				u.Username, status, err)
+			logf("social profile read failed (igid=%s status=%d): %v",
+				canonical, status, err)
 			out.SocialError = fmt.Sprintf("%d: %v", status, err)
 		} else {
 			out.SocialAvailable, out.Social = true, &s
 		}
 	}
 	return out, nil
+}
+
+// socialIssuerFor resolves the raw GraphQL issuer off an igClient — a
+// package VARIABLE rather than an ordinary function, so a test can replace
+// it with a fake that records what `readProfile` handed it and returns a
+// canned response, entirely bypassing `*httpclient.HTTPClient`, which has no
+// interface seam of its own to fake against directly.
+//
+// This is the seam that makes the actual regression this file fixes
+// testable at all: whether `readProfile` keys the social call with
+// `canonical` (correct) or `u.Username` (the original bug) is a question
+// about what VALUE reaches `readSocialProfile`'s second argument, not about
+// how a response byte string parses — `parseSocialProfile`'s own tests
+// cannot see it, because by the time bytes exist to parse, the wrong value
+// has already been sent.
+var socialIssuerFor = func(cli igClient) (graphQLIssuer, error) {
+	social, ok := cli.(socialClient)
+	if !ok {
+		return nil, errors.New("this client cannot issue raw requests")
+	}
+	h := social.GetHTTP()
+	if h == nil {
+		return nil, fmt.Errorf("%w: no http client", errNotConnected)
+	}
+	return h, nil
 }
 
 // --- /story -------------------------------------------------------------------
