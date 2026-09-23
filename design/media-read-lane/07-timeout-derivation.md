@@ -124,3 +124,47 @@ It was rejected because:
 4. **The DEC-196 ceiling does not substitute for this.** It bounds how many tool
    calls run at once and queues the rest; it says nothing about a single
    invocation's internal waves.
+
+---
+
+## 6. ⚠️ The cross-bundle interaction that makes the retracted number TRUE
+
+The `4 × 120 s = 480 s` arithmetic I got wrong is **false today** — but it becomes
+**true the moment DEC-196's ceiling is set below the `media_fetch` budget.** This is
+not a detail; it is the joint that couples the two bundles, and neither states it.
+
+| budget | DEC-196 ceiling | waves | wall clock | vs 360 s loop |
+|---|---|---|---|---|
+| 4 | 4 (equal) | 1 | 120 s | **FITS** |
+| 10 | 4 | 3 | **360 s** | exceeds (boundary) |
+| 10 | 2 | 5 | **600 s** | **exceeds — silent turn death** |
+
+**Why:** DEC-196 **queues** rather than refusing (its `02 §1`: "queues the call; it
+runs when a slot frees"). Queueing reduces *simultaneity* by introducing
+*serialization* — so once more tool calls are requested than the ceiling admits,
+wall clock becomes `ceil(n/ceiling) × per_call` instead of `max(per_call)`. The
+operator's stated intent — that raising the budget must not multiply concurrency —
+is achieved, but it is **achieved by making the calls queue**, and the queue is what
+re-converts concurrency back into the sum.
+
+**Consequence:** the two settled numbers interact, and nothing currently enforces
+the relationship between them.
+
+**The invariant this creates — recommend it be asserted in code:**
+
+```
+ceil(media_fetch_budget / tool_concurrency) × vision_timeout  <  [llm].timeout_seconds
+```
+
+With the settled values (`4 / 4 = 1`, `1 × 120 < 360`) it holds with room. At
+budget 10 with ceiling 4 it **fails at the boundary**, and the failure mode is the
+silent one (`invoke.py:171-179`), not the honest per-window `_UNREAD_MARKER`.
+
+**This is the same class of guard the repo already has** — `derive_vision_timeout`'s
+own docstring argues an invariant "is one nobody can violate if it is never written
+down twice". This one is currently written down nowhere.
+
+**Action:** either (a) assert it as a config-validation test across both keys, so a
+future budget raise or ceiling change is rejected at startup rather than silently
+losing turns; or (b) accept it and record the residual risk explicitly. **(a) is
+cheap and matches house practice — recommend (a).** Operator to decide.
