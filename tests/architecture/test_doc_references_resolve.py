@@ -232,6 +232,13 @@ def _tracked_markdown_files() -> list[str]:
 # the operator; do not mass-rewrite the docs to clear it, and do not add to it
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
+    ("design/instagram-adoption/17-implementation-plan.md", "nora/infra/social/subjects.py"): (
+        "planned file, created by P3 (the SocialSubjectIndex implementation); "
+        "drop this entry in that PR"
+    ),
+    ("design/instagram-adoption/17-implementation-plan.md", "nora/infra/social/instagram_links.py"): (
+        "planned file, created by P10 (Instagram link parsing); drop this entry in that PR"
+    ),
     # --- the self-reference bundle, DEC-193 (merged 2026-09-22) ---
     #
     # Both are this gate's own stated case: "a design brief predating the code
