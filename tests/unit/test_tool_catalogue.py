@@ -21,7 +21,15 @@ ENC = tiktoken.get_encoding("cl100k_base")
 # EVERY call of EVERY turn, so aggregate growth is what turns a 1k index back
 # into a 22k schema dump. Measured at 1,021 when this landed — 27% of headroom,
 # deliberately not sized to the current value.
-BLOCK_CEILING = 1_400
+#
+# RE-SET 2026-09-23, 1,400 -> 2,000, because the LINE changed definition, not
+# because lines drifted. It was each tool's first sentence — the «what» alone —
+# and a deferred turn judging from «Work out a number exactly» skipped
+# `calculate` (tool_selection arm B). It is now ADR 0007's L1 paragraph, what +
+# WHEN, pinned by `test_the_opening_paragraph_is_an_l1`; that measures 1,702.
+# Still an index: 7.7% of the 22,130 tokens of schemas it replaces. Headroom
+# ~18%, again not sized to the current value.
+BLOCK_CEILING = 2_000
 
 # The per-line ceiling, and it was REVISED after measurement. The bundle
 # asserted 20 from an estimate; rendering the real thing put eleven lines
@@ -37,7 +45,10 @@ BLOCK_CEILING = 1_400
 # doing real work. A description is 100+ tokens; nothing legitimate is near 40.
 # The block ceiling and the mean below are what bind ordinary drift.
 LINE_CEILING = 40
-MEAN_CEILING = 25
+# 25 -> 33 on the same 2026-09-23 re-definition: a when-clause costs ~8-12
+# tokens and every line now carries one (measured mean 30.0; the 16 openings
+# that ALREADY carried one averaged 29.6 before any rewrite).
+MEAN_CEILING = 33
 
 
 def _lines() -> list[str]:

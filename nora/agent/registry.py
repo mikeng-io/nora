@@ -85,26 +85,25 @@ from .whereis import Circle, PresenceReader
 log = logging.getLogger("nora.agent.registry")
 
 
-def _first_sentence(description: str) -> str:
-    """The first SENTENCE of a tool description, however it happens to wrap.
+def _opening(description: str) -> str:
+    """A tool description's OPENING — ADR 0007's L1: what it does and when to
+    call it — as one unwrapped line.
 
-    The obvious version — first line, then first sentence — is wrong, and was
-    wrong in production: a docstring whose opening sentence runs past the
-    column takes its line break mid-clause, so `search_memory` rendered as
-    «Find where something was actually SAID in this group's history — the» and
-    `search_memory_workspace` as «…across EVERY room of this». Five of
-    thirty-four lines were amputated that way, and two of them are the record
-    verbs the gate's «something settled here that nobody can now produce»
-    judgement depends on.
+    The opening is the description's FIRST PARAGRAPH, and that is a declared
+    unit, not a heuristic: `tests/test_tool_surface_policy.py::
+    test_the_opening_paragraph_is_an_l1` pins every tool's first paragraph to
+    carry a when-to-call clause and to fit a catalogue line. It replaced the
+    first SENTENCE (2026-09-23) because the first sentence held the «what» and
+    dropped the «when» — measured: 2 of 55 catalogue lines carried a
+    when-to-call clause, and a deferred turn then judged whether to call
+    `calculate` from «Work out a number exactly» without the «use this for ALL
+    arithmetic» that decides it.
 
-    So: unwrap first, then cut. A sentence is what ends the description or ends
-    at `. ` — the wrap is a typographic accident and must not be a boundary.
+    Unwrapped, because a line break inside the paragraph is a typographic
+    accident (`search_memory` once rendered cut mid-clause at the column).
     """
-    unwrapped = " ".join(description.split())
-    if not unwrapped:
-        return ""
-    head, sep, _ = unwrapped.partition(". ")
-    return (head if sep else unwrapped).strip().rstrip(".")
+    unwrapped = " ".join(description.strip().split("\n\n")[0].split())
+    return unwrapped.rstrip(".")
 
 
 class ToolRegistry:
@@ -624,7 +623,7 @@ class ToolRegistry:
         lines = []
         for name in sorted(names):
             mark = "*" if name in hot else "-"
-            first = _first_sentence(described.get(name, ""))
+            first = _opening(described.get(name, ""))
             lines.append(f"{mark} {name} — {first}" if first else f"{mark} {name}")
         return lines
 

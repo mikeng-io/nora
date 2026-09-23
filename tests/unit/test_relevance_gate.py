@@ -1124,30 +1124,26 @@ def test_the_digest_is_derived_from_the_registry_and_read_only():
     assert "remind" not in named
 
 
-def test_the_first_sentence_survives_a_line_wrap():
-    """The renderer's own bug, 2026-09-10. Taking the first LINE and then the
-    first sentence amputates any description whose opening sentence runs past
-    the column — `search_memory` shipped as «…in this group's history — the»,
-    five of thirty-four lines cut mid-clause, and two of them were the record
-    verbs the gate's «settled here, nobody can now produce» judgement needs.
-
-    A wrap is a typographic accident. Only `. ` or the end of the description
-    is a sentence boundary.
-    """
-    from nora.agent.registry import _first_sentence
+def test_the_opening_survives_a_line_wrap():
+    """The renderer's own bug, 2026-09-10: taking the first LINE amputated any
+    opening that ran past the column — `search_memory` shipped as «…in this
+    group's history — the». A wrap is a typographic accident; only a blank
+    line ends the opening (ADR 0007's L1 paragraph, since 2026-09-23 — it was
+    the first sentence before, which dropped the when-to-call clause)."""
+    from nora.agent.registry import _opening
 
     wrapped = (
         "Find where something was actually SAID in this group's\n"
-        "history — the exact words. Use it when load_transcript is too shallow."
+        "history — the exact words. Call this when load_transcript is too shallow.\n"
+        "\n"
+        "Everything after the blank line is not the opening."
     )
-    assert _first_sentence(wrapped) == (
+    assert _opening(wrapped) == (
         "Find where something was actually SAID in this group's history — "
-        "the exact words"
+        "the exact words. Call this when load_transcript is too shallow"
     )
-    assert _first_sentence("One sentence, no full stop") == (
-        "One sentence, no full stop"
-    )
-    assert _first_sentence("") == ""
+    assert _opening("One paragraph, no full stop") == "One paragraph, no full stop"
+    assert _opening("") == ""
 
 
 def test_no_digest_line_is_cut_mid_sentence():
