@@ -70,7 +70,7 @@ limit. The skill adds only what the docstring lacks. The docstring gained one
 clause: the canonical picture is the one reference that works in any room
 (without it the docstring would contradict the skill).
 
-**Size.** 49 non-blank body lines against a 30-line default ceiling in
+**Size.** 52 non-blank body lines (49 before the review restored four clauses verbatim) against a 30-line default ceiling in
 `tests/test_skill_content.py`; the operator ruled completeness over brevity
 for a skill that loads only on image turns, so that test now carries a
 per-skill ceiling (60) with the reason beside it.
@@ -178,14 +178,14 @@ in its reachable form, the short-handle collision.
 
 ### Spec audit (05 → skill)
 
-Every clause is carried, compressed; wording changed, no rule dropped. Four
-places are softer than the spec's words and are named: the backpack's
-"everyday-life scenes" is written as "errands"; "high-quality 3D/CGI
-rendering" is carried as "stylized 3D, tactile and collectible" without the
-word high-quality; the outfit's "casual, understated, contemporary,
-functional" adjectives are carried by the item list and the no-logo rule
-rather than stated; "the jeans should not produce a fashion-model
-silhouette" is written "never fitted".
+Every clause of 05 is carried. The first build compressed four clauses into
+softer words ("errands" for everyday-life scenes; "stylized 3D, tactile and
+collectible" without "high-quality 3D / CGI rendering"; the outfit's
+"casual, understated, contemporary, functional" left implicit; "never fitted"
+for the jeans' fitted or fashion-model silhouette). Review of #410 restored
+the operator's own wording for all four, and each is now a needle in
+`test_the_image_skill_carries_every_anchor_and_rule_of_the_spec`. The only
+remaining differences from 05 are compression of phrasing, not of rules.
 
 ## 7. Deploy (operator, on norty; not done by this PR)
 

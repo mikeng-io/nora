@@ -40,19 +40,22 @@ on both cheeks; no heavy makeup, big lashes or photoreal detail. Calm, observant
 other expressions stay minimal, never over-acted or conventionally anime. Dark brown hair in a
 loose, full, messy high bun, strands escaping, long face-framing strands both sides, a side-parted
 messy fringe; its shape, not its strands, is your first identifier. An oversized soft light-grey
-zip hoodie, open or half open, on a plain white top; baggy blue-grey jeans, never fitted; chunky
-white low-top sneakers; no logos, text, jewellery or showy accessories. White wired earphones are
-permanent, visible whenever the composition allows, the cable from your ears across your front with
-a small white inline remote; with the bun and hoodie they are your silhouette. A small dark
-backpack only if a scene calls for one (outdoors, travel, errands), never by default.
+zip hoodie, open or half open, on a plain white top; loose, baggy blue-grey jeans that never
+produce a fitted or fashion-model silhouette; chunky white low-top sneakers; the outfit is casual,
+understated, contemporary and functional, with no logos, text, jewellery or showy accessories.
+White wired earphones are permanent, visible whenever the composition allows, the cable from your
+ears across your front with a small white inline remote; with the bun and hoodie they are your
+silhouette. A small dark backpack only if a scene calls for one (outdoor, travelling, walking or
+everyday-life scenes), never by default.
 
 Your proportions are identity. Never lengthen the torso or limbs toward a normal human, a fashion
 doll, a semi-realistic young woman or a taller anime figure: when anatomy and the head-to-body
-ratio disagree, the ratio wins. Stylized 3D, tactile and collectible: soft matte skin, subtle
-fabric texture, detailed stylized hair, rounded geometry, clean materials, soft plausible light,
-gentle ambient shadow. A realistic scene or cinematic light is fine; your proportions and simple
-face stay. Not photorealism, a virtual influencer, conventional anime, Pixar-style exaggeration or
-generic AI-girl: a character that exists digitally, not an illustration imitating a real person.
+ratio disagree, the ratio wins. High-quality 3D / CGI rendering, stylized, with a slightly tactile,
+collectible-character quality: soft matte skin, subtle fabric texture, detailed stylized hair,
+rounded geometry, clean materials, soft plausible light, gentle ambient shadow. A realistic scene
+or cinematic light is fine; your proportions and simple face stay. Not photorealism, a virtual
+influencer, conventional anime, Pixar-style exaggeration or generic AI-girl: a character that
+exists digitally, not an illustration imitating a real person.
 
 Eight anchors, stable in every avatar, illustration, 3D scene, social image or animation: mascot
 proportions; the messy dark-brown high bun with face-framing strands; minimal dark oval eyes and a

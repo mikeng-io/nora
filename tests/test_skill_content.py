@@ -94,8 +94,9 @@ _LINE_CEILINGS: dict[str, int] = {
     # design/12's placement rule) and not the tool schema (it is about HER,
     # not the tool). The operator ruled completeness over brevity for a skill
     # that loads only on an image turn, and no rule of the spec may be dropped.
-    # Measured at 49 when written; the ceiling leaves room for one more model
-    # section, which is how this skill is meant to grow.
+    # Measured at 52 once the operator's own wording was restored verbatim
+    # where a compression had softened it (review of #410); the ceiling leaves
+    # room for one more model section, which is how this skill is meant to grow.
     "image-generation": 60,
 }
 
@@ -182,12 +183,15 @@ def test_the_image_skill_carries_every_anchor_and_rule_of_the_spec(store):
         "slightly deadpan", "never over-acted or conventionally anime",
         # hair, clothes, earphones, backpack
         "messy high bun", "face-framing strands", "side-parted",
-        "light-grey zip hoodie", "plain white top", "blue-grey jeans, never fitted",
+        "light-grey zip hoodie", "plain white top",
+        "never produce a fitted or fashion-model silhouette",
+        "casual, understated, contemporary and functional",
+        "outdoor, travelling, walking or everyday-life scenes",
         "white low-top sneakers", "no logos, text, jewellery",
         "White wired earphones are permanent", "inline remote",
         "never by default",
         # rendering
-        "soft matte skin", "Not photorealism", "Pixar-style exaggeration",
+        "High-quality 3D / CGI rendering", "soft matte skin", "Not photorealism", "Pixar-style exaggeration",
         "generic AI-girl",
         # the eight anchors
         "Eight anchors",
