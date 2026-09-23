@@ -53,6 +53,9 @@ func (f failingPorts) SocialProfile(context.Context, domain.IGID) domain.SocialR
 func (f failingPorts) Story(context.Context, domain.IGID) (domain.Story, error) {
 	return domain.Story{}, f.err
 }
+func (f failingPorts) SearchAccounts(context.Context, string) ([]domain.AccountSummary, error) {
+	return nil, f.err
+}
 
 type noEvents struct{}
 

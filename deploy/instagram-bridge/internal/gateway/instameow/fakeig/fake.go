@@ -122,6 +122,18 @@ type IG struct {
 	ReelResp *responses.ReelInfoResponse
 	ReelSet  bool
 	ReelErr  error
+
+	// --- the account search --------------------------------------------------
+	//
+	// SearchQueries records every query text SearchUsers was addressed with —
+	// the seam the observability test needs to prove the query text stays OUT
+	// of every span while still confirming it reached the library call.
+	SearchQueries []string
+	// SearchResults overrides the answer. nil (and SearchResultsSet false)
+	// means "the measured two hits".
+	SearchResults    []*slidetypes.SearchResult
+	SearchResultsSet bool
+	SearchErr        error
 }
 
 // The measured three-person room, as `Users[]` actually returns it: TWO rows,
@@ -257,6 +269,32 @@ func (f *IG) FetchReel(_ context.Context, reelIDs []string, _ string) (*response
 		return f.ReelResp, nil
 	}
 	return MeasuredReel(), nil
+}
+
+// MeasuredSearchResults is two hits in the shape SearchUsers actually
+// returns: `pk`, `username`, `full_name`, `is_verified`,
+// `interop_messaging_user_fbid` — and nothing else. No `is_private`: that
+// field is not on `slidetypes.SearchResult` at all (see search.go), so a fake
+// that invented one here would test a shape the wire never sends.
+var MeasuredSearchResults = []*slidetypes.SearchResult{
+	{PK: "221731317", Username: "nka_bpumvg", FullName: "Miles Novak", InteropMessagingUserFBID: 110966695387753},
+	{PK: "88700112233", Username: "second_result", FullName: "", IsVerified: true},
+}
+
+func (f *IG) SearchUsers(_ context.Context, query string) (*slidetypes.SearchResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.SearchQueries = append(f.SearchQueries, query)
+	if f.SearchErr != nil {
+		return nil, f.SearchErr
+	}
+	results := MeasuredSearchResults
+	if f.SearchResultsSet {
+		results = f.SearchResults
+	}
+	resp := &slidetypes.SearchResponse{}
+	resp.Data.Results = results
+	return resp, nil
 }
 
 func (f *IG) SendMessage(_ context.Context, req *slidetypes.SendTextRequest) (*slidetypes.SendTextResponse, error) {

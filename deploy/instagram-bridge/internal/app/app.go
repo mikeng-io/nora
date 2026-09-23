@@ -36,11 +36,13 @@ type Messaging interface {
 	Members(ctx context.Context, thread domain.ThreadRef) (domain.Thread, error)
 }
 
-// Social is the account side: who an account is, what it shows, its story.
+// Social is the account side: who an account is, what it shows, its story,
+// and finding one by free text.
 type Social interface {
 	Account(ctx context.Context, igid domain.IGID) (domain.Account, error)
 	SocialProfile(ctx context.Context, igid domain.IGID) domain.SocialRead
 	Story(ctx context.Context, igid domain.IGID) (domain.Story, error)
+	SearchAccounts(ctx context.Context, query string) ([]domain.AccountSummary, error)
 }
 
 // --- stage errors -------------------------------------------------------------
@@ -249,4 +251,15 @@ func (s *Service) ReadStory(ctx context.Context, igid string) (domain.Story, err
 		return domain.Story{}, err
 	}
 	return s.social.Story(ctx, id)
+}
+
+// SearchAccounts searches Instagram accounts by free text. Session gate
+// first, as every other Instagram-facing use case (`ready` runs before
+// anything else). The query is not parsed into a value object: it is free
+// text a person typed, not one of the ids that name an account.
+func (s *Service) SearchAccounts(ctx context.Context, query string) ([]domain.AccountSummary, error) {
+	if _, err := s.ready(); err != nil {
+		return nil, err
+	}
+	return s.social.SearchAccounts(ctx, query)
 }

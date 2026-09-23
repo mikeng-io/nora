@@ -182,6 +182,43 @@ func TestMessageTextNeverEntersASpan(t *testing.T) {
 	}
 }
 
+// The negative for GET /accounts?query=: a search query is a name typed
+// about a person, the same as message text, and must never land in a span —
+// attributes, events, name or status — anywhere, including the
+// instagram.search.result_count attribute the handler DOES set deliberately
+// (accounts_search.go), which must carry the COUNT and never the query
+// itself.
+func TestSearchQueryNeverEntersASpan(t *testing.T) {
+	rec := recordSpans(t)
+	b := newTestBridge(t, &fakeIG{})
+	const secret = "the-name-somebody-searched-for-a91c4"
+
+	w := getSearch(t, b, "?query="+secret)
+	if w.Code != http.StatusOK {
+		t.Fatalf("/accounts?query= answered %d: %s", w.Code, w.Body.String())
+	}
+	if len(rec.Ended()) < 2 {
+		t.Fatalf("expected a server span and an upstream span, got %d", len(rec.Ended()))
+	}
+	for _, s := range rec.Ended() {
+		for _, kv := range s.Attributes() {
+			if strings.Contains(kv.Value.String(), secret) {
+				t.Errorf("span %q attribute %s carries the search query", s.Name(), kv.Key)
+			}
+		}
+		for _, ev := range s.Events() {
+			for _, kv := range ev.Attributes {
+				if strings.Contains(kv.Value.String(), secret) {
+					t.Errorf("span %q event %q carries the search query", s.Name(), ev.Name)
+				}
+			}
+		}
+		if strings.Contains(s.Name(), secret) || strings.Contains(s.Status().Description, secret) {
+			t.Errorf("span %q name or status carries the search query", s.Name())
+		}
+	}
+}
+
 // The healthcheck is polled continuously and /events is a stream that stays
 // open for hours; neither is a unit of work worth a span.
 func TestHealthAndEventsAreNotTraced(t *testing.T) {

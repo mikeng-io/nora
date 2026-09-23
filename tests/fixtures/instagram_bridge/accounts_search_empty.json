@@ -1,0 +1,9 @@
+{
+  "route": "GET /accounts",
+  "path": "/accounts?query=nobody-matches-this",
+  "status": 200,
+  "body": {
+    "items": [],
+    "next_cursor": null
+  }
+}

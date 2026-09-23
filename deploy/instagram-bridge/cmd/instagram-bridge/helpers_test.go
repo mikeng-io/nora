@@ -33,7 +33,10 @@ const (
 	selfFBID    = fakeig.SelfFBID
 )
 
-var measuredUsers = fakeig.MeasuredUsers
+var (
+	measuredUsers         = fakeig.MeasuredUsers
+	measuredSearchResults = fakeig.MeasuredSearchResults
+)
 
 // testBridge is one wired bridge: its handler, its session, its event hub.
 type testBridge struct {
