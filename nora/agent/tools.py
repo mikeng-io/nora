@@ -145,7 +145,7 @@ from .links import LinkCarry
 from .ports import ToolSpec, adapt
 from .relay import Relay
 from .room import Room, RoomView, _key, _names_of, find_by_name
-from .surface import ToolShelf, load_onto
+from .surface import LOAD_TOOLS_UNAVAILABLE_NOTE, ToolShelf, load_onto
 from .whereis import (
     STALE_AFTER_MS,
     DisclosureGuard,
@@ -878,14 +878,20 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # a second covers "no, the other one" after a bad match. `terminal=False`
     # on all six — playing/skipping/stopping/volume is the middle of a turn,
     # she still has to say what happened.
+    #
+    # Levels (ADR 0015 §3): `play_music` is 2, its one constraint being that
+    # only a real playlist URL queues several tracks (search for one first);
+    # `top_music` is 2, never a guessed position; the other four are 1. How to
+    # report each status rides in the result: `_MUSIC_REPORT` on every non-ok,
+    # and `play_music`'s `ok` says whether to announce «queued» or «playing».
     "play_music": NativeTool(2,
                              side_effect_state="unknown", idempotency="non_idempotent",
                              retry="never",
-                             output_contract="three_state"),
+                             output_contract="three_state", level=2),
     "skip_music": NativeTool(2,
                              side_effect_state="unknown", idempotency="non_idempotent",
                              retry="never",
-                             output_contract="three_state"),
+                             output_contract="three_state", level=1),
     # `position` is the same 1-based number `/music queue` already displays
     # next to each track — never guess it, only use one someone actually
     # named or that a prior `music_status`/queue listing in this
@@ -893,17 +899,17 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "top_music": NativeTool(2,
                             side_effect_state="unknown", idempotency="non_idempotent",
                             retry="never",
-                            output_contract="three_state"),
+                            output_contract="three_state", level=2),
     "stop_music": NativeTool(2,
                              side_effect_state="unknown", idempotency="non_idempotent",
                              retry="never",
-                             output_contract="three_state"),
+                             output_contract="three_state", level=1),
     # `read_only`/`cacheable`, like `weather`: a live status read that acts on
     # nothing and discloses nothing per-person.
     "music_status": NativeTool(2, source_tier="confirmed", cacheable=True,
                                 read_only=True,
                                side_effect_state="none", idempotency="idempotent", retry="safe",
-                               output_contract="three_state"),
+                               output_contract="three_state", level=1),
     # `set_music_volume` — the agent-side twin of the `/music volume 0-200`
     # slash verb (design/discord-music/07-agent-tool.md, 2026-09-16
     # operator decision: Nora must be able to answer directly when someone
@@ -914,7 +920,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "set_music_volume": NativeTool(2,
                                    side_effect_state="unknown", idempotency="non_idempotent",
                                    retry="never",
-                                   output_contract="three_state"),
+                                   output_contract="three_state", level=1),
     # The three reminder verbs (design spec §7). All 2, and the number is sized
     # by the CONVERSATION rather than by cost: none of the three leaves the host
     # or the database, so a call is one model round trip and nothing else, and
@@ -939,6 +945,12 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # recurring 每日提嘅 reminder」 about a tool she had, because nothing she was
     # shown said recurrence existed.
     #
+    # `list_reminders` is level 1 and `cancel_reminder` level 2 (ADR 0015 §3):
+    # the one constraint is that a cancel ends the whole series, so skipping one
+    # occurrence is not something to call it for. What a listing means (an
+    # empty list is an answer, the rows are everyone's, a repeat is a series)
+    # is in its `ok` note, built per row.
+    #
     # `level=3` (ADR 0015 §3): more than L2's one constraint. How to CALL it
     # carries several, each from a real failure: resolve `when` yourself and
     # never ask for a restatement, lead time is arithmetic on `when` (DEC-85),
@@ -950,33 +962,37 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                          output_contract="three_state", level=3),
     "list_reminders": NativeTool(2, read_only=True,
                                  side_effect_state="none", idempotency="idempotent", retry="safe",
-                                 output_contract="three_state"),
+                                 output_contract="three_state", level=1),
     "cancel_reminder": NativeTool(2,
                                   side_effect_state="unknown", idempotency="non_idempotent",
                                   retry="never",
-                                  output_contract="three_state"),
+                                  output_contract="three_state", level=2),
+    # The six event verbs (ADR 0015 §3): `create_event` is level 2 (it MUST
+    # follow `list_events`, or an open event is duplicated); the rest are 1.
+    # Their non-ok results share `_EVENTS_OFF`, `_NO_SUCH_EVENT` and
+    # `_NOT_AN_EVENT_ID`, each with a note on how to report it.
     "create_event": NativeTool(3,
                                side_effect_state="unknown", idempotency="non_idempotent",
                                retry="never",
-                               output_contract="three_state"),
+                               output_contract="three_state", level=2),
     "update_event": NativeTool(2,
                                side_effect_state="unknown", idempotency="non_idempotent",
                                retry="never",
-                               output_contract="three_state"),
+                               output_contract="three_state", level=1),
     "rsvp_event": NativeTool(1,
                              side_effect_state="unknown", idempotency="non_idempotent",
                              retry="never",
-                             output_contract="three_state"),
+                             output_contract="three_state", level=1),
     "cancel_event": NativeTool(2,
                                side_effect_state="unknown", idempotency="non_idempotent",
                                retry="never",
-                               output_contract="three_state"),
+                               output_contract="three_state", level=1),
     "list_events": NativeTool(1, read_only=True,
                               side_effect_state="none", idempotency="idempotent", retry="safe",
-                              output_contract="three_state"),
+                              output_contract="three_state", level=1),
     "suggest_venue": NativeTool(4, read_only=True,
                                 side_effect_state="none", idempotency="idempotent", retry="safe",
-                                output_contract="three_state"),
+                                output_contract="three_state", level=1),
     # THE FOUR NOTE VERBS (note-tier spec §6.4). Every budget here is sized by
     # the same currency as its neighbours — a model round trip — but the RATIO
     # between them is the load-bearing part, not the absolute numbers:
@@ -1085,10 +1101,14 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `time_shiftable` is None, like `calculate`: the manifest cannot change
     # under a running process, so the answer is neither about this instant nor
     # shiftable to another one.
+    #
+    # `level=2` (ADR 0015 §3): one constraint, never work a version out from the
+    # chat or the web. Whether to paraphrase `notes` or say none were recorded
+    # is the `ok` result's `note`.
     "version": NativeTool(2,
                           source_tier="confirmed", read_only=True,
                           side_effect_state="none", idempotency="idempotent", retry="safe",
-                          output_contract="three_state"),
+                          output_contract="three_state", level=2),
     # THE ONLY TERMINAL TOOL, and **the number that caps how many messages one
     # tag may send** (verified 2026-08-06). Both facts are easy to miss from the
     # guard's side, so they are stated here, where the number is.
@@ -1254,11 +1274,15 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # for R-97 by the derivation in `ToolRegistry.lookup_tools`, so that
     # method names it as the one exception: «did I load a schema» is not «did
     # this turn come back with something».
+    #
+    # `level=2` (ADR 0015 §3): one constraint, at most `LOAD_TOOLS_MAX_NAMES`
+    # names per call. What `unknown` and `refused` mean rides in the result's
+    # `note` (`surface.load_onto`), only when that list is non-empty.
     "load_tools": NativeTool(3,
                              terminal=False, time_shiftable=None, read_only=True,
                              source_tier=None,
                              side_effect_state="none", idempotency="idempotent", retry="safe",
-                             output_contract="three_state"),
+                             output_contract="three_state", level=2),
     "skills": NativeTool(2,
                          terminal=False, time_shiftable=None, plugin=True,
                          side_effect_state="unknown", idempotency="non_idempotent", retry="never"),
@@ -1948,7 +1972,30 @@ _UNKNOWN_OWNER = "someone I can no longer name"
 #: `persons.by_person` can never resolve — and «someone I can no longer name»
 #: would be the one wrong answer, since she is the one person here she CAN
 #: name.
-_SELF_OWNER = "you — a reminder you set for yourself"
+_SELF_OWNER = "you (a reminder you set for yourself)"
+
+
+def _reminders_ok_note(rows: list[dict]) -> str:
+    """How to report a `list_reminders` answer (ADR 0015 §3), built per what
+    the rows hold so each rule is paid only when its field is there: an empty
+    list is an answer, the rows are the room's and not the asker's, a repeat is
+    a series, and an unnamed setter is still a real reminder."""
+    if not rows:
+        return "Nothing is waiting here, and that is a real answer."
+    parts = [
+        "This is everyone's reminders here; set_by says who set each one.",
+    ]
+    if any(r.get("repeat") != Recurrence.NONE.value for r in rows):
+        parts.append(
+            "A repeating row is a whole series: say how many are left "
+            "(repeat_left) and when it ends (repeat_until) if it has an end."
+        )
+    if any(r.get("set_by") == _UNKNOWN_OWNER for r in rows):
+        parts.append(
+            f"A set_by of \"{_UNKNOWN_OWNER}\" is still a real reminder; you just "
+            "can't say who set it."
+        )
+    return " ".join(parts)
 
 
 def _owner_name(persons, person_id: str, *, ai_peer: str = "") -> str:
@@ -2473,21 +2520,44 @@ _WEATHER_OFF: Mapping[str, object] = {
 _MUSIC_NOT_DISCORD: Mapping[str, object] = {
     "status": "unavailable",
     "note": "Music only works in a Discord voice channel. Say you can't play music "
-            "here — don't pretend to.",
+            "here, and don't pretend to.",
 }
 # No `music` collaborator wired (composition never built a
 # `DiscordMusicToolBridge`) — the ordinary state for the offline/eval
 # compositions and any deployment with `[music] enabled = false`.
 _MUSIC_OFF: Mapping[str, object] = {
     "status": "unavailable",
-    "note": "I can't reach the music player right now.",
+    "note": "I can't reach the music player right now. Say so, and don't pretend "
+            "it worked.",
 }
 # `room.tagger` is None, or identity.toml maps them to no Discord account at
 # all — `_member_voice_channel`'s `(conversation_id, sender_id)` pair needs a
 # REAL Discord id, never guessed from a display name.
 _MUSIC_NO_TAGGER: Mapping[str, object] = {
     "status": "unavailable",
-    "note": "I couldn't tell who's asking, so I can't check your voice channel.",
+    "note": "I couldn't tell who's asking, so I can't check your voice channel. "
+            "Say so, and don't guess a channel.",
+}
+# The six event verbs' shared results (ADR 0015 §3): what each status means
+# and how to report it, in one place so the verbs cannot drift apart.
+_EVENTS_OFF: Mapping[str, object] = {
+    "status": "unavailable",
+    "note": "Events aren't set up here. Say so, and don't pretend it's done.",
+}
+_NO_SUCH_EVENT: Mapping[str, object] = {
+    "status": "refused",
+    "note": "I don't know that event here. Check list_events for its id, and "
+            "don't guess one.",
+}
+_NOT_AN_EVENT_ID: Mapping[str, object] = {
+    "status": "refused",
+    "note": "That doesn't look like an event id. Use one from list_events.",
+}
+_VENUE_REPORT: Mapping[str, str] = {
+    "nothing_found": "Nobody here has said anything usable about places they "
+                     "like. Say so, and don't invent a pick.",
+    "unavailable": "I can't read what people here like right now. Say you "
+                   "couldn't check, and don't guess a venue.",
 }
 # The «no build stamp» payload for `version` (DEC-97). A source checkout has no
 # `nora/version.json` (it is generated at build time and gitignored), so this is
@@ -2498,7 +2568,7 @@ _MUSIC_NO_TAGGER: Mapping[str, object] = {
 _VERSION_OFF: Mapping[str, object] = {
     "status": "unavailable",
     "note": "I can't read my own build stamp. Say you're not sure which version "
-            "you're on — don't guess one, and don't work it out from the chat.",
+            "you're on, and don't guess one or work it out from the chat.",
 }
 
 
@@ -2538,10 +2608,22 @@ def _weather_result(obs: WeatherObservation) -> dict[str, object]:
     return result
 
 
+#: How to report a non-ok music outcome (ADR 0015 §3). The bridge's own note
+#: says WHAT happened, in the wording `music_messages` shares with the slash
+#: commands and channel posts, so it is left as it is; this clause, appended
+#: here, is the part only the model reads. Every music verb's result passes
+#: through `_music_result`, so no path can return a non-ok status without it.
+_MUSIC_REPORT: Mapping[str, str] = {
+    "nothing_found": "Say so plainly, and don't guess.",
+    "unavailable": "Say you couldn't, and don't guess a channel or pretend it worked.",
+}
+
+
 def _music_result(outcome: MusicToolOutcome) -> dict[str, object]:
     """Render a `MusicToolOutcome` into the model-facing tool result — only
     the fields the bridge actually set, the same sparse-dict discipline
-    `_weather_result` follows."""
+    `_weather_result` follows. A non-ok status always carries a `note`: the
+    bridge's (if any) followed by `_MUSIC_REPORT`'s clause for that status."""
     result: dict[str, object] = {"status": outcome.status}
     if outcome.title is not None:
         result["title"] = outcome.title
@@ -2549,8 +2631,10 @@ def _music_result(outcome: MusicToolOutcome) -> dict[str, object]:
         result["url"] = outcome.url
     if outcome.queued:
         result["queued"] = True
-    if outcome.note:
-        result["note"] = outcome.note
+    report = _MUSIC_REPORT.get(outcome.status, "")
+    note = " ".join(part for part in (outcome.note, report) if part)
+    if note:
+        result["note"] = note
     return result
 
 
@@ -7060,48 +7144,20 @@ Args:
         return persons.platform_ids(room.platform, tagger.person_id)
 
     async def play_music(query: str) -> dict:
-        """Play something in the Discord voice channel you're already in. Call
-        this when someone asks Nora to play music.
+        """Play a search term or a YouTube link in the asker's Discord voice
+        channel. Call this when someone asks you to play music.
 
-        Call this when someone asks Nora to play music — a direct request
-        ("play apt", "play some jazz") or a link they shared. `query` takes
-        either a plain search term (the top YouTube match plays) or a URL (a
-        single video, or a playlist link — a playlist queues every track).
+        `query` is a search term (the top YouTube match plays) or a URL. Only a
+        real playlist URL (youtube.com/playlist?list=...) queues several tracks;
+        a long video titled as a playlist is still one track. For a playlist or
+        a genre, find a real playlist page with web_search first, and fall back
+        to a single video only if none turns up.
 
-        **A "playlist" request needs an ACTUAL playlist URL** — one shaped
-        like `youtube.com/playlist?list=...`, the link YouTube's own UI gives
-        you from a playlist's page. A regular video URL only ever queues as
-        ONE track, no matter how long it runs or what its title claims — a
-        3-hour "KPOP PLAYLIST 2026 MIX" video is still a single track here,
-        not a playlist somebody can skip through. When they ask for a
-        playlist or a vague genre ("play some kpop"), use `web_search` FIRST
-        and specifically look for a real playlist page (try appending
-        `site:youtube.com/playlist` to the search, or open a promising
-        `web_fetch` result to confirm its URL is actually `/playlist?
-        list=...` before using it) — ordinary multi-tool reasoning in one
-        turn, not a separate step. Only fall back to a single video if no
-        real playlist turns up.
-
-        You must already be in a Discord voice channel for a FIRST track to
-        start a session; adding to an already-playing session works from
-        anywhere in the server. `status`: `ok` (now playing or queued —
-        `title` names it), `nothing_found` (couldn't resolve `query` to
-        anything playable), or `unavailable` (music isn't available here, or
-        you're not in a voice channel and nothing is playing yet — say so,
-        don't guess a channel). When `status` is `ok` the result also
-        carries `queued` — `true` when the track was added BEHIND something
-        already playing, `false` when it actually started playing — so say
-        "queued" or "now playing" accurately instead of guessing.
-
-        When a track you started actually BEGINS playing, YOUR reply is the
-        only announcement the channel gets — the system does not post its
-        own "Now playing" line for a session-started-by-request
-        (design/discord-music/09-message-conventions.md). The system only
-        announces what starts on its own later: a natural track-end, an
-        autoplay pick, or the next track after a skip.
+        Returns `status`: ok, nothing_found or unavailable, with a `note` on how
+        to report it.
 
         Args:
-            query: what to play — a search term, a video URL, or a playlist URL.
+            query: What to play: a search term, a video URL or a playlist URL.
         """
         if room.platform != "discord":
             _record(metrics, "play_music", "unavailable")
@@ -7124,14 +7180,28 @@ Args:
             _record(metrics, "play_music", "unavailable")
             return dict(_MUSIC_OFF)
         _record(metrics, "play_music", outcome.status)
-        return _music_result(outcome)
+        result = _music_result(outcome)
+        if outcome.status == "ok":
+            # How to report a start (ADR 0015 §3), per `queued`: the system
+            # posts no «Now playing» line for a session started by request
+            # (design/discord-music/09-message-conventions.md), so her reply is
+            # the only announcement, and «queued» must never be said as «now
+            # playing».
+            result["note"] = (
+                "Queued behind what is playing: say it is queued, not playing now."
+                if outcome.queued else
+                "Started playing now. Your reply is the only announcement the "
+                "channel gets, so name the track."
+            )
+        return result
 
     async def skip_music() -> dict:
-        """Skip the track currently playing in this Discord voice channel.
-Call this when somebody wants the current song moved on.
+        """Skip the track playing in this Discord voice channel. Call this when
+        somebody wants the current song moved on.
 
-`status`: `ok` (`title` names what was skipped), `nothing_found`
-(nothing is playing), or `unavailable` (music isn't available here)."""
+        Returns `status`: ok (`title` is what was skipped), nothing_found or
+        unavailable, with a `note` when it is not ok.
+        """
         if room.platform != "discord":
             _record(metrics, "skip_music", "unavailable")
             return dict(_MUSIC_NOT_DISCORD)
@@ -7150,21 +7220,19 @@ Call this when somebody wants the current song moved on.
         return _music_result(outcome)
 
     async def top_music(position: int) -> dict:
-        """Move a track already queued in this Discord voice channel to play
-next. Call this when somebody wants a queued song sooner.
+        """Move a track queued in this Discord voice channel to play next. Call
+        this when somebody wants a queued song sooner.
 
-`position` is the number `/music queue` (or a prior `music_status`
-mention of the queue in this conversation) shows next to the track —
-1 is whatever already plays next, so there's rarely a reason to call
-this with `1`. Only use a number someone actually named or that you
-can see was shown; never guess one.
+        `position` is the number the queue shows beside the track (1 already
+        plays next). Use only a number someone named or that was shown in this
+        conversation; never guess one.
 
-`status`: `ok` (`title` names the track now playing next),
-`nothing_found` (nothing is queued at that position), or
-`unavailable` (music isn't available here).
+        Returns `status`: ok (`title` is the track now next), nothing_found or
+        unavailable, with a `note` when it is not ok.
 
-Args:
-    position: the queue position to move to the front, 1-based."""
+        Args:
+            position: The 1-based queue position to move to the front.
+        """
         if room.platform != "discord":
             _record(metrics, "top_music", "unavailable")
             return dict(_MUSIC_NOT_DISCORD)
@@ -7183,12 +7251,12 @@ Args:
         return _music_result(outcome)
 
     async def stop_music() -> dict:
-        """Stop the music and leave the Discord voice channel. Call this when
-somebody wants the music off.
+        """Stop the music and leave this Discord voice channel. Call this when
+        somebody wants the music off.
 
-`status`: `ok` (stopped), `nothing_found` (nothing was playing, so
-there was nothing to stop), or `unavailable` (music isn't available
-here)."""
+        Returns `status`: ok, nothing_found (nothing was playing) or unavailable,
+        with a `note` when it is not ok.
+        """
         if room.platform != "discord":
             _record(metrics, "stop_music", "unavailable")
             return dict(_MUSIC_NOT_DISCORD)
@@ -7207,11 +7275,12 @@ here)."""
         return _music_result(outcome)
 
     async def music_status() -> dict:
-        """What's currently playing in this Discord voice channel. Call this
-when somebody asks what song is on.
+        """Read what is playing in this Discord voice channel. Call this when
+        somebody asks what song is on.
 
-`status`: `ok` (`title` names the now-playing track), `nothing_found`
-(nothing is playing), or `unavailable` (music isn't available here)."""
+        Returns `status`: ok (`title` is the track playing now), nothing_found
+        or unavailable, with a `note` when it is not ok.
+        """
         if room.platform != "discord":
             _record(metrics, "music_status", "unavailable")
             return dict(_MUSIC_NOT_DISCORD)
@@ -7230,29 +7299,25 @@ when somebody asks what song is on.
         return _music_result(outcome)
 
     async def set_music_volume(percent: int) -> dict:
-        """Set the Discord music-player volume, up or down. Reach for it when
-        someone asks.
+        """Set the music volume in this Discord voice channel, up or down. Call
+        this when someone asks for it louder or quieter.
 
-        Reach for it when someone asks (「較細聲啲」, 「大聲啲」).
+        Returns `status`: ok, nothing_found (nothing is playing) or unavailable,
+        with a `note`.
 
-        `percent` is the volume as a whole number 0-200 (100 = normal).
-        Only reachable when Nora can hear a music session in the room's
-        Discord voice channel — same Discord-only gate the other music
-        verbs carry.
-
-        `status`: `ok` (volume applied), `nothing_found` (nothing is
-        playing — say so, don't guess a session), or `unavailable`
-        (music isn't available here).
-
-        `percent` is bounded HERE (0-200, same as the slash command's
-        app_commands.Range) because the model is the only gate otherwise
-        — a hallucinated `percent=500` would fall through to the manager's
-        out-of-range `False`, which must not be labelled `nothing_found`."""
+        Args:
+            percent: The volume, a whole number from 0 to 200 (100 is normal).
+        """
+        # `percent` is bounded HERE (0-200, same as the slash command's
+        # app_commands.Range) because the model is the only gate otherwise: a
+        # hallucinated `percent=500` would fall through to the manager's
+        # out-of-range `False`, which must not be labelled `nothing_found`.
         if not 0 <= percent <= 200:
             _record(metrics, "set_music_volume", "unavailable")
             return {
                 "status": "unavailable",
-                "note": "Volume must be between 0 and 200.",
+                "note": "Volume must be between 0 and 200. Pick a number in that "
+                        "range, or ask what they want.",
             }
         if room.platform != "discord":
             _record(metrics, "set_music_volume", "unavailable")
@@ -7655,31 +7720,13 @@ when somebody asks what song is on.
         return result
 
     async def list_reminders() -> dict:
-        """What you are still holding for THIS conversation, soonest first. Call
+        """List the reminders waiting in THIS conversation, soonest first. Call
         this when somebody asks what's set, or before cancelling one.
 
-        Call this when somebody asks what's set, or before cancelling one — the ids
-        here are the only ones cancel_reminder accepts. It covers this conversation
-        only; you cannot see or touch another room's.
+        Each row has its `id` (for cancel_reminder), `text`, `due_at`, `set_by`
+        and `repeat`.
 
-        These are the CONVERSATION's reminders, whoever set them — not just the
-        person talking to you. Each row carries `set_by`, the name of the person who
-        asked for it, and you may say whose is whose: 「Tyler 七點嗰個」 is a fair
-        answer, and so is telling someone that the one they just called off was
-        Tyler's. `set_by` reads «someone I can no longer name» when the person who
-        set it is no longer someone you know — the reminder is still real, you just
-        cannot put a name to it.
-
-        `repeat` says whether a row is a one-off (`none`) or a standing arrangement
-        (`daily`/`weekly`/`monthly`/`yearly`); a repeating row also carries
-        `repeat_left` — how many more times it will go off after the one shown —
-        and `repeat_until` if it has an end date. A repeating reminder is ONE row
-        here even when it has months to run, because only the next time it goes off
-        is actually waiting. Say it as what it is: 「每日提到10月11號」, not 「一個
-        提醒」.
-
-        Outcomes: `ok` with the list (empty means nothing is waiting, which is a real
-        answer); `unavailable` when reminders are not configured.
+        Returns `status`: ok or unavailable, with a `note` on how to report it.
         """
         if reminders is None:
             _record(metrics, "list_reminders", "unavailable")
@@ -7694,84 +7741,71 @@ when somebody asks what song is on.
             _record(metrics, "list_reminders", "unavailable")
             return {
                 "status": "unavailable",
-                "note": "I couldn't check what's waiting. Say so — an empty list and "
+                "note": "I couldn't check what's waiting. Say so: an empty list and "
                         "a failed look are different answers.",
             }
         _record(metrics, "list_reminders", "ok", count=len(rows))
-        return {
-            "status": "ok",
-            "reminders": [
-                {
-                    "id": str(r.id),
-                    "text": r.text,
-                    # A REPEATING reminder shows as ONE row, because that is
-                    # what it is here: a series keeps exactly one waiting
-                    # occurrence and the rest do not exist yet (DEC-85). So
-                    # `repeat` is the difference between «洗衫 at 21:00» and
-                    # 「每日都會提」 — without it she reads a fourteen-day
-                    # countdown as a single reminder and tells them so.
-                    #
-                    # Cancelling this row cancels the SERIES. There is nothing
-                    # else to cancel: no later occurrence has been written.
-                    "repeat": (
-                        Recurrence.NONE.value if r.series is None
-                        else r.series.rule.every.value
+        listed = [
+            {
+                "id": str(r.id),
+                "text": r.text,
+                # A REPEATING reminder shows as ONE row, because that is
+                # what it is here: a series keeps exactly one waiting
+                # occurrence and the rest do not exist yet (DEC-85). So
+                # `repeat` is the difference between «洗衫 at 21:00» and
+                # 「每日都會提」 — without it she reads a fourteen-day
+                # countdown as a single reminder and tells them so.
+                #
+                # Cancelling this row cancels the SERIES. There is nothing
+                # else to cancel: no later occurrence has been written.
+                "repeat": (
+                    Recurrence.NONE.value if r.series is None
+                    else r.series.rule.every.value
+                ),
+                **({} if r.series is None else {
+                    "every_n": r.series.rule.interval,
+                    "repeat_left": remaining_occurrences(r.series),
+                    "repeat_until": (
+                        None if r.series.rule.until is None
+                        else r.series.rule.until.astimezone(_HKT).isoformat()
                     ),
-                    **({} if r.series is None else {
-                        "every_n": r.series.rule.interval,
-                        "repeat_left": remaining_occurrences(r.series),
-                        "repeat_until": (
-                            None if r.series.rule.until is None
-                            else r.series.rule.until.astimezone(_HKT).isoformat()
-                        ),
-                    }),
-                    # WHOSE. A reminder is group-owned in a group (§7.3), so this
-                    # listing shows everybody's and anybody here may cancel any of
-                    # them — which is precisely why the name has to be on the row.
-                    # Without it 「取消 Tyler 七點嗰個」 is unanswerable, and one
-                    # person can call off another's with neither of them able to
-                    # see that that is what happened.
-                    #
-                    # `set_by`, not `owner`: the group owns it, this person asked
-                    # for it, and a field called `owner` would tell the model the
-                    # opposite of the rule cancel actually enforces.
-                    "set_by": _owner_name(persons, r.requester_person_id, ai_peer=ai_peer),
-                    # Rendered in Nora's own zone rather than UTC: the model
-                    # reasons about 「聽日七點」 against the local clock the prefill
-                    # stated, and a UTC stamp is one silent subtraction away from
-                    # an eight-hour mistake.
-                    "due_at": r.due_at.astimezone(_HKT).isoformat(),
-                }
-                for r in rows
-            ],
-        }
+                }),
+                # WHOSE. A reminder is group-owned in a group (§7.3), so this
+                # listing shows everybody's and anybody here may cancel any of
+                # them — which is precisely why the name has to be on the row.
+                # Without it 「取消 Tyler 七點嗰個」 is unanswerable, and one
+                # person can call off another's with neither of them able to
+                # see that that is what happened.
+                #
+                # `set_by`, not `owner`: the group owns it, this person asked
+                # for it, and a field called `owner` would tell the model the
+                # opposite of the rule cancel actually enforces.
+                "set_by": _owner_name(persons, r.requester_person_id, ai_peer=ai_peer),
+                # Rendered in Nora's own zone rather than UTC: the model
+                # reasons about 「聽日七點」 against the local clock the prefill
+                # stated, and a UTC stamp is one silent subtraction away from
+                # an eight-hour mistake.
+                "due_at": r.due_at.astimezone(_HKT).isoformat(),
+            }
+            for r in rows
+        ]
+        return {"status": "ok", "reminders": listed, "note": _reminders_ok_note(listed)}
 
     async def cancel_reminder(reminder_id: str) -> dict:
-        """Call off something you are holding. Call this when somebody wants
-to un-set a reminder, by the id list_reminders gave you.
+        """Cancel a waiting reminder by the id list_reminders gave you. Call this
+        when somebody wants to call off a reminder.
 
-Only ids from this conversation work, and only ones still waiting: something
-that has already gone out cannot be un-sent, and this will say so rather than
-pretend.
+        Anyone here may cancel any reminder set in this conversation. On a
+        repeating reminder it cancels the whole series: there is no skipping a
+        single occurrence, so if that is what they want, say so and offer to
+        cancel the series instead.
 
-On a REPEATING reminder this calls off the whole thing — every time it would
-have gone off from now on, not just the next one. There is no way to skip one
-day and keep the rest, so if that is what they asked for, say so and offer to
-call the whole thing off instead. Times that have already gone out stay gone
-out.
+        Returns `status`: ok, refused or unavailable, with a `note` on how to
+        report it.
 
-Anything set in this conversation can be called off by anyone in it — a
-reminder belongs to the room it was set in, not to the person who set it.
-Do not tell somebody a reminder is not theirs to cancel; it is. If calling
-one off would surprise the person who set it, say whose it was (list_reminders
-gives you the name) — that is the honest move, not a refusal.
-
-Outcomes: `ok`; `refused` with a note (no such waiting reminder here — it may
-already have fired, or belong to another room); `unavailable` when reminders
-are not configured.
-
-Args:
-    reminder_id: the id from list_reminders — never one you made up."""
+        Args:
+            reminder_id: The id from list_reminders, never one you made up.
+        """
         if reminders is None:
             _record(metrics, "cancel_reminder", "unavailable")
             return {
@@ -7811,24 +7845,35 @@ Args:
             _record(metrics, "cancel_reminder", "refused", reason="no_pending_row")
             return {
                 "status": "refused",
-                "note": "I have nothing waiting under that id here — it may already "
+                "note": "I have nothing waiting under that id here. It may already "
                         "have gone out, or it belongs to another conversation. Check "
                         "list_reminders before saying it's off.",
             }
         _record(metrics, "cancel_reminder", "ok")
-        return {"status": "ok"}
+        # How to report it (ADR 0015 §3). The store answers one bool, so the
+        # note cannot say whether it repeated or whose it was; it says what to
+        # tell them either way.
+        return {
+            "status": "ok",
+            "note": "It is off from now on, the whole series if it repeated. If "
+                    "someone else set it, say whose it was.",
+        }
 
-    async def list_events(status: str = "") -> dict:
-        """What gatherings are proposed or confirmed in THIS conversation.
-Call this BEFORE create_event — an existing open event should be
-updated (update_event), not duplicated.
+    async def list_events(
+        status: Literal["proposed", "confirmed", "cancelled"] | None = None,
+    ) -> dict:
+        """List the gatherings proposed or confirmed in THIS conversation. Call
+        this before create_event, so an open event gets updated instead of copied.
 
-Args:
-    status: Optional filter — "proposed", "confirmed", or
-        "cancelled". Leave empty for everything."""
+        Returns `status`: ok (each event's id, title, when, venue and status),
+        refused or unavailable, with a `note` when it is not ok.
+
+        Args:
+            status: Only events in this state. Leave it out for all of them.
+        """
         if events is None:
             _record(metrics, "list_events", "unavailable")
-            return {"status": "unavailable", "note": "Events aren't set up here."}
+            return dict(_EVENTS_OFF)
         parsed_status: GatheringStatus | None = None
         if status:
             try:
@@ -7837,8 +7882,8 @@ Args:
                 _record(metrics, "list_events", "refused", reason="bad_status")
                 return {
                     "status": "refused",
-                    "note": "That's not a status I know — proposed, confirmed, or "
-                            "cancelled.",
+                    "note": "That's not a status I know. Use proposed, confirmed "
+                            "or cancelled, or leave it out.",
                 }
         try:
             out = await events.list_events(
@@ -7849,7 +7894,7 @@ Args:
             _record(metrics, "list_events", "unavailable")
             return {
                 "status": "unavailable",
-                "note": "I couldn't check what's on. Say you couldn't check — "
+                "note": "I couldn't check what's on. Say you couldn't check, and "
                         "don't guess what's planned.",
             }
         _record(metrics, "list_events", "ok", count=len(out))
@@ -7869,35 +7914,40 @@ Args:
     async def create_event(
         title: str, when: str = "", venue_text: str = "",
     ) -> dict:
-        """Propose a NEW gathering in this conversation — call this when the
-room wants to arrange something that is not open yet.
+        """Propose a NEW gathering in this conversation, returning its id. Call
+        this when the room wants to arrange something that is not open yet.
 
-Call list_events FIRST: if one is already open (status "proposed"), call
-update_event against it instead of creating a second one.
+        You MUST call list_events first: if an event is already open (proposed),
+        update it with update_event instead of creating a second one.
 
-Outcomes: `ok` with the id; `refused` with a note (two or more
-events are already open here — ask which one is meant, do not
-guess which); `unavailable` when events aren't configured.
+        Returns `status`: ok, refused or unavailable, with a `note` when it is
+        not ok.
 
-Args:
-    title: What the gathering is, in their words.
-    when: Optional. ISO-8601 with an offset, the first moment it's
-        for. Resolve relative time the same way `remind` does.
-    venue_text: Optional. The place, the way it was said."""
+        Args:
+            title: What the gathering is, in their words.
+            when: Optional. ISO 8601 with an offset, the first moment it is for.
+                Work out relative time yourself, the same way remind does.
+            venue_text: Optional. The place, the way it was said.
+        """
         if events is None:
             _record(metrics, "create_event", "unavailable")
-            return {"status": "unavailable", "note": "Events aren't set up here."}
+            return dict(_EVENTS_OFF)
         tagger = room.tagger
         if tagger is None:
             _record(metrics, "create_event", "refused", reason="no_tagger")
             return {
                 "status": "refused",
-                "note": "I don't know who you are well enough to start this.",
+                "note": "I couldn't tell who's asking, so nothing was created. Say "
+                        "so plainly.",
             }
         due_at = _parse_when(when) if when else None
         if when and due_at is None:
             _record(metrics, "create_event", "refused", reason="bad_when")
-            return {"status": "refused", "note": "I couldn't work out that time."}
+            return {
+                "status": "refused",
+                "note": "I couldn't work out that time. Ask when they mean, or "
+                        "leave the time out.",
+            }
         try:
             ev = await events.create_event(
                 conversation_id=bound_conversation_id,
@@ -7911,8 +7961,8 @@ Args:
             _record(metrics, "create_event", "refused", reason="ambiguous")
             return {
                 "status": "refused",
-                "note": "There's more than one open event here already — "
-                        "which one do you mean? Use list_events to check.",
+                "note": "There's more than one open event here already. Ask which "
+                        "one they mean (list_events shows them), and don't guess.",
             }
         except Exception:
             log.exception("create_event failed")
@@ -7928,21 +7978,28 @@ Args:
     async def update_event(
         event_id: str, when: str = "", venue_text: str = "",
     ) -> dict:
-        """Update an event ALREADY proposed here — a time now settled, a
-venue now settled. Use this when an open event's details change; use the id
-list_events gave you.
+        """Change the time or venue of an event ALREADY proposed here. Call this
+        when an open event's details are settled or change.
 
-Args:
-    event_id: The event's id, from list_events.
-    when: Optional. ISO-8601 with an offset.
-    venue_text: Optional. The place, the way it was said."""
+        Returns `status`: ok (its `id` and `venue`), refused or unavailable, with
+        a `note` when it is not ok.
+
+        Args:
+            event_id: The event's id, from list_events.
+            when: Optional. ISO 8601 with an offset.
+            venue_text: Optional. The place, the way it was said.
+        """
         if events is None:
             _record(metrics, "update_event", "unavailable")
-            return {"status": "unavailable", "note": "Events aren't set up here."}
+            return dict(_EVENTS_OFF)
         due_at = _parse_when(when) if when else None
         if when and due_at is None:
             _record(metrics, "update_event", "refused", reason="bad_when")
-            return {"status": "refused", "note": "I couldn't work out that time."}
+            return {
+                "status": "refused",
+                "note": "I couldn't work out that time. Ask when they mean, or "
+                        "leave the time out.",
+            }
         try:
             ev = await events.update_event(
                 event_id=UUID(event_id), conversation_id=bound_conversation_id,
@@ -7951,17 +8008,17 @@ Args:
             )
         except GatheringNotFoundError:
             _record(metrics, "update_event", "refused", reason="not_found")
-            return {"status": "refused", "note": "I don't know that event."}
+            return dict(_NO_SUCH_EVENT)
         except GatheringCancelledError:
             _record(metrics, "update_event", "refused", reason="cancelled")
             return {
                 "status": "refused",
-                "note": "That event's already been called off — there's nothing "
-                        "to update.",
+                "note": "That event has already been called off, so there's "
+                        "nothing to update. Say so.",
             }
         except ValueError:
             _record(metrics, "update_event", "refused", reason="bad_id")
-            return {"status": "refused", "note": "That doesn't look like an event id."}
+            return dict(_NOT_AN_EVENT_ID)
         except Exception:
             log.exception("update_event failed")
             _record(metrics, "update_event", "unavailable")
@@ -7976,20 +8033,30 @@ Args:
             "venue": ev.venue_name or ev.venue_text,
         }
 
-    async def rsvp_event(event_id: str, response: str) -> dict:
-        """Record whether the person talking now is coming to an event
-already proposed here. Call this when somebody says they will (or won't) come.
+    async def rsvp_event(
+        event_id: str, response: Literal["yes", "no", "maybe"],
+    ) -> dict:
+        """Record whether the person talking is coming to an event already
+        proposed here. Call this when somebody says they will, won't or might come.
 
-Args:
-    event_id: The event's id, from list_events.
-    response: "yes", "no", or "maybe"."""
+        Returns `status`: ok, refused or unavailable, with a `note` when it is
+        not ok.
+
+        Args:
+            event_id: The event's id, from list_events.
+            response: Whether they are coming.
+        """
         if events is None:
             _record(metrics, "rsvp_event", "unavailable")
-            return {"status": "unavailable", "note": "Events aren't set up here."}
+            return dict(_EVENTS_OFF)
         tagger = room.tagger
         if tagger is None:
             _record(metrics, "rsvp_event", "refused", reason="no_tagger")
-            return {"status": "refused", "note": "I don't know who you are."}
+            return {
+                "status": "refused",
+                "note": "I couldn't tell who's asking, so nothing was recorded. "
+                        "Say so plainly.",
+            }
         try:
             await events.rsvp(
                 event_id=UUID(event_id), conversation_id=bound_conversation_id,
@@ -7997,16 +8064,21 @@ Args:
             )
         except GatheringNotFoundError:
             _record(metrics, "rsvp_event", "refused", reason="not_found")
-            return {"status": "refused", "note": "I don't know that event."}
+            return dict(_NO_SUCH_EVENT)
         except GatheringCancelledError:
             _record(metrics, "rsvp_event", "refused", reason="cancelled")
             return {
                 "status": "refused",
-                "note": "That event's already been called off — no need to RSVP.",
+                "note": "That event has already been called off, so there's "
+                        "nothing to answer. Say so.",
             }
         except ValueError:
             _record(metrics, "rsvp_event", "refused", reason="bad_input")
-            return {"status": "refused", "note": "That's not yes, no, or maybe."}
+            return {
+                "status": "refused",
+                "note": "That isn't an event id from list_events, or the answer "
+                        "isn't yes, no or maybe.",
+            }
         except Exception:
             log.exception("rsvp_event failed")
             _record(metrics, "rsvp_event", "unavailable")
@@ -8019,24 +8091,28 @@ Args:
         return {"status": "ok"}
 
     async def cancel_event(event_id: str) -> dict:
-        """Call off an event already proposed here. Use when the room agrees
-a gathering is not happening.
+        """Call off an event already proposed here. Call this when the room
+        agrees a gathering is not happening.
 
-Args:
-    event_id: The event's id, from list_events."""
+        Returns `status`: ok, refused or unavailable, with a `note` when it is
+        not ok.
+
+        Args:
+            event_id: The event's id, from list_events.
+        """
         if events is None:
             _record(metrics, "cancel_event", "unavailable")
-            return {"status": "unavailable", "note": "Events aren't set up here."}
+            return dict(_EVENTS_OFF)
         try:
             ev = await events.cancel_event(
                 event_id=UUID(event_id), conversation_id=bound_conversation_id,
             )
         except GatheringNotFoundError:
             _record(metrics, "cancel_event", "refused", reason="not_found")
-            return {"status": "refused", "note": "I don't know that event."}
+            return dict(_NO_SUCH_EVENT)
         except ValueError:
             _record(metrics, "cancel_event", "refused", reason="bad_id")
-            return {"status": "refused", "note": "That doesn't look like an event id."}
+            return dict(_NOT_AN_EVENT_ID)
         except Exception:
             log.exception("cancel_event failed")
             _record(metrics, "cancel_event", "unavailable")
@@ -8049,22 +8125,19 @@ Args:
         return {"status": "ok", "id": str(ev.id)}
 
     async def suggest_venue(event_id: str) -> dict:
-        """Suggest a venue for an event already proposed here, drawn from
-what people in this conversation have said they like. Call this when somebody
-wants a place.
+        """Suggest venues for an event already proposed here, from places people
+        in this conversation said they like. Call this when somebody wants a place.
 
-Call this when somebody wants a place to hold an open event.
+        Returns `status`: ok (up to three `candidates`, each with name, address,
+        rating, price_level, maps_url and why), nothing_found, refused or
+        unavailable, with a `note` when it is not ok.
 
-Outcomes: `ok` with `candidates` (name, address, rating,
-price_level, maps_url, and why it was suggested); `nothing_found`
-when nobody's said anything usable — say so, don't invent a pick;
-`unavailable` when this isn't configured.
-
-Args:
-    event_id: The event's id, from list_events."""
+        Args:
+            event_id: The event's id, from list_events.
+        """
         if events is None:
             _record(metrics, "suggest_venue", "unavailable")
-            return {"status": "unavailable", "note": "Events aren't set up here."}
+            return dict(_EVENTS_OFF)
         try:
             roster = await room.members()
         except Exception:
@@ -8078,7 +8151,8 @@ Args:
             _record(metrics, "suggest_venue", "unavailable", reason="roster")
             return {
                 "status": "unavailable",
-                "note": "I couldn't read who's in this conversation right now.",
+                "note": "I couldn't read who's in this conversation right now. Say "
+                        "you couldn't check, and don't guess a venue.",
             }
         try:
             out = await events.suggest_venue(
@@ -8088,20 +8162,20 @@ Args:
             )
         except GatheringNotFoundError:
             _record(metrics, "suggest_venue", "refused", reason="not_found")
-            return {"status": "refused", "note": "I don't know that event."}
+            return dict(_NO_SUCH_EVENT)
         except ValueError:
             _record(metrics, "suggest_venue", "refused", reason="bad_id")
-            return {"status": "refused", "note": "That doesn't look like an event id."}
+            return dict(_NOT_AN_EVENT_ID)
         except Exception:
             log.exception("suggest_venue failed")
             _record(metrics, "suggest_venue", "unavailable")
             return {
                 "status": "unavailable",
                 "note": "I couldn't work out a suggestion. Say you couldn't "
-                        "check — don't guess a venue.",
+                        "check, and don't guess a venue.",
             }
         _record(metrics, "suggest_venue", out.status)
-        return {
+        result: dict = {
             "status": out.status,
             "candidates": [
                 {
@@ -8113,6 +8187,12 @@ Args:
                 for c in out.candidates
             ],
         }
+        # How to report a non-ok answer (ADR 0015 §3): the service returns
+        # `nothing_found` (nobody has said anything usable) or `unavailable`
+        # (no memory to ask) with no words of its own.
+        if out.status in _VENUE_REPORT:
+            result["note"] = _VENUE_REPORT[out.status]
+        return result
 
     async def recall_lookups(limit: int = RECALL_LOOKUPS_DEFAULT) -> dict:
         """Pull back what you already looked up in THIS conversation, within the last 7 days.
@@ -8901,32 +8981,19 @@ Args:
         return {"status": "ok", "still_working": True}
 
     async def version(which: str = "") -> dict:
-        """Which version of you is running, and what was in it. Call this the
-        moment somebody asks about YOU as software.
+        """Read which version of you is running, and what was in it. Call this
+        the moment somebody asks about YOU as software.
 
-        Call this the moment somebody asks about YOU as software — 「你而家咩
-        version」, 「你更新咗啲咩」, 「V2 有咩」, 「上個version做過咩」. It reads the
-        build stamp of the code you are actually executing. Never work a version
-        out from the transcript, from what somebody said earlier, or from the
-        web — this is the only thing that knows.
+        This build stamp is the only source: never work a version out from the
+        chat, from what somebody said, or from the web. Leave `which` empty for
+        the running version, or name an earlier one.
 
-        Leave `which` empty for the version running right now. Pass a name like
-        «V2» to read what was in an earlier one instead.
-
-        `status`:
-          - `ok` — `version` is the name. `notes` is what the people who build
-            you wrote about that version; `changes` is a rough list of what was
-            done in it. Either may be missing, which means nothing was recorded
-            — say the version and say you have no notes for it, never fill the
-            gap in yourself. Put `notes` in your own words; don't read it out.
-          - `nothing_found` — there is no such version. `known` is the list of
-            the ones that do exist; offer those rather than inventing one.
-          - `unavailable` — you can't read your own build stamp. Say you're not
-            sure which version you're on, and move on.
+        Returns `status`: ok, nothing_found or unavailable, with a `note` on how
+        to report it.
 
         Args:
-            which: a version name like «V2» — leave it out for the one you are
-                running now.
+            which: A version name, to read an earlier one. Leave it out for the
+                one running now.
         """
         asked = str(which).strip()
         if versions is None:
@@ -8945,8 +9012,8 @@ Args:
             return {
                 "status": "nothing_found",
                 "known": list(lookup.known),
-                "note": "There's no version by that name. Only the ones in `known` "
-                        "exist — don't describe one that isn't there.",
+                "note": "There's no version by that name. Offer the ones in `known`, "
+                        "and don't describe one that isn't there.",
             }
         entry = lookup.entry
         out: dict = {"status": "ok", "version": entry.version}
@@ -8961,6 +9028,14 @@ Args:
         if entry.changes:
             out["changes"] = list(entry.changes)
         out["known"] = list(lookup.known)
+        # How to report it (ADR 0015 §3), per whether `notes` was recorded: an
+        # absent field is «nothing recorded», never a gap to fill.
+        out["note"] = (
+            "Put notes in your own words rather than reading them out."
+            if entry.notes else
+            "No notes were recorded for this version. Say its name and that you "
+            "have no notes for it, and don't fill the gap."
+        )
         _record(
             metrics, "version", "ok",
             asked=bool(asked), noted=bool(entry.notes), changes=len(entry.changes),
@@ -9293,26 +9368,22 @@ Args:
     # builds every closure; the scope admits.
 
     async def load_tools(names: list[str], tool_context: Any) -> dict:
-        """Call this before using any tool your catalogue lists without a *.
+        """Load catalogue tools by name so you can call them. Call this before
+        using any tool your catalogue lists without a *.
 
-        Your catalogue lists everything you can do, one line each. The ones
-        marked * are already loaded; anything else, ask for here by its exact
-        name first, then call it as usual on your next step. Ask for every
-        tool you expect to need in one call (up to 4).
+        Tools marked * are already loaded. Ask for every tool you expect to need
+        in one call (up to 4), then call them as usual on your next step.
 
-        `status` is `ok` when at least one name is ready (`loaded`, or
-        `already_loaded`); `unknown` names are not in your catalogue — read it
-        again rather than retrying the same name; `refused` were over the
-        limit — ask for those next. `nothing_found` means none of the names
-        exist. `unavailable` means loading is not possible right now; say so
-        rather than guessing what the tool would have said.
+        Returns `status`: ok, nothing_found or unavailable, with the names
+        `loaded`, `already_loaded`, `unknown` and `refused`, and a `note` on how
+        to report it.
 
         Args:
             names: Tool names exactly as your catalogue spells them.
         """
         if shelf is None:
             return {"status": "unavailable", "loaded": [], "already_loaded": [],
-                    "unknown": [], "refused": []}
+                    "unknown": [], "refused": [], "note": LOAD_TOOLS_UNAVAILABLE_NOTE}
         return load_onto(getattr(tool_context, "agent", None), shelf, names)
 
     return (

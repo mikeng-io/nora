@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -260,3 +260,107 @@ async def test_update_event_refuses_an_event_from_another_conversation_fix_i5():
     tools = _tools(events=events, conversation_id=GROUP)
     out = await tools["update_event"](event_id=str(ev.id), venue_text="Soi 29")
     assert out["status"] == "refused"
+
+
+# ── ADR 0015 §3: how to report a status rides in the result ─────────────────
+
+
+class _Raising:
+    """Every GatheringService verb the tools call, raising `exc` (or, for
+    `suggest_venue`, answering `venues`). The tool layer's translation is what
+    is under test, so the service is a stub here."""
+
+    def __init__(self, exc: Exception | None = None, venues=None) -> None:
+        self._exc = exc
+        self._venues = venues
+
+    async def _raise(self, **_: object):
+        if self._exc is not None:
+            raise self._exc
+        return self._venues
+
+    create_event = update_event = rsvp = cancel_event = list_events = _raise
+
+    async def suggest_venue(self, **_: object):
+        return await self._raise()
+
+
+async def test_every_non_ok_event_status_carries_a_note():
+    """ADR 0015 §3/§6: the six descriptions only NAME their statuses; how to
+    report each is the result's `note`. Every non-ok code path is driven, so
+    one that loses its note, or grows a dash, goes red."""
+    from nora.domain.gatherings import (
+        AmbiguousOpenGatheringsError,
+        GatheringCancelledError,
+        GatheringNotFoundError,
+        VenueSuggestions,
+    )
+
+    eid = str(uuid4())
+    real = _events_service()
+    boom = _Raising(RuntimeError("store down"))
+    missing = _Raising(GatheringNotFoundError(UUID(eid)))
+    gone = _Raising(GatheringCancelledError(UUID(eid)))
+    calls = {
+        "unavailable/off/list": (_tools(events=None), "list_events", {}),
+        "unavailable/off/create": (_tools(events=None), "create_event", {"title": "D"}),
+        "unavailable/off/update": (_tools(events=None), "update_event", {"event_id": eid}),
+        "unavailable/off/rsvp": (
+            _tools(events=None), "rsvp_event", {"event_id": eid, "response": "yes"}),
+        "unavailable/off/cancel": (_tools(events=None), "cancel_event", {"event_id": eid}),
+        "unavailable/off/suggest": (_tools(events=None), "suggest_venue", {"event_id": eid}),
+        "unavailable/raise/list": (_tools(events=boom), "list_events", {}),
+        "unavailable/raise/create": (_tools(events=boom), "create_event", {"title": "D"}),
+        "unavailable/raise/update": (_tools(events=boom), "update_event", {"event_id": eid}),
+        "unavailable/raise/rsvp": (
+            _tools(events=boom), "rsvp_event", {"event_id": eid, "response": "yes"}),
+        "unavailable/raise/cancel": (_tools(events=boom), "cancel_event", {"event_id": eid}),
+        "unavailable/raise/suggest": (_tools(events=boom), "suggest_venue", {"event_id": eid}),
+        "unavailable/memory/suggest": (
+            _tools(events=_Raising(venues=VenueSuggestions(status="unavailable"))),
+            "suggest_venue", {"event_id": eid}),
+        "nothing_found/suggest": (
+            _tools(events=_Raising(venues=VenueSuggestions(status="nothing_found"))),
+            "suggest_venue", {"event_id": eid}),
+        "refused/bad_status/list": (_tools(events=real), "list_events", {"status": "x"}),
+        "refused/no_tagger/create": (
+            _tools(events=real, tagger=None), "create_event", {"title": "D"}),
+        "refused/no_tagger/rsvp": (
+            _tools(events=real, tagger=None), "rsvp_event",
+            {"event_id": eid, "response": "yes"}),
+        "refused/bad_when/create": (
+            _tools(events=real), "create_event", {"title": "D", "when": "whenever"}),
+        "refused/bad_when/update": (
+            _tools(events=real), "update_event", {"event_id": eid, "when": "whenever"}),
+        "refused/ambiguous/create": (
+            _tools(events=_Raising(AmbiguousOpenGatheringsError(GROUP, ()))),
+            "create_event", {"title": "D"}),
+        "refused/not_found/update": (_tools(events=missing), "update_event", {"event_id": eid}),
+        "refused/not_found/rsvp": (
+            _tools(events=missing), "rsvp_event", {"event_id": eid, "response": "yes"}),
+        "refused/not_found/cancel": (_tools(events=missing), "cancel_event", {"event_id": eid}),
+        "refused/not_found/suggest": (_tools(events=missing), "suggest_venue", {"event_id": eid}),
+        "refused/cancelled/update": (_tools(events=gone), "update_event", {"event_id": eid}),
+        "refused/cancelled/rsvp": (
+            _tools(events=gone), "rsvp_event", {"event_id": eid, "response": "yes"}),
+        "refused/bad_id/update": (_tools(events=real), "update_event", {"event_id": "x"}),
+        "refused/bad_id/rsvp": (
+            _tools(events=real), "rsvp_event", {"event_id": "x", "response": "yes"}),
+        "refused/bad_id/cancel": (_tools(events=real), "cancel_event", {"event_id": "x"}),
+        "refused/bad_id/suggest": (_tools(events=real), "suggest_venue", {"event_id": "x"}),
+    }
+    for case, (tools, verb, kwargs) in calls.items():
+        out = await tools[verb](**kwargs)
+        assert out["status"] == case.split("/")[0], (case, out)
+        assert isinstance(out.get("note"), str) and out["note"].strip(), case
+        assert "—" not in out["note"] and "–" not in out["note"], case
+
+
+async def test_an_ok_event_result_carries_no_reporting_note():
+    """No ok guidance left these descriptions, so none is added to an ok."""
+    events = _events_service()
+    tools = _tools(events=events)
+    created = await tools["create_event"](title="Dinner")
+    assert created["status"] == "ok" and "note" not in created
+    listed = await tools["list_events"]()
+    assert listed["status"] == "ok" and "note" not in listed
