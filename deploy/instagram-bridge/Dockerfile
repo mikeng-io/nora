@@ -31,7 +31,11 @@ COPY internal ./internal
 # shell. Nothing in this bridge can be verified against the live account — it
 # is a real account in daily use — so the unit suite is the only gate there is,
 # and a gate that has to be remembered is not a gate.
-RUN go vet ./... && go test ./... && \
+#
+# IG_BRIDGE_IMAGE_BUILD=1 tells ONE test where it is: the shared contract
+# fixtures (tests/fixtures/instagram_bridge) are outside this build context,
+# so contract_fixtures_test.go skips here and runs wherever the repo is.
+RUN go vet ./... && IG_BRIDGE_IMAGE_BUILD=1 go test ./... && \
     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/instagram-bridge .
 
 FROM debian:bookworm-slim

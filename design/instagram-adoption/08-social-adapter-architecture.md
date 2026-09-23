@@ -266,7 +266,7 @@ posts one.
 > the two implementation mistakes it took two more rounds to find (a
 > username sent into a numeric-id field; a GraphQL `errors` envelope read as
 > success because only the HTTP status was checked) are in `05`'s and `07`'s
-> matching corrections and `deploy/instagram-bridge/social_profile.go`.
+> matching corrections and `deploy/instagram-bridge/internal/gateway/instameow/social_profile.go`.
 >
 > **"List this person's recent posts" is UNCHANGED by this correction** —
 > `media_count` is a count, not a feed, and no instameow client method pages

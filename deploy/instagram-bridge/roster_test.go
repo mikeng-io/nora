@@ -21,11 +21,14 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"instagram-bridge/internal/domain"
+	gateway "instagram-bridge/internal/gateway/instameow"
+
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
 )
 
-func getRoster(t *testing.T, b *bridge, query string) *httptest.ResponseRecorder {
+func getRoster(t *testing.T, b *server, query string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/threads/"+query+"/members", nil)
 	rec := httptest.NewRecorder()
@@ -88,8 +91,8 @@ func TestRosterReadsTheShortThreadID(t *testing.T) {
 	if rec := getRoster(t, b, threadShort); rec.Code != http.StatusOK {
 		t.Fatalf("members read answered %d", rec.Code)
 	}
-	if len(f.getThreadIDs) != 1 || f.getThreadIDs[0] != threadShort {
-		t.Fatalf("GetThread was addressed with %v, want [%s]", f.getThreadIDs, threadShort)
+	if len(f.GetThreadIDs) != 1 || f.GetThreadIDs[0] != threadShort {
+		t.Fatalf("GetThread was addressed with %v, want [%s]", f.GetThreadIDs, threadShort)
 	}
 	// And the long id never crosses the HTTP boundary in either direction: a
 	// caller that sends it is refused, not served.
@@ -128,7 +131,7 @@ func TestRosterDoesNotInventSelfAsAMember(t *testing.T) {
 	body := decodeRoster(t, getRoster(t, b, threadShort))
 
 	for _, member := range body.Members {
-		if member.FBID == b.selfSnapshot().FBID {
+		if member.FBID == b.gw.Snapshot().Self.FBID {
 			t.Fatalf("the roster carries Nora's own account: %+v", member)
 		}
 	}
@@ -138,7 +141,7 @@ func TestRosterDoesNotInventSelfAsAMember(t *testing.T) {
 // route drops it rather than handing Nora back an account she cannot name.
 // Belt and braces: the measurement says this never fires today.
 func TestRosterDropsSelfIfTheWireEverIncludesIt(t *testing.T) {
-	f := &fakeIG{threadUsersSet: true, threadUsers: append(
+	f := &fakeIG{ThreadUsersSet: true, ThreadUsers: append(
 		[]*slidetypes.User{{
 			InteropMessagingUserFBID: 14963523149149302,
 			ID:                       "79597894900",
@@ -167,7 +170,7 @@ func TestRosterDropsSelfIfTheWireEverIncludesIt(t *testing.T) {
 // which is the sentence `Roster.available` exists to keep separate from «I
 // could not look».
 func TestRosterRefusesAnEmptyMemberList(t *testing.T) {
-	f := &fakeIG{threadUsersSet: true, threadUsers: nil}
+	f := &fakeIG{ThreadUsersSet: true, ThreadUsers: nil}
 	b := newTestBridge(t, f)
 
 	rec := getRoster(t, b, threadShort)
@@ -181,7 +184,7 @@ func TestRosterRefusesAnEmptyMemberList(t *testing.T) {
 // an error from the library: GraphQL answers with the thread simply absent, so
 // nothing raises and only an explicit check catches it.
 func TestRosterRefusesAThreadThatReadsBackAbsent(t *testing.T) {
-	b := newTestBridge(t, &fakeIG{noThread: true})
+	b := newTestBridge(t, &fakeIG{NoThread: true})
 
 	rec := getRoster(t, b, threadShort)
 
@@ -201,7 +204,7 @@ func TestRosterRefusesAThreadThatReadsBackAbsent(t *testing.T) {
 // unnamed accounts it CAN see. An account it cannot see at all is one the
 // disclosure gate never gets to refuse over.
 func TestRosterRefusesRatherThanUnderReportTheRoom(t *testing.T) {
-	f := &fakeIG{threadUsersSet: true, threadUsers: []*slidetypes.User{
+	f := &fakeIG{ThreadUsersSet: true, ThreadUsers: []*slidetypes.User{
 		measuredUsers[0],
 		{InteropMessagingUserFBID: 0, ID: "74340223606", Username: "third_member"},
 	}}
@@ -223,7 +226,7 @@ func TestRosterRefusesRatherThanUnderReportTheRoom(t *testing.T) {
 func TestRosterStatusMapping(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
-		setup func(*bridge, *fakeIG)
+		setup func(*gateway.Options, *fakeIG)
 		query string
 		want  int
 	}{
@@ -256,34 +259,34 @@ func TestRosterStatusMapping(t *testing.T) {
 		},
 		{
 			name:  "checkpointed: a human must clear it, never retry",
-			setup: func(b *bridge, _ *fakeIG) { b.setState(stateCheckpointed, "captcha") },
+			setup: func(o *gateway.Options, _ *fakeIG) { withState(domain.StateCheckpointed, "captcha")(o) },
 			query: threadShort,
 			want:  http.StatusConflict,
 		},
 		{
 			name:  "logged out: same — new cookies, not a retry",
-			setup: func(b *bridge, _ *fakeIG) { b.setState(stateLoggedOut, "gone") },
+			setup: func(o *gateway.Options, _ *fakeIG) { withState(domain.StateLoggedOut, "gone")(o) },
 			query: threadShort,
 			want:  http.StatusConflict,
 		},
 		{
 			name: "a checkpoint discovered during the read is still 409",
-			setup: func(_ *bridge, f *fakeIG) {
-				f.threadErr = httpclient.ErrCheckpointRequired
+			setup: func(_ *gateway.Options, f *fakeIG) {
+				f.ThreadErr = httpclient.ErrCheckpointRequired
 			},
 			query: threadShort,
 			want:  http.StatusConflict,
 		},
 		{
 			name:  "the session is being re-established: retryable",
-			setup: func(b *bridge, _ *fakeIG) { b.out = nil },
+			setup: func(o *gateway.Options, _ *fakeIG) { withNoClient()(o) },
 			query: threadShort,
 			want:  http.StatusServiceUnavailable,
 		},
 		{
 			name: "an unclassified failure is 500, never a 503 that invites a retry loop",
-			setup: func(_ *bridge, f *fakeIG) {
-				f.threadErr = errors.New("something nobody has a name for")
+			setup: func(_ *gateway.Options, f *fakeIG) {
+				f.ThreadErr = errors.New("something nobody has a name for")
 			},
 			query: threadShort,
 			want:  http.StatusInternalServerError,
@@ -291,10 +294,11 @@ func TestRosterStatusMapping(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := &fakeIG{}
-			b := newTestBridge(t, f)
-			if tc.setup != nil {
-				tc.setup(b, f)
-			}
+			b := newTestBridge(t, f, func(o *gateway.Options) {
+				if tc.setup != nil {
+					tc.setup(o, f)
+				}
+			})
 			if rec := getRoster(t, b, tc.query); rec.Code != tc.want {
 				t.Fatalf("answered %d, want %d: %s", rec.Code, tc.want, rec.Body.String())
 			}
@@ -306,12 +310,11 @@ func TestRosterStatusMapping(t *testing.T) {
 // account must not be touched at all.
 func TestRosterDoesNotReachInstagramWhileCheckpointed(t *testing.T) {
 	f := &fakeIG{}
-	b := newTestBridge(t, f)
-	b.setState(stateCheckpointed, "captcha")
+	b := newTestBridge(t, f, withState(domain.StateCheckpointed, "captcha"))
 
 	getRoster(t, b, threadShort)
 
-	if len(f.getThreadIDs) != 0 {
-		t.Fatalf("a checkpointed session still read the thread: %v", f.getThreadIDs)
+	if len(f.GetThreadIDs) != 0 {
+		t.Fatalf("a checkpointed session still read the thread: %v", f.GetThreadIDs)
 	}
 }

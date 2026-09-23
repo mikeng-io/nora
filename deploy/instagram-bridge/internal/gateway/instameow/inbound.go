@@ -1,4 +1,4 @@
-package main
+package instameow
 
 // Inbound normalization: instameow's typed delta -> the JSON on GET /events.
 //
@@ -26,6 +26,8 @@ package main
 import (
 	"strconv"
 
+	"instagram-bridge/internal/domain"
+
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 )
 
@@ -40,7 +42,6 @@ const (
 	kindUnsend    = "unsend"
 	kindTyping    = "typing"
 	kindHeartbeat = "heartbeat"
-	kindDropped   = "dropped"
 )
 
 // Media kinds. `image`, `video` and `animated` are the contract's; `audio` is
@@ -79,9 +80,9 @@ type eventSender struct {
 // The value still goes out, because the adapter may want the room id; what it
 // needs is to be told which question the number answers.
 //
-// The same struct is what /send accepts for outbound mentions, where only
-// fbid/offset/length are read: a caller cannot ask for an @everyone by setting
-// this field, and sendText ignores it.
+// Outbound mentions on /send are a different, narrower shape (the HTTP
+// layer's mentionBody): only fbid/offset/length, so a caller cannot ask for
+// an @everyone.
 type eventMention struct {
 	FBID      string `json:"fbid"`
 	Offset    int    `json:"offset"`
@@ -649,13 +650,8 @@ func fromMe(senderFBID, ownFBID int64) *bool {
 }
 
 type heartbeatEvent struct {
-	Kind      string       `json:"kind"`
-	TSMS      int64        `json:"ts_ms"`
-	Connected bool         `json:"connected"`
-	Session   sessionState `json:"session"`
-}
-
-type droppedEvent struct {
-	Kind         string `json:"kind"`
-	DroppedTotal int    `json:"dropped_total"`
+	Kind      string              `json:"kind"`
+	TSMS      int64               `json:"ts_ms"`
+	Connected bool                `json:"connected"`
+	Session   domain.SessionState `json:"session"`
 }

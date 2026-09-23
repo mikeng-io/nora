@@ -1,4 +1,4 @@
-package main
+package instameow
 
 // The supervisor and the event callback: the two places with no HTTP surface,
 // which is why neither had a test and why both of the "silent" defects lived
@@ -10,24 +10,28 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
+
+	"instagram-bridge/internal/domain"
+	"instagram-bridge/internal/session"
+	"instagram-bridge/internal/stream"
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
 )
 
-func eventBridge(t *testing.T) *bridge {
+func eventBridge(t *testing.T) *Bridge {
 	t.Helper()
-	b := &bridge{
-		store:     store{dir: t.TempDir()},
-		hub:       newHub(),
-		startedAt: time.Now(),
-		state:     stateAuthenticated,
-		self:      selfIdentity{FBID: "14963523149149302", IGID: "79597894900", Username: "not_____nora"},
-	}
+	b := NewBridge(Options{
+		Store: session.Store{Dir: t.TempDir()},
+		Sink:  stream.NewHub(),
+		State: domain.StateAuthenticated,
+		Self:  domain.Self{FBID: "14963523149149302", IGID: "79597894900", Username: "not_____nora"},
+	})
 	b.threads = newThreadIndex((&fakeIG{}).FetchThreadID)
 	return b
 }
@@ -105,7 +109,7 @@ func TestSuperviseWithNoCredentialPollsAndStopsOnShutdown(t *testing.T) {
 	// One pass is enough to reach the poll: sessionPoll is 10s, so if the loop
 	// spun instead of waiting this would be thousands of passes by now.
 	deadline := time.After(3 * time.Second)
-	for b.currentState() != stateLoggedOut {
+	for b.currentState() != domain.StateLoggedOut {
 		select {
 		case <-deadline:
 			t.Fatal("supervise never reported logged_out")
@@ -136,7 +140,7 @@ func TestAuthErrorLatchesReindexAndOnlyASuccessfulLoadReleasesIt(t *testing.T) {
 	if err := b.onEvent(t.Context(), &slidetypes.AuthError{Error: httpclient.ErrCheckpointRequired}); err != nil {
 		t.Fatal(err)
 	}
-	if got := b.currentState(); got != stateCheckpointed {
+	if got := b.currentState(); got != domain.StateCheckpointed {
 		t.Fatalf("state = %q, want checkpointed", got)
 	}
 	if !b.needsReindex() {
@@ -166,13 +170,13 @@ func TestAVoidedSequenceIDDoesNotSurviveARestart(t *testing.T) {
 		"auth error": &slidetypes.AuthError{Error: httpclient.ErrCheckpointRequired},
 	} {
 		b := eventBridge(t)
-		if err := b.store.saveSeq(4242, time.Now()); err != nil {
+		if err := b.store.SaveSeq(4242, time.Now()); err != nil {
 			t.Fatal(err)
 		}
 		if err := b.onEvent(t.Context(), evt); err != nil {
 			t.Fatal(err)
 		}
-		if seq, _ := b.store.loadSeq(); seq != 0 {
+		if seq, _ := b.store.LoadSeq(); seq != 0 {
 			t.Errorf("%s: seq.json still holds %d — a restart would resume from it", name, seq)
 		}
 		if _, _, _, seq := b.snapshot(); seq != 0 {
@@ -187,13 +191,13 @@ func TestAVoidedSequenceIDDoesNotSurviveARestart(t *testing.T) {
 // the failure the sequence id exists to prevent.
 func TestAnOrdinaryDisconnectKeepsTheSequenceID(t *testing.T) {
 	b := eventBridge(t)
-	if err := b.store.saveSeq(4242, time.Now()); err != nil {
+	if err := b.store.SaveSeq(4242, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if err := b.onEvent(t.Context(), &slidetypes.Disconnected{FailureCount: 1, Error: errors.New("eof")}); err != nil {
 		t.Fatal(err)
 	}
-	if seq, _ := b.store.loadSeq(); seq != 4242 {
+	if seq, _ := b.store.LoadSeq(); seq != 4242 {
 		t.Fatalf("an ordinary disconnect discarded the sequence id (seq=%d)", seq)
 	}
 }
@@ -217,7 +221,7 @@ func TestSeqAndStateUpdatesReachTheDisk(t *testing.T) {
 	if err := b.onEvent(t.Context(), &slidetypes.SeqIDUpdate{SeqID: 99, Timestamp: ts}); err != nil {
 		t.Fatal(err)
 	}
-	seq, got := b.store.loadSeq()
+	seq, got := b.store.LoadSeq()
 	if seq != 99 || !got.Equal(ts) {
 		t.Fatalf("seq persisted as %d at %s", seq, got)
 	}
@@ -227,7 +231,7 @@ func TestSeqAndStateUpdatesReachTheDisk(t *testing.T) {
 	}
 	// This is what makes a restart a resume rather than a fresh login, and a
 	// fresh login is the event that provokes a trust check.
-	if blob, ok := b.store.loadState(); !ok || string(blob) != string(state) {
+	if blob, ok := b.store.LoadState(); !ok || string(blob) != string(state) {
 		t.Fatalf("reconnection state = %q, %v", blob, ok)
 	}
 }
@@ -238,8 +242,8 @@ func TestSeqAndStateUpdatesReachTheDisk(t *testing.T) {
 // as the short one, and every consumer keying on room_id would miss silently.
 func TestTypingClaimsARoomOnlyWhenTheCacheCanVouchForIt(t *testing.T) {
 	b := eventBridge(t)
-	ch, _, _ := b.hub.subscribe()
-	defer b.hub.unsubscribe(ch)
+	ch, _, _ := hubOf(b).Subscribe()
+	defer hubOf(b).Unsubscribe(ch)
 
 	if err := b.onEvent(t.Context(), &slidetypes.TypingNotification{
 		ThreadID: threadLong, SenderID: 110966695387753, ActivityStatus: 1,
@@ -307,7 +311,7 @@ func TestEveryMeaningfulDeltaIsForwardedAndTheRestAreNot(t *testing.T) {
 		if err := b.onEvent(t.Context(), &slidetypes.Delta{ThreadIGID: threadShort, Data: c.data}); err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
-		_, buffered, dropped := b.hub.stats()
+		_, buffered, dropped := hubOf(b).Stats()
 		if dropped != 0 {
 			t.Errorf("%s: %d events were dropped", c.name, dropped)
 		}
@@ -320,7 +324,7 @@ func TestEveryMeaningfulDeltaIsForwardedAndTheRestAreNot(t *testing.T) {
 		if buffered != 1 {
 			t.Fatalf("%s: emitted %d events, want 1", c.name, buffered)
 		}
-		_, replay, _ := b.hub.subscribe()
+		_, replay, _ := hubOf(b).Subscribe()
 		var got map[string]any
 		if err := json.Unmarshal(replay[0], &got); err != nil {
 			t.Fatal(err)
@@ -350,10 +354,10 @@ func TestEveryMeaningfulDeltaIsForwardedAndTheRestAreNot(t *testing.T) {
 // /health that looked wrong. The only symptom is an account that stops
 // noticing it was spoken to.
 func TestAZeroOwnFBIDDoesNotDestroyTheCachedIdentity(t *testing.T) {
-	good := selfIdentity{FBID: "14963523149149302", IGID: "79597894900", Username: "not_____nora"}
+	good := domain.Self{FBID: "14963523149149302", IGID: "79597894900", Username: "not_____nora"}
 	b := eventBridge(t)
 	b.setSelf(good)
-	if err := b.store.saveSelf(good); err != nil {
+	if err := b.store.SaveSelf(good); err != nil {
 		t.Fatal(err)
 	}
 
@@ -363,7 +367,7 @@ func TestAZeroOwnFBIDDoesNotDestroyTheCachedIdentity(t *testing.T) {
 	if got := b.selfSnapshot(); got != good {
 		t.Fatalf("the live identity was replaced by %+v", got)
 	}
-	if got, ok := b.store.loadSelf(); !ok || got != good {
+	if got, ok := b.store.LoadSelf(); !ok || got != good {
 		t.Fatalf("self.json was overwritten: %+v, %v", got, ok)
 	}
 	// And the thing that actually breaks when it is lost.
@@ -379,13 +383,13 @@ func TestAZeroOwnFBIDDoesNotDestroyTheCachedIdentity(t *testing.T) {
 // to notice the same problem.
 func TestAZeroOwnFBIDOnAFirstBootIsReportedButNotPersisted(t *testing.T) {
 	b := eventBridge(t)
-	b.setSelf(selfIdentity{})
+	b.setSelf(domain.Self{})
 	b.recordSelf(0, "79597894900", "not_____nora")
 
 	if got := b.selfSnapshot(); got.Username != "not_____nora" || got.FBID != "" {
 		t.Fatalf("self = %+v", got)
 	}
-	if _, err := os.Stat(b.store.path("self.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(b.store.Path("self.json")); !os.IsNotExist(err) {
 		t.Fatal("an fbid-less identity was written to self.json")
 	}
 }
@@ -394,14 +398,14 @@ func TestAZeroOwnFBIDOnAFirstBootIsReportedButNotPersisted(t *testing.T) {
 // bought by never updating it.
 func TestARealOwnFBIDIsRecordedAndPersisted(t *testing.T) {
 	b := eventBridge(t)
-	b.setSelf(selfIdentity{})
+	b.setSelf(domain.Self{})
 	b.recordSelf(14963523149149302, "79597894900", "not_____nora")
 
-	want := selfIdentity{FBID: "14963523149149302", IGID: "79597894900", Username: "not_____nora"}
+	want := domain.Self{FBID: "14963523149149302", IGID: "79597894900", Username: "not_____nora"}
 	if got := b.selfSnapshot(); got != want {
 		t.Fatalf("self = %+v", got)
 	}
-	if got, ok := b.store.loadSelf(); !ok || got != want {
+	if got, ok := b.store.LoadSelf(); !ok || got != want {
 		t.Fatalf("self.json = %+v, %v", got, ok)
 	}
 }
@@ -414,7 +418,7 @@ func TestARealOwnFBIDIsRecordedAndPersisted(t *testing.T) {
 func TestFlushingANilOrEmptyJarIsSafe(t *testing.T) {
 	b := eventBridge(t)
 	b.flushCookies()
-	if _, err := os.Stat(b.store.path("cookies.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(b.store.Path("cookies.json")); !os.IsNotExist(err) {
 		t.Fatal("a nil jar was persisted")
 	}
 }
@@ -433,3 +437,66 @@ func nextTyping(t *testing.T, ch cortez []byte) typingEvent {
 		return typingEvent{}
 	}
 }
+
+// The three states are not interchangeable and the difference decides what the
+// operator is told to do. `checkpointed` means the SAME cookies work again
+// after a human clears a challenge; `logged_out` means they are dead and a new
+// browser session must be handed over. Collapsing them sends the operator to
+// the wrong remedy; collapsing either into "authenticated" makes /send retry
+// against a wall.
+func TestAuthErrorsAreClassifiedNotCollapsed(t *testing.T) {
+	cases := []struct {
+		err  error
+		want domain.SessionState
+	}{
+		{nil, domain.StateAuthenticated},
+		{httpclient.ErrChallengeRequired, domain.StateCheckpointed},
+		{httpclient.ErrCheckpointRequired, domain.StateCheckpointed},
+		{httpclient.ErrConsentRequired, domain.StateCheckpointed},
+		{httpclient.ErrTokenInvalidated, domain.StateLoggedOut},
+		// Wrapped, because that is how they actually arrive.
+		{fmt.Errorf("failed to load inbox: %w", httpclient.ErrCheckpointRequired), domain.StateCheckpointed},
+		{fmt.Errorf("mercury upload: %w", httpclient.ErrTokenInvalidated), domain.StateLoggedOut},
+		// Unclassified. FAIL CLOSED: an error we have no name for is reported
+		// as needing a human, never as a healthy session.
+		{errors.New("something nobody has seen before"), domain.StateCheckpointed},
+	}
+	for _, c := range cases {
+		if got := classifyAuthError(c.err); got != c.want {
+			t.Errorf("classifyAuthError(%v) = %q, want %q", c.err, got, c.want)
+		}
+	}
+}
+
+// "No credential to try" and "Instagram refused the credential we tried" are
+// different states with different remedies and different retry rates. The
+// first is a bootstrap step an operator is in the middle of, polled every few
+// seconds; the second is an account state, backed off to five minutes because
+// hammering a login endpoint while waiting for a human is how a checkpoint
+// becomes a ban. Collapsing them gives one of the two the wrong rate.
+func TestMissingOrPartialSessionIsABootstrapStateNotAnAuthFailure(t *testing.T) {
+	cases := map[string]string{
+		"nothing on disk": "",
+		"partial paste":   `-H 'cookie: csrftoken=CSRF123'`,
+	}
+	for name, curl := range cases {
+		b := NewBridge(Options{Store: session.Store{Dir: t.TempDir()}, Sink: stream.NewHub(), State: domain.StateAuthenticated})
+		if curl != "" {
+			if err := os.WriteFile(b.store.Path("cookies.curl"), []byte(curl), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		err := b.ensureSession(t.Context(), zerolog.Nop())
+		if !errors.Is(err, errNoSession) {
+			t.Errorf("%s: ensureSession gave %v, want errNoSession", name, err)
+		}
+		if got := b.currentState(); got != domain.StateLoggedOut {
+			t.Errorf("%s: session reported as %q, want logged_out", name, got)
+		}
+		if b.currentClient() != nil {
+			t.Errorf("%s: a client was built from an unusable credential", name)
+		}
+	}
+}
+
+func hubOf(b *Bridge) *stream.Hub { return b.sink.(*stream.Hub) }

@@ -7,7 +7,6 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -17,46 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"instagram-bridge/internal/domain"
+
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
-	"go.mau.fi/mautrix-meta/pkg/messagix/types"
 )
-
-// newTestBridge wires a bridge with a fake session. Nothing here touches the
-// network: the live account is in use and cannot be probed, so the HTTP layer
-// is verified against a recording fake and the parts that genuinely need
-// Instagram are left honestly unverified (see the session tests).
-func newTestBridge(t *testing.T, f *fakeIG) *bridge {
-	t.Helper()
-	b := &bridge{
-		store:     store{dir: t.TempDir()},
-		hub:       newHub(),
-		startedAt: time.Now(),
-		state:     stateAuthenticated,
-		connected: true,
-		seq:       22,
-		self:      selfIdentity{FBID: "14963523149149302", IGID: "79597894900", Username: "not_____nora"},
-	}
-	b.threads = newThreadIndex(f.FetchThreadID)
-	b.out = f
-	b.up = func(context.Context, int64, *httpclient.MercuryUploadMedia) (*types.MercuryUploadResponse, error) {
-		return &types.MercuryUploadResponse{
-			Payload: types.MediaPayloads{RealMetadata: &types.FileMetadata{ImageID: 2280432885466163}},
-		}, nil
-	}
-	return b
-}
-
-func post(t *testing.T, b *bridge, path string, body any) *httptest.ResponseRecorder {
-	t.Helper()
-	blob, err := json.Marshal(body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(string(blob)))
-	rec := httptest.NewRecorder()
-	b.routes().ServeHTTP(rec, req)
-	return rec
-}
 
 // --- /health ------------------------------------------------------------------
 
@@ -65,9 +28,8 @@ func post(t *testing.T, b *bridge, path string, body any) *httptest.ResponseReco
 // on an ordinary Instagram captcha and restart a process whose restart fixes
 // nothing — an ERROR reading as a dead bridge.
 func TestHealthIs200InEverySessionState(t *testing.T) {
-	for _, state := range []sessionState{stateAuthenticated, stateCheckpointed, stateLoggedOut} {
-		b := newTestBridge(t, &fakeIG{})
-		b.setState(state, "because")
+	for _, state := range []domain.SessionState{domain.StateAuthenticated, domain.StateCheckpointed, domain.StateLoggedOut} {
+		b := newTestBridge(t, &fakeIG{}, withState(state, "because"))
 		req := httptest.NewRequest(http.MethodGet, "/health", nil)
 		rec := httptest.NewRecorder()
 		b.routes().ServeHTTP(rec, req)
@@ -116,10 +78,9 @@ func TestHealthCarriesOwnIdentity(t *testing.T) {
 // retry a challenged account forever, which is the documented way to turn a
 // checkpoint into a ban.
 func TestCheckpointedSessionRefusesSendsWith409(t *testing.T) {
-	for _, state := range []sessionState{stateCheckpointed, stateLoggedOut} {
+	for _, state := range []domain.SessionState{domain.StateCheckpointed, domain.StateLoggedOut} {
 		f := &fakeIG{}
-		b := newTestBridge(t, f)
-		b.setState(state, "challenge required")
+		b := newTestBridge(t, f, withState(state, "challenge required"))
 		for _, route := range []string{"/send", "/send-media", "/react", "/typing", "/unsend"} {
 			rec := post(t, b, route, map[string]any{
 				"room_id": threadShort, "text": "hi", "message_id": "mid.$x",
@@ -129,7 +90,7 @@ func TestCheckpointedSessionRefusesSendsWith409(t *testing.T) {
 				t.Errorf("session %q: %s answered %d, want 409", state, route, rec.Code)
 			}
 		}
-		if f.textReq != nil || f.mediaReq != nil || f.reactReq != nil || f.unsend != nil || len(f.typing) > 0 {
+		if f.TextReq != nil || f.MediaReq != nil || f.ReactReq != nil || f.Unsend != nil || len(f.Typing) > 0 {
 			t.Errorf("session %q: a request reached Instagram while checkpointed", state)
 		}
 	}
@@ -142,8 +103,7 @@ func TestCheckpointedSessionRefusesSendsWith409(t *testing.T) {
 // actually stop them.
 func TestOnlyTypingRequiresTheRealtimeSocket(t *testing.T) {
 	f := &fakeIG{}
-	b := newTestBridge(t, f)
-	b.setConnected(false)
+	b := newTestBridge(t, f, withConnected(false))
 
 	if rec := post(t, b, "/typing", map[string]any{"room_id": threadShort, "typing": true}); rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("/typing answered %d with the socket down, want 503", rec.Code)
@@ -204,7 +164,7 @@ func TestOversizeBodyIs413(t *testing.T) {
 // library surfaces it as an opaque error. Reporting a 50,000-character message
 // as a 500 would have the adapter retry a message that can never be accepted.
 func TestMessageTooLongMapsTo413(t *testing.T) {
-	f := &fakeIG{sendErr: errorString("Message Too Long")}
+	f := &fakeIG{SendErr: errorString("Message Too Long")}
 	b := newTestBridge(t, f)
 	rec := post(t, b, "/send", map[string]any{"room_id": threadShort, "text": "x"})
 	if rec.Code != http.StatusRequestEntityTooLarge {
@@ -216,7 +176,7 @@ func TestMessageTooLongMapsTo413(t *testing.T) {
 // that retrying will work, and making that claim on an unknown error turns a
 // permanent failure into an infinite retry loop.
 func TestUnknownSendFailureIs500NotRetryable(t *testing.T) {
-	f := &fakeIG{sendErr: errorString("some new graphql error nobody has seen")}
+	f := &fakeIG{SendErr: errorString("some new graphql error nobody has seen")}
 	b := newTestBridge(t, f)
 	rec := post(t, b, "/send", map[string]any{"room_id": threadShort, "text": "x"})
 	if rec.Code != http.StatusInternalServerError {
@@ -228,7 +188,7 @@ func TestUnknownSendFailureIs500NotRetryable(t *testing.T) {
 // before it; otherwise the adapter's behaviour depends on when Instagram
 // happened to notice.
 func TestCheckpointDuringASendStillMapsTo409(t *testing.T) {
-	f := &fakeIG{sendErr: httpclient.ErrCheckpointRequired}
+	f := &fakeIG{SendErr: httpclient.ErrCheckpointRequired}
 	b := newTestBridge(t, f)
 	rec := post(t, b, "/send", map[string]any{"room_id": threadShort, "text": "x"})
 	if rec.Code != http.StatusConflict {
@@ -259,8 +219,8 @@ func TestSendReturnsTheContractResultShape(t *testing.T) {
 	// The SHORT id is what /send carries — measured arriving 2026-09-22, and
 	// what upstream uses — and the long id never appears on the wire the
 	// caller sees, in either direction.
-	if f.textReq.IGThreadIGID == nil || *f.textReq.IGThreadIGID != threadShort {
-		t.Errorf("send used %v, want the short id", f.textReq.IGThreadIGID)
+	if f.TextReq.IGThreadIGID == nil || *f.TextReq.IGThreadIGID != threadShort {
+		t.Errorf("send used %v, want the short id", f.TextReq.IGThreadIGID)
 	}
 	if strings.Contains(rec.Body.String(), threadLong) {
 		t.Error("the long thread id leaked into the HTTP response")
@@ -284,10 +244,10 @@ func TestSendMediaCarriesNoCaption(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("answered %d: %s", rec.Code, rec.Body.String())
 	}
-	if f.mediaReq.ThreadID != threadShort {
-		t.Errorf("media thread = %q, want the short id", f.mediaReq.ThreadID)
+	if f.MediaReq.ThreadID != threadShort {
+		t.Errorf("media thread = %q, want the short id", f.MediaReq.ThreadID)
 	}
-	if f.textReq != nil {
+	if f.TextReq != nil {
 		t.Error("/send-media also sent a text message")
 	}
 }
@@ -311,16 +271,16 @@ func TestReactAndUnsendSucceedOnTheirOwnIDSpaces(t *testing.T) {
 	}); rec.Code != http.StatusOK {
 		t.Fatalf("/unsend answered %d: %s", rec.Code, rec.Body.String())
 	}
-	if f.reactReq.Input.ThreadID != threadShort {
-		t.Errorf("/react addressed %q, want the SHORT id", f.reactReq.Input.ThreadID)
+	if f.ReactReq.Input.ThreadID != threadShort {
+		t.Errorf("/react addressed %q, want the SHORT id", f.ReactReq.Input.ThreadID)
 	}
-	if f.unsend.SendData.ThreadID != threadLong {
-		t.Errorf("/unsend addressed %q, want the LONG id", f.unsend.SendData.ThreadID)
+	if f.Unsend.SendData.ThreadID != threadLong {
+		t.Errorf("/unsend addressed %q, want the LONG id", f.Unsend.SendData.ThreadID)
 	}
 	// The reaction is on the message afterwards. This is the read-back, not
 	// the request: it is what makes the assertion above fail rather than pass
 	// silently if the id ever goes back to the long one.
-	if got := f.reactions["mid.$x"]; len(got) != 1 || got[0].SenderFBID != selfFBID {
+	if got := f.Reactions["mid.$x"]; len(got) != 1 || got[0].SenderFBID != selfFBID {
 		t.Fatalf("the reaction is not on the message: %+v", got)
 	}
 }
@@ -330,9 +290,8 @@ func TestReactAndUnsendSucceedOnTheirOwnIDSpaces(t *testing.T) {
 // the mutation returns, so this drives the failure through the whole route.
 func TestReactThatDoesNotLandIsNotA200(t *testing.T) {
 	f := &fakeIG{}
-	b := newTestBridge(t, f)
 	// An own fbid of 0 makes the read-back unverifiable, which is an ERROR.
-	b.setSelf(selfIdentity{IGID: "79597894900", Username: "not_____nora"})
+	b := newTestBridge(t, f, withSelf(domain.Self{IGID: "79597894900", Username: "not_____nora"}))
 	rec := post(t, b, "/react", map[string]any{
 		"room_id": threadShort, "message_id": "mid.$x", "emoji": "👍",
 	})
@@ -350,7 +309,7 @@ func TestAnUnconfirmedUnsendStillAnswers200AndSaysSo(t *testing.T) {
 	// the unconfirmed path can only be reached by making the MUTATION answer
 	// false — which is the thing being tested. Driving it any other way would
 	// be a test that cannot fail.
-	b := newTestBridge(t, &fakeIG{unconfirmedUnsend: true})
+	b := newTestBridge(t, &fakeIG{UnconfirmedUnsend: true})
 	rec := post(t, b, "/unsend", map[string]any{"room_id": threadShort, "message_id": "mid.$x"})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/unsend answered %d, want 200: %s", rec.Code, rec.Body.String())
@@ -386,8 +345,8 @@ func TestTypingFollowsUpstreamAndUsesTheShortThreadID(t *testing.T) {
 	if rec := post(t, b, "/typing", map[string]any{"room_id": threadShort, "typing": true}); rec.Code != http.StatusOK {
 		t.Fatalf("/typing answered %d", rec.Code)
 	}
-	if len(f.typing) != 1 || f.typing[0] != threadShort {
-		t.Fatalf("typing addressed %v, want the short id", f.typing)
+	if len(f.Typing) != 1 || f.Typing[0] != threadShort {
+		t.Fatalf("typing addressed %v, want the short id", f.Typing)
 	}
 }
 
@@ -395,7 +354,7 @@ func TestTypingFollowsUpstreamAndUsesTheShortThreadID(t *testing.T) {
 // adapter as 200 {"ok":true}: the contract promises {ok,id,timestamp_ms}.
 func TestSendWithoutAMessageIDDoesNotAnswer200(t *testing.T) {
 	for _, route := range []string{"/send", "/send-media"} {
-		b := newTestBridge(t, &fakeIG{emptySend: true})
+		b := newTestBridge(t, &fakeIG{EmptySend: true})
 		rec := post(t, b, route, map[string]any{
 			"room_id": threadShort, "text": "hi",
 			"data_base64": base64.StdEncoding.EncodeToString([]byte("x")),
@@ -410,7 +369,7 @@ func TestSendWithoutAMessageIDDoesNotAnswer200(t *testing.T) {
 
 func TestEventsStreamsBufferedEventsThenLive(t *testing.T) {
 	b := newTestBridge(t, &fakeIG{})
-	b.hub.emit(&messageEvent{Kind: kindMessage, RoomID: threadShort, MessageID: "mid.$buffered"})
+	b.hub.Emit(map[string]any{"kind": "message", "room_id": threadShort, "message_id": "mid.$buffered"})
 
 	srv := httptest.NewServer(b.routes())
 	defer srv.Close()
@@ -434,10 +393,10 @@ func TestEventsStreamsBufferedEventsThenLive(t *testing.T) {
 	// the event races into the buffer and this test measures its own timing
 	// rather than the hub's behaviour.
 	deadline := time.Now().Add(2 * time.Second)
-	for !b.hub.hasClients() && time.Now().Before(deadline) {
+	for !b.hub.HasClients() && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
 	}
-	b.hub.emit(&messageEvent{Kind: kindMessage, RoomID: threadShort, MessageID: "mid.$live"})
+	b.hub.Emit(map[string]any{"kind": "message", "room_id": threadShort, "message_id": "mid.$live"})
 	if second := readSSEData(t, reader); !strings.Contains(second, "mid.$live") {
 		t.Fatalf("second event = %q, want the live one", second)
 	}
@@ -458,9 +417,3 @@ func readSSEData(t *testing.T, r *bufio.Reader) string {
 		}
 	}
 }
-
-// --- helpers ------------------------------------------------------------------
-
-type errorString string
-
-func (e errorString) Error() string { return string(e) }
