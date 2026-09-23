@@ -120,36 +120,17 @@ decimal strings: the `02` trap again.
   committed once, read by **both** the Go handler tests and the Python client
   tests. A shape change on either side then fails on both.
 
-## P5: The router routes by network
+## P5: `instagram_fetch` (replaced 2026-09-23)
 
-**`nora/infra/social/router.py`**: `EXCEPTION_ROUTES` and the OpenCLI-default
-rule are replaced by one **total** `ROUTES` table, `(platform, what) →
-backend`, since `15` superseded the rule they encode.
-
-| Row | Backend | Subject |
-|---|---|---|
-| `instagram/story` | bridge | `person_id` → resolve + Tier 0 reach |
-| `instagram/profile` | bridge | `person_id` → resolve only. A username or link answers `unavailable` until P10 |
-| `instagram/posts` | bridge client, **no route behind it** | the client answers `unavailable` itself without calling the bridge (the row is not in its served set) until P13 adds a route. The row is bridge-owned now so it can never fall back to OpenCLI. OpenCLI's `user` returns Instagram's HTML page, so nothing working is lost |
-| `instagram/search` | **OpenCLI, the last Instagram row there** | named; moves in P11 |
-| `x/*` | OpenCLI | named |
-
-- **`nora/infra/social/bridge_server.py`**: `instagram/profile` and
-  `instagram/posts` leave `READ_ONLY_ALLOWLIST`.
-- **`tests/test_acceptance_rules.py::test_r86_…`** is **rewritten**, not
-  repointed. Its current disjointness assertion (`EXCEPTION_ROUTES &
-  READ_ONLY_ALLOWLIST == ∅`) has no meaning over one dict. The new
-  invariants: every pair the tool can construct is a key of `ROUTES`;
-  OpenCLI-routed pairs ⊆ `READ_ONLY_ALLOWLIST`; bridge-routed pairs ∩
-  `READ_ONLY_ALLOWLIST` = ∅. `tests/unit/test_social_router.py` follows.
-- **`nora/app/composition.py`** builds `InstagramSocialClient` and
-  `PersonsSubjectIndex` under `[social.instagram] enabled`, replacing the
-  hard-coded `None`.
-- **`social_fetch`'s docstring** (`nora/agent/tools.py`): on Instagram,
-  `profile` takes a person id for now.
-- **Read-back.** "what's on <person>'s story" in the Instagram room returns
-  story items; "<person>'s Instagram" returns the profile; both are one trace
-  each.
+**Superseded by `18-instagram-fetch-tool.md`.** P5 originally rewired
+`social_fetch`'s Instagram rows and docstring, and the operator then decided to
+split social reads per network. Changing `social_fetch` and then replacing it
+would have rewritten Nora's tool surface twice, so P5 is now: land
+`instagram_fetch` on the bridge path, and remove `social_fetch`'s Instagram
+rows in the same PR. It builds on P2–P4 and lands after the tool catalogue's
+#367 and #393. The routing-by-network, allowlist and `test_r86_…` changes this
+section used to list move into `18` §"Read-only, at three layers" unchanged
+in substance.
 
 ## P6–P8: The bridge's layers (`16` steps 2–4)
 

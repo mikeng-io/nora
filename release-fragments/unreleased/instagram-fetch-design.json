@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "Design: instagram_fetch, the first per-network social tool.",
+  "details": [],
+  "limitations": [],
+  "reason": "Design documents only (design/instagram-adoption/18, and 17 P5 replaced by it). instagram_fetch reads Instagram over the bridge only, takes a person, a pasted link or a typed handle, and adds a verb only when its bridge route works end to end. Resolution and authorization stay in SocialRouter for every social tool; read-only is enforced by a GET-only client and one allowlist table. It meets the tool catalogue's contract (first-sentence catalogue line, triggers, full NativeTool fields, Dreamer unit-safe, not hot) and lands after the catalogue, removing social_fetch's Instagram rows in the same PR."
+}
