@@ -17,13 +17,14 @@ read where `TagTrace.transcript` promises `TranscriptRow`s with a real Enum.
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 from uuid import uuid4
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.models import DeliveryStatus, TranscriptRow
+from nora.domain.models import DeliveryStatus, RowEdit, TranscriptRow
 from nora.domain.tag_trace import TagTrace
 from nora.infra.sql.schema import TAG_TRACE
 
@@ -31,12 +32,20 @@ from nora.infra.sql.schema import TAG_TRACE
 def _row_to_json(row: TranscriptRow) -> dict[str, Any]:
     d = dict(row.__dict__)
     d["delivery_status"] = row.delivery_status.value
+    # An EDITED row carries a `RowEdit` (design/message-edits/01 §3) — a
+    # dataclass, not a JSON primitive, the same problem `delivery_status`'s
+    # Enum is. Left in, it failed the JSONB encode for every tag whose window
+    # held an edited message, and the save is spawned, so the trace vanished
+    # with only a log line.
+    d["edit"] = dataclasses.asdict(row.edit) if row.edit is not None else None
     return d
 
 
 def _json_to_row(d: dict[str, Any]) -> TranscriptRow:
     d = dict(d)
     d["delivery_status"] = DeliveryStatus(d["delivery_status"])
+    edit = d.get("edit")
+    d["edit"] = RowEdit(**edit) if isinstance(edit, dict) else None
     return TranscriptRow(**d)
 
 

@@ -15,12 +15,13 @@ wiring to build at all.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import re
 from typing import Protocol
 
 from ...domain.media import MediaRef, label_for, render_placeholder
-from ...domain.models import NormalizedMessage, Quote
+from ...domain.models import EditTarget, NormalizedMessage, Quote
 from .snowflake import timestamp_ms as _timestamp_ms
 
 log = logging.getLogger("nora.discord.parser")
@@ -269,3 +270,38 @@ def parse_discord_message(
     except Exception:
         log.exception("unparseable discord message, skipping")
         return None
+
+
+def parse_discord_edit(
+    message: _DiscordMessage | None, *, own_id: str
+) -> NormalizedMessage | None:
+    """An edited message (`on_raw_message_edit`'s `payload.message`) → an
+    edit of the message it is (design/message-edits/03 §1).
+
+    The same parse as a new message, so the edit's body, mentions and media
+    are built by exactly the rules the original's were — then marked with
+    `edit_of` (its own snowflake: a Discord edit keeps its id) and stamped
+    with `edited_at`, the time the TEXT changed.
+
+    `MESSAGE_UPDATE` is not only an edit. It also fires when a link preview
+    resolves, a message is pinned, a thread is started from it or a poll ends.
+    A message its author NEVER edited has no `edited_at`, so such an update is
+    not an edit and answers None here, before custody fetches anything. It is
+    also what closes a race: a link preview's update can arrive while the
+    message it updates is still being written, and would otherwise look like
+    an edit of nothing. An update to a message that WAS edited earlier still
+    carries that older `edited_at`; ingest ends it `edit_stale`
+    or `edit_unchanged`."""
+    edited_at = getattr(message, "edited_at", None) if message is not None else None
+    if edited_at is None:
+        return None
+    parsed = parse_discord_message(message, own_id=own_id)
+    if parsed is None or message is None:
+        return None
+    try:
+        ts = int(edited_at.timestamp() * 1000)
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        return None
+    return dataclasses.replace(
+        parsed, timestamp=ts, edit_of=EditTarget(message_id=str(message.id)),
+    )

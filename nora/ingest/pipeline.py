@@ -26,12 +26,13 @@ than propagating).
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any, Literal, get_args
 
-from nora.domain.models import NormalizedMessage
+from nora.domain.models import EditedMessage, NormalizedMessage
 from nora.domain.ports import (
     BlobStore,
     EngageDecision,
@@ -49,6 +50,9 @@ from nora.platform.registry import MediaSourceRegistry
 from nora.policy import Policy
 
 from .stages import audit as audit_stage
+from .stages import edit_gate as edit_gate_stage
+from .stages import edit_record as edit_record_stage
+from .stages import edit_target as edit_target_stage
 from .stages import gate as gate_stage
 from .stages import identity as identity_stage
 from .stages import media as media_stage
@@ -78,6 +82,15 @@ IngestOutcome = Literal[
     "sender_not_allowed",   # recorded, and deliberately not answered
     "engaged",              # recorded, and handed to the engagement path
     "recorded",             # recorded, and that is all — the ambient majority
+    # The EDIT path (design/message-edits/02 §4). An edit is not a message, so
+    # it gets its own endings rather than borrowing `recorded`/`engaged`: a
+    # rate of edits is a different question from a rate of messages.
+    "edit_recorded",        # folded onto the message it edits
+    "edit_engaged",         # folded, and it newly addresses her — a turn
+    "edit_unchanged",       # the text did not change (a link preview, a pin); nothing written
+    "edit_stale",           # no newer than the edit on record (a redelivery); nothing written
+    "edit_orphaned",        # no original on record; dropped, whoever sent it
+    "edit_refused",         # the original is hers, or its author is not the editor
 ]
 
 _OUTCOMES: frozenset[str] = frozenset(get_args(IngestOutcome))
@@ -290,6 +303,22 @@ class IngestPipeline:
             _outcome(m, message, "scope_refused")
             return IngestResult(message=None, decision=None)
 
+        # AN EDIT takes its own path from here (design/message-edits/02 §4):
+        # it is recorded beside the message it changes, never as a message of
+        # its own — and an edit of nothing on record is dropped, not ingested.
+        if message.edit_of is not None:
+            with span("ingest.edit_target"):
+                found = await edit_target_stage.run(
+                    message=message, target=message.edit_of, audit=self._audit,
+                    persons=self._persons, metrics=m,
+                )
+            if found.ending is not None or found.original is None:
+                _outcome(m, message, found.ending or "edit_orphaned")
+                return IngestResult(message=None, decision=None)
+            return await self._run_edit(
+                message=found.message, original=found.original,
+            )
+
         # Identity first, so the resolved person_id lands in the audit INSERT
         # instead of a second write. `Persons.resolve` is two dict lookups on a
         # startup-built frozen mapping — no I/O, so nothing fallible moved
@@ -388,3 +417,63 @@ class IngestPipeline:
             _outcome(m, message, "engaged" if decision.engage else "recorded")
 
         return IngestResult(message=message, decision=decision)
+
+    async def _run_edit(
+        self, *, message: NormalizedMessage, original: EditedMessage,
+    ) -> IngestResult:
+        """An edit whose original is on record (design/message-edits/02 §4).
+
+        The ambient path's stages, in its order, with three differences:
+        the record is a `message_edit` row and is skipped when the text did not
+        change; Honcho is fed a framed correction; and the gate asks whether
+        the edit NEWLY addresses her (`edit_gate`). No standing event: the
+        standing fold counts new messages, and an edit is not one.
+
+        A turn it opens is answered AS THE ORIGINAL — its timestamp and its
+        platform handle — because that is the message the room sees, and what
+        the 👀 reaction and a threaded reply have to point at. A WhatsApp edit's
+        own stanza id is not a message anyone can react to."""
+        m = self._metrics
+        with span("ingest.identity"):
+            person = await identity_stage.run(
+                message=message, persons=self._persons, metrics=m
+            )
+        annotate(**{"nora.person_known": person is not None})
+        with span("ingest.media"):
+            message = await media_stage.run(
+                message=message, sources=self._media_sources, blobs=self._blobs,
+                media_store=self._media_store, metrics=m,
+                stickers=self._stickers, transcriber=self._transcriber,
+                comprehension=self._comprehension,
+                person=person, language=self._language,
+            )
+        with span("ingest.edit_record"):
+            recorded = await edit_record_stage.run(
+                message=message, original=original, audit=self._audit, metrics=m,
+            )
+        if recorded != "recorded":
+            _outcome(m, message, recorded)
+            return IngestResult(message=None, decision=None)
+        with span("ingest.memory_feed"):
+            await memory_feed_stage.run(
+                message=message, person=person, memory=self._memory, metrics=m,
+                spawn=self._spawn, edited=original,
+            )
+        with span("ingest.gate"):
+            decision = await edit_gate_stage.run(
+                message=message, previous=original, policy=self._policy, metrics=m,
+            )
+        annotate(**{"nora.engage_reason": decision.reason})
+        if decision.engage and not self._allowlist.is_allowed(
+            platform=message.platform,
+            conversation_id=message.conversation_id,
+            person_id=person.person_id if person else None,
+        ):
+            m.inc("nora_denied_senders_total", platform=message.platform)
+            decision = EngageDecision(engage=False, reason="sender_not_allowed")
+        _outcome(m, message, "edit_engaged" if decision.engage else "edit_recorded")
+        answered_as = dataclasses.replace(
+            message, timestamp=original.ts,
+            message_id=original.platform_message_id,
+        )
+        return IngestResult(message=answered_as, decision=decision)

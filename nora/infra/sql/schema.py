@@ -118,7 +118,66 @@ MESSAGES = sa.Table(
     # queries it by hash, and an index here would disturb the one index that
     # matters.
     sa.Column("media_json", sa.Text),
+    # The PLATFORM'S OWN HANDLE for this message (`NormalizedMessage.message_id`)
+    # — a Discord snowflake, a WhatsApp stanza id, an Instagram mid — or NULL
+    # where the platform has none (Signal addresses a message by author and
+    # sent-timestamp instead). A column so an EDIT, which names its target by
+    # this handle, can find it (design/message-edits/01 §2). Migration 0060
+    # backfilled it from `raw_json` for every row stored before it existed.
+    sa.Column("platform_message_id", sa.Text),
+    # The ids this message @-mentioned, as the parser produced them: a JSON
+    # array, sorted, or NULL on a row stored before the column existed. Read
+    # for ONE question — did the version an edit replaced already address
+    # Nora? (design/message-edits/02 §3) — and stored rather than re-parsed out
+    # of `raw_json` because that would interpret the envelope a second time,
+    # per platform, in ingest.
+    sa.Column("mentions_json", sa.Text),
     sa.CheckConstraint("conversation_type IN ('group','dm')"),
+)
+
+#: An edit names its target by the platform's handle, within one room.
+IDX_MESSAGES_CONV_PLATFORM_ID = sa.Index(
+    "idx_messages_conv_platform_message_id",
+    MESSAGES.c.conversation_id, MESSAGES.c.platform_message_id,
+)
+
+# ── message_edit (design/message-edits/01 §2) ─────────────────────────────────
+# One row per EDIT a member made to a message Nora recorded, pointing at that
+# message. `messages` is never updated for an edit (A9, append-only): the
+# transcript read folds the newest edit onto its row instead.
+#
+# A side table rather than more rows in `messages`, because five readers query
+# `messages` directly and every one of them would count an edit as a second
+# utterance. CASCADE because `prune_all` deletes messages and an edit of a
+# pruned message is an edit of nothing.
+MESSAGE_EDIT = sa.Table(
+    "message_edit",
+    METADATA,
+    sa.Column("id", sa.Integer, sa.Identity(always=False), primary_key=True),
+    sa.Column(
+        "message_id", sa.Integer,
+        sa.ForeignKey("messages.id", name="message_edit_message_id_fkey",
+                      ondelete="CASCADE"),
+        nullable=False,
+    ),
+    # The PLATFORM'S edit time, ms — the clock `edited` renders an age from.
+    sa.Column("ts", sa.BigInteger, nullable=False),
+    sa.Column("body", sa.Text),
+    # The edit's own envelope. The row it edits keeps its own `raw_json`, which
+    # is what a reply or a reaction reads the platform handle from.
+    sa.Column("raw_json", sa.Text),
+    sa.Column("mentions_json", sa.Text),
+    sa.Column(
+        "created_at", sa.Text, nullable=False,
+        server_default=sa.text("now()::text"),
+    ),
+)
+
+#: The fold's read: the newest edit of each message. Ascending on purpose —
+#: Postgres scans it backwards for `ts DESC`, and a plain index keeps it out of
+#: `env.py`'s DESC-expression exclusion list.
+IDX_MESSAGE_EDIT_MESSAGE_TS = sa.Index(
+    "idx_message_edit_message_ts", MESSAGE_EDIT.c.message_id, MESSAGE_EDIT.c.ts,
 )
 
 # Declared after the table so the expression index can reference its columns.

@@ -213,6 +213,8 @@ from nora.domain.media import MediaRef as MediaRef
 from nora.domain.models import (
     ConversationTarget,
     DeliveryStatus,
+    EditedMessage,
+    EditTarget,
     NormalizedMessage,
     TagContext,
     TranscriptRow,
@@ -799,6 +801,26 @@ class RecordStore(Protocol):
     async def set_delivery_outcome(
         self, *, row_id: int, status: DeliveryStatus, ts: int | None = None
     ) -> None: ...
+
+    async def find_edited(
+        self, *, conversation_id: str, target: EditTarget, sender_id: str,
+    ) -> EditedMessage | None:
+        """The recorded message an edit targets, or None if it was never
+        recorded (design/message-edits/01 §2).
+
+        `target.message_id` matches `messages.platform_message_id` in this
+        conversation; `target.sent_ts` (Signal) matches `ts` from `sender_id`,
+        the pair Signal addresses a message by. `sender_id` is ignored on the
+        handle path — Instagram's edit names no sender at all. The result
+        carries the CURRENT version (its newest edit folded in).
+        """
+        ...
+
+    async def append_edit(self, *, message_id: int, message: NormalizedMessage) -> None:
+        """Record one edit of the `messages` row `message_id`. Append-only:
+        the row it edits is never updated (A9); the transcript reads fold the
+        newest edit onto it instead (design/message-edits/01 §3)."""
+        ...
 
     async def unattributed(self, *, limit: int) -> list[UnattributedRow]: ...
 

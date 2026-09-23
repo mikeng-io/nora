@@ -68,7 +68,7 @@ async def test_listen_parses_and_forwards_only_parseable_events(monkeypatch):
         ),
     ]
 
-    async def _fake_listen(self, on_message_cb):
+    async def _fake_listen(self, on_message_cb, on_edit_cb=None):
         for event in events:
             await on_message_cb(event)
 
@@ -88,6 +88,54 @@ async def test_listen_parses_and_forwards_only_parseable_events(monkeypatch):
     assert len(received) == 1
     assert received[0].body == "hello"
     assert received[0].sender_id == "42"
+
+
+async def test_an_edit_reaches_the_same_callback_marked_as_an_edit(monkeypatch):
+    """design/message-edits/03 §1: `on_raw_message_edit`'s message goes
+    through the SAME parse as a new one, then is marked with its own snowflake
+    as the target and stamped with `edited_at`. It reaches the one `on_message`
+    every network feeds, where ingest routes it."""
+    import datetime as _dt
+
+    from nora.domain.models import EditTarget
+
+    adapter = DiscordAdapter("tok")
+    adapter._identity = PlatformIdentity(platform="discord", primary="999")
+    adapter._own_id = "999"
+    guild, channel = FakeGuild(id=1), FakeChannel(id=2)
+    edited = FakeMessage(
+        id=4, author=FakeUser(id=42), guild=guild, channel=channel,
+        content="hello, fixed",
+    )
+    edited.edited_at = _dt.datetime(2026, 9, 23, 12, 0, tzinfo=_dt.UTC)
+    self_edit = FakeMessage(id=5, author=FakeUser(id=999), guild=guild, channel=channel)
+    self_edit.edited_at = edited.edited_at
+    # A link preview resolving, a pin, a thread: an update to a message its
+    # author never edited. No `edited_at`, so not an edit.
+    embed_only = FakeMessage(
+        id=6, author=FakeUser(id=42), guild=guild, channel=channel, content="see link",
+    )
+    embed_only.edited_at = None
+
+    async def _fake_listen(self, on_message_cb, on_edit_cb=None):
+        assert on_edit_cb is not None, "the adapter must wire the edit callback"
+        await on_edit_cb(self_edit)
+        await on_edit_cb(embed_only)
+        await on_edit_cb(edited)
+
+    monkeypatch.setattr(DiscordListener, "listen", _fake_listen)
+    received = []
+
+    async def _capture(message):
+        received.append(message)
+
+    await adapter.listen(on_message=_capture)
+
+    assert len(received) == 1, \
+        "Nora's own edit (R-12) and a non-edit update must not reach ingest"
+    assert received[0].edit_of == EditTarget(message_id="4")
+    assert received[0].body == "hello, fixed"
+    assert received[0].timestamp == int(edited.edited_at.timestamp() * 1000)
 
 
 async def test_health_reports_connection_state():

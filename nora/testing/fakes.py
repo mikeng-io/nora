@@ -20,9 +20,14 @@ from nora.domain.media import MediaBlob, MediaBytes, MediaObject, MediaRef, medi
 from nora.domain.models import (
     ConversationTarget,
     DeliveryStatus,
+    EditedMessage,
+    EditTarget,
     NormalizedMessage,
+    RowEdit,
     TranscriptRow,
     UnattributedRow,
+    mentions_json,
+    parse_mentions_json,
 )
 from nora.domain.ports import (
     AdapterHealth,
@@ -108,6 +113,9 @@ class FakeRecordStore:
 
     def __init__(self) -> None:
         self.rows: list[dict[str, Any]] = []
+        # `message_edit`, as dicts: {"id", "message_id", "ts", "body",
+        # "raw_json", "mentions_json"} (design/message-edits/01 §2).
+        self.edits: list[dict[str, Any]] = []
         self.fail_on_nora = False
         self.fail_on_recent = False
         self.closed = False
@@ -160,8 +168,70 @@ class FakeRecordStore:
             # have; `tests/contract/test_audit_store_contract.py` is what pins
             # the two together.
             "media_json": media_json(message.media_blobs),
+            # Both mirror `SqlRecordStore.append` (design/message-edits/01 §2).
+            "platform_message_id": message.message_id or None,
+            "mentions_json": mentions_json(message.mentions),
         })
         return row_id
+
+    def _latest_edit(self, row_id: int) -> dict[str, Any] | None:
+        """Mirrors `audit._latest_edit`: newest by `(ts, id)`."""
+        mine = [e for e in self.edits if e["message_id"] == row_id]
+        return max(mine, key=lambda e: (e["ts"], e["id"])) if mine else None
+
+    async def find_edited(
+        self, *, conversation_id: str, target: EditTarget, sender_id: str,
+    ) -> EditedMessage | None:
+        """Mirrors `SqlRecordStore.find_edited`, earliest-id tie-break
+        included; pinned for both by the contract suite."""
+        if target.message_id:
+            def match(r: dict[str, Any]) -> bool:
+                return r["platform_message_id"] == target.message_id
+        elif target.sent_ts is not None and sender_id:
+            def match(r: dict[str, Any]) -> bool:
+                return r["ts"] == target.sent_ts and r["sender_id"] == sender_id
+        else:
+            return None
+        found = sorted(
+            (r for r in self.rows
+             if r["conversation_id"] == conversation_id and match(r)),
+            key=lambda r: r["id"],
+        )
+        if not found:
+            return None
+        r = found[0]
+        latest = self._latest_edit(r["id"])
+        return EditedMessage(
+            id=r["id"], ts=r["ts"], sender_id=r["sender_id"],
+            person_id=r["person_id"], is_nora=bool(r["is_nora"]),
+            body=latest["body"] if latest else r["body"],
+            mentions=parse_mentions_json(
+                latest["mentions_json"] if latest else r["mentions_json"]
+            ),
+            first_body=r["body"],
+            platform_message_id=r["platform_message_id"] or "",
+            replies_to_nora=any(
+                q["conversation_id"] == r["conversation_id"]
+                and r["quoted_ts"] is not None and q["ts"] == r["quoted_ts"]
+                and q["is_nora"]
+                for q in self.rows
+            ),
+            edited_ts=latest["ts"] if latest else None,
+        )
+
+    async def append_edit(self, *, message_id: int, message: NormalizedMessage) -> None:
+        self.edits.append({
+            "id": len(self.edits) + 1,
+            "message_id": message_id,
+            "ts": message.timestamp,
+            "body": message.body,
+            "raw_json": json.dumps(message.raw),
+            # Mirrors `audit._edit_mentions_json`.
+            "mentions_json": (
+                None if message.edit_of is not None and not message.edit_of.mentions_known
+                else mentions_json(message.mentions)
+            ),
+        })
 
     async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]:
         if self.fail_on_recent:
@@ -215,17 +285,22 @@ class FakeRecordStore:
         rows.sort(key=lambda r: r["id"])
         return [self._transcript_row(r) for r in rows[:limit]]
 
-    @staticmethod
-    def _transcript_row(r: dict[str, Any]) -> TranscriptRow:
+    def _transcript_row(self, r: dict[str, Any]) -> TranscriptRow:
         """The shared row -> `TranscriptRow` mapping for `recent` and
         `since` — mirrors `SqlRecordStore._row` so the two stay legible
-        side by side."""
+        side by side, the edit fold included."""
+        latest = self._latest_edit(r["id"])
         return TranscriptRow(
             id=r["id"], sender_id=r["sender_id"], sender_name=r["sender_name"],
-            ts=r["ts"], body=r["body"], is_nora=r["is_nora"],
+            ts=r["ts"], body=latest["body"] if latest else r["body"],
+            is_nora=r["is_nora"],
             delivery_status=r["delivery_status"], raw_json=r["raw_json"],
             quoted_ts=r["quoted_ts"], media_json=r["media_json"],
             person_id=r["person_id"],
+            edit=(
+                RowEdit(ts=latest["ts"], was=r["body"], raw_json=latest["raw_json"])
+                if latest else None
+            ),
         )
 
     async def set_delivery_outcome(

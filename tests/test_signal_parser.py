@@ -1,5 +1,6 @@
 import pytest
 
+from nora.domain.models import EditTarget
 from nora.platform.signal.parser import parse_event
 
 OWN = "+85290000100"
@@ -402,6 +403,29 @@ def test_an_edited_message_is_ingested():
     assert msg is not None, "an edit must not be silently dropped"
     assert msg.body == "corrected"
     assert msg.conversation_id == "Z3JvdXA="
+
+
+def test_an_edit_names_the_message_it_edits_by_its_sent_timestamp():
+    """design/message-edits/03 §1: `targetSentTimestamp` is the ORIGINAL's
+    sent-timestamp — with the author, Signal's address for a message. The
+    edit's own `timestamp` is when it was edited."""
+    msg = parse_event(sse_edit(), OWN)
+    assert msg is not None
+    assert msg.edit_of == EditTarget(sent_ts=1700)
+    assert msg.timestamp == 1800
+
+
+def test_an_ordinary_message_is_not_an_edit():
+    assert parse_event(envelope(), OWN).edit_of is None
+
+
+def test_an_edit_naming_no_target_falls_back_to_an_ordinary_message():
+    """Nothing to fold onto, so it is ingested the way every edit was before
+    the edit path existed — not dropped."""
+    e = sse_edit()
+    del e["envelope"]["editMessage"]["targetSentTimestamp"]
+    msg = parse_event(e, OWN)
+    assert msg is not None and msg.edit_of is None
 
 
 def test_an_edit_still_obeys_the_self_send_rule():

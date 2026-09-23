@@ -8,12 +8,13 @@ without the other fails here, which is the point.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 
 import pytest
 
 from nora.domain.media import MediaBlob
-from nora.domain.models import DeliveryStatus, NormalizedMessage, Quote
+from nora.domain.models import DeliveryStatus, EditTarget, NormalizedMessage, Quote, RowEdit
 from nora.domain.ports import RecordStore
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
@@ -448,3 +449,155 @@ async def test_an_unattributed_row_carries_its_custody_index(store):
     assert len(rows) == 1
     assert rows[0].media_json is not None
     assert blob.sha256 in rows[0].media_json
+
+
+# ── edits (design/message-edits/01) ──────────────────────────────────────────
+
+
+def _edit(body: str, ts: int, *, conv="g1", sender="+852111", raw=None,
+          mentions=frozenset()) -> NormalizedMessage:
+    return NormalizedMessage(
+        platform="signal", conversation_id=conv, conversation_type="group",
+        sender_id=sender, sender_name="Miles", timestamp=ts, body=body,
+        raw={"edit": ts} if raw is None else raw, mentions=mentions,
+        edit_of=EditTarget(sent_ts=1),
+    )
+
+
+async def test_an_edit_folds_the_latest_text_onto_the_original_position(store):
+    """The row keeps its id, its ts and its OWN raw_json (the envelope a reply
+    or a reaction reads the platform handle from); the body is the latest
+    edit's; `edit` carries when, what it first said, and the latest envelope."""
+    await store.append(message=_msg(body="before", ts=0))
+    original = await store.append(message=_msg(body="dinner at 7", ts=1, raw={"orig": 1}))
+    await store.append(message=_msg(body="after", ts=2))
+    await store.append_edit(message_id=original, message=_edit("dinner at 8", 5))
+    await store.append_edit(message_id=original, message=_edit("dinner at 9", 9))
+
+    rows = await store.recent(conversation_id="g1", limit=10)
+    assert [r.body for r in rows] == ["before", "dinner at 9", "after"], \
+        "the edit must fold AT the original's position, not append at the end"
+    edited = rows[1]
+    assert edited.id == original and edited.ts == 1
+    assert json.loads(edited.raw_json) == {"orig": 1}
+    assert edited.edit == RowEdit(ts=9, was="dinner at 7", raw_json=json.dumps({"edit": 9}))
+    assert rows[0].edit is None and rows[2].edit is None
+
+
+async def test_since_reads_fold_edits_too(store):
+    """One select for every transcript read: the Dreamer's cursor and the
+    standing fold must not read the text the member replaced."""
+    original = await store.append(message=_msg(body="dinner at 7", ts=1))
+    await store.append_edit(message_id=original, message=_edit("dinner at 8", 5))
+    for rows in (
+        await store.since(conversation_id="g1", after_id=0, limit=10),
+        await store.since_including_nora(conversation_id="g1", after_id=0, limit=10),
+    ):
+        assert [r.body for r in rows] == ["dinner at 8"]
+        assert rows[0].edit is not None and rows[0].edit.was == "dinner at 7"
+
+
+async def test_an_edit_is_found_by_the_platforms_handle(store):
+    """WhatsApp, Instagram and Discord name the edited message by their own
+    handle, which `append` now stores from `NormalizedMessage.message_id`."""
+    base = _msg(platform="whatsapp", body="hi", ts=10)
+    row = await store.append(message=dataclasses.replace(base, message_id="3EB0A"))
+    found = await store.find_edited(
+        conversation_id="g1", target=EditTarget(message_id="3EB0A"), sender_id="",
+    )
+    assert found is not None and found.id == row
+    assert found.platform_message_id == "3EB0A"
+    assert await store.find_edited(
+        conversation_id="g2", target=EditTarget(message_id="3EB0A"), sender_id="",
+    ) is None, "a handle must never resolve across a conversation"
+
+
+async def test_a_signal_edit_is_found_by_author_and_sent_timestamp(store):
+    row = await store.append(message=_msg(body="hi", ts=1700, sender="+852111"))
+    await store.append(message=_msg(body="other", ts=1700, sender="+852999"))
+    found = await store.find_edited(
+        conversation_id="g1", target=EditTarget(sent_ts=1700), sender_id="+852111",
+    )
+    assert found is not None and found.id == row
+    assert await store.find_edited(
+        conversation_id="g1", target=EditTarget(sent_ts=1700), sender_id="",
+    ) is None, "the timestamp alone is not Signal's address for a message"
+
+
+async def test_find_edited_returns_the_current_version_and_the_first(store):
+    """The gate compares an edit against the version it REPLACES, so the
+    lookup carries the newest edit's body and mentions — and the first text
+    for Honcho's framing."""
+    row = await store.append(message=dataclasses.replace(
+        _msg(body="dinner at 7", ts=1), mentions=frozenset({"+852000"}),
+    ))
+    found = await store.find_edited(
+        conversation_id="g1", target=EditTarget(sent_ts=1), sender_id="+852111",
+    )
+    assert found is not None
+    assert (found.body, found.mentions, found.first_body) == \
+        ("dinner at 7", frozenset({"+852000"}), "dinner at 7")
+
+    await store.append_edit(message_id=row, message=_edit(
+        "dinner at 8", 5, mentions=frozenset({"+852000", "+852555"}),
+    ))
+    found = await store.find_edited(
+        conversation_id="g1", target=EditTarget(sent_ts=1), sender_id="+852111",
+    )
+    assert found is not None
+    assert (found.body, found.mentions, found.first_body) == \
+        ("dinner at 8", frozenset({"+852000", "+852555"}), "dinner at 7")
+
+
+async def test_a_message_that_mentioned_nobody_is_known_not_unknown(store):
+    """`[]` and NULL are different answers: NULL is «stored before the column
+    existed», which the gate refuses on. A message written today that mentions
+    nobody must read as an EMPTY set."""
+    await store.append(message=_msg(body="hi", ts=1))
+    found = await store.find_edited(
+        conversation_id="g1", target=EditTarget(sent_ts=1), sender_id="+852111",
+    )
+    assert found is not None and found.mentions == frozenset()
+
+
+async def test_find_edited_knows_whether_the_message_replies_to_nora(store):
+    """Read off the RECORDED quote, because an edit event need not repeat it."""
+    await store.append(message=_msg(body="hi from nora", ts=1, sender="nora"), is_nora=True)
+    await store.append(message=_msg(body="hi back", ts=2, quote=Quote(
+        author_id="nora", text="", quoted_ts=1,
+    )))
+    await store.append(message=_msg(body="unrelated", ts=3))
+    reply = await store.find_edited(
+        conversation_id="g1", target=EditTarget(sent_ts=2), sender_id="+852111",
+    )
+    plain = await store.find_edited(
+        conversation_id="g1", target=EditTarget(sent_ts=3), sender_id="+852111",
+    )
+    assert reply is not None and reply.replies_to_nora
+    assert plain is not None and not plain.replies_to_nora
+
+
+async def test_find_edited_carries_the_newest_edit_time(store):
+    row = await store.append(message=_msg(body="v1", ts=1))
+    found = await store.find_edited(
+        conversation_id="g1", target=EditTarget(sent_ts=1), sender_id="+852111",
+    )
+    assert found is not None and found.edited_ts is None
+    await store.append_edit(message_id=row, message=_edit("v2", 7))
+    found = await store.find_edited(
+        conversation_id="g1", target=EditTarget(sent_ts=1), sender_id="+852111",
+    )
+    assert found is not None and found.edited_ts == 7
+
+
+async def test_an_edit_that_could_not_see_mentions_records_unknown(store):
+    """`EditTarget.mentions_known=False` with nothing carried forward: NULL,
+    never `[]` — the platform never said the edit mentioned nobody."""
+    row = await store.append(message=_msg(body="v1", ts=1))
+    await store.append_edit(message_id=row, message=dataclasses.replace(
+        _edit("v2", 7), edit_of=EditTarget(sent_ts=1, mentions_known=False),
+    ))
+    found = await store.find_edited(
+        conversation_id="g1", target=EditTarget(sent_ts=1), sender_id="+852111",
+    )
+    assert found is not None and found.mentions is None

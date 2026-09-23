@@ -14,10 +14,11 @@ still answers None for them so it stays total on its own), `from_me`
 and turns carrying neither text nor media.
 
 An EDIT arrives as an ordinary `message` event whose `edit_of` names the
-original stanza. Like Signal (`nora.platform.signal.parser`), the edit is
-ingested as its OWN row: the audit trail is append-only, and the prefill
-wants the latest text. `edit_of` itself is carried in `raw` and nowhere
-else this phase.
+original stanza, with `text`/`media` describing the NEW content. It becomes
+`NormalizedMessage.edit_of = EditTarget(message_id=<that stanza id>)`, and
+ingest records it beside the message it edits rather than as a row of its own
+(design/message-edits/03 §1). `message_id` stays the edit's own stanza id —
+the original's is what `edit_of` names.
 
 Never raises: one malformed event is logged and skipped, mirroring the
 sibling parsers — a bad turn must never kill the stream behind it.
@@ -28,7 +29,7 @@ from __future__ import annotations
 import logging
 
 from ...domain.media import MediaRef, label_for, render_placeholder
-from ...domain.models import NormalizedMessage, Quote
+from ...domain.models import EditTarget, NormalizedMessage, Quote
 from .jid import (
     conversation_id_for,
     is_broadcast,
@@ -192,6 +193,10 @@ def parse_event(event: dict) -> NormalizedMessage | None:
             # by, the way Discord's snowflake does. `(author, timestamp)`
             # means nothing to that endpoint.
             message_id=str(event.get("id") or ""),
+            edit_of=(
+                EditTarget(message_id=str(event["edit_of"]))
+                if event.get("edit_of") else None
+            ),
         )
     except Exception:
         log.exception("unparseable whatsapp event, skipping")

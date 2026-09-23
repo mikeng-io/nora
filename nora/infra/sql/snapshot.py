@@ -138,10 +138,11 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.culture import CultureRevision
-from nora.domain.models import DeliveryStatus, TranscriptRow
+from nora.domain.models import TranscriptRow
 from nora.domain.notes import Note, NoteRevision
 from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import Standing
+from nora.infra.sql.audit import transcript_row, transcript_select
 from nora.infra.sql.notes import _row_to_note, _row_to_revision
 from nora.infra.sql.reminders import _row_to_reminder
 from nora.infra.sql.schema import (
@@ -288,33 +289,6 @@ async def snapshot(
     )
 
 
-def _transcript_row(r: Any) -> TranscriptRow:
-    """`SqlRecordStore._row`'s mapping, over the same eleven columns.
-
-    Spelled out here rather than borrowed because that one is a method on a
-    store that is CONSTRUCTED with a metrics sink and a bounds site, which it
-    uses to report a cut window — this read does not cut, so reaching it would
-    mean building an instrument with nothing to report just to get at a
-    mapping. The note tier's two mappings, by contrast, are module-level
-    functions over nothing but a row, so those are imported rather than
-    re-typed. The columns are selected in the same order in both places, which
-    is what makes this one comparable to its original at a glance.
-    """
-    return TranscriptRow(
-        id=r.id,
-        sender_id=r.sender_id,
-        sender_name=r.sender_name,
-        ts=r.ts,
-        body=r.body,
-        is_nora=bool(r.is_nora),
-        delivery_status=DeliveryStatus(r.delivery_status),
-        raw_json=r.raw_json,
-        quoted_ts=r.quoted_ts,
-        media_json=r.media_json,
-        person_id=r.person_id,
-    )
-
-
 async def _transcript(
     engine: AsyncEngine,
     *,
@@ -337,12 +311,10 @@ async def _transcript(
     is not evidence, it is the transcript, and she was in it. A reconstruction
     that dropped her half would show a room talking to nobody.
     """
-    columns = (
-        MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.sender_name,
-        MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.is_nora,
-        MESSAGES.c.delivery_status, MESSAGES.c.raw_json,
-        MESSAGES.c.quoted_ts, MESSAGES.c.media_json, MESSAGES.c.person_id,
-    )
+    # `SqlRecordStore`'s own select and mapping, so an edit folds here as it
+    # does on every live read — bounded AS OF the instant: an edit made after
+    # `before_ms` had not happened yet (design/message-edits/01 §3).
+    select = transcript_select(edits_before=before_ms)
     where = (
         MESSAGES.c.platform == platform,
         MESSAGES.c.conversation_id == conversation_id,
@@ -356,21 +328,21 @@ async def _transcript(
         # ascending read would keep the oldest and drop exactly the part of the
         # room that was still live at `before_ms`.
         stmt = (
-            sa.select(*columns).where(*where)
+            select.where(*where)
             .order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc())
             .limit(limit)
         )
         async with engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        return tuple(_transcript_row(r) for r in reversed(rows))
+        return tuple(transcript_row(r) for r in reversed(rows))
 
     stmt = (
-        sa.select(*columns).where(*where)
+        select.where(*where)
         .order_by(MESSAGES.c.ts.asc(), MESSAGES.c.id.asc())
     )
     async with engine.connect() as conn:
         rows = (await conn.execute(stmt)).all()
-    return tuple(_transcript_row(r) for r in rows)
+    return tuple(transcript_row(r) for r in rows)
 
 
 async def _culture(

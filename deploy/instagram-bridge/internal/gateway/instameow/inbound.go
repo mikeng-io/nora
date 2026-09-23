@@ -587,9 +587,9 @@ func normalizeReaction(room string, r slidetypes.Reaction, messageID string, rem
 	return ev
 }
 
-// editEvent carries the NEW text. Like Signal and WhatsApp, an edit is its own
-// row rather than a mutation of an earlier one — the audit trail is
-// append-only, so the bridge reports the event and never rewrites history.
+// editEvent carries the NEW text. The bridge reports the event and never
+// rewrites history; Nora records it beside the message it edits, not over it
+// (design/message-edits/, the same for every network).
 type editEvent struct {
 	Kind      string `json:"kind"`
 	RoomID    string `json:"room_id"`

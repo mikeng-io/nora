@@ -1,0 +1,17 @@
+{
+  "type": "feature",
+  "summary": "Nora now sees message edits on Signal, WhatsApp, Instagram and Discord, and reads an edited message as a correction rather than a second message.",
+  "details": [
+    "An edit is recorded beside the message it changes. The transcript shows the latest text where the message was originally sent, with when it was edited and what it first said.",
+    "Instagram and Discord edits reach Nora for the first time; Signal and WhatsApp edits no longer appear as a duplicate, unmarked message.",
+    "Honcho is told about an edit as a correction of what the person first said, not as a new, independent statement.",
+    "An edit opens a turn only when it newly addresses Nora — adding an @-mention or her trigger to a message that had none. Fixing a typo in a message that already tagged her does not make her answer again."
+  ],
+  "limitations": [
+    "Deleted or unsent messages are still not captured.",
+    "An edit to a message Nora never recorded (older than her retention window, or from before she was in the room) is ignored.",
+    "If someone edits a question Nora already answered, she does not answer again; she sees the corrected text on her next turn.",
+    "Signal and WhatsApp edits received before this release stay in the transcript as separate messages until they age out of the window.",
+    "An edit to a message sent before this release never opens a turn, because Nora has no record of whom that message mentioned."
+  ]
+}

@@ -4,6 +4,7 @@ fixtures below are the bridge's, verbatim; a drift in either direction is a
 failure here, not a judgment call."""
 
 from nora.domain.identity import Identifier
+from nora.domain.models import EditTarget
 from nora.platform.whatsapp.jid import lid_form, phone_form
 from nora.platform.whatsapp.parser import parse_event
 
@@ -277,17 +278,23 @@ def test_non_message_types_are_dropped():
 # ── edits and malformed input ────────────────────────────────────────────────
 
 
-def test_an_edit_is_ingested_as_its_own_message_row():
-    """`edit_of` names the original stanza; `text` is the NEW content. Like
-    Signal, the edit is its own row — the audit trail is append-only and the
-    prefill wants the latest text."""
+def test_an_edit_names_the_stanza_it_edits():
+    """`edit_of` names the original stanza; `text` is the NEW content. It
+    becomes `NormalizedMessage.edit_of` (design/message-edits/03 §1), and
+    `message_id` stays the edit's own stanza id — the original's is what
+    `edit_of` carries."""
     msg = parse_event(event(
         id="3EB0F2", edit_of="3EB0F1A2B3C4", text="hello, corrected",
     ))
     assert msg is not None
+    assert msg.edit_of == EditTarget(message_id="3EB0F1A2B3C4")
     assert msg.message_id == "3EB0F2"
     assert msg.body == "hello, corrected"
-    assert msg.raw["edit_of"] == "3EB0F1A2B3C4"
+
+
+def test_an_ordinary_message_is_not_an_edit():
+    msg = parse_event(event(id="3EB0F2", text="hi"))
+    assert msg is not None and msg.edit_of is None
 
 
 def test_a_malformed_event_is_none_not_an_exception():

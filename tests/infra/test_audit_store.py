@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 
 import pytest
@@ -217,6 +218,26 @@ async def test_prune_all_keeps_the_window_per_conversation(make_store):
     kept = await store.recent(conversation_id="A", limit=1000)
     assert [r.body for r in kept] == ["a7", "a8", "a9"]
     assert len(await store.recent(conversation_id="B", limit=1000)) == 2
+
+
+async def test_prune_all_takes_a_pruned_messages_edits_with_it(make_store):
+    """design/message-edits/01 §2: `message_edit` is ON DELETE CASCADE. Without
+    it the sweep would fail on the foreign key the first time an edited
+    message aged out — and a sweep that raises stops pruning every room."""
+    import sqlalchemy as sa
+
+    from nora.domain.models import EditTarget
+
+    store = make_store(max_per_conversation=1)
+    old = await store.append(message=_msg(body="old", ts=1))
+    await store.append_edit(message_id=old, message=dataclasses.replace(
+        _msg(body="old, edited", ts=5), edit_of=EditTarget(sent_ts=1),
+    ))
+    await store.append(message=_msg(body="new", ts=2))
+    assert await store.prune_all() == 1
+    async with store._engine.connect() as conn:
+        left = (await conn.execute(sa.text("select count(*) from message_edit"))).scalar()
+    assert left == 0
 
 
 async def test_prune_all_is_a_no_op_below_the_window(store):

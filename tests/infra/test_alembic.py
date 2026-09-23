@@ -182,3 +182,50 @@ def test_pre_0033_row_inserted_before_kind_columns_gets_the_reminder_default(pg_
         engine.dispose()
     assert row.kind == "reminder"
     assert row.payload is None
+
+
+def test_0060_backfills_the_platform_handle_from_raw_json(pg_url):
+    """design/message-edits/01 §2: an edit names its target by the platform's
+    handle, and a message stored BEFORE 0060 had it only inside `raw_json`.
+    Without the backfill, every edit to a message sent before the deploy is an
+    orphan. Each platform keeps it under its own key — `id` for WhatsApp and
+    Discord (Discord's is a JSON NUMBER), `message_id` for Instagram — and
+    Signal has none. A row whose `raw_json` is not JSON must not abort the
+    migration, and Nora's own rows are not envelopes."""
+    from alembic import command as alembic_command
+
+    run_migrations(pg_url)
+    alembic_command.downgrade(alembic_config(pg_url), "0059_standing_revision")
+
+    rows = [
+        ("whatsapp", '{"id": "3EB0A", "type": "message"}', 0),
+        ("discord", '{"id": 1234567890123456789, "content": "hi"}', 0),
+        ("instagram", '{"message_id": "mid.$m", "kind": "message"}', 0),
+        ("signal", '{"envelope": {"timestamp": 1}}', 0),
+        ("whatsapp", "not json at all", 0),
+        ("whatsapp", '{"id": "nora-own"}', 1),
+    ]
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn:
+            for i, (platform, raw, is_nora) in enumerate(rows):
+                conn.execute(sa.text(
+                    "INSERT INTO messages (platform, conversation_id, "
+                    "conversation_type, sender_id, ts, body, is_nora, raw_json) "
+                    "VALUES (:p, 'c', 'group', 's', :ts, 'b', :n, :raw)"
+                ), {"p": platform, "ts": i, "n": is_nora, "raw": raw})
+            conn.commit()
+    finally:
+        engine.dispose()
+
+    run_migrations(pg_url)
+
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn:
+            got = conn.execute(sa.text(
+                "SELECT platform_message_id FROM messages ORDER BY ts"
+            )).scalars().all()
+    finally:
+        engine.dispose()
+    assert got == ["3EB0A", "1234567890123456789", "mid.$m", None, None, None]

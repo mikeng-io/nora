@@ -9,9 +9,9 @@ here is a contract-test failure, not a judgment call. Field names below
 
 Dropped before a `NormalizedMessage` is built:
 
-- anything whose `kind` is not `message` — `heartbeat`, `dropped`, `reaction`,
-  `edit`, `unsend` and `typing` are listener-level or not ingested this phase,
-  and this function still answers None for them so it stays total on its own;
+- anything whose `kind` is not `message` or `edit` — `heartbeat`, `dropped`,
+  `reaction`, `unsend` and `typing` are listener-level or not ingested, and
+  this function still answers None for them so it stays total on its own;
 - `from_me` — R-12's first pass, never ingest Nora's own sends. Unlike
   WhatsApp this field is **structural rather than derived**: the bridge
   compares `sender_fbid` against `client.GetOwnFBID()` itself, so the adapter
@@ -48,10 +48,14 @@ the wire distinguishes one. `is_group` is read when present so the day the
 bridge grows the field this parser already honours it, with no second place to
 change.
 
-An EDIT arrives as its own `kind: "edit"` event here rather than as a message
-with an `edit_of` (WhatsApp's shape), so there is nothing for this function to
-ingest as a new row this phase. `03` lists the kind; ingesting it is not in
-M2's scope and it is dropped by the `kind != "message"` line above.
+An EDIT arrives as its own `kind: "edit"` event rather than as a message with
+an `edit_of` (WhatsApp's shape), and `_parse_edit` turns it into the same
+`NormalizedMessage.edit_of` every network produces (design/message-edits/03
+§1). It carries the target's `message_id`, the new text and usually a
+timestamp — and NO sender: `from_me` is null by contract, because the delta
+names nobody. So `sender_id` is `""` and ingest takes the sender from the
+message the edit targets; an edit of a message Nora never recorded cannot be
+attributed and is dropped there, counted.
 
 Never raises: one malformed event is logged and skipped, mirroring the sibling
 parsers — a bad turn must never kill the stream behind it.
@@ -60,9 +64,10 @@ parsers — a bad turn must never kill the stream behind it.
 from __future__ import annotations
 
 import logging
+import time
 
 from ...domain.media import MediaRef, label_for, render_placeholder
-from ...domain.models import NormalizedMessage, Quote
+from ...domain.models import EditTarget, NormalizedMessage, Quote
 from .ids import conversation_id_for, fbid_form, is_person_mention
 
 log = logging.getLogger("nora.instagram.parser")
@@ -266,8 +271,47 @@ def _quoted(reply_to: object) -> Quote | None:
     )
 
 
+def _parse_edit(event: dict) -> NormalizedMessage | None:
+    """A `kind: "edit"` event → an edit of the message it names.
+
+    `from_me` is null by contract (the bridge cannot know), so R-12 is not
+    decided here: ingest refuses an edit whose target is one of Nora's own
+    rows. The edit time falls back to ARRIVAL when the delta carried none —
+    a zero would sort the edit before every other and render no age, which is
+    exactly the «edited, but when?» the fold exists to answer; arrival is
+    seconds late, never wrong in kind. The text is the whole new body:
+    Instagram edits text messages only, so there is no placeholder run to
+    keep."""
+    room_id = conversation_id_for(event.get("room_id"))
+    target = str(event.get("message_id") or "")
+    text = str(event.get("text") or "").strip()
+    if not room_id or not target or not text:
+        return None
+    timestamp_ms = event.get("timestamp_ms")
+    return NormalizedMessage(
+        platform="instagram",
+        conversation_id=room_id,
+        conversation_type="group",
+        sender_id="",
+        sender_name=None,
+        timestamp=(
+            timestamp_ms
+            if isinstance(timestamp_ms, int) and not isinstance(timestamp_ms, bool)
+            and timestamp_ms > 0
+            else int(time.time() * 1000)
+        ),
+        body=text,
+        raw=event,
+        # The delta carries no mentions, so none are claimed: ingest carries
+        # the original's forward (`EditTarget.mentions_known`).
+        edit_of=EditTarget(message_id=target, mentions_known=False),
+    )
+
+
 def parse_event(event: dict) -> NormalizedMessage | None:
     try:
+        if isinstance(event, dict) and event.get("kind") == "edit":
+            return _parse_edit(event)
         if not isinstance(event, dict) or event.get("kind") != "message":
             return None                     # heartbeat / dropped are listener-level
         if event.get("from_me"):

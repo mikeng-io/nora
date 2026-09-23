@@ -156,6 +156,12 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        # answering»).
        n="its handle, the number that points at this message when one is needed",
        replying_to="the `n` of the message it answers",
+       edited=(
+           "how long ago its sender last changed it; the body is the changed "
+           "text, and anything said between `age` and `edited` answered an "
+           "earlier version"
+       ),
+       was="what it said before its sender first changed it",
        window=(
            "how many messages back you were shown. Nothing older than that is "
            "in front of you, so a thing you cannot find here may simply be "
