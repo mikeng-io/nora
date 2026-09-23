@@ -150,3 +150,26 @@ def test_compose_passes_every_search_backend_key_into_the_container():
             f"not enough — compose does not inherit host .env into a service, so "
             f"selecting that backend would answer `unavailable` on every call."
         )
+
+
+def test_the_life360_login_alert_matches_the_reasons_the_client_emits():
+    """The alert on a refused Life360 login (2026-09-24) must name the SAME
+    `reason` labels `Life360Client` increments: a rule on a label nobody emits
+    is silent forever and looks exactly like a healthy one. Derived from the
+    client's own `_alarm(...)` calls, not hand-copied."""
+    import re
+
+    import yaml
+
+    client = (ROOT / "nora" / "infra" / "life360" / "client.py").read_text()
+    emitted = set(re.findall(r'_alarm\("([a-z_0-9]+)"\)', client))
+    assert {"auth_403", "token_rejected"} <= emitted
+    rules = yaml.safe_load((DEPLOY / "prometheus" / "rules" / "nora.yml").read_text())
+    (rule,) = [
+        r for g in rules["groups"] for r in g["rules"]
+        if r.get("alert") == "Life360LoginRefused"
+    ]
+    assert re.search(r'reason=~"auth_403\|token_rejected"', rule["expr"])
+    # The annotation is the operator's whole recovery path at 3am.
+    assert "LIFE360_AUTH_TOKEN" in rule["annotations"]["description"]
+    assert "--force-recreate presence" in rule["annotations"]["description"]

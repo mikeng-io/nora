@@ -552,7 +552,7 @@ async def test_a_rejected_access_token_backs_off_alarms_and_never_posts_a_creden
     for _ in range(reads):
         read = await client.read_circle(circle_id="c1", now_ms=NOW_MS)
         assert read.status is ReadStatus.BANNED
-        assert "LIFE360_ACCESS_TOKEN" in read.detail
+        assert "LIFE360_AUTH_TOKEN" in read.detail
     assert client.auth_failures == reads
     assert "token" not in fake.requests
     assert fake.requests.count("members") == reads
@@ -569,7 +569,7 @@ async def test_a_rejected_access_token_on_places_and_the_ping_never_posts_a_cred
     client = _client(base, metrics=metrics, access_token=STATIC)
     places = await client.read_places(circle_id="c1", now_ms=NOW_MS)
     assert places.status is ReadStatus.BANNED
-    assert "LIFE360_ACCESS_TOKEN" in places.detail
+    assert "LIFE360_AUTH_TOKEN" in places.detail
     assert await client.request_location(circle_id="c1", member_id="m-live") is False
     assert "token" not in fake.requests
     assert metrics.get("nora_presence_auth_alarms_total", reason="token_rejected") == 2

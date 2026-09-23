@@ -498,10 +498,12 @@ life360 read banned/refused: initial authentication failed (failures=N)
 Read the token endpoint's body once from inside the container. If it says
 `{"errorMessage":"Invalid login and password. ..."}` while the password in
 `.env` is right, Life360 is refusing the **password grant** for this account.
-That happened on 2026-09-24 at 00:12 HKT with nothing changed on our side.
-pnbruckner/life360 attributes it to the account having a verified phone number.
-Changing the password does not bring it back. Switch the collector to **token
-mode**:
+Once an account's phone number is verified, Life360 blocks the password grant
+for it (pnbruckner/life360 README). On 2026-09-23 the phone and email on Nora's
+account were verified in the afternoon. The collector's cached token kept
+working until Life360 revoked it at 00:12 HKT on 09-24, and every re-auth after
+that got this 403. Changing the password does not bring it back. Switch the
+collector to **token mode**:
 
 1. In a browser, sign in at <https://life360.com/login> as **Nora's** Life360
    account (the one `LIFE360_USERNAME` names), not your own.
@@ -510,7 +512,7 @@ mode**:
 3. On norty, add it to the deploy checkout's `.env` (never commit it):
 
    ```bash
-   LIFE360_ACCESS_TOKEN=<the cookie value>
+   LIFE360_AUTH_TOKEN=<the cookie value>
    ```
 
 4. Recreate the collector. A plain `restart` keeps the old environment:
@@ -523,7 +525,7 @@ mode**:
    rows land in `presence_fixes` within a cadence or two.
 
 In token mode the password is never POSTed. When Life360 stops accepting the
-token, the log reads `access token rejected — replace LIFE360_ACCESS_TOKEN` and
+token, the log reads `access token rejected — replace LIFE360_AUTH_TOKEN` and
 `nora_presence_auth_alarms_total{reason="token_rejected"}` climbs. The collector
 backs off rather than falling back to the password, so repeat steps 1–4. Unset
 the variable to go back to password mode.

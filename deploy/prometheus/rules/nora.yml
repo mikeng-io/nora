@@ -161,6 +161,33 @@ groups:
         annotations:
           summary: "guild {{ $labels.guild_id }}: 3+ music streams failed in 15 minutes (reason {{ $labels.reason }})"
 
+  - name: presence-auth
+    rules:
+      # 2026-09-24: Life360 revoked the collector's token at 00:12 HKT and then
+      # refused the password grant ("Invalid login and password"): phone
+      # verification on Nora's account the afternoon before blocks it. The
+      # collector did exactly what DEC-55 says — alarmed and backed off — and
+      # nothing fired, so Nora answered «at home» from a two-hour-old fix while
+      # the person was out cycling. Both reasons need an operator's hands and
+      # nothing else will fix them: `auth_403` is the refused password (switch
+      # to token mode), `token_rejected` is a dead LIFE360_AUTH_TOKEN (copy a
+      # new one). 2h, not 15m: the back-off caps at an hour between attempts,
+      # so a shorter window flaps between them.
+      - alert: Life360LoginRefused
+        expr: sum by (job, reason) (increase(nora_presence_auth_alarms_total{reason=~"auth_403|token_rejected"}[2h])) > 0
+        for: 0m
+        labels: { severity: critical }
+        annotations:
+          summary: "Life360 refused the presence collector's login ({{ $labels.reason }}) — no locations are being recorded"
+          description: >-
+            Every where_is / where_been answer is frozen on the last fix until
+            this is fixed. To fix it, sign in at https://life360.com/login as
+            Nora's Life360 account, open DevTools > Application > Cookies >
+            life360.com, and copy the LIFE360_AUTH_TOKEN value into
+            LIFE360_AUTH_TOKEN= in nora/.env on norty. Then run
+            `docker compose up -d --force-recreate presence` (a restart keeps
+            the old environment). docs/runbook.md §4c has the full steps.
+
   - name: monitoring-itself
     rules:
       # A monitoring stack's own failure mode is to go quiet and leave every

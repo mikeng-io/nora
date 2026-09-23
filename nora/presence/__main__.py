@@ -123,7 +123,7 @@ async def _run(config_path: Path) -> None:
                 os.environ.get(cfg.presence.client_credential_env, ""),
                 os.environ.get(cfg.presence.username_env, ""),
                 os.environ.get(cfg.presence.password_env, ""),
-                os.environ.get(cfg.presence.access_token_env, ""),
+                os.environ.get(cfg.presence.auth_token_env, ""),
                 os.environ.get(cfg.presence.geocode_api_key_env, ""),
                 # The HK-gov token rides the query string (the leakiest position),
                 # so it must be scrubbed too — the safety net was Google-only

@@ -346,7 +346,7 @@ async def cmd_presence_members(args: argparse.Namespace) -> int:
         presence.username_env: os.environ.get(presence.username_env, ""),
         presence.password_env: os.environ.get(presence.password_env, ""),
     }
-    access_token = os.environ.get(presence.access_token_env, "")
+    access_token = os.environ.get(presence.auth_token_env, "")
     missing = [name for name, value in creds.items() if not value and not access_token]
     if missing:
         raise CliError(
@@ -354,7 +354,7 @@ async def cmd_presence_members(args: argparse.Namespace) -> int:
             f"Add them to .env. {presence.client_credential_env} is the Life360 "
             "app's Basic credential (a public app constant, the same for every "
             f"unofficial client); {presence.username_env}/{presence.password_env} "
-            f"are your Life360 login — or set {presence.access_token_env} if "
+            f"are your Life360 login — or set {presence.auth_token_env} if "
             "Life360 refuses the password login."
         )
     client = Life360Client(

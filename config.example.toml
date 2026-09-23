@@ -877,7 +877,7 @@ password_env = "LIFE360_PASSWORD"
 # with the right password: an account with a verified phone number), put the
 # LIFE360_AUTH_TOKEN cookie from a life360.com browser login in this env var.
 # Token mode never POSTs the password; a rejected token alarms `token_rejected`.
-access_token_env = "LIFE360_ACCESS_TOKEN"
+auth_token_env = "LIFE360_AUTH_TOKEN"
 cadence_seconds = 90
 # Adaptive cadence (design/19 §4.1): floor while a circle has a driver, ceiling
 # once it's been still long enough to hit the ramp. `cadence_seconds` above

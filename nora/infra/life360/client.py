@@ -312,7 +312,7 @@ class Life360Client:
             raise Life360DiscoveryError(
                 "authentication failed — check LIFE360_CLIENT_CREDENTIAL, "
                 "LIFE360_USERNAME and LIFE360_PASSWORD (or set "
-                "LIFE360_ACCESS_TOKEN if Life360 refuses the password login)"
+                "LIFE360_AUTH_TOKEN if Life360 refuses the password login)"
             )
         body = await self._get_json(self._circles_url, token)
         circles = body.get("circles") if isinstance(body, dict) else None
@@ -395,7 +395,7 @@ class Life360Client:
             timeout_seconds=self._timeout_seconds,
         )
 
-    _TOKEN_REJECTED = "access token rejected — replace LIFE360_ACCESS_TOKEN"  # noqa: S105 — a message, not a secret
+    _TOKEN_REJECTED = "access token rejected — replace LIFE360_AUTH_TOKEN"  # noqa: S105 — a message, not a secret
 
     def _token_rejected(self, result: HttpResult) -> bool:
         """Token mode's refusal: a 401/403 on the operator's bearer. Alarmed as
