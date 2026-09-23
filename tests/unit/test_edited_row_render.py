@@ -113,3 +113,27 @@ def test_each_text_is_rehydrated_against_the_envelope_it_came_from():
 
     assert out.body == "ok @Amy come?"
     assert out.edit is not None and out.edit.was == "@Tyler come?"
+
+
+def test_an_edit_says_which_message_came_last_before_it():
+    """Minute-grained ages cannot order a reply and the edit that followed it
+    (both «just now» — measured live 2026-09-24). `edited_after` is the `n` of
+    the last message sent before the edit, so «she answered the old version»
+    is readable off the element."""
+    rows = [
+        _row("@nora 2 3 4 5 6 7 8", ts=NOW_MS - 30_000, id=1,
+             edit=RowEdit(ts=NOW_MS - 10_000, was="@nora 2 3 4 5 7 8")),
+        _row("「2 3 4 5 7 8」?", ts=NOW_MS - 20_000, id=2),
+        _row("read again", ts=NOW_MS - 5_000, id=3),
+    ]
+    out = _render(rows).splitlines()
+    assert 'edited_after="2"' in out[0]
+    assert "edited_after" not in out[1] + out[2]
+
+
+def test_an_edit_before_anything_else_was_said_has_no_edited_after():
+    rows = [
+        _row("v2", ts=NOW_MS - 30_000, id=1, edit=RowEdit(ts=NOW_MS - 25_000, was="v1")),
+        _row("later", ts=NOW_MS - 5_000, id=2),
+    ]
+    assert "edited_after" not in _render(rows)

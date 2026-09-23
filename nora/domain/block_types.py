@@ -158,8 +158,12 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        replying_to="the `n` of the message it answers",
        edited=(
            "how long ago its sender last changed it; the body is the changed "
-           "text, and anything said between `age` and `edited` answered an "
-           "earlier version"
+           "text"
+       ),
+       edited_after=(
+           "the `n` of the last message sent before it was changed: that "
+           "message, and any between it and this one, answered an earlier "
+           "version. Absent when nothing came between"
        ),
        was="what it said before its sender first changed it",
        window=(

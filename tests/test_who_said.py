@@ -506,3 +506,52 @@ async def test_neither_the_words_nor_a_line_reaches_the_collector(
         assert "收隊" not in rendered
         assert "等陣覆你" not in rendered
         assert scan_identifiers(rendered) is None
+
+
+# ---- an edited message (design/message-edits/02 §1) ------------------------
+
+
+def _edited_window():
+    import dataclasses
+
+    from nora.domain.models import RowEdit
+
+    edited = dataclasses.replace(
+        _row(5, sender_id="+85290000101", ts=5_000, body="2 3 4 5 6 7 8",
+             person_name="Miles Novak"),
+        edit=RowEdit(ts=6_000, was="2 3 4 5 7 8"),
+    )
+    return (*WINDOW, edited)
+
+
+class _StoreOf:
+    def __init__(self, rows) -> None:
+        self._rows = tuple(rows)
+
+    async def recent(self, *, conversation_id: str, limit: int):
+        return list(self._rows[-limit:]) if conversation_id == CONV and limit > 0 else []
+
+
+async def test_load_transcript_says_a_message_was_edited_and_what_it_first_said(persons):
+    """Measured live 2026-09-24: asked to «read again» after an edit, she
+    called this tool, got the new text with no marker, and answered «冇變».
+    The prefill marks the row; this tool re-reads the same row and must too."""
+    window = _edited_window()
+    tools, _, _ = _build(persons, window=window, store=_StoreOf(window))
+    out = await _call(tools["load_transcript"], limit=10)
+    last = out["messages"][-1]
+    assert last["body"] == "2 3 4 5 6 7 8"
+    assert (last["edited_ts"], last["was"]) == (6_000, "2 3 4 5 7 8")
+    assert all("edited_ts" not in m and "was" not in m for m in out["messages"][:-1]), \
+        "a message never edited must not carry either key"
+
+
+async def test_who_said_finds_words_only_the_first_version_carried(persons):
+    """Its sender said them, then changed them: that is still who said them,
+    and the hit says which version it was."""
+    tools, _, _ = _build(persons, window=_edited_window())
+    result = await _call(tools["who_said"], words="5 7 8")
+    assert result["status"] == "ok"
+    assert result["said_by"] == [
+        {"who": "Miles Novak", "line": "2 3 4 5 6 7 8", "was": "2 3 4 5 7 8"},
+    ]
