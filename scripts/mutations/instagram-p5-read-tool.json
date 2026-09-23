@@ -1,0 +1,100 @@
+[
+  {
+    "name": "the Tier 0 reach check is removed from the router",
+    "file": "nora/infra/social/router.py",
+    "old": "if (platform, what) in TIER_ZERO_READS and not await self._subjects.is_tier_zero(",
+    "new": "if False and not await self._subjects.is_tier_zero(",
+    "target": "tests/unit/test_instagram_read_tool.py::test_a_story_for_someone_in_no_room_is_refused_and_never_requested"
+  },
+  {
+    "name": "a persons = \"*\" room counts as listing everyone",
+    "file": "nora/infra/social/subjects.py",
+    "old": "convo.persons is not None and person_id in convo.persons",
+    "new": "convo.persons is None or person_id in convo.persons",
+    "target": "tests/unit/test_instagram_read_tool.py::test_a_star_room_makes_nobody_tier_zero"
+  },
+  {
+    "name": "a [dm] persons listing counts as Tier 0",
+    "file": "nora/infra/social/subjects.py",
+    "old": "                convo.persons is not None and person_id in convo.persons\n                for convo in self._policy.conversations\n            )",
+    "new": "                convo.persons is not None and person_id in convo.persons\n                for convo in self._policy.conversations\n            ) or person_id in getattr(self._policy, \"dm_persons\", ())",
+    "target": "tests/unit/test_instagram_read_tool.py::test_a_dm_listing_makes_nobody_tier_zero"
+  },
+  {
+    "name": "a person with two Instagram accounts gets the first one picked",
+    "file": "nora/infra/social/subjects.py",
+    "old": "        if len(igids) != 1:\n            return None\n        (igid,) = igids\n        return igid",
+    "new": "        return min(igids) if igids else None",
+    "target": "tests/unit/test_instagram_read_tool.py::test_a_person_with_two_accounts_is_ambiguous_never_a_pick"
+  },
+  {
+    "name": "a name two people answer to gets the first person picked",
+    "file": "nora/agent/tools.py",
+    "old": "        if len(matches) > 1:\n            _record(metrics, \"instagram_read\", \"ambiguous\", reason=\"person\")",
+    "new": "        if len(matches) > 99:\n            _record(metrics, \"instagram_read\", \"ambiguous\", reason=\"person\")",
+    "target": "tests/unit/test_instagram_read_tool.py::test_a_name_two_people_answer_to_is_ambiguous_and_reads_nothing"
+  },
+  {
+    "name": "ids leaked: the tool returns the person id",
+    "file": "nora/agent/tools.py",
+    "old": "        return {**out, \"person\": ref.name}",
+    "new": "        return {**out, \"person\": ref.name, \"person_id\": ref.person_id}",
+    "target": "tests/unit/test_instagram_read_tool.py::test_no_igid_fbid_or_person_id_is_in_the_model_facing_result"
+  },
+  {
+    "name": "ids leaked: the profile text renders the igid and fbid",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "    lines = [head]",
+    "new": "    lines = [head, f\"ids {body.get('igid')} / {body.get('fbid')}\"]",
+    "target": "tests/unit/test_instagram_read_tool.py::test_no_igid_fbid_or_person_id_is_in_the_model_facing_result"
+  },
+  {
+    "name": "ids leaked: the story result carries the igid",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "            \"source_kind\": SOURCE_KIND,",
+    "new": "            \"source_kind\": SOURCE_KIND, \"igid\": igid,",
+    "target": "tests/unit/test_instagram_read_tool.py::test_no_igid_fbid_or_person_id_is_in_the_model_facing_result"
+  },
+  {
+    "name": "the router forwards the person id instead of the resolved igid",
+    "file": "nora/infra/social/router.py",
+    "old": "        return igid\n",
+    "new": "        return target\n",
+    "target": "tests/unit/test_instagram_read_tool.py::test_a_name_resolves_to_one_person_one_igid_and_reads_the_profile"
+  },
+  {
+    "name": "a typed handle is admitted on the story row (skips resolution and reach)",
+    "file": "nora/infra/social/router.py",
+    "old": "    (\"instagram\", \"story\", TARGET_PERSON),\n})",
+    "new": "    (\"instagram\", \"story\", TARGET_PERSON),\n    (\"instagram\", \"story\", TARGET_NAMED),\n})",
+    "target": "tests/unit/test_social_router.py::test_a_typed_handle_on_a_bridge_row_is_not_served"
+  },
+  {
+    "name": "the client issues something other than GET",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "session.get(f\"{self._base_url}{path}\", headers=propagation_headers())",
+    "new": "session.post(f\"{self._base_url}{path}\", headers=propagation_headers())",
+    "target": "tests/unit/test_instagram_read_tool.py::test_every_request_the_client_makes_is_a_get_on_an_account_resource"
+  },
+  {
+    "name": "social_fetch still sends an Instagram profile to OpenCLI (cutover undone)",
+    "file": "nora/agent/tools.py",
+    "old": "    (\"instagram\", \"post\"), (\"instagram\", \"profile\"), (\"instagram\", \"posts\"),",
+    "new": "    (\"instagram\", \"post\"), (\"instagram\", \"posts\"),",
+    "target": "tests/test_social_fetch_tool.py::test_an_instagram_profile_is_redirected_to_instagram_read_and_never_sent"
+  },
+  {
+    "name": "composition wires the Instagram backend without the person index",
+    "file": "nora/app/composition.py",
+    "old": "            subjects=social_subjects,",
+    "new": "            subjects=None,",
+    "target": "tests/test_composition.py::test_the_instagram_backend_is_composed_with_the_person_index"
+  },
+  {
+    "name": "composition wires the bridge behind the story row only",
+    "file": "nora/app/composition.py",
+    "old": "dict.fromkeys(EXCEPTION_ROUTES, instagram_social)",
+    "new": "{(\"instagram\", \"story\"): instagram_social}",
+    "target": "tests/test_composition.py::test_the_instagram_backend_is_composed_with_the_person_index"
+  }
+]
