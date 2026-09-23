@@ -142,6 +142,32 @@ class ToolSurface:
     def catalogue(self) -> str:
         return "\n".join(self._render(self.admitted, self.resident))
 
+    @property
+    def prompt_catalogue(self) -> str:
+        """The catalogue as the PROMPT should carry it: the index when anything
+        is deferred, nothing when every admitted tool is already in the
+        `tools` array — there the schemas already say it all, and a second
+        copy is what DEC-150 deleted the capability block for."""
+        return self.catalogue if self.shelf else ""
+
+    def limits(self, base: Mapping[str, Any]) -> dict[str, Any]:
+        """The loop's R-8 caps for THIS surface.
+
+        A deferred turn spends one model call on `load_tools` before the call
+        that uses what it loaded, and `turns` is a shared ceiling: left alone,
+        that call comes out of the real work — the inert-under-a-shared-pass
+        failure (`per-tool-budget-is-inert-under-a-shared-pass-ceiling`). So
+        the ceiling rises by one when anything is on the shelf. One, not the
+        measured 0.8 mean rounded: a turn either loads or does not, and the
+        loader's own `budget` bounds how many of its calls a turn may make.
+        The token caps are left alone — a deferred turn's prompt is SMALLER,
+        which is the point of deferring.
+        """
+        limits = dict(base)
+        if self.shelf and "turns" in limits:
+            limits["turns"] = int(limits["turns"]) + 1
+        return limits
+
 
 #: `load_tools`' per-call name cap (design/tool-catalogue/02). Its budget caps
 #: CALLS, not tokens: without this, one `load_tools([...every name...])` would

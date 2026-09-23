@@ -1,0 +1,4 @@
+{
+  "type": "change",
+  "reason": "Adds `[llm] defer_tools` (default false). When true, tag and fire turns carry six full tool schemas and a one-line <tool_catalogue> of everything else, and she loads any other tool by name with load_tools. The per-turn call ceiling rises by one to cover that load. Off by default. It is switched on only after the tool_selection suite shows selection accuracy holds."
+}

@@ -401,6 +401,7 @@ def _fire_path(
     standing_store_timeout_seconds: float = 5.0,
     decisions=None,
     policy=None,
+    defer_tools: bool = False,
 ) -> FirePath:
     extra = {"standing": standing,
              "standing_store_timeout_seconds": standing_store_timeout_seconds,
@@ -422,6 +423,7 @@ def _fire_path(
         canary="test-canary", display_name="Nora",
         ai_peer="nora", context_window=40,
         limits=LIMITS, timeout_seconds=timeout_seconds, clock=lambda: T0,
+        defer_tools=defer_tools,
         participation_runner=participation_runner,
         shadow_channel=shadow_channel, shadow_platform=shadow_platform,
         gate_shadow_channel=gate_shadow_channel,
@@ -3030,3 +3032,31 @@ async def test_the_fire_context_reads_run_concurrently_not_one_after_another(
 
     assert ctx.standing is not None and ctx.standing.body == "dinner is still open"
     assert ctx.presence is not None
+
+async def test_a_deferred_participation_turn_gets_the_same_surface_as_a_tag(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """design/tool-catalogue phase C: the fire path takes its tools from the
+    SAME `ToolRegistry.surface()` the tag path does, so `[llm] defer_tools`
+    means the same thing on both — hot tools plus the loader, the catalogue
+    in the prompt, one more turn for the load."""
+    from nora.agent.tools import HOT_TOOLS, LOADER_TOOL
+
+    calls: list = []
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        adapter=_FireAdapter(), runner=FakeAgentRunner([]),
+        participation_runner=FakeAgentRunner(
+            [ScriptedTurn(final_text="")], on_call=calls.append,
+        ),
+        defer_tools=True,
+    )
+    await path.speak(_participation())
+
+    call = calls[-1]
+    assert {t.tool_name for t in call["tools"]} == HOT_TOOLS | {LOADER_TOOL}
+    prompt = "\n".join(
+        block.get("text", "") for m in call["pre_fill"] for block in m["content"]
+    )
+    assert "<tool_catalogue" in prompt
+    assert call["limits"]["turns"] == LIMITS["turns"] + 1

@@ -228,7 +228,12 @@ def _full_prefill_body() -> str:
         notes=(_note(),), standing=_standing(), culture=_culture(), decisions=_decisions(),
         people_in_window=(("Grant", ("asked about dinner",)),),
     )
-    return build_prefill(ctx, display_name="Nora", context_window=40)[1]["content"][0]["text"]
+    return build_prefill(
+        ctx, display_name="Nora", context_window=40,
+        # design/tool-catalogue phase C: rendered only when tools are deferred,
+        # so the fixture passes one or the block could never be checked.
+        catalogue="* now — the current time, here.\n- weather — the forecast.",
+    )[1]["content"][0]["text"]
 
 
 def _opening_tag(body: str, name: str) -> str:
