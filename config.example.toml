@@ -1065,10 +1065,10 @@ api_key_env = "STEAM_WEB_API_KEY"
 # timeout_seconds = 8.0
 
 [social]
-# social_fetch (DEC-151) — READ-ONLY X reads, and Instagram ACCOUNT search
-# until P11, via the host-side OpenCLI bridge (`python -m nora.infra.social`,
-# run as the systemd user service in deploy/social-bridge/). Instagram
-# profiles and stories are NOT here: they are instagram_read's, over
+# social_fetch (DEC-151) — READ-ONLY X reads, via the host-side OpenCLI bridge
+# (`python -m nora.infra.social`, run as the systemd user service in
+# deploy/social-bridge/). Nothing Instagram is here: profiles and stories are
+# instagram_read's, and account search is instagram_search's, both over
 # [social.instagram] below. KEYLESS, so `enabled` is the whole gate
 # (the [preview] shape). Off here for the "explicitly on" house rule; even on,
 # the tool can only construct allowlisted reads — the bridge re-enforces the
@@ -1086,11 +1086,11 @@ bridge_url = "http://127.0.0.1:19826"
 # content_max_chars = 4000                # retrieved-text clamp (bounds re-sent tokens)
 
 [social.instagram]
-# The Instagram backend for instagram_read: a person's profile and what is on
-# their story right now, over the instagram-bridge container
+# The Instagram backend for instagram_read and instagram_search: a person's
+# profile and what is on their story right now, and accounts matching a name
+# or handle, over the instagram-bridge container
 # (design/instagram-adoption/15, /18). Every Instagram read goes through the
-# bridge; account search is the one Instagram verb still on OpenCLI above,
-# until P11 moves it here too.
+# bridge; OpenCLI above serves X only.
 #
 # Its own `enabled` rather than riding [social] above, because the two are
 # provisioned and fail independently: that one needs a systemd service and a

@@ -574,10 +574,16 @@ class DreamToolSource(Protocol):
 # did.
 UNIT_SAFE_TOOLS: frozenset[str] = frozenset({
     "web_search", "web_fetch", "now", "calculate", "weather", "version",
-    # `social_fetch` (DEC-151): reads the open internet (public X/Instagram
-    # content) with no room state anywhere in the answer — the same shape as
+    # `social_fetch` (DEC-151): reads the open internet (public X content)
+    # with no room state anywhere in the answer — the same shape as
     # `web_search`/`web_fetch`, and read-only at three layers besides (R-86).
     "social_fetch",
+    # `instagram_search` (design/instagram-adoption/18, P11): free text in,
+    # Instagram accounts out, with no name resolved against a roster and no
+    # Tier 0 check, so no room state in the answer. A search is invisible to
+    # the accounts it finds, which is why it may run in a background turn at
+    # all (unlike a story read; `instagram_read` is room-scoped).
+    "instagram_search",
     # Nora's OWN generated-image library — reads her library across every
     # conversation (the store records platform/conversation as provenance,
     # but a lookup is a global search of her own creations, never

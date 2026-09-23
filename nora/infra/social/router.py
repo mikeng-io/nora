@@ -10,9 +10,9 @@ leak the topology into the prompt. If a doctrine line or a tool docstring ever
 says "instameow" or "opencli", this boundary has already failed.
 
 It is the single choke point for EVERY social tool, old and new: `social_fetch`
-(X, and Instagram account search until P11) and `instagram_read` (18) both
-hand their reads to this one object, so neither tool carries its own copy of a
-routing or an authorization rule.
+(X only, since P11), `instagram_read` and `instagram_search` (18) all hand
+their reads to this one object, so no tool carries its own copy of a routing
+or an authorization rule.
 
 ## The rule: X goes to OpenCLI, Instagram goes to the bridge
 
@@ -27,9 +27,9 @@ serve it», a proof of impossibility per row; since 15 the rule is that the
 bridge is the only door for Instagram, so a row joins the list when its bridge
 route works END TO END and leaves OpenCLI in the same change (15's per-verb
 cutover). `instagram/story` and `instagram/profile` are on it
-(`instagram_read`, P5). `instagram/search` is the one Instagram verb still on
-OpenCLI, until P11 lands its bridge route; nothing else Instagram is served
-anywhere, and `instagram/posts` has no mechanism at all (P13).
+(`instagram_read`, P5), and `instagram/search` joined with P11
+(`instagram_search`), leaving OpenCLI in the same change: OpenCLI now serves X
+only. `instagram/posts` has no mechanism at all (P13).
 
 ## No failover, and it is structural rather than a comment
 
@@ -74,10 +74,13 @@ a duplicated authorization rule is one that diverges.
   on file»), several is `ambiguous`, and an unreadable index is
   `unavailable`. A triple that is not in the table is not served.
 * **Authorization is keyed on the READ, never the input** — `TIER_ZERO_READS`.
-  Only a story read is visible to the person read (it lands in their viewer
-  list), so only `instagram/story` has a reach check: the person must be
-  Tier 0, listed in a group room Nora is in on any network. A profile needs
-  resolution alone.
+  Only `instagram/story` has a reach check: the person must be Tier 0,
+  listed in a group room Nora is in on any network. That is a privacy
+  choice, not a claim about Instagram: Nora does not read people's stories
+  unprompted or beyond the people the operator listed (a 2026-09-21 probe
+  found `FetchReel` does not mark a story seen; not re-measured since, and
+  design/instagram-adoption/05 records why `seen` may not be the author's
+  viewer list). A profile, and an account search, need resolution alone.
 
 Writing both as tables rather than as an `if what == "story"` is the point:
 the absence of a check is spelled, dated and tested, so the next row added has
@@ -107,6 +110,9 @@ log = logging.getLogger("nora.social.router")
 EXCEPTION_ROUTES: frozenset[tuple[str, str]] = frozenset({
     ("instagram", "story"),
     ("instagram", "profile"),
+    # P11 (`instagram_search`): `GET /accounts?query=`. The OpenCLI row was
+    # deleted in the same change, so no Instagram read has two backends.
+    ("instagram", "search"),
 })
 
 #: The two input kinds a target can arrive as (18 §"What the router has to
@@ -126,10 +132,11 @@ TARGET_PERSON: TargetKind = "person"
 #: `READ_ONLY_ALLOWLIST | EXCEPTION_ROUTES` and requires each to appear here —
 #: and fail-closed by construction: a triple not listed is `unavailable`.
 #:
-#: The Instagram rows admit `person` only, and that is the whole of P5's
-#: input surface: a `named` string for `instagram/story` or `instagram/profile`
-#: would be a handle nobody resolved, and until P10's username lookup exists
-#: nothing may turn one into an igid.
+#: `instagram/profile` and `instagram/story` admit `person` only, and that is
+#: the whole of P5's input surface: a `named` string for either would be a
+#: handle nobody resolved, and until P10's username lookup exists nothing may
+#: turn one into an igid. `instagram/search` admits `named` only: its target
+#: is free text a person typed, sent as a query and never resolved (P11).
 SUBJECT_INPUTS: frozenset[tuple[str, str, str]] = frozenset({
     ("x", "post", TARGET_NAMED),
     ("x", "profile", TARGET_NAMED),
@@ -141,10 +148,13 @@ SUBJECT_INPUTS: frozenset[tuple[str, str, str]] = frozenset({
 })
 
 #: AUTHORIZATION, keyed on the READ alone: the reads with a Tier 0 reach check.
-#: Only a story — its author sees who viewed it (15 §"Resolution is not
-#: authorization"). Tier 0 is a property of the PERSON (listed in a group room
-#: on any network, never a `*` room, never a DM), answered by
-#: `SocialSubjectIndex.is_tier_zero` and by nothing else.
+#: Only a story (15 §"Resolution is not authorization"), as a privacy choice:
+#: Nora does not open the stories of people the operator has not listed. It
+#: is not a claim that the author sees the view (a 2026-09-21 probe found
+#: `FetchReel` does not mark a story seen; not re-measured since). Tier 0 is a
+#: property of the PERSON (listed in a group room on any network, never a `*`
+#: room, never a DM), answered by `SocialSubjectIndex.is_tier_zero` and by
+#: nothing else.
 TIER_ZERO_READS: frozenset[tuple[str, str]] = frozenset({
     ("instagram", "story"),
 })
@@ -370,7 +380,8 @@ class SocialRouter(SocialProvider):
                 return dict(AMBIGUOUS)
             (igid,) = igids
             # REACH, keyed on the read and never on the input kind: a story
-            # view lands in its author's viewer list, a profile read does not.
+            # is opened only for a listed person (a privacy choice, 18), a
+            # profile needs no reach check.
             if (platform, what) in TIER_ZERO_READS and not await self._subjects.is_tier_zero(
                 person_id=target,
             ):

@@ -42,6 +42,7 @@ import (
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
 	"go.mau.fi/mautrix-meta/pkg/messagix/responses"
+	"go.mau.fi/mautrix-meta/pkg/messagix/types"
 )
 
 var updateFixtures = flag.Bool("update", false,
@@ -338,6 +339,29 @@ func contractCases() []contractCase {
 			// Longer than 11 characters: well formed, no decoding known.
 			file: "posts_long_shortcode_501.json", route: "GET /posts/{shortcode}", path: "/posts/" + fakeig.CarouselShortcode + "xyz",
 			fake: func() *fakeIG { return &fakeIG{} },
+		},
+		// The three failure envelopes Nora's `instagram_search` reads as
+		// `unavailable` (design/instagram-adoption/17 P11): the session
+		// needs a human (409), Instagram rejected the search (502), and no
+		// session to search with (503). Each is the envelope, never the old
+		// `{"ok": false}` body, so the Python client is tested against the
+		// shape this route actually answers.
+		{
+			file: "accounts_search_checkpointed_409.json", route: "GET /accounts", path: "/accounts?query=example",
+			fake: func() *fakeIG { return &fakeIG{SearchErr: httpclient.ErrCheckpointRequired} },
+		},
+		{
+			file: "accounts_search_upstream_rejected_502.json", route: "GET /accounts", path: "/accounts?query=example",
+			fake: func() *fakeIG {
+				return &fakeIG{SearchErr: (&types.ErrorResponse{Errors: []*types.GraphQLError{
+					{Message: "synthetic field exception", Summary: "Query error", Code: 1675030},
+				}}).AsError()}
+			},
+		},
+		{
+			file: "accounts_search_reconnecting_503.json", route: "GET /accounts", path: "/accounts?query=example",
+			fake: func() *fakeIG { return &fakeIG{} },
+			opts: []bridgeOpt{withNoClient()},
 		},
 	}
 }

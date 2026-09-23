@@ -986,22 +986,24 @@ def test_r86_social_fetch_is_read_only_at_three_layers():
        for OpenCLI (its command slot is only ever filled from the mapping's
        values; the behavioural half is `tests/unit/test_social_bridge_server.
        py`), and the router's `EXCEPTION_ROUTES` for the instagram-bridge,
-       whose client issues only `GET /accounts/…` (pinned on a recording fake
-       bridge in `tests/unit/test_instagram_read_tool.py`);
+       whose client issues only `GET /accounts…` (pinned on a recording fake
+       bridge in `tests/unit/test_instagram_read_tool.py` and
+       `tests/unit/test_instagram_search_tool.py`);
     3. each tool's `NativeTool` declaration `read_only=True`, the Dreamer's
        ceiling.
 
     The derivation is TOTAL: every pair a tool can construct is served by
     exactly one backend, every pair a backend serves is constructed by exactly
     one tool (no Instagram read ever has two tools, 18 §"What happens to
-    social_fetch"), and every other pair in a tool's closed product is
-    declared unsupported.
+    social_fetch"). Since P11 OpenCLI serves X only: no `instagram` key is
+    left in `READ_ONLY_ALLOWLIST`, and `social_fetch` constructs no Instagram
+    pair at all.
     """
     from nora.agent import tools as tools_module
     from nora.infra.social import EXCEPTION_ROUTES, bridge_server
 
     vocabulary = tools_module.social_read_vocabulary()
-    assert set(vocabulary) == {"social_fetch", "instagram_read"}
+    assert set(vocabulary) == {"social_fetch", "instagram_read", "instagram_search"}
 
     # Layer 2: every command the bridge can spawn is disjoint from OpenCLI's
     # write verbs (the set in `bridge_server.OPENCLI_WRITE_VERBS`, verified
@@ -1018,31 +1020,31 @@ def test_r86_social_fetch_is_read_only_at_three_layers():
     assert constructed == served
 
     # One read, one tool, one backend.
-    fetch, read = vocabulary["social_fetch"], vocabulary["instagram_read"]
-    assert not (fetch & read), "an Instagram read has two tools"
-    assert read == EXCEPTION_ROUTES, (
-        "instagram_read reads through the instagram-bridge only "
-        "(design/instagram-adoption/15)"
+    fetch = vocabulary["social_fetch"]
+    read, search = vocabulary["instagram_read"], vocabulary["instagram_search"]
+    assert not (fetch & read) and not (fetch & search) and not (read & search), (
+        "a social read has two tools"
+    )
+    assert read | search == EXCEPTION_ROUTES, (
+        "instagram_read and instagram_search read through the instagram-bridge "
+        "only (design/instagram-adoption/15)"
     )
     assert not (EXCEPTION_ROUTES & set(bridge_server.READ_ONLY_ALLOWLIST)), (
-        "a pair is on the bridge's list AND in OpenCLI's allowlist — a verb "
+        "a pair is on the bridge's list AND in OpenCLI's allowlist, so a verb "
         "has two backends"
     )
 
-    # A pair `social_fetch` declares unsupported must NOT be one its own
-    # backend serves: that is a working OpenCLI row the tool can never reach —
-    # a cutover done on one side only (the tool dropped the verb, the
-    # allowlist kept it, and the host still spawns it for anything that asks).
-    # And one served by the bridge must be another tool's read. (This replaced
-    # `product - fetch == _SOCIAL_UNSUPPORTED`, which held by construction:
-    # `fetch` IS `product - _SOCIAL_UNSUPPORTED`, so it could only fail if
-    # the declaration named a pair outside the product.)
-    unsupported = tools_module._SOCIAL_UNSUPPORTED
-    assert not (unsupported & set(bridge_server.READ_ONLY_ALLOWLIST)), (
-        "social_fetch declares a pair unsupported that OpenCLI still serves"
-    )
-    assert unsupported & EXCEPTION_ROUTES <= read, (
-        "social_fetch declares a bridge pair unsupported that no tool reads"
+    # P11 (design/instagram-adoption/17): OpenCLI serves X only. Asserted on
+    # the KEYS, not derived from the vocabulary, because the cutover this
+    # guards is exactly an allowlist row left behind after its tool moved:
+    # the host would still spawn an Instagram command for anything that
+    # asked, and the derivation above would read that as a missing tool
+    # rather than a leftover backend.
+    assert not [
+        key for key in bridge_server.READ_ONLY_ALLOWLIST if key[0] == "instagram"
+    ], "OpenCLI still serves an Instagram read"
+    assert all(platform == "x" for platform, _what in fetch), (
+        "social_fetch constructs an Instagram read"
     )
 
     # Layer 3: the declaration the Dreamer's ceiling is derived from.

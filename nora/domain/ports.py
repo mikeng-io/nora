@@ -1627,7 +1627,7 @@ class SteamPresenceProvider(Protocol):
 @runtime_checkable
 class SocialProvider(Protocol):
     """`{platform, what, target, limit} -> {status, ...}` social reads, behind
-    the `social_fetch` (DEC-151) and `instagram_read`
+    the `social_fetch` (DEC-151), `instagram_read` and `instagram_search`
     (design/instagram-adoption/18) tools. NEVER raises — a transport failure of
     the bridge call is `{"status": "unavailable"}`, never an exception into
     the loop (R-5), and the R-27 three states apply end to end: an error is

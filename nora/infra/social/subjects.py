@@ -12,7 +12,10 @@ anything the model supplies:
 * **Authorization** — may Nora read this person's story? `policy.toml`: the
   person is LISTED in the `persons` of at least one configured room. That is
   Tier 0, «someone in a room Nora is in», and it is the only tier a story read
-  has, because a story view appears in its author's viewer list.
+  has. That is a privacy choice: Nora does not read the stories of people the
+  operator has not listed. It is not a claim that the author sees the view
+  (a 2026-09-21 probe found `FetchReel` does not mark a story seen; not
+  re-measured since).
 
 **The policy is taken STRUCTURALLY, not imported.** `nora.infra` may not
 import `nora.policy` (`pyproject.toml`: "the room policy is composed in, never
