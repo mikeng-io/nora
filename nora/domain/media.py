@@ -796,3 +796,29 @@ def body_with_handles(
     if not body.endswith(old):
         return body
     return body[: len(body) - len(old)] + placeholder_suffix(labels, handles)
+
+
+@dataclass(frozen=True)
+class VideoReadingKey:
+    """Everything a question-less video reading is a function of.
+
+    An image description is a pure function of its bytes, which is why the
+    vision cache keys on the sha256 alone. A chunked VIDEO reading is not
+    (issue #117): which windows were cut depends on `chunk_seconds` and
+    `chunk_max`, and the coverage sentence that says what was missed depends on
+    them too. Caching on the sha256 alone put #117's bug back through the cache,
+    so video was excluded from it entirely. Every input goes in the key instead:
+
+    * `sha256` — the bytes.
+    * `chunk_seconds`, `chunk_max` — the geometry; raising `chunk_max` must
+      miss, or a stale «I have not seen the rest» is served forever.
+    * `model` — the describer that read it; moving the lane (K3 → MiMo) misses.
+    * `prompt_digest` — what it was asked; turning on speech (DEC-197) misses,
+      so an old SILENT reading is never served for a clip that now has sound.
+    """
+
+    sha256: str
+    model: str
+    chunk_seconds: int
+    chunk_max: int
+    prompt_digest: str

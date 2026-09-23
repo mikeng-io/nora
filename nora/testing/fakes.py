@@ -16,7 +16,14 @@ from nora.domain.compute import (
     ensure_utc_job,
     normalise_compute_job,
 )
-from nora.domain.media import MediaBlob, MediaBytes, MediaObject, MediaRef, media_json
+from nora.domain.media import (
+    MediaBlob,
+    MediaBytes,
+    MediaObject,
+    MediaRef,
+    VideoReadingKey,
+    media_json,
+)
 from nora.domain.models import (
     ConversationTarget,
     DeliveryStatus,
@@ -869,6 +876,35 @@ class FakeMediaDescriptionStore:
             return
         self.index[(platform, token)] = blob
         self.descriptions[blob.sha256] = description
+
+
+class FakeVideoReadingStore:
+    """In-memory `VideoReadingStore`, bound to `SqlVideoReadingStore` by
+    `tests/contract/test_video_reading_store_contract.py`.
+
+    Keyed on the WHOLE `VideoReadingKey`, exactly as the table is, so a caller
+    that builds the key from the wrong geometry or model misses here as it
+    would against Postgres. `unavailable` is the store being down: `get`
+    misses and `put` swallows.
+    """
+
+    def __init__(self, *, unavailable: bool = False) -> None:
+        self.unavailable = unavailable
+        self.readings: dict[VideoReadingKey, str] = {}
+        self.gets: list[VideoReadingKey] = []
+        self.puts: list[tuple[VideoReadingKey, str]] = []
+
+    async def get(self, *, key: VideoReadingKey) -> str | None:
+        self.gets.append(key)
+        if self.unavailable:
+            return None
+        return self.readings.get(key) or None
+
+    async def put(self, *, key: VideoReadingKey, reading: str) -> None:
+        self.puts.append((key, reading))
+        if self.unavailable or not reading:
+            return
+        self.readings[key] = reading
 
 
 class FakeMediaObjectStore:

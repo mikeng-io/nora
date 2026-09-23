@@ -80,6 +80,7 @@ from ..domain.media import (
     GifCandidate,
     MediaBlob,
     MediaObject,
+    VideoReadingKey,
     resolve_media_type,
     sniff_media_type,
 )
@@ -129,6 +130,7 @@ from ..domain.reminders import (
 from ..domain.tool_call_log import ToolCallLogStore
 from ..infra.version import NOTHING_FOUND as VERSION_NOTHING_FOUND
 from ..infra.version import UNAVAILABLE as VERSION_UNAVAILABLE
+from ..infra.vision.client import DESCRIBE_PROMPTS
 from ..infra.vision.comprehend import describe_coverage, read_video_windows
 from ..infra.vision.preprocess import (
     VIDEO_CHUNK_SECONDS,
@@ -2647,6 +2649,7 @@ def build_tool_specs(
     vision_source=None,
     blob_store=None,
     vision_cache=None,
+    video_readings=None,
     describe_models: Mapping[str, str] | None = None,
     describe_providers: Mapping[str, str] | None = None,
     describe_max_bytes: Mapping[str, int] | None = None,
@@ -5545,6 +5548,35 @@ Args:
                 sha256, cached_description, cached=True, code=serve_code,
             )
 
+        # THE VIDEO READING CACHE (migration 0061) — video's own, keyed on
+        # EVERYTHING the reading depends on rather than the sha256 alone: the
+        # bytes, the describer, the chunk geometry and the question it was
+        # asked. That is what makes it sound where the sha256 cache above was
+        # not (#117): raising `chunk_max`, moving the lane or turning on speech
+        # changes the key and MISSES, so a stale «I have not seen the rest» or
+        # an old silent reading is never served. It covers both halves — a
+        # Reel or Story by URL, which has no blob and so no stored
+        # comprehension, and a room clip whose ingest reading never landed —
+        # which until now paid a full video read (60-120 s a window) on every
+        # ask. A `question` read bypasses it for layer 2's reason.
+        video_key: VideoReadingKey | None = None
+        if modality == "video" and not question and video_readings is not None:
+            video_key = VideoReadingKey(
+                sha256=sha256, model=describe_model,
+                chunk_seconds=video_chunk_seconds, chunk_max=video_max_chunks,
+                prompt_digest=hashlib.sha256(
+                    DESCRIBE_PROMPTS["video"].encode("utf-8")).hexdigest()[:16],
+            )
+            try:
+                cached_reading = await video_readings.get(key=video_key)
+            except Exception:
+                log.exception("media_fetch could not read the video reading cache")
+                cached_reading = None
+            if cached_reading:
+                return _serve_media(
+                    sha256, cached_reading, cached=True, code=serve_code,
+                )
+
         if url:
             # URL path: the bytes are already in hand from the download; no
             # blob decrypt step exists for them (custody is untouched — a
@@ -5610,6 +5642,7 @@ Args:
                 return None
 
         coverage = ""
+        video_read_whole = False
         if modality == "video":
             # **THE DELIBERATE LOOK CHUNKS TOO** (issue #117). This path used
             # to run `preprocess_media`, whose single view is capped at
@@ -5656,6 +5689,10 @@ Args:
                     "have watched all of it.)"
                 )
                 result = one
+                # The one view reached a model; what it could not cover is a
+                # fact about the BYTES (ffmpeg cannot measure them), not about
+                # this attempt, so the same inputs give the same answer.
+                video_read_whole = True
             else:
                 segments, read_windows = await read_video_windows(
                     cut=cut, media_type=media_type, ask=_ask,
@@ -5670,6 +5707,12 @@ Args:
                 description = "\n".join(segments)
                 coverage = describe_coverage(cut=cut, read=read_windows)
                 result = None
+                # Cacheable only when every window ffmpeg CUT reached a model.
+                # A window the chunk ceiling or ffmpeg left out is a fact about
+                # the inputs and repeats; a window the MODEL refused (a timeout,
+                # a cut-off) is a fact about THIS attempt, and caching the
+                # caveat would freeze a transient miss into every later answer.
+                video_read_whole = len(read_windows) == len(cut.windows)
         else:
             # Preprocess (scale/re-encode via ffmpeg) BEFORE the vision call:
             # a 4K still carries many times the bytes — and tokens — of the
@@ -5698,6 +5741,14 @@ Args:
             # alone. Storing it would make the next room asking "what is this"
             # get an answer to a question it never asked.
             return _serve_media(sha256, description, cached=False, code=serve_code)
+        if video_key is not None and video_read_whole:
+            # The reading WITH its coverage sentence, so the two cannot come
+            # apart — the half of #117 a sha256-keyed cache got wrong. The
+            # identifier screen still runs on every serve, cached or not.
+            try:
+                await video_readings.put(key=video_key, reading=description)
+            except Exception:
+                log.exception("media_fetch could not write the video reading cache")
         if vision_cache is not None and cacheable_modality:
             # Store the RAW description, at both tiers; the screen runs on
             # every serve, not here. `model` is the describer THIS modality
@@ -9458,6 +9509,7 @@ def build_tools(
     vision_source=None,
     blob_store=None,
     vision_cache=None,
+    video_readings=None,
     describe_models: Mapping[str, str] | None = None,
     describe_providers: Mapping[str, str] | None = None,
     describe_max_bytes: Mapping[str, int] | None = None,
@@ -9517,6 +9569,7 @@ def build_tools(
         persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
         room=room, transit_source=transit_source, route_source=route_source,
         vision_source=vision_source, blob_store=blob_store, vision_cache=vision_cache,
+        video_readings=video_readings,
         describe_models=describe_models,
         describe_providers=describe_providers,
         search_source=search_source, weather_source=weather_source,

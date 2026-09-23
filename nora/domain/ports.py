@@ -210,6 +210,7 @@ from nora.domain.media import MediaBlob as MediaBlob
 from nora.domain.media import MediaBytes as MediaBytes
 from nora.domain.media import MediaObject as MediaObject
 from nora.domain.media import MediaRef as MediaRef
+from nora.domain.media import VideoReadingKey as VideoReadingKey
 from nora.domain.models import (
     ConversationTarget,
     DeliveryStatus,
@@ -1122,6 +1123,25 @@ def speakable(text: str) -> bool:
         or _HEX_RUN.search(text)
         or _B64_RUN.search(text)
     )
+
+
+@runtime_checkable
+class VideoReadingStore(Protocol):
+    """Durable cache of question-less VIDEO readings, keyed on everything the
+    reading depends on (`VideoReadingKey`). Never raises.
+
+    Separate from `MediaDescriptionStore` on purpose: that one's durable tier
+    IS `media_objects`, whose row promises Nora holds the bytes — and a clip
+    read by URL has no blob. A reading keyed by more than a sha256 cannot live
+    in a table every handle lookup and search reads as a sha256 either.
+
+    A failure degrades to a MISS (one re-read), never the message: `get`
+    answers None, `put` swallows.
+    """
+
+    async def get(self, *, key: VideoReadingKey) -> str | None: ...
+
+    async def put(self, *, key: VideoReadingKey, reading: str) -> None: ...
 
 
 @runtime_checkable

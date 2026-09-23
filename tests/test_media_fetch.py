@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+from pathlib import Path
 
 import pytest
 
@@ -121,7 +122,8 @@ async def wiring(tmp_path, pg_url):
     cache = VisionCache()
 
     def build(*, vision_source=vision, blob_store=blobs, vision_cache=cache,
-              describe_models=None, describe_providers=None, media_store=None):
+              describe_models=None, describe_providers=None, media_store=None,
+              video_readings=None, video_max_chunks=None):
         # Image-only by default, which is the shipped configuration: audio and
         # video are wired but inert until a model is named for them. A NAMED
         # model, not "": since the split an empty model means «not configured»
@@ -138,7 +140,8 @@ async def wiring(tmp_path, pg_url):
             describe_models=describe_models,
             describe_providers=describe_providers,
             question="what is in the photo", context_window=40,
-            media_store=media_store,
+            media_store=media_store, video_readings=video_readings,
+            **({} if video_max_chunks is None else {"video_max_chunks": video_max_chunks}),
         )
         return {t.tool_name: t for t in tools}["media_fetch"]
 
@@ -1427,3 +1430,164 @@ async def test_a_screened_question_is_refused_rather_than_stripped(wiring):
 
     assert out["status"] == "nothing_found"
     assert "description" not in out, "a stripped question was answered anyway"
+
+
+
+# ---- the video reading cache (migration 0061) --------------------------------
+#
+# A video used to be re-read on EVERY ask: the sha256 cache excluded it (#117),
+# and a clip by URL has no stored comprehension. The cache below is keyed on
+# everything a reading depends on, so what it must prove is both halves — a
+# repeat is free, and any change of input is a miss, never a stale hit.
+
+def _video_download(monkeypatch, data: bytes = b"reel-bytes"):
+    async def fake_download(url: str) -> tuple[bytes, str]:
+        return data, "video/mp4"
+    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+
+
+async def test_a_second_look_at_the_same_url_clip_makes_no_model_call(
+    wiring, monkeypatch,
+):
+    """The live case (2026-09-24): an Instagram story by URL, one 90 s window,
+    re-read in full on every «what's on my story»."""
+    from nora.infra.vision import preprocess as _pre
+    from nora.testing import FakeVideoReadingStore
+
+    monkeypatch.setattr(_pre, "_run_video", _ffmpeg("15.0"))
+    _video_download(monkeypatch)
+    vision, readings = _WindowVision(answers=["a story at the beach"]), FakeVideoReadingStore()
+    build = lambda: wiring["build"](  # noqa: E731
+        vision_source=vision, describe_models={"video": "mimo-v2.6-flash"},
+        video_readings=readings,
+    )
+
+    first = await _call(build(), url="https://cdn.example/story.mp4")
+    second = await _call(build(), url="https://cdn.example/story.mp4")
+
+    assert first["status"] == second["status"] == "ok"
+    assert second["description"] == first["description"]
+    assert len(vision.calls) == 1, "the second look is served from the cache"
+
+
+async def test_a_room_clip_with_no_ingest_reading_is_cached_too(wiring, monkeypatch):
+    """The other half: a clip the room holds, whose automatic comprehension
+    never landed (off, failed, or not finished) — layer 1 misses, and without
+    this every ask re-read it."""
+    from nora.infra.vision import preprocess as _pre
+    from nora.testing import FakeVideoReadingStore
+
+    monkeypatch.setattr(_pre, "_run_video", _ffmpeg("100.0"))
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA,
+                        media_type="video/mp4")
+    vision, readings = _WindowVision(), FakeVideoReadingStore()
+    build = lambda: wiring["build"](  # noqa: E731
+        vision_source=vision, describe_models={"video": "mimo-v2.6-flash"},
+        media_store=FakeMediaObjectStore(), video_readings=readings,
+    )
+
+    await _call(build(), code=PNG_SHA[:6])
+    again = await _call(build(), code=PNG_SHA[:6])
+
+    assert again["status"] == "ok"
+    assert len(vision.calls) == 2, "two windows read ONCE, not twice"
+
+
+async def test_a_raised_chunk_ceiling_misses_and_reads_again(wiring, monkeypatch):
+    """#117's stale-caveat trap: a reading cut short by `chunk_max` must not be
+    served after the ceiling is raised — the geometry is in the key."""
+    from nora.infra.vision import preprocess as _pre
+    from nora.testing import FakeVideoReadingStore
+
+    monkeypatch.setattr(_pre, "_run_video", _ffmpeg("300.0"))
+    _video_download(monkeypatch)
+    vision, readings = _WindowVision(), FakeVideoReadingStore()
+
+    capped = await _call(wiring["build"](
+        vision_source=vision, describe_models={"video": "mimo-v2.6-flash"},
+        video_readings=readings, video_max_chunks=2,
+    ), url="https://cdn.example/long.mp4")
+    whole = await _call(wiring["build"](
+        vision_source=vision, describe_models={"video": "mimo-v2.6-flash"},
+        video_readings=readings, video_max_chunks=10,
+    ), url="https://cdn.example/long.mp4")
+
+    assert "have not seen the rest" in capped["description"]
+    assert "have not seen the rest" not in whole["description"]
+    assert len(vision.calls) == 2 + 4, "the raised ceiling re-read the clip"
+
+
+async def test_a_cached_partial_read_still_says_what_it_missed(wiring, monkeypatch):
+    """The caveat is stored WITH the reading, so a hit cannot come apart from
+    it — the other half of what the sha256 cache got wrong."""
+    from nora.infra.vision import preprocess as _pre
+    from nora.testing import FakeVideoReadingStore
+
+    monkeypatch.setattr(_pre, "_run_video", _ffmpeg("300.0"))
+    _video_download(monkeypatch)
+    vision, readings = _WindowVision(), FakeVideoReadingStore()
+    build = lambda: wiring["build"](  # noqa: E731
+        vision_source=vision, describe_models={"video": "mimo-v2.6-flash"},
+        video_readings=readings, video_max_chunks=2,
+    )
+
+    await _call(build(), url="https://cdn.example/long.mp4")
+    hit = await _call(build(), url="https://cdn.example/long.mp4")
+
+    assert len(vision.calls) == 2
+    assert "have not seen the rest" in hit["description"]
+
+
+async def test_a_window_the_model_refused_is_not_frozen_into_the_cache(
+    wiring, monkeypatch,
+):
+    """A timed-out window is a fact about THAT attempt, not the clip: caching
+    its caveat would serve «I missed 1:30-3:00» forever. So a read the model
+    shortened is not stored, and the next ask tries again."""
+    from nora.infra.vision import preprocess as _pre
+    from nora.testing import FakeVideoReadingStore
+
+    monkeypatch.setattr(_pre, "_run_video", _ffmpeg("100.0"))
+    _video_download(monkeypatch)
+    vision = _WindowVision(answers=["the first window", ""])  # second times out
+    readings = FakeVideoReadingStore()
+    build = lambda: wiring["build"](  # noqa: E731
+        vision_source=vision, describe_models={"video": "mimo-v2.6-flash"},
+        video_readings=readings,
+    )
+
+    await _call(build(), url="https://cdn.example/clip.mp4")
+
+    assert readings.readings == {}, "a model-shortened read must not be cached"
+
+
+async def test_a_question_about_a_clip_reads_and_writes_no_cache(wiring, monkeypatch):
+    """Layer 2's rule: an answer to a question is a function of (bytes,
+    question), so it neither comes from nor goes into a cache keyed without it."""
+    from nora.infra.vision import preprocess as _pre
+    from nora.testing import FakeVideoReadingStore
+
+    monkeypatch.setattr(_pre, "_run_video", _ffmpeg("15.0"))
+    _video_download(monkeypatch)
+    readings = FakeVideoReadingStore()
+
+    await _call(wiring["build"](
+        vision_source=_WindowVision(), describe_models={"video": "mimo-v2.6-flash"},
+        video_readings=readings,
+    ), url="https://cdn.example/story.mp4", question="what colour is her shirt?")
+
+    assert readings.gets == [] and readings.puts == []
+
+
+
+def test_the_video_reading_cache_is_wired_from_composition_to_the_tool():
+    """Two joints no behavioural test above reaches: composition must hand the
+    registry a DURABLE store (not None, which silently leaves every video
+    uncached), and the registry must forward it to `media_fetch`. Read from
+    source, because a test that built its own registry would be true by
+    construction."""
+    root = Path(__file__).resolve().parents[1]
+    composition = (root / "nora" / "app" / "composition.py").read_text()
+    registry = (root / "nora" / "agent" / "registry.py").read_text()
+    assert "video_readings=SqlVideoReadingStore(engine)" in composition
+    assert "video_readings=self._video_readings" in registry
