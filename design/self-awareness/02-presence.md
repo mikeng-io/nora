@@ -105,7 +105,7 @@ Roughly 80–100 tokens. The last line is the D1 = B wording.
 
 - **No room ids** (R-18). Labels only.
 - **No member names for rooms other than this one.** Who is in another room is
-  `read_room`'s territory and its disclosure tier (`03`), not a line every
+  `room_read`'s territory and its disclosure tier (`03`), not a line every
   turn pays for.
 - **No capability wording.** "You can send messages to Signal" is the
   catalogue's job and the framing `01` rules out.

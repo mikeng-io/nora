@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "Self-awareness design: the planned room tools are renamed to the new tool-naming rule and become two.",
+  "details": [],
+  "limitations": [],
+  "reason": "Design documents only (design/self-awareness/); no tool is built yet. ADR 0015 (PR #420) makes every new tool <domain>_<verb> from a closed verb list, which my_rooms, room_activity and read_room all fail. They become room_list and room_read: under D1 = B, existence and activity share one boundary (this unit, no text), so only content stays a separate tool."
+}
