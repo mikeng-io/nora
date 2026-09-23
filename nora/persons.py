@@ -79,6 +79,14 @@ class Persons:
     # fbid THIS room's own roster resolved to, so `instagram_handle` reads
     # off that SAME account rather than guessing among a person's several.
     _instagram_handles: dict[str, str] = field(default_factory=dict)
+    # person_id -> every `igid` their Instagram blocks declare, KIND-aware
+    # (design/instagram-adoption/17 P2). `index` cannot answer this: it is
+    # `(platform, value) -> person_id` and drops the id kind, so
+    # `platform_ids("instagram", p)` returns the fbid and the igid mixed —
+    # both decimal strings, and handing an fbid to a route that wants an
+    # igid names a different account or none, with no error anywhere
+    # (design/instagram-adoption/02).
+    _instagram_igids: dict[str, frozenset[str]] = field(default_factory=dict)
 
     def subject_id_for(self, person_id: str) -> str:
         """The stable id to derive analytics under. Resolves a RETIRED
@@ -166,6 +174,18 @@ class Persons:
         """
         return self._instagram_handles.get(fbid)
 
+    def instagram_igids(self, person_id: str) -> frozenset[str]:
+        """Every Instagram `igid` (the public/social id) recorded for
+        `person_id` — never an `fbid`, which `platform_ids` would mix in.
+
+        A SET, and deliberately not a pick: a person may hold several
+        Instagram accounts, and choosing among them is not this class's
+        decision (the social subject index answers `ambiguous` for more than
+        one). An unknown person, or one with no `igid` on file, is an empty
+        set — never a `KeyError`, for `platform_ids`' reason.
+        """
+        return self._instagram_igids.get(person_id, frozenset())
+
     def display_name(self, msg: NormalizedMessage) -> str:
         ref = self.resolve(msg.platform, msg.sender_id)
         if ref:
@@ -224,6 +244,7 @@ def load_persons(path: Path) -> Persons:
     index: dict[tuple[str, str], str] = {}
     life360: list[Life360Membership] = []
     instagram_handles: dict[str, str] = {}
+    instagram_igids: dict[str, set[str]] = {}
     for person_id, entry in parsed.persons.items():
         # `name` is what Nora calls them out loud. Fall back through the
         # structured parts before the person_id, so a file that gives only
@@ -274,6 +295,12 @@ def load_persons(path: Path) -> Persons:
                     # duplicate-checked index key below, so this needs no
                     # collision check of its own.
                     instagram_handles[str(account["fbid"])] = str(account["username"])
+                if platform == "instagram" and "igid" in account:
+                    # By KIND, read off the block, because the index below
+                    # keeps only the value. Uniqueness is the index's own
+                    # duplicate check (an igid under two people refuses to
+                    # load), so this needs none of its own.
+                    instagram_igids.setdefault(person_id, set()).add(str(account["igid"]))
                 for kind, id_value in account.items():
                     if kind == ACCOUNT_LABEL_KEY or kind in metadata:
                         continue          # non-matchable: label / life360 circle_id
@@ -342,4 +369,5 @@ def load_persons(path: Path) -> Persons:
     return Persons(
         by_person=by_person, index=index, life360=tuple(life360),
         _subject_aliases=subject_aliases, _instagram_handles=instagram_handles,
+        _instagram_igids={pid: frozenset(ids) for pid, ids in instagram_igids.items()},
     )
