@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Mapping, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, tzinfo
 from typing import Any
 
 #: How much of one tool result the JUDGE reads. Well above the fold's own
@@ -32,11 +32,13 @@ from typing import Any
 _RESULT_CHARS = 16_000
 
 
-def _local(ms: int) -> str:
-    """An absolute local time WITH its offset — the judge has to place a
-    relative clause («tomorrow», «tonight») on a calendar, so the zone the
-    room lives in is part of the fact."""
-    return datetime.fromtimestamp(ms / 1000, tz=UTC).astimezone().strftime(
+def _local(ms: int, tz: tzinfo) -> str:
+    """An absolute time in the DEPLOYMENT's zone, WITH the date, weekday and
+    offset — the judge has to place a relative clause («tomorrow», «tonight»)
+    on a calendar, so the zone the room lives in is part of the fact, and the
+    machine the suite runs on is not the room. Date-first like the fold's own
+    `at` (`%Y-%m-%d %H:%M`), so the two read the same way."""
+    return datetime.fromtimestamp(ms / 1000, tz=UTC).astimezone(tz).strftime(
         "%Y-%m-%d %H:%M (%a) UTC%z"
     )
 
@@ -93,10 +95,13 @@ def _steps(messages: Iterable[Any]) -> list[str]:
     return lines
 
 
-def render_evidence(turn: Any, *, display_name: str) -> str:
-    """The prior, the turn's window, the turn's steps — from the record.
+def render_evidence(turn: Any, *, display_name: str, tz: tzinfo) -> str:
+    """The prior, the rows the fold read, the turn's steps — from the record.
 
-    `turn` is a `nora.subject.standing_fold.FoldTurn`.
+    `turn` is a `nora.subject.standing_fold.FoldTurn`. The rows are its `seen`:
+    the watermark batch at production's fold instant plus the turn's own —
+    which is where a `recovered` turn's reply is, written after the turn's
+    record closed.
     """
     trace = turn.trace
     prior = turn.prior
@@ -105,18 +110,19 @@ def render_evidence(turn: Any, *, display_name: str) -> str:
     else:
         prior_block = (
             "## Her position BEFORE this turn\n"
-            f"Written {_local(prior.updated_at)} — "
+            f"Written {_local(prior.updated_at, tz)} — "
             f"{_hours(trace.created_at - prior.updated_at)} before the turn.\n"
             f"```\n{prior.body.strip()}\n```\n"
         )
     rows = []
-    for row in trace.transcript:
+    for row in turn.seen or trace.transcript:
         who = display_name if row.is_nora else (row.person_name or row.sender_name or "?")
-        rows.append(f"[{_local(row.ts)}] {who}: {(row.body or '').strip()}")
+        rows.append(f"[{_local(row.ts, tz)}] {who}: {(row.body or '').strip()}")
     return (
         f"{prior_block}\n"
-        f"## The turn\nAt {_local(trace.created_at)}. Outcome: {trace.outcome}.\n\n"
-        "### The room's messages around the turn, oldest first\n"
+        f"## The turn\nAt {_local(trace.created_at, tz)}. Outcome: {trace.outcome}.\n\n"
+        "### The room's messages the fold read, oldest first "
+        "(the stretch since her last position, and the turn's own)\n"
         + "\n".join(rows)
         + "\n\n### Her steps on the turn: what she called, what came back, what she wrote\n"
         + "\n".join(_steps(trace.messages))

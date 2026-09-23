@@ -30,6 +30,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from nora.app.fire import SENT, SILENT, participation_occasion
 from nora.subject import (
@@ -462,14 +463,27 @@ async def standing(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
         turn = await read_fold_turn(subject, source_url=moment.source_url, tag_id=tag_id)
     except (LookupError, ValueError) as exc:
         return Outcome(admitted=None, source="fail_closed", error=str(exc))
+    # THE FOLD'S INSTANT, not the turn's: production's fold ran after the
+    # turn finished and read the room then, and on a `recovered` turn her
+    # reply is written in between. The anchor is the first revision the room
+    # got after the turn; a case anchored anywhere else seeds a different room
+    # than the fold read.
     stated = int((case.snapshot or {}).get("before_ms") or 0)
-    if turn.trace.created_at != stated:
+    if turn.folded_at is None:
         return Outcome(
             admitted=None, source="fail_closed",
             error=(
-                f"the case's before_ms ({stated}) is not tag {tag_id!r}'s own "
-                f"instant ({turn.trace.created_at}); the sandbox would hold a "
-                "different room than the fold read"
+                f"production wrote no standing revision after tag {tag_id!r}, "
+                "so the instant its fold read the room at is unrecorded"
+            ),
+        )
+    if turn.folded_at != stated:
+        return Outcome(
+            admitted=None, source="fail_closed",
+            error=(
+                f"the case's before_ms ({stated}) is not the instant production "
+                f"folded tag {tag_id!r} at ({turn.folded_at}); the sandbox would "
+                "hold a different room than the fold read"
             ),
         )
     if turn.prior is None:
@@ -503,7 +517,13 @@ async def standing(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     return Outcome(
         admitted=None,
         position=folded.position,
-        evidence=render_evidence(turn, display_name=subject.cfg.doctrine.display_name),
+        evidence=render_evidence(
+            turn, display_name=subject.cfg.doctrine.display_name,
+            # The deployment's own zone (the one its recurrences keep), stated
+            # rather than the machine's: a relative clause is placed on a
+            # calendar by the judge, and the room lives in this zone.
+            tz=ZoneInfo(subject.cfg.reminders.timezone),
+        ),
         shown=shown,
         outcome_token=folded.outcome,
     )

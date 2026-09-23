@@ -188,3 +188,68 @@ def test_print_input_renders_one_case_without_asking_for_a_verdict(monkeypatch, 
     parked = next(c.name for c in load_all("standing") if c.metadata.get("parked"))
     assert cli._print_input("standing", parked, source_url="x") == 2
     assert cli._print_input("no_trigger", "anything", source_url="x") == 2
+
+
+def _row(i: int, body: str, *, ts: int, nora: bool = False) -> object:
+    from nora.domain.models import DeliveryStatus, TranscriptRow
+
+    return TranscriptRow(
+        id=i, sender_id="+1", sender_name="self-set", ts=ts, body=body, is_nora=nora,
+        delivery_status=DeliveryStatus.SENT, raw_json=None,
+        person_name=None if nora else "Canonical",
+    )
+
+
+def test_render_evidence_is_the_record_in_the_deployments_zone() -> None:
+    """What the judge reads: the prior with when it was written, the rows the
+    fold READ (not only the trace's), every step, a long result past the fold's
+    own bound, and times placed in the zone it is told — not the machine's."""
+    from zoneinfo import ZoneInfo
+
+    from evals.rebuilt.fold_evidence import render_evidence
+    from nora.domain.standing import Standing
+    from nora.domain.tag_trace import TagTrace
+    from nora.subject.standing_fold import FoldTurn
+
+    turn_at = 1_790_148_435_400                      # 2026-09-23 15:27 in Hong Kong
+    long_result = "x" * 9000 + "DEEP-FINDING" + "y" * 20000
+    trace = TagTrace(
+        tag_id="t", conversation_id="c", outcome="recovered", created_at=turn_at,
+        transcript=(_row(2, "IN-THE-TRACE", ts=turn_at - 60_000),),
+        messages=(
+            {"role": "assistant",
+             "content": [{"toolUse": {"name": "web_search", "input": {"q": 1}}}]},
+            {"role": "user", "content": [{"toolResult": {"content": [{"text": long_result}]}}]},
+        ),
+    )
+    turn = FoldTurn(
+        platform="signal", trace=trace, delivered={},
+        prior=Standing(platform="signal", conversation_id="c", body="THE-PRIOR",
+                       fold_count=3, updated_at=turn_at - 20 * 3_600_000),
+        seen=(
+            _row(1, "BATCH-ONLY", ts=turn_at - 120_000),
+            _row(2, "IN-THE-TRACE", ts=turn_at - 60_000),
+            _row(3, "HER-LATE-REPLY", ts=turn_at + 300, nora=True),
+        ),
+    )
+    text = render_evidence(turn, display_name="Nora", tz=ZoneInfo("Asia/Hong_Kong"))
+
+    assert "THE-PRIOR" in text and "20.0 hours before the turn" in text
+    assert "2026-09-23 15:27 (Wed) UTC+0800" in text, "not in the deployment's zone"
+    assert text.index("BATCH-ONLY") < text.index("IN-THE-TRACE") < text.index("HER-LATE-REPLY")
+    assert "] Nora: HER-LATE-REPLY" in text
+    assert "] Canonical: BATCH-ONLY" in text, "the roster's name, never the self-set one"
+    assert "[she called web_search]" in text
+    assert "DEEP-FINDING" in text, "a result past the fold's own 4000 bound must reach the judge"
+    assert "cut at 16000 of" in text, "a result past the judge's bound is cut AND says so"
+
+    utc = render_evidence(turn, display_name="Nora", tz=ZoneInfo("UTC"))
+    assert "2026-09-23 07:27 (Wed) UTC+0000" in utc
+
+
+def test_a_row_id_the_sandbox_did_not_seed_is_refused_not_guessed() -> None:
+    from nora.subject.standing_fold import _translated
+
+    assert _translated(7, {7: 1}, what="w") == 1
+    with pytest.raises(LookupError, match="was not seeded with"):
+        _translated(8, {7: 1}, what="the turn's transcript")

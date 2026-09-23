@@ -227,7 +227,10 @@ def _print_input(name: str, case_name: str, *, source_url: str) -> int:
     `design/standing-compact/20-verification.md` §1: «before any model call,
     each arm's rendered input for one case is printed and diffed. A suite that
     cannot see the change measures noise.» Run it once on each arm's checkout
-    and `diff` the two outputs.
+    and `diff` the two outputs. The master arm is master with the harness
+    commit applied — the corpus, `evals/` and `nora/subject/standing_fold.py`
+    apply to it unchanged — and the branch arm is the branch; the corpus
+    header (`evals/corpora/standing.yaml`) states the whole recipe.
 
     The case runs the ONE path — sandbox, snapshot, frozen clock — with the
     fold's model client swapped for a recorder, so what prints is exactly what
@@ -275,7 +278,10 @@ def main() -> int:
         "--print-input", metavar="CASE",
         help="render CASE's model input (the standing fold's system and user "
              "prompt) and print it, calling no model — run on each arm and "
-             "diff, before any suite is paid for. One corpus only.",
+             "diff, before any suite is paid for. One corpus only. The MASTER "
+             "arm is master with the harness commit applied (it applies "
+             "unchanged: evals/, nora/subject/standing_fold.py, the corpus); "
+             "the branch arm is the branch. See evals/corpora/standing.yaml.",
     )
     ap.add_argument(
         "--source-url", default=os.environ.get("NORA_EVAL_SOURCE_URL", ""),

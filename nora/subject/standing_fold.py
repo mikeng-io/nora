@@ -33,6 +33,26 @@ seam only.**
   (a fold that concluded she had sent nothing with her delivered answer in
   front of it). Her rows get back the status the source recorded.
 
+**Two instants, and which one each input is read at is the point.** The
+turn finished at `tag_trace.created_at`; production's fold ran a few hundred
+milliseconds LATER and read the room then — and on a `recovered` turn her reply
+is written in that gap, so a room cut at `created_at` is a room without her
+reply. The fold's own instant is recorded exactly once: the `updated_at` of the
+first `standing_revision` the room got after the turn (`folded_at`). So:
+
+- the room (the sandbox, the batch, delivery) is read at `folded_at`;
+- the prior and the verdict chain are read as of `created_at` — what stood
+  BEFORE the turn, never the revision this turn's own fold wrote.
+
+A turn after which production wrote no revision has no recorded fold instant,
+and is refused rather than cut at a guess.
+
+**The verdict chain is seeded too.** Master's fold re-derives the position
+when the newest ungrounded `turn_verdict` is one the prior has not consumed;
+without those rows its arm cannot reproduce what production did. The table
+exists in both arms' schema and nothing on this branch reads it, so seeding it
+changes one arm's behaviour only where production's behaviour changed.
+
 **Two ways to call the model, one of them is not calling it.** `call_model=
 False` swaps the client for a recorder that returns an empty completion: the
 fold renders its whole input, records it, and stops at the parse (`malformed`)
@@ -50,13 +70,14 @@ from typing import Any
 
 import sqlalchemy as sa
 
-from nora.domain.models import DeliveryStatus
+from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.standing import Standing
 from nora.domain.tag_trace import TagTrace
 from nora.engagement.stages.debrief import Completion
-from nora.infra.sql import create_readonly_sql_engine
-from nora.infra.sql.schema import TAG_TRACE
+from nora.infra.sql import create_readonly_sql_engine, create_sql_engine
+from nora.infra.sql.schema import STANDING_REVISION, TAG_TRACE, TURN_VERDICT
 from nora.infra.sql.snapshot import snapshot
+from nora.infra.sql.standing import SqlStandingStore
 
 # The table's ONE (de)serialisation of a transcript row, reused rather than
 # copied: `SqlTagTraceStore.recent` is the store's only read and it is keyed on
@@ -86,8 +107,19 @@ class FoldTurn:
     #: reads as; the two cannot be told apart from here, so a caller that needs
     #: a prior must refuse rather than fold against a blank.
     prior: Standing | None
-    #: Her rows' delivery status as the source recorded it, by source row id.
+    #: Her rows' delivery status as the source recorded it, by source row id,
+    #: at `folded_at`.
     delivered: Mapping[int, DeliveryStatus]
+    #: Production's fold instant: the first revision's `updated_at` after the
+    #: turn. `None` when production wrote none.
+    folded_at: int | None = None
+    #: The rows production's fold read — the watermark batch at `folded_at`
+    #: plus the turn's own rows, by id — for the JUDGE. Computed from the
+    #: source the way `since_including_nora` reads it (`id > watermark`,
+    #: ascending, `[standing] fold_batch` of them).
+    seen: tuple[TranscriptRow, ...] = ()
+    #: `turn_verdict` rows of this conversation as of the turn, verbatim.
+    verdicts: tuple[Mapping[str, Any], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,16 +164,31 @@ async def read_fold_turn(subject: Subject, *, source_url: str, tag_id: str) -> F
             found = (await conn.execute(
                 sa.select(TAG_TRACE).where(TAG_TRACE.c.tag_id == tag_id)
             )).all()
-        if len(found) != 1:
-            raise LookupError(
-                f"the source holds {len(found)} tag_trace rows for tag {tag_id!r}; "
-                "a case names exactly one real turn"
-            )
-        [row] = found
-        if row.conversation_id != conversation_id:
-            raise ValueError(
-                f"tag {tag_id!r} was a turn in another conversation; the case's "
-                "snapshot names the room the fold writes into"
+            if len(found) != 1:
+                raise LookupError(
+                    f"the source holds {len(found)} tag_trace rows for tag "
+                    f"{tag_id!r}; a case names exactly one real turn"
+                )
+            [row] = found
+            if row.conversation_id != conversation_id:
+                raise ValueError(
+                    f"tag {tag_id!r} was a turn in another conversation; the "
+                    "case's snapshot names the room the fold writes into"
+                )
+            folded_at = (await conn.execute(
+                sa.select(sa.func.min(STANDING_REVISION.c.updated_at)).where(
+                    STANDING_REVISION.c.platform == platform,
+                    STANDING_REVISION.c.conversation_id == conversation_id,
+                    STANDING_REVISION.c.updated_at > row.created_at,
+                )
+            )).scalar()
+            verdicts = tuple(
+                dict(v._mapping) for v in (await conn.execute(
+                    sa.select(TURN_VERDICT).where(
+                        TURN_VERDICT.c.conversation_id == conversation_id,
+                        TURN_VERDICT.c.created_at <= row.created_at,
+                    )
+                )).all()
             )
         trace = TagTrace(
             tag_id=row.tag_id,
@@ -151,24 +198,38 @@ async def read_fold_turn(subject: Subject, *, source_url: str, tag_id: str) -> F
             outcome=row.outcome,
             created_at=row.created_at,
         )
-        # The SAME reconstruction the sandbox was seeded from, at the turn's own
-        # instant: `standing` is `SqlStandingStore.read_as_of`, the transcript
-        # carries each row's recorded delivery status.
+        # BEFORE the turn: the chain's newest revision at or before it.
+        standing_store = SqlStandingStore(engine)
+        prior = await standing_store.read_as_of(
+            platform=platform, conversation_id=conversation_id,
+            before_ms=trace.created_at,
+        )
+        # The ROOM as the fold read it: the same reconstruction the sandbox is
+        # seeded from, at the fold's own instant.
         shot = await snapshot(
             engine,
             platform=platform,
             conversation_id=conversation_id,
             culture_key=subject.culture_key,
             unit=subject.unit,
-            before_ms=trace.created_at,
+            before_ms=int(folded_at) if folded_at is not None else trace.created_at,
         )
     finally:
         await engine.dispose()
+    watermark = (prior.last_folded_row_id if prior is not None else None) or 0
+    batch = sorted(
+        (r for r in shot.transcript if r.id > watermark), key=lambda r: r.id,
+    )[: subject.cfg.standing.fold_batch]
+    by_id = {r.id: r for r in batch}
+    by_id.update({r.id: r for r in trace.transcript})
     return FoldTurn(
         platform=platform,
         trace=trace,
-        prior=shot.standing,
+        prior=prior,
         delivered={r.id: r.delivery_status for r in shot.transcript if r.is_nora},
+        folded_at=int(folded_at) if folded_at is not None else None,
+        seen=tuple(sorted(by_id.values(), key=lambda r: r.id)),
+        verdicts=verdicts,
     )
 
 
@@ -215,9 +276,7 @@ def _outcome_counts(subject: Subject) -> dict[str, float]:
     return counts
 
 
-def _translated(row_id: int | None, rows: Mapping[int | str, int], *, what: str) -> int | None:
-    if row_id is None:
-        return None
+def _translated(row_id: int, rows: Mapping[int | str, int], *, what: str) -> int:
     mapped = rows.get(row_id)
     if mapped is None:
         raise LookupError(
@@ -260,12 +319,25 @@ async def fold(
     # The prior, with its watermark in the sandbox's id space. `replace`, so
     # every other field the arm's `Standing` carries rides through unchanged.
     if turn.prior is not None:
+        watermark = turn.prior.last_folded_row_id
         await wiring.store.write(standing=dataclasses.replace(
             turn.prior,
-            last_folded_row_id=_translated(
-                turn.prior.last_folded_row_id, rows, what="the prior's watermark",
+            last_folded_row_id=(
+                None if watermark is None
+                else _translated(watermark, rows, what="the prior's watermark")
             ),
         ))
+
+    # The verdict chain as of the turn (see the module docstring). Written
+    # through the table rather than a store: the branch deleted the store, the
+    # schema kept the table, and master's arm reads it through its own.
+    if turn.verdicts:
+        engine = create_sql_engine(subject.database_url)
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(sa.insert(TURN_VERDICT), [dict(v) for v in turn.verdicts])
+        finally:
+            await engine.dispose()
 
     trace = dataclasses.replace(
         turn.trace,
