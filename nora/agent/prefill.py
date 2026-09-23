@@ -61,7 +61,14 @@ TAG_HEADER = (
 # no entry falls back to the key itself rather than being hidden — «I am
 # somewhere I have no name for» is still a better situational model than
 # silence, which is what produced the bug this table exists for.
-_PLATFORM_NAMES = {"signal": "Signal", "discord": "Discord"}
+#
+# WhatsApp and Instagram joined 2026-09-23 (design/self-awareness/05 step 1):
+# both had fallen through to the wire key since they went live, which is the
+# bug this table was written for, recurring on the two networks added since.
+_PLATFORM_NAMES = {
+    "signal": "Signal", "discord": "Discord",
+    "whatsapp": "WhatsApp", "instagram": "Instagram",
+}
 
 
 def _where_line(platform: str) -> str:
