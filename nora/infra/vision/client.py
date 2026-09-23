@@ -364,6 +364,12 @@ class VisionClient:
         self._configured = timeout_seconds
         self._loop_timeout = loop_timeout_seconds
 
+    @property
+    def reasoning_effort(self) -> str:
+        """The effort every describe call is made at — part of what a cached
+        video reading depends on (`VideoReadingKey.reading_digest`)."""
+        return self._reasoning_effort
+
     def _call_timeout(self, windows: int | None) -> float:
         """This call's ceiling, derived HERE and nowhere else.
 

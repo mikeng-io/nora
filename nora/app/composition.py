@@ -119,6 +119,7 @@ from nora.infra.sql.tag_debounce import SqlTagDebounceStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.sql.turn_verdicts import SqlTurnVerdictStore
+from nora.infra.sql.video_readings import SqlVideoReadingStore
 from nora.infra.version import OK as VERSION_OK
 from nora.infra.version import VersionManifest
 from nora.infra.vision import MediaComprehender, VisionClient
@@ -2515,7 +2516,8 @@ async def build_dependencies(
         video_max_chunks=cfg.media.describe.video.chunk_max,
         media_join=media_join,
         describe_max_bytes=_describe_max_bytes(cfg),
-        blobs=blobs, descriptions=media_descriptions, search=search_client,
+        blobs=blobs, descriptions=media_descriptions,
+        video_readings=SqlVideoReadingStore(engine), search=search_client,
         social=social_client,
         weather=weather_client,
         presence=presence_store, circles=presence_circles,
