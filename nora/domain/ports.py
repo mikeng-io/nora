@@ -1607,7 +1607,8 @@ class SteamPresenceProvider(Protocol):
 @runtime_checkable
 class SocialProvider(Protocol):
     """`{platform, what, target, limit} -> {status, ...}` social reads, behind
-    the `social_fetch` tool (DEC-151). NEVER raises — a transport failure of
+    the `social_fetch` (DEC-151) and `instagram_read`
+    (design/instagram-adoption/18) tools. NEVER raises — a transport failure of
     the bridge call is `{"status": "unavailable"}`, never an exception into
     the loop (R-5), and the R-27 three states apply end to end: an error is
     never a `nothing_found`.
@@ -1621,8 +1622,9 @@ class SocialProvider(Protocol):
     `tests/contract/test_social_provider_contract.py`, and all three pass it.
 
     Two DECLARED status extensions ride beside the core three on this port,
-    both of them only reachable on the Instagram story row, and both named
-    here so they cannot arrive silently (`nora.agent.ports
+    both of them produced by `SocialRouter` on a PERSON-keyed Instagram read
+    (`ambiguous` on profile and story, `refused` on story only), and both
+    named here so they cannot arrive silently (`nora.agent.ports
     .DECLARED_STATUS_EXTENSIONS` is where the vocabulary is declared):
 
       * `ambiguous` — the subject did not resolve. `target` is a `person_id`
@@ -1679,19 +1681,25 @@ class SocialSubjectIndex(Protocol):
     revocable — a human reads one file and deletes one line — which inferred
     memory supports neither of.
 
-    Two methods rather than one fused answer, because the two failures are
-    different claims the model must not conflate: an unresolved subject is
-    `ambiguous` («I don't know who that is on there»), an out-of-tier one is
-    `refused` («I'm not going to look»).
+    Separate methods rather than one fused answer, because the failures are
+    different claims the model must not conflate. `igids_for` returns EVERY
+    igid on file for the person, and its caller tells three states apart
+    (design/instagram-adoption/18, 2026-09-24): none on file is
+    `nothing_found` («no account on file, so I didn't look»), several is
+    `ambiguous` («I can't tell which, so I didn't look»), and `None` — the
+    index could not be read — is `unavailable`. An out-of-tier person is
+    `refused` («I'm not going to look»). The earlier `igid_for -> str | None`
+    folded all three unresolved cases into one `None`, and the router had to
+    call every one of them `ambiguous`.
 
-    **Neither method raises**, and both fail CLOSED: an index that cannot be
-    read answers `None` / `False`, which costs a read that should have
-    happened and never grants one that should not have.
+    **No method raises**, and all fail CLOSED: an index that cannot be read
+    answers `None` / `False`, which costs a read that should have happened
+    and never grants one that should not have.
 
     `person_for_igid` is the REVERSE lookup, and it exists for links
     (design/instagram-adoption/15 §Links): a link names ONE account, so its
     reach check runs `igid -> person -> is_tier_zero` on the igid the link
-    named. Re-deriving through `igid_for` would turn a friend with two
+    named. Re-deriving through `igids_for` would turn a friend with two
     accounts into `ambiguous` although the link said which one. An igid that
     maps to no person is `None`, which the link path answers `refused`.
 
@@ -1701,7 +1709,7 @@ class SocialSubjectIndex(Protocol):
     holds it and `nora.testing.FakeSocialSubjectIndex` to the same answers.
     """
 
-    async def igid_for(self, *, person_id: str) -> str | None: ...
+    async def igids_for(self, *, person_id: str) -> frozenset[str] | None: ...
 
     async def is_tier_zero(self, *, person_id: str) -> bool: ...
 

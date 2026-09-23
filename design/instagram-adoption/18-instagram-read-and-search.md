@@ -3,7 +3,7 @@ type: design
 title: "instagram_read and instagram_search — the per-network social tool convention"
 description: "Nora reads Instagram through two tools of its own, over the bridge only: instagram_read takes a person (by name), a pasted link or a typed handle, as three separate parameters, and returns profiles and stories now and posts once a mechanism exists; instagram_search takes free text. Looking at the media stays media_fetch. The naming is the convention every later network follows."
 tags: [nora, instagram, social, tools, instagram_read, instagram_search, catalogue, naming]
-timestamp: '2026-09-23'
+timestamp: '2026-09-24'
 edges:
   - {dst: 00-overview.md, rel: parent, provenance: asserted}
   - {dst: 09-tool-surface-and-naming.md, rel: realizes, provenance: asserted}
@@ -30,6 +30,26 @@ Two things made the split affordable. The tool catalogue
 (`design/tool-catalogue/`) cuts a tool's resident cost from about 400 tokens
 to one catalogue line. And `15` gives Instagram exactly one backend, so the
 tools for one network map onto one backend.
+
+> **2026-09-24: the first reason no longer holds.** The catalogue's deferral
+> switch (`[llm] defer_tools`) measured worse per turn and stays `false`
+> (`../tool-catalogue/05-measurement.md` §3a), so every tool, these included,
+> ships RESIDENT with its full schema. `instagram_read` costs its schema on
+> every turn: 282 tokens (cl100k, `json.dumps` of its `tool_spec`, the 05 §1
+> method). The same PR cut `social_fetch`'s schema from 847 to 486 by removing
+> its Instagram rows and meeting ADR 0015, so the resident total moved −79
+> (27,044 → 26,965, against master at `4cc8f89b`). The split is still the
+> decision; what it costs is now measured rather than assumed away. 05 §3a
+> names this tool set's growth as a re-measure trigger.
+
+> **ADR 0015 (proposed 2026-09-24), met from the first commit.** Both tools
+> declare `level=3` on `NativeTool` (the field was added here, ADR 0015 §3).
+> The text Strands sends is 183 tokens for `instagram_read` and 312 for
+> `social_fetch`, under the Level 3 ceiling of 320. Neither has an em or en
+> dash or any non-English string. `instagram_read`'s `what` is a `Literal`,
+> so the schema carries the enum. Its description names the statuses and
+> says each non-`ok` result carries a `note`; the notes say what to tell
+> them.
 
 ## The naming convention, for every network
 
@@ -68,6 +88,14 @@ instagram_read(what: str | None = None, person: str | None = None,
                limit: int = 5, cursor: str | None = None)
 ```
 
+> **As built in P5 (2026-09-24): `instagram_read(what, person)`, both
+> required.** `link` and `handle` are not in the schema until P10, and `limit`
+> and `cursor` are not in it until `posts` (P13), per §"Verbs join only when
+> they work end to end" below: a parameter in the schema is a word
+> advertising an input, and a resident schema is paid for on every turn. A
+> story is returned whole (the client clamps frames and text on its side).
+> The signature above is the P13 end state.
+
 **Exactly one of `person`, `link`, `handle`.** Three parameters, not one
 overloaded `target`: a person's name and an Instagram handle are the same
 shape of string ("miles" could be either), and nothing could tell them apart
@@ -76,7 +104,7 @@ for something in the conversation, `url` for an address).
 
 | Input | Means | Resolved by |
 |---|---|---|
-| `person` | a person, named the way the message named them (a nickname is fine) | **the tool** resolves the name with the same room-scoped lookup `about` uses (`room.scope().find`), because only the tool holds the turn's `room`; the router then takes the resolved person through the person index to their Instagram account. No match → `nothing_found`; several people or several accounts → `ambiguous`. **No tool hands Nora a person id**, so the tool never asks for one |
+| `person` | a person, named the way the message named them (a nickname is fine) | **the tool** resolves the name with the same room-scoped lookup `about` uses (`room.scope().find`), because only the tool holds the turn's `room`; the router then takes the resolved person through the person index to their Instagram account. No match → `nothing_found`; several people → `ambiguous` (ask which). Then the index (`igids_for`, 2026-09-24) returns every igid on file: none → `nothing_found` with a note saying no account is on file and nothing was looked at; several → `ambiguous`, «I can't tell which, so I didn't look» (never a pick, and not «ask» — the room cannot settle it, only the file can); an unreadable index → `unavailable`. An unreadable room roster is `unavailable`. **No tool hands Nora a person id**, so the tool never asks for one |
 | `link` | a pasted Instagram URL | the link parser; the LINK decides the read (profile, post, reel or story, `15` §Links) |
 | `handle` | an Instagram username someone typed (no `@`) | the bridge (`GET /accounts?username=`) |
 
@@ -98,6 +126,13 @@ Every item, listed or single, carries the **text layer** and **references**:
 caption, author, when it was posted, Instagram's own alt text
 (`accessibility_caption`, e.g. "a photo of a plate"), kind (image / video /
 carousel), and media URLs. It does **not** carry what the media shows.
+
+> **2026-09-24: no item `id`.** A story item is `{kind, taken_at, url}` and
+> the text layer. The frame id was never used (`media_fetch` takes the URL),
+> and it leaked: when a reel item has no `pk`, the bridge's `storyFrame`
+> falls back to `item.ID`, shaped `<pk>_<owner igid>`, so the story owner's
+> igid reached the model (R-18). The client no longer reads the field; the
+> shared fixture `story_found.json` carries a frame of that shape.
 
 **Seeing an image or video is `media_fetch(url=…)`**, called on the one item
 that matters, exactly as `10-discovery-retrieval-and-paging.md` divides it:
@@ -149,6 +184,34 @@ The same envelope as every social read: R-27's `ok`, `nothing_found`,
 check (story only) produce them. The body is the curated DTO (`16`
 §Resources), never Instagram's raw response, wrapped as untrusted and clamped.
 
+> **2026-09-24, as built.** `refused` says «I only open stories of people the
+> operator has listed in one of my rooms», which is true of everyone it
+> covers — including someone who is IN the chat but not listed, about whom
+> «outside the rooms I'm in» was false. A backend that is not composed (its
+> flag is off) answers one stable `unavailable` sentence, «Instagram isn't
+> set up», and logs once at boot rather than on every call.
+
+## A story is opened only when a person asks (operator safety rule, 2026-09-24)
+
+A story view is VISIBLE to its author: it lands in their viewer list. So
+`instagram_read(what="story")` is answered `refused`, before any name is
+resolved or any request is sent, in every turn that does not answer a person
+— a fire turn (reminder, proactive, participation) or a Dreamer pass. It runs
+only in a turn a person addressed (a tag or a reply). The tool knows which
+it is from provenance its builder already carries (`fire_turn`,
+`dream_adaptor`), not from a guess. A profile read is invisible to the
+account and stays allowed wherever the tool is. Pinned by
+`test_a_story_is_never_opened_in_a_turn_nobody_asked_for`. **This holds until
+the operator decides otherwise.**
+
+`side_effect_state` stays `none`, and the `NativeTool` comment says why that
+is not the whole truth: ADR 0008 §1 binds `read_only=True` to `none` (a
+tested invariant), and the honest `unknown` would make `instagram_read` an
+act verb — removing it from the Relevance Gate's digest, from R-97's lookup
+set and from the Dreamer's ceiling for the invisible profile read as well.
+The visible half is held by the rule above instead. Changing that trade is an
+ADR 0008 decision, not a flag on this tool.
+
 ## Where each concern lives
 
 | Concern | Owner |
@@ -177,20 +240,37 @@ and P10 (for `link` / `handle`), not a detail left to either:
 
 - **Resolution is keyed on `(platform, what, input kind)`.**
   - `person` → the tool has already resolved the name to a person id →
-    `igid_for`. Any read.
+    `igids_for` (exactly one is read). Any read.
   - `handle` → the bridge's username lookup → igid.
   - `link` → the parser → (read, username or shortcode) → as for `handle`, or
     straight to the post route.
 - **Authorization stays keyed on the read, not the input.** Only `story` has
   a reach check. For `person` it is `is_tier_zero(person)`. For `link` and
   `handle` it is `igid → person_for_igid → is_tier_zero`, **on the igid the
-  input named, never re-derived through `igid_for`** (`15` §Links). An igid
+  input named, never re-derived through `igids_for`** (`15` §Links). An igid
   that maps to nobody is not in any room: `refused`, and no story request is
   sent. `profile` and `post` need resolution only.
+
+  > **Tier 0 note, 2026-09-24.** `is_tier_zero` counts any `[[conversations]]`
+  > entry that lists the person, and does not ask whether that entry is a
+  > group: a direct-chat entry would make its person Tier 0. The policy parser
+  > cannot produce one today (Nora does not accept DMs, and `[dm] persons` is
+  > a separate field that never counts), so this is recorded rather than
+  > fixed.
 - **The port gains `cursor` and the input kind.** `SocialProvider.read` and
   `SocialRouter.read` take `(platform, what, target, limit)` today; both grow
   a cursor and a typed target, and the contract suite
   (`tests/contract/test_social_provider_contract.py`) grows with them.
+
+  > **As built in P5 (2026-09-24).** `SocialRouter.read` grew `target_kind`
+  > (`named` | `person`, default `named`, the port's own meaning), with
+  > resolution keyed on `(platform, what, target_kind)` (`SUBJECT_INPUTS`)
+  > and reach on the read alone (`TIER_ZERO_READS`, story only). The
+  > BACKENDS' port did not grow: the kind is consumed by resolution, and a
+  > backend only ever sees a resolved target (an igid, or a typed string), so
+  > the argument would be one every backend ignores. `cursor` joins with the
+  > read that pages (P13). The Instagram rows admit `person` only; a `named`
+  > target there is `unavailable` until P10's username lookup exists.
 
 ## Read-only, at three layers, still one table
 
@@ -201,36 +281,54 @@ allowlist, and `read_only=True`. The bridge also serves writes (`/send`,
 test pins that its request set contains nothing else. `test_r86_…` derives all
 three layers from one vocabulary table covering every social tool.
 
-## The tool-catalogue contract (porgy-58, 2026-09-23)
+## The tool-catalogue contract (porgy-58, 2026-09-23; amended 2026-09-24)
+
+> **Amended 2026-09-24 (catalogue owner; landed with P5).** Two things this
+> section assumed changed after it was written. (1) The catalogue line is no
+> longer the docstring's first SENTENCE; it is the first PARAGRAPH, and that
+> paragraph is ADR 0007's L1 — what the tool does AND when to call it —
+> gated by `tests/test_tool_surface_policy.py::
+> test_the_opening_paragraph_is_an_l1`: a `WHEN_TRIGGERS` phrase, and ≤40
+> cl100k tokens rendered as `- name — <paragraph>`; the block ceiling is
+> 2,000 and the mean 33 (`tests/unit/test_tool_catalogue.py`). (2) Deferral
+> is OFF (`../tool-catalogue/05-measurement.md` §3a), so the tools ship
+> resident with their full schemas and the "she calls from the catalogue
+> line" argument below applies only if the switch is ever turned on. The
+> line must still name the input and separate the siblings, because it is
+> also the opening of the resident description. The bullets below are
+> updated in place; the drafts are replaced by what shipped.
 
 Each item is an existing test that goes red, applied to both tools:
 
-- **Catalogue line = the docstring's first sentence**, ≤40 tokens (cl100k),
-  mean ≤25 across tools, no identical lines (the gate as built in #367,
-  raised from the bundle's original 20 after measurement; #393 stacks on it). The catalogue
-  session measured an earlier `instagram_read` draft at 25 tokens and
-  `instagram_search`'s at 12 against the real renderer, with the block at
-  about 1,056 of its 1,400 ceiling. Each PR's line is re-measured by the gate
-  itself.
-- **The first sentence is also what she calls from.** In the catalogue's
-  deferred arm she often calls a tool straight from its catalogue line,
-  before loading its schema (measured, porgy-58). So the line must name the
-  input the tool takes (a person, a link, a handle; free text), not only the
-  network, and the drafts below do. It names Instagram and separates
-  each tool from its confusable siblings (`social_fetch`, `web_fetch`,
-  `media_fetch`, and each other). Drafts:
-  - `instagram_read`, first PR: *"Read a person's Instagram profile or current
-    story, by their name."* From P10: *"Read Instagram: a person's profile or
-    story by name or handle, or what a pasted Instagram link points to."*
-    `posts` joins the line
-    only with P13.
-  - `instagram_search`: *"Search Instagram for accounts by name or handle."*
+- **Catalogue line = the docstring's first paragraph**, what + when, ≤40
+  tokens (cl100k) as a catalogue line, mean ≤33 across tools, no identical
+  lines. Each PR's line is re-measured by the gate itself.
+- **The line names the input the tool takes** (a person, a link, a handle;
+  free text), not only the network, names Instagram, and separates each tool
+  from its confusable siblings (`social_fetch`, `web_fetch`, `media_fetch`,
+  and each other). It is what she would call from if deferral were on
+  (measured, porgy-58), and it opens the resident description either way.
+  - `instagram_read`, as shipped in P5 (34 tokens as the L1 gate counts it): *"Read someone's
+    Instagram profile or current story, by their name. Call this when
+    somebody asks about a person's Instagram or what is on their story."*
+    From P10 it names handles and pasted links; `posts` joins the line only
+    with P13.
+  - `instagram_search` (P11), draft: *"Search Instagram for accounts by name
+    or handle."* plus its when-clause.
 - **The opening** contains a `WHEN_TRIGGERS` phrase
   (`tests/test_tool_surface_policy.py`), with no permission-suppression wording.
 - **A `NativeTool` entry with every field**, shaped like `social_fetch`'s:
   `read_only=True`, `output_contract="three_state"`, `source_tier`,
   `cacheable`, and the side-effect / idempotency / retry triple.
 - **Unit-safe for the Dreamer** (`UNIT_SAFE_TOOLS` in `nora/agent/dreamer.py`).
+  > **Not as built (P5, 2026-09-24): `instagram_read` is classified
+  > ROOM-scoped**, beside `about` and `online_now`
+  > (`tests/unit/test_dreamer_runtime.py`). This bullet was written before
+  > name resolution moved into the tool; the tool now resolves the name
+  > against the room's live roster, which a unit-keyed Dreamer tick does not
+  > have, and `UNIT_SAFE_TOOLS`' own rule refuses room-scoped reads. In a
+  > unit-keyed tick it could only ever answer `unavailable`. Moving it is a
+  > one-line change and a separate decision.
 - **Not in `HOT_TOOLS`**: that set is measured, not hand-picked.
 - No `ToolScope` change: they read Instagram from any room.
 
@@ -262,6 +360,18 @@ catalogue line. Left as is, it overlaps both new lines: exactly the
 confusable pair the catalogue gates exist to prevent (porgy-58, 2026-09-23).
 It must name X only.
 
+> **As built in P5 (2026-09-24):** *"Read X (Twitter) posts, profiles and
+> searches, or search Instagram accounts. Call this when somebody links or
+> asks about something on X, or wants an Instagram account found."* (39
+> tokens as the L1 gate counts it). It names X for every read, and Instagram for the one verb it still
+> serves: the overlap with `instagram_read` is gone (no profile, no story),
+> and there is no `instagram_search` line to overlap until P11, when the
+> Instagram clause leaves with the row. Naming X only would have left
+> Instagram account search, which works today, out of the line that
+> advertises it — the per-verb cutover's "none goes dark in between", one
+> level up. A `story` or Instagram `profile` asked of `social_fetch` answers
+> `unavailable` with a note naming `instagram_read`.
+
 ## Order
 
 `instagram_read` **replaces P5** of `17`: it builds on P2–P4 and lands after
@@ -274,6 +384,14 @@ Routing cases in the catalogue's tool_selection eval corpus (on #393's
 branch), run in both catalogue arms (resident and deferred), n ≥ 3. They are
 added after this design merges, so the corpus never names a tool that does
 not exist:
+
+> **2026-09-24:** with deferral off (05 §3a) the resident arm is the one that
+> ships; the deferred arm is worth running only as part of re-measuring the
+> switch. P5 added four rows (`route_instagram_read_story`,
+> `route_instagram_read_posted`, `route_social_fetch_instagram_search`,
+> `route_social_fetch_x_link` in `evals/corpora/tool_selection.yaml`); until
+> P11 an Instagram account search still routes to `social_fetch`. The link,
+> post and `instagram_search` rows land with P10–P12.
 
 | Message | Must call | Must not call |
 |---|---|---|

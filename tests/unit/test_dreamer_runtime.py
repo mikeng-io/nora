@@ -780,6 +780,14 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # fail-closed, the same "not yet actually reachable" reasoning
         # `note_read`/`note_search` were.
         "music_status",
+        # `instagram_read` (design/instagram-adoption/18) resolves the name it
+        # is given against the ROOM's live roster (`room.scope().find`, the
+        # lookup `about` uses) — the input a unit-keyed tick does not have,
+        # so every call there is honestly `unavailable`. Room-scoped is the
+        # fail-closed side, the same one `about` and `online_now` sit on;
+        # design 18 said "unit-safe" before the name resolution moved into
+        # the tool, and a move to UNIT_SAFE_TOOLS is a separate decision.
+        "instagram_read",
     }
     # The unit-safe half is `UNIT_SAFE_TOOLS` itself, read from the
     # module. Since design/dreamer-agent-loop/32 §3.4 that set includes the

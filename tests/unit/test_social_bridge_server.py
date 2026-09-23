@@ -102,6 +102,25 @@ async def test_instagram_post_is_refused_and_never_spawns(bridge):
     assert runner.calls == []
 
 
+@pytest.mark.parametrize("what", ["profile", "posts", "story"])
+async def test_instagram_reads_moved_to_the_bridge_are_refused_and_never_spawn(
+    bridge, what,
+):
+    """The per-verb cutover, host-side (design/instagram-adoption/15, /18 P5).
+    Instagram profile and story are `instagram_read`'s, over the
+    instagram-bridge, and `posts` has no mechanism anywhere, so OpenCLI
+    serves none of them. A request for one could only have been built around
+    both tools, and it is refused here without a subprocess."""
+    runner, session, base = bridge
+    status, body = await _read(
+        session, base,
+        {"platform": "instagram", "what": what, "target": "nasa", "limit": 5},
+    )
+    assert status == 400
+    assert body["status"] == "unavailable"
+    assert runner.calls == []
+
+
 async def test_an_unknown_platform_is_refused_without_spawning(bridge):
     runner, session, base = bridge
     status, _body = await _read(
@@ -135,10 +154,6 @@ _ARGV_CASES = [
      [BIN, "twitter", "tweets", "nasa", "--limit", "5", "-f", "json"]),
     ("x", "search", "hk weather",
      [BIN, "twitter", "search", "hk weather", "--limit", "5", "-f", "json"]),
-    ("instagram", "profile", "nasa",
-     [BIN, "instagram", "profile", "nasa", "-f", "json"]),
-    ("instagram", "posts", "nasa",
-     [BIN, "instagram", "user", "nasa", "--limit", "5", "-f", "json"]),
     ("instagram", "search", "hk hiking",
      [BIN, "instagram", "search", "hk hiking", "--limit", "5", "-f", "json"]),
 ]
@@ -179,7 +194,7 @@ async def test_every_allowlisted_pair_is_covered_by_the_argv_test():
         ("x", "profile", "not a username!"),                # charset violation
         ("x", "profile", "@nasa"),                          # no @ prefix
         ("x", "posts", "a" * 31),                           # too long
-        ("instagram", "profile", "../etc/passwd"),          # path-shaped
+        ("x", "profile", "../etc/passwd"),                  # path-shaped
         ("x", "search", "   "),                             # empty query
         ("x", "search", "q" * 201),                         # over the cap
     ],

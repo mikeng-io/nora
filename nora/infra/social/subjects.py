@@ -65,25 +65,22 @@ class PersonsSubjectIndex:
         self._persons = persons
         self._policy = policy
 
-    async def igid_for(self, *, person_id: str) -> str | None:
-        """The igid when the person has EXACTLY ONE; `None` for zero or
-        several.
+    async def igids_for(self, *, person_id: str) -> frozenset[str] | None:
+        """Every igid on file for the person — empty when there is none —
+        or `None` when the index could not be read.
 
-        Several is `ambiguous` rather than a pick, and that is the rule, not a
-        limitation: nothing in a `person_id` says which of a friend's accounts
-        was meant, and choosing one reads a story its author did not expect
-        Nora to open. A link names ONE account, so the link path goes through
+        It returns the SET and never a pick. Choosing is the router's
+        question and its answer is «only if there is exactly one»: nothing in
+        a `person_id` says which of a friend's accounts was meant, and
+        choosing one reads a story its author did not expect Nora to open. A
+        link names ONE account, so the link path goes through
         `person_for_igid` instead and never through here
         (design/instagram-adoption/15 §Links)."""
         try:
-            igids = self._persons.instagram_igids(person_id)
+            return frozenset(self._persons.instagram_igids(person_id))
         except Exception:
             log.exception("subject index: igid lookup failed")
             return None
-        if len(igids) != 1:
-            return None
-        (igid,) = igids
-        return igid
 
     async def is_tier_zero(self, *, person_id: str) -> bool:
         """The person is LISTED by id in the `persons` of at least one

@@ -160,6 +160,9 @@ def test_every_declared_tool_is_built(wiring):
         "web_search", "web_fetch",
         # social_fetch (DEC-151): READ-ONLY X/Instagram via the host bridge.
         "social_fetch",
+        # instagram_read (design/instagram-adoption/18): a person's Instagram
+        # profile or story, over the instagram-bridge.
+        "instagram_read",
         "weather",
         # TD open-data parking vacancy (data.gov.hk hk-td-tis_5, 2026-08-31).
         "parking_status",

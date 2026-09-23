@@ -146,7 +146,7 @@ async def test_a_bad_username_is_nothing_found():
     fake = _FakeSocialProvider()
     tools = _tools(social=fake)
     out = await tools["social_fetch"](
-        platform="instagram", what="profile", target="not a username!",
+        platform="x", what="profile", target="not a username!",
     )
     assert out["status"] == "nothing_found"
     assert fake.read_calls == []
@@ -261,100 +261,76 @@ async def test_limit_is_clamped_to_the_floor():
     assert fake.read_calls[0]["limit"] == 1
 
 
-# ------------------------------------------------------- the `story` surface
+# ------------------------------------- the rows that moved to `instagram_read`
 #
-# Added 2026-09-22. The row shipped with ZERO tests through this closure:
-# nothing exercised the `x story` note, the person-id shape check, the story
-# branch reaching the provider, or what is counted. Every assertion below is
-# about the TOOL layer — the backend's own three-plus-two states live in
-# tests/contract/test_social_provider_contract.py and
-# tests/unit/test_instagram_social_client.py.
+# 2026-09-24 (design/instagram-adoption/18, P5): Instagram profile and story
+# left this tool for `instagram_read`, and Instagram posts has no mechanism
+# anywhere. Each is answered by THIS tool, `unavailable` («not here»), and
+# never reaches the provider: a request that reached OpenCLI for an Instagram
+# profile would be a second tool reading the same thing over the backend 15
+# took Instagram away from.
 
 
-async def test_a_story_on_x_is_unavailable_with_its_own_note():
-    """X has no story concept at all, so «I can't» — never «there's nothing
-    up», which would be a claim about an account on a platform that has no
-    such thing. It gets its OWN sentence rather than the instagram/post one:
-    "I can't read Instagram posts yet" is false about X and about stories.
-    """
+async def test_a_story_is_redirected_to_instagram_read_and_never_sent():
+    """On either platform. «There's nothing on his story» (`nothing_found`)
+    would be a claim about an account nobody looked at; the honest answer is
+    which tool reads stories now."""
     fake = _FakeSocialProvider()
     tools = _tools(social=fake)
-    out = await tools["social_fetch"](platform="x", what="story", target="miles")
+    for platform in ("instagram", "x"):
+        out = await tools["social_fetch"](platform=platform, what="story", target="miles")
+        assert out["status"] == "unavailable"
+        assert "instagram_read" in out["note"]
+    assert fake.read_calls == []
+
+
+async def test_an_instagram_profile_is_redirected_to_instagram_read_and_never_sent():
+    fake = _FakeSocialProvider()
+    tools = _tools(social=fake)
+    out = await tools["social_fetch"](
+        platform="instagram", what="profile", target="example_friend",
+    )
     assert out["status"] == "unavailable"
-    assert "Instagram" in out["note"] and "X doesn't have" in out["note"]
+    assert "instagram_read" in out["note"]
     assert fake.read_calls == []
+    # Positive control: an X profile, same shape of target, IS sent.
+    assert (await tools["social_fetch"](
+        platform="x", what="profile", target="example_friend",
+    ))["status"] == "ok"
+    assert len(fake.read_calls) == 1
 
 
-async def test_a_story_target_that_is_not_a_person_id_is_ambiguous():
-    """NOT `nothing_found`. This tool's own docstring defines that word as
-    «the read ran and there was nothing», and nothing ran: no index was
-    consulted, no bridge was called, no account was looked at. `ambiguous` is
-    the declared word for exactly this — «I don't know which account that is,
-    so I didn't look» — and the model says a different sentence for each.
-    """
+async def test_instagram_posts_is_unavailable_and_never_sent():
     fake = _FakeSocialProvider()
     tools = _tools(social=fake)
     out = await tools["social_fetch"](
-        platform="instagram", what="story", target="not a person id!",
+        platform="instagram", what="posts", target="example_friend",
     )
-    assert out["status"] == "ambiguous"
+    assert out["status"] == "unavailable"
     assert fake.read_calls == []
 
 
-async def test_a_person_id_too_long_for_the_shape_check_is_ambiguous_too():
-    """`_SOCIAL_PERSON_ID_RE` caps at 64 characters and `persons_file` puts no
-    length bound on a person id, so a LEGAL person can land here. That is the
-    case that makes the word matter: «I don't know which account that is» is
-    true of a 70-character person id; «there's nothing there» is not.
-    """
+async def test_instagram_search_still_reaches_the_provider():
+    """The one Instagram verb this tool keeps until P11."""
     fake = _FakeSocialProvider()
     tools = _tools(social=fake)
     out = await tools["social_fetch"](
-        platform="instagram", what="story", target="m" * 70,
-    )
-    assert out["status"] == "ambiguous"
-    assert fake.read_calls == []
-
-
-async def test_a_well_shaped_story_target_reaches_the_provider_trimmed():
-    """The happy path through the branch — and that `target` arrives as the
-    person id and nothing else. A bare igid typed into this slot also passes
-    the charset (digits are person-id characters) and then fails to RESOLVE
-    one layer down, which is the fail-closed direction: the model is told it
-    doesn't know whose account that is, rather than being handed a read of
-    whoever that number turns out to be."""
-    fake = _FakeSocialProvider()
-    tools = _tools(social=fake)
-    out = await tools["social_fetch"](
-        platform="instagram", what="story", target="  miles  ", limit=1,
+        platform="instagram", what="search", target="hk hiking",
     )
     assert out["status"] == "ok"
-    assert fake.read_calls == [
-        {"platform": "instagram", "what": "story", "target": "miles", "limit": 1}
-    ]
+    assert fake.read_calls[0]["platform"] == "instagram"
 
 
-async def test_the_story_row_is_counted_under_its_own_platform_and_what():
-    """`_record` carries `platform`/`what` on the way out, and they are safe
-    on the line only because both were validated against closed vocabularies
-    first. A story read counted as anything else is a row that cannot be seen
-    separately from the OpenCLI ones it does not share a backend with."""
+async def test_a_moved_row_is_counted_as_unavailable_not_as_a_miss():
+    """A dashboard reading this series must not see «wrong tool» as «I
+    looked and found nothing»."""
     metrics = Metrics()
-    fake = _FakeSocialProvider()
-    tools = _tools(social=fake, metrics=metrics)
-    await tools["social_fetch"](
-        platform="instagram", what="story", target="miles",
-    )
-    assert metrics.get("nora_tool_calls_total", tool="social_fetch", status="ok") == 1
-    # And the refusing branch is counted under the status it actually
-    # returned — the whole point of changing it: a dashboard that reads this
-    # series must not see "I didn't know whose account" as "I looked".
-    await tools["social_fetch"](
-        platform="instagram", what="story", target="not a person id!",
-    )
+    tools = _tools(social=_FakeSocialProvider(), metrics=metrics)
+    await tools["social_fetch"](platform="instagram", what="story", target="miles")
+    await tools["social_fetch"](platform="instagram", what="profile", target="miles")
     assert metrics.get(
-        "nora_tool_calls_total", tool="social_fetch", status="ambiguous",
-    ) == 1
+        "nora_tool_calls_total", tool="social_fetch", status="unavailable",
+    ) == 2
     assert metrics.get(
         "nora_tool_calls_total", tool="social_fetch", status="nothing_found",
     ) == 0

@@ -63,8 +63,15 @@ line (so a caption cannot forge a frame line of its own), rendered into
 `text`, then `wrap_outside_text` (R-13) and `clamp_chars`. They are NOT copied
 into `items`: `social_fetch` hands the whole result dict to the model, so a
 caption in `items` would be stranger prose OUTSIDE the untrusted wrap and
-outside the clamp. `items` stays `{id, kind, taken_at, url}` — the
+outside the clamp. `items` stays `{kind, taken_at, url}` — the
 machine-usable handoff to `media_fetch(url=…)`, which needs nothing else.
+
+**No `id`, since 2026-09-24.** A frame's id was carried as a "reference" and
+nothing ever used it — `media_fetch` takes the URL. It was also an identifier
+leak: when a reel item has no `pk`, the bridge's `storyFrame` falls back to
+`item.ID`, which Instagram shapes as `<pk>_<owner igid>`, and the id charset
+admitted `_` — so the story OWNER's igid could reach the model (R-18). The
+field is not read at all now, so no shape check can be the thing that fails.
 `author` also rides the result top-level, because it is shape-checked as an
 Instagram handle and so cannot carry prose. A non-string caption is dropped,
 never `str()`-ed.
@@ -79,7 +86,7 @@ so `id={"caption": "at the beach with tyler"}` put that caption in the result
 while the guard test — which asserted the key SET and that "beach" was not in
 `text` — stayed green on both counts. So every value is bound to its own
 shape: nothing the bridge writes lands in `note`, the URL host must be a
-MEASURED Instagram CDN host, the id must look like an id, and the only
+MEASURED Instagram CDN host, the id is not read at all, and the only
 free-text fields (caption, alt text) are strings that reach the model inside
 the wrap and nowhere else. A key whitelist answers "which fields"; only a
 value check answers "carrying what".
@@ -231,11 +238,6 @@ _MAX_ITEMS = 20
 #: `https://evil.test/?u=.fbcdn.net` both defeat a substring test.
 _CDN_HOST_SUFFIXES: tuple[str, ...] = (".fbcdn.net", ".cdninstagram.com")
 
-#: What a media id may look like. Instagram's are decimal, but the point is
-#: not the charset — it is that the value is TYPE-checked and SHAPE-checked
-#: before `str()` touches it. `str(row.get("id") or "")` rendered whatever
-#: arrived, so a dict smuggled a caption into the result through the id slot.
-_ID_RE = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 
 
 class InstagramSocialClient(SocialProvider):
@@ -521,7 +523,7 @@ def _items(
     `(reference row, text layer)`.
 
     **Built field by field, never copied, and every value bound to a shape.**
-    The reference row is `{id, kind, taken_at, url}` and nothing else; the
+    The reference row is `{kind, taken_at, url}` and nothing else; the
     text layer is `{caption, alt_text}`, each present only when the bridge
     sent a non-empty STRING. The two are kept apart because they go to
     different places: the row into `items` (unwrapped, machine-usable), the
@@ -561,15 +563,14 @@ def _items(
         # to go and fetch it.
         if not _is_cdn_url(url):
             continue
-        # The id is TYPE-checked before it is rendered. `str(row.get("id"))`
-        # accepted anything — a dict, a list — and stringified it into the
-        # result, which is a content channel wearing a reference field's name.
-        item_id = _media_id(row.get("id"))
-        if item_id is None:
-            continue
+        # The frame's `id` is deliberately NOT read. The model needs only the
+        # URL, and the bridge's id can be `<pk>_<owner igid>` (its `storyFrame`
+        # falls back to `item.ID` when a reel item has no `pk`), so carrying it
+        # would hand the story owner's igid to the model (R-18). Once it was
+        # also a content channel: `str()` of a dict in that slot put a caption
+        # in the result.
         kind = row.get("kind")
         item: dict[str, Any] = {
-            "id": item_id,
             "kind": kind if kind in _KINDS else "media",
             "url": url,
         }
@@ -614,20 +615,6 @@ def _is_cdn_url(value: Any) -> bool:
     return any(host == suffix[1:] or host.endswith(suffix) for suffix in _CDN_HOST_SUFFIXES)
 
 
-def _media_id(value: Any) -> str | None:
-    """A media id, or None for anything that is not one.
-
-    A bool is refused although Python would `str()` it happily, for the same
-    reason `_as_int` refuses one: `True` is not an identifier, and a value
-    that only LOOKS renderable is how a non-reference gets into a reference
-    field.
-    """
-    if isinstance(value, bool) or not isinstance(value, (str, int)):
-        return None
-    text = str(value)
-    return text if _ID_RE.fullmatch(text) else None
-
-
 def _render(
     frames: list[tuple[dict[str, Any], dict[str, str]]], author: str | None,
 ) -> str:
@@ -667,7 +654,7 @@ def _one_line(value: Any) -> str | None:
     """A free-text field (caption, alt text) → one line of text, or `None`.
 
     Only a `str` is accepted: anything else is dropped, never `str()`-ed, for
-    the same reason `_media_id` refuses a dict — `str()` is how a structure
+    the same reason the frame id is not read — `str()` is how a structure
     becomes content nobody checked. Whitespace, newlines included, collapses
     to single spaces, so a caption cannot start a line of its own and pass
     itself off as a `[video https://…]` marker for another frame."""
