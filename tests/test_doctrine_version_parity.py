@@ -230,9 +230,10 @@ PINNED: dict[str, tuple[int, str]] = {
     # match is worse than none»: 6 judged, 3 sent. v2 (never deployed before
     # it) says when trading shots a GIF is usually right and lets selection
     # take the closest fit: 11 judged, 11 sent, all banter, about the room's
-    # own one-sticker-in-ten rate.
+    # own one-sticker-in-ten rate. v3 (operator): «Hong Kong» dropped from
+    # the description of the chat it is reading; nothing else changed.
     "reaction": (
-        2, "e8c15044e46761a581fe655afb04fcf7d6eab58a92d092c172b742073b4f1c58",
+        3, "df6960012a6c4610e80d1cbbbd0c597885853625d78d7a306c7c68321ffc41d2",
     ),
     "participation-conduct": (
         1, "23d144d3431e9844d2688c13ad8228497a9db3ab8f6bcf7f86f269053f3e19b7",

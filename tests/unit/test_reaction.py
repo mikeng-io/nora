@@ -146,5 +146,5 @@ def test_the_picker_reads_only_the_latest_lines_one_per_row() -> None:
     rows.append(_row(100, ""))
     got = render_recent(rows).splitlines()
     assert len(got) == RECENT_LINES - 1
-    assert got[-1] == "Nora: slow clap 呢個 / 第二行"
+    assert got[-1] == "Nora: slow clap 呢個 第二行"
     assert "line 0" not in "\n".join(got)

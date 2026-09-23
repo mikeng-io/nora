@@ -85,6 +85,7 @@ _ALLOWED: dict[str, str] = {
     # every query `ok` and is not under it either.
     "tests/test_web_fetch_tool.py::_FakeSearchProvider": _NO_SHARED_FAKE,
     "tests/test_tools.py::_GifSource": _NO_SHARED_FAKE,
+    "tests/unit/test_reaction.py::_Gifs": _NO_SHARED_FAKE,
     "tests/test_social_fetch_tool.py::_FakeSocialProvider": _NO_SHARED_FAKE,
     # ImageGenerator — the only implementation is `XaiImageGenerator`
     # (`nora/infra/image_gen/xai_adapter.py`), and its own contract suite

@@ -46,10 +46,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from nora.domain.blocks import speaker_name
+from nora.domain.blocks import ContextBlock, speaker_name
 from nora.domain.media import GifCandidate
 from nora.domain.models import TranscriptRow
 from nora.domain.ports import GifSource
+from nora.domain.prompt import escape, one_line
 
 from .egress import scan_identifiers
 
@@ -92,17 +93,18 @@ class Reaction:
 
 def render_recent(rows: Sequence[TranscriptRow], *, display_name: str = "Nora") -> str:
     """The room's last few lines as `name: body`, the picker's whole view of
-    the moment. Bodies are one line each; an empty body (a bare attachment)
-    is skipped rather than rendered as a speaker saying nothing."""
+    the moment, escaped and collapsed to one line per row (`one_line`: a
+    newline inside a message must not forge a second speaker). An empty body
+    (a bare attachment) is skipped rather than rendered as nobody speaking."""
     lines = []
     for row in rows[-RECENT_LINES:]:
-        body = " / ".join((row.body or "").split("\n")).strip()
+        body = one_line((row.body or "")[:300]).strip()
         if not body:
             continue
         who = display_name if row.is_nora else speaker_name(
             getattr(row, "person_name", None), row.sender_name,
         )
-        lines.append(f"{who}: {body[:300]}")
+        lines.append(f"{escape(one_line(who))}: {escape(body)}")
     return "\n".join(lines)
 
 
@@ -158,8 +160,10 @@ class ReactionPicker:
         if not instruction or not reply.strip():
             self._count("no_instruction" if not instruction else "none")
             return None
-        material = (f"<recent_chat>\n{recent}\n</recent_chat>\n"
-                    f"<nora_reply>\n{reply}\n</nora_reply>")
+        material = "\n".join((
+            ContextBlock(name="recent_chat", body=recent).render(),
+            ContextBlock(name="nora_reply", body=escape(reply)).render(),
+        ))
 
         first = await self._client.complete(
             system=instruction, prompt=f"{material}\n\nAnswer the first question.",
@@ -184,8 +188,9 @@ class ReactionPicker:
         )
         second = await self._client.complete(
             system=instruction,
-            prompt=(f"{material}\n<candidates query=\"{query}\">\n{listing}\n"
-                    "</candidates>\n\nAnswer the second question."),
+            prompt="\n".join((material, ContextBlock(
+                name="gif_candidates", body=escape(listing), attrs=(("query", query),),
+            ).render(), "", "Answer the second question.")),
         )
         chosen = {c.id: c for c in found}.get(str(_json(second.content).get("id") or ""))
         if chosen is None:
