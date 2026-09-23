@@ -189,7 +189,12 @@ class FakeRecordStore:
                 return r["platform_message_id"] == target.message_id
         elif target.sent_ts is not None and sender_id:
             def match(r: dict[str, Any]) -> bool:
-                return r["ts"] == target.sent_ts and r["sender_id"] == sender_id
+                # Mirrors the SQL: the original's ts, or one of its edits'.
+                return r["sender_id"] == sender_id and (
+                    r["ts"] == target.sent_ts
+                    or any(e["message_id"] == r["id"] and e["ts"] == target.sent_ts
+                           for e in self.edits)
+                )
         else:
             return None
         found = sorted(

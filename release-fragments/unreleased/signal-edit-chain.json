@@ -1,0 +1,7 @@
+{
+  "type": "fix",
+  "summary": "A second edit of the same Signal message is now recognised instead of being ignored.",
+  "details": [
+    "Signal can address a follow-up edit by the previous edit's timestamp; Nora now matches either the original message or any of its earlier edits."
+  ]
+}

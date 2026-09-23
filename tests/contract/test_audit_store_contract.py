@@ -601,3 +601,19 @@ async def test_an_edit_that_could_not_see_mentions_records_unknown(store):
         conversation_id="g1", target=EditTarget(sent_ts=1), sender_id="+852111",
     )
     assert found is not None and found.mentions is None
+
+
+async def test_a_second_signal_edit_naming_the_first_edits_timestamp_finds_the_message(store):
+    """A Signal client edits the revision in front of it, so a second edit can
+    name the FIRST EDIT's sent-timestamp. Matching the original's `ts` alone
+    made every edit after the first an orphan (live 2026-09-24). Still keyed
+    on the author: another sender's edit at that timestamp finds nothing."""
+    row = await store.append(message=_msg(body="v1", ts=1))
+    await store.append_edit(message_id=row, message=_edit("v2", 7))
+    found = await store.find_edited(
+        conversation_id="g1", target=EditTarget(sent_ts=7), sender_id="+852111",
+    )
+    assert found is not None and found.id == row and found.body == "v2"
+    assert await store.find_edited(
+        conversation_id="g1", target=EditTarget(sent_ts=7), sender_id="+852999",
+    ) is None

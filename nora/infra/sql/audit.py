@@ -318,8 +318,18 @@ class SqlRecordStore:
         if target.message_id:
             match = MESSAGES.c.platform_message_id == target.message_id
         elif target.sent_ts is not None and sender_id:
+            # The ORIGINAL's sent-timestamp, OR one of its edits'. A second
+            # edit of a Signal message can name the first edit's timestamp
+            # rather than the original's — it is the revision the sender's
+            # client was looking at — so matching `messages.ts` alone made
+            # every edit after the first an orphan (live 2026-09-24).
+            edited_at_that_ts = sa.exists().where(
+                MESSAGE_EDIT.c.message_id == MESSAGES.c.id,
+                MESSAGE_EDIT.c.ts == target.sent_ts,
+            )
             match = sa.and_(
-                MESSAGES.c.ts == target.sent_ts, MESSAGES.c.sender_id == sender_id,
+                MESSAGES.c.sender_id == sender_id,
+                sa.or_(MESSAGES.c.ts == target.sent_ts, edited_at_that_ts),
             )
         else:
             return None
