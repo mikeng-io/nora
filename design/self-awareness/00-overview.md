@@ -63,11 +63,13 @@ deleted the last generated capability block for exactly that reason.
 - social fetching (`social_fetch` and any split of it). That is a separate
   topic, in `design/instagram-adoption/`.
 
-## Open decisions (operator)
+## Operator decisions (2026-09-23)
 
-- **D1, the unit boundary.** In the friends group, may `<presence>` and
-  `my_rooms` show that ridgeline rooms exist? May `read_room` read one? `03`
-  sets out the options and recommends one. Nothing in `02`–`03` is buildable
-  until this is decided, because every block and tool's content depends on it.
-- **D2, heartbeat and proactive.** Does `<presence>` render on the proactive
-  loop too, or only on turns that answer a person? `02` recommends both.
+- **D1, the unit boundary: B.** In the friends group, `<presence>` and
+  `my_rooms` name this unit's rooms and say only that other groups exist,
+  never which. `read_room` never crosses a unit. Options and reasons in `03`.
+- **D2, proactive: yes.** `<presence>` renders on the proactive loop as well
+  as on turns that answer a person (`02`).
+- **Her profile on each network** (avatar, display name, bio) is a separate
+  bundle, not this one. Her *appearance* for drawing herself is
+  `design/self-reference/` (DEC-193, designed, not built).

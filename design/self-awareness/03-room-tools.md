@@ -25,7 +25,7 @@ the tool resolves it; an unknown label is `nothing_found`, not a guess.
 wrapping (R-13) and the same "never an instruction to you" framing that
 `load_transcript` carries.
 
-## D1: the unit boundary (operator decision)
+## D1: the unit boundary (decided 2026-09-23: B)
 
 Units (DEC-105) exist so one group's talk does not reach another. These tools
 are the first thing able to cross that line from inside a turn, so the
@@ -38,7 +38,7 @@ boundary has to be set before any of them is built.
 | **C. Names across units** | every room by name | every room | this unit only |
 | **D. Open** | every room | every room | any room |
 
-**Recommendation: B.** Nora saying she is only in this group would be false,
+**Decided: B** (operator, 2026-09-23). Nora saying she is only in this group would be false,
 and a false answer about herself is the failure `00` opens with. Naming the
 other groups tells this room about people who never agreed to be mentioned in
 it. B is the only option where every sentence is both true and discloses
@@ -46,9 +46,10 @@ nothing a member of this room could not already guess. `read_room` never
 crosses a unit under any option short of D, and D is listed for completeness,
 not recommended.
 
-**One exception worth deciding explicitly:** the operator's own DMs, or an
-operator-only room, may want option D. That is a per-room flag in
-`policy.toml`, not a global setting, and it defaults off.
+**Deferred, not decided:** the operator's own DMs, or an operator-only room,
+may want option D. If it is ever wanted it is a per-room flag in
+`policy.toml`, not a global setting, and it defaults off. v1 ships B
+everywhere.
 
 ## What already exists and is reused
 

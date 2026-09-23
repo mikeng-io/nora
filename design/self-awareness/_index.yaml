@@ -43,9 +43,10 @@ scope:
     - "A generated capability block — the tool catalogue is that layer (DEC-150)"
     - "Any new tool before the tool catalogue lands"
     - "Social fetching (social_fetch, its per-network split, Instagram wiring) — design/instagram-adoption/"
-open_decisions:
-  - "D1 unit boundary for <presence>/my_rooms/room_activity/read_room — recommended B: this unit by name, other units by existence only, read_room never crosses a unit"
-  - "D2 whether <presence> renders on the proactive loop — recommended yes"
+    - "Her profile on each network (avatar, display name, bio) — a separate bundle; appearance for drawing herself is design/self-reference/ (DEC-193)"
+operator_decisions:
+  - "D1 unit boundary for <presence>/my_rooms/room_activity/read_room — DECIDED B (2026-09-23): this unit by name, other units by existence only, read_room never crosses a unit"
+  - "D2 whether <presence> renders on the proactive loop — DECIDED yes (2026-09-23)"
 gates:
   - "Read the assembled prompt back and confirm <presence> is present in the arm before any eval run"
   - "Five eval cases in 05, n>=3 each, before and after, including the negative case (no unprompted room list)"

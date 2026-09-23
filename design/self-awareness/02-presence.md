@@ -14,8 +14,8 @@ Three facts, all generated, none typed anywhere:
 2. **This unit's other rooms**: network and label for each, and whether each
    transport is up. This is what `send_to` needs her to know already; today she
    has to guess which networks the unit has.
-3. **Beyond this unit**: depends on D1 (`03-room-tools.md`). Under the
-   recommended option it says only that other groups exist, never which.
+3. **Beyond this unit**: D1 = B (`03-room-tools.md`): it says only that
+   other groups exist, never which.
 
 Transport state uses `AdapterHealth`'s three states and nothing finer:
 `connected`, `reconnecting` (disconnected, expected to heal), `needs a person`
@@ -36,8 +36,7 @@ You are also in other groups, which you do not discuss here.
 </presence>
 ```
 
-Roughly 60–80 tokens. Line 4 is the D1-recommended wording; under the other
-options it changes or disappears.
+Roughly 60–80 tokens. Line 4 is the D1 = B wording.
 
 ## Where it goes
 
@@ -46,9 +45,9 @@ options it changes or disappears.
 - **Registered as a block** in the context-assembly registry with key `turn`,
   so every occasion that declares it gets the same builder. No occasion builds
   its own copy.
-- **Occasions:** tag and participation (a person is addressing her). D2
-  recommends proactive too: the proactive loop decides *where* to raise
-  something, and it cannot choose a room it does not know exists.
+- **Occasions:** tag, participation, and proactive (D2, decided yes
+  2026-09-23): the proactive loop decides *where* to raise something, and it
+  cannot choose a room it does not know exists.
 
 ## What it must not do
 

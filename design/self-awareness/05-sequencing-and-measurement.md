@@ -11,14 +11,14 @@ tools wait for the catalogue. Work that adds no tool does not.
 
 | Step | What | Needs | Adds a tool? |
 |---|---|---|---|
-| **0** | Operator decides D1 (unit boundary) and D2 (proactive) | — | — |
+| **0** | Operator decides D1 (unit boundary) and D2 (proactive): **done 2026-09-23, D1 = B, D2 = yes** | — | — |
 | **1** | `_PLATFORM_NAMES` gains WhatsApp and Instagram | nothing | no |
 | **2** | `<presence>` replaces `_where_line` (`02`) | D1, D2 | no |
 | **3** | Tool catalogue lands (separate session, its own bundle) | — | — |
 | **4** | `my_rooms`, `room_activity` (`03`) | 2, 3 | yes |
 | **5** | `read_room` (`03`) | 4, D1 | yes |
 
-Step 1 can start now; step 2 once D1 and D2 are decided. Step 2 is the largest
+Steps 1 and 2 can start now. Step 2 is the largest
 change for her behaviour and adds no tool at all.
 
 ## How to prove it
