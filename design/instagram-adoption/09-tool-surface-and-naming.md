@@ -15,10 +15,12 @@ edges:
 ## Recommendation
 
 > **REOPENED 2026-09-23 (operator).** Miles's direction is to split
-> `social_fetch` per NETWORK as a later step: `x_fetch`, `instagram_fetch`,
-> `threads_fetch`, `linkedin_fetch`. This is a direction, **not yet a written
-> design**, and until one lands `social_fetch` remains the shipped tool and
-> this document's vocabulary rules still govern it. What changed the
+> `social_fetch` per NETWORK. **Designed in `18-instagram-read-and-search.md`**:
+> each network gets `<network>_read` (a subject: person, link or handle) and
+> `<network>_search` (free text), following Nora's own `note_read` /
+> `web_search` naming; the first-draft `<network>_fetch` names were rejected
+> there. Until `instagram_read` lands, `social_fetch` remains the shipped
+> tool and this document's vocabulary rules still govern it. What changed the
 > calculation: the tool catalogue (`design/tool-catalogue/`) drops a tool's
 > resident cost from about 400 tokens to about 18, and `15-bridge-is-the-only-entry.md`
 > gives each network exactly one backend, so one tool per network maps onto
