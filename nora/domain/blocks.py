@@ -711,6 +711,8 @@ def render_messages(
     replying_to: Callable[[Row], int | None] = lambda _: None,
     tag: str = "m",
     now: datetime | None = None,
+    edited: Callable[[Row], int | None] = lambda _: None,
+    was: Callable[[Row], str | None] = lambda _: None,
 ) -> str:
     """A conversation as one TAG PER MESSAGE, not one line per message.
 
@@ -744,17 +746,27 @@ def render_messages(
 
     Speaker names are still collapsed: a newline inside an attribute cannot
     break out, but it makes the tag unreadable for no gain.
+
+    **An EDITED message says so** (design/message-edits/02 §1): `edited` is the
+    age of its last change, on the same clock as `age`, and `was` what it
+    first said. The judgement they feed is about time — did an answer come
+    before or after the correction? — so the element carries one, and the old
+    text is what makes an earlier reply to it legible. `was` is an attribute
+    and so collapsed to one line; the body stays the message.
     """
     clock = now or datetime.now().astimezone()
 
     def _attrs(row: Row, i: int) -> tuple[tuple[str, str | None], ...]:
         ts = timestamp(row)
         parent = replying_to(row)
+        changed = edited(row)
         return (
             ("n", str(i)),
             ("age", age(ts, clock) if ts is not None else None),
             ("from", one_line(speaker(row))),
             ("replying_to", None if parent is None else str(parent)),
+            ("edited", age(changed, clock) if changed else None),
+            ("was", was(row) if changed else None),
         )
 
     return render_elements(rows, tag=tag, attrs=_attrs, body=body)

@@ -72,7 +72,17 @@ class DiscordListener:
         self.connected = False
         self.last_event_at: float | None = None
 
-    async def listen(self, on_message_cb: Callable[[Any], Awaitable[None]]) -> None:
+    async def listen(
+        self,
+        on_message_cb: Callable[[Any], Awaitable[None]],
+        on_edit_cb: Callable[[Any], Awaitable[None]] | None = None,
+    ) -> None:
+        """`on_edit_cb` receives the EDITED message (design/message-edits/03).
+        It is wired to `on_raw_message_edit`, not `on_message_edit`: the
+        latter fires only for a message still in discord.py's cache, so an
+        edit to anything older than the cache — or sent before a reconnect —
+        would vanish without a trace. The raw event carries the full message
+        (`payload.message`, discord.py >= 2.4) either way."""
         async def on_ready() -> None:
             self.connected = True
             # A CONNECTED EDGE IS LIVENESS. Without this, `last_event_at` was
@@ -108,14 +118,24 @@ class DiscordListener:
             except Exception:
                 log.exception("event handler raised; continuing")
 
+        async def on_raw_message_edit(payload: Any) -> None:
+            self.last_event_at = self._clock()
+            if on_edit_cb is None:
+                return
+            try:
+                await on_edit_cb(payload.message)
+            except Exception:
+                log.exception("edit handler raised; continuing")
+
         async def on_disconnect() -> None:
             self.connected = False
             log.warning("discord gateway disconnected")
 
         # Registration binds on `coro.__name__` (discord.py's own convention),
-        # which is exactly what the four closures above are named for.
+        # which is exactly what the five closures above are named for.
         self._client.event(on_ready)
         self._client.event(on_resumed)
         self._client.event(on_message)
+        self._client.event(on_raw_message_edit)
         self._client.event(on_disconnect)
         await self._client.start(self._token)

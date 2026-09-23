@@ -499,6 +499,8 @@ def render_context(
         # stamped 0 renders no age rather than «56y ago».
         timestamp=lambda r: r.ts or None,
         now=clock,
+        edited=lambda r: r.edit.ts if r.edit else None,
+        was=lambda r: r.edit.was if r.edit else None,
     ) if rows else "(no messages)"
     # Standing is Nora's own folded text rather than a member's, but it is
     # rendered in the same document and a fold summarises what people said —

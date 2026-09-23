@@ -36,7 +36,7 @@ from .music_commands import register as register_music_commands
 from .music_commands import resume_persisted_sessions as resume_persisted_music_sessions
 from .music_manager import MusicPlayerManager
 from .music_notify import ResolveMusicChannel, no_music_channel
-from .parser import parse_discord_message
+from .parser import parse_discord_edit, parse_discord_message
 from .react import DiscordReactor
 from .self_id import derive_identity
 from .send import DEFAULT_API_BASE, DiscordSender
@@ -181,8 +181,16 @@ class DiscordAdapter:
             if message is not None:
                 await on_message(message)
 
+        # An edit reaches the SAME `on_message` as a new message: it is a
+        # `NormalizedMessage` with `edit_of` set, and ingest routes it
+        # (design/message-edits/02 §4), as it does for every other network.
+        async def _on_discord_edit(raw_message: Any) -> None:
+            message = parse_discord_edit(raw_message, own_id=self._own_id)
+            if message is not None:
+                await on_message(message)
+
         try:
-            await self._listener.listen(_on_discord_message)
+            await self._listener.listen(_on_discord_message, _on_discord_edit)
         finally:
             # `Client.start()` is `login()` then `connect()`. `connect()` closes
             # the client itself before re-raising, but `login()` raising — a

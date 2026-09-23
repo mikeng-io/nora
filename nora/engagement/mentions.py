@@ -104,20 +104,39 @@ class MentionRenderer:
         )
 
     def _row(self, row: TranscriptRow, platform: str) -> TranscriptRow:
-        if not row.body or PLACEHOLDER not in row.body or not row.raw_json:
+        """An EDITED row carries two texts from two envelopes
+        (design/message-edits/01 §3): its body is the latest edit's, whose
+        spans index into `edit.raw_json`, and `edit.was` is the first text,
+        whose spans index into the row's own `raw_json`. Each is looked up in
+        the envelope it came from — the rule `mention_spans` exists to keep."""
+        if row.edit is None:
+            return dataclasses.replace(
+                row, body=self._text(row.body, row.raw_json, row.id, platform),
+            )
+        return dataclasses.replace(
+            row,
+            body=self._text(row.body, row.edit.raw_json, row.id, platform),
+            edit=dataclasses.replace(
+                row.edit,
+                was=self._text(row.edit.was, row.raw_json, row.id, platform),
+            ),
+        )
+
+    def _text(
+        self, text: str | None, raw_json: str | None, row_id: int, platform: str,
+    ) -> str | None:
+        if not text or PLACEHOLDER not in text or not raw_json:
             # The cheap reject, and it covers every one of Nora's own rows:
             # `Deliverer` stores a `raw` of tag bookkeeping, not an envelope.
-            return row
+            return text
         try:
-            event = json.loads(row.raw_json)
+            event = json.loads(raw_json)
         except (TypeError, ValueError):
-            log.warning("row %s has unreadable raw_json; leaving its body as stored", row.id)
-            return row
+            log.warning("row %s has unreadable raw_json; leaving its body as stored", row_id)
+            return text
         if not isinstance(event, dict):
-            return row
-        return dataclasses.replace(
-            row, body=self._render(row.body, event, platform=platform),
-        )
+            return text
+        return self._render(text, event, platform=platform)
 
     def _render(self, body: str, event: dict[str, Any], *, platform: str) -> str:
         if not body or PLACEHOLDER not in body:

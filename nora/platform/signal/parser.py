@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass
 
 from ...domain.media import MediaRef, label_for, render_placeholder, resolve_media_type
-from ...domain.models import NormalizedMessage, Quote
+from ...domain.models import EditTarget, NormalizedMessage, Quote
 
 log = logging.getLogger("nora.signal.parser")
 
@@ -157,12 +157,11 @@ def _data_message(env: dict) -> dict | None:
     notification. Someone correcting a typo would watch Nora act on the text
     they had just replaced.
 
-    The edit is ingested as its own row rather than amending the original. The
-    transcript is an append-only audit (A9), `recent` tie-breaks on `id`, and
-    the prefill wants the LATEST text — which a new row gives, in order,
-    without a second write on the ingest path. It does mean both versions
-    appear in context; that is the honest record, and it is what the operator
-    would see in Signal.
+    The edit is NOT a message of its own. `parse_event` marks it with
+    `edit_of` (`_edit_target`), and ingest records it beside the message it
+    edits, which the transcript read then shows with the latest text at its
+    original position (design/message-edits/01). Before that, it was written
+    as a new row — both versions in context, unmarked, and a fresh tag.
 
     Extracted from `parse_event` so `mention_spans` unwraps the SAME two
     framings: a mention has to be looked up in the dataMessage the body came
@@ -175,6 +174,24 @@ def _data_message(env: dict) -> dict | None:
     edit = env.get("editMessage")
     data = edit.get("dataMessage") if isinstance(edit, dict) else None
     return data if isinstance(data, dict) else None
+
+
+def _edit_target(env: dict) -> EditTarget | None:
+    """The message an `editMessage` envelope edits, or None when this
+    envelope is not an edit. signal-cli names it by `targetSentTimestamp` —
+    the ORIGINAL's sent-timestamp, which with the author is how Signal
+    addresses any message (a quote, a reaction, an edit). A malformed or
+    missing timestamp is None: an edit that names nothing cannot be folded,
+    and ingesting it as an ordinary message is the honest fallback."""
+    if isinstance(env.get("dataMessage"), dict):
+        return None
+    edit = env.get("editMessage")
+    if not isinstance(edit, dict):
+        return None
+    ts = edit.get("targetSentTimestamp")
+    if not isinstance(ts, int) or isinstance(ts, bool) or ts <= 0:
+        return None
+    return EditTarget(sent_ts=ts)
 
 
 def mention_spans(event: dict) -> tuple[MentionSpan, ...]:
@@ -392,6 +409,7 @@ def parse_event(event: dict, own_account: str) -> NormalizedMessage | None:
             # What the platform SAID. `media_blobs` — what Nora holds — is
             # filled in one stage later; this parser still downloads nothing.
             media=refs,
+            edit_of=_edit_target(env),
         )
     except Exception:
         log.exception("unparseable envelope, skipping")

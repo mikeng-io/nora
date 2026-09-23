@@ -15,12 +15,14 @@ wiring to build at all.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import re
+import time
 from typing import Protocol
 
 from ...domain.media import MediaRef, label_for, render_placeholder
-from ...domain.models import NormalizedMessage, Quote
+from ...domain.models import EditTarget, NormalizedMessage, Quote
 from .snowflake import timestamp_ms as _timestamp_ms
 
 log = logging.getLogger("nora.discord.parser")
@@ -269,3 +271,37 @@ def parse_discord_message(
     except Exception:
         log.exception("unparseable discord message, skipping")
         return None
+
+
+def parse_discord_edit(
+    message: _DiscordMessage | None, *, own_id: str
+) -> NormalizedMessage | None:
+    """An edited message (`on_raw_message_edit`'s `payload.message`) → an
+    edit of the message it is (design/message-edits/03 §1).
+
+    The same parse as a new message, so the edit's body, mentions and media
+    are built by exactly the rules the original's were — then marked with
+    `edit_of` (its own snowflake: a Discord edit keeps its id) and stamped
+    with `edited_at`, the time the TEXT changed.
+
+    `MESSAGE_UPDATE` is not only an edit. It also fires when a link preview
+    resolves or a message is pinned, and then `edited_at` is unchanged or
+    absent. That is NOT filtered here: ingest compares the text against the
+    version on record and ends such an update `edit_unchanged`, which is total
+    across platforms where a rule about Discord's event semantics would not be.
+    A missing `edited_at` falls back to now, never to the snowflake's time —
+    that is when the message was SENT, and an edit stamped then would render
+    as changed before anybody could have answered it."""
+    parsed = parse_discord_message(message, own_id=own_id)
+    if parsed is None or message is None:
+        return None
+    edited_at = getattr(message, "edited_at", None)
+    try:
+        ts = int(edited_at.timestamp() * 1000) if edited_at is not None else 0
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        ts = 0
+    return dataclasses.replace(
+        parsed,
+        timestamp=ts or int(time.time() * 1000),
+        edit_of=EditTarget(message_id=str(message.id)),
+    )

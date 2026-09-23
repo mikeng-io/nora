@@ -536,6 +536,8 @@ def _transcript_block(
         timestamp=lambda row: row.ts,
         replying_to=_parent_index,
         now=now,
+        edited=lambda row: row.edit.ts if row.edit else None,
+        was=lambda row: row.edit.was if row.edit else None,
     )
     # `window` is R-15, moved onto the block it is about (#314). The header
     # used to say «the last 40 messages» in its catalogue entry for this block,
