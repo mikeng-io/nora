@@ -1,30 +1,39 @@
 """ADR 0015 §1: a NEW tool is named `<domain>_<verb>`.
 
 The domain is a service (`web`, `instagram`, `x`) or a resource (`note`,
-`music`); the verb says what the tool takes or does. Today's names predate the
-rule and stay (ADR 0004: a rename is measured one at a time), so they are
-frozen below. The list only shrinks: a tool renamed to the pattern leaves it,
-and a name added here needs a written reason in the same commit.
+`room`, `music`); the verb says what the tool takes or does. Today's names
+predate the rule and stay (ADR 0004: a rename is measured one at a time), so
+they are frozen below. The frozen list only shrinks: a tool renamed to the
+pattern leaves it, and its length is pinned.
 """
 
 from __future__ import annotations
 
 import re
 
+import pytest
+
+from nora.agent import tools as tools_module
 from nora.agent.tools import NATIVE_TOOLS
 
-#: Every provider's safe set: Anthropic, OpenAI and Gemini all accept
-#: `[a-zA-Z0-9_-]`, and OpenAI and Gemini cap names at 64. Lower case and `_`
-#: only, because Gemini's best-practice page discourages `-` and `.` in names.
+#: Lower case, digits and `_`, at most 64 characters. Anthropic allows
+#: `[a-zA-Z0-9_-]{1,128}` and MCP allows `.` up to 128; this is the
+#: conservative intersection, so a name works under any provider.
 _CHARSET = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
-#: `<domain>_<verb>`. `_read` takes a known subject, `_fetch` a URL, `_search`
-#: free text, `_list` enumerates; the rest act. A verb outside this set is a
-#: decision to write into ADR 0015 first, not a name to invent here.
-_VERBS = ("read", "fetch", "search", "list", "create", "update", "cancel", "send")
-_SHAPE = re.compile(rf"^[a-z][a-z0-9]*(_[a-z0-9]+)*_({'|'.join(_VERBS)})$")
+#: The verbs, as ADR 0015 §1 delegates them to this constant. `read` takes a
+#: known subject, `fetch` a URL, `search` free text, `list` enumerates; the rest
+#: act. A new verb is added HERE, in a PR that states why it is not one of these.
+VERBS: tuple[str, ...] = (
+    "read", "fetch", "search", "list", "create", "update", "cancel", "send",
+)
 
-#: The names that predate ADR 0015 (2026-09-24). Frozen, never grown.
+
+def _shape(verbs: tuple[str, ...] = VERBS) -> re.Pattern[str]:
+    return re.compile(rf"^[a-z][a-z0-9]*(_[a-z0-9]+)*_({'|'.join(verbs)})$")
+
+
+#: The names that predate ADR 0015 (2026-09-24). Frozen; never grown.
 _PREDATES_THE_RULE = frozenset({
     "about", "ask_memory", "calculate", "cancel_event", "cancel_reminder",
     "create_event", "find_parking", "generate_image", "group_members",
@@ -40,6 +49,15 @@ _PREDATES_THE_RULE = frozenset({
     "weather", "web_fetch", "web_search", "where_been", "where_is", "who_said",
 })
 
+#: The frozen list's size when the rule landed. It may go DOWN (a rename or a
+#: removal), never up: raising this number is exempting a new tool by hand.
+_FROZEN_AT_MOST = 57
+
+
+def _misnamed(names) -> list[str]:
+    shape = _shape()
+    return sorted(n for n in names if n not in _PREDATES_THE_RULE and not shape.match(n))
+
 
 def test_every_tool_name_uses_the_safe_charset() -> None:
     bad = sorted(name for name in NATIVE_TOOLS if not _CHARSET.match(name))
@@ -47,27 +65,39 @@ def test_every_tool_name_uses_the_safe_charset() -> None:
 
 
 def test_a_new_tool_is_named_domain_then_verb() -> None:
-    new = sorted(
-        name for name in NATIVE_TOOLS
-        if name not in _PREDATES_THE_RULE and not _SHAPE.match(name)
-    )
+    new = _misnamed(NATIVE_TOOLS)
     assert not new, (
         f"{new}: a tool added after ADR 0015 is named <domain>_<verb> with a "
-        f"verb from {_VERBS} (e.g. instagram_read, note_search). Read "
+        f"verb from {VERBS} (e.g. instagram_read, room_list). Read "
         "docs/adr/0015-tool-surface-policy-v2.md before naming a tool."
     )
 
 
-def test_the_frozen_list_only_names_tools_that_still_exist() -> None:
-    """A tool removed or renamed must leave the list, or the list stops
-    shrinking and quietly exempts a name nobody is using."""
+def test_a_misnamed_new_tool_is_actually_caught(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The live check has nothing to catch today (every current name is
+    frozen), so without this a mutant that empties it would pass unseen. Put a
+    badly named tool into the table and require the check to name it."""
+    fake = dict(NATIVE_TOOLS)
+    fake["read_instagram"] = NATIVE_TOOLS["web_fetch"]
+    fake["instagram_read"] = NATIVE_TOOLS["web_fetch"]
+    monkeypatch.setattr(tools_module, "NATIVE_TOOLS", fake)
+    assert _misnamed(tools_module.NATIVE_TOOLS) == ["read_instagram"]
+
+
+def test_the_frozen_list_only_shrinks() -> None:
+    assert len(_PREDATES_THE_RULE) <= _FROZEN_AT_MOST, (
+        "_PREDATES_THE_RULE grew: a new tool was exempted by hand instead of "
+        "being named <domain>_<verb>"
+    )
     gone = sorted(_PREDATES_THE_RULE - set(NATIVE_TOOLS))
     assert not gone, f"remove from _PREDATES_THE_RULE, no longer tools: {gone}"
 
 
 def test_the_shape_accepts_the_pattern_and_refuses_the_rest() -> None:
     """Positive control, so a broken regex cannot pass every name vacuously."""
-    for good in ("instagram_read", "instagram_search", "x_fetch", "note_list"):
-        assert _SHAPE.match(good), good
-    for bad in ("read_instagram", "instagram", "instagramread", "instagram_get"):
-        assert not _SHAPE.match(bad), bad
+    shape = _shape()
+    for good in ("instagram_read", "instagram_search", "x_fetch", "room_list", "room_read"):
+        assert shape.match(good), good
+    for bad in ("read_instagram", "instagram", "instagramread", "instagram_get",
+                "my_rooms", "read_room"):
+        assert not shape.match(bad), bad

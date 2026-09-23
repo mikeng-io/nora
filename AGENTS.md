@@ -354,24 +354,33 @@ summary — update-in-place, separate from the Dreamer and Honcho).
 ## Adding or changing a tool
 
 Read **`docs/adr/0015-tool-surface-policy-v2.md` before writing one line** of a
-tool's name, docstring or result. It supersedes parts of 0007 and extends 0004;
-read those two as well. A tool's text is the model's routing surface on every
-call. Three weeks of tools written without these ADRs left 17,485 tokens of
-descriptions, 300 em dashes and 644 CJK characters in them.
+tool's name, docstring or result, and 0004 and 0007, which it extends and
+partly supersedes. A tool's text is the model's routing surface on every call.
+0007's length and language rules had no test, and they were not met even on
+the day they were written. 0015 §6 lists which rule is checked how.
 
-- **Name:** `<domain>_<verb>` (`instagram_read`, `note_search`). `_read` takes a
-  known subject, `_fetch` a URL, `_search` free text. Never rename an existing
+Enforced today:
+
+- **Name:** `<domain>_<verb>`, with the verb from the list in
+  `tests/architecture/test_tool_names.py` (`instagram_read`, `room_list`). A
+  new verb goes into that list in a PR that says why. Never rename an existing
   tool without a `tool_selection` measurement (0004).
-- **First paragraph:** what the tool does and when to call it, plus what the
-  output is when that is not obvious. At most 40 tokens, because it is the
-  catalogue line.
-- **Content:** declare `level=1|2|3` on `NativeTool` and fit its ceiling. Put
-  result interpretation in the RESULT, not the description. Use `Literal` for
-  fixed options, RFC 2119 for MUST/SHOULD/MAY, English prose with at most one
-  non-English token, and no em or en dashes.
-- **Process:** write, then run the `humanizer` skill over it, then `make gate`,
-  then `python -m evals tool_selection --sample 5 --reasons` before and after.
-  Put the numbers in the PR.
+- **First paragraph:** what the tool does and when to call it, as a catalogue
+  line of at most 40 tokens (name included). Checked by
+  `tests/test_tool_surface_policy.py`.
+
+Policy now; its tests land with the first rewrite batch (0015 §5):
+
+- A `level` field on `NativeTool` with a token ceiling per level.
+- Result interpretation in the RESULT, not the description.
+- `Literal` types for fixed options.
+- At most one non-English string (a trigger word only).
+- No em or en dashes.
+
+Process: write, run the `humanizer` skill if the session has it, `make gate`,
+then measure before and after. Routing is
+`python -m evals tool_selection --sample 5 --reasons`; reporting needs the
+judged corpus 0015 §4 describes. Put the numbers in the PR.
 
 ## Never (one line each — the war-story behind each is in `docs/CONVENTIONS.md`)
 

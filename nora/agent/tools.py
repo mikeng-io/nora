@@ -422,10 +422,12 @@ RETRY_POLICIES: frozenset[str] = frozenset({"safe", "unsafe_without_key", "never
 # its repeat call is the one on this table that returns DIFFERENT content —
 # the argument picks which body loads. `guards.py`'s ceiling branch says so.)
 # ADDING OR CHANGING A TOOL: read docs/adr/0015-tool-surface-policy-v2.md first
-# (and 0004 and 0007, which it extends and partly supersedes). The name, the
-# first paragraph of the docstring, the declared level, where result
-# interpretation lives, and the humanize, gate and measure process are all set
-# there, and `tests/test_tool_surface_policy.py` enforces them.
+# (and 0004 and 0007, which it extends and partly supersedes). It sets the name,
+# the docstring's first paragraph, the level, where result interpretation lives,
+# and the humanize, gate and measure process. Enforced today:
+# `tests/architecture/test_tool_names.py` (names) and
+# `tests/test_tool_surface_policy.py` (the opening). 0015 §6 lists what else is
+# checked, and when.
 NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # Cheap, local, and the answer changes every second, so there is no reason
     # to ration it — but a budget is still required: R-7 default-denies any

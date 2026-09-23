@@ -1,6 +1,6 @@
 # 0007 — A tool's name and description are its routing surface: policy
 
-- **Status:** accepted; §3.5 and §5 superseded by [0015](0015-tool-surface-policy-v2.md) (proposed)
+- **Status:** accepted
 - **Date:** 2026-08-31
 - **Index:** DEC-39 / ADR 0004 (naming is measured), DEC-41 (docstring
   selection regression, measured not argued), DEC-92 (the schema is the
