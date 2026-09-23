@@ -53,7 +53,7 @@ deleted the last generated capability block for exactly that reason.
 
 **In:**
 - `<presence>`: a generated per-turn block extending `_where_line` (`02`)
-- three room-awareness tools, `my_rooms`, `room_activity`, `read_room`, each
+- two room-awareness tools, `room_list` and `room_read` (named to ADR 0015), each
   with its own disclosure tier (`03`)
 - the order, and how to prove each part helps (`05`)
 
@@ -66,8 +66,8 @@ deleted the last generated capability block for exactly that reason.
 ## Operator decisions (2026-09-23)
 
 - **D1, the unit boundary: B.** In the friends group, `<presence>` and
-  `my_rooms` name this unit's rooms and say only that other groups exist,
-  never which. `read_room` never crosses a unit. Options and reasons in `03`.
+  `room_list` name this unit's rooms and say only that other groups exist,
+  never which. `room_read` never crosses a unit. Options and reasons in `03`.
 - **D2, proactive: yes.** `<presence>` renders on the proactive loop as well
   as on turns that answer a person (`02`).
 - **Her profile on each network** (avatar, display name, bio) is a separate
