@@ -41,17 +41,28 @@ class _FakeSearchProvider:
     receives — the probe a screen that refuses BEFORE the call needs, the same
     shape `web_search`'s own `calls == []` comment describes."""
 
-    def __init__(self, *, raises: bool = False) -> None:
+    def __init__(self, *, raises: bool = False,
+                 search: dict[str, Any] | None = None,
+                 fetch: dict[str, Any] | None = None) -> None:
         self.fetch_calls: list[str] = []
         self._raises = raises
+        # A fixed payload per verb, for the note tests at the bottom: the
+        # shapes the real providers return, which carry no `note` on `ok` or
+        # `nothing_found`.
+        self._search = search
+        self._fetch = fetch
 
     async def search(self, *, query: str) -> dict[str, Any]:
+        if self._search is not None:
+            return dict(self._search)
         return {"status": "ok", "results": []}
 
     async def fetch(self, *, url: str) -> dict[str, Any]:
         self.fetch_calls.append(url)
         if self._raises:
             raise RuntimeError("boom")
+        if self._fetch is not None:
+            return dict(self._fetch)
         # `text`, NOT `content` — same Strands-envelope invariant as the real
         # providers (a dict carrying both `status` and `content` passes
         # through `_wrap_tool_result` unwrapped and reads as "empty").
@@ -137,3 +148,67 @@ async def test_a_raising_provider_degrades_to_unavailable():
     tools = _tools(search=fake)
     out = await tools["web_fetch"](url="https://example.com/a")
     assert out["status"] == "unavailable"
+
+
+# ---- ADR 0015 §3: how to report a status rides in the result ----------------
+# `web_search` shares this closure's harness (one `search_source`, both verbs),
+# so its notes are pinned here beside `web_fetch`'s.
+
+_DASHES = ("—", "–")
+
+
+def _assert_noted(case: str, out: dict, status: str) -> None:
+    assert out["status"] == status, (case, out)
+    assert isinstance(out.get("note"), str) and out["note"].strip(), case
+    assert not any(d in out["note"] for d in _DASHES), case
+
+
+async def test_every_non_ok_web_status_carries_a_note():
+    """Every non-ok path of both verbs, the provider's own included, so a path
+    that loses its note (the reporting rule for that status) goes red."""
+    empty = _tools(search=_FakeSearchProvider(
+        search={"status": "nothing_found", "results": []}, fetch={"status": "nothing_found"},
+    ))
+    raising = _tools(search=_FakeSearchProvider(raises=True))
+    unwired = _tools(search=None)
+    from nora.infra.search._shared import UNAVAILABLE_FETCH, UNAVAILABLE_SEARCH
+    down = _tools(search=_FakeSearchProvider(search=UNAVAILABLE_SEARCH, fetch=UNAVAILABLE_FETCH))
+    search_cases = {
+        "nothing_found/identifier": (empty, "call +85212345678"),
+        "nothing_found/coordinate": (empty, "22.31,114.16"),
+        "nothing_found/empty": (empty, "a real question"),
+        "unavailable/unwired": (unwired, "a real question"),
+        "unavailable/provider": (down, "a real question"),
+    }
+    for case, (tools, query) in search_cases.items():
+        _assert_noted(f"web_search {case}", await tools["web_search"](query=query),
+                      case.split("/")[0])
+    fetch_cases = {
+        "nothing_found/not_a_url": (empty, "example.com/a"),
+        "nothing_found/identifier": (empty, "https://example.com/?n=%2B85212345678"),
+        "nothing_found/coordinate": (empty, "https://example.com/?at=22.31,114.16"),
+        "nothing_found/dead": (empty, "https://example.com/a"),
+        "unavailable/unwired": (unwired, "https://example.com/a"),
+        "unavailable/raised": (raising, "https://example.com/a"),
+        "unavailable/provider": (down, "https://example.com/a"),
+    }
+    for case, (tools, url) in fetch_cases.items():
+        _assert_noted(f"web_fetch {case}", await tools["web_fetch"](url=url),
+                      case.split("/")[0])
+
+
+async def test_an_ok_web_note_comes_before_the_page_written_text():
+    """The reading rules that left the descriptions (a stranger's words, give
+    the link, say which page) ride with the `ok`, placed right after `status`
+    so they are read before the text they are about."""
+    tools = _tools(search=_FakeSearchProvider(
+        search={"status": "ok", "results": [{"url": "https://a.example", "content": "x"}]},
+        fetch={"status": "ok", "url": "https://a.example", "text": "the page"},
+    ))
+    found = await tools["web_search"](query="a real question")
+    assert list(found)[:3] == ["status", "note", "results"]
+    assert "`url`" in found["note"] and "stranger" in found["note"]
+    page = await tools["web_fetch"](url="https://a.example")
+    assert list(page)[:2] == ["status", "note"]
+    assert page["text"] == "the page"
+    assert "which page" in page["note"] and "stranger" in page["note"]

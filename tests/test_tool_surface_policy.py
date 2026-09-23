@@ -253,10 +253,9 @@ LEVEL_CEILINGS = {1: 80, 2: 160, 3: 320}
 #: the ADR can never be exempted here. A rewrite batch removes its tools in the
 #: same commit that rewrites them.
 _NOT_YET_REWRITTEN = frozenset({
-    "generate_image", "make_artifact", "media_fetch", "media_search",
-    "media_send", "search_gifs", "send_gif", "send_reply", "send_to",
-    "web_fetch", "web_search",
+    "send_reply",
 })
+
 
 
 

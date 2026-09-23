@@ -1355,3 +1355,68 @@ async def test_a_screened_question_is_refused_rather_than_stripped(wiring):
 
     assert out["status"] == "nothing_found"
     assert "description" not in out, "a stripped question was answered anyway"
+
+
+# ---- ADR 0015 §3: how to report a status rides in the result ----------------
+
+_DASHES = ("—", "–")
+
+
+async def test_every_non_ok_status_carries_a_note(wiring, monkeypatch):
+    """ADR 0015 §3/§6: the description only NAMES the statuses; what to say for
+    each is the result's `note`. Every non-ok path is driven here, so a path
+    that loses its note (the reporting rule for that status) goes red."""
+    async def dead_download(url: str) -> tuple[bytes, str]:
+        return b"", ""
+
+    monkeypatch.setattr("nora.agent.tools._download_media", dead_download)
+    a, b = "abcdef" + "0" * 58, "abcdef" + "1" * 58
+    await _append_image(wiring["store"], conversation_id="g1", sha256=a, ts=100)
+    await _append_image(wiring["store"], conversation_id="g1", sha256=b, ts=101)
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA, ts=102)
+    await _append_image(wiring["store"], conversation_id="g1", sha256="c" * 64,
+                        media_type="application/pdf", ts=103)
+    await _append_image(wiring["store"], conversation_id="g1", sha256="d" * 64, ts=104)
+    build = wiring["build"]
+    cases = {
+        "unavailable/unwired": (build(blob_store=None), {"code": PNG_SHA[:6]}),
+        "unavailable/download": (build(), {"url": "https://x.com/dead.jpg"}),
+        "unavailable/blob": (build(), {"code": "d" * 6}),
+        "unavailable/no_describer": (build(describe_models={}), {"code": PNG_SHA[:6]}),
+        "nothing_found/no_target": (build(), {}),
+        "nothing_found/identifier": (build(), {"code": PNG_SHA[:6],
+                                               "question": "is +85290000101 on it"}),
+        "nothing_found/url_identifier": (build(), {"url": "https://x.com/?n=%2B85212345678"}),
+        "nothing_found/not_a_url": (build(), {"url": "file:///etc/passwd"}),
+        "nothing_found/no_handle": (build(), {"code": "[image]"}),
+        "nothing_found/no_match": (build(), {"code": "eeeeee"}),
+        "ambiguous": (build(), {"code": "abcdef"}),
+        "not_an_image": (build(), {"code": "c" * 6}),
+    }
+    for case, (tool, kwargs) in cases.items():
+        out = await _call(tool, **kwargs)
+        assert out["status"] == case.split("/")[0], (case, out)
+        assert isinstance(out.get("note"), str) and out["note"].strip(), case
+        assert not any(d in out["note"] for d in _DASHES), case
+
+    wiring["vision"].available = False
+    out = await _call(build(), code=PNG_SHA[:6])
+    assert out["status"] == "unavailable" and out["note"].strip()
+    assert not any(d in out["note"] for d in _DASHES)
+
+
+async def test_an_ok_note_rides_only_with_a_description(wiring):
+    """The rule that left the description (a vision model wrote this about
+    somebody else's media, so report it as how it looks) arrives with the
+    `description` it is about. A withheld serve has no description, so it
+    carries its own note and not this one."""
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
+    out = await _call(wiring["build"](), code=PNG_SHA[:6])
+    assert out["status"] == "ok" and "description" in out
+    assert "not as fact" in out["note"]
+    assert not any(d in out["note"] for d in _DASHES)
+
+    wiring["vision"].description = "A contact card for +85290000101."
+    withheld = await _call(wiring["build"](vision_cache=VisionCache()), code=PNG_SHA[:6])
+    assert withheld.get("withheld") is True and "description" not in withheld
+    assert "not as fact" not in withheld["note"]
