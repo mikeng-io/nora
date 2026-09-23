@@ -60,6 +60,8 @@ import (
 	"strconv"
 	"sync"
 
+	"instagram-bridge/internal/domain"
+
 	"go.mau.fi/mautrix-meta/pkg/instameow"
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
@@ -97,19 +99,6 @@ type igClient interface {
 // same reason: it hangs off *httpclient.HTTPClient, which cannot be faked.
 type uploader func(context.Context, int64, *httpclient.MercuryUploadMedia) (*types.MercuryUploadResponse, error)
 
-// threadRef is both ids for one thread, resolved together and carried
-// together. It exists because the per-verb table at the top of this file means
-// a handler needs BOTH: there is no single "the thread id" to pass around, and
-// a function that took one string would make picking the wrong space a
-// one-character mistake again.
-type threadRef struct {
-	// Short is `thread_fbid`, canonicalized through ParseInt/FormatInt so the
-	// cache cannot hold "012" and "12" as two different threads.
-	Short string
-	// Long is `thread_igid`.
-	Long string
-}
-
 // threadIndex caches the short->long pair. The lookup is an HTTP round trip
 // against Instagram's route endpoint, so doing it per send would add a request
 // to every reply — and a rate-limited one, on the navigation endpoint rather
@@ -121,59 +110,60 @@ type threadRef struct {
 // notification's unclassified thread id back into a room key we can vouch for.
 type threadIndex struct {
 	mu        sync.RWMutex
-	shortLong map[string]string
+	shortLong map[string]domain.ThreadIGID
 	longShort map[string]string
 	fetch     func(context.Context, int64) (*instameow.ThreadIGIDs, error)
 }
 
 func newThreadIndex(fetch func(context.Context, int64) (*instameow.ThreadIGIDs, error)) *threadIndex {
 	return &threadIndex{
-		shortLong: map[string]string{},
+		shortLong: map[string]domain.ThreadIGID{},
 		longShort: map[string]string{},
 		fetch:     fetch,
 	}
 }
 
-var errBadRoomID = errors.New("room_id must be a decimal thread_fbid")
-
 // resolve maps a room key to both thread ids, fetching on a miss.
-func (t *threadIndex) resolve(ctx context.Context, short string) (threadRef, error) {
-	// Parse before anything else: `room_id` arrives from HTTP and a non-numeric
-	// value is a caller error (400), not an Instagram failure (5xx). Letting it
-	// through would produce a route lookup for `/direct/t/0/` and a 404 that
-	// reads like a deleted thread.
-	shortID, err := strconv.ParseInt(short, 10, 64)
-	if err != nil || shortID <= 0 {
-		return threadRef{}, fmt.Errorf("%w: %q", errBadRoomID, short)
-	}
-	canonical := strconv.FormatInt(shortID, 10)
+//
+// The key arrives already PARSED. A non-numeric room_id is the caller's error
+// (400), not an Instagram failure (5xx), and domain.ParseThreadFBID refuses it
+// at the edge, before anything here could turn it into a route lookup for
+// `/direct/t/0/` and a 404 that reads like a deleted thread. The parse is also
+// what canonicalizes, so the cache cannot hold "012" and "12" as two threads.
+func (t *threadIndex) resolve(ctx context.Context, short domain.ThreadFBID) (domain.ThreadRef, error) {
+	canonical := short.String()
 
 	t.mu.RLock()
 	long, ok := t.shortLong[canonical]
 	t.mu.RUnlock()
 	if ok {
-		return threadRef{Short: canonical, Long: long}, nil
+		return domain.ThreadRef{Short: short, Long: long}, nil
 	}
 
-	ids, err := t.fetch(ctx, shortID)
+	ids, err := t.fetch(ctx, short.Int64())
 	if err != nil {
-		return threadRef{}, err
+		return domain.ThreadRef{}, err
 	}
-	if ids == nil || ids.LongID == "" {
+	var raw string
+	if ids != nil {
+		raw = ids.LongID
+	}
+	long, err = domain.NewThreadIGID(raw)
+	if err != nil {
 		// Fail closed. Returning the short id as a "best effort" would produce
 		// a send that is accepted by the HTTP layer and never arrives, which
 		// is the single worst outcome available here.
-		return threadRef{}, fmt.Errorf("thread %s resolved to no thread_igid", canonical)
+		return domain.ThreadRef{}, fmt.Errorf("thread %s resolved to no thread_igid", canonical)
 	}
-	t.remember(canonical, ids.LongID)
-	return threadRef{Short: canonical, Long: ids.LongID}, nil
+	t.remember(canonical, long)
+	return domain.ThreadRef{Short: short, Long: long}, nil
 }
 
-func (t *threadIndex) remember(short, long string) {
+func (t *threadIndex) remember(short string, long domain.ThreadIGID) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.shortLong[short] = long
-	t.longShort[long] = short
+	t.longShort[long.String()] = short
 }
 
 // roomFor answers "is this id one I already know a room key for?" for either

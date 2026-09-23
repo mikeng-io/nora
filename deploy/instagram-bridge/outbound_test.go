@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"errors"
+	"net/http"
 	"reflect"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
+
+	"instagram-bridge/internal/domain"
 
 	"go.mau.fi/mautrix-meta/pkg/instameow"
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
@@ -363,6 +366,16 @@ func knownThread(id string) bool { return id == threadShort || id == threadLong 
 
 func newIndex(f *fakeIG) *threadIndex { return newThreadIndex(f.FetchThreadID) }
 
+// shortThread parses a room key the way the HTTP edge does.
+func shortThread(t *testing.T, s string) domain.ThreadFBID {
+	t.Helper()
+	id, err := domain.ParseThreadFBID(s)
+	if err != nil {
+		t.Fatalf("ParseThreadFBID(%q): %v", s, err)
+	}
+	return id
+}
+
 // --- the two-thread-id trap ---------------------------------------------------
 
 // A send addressed with the short id does not arrive, and does not error
@@ -383,14 +396,14 @@ func newIndex(f *fakeIG) *threadIndex { return newThreadIndex(f.FetchThreadID) }
 func TestSendFollowsUpstreamAndUsesTheShortThreadID(t *testing.T) {
 	f := &fakeIG{}
 	idx := newIndex(f)
-	thread, err := idx.resolve(t.Context(), threadShort)
+	thread, err := idx.resolve(t.Context(), shortThread(t, threadShort))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if thread.Long != threadLong || thread.Short != threadShort {
+	if thread.Long.String() != threadLong || thread.Short.String() != threadShort {
 		t.Fatalf("resolve gave %+v, want both ids", thread)
 	}
-	res, err := sendText(t.Context(), f, thread.Short, "hello", nil, "")
+	res, err := sendText(t.Context(), f, thread.Short.String(), "hello", nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,11 +427,11 @@ func TestShortIDIsCanonicalizedBeforeCaching(t *testing.T) {
 	f := &fakeIG{}
 	idx := newIndex(f)
 	for _, spelling := range []string{threadShort, "0" + threadShort} {
-		thread, err := idx.resolve(t.Context(), spelling)
+		thread, err := idx.resolve(t.Context(), shortThread(t, spelling))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if thread.Short != threadShort {
+		if thread.Short.String() != threadShort {
 			t.Fatalf("resolve(%q).Short = %q", spelling, thread.Short)
 		}
 	}
@@ -431,7 +444,7 @@ func TestThreadIDIsResolvedOncePerRoom(t *testing.T) {
 	f := &fakeIG{}
 	idx := newIndex(f)
 	for range 5 {
-		if _, err := idx.resolve(t.Context(), threadShort); err != nil {
+		if _, err := idx.resolve(t.Context(), shortThread(t, threadShort)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -446,17 +459,28 @@ func TestThreadIDIsResolvedOncePerRoom(t *testing.T) {
 // A non-numeric room_id is the CALLER's error, not Instagram's. Letting it
 // through would produce a route lookup for /direct/t/0/ and a 404 that reads
 // like a deleted thread.
+//
+// The parse now happens at the HTTP edge (domain.ParseThreadFBID), so this is
+// driven through every route that takes a room key: each must answer 400 and
+// none may reach the route lookup.
 func TestNonNumericRoomIDIsRejectedWithoutALookup(t *testing.T) {
 	f := &fakeIG{}
-	idx := newIndex(f)
+	b := newTestBridge(t, f)
 	// The last entry is the LONG thread id. It is all digits, so a naive
 	// "is it numeric" check would wave it through — and a room_id in the wrong
 	// id space is precisely the mistake this whole translation layer exists to
 	// make impossible. It overflows int64 and is refused.
 	for _, bad := range []string{"", "abc", "-1", "0", "12a4", threadLong} {
-		_, err := idx.resolve(t.Context(), bad)
-		if !errors.Is(err, errBadRoomID) {
-			t.Errorf("room_id %q gave %v, want errBadRoomID", bad, err)
+		if _, err := domain.ParseThreadFBID(bad); !errors.Is(err, domain.ErrInvalidID) {
+			t.Errorf("room_id %q parsed as %v, want ErrInvalidID", bad, err)
+		}
+		for _, route := range []string{"/send", "/react", "/typing", "/unsend"} {
+			rec := post(t, b, route, map[string]any{
+				"room_id": bad, "text": "hi", "message_id": "mid.$x", "emoji": "👍",
+			})
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("%s with room_id %q answered %d, want 400", route, bad, rec.Code)
+			}
 		}
 	}
 	if f.fetches != 0 {
@@ -473,7 +497,7 @@ func TestEmptyLongIDIsAnErrorNotAFallback(t *testing.T) {
 		return &instameow.ThreadIGIDs{ShortID: threadShort}, nil
 	})
 	_ = f
-	if got, err := idx.resolve(t.Context(), threadShort); err == nil {
+	if got, err := idx.resolve(t.Context(), shortThread(t, threadShort)); err == nil {
 		t.Fatalf("an empty thread_igid was accepted: %+v", got)
 	}
 }
@@ -483,7 +507,7 @@ func TestRoomForAnswersBothIDSpacesAndAdmitsIgnorance(t *testing.T) {
 	if _, ok := idx.roomFor(threadLong); ok {
 		t.Fatal("claimed a room for an id it has never seen")
 	}
-	if _, err := idx.resolve(t.Context(), threadShort); err != nil {
+	if _, err := idx.resolve(t.Context(), shortThread(t, threadShort)); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []string{threadShort, threadLong} {

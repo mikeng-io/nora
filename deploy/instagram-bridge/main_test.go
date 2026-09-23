@@ -258,7 +258,7 @@ func TestTypingClaimsARoomOnlyWhenTheCacheCanVouchForIt(t *testing.T) {
 	}
 
 	// Now teach the cache the pair, and the same notification resolves.
-	if _, err := b.threads.resolve(t.Context(), threadShort); err != nil {
+	if _, err := b.threads.resolve(t.Context(), shortThread(t, threadShort)); err != nil {
 		t.Fatal(err)
 	}
 	if err := b.onEvent(t.Context(), &slidetypes.TypingNotification{
