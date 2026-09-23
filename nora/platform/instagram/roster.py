@@ -86,6 +86,7 @@ import logging
 import aiohttp
 
 from ...domain.ports import Roster
+from ...infra.trace_propagation import propagation_headers
 from .ids import fbid_form
 
 log = logging.getLogger("nora.instagram.roster")
@@ -148,6 +149,7 @@ class InstagramRoster:
                 aiohttp.ClientSession(timeout=self._timeout) as session,
                 session.get(
                     f"{self._base_url}/threads/{room_id}/members",
+                    headers=propagation_headers(),
                 ) as resp,
             ):
                 if resp.status == 409:

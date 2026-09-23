@@ -20,11 +20,12 @@ package main
 // reconnects in seconds. They are distinct because the consequences are.
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -65,22 +66,22 @@ func (b *bridge) routes() http.Handler {
 	// spelling of one noun. Renamed 2026-09-22 while it was still free:
 	// `/profile` and `/story` had no caller at all, and `/roster` had exactly
 	// one.
-	mux.HandleFunc("GET /threads/{thread_fbid}/members", b.handleRoster)
+	mux.HandleFunc("GET /threads/{thread_fbid}/members", route("GET /threads/{thread_fbid}/members", b.handleRoster))
 	// ONE account resource. `web_profile_info`'s fields are not a second
 	// noun — they are more of this one — so they are merged into this read
 	// rather than given a path of their own. The response says which upstream
 	// halves answered; see social.go.
-	mux.HandleFunc("GET /accounts/{igid}", b.handleProfile)
+	mux.HandleFunc("GET /accounts/{igid}", route("GET /accounts/{igid}", b.handleProfile))
 	// The only path to a story anywhere, and the only read VISIBLE to the
 	// person being read. A sub-resource of the account, because that is what
 	// it is.
-	mux.HandleFunc("GET /accounts/{igid}/story", b.handleStory)
-	mux.HandleFunc("POST /send", b.handleSend)
-	mux.HandleFunc("POST /send-media", b.handleSendMedia)
-	mux.HandleFunc("POST /react", b.handleReact)
-	mux.HandleFunc("POST /typing", b.handleTyping)
-	mux.HandleFunc("POST /unsend", b.handleUnsend)
-	return mux
+	mux.HandleFunc("GET /accounts/{igid}/story", route("GET /accounts/{igid}/story", b.handleStory))
+	mux.HandleFunc("POST /send", route("POST /send", b.handleSend))
+	mux.HandleFunc("POST /send-media", route("POST /send-media", b.handleSendMedia))
+	mux.HandleFunc("POST /react", route("POST /react", b.handleReact))
+	mux.HandleFunc("POST /typing", route("POST /typing", b.handleTyping))
+	mux.HandleFunc("POST /unsend", route("POST /unsend", b.handleUnsend))
+	return traceHTTP(mux)
 }
 
 // --- /health ------------------------------------------------------------------
@@ -218,7 +219,7 @@ func (b *bridge) handleSend(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := sendText(r.Context(), cli, thread.Short, req.Text, req.Mentions, req.ReplyTo)
 	if err != nil {
-		b.failSend(w, "send", req.RoomID, err)
+		b.failSend(r.Context(), w, "send", req.RoomID, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
@@ -291,7 +292,7 @@ func (b *bridge) handleSendMedia(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := sendMedia(r.Context(), cli, up, shortID, media, req.ReplyTo)
 	if err != nil {
-		b.failSend(w, "send-media", req.RoomID, err)
+		b.failSend(r.Context(), w, "send-media", req.RoomID, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
@@ -346,7 +347,7 @@ func (b *bridge) handleReact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		b.failSend(w, "react", req.RoomID, err)
+		b.failSend(r.Context(), w, "react", req.RoomID, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -385,7 +386,7 @@ func (b *bridge) handleTyping(w http.ResponseWriter, r *http.Request) {
 	// never measured in either id space — there is no read-back for typing —
 	// so this is followed, not proven.
 	if err := cli.SetTyping(r.Context(), thread.Short, req.Typing); err != nil {
-		b.failSend(w, "typing", req.RoomID, err)
+		b.failSend(r.Context(), w, "typing", req.RoomID, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -418,7 +419,7 @@ func (b *bridge) handleUnsend(w http.ResponseWriter, r *http.Request) {
 	// cleanup ran this way.
 	confirmed, err := unsendMessage(r.Context(), cli, thread.Long, req.MessageID)
 	if err != nil {
-		b.failSend(w, "unsend", req.RoomID, err)
+		b.failSend(r.Context(), w, "unsend", req.RoomID, err)
 		return
 	}
 	if !confirmed {
@@ -428,8 +429,8 @@ func (b *bridge) handleUnsend(w http.ResponseWriter, r *http.Request) {
 		// the cleanup path fails and a human is told the message is still
 		// there. So the observation is surfaced both ways and the call still
 		// reads 200. See unsendMessage.
-		logf("unsend (room=%s) returned direct_unsend_message=false; "+
-			"the message may still be in the thread", req.RoomID)
+		slog.WarnContext(r.Context(), "unsend returned direct_unsend_message=false; "+
+			"the message may still be in the thread", "room", req.RoomID)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "confirmed": false})
 		return
 	}
@@ -486,11 +487,12 @@ func (b *bridge) resolveRoom(w http.ResponseWriter, r *http.Request, roomID stri
 	return threadRef{}, false
 }
 
-func (b *bridge) failSend(w http.ResponseWriter, route, roomID string, err error) {
+func (b *bridge) failSend(ctx context.Context, w http.ResponseWriter, route, roomID string, err error) {
 	status := statusForError(err)
 	// room_id is a group thread id, not a person. It is safe to log and is the
 	// only handle an operator has for correlating a failure with a room.
-	logf("%s failed (room=%s status=%d): %v", route, roomID, status, err)
+	slog.WarnContext(ctx, "send route failed",
+		"route", route, "room", roomID, "status", status, "error", err)
 	writeJSON(w, status, map[string]any{"ok": false, "error": err.Error()})
 }
 
@@ -574,8 +576,6 @@ func decodeBase64(s string) ([]byte, error) {
 	}
 	return nil, errors.New("not valid base64")
 }
-
-func logf(format string, args ...any) { log.Printf(format, args...) }
 
 func orDefault(v, fallback string) string {
 	if v == "" {

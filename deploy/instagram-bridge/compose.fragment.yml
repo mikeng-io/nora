@@ -41,8 +41,16 @@ services:
       # bind-mounts that, and she has no business reading transport
       # credentials. chmod 700; never commit.
       - ./state/instagram:/session
+    # host.docker.internal reaches the collector on the host (4318). Egress
+    # only: the service still publishes nothing.
+    extra_hosts: ["host.docker.internal:host-gateway"]
     environment:
       - IG_SESSION_DIR=/session
+      # Tracing (design/instagram-adoption/16 §Tracing): OTLP to the host's
+      # collector, the same endpoint Nora exports to. The collector routes the
+      # spans to Jaeger (and to Langfuse when a trace carries a model call).
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://host.docker.internal:4318/v1/traces
+      - OTEL_SERVICE_NAME=instagram-bridge
     command: ["--port", "18082", "--session", "/session"]
     healthcheck:
       # Proves the bridge's HTTP layer serves. It CANNOT prove the Instagram

@@ -67,6 +67,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -157,7 +158,8 @@ func (b *bridge) handleRoster(w http.ResponseWriter, r *http.Request) {
 	info, err := readRoster(r.Context(), cli, thread.Short, b.ownFBID())
 	if err != nil {
 		status := statusForError(err)
-		logf("roster failed (room=%s status=%d): %v", thread.Short, status, err)
+		slog.WarnContext(r.Context(), "roster failed",
+			"room", thread.Short, "status", status, "error", err)
 		writeJSON(w, status, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
@@ -224,9 +226,9 @@ func readRoster(
 		// other participants and the viewer rides in `ThreadInfo.Viewer`. The
 		// day it does fire, the measurement the Python side's "Nora is
 		// excluded by the wire" comment rests on has changed.
-		logf("roster (room=%s) dropped %d self row(s) from Users[] — the measured "+
-			"shape does NOT include the viewer, so this is a library change worth "+
-			"reading", shortThreadID, dropped)
+		slog.WarnContext(ctx, "roster dropped self rows from Users[]: the measured "+
+			"shape does NOT include the viewer, so this is a library change worth reading",
+			"room", shortThreadID, "dropped", dropped)
 	}
 	if len(members) == 0 {
 		return rosterBody{}, fmt.Errorf("%w: %s", errEmptyRoster, shortThreadID)

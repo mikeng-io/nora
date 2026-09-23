@@ -48,6 +48,7 @@ import aiohttp
 
 from ...domain.models import ConversationTarget
 from ...domain.ports import ReactionResult
+from ...infra.trace_propagation import propagation_headers
 
 log = logging.getLogger("nora.instagram.react")
 
@@ -94,7 +95,9 @@ class InstagramReactor:
         try:
             async with (
                 aiohttp.ClientSession(timeout=self._timeout) as session,
-                session.post(f"{self._base_url}/react", json=payload) as resp,
+                session.post(
+                    f"{self._base_url}/react", json=payload, headers=propagation_headers(),
+                ) as resp,
             ):
                 if resp.status == 200:
                     return ReactionResult(ok=True, supported=True)

@@ -111,6 +111,7 @@ import aiohttp
 
 from ...domain.blocks import wrap_outside_text
 from ...domain.ports import SocialProvider
+from ..trace_propagation import propagation_headers
 from .results import NOTHING_FOUND, UNAVAILABLE, clamp_chars
 
 log = logging.getLogger("nora.social.instagram")
@@ -320,7 +321,9 @@ class InstagramSocialClient(SocialProvider):
         timeout = aiohttp.ClientTimeout(total=self._timeout_seconds)
         async with (
             aiohttp.ClientSession(timeout=timeout) as session,
-            session.post(f"{self._base_url}/social/story", json=body) as response,
+            session.post(
+                f"{self._base_url}/social/story", json=body, headers=propagation_headers(),
+            ) as response,
         ):
             text = await response.text()
             if response.status != 200:
