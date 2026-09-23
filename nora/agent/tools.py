@@ -5566,7 +5566,7 @@ Args:
             # columns: the question (a question-less read resolves
             # `DESCRIBE_PROMPTS["video"]` in the client), the declared media
             # type, the reasoning effort and every encode setting.
-            view = "\x1f".join((
+            view_inputs = "\x1f".join((
                 DESCRIBE_PROMPTS["video"], media_type,
                 str(getattr(vision_source, "reasoning_effort", "")),
                 video_encode_signature(),
@@ -5574,7 +5574,7 @@ Args:
             video_key = VideoReadingKey(
                 sha256=sha256, provider=describe_provider, model=describe_model,
                 chunk_seconds=video_chunk_seconds, chunk_max=video_max_chunks,
-                reading_digest=hashlib.sha256(view.encode("utf-8")).hexdigest()[:32],
+                reading_digest=hashlib.sha256(view_inputs.encode("utf-8")).hexdigest()[:32],
             )
             try:
                 cached_reading = await video_readings.get(key=video_key)
