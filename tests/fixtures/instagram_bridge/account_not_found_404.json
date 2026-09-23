@@ -1,0 +1,9 @@
+{
+  "route": "GET /accounts/{igid}",
+  "path": "/accounts/10000001",
+  "status": 404,
+  "body": {
+    "error": "profile read returned no user: 10000001",
+    "ok": false
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "route": "GET /accounts/{igid}/story",
+  "path": "/accounts/10000001/story",
+  "status": 200,
+  "body": {
+    "ok": true,
+    "igid": "10000001",
+    "found": false,
+    "items": []
+  }
+}

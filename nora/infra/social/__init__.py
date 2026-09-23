@@ -20,10 +20,10 @@ The OpenCLI half has a loopback HTTP seam between two halves of THIS package:
 
 The Instagram half has no host-side half here at all:
 
-* `instagram_client.py::InstagramSocialClient` — POSTs to the instagram-bridge
-  container's `/social/story` on the private `nora` network. Its allowlist
-  lives in that Go process (`deploy/instagram-bridge/`), which is where the
-  read is performed.
+* `instagram_client.py::InstagramSocialClient` — `GET /accounts/{igid}` and
+  `GET /accounts/{igid}/story` on the instagram-bridge container, over the
+  private `nora` network. The bodies are pinned by shared fixtures the Go
+  handlers generate (`tests/fixtures/instagram_bridge/`).
 
 * `subjects.py::PersonsSubjectIndex` — the production `SocialSubjectIndex`:
   `person_id -> igid` off `identity.toml` (kind-aware), Tier 0 off the rooms'
