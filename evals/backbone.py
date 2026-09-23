@@ -475,13 +475,22 @@ def _hold_the_transport_tier(subject: Any, spec: Spec, md: Mapping[str, Any]) ->
     nothing."""
     if getattr(subject.deps, "self_presence", None) is None:
         return None
-    config = tomllib.loads(
-        spec.deployment_config if spec.deployment_config is not None
-        else _deployment_config()
-    )
+    if spec.deployment_config is not None:
+        networks = deployment_networks(tomllib.loads(spec.deployment_config))
+    elif spec.policy is not None:
+        # A caller that states its OWN room set (a test reconstructing a room
+        # of its own) composed its own world: the networks it runs are the
+        # ones its subject enabled. Reading the deployment's config here is
+        # what broke every integration test off the deploy host.
+        networks = tuple(sorted(
+            name for name in ("signal", "discord", "whatsapp", "instagram")
+            if getattr(getattr(subject.cfg.platforms, name, None), "enabled", False)
+        ))
+    else:
+        networks = deployment_networks(tomllib.loads(_deployment_config()))
     return hold_transports(
         subject,
-        networks=deployment_networks(config),
+        networks=networks,
         varied=varied_transport(md),
         live_handles=LIVE_HANDLE_STANDINS,
     )
