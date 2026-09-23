@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Internal only; nothing a member of a room can observe yet. SocialSubjectIndex gets its production implementation, nora.infra.social.PersonsSubjectIndex: person_id -> the igid when the person has exactly one (several is ambiguous, never a pick), Tier 0 when the person is listed in some room's persons (a persons = \"*\" room does not count), and a new reverse igid -> person_id for the link path, which refuses an fbid. A shared contract suite holds it and the fake to the same answers. Not wired into composition; that is P5 (design/instagram-adoption/17)."
+}

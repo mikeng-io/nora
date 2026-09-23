@@ -1,0 +1,44 @@
+[
+  {
+    "name": "a persons = \"*\" room counts as listing everyone",
+    "file": "nora/infra/social/subjects.py",
+    "old": "convo.persons is not None and person_id in convo.persons",
+    "new": "convo.persons is None or person_id in convo.persons",
+    "target": "tests/unit/test_social_subject_index.py::test_a_star_room_does_not_make_anyone_tier_zero"
+  },
+  {
+    "name": "igid_for picks one of several accounts instead of answering ambiguous",
+    "file": "nora/infra/social/subjects.py",
+    "old": "        if len(igids) != 1:\n            return None\n        (igid,) = igids\n        return igid",
+    "new": "        return min(igids) if igids else None",
+    "target": "tests/unit/test_social_subject_index.py::test_two_accounts_are_ambiguous_never_a_pick"
+  },
+  {
+    "name": "person_for_igid trusts the kind-blind index (an fbid resolves)",
+    "file": "nora/infra/social/subjects.py",
+    "old": "if ref is None or igid not in self._persons.instagram_igids(ref.person_id):",
+    "new": "if ref is None:",
+    "target": "tests/unit/test_social_subject_index.py::test_an_fbid_is_not_accepted_as_an_igid_in_reverse"
+  },
+  {
+    "name": "person_for_igid answers nobody for a mapped igid",
+    "file": "nora/infra/social/subjects.py",
+    "old": "            return ref.person_id\n",
+    "new": "            return None\n",
+    "target": "tests/contract/test_social_subject_index_contract.py::test_the_reverse_lookup_names_the_owner_or_nobody"
+  },
+  {
+    "name": "is_tier_zero loses its fail-closed backstop",
+    "file": "nora/infra/social/subjects.py",
+    "old": "        except Exception:\n            log.exception(\"subject index: tier check failed\")",
+    "new": "        except ZeroDivisionError:\n            log.exception(\"subject index: tier check failed\")",
+    "target": "tests/contract/test_social_subject_index_contract.py::test_an_unreadable_index_fails_closed_and_never_raises"
+  },
+  {
+    "name": "the fake's reverse lookup answers nobody for a held igid",
+    "file": "nora/testing/fakes.py",
+    "old": "return next((pid for pid, held in self.igids.items() if held == igid), None)",
+    "new": "return None",
+    "target": "tests/contract/test_social_subject_index_contract.py::test_the_reverse_lookup_names_the_owner_or_nobody"
+  }
+]

@@ -25,6 +25,10 @@ The Instagram half has no host-side half here at all:
   lives in that Go process (`deploy/instagram-bridge/`), which is where the
   read is performed.
 
+* `subjects.py::PersonsSubjectIndex` — the production `SocialSubjectIndex`:
+  `person_id -> igid` off `identity.toml` (kind-aware), Tier 0 off the rooms'
+  `persons` lists, and the reverse `igid -> person_id` a link needs.
+
 `SocialRouter` also owns the TIER LADDER (`SUBJECT_TIERS`), which is the
 other thing every social read passes through and the reason the router is
 more than a dispatch table: subject resolution and the reach check used to
@@ -50,6 +54,7 @@ from .router import (
     TIER_ROOM,
     SocialRouter,
 )
+from .subjects import PersonsSubjectIndex
 
 __all__ = [
     "EXCEPTION_ROUTES",
@@ -58,5 +63,6 @@ __all__ = [
     "TIER_ROOM",
     "InstagramSocialClient",
     "OpenCliBridgeClient",
+    "PersonsSubjectIndex",
     "SocialRouter",
 ]
