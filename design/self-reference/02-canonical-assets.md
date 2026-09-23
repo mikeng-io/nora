@@ -30,19 +30,27 @@ The canonical `self` asset source material lives IN this bundle, as two files
 with two distinct roles:
 
 - **`assets/nora-canonical-self.png`** (1024×1536) — **THE ASSET.** A single
-  clean full-body front-facing studio image, produced from the reference sheet
-  (2026-09-16) and accepted by the operator as the canonical self image. This
-  is what gets ingested.
-- **`assets/nora-character-reference-sheet.png`** (1536×1024) — **THE
-  DESCRIPTIVE SOURCE, not an asset.** Multi-panel (angles, expressions, eye
-  directions, closeups, turnaround, sitting poses, swatches); it is what the
-  doctrine text is written from, and it is deliberately NOT ingested as a
-  reference image — a multi-panel image muddles identity in generation.
+  clean full-body front-facing studio render of the mascot form, supplied by
+  the operator on 2026-09-23 as the image to reference whenever Nora appears
+  in a picture herself. This is what gets ingested. It replaces the
+  2026-09-16 human-form image at the same path.
+- **`assets/nora-character-reference-sheet.png`** (1254×1254) — **THE
+  DESCRIPTIVE SOURCE, not an asset.** Multi-panel "Mini Form" sheet
+  (turnaround, expressions, poses, details, colour palette, size reference);
+  with `05-visual-identity-spec.md` it is what the doctrine text is written
+  from, and it is deliberately NOT ingested as a reference image — a
+  multi-panel image muddles identity in generation.
+- **`assets/nora-social-avatar.png`** (1374×1145) and
+  **`assets/nora-social-banner.png`** (2057×765) — **REFERENCE ONLY, not
+  assets.** Her current profile picture and banner on every social network
+  (operator, 2026-09-23). Kept so the look she presents publicly is on file
+  beside the canon; not ingested, because each places her in a scene (desk,
+  laptop, cat) that a generation would copy.
 
 At build time the ingest one-shot (`scripts/ingest_self_asset.py`) ingests the
 canonical single image into Nora's media library, marks `role: self`, and the
 doctrine's `<SELF_HANDLE>` is pinned to the ingested row's full sha256 as
-normal. Source sha256 at acceptance: `4b8825fe61b874bbcee85b28ce740fb2da1b10c1c7e5ba406fbca4c4e9b45e09`.
+normal. Source sha256 at acceptance (2026-09-23): `535e4da56b933c9c30ea28182ba651246ce9bc65608ebdf92363e6342ab8567c`. The 2026-09-16 image (`4b8825fe…`) is superseded.
 
 ## Storage
 

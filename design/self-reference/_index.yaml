@@ -19,6 +19,7 @@ governance: pre-governance-input
 timestamp: '2026-08-27'
 revision: '2026-08-27 — adversarial review (Hermes delegate) of the earlier single-file draft returned REQUEST CHANGES; all findings addressed: operator canonical asset added + deterministic no-guess rule (03), test_doctrine_assembly.py added to files-touched (04), authority fields specified (01), ingest-before-doctrine ordering + handle-pinning test (02, 04), resolver precedence pinned (02), 3-slot cap relabelled tool-surface convention (01), no-migration wording (02), appearance tag-only mirroring silence (04). Restructured from a single proposed/ document into this bundle (Miles: design bundle, not design document).'
 revision_2026_09_16: 'Scope narrowed to self-only (operator: 「no need operator, just nora」) — the operator canonical asset is dropped from v1 and the operator-photo ambiguity class is carried by the ask rule alone; the canonical self image (assets/nora-canonical-self.png, 1024x1536, sha256 4b8825fe…) is accepted and the multi-panel sheet is reclassified as the descriptive source, not an asset.'
+revision_2026_09_23: 'Canon replaced by the mascot form (operator, 2026-09-23): new self asset (sha256 535e4da5…), new Mini Form sheet, the operator''s spec kept verbatim as 05, social avatar and banner added as reference-only. The human form is retired, not kept as an alternative.'
 origin: "self-reference design discussion with miles after the 2026-08-27 cow-avatar image failure"
 members:
   - 00-overview.md
@@ -26,7 +27,10 @@ members:
   - 02-canonical-assets.md
   - 03-reference-rules.md
   - 04-tests-and-files.md
+  - 05-visual-identity-spec.md
 edges:
+  - {src: 01-appearance-doctrine, dst: 05-visual-identity-spec, rel: depends_on, provenance: asserted}
+  - {src: 05-visual-identity-spec, dst: 00-overview, rel: realizes, provenance: asserted}
   - {src: 01-appearance-doctrine, dst: 00-overview, rel: realizes, provenance: asserted}
   - {src: 02-canonical-assets, dst: 00-overview, rel: realizes, provenance: asserted}
   - {src: 03-reference-rules, dst: 00-overview, rel: realizes, provenance: asserted}

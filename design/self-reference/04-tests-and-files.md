@@ -47,7 +47,12 @@ config.toml                                    # (none expected — asset handle
 
 ## Open questions (operator decision needed)
 
-1. **Which image is canonical for `self`?** **DECIDED 2026-09-16.** Two files,
+1. **Which image is canonical for `self`?** **RE-DECIDED 2026-09-23:** the
+   operator replaced the human-form image with the mascot form; the files
+   below keep their paths and roles, the bytes changed (asset sha256
+   `535e4da5…`, sheet now the 1254×1254 "Mini Form" sheet, spec in
+   `05-visual-identity-spec.md`). The 2026-09-16 decision it replaces, kept
+   for its reasoning: **DECIDED 2026-09-16.** Two files,
    two roles:
    - **`assets/nora-canonical-self.png`** (1024×1536) is **THE ASSET** — the
      single clean full-body front-facing studio image accepted by the operator
@@ -79,7 +84,9 @@ config.toml                                    # (none expected — asset handle
    confirmed against `assets/nora-canonical-self.png`, whose byte-identity the
    operator confirmed (sha256 `4b8825fe…`). If a different `self` image is ever
    substituted, the description must be re-derived and the handle re-pinned
-   before merge.
+   before merge. **That happened on 2026-09-23**: 01 is re-derived from
+   `05-visual-identity-spec.md` and the new asset (`535e4da5…`); nothing was
+   built, so no handle needed re-pinning.
 4. **Should `appearance.md` also be injected for `heartbeat` audiences?**
    Default: `[tag]` only (image generation happens in tagged turns). If
    heartbeat turns can also generate images, widen.

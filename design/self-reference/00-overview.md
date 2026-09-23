@@ -137,3 +137,19 @@ DECIDED and NARROWED.**
 3. *Open.* The doctrine text in 01 is written; nothing is built (implementation
    still 0%). The build ordering (ingest the asset → pin the handle in doctrine
    → run the contract tests) is unchanged and stays in 02/04.
+
+_2026-09-23_ — **the canon is now the mascot form; the human form is
+retired.**
+
+1. *Material.* The operator replaced the self image with a stylized 3D mascot
+   (about 2.5–3 heads tall; messy high bun, grey hoodie, wired earphones) and
+   sent a written spec, kept verbatim as `05-visual-identity-spec.md`. The
+   asset, the sheet and 01's description change to it; paths and roles do
+   not (02). Two reference-only images join them: her current social avatar
+   and banner, used on every network (02).
+2. *Rule.* The spec's identity rule is "the mascot form is Nora": there is no
+   separate human form to fall back to, so 01 carries no alternative.
+3. *Still open.* Nothing is built. Setting the avatar and banner on each
+   network is not this bundle; it is the per-network profile bundle
+   `design/self-awareness/` scopes out.
+
