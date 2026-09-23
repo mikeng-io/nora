@@ -1963,7 +1963,7 @@ class FirePath:
                 # the honest state (R-21), not a degraded one.
                 tagger=tagger, self_ids=self_ids,
             )
-            tools = self._registry.build(
+            surface = self._registry.surface(
                 store=self._records, conversation_id=occasion.conversation_id,
                 conversation_type=occasion.conversation_type, persons=self._persons,
                 honcho=self._memory, deliverer=handle.deliverer, room=room,
@@ -2005,7 +2005,7 @@ class FirePath:
             )
 
             failure, stop_reason, final_text = await self._invoke(
-                doctrine=doctrine, tools=tools, pre_fill=pre_fill,
+                doctrine=doctrine, tools=surface.tools, pre_fill=pre_fill,
                 guard=handle.guard, tool_call_log=handle.tool_call_log,
                 reasoning_watch=handle.reasoning_watch,
                 tag_message=tag_message, ctx=ctx,

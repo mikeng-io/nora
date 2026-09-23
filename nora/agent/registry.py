@@ -66,8 +66,10 @@ from .mcp import McpToolGroup
 from .ports import ToolSpec, adapt
 from .relay import Relay
 from .room import Room
+from .surface import ToolScope, ToolShelf, ToolSurface
 from .tools import (
     HOT_TOOLS,
+    LOADER_TOOL,
     NATIVE_TOOL_BUDGETS,
     NATIVE_TOOLS,
     EventsCollaborator,
@@ -422,6 +424,9 @@ class ToolRegistry:
         self._image_generator = image_generator
         self._image_refs_allowed = image_refs_allowed
         self._media_store = media_store
+        # `_descriptions()`'s memo — process-lifetime for the reason the
+        # transit catalogue is, and empty until the first catalogue renders.
+        self._described: dict[str, str] | None = None
 
     def budgets(self, *, allowed_mcp: frozenset[str] = frozenset()) -> Mapping[str, int]:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7.
@@ -596,7 +601,7 @@ class ToolRegistry:
         guidance; a reader deciding whether an answer could exist needs the
         verb and its subject, not its usage rules.
         """
-        return "\n".join(self._digest_lines(self.read_only_tools()))
+        return "\n".join(self._digest_lines(self.read_only_tools() - {LOADER_TOOL}))
 
     def _digest_lines(
         self, names: Iterable[str], *, hot: Container[str] = frozenset()
@@ -608,10 +613,7 @@ class ToolRegistry:
         capability block for. They differ only in WHICH names and whether a
         name is marked resident; the line itself has one implementation.
         """
-        described = {
-            entry["name"]: str(entry.get("description") or "")
-            for entry in self.catalog()
-        }
+        described = self._descriptions()
         lines = []
         for name in sorted(names):
             mark = "*" if name in hot else "-"
@@ -655,7 +657,22 @@ class ToolRegistry:
         exists so a test can render a catalogue without depending on today's
         measured six.
         """
-        return "\n".join(self._digest_lines(self.tool_names(), hot=hot))
+        names = set(self.tool_names()) - {LOADER_TOOL}
+        return "\n".join(self._digest_lines(names, hot=hot))
+
+    def _descriptions(self) -> Mapping[str, str]:
+        """Each tool's model-facing description, introspected once per process.
+
+        Docstrings are fixed by the code that shipped, so this cannot go stale
+        within a process — and `ToolSurface.catalogue` renders per turn, where
+        re-introspecting fifty-odd closures every tag would be pure waste.
+        """
+        if self._described is None:
+            self._described = {
+                entry["name"]: str(entry.get("description") or "")
+                for entry in self.catalog()
+            }
+        return self._described
 
     def catalog(self) -> tuple[dict, ...]:
         """Every built tool's public metadata — name, model-facing
@@ -769,6 +786,7 @@ class ToolRegistry:
         dream_adaptor: str = "",
         online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
         origin_rooms: Mapping[str, OriginRoom] | None = None,
+        shelf: ToolShelf | None = None,
     ) -> tuple[ToolSpec, ...]:
         """The registered tools as plain `ToolSpec`s, closed over this tag's
         dependencies — before any Strands adaptation.
@@ -872,6 +890,7 @@ class ToolRegistry:
             image_refs_allowed=self._image_refs_allowed,
             media_store=self._media_store,
             origin_rooms=origin_rooms,
+            shelf=shelf,
         )
 
     def build(
@@ -897,26 +916,76 @@ class ToolRegistry:
         online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
         origin_rooms: Mapping[str, OriginRoom] | None = None,
     ) -> list[Any]:
-        """The registered tools, adapted to what `Agent(tools=...)` wants —
-        what `nora.engagement.pipeline.EngagementPipeline` calls in place of
-        the old direct `nora.agent.tools.build_tools` import.
+        """`surface(...).tools`, for a caller that wants only the list.
 
-        `nora.app.fire.FirePath` is the other caller, and the only one that
-        passes `fire_turn=True`.
+        Every production loop calls `surface()` itself — it is the one builder
+        (see its docstring). This stays for the callers that ask «what tools
+        would this turn get» and nothing else: tests, and anything reading the
+        adapted objects without placing a catalogue. It takes no `grant` and
+        never defers, so it is exactly the resident-everything build it
+        always was."""
+        return self.surface(
+            store=store, conversation_id=conversation_id, conversation_type=conversation_type,
+            persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
+            room=room, question=question, context_window=context_window,
+            transcript=transcript, fire_turn=fire_turn, allowed_mcp=allowed_mcp,
+            location_trusted=location_trusted, links=links,
+            supplied_unit=supplied_unit, dream_adaptor=dream_adaptor,
+            online_scope=online_scope, origin_rooms=origin_rooms,
+        ).tools
 
-        `allowed_mcp` (spec §3) is the enforcement point for per-conversation
-        MCP scope: only tool groups whose server name is in this set are
-        appended, and they are appended AFTER `adapt()` runs over the native
-        specs — MCP tools are already Strands tool objects (`McpToolGroup.tools`,
-        Task 2), not `ToolSpec`s, so `specs()` cannot return them and `adapt()`
-        must not be called on them. Native tools are unaffected — this
-        codebase has no per-conversation gating for them today, and this
-        change does not add one.
+    def surface(
+        self,
+        *,
+        store: Any,
+        conversation_id: str,
+        conversation_type: str,
+        persons: Any,
+        honcho: Any,
+        deliverer: Any,
+        metrics: Any,
+        room: Room,
+        question: str = "",
+        context_window: int = 40,
+        transcript: tuple[TranscriptRow, ...] | None = None,
+        fire_turn: bool = False,
+        allowed_mcp: frozenset[str] = frozenset(),
+        location_trusted: bool = False,
+        links: LinkCarry | None = None,
+        supplied_unit: str | None = None,
+        dream_adaptor: str = "",
+        online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
+        origin_rooms: Mapping[str, OriginRoom] | None = None,
+        grant: frozenset[str] | None = None,
+        defer: bool = False,
+    ) -> ToolSurface:
+        """The ONE builder every loop takes its tools from.
 
-        `supplied_unit` passes straight through to `specs()` — see that
-        method's docstring; it exists for the Dreamer's unit-keyed build
-        and every other caller leaves it None. `online_scope` is the same
-        pass-through, for the same caller's home-room decide turn."""
+        A tag (`EngagementPipeline`), a fire turn (`FirePath`: participation,
+        proactive act, reminders) and every Dreamer adaptor
+        (`RegistryToolSource`) all call this, and nothing else decides which
+        tools an occasion sees. `ToolScope` (`nora.agent.surface`) admits by
+        platform, by whether the Dreamer built the set, and by `grant` — the
+        Dreamer's per-adaptor ceiling, which used to be a filter over
+        `build()`'s output.
+
+        `defer` (design/tool-catalogue/02): False keeps every admitted tool
+        resident, exactly as before this method existed. True keeps only
+        `HOT_TOOLS` resident, puts the rest on a per-turn `ToolShelf`, and adds
+        `load_tools` so the model can register what it names. `load_tools` is
+        in `tools` only when the shelf holds something, so a turn with nothing
+        deferred pays nothing for it.
+
+        `allowed_mcp` groups are appended resident, after the native tools,
+        for `build()`'s reason: they are already Strands objects, and
+        `adapt()` must not run on them. Every other parameter is `specs()`'s.
+        """
+        scope = ToolScope(
+            platform=None if room is None else room.platform,
+            dreamer=bool(dream_adaptor),
+            grant=grant,
+        )
+        shelf = ToolShelf()
         specs = self.specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
@@ -925,10 +994,30 @@ class ToolRegistry:
             fire_turn=fire_turn, location_trusted=location_trusted, links=links,
             supplied_unit=supplied_unit, dream_adaptor=dream_adaptor,
             online_scope=online_scope, origin_rooms=origin_rooms,
+            shelf=shelf,
         )
-        tools = [adapt(spec) for spec in specs]
+        loader = next(spec for spec in specs if spec.name == LOADER_TOOL)
+        admitted = [
+            spec for spec in specs
+            if spec.name != LOADER_TOOL and scope.admits(spec.name)
+        ]
+        resident = [spec for spec in admitted if not defer or spec.name in HOT_TOOLS]
+        shelf.stock({
+            spec.name: adapt(spec) for spec in admitted
+            if defer and spec.name not in HOT_TOOLS
+        })
+        tools = [adapt(spec) for spec in resident]
+        if shelf:
+            tools.append(adapt(loader))
         for name in allowed_mcp:
             group = self._mcp_tools.get(name)
             if group is not None:
                 tools.extend(group.tools)
-        return tools
+        return ToolSurface(
+            scope=scope,
+            tools=tools,
+            resident=(spec.name for spec in resident),
+            shelf=shelf,
+            admitted=(spec.name for spec in admitted),
+            render=lambda names, hot: self._digest_lines(names, hot=hot),
+        )

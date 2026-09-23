@@ -12,7 +12,7 @@ from __future__ import annotations
 import tiktoken
 
 from nora.agent.registry import ToolRegistry
-from nora.agent.tools import HOT_TOOLS, NATIVE_TOOLS
+from nora.agent.tools import HOT_TOOLS, LOADER_TOOL, NATIVE_TOOLS
 
 ENC = tiktoken.get_encoding("cl100k_base")
 
@@ -50,7 +50,12 @@ def test_every_registered_tool_has_a_catalogue_line():
     cannot be reached — DEC-28's failure, where a model was read as refusing to
     use a tool it had never been shown."""
     named = {line.split(" — ")[0][2:] for line in _lines()}
-    expected = {name for name, spec in NATIVE_TOOLS.items() if not spec.plugin}
+    # `load_tools` is plumbing, not a capability: the block header says how to
+    # load, and a line for the loader would be a line spent on itself.
+    expected = {
+        name for name, spec in NATIVE_TOOLS.items()
+        if not spec.plugin and name != LOADER_TOOL
+    }
     assert named == expected
 
 

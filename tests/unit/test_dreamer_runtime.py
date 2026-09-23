@@ -26,6 +26,7 @@ import contextlib
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -847,7 +848,7 @@ def _names(built: list[Any]) -> set[str]:
 
 class _RecordingRegistry:
     """`ToolRegistry`'s two verbs the tool source calls, with every keyword
-    `build` was handed kept — the home-room arguments (39 D2) are VALUES on
+    `surface` was handed kept — the home-room arguments (39 D2) are VALUES on
     that call and nothing else observes them."""
 
     def __init__(self) -> None:
@@ -856,9 +857,11 @@ class _RecordingRegistry:
     def read_only_tools(self) -> frozenset[str]:
         return frozenset({"where_is", "now"})
 
-    def build(self, **kw: Any) -> list[Any]:
+    def surface(self, **kw: Any) -> Any:
+        # `surface()` is the one builder (design/tool-catalogue phase B); the
+        # source reads `.tools` off what it returns.
         self.calls.append(kw)
-        return []
+        return SimpleNamespace(tools=[])
 
 
 def test_a_home_room_grant_builds_the_room_the_operator_named():

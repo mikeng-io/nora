@@ -10,7 +10,7 @@ from nora.agent.guards import Deliverer, ReplyGuard
 from nora.agent.mcp import McpToolGroup
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
-from nora.agent.tools import NATIVE_TOOL_BUDGETS
+from nora.agent.tools import LOADER_TOOL, NATIVE_TOOL_BUDGETS
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget
 from nora.obs.metrics import Metrics
@@ -128,38 +128,46 @@ def test_the_registry_exposes_every_declared_tool():
 
 def test_non_discord_catalog_omits_music_tools():
     """2026-09-16 catalog-level platform filter: music verbs are Discord-only,
-    so a non-Discord room's catalog never ships them (they would only ever
-    answer unavailable). The bodies still gate independently — the platform
-    check stays as the second line of defence — but this test pins the
-    TOKEN-SAVING cut at build time."""
-    from nora.agent.registry import ToolRegistry
-    from nora.agent.tools import build_tool_specs
+    so a non-Discord room's tools never ship them (they would only ever answer
+    unavailable). The bodies still gate independently — the platform check
+    stays as the second line of defence — but this test pins the TOKEN-SAVING
+    cut.
+
+    Re-derived when the filter moved (design/tool-catalogue, phase B): it was a
+    branch inside `build_tool_specs` and is now `ToolScope`, applied by
+    `ToolRegistry.surface()` — the one builder every loop takes tools from.
+    `build_tool_specs` builds every closure; this asserts what a ROOM gets,
+    which is the only place the cut ever mattered."""
     registry = ToolRegistry()
-    room = Room(
+    signal_room = Room(
         platform="signal", conversation_id="g1", roster_source=None,
         persons=_FakePersons(),
     )
-    specs = build_tool_specs(
+    music = {"play_music", "skip_music", "top_music", "stop_music",
+             "music_status", "set_music_volume"}
+    signal = registry.surface(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
         persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
-        metrics=Metrics(), room=room, transit_source=None,
+        metrics=Metrics(), room=signal_room,
     )
-    names = {s.name for s in specs}
-    assert not names & {"play_music", "skip_music", "top_music", "stop_music",
-                        "music_status", "set_music_volume"}
-    # And the Discord catalog still carries all six (the `_room()` above pins
-    # that for the full table; this is the explicit signal-half).
-    discord = registry.build(
+    assert not {t.tool_name for t in signal.tools} & music
+    # The catalogue is derived from the SAME admitted set, so it cannot
+    # advertise a tool this room cannot load.
+    assert not signal.admitted & music
+    discord = registry.surface(
         store=_FakeStore(), conversation_id="g1", conversation_type="group",
         persons=_FakePersons(), honcho=FakeMemoryStore(), deliverer=_deliverer(),
         metrics=Metrics(), room=_room(),
     )
-    assert {"play_music", "skip_music", "top_music", "stop_music",
-            "music_status", "set_music_volume"} <= {t.tool_name for t in discord}
+    assert music <= {t.tool_name for t in discord.tools}
+    assert music <= discord.admitted
 
 
 def test_budgets_match_todays_table():
     assert dict(ToolRegistry().budgets()) == {
+        # design/tool-catalogue/02: 3 calls of up to 4 names covers the
+        # measured p90 of 2 cold tools per turn, with a retry after `unknown`.
+        "load_tools": 3,
         # 4, sized like `lookup_person`: one reply routinely carries more than
         # one attribution and each is a separate question. The call is free — a
         # scan of a tuple already in hand — so round trips are the only currency.
@@ -382,8 +390,10 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
     # not have. `NATIVE_TOOL_BUDGETS` is a SUPERSET now: it also carries the
     # `skills` budget so R-7 can admit the plugin's activation tool where it is
     # wired — but that budget is not a built tool here.
-    assert set(agent.tool_names) == set(ToolRegistry().tool_names())
-    assert set(agent.tool_names) == set(NATIVE_TOOL_BUDGETS) - {"skills"}
+    # And `load_tools` is declared but not handed over: `build()` never
+    # defers, and the loader ships only when something is on the shelf.
+    assert set(agent.tool_names) == set(ToolRegistry().tool_names()) - {LOADER_TOOL}
+    assert set(agent.tool_names) == set(NATIVE_TOOL_BUDGETS) - {"skills", LOADER_TOOL}
     assert "skills" in NATIVE_TOOL_BUDGETS
 
 
@@ -666,6 +676,9 @@ ACT_VERBS = frozenset({
 # test above red as a LEAK. The two directions are what make a fail-closed
 # default safe.
 READ_ONLY = frozenset({
+    # design/tool-catalogue/02: registers shelf tools onto this turn's own
+    # agent and nothing else — no store, no room, nothing outside the turn.
+    "load_tools",
     "now", "calculate", "transit", "route", "where_is", "place_info",
     # DEC-156: a pure coordinate -> address lookup, no writes anywhere.
     "reverse_geocode",

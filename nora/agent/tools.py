@@ -54,7 +54,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
-from typing import Literal, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -143,6 +143,7 @@ from .links import LinkCarry
 from .ports import ToolSpec, adapt
 from .relay import Relay
 from .room import Room, RoomView, _key, _names_of, find_by_name
+from .surface import ToolShelf, load_onto
 from .whereis import DisclosureGuard, Whereis, _dedupe, resolvable_places
 
 log = logging.getLogger("nora.tools")
@@ -1175,6 +1176,20 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # conservative declaration rather than a guessed one. The reading that
     # would change it is the plugin's activation being shown to write nothing
     # outside the turn, which would make it `none`.
+    # `load_tools` (design/tool-catalogue/02) — registry plumbing, not a fact
+    # source. 3 is sized on measured cold-tool demand: p90 is 2 distinct
+    # cold tools per turn, and `LOAD_TOOLS_MAX_NAMES` (4 per call) means three
+    # calls cover p90 with a retry after an `unknown` to spare. `read_only`
+    # because it reads the registry and changes nothing outside the turn — the
+    # tool it registers lives in THIS turn's agent and dies with it — which
+    # also keeps it inside the Dreamer's ceiling. `output_contract` is left
+    # unset on purpose: a three_state read-only tool counts as a LOOKUP for
+    # R-97 (`ToolRegistry.lookup_tools`), and «did I load a schema» is not
+    # «did this turn come back with something».
+    "load_tools": NativeTool(3,
+                             terminal=False, time_shiftable=None, read_only=True,
+                             source_tier=None,
+                             side_effect_state="none", idempotency="idempotent", retry="safe"),
     "skills": NativeTool(2,
                          terminal=False, time_shiftable=None, plugin=True,
                          side_effect_state="unknown", idempotency="non_idempotent", retry="never"),
@@ -1214,6 +1229,12 @@ NATIVE_TOOL_BUDGETS: Mapping[str, int] = {
 HOT_TOOLS: frozenset[str] = frozenset({
     "web_search", "send_reply", "note_read", "web_fetch", "now", "search_memory",
 })
+
+# The loader's name, for the few places that must treat it as plumbing rather
+# than a capability: it is never on the shelf it loads from, never a catalogue
+# line (the catalogue's header already says how to load), and never resident
+# unless something is deferred.
+LOADER_TOOL = "load_tools"
 
 # `load_transcript`'s clamp, and the single source both the clamp and the
 # model-facing docstring below read from — `tests/test_tools.py::
@@ -2600,6 +2621,7 @@ def build_tool_specs(
     # (every tag-path caller, and a unit with no proactive wiring) keeps
     # the home-room behaviour — the honest, unchanged default.
     origin_rooms: Mapping[str, OriginRoom] | None = None,
+    shelf: ToolShelf | None = None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -8930,56 +8952,36 @@ Args:
             from_conversation_id=conversation_id,
         )
 
-    # Music verbs are Discord-only by construction (their bodies gate on
-    # `room.platform != "discord"` first) — but the BODY gate still ships
-    # them in every non-Discord catalog, costing prompt tokens for a tool
-    # that can only ever answer "unavailable" there. 2026-09-16 operator
-    # decision (set_music_volume add): filter at CATALOG level, so a Signal
-    # (or any non-Discord) turn never sees the six music verbs at all.
-    # `room is None` appears on the REGISTRY-table path — ToolRegistry.specs()
-    # is called by tests/test_guards_terminal.py with room=None to compare
-    # specs against terminal_tools() — and keeps that caller's full table
-    # (a caller asking "what is declared" wants everything, not one room's
-    # catalog). The web catalog's full table comes from _catalog_room()
-    # returning platform="discord", not from None.
-    # `search_memory_workspace` is DREAMER-ONLY, and now actually is (#350).
-    # Its own body says why — "this verb exists for the Dreamer, whose output
-    # is verdicts, never a quote into any room" — and that sentence was false:
-    # it sat in the unconditional list, so every tag and every fire turn
-    # carried it, in every room. What it returns there is VERBATIM lines,
-    # attributed by name, from Honcho's WORKSPACE `/search`: the whole
-    # deployment, every unit. The only filter is identity.toml's entire
-    # address book (`PersonRef` has no unit, so that filter cannot be
-    # unit-shaped). A room whose policy entry names one unit could surface
-    # words said by people who are in none of its units — the crossing
-    # `send_to` refuses outright (R-49), and R-21 exists because she once
-    # listed people who had never been members.
-    #
-    # Gated on `dream_adaptor` rather than a new flag: it is already the
-    # provenance meaning "`RegistryToolSource` built this set", `""` for every
-    # tag and every fire turn. `room is None` keeps the REGISTRY-TABLE
-    # caller's full table for the same reason the music block below does — a
-    # caller asking "what is DECLARED" wants everything, not one room's
-    # catalog.
-    #
-    # Measured before removing it (Langfuse, 2026-09-03..18): 49 calls over 17
-    # traces, 44 of them Dreamer, 5 across 3 `engagement` traces. The tag path
-    # loses roughly three turns a fortnight.
-    unit_memory_specs: tuple[ToolSpec, ...] = ()
-    if dream_adaptor or room is None:
-        unit_memory_specs = (
-            _spec("search_memory_workspace", search_memory_workspace),
-        )
-    music_specs: tuple[ToolSpec, ...] = ()
-    if room is not None and room.platform == "discord":
-        music_specs = (
-            _spec("play_music", play_music),
-            _spec("skip_music", skip_music),
-            _spec("top_music", top_music),
-            _spec("stop_music", stop_music),
-            _spec("music_status", music_status),
-            _spec("set_music_volume", set_music_volume),
-        )
+    # WHICH of these a turn sees is not decided here. The music verbs'
+    # Discord-only cut and `search_memory_workspace`'s Dreamer-only gate (#350)
+    # used to be two filters in this function; they are `ToolScope`'s now
+    # (`nora.agent.surface`), beside the Dreamer's grant ceiling and read by
+    # the one builder every loop uses, `ToolRegistry.surface()`. This function
+    # builds every closure; the scope admits.
+
+    async def load_tools(names: list[str], tool_context: Any) -> dict:
+        """Load the tools you named from your catalogue, so you can call them next.
+
+        Your catalogue lists everything you can do, one line each. The ones
+        marked * are already loaded; anything else, ask for here by its exact
+        name first, then call it as usual. Ask for every tool you expect to
+        need in one call (up to 4).
+
+        `status` is `ok` when at least one name is ready (`loaded`, or
+        `already_loaded`); `unknown` names are not in your catalogue — read it
+        again rather than retrying the same name; `refused` were over the
+        limit — ask for those next. `nothing_found` means none of the names
+        exist. `unavailable` means loading is not possible right now; say so
+        rather than guessing what the tool would have said.
+
+        Args:
+            names: Tool names exactly as your catalogue spells them.
+        """
+        if shelf is None:
+            return {"status": "unavailable", "loaded": [], "already_loaded": [],
+                    "unknown": [], "refused": []}
+        return load_onto(getattr(tool_context, "agent", None), shelf, names)
+
     return (
         _spec("now", now),
         _spec("calculate", calculate),
@@ -9009,7 +9011,12 @@ Args:
         _spec("weather", weather),
         _spec("parking_status", parking_status),
         _spec("find_parking", find_parking),
-        *music_specs,
+        _spec("play_music", play_music),
+        _spec("skip_music", skip_music),
+        _spec("top_music", top_music),
+        _spec("stop_music", stop_music),
+        _spec("music_status", music_status),
+        _spec("set_music_volume", set_music_volume),
         _spec("remind", remind),
         _spec("list_reminders", list_reminders),
         _spec("cancel_reminder", cancel_reminder),
@@ -9019,7 +9026,7 @@ Args:
         _spec("rsvp_event", rsvp_event),
         _spec("cancel_event", cancel_event),
         _spec("suggest_venue", suggest_venue),
-        *unit_memory_specs,
+        _spec("search_memory_workspace", search_memory_workspace),
         _spec("note_read", note_read),
         _spec("note_search", note_search),
         _spec("note_create", note_create),
@@ -9031,6 +9038,7 @@ Args:
         _spec("send_to", send_to),
         _spec("search_gifs", search_gifs),
         _spec("send_gif", send_gif),
+        _spec("load_tools", load_tools),
     )
 
 

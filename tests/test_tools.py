@@ -137,9 +137,12 @@ def test_every_declared_tool_is_built(wiring):
         "send_to",
         "group_members", "lookup_person", "about", "ask_memory", "search_memory",
         "recall_lookups",
-        # NOT `search_memory_workspace` — Dreamer-only since #350. Its own
-        # presence here is asserted by
-        # `test_search_memory_workspace_is_not_in_a_room_catalog` below.
+        # `search_memory_workspace` IS built here — `build_tools` builds every
+        # closure. Which ones a ROOM sees is `ToolScope`'s decision, applied
+        # by `ToolRegistry.surface()` (design/tool-catalogue, phase B), and the
+        # Dreamer-only cut (#350) is pinned there:
+        # tests/unit/test_tool_registry.py (`dreamer - tag`).
+        "search_memory_workspace",
         "calculate", "transit", "route",
         "place_info", "saved_places",
         "where_is",
@@ -161,14 +164,14 @@ def test_every_declared_tool_is_built(wiring):
         "parking_status",
         # Google Nearby Search parking discovery around a named place/position.
         "find_parking",
-        # Discord-only music verbs are NOT in this signal-room catalog
-        # (2026-09-16 catalog-level platform filter — they would only ever
-        # answer `unavailable` here). The full table, including the six
-        # music verbs, is pinned for the Discord room in
-        # tests/unit/test_tool_registry.py (both halves: `_room()` = discord
-        # and `test_non_discord_catalog_omits_music_tools`).
-        # "play_music", "skip_music", "top_music", "stop_music",
-        # "music_status", "set_music_volume",  # Discord-only (omitted here)
+        # The six music verbs are built here too. The Discord-only cut
+        # (2026-09-16) is `ToolScope`'s, pinned by
+        # `test_non_discord_catalog_omits_music_tools`.
+        "play_music", "skip_music", "top_music", "stop_music",
+        "music_status", "set_music_volume",
+        # design/tool-catalogue/02 — the loader. Built for every turn;
+        # `surface()` hands it to the model only when something is deferred.
+        "load_tools",
         "remind", "list_reminders", "cancel_reminder",
         # The Event module (gatherings/RSVP/venue suggestions).
         "create_event", "update_event", "rsvp_event", "cancel_event",

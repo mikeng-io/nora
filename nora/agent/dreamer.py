@@ -594,11 +594,17 @@ UNIT_SAFE_TOOLS: frozenset[str] = frozenset({
     # scope ABOVE a unit. Being in this set is what lets a DREAMER adaptor
     # call it, which is intended; what used to follow from the same list was
     # that every TAG turn carried it too, which was not. That half is closed
-    # at the catalog instead (#350, `build_tool_specs`' `dream_adaptor` gate),
+    # at the catalog instead (#350, `ToolScope`'s Dreamer-only gate),
     # because the fix belongs where the audience is known. The missing axis
     # here is still missing.
     "note_read", "note_search",
     "search_memory_workspace",
+    # `load_tools` (design/tool-catalogue/02) reads neither a room nor a
+    # unit: it registers tools from THIS run's own shelf onto THIS run's own
+    # agent, so it is as unit-safe as `now`. Being here makes it grantable;
+    # whether a run holds it is `ToolRegistry.surface`'s call, and it is only
+    # added when something was deferred onto the shelf.
+    "load_tools",
 })
 
 
@@ -1101,7 +1107,11 @@ class RegistryToolSource:
                 platform="", conversation_id=key, roster_source=None,
                 persons=self._persons,
             )
-        built = self._registry.build(
+        return self._registry.surface(
+            # The adaptor's ceiling, applied by the SAME scope every loop's
+            # tools pass through — this used to be a name filter over
+            # `build()`'s output, a third place deciding what an occasion sees.
+            grant=wanted,
             store=self._store,
             # The HOME ROOM's conversation, not the key, when there is one
             # (39 D3): for a unit-keyed adaptor the key is the
@@ -1143,12 +1153,7 @@ class RegistryToolSource:
             # conversation ids -> OriginRoom, threaded to `remind` so a
             # note-linked proactive row is stamped into the note's own room.
             origin_rooms=self._origin_rooms,
-        )
-        return [
-            tool for tool in built
-            if (getattr(tool, "tool_name", None) or getattr(tool, "__name__", ""))
-            in wanted
-        ]
+        ).tools
 
 
 class DreamerRuntime:
