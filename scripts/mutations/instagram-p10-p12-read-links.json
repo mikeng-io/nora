@@ -67,7 +67,7 @@
     "file": "nora/domain/instagram_links.py",
     "old": "        return InstagramLink(kind, code) if SHORTCODE_RE.fullmatch(code) else None",
     "new": "        return InstagramLink(kind, code)",
-    "target": "tests/unit/test_instagram_read_links.py -k hostile"
+    "target": "tests/unit/test_instagram_links.py::test_anything_else_is_unsupported tests/unit/test_instagram_parser.py::test_a_url_that_fails_validation_leaves_no_link_at_all"
   },
   {
     "name": "a link whose kind contradicts what is guessed at",

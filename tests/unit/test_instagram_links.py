@@ -58,6 +58,8 @@ def test_a_story_link_carries_its_pk():
         "https://www.instagram.com/accounts/login/",
         "https://www.instagram.com/direct/inbox/",
         "https://www.instagram.com/p/",
+        "https://www.instagram.com/p/bad.code/",
+        "https://www.instagram.com/reel/bad%20code/",
         "https://www.instagram.com/4242424242/",
         "https://notinstagram.com/some.account/",
         "https://some.account.instagram.com/",
