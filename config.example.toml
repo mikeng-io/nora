@@ -601,7 +601,13 @@ vision_model = "ollamacloud/glm-5.3-flash"
 # `unavailable` (a truncated description reads like a complete one). This is a
 # PER-REQUEST allowance, not an aggregate budget, and it is shared: images,
 # audio, every video window and the text pass all get it.
-vision_max_tokens = 4096
+# 4096 → 16384 (2026-09-24, measured on the live deploy): 4096 still cut MiMo
+# off — 2 of 3 reads of one audible 35 s window ended `finish_reason=length`.
+# MiMo v2.6 Flash REASONS before it answers even at effort "low": 2,808 /
+# 4,154 / 6,159 completion tokens per window, of which 2,167 / 3,632 / 5,540
+# were reasoning and the answer ~600. 16384 is ~2.7x the worst of n=3 — a cap,
+# not a reservation, so the headroom costs nothing on a read that stops sooner.
+vision_max_tokens = 16384
 vision_reasoning_effort = "low"
 vision_max_bytes = 8388608   # 8 MiB → ~10.7 MiB base64 body
 # 20 → 40 (2026-08-30, operator): the per-call vision budget derives as

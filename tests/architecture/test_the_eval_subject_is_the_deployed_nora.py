@@ -102,7 +102,7 @@ enabled = false
 encryption_key_env = "MEDIA_ENCRYPTION_KEY"
 vision_model = "a-vision-model"
 vision_timeout_seconds = 120.0
-vision_max_tokens = 4096
+vision_max_tokens = 16384
 sticker_descriptions = true
 [media.describe.audio]
 enabled = true
