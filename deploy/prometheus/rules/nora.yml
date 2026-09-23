@@ -69,6 +69,26 @@ groups:
             the last successful read. Check the presence container log for
             `life360 auth failed` / `banned/refused` before restarting it.
 
+      # The restart-proof twin of the rule above. That gauge counts from BOOT,
+      # so every restart resets it: a crash-looping collector, or one recreated
+      # on every deploy, never reaches 1800s. This one reads what was actually
+      # WRITTEN. increase() survives counter resets, and `or vector(0)` answers
+      # for a series that is absent (created lazily, or the target down).
+      # 2h: over 14 days (09-10 → 09-24) the longest gap between any two fixes
+      # outside the two real outages (09-16, 4.8h; 09-24, 3h) was 30 min, and
+      # no aligned 2h bucket held fewer than 7. A 2h window is 4x that gap.
+      - alert: PresenceNotRecording
+        expr: (sum(increase(nora_presence_fixes_total[2h])) or vector(0)) == 0
+        for: 15m
+        labels: { severity: critical }
+        annotations:
+          summary: "presence has written no location fix for anyone in 2 hours"
+          description: >-
+            No new fix has been recorded for any member in 2h, including across
+            restarts. Every where_is / where_been answer stops at the last one.
+            Check the presence container log for `life360 auth failed`,
+            `banned/refused` or `access token rejected`, and its restart count.
+
       # WHY the collection stopped, when the cause is Life360 refusing us. Each
       # increment is a refused login (`auth_403`), a ban-class read (`banned`),
       # or the app-update challenge page (`challenge`) — never a stale token
