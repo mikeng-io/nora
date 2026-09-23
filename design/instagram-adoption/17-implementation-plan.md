@@ -126,11 +126,14 @@ decimal strings: the `02` trap again.
 `social_fetch`'s Instagram rows and docstring, and the operator then decided to
 split social reads per network. Changing `social_fetch` and then replacing it
 would have rewritten Nora's tool surface twice, so P5 is now: land
-`instagram_read` on the bridge path, and remove `social_fetch`'s Instagram
-rows in the same PR. It builds on P2–P4 and lands after the tool catalogue's
-#367 and #393. The routing-by-network, allowlist and `test_r86_…` changes this
-section used to list move into `18` §"Read-only, at three layers" unchanged
-in substance.
+`instagram_read` on the bridge path for `person` input (profile, story),
+teach the router input-kind resolution for it (`18` §"What the router has to
+learn"), and move `social_fetch`'s dead or unbacked Instagram rows (profile,
+story, posts) in the same PR. `instagram/search` stays on `social_fetch` until
+P11. It builds on P2–P4 and lands after the tool catalogue's #367 and #393.
+The allowlist and `test_r86_…` changes this section used to list move into
+`18` §"Read-only, at three layers" unchanged in substance. P10 then adds the
+`link` and `handle` inputs, and P11 lands `instagram_search`.
 
 ## P6–P8: The bridge's layers (`16` steps 2–4)
 
