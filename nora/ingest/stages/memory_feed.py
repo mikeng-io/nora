@@ -15,8 +15,21 @@ from __future__ import annotations
 from collections.abc import Callable, Coroutine
 from typing import Any
 
-from nora.domain.models import NormalizedMessage, PersonRef
+from nora.domain.models import EditedMessage, NormalizedMessage, PersonRef
 from nora.domain.ports import MemoryStore
+
+
+def edit_text(*, body: str, first_body: str | None) -> str:
+    """What Honcho is fed for an EDIT (design/message-edits/02 §2).
+
+    Honcho stores a message's content once — its API updates metadata only —
+    and its deriver has usually read the original before the edit arrives. So
+    the edit is a NEW message, and this framing is what lets the deriver read
+    it as a correction of something already said rather than as a second,
+    independent statement. The first text is quoted because the deriver has no
+    join from this message to that one: without it, «8pm» is a fact, not a
+    change from «7pm»."""
+    return f"[edited an earlier message; it first said: «{first_body or ''}»] {body}"
 
 
 async def run(
@@ -26,26 +39,36 @@ async def run(
     memory: MemoryStore,
     metrics: Any,
     spawn: Callable[[Coroutine[Any, Any, None]], None],
+    edited: EditedMessage | None = None,
 ) -> None:
     """Schedule the feed; never await it here. `person is None` means the
-    sender is unmapped (D6) — the message is never fed to the semantic store."""
+    sender is unmapped (D6) — the message is never fed to the semantic store.
+
+    `edited` is the message `message` edits, when it is an edit: the text is
+    then framed as a correction and the metadata points at the original's
+    `ts` (design/message-edits/02 §2)."""
     if person is None:
         return
+    text = message.body
+    metadata: dict[str, object] = {"ts": message.timestamp}
+    if edited is not None:
+        text = edit_text(body=message.body, first_body=edited.first_body)
+        metadata["edit_of_ts"] = edited.ts
     spawn(_feed(
-        memory=memory, peer_id=person.honcho_peer_id, text=message.body,
-        conversation_id=message.conversation_id, ts=message.timestamp, metrics=metrics,
+        memory=memory, peer_id=person.honcho_peer_id, text=text,
+        conversation_id=message.conversation_id, metadata=metadata, metrics=metrics,
     ))
 
 
 async def _feed(
     *, memory: MemoryStore, peer_id: str, text: str, conversation_id: str,
-    ts: int, metrics: Any,
+    metadata: dict[str, object], metrics: Any,
 ) -> None:
     await memory.ensure_peer(peer_id=peer_id)
     # Fed under the SPEAKER'S peer into the CONVERSATION's session (Honcho v2,
     # design/24). `ts` rides as metadata so the deriver has structure.
     ok = await memory.feed(
         peer_id=peer_id, text=text, conversation_id=conversation_id,
-        metadata={"ts": ts},
+        metadata=metadata,
     )
     metrics.inc("honcho_feed_success" if ok else "honcho_feed_failure")

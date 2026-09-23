@@ -209,6 +209,7 @@ class FakeRecordStore:
                 latest["mentions_json"] if latest else r["mentions_json"]
             ),
             first_body=r["body"],
+            platform_message_id=r["platform_message_id"] or "",
         )
 
     async def append_edit(self, *, message_id: int, message: NormalizedMessage) -> None:

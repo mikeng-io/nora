@@ -264,6 +264,9 @@ class EditedMessage:
     an edit against the version it REPLACES. `mentions` is None when that
     version predates `messages.mentions_json`, which the gate reads as
     «unknown». `first_body` is what it first said, for Honcho's framing.
+    `platform_message_id` is its own handle ("" where the platform has none):
+    an edit that opens a turn is answered AS this message, so a reaction or a
+    threaded reply points at it and not at the edit.
     """
 
     id: int
@@ -274,6 +277,7 @@ class EditedMessage:
     body: str | None
     mentions: frozenset[str] | None
     first_body: str | None
+    platform_message_id: str = ""
 
 
 def mentions_json(mentions: frozenset[str]) -> str:

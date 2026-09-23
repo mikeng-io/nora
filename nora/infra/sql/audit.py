@@ -320,7 +320,7 @@ class SqlRecordStore:
             sa.select(
                 MESSAGES.c.id, MESSAGES.c.ts, MESSAGES.c.sender_id,
                 MESSAGES.c.person_id, MESSAGES.c.is_nora, MESSAGES.c.body,
-                MESSAGES.c.mentions_json,
+                MESSAGES.c.mentions_json, MESSAGES.c.platform_message_id,
                 latest.c.ts.label("edit_ts"), latest.c.body.label("edit_body"),
                 latest.c.mentions_json.label("edit_mentions_json"),
             )
@@ -342,6 +342,7 @@ class SqlRecordStore:
                 r.edit_mentions_json if edited else r.mentions_json
             ),
             first_body=r.body,
+            platform_message_id=r.platform_message_id or "",
         )
 
     async def append_edit(self, *, message_id: int, message: NormalizedMessage) -> None:
