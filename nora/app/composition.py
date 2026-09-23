@@ -202,6 +202,32 @@ _REASONING_EFFORTS: frozenset[str] = frozenset(
 )
 
 
+def _unit_rooms(allowlist: Policy) -> dict[str, tuple[UnitRoom, ...]]:
+    """Unit -> its rooms, as the proactive adaptor names them.
+
+    `label` is the operator's `policy.toml` label or `""` — NEVER `primary_id`.
+    It fell back to the id until 2026-09-23, and every model-facing render of
+    it (`<rooms>`, `<loop_decisions>`, the no-reader `<presence>`) then put a
+    room id on the wire for an unlabelled room (R-18). Nothing reads it as a
+    key: `conversation_id` is the key, and the renders supply their own
+    stand-in for a room with no name.
+    """
+    rooms_by_unit: dict[str, tuple[UnitRoom, ...]] = {}
+    for conv in allowlist.conversations:
+        rooms_by_unit[conv.unit] = (
+            *rooms_by_unit.get(conv.unit, ()),
+            UnitRoom(
+                platform=conv.platform, conversation_id=conv.primary_id,
+                label=conv.label, home=conv.home_room,
+                # The operator's own description of the room (issue #161) —
+                # the SAME `policy.toml` field the note candidates pass reads,
+                # so the two passes cannot hold two ideas of what a room is.
+                description=conv.description,
+            ),
+        )
+    return rooms_by_unit
+
+
 def _presence_reader(
     cfg: Config, allowlist: Policy, registry: AdapterRegistry,
 ) -> PresenceReader:
@@ -3482,20 +3508,7 @@ async def build_dependencies(
             # the same room (39 D2: two readers with two ideas of a
             # unit's home would put the decide turn in one room and the
             # act turn in another).
-            rooms_by_unit: dict[str, tuple[UnitRoom, ...]] = {}
-            for conv in allowlist.conversations:
-                rooms_by_unit[conv.unit] = (
-                    *rooms_by_unit.get(conv.unit, ()),
-                    UnitRoom(
-                        platform=conv.platform, conversation_id=conv.primary_id,
-                        label=conv.label or conv.primary_id, home=conv.home_room,
-                        # The operator's own description of the room (issue
-                        # #161) — the SAME `policy.toml` field the note
-                        # candidates pass reads, so the two passes cannot hold
-                        # two ideas of what a room is.
-                        description=conv.description,
-                    ),
-                )
+            rooms_by_unit = _unit_rooms(allowlist)
             dream_schedules = {
                 **dream_schedules,
                 # Daily, on the Dreamer's existing clock (39 D10), phased to

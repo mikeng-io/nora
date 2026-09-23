@@ -1382,3 +1382,43 @@ async def test_a_roster_index_that_never_answers_is_bounded_and_counted():
     assert "·" not in block
     assert metrics.get(
         "nora_errors_total", stage="proactive_roster_index", platform="signal") == 1
+
+
+async def test_an_unlabelled_room_never_puts_its_id_in_the_proactive_prompt(tmp_path):
+    """R-18, from `policy.toml` to the rendered prompt. The composition root
+    built `UnitRoom.label` as `conv.label or conv.primary_id`, so an
+    unlabelled room's id reached `<rooms>` (and `<loop_decisions>`, and the
+    no-reader `<presence>`). The rooms here come from the composition root's
+    own builder, so the test sees exactly what production hands the pass."""
+    from nora.app.composition import _unit_rooms
+    from nora.policy import load_policy
+
+    room_id = "Z3JvdXAudW5sYWJlbGxlZA=="
+    path = tmp_path / "policy.toml"
+    path.write_text(
+        'default = "deny"\n'
+        "[[conversations]]\n"
+        f'platform = "signal"\nid = "{room_id}"\npersons = "*"\n'
+        f'unit = "{WS}"\nhome_room = true\n'
+        "[[conversations]]\n"
+        'platform = "discord"\nid = "111/222"\nlabel = "Zone 42"\npersons = "*"\n'
+        f'unit = "{WS}"\n'
+    )
+    rooms = _unit_rooms(load_policy(path))[WS]
+    standing = InMemoryStandingStore()
+    for room in rooms:
+        await standing.write(standing=Standing(
+            platform=room.platform, conversation_id=room.conversation_id,
+            body="dinner is still open", fold_count=1, updated_at=NOW_MS - 3_600_000,
+        ))
+    notes = InMemoryNoteStore()
+    await _note(notes)
+    adaptor = _adaptor(notes=notes, standing=standing, rooms=rooms)
+
+    text = await adaptor.inputs(key=WS, batch=())
+
+    assert room_id not in text
+    assert "111/222" not in text
+    rooms_block = text.split("<rooms")[1].split("</rooms>")[0]
+    assert "- a room with no name (signal), as of 1 h ago" in rooms_block
+    assert "- Zone 42 (discord)" in rooms_block

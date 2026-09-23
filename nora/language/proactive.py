@@ -268,6 +268,16 @@ DEFAULT_ROSTER_INDEX_MEMBERS = 12
 _ROOM_STYLE = RowStyle(handle="bullet")
 
 
+#: What a room with no `policy.toml` label is called on a `<rooms>` line.
+#: Never its id (R-18) — the line's suffix already names the network.
+UNNAMED_ROOM = "a room with no name"
+
+
+def _room_name(room: UnitRoom) -> str:
+    """The speaker position of a `<rooms>` line: the label, or the stand-in."""
+    return room.label or UNNAMED_ROOM
+
+
 def _room_body(_room: UnitRoom, *, text: str) -> str:
     """The position itself, already collapsed and clipped by the caller."""
     return text
@@ -322,6 +332,9 @@ class UnitRoom:
 
     platform: str
     conversation_id: str
+    #: The operator's `policy.toml` label, or `""`. Never the id: every render
+    #: of it is model-facing (R-18), and the renders say «a room with no name»
+    #: rather than falling back.
     label: str
     home: bool = False
     #: What the operator says this room IS (`policy.Conversation.description`,
@@ -734,7 +747,8 @@ class ProactiveAdaptor:
         try:
             people = await self._people_of(home)
         except Exception:
-            log.exception("proactive people block failed (home=%s)", home.label)
+            log.exception("proactive people block failed (home=%s)",
+                          home.label or home.conversation_id)
             return ""
         if not people:
             return ""
@@ -939,7 +953,8 @@ class ProactiveAdaptor:
                     conversation_id=room.conversation_id, limit=1,
                 )
             except Exception:
-                log.exception("proactive: quiet read failed for %s", room.label)
+                log.exception("proactive: quiet read failed for %s",
+                              room.label or room.conversation_id)
                 return False
             if rows and now_ms - rows[-1].ts < self._quiet_ms:
                 return False
@@ -960,14 +975,15 @@ class ProactiveAdaptor:
                 # Fail-soft, counted where the tag path counts it: a room
                 # whose position could not be read is rendered as unread,
                 # never as «no position».
-                log.exception("proactive: standing read failed for %s", room.label)
+                log.exception("proactive: standing read failed for %s",
+                              room.label or room.conversation_id)
                 self._inc(
                     "nora_errors_total", stage="proactive_standing",
                     platform=room.platform,
                 )
                 lines.append(render_rows(
                     [room], style=_ROOM_STYLE,
-                    speaker=lambda r: r.label,
+                    speaker=_room_name,
                     suffix=lambda r: f"({r.platform})",
                     body=lambda _r: "(could not read the position)",
                 ))
@@ -994,7 +1010,7 @@ class ProactiveAdaptor:
             shown = _clip(one_line(position.body))
             lines.append(render_rows(
                 [room], style=_ROOM_STYLE,
-                speaker=lambda r: r.label,
+                speaker=_room_name,
                 # Bound as defaults, not captured: these read the LOOP's
                 # variables and a late-bound closure would render every room
                 # with the last room's age and position (ruff B023).
