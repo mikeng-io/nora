@@ -37,7 +37,6 @@ import asyncio
 import base64
 import logging
 from dataclasses import dataclass
-from math import ceil
 
 from openai import AsyncOpenAI
 

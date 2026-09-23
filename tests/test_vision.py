@@ -148,7 +148,7 @@ def _client(
 
     The client derives its per-call ceiling now (`_call_timeout`) instead of
     being handed one, so every scenario below must say what loop it is inside.
-    300 s × 0.6 = 180 s over one wave, so `timeout_seconds` is what binds and
+    300 s x 0.6 = 180 s over one wave, so `timeout_seconds` is what binds and
     each test's explicit value — including the 0.3 s the hang test needs — is
     the one that reaches `wait_for`. The derivation's own arithmetic is asserted
     directly, not through a live server.
@@ -252,7 +252,7 @@ def test_a_long_clip_tightens_the_per_call_timeout():
     Ten windows is `VIDEO_MAX_CHUNKS` — fifteen minutes of clip — read one after
     another, so each window gets a tenth of the share and the invocation still
     fits inside the loop. Honouring the configured 120 for the short case must
-    not mean handing a fifteen-minute video ten × 120 s.
+    not mean handing a fifteen-minute video ten x 120 s.
     """
     derived = derive_vision_timeout(
         loop_timeout_seconds=OPERATOR_LOOP,
@@ -339,9 +339,9 @@ def test_the_window_fan_out_and_the_wave_divisor_cannot_drift_apart():
     # `read_video_windows`, which left this assertion GREEN while genuinely
     # reading every window at once — the exact defect the test exists to catch.
     # A guard that only knows one spelling of the thing it guards is decoration.
-    _FAN_OUT = ("gather", "TaskGroup", "asyncio.wait", "ensure_future", "create_task")
+    fan_out = ("gather", "TaskGroup", "asyncio.wait", "ensure_future", "create_task")
     if VISION_WINDOW_CONCURRENCY == 1:
-        found = [k for k in _FAN_OUT if k in code]
+        found = [k for k in fan_out if k in code]
         assert not found, (
             f"read_video_windows fans out ({', '.join(found)}) while "
             f"VISION_WINDOW_CONCURRENCY is 1 — the per-call ceiling is being "
