@@ -45,7 +45,7 @@ needs — scope, identity, custody, the gate — already takes a
 | `mentions_json` | the edit's mention ids (see below) |
 | `created_at` | |
 
-Indexed on `(message_id, ts DESC)`: the fold reads the newest edit per row.
+Indexed on `(message_id, ts)`, scanned backwards: the fold reads the newest edit per row.
 
 **A table, not rows in `messages`.** Five readers query `messages` directly
 (`language`, `participation_state`, `participation_measures`, `snapshot`, the

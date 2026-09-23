@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Message Edits — Behaviour"
-description: "How an edit renders (edited + was attributes), what Honcho receives (a framed correction under the speaker's peer), when an edit opens a turn (only when it newly addresses Nora), and the edit path's five fail-closed endings."
+description: "How an edit renders (edited + was attributes), what Honcho receives (a framed correction under the speaker's peer), when an edit opens a turn (only when it newly addresses Nora), and the edit path's six fail-closed endings."
 tags: [nora, ingest, prompt, honcho, engagement]
 timestamp: '2026-09-23'
 edges: []

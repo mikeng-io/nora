@@ -55,7 +55,7 @@ Each claim is pinned by a test that reverting its line reddens:
 - the store contract (both stores): fold returns latest body at the original
   position, `was` = first body, `raw_json` unchanged; `find_edited` by handle
   and by (sender, ts); cascade on prune;
-- ingest: each of the five outcomes; the newly-addressed rule's four rows;
+- ingest: each of the six outcomes; the newly-addressed rule's four rows;
   identity from the original when the edit names no sender;
 - render: `edited`/`was` present on an edited row, absent otherwise;
   rehydration uses the edit's envelope for the body and the original's for
