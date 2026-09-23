@@ -48,6 +48,14 @@ tools for one network map onto one backend.
 > against master at `71166ba5`). The text Strands sends for
 > `instagram_search` is 123 tokens (Level 3 ceiling 320), with no dash and no
 > non-Latin character in its spec.
+>
+> **P10 and P12 (2026-09-24), the same method:** `instagram_read` grew
+> `handle` and `link` and lost its two required fields, so its schema went
+> **282 → 366** tokens and the resident total **27,400 → 27,484 (+84)**,
+> against master at `c893e581`. About 20 of the 84 are the four
+> `"default": null` entries Strands writes for an optional parameter. The
+> text Strands sends is 205 tokens (was 183; Level 3 ceiling 320), with no
+> dash and no non-Latin character in its spec.
 
 > **ADR 0015 (proposed 2026-09-24), met from the first commit.** Both tools
 > declare `level=3` on `NativeTool` (the field was added here, ADR 0015 §3).
@@ -102,6 +110,20 @@ instagram_read(what: str | None = None, person: str | None = None,
 > advertising an input, and a resident schema is paid for on every turn. A
 > story is returned whole (the client clamps frames and text on its side).
 > The signature above is the P13 end state.
+>
+> **As built in P10 and P12 (2026-09-24): `instagram_read(what=None,
+> person=None, handle=None, link=None)`, nothing required.** Exactly one of
+> `person`, `handle`, `link` is checked in the tool (none, two, or a blank
+> one is `unavailable` and nothing is sent). `what` stays the enum
+> `profile | story` and is required for `person` and `handle`. A `link`
+> decides the read: a profile link reads the profile, a story link the
+> story, a post or reel link the post; `what` beside a link must name the
+> same read, and anything else (including any `what` with a post link) is
+> `unavailable`, «the link already says what to read», per the paragraph
+> below. `posts` is NOT in the enum: a person's post list has no mechanism
+> (P13), and a word in the schema is a word advertising it. A link given
+> without a scheme (`instagram.com/p/...`) gains `https://` before it is
+> parsed; the parser still decides everything else.
 
 **Exactly one of `person`, `link`, `handle`.** Three parameters, not one
 overloaded `target`: a person's name and an Instagram handle are the same
@@ -247,6 +269,25 @@ check (story only) produce them. The body is the curated DTO (`16`
 > flag is off) answers one stable `unavailable` sentence, «Instagram isn't
 > set up», and logs once at boot rather than on every call.
 
+> **2026-09-24, P10 and P12 as built.** A handle nobody holds is
+> `nothing_found`, «Instagram has no account with that username; don't guess
+> a similar one» (`results.NO_SUCH_HANDLE`), distinct from `NO_ACCOUNT`,
+> which is about the operator's file. A story named by a handle or link whose
+> account maps to nobody listed (a stranger included) is `refused` with the
+> same sentence as a person-named one. A post or reel link returns
+> `source_kind: instagram_post`, `items` (every item in the bridge's order,
+> each `{kind, url}` plus `duration_seconds` for a video, at most 20, which
+> is Instagram's carousel ceiling, `truncated` if more), `author` (a
+> shape-checked handle), `taken_at`, and `text`: one wrapped, clamped block
+> with the author and age first, one `[kind url]` line per item, and the
+> caption LAST with its square brackets turned round, so a caption can
+> neither forge an item nor push one past the clamp. The `note` tells Nora
+> to `media_fetch` each item she needs to see. The bridge's 404 is
+> `nothing_found`, its 501 (a shortcode longer than 11 characters) is
+> `unavailable` saying a retry will not help, and every other failure is
+> `unavailable`. No igid, fbid or person id is in any of it, notes and
+> errors included; the shortcode the bridge echoes is not read back.
+
 ## A story is opened only when a person asks (operator safety rule, 2026-09-24)
 
 Nora does not read people's stories unprompted. That is a privacy choice,
@@ -260,6 +301,15 @@ it is from provenance its builder already carries (`fire_turn`,
 the tool is. Pinned by
 `test_a_story_is_never_opened_in_a_turn_nobody_asked_for`. **This holds until
 the operator decides otherwise.**
+
+> **Extended 2026-09-24 (P10, P12).** The same rule covers a story named by
+> a handle or a link, and a post or reel link: the operator's rule that Nora
+> reads shared content only when asked (13 §2026-09-24). In a fire turn or a
+> Dreamer pass all of them are `refused` before any name, handle or link is
+> resolved, so no lookup and no read reaches the bridge. A profile, by any
+> input, stays allowed everywhere. Pinned by
+> `test_a_background_turn_is_refused_a_story_post_or_reel_before_any_call`
+> (`tests/unit/test_instagram_read_links.py`).
 
 > **Reason corrected 2026-09-24 (P11 PR).** This section first justified the
 > rule by saying a story view is visible to its author. That was never
@@ -283,12 +333,23 @@ ADR 0008 decision, not a flag on this tool.
 
 | Concern | Owner |
 |---|---|
-| parse the link, pick the read | the link parser, a new module under nora/infra/social (P10) |
+| parse the link, pick the read | the link parser, `nora/domain/instagram_links.py` (P10; see the note below) |
 | resolve a NAME → person | the tool, with the turn's `room` (the lookup `about` uses) |
 | resolve person → igid, igid → person | `SocialSubjectIndex` (`17` P3), called by the router |
 | authorize (Tier 0, story only) | `SocialRouter`, the single choke point for EVERY social tool, old and new |
 | call the bridge | `InstagramSocialClient` (`17` P4) |
 | the model-facing contracts | the two tools in `nora/agent/tools.py` |
+
+> **2026-09-24, P10: the link parser landed in `nora/domain`, not
+> `nora/infra/social`.** Two readers need it: the Instagram adapter's
+> transcript render (`nora/platform/instagram/parser.py`, #435's rules) and
+> `instagram_read`. `nora.domain` is the layer both may import and it is
+> standard-library only, which a URL parser is. #435's rules moved into it
+> unchanged (the parser's tests did not change); the tool parses a link into
+> `(kind, key)` there, so the router is handed a username or a shortcode and
+> never a URL. The username lookup is a new port,
+> `nora.domain.ports.InstagramAccountLookup`, implemented by
+> `InstagramSocialClient` and handed to the router as `accounts`.
 
 The tools stay thin: validate arguments, resolve a spoken name to a person
 (the one resolution that needs the conversation, and the tool is the only
@@ -339,6 +400,25 @@ and P10 (for `link` / `handle`), not a detail left to either:
   > read that pages (P13). The Instagram rows admit `person` only; a `named`
   > target there is `unavailable` until P10's username lookup exists.
 
+  > **As built in P10 and P12 (2026-09-24).** `target_kind` gained
+  > `handle`: a typed username, or the username of a profile or story link.
+  > `SUBJECT_INPUTS` admits `(instagram, profile|story, handle)` and
+  > `(instagram, post, named)` (a post's shortcode, never resolved);
+  > `(instagram, post)` joined `EXCEPTION_ROUTES`. A handle resolves through
+  > the bridge's exact lookup (`InstagramAccountLookup.igid_for_username`):
+  > `none` is `nothing_found`, `unavailable` is `unavailable`. For a story
+  > the router then asks `person_for_igid` of THAT igid and `is_tier_zero` of
+  > that person; `igids_for` is never called on this path, so a link to one
+  > of a two-account friend's accounts reads that account while the same
+  > friend by name stays `ambiguous` (pinned in
+  > `tests/unit/test_social_router.py` and end to end in
+  > `tests/unit/test_instagram_read_links.py`). A missing lookup is not a
+  > boot error: it grants nothing (every handle read is `unavailable`), and
+  > the `person` path keeps working. The client does not re-pick: it keeps
+  > only rows whose username is the one asked for, and anything but exactly
+  > one is `unavailable` (P9 wrote «ambiguous» for two matches; that word's
+  > sentence is about the operator's file, so it was not reused).
+
 ## Read-only, at three layers, still one table
 
 R-86 pins read-only at three layers: the tools' closed vocabulary, the backend
@@ -380,6 +460,14 @@ Each item is an existing test that goes red, applied to both tools:
     somebody asks about a person's Instagram or what is on their story."*
     From P10 it names handles and pasted links; `posts` joins the line only
     with P13.
+  - `instagram_read`, as shipped in P10 and P12 (38 tokens as the L1 gate
+    counts it): *"Read an Instagram profile, story, post or reel, by name,
+    handle or link. Call this when somebody asks about someone's Instagram
+    or pastes an Instagram link."* "post or reel" is the one item a link
+    names (P12), not a person's list; the description body says a post or
+    reel is read from its link only. The draft that named the inputs per
+    read ("…profile or story by name, handle or link, or a post or reel by
+    its link…") measured 43 and did not fit.
   - `instagram_search`, as shipped in P11 (35 tokens as the L1 gate counts
     it): *"Search Instagram for accounts by name or handle, returning up to 5
     matches. Call this when somebody wants to find a person's Instagram
@@ -489,6 +577,16 @@ not exist:
 > Miles's Instagram", about a member of room A, expects `instagram_read` (a
 > read by name), while the same request about a synthetic name in no room
 > expects `instagram_search`. Not yet run.
+>
+> **P10 and P12 (2026-09-24):** four rows joined:
+> `route_instagram_read_reel_link` (a pasted `/reel/SynthReel01/` link,
+> "what's in this reel"), `route_instagram_read_profile_link` (a pasted
+> profile link, "who's this"), `route_instagram_read_handle` ("who is
+> @synth.example on IG"), all expecting `instagram_read`, and
+> `route_instagram_search_find_name_en` ("find Taylor Example on
+> Instagram"), still `instagram_search`. Not yet run; the L1 line now names
+> handles, so `route_instagram_search_handle` ("what's <name>'s IG handle")
+> is the row most likely to move.
 
 | Message | Must call | Must not call |
 |---|---|---|

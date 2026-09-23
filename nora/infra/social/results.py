@@ -66,13 +66,28 @@ NO_ACCOUNT: dict[str, Any] = {
             "look. Say that; don't guess one from their name.",
 }
 
+#: A typed handle or a pasted link named a username Instagram has no account
+#: for: the bridge's exact username lookup ran and matched nobody
+#: (design/instagram-adoption/15 §Links, /17 P9, P10). `nothing_found`, a fact
+#: about Instagram, and different from `NO_ACCOUNT`, which is about the
+#: operator's file. The note says not to guess a near spelling: the lookup is
+#: exact on purpose, and a guessed handle reads a different human.
+NO_SUCH_HANDLE: dict[str, Any] = {
+    "status": "nothing_found",
+    "note": "Instagram has no account with that username. Say so; don't "
+            "guess a similar one.",
+}
+
 #: The subject resolved and is out of reach. A story is Tier 0 only — a
 #: person the operator LISTED in a group room (design/instagram-adoption/07,
 #: /15) — and it is refused in a turn nobody asked for (/18, 2026-09-24).
 #: Distinct from `unavailable` because calling again cannot help and nothing
 #: is broken: «I may not» and «I couldn't» are different claims. The note
 #: names the listing, not "the rooms I'm in": someone can be IN the chat and
-#: not listed, and "outside my rooms" would be false about them.
+#: not listed, and "outside my rooms" would be false about them. Since P10 it
+#: also answers a story named by a typed handle or a pasted link whose account
+#: maps to nobody listed, which covers a stranger: the same boundary, so the
+#: same sentence.
 REFUSED: dict[str, Any] = {
     "status": "refused",
     "note": "I only open stories of people the operator has listed in one of "

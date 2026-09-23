@@ -95,6 +95,12 @@ no person is not in any room: `refused`.
 Until the lookup route exists, a link answers `unavailable` (R-27), never a
 guess and never OpenCLI.
 
+> **2026-09-24: built on the Nora side (P10, P12).** The rows above are what
+> `instagram_read` does with a `link` (and a typed `handle`), through one link
+> parser, `nora/domain/instagram_links.py`, that the transcript render shares.
+> A post or reel link is read only in a turn a person asked for, the same rule
+> as a story (18). See 17 §P10, §P12.
+
 ## Resolution is not authorization
 
 Two different questions, answered in two different places:

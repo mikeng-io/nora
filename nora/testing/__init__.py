@@ -28,7 +28,10 @@ bound to `nora.platform.signal.roster.SignalRoster` by
 of them — by `tests/contract/test_social_provider_contract.py`, which also
 drives `FakeSocialSubjectIndex` (`SocialSubjectIndex`, bound to
 `nora.infra.social.PersonsSubjectIndex` by
-`tests/contract/test_social_subject_index_contract.py`). Adding such a
+`tests/contract/test_social_subject_index_contract.py`) and
+`FakeInstagramAccountLookup` (`InstagramAccountLookup`, bound to
+`nora.infra.social.InstagramSocialClient` by
+`tests/contract/test_instagram_account_lookup_contract.py`). Adding such a
 fake without one is a project rule violation, not a shortcut.
 
 `FakeArtifactIngest` is still also exercised on its own by
@@ -110,6 +113,7 @@ from nora.testing.fakes import (
     FakeComputeBackend,
     FakeComputeJobStore,
     FakeGeocodeCacheStore,
+    FakeInstagramAccountLookup,
     FakeLinkPreviewSource,
     FakeMediaDescriptionStore,
     FakeMediaInterpreter,
@@ -167,6 +171,7 @@ __all__ = [
     "FakeComputeJobStore",
     "FakeDiscordPresenceSource",
     "FakeGeocodeCacheStore",
+    "FakeInstagramAccountLookup",
     "FakeLinkPreviewSource",
     "FakeMediaDescriptionStore",
     "FakeMediaInterpreter",

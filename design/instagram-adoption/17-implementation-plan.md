@@ -208,6 +208,22 @@ than one means the upstream data disagreed with itself). The Nora half
 (`instagram_links.py`, the router, and the negative and multi-account tests
 above) is not started.
 
+**2026-09-24: the Nora half is built** (PR `mikeng-io/instagram-read-links`,
+with P12; not merged, not deployed). The link parser is
+`nora/domain/instagram_links.py`, not `nora/infra/social` (18 §"Where each
+concern lives" says why), and #435's parser reads it unchanged.
+`instagram_read` takes exactly one of `person`, `handle`, `link`. A handle
+or a profile/story link's username resolves through the bridge's exact
+lookup (`InstagramAccountLookup`, implemented by `InstagramSocialClient`,
+which never takes `items[0]`); a story then passes
+`person_for_igid → is_tier_zero` on the igid the input named, or it is
+`refused` and no story request is sent. Both named tests exist:
+`test_a_story_of_someone_in_none_of_her_rooms_is_refused_and_never_requested`
+and `test_a_story_link_to_one_of_two_accounts_reads_that_account`
+(`tests/unit/test_instagram_read_links.py`, on a recording fake bridge).
+18 has the as-built detail. Still open for "done": the deploy, the routing
+eval run, and the live Jaeger read-back.
+
 ## P11: Search onto the bridge
 
 `GET /accounts?query=`. The `instagram/search` row leaves OpenCLI. After this
@@ -255,6 +271,18 @@ wired to post and reel links.
 `GET /posts/{shortcode}` over `FetchMedia` (REST `media/{id}/info/`), the id
 decoded from the shortcode in `domain`, on synthetic unmeasured fixtures; the
 Nora half (wiring post and reel links) is not started.
+
+**2026-09-24: the Nora half is built**, in the same PR as P10. A `/p/`,
+`/reel/` or `/reels/` link becomes `GET /posts/{shortcode}` through the new
+`(instagram, post)` row, with the shortcode as a `named` target (never
+resolved). The result is the whole post: every item in order with kind, url
+and a video's duration, the author, the caption wrapped and clamped, no ids,
+and a note to `media_fetch` each item Nora needs to see. It is read only in
+a turn a person asked for; a fire or Dreamer turn is `refused` before any
+call, as a story is. The bridge's 404 is `nothing_found`, 501 is
+`unavailable` («can't read that kind of post link yet»). The bridge half's
+live probe on a real post is still outstanding, so the Nora half is tested
+on the generated fixtures only.
 
 ## P13: Posts and reels lists (investigation, not a build)
 
