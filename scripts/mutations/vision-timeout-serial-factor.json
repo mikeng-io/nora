@@ -23,12 +23,12 @@
   {
     "name": "a long clip still tightens the per-call ceiling",
     "file": "nora/infra/vision/client.py",
-    "old": "    waves = vision_waves(windows=1 if windows is None else windows),",
-    "new": "    waves = vision_waves(windows=1),",
-    "target": "tests/test_vision.py -k long_clip_tightens"
+    "old": "            waves=vision_waves(windows=1 if windows is None else windows),",
+    "new": "            waves=vision_waves(windows=1),",
+    "target": "tests/test_vision.py -k derives_one_ceiling"
   },
   {
-    "name": "the wave invariant itself (waves * derived < loop)",
+    "name": "the configured ceiling actually binds (min(configured, per_call))",
     "file": "nora/infra/vision/client.py",
     "old": "    return min(configured, per_call) if configured > 0 else per_call",
     "new": "    return per_call",

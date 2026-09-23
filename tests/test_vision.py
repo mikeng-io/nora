@@ -186,7 +186,16 @@ def _client_kimi(
 
 # ---- the derived timeout is provably shorter than the loop budget -----------
 
-@pytest.mark.parametrize("loop,configured", [(30.0, 20.0), (30.0, 999.0), (10.0, 8.0), (8.0, 20.0)])
+# `(360.0, 120.0)` and `(120.0, 40.0)` are NOT filler: they are the operator's
+# settled pair and config.example.toml's own pair — the only two points in this
+# file where `configured` is SMALLER than `loop * 0.6 / waves`, i.e. where the
+# `min(configured, per_call)` actually binds. Every other pair here has the
+# derived value below `configured`, so the whole 48-case sweep passed with the
+# `min` deleted outright — the ceiling was untested. (Mutation sweep, 2026-09-23.)
+@pytest.mark.parametrize(
+    "loop,configured",
+    [(30.0, 20.0), (30.0, 999.0), (10.0, 8.0), (8.0, 20.0), (360.0, 120.0), (120.0, 40.0)],
+)
 @pytest.mark.parametrize("windows", [1, 2, 3, 10])
 @pytest.mark.parametrize("concurrency", [1, 2, 4])
 def test_the_waves_of_one_read_together_stay_under_the_loop(
@@ -209,7 +218,20 @@ def test_the_waves_of_one_read_together_stay_under_the_loop(
         loop_timeout_seconds=loop, configured=configured, waves=waves,
     )
     assert derived > 0
+
+    # THE CEILING MUST ACTUALLY BIND when it is the smaller of the two. Without
+    # this the `min(configured, per_call)` could be deleted outright and this
+    # test would stay green: with the parameters above, `per_call` is already
+    # below `configured`, so `derived <= configured` holds either way — the
+    # assertion was checking a coincidence. (Found by the mutation sweep,
+    # 2026-09-23: reverting the `min` left these 48 cases passing.)
+    assert derived == min(configured, loop * VISION_LOOP_SHARE / waves)
     assert derived <= configured, "the configured value is a CEILING, never a floor"
+    if configured < loop * VISION_LOOP_SHARE / waves:
+        assert derived == configured, (
+            "the configured value is the smaller of the two, so it must be what "
+            "binds — a derived value below it means the ceiling was bypassed"
+        )
     # `+ 1e-9` is an ULP allowance, not slack in the invariant. The left side
     # re-associates `loop * SHARE / waves` by multiplying back, and IEEE-754
     # does not promise that round trip is exact — `8.0 * 0.6` is already
@@ -262,6 +284,41 @@ def test_a_long_clip_tightens_the_per_call_timeout():
     assert derived == pytest.approx(21.6)
     assert derived < OPERATOR_CONFIGURED
     assert 10 * derived < OPERATOR_LOOP
+
+
+def test_the_client_derives_one_ceiling_per_wave_count(mimo):
+    """`_call_timeout` is the path the CLIENT actually uses — the pure function
+    above is only half the change.
+
+    Found by the mutation sweep (2026-09-23): reverting `_call_timeout` to
+    always derive for a single window left every other test in this file
+    GREEN, because they all call `derive_vision_timeout`/`vision_waves`
+    directly and never touch the client's own derivation. The wiring that
+    decides `windows=None` vs a real count — the whole reason `describe` grew
+    the parameter — was unguarded.
+
+    Asserts on the client's own ceiling, not on the function's: a `windows=None`
+    read (image, voice note, the text pass) is one wave; a ten-window read is
+    ten, so it gets a tenth of the loop share.
+    """
+    # `_client`'s own default is `timeout_seconds=5.0`, which IS `configured` —
+    # so the operator's pair has to be passed explicitly, or this measures
+    # the helper's default rather than the deployment's numbers.
+    client = _client(
+        mimo, timeout_seconds=OPERATOR_CONFIGURED, loop_timeout_seconds=OPERATOR_LOOP,
+    )
+    assert client._call_timeout(None) == OPERATOR_CONFIGURED, (
+        "a single-view read must honour the configured ceiling"
+    )
+    assert client._call_timeout(1) == client._call_timeout(None), (
+        "one window is one wave — it must derive the same ceiling as a "
+        "single-view read, or a 90 s Instagram clip and a photo disagree"
+    )
+    long_read = client._call_timeout(10)
+    assert long_read < client._call_timeout(1), (
+        "ten windows must derive a tighter per-window ceiling than one"
+    )
+    assert long_read == pytest.approx(OPERATOR_LOOP * 0.6 / 10)
 
 
 def test_the_media_fetch_budget_is_not_an_input_to_the_derivation():
