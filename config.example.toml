@@ -1912,7 +1912,11 @@ timeout_seconds = 240.0
 # spends it, and the instrument that says whether it is being spent well is
 # `nora_dream_guard_vetoes_total{adaptor="proactive",rule="memory-budget"}`
 # against the decide suite's recall.
-max_memory_calls = 6
+#
+# 6 -> 16 (operator, 2026-09-24), with the per-verb ceilings below raised to
+# match: `ask_memory`, `search_memory_workspace` and `about` to 8 each. 6 was
+# below `lookup_person` alone, so it was the number every memory verb ran under.
+max_memory_calls = 16
 
 # **The per-tool call ceilings this pass overrides**, a tool name to how many
 # times ONE pass may call it. Applied OVER `NativeTool.budget` and over
@@ -1947,7 +1951,10 @@ max_memory_calls = 6
 # nothing would otherwise leave this file recording a bound the pass does not
 # actually run under, with nothing measuring the difference.
 [dreamer.budgets.proactive.tool_calls]
-note_read = 8
+# 8 -> 16 (operator, 2026-09-24): a unit's open-note count only grows between
+# curations, and a note decided from its index line alone is the silent shape
+# above.
+note_read = 16
 # `lookup_person` — the table says 4, another TAG TURN's number, sized for
 # "one message routinely names two people". TRIPLED to 12 (operator,
 # 2026-09-18). A decide pass is not answering one message: it is asked for a
@@ -1960,6 +1967,18 @@ note_read = 8
 # round trips and not by work. See `max_memory_calls = 6` above: that is the
 # ceiling that actually binds this verb, and 12 here is inert without it.
 lookup_person = 12
+# The other memory verbs, 4 -> 8 each (operator, 2026-09-24), and bound by
+# `max_memory_calls = 16` above, not by these numbers alone.
+ask_memory = 8
+search_memory_workspace = 8
+about = 8
+note_search = 4
+# `remind` — the table says 2, a tag turn's number: one reply rarely sets more.
+# This pass decides every open note of a unit at once, and a refused call is
+# still a spent one: Langfuse `42f7e8bd` (2026-09-23) spent both on refusals
+# and was stopped at the third. 6 (operator, 2026-09-24).
+# `reminders.max_pending_per_requester` still bounds what actually lands.
+remind = 6
 
 # THE CULTURE FOLD (design/culture-tier). Uncommented from 2026-09-17, when the
 # adaptor stopped being tool-free: it now holds nine read verbs through an
