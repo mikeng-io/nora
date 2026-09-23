@@ -1076,9 +1076,10 @@ bridge_url = "http://127.0.0.1:19826"
 # OFF here and off in the code, the house rule for anything that reads other
 # people. Turning it on ALSO needs identity.toml to carry each person's `igid`
 # ([[persons.<id>.instagram]]): a read names a PERSON, never a handle, and
-# Nora does not guess an account from a name — a person with no igid, or two,
-# is answered "I don't know which account", and a story is read only for
-# someone listed in a group room of policy.toml.
+# Nora does not guess an account from a name: a person with no igid is
+# answered "no Instagram account on file", one with two is ambiguous, and a
+# story is read only for someone listed in a group room of policy.toml, and
+# only on a turn where somebody asked.
 #
 # The HEADER is live and `enabled` is written out, unlike the two settings
 # below it. A wholly commented-out section is not "the default, shown": it
