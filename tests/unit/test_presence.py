@@ -160,9 +160,15 @@ async def test_a_unit_alone_in_policy_does_not_claim_other_groups(tmp_path):
     assert "other groups" not in body
 
 
-async def test_no_room_id_reaches_the_block(policy):
-    body = await _body(PresenceReader(policy=policy, adapters=_adapters()))
+async def test_no_room_id_reaches_the_block(tmp_path):
+    """R-18. The WhatsApp room here has NO label, which is the case that
+    matters: `UnitRoom` falls back to `primary_id` for exactly that, and a
+    reader copying it would put a room id in every turn."""
+    path = tmp_path / "policy.toml"
+    path.write_text(_POLICY.replace('label = "Friends WA"\n', ""))
+    body = await _body(PresenceReader(policy=load_policy(path), adapters=_adapters()))
 
+    assert "and WhatsApp." in body          # named by its network alone
     for rid in ("SIGNAL-FRIENDS-ID", "111/222", "WA-FRIENDS-ID", "IG-RIDGELINE-ID"):
         assert rid not in body
 
