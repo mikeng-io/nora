@@ -38,7 +38,7 @@ from typing import Any
 #: NEVER «I looked and there was nothing».
 UNAVAILABLE: dict[str, Any] = {
     "status": "unavailable",
-    "note": "I couldn't read that just now. Say so — don't answer as if "
+    "note": "I couldn't read that just now. Say so. Don't answer as if "
             "you'd checked.",
 }
 
@@ -100,7 +100,7 @@ def not_set_up(platform: str) -> dict[str, Any]:
 NOTHING_FOUND: dict[str, Any] = {
     "status": "nothing_found",
     "note": "I looked and there was nothing there. Say you couldn't find "
-            "anything — not that you couldn't check.",
+            "anything, not that you couldn't check.",
 }
 
 

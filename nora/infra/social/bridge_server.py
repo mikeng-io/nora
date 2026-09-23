@@ -50,24 +50,22 @@ log = logging.getLogger("nora.social.bridge")
 # The ONE mapping a request can resolve to an argv through (DEC-151) —
 # `(platform, what) -> (site, command)`, frozen so nothing at runtime can add
 # a row. Every command it can produce is one OpenCLI 1.8.7 marks `access:
-# "read"` in `opencli list -f json` (verified 2026-08-30). `("instagram",
-# "post")` is ABSENT on purpose: 1.8.7 has no caption-by-URL command, and the
-# tool answers that combination `unavailable` without ever calling the bridge.
+# "read"` in `opencli list -f json` (verified 2026-08-30).
 #
-# `("instagram", "profile")` and `("instagram", "posts")` LEFT 2026-09-24
-# (design/instagram-adoption/15, /18, P5): every Instagram read goes through
-# the instagram-bridge, and a verb's OpenCLI row is deleted in the same change
-# that gives it a bridge route. Measured before they went, 2026-09-22: profile
-# answered 429 all day and `user` returned Instagram's HTML shell, so nothing
-# working was lost. `("instagram", "search")` is the one Instagram row left,
-# until P11 moves it to the bridge; after that OpenCLI serves X only.
+# **X only, and no Instagram row at all** (`test_r86_…` asserts it). Every
+# Instagram read goes through the instagram-bridge (design/instagram-adoption/
+# 15, /18), and a verb's OpenCLI row is deleted in the same change that gives
+# it a bridge route. `("instagram", "profile")` and `("instagram", "posts")`
+# left 2026-09-24 (P5; measured 2026-09-22, profile answered 429 all day and
+# `user` returned Instagram's HTML shell, so nothing working was lost).
+# `("instagram", "search")` left 2026-09-24 with P11, when `instagram_search`
+# landed on the bridge's `GET /accounts?query=`.
 READ_ONLY_ALLOWLIST: MappingProxyType[tuple[str, str], tuple[str, str]] = (
     MappingProxyType({
         ("x", "post"): ("twitter", "thread"),
         ("x", "profile"): ("twitter", "profile"),
         ("x", "posts"): ("twitter", "tweets"),
         ("x", "search"): ("twitter", "search"),
-        ("instagram", "search"): ("instagram", "search"),
     })
 )
 
@@ -96,7 +94,6 @@ OPENCLI_WRITE_VERBS = frozenset({
 _LIMIT_COMMANDS = frozenset({
     ("twitter", "tweets"),
     ("twitter", "search"),
-    ("instagram", "search"),
 })
 
 # Re-validated HERE, host-side, even though the tool validates too — the
@@ -170,10 +167,9 @@ def _validate_target(site: str, command: str, target: str) -> str | None:
 def _source_url(site: str, command: str, target_arg: str) -> str | None:
     """Where the read came from, for provenance on the wrapped content.
 
-    `x.com/i/status/<id>` is X's own canonical id-only status URL. Instagram
-    user search, the one Instagram command left here, has no stable public
-    results URL, so it carries None and the client falls back to naming the
-    platform as the provenance."""
+    `x.com/i/status/<id>` is X's own canonical id-only status URL. A command
+    this function does not name carries None, and the client falls back to
+    naming the platform as the provenance."""
     if site == "twitter":
         if command == "thread":
             return f"https://x.com/i/status/{target_arg}"

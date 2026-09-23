@@ -1582,15 +1582,16 @@ class SearchConfig(BaseModel):
 
 class InstagramSocialConfig(BaseModel):
     """The Instagram social backend — `instagram_read`'s profile and story
-    reads via the instagram-bridge container (design/instagram-adoption/15,
-    /18).
+    reads and `instagram_search`'s account search, via the instagram-bridge
+    container (design/instagram-adoption/15, /18).
 
     It serves the rows on `SocialRouter`'s exception list, `(instagram,
-    story)` and `(instagram, profile)`: every Instagram read goes through the
-    bridge, and a verb joins when its bridge route works end to end.
-    Instagram account search is the one verb still on the OpenCLI default,
-    until P11. Enabling it also composes `PersonsSubjectIndex`, because both
-    rows take a PERSON and only the person index may resolve one to an igid.
+    story)`, `(instagram, profile)` and, since P11, `(instagram, search)`:
+    every Instagram read goes through the bridge, and a verb joins when its
+    bridge route works end to end. Enabling it also composes
+    `PersonsSubjectIndex`, because the profile and story rows take a PERSON
+    and only the person index may resolve one to an igid (the search row
+    takes free text and needs none).
 
     **Its own `enabled` rather than riding `[social] enabled`**, because the
     two backends fail and are provisioned independently: the OpenCLI path
@@ -1628,10 +1629,10 @@ class InstagramSocialConfig(BaseModel):
 
 
 class SocialConfig(BaseModel):
-    """READ-ONLY social reads: X (and Instagram account search, until P11)
-    for the `social_fetch` tool (DEC-151) via the host-side OpenCLI bridge
-    (`python -m nora.infra.social`, deployed as `deploy/social-bridge/`), and
-    Instagram profiles and stories for `instagram_read` via the
+    """READ-ONLY social reads: X for the `social_fetch` tool (DEC-151) via
+    the host-side OpenCLI bridge (`python -m nora.infra.social`, deployed as
+    `deploy/social-bridge/`), and Instagram profiles, stories and account
+    search for `instagram_read` and `instagram_search` via the
     instagram-bridge container (`[social.instagram]` below).
 
     **Optional and every field defaults**, the `RouteConfig` shape. `enabled`

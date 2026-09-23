@@ -52,6 +52,7 @@ async def bridge():
     app.router.add_get("/threads/{thread_fbid}/members", record)
     app.router.add_get("/accounts/{igid}", record)
     app.router.add_get("/accounts/{igid}/story", record)
+    app.router.add_get("/accounts", record)
     server = TestServer(app)
     await server.start_server()
     yield str(server.make_url("")).rstrip("/"), seen
@@ -104,7 +105,12 @@ async def test_a_roster_read_carries_the_turns_trace(bridge):
 
 @pytest.mark.parametrize(
     ("what", "path"),
-    [("story", "/accounts/10000001/story"), ("profile", "/accounts/10000001")],
+    [
+        ("story", "/accounts/10000001/story"),
+        ("profile", "/accounts/10000001"),
+        # P11: the account search rides the same `_get`, so the same header.
+        ("search", "/accounts"),
+    ],
 )
 async def test_a_social_read_carries_the_turns_trace(bridge, what, path):
     base_url, seen = bridge

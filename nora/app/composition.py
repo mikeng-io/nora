@@ -2077,9 +2077,9 @@ async def build_dependencies(
                 cfg.search.provider,
                 cfg.search.api_key_env,
             )
-    # `social_fetch` (DEC-151) and `instagram_read` (design/instagram-
-    # adoption/18) get ONE `SocialProvider` — `SocialRouter` — and the
-    # registry stays unaware that there are two backends under it
+    # `social_fetch` (DEC-151), `instagram_read` and `instagram_search`
+    # (design/instagram-adoption/18) get ONE `SocialProvider` — `SocialRouter`
+    # — and the registry stays unaware that there are two backends under it
     # (design/instagram-adoption/08). Each backend is wired independently and
     # there is NO credential on either, so `enabled` alone is the gate (the
     # `[preview]` shape); an unwired backend answers `unavailable` for ITS OWN
@@ -2099,8 +2099,10 @@ async def build_dependencies(
         )
     # The INSTAGRAM backend serves every Instagram read the bridge has a route
     # for — `instagram/story` and `instagram/profile`, `instagram_read`'s two
-    # (design/instagram-adoption/15, /18, P5). Both rows take a PERSON, so the
-    # router needs a `SocialSubjectIndex`: `PersonsSubjectIndex` resolves
+    # (design/instagram-adoption/15, /18, P5), and `instagram/search`,
+    # `instagram_search`'s (P11), which takes free text and needs no index.
+    # The two read rows take a PERSON, so the router needs a
+    # `SocialSubjectIndex`: `PersonsSubjectIndex` resolves
     # person -> igid off `identity.toml` (kind-aware; none or several is
     # `ambiguous`) and answers Tier 0 off `policy.toml`'s group rooms (a `*`
     # room and `[dm]` never count). `SocialRouter` refuses to be constructed

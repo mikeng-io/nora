@@ -1,12 +1,12 @@
-"""Social reads behind the `social_fetch` (DEC-151) and `instagram_read`
-(design/instagram-adoption/18) tools — X and Instagram, READ-ONLY, over two
-backends the model never learns the names of.
+"""Social reads behind the `social_fetch` (DEC-151), `instagram_read` and
+`instagram_search` (design/instagram-adoption/18) tools — X and Instagram,
+READ-ONLY, over two backends the model never learns the names of.
 
 `SocialRouter` is what the composition root injects; it is itself a
 `SocialProvider`, so `nora.agent.registry` is unchanged and unaware. Below it,
 X goes to OpenCLI and Instagram to the instagram-bridge (`15`): the bridge's
-rows are `instagram/story` and `instagram/profile`, and `instagram/search` is
-the one Instagram verb still on OpenCLI until P11 — see `router.py`.
+rows are `instagram/story`, `instagram/profile` and, since P11,
+`instagram/search`. OpenCLI serves X only. See `router.py`.
 
 The OpenCLI half has a loopback HTTP seam between two halves of THIS package:
 
@@ -21,8 +21,9 @@ The OpenCLI half has a loopback HTTP seam between two halves of THIS package:
 
 The Instagram half has no host-side half here at all:
 
-* `instagram_client.py::InstagramSocialClient` — `GET /accounts/{igid}` and
-  `GET /accounts/{igid}/story` on the instagram-bridge container, over the
+* `instagram_client.py::InstagramSocialClient` — `GET /accounts/{igid}`,
+  `GET /accounts/{igid}/story` and `GET /accounts?query=` on the
+  instagram-bridge container, over the
   private `nora` network. The bodies are pinned by shared fixtures the Go
   handlers generate (`tests/fixtures/instagram_bridge/`).
 

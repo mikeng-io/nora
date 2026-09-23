@@ -61,7 +61,7 @@ async def test_a_policy_with_only_star_rooms_has_no_tier_zero_at_all(tmp_path):
 
 async def test_two_accounts_are_returned_as_two_never_a_pick(tmp_path):
     """Nothing in a `person_id` says which of a friend's accounts was meant,
-    and a story read is visible to its author — so the index hands back BOTH
+    and reading the wrong one reads a different human, so the index hands back BOTH
     and the router answers `ambiguous`. Collapsing them to one here, or to
     `None`, is what this pins against."""
     index = PersonsSubjectIndex(

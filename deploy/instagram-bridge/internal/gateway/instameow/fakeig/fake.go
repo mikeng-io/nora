@@ -114,9 +114,10 @@ type IG struct {
 	// --- the story read ----------------------------------------------------
 	//
 	// reelIDs records every CALL's id list, not a flattened set, so the "one
-	// igid, never a batch" rule can actually be asserted. A story read is
-	// visible to its author, and a batched one would put Nora in several
-	// people's viewer lists to answer a question about one.
+	// igid, never a batch" rule can actually be asserted. A batched read
+	// would open several people's stories to answer a question about one
+	// (whether the author sees the view is unmeasured, design 04, 05
+	// §Reading a story).
 	ReelIDs [][]string
 	// reelResp overrides the answer. nil means "the measured reel".
 	ReelResp *responses.ReelInfoResponse

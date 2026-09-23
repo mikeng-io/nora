@@ -243,8 +243,9 @@ func (s *Service) ReadAccount(ctx context.Context, igid string) (AccountRead, er
 	return AccountRead{Account: acct, Social: s.social.SocialProfile(ctx, id)}, nil
 }
 
-// ReadStory reads one account's current story — ONE igid, because a story
-// read is visible to its author.
+// ReadStory reads one account's current story — ONE igid, because a batch
+// would open stories nobody asked about (a privacy choice; whether the author
+// sees the view is unmeasured, design 04, 05 §Reading a story).
 func (s *Service) ReadStory(ctx context.Context, igid string) (domain.Story, error) {
 	if _, err := s.ready(); err != nil {
 		return domain.Story{}, err
