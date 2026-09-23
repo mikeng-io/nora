@@ -136,6 +136,10 @@ NORA_SHOWN_WHERE = "nora.shown_where"
 #: `{network: state}`, or `None` on a build with no `<presence>` reader —
 #: where there is nothing to hold and the prompt carries no transport state.
 NORA_TRANSPORT = "nora.transport_held"
+#: The judge's own raw answers (`Judgement.samples`), one per sample. The
+#: verdict alone says FAIL; this says which criterion and why, which is the
+#: difference between a reading and a number when a case moves.
+NORA_JUDGE_SAMPLES = "nora.judge_samples"
 #: `Outcome.written`/`len(.changed)`/`len(.staged)` off the FIRST drive —
 #: never surfaced to a grader before this (S6, `10-the-scenario-map.md` §3).
 #: `dream()`'s own `written`/`changed` are already PER-CALL DELTAS (it
@@ -744,6 +748,7 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
             # S3/S9 (`10-the-scenario-map.md` §3) — judged HERE, while the
             # subject is alive, because the judge needs the doctrine she
             # actually ran ON, not a copy read off disk.
+            judge_samples: tuple[str, ...] = ()
             if spec.judge is not None and outcome.said and outcome.error is None:
                 from evals.rebuilt.grading import criteria_for
 
@@ -763,6 +768,7 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                 outcome = dataclasses.replace(
                     outcome, judged=judgement.verdict, error=judgement.error,
                 )
+                judge_samples = tuple(getattr(judgement, "samples", ()) or ())
 
             repeat_state = []
             if spec.repeat > 1:
@@ -800,6 +806,7 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                     EnvironmentState(name=NORA_TOOLS, state=tools_called),
                     EnvironmentState(name=NORA_SHOWN_WHERE, state=shown),
                     EnvironmentState(name=NORA_TRANSPORT, state=transport),
+                    EnvironmentState(name=NORA_JUDGE_SAMPLES, state=judge_samples),
                     *repeat_state,
                 ],
             }
@@ -884,6 +891,7 @@ def nora_task(spec: Spec):
                     EnvironmentState(name=NORA_TOOLS, state=None),
                     EnvironmentState(name=NORA_SHOWN_WHERE, state=None),
                     EnvironmentState(name=NORA_TRANSPORT, state=None),
+                    EnvironmentState(name=NORA_JUDGE_SAMPLES, state=()),
                 ],
             }
 
