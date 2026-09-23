@@ -38,7 +38,7 @@ import asyncio
 import logging
 import os
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -71,8 +71,11 @@ from nora.config import load as load_config
 from nora.doctrine.loader import Doctrine, DoctrineStore
 from nora.domain.models import DeliveryStatus, NormalizedMessage, PersonRef, TranscriptRow
 from nora.domain.notes import Note, NoteRevision
+from nora.domain.ports import AdapterHealth
 from nora.domain.reminders import Reminder, ReminderCaps, ReminderState
+from nora.domain.self_presence import Presence
 from nora.domain.standing import Standing
+from nora.engagement.self_presence import PresenceReader
 from nora.engagement.stages.deliver import BUDGET_STOP_REASONS as _BUDGET_STOP_REASONS
 from nora.infra.honcho import HonchoClient
 from nora.infra.sql.engine import create_sql_engine
@@ -87,7 +90,7 @@ from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.language.proactive import ProactiveAdaptor, UnitRoom
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, load_persons
-from nora.policy import permissive_policy
+from nora.policy import Conversation, Policy, permissive_policy
 from nora.tag import is_tagged
 from nora.testing import (
     BACKED_TOOLS,
@@ -1274,6 +1277,51 @@ _EVAL_ROOM = frozenset({"+852111", "+852222", "+852333", "+852444"})
 _EVAL_ROOM_DISCORD = frozenset({"u-miles", "u-grant", "u-ada", "u-ben"})
 
 
+class _EvalTransportUp:
+    """Every network of an eval case is up: the proactive suite grades the
+    decision, not an outage."""
+
+    def __init__(self, platform: str) -> None:
+        self._platform = platform
+
+    async def health(self) -> AdapterHealth:
+        return AdapterHealth(platform=self._platform, connected=True)
+
+
+def _eval_presence_of(
+    unit: str, rooms: Sequence[Mapping[str, object]],
+) -> Callable[[UnitRoom], Awaitable[Presence]]:
+    """The production `PresenceReader` over this case's rooms, as a policy.
+
+    Labels come from the case exactly as a `policy.toml` label would, and are
+    never replaced by the id — the reader's own R-18 rule, not this helper's.
+    """
+    convos = tuple(
+        Conversation(
+            platform=str(r["platform"]), ids=frozenset({str(r["conversation_id"])}),
+            persons=None, label=str(r.get("label", "")),
+            primary_id=str(r["conversation_id"]), unit=unit,
+            home_room=bool(r.get("home", False)),
+        )
+        for r in rooms
+    )
+    policy = Policy(
+        conversations=convos,
+        _by_id={(c.platform, c.primary_id): c for c in convos},
+    )
+    reader = PresenceReader(
+        policy=policy,
+        adapters={c.platform: _EvalTransportUp(c.platform) for c in convos},
+    )
+
+    async def presence_of(home: UnitRoom) -> Presence:
+        return await reader.read(
+            platform=home.platform, conversation_id=home.conversation_id,
+        )
+
+    return presence_of
+
+
 async def _eval_home_room_people(home: object) -> tuple[PersonRef, ...]:
     """The harness's `people_of`: every mapped person, in a stable order.
 
@@ -1554,6 +1602,11 @@ async def run_proactive_decide_case(
         roster_index_conclusions=1,
         ai_peer="nora", clock=lambda: now, timezone=ZoneInfo("Asia/Hong_Kong"),
         metrics=Metrics(),
+        # `<presence>` through the PRODUCTION reader (design/self-awareness/02,
+        # D2), over a policy built from this case's own rooms with every
+        # transport up — so the suite grades the block a deployment renders,
+        # not the no-reader fallback.
+        presence_of=_eval_presence_of(unit, rooms),
     )
     before = {r.id for r in await reminders.history(
         requester_person_id="nora", since=now - timedelta(days=365), limit=1000,

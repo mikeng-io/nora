@@ -676,14 +676,17 @@ class ProactiveAdaptor:
         `presence_of` is the composition root's `PresenceReader`, read on the
         home room at pass time and never cached. `None` (no reader wired, the
         contract fake and a bare eval drive) or a reader that could not place
-        the room renders the network and the label alone — never a claim
-        about rooms or health nobody read.
+        the room renders the network ALONE — never a claim about rooms or
+        health nobody read, and never `home.label`. `UnitRoom.label` is built
+        as `conv.label or conv.primary_id` by the composition root, so for an
+        unlabelled room it IS the room id, and R-18 keeps ids off the wire.
+        The reader reads the policy label itself and never falls back.
         """
         presence: Presence | None = None
         if self._presence_of is not None:
             presence = await self._presence_of(home)
         if presence is None:
-            presence = Presence(platform=home.platform, label=home.label)
+            presence = Presence(platform=home.platform)
         block = restamp(render_presence(presence, room_is=home.description), _ROW)
         return block.render()
 

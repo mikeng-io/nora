@@ -237,7 +237,7 @@ async def test_inputs_renders_the_index_the_rooms_the_log_and_the_self_card():
     text = await adaptor.inputs(key=WS, batch=())
 
     assert "2026-09-09 Wed 07:00 (Asia/Hong_Kong)" in text.split("</now>")[0]
-    assert "You are in «Friends» on Signal." in text.split("</presence>")[0]
+    assert "You are on Signal right now." in text.split("</presence>")[0]
     assert (
         '<note n="1" title="AI Hackathon dinner plan" '
         'about="Sat 12 Sep, in 3 days">where to eat is open</note>'
@@ -272,7 +272,26 @@ async def test_presence_carries_the_operators_description_as_an_attribute():
 
     opening = text.split("<presence ")[1].split(">")[0]
     assert 'this_room_is="a games room; 2200 is when people log on' in opening
-    assert "You are in «Zone 42» on Signal." in text
+
+
+async def test_presence_without_a_reader_never_renders_the_unit_room_label():
+    """R-18, on the no-reader fallback. The composition root builds
+    `UnitRoom.label` as `conv.label or conv.primary_id`, so an unlabelled
+    room's label IS its id; the fallback names the network alone rather than
+    trusting it."""
+    rooms = (UnitRoom(
+        platform="signal", conversation_id="Z3JvdXAuc2VjcmV0aWQ=",
+        label="Z3JvdXAuc2VjcmV0aWQ=", home=True,
+    ),)
+    notes = InMemoryNoteStore()
+    await _note(notes)
+    adaptor = _adaptor(notes=notes, rooms=rooms)
+
+    text = await adaptor.inputs(key=WS, batch=())
+    block = text.split("<presence ")[1].split("</presence>")[0]
+
+    assert "Z3JvdXAuc2VjcmV0aWQ=" not in block
+    assert "You are on Signal right now." in block
 
 
 async def test_presence_replaces_home_room_on_the_proactive_pass():
