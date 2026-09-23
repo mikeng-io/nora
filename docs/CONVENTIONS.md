@@ -442,7 +442,8 @@ implementations agreeing, every test green, two reviews clean. The divergence
 lived only in the plan, and nothing in this repo had ever looked at one. The
 fix is `== sa.false()` (`nora/infra/sql/turn_verdicts.py:100`) and the check is
 `tests/contract/test_turn_verdict_store_contract.py::test_the_trigger_read_
-actually_uses_its_partial_index`.
+actually_uses_its_partial_index`. (Both were deleted on 2026-09-24 with the
+grounding verdict, `design/standing-compact/`; the lesson stands.)
 
 **And the first version of that test compiled its OWN statement** with the
 correct spelling and EXPLAINed that — so reverting the store's predicate to the

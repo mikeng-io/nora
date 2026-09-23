@@ -1,7 +1,7 @@
 """`SqlDecisionLogStore` — the shared decision log's Postgres half (issue #199).
 
 `__init__(self, engine: AsyncEngine)` and nothing else, matching
-`SqlTurnVerdictStore`/`SqlStandingStore`/`SqlTagTraceStore`: no config, no
+`SqlStandingStore`/`SqlTagTraceStore`: no config, no
 clock, no metrics. The clock is on the row; the bound and the fail-soft rule
 are `nora.domain.decision_log.DecisionLogRecorder`'s, one layer up, because a
 store that swallowed its own failures could not be contract-tested against a
@@ -9,7 +9,7 @@ double that raises.
 
 **There is no `update`, no `delete` and no `ON CONFLICT` — only `append`, a
 plain INSERT.** That absence IS the append-only property, the same way
-`TurnVerdictStore` has no `write` and `DreamSink` has no delete: a path that
+`DreamSink` has no delete: a path that
 does not exist cannot be taken by someone who has not read the docstring. A
 second append for the same `id` raises `IntegrityError` from the primary key,
 which is the correct outcome — it means a caller reused an id, and silently

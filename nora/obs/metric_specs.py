@@ -1329,29 +1329,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # the one that wrote nothing. Two very different healths wearing one name
     # would make the series unreadable: a high `first` with a low `final` is
     # the mechanism working.
-    # 26 §3's second output. The label is the VERDICT, not the write's success,
-    # because the reading that matters is the grounding mix — a room where
-    # every turn comes back `false` is telling you something about the doctrine
-    # or the tools, not about the store.
-    #
-    #   true      — the fold judged the turn grounded
-    #   false     — ungrounded; `unsupported` names which claims
-    #   absent    — the fold revised the position but produced no usable
-    #               verdict. A sustained rate means the objective is not
-    #               asking for one clearly enough — a reading about the PROMPT
-    #   unwritten — the verdict parsed but the save failed, including the
-    #               duplicate-key error that IS the never-rewritten property
-    #               (a turn debriefed twice). Never folded in with `absent`:
-    #               "the model gave nothing" and "the database refused" send
-    #               the next investigation to different places (R-27)
-    # 26 §6's named reading, and the LABEL is the whole point: "forced-on-
-    # ungrounded versus ceiling. If the ceiling dominates, the trigger is a
-    # clock wearing a condition." So `ungrounded` wins whenever both conditions
-    # hold — labelling a turn that actually went wrong as `ceiling` manufactures
-    # the very degradation this series exists to detect.
-    #
-    # Never firing at all is also a reading: it means positions are never being
-    # rebuilt, so a bad fold carries itself forward indefinitely.
     # 26 §7's read-set, reaching the debrief. Counted before anything consumes
     # it ON PURPOSE: the note-proposal output is still blocked on the store's
     # create-shaped payload, and a wiring that is built but unread is exactly
@@ -1404,9 +1381,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "the two paths cannot argue over the same note every turn.",
     ),
     # Issue #189 step 1. `nora.engagement.debrief_render._clip` cuts one block
-    # at that module's `_BLOCK_CHARS` before it reaches EITHER of the two
-    # model calls the debrief makes (the standing call and the verdict call,
-    # each rendering its own copy of the turn) — and until this counter,
+    # at that module's bound (600, or 4000 for a tool result or a thinking
+    # step since design/standing-compact/10 §3) before the fold sees it — and
+    # until this counter,
     # nothing said how often, or which kind of block. It exists because the
     # module could not answer its own question: `grep -c "metrics"
     # nora/engagement/debrief_render.py` returned 0 before this, which made
@@ -1421,63 +1398,23 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     #                 supported by the tail of a long tool result reads as
     #                 unsupported to a grader shown only the head
     #
-    # This is COUNT ONLY (issue #189 step 1); step 2 is the render carrying an
-    # explicit mark so the model reading a clipped block knows it is one
-    # (`_REASONING_LEGEND`), and step 3 — sizing `_BLOCK_CHARS` against what
-    # this series says — is explicitly OUT of scope for the issue that added
-    # this counter: sizing follows the count, never the other way round.
+    # Step 2 is the render carrying an explicit mark so the model reading a
+    # clipped block knows it is one (the `<steps>` type's `clipped`
+    # annotation). Step 3, sizing the bound, landed 2026-09-24 against the
+    # measured size of 1000 production tool results — sizing followed the
+    # count, not the other way round.
     _CounterSpec(
         "nora_debrief_clips_total",
-        "Blocks the debrief render cut at _BLOCK_CHARS before a model saw "
+        "Blocks the debrief render cut at its bound before the fold saw "
         "them, by which kind of block (reasoning / tool_call / tool_result).",
         ("block",),
     ),
-    _CounterSpec(
-        "nora_standing_rederivations_total",
-        "Re-derivations TRIGGERED, by trigger: ungrounded (an unconsumed "
-        "ungrounded verdict) or ceiling (fold_count reached [standing] "
-        "rebuild_after_folds). Ungrounded wins when both hold. Read against "
-        "nora_standing_rederivations_written_total: a fold that refuses "
-        "writes nothing and advances no watermark, so the trigger fires again "
-        "next turn, and on this series alone that is indistinguishable from a "
-        "trigger latched on.",
-        ("trigger",),
-    ),
-    _CounterSpec(
-        "nora_standing_rederivations_written_total",
-        "Re-derivations that LANDED — the rebuilt position was written and, "
-        "for an ungrounded trigger, the watermark advanced with it. Same "
-        "labels as nora_standing_rederivations_total; a persistent gap "
-        "between the two is a fold that keeps failing, not a latch.",
-        ("trigger",),
-    ),
-    # Issue #199's deterministic half, and it exists because the check it
-    # counts would otherwise make `nora_turn_verdict_total` unreadable.
-    # #189's finding — the judge has never once returned false — is read off
-    # that series, and from now on a `false` there may be code-authored. The
-    # `model_verdict` label says what the MODEL had said at the moment the
-    # code overrode it: `grounded` is the incident's own shape (the judge
-    # blessed a contradicted position), `ungrounded` means both halves agreed,
-    # `absent` means the judge produced nothing usable and this is the only
-    # verdict the turn has. A rising `grounded` is the reading that says the
-    # prompt half is still not seeing what the record does.
-    _CounterSpec(
-        "nora_debrief_room_scope_overrides_total",
-        "Turns the debrief's deterministic check forced to ungrounded — the "
-        "turn broke without sending while a reply of hers was delivered "
-        "contemporaneously — by what the model's own verdict had said: "
-        "grounded, ungrounded, or absent. Subtract nothing from "
-        "nora_turn_verdict_total; read the two together, because a false "
-        "there no longer implies the judge convicted.",
-        ("model_verdict",),
-    ),
-    _CounterSpec(
-        "nora_turn_verdict_total",
-        "Per-turn debrief verdicts by grounding: true, false, absent (no "
-        "usable verdict from the fold), unwritten (parsed but the save "
-        "failed).",
-        ("grounded",),
-    ),
+    # `nora_standing_rederivations_total`, `..._written_total`,
+    # `nora_debrief_room_scope_overrides_total` and `nora_turn_verdict_total`
+    # were declared here until 2026-09-24 and are GONE with the verdict and the
+    # re-derivation triggers they counted (design/standing-compact/10 §1). A
+    # declared metric with no call site renders a series that is always zero,
+    # which reads as «never fired» rather than «no longer exists».
     _CounterSpec(
         "nora_standing_overflow_refusals_total",
         "Standing writes refused for exceeding [standing] max_chars, by "

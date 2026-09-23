@@ -2364,6 +2364,10 @@ IDX_STANDING_REVISION_ROOM_UPDATED = sa.Index(
 )
 
 # ── turn_verdict (design/dreamer-agent-loop/26-standing.md §3) ─────────────
+# **NO WRITER SINCE 2026-09-24.** The verdict and the re-derivation it fed
+# were deleted (design/standing-compact/); the table stays, as dropped tiers'
+# tables do — dropping it is a separate explicit decision. Likewise
+# `standing.consumed_verdict_tag` above.
 # The debrief's per-TURN judgement, written once and NEVER rewritten — the
 # opposite cardinality to `standing` beside it, and the split is structural
 # rather than stylistic. It was found by a bug: the first draft put these

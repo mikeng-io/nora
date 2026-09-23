@@ -19,12 +19,11 @@ from nora.domain.standing import Standing
 from nora.domain.tag_trace import TagTrace
 from nora.engagement.debrief_render import (
     _BLOCK_CHARS,
+    _CARRIED_CHARS,
     _CLIP_MARK,
     render_debrief_input,
     render_debrief_turn,
     render_rollup_input,
-    render_rollup_verdict_input,
-    render_verdict_input,
 )
 from nora.obs.metrics import Metrics
 
@@ -246,8 +245,8 @@ def test_a_tool_call_and_its_result_are_rendered_as_such():
 # --- issue #189: the clip counter and the mark it explains -----------------
 
 
-def _reasoning_body(out: str) -> str:
-    """The `<reasoning>` block's own text, BODY ONLY — opening tag excluded.
+def _steps_body(out: str) -> str:
+    """The `<steps>` block's own text, BODY ONLY — opening tag excluded.
 
     Excluding it is the point rather than tidiness. The sentence explaining the
     clip mark used to be a sibling `<how_to_read_reasoning>` block and is now
@@ -257,24 +256,25 @@ def _reasoning_body(out: str) -> str:
     `test_a_block_under_the_ceiling_is_not_counted_and_carries_no_mark` — the
     zero-assertion — would be the test that never went red.
     """
-    return _inner(out, "reasoning")
+    return _inner(out, "steps")
 
 
 def test_an_oversize_tool_result_is_clipped_counted_and_marked():
     """Issue #189 steps 1 and 2. Before this, `_BLOCK_CHARS` cut a tool
     result and said nothing to anybody: not a series an operator could read,
-    not a mark the grading model could read. Both now exist off one cut."""
+    not a mark the grading model could read. Both now exist off one cut —
+    at `_CARRIED_CHARS` for a tool result since design/standing-compact/10 §3."""
     metrics = Metrics()
-    long_result = "x" * (_BLOCK_CHARS + 50)
+    long_result = "x" * (_CARRIED_CHARS + 50)
     full_rendered = str([{"text": long_result}])  # what `_block` stringifies
     out = _render(trace=_trace(messages=(
         {"role": "user", "content": [
             {"toolResult": {"content": [{"text": long_result}]}},
         ]},
     )), metrics=metrics)
-    body = _reasoning_body(out)
+    body = _steps_body(out)
     assert f"…[{_CLIP_MARK}]" in body
-    assert full_rendered[:_BLOCK_CHARS] in body
+    assert full_rendered[:_CARRIED_CHARS] in body
     assert full_rendered not in body  # the tail is genuinely gone
     assert metrics.get("nora_debrief_clips_total", block="tool_result") == 1
 
@@ -289,10 +289,11 @@ def test_an_oversize_tool_call_and_an_oversize_reasoning_text_are_labelled_apart
         {"role": "assistant", "content": [
             {"text": long_text},
             {"toolUse": {"name": "where_is", "input": "w" * (_BLOCK_CHARS + 10)}},
-            {"reasoningContent": {"reasoningText": {"text": "r" * (_BLOCK_CHARS + 10)}}},
+            # A thinking step carries at `_CARRIED_CHARS`, not `_BLOCK_CHARS`.
+            {"reasoningContent": {"reasoningText": {"text": "r" * (_CARRIED_CHARS + 10)}}},
         ]},
     )), metrics=metrics)
-    assert _reasoning_body(out).count(f"…[{_CLIP_MARK}]") == 3
+    assert _steps_body(out).count(f"…[{_CLIP_MARK}]") == 3
     assert metrics.get("nora_debrief_clips_total", block="tool_call") == 1
     # the text block and the reasoning block are the SAME label (both are the
     # model's own output), so together they read 2 on "reasoning"
@@ -310,7 +311,7 @@ def test_a_block_under_the_ceiling_is_not_counted_and_carries_no_mark():
             {"toolResult": {"content": [{"text": "at home"}]}},
         ]},
     )), metrics=metrics)
-    assert f"…[{_CLIP_MARK}]" not in _reasoning_body(out)
+    assert f"…[{_CLIP_MARK}]" not in _steps_body(out)
     assert metrics.get("nora_debrief_clips_total") == 0
 
 
@@ -320,12 +321,13 @@ def test_the_clip_mark_is_explained_ON_the_block_that_can_carry_it():
     on EVERY turn, clipped or not, so the model learns one contract rather than
     a sometimes-explained mark.
 
-    **It is an ATTRIBUTE of `<reasoning>` now, not a sibling block** (#314).
+    **It is an ATTRIBUTE of `<steps>` now, not a sibling block** (#314).
     `<how_to_read_reasoning>` was a block whose entire content was prose about
     the block beside it, which existed only because a field's meaning had
     nowhere to live. It has one: `BlockType.annotations`, rendered as `fields=`
     on the block itself. Travelling WITH the block is what the sibling could
-    never do — it sat next to `<reasoning>` by an `order` number, and a
+    never do — it sat next to `<steps>` (then `<reasoning>`) by an `order`
+    number, and a
     renderer that moved one and not the other would ship an explanation
     describing something else.
     """
@@ -334,23 +336,8 @@ def test_the_clip_mark_is_explained_ON_the_block_that_can_carry_it():
         "the legend block is back; its content belongs in the type's "
         "annotations, where it cannot be separated from what it explains"
     )
-    tag = out.split("<reasoning ", 1)[1].split(">", 1)[0]
+    tag = out.split("<steps ", 1)[1].split(">", 1)[0]
     assert f"…[{_CLIP_MARK}]" in tag, tag
-
-
-def test_the_verdict_render_also_counts_and_marks_its_own_clip():
-    """The grounding verdict is the consumer issue #189 is actually about —
-    the standing render sharing `render_debrief_turn` must not be the only
-    one that counts."""
-    metrics = Metrics()
-    long_result = "y" * (_BLOCK_CHARS + 50)
-    out = render_verdict_input(trace=_trace(messages=(
-        {"role": "user", "content": [
-            {"toolResult": {"content": [{"text": long_result}]}},
-        ]},
-    )), display_name="Nora", metrics=metrics, tz=UTC)
-    assert f"…[{_CLIP_MARK}]" in out
-    assert metrics.get("nora_debrief_clips_total", block="tool_result") == 1
 
 
 def test_a_renamed_or_absent_sdk_field_degrades_rather_than_raising():
@@ -366,7 +353,7 @@ def test_a_renamed_or_absent_sdk_field_degrades_rather_than_raising():
         {"role": "assistant", "content": [{"unknownBlock": {"x": 1}}]},
         "not even a mapping",
     )))
-    assert "<reasoning " in out
+    assert "<steps " in out
 
 
 def test_group_authored_text_is_escaped():
@@ -380,33 +367,13 @@ def test_group_authored_text_is_escaped():
     assert "&lt;turn&gt;" in out
 
 
-# --- the verdict render, issue #78 Phase 2's second consumer ----------------
-
-
-def test_the_verdict_render_is_the_turn_without_the_prior():
-    """Call B sees the whole turn and NEVER `<standing_prior>` — the judge is
-    shown what actually happened, not the position it is about to write. It
-    is the local half of the split's impartiality argument: the prompt
-    pollution the single completion had was the prior feeding the judge."""
-    out = render_verdict_input(trace=_trace(), display_name="Nora", metrics=Metrics(), tz=UTC)
-    assert "<standing_prior " not in out
-    assert "<turn " in out
-    assert "<transcript " in out and "<reasoning " in out
-
-
-def test_the_verdict_render_sees_the_outcome_and_the_gloss():
-    """The judge sequences the turn's ENDING too: a verdict about a turn must
-    know how it ended (§2 — a silence is the case most worth judging)."""
-    out = render_verdict_input(trace=_trace(outcome="silent"),
-                               display_name="Nora", metrics=Metrics(), tz=UTC)
-    assert 'outcome="silent"' in out
-    assert "chose to say nothing" in out
+# --- the fold's render: the prior, then the turn --------------------------
 
 
 def test_the_standing_render_is_the_prior_plus_the_same_turn_block():
-    """One turn block, two consumers: the standing render prepends the prior
-    to EXACTLY the block the judge gets, so the two calls can never disagree
-    about what even happened."""
+    """The standing render prepends the prior to EXACTLY the turn block
+    `render_debrief_turn` produces. (It had a second consumer, the grounding
+    verdict, until 2026-09-24 — design/standing-compact/.)"""
     trace = _trace(rows=(_row(1, 1_756_000_920_000, "Miles", "去邊食"),),
                    messages=({"role": "assistant",
                               "content": [{"text": "我諗諗"}]},))
@@ -417,17 +384,13 @@ def test_the_standing_render_is_the_prior_plus_the_same_turn_block():
                        body="old position", fold_count=1, updated_at=1),
         display_name="Nora", metrics=Metrics(), tz=UTC,
     )
-    verdict = render_verdict_input(trace=trace, display_name="Nora", metrics=Metrics(), tz=UTC)
     # The PRIOR's exact bytes are `_standing_prior`'s, not this test's — what
     # must hold is that the standing render is the prior followed by EXACTLY
-    # the block the judge gets, so the two calls cannot disagree about what
-    # happened. Pinning the prior's own framing here would make this test fail
-    # every time that sentence is reworded, for no property.
+    # the turn block. Pinning the prior's own framing here would make this
+    # test fail every time that sentence is reworded, for no property.
     assert standing.endswith("\n\n" + turn)
     assert standing.startswith("<standing_prior ")
     assert "\nold position\n" in standing
-    assert verdict == turn
-    assert standing != verdict  # the whole point of the split
 
 
 # --- issue #199: the seventh mapping, and the scope of a failure header -----
@@ -529,7 +492,7 @@ def test_the_rollup_render_marks_and_explains_the_same_way():
     delivery mark in the tag fold's transcript and a bare one in the rollup's
     would be one token meaning two things to the same model."""
     out = render_rollup_input(
-        prior=None, display_name="Nora", tz=UTC,
+        prior=None, display_name="Nora", tz=UTC, now_ms=1_756_001_000_000,
         rows=(_row(1, 1_756_000_920_000, None, "路線係咁", is_nora=True),),
     )
     assert 'from="Nora" delivery="delivered">路線係咁</m>' in out
@@ -538,26 +501,6 @@ def test_the_rollup_render_marks_and_explains_the_same_way():
     assert "<transcript " not in out
     assert "it spans however many turns" in out.split("<stretch ")[1]
     assert "Nothing here says which turn sent it" in out.split("<stretch ")[1]
-
-
-def test_the_rollup_verdict_render_sees_the_same_marked_transcript():
-    """The event path's TWO calls — the rollup position and its judge — read
-    the same batch, and D4's whole point is that they must never disagree
-    about what happened. Routing the position call through `_transcript_block`
-    and leaving the judge on a bare `_transcript` would give the two exactly
-    that disagreement about the one thing this branch adds: whether a line of
-    hers went out. It was guarded by nothing until this existed — this
-    renderer had no test at all."""
-    rows = (_row(1, 1_756_000_920_000, "Miles", "去邊食"),
-            _row(2, 1_756_000_980_000, None, "路線係咁", is_nora=True))
-    verdict = render_rollup_verdict_input(rows=rows, display_name="Nora", tz=UTC)
-    position = render_rollup_input(
-        prior=None, rows=rows, display_name="Nora", tz=UTC)
-    assert 'from="Nora" delivery="delivered">路線係咁</m>' in verdict
-    assert "<transcript " not in verdict
-    assert "it spans however many turns" in verdict.split("<stretch ")[1]
-    # The judge's block IS the position call's block, minus the prior.
-    assert verdict.split("<conversation ")[1] == position.split("<conversation ")[1]
 
 
 def test_every_gloss_that_sent_nothing_scopes_itself_to_the_turn():
@@ -659,3 +602,159 @@ def test_a_multi_line_message_keeps_its_own_speaker_in_the_fold():
     assert len(opens) == 2, block
     for tag in opens:
         assert _re.match(r'^<m at="\d\d:\d\d" from="[^"]+"', tag), tag
+
+
+# --- design/standing-compact: the prior's clock, the steps, the carried bound -
+
+_DAY_MS = 86_400_000
+
+
+def _prior(*, updated_at: int, body: str = "tomorrow at 10 I owe Miles the route",
+           fold_count: int = 2) -> Standing:
+    return Standing(platform="signal", conversation_id="g1", body=body,
+                    fold_count=fold_count, updated_at=updated_at)
+
+
+def test_the_prior_carries_when_it_was_written_against_the_turns_time():
+    """design/standing-compact/10 §2. A clause saying «tomorrow at 10» cannot
+    be re-judged by a reader who does not know which day it was written on —
+    a production position carried «today (6 September)» for 17 days.
+
+    Against the TURN's `created_at`, not the wall clock: the trace here is
+    from 2025, so an age measured against `now` would read hundreds of days,
+    and the turn's own `<turn at=…>` would disagree with it in one prompt."""
+    turn = _trace()
+    out = _render(trace=turn, prior=_prior(updated_at=turn.created_at - 3 * _DAY_MS))
+    opening = out.split("<standing_prior ", 1)[1].split(">", 1)[0]
+    assert 'written="3d ago"' in opening, opening
+    # A second point on the scale, so the attribute is an AGE and not a
+    # constant that happens to say three days.
+    out = _render(trace=turn, prior=_prior(updated_at=turn.created_at - 5 * 3_600_000))
+    assert 'written="5h ago"' in out.split("<standing_prior ", 1)[1].split(">", 1)[0]
+
+
+def test_the_rollup_prior_carries_when_it_was_written_against_now_ms():
+    """The event path has no turn, so its clock is the `now_ms` it is handed —
+    the same `written` attribute, the same `age` vocabulary."""
+    now_ms = 1_756_000_000_000
+    out = render_rollup_input(
+        prior=_prior(updated_at=now_ms - 2 * _DAY_MS), display_name="Nora",
+        tz=UTC, now_ms=now_ms,
+        rows=(_row(1, now_ms - 60_000, "Miles", "去邊食"),),
+    )
+    opening = out.split("<standing_prior ", 1)[1].split(">", 1)[0]
+    assert 'written="2d ago"' in opening, opening
+    out = render_rollup_input(
+        prior=_prior(updated_at=now_ms - 40 * 60_000), display_name="Nora",
+        tz=UTC, now_ms=now_ms, rows=(),
+    )
+    assert 'written="40m ago"' in out.split("<standing_prior ", 1)[1].split(">", 1)[0]
+
+
+def test_no_prior_renders_no_age_and_a_prior_renders_no_first_fold_sentence():
+    """The two branches of `_standing_prior`, each the other's control: the
+    «no position yet» sentence is true exactly when there is nothing to date,
+    and a prior — however many folds it has behind it — is never described as
+    the first fold."""
+    none = _render(prior=None)
+    assert "no position yet" in none
+    assert "written=" not in none.split("<standing_prior ", 1)[1].split(">", 1)[0]
+    old = _render(prior=_prior(updated_at=1, fold_count=500))
+    assert "no position yet" not in old
+    assert "tomorrow at 10 I owe Miles the route" in old
+
+
+def test_the_steps_block_replaces_reasoning_and_marks_a_thinking_step():
+    """design/standing-compact/10 §3. The block was `<reasoning>` and the
+    deployed model produces none, so the name asserted a thing that was not
+    there. A `reasoningContent` step is marked `kind="thinking"` when the
+    model produced one — an ATTRIBUTE, not the old «(thinking) » prefix."""
+    out = _render(trace=_trace(messages=(
+        {"role": "assistant", "content": [
+            {"reasoningContent": {"reasoningText": {"text": "should I check first"}}},
+            {"text": "I'll check"},
+        ]},
+    )))
+    assert "<steps " in out
+    assert "<reasoning" not in out
+    body = _steps_body(out)
+    assert '<step role="assistant" kind="thinking">should I check first</step>' in body
+    # Only the thinking step carries it: her narration is a plain step.
+    assert '<step role="assistant">I\'ll check</step>' in body
+    assert body.count(' kind="') == 1, body
+    assert "(thinking)" not in out
+
+
+def test_a_turn_with_no_reasoning_renders_no_kind_attribute_anywhere():
+    """The deployed model produces no reasoning, and on such a turn the block
+    says nothing about thinking: no step carries `kind`. The type's own
+    `fields=` names the attribute (so the model knows what it would mean), but
+    no element in the prompt carries one."""
+    out = _render(trace=_trace(messages=(
+        {"role": "assistant", "content": [
+            {"text": "I'll check"},
+            {"toolUse": {"name": "where_is", "input": {"who": "Grant"}}},
+        ]},
+        {"role": "user", "content": [
+            {"toolResult": {"content": [{"text": "at home"}]}},
+        ]},
+    )))
+    assert _steps_body(out).count("<step ") == 3  # positive control: steps ARE there
+    assert ' kind="' not in out
+    assert "kind=" not in out
+
+
+def _tool_result_turn(text: str) -> TagTrace:
+    return _trace(messages=(
+        {"role": "user", "content": [{"toolResult": {"content": text}}]},
+    ))
+
+
+def test_a_tool_result_at_the_carried_bound_renders_whole():
+    """design/standing-compact/10 §3: a tool result exists only inside the
+    turn, and at 600 characters the fold saw a sixteenth of a median
+    `web_search`. 4000 renders whole: no mark, no count."""
+    assert _CARRIED_CHARS == 4000
+    metrics = Metrics()
+    result = "a" * _CARRIED_CHARS
+    body = _steps_body(_render(trace=_tool_result_turn(result), metrics=metrics))
+    assert f"(tool result: {result})" in body
+    assert f"…[{_CLIP_MARK}]" not in body
+    assert metrics.get("nora_debrief_clips_total", block="tool_result") == 0
+
+
+def test_a_tool_result_one_past_the_carried_bound_is_clipped_marked_and_counted():
+    metrics = Metrics()
+    result = "a" * _CARRIED_CHARS + "Z"
+    body = _steps_body(_render(trace=_tool_result_turn(result), metrics=metrics))
+    assert f"(tool result: {'a' * _CARRIED_CHARS} …[{_CLIP_MARK}])" in body
+    assert "Z" not in body
+    assert metrics.get("nora_debrief_clips_total", block="tool_result") == 1
+
+
+def test_narration_and_tool_calls_still_clip_at_the_block_bound():
+    """Her own narration and her tool CALLS keep 600: what she wrote is in the
+    transcript when it was sent, and a call's arguments are hers and short.
+    One character each side of the bound, for both kinds."""
+    assert _BLOCK_CHARS == 600
+    metrics = Metrics()
+    body = _steps_body(_render(trace=_trace(messages=(
+        {"role": "assistant", "content": [
+            {"text": "n" * _BLOCK_CHARS},
+            {"toolUse": {"name": "web_search", "input": "q" * _BLOCK_CHARS}},
+        ]},
+    )), metrics=metrics))
+    assert f"…[{_CLIP_MARK}]" not in body
+    assert metrics.get("nora_debrief_clips_total") == 0
+
+    metrics = Metrics()
+    body = _steps_body(_render(trace=_trace(messages=(
+        {"role": "assistant", "content": [
+            {"text": "n" * (_BLOCK_CHARS + 1)},
+            {"toolUse": {"name": "web_search", "input": "q" * (_BLOCK_CHARS + 1)}},
+        ]},
+    )), metrics=metrics))
+    assert f"{'n' * _BLOCK_CHARS} …[{_CLIP_MARK}]" in body
+    assert f"(called web_search with {'q' * _BLOCK_CHARS} …[{_CLIP_MARK}])" in body
+    assert metrics.get("nora_debrief_clips_total", block="reasoning") == 1
+    assert metrics.get("nora_debrief_clips_total", block="tool_call") == 1

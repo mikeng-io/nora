@@ -509,7 +509,7 @@ async def build_production_seed(
             # `evals/` concern this module has no business naming.
             standing_row = (await conn.execute(sa.text(
                 "SELECT platform, conversation_id, body, fold_count, updated_at, "
-                "consumed_verdict_tag, last_folded_row_id FROM standing "
+                "last_folded_row_id FROM standing "
                 "ORDER BY updated_at DESC LIMIT 1"
             ))).one_or_none()
             if standing_row is not None:

@@ -2241,10 +2241,10 @@ def _wiring() -> object:
     own suite."""
     from nora.engagement.stages.debrief import Wiring
 
-    return Wiring(store=object(), store_verdict=object(), client=object(),
+    return Wiring(store=object(), client=object(),
                   objective=object(), record_store=object(),
                   max_chars=1200, fold_batch=200, timeout_seconds=5.0,
-                  store_timeout_seconds=5.0, rebuild_after_folds=20,
+                  store_timeout_seconds=5.0,
                   notes_sink=None, unit_of=lambda p, c: "ws")
 
 

@@ -223,7 +223,6 @@ from nora.domain.models import (
 )
 from nora.domain.parking import StreetParking as StreetParking
 from nora.domain.standing import Standing as Standing
-from nora.domain.turn_verdict import TurnVerdict as TurnVerdict
 from nora.domain.utf16 import utf16_len
 
 # `PlatformIdentity` is re-exported, not declared here — it moved next to
@@ -2509,73 +2508,6 @@ class StandingStore(Protocol):
 
 
 @runtime_checkable
-class TurnVerdictStore(Protocol):
-    """Where the debrief's per-turn judgement is written (26 §3).
-
-    **One verb, and the absent one is the point.** There is no `write`, no
-    upsert and no `supersede`: a `TurnVerdict` is written ONCE and never
-    rewritten, so the port offers no path that could rewrite it — the same
-    move `DreamSink` makes by having no delete. A rule expressed as a type
-    cannot be forgotten by either side; the same rule in a docstring is
-    remembered until the night someone is tired.
-
-    That matters more here than it looks, because the split between this and
-    `Standing` was found by a bug: per-turn fields lived on the
-    per-conversation row, and the re-derivation trigger read a `grounded` flag
-    the NEXT TURN had already overwritten. Making the rewrite unrepresentable
-    is what stops that returning.
-
-    `read` exists for the re-derivation path and for the contract suite.
-    Nothing on the reply path calls it — a verdict is written and forgotten
-    until something rebuilds a position from it.
-    """
-
-    async def save(self, *, verdict: TurnVerdict) -> None:
-        """Write this turn's verdict. Raises if the turn already has one —
-        that means it was debriefed twice, and silently overwriting would hide
-        it."""
-        ...
-
-    async def read(self, *, tag_id: str) -> TurnVerdict | None:
-        """One turn's verdict, or `None`."""
-        ...
-
-    async def latest_ungrounded(
-        self, *, conversation_id: str
-    ) -> TurnVerdict | None:
-        """The newest UNGROUNDED verdict in this conversation, or `None`.
-
-        The read S2's trigger needs, and a DIFFERENT question from `read`: the
-        trigger asks "is there an ungrounded verdict this position has not been
-        re-derived from", not "how did this turn go". Keyed on
-        `conversation_id` alone because `turn_verdict` has no platform column —
-        a `tag_id` is already globally unique, so the row needs no second axis.
-
-        **Ungrounded-only, and a `latest` of EITHER kind is deliberately NOT on
-        this port** — this replaced one rather than joining it. That read
-        answers a question which coincides with the right one most of the time,
-        and the gap is the ORDINARY shape of a successful turn: an ungrounded
-        verdict goes unconsumed for a turn (the trigger declines because the
-        read failed — R-27's «I could not check»), that turn's own fold
-        succeeds and saves a GROUNDED verdict, and from then on the newest
-        verdict is grounded and the older ungrounded one is buried. Never acted
-        on, and the by-trigger counter reads zero — which §6 interprets as the
-        trigger having degraded into a clock. Measured over three turns before
-        this method existed.
-
-        So the wrong read is made UNREPRESENTABLE rather than documented — the
-        same move this port already makes by having no `write`. A rule
-        expressed as a type cannot be forgotten by either side; the same rule
-        in a docstring is remembered until the night someone is tired (cold
-        review, 2026-08-28).
-
-        `None` when nothing here has been judged ungrounded, which is the
-        ordinary state and is not a reason to re-derive.
-        """
-        ...
-
-
-@runtime_checkable
 class DecisionLogStore(Protocol):
     """Where every ambient decision is written, and where the NEXT decider
     reads what the others already did (issue #199).
@@ -2583,8 +2515,8 @@ class DecisionLogStore(Protocol):
     **Append-only, and the absent verbs are the point.** There is no `update`,
     no `delete` and no upsert: a decision happened, and a log whose rows can be
     rewritten is not a record of what happened — it is a record of what somebody
-    later wanted to have happened. The same move `TurnVerdictStore` makes by
-    having no `write` and `DreamSink` by having no delete. `id` is the primary
+    later wanted to have happened. The same move `DreamSink` makes by having no
+    delete. `id` is the primary
     key, so a duplicate is a caller reusing an id rather than a second decision,
     and Postgres says so.
 

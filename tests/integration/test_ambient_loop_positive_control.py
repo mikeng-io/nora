@@ -36,8 +36,7 @@ THE ASSERTIONS, EACH AT THE STAGE WHERE IT BECOMES DECIDABLE
    `delivery_status=sent`  (`test_1_*`)
 2. after the tag turn — `llm_error`, and no second send  (`test_2_*`)
 3. after the debrief — the header is turn-scoped (`3a`), the fold is told her
-   row in the window was delivered (`3a2`), the verdict refuses a position
-   claiming no reply was sent (`3b`), no note and no create-candidate come out
+   row in the window was delivered (`3a2`), no note and no create-candidate come out
    of a dead turn (`3c`), and neither background pass is shown the false
    premise (`3d`)
 4. after the proactive decide tick at +80min — the pass declines to render
@@ -53,6 +52,8 @@ would fail the suite the day the fix landed and force the markers out. That
 happened on 2026-09-11 and all five markers are gone. They are now ordinary
 assertions and a regression in any of the four fixes reddens this file — which
 is the only reason the instrument was worth building before the fix.
+(Stage 3's verdict assertion, `3b`, was deleted on 2026-09-24 with the
+grounding verdict it measured — design/standing-compact/.)
 
 Two things the XPASS caught that the fix's own unit tests did not, and both
 are why a journey case earns its keep: the first draft of the scoped header
@@ -72,8 +73,8 @@ a journey case is a stage that silently never happened:
 * the participation turn actually invoked its model and actually sent;
 * the tag turn actually reached the model and actually raised (the scripted
   runner records its invocations; a tag that never ran would leave zero);
-* the debrief fold actually ran — the scripted debrief client records both of
-  its calls, and `test_0_*` refuses a run where it made none;
+* the debrief fold actually ran — the scripted debrief client records its
+  call, and `test_0_*` refuses a run where it made none;
 * the proactive pass actually ran — it counted itself on
   `nora_proactive_pass_total`.
 
@@ -203,7 +204,6 @@ from nora.testing import (
     InMemoryDreamScheduleClock,
     InMemoryNoteStore,
     InMemoryStandingStore,
-    InMemoryTurnVerdictStore,
     ScriptedTurn,
     group_event,
 )
@@ -302,25 +302,25 @@ class _ScriptedGateClient:
 
 
 class _ScriptedDebriefClient:
-    """The debrief's `ModelClient`, replaying the incident's two outputs.
+    """The debrief's `ModelClient`, replaying the incident's position.
 
-    The stage makes TWO calls in one `asyncio.gather` — the position call and
-    the verdict call — so this dispatches on the objective body in the system
-    prompt rather than on arrival order, which `gather` does not fix.
+    The stage makes ONE call per fold since the grounding verdict was deleted
+    (2026-09-24, design/standing-compact/). This still dispatches on the
+    objective body in the system prompt, and records anything else as an
+    OTHER call answered with an empty object, so a second call per fold is
+    counted rather than silently served.
 
-    Both replies are the incident's own, verbatim: the false position and the
-    `grounded: true` that blessed it. The case asserts on what the CODE does
-    with them.
+    The reply is the incident's own, verbatim: the false position. The case
+    asserts on what the CODE does with it.
     """
 
-    def __init__(self, *, standing_body: str, verdict_body: str) -> None:
+    def __init__(self, *, standing_body: str) -> None:
         self._standing_objective = shipped_objectives().objective_body(
             debrief.OBJECTIVE,
         )
         self._standing_body = standing_body
-        self._verdict_body = verdict_body
         self.standing_calls: list[str] = []
-        self.verdict_calls: list[str] = []
+        self.other_calls: list[str] = []
 
     @property
     def model(self) -> str:
@@ -334,8 +334,8 @@ class _ScriptedDebriefClient:
             return debrief.Completion(
                 content=self._standing_body, finish_reason="stop",
             )
-        self.verdict_calls.append(prompt)
-        return debrief.Completion(content=self._verdict_body, finish_reason="stop")
+        self.other_calls.append(prompt)
+        return debrief.Completion(content="{}", finish_reason="stop")
 
 
 class _Clock:
@@ -381,7 +381,6 @@ class _Journey:
     audit: FakeRecordStore
     standing: InMemoryStandingStore
     notes: InMemoryNoteStore
-    verdicts: InMemoryTurnVerdictStore
     reminders: FakeReminderStore
     gate_client: _ScriptedGateClient
     debrief_client: _ScriptedDebriefClient
@@ -462,7 +461,6 @@ async def _drive(tmp_path: Path) -> _Journey:
     memory = FakeMemoryStore()
     standing_store = InMemoryStandingStore()
     note_store = InMemoryNoteStore()
-    verdict_store = InMemoryTurnVerdictStore()
     reminders = FakeReminderStore()
     adapter = FakeAdapter()
     clock = _Clock(T_QUESTION)
@@ -499,16 +497,14 @@ async def _drive(tmp_path: Path) -> _Journey:
             {"standing": INCIDENT_STANDING, "notes": [INCIDENT_NOTE]},
             ensure_ascii=False,
         ),
-        verdict_body=json.dumps({"grounded": True, "unsupported": []}),
     )
     debrief_wiring = debrief.Wiring(
-        store=standing_store, store_verdict=verdict_store, notes_sink=note_store,
+        store=standing_store, notes_sink=note_store,
         unit_of=lambda _platform, _conversation_id: UNIT,
         client=debrief_client, objective=shipped_objectives(), record_store=audit,
         max_chars=cfg.standing.max_chars, fold_batch=cfg.standing.fold_batch,
         timeout_seconds=cfg.standing.timeout_seconds,
         store_timeout_seconds=cfg.standing.store_timeout_seconds,
-        rebuild_after_folds=cfg.standing.rebuild_after_folds,
     )
 
     dispatcher, _engagement, background, trigger = build_offline_pipeline(
@@ -523,7 +519,7 @@ async def _drive(tmp_path: Path) -> _Journey:
     )
     journey = _Journey(
         metrics=metrics, adapter=adapter, audit=audit, standing=standing_store,
-        notes=note_store, verdicts=verdict_store, reminders=reminders,
+        notes=note_store, reminders=reminders,
         gate_client=gate_client, debrief_client=debrief_client,
         tag_runner=tag_runner, participation_runner=participation_runner,
     )
@@ -716,8 +712,8 @@ def test_0_every_stage_of_the_journey_actually_ran(journey: _Journey) -> None:
     assert len(journey.debrief_client.standing_calls) == 1, (
         "the debrief fold's position call must have run"
     )
-    assert len(journey.debrief_client.verdict_calls) == 1, (
-        "the debrief fold's verdict call must have run"
+    assert journey.debrief_client.other_calls == [], (
+        "the debrief fold made a call other than its one position call"
     )
     assert journey.note_candidates_envelope, (
         "the note-candidates tick must have rendered the room's batch — an "
@@ -925,47 +921,6 @@ def test_3a2_the_fold_is_told_her_row_in_the_window_was_delivered(
         "her row must say on the row that it went out; the legend alone is an "
         f"explanation of a mark that is not there. The row reads: {her_row!r}"
     )
-
-
-async def test_3b_the_verdict_refuses_a_position_that_claims_no_reply(
-    journey: _Journey,
-) -> None:
-    """#199 shape 2 — the verdict must be able to SEE it.
-
-    The model was scripted to return the incident's own `grounded: true,
-    unsupported: []`. The check this asks for is one the code can make from the
-    transcript alone: a position asserting that no reply was sent, while the
-    window holds a `Nora:` row after the tag, is `unsupported`.
-
-    Decidable without reading the position's language: the stored verdict's own
-    `grounded` flag is the output property, and `InMemoryTurnVerdictStore`
-    refuses `grounded=True` with a non-empty `unsupported`, so the two cannot
-    drift apart.
-
-    **THIS DELIBERATELY PINS A CODE-SIDE CHECK, and the constraint is chosen,
-    not accidental.** The verdict model here is hard-scripted to bless the
-    position, so the only thing that can ever flip `grounded` is a
-    deterministic check inside `debrief.py` overriding what the model said.
-    #199 shape 2 asks for exactly that — «one check the verdict can make from
-    the transcript alone» — and a prompt-side fix would leave this red forever
-    with the strict XPASS never tripping. If the fix lands prompt-side instead,
-    this assertion is the wrong instrument and must be rewritten, not deleted:
-    `test_3a2_*` is the half that holds under either shape.
-    """
-    rows = list(journey.verdicts._rows.values())
-    assert len(rows) == 1, f"expected one turn verdict, got {rows}"
-    verdict = rows[0]
-    assert verdict.grounded is False, (
-        "a position claiming no reply was sent, written beside a transcript "
-        "window that holds her sent row, must not be blessed as grounded; "
-        f"got {verdict}"
-    )
-    assert verdict.unsupported, "the unsupported claim must be named"
-    # The read production actually makes, so a fake-vs-SQL divergence on the
-    # ungrounded index would show up here rather than at the next incident.
-    assert await journey.verdicts.latest_ungrounded(
-        conversation_id=THREAD_ROOM,
-    ) is not None
 
 
 async def test_3c_no_note_is_proposed_from_a_dead_turn(journey: _Journey) -> None:

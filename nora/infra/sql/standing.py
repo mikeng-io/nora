@@ -47,7 +47,7 @@ from nora.infra.sql.schema import STANDING, STANDING_REVISION
 def _standing(row: sa.Row[Any]) -> Standing:
     """The shared row -> `Standing` mapping for `read` and `read_as_of`.
 
-    One mapping rather than two, because the two tables carry the same seven
+    One mapping rather than two, because the two tables carry the same six
     values by construction — `write` copies them across in one transaction — and
     a second mapping is a second place for a column to be dropped. `audit.py`'s
     `_row` is the same argument for the same reason.
@@ -58,7 +58,6 @@ def _standing(row: sa.Row[Any]) -> Standing:
         body=row.body,
         fold_count=row.fold_count,
         updated_at=row.updated_at,
-        consumed_verdict_tag=row.consumed_verdict_tag,
         last_folded_row_id=row.last_folded_row_id,
     )
 
@@ -157,7 +156,6 @@ class SqlStandingStore:
             body=standing.body,
             fold_count=standing.fold_count,
             updated_at=standing.updated_at,
-            consumed_verdict_tag=standing.consumed_verdict_tag,
             last_folded_row_id=standing.last_folded_row_id,
         )
         stmt = stmt.on_conflict_do_update(
@@ -166,16 +164,14 @@ class SqlStandingStore:
                 "body": stmt.excluded.body,
                 "fold_count": stmt.excluded.fold_count,
                 "updated_at": stmt.excluded.updated_at,
-                # WRITTEN ON EVERY UPSERT, never left out of the `set_`. The
-                # caller carries the prior's watermark forward on a revise, so
-                # the value handed here is always the intended one — but an
-                # omitted key would make the column keep its old value by
-                # accident rather than by decision, and "correct because the
-                # writer happens to agree with the previous row" is exactly
-                # what stops being true the first time it does not.
-                "consumed_verdict_tag": stmt.excluded.consumed_verdict_tag,
-                # The row-id watermark, same rule as the verdict watermark
-                # above: written on every upsert, never omitted, so a revise
+                # `consumed_verdict_tag` is NOT written: it was the watermark
+                # of the ungrounded re-derivation trigger, deleted 2026-09-24
+                # with the verdict (design/standing-compact/). The column
+                # stays, as dropped tiers' columns do; nothing reads it.
+                #
+                # The row-id watermark: written on every upsert, never
+                # omitted — an omitted key would keep its old value by
+                # accident rather than by decision — so a revise
                 # that carries the prior's watermark forward does so by
                 # decision and a fold that advanced it writes the advance in
                 # the SAME statement as the position it belongs to
@@ -189,7 +185,7 @@ class SqlStandingStore:
         # values, no derivation: whatever the head was set to is what history
         # records, so there is no arithmetic here that could disagree with the
         # statement above. It is a plain `INSERT` with no `ON CONFLICT` for
-        # `SqlTurnVerdictStore.save`'s reason — there is no update path to take,
+        # an append-only log's reason — there is no update path to take,
         # and `id` defaults to a fresh uuid, so two folds that agree in every
         # other column are two rows rather than one silently replaced.
         #
@@ -203,7 +199,6 @@ class SqlStandingStore:
             body=standing.body,
             fold_count=standing.fold_count,
             updated_at=standing.updated_at,
-            consumed_verdict_tag=standing.consumed_verdict_tag,
             last_folded_row_id=standing.last_folded_row_id,
         )
         async with self._engine.begin() as conn:

@@ -56,12 +56,12 @@ the same group-written text the prefill escapes, one hop further along.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import datetime, tzinfo
+from datetime import UTC, datetime, tzinfo
 from typing import Any, Literal, get_args
 
 from nora.domain.blocks import ContextBlock, render_elements, speaker_name
 from nora.domain.models import DeliveryStatus, TranscriptRow
-from nora.domain.prompt import escape
+from nora.domain.prompt import age, escape
 from nora.domain.standing import Standing
 from nora.domain.tag_trace import TagTrace
 from nora.obs.metrics import Metrics
@@ -85,7 +85,7 @@ _THIS_TURN_ONLY = (
 # `send_reply` by `EngagementPipeline` — `recovered_delivered` is only set on
 # the DEC-93 prose-recovery branch, not on the fallback one — so the gloss
 # below tells the fold "you replied, through the send_reply tool" while the
-# rendered `<reasoning>` shows no such call. A self-contradictory input.
+# rendered `<steps>` shows no such call. A self-contradictory input.
 #
 # NOT fixed here, deliberately. The honest fix is a SEVENTH outcome, and
 # `VALID_OUTCOMES` is a closed set backed by `tag_trace_outcome_check` — so it
@@ -121,14 +121,24 @@ _OUTCOME_GLOSS: Mapping[str, str] = {
                  + _THIS_TURN_ONLY,
 }
 
-#: How much of one narration/tool-result block reaches the fold. The trace is
-#: already capped on the way into retention (`cap_messages`), so this is the
+#: How much of one step reaches the fold, by what the step CARRIES. The trace
+#: is already capped on the way into retention (`cap_messages`), so this is the
 #: SECOND bound and it exists for a different reason: retention's budget is
 #: about what is worth keeping, this one is about what fits beside a transcript
-#: and a prior position inside one bounded completion. Generous enough that a
-#: tool result stays readable, tight enough that one runaway result cannot
-#: crowd out the exchange it belongs to.
+#: and a prior position inside one bounded completion.
+#:
+#: **Two bounds, not one** (design/standing-compact/10 §3). A tool result and a
+#: step of private reasoning are the only content in the turn that exists
+#: NOWHERE ELSE: the transcript does not hold what a search returned, and once
+#: the turn ends the fold is the last reader it will ever have. At one flat 600
+#: the fold was shown a sixteenth of a median `web_search` (9.6k), so a search
+#: that found eight restaurants and sent two left no trace of the other six.
+#: 4000 carries `web_fetch` and `ask_memory` whole at p90 (measured on 1000
+#: production tool calls, 2026-09-09..24). Her own narration and her tool
+#: CALLS keep 600: what she wrote is in the transcript when it was sent, and a
+#: call's arguments are hers and short.
 _BLOCK_CHARS = 600
+_CARRIED_CHARS = 4000
 
 #: WHICH block `_clip` cut — issue #189 step 1. Grounded on `_block`'s own four
 #: branches rather than copied from the issue's prose: `text` and
@@ -153,8 +163,8 @@ _CLIPS_METRIC = "nora_debrief_clips_total"
 #: #189 step 2. `_TRANSCRIPT_LEGEND` below is the precedent this follows:
 #: **telling the model what it is READING beat telling it what it can do**,
 #: measured on the Relevance Gate (#78's closing comment). A block cut at
-#: `_BLOCK_CHARS` and handed to the grounding verdict with no mark reads as a
-#: complete account that simply doesn't support the claim; the grader cannot
+#: its bound and handed to a model with no mark reads as a complete account
+#: that simply doesn't support the claim; the reader cannot
 #: tell "the support isn't there" from "I was shown a fragment" unless the
 #: fragment says so itself.
 _CLIP_MARK = "clipped"
@@ -274,9 +284,9 @@ def _transcript_block(
 
     **`name` exists because ONE description was false in two of five callers**
     (audit, 2026-09-17). `<transcript>` says «the messages of THIS TURN», which
-    is right for the fold, the verdict and the turn render — and wrong for the
-    two rollup renders, whose own docstring says «there IS no turn: the event
-    fold runs after an untagged stretch». Their wrapper called the same
+    is right for the fold's turn render — and wrong for the rollup render,
+    whose own docstring says «there IS no turn: the event fold runs after an
+    untagged stretch». Their wrapper called the same
     messages «the batch» one line above. Two names for one thing, in one
     document, adjacent.
 
@@ -332,17 +342,35 @@ def _transcript_block(
 #: same lines to any string operation. So the nesting is flat now.
 
 
-def _standing_prior(body: str) -> str:
+def _standing_prior(prior: Standing | None, *, now_ms: int) -> str:
     """Her previous position, or the sentence saying there is none.
 
     This is HER fold from a previous turn, and the type says so — «yours to
     continue, not a record of what anybody said». The absent-position sentence
-    is this module's own words about that absence.
+    is this module's own words about that absence, and since 2026-09-24 it is
+    TRUE whenever it is rendered: nothing withholds an existing prior any more
+    (design/standing-compact/10 §1).
+
+    **`written` is how long before this fold the prior was written**
+    (design/standing-compact/10 §2). The fold is told to re-judge every
+    inherited clause, and a clause saying «tomorrow at 10» cannot be re-judged
+    by a reader who does not know which day it was written on: a production
+    position carried «today (6 September)» for 17 days, re-affirmed on every
+    fold. The Relevance Gate's defect, one tier over — a judgement about WHEN
+    over an input with no time. Same `age` vocabulary `<standing>` already
+    uses on the tag turn.
     """
+    if prior is None or not prior.body.strip():
+        return ContextBlock(
+            name="standing_prior",
+            body="(no position yet — this is the first fold for this conversation)",
+        ).render()
     return ContextBlock(
-        name="standing_prior", body=escape(body) if body else (
-            "(no position yet — this is the first fold for this conversation)"
-        ),
+        name="standing_prior",
+        attrs=(("written", age(
+            prior.updated_at, datetime.fromtimestamp(now_ms / 1000, tz=UTC),
+        )),),
+        body=escape(prior.body.strip()),
     ).render()
 
 
@@ -353,26 +381,28 @@ def _conversation(block: str) -> str:
     ).render()
 
 
-def _clip(text: str, *, kind: ClipKind, metrics: Metrics) -> str:
-    """Cut at `_BLOCK_CHARS`, COUNTED and MARKED — issue #189 steps 1 and 2.
+def _clip(
+    text: str, *, kind: ClipKind, metrics: Metrics, limit: int = _BLOCK_CHARS,
+) -> str:
+    """Cut at `limit`, COUNTED and MARKED — issue #189 steps 1 and 2.
 
     The increment fires only on an actual cut, never on every call: a series
     that moved on every block, clipped or not, would say nothing about how
     often the ceiling is hit, which is the number step 3 needs. The mark is
     appended to the TEXT itself, ahead of `escape()` at every call site, so it
     travels with the block through whichever prefix wraps it
-    (`(thinking) …`, `(tool result: …)`) and reaches the model as part of what
+    (`(called … with …)`, `(tool result: …)`) and reaches the model as part of what
     it is reading, not as a side channel it has no reason to trust more than
     the content.
     """
     text = text.strip()
-    if len(text) <= _BLOCK_CHARS:
+    if len(text) <= limit:
         return text
     metrics.inc(_CLIPS_METRIC, block=kind)
-    return f"{text[:_BLOCK_CHARS]} …[{_CLIP_MARK}]"
+    return f"{text[:limit]} …[{_CLIP_MARK}]"
 
 
-def _reasoning(messages: Sequence[Mapping[str, Any]], *, metrics: Metrics) -> str:
+def _steps(messages: Sequence[Mapping[str, Any]], *, metrics: Metrics) -> str:
     """The model exchange, flattened to lines the fold can read.
 
     **Defensive throughout, for `tag_trace_extract`'s reason**: the blocks are
@@ -385,7 +415,7 @@ def _reasoning(messages: Sequence[Mapping[str, Any]], *, metrics: Metrics) -> st
     tool ran, and «did the tool actually run» is exactly what separates a
     grounded turn from a plausible one.
     """
-    rows: list[tuple[str, str]] = []
+    rows: list[tuple[str, str, str | None]] = []
     for message in messages:
         if not isinstance(message, Mapping):
             continue
@@ -396,44 +426,60 @@ def _reasoning(messages: Sequence[Mapping[str, Any]], *, metrics: Metrics) -> st
         for block in content:
             if not isinstance(block, Mapping):
                 continue
-            rendered = _block(block, metrics=metrics)
+            rendered, kind = _block(block, metrics=metrics)
             if rendered:
-                rows.append((role, rendered))
-    # ONE STEP, ONE ELEMENT — and this block is NOT hers, whatever its name
-    # suggests. A `toolResult` from `load_transcript` or `who_said` is a
-    # member's own body and their self-set profile name, so the flat
-    # `role: rendered` joined with newlines let a quoted transcript line forge
+                rows.append((role, rendered, kind))
+    # ONE STEP, ONE ELEMENT — and this block is not all hers. A `toolResult`
+    # from `load_transcript` or `who_said` is a member's own body and their
+    # self-set profile name, so the flat `role: rendered` joined with newlines
+    # let a quoted transcript line forge
     # `assistant: (called send_reply with …)` and `user: (tool result: …)` —
     # byte-identical to real steps, in the block the fold reads to decide what
     # happened, which then WRITES Standing. R-13c inside the one place the
     # conversion had framed as her own record.
+    #
+    # `kind` is set on a step of PRIVATE REASONING and on nothing else, and a
+    # `None` drops the attribute (`render_elements`). So a turn whose model
+    # produced no reasoning renders no `kind` anywhere and the block says
+    # nothing about thinking; a model that does produce it is shown it, with
+    # no change here or in the objective (operator 2026-09-24: «make it depend
+    # on whether there is reasoning»).
     return render_elements(
         rows, tag="step",
-        attrs=lambda r, _i: (("role", r[0]),),
+        attrs=lambda r, _i: (("role", r[0]), ("kind", r[2])),
         body=lambda r: r[1],
     )
 
 
-def _block(block: Mapping[str, Any], *, metrics: Metrics) -> str:
+def _block(
+    block: Mapping[str, Any], *, metrics: Metrics,
+) -> tuple[str, str | None]:
+    """One content block as `(rendered, kind)`; `kind` is `"thinking"` for a
+    step of private reasoning and `None` for everything else."""
     text = block.get("text")
     if isinstance(text, str) and text.strip():
-        return escape(_clip(text, kind="reasoning", metrics=metrics))
+        return escape(_clip(text, kind="reasoning", metrics=metrics)), None
     reasoning = block.get("reasoningContent")
     if isinstance(reasoning, Mapping):
         inner = reasoning.get("reasoningText")
         raw = inner.get("text") if isinstance(inner, Mapping) else None
         if isinstance(raw, str) and raw.strip():
-            return f"(thinking) {escape(_clip(raw, kind='reasoning', metrics=metrics))}"
+            return escape(_clip(
+                raw, kind="reasoning", metrics=metrics, limit=_CARRIED_CHARS,
+            )), "thinking"
     use = block.get("toolUse")
     if isinstance(use, Mapping):
         name = escape(str(use.get("name") or "?"))
         clipped = _clip(str(use.get("input")), kind="tool_call", metrics=metrics)
-        return f"(called {name} with {escape(clipped)})"
+        return f"(called {name} with {escape(clipped)})", None
     result = block.get("toolResult")
     if isinstance(result, Mapping):
-        clipped = _clip(str(result.get("content")), kind="tool_result", metrics=metrics)
-        return f"(tool result: {escape(clipped)})"
-    return ""
+        clipped = _clip(
+            str(result.get("content")), kind="tool_result", metrics=metrics,
+            limit=_CARRIED_CHARS,
+        )
+        return f"(tool result: {escape(clipped)})", None
+    return "", None
 
 
 def _fold_rows(
@@ -458,7 +504,7 @@ def render_debrief_turn(
     *, trace: TagTrace, display_name: str, metrics: Metrics,
     since_rows: Sequence[TranscriptRow] = (), tz: tzinfo | None = None,
 ) -> str:
-    """The whole turn — outcome, transcript, reasoning — as one block.
+    """The whole turn — outcome, transcript, steps — as one block.
 
     `since_rows` is the watermark batch: every row since the last fold's
     `last_folded_row_id`, read via `RecordStore.since_including_nora` and
@@ -467,26 +513,20 @@ def render_debrief_turn(
     deduped by id — see `_fold_rows` for why the turn's rows must always be
     present.
 
-    **The block both calls read, and the standing call extends.** Issue #78
-    Phase 2 splits the fold into a position call and a verdict call; the judge
-    renders EXACTLY this block, the position call prepends
-    `<standing_prior>` to it (`render_debrief_input`). Giving the judge the
-    prior would be prompt pollution in the other direction: a judge shown the
-    position it is about to write judges the position, not the turn.
+    The fold prepends `<standing_prior>` to it (`render_debrief_input`).
 
     `metrics` is required, not defaulted — issue #189: a render this module
     cannot count is exactly the defect the issue is about, one level up from
-    the model it feeds. Both `render_debrief_input` and `render_verdict_input`
-    call through here, so a clip in the SAME turn is counted once per call
-    that actually renders it — two separate model inputs, each independently
-    truncated, not one event double-counted.
+    the model it feeds.
 
-    What the clip mark MEANS is the `<reasoning>` type's `clipped` annotation,
+    What the clip mark MEANS is the `<steps>` type's `clipped` annotation,
     so it is on the block that can carry the mark and is present whether or not
     this turn clipped anything — the model reads the same contract every turn
     rather than learning a mark whose explanation appears only sometimes.
 
-    It was a sibling `<how_to_read_reasoning>` block until #314: a block whose
+    It was a sibling `<how_to_read_reasoning>` block until #314 (and the block
+    was `<reasoning>` until 2026-09-24, a name asserting a reasoning the
+    deployed model does not produce): a block whose
     entire content was prose about the block beside it, kept next to it by an
     `order` number, which existed only because a field's meaning had nowhere to
     live. Travelling WITH the block is what a sibling could never do.
@@ -502,14 +542,14 @@ def render_debrief_turn(
         ).render()),
         _transcript_block(rows, display_name=display_name, tz=tz),
         (ContextBlock(
-            name="reasoning",
+            name="steps",
             # MARKED, because a tool result is the room's words. `load_transcript`
             # and `who_said` hand back member-authored bodies and self-set
             # profile names, so this block carries what people typed even though
             # the steps around it are hers. `tests/test_prefill.py`'s own
             # classification names "a tool result" in the marked class; this
             # block was the exception to a rule the tree states in writing.
-            body=_reasoning(trace.messages, metrics=metrics),
+            body=_steps(trace.messages, metrics=metrics),
         ).render()),
     ))
     return ContextBlock(
@@ -519,30 +559,6 @@ def render_debrief_turn(
         # own marker.
         body=inner,
     ).render()
-
-
-def render_verdict_input(
-    *, trace: TagTrace, display_name: str, metrics: Metrics,
-    since_rows: Sequence[TranscriptRow] = (), tz: tzinfo | None = None,
-) -> str:
-    """What the VERDICT call sees: the whole turn, WITHOUT the prior.
-
-    Same transcript, same reasoning, same outcome labelling as the standing
-    render — the judge sequences the SAME turn, so a different render here
-    would let the two calls disagree about what even happened. Only the prior
-    is missing, and that is the point (issue #78 Phase 2): the verdict must not
-    read the position it is about to write. `since_rows` is the SAME watermark
-    batch the standing call reads (D4: the two calls must not disagree about
-    what happened).
-
-    This is the render issue #189 is actually about: the grounding verdict is
-    the consumer that judges "was the reply supported by what she saw", and a
-    clip here is a clip in exactly the input that call grades.
-    """
-    return render_debrief_turn(
-        trace=trace, display_name=display_name, metrics=metrics,
-        since_rows=since_rows, tz=tz,
-    )
 
 
 def render_debrief_input(
@@ -561,9 +577,11 @@ def render_debrief_input(
     absent block and a block the fold failed to read look identical from inside
     the prompt, and the one thing this tier cannot afford is a fold that writes
     a second position beside the first because it never saw the first.
+
+    The prior's age is measured against the TURN's own time, the same instant
+    `<turn at=…>` renders, so the two clocks in one prompt cannot disagree.
     """
-    body = prior.body.strip() if prior is not None and prior.body.strip() else ""
-    prior_block = _standing_prior(body)
+    prior_block = _standing_prior(prior, now_ms=trace.created_at)
     turn = render_debrief_turn(
         trace=trace, display_name=display_name, metrics=metrics,
         since_rows=since_rows, tz=tz,
@@ -576,6 +594,7 @@ def render_rollup_input(
     prior: Standing | None,
     rows: Sequence[TranscriptRow],
     display_name: str,
+    now_ms: int,
     tz: tzinfo | None = None,
 ) -> str:
     """What the EVENT-path fold (the rollup) sees: the prior plus the batch of
@@ -587,26 +606,10 @@ def render_rollup_input(
     always-present contract `render_debrief_input` uses — a rollup fold that
     cannot see the prior position cannot correct it.
     """
-    body = prior.body.strip() if prior is not None and prior.body.strip() else ""
-    prior_block = (
-        _standing_prior(body)
-    )
+    prior_block = _standing_prior(prior, now_ms=now_ms)
     block = _transcript_block(
         rows, display_name=display_name, tz=tz, name="stretch",
     )
     return (
         f"{prior_block}\n\n" + _conversation(block)
     )
-
-
-def render_rollup_verdict_input(
-    *, rows: Sequence[TranscriptRow], display_name: str, tz: tzinfo | None = None,
-) -> str:
-    """What the event-path fold's VERDICT call sees: the SAME batch WITHOUT the
-    prior (D4 — the verdict must not read the position it is about to write,
-    and the two calls must not disagree about what happened).
-    """
-    block = _transcript_block(
-        rows, display_name=display_name, tz=tz, name="stretch",
-    )
-    return _conversation(block)

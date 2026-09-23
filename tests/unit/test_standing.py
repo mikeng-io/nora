@@ -77,7 +77,8 @@ def test_a_negative_fold_count_is_refused():
 
 def test_the_row_id_watermark_is_a_row_id_or_none():
     """The fold's row-id watermark (design/standing-watermark/20), and the
-    same "two null values" argument `consumed_verdict_tag` already makes:
+    same "two null values" argument `consumed_verdict_tag` made (deleted
+    2026-09-24):
     `None` means "never folded — read from the beginning" (D5), so `0` would
     be a second spelling of that state that compares unequal to it — and
     messages ids start at 1 anyway. A watermark satisfiable by accident is how
