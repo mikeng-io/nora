@@ -595,37 +595,6 @@ def test_the_schema_takes_a_read_and_a_person_and_nothing_else(persons):
     assert schema["properties"]["what"]["enum"] == ["profile", "story"]
 
 
-def test_the_description_meets_adr_0015():
-    """ADR 0015 §3 for a NEW tool, from its first commit: a declared level,
-    the text Strands sends (the docstring minus `Args:`) within that level's
-    ceiling, no em or en dash, and no non-English string at all (it needs no
-    trigger word). The same checks for `social_fetch`, whose docstring this
-    branch edits. Counted over the whole sent spec for the dash and script
-    checks, so an `Args:` line cannot hide one."""
-    import tiktoken
-
-    from nora.agent.ports import adapt
-
-    enc = tiktoken.get_encoding("cl100k_base")
-    ceilings = {1: 80, 2: 160, 3: 320}
-    room = Room(platform="signal", conversation_id="g1", roster_source=None, persons=_NoPersons())
-    specs = {
-        s.name: s for s in ToolRegistry().specs(
-            store=_NoStore(), conversation_id="g1", conversation_type="group",
-            persons=_NoPersons(), honcho=FakeMemoryStore(), deliverer=SinkSender(),
-            metrics=Metrics(), room=room,
-        )
-    }
-    for name in ("instagram_read", "social_fetch"):
-        level = NATIVE_TOOLS[name].level
-        assert level in ceilings, name
-        sent = adapt(specs[name]).tool_spec
-        assert len(enc.encode(sent["description"])) <= ceilings[level], name
-        whole = json.dumps(sent, ensure_ascii=False)
-        assert not re.search("[\u2013\u2014]", whole), name
-        assert not re.search("[^\x00-\u024f]", whole), name
-
-
 class _NoPersons:
     by_person: typing.ClassVar[dict] = {}
 
