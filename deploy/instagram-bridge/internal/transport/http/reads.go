@@ -1,4 +1,4 @@
-package main
+package httptransport
 
 // The response shapes, and the three READ routes that answer about people
 // rather than about the bridge: a thread's members, an account, its story.
@@ -11,7 +11,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 
 	"instagram-bridge/internal/domain"
@@ -126,45 +125,6 @@ func rosterOf(room string, t domain.Thread) rosterBody {
 		members = append(members, rosterMember(m))
 	}
 	return rosterBody{OK: true, RoomID: room, Title: t.Title, IsGroup: t.IsGroup, Members: members}
-}
-
-// handleRoster answers GET /threads/{thread_fbid}/members.
-//
-// A GET on the thread's own path rather than a POST body, because it is a read
-// with no side effect. The room key is the SHORT thread id, exactly as every
-// other route takes it; the long id never crosses this boundary in either
-// direction.
-//
-// The status mapping is the same one the send routes use: 409 for a
-// checkpointed or logged-out session because a human has to act, 503 for a
-// session being re-established because that one heals itself, 400 for a
-// room_id that is not a decimal thread_fbid, and 500 for anything the bridge
-// cannot classify — never a 200 with a partial answer.
-func (b *server) handleRoster(w http.ResponseWriter, r *http.Request) {
-	roomID := r.PathValue("thread_fbid")
-	if roomID == "" {
-		badRequest(w, "thread_fbid is required")
-		return
-	}
-	if !b.ready(w) {
-		return
-	}
-	// resolveRoom validates that the id parses (400, not a 5xx from
-	// Instagram) and warms the short<->long cache the typing path reads. The
-	// lookup is cached after the first call.
-	thread, ok := b.resolveRoom(w, r, roomID)
-	if !ok {
-		return
-	}
-	info, err := b.gw.Members(r.Context(), thread)
-	if err != nil {
-		status := statusForError(err)
-		slog.WarnContext(r.Context(), "roster failed",
-			"room", thread.Short.String(), "status", status, "error", err)
-		writeJSON(w, status, map[string]any{"ok": false, "error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, rosterOf(thread.Short.String(), info))
 }
 
 // --- GET /accounts/{igid} -----------------------------------------------------
@@ -292,42 +252,6 @@ type socialProfile struct {
 	ProfilePicURL string `json:"profile_pic_url,omitempty"`
 }
 
-// handleProfile answers GET /accounts/{igid}.
-//
-// The IGID, not the fbid — this is the social id space, and it is the one
-// `GetProfile` takes. A messaging fbid is also a decimal string, so it
-// validates, and then names a different account or none at all.
-func (b *server) handleProfile(w http.ResponseWriter, r *http.Request) {
-	igid := r.PathValue("igid")
-	if igid == "" {
-		badRequest(w, "igid is required")
-		return
-	}
-	if !b.ready(w) {
-		return
-	}
-	// Parsed at the edge, AFTER the session gate: a checkpointed session
-	// answers 409 before a malformed id answers 400.
-	id, err := domain.ParseIGID(igid)
-	var acct domain.Account
-	if err == nil {
-		acct, err = b.gw.Account(r.Context(), id)
-	}
-	if err != nil {
-		status := statusForError(err)
-		// The igid is logged; the error text crosses a boundary, while the log
-		// stays on the host an operator already has.
-		slog.WarnContext(r.Context(), "profile failed",
-			"igid", igid, "status", status, "error", err)
-		writeJSON(w, status, map[string]any{"ok": false, "error": err.Error()})
-		return
-	}
-	// THE SECOND CALL, keyed on the same parsed igid, and it may fail on its
-	// own: GetProfile has already answered, so a social failure degrades this
-	// read rather than losing it.
-	writeJSON(w, http.StatusOK, profileOf(acct, b.gw.SocialProfile(r.Context(), id)))
-}
-
 func profileOf(a domain.Account, social domain.SocialRead) profileBody {
 	out := profileBody{
 		OK:              true,
@@ -419,31 +343,6 @@ type storyBody struct {
 }
 
 // handleStory answers GET /accounts/{igid}/story.
-func (b *server) handleStory(w http.ResponseWriter, r *http.Request) {
-	igid := r.PathValue("igid")
-	if igid == "" {
-		badRequest(w, "igid is required")
-		return
-	}
-	if !b.ready(w) {
-		return
-	}
-	// Parsed at the edge, after the session gate, as handleProfile does.
-	id, err := domain.ParseIGID(igid)
-	var story domain.Story
-	if err == nil {
-		story, err = b.gw.Story(r.Context(), id)
-	}
-	if err != nil {
-		status := statusForError(err)
-		slog.WarnContext(r.Context(), "story failed",
-			"igid", igid, "status", status, "error", err)
-		writeJSON(w, status, map[string]any{"ok": false, "error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, storyOf(story))
-}
-
 func storyOf(s domain.Story) storyBody {
 	items := make([]storyItem, 0, len(s.Items))
 	for _, it := range s.Items {

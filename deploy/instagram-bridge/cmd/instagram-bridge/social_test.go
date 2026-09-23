@@ -30,7 +30,7 @@ import (
 	"go.mau.fi/mautrix-meta/pkg/messagix/responses"
 )
 
-func getProfile(t *testing.T, b *server, query string) *httptest.ResponseRecorder {
+func getProfile(t *testing.T, b *testBridge, query string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/accounts/"+query, nil)
 	rec := httptest.NewRecorder()
@@ -288,7 +288,7 @@ func TestProfileKeysTheSocialCallOnTheIGIDNotTheUsername(t *testing.T) {
 // route must never batch, and it must never report "not permitted" as "nothing
 // posted".
 
-func getStory(t *testing.T, b *server, query string) *httptest.ResponseRecorder {
+func getStory(t *testing.T, b *testBridge, query string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/accounts/"+query+"/story", nil)
 	rec := httptest.NewRecorder()

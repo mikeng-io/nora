@@ -28,7 +28,7 @@ import (
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
 )
 
-func getRoster(t *testing.T, b *server, query string) *httptest.ResponseRecorder {
+func getRoster(t *testing.T, b *testBridge, query string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/threads/"+query+"/members", nil)
 	rec := httptest.NewRecorder()

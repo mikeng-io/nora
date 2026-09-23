@@ -1,8 +1,12 @@
-package main
-
-// The HTTP surface. The table in
-// design/instagram-adoption/03-transport-contract.md, plus the thread and account reads
-// (roster.go), which the contract document does not carry yet.
+// Package httptransport is the bridge's HTTP surface: routes, request
+// parsing, response DTOs and the status mapping
+// (design/instagram-adoption/16 §Layers, 17 P8). Handlers are thin: they read
+// the request, call ONE use case, and write what it returned. They import the
+// use cases and the domain, never instameow and never a wire struct.
+//
+// The routes are the table in design/instagram-adoption/03-transport-contract.md,
+// plus the thread and account reads, which the contract document does not
+// carry yet.
 //
 // The status mapping is the load-bearing part and it is NOT a generic
 // success/failure split. The adapter's retry decision reads it directly:
@@ -13,11 +17,13 @@ package main
 //	503  socket down or reconnecting — retryable, the bridge heals itself
 //	413  payload over a limit
 //	400  the caller's request is malformed
+//	404  the id names nothing
 //	500  Instagram refused for a reason the bridge has no name for
 //
 // Collapsing 409 into 503 would make the adapter hammer a challenged account
 // forever; collapsing 503 into 500 would make it give up on a socket that
 // reconnects in seconds. They are distinct because the consequences are.
+package httptransport
 
 import (
 	"context"
@@ -29,18 +35,10 @@ import (
 	"net/http"
 	"time"
 
+	"instagram-bridge/internal/app"
 	"instagram-bridge/internal/domain"
-	gateway "instagram-bridge/internal/gateway/instameow"
 	"instagram-bridge/internal/observability"
-	"instagram-bridge/internal/stream"
 )
-
-// server is the HTTP surface over the gateway's one session.
-type server struct {
-	gw        *gateway.Bridge
-	hub       *stream.Hub
-	startedAt time.Time
-}
 
 const (
 	// maxJSONBody bounds the control routes. Generous relative to a message
@@ -52,41 +50,57 @@ const (
 	maxMediaBody = 32 << 20 // 32 MiB
 )
 
-func (b *server) routes() http.Handler {
+// Events is the SSE hub as /events and /health read it.
+type Events interface {
+	Subscribe() (cortez []byte, [][]byte, int)
+	Unsubscribe(cortez []byte)
+	Stats() (clients, buffered, dropped int)
+}
+
+// Server is the HTTP surface over the use cases.
+type Server struct {
+	app       *app.Service
+	events    Events
+	startedAt time.Time
+}
+
+// New builds the surface. startedAt is the process start, for /health's
+// uptime.
+func New(svc *app.Service, events Events, startedAt time.Time) *Server {
+	return &Server{app: svc, events: events, startedAt: startedAt}
+}
+
+// Routes is the whole handler, traced.
+func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", b.handleHealth)
-	mux.HandleFunc("GET /events", b.handleEvents)
-	// The one READ route that answers about PEOPLE rather than about the
-	// bridge. GET with the room key in the query string, because it has no
-	// side effect — see roster.go.
+	// The bridge talking about ITSELF: its health, its event stream.
+	mux.HandleFunc("GET /health", s.handleHealth)
+	mux.HandleFunc("GET /events", s.handleEvents)
 	// --- RESOURCES ---------------------------------------------------------
 	//
 	// Two nouns — a THREAD and an ACCOUNT — and the reads hang off them. The
-	// first four routes above are the bridge talking about ITSELF (health,
-	// its event stream) and the mutations below are verbs on a thread; these
-	// are the reads, and they are the ones that were drifting.
+	// mutations below are still verbs on a thread; they move onto resource
+	// paths in P14.
 	//
 	// They were `GET /roster`, `GET /profile` and `GET /story`, plus a
 	// proposed `GET /profile-social` — a path named after which BACKEND a
 	// field came from, which is not a resource and would have been the fourth
-	// spelling of one noun. Renamed 2026-09-22 while it was still free:
-	// `/profile` and `/story` had no caller at all, and `/roster` had exactly
-	// one.
-	mux.HandleFunc("GET /threads/{thread_fbid}/members", observability.Route("GET /threads/{thread_fbid}/members", b.handleRoster))
-	// ONE account resource. `web_profile_info`'s fields are not a second
-	// noun — they are more of this one — so they are merged into this read
-	// rather than given a path of their own. The response says which upstream
-	// halves answered; see social.go.
-	mux.HandleFunc("GET /accounts/{igid}", observability.Route("GET /accounts/{igid}", b.handleProfile))
+	// spelling of one noun. Renamed 2026-09-22 while it was still free.
+	mux.HandleFunc("GET /threads/{thread_fbid}/members", observability.Route("GET /threads/{thread_fbid}/members", s.handleRoster))
+	// ONE account resource. The social fields are not a second noun — they
+	// are more of this one — so they are merged into this read rather than
+	// given a path of their own. The response says which upstream halves
+	// answered.
+	mux.HandleFunc("GET /accounts/{igid}", observability.Route("GET /accounts/{igid}", s.handleProfile))
 	// The only path to a story anywhere, and the only read VISIBLE to the
 	// person being read. A sub-resource of the account, because that is what
 	// it is.
-	mux.HandleFunc("GET /accounts/{igid}/story", observability.Route("GET /accounts/{igid}/story", b.handleStory))
-	mux.HandleFunc("POST /send", observability.Route("POST /send", b.handleSend))
-	mux.HandleFunc("POST /send-media", observability.Route("POST /send-media", b.handleSendMedia))
-	mux.HandleFunc("POST /react", observability.Route("POST /react", b.handleReact))
-	mux.HandleFunc("POST /typing", observability.Route("POST /typing", b.handleTyping))
-	mux.HandleFunc("POST /unsend", observability.Route("POST /unsend", b.handleUnsend))
+	mux.HandleFunc("GET /accounts/{igid}/story", observability.Route("GET /accounts/{igid}/story", s.handleStory))
+	mux.HandleFunc("POST /send", observability.Route("POST /send", s.handleSend))
+	mux.HandleFunc("POST /send-media", observability.Route("POST /send-media", s.handleSendMedia))
+	mux.HandleFunc("POST /react", observability.Route("POST /react", s.handleReact))
+	mux.HandleFunc("POST /typing", observability.Route("POST /typing", s.handleTyping))
+	mux.HandleFunc("POST /unsend", observability.Route("POST /unsend", s.handleUnsend))
 	return observability.TraceHTTP(mux)
 }
 
@@ -113,14 +127,13 @@ type healthBody struct {
 
 // handleHealth ALWAYS answers 200 while the HTTP server serves.
 //
-// This is inherited verbatim from whatsapp-bridge and it matters more here:
 // Instagram challenges are routine, so a checkpointed session is a normal
 // operating state the bridge must DESCRIBE, not a condition to fail on. A
 // non-200 would make the container healthcheck flap on an ordinary captcha
 // and restart a process whose restart fixes nothing.
-func (b *server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	snap := b.gw.Snapshot()
-	clients, buffered, dropped := b.hub.Stats()
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	snap := s.app.Health()
+	clients, buffered, dropped := s.events.Stats()
 	writeJSON(w, http.StatusOK, healthBody{
 		OK:             true,
 		Session:        snap.State,
@@ -131,13 +144,13 @@ func (b *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		DroppedEvents:  dropped,
 		BufferedEvents: buffered,
 		Clients:        clients,
-		UptimeSeconds:  int(time.Since(b.startedAt).Seconds()),
+		UptimeSeconds:  int(time.Since(s.startedAt).Seconds()),
 	})
 }
 
 // --- /events ------------------------------------------------------------------
 
-func (b *server) handleEvents(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "streaming unsupported"})
@@ -155,8 +168,8 @@ func (b *server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, ":\n\n")
 	flusher.Flush()
 
-	ch, replay, droppedTotal := b.hub.Subscribe()
-	defer b.hub.Unsubscribe(ch)
+	ch, replay, droppedTotal := s.events.Subscribe()
+	defer s.events.Unsubscribe(ch)
 
 	// The drop notice goes FIRST, before the replay. A consumer that reads its
 	// backlog and only then learns some of it is missing has already made
@@ -201,7 +214,7 @@ type sendRequest struct {
 	ReplyTo  string        `json:"reply_to"`
 }
 
-func (b *server) handleSend(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	var req sendRequest
 	if !readJSON(w, r, maxJSONBody, &req) {
 		return
@@ -210,21 +223,9 @@ func (b *server) handleSend(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "text is required")
 		return
 	}
-	// NO 1000-CHARACTER CAP. mautrix-meta declares MaxTextLength = 1000 as its
-	// own policy; measured on this wire, 20,000 characters are accepted and
-	// 50,000 are refused. Enforcing 1000 here would hand Nora's reply budget a
-	// ceiling that does not exist, and a budget derived from a policy constant
-	// is a budget nobody can raise.
-	if !b.ready(w) {
-		return
-	}
-	thread, ok := b.resolveRoom(w, r, req.RoomID)
-	if !ok {
-		return
-	}
-	res, err := b.gw.SendText(r.Context(), thread, req.Text, mentionsOf(req.Mentions), req.ReplyTo)
+	res, err := s.app.SendText(r.Context(), req.RoomID, req.Text, mentionsOf(req.Mentions), req.ReplyTo)
 	if err != nil {
-		b.failSend(r.Context(), w, "send", req.RoomID, err)
+		fail(r.Context(), w, "send", req.RoomID, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, sentBody{OK: true, ID: res.ID, TimestampMS: res.TimestampMS})
@@ -242,14 +243,14 @@ type sendMediaRequest struct {
 }
 
 // handleSendMedia carries NO text, and that is structural rather than a
-// choice: slidetypes.SendMediaRequest has no text field of any kind, so a
-// caption cannot be expressed on this wire at all.
+// choice: the wire's media request has no text field of any kind, so a
+// caption cannot be expressed at all.
 //
 // This INVERTS the WhatsApp adapter, which deliberately puts the reply text in
 // `caption` on the first attachment and skips /send so the group does not hear
 // the reply twice. Copying that shape here silently loses the text. On
 // Instagram the caller sends /send first, then /send-media per attachment.
-func (b *server) handleSendMedia(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleSendMedia(w http.ResponseWriter, r *http.Request) {
 	var req sendMediaRequest
 	if !readJSON(w, r, maxMediaBody, &req) {
 		return
@@ -267,24 +268,14 @@ func (b *server) handleSendMedia(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "data_base64 decoded to zero bytes")
 		return
 	}
-	if !b.ready(w) {
-		return
-	}
-	thread, ok := b.resolveRoom(w, r, req.RoomID)
-	if !ok {
-		return
-	}
-	// BOTH legs of /send-media take the short id, from the one parsed
-	// ThreadFBID, so they cannot disagree and cannot upload against
-	// /direct/t/0/.
-	res, err := b.gw.SendMedia(r.Context(), thread, domain.Upload{
+	res, err := s.app.SendMedia(r.Context(), req.RoomID, domain.Upload{
 		Filename:  orDefault(req.Filename, "upload.bin"),
 		MimeType:  orDefault(req.Mimetype, "application/octet-stream"),
 		Data:      data,
 		VoiceNote: req.VoiceNote,
 	}, req.ReplyTo)
 	if err != nil {
-		b.failSend(r.Context(), w, "send-media", req.RoomID, err)
+		fail(r.Context(), w, "send-media", req.RoomID, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, sentBody{OK: true, ID: res.ID, TimestampMS: res.TimestampMS})
@@ -297,7 +288,7 @@ type reactRequest struct {
 	Remove    bool   `json:"remove"`
 }
 
-func (b *server) handleReact(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleReact(w http.ResponseWriter, r *http.Request) {
 	var req reactRequest
 	if !readJSON(w, r, maxJSONBody, &req) {
 		return
@@ -312,22 +303,9 @@ func (b *server) handleReact(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "emoji is required (also when remove is true)")
 		return
 	}
-	if !b.ready(w) {
-		return
-	}
-	thread, ok := b.resolveRoom(w, r, req.RoomID)
-	if !ok {
-		return
-	}
-	// SHORT — and this is the one verb where that is load-bearing rather than
-	// merely matching upstream. A reaction addressed with the long thread_igid
-	// is accepted by the API and is absent from the thread on read-back
-	// (measured 2026-09-22), where a SEND was measured arriving either way.
-	// The long id is still resolved first: that lookup is what validates the
-	// room exists and what warms the reverse cache /typing reads.
-	confirmed, err := b.gw.React(r.Context(), thread, req.MessageID, req.Emoji, req.Remove)
+	confirmed, err := s.app.React(r.Context(), req.RoomID, req.MessageID, req.Emoji, req.Remove)
 	if err != nil {
-		b.failSend(r.Context(), w, "react", req.RoomID, err)
+		fail(r.Context(), w, "react", req.RoomID, err)
 		return
 	}
 	if !confirmed {
@@ -348,34 +326,15 @@ type typingRequest struct {
 	Typing bool   `json:"typing"`
 }
 
-// handleTyping is the one route that genuinely needs the realtime socket.
-//
-// Everything else here is a GraphQL call over plain HTTPS and works while the
-// socket reconnects; SetTyping publishes over the MQTT-bypass stream and needs
-// a live connection context. So this is the only handler that answers 503 on
-// `connected == false` — the others would answer 503 for a condition that does
-// not actually stop them.
-func (b *server) handleTyping(w http.ResponseWriter, r *http.Request) {
+// handleTyping is the one route that genuinely needs the realtime socket, so
+// the only one that answers 503 on `connected == false`.
+func (s *Server) handleTyping(w http.ResponseWriter, r *http.Request) {
 	var req typingRequest
 	if !readJSON(w, r, maxJSONBody, &req) {
 		return
 	}
-	if !b.ready(w) {
-		return
-	}
-	if !b.gw.Snapshot().Connected {
-		unavailable(w, "realtime socket is not connected")
-		return
-	}
-	thread, ok := b.resolveRoom(w, r, req.RoomID)
-	if !ok {
-		return
-	}
-	// SHORT, following upstream (handlematrix.go:484). Typing arrival was
-	// never measured in either id space — there is no read-back for typing —
-	// so this is followed, not proven.
-	if err := b.gw.Typing(r.Context(), thread, req.Typing); err != nil {
-		b.failSend(r.Context(), w, "typing", req.RoomID, err)
+	if err := s.app.Typing(r.Context(), req.RoomID, req.Typing); err != nil {
+		fail(r.Context(), w, "typing", req.RoomID, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -386,7 +345,7 @@ type unsendRequest struct {
 	MessageID string `json:"message_id"`
 }
 
-func (b *server) handleUnsend(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleUnsend(w http.ResponseWriter, r *http.Request) {
 	var req unsendRequest
 	if !readJSON(w, r, maxJSONBody, &req) {
 		return
@@ -395,95 +354,53 @@ func (b *server) handleUnsend(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "message_id is required")
 		return
 	}
-	if !b.ready(w) {
-		return
-	}
-	thread, ok := b.resolveRoom(w, r, req.RoomID)
-	if !ok {
-		return
-	}
-	// LONG: the one verb that is genuinely long on both sides (upstream
-	// handlematrix.go:292 passes `meta.IGThreadID`), and the one every probe
-	// cleanup ran this way.
-	confirmed, err := b.gw.Unsend(r.Context(), thread, req.MessageID)
+	confirmed, err := s.app.Unsend(r.Context(), req.RoomID, req.MessageID)
 	if err != nil {
-		b.failSend(r.Context(), w, "unsend", req.RoomID, err)
+		fail(r.Context(), w, "unsend", req.RoomID, err)
 		return
 	}
 	if !confirmed {
-		// REPORTED, NOT FAILED. `direct_unsend_message` has never been
-		// observed against an unsend known to have failed, upstream discards
-		// it, and a false 500 here strands probe messages in a real group —
-		// the cleanup path fails and a human is told the message is still
-		// there. So the observation is surfaced both ways and the call still
-		// reads 200. See unsendMessage.
-		slog.WarnContext(r.Context(), "unsend returned direct_unsend_message=false; "+
-			"the message may still be in the thread", "room", req.RoomID)
+		// REPORTED, NOT FAILED: the observation is surfaced in the body and
+		// the call still reads 200.
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "confirmed": false})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-// --- shared plumbing ----------------------------------------------------------
+// --- failures -----------------------------------------------------------------
 
-// ready is the session gate every send route passes through first.
+// fail writes a use case's error. Two stages answer with their own bodies,
+// as they always have:
 //
-// It answers 409 for checkpointed AND logged_out: both mean "a human must act
-// before this can succeed", which is precisely what 409 tells the adapter. It
-// does NOT check the socket — see handleTyping for why that would be wrong for
-// the other five routes.
-func (b *server) ready(w http.ResponseWriter) bool {
-	snap := b.gw.Snapshot()
-	if snap.State != domain.StateAuthenticated {
+//   - the session gate (409): the session STATE and its detail, because what
+//     the caller needs is which human action is due, not an error string;
+//   - a room's route lookup failing against Instagram: `thread_lookup_failed`
+//     with the detail, mapped through the same status classifier, so a
+//     checkpoint discovered there reads 409 and not a 500 the adapter would
+//     retry.
+//
+// Everything else is `{"ok": false, "error": ...}` at statusForError's code.
+func fail(ctx context.Context, w http.ResponseWriter, route, key string, err error) {
+	var notReady *app.NotReadyError
+	if errors.As(err, &notReady) {
 		writeJSON(w, http.StatusConflict, map[string]any{
-			"ok": false, "error": string(snap.State), "detail": snap.Detail,
+			"ok": false, "error": string(notReady.State), "detail": notReady.Detail,
 		})
-		return false
+		return
 	}
-	if !snap.HasClient {
-		unavailable(w, "session is being re-established")
-		return false
-	}
-	return true
-}
-
-// resolveRoom turns the contract's room key (the SHORT thread_fbid) into BOTH
-// thread ids. Which one a given verb takes is a per-verb fact, not a rule —
-// see the table at the top of outbound.go. The long id never crosses the HTTP
-// boundary in either direction.
-func (b *server) resolveRoom(w http.ResponseWriter, r *http.Request, roomID string) (domain.ThreadRef, bool) {
-	// The room key is parsed into its value object HERE, at the edge: a value
-	// that is not a short thread id (the long one included) is the caller's
-	// 400 and never becomes a route lookup against Instagram.
-	short, err := domain.ParseThreadFBID(roomID)
-	if err != nil {
-		badRequest(w, err.Error())
-		return domain.ThreadRef{}, false
-	}
-	thread, err := b.gw.ResolveThread(r.Context(), short)
-	if err == nil {
-		return thread, true
-	}
-	if errors.Is(err, domain.ErrUnavailable) {
-		unavailable(w, err.Error())
-		return domain.ThreadRef{}, false
-	}
-	// A lookup that failed against Instagram is mapped through the same
-	// classifier as a send, so a checkpoint discovered here reads 409 and not
-	// a generic 500 the adapter would retry.
-	writeJSON(w, statusForError(err), map[string]any{
-		"ok": false, "error": "thread_lookup_failed", "detail": err.Error(),
-	})
-	return domain.ThreadRef{}, false
-}
-
-func (b *server) failSend(ctx context.Context, w http.ResponseWriter, route, roomID string, err error) {
 	status := statusForError(err)
-	// room_id is a group thread id, not a person. It is safe to log and is the
-	// only handle an operator has for correlating a failure with a room.
-	slog.WarnContext(ctx, "send route failed",
-		"route", route, "room", roomID, "status", status, "error", err)
+	var lookup *app.ThreadLookupError
+	if errors.As(err, &lookup) && !errors.Is(err, domain.ErrUnavailable) {
+		writeJSON(w, status, map[string]any{
+			"ok": false, "error": "thread_lookup_failed", "detail": err.Error(),
+		})
+		return
+	}
+	// The key is a room (a group thread id, not a person) or an igid. Both
+	// are safe to log and are the only handle an operator has for
+	// correlating a failure; the log stays on the host.
+	slog.WarnContext(ctx, route+" failed", "key", key, "status", status, "error", err)
 	writeJSON(w, status, map[string]any{"ok": false, "error": err.Error()})
 }
 
@@ -511,10 +428,6 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 
 func badRequest(w http.ResponseWriter, detail string) {
 	writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": detail})
-}
-
-func unavailable(w http.ResponseWriter, detail string) {
-	writeJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": detail})
 }
 
 // decodeBase64 accepts both the standard and the URL-safe alphabet, and both

@@ -1,5 +1,10 @@
 package main
 
+// End-to-end tests of the wired bridge: the real HTTP surface, the real use
+// cases and the real gateway, over a fake session that behaves like the
+// measured wire. Built through wire(), the function main uses, so a test
+// cannot assemble the layers differently from production.
+
 import (
 	"context"
 	"encoding/json"
@@ -30,6 +35,15 @@ const (
 
 var measuredUsers = fakeig.MeasuredUsers
 
+// testBridge is one wired bridge: its handler, its session, its event hub.
+type testBridge struct {
+	gw  *gateway.Bridge
+	hub *stream.Hub
+	h   http.Handler
+}
+
+func (b *testBridge) routes() http.Handler { return b.h }
+
 // bridgeOpt adjusts the session a test bridge starts in. Everything a test
 // used to poke into the bridge after building it is set here instead, at
 // construction, the way the supervisor sets it in production.
@@ -48,16 +62,12 @@ func withNoClient() bridgeOpt { return func(o *gateway.Options) { o.Client, o.Up
 
 func withIssuer(i gateway.GraphQLIssuer) bridgeOpt { return func(o *gateway.Options) { o.Issuer = i } }
 
-// newTestBridge wires the whole HTTP path over a fake session. Nothing here
-// touches the network: the live account is in use and cannot be probed, so
-// the HTTP layer is verified against a recording fake that behaves like the
-// measured wire, through the same gateway code production runs — spans
-// included.
-func newTestBridge(t *testing.T, f *fakeIG, opts ...bridgeOpt) *server {
+// newTestBridge wires the whole path over a fake session. Nothing here
+// touches the network: the live account is in use and cannot be probed.
+func newTestBridge(t *testing.T, f *fakeIG, opts ...bridgeOpt) *testBridge {
 	t.Helper()
 	o := gateway.Options{
 		Store:     session.Store{Dir: t.TempDir()},
-		Sink:      stream.NewHub(),
 		State:     domain.StateAuthenticated,
 		Connected: true,
 		Seq:       22,
@@ -72,11 +82,12 @@ func newTestBridge(t *testing.T, f *fakeIG, opts ...bridgeOpt) *server {
 	for _, opt := range opts {
 		opt(&o)
 	}
-	hub := o.Sink.(*stream.Hub)
-	return &server{gw: gateway.NewBridge(o), hub: hub, startedAt: time.Now()}
+	hub := stream.NewHub()
+	gw, h := wire(o, hub, time.Now())
+	return &testBridge{gw: gw, hub: hub, h: h}
 }
 
-func post(t *testing.T, b *server, path string, body any) *httptest.ResponseRecorder {
+func post(t *testing.T, b *testBridge, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	blob, err := json.Marshal(body)
 	if err != nil {

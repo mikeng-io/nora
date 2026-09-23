@@ -27,7 +27,7 @@ var badRoomIDs = []string{"abc", "-1", "0", "12a4", threadLong}
 
 // roomRequest sends one room-keyed request to one route. Every body carries
 // everything every route needs, so the room key is the only thing wrong.
-func roomRequest(t *testing.T, b *server, route, room string) *httptest.ResponseRecorder {
+func roomRequest(t *testing.T, b *testBridge, route, room string) *httptest.ResponseRecorder {
 	t.Helper()
 	if route == "members" {
 		req := httptest.NewRequest(http.MethodGet, "/threads/"+room+"/members", nil)
