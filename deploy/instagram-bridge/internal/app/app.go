@@ -14,7 +14,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"instagram-bridge/internal/domain"
 )
@@ -279,6 +278,20 @@ func (s *Service) SearchAccounts(ctx context.Context, query string) ([]domain.Ac
 // use case, not in the transport layer, so the rule is provable independent
 // of the HTTP shape around it.
 //
+// # The match is pattern-checked before it is ever fold-compared
+//
+// A hit whose username does not itself parse as a `domain.Username`
+// (`ParseUsername`'s `[A-Za-z0-9._]{1,30}` pattern) is skipped, never
+// compared. This is load-bearing, not a defensive extra: `strings.EqualFold`
+// folds by full Unicode case-folding rules, which fold characters OUTSIDE
+// that pattern onto ones inside it — U+212A KELVIN SIGN folds to `k`, U+017F
+// LATIN SMALL LETTER LONG S folds to `s`. An upstream hit spelled with one of
+// those would read as an exact, case-insensitive match for an ASCII `k` or
+// `s` username it is not, which is a spoofable identity check, not a
+// case-insensitive one. Checking the pattern first rules that out
+// categorically: `asciiEqualFold`, which runs afterward, only ever sees two
+// strings already known to contain nothing but `[A-Za-z0-9._]`.
+//
 // Zero matches is a normal empty answer, not ErrNotFound: P9 also measured
 // zero items for a username that does not exist, and the search returning
 // nothing for a real one it simply missed would look identical, so there is
@@ -298,7 +311,14 @@ func (s *Service) LookupAccountByUsername(ctx context.Context, username domain.U
 	want := username.String()
 	matches := make([]domain.AccountSummary, 0, 1)
 	for _, hit := range hits {
-		if strings.EqualFold(hit.Username, want) {
+		hitUsername, err := domain.ParseUsername(hit.Username)
+		if err != nil {
+			// Not a pattern-conforming username: never an exact match,
+			// whatever a Unicode-aware fold would say about it. See this
+			// function's doc comment.
+			continue
+		}
+		if asciiEqualFold(hitUsername.String(), want) {
 			matches = append(matches, hit)
 		}
 	}
@@ -309,6 +329,34 @@ func (s *Service) LookupAccountByUsername(ctx context.Context, username domain.U
 			fmt.Errorf("username search matched %d accounts, want at most 1", len(matches)))
 	}
 	return matches, nil
+}
+
+// asciiEqualFold reports whether a and b are equal under ASCII-only case
+// folding: it upper/lower-cases only the byte range `A`-`Z`/`a`-`z` and
+// compares byte for byte. LookupAccountByUsername calls it ONLY after both
+// strings have already passed `domain.ParseUsername`'s pattern
+// (`[A-Za-z0-9._]{1,30}`), so both are already known to be pure ASCII —
+// but the point of this function, rather than `strings.EqualFold`, is that
+// it makes that safe even if that invariant is ever weakened: it has no
+// Unicode fold table to exploit, so a homoglyph can never make it answer
+// true for two strings that are not the same ASCII bytes up to case.
+func asciiEqualFold(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		ca, cb := a[i], b[i]
+		if 'A' <= ca && ca <= 'Z' {
+			ca += 'a' - 'A'
+		}
+		if 'A' <= cb && cb <= 'Z' {
+			cb += 'a' - 'A'
+		}
+		if ca != cb {
+			return false
+		}
+	}
+	return true
 }
 
 // ReadPost reads one post by its shortcode (17 P12).

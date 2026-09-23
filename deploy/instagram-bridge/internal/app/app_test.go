@@ -322,6 +322,42 @@ func TestLookupAccountByUsernameNoExactMatchIsEmpty(t *testing.T) {
 	}
 }
 
+// A hit spelled with U+212A KELVIN SIGN, which Unicode case-folds to 'k',
+// must never match an ASCII "k" username: strings.EqualFold would call it a
+// match, and that is exactly the identity spoof LookupAccountByUsername's
+// pattern check exists to rule out (see its doc comment). The hit is not
+// pattern-conforming, so it is skipped entirely, not merely "not equal".
+func TestLookupAccountByUsernameRejectsKelvinSignHomoglyph(t *testing.T) {
+	const kelvinSign = "K" // KELVIN SIGN: strings.EqualFold("K", "K") is true
+	p := &fakePorts{searchHits: []domain.AccountSummary{
+		{IGID: "1", Username: kelvinSign + "elvin_user"},
+	}}
+	matches, err := service(ready(), p).LookupAccountByUsername(t.Context(), mustUsername(t, "kelvin_user"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("matches = %+v, want none: a Kelvin-sign homoglyph must never count as an exact match", matches)
+	}
+}
+
+// A hit whose username does not itself parse as a domain.Username (here: a
+// space, outside the pattern) is skipped rather than compared at all, and a
+// genuine exact match sitting next to it is still returned.
+func TestLookupAccountByUsernameSkipsANonPatternHitButKeepsTheValidOne(t *testing.T) {
+	p := &fakePorts{searchHits: []domain.AccountSummary{
+		{IGID: "1", Username: "target user"}, // a space: not [A-Za-z0-9._]
+		{IGID: "2", Username: "target_user"},
+	}}
+	matches, err := service(ready(), p).LookupAccountByUsername(t.Context(), mustUsername(t, "target_user"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 || matches[0].IGID != "2" {
+		t.Fatalf("matches = %+v, want exactly the pattern-conforming exact match", matches)
+	}
+}
+
 // Two exact, case-insensitive matches cannot happen for a real username, so
 // it is ErrUpstreamRejected — the transport maps that to 502 — never a
 // silent items[0] pick.
