@@ -141,6 +141,12 @@ same behaviour.
 
 ## The routing rule: the axis split is the DEFAULT, not a tie-break
 
+> **SUPERSEDED FOR INSTAGRAM 2026-09-23 by `15-bridge-is-the-only-entry.md`.**
+> Every Instagram verb goes through instagram-bridge's HTTP API; OpenCLI serves
+> no Instagram row. The table and notes below are kept as the record of how
+> the split was reasoned and measured. They are not the current routing. X is
+> unaffected.
+
 The operator's boundary is the rule, and it is stated first because everything
 below is an exception to it:
 

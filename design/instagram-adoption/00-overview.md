@@ -21,6 +21,9 @@ edges:
   - {dst: 11-sequencing-and-flows.md, rel: details, provenance: asserted}
   - {dst: 12-external-review.md, rel: review, provenance: asserted}
   - {dst: 13-shared-posts-and-reels.md, rel: details, provenance: asserted}
+  - {dst: 15-bridge-is-the-only-entry.md, rel: details, provenance: asserted}
+  - {dst: 16-bridge-architecture-and-observability.md, rel: details, provenance: asserted}
+  - {dst: 17-implementation-plan.md, rel: details, provenance: asserted}
 ---
 
 # Instagram Adoption — Overview, Verdict & Phases
