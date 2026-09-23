@@ -521,6 +521,14 @@ test('the edit key matches whatsmeow byte for byte', () => {
   assert.equal(key.toString('hex'), WM_KEY);
 });
 
+test('the key orders original sender before editor, both without device, as whatsmeow does', () => {
+  // A second whatsmeow vector with the two sides DIFFERENT (the editor's JID
+  // carries a device part, ":3", which whatsmeow strips): swapping them, or
+  // keeping the device, gives a different key.
+  const key = deriveEditKey(WM_SECRET, '3EB0ORIGID', '149242447412@lid', '85202411020@s.whatsapp.net');
+  assert.equal(key.toString('hex'), 'b87c3f1eaf124da257537ee2bb7d26c8c9f847813aa7caa3698b2077881154b8');
+});
+
 function secretEditFixture({ originalParticipant = '149242447412@lid', lidToPhone = {} } = {}) {
   const cache = createRecentMessageCache();
   cache.remember({
