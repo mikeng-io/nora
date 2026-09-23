@@ -257,8 +257,6 @@ _NOT_YET_REWRITTEN = frozenset({
 })
 
 
-
-
 #: A run of CJK, kana or hangul. ADR 0015 §3's unit: a distinct maximal run,
 #: counted once however often it repeats. Punctuation such as 「」 separates runs.
 _NON_LATIN_RUN = re.compile(r"[㐀-䶿一-鿿぀-ヿ가-힯]+")

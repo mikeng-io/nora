@@ -155,7 +155,8 @@ _NOTE_OK_TRANSIT = (
 )
 _NOTE_OK_PLAIN = (
     "`duration_seconds` and `distance_meters` are the whole journey for this "
-    "mode. There are no boarding steps to report: it is one continuous trip."
+    "mode. There are no boarding steps to report: it is one continuous trip. "
+    "It is an estimate; say 'about' when you quote it."
 )
 
 

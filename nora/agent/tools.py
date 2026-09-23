@@ -3851,7 +3851,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         """The current date and time, in Hong Kong time. Call this before
         answering anything that depends on when it is.
 
-        That includes how long until something, whether a place is still open,
+        That includes how long until something or since a message was sent,
+        whether a place is still open,
         and what "tonight" or "yesterday" means. Returns the weekday, date, time
         and timezone.
         """
@@ -4001,7 +4002,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         """How to get from one place to another, and how long it takes. Call
         this for ANY «how do I get from A to B».
 
-        Give places as they were named; it looks each one up itself. For a
+        Give places as they were named: a place, never a person or a
+        coordinate. It looks each one up itself. For a
         PERSONAL place name (home, someone's home, work), call `saved_places`
         first and pass the saved name; never guess one from earlier messages.
         An `address` that `where_is` gave you MAY be the origin.
@@ -7150,6 +7152,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         """Play a search term or a YouTube link in the asker's Discord voice
         channel. Call this when someone asks you to play music.
 
+        The asker must already be in a voice channel for a first track.
         `query` is a search term (the top YouTube match plays) or a URL. Only a
         real playlist URL (youtube.com/playlist?list=...) queues several tracks;
         a long video titled as a playlist is still one track. For a playlist or
@@ -7368,11 +7371,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         ends: at `times`, at `until`, or at a cap the result reports in
         `repeat_left`. Nothing repeats faster than every few minutes.
 
-        SHOULD: say back the moment you took them to mean, and any repeat limit,
-        so a wrong guess is caught now.
-
-        Returns `status`: ok, refused or unavailable. A refusal's `note` says
-        what to fix.
+        Returns `status`: ok, refused or unavailable, with a `note` on how to
+        report it.
 
         Args:
             when: the FIRST moment it should go off, ISO-8601 with an offset.
@@ -7697,12 +7697,12 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             "status": "ok", "id": str(row.id),
             "due_at": due_at.astimezone(_HKT).isoformat(),
         }
-        # `note` here is the LINKED NOTE's title, not a reporting note (ADR 0015
-        # §3's `note`). That is why `ok`'s reporting rule (say back the moment
-        # and any repeat limit) stays in the description as a SHOULD: putting
-        # guidance under this key would make it mean two things.
+        # The LINKED note's title rides as `note_title`; `note` is the reporting
+        # note every tool result carries (ADR 0015 §3). It was `note` until the
+        # 2026-09-24 audit: one key meaning a title here and a rule everywhere
+        # else is a key she cannot read the same way twice.
         if payload is not None and "note_title" in payload:
-            result["note"] = payload["note_title"]
+            result["note_title"] = payload["note_title"]
         # Added only when it repeats, so a one-shot's answer is byte-identical
         # to the pre-DEC-85 one. `repeat_left` is the bound she has to SAY —
         # they asked for «every day», I clamped it to a number, and a limit
@@ -7720,6 +7720,16 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             result["repeat_until"] = (
                 None if rule.until is None else rule.until.astimezone(_HKT).isoformat()
             )
+        # How to report an `ok` (it was a SHOULD in the description): say the
+        # moment back so a wrong guess is caught now, and the limit only when
+        # there is one to say.
+        result["note"] = (
+            "Say back the moment you took them to mean, so a wrong guess is "
+            "caught now."
+            + (" Say the limit too (repeat_left, repeat_until): a limit nobody "
+               "was told about is what surprises people later."
+               if rule is not None else "")
+        )
         return result
 
     async def list_reminders() -> dict:
@@ -7859,7 +7869,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         return {
             "status": "ok",
             "note": "It is off from now on, the whole series if it repeated. If "
-                    "someone else set it, say whose it was.",
+                    "list_reminders showed someone else as set_by, say whose "
+                    "it was.",
         }
 
     async def list_events(

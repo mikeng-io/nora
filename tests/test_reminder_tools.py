@@ -803,7 +803,10 @@ async def test_the_week_before_ask_stays_a_one_off():
     )
 
     assert result["status"] == "ok"
-    assert set(result) == {"status", "id", "due_at"}
+    # No series keys: one row, not a recurrence. The reporting `note` (ADR 0015
+    # §3) is the one key every ok carries now.
+    assert set(result) == {"status", "id", "due_at", "note"}
+    assert "limit" not in result["note"]
     row = (await store.pending_for(CONVERSATION))[0]
     assert row.series is None
 
@@ -1532,7 +1535,7 @@ async def test_a_dreamer_provenance_stamps_the_row_in_code():
     )
 
     assert result["status"] == "ok", result
-    assert result["note"] == "AI Hackathon dinner plan"
+    assert result["note_title"] == "AI Hackathon dinner plan"
     (row,) = await store.pending_for(CONVERSATION)
     assert row.kind == "proactive"
     assert row.requester_person_id == "nora"
@@ -1648,3 +1651,17 @@ async def test_list_reminders_names_a_row_nora_set_herself():
 
     assert listing["status"] == "ok"
     assert listing["reminders"][0]["set_by"] == tools_module._SELF_OWNER
+
+
+async def test_a_remind_ok_says_to_confirm_the_moment_and_only_a_real_limit():
+    """ADR 0015 §3: `remind`'s ok reporting rule moved from a SHOULD in the
+    description into the result. The limit clause rides only on a series."""
+    tools = _tools(reminders=FakeReminderStore(), caps=YEAR)
+    once = await tools["remind"](when="2026-10-04T09:00:00+08:00", text="交租")
+    series = await tools["remind"](
+        when="2026-10-04T09:00:00+08:00", text="食藥", repeat="daily", times=3,
+    )
+    assert "Say back the moment" in once["note"] and "limit" not in once["note"]
+    assert "Say back the moment" in series["note"] and "limit" in series["note"]
+    for result in (once, series):
+        assert "\u2014" not in result["note"] and "\u2013" not in result["note"]
