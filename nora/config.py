@@ -901,13 +901,29 @@ class MediaConfig(BaseModel):
     # with an honest note rather than shipping a nine-figure request
     # (downscaling is a later option, not this build). 8 MiB → ~10.7 MiB body.
     vision_max_bytes: int = 8 * 1024 * 1024
-    # A CEILING on the per-call vision timeout, not the timeout itself: the tool
-    # derives the real budget as the smaller of this and a fixed fraction of
-    # `llm.timeout_seconds` (`nora.infra.vision.derive_vision_timeout`), so it is
-    # provably shorter than the loop's `asyncio.wait_for` budget and a hung MiMo
-    # call becomes this tool's `unavailable` rather than the loop's silent
-    # `invocation_timeout` (DEC-56, the way `factory.build_retry_policy` derives
-    # its backoff from the same timeout).
+    # A CEILING on the per-call vision timeout, not the timeout itself: the
+    # client derives the real budget as the smaller of this and a fixed fraction
+    # of `llm.timeout_seconds` divided by the WAVES one read runs in sequence
+    # (`nora.infra.vision.derive_vision_timeout`), so it is provably shorter than
+    # the loop's `asyncio.wait_for` budget and a hung MiMo call becomes this
+    # tool's `unavailable` rather than the loop's silent `invocation_timeout`
+    # (DEC-56, the way `factory.build_retry_policy` derives its backoff from the
+    # same timeout).
+    #
+    # A single-view read — every image, and every clip of `chunk_seconds` or
+    # less — is ONE wave, so THIS value is what binds there.
+    #
+    # Precisely: the derived ceiling is `min(this, llm.timeout_seconds * 0.6 /
+    # waves)`. This value binds exactly when it is no larger than the loop's own
+    # 0.6 share, which is the case at the deployment's settings (min(120, 216)).
+    # A `waves`-window clip divides the LOOP SHARE, not this number — a
+    # ten-window read of a 240 s loop gets 240 * 0.6 / 10 = 14.4 s regardless of
+    # what is set here. Stating it as «honoured in full» without that condition
+    # was wrong: an independent review (2026-09-23) caught the template's own
+    # 240/40 pair deriving 14.4 s for ten windows, not 40 divided by ten.
+    #
+    # So this is the ceiling a short clip actually gets, not a figure something
+    # else quietly divides (design/media-read-lane/07-timeout-derivation.md).
     vision_timeout_seconds: float = 20.0
     # The per-modality describers. `vision_model` above stays as the IMAGE
     # model's deprecated alias so a config written before this split keeps

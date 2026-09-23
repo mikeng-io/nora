@@ -311,8 +311,12 @@ class MediaComprehender:
             return MediaDescription(available=False, reason=cut.reason or "ffmpeg")
         segments, read = await read_video_windows(
             cut=cut, media_type=media_type,
-            ask=lambda chunk: self._client.describe(
+            ask=lambda chunk, windows: self._client.describe(
                 data=chunk, media_type=media_type,
+                # The SERIAL factor for this read, threaded from the only place
+                # that knows it: `cut_video` has just run, the client was built
+                # a process ago. See `client.derive_vision_timeout`.
+                windows=windows,
                 prompt=(
                     f"{COMPREHEND_QUESTIONS['video']}\n\n"
                     "Answer in plain prose, not JSON."
@@ -409,11 +413,23 @@ class MediaComprehender:
         )
 
 
+#: One window's bytes AND the total window count of the read they belong to.
+#:
+#: The second argument is not decoration: the per-call vision ceiling divides
+#: by the SERIAL factor (`client.vision_waves`), and this function is the only
+#: place in the codebase that holds the window count before the model calls are
+#: issued — `cut_video` produces it per request, long after `VisionClient` was
+#: built. Every `ask` therefore takes it and hands it to `describe(windows=…)`;
+#: a caller that computed the ceiling itself would be the second writer of an
+#: invariant whose whole argument is that it is written down once.
+AskWindow = Callable[[bytes, int], Awaitable[VisionResult | None]]
+
+
 async def read_video_windows(
     *,
     cut: VideoCut,
     media_type: str,
-    ask: Callable[[bytes], Awaitable[VisionResult | None]],
+    ask: AskWindow,
 ) -> tuple[tuple[str, ...], tuple[VideoWindow, ...]]:
     """Every window through `ask`, timecoded from the WINDOW's own start.
 
@@ -435,8 +451,13 @@ async def read_video_windows(
     """
     segments: list[str] = []
     read: list[VideoWindow] = []
+    # SEQUENTIAL, and that is `client.VISION_WINDOW_CONCURRENCY == 1` written
+    # as control flow: the per-call ceiling divides by `ceil(windows /
+    # concurrency)`, so a bounded `asyncio.gather` here without raising that
+    # constant would hand each window a ceiling derived for a serial read.
+    # `design/media-read-lane/01-chunk-parallelism.md` moves both together.
     for window in cut.windows:
-        result = await ask(window.data)
+        result = await ask(window.data, len(cut.windows))
         stamp = _timecode(window.start_seconds)
         # `result is None` FIRST, and it is not defensive padding. `ask` is a
         # caller-supplied callable and `media_fetch`'s returns `None` when the

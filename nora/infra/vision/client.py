@@ -12,12 +12,13 @@ retry/timeout/trace machinery, which means this module owns all three itself:
 
 * **Its own timeout, PROVABLY shorter than the loop budget.** The whole agent
   loop — every text turn and every tool call, this one included — runs inside a
-  single `asyncio.wait_for(timeout=llm.timeout_seconds)` (30 s). A MiMo
-  *reasoning* call with a generous `max_tokens` is seconds, not `about`'s ~0.2 s,
-  and two of them plus the text turns would overrun 30 s → the loop's silent
-  `invocation_timeout` (R-5). `derive_vision_timeout` below caps this call's
-  budget at a fixed fraction of the loop timeout, so a slow or hung MiMo becomes
-  THIS tool's `unavailable` inside the turn instead — the same discipline
+  single `asyncio.wait_for(timeout=llm.timeout_seconds)`. A MiMo *reasoning*
+  call with a generous `max_tokens` is seconds, not `about`'s ~0.2 s, and a
+  ten-window video read plus the text turns would overrun it → the loop's
+  silent `invocation_timeout` (R-5). `derive_vision_timeout` below caps this
+  call at a fixed fraction of the loop timeout DIVIDED BY THE WAVES one
+  invocation awaits in sequence, so a slow or hung MiMo becomes THIS tool's
+  `unavailable` inside the turn instead — the same discipline
   `factory.build_retry_policy` applies to its backoff.
 * **A byte ceiling** (`vision_max_bytes`, config), far below `media.max_bytes`.
   Over it, `too_large` → the tool's `unavailable`, never a nine-figure request.
@@ -44,13 +45,36 @@ from nora.domain.media import parse_media_type
 log = logging.getLogger("nora.vision")
 
 # How much of the loop's own timeout one vision call may spend. A fraction < 1
-# is what MAKES the derived budget provably shorter than the loop's
+# is what MAKES the derived ceiling provably shorter than the loop's
 # `asyncio.wait_for`, so a hung MiMo can never become the loop's silent
-# `invocation_timeout`. The share is divided by the tool's BUDGET in
-# `derive_vision_timeout`, so `budget * derived < loop`: two hung image reads in
-# one turn (the case budget 2 exists for) still leave headroom for the text
-# turns. A per-CALL fraction alone reopened that hole — both reviews 2026-08-07.
+# `invocation_timeout`. The share is divided by the SERIAL factor in
+# `derive_vision_timeout` — the waves one invocation awaits in sequence — so
+# `waves * derived <= loop * VISION_LOOP_SHARE`, which is the wall clock that
+# invocation actually consumes.
+#
+# It used to be divided by the tool's BUDGET, and that was a unit error
+# (design/media-read-lane/07-timeout-derivation.md §2): budgeted calls run
+# CONCURRENTLY and occupy `max(their durations)` of wall clock, never their
+# sum, so dividing a wall-clock ceiling by them shrank the result by a factor
+# corresponding to no elapsed time at all. At the settled settings — loop 360,
+# `vision_timeout_seconds` 120, `media_fetch` budget 4 — it derived
+# `min(120, 360 * 0.6 / 4) = 54 s` and the configured 120 never took effect,
+# against a measured 90-second-window median of ~41.6 s. A third of reads
+# degraded on the ceiling that existed to stop exactly that. `budget` bounds
+# REFUSALS (DEC-10's count), not elapsed time; it has been REMOVED from this
+# derivation and must not come back.
 VISION_LOOP_SHARE = 0.6
+
+# How many of ONE invocation's windows are read at once. One today: the fan-out
+# in `comprehend.read_video_windows` is a sequential `for`, and this constant is
+# that loop's width, written where the derivation can see it. It is the
+# divisor's companion — `waves = ceil(windows / concurrency)` — so raising the
+# fan-out without raising this (or the reverse) would silently void the
+# invariant. `design/media-read-lane/01-chunk-parallelism.md` is where the
+# bounded `asyncio.gather` lands; it must move this number and that loop in the
+# same change, which
+# `test_the_window_fan_out_and_the_wave_divisor_cannot_drift_apart` enforces.
+VISION_WINDOW_CONCURRENCY = 1
 
 # Authored, fixed, and small — never model-supplied. The description it asks for
 # is untrusted egress (design/14 §2.1), screened by the tool on every serve.
@@ -190,24 +214,63 @@ def _content_block(
     raise UnsupportedPayloadError(f"no content block for {top}/{subtype}")
 
 
-def derive_vision_timeout(
-    *, loop_timeout_seconds: float, configured: float, budget: int
-) -> float:
-    """The per-call vision budget: small enough that `budget` calls together stay
-    under the loop's `wait_for`, leaving headroom for the text turns.
+def vision_waves(
+    *, windows: int, concurrency: int = VISION_WINDOW_CONCURRENCY
+) -> int:
+    """How many model calls ONE invocation must await IN SEQUENCE.
 
-    Derived from `llm.timeout_seconds` AND the tool's `budget`, never configured
+    The serial factor, and the only one that adds up in wall clock. A video is
+    cut into windows (`preprocess.VIDEO_CHUNK_SECONDS` = 90 s,
+    `VIDEO_MAX_CHUNKS` = 10), `concurrency` of them are read at once, so the
+    invocation's elapsed time is `ceil(windows / concurrency)` per-call ceilings
+    — not `windows` of them, and not one, which is the other half of the old
+    formula's error: one `media_fetch` was treated as one model call.
+
+    A single-view read — an image, a voice note, the text synthesis, a clip
+    ffmpeg could not cut — is one window and therefore exactly one wave.
+    """
+    # INTEGER ceiling division, not `ceil(a / b)`. The float form is off by one
+    # for `windows` above 2**53 (float division loses the low bit: 2**53 + 1
+    # returns 2**53) and raises `OverflowError` for a huge `windows`. Neither is
+    # reachable from video geometry, but the arithmetic should not have a
+    # precision cliff at all when the exact form is the same length.
+    # (Independent review round 1, 2026-09-23.)
+    return -(-max(1, windows) // max(1, concurrency))
+
+
+def derive_vision_timeout(
+    *, loop_timeout_seconds: float, configured: float, waves: int
+) -> float:
+    """The per-call vision ceiling: small enough that the `waves` one invocation
+    runs in sequence stay under the loop's `wait_for`, leaving headroom for the
+    text turns.
+
+    Derived from `llm.timeout_seconds` AND the wave count, never configured
     beside them (the `factory.build_retry_policy` argument): the invariant that
-    matters — `budget * derived < loop_timeout_seconds` — is one nobody can
-    violate if it is never written down twice. `VISION_LOOP_SHARE / budget` is
-    what guarantees it: for any `configured`, however large, the result is at
-    most `loop_timeout_seconds * VISION_LOOP_SHARE / budget`, so the AGGREGATE of
-    `budget` calls is at most `loop * VISION_LOOP_SHARE`, strictly less than the
-    loop. No `max(0.1, …)` floor: for any positive loop the per-call ceiling is
+    matters — `waves * derived <= loop * VISION_LOOP_SHARE < loop` — is one
+    nobody can violate if it is never written down twice. `VISION_LOOP_SHARE /
+    waves` is what guarantees it: for any `configured`, however large, the
+    result is at most `loop_timeout_seconds * VISION_LOOP_SHARE / waves`, so the
+    wall clock one invocation consumes is at most `loop * VISION_LOOP_SHARE`,
+    strictly less than the loop.
+
+    **The divisor is the SERIAL factor, and it used to be a concurrent one.**
+    Dividing by the tool's budget — the number of `media_fetch` calls a turn may
+    make — divided a wall-clock ceiling by calls that OVERLAP in time, so the
+    quantity the old invariant proved (`budget * derived < loop`) was one
+    nothing ever elapses. The result is now independent of the budget by
+    construction: concurrent invocations occupy `max(their durations)`, and a
+    turn that runs four of them consumes one invocation's wall clock, not four.
+    See `design/media-read-lane/07-timeout-derivation.md`; §6 records the one
+    case that reconverts concurrency into a sum (a tool-concurrency ceiling BELOW
+    the budget makes the calls QUEUE), which is a config relationship to assert
+    across both keys rather than a term to put back here.
+
+    No `max(0.1, …)` floor: for any positive loop the per-call ceiling is
     positive and below the loop, and a floor could exceed the ceiling for a
     sub-second loop and void the guarantee (both reviews' low finding).
     """
-    per_call = loop_timeout_seconds * VISION_LOOP_SHARE / max(1, budget)
+    per_call = loop_timeout_seconds * VISION_LOOP_SHARE / max(1, waves)
     return min(configured, per_call) if configured > 0 else per_call
 
 
@@ -217,7 +280,7 @@ class VisionResult:
 
     `reason` is for the `{status}` distinction and the log line, never for a
     caller to branch on beyond that: `too_large` (over the byte ceiling),
-    `timeout` (did not answer inside the derived budget), `error` (transport, or
+    `timeout` (did not answer inside the derived ceiling), `error` (transport, or
     an answer this reader could not read).
     """
 
@@ -245,6 +308,7 @@ class VisionClient:
         reasoning_effort: str,
         max_bytes: int,
         timeout_seconds: float,
+        loop_timeout_seconds: float,
         direct_client: AsyncOpenAI | None = None,
     ) -> None:
         self._client = client
@@ -253,27 +317,57 @@ class VisionClient:
         self._max_tokens = max_tokens
         self._reasoning_effort = reasoning_effort
         self._max_bytes = max_bytes
-        self._timeout = timeout_seconds
+        # The derivation's INPUTS, not its result. The divisor is the window
+        # count, which `cut_video` only produces per request — long after this
+        # object is built (`composition.py`) — so the client holds
+        # `configured` and the loop ceiling and derives per call below.
+        self._configured = timeout_seconds
+        self._loop_timeout = loop_timeout_seconds
+
+    def _call_timeout(self, windows: int | None) -> float:
+        """This call's ceiling, derived HERE and nowhere else.
+
+        Single-sourced on purpose: `derive_vision_timeout`'s own argument is
+        that the invariant "is one nobody can violate if it is never written
+        down twice", and computing it at the call sites is precisely how
+        `[llm.budgets]` once produced a second reader of the same number.
+
+        `windows is None` is every single-view read — an image, a voice note,
+        the text pass — and `vision_waves` resolves it to one wave.
+        """
+        return derive_vision_timeout(
+            loop_timeout_seconds=self._loop_timeout,
+            configured=self._configured,
+            waves=vision_waves(windows=1 if windows is None else windows),
+        )
 
     async def describe(
         self, *, data: bytes, media_type: str, prompt: str = "", model: str = "",
         provider: str = "omniroute", max_bytes: int | None = None,
+        windows: int | None = None,
     ) -> VisionResult:
         """MiMo's sentence about `data`, or an unavailable result. Never raises.
 
         `prompt` defaults to the transcription prompt `media_fetch` has always
         used — a call site that omits the argument keeps its exact existing
         behaviour. `MediaComprehender` is the other caller, passing one of
-        `COMPREHEND_QUESTIONS` instead: same connection, same budget, a
+        `COMPREHEND_QUESTIONS` instead: same connection, same ceiling, a
         different question, selected by the media LABEL.
 
         `model` is the same shape one level up (2026-08-17 spec): empty keeps
         the configured model, so every existing call site is unchanged, and a
         per-modality caller passes the model ITS modality is configured with.
-        One client, one connection, one budget — the modality picks the model
-        and the prompt, not a second client. That matters for the aggregate
-        timeout proof `derive_vision_timeout` makes: three clients would be
-        three budgets, and three hung calls could outlast the loop.
+        One client, one connection, one ceiling — the modality picks the model
+        and the prompt, not a second client. That matters for the timeout proof
+        `derive_vision_timeout` makes: three clients would be three independent
+        ceilings, and three hung calls could outlast the loop.
+
+        `windows` is how many windows THIS invocation reads in total — the
+        serial factor the per-call ceiling divides by. `None` is a single-view
+        read (an image, a voice note, a clip ffmpeg could not cut) and derives
+        exactly the ceiling those have always had. Only `read_video_windows`
+        passes a count, because only `cut_video` produces one, and it can only
+        do so per request.
 
         `provider` selects the transport: `"omniroute"` (default; the process-
         wide gateway client, `_client` — every pre-provider caller keeps its
@@ -308,17 +402,18 @@ class VisionClient:
         except UnsupportedPayloadError as exc:
             log.warning("vision payload not buildable: %s", exc)
             return VisionResult(available=False, reason="unsupported_payload")
+        timeout = self._call_timeout(windows)
         try:
             # The whole retry loop is inside ONE wait_for, so even two attempts
-            # cannot push the total past the derived budget (< the loop's own).
+            # cannot push the total past the derived ceiling (< the loop's own).
             text = await asyncio.wait_for(
                 self._describe_with_retry(
                     block=block, prompt=prompt, model=model, provider=provider,
                 ),
-                timeout=self._timeout,
+                timeout=timeout,
             )
         except TimeoutError:
-            log.warning("vision call did not answer within %.1fs", self._timeout)
+            log.warning("vision call did not answer within %.1fs", timeout)
             return VisionResult(available=False, reason="timeout")
         except Exception:
             log.exception("vision call failed")
@@ -331,14 +426,17 @@ class VisionClient:
         return VisionResult(available=True, description=text)
 
     async def complete(self, *, prompt: str, text: str, model: str = "") -> str:
-        """One TEXT-only call on this same client, connection and budget.
+        """One TEXT-only call on this same client, connection and ceiling.
 
         The audio half of issue #116 and the video synthesis half of #117 both
         need a cheap pass over text Nora already holds — a voice note's
         STT transcript, a video's chunk run. Neither is a vision call
-        and neither should build a second client for it: the aggregate timeout
-        proof `derive_vision_timeout` makes is about ONE budget, and a separate
+        and neither should build a second client for it: the timeout proof
+        `derive_vision_timeout` makes is about ONE ceiling, and a separate
         client would be a second one that could outlast the loop.
+
+        It is ONE call, so it is one wave — the synthesis happens after the
+        window run has already finished, never alongside it.
 
         `text` rides in its OWN user message, after the authored `prompt`,
         rather than concatenated into it. The text is a transcript of what
@@ -362,7 +460,7 @@ class VisionClient:
                 ],
                 extra_body={"reasoning_effort": self._reasoning_effort},
             ),
-            timeout=self._timeout,
+            timeout=self._call_timeout(None),
         )
         return _checked(response, what="the text-only vision call")
 
