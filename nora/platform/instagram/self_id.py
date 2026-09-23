@@ -21,10 +21,13 @@ declares:
   `PlatformIdentity` both flatten identity, and leaving it out would mean the
   social axis had a second, private answer to "who is Nora".
 
-`username` is NOT recorded. It is a renameable handle and therefore never a
-matchable kind on any platform (`nora.domain.identity`'s `_ID_KINDS` note) —
-`Identifier` refuses to carry one, so there is no way to record it by
-accident.
+`username` is NOT recorded as an identity. It is a renameable handle and
+therefore never a matchable kind on any platform (`nora.domain.identity`'s
+`_ID_KINDS` note) — `Identifier` refuses to carry one, so there is no way to
+record it by accident. It IS read, separately and as plain text, by
+`read_username`: the name people type to reach her, rendered in `<presence>`
+(design/self-awareness/02). The two functions share a response shape and
+nothing else, so the handle cannot drift into `derive_identity`'s set.
 
 ## The session state is part of the measurement, not a detail
 
@@ -114,3 +117,40 @@ async def derive_identity(
     if igid:
         identifiers.add(Identifier("instagram", "igid", igid))
     return fbid, frozenset(identifiers)
+
+
+async def read_username(
+    base_url: str,
+    *,
+    timeout: float = 1.0,  # noqa: ASYNC109 -- caller budget, as derive_identity's
+) -> str | None:
+    """Her Instagram handle as the live session reports it, or `None`.
+
+    DISPLAY TEXT, never an `Identifier` (the module docstring): it is what
+    `<presence>` tells her she is called on Instagram, read from the same
+    `GET /health` `derive_identity` reads, because the account was renamed
+    once already (`not_____nora` -> `noraexample`, 2026-09-22/23) and a copy
+    in config would have gone stale in silence.
+
+    `None` on anything short of a 200 carrying a non-empty `self.username`.
+    A checkpointed session still answers with its cached `self` block, and the
+    handle in it is still her handle — whether she can SEND there is
+    `health()`'s question, not this one's.
+    """
+    try:
+        async with (
+            aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session,
+            session.get(f"{base_url.rstrip('/')}/health") as resp,
+        ):
+            if resp.status != 200:
+                return None
+            body = await resp.json()
+    except (aiohttp.ClientError, TimeoutError, ValueError):
+        return None
+    if not isinstance(body, dict):
+        return None
+    raw_self = body.get("self")
+    username = raw_self.get("username") if isinstance(raw_self, dict) else None
+    if not isinstance(username, str) or not username.strip():
+        return None
+    return username.strip()

@@ -154,15 +154,17 @@ def test_the_registered_blocks_are_exactly_what_this_pass_carries():
 
     Each of the eight is rendered somewhere in this file:
     `test_inputs_renders_the_index_the_rooms_the_log_and_the_self_card`
-    (`now`, `home_room`, `people`, `notes`, `rooms`, `decisions`,
+    (`now`, `presence`, `people`, `notes`, `rooms`, `decisions`,
     `self_card`) and the `<loop_decisions>` group further down (issue #199).
+    `presence` replaced `home_room` on 2026-09-23 (design/self-awareness/02,
+    D2): one block for «where am I», the one the tag path renders.
     This test pins the DECLARATION rather than re-asserting every render; a
     name added to one without the other is either a block nobody can find by
     reading the table or a row for a block that does not exist.
     """
     names = {name for name, _order, _key in _BLOCKS}
     assert names == {
-        "now", "home_room", "people", "notes", "rooms",
+        "now", "presence", "people", "notes", "rooms",
         "decisions", "loop_decisions", "self_card",
     }
 

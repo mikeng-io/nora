@@ -39,6 +39,20 @@ policy_file = "policy.toml"   # WHO may talk to her, and where. See policy.examp
 # workspace_id.
 name = "nora"
 
+# HER OWN PUBLIC HANDLES, by network key (design/self-awareness/02). Rendered
+# in <presence> each turn so she knows what people call her on each network.
+# Declared ONLY where nothing can report it: Instagram's is read live from the
+# bridge's /health (a value here is only its fallback), and a rename there
+# needs no edit here. Display text only — never matched against anyone, never
+# one of her mention ids. A network with no entry and no live read is left out,
+# never guessed. Discord: add one only if she has a handle worth giving.
+
+[agent.handles]
+signal = "@nora.000"
+whatsapp = "@noraexample"
+x = "@noraexample"
+threads = "@noraexample"
+
 
 [platforms.signal]
 base_url = "http://127.0.0.1:18080"
