@@ -116,6 +116,11 @@ NORA_STOPS = "nora.stop_reasons"
 #: this. A tuple, never `None` on a turn that ran: an empty tuple is a turn
 #: that called nothing, which is a routing answer too.
 NORA_TOOLS = "nora.tools_called"
+#: What each executed tool RETURNED, in order, as `(name, text)`: read off the
+#: `gen_ai.choice` event Strands puts on every `execute_tool` span. The
+#: reporting criterion (`tool_status_reported`) grades the reply against these,
+#: so the judge sees the result she saw, not a description of it.
+NORA_TOOL_RESULTS = "nora.tool_results"
 #: `Outcome.written`/`len(.changed)`/`len(.staged)` off the FIRST drive —
 #: never surfaced to a grader before this (S6, `10-the-scenario-map.md` §3).
 #: `dream()`'s own `written`/`changed` are already PER-CALL DELTAS (it
@@ -362,6 +367,42 @@ def _tools_called(exporter: InMemorySpanExporter) -> tuple[str, ...]:
     ]
     spans.sort(key=lambda span: span.start_time or 0)
     return tuple(str(span.attributes["gen_ai.tool.name"]) for span in spans)
+
+
+def _tool_results(exporter: InMemorySpanExporter) -> tuple[tuple[str, str], ...]:
+    """`(tool name, result text)` for each executed tool, in start order (see
+    `NORA_TOOL_RESULTS`). A span whose result event is missing contributes
+    `(name, "")`: an absent result is recorded as absent, never skipped."""
+    spans = [
+        span for span in exporter.get_finished_spans()
+        if "gen_ai.tool.name" in (span.attributes or {})
+    ]
+    spans.sort(key=lambda span: span.start_time or 0)
+    out = []
+    for span in spans:
+        text = ""
+        for event in getattr(span, "events", ()) or ():
+            attrs = event.attributes or {}
+            if "message" in attrs:
+                text = str(attrs["message"])
+            elif "gen_ai.output.messages" in attrs:
+                text = str(attrs["gen_ai.output.messages"])
+        out.append((str(span.attributes["gen_ai.tool.name"]), text))
+    return tuple(out)
+
+
+def _judge_source(transcript: list[str], results: tuple[tuple[str, str], ...],
+                  criteria: tuple[str, ...]) -> str | None:
+    """The source data a judge grades against. The transcript always; the tool
+    results too when the case grades REPORTING (`tool_status_reported`), since
+    that criterion is about what the results were worth."""
+    parts = ["\n".join(transcript)] if transcript else []
+    if "tool_status_reported" in criteria and results:
+        lines = [f"- {name}: {text}" for name, text in results
+                 if name not in ("send_reply", "load_tools")]
+        if lines:
+            parts.append("Tool results this turn:\n" + "\n".join(lines))
+    return "\n\n".join(parts) or None
 
 
 @dataclass(frozen=True)
@@ -661,6 +702,7 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                 turn = _model_calls(exporter, agent=agent_name)
                 spend.update({f"turn.{k}": v for k, v in turn.items()})
             tools_called = _tools_called(exporter)
+            tool_results = _tool_results(exporter)
             _SPEND.append(spend)
             outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)
 
@@ -670,15 +712,21 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
             if spec.judge is not None and outcome.said and outcome.error is None:
                 from evals.rebuilt.grading import criteria_for
 
+                criteria = tuple(md.get("criteria") or ())
+                binds = md.get("binds")
                 judgement = await spec.judge.grade(
                     said="\n".join(outcome.said),
                     asked=nora_case.input,
                     doctrine=subject.deps.doctrine.doctrine_text,
                     # The SOURCE the reply had to ground against — the window
-                    # she was seeded with. Without it the judge grades
-                    # grounding BLIND (DEC-75).
-                    source="\n".join(seeded.transcript) or None,
-                    extra=criteria_for(tuple(md.get("criteria") or ())),
+                    # she was seeded with, and for a reporting case the tool
+                    # results too. Without it the judge grades BLIND (DEC-75).
+                    source=_judge_source(seeded.transcript, tool_results, criteria),
+                    extra=criteria_for(criteria),
+                    # A case may BIND its verdict to one of its own criteria
+                    # (the reporting corpus binds `tool_status_reported`);
+                    # every other case keeps the safety criterion.
+                    **({"criterion": criteria_for((binds,))[0].name} if binds else {}),
                 )
                 outcome = dataclasses.replace(
                     outcome, judged=judgement.verdict, error=judgement.error,
@@ -718,6 +766,7 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                     EnvironmentState(name=NORA_JUDGED, state=outcome.judged),
                     EnvironmentState(name=NORA_CHECKS_FAILED, state=outcome.checks_failed),
                     EnvironmentState(name=NORA_TOOLS, state=tools_called),
+                    EnvironmentState(name=NORA_TOOL_RESULTS, state=tool_results),
                     *repeat_state,
                 ],
             }
@@ -800,6 +849,7 @@ def nora_task(spec: Spec):
                     EnvironmentState(name=NORA_JUDGED, state=""),
                     EnvironmentState(name=NORA_CHECKS_FAILED, state=()),
                     EnvironmentState(name=NORA_TOOLS, state=None),
+                    EnvironmentState(name=NORA_TOOL_RESULTS, state=None),
                 ],
             }
 

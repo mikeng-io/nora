@@ -237,6 +237,7 @@ CORPUS_ENTRY: dict[str, str] = {
     "proactive_decide": "dreamer",
     "proactive_act": "proactive_act",
     "tool_selection": "tag",
+    "tool_reporting": "tag",
 }
 
 #: S2 — graded on WHICH TOOL ran, not on whether she replied
@@ -252,6 +253,9 @@ ROUTED_CORPORA = frozenset({"tool_selection"})
 JUDGED_CORPORA = frozenset({
     "being_contradicted", "identity_grounding", "source_scope",
     "injections", "transcript_injection",
+    # ADR 0015 §4: what she SAYS after a tool returns a status, bound on
+    # `tool_status_reported` (each case's `binds`).
+    "tool_reporting",
 })
 
 
