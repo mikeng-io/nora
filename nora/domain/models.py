@@ -78,10 +78,16 @@ class EditTarget:
     as `messages.platform_message_id`); Signal names it by its author and its
     original sent-timestamp (`sent_ts`, signal-cli's `targetSentTimestamp`),
     the same pair it addresses a quote or a reaction by. Exactly one is set.
+
+    `mentions_known` is False when the platform's edit event cannot carry
+    mentions at all (Instagram's edit delta is a message id, a text and a
+    time). Ingest then carries the original's forward rather than recording
+    «mentioned nobody», which would be a claim the platform never made.
     """
 
     message_id: str = ""
     sent_ts: int | None = None
+    mentions_known: bool = True
 
 
 @dataclass(frozen=True)
@@ -267,6 +273,12 @@ class EditedMessage:
     `platform_message_id` is its own handle ("" where the platform has none):
     an edit that opens a turn is answered AS this message, so a reaction or a
     threaded reply points at it and not at the edit.
+
+    `replies_to_nora` is whether it quotes one of Nora's own messages. An edit
+    cannot change what a message replies to, but not every platform repeats
+    the quote on the edit event, so the gate reads it from here rather than
+    from the edit. `edited_ts` is its newest edit's time, or None: an edit no
+    newer than that is a redelivery, not a change.
     """
 
     id: int
@@ -278,6 +290,8 @@ class EditedMessage:
     mentions: frozenset[str] | None
     first_body: str | None
     platform_message_id: str = ""
+    replies_to_nora: bool = False
+    edited_ts: int | None = None
 
 
 def mentions_json(mentions: frozenset[str]) -> str:

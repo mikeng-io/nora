@@ -82,6 +82,14 @@ def transcript_select(*, edits_before: int | None = None) -> Any:
     ).select_from(MESSAGES.outerjoin(latest, sa.true()))
 
 
+def _edit_mentions_json(message: NormalizedMessage) -> str | None:
+    """NULL — «unknown» — when the platform's edit could not carry mentions
+    and none were carried forward (`EditTarget.mentions_known`)."""
+    if message.edit_of is not None and not message.edit_of.mentions_known:
+        return None
+    return mentions_json(message.mentions)
+
+
 def transcript_row(r: Any) -> TranscriptRow:
     """The column-row -> `TranscriptRow` mapping for every `transcript_select`
     read — they select the same columns, so the mapping exists once.
@@ -316,6 +324,12 @@ class SqlRecordStore:
         else:
             return None
         latest = _latest_edit()
+        quoted = MESSAGES.alias("quoted")
+        replies_to_nora = sa.exists().where(
+            quoted.c.conversation_id == MESSAGES.c.conversation_id,
+            quoted.c.ts == MESSAGES.c.quoted_ts,
+            quoted.c.is_nora == 1,
+        )
         stmt = (
             sa.select(
                 MESSAGES.c.id, MESSAGES.c.ts, MESSAGES.c.sender_id,
@@ -323,6 +337,7 @@ class SqlRecordStore:
                 MESSAGES.c.mentions_json, MESSAGES.c.platform_message_id,
                 latest.c.ts.label("edit_ts"), latest.c.body.label("edit_body"),
                 latest.c.mentions_json.label("edit_mentions_json"),
+                replies_to_nora.label("replies_to_nora"),
             )
             .select_from(MESSAGES.outerjoin(latest, sa.true()))
             .where(MESSAGES.c.conversation_id == conversation_id, match)
@@ -343,6 +358,8 @@ class SqlRecordStore:
             ),
             first_body=r.body,
             platform_message_id=r.platform_message_id or "",
+            replies_to_nora=bool(r.replies_to_nora),
+            edited_ts=r.edit_ts,
         )
 
     async def append_edit(self, *, message_id: int, message: NormalizedMessage) -> None:
@@ -353,7 +370,7 @@ class SqlRecordStore:
             ts=message.timestamp,
             body=message.body,
             raw_json=json.dumps(message.raw),
-            mentions_json=mentions_json(message.mentions),
+            mentions_json=_edit_mentions_json(message),
         )
         async with self._engine.begin() as conn:
             await conn.execute(stmt)

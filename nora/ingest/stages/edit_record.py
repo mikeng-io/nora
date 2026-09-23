@@ -10,6 +10,11 @@ would replace needs none. After custody, not before, because the stored body
 carries attachment handles and the parser's does not — compared earlier, every
 update to a message with a photo in it would look like an edit.
 
+**Stale is decided on the clock.** An edit no newer than the newest one on
+record is a redelivery or an out-of-order arrival: the transcript already
+shows the later text, and recording it would feed Honcho an older version as
+the latest correction.
+
 Like the audit stage, a failed write drops the edit and never re-raises: this
 runs on the listener's await path.
 """
@@ -24,13 +29,15 @@ from nora.domain.ports import RecordStore
 
 log = logging.getLogger("nora.ingest.edit_record")
 
-EditRecordOutcome = Literal["recorded", "edit_unchanged", "audit_refused"]
+EditRecordOutcome = Literal["recorded", "edit_unchanged", "edit_stale", "audit_refused"]
 
 
 async def run(
     *, message: NormalizedMessage, original: EditedMessage, audit: RecordStore,
     metrics: Any,
 ) -> EditRecordOutcome:
+    if original.edited_ts is not None and message.timestamp <= original.edited_ts:
+        return "edit_stale"
     if (message.body or "") == (original.body or ""):
         return "edit_unchanged"
     try:

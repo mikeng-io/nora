@@ -100,7 +100,8 @@ def test_an_edit_names_its_target_and_no_sender():
         "text": "fixed", "timestamp_ms": 1_700_000_000_500, "from_me": None,
     })
     assert msg is not None
-    assert msg.edit_of == EditTarget(message_id="mid.$m")
+    # The delta carries no mentions, so none are claimed.
+    assert msg.edit_of == EditTarget(message_id="mid.$m", mentions_known=False)
     assert msg.body == "fixed"
     assert msg.sender_id == ""
     assert msg.timestamp == 1_700_000_000_500

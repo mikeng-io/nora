@@ -11,7 +11,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Any
 
-from nora.domain.models import EditTarget, NormalizedMessage, PersonRef
+from nora.domain.models import EditTarget, NormalizedMessage, PersonRef, Quote
 from nora.domain.ports import EngageDecision, MemoryHealth
 from nora.ingest import pipeline as pipeline_module
 from nora.ingest.pipeline import IngestPipeline
@@ -140,28 +140,46 @@ async def test_an_edit_whose_text_did_not_change_writes_nothing():
     assert metrics.get("nora_ingest_outcomes_total", outcome="edit_unchanged") == 2
 
 
-async def test_an_orphan_the_platform_attributed_is_ingested_as_a_message():
-    """The original was never recorded, so this is the only version Nora will
-    ever see — the pre-edit-path behaviour, kept on purpose."""
+async def test_an_orphan_is_dropped_even_when_the_platform_names_its_sender():
+    """An edit of something never recorded — pruned, from before Nora joined,
+    or a Discord update racing its own message. Ingesting it would put an old
+    message at the bottom of the transcript as if said now, and a tag in it
+    would open a turn on something long settled."""
     store = FakeRecordStore()
     metrics = Metrics()
-    result = await _pipeline(store, metrics=metrics).run(message=_edit("dinner at 8"))
-
-    assert [r["body"] for r in store.rows] == ["dinner at 8"]
-    assert store.edits == []
-    assert result.message is not None and result.message.edit_of is None
-    assert metrics.get("nora_ingest_outcomes_total", outcome="recorded") == 1
+    result = await _pipeline(store, metrics=metrics).run(
+        message=_edit(f"{TRIGGER} dinner at 8"),
+    )
+    assert store.rows == [] and store.edits == []
+    assert result.message is None and result.decision is None
+    assert metrics.get("nora_ingest_outcomes_total", outcome="edit_orphaned") == 1
 
 
 async def test_an_unattributed_orphan_is_dropped():
-    """Instagram's edit names no sender; with no original to take one from,
-    there is nobody to put the words under."""
     store = FakeRecordStore()
     metrics = Metrics()
     result = await _pipeline(store, metrics=metrics).run(message=_edit("x", sender=""))
     assert store.rows == [] and store.edits == []
     assert result.message is None
     assert metrics.get("nora_ingest_outcomes_total", outcome="edit_orphaned") == 1
+
+
+async def test_a_redelivered_or_out_of_order_edit_is_stale():
+    """The transcript already shows the later text; recording the older one
+    would feed Honcho a stale version as the latest correction."""
+    store = FakeRecordStore()
+    memory = RecordingMemory()
+    spawned: list = []
+    metrics = Metrics()
+    await store.append(message=_msg("dinner at 7"), person_id="miles")
+    pipe = _pipeline(store, memory=memory, spawned=spawned, metrics=metrics)
+    await pipe.run(message=_edit("dinner at 9", ts=9))
+    await pipe.run(message=_edit("dinner at 8", ts=5))
+    await pipe.run(message=_edit("dinner at 9", ts=9))
+    await _drain(spawned)
+    assert [e["body"] for e in store.edits] == ["dinner at 9"]
+    assert len(memory.fed) == 1
+    assert metrics.get("nora_ingest_outcomes_total", outcome="edit_stale") == 2
 
 
 # ── whose words ──────────────────────────────────────────────────────────────
@@ -198,16 +216,14 @@ async def test_somebody_elses_edit_by_handle_is_refused():
 
 async def test_on_signal_somebody_elses_edit_cannot_reach_the_row_at_all():
     """Signal addresses a message by (author, sent-timestamp), so another
-    sender's edit naming Miles's timestamp finds nothing of theirs — it is an
-    orphan, and lands as THEIR message under THEIR name. Miles's row is
-    untouched, which is the property the refusal exists for."""
+    sender's edit naming Miles's timestamp finds nothing of theirs — an orphan,
+    dropped. Miles's row is untouched, which is the property the refusal is
+    for."""
     store = FakeRecordStore()
     await store.append(message=_msg("dinner at 7"), person_id="miles")
     await _pipeline(store).run(message=_edit("x", sender="+852000"))
     assert store.edits == []
-    assert [(r["sender_id"], r["body"]) for r in store.rows] == [
-        ("+852111", "dinner at 7"), ("+852000", "x"),
-    ]
+    assert [(r["sender_id"], r["body"]) for r in store.rows] == [("+852111", "dinner at 7")]
 
 
 async def test_the_same_person_under_their_other_account_form_may_edit():
@@ -285,6 +301,55 @@ async def test_fixing_a_typo_in_a_message_that_tagged_her_does_not_answer_again(
     )
     assert result.decision == EngageDecision(engage=False, reason="edit_already_addressed")
     assert [e["body"] for e in store.edits] == ["@nora dinner?"], "still recorded"
+
+
+async def test_adding_a_mention_to_a_reply_she_already_answered_does_not_answer_again():
+    """A reply to Nora was addressed to her in every version. The edit event
+    may not repeat the quote (Instagram's never does), so the fact is read off
+    the RECORDED message, not the edit."""
+    store = FakeRecordStore()
+    await store.append(message=_msg("hello", ts=1, sender=NORA), is_nora=True)
+    await store.append(
+        message=dataclasses.replace(
+            _msg("what about dinner?", ts=2),
+            quote=Quote(author_id=NORA, text="hello", quoted_ts=1),
+        ),
+        person_id="miles",
+    )
+    result = await _pipeline(store).run(message=_edit(
+        "@nora what about dinner?", mentions=frozenset({NORA}),
+        target=EditTarget(sent_ts=2),
+    ))
+    assert result.decision == EngageDecision(engage=False, reason="edit_already_addressed")
+
+
+async def test_an_edit_that_cannot_see_mentions_carries_the_originals():
+    """Instagram's edit delta has no mentions. The original's are carried
+    forward and recorded as known — never «mentioned nobody», which the
+    platform did not say — so a LATER edit is still compared honestly."""
+    store = FakeRecordStore()
+    await store.append(
+        message=_msg("@nora dinnr?", message_id="m1", mentions=frozenset({NORA})),
+        person_id="miles",
+    )
+    blind = EditTarget(message_id="m1", mentions_known=False)
+    first = await _pipeline(store).run(message=_edit("@nora dinner?", sender="", target=blind))
+    assert store.edits[0]["mentions_json"] == f'["{NORA}"]'
+    second = await _pipeline(store).run(message=_edit(
+        f"{TRIGGER} dinner??", sender="", ts=9, target=blind,
+    ))
+    assert first.decision is not None and not first.decision.engage
+    assert second.decision == EngageDecision(engage=False, reason="edit_already_addressed")
+
+
+async def test_an_edit_that_cannot_see_mentions_of_an_unknown_original_records_unknown():
+    store = FakeRecordStore()
+    await store.append(message=_msg("dinner?", message_id="m1"), person_id="miles")
+    store.rows[0]["mentions_json"] = None
+    await _pipeline(store).run(message=_edit(
+        "dinner at 8?", sender="", target=EditTarget(message_id="m1", mentions_known=False),
+    ))
+    assert store.edits[0]["mentions_json"] is None
 
 
 async def test_the_comparison_is_against_the_version_the_edit_replaced():

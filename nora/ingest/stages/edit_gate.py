@@ -14,7 +14,11 @@ the gate:
   one question. The corrected text is in front of her next turn anyway.
 
 A reply to Nora cannot be re-targeted by an edit on any of the four networks,
-so both versions carry the same quote and an edited reply never re-engages.
+so a message that replied to her was addressed to her in every version — but
+not every platform repeats the quote on the edit event (Instagram's delta has
+none), so that fact is read off the RECORDED message
+(`EditedMessage.replies_to_nora`), never off the edit. Without it, adding an
+@-mention to a reply she had already answered read as newly addressed.
 
 **Unknown is no.** A version stored before `messages.mentions_json` existed
 has no recorded mentions, and the second call cannot be made honestly. R-5:
@@ -44,6 +48,8 @@ async def run(
     now = await gate_stage.run(message=message, policy=policy, metrics=metrics)
     if not now.engage:
         return dataclasses.replace(now, relevance_gate=False)
+    if previous.replies_to_nora:
+        return EngageDecision(engage=False, reason="edit_already_addressed")
     if previous.mentions is None:
         return EngageDecision(engage=False, reason="edit_previous_unknown")
     before = await gate_stage.run(

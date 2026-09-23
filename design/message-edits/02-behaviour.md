@@ -59,32 +59,47 @@ says no — **it newly addresses her**.
 | edits a reply to her (the quote cannot change) | yes | recorded, no turn |
 | before-version's mentions unknown (row predates the column) | ? | recorded, no turn (R-5) |
 
+«A reply to her» is read off the RECORDED message (`EditedMessage.replies_to_nora`),
+not the edit event: Instagram's edit delta carries no quote, so reading it off
+the edit made adding an `@Nora` to an answered reply look newly addressed
+(review finding, 2026-09-24). An edit event that cannot see mentions at all
+(Instagram, `EditTarget.mentions_known = False`) carries the original's
+forward, and records NULL — «unknown» — when the original's were unknown too.
+
 A non-engaging edit is never a Relevance Gate candidate: it is not new room
 activity. The sender allowlist applies as it does to any tag.
 
 ## 4. The edit path
 
 Scope → find the original → identity → custody → record → Honcho → gate.
-Five endings, on `nora_ingest_outcomes_total`:
+Six endings, on `nora_ingest_outcomes_total`:
 
 | outcome | when | written |
 |---|---|---|
 | `edit_recorded` | folded onto its original | `message_edit` row, Honcho feed |
 | `edit_engaged` | as above, and it newly addresses her | same, plus a turn |
 | `edit_unchanged` | the text equals the version it replaces | nothing |
-| `edit_orphaned` | no original on record | see below |
+| `edit_stale` | no newer than the newest edit on record (a redelivery, or out of order) | nothing |
+| `edit_orphaned` | no original on record | nothing |
 | `edit_refused` | the original is Nora's own, or its sender differs from the editor's | nothing |
 
-`edit_unchanged` is what absorbs Discord's non-edits: `MESSAGE_UPDATE` also
-fires when a link preview resolves or a message is pinned, with the text
-unchanged. Filtering on the text rather than on the event type is total — it
-also absorbs a bridge redelivering an edit.
+Discord's non-edits never reach this path: `MESSAGE_UPDATE` also fires when a
+link preview resolves, a message is pinned or a thread starts from it, and a
+message its author never edited has no `edited_at`, so the parser answers None
+(`03` §1). An update to a message that WAS edited earlier carries that older
+`edited_at` and ends `edit_stale` or `edit_unchanged`. Filtering on the text
+and the clock rather than on event types is what keeps this total across
+platforms and redeliveries.
 
-**Orphans.** An edit whose original was never recorded (it predates Nora in
-the room, or was in a room not yet allowlisted) is the only version she will
-ever see. When the platform names the sender it is ingested as an ordinary
-message, exactly as Signal and WhatsApp did before this change; Instagram
-names no sender, so an Instagram orphan is dropped and counted.
+**Orphans are dropped, whoever sent them.** An edit whose original was never
+recorded — pruned past the 500-per-room window, from before Nora joined or
+before the room was allowlisted, or a Discord update racing its own message —
+is counted and discarded. The first draft ingested an attributed orphan as an
+ordinary message; review (2026-09-24) traced that to an OLD message landing at
+the bottom of the transcript as if said just now, where a tag in it opened a
+turn on something long settled, and to a duplicate row when an update raced
+its message's insert. Losing the rare genuine edit of an unrecorded message is
+the smaller cost.
 
 **Identity comes from the original** when the edit names no sender
 (Instagram), and must MATCH it when it does. A mismatch is refused: an edit

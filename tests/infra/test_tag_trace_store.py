@@ -119,6 +119,29 @@ async def test_transcript_round_trips_including_the_delivery_status_enum(
     assert isinstance(got[0].transcript[0].delivery_status, DeliveryStatus)
 
 
+async def test_an_edited_row_round_trips_with_its_edit(tag_trace_engine: Any) -> None:
+    """design/message-edits/01 §3: an edited row carries a `RowEdit`, which
+    is no more a JSON primitive than the Enum above. Before the fix every tag
+    whose window held an edited message failed this save — spawned, so the
+    trace simply vanished — and a read would have rebuilt `edit` as a dict."""
+    import dataclasses
+
+    from nora.domain.models import RowEdit
+
+    store = SqlTagTraceStore(tag_trace_engine)
+    row = dataclasses.replace(
+        _row(), body="dinner at 8",
+        edit=RowEdit(ts=1_723_000_000_000, was="dinner at 7", raw_json='{"e": 1}'),
+    )
+    await store.save(TagTrace(
+        tag_id="t-edit", conversation_id="c-edit", messages=(),
+        transcript=(row,), outcome="send_reply", created_at=NOW,
+    ))
+    got = await store.recent(conversation_id="c-edit", limit=10)
+    assert got[0].transcript == (row,)
+    assert isinstance(got[0].transcript[0].edit, RowEdit)
+
+
 async def test_recent_orders_newest_first(tag_trace_engine: Any) -> None:
     store = SqlTagTraceStore(tag_trace_engine)
     for i, ts in enumerate([1000, 3000, 2000]):

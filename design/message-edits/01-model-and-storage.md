@@ -77,7 +77,9 @@ leaves them counting what they count today.
   Signal addresses a message by (author, sent-timestamp) everywhere else too.
 
 Returns the original with its CURRENT version (latest edit folded), because
-the gate compares against the version the edit replaced, not the first one.
+the gate compares against the version the edit replaced, not the first one —
+plus whether it quotes one of Nora's messages (`replies_to_nora`) and when it
+was last edited (`edited_ts`).
 
 ## 3. The fold
 

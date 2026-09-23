@@ -590,15 +590,21 @@ async def _drive_sender_not_allowed(metrics=None):
 
 
 async def _drive_edit(metrics, *, edit_body: str, original_is_nora: bool = False,
-                      sender_id: str = "+852111", recorded: bool = True):
+                      sender_id: str = "+852111", recorded: bool = True,
+                      stale: bool = False):
     """An EDIT of a Signal message sent at ts=1 (design/message-edits/02 §4).
-    `recorded=False` leaves the original off the record — an orphan."""
+    `recorded=False` leaves the original off the record — an orphan.
+    `stale=True` records a LATER edit first, so this one (ts=5) is older."""
     store = FakeRecordStore()
     if recorded:
-        await store.append(
+        row = await store.append(
             message=_msg(body="dinner at 7"), is_nora=original_is_nora,
             person_id=None if original_is_nora else "miles",
         )
+        if stale:
+            await store.append_edit(message_id=row, message=dataclasses.replace(
+                _msg(body="dinner at 9"), timestamp=9, edit_of=EditTarget(sent_ts=1),
+            ))
     pipeline = _pipeline(
         audit=store, memory=FakeMemory(), persons=_known_persons(),
         policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
@@ -625,6 +631,7 @@ def _all_drivers(monkeypatch, metrics):
         "edit_recorded": lambda: _drive_edit(metrics, edit_body="dinner at 8"),
         "edit_engaged": lambda: _drive_edit(metrics, edit_body="nora.000 dinner at 8?"),
         "edit_unchanged": lambda: _drive_edit(metrics, edit_body="dinner at 7"),
+        "edit_stale": lambda: _drive_edit(metrics, edit_body="dinner at 8", stale=True),
         "edit_orphaned": lambda: _drive_edit(
             metrics, edit_body="dinner at 8", sender_id="", recorded=False,
         ),

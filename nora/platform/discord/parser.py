@@ -18,7 +18,6 @@ from __future__ import annotations
 import dataclasses
 import logging
 import re
-import time
 from typing import Protocol
 
 from ...domain.media import MediaRef, label_for, render_placeholder
@@ -285,23 +284,24 @@ def parse_discord_edit(
     with `edited_at`, the time the TEXT changed.
 
     `MESSAGE_UPDATE` is not only an edit. It also fires when a link preview
-    resolves or a message is pinned, and then `edited_at` is unchanged or
-    absent. That is NOT filtered here: ingest compares the text against the
-    version on record and ends such an update `edit_unchanged`, which is total
-    across platforms where a rule about Discord's event semantics would not be.
-    A missing `edited_at` falls back to now, never to the snowflake's time —
-    that is when the message was SENT, and an edit stamped then would render
-    as changed before anybody could have answered it."""
+    resolves, a message is pinned, a thread is started from it or a poll ends.
+    A message its author NEVER edited has no `edited_at`, so such an update is
+    not an edit and answers None here, before custody fetches anything. It is
+    also what closes a race: a link preview's update can arrive while the
+    message it updates is still being written, and would otherwise look like
+    an edit of nothing. An update to a message that WAS edited earlier still
+    carries that older `edited_at`; ingest ends it `edit_stale`
+    or `edit_unchanged`."""
+    edited_at = getattr(message, "edited_at", None) if message is not None else None
+    if edited_at is None:
+        return None
     parsed = parse_discord_message(message, own_id=own_id)
     if parsed is None or message is None:
         return None
-    edited_at = getattr(message, "edited_at", None)
     try:
-        ts = int(edited_at.timestamp() * 1000) if edited_at is not None else 0
+        ts = int(edited_at.timestamp() * 1000)
     except (AttributeError, TypeError, ValueError, OverflowError):
-        ts = 0
+        return None
     return dataclasses.replace(
-        parsed,
-        timestamp=ts or int(time.time() * 1000),
-        edit_of=EditTarget(message_id=str(message.id)),
+        parsed, timestamp=ts, edit_of=EditTarget(message_id=str(message.id)),
     )

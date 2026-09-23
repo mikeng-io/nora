@@ -109,10 +109,18 @@ async def test_an_edit_reaches_the_same_callback_marked_as_an_edit(monkeypatch):
     )
     edited.edited_at = _dt.datetime(2026, 9, 23, 12, 0, tzinfo=_dt.UTC)
     self_edit = FakeMessage(id=5, author=FakeUser(id=999), guild=guild, channel=channel)
+    self_edit.edited_at = edited.edited_at
+    # A link preview resolving, a pin, a thread: an update to a message its
+    # author never edited. No `edited_at`, so not an edit.
+    embed_only = FakeMessage(
+        id=6, author=FakeUser(id=42), guild=guild, channel=channel, content="see link",
+    )
+    embed_only.edited_at = None
 
     async def _fake_listen(self, on_message_cb, on_edit_cb=None):
         assert on_edit_cb is not None, "the adapter must wire the edit callback"
         await on_edit_cb(self_edit)
+        await on_edit_cb(embed_only)
         await on_edit_cb(edited)
 
     monkeypatch.setattr(DiscordListener, "listen", _fake_listen)
@@ -123,7 +131,8 @@ async def test_an_edit_reaches_the_same_callback_marked_as_an_edit(monkeypatch):
 
     await adapter.listen(on_message=_capture)
 
-    assert len(received) == 1, "Nora's own edit must not be ingested (R-12)"
+    assert len(received) == 1, \
+        "Nora's own edit (R-12) and a non-edit update must not reach ingest"
     assert received[0].edit_of == EditTarget(message_id="4")
     assert received[0].body == "hello, fixed"
     assert received[0].timestamp == int(edited.edited_at.timestamp() * 1000)

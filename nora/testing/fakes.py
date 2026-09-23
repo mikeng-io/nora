@@ -210,6 +210,13 @@ class FakeRecordStore:
             ),
             first_body=r["body"],
             platform_message_id=r["platform_message_id"] or "",
+            replies_to_nora=any(
+                q["conversation_id"] == r["conversation_id"]
+                and r["quoted_ts"] is not None and q["ts"] == r["quoted_ts"]
+                and q["is_nora"]
+                for q in self.rows
+            ),
+            edited_ts=latest["ts"] if latest else None,
         )
 
     async def append_edit(self, *, message_id: int, message: NormalizedMessage) -> None:
@@ -219,7 +226,11 @@ class FakeRecordStore:
             "ts": message.timestamp,
             "body": message.body,
             "raw_json": json.dumps(message.raw),
-            "mentions_json": mentions_json(message.mentions),
+            # Mirrors `audit._edit_mentions_json`.
+            "mentions_json": (
+                None if message.edit_of is not None and not message.edit_of.mentions_known
+                else mentions_json(message.mentions)
+            ),
         })
 
     async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]:

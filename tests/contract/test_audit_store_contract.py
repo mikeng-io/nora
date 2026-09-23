@@ -558,3 +558,46 @@ async def test_a_message_that_mentioned_nobody_is_known_not_unknown(store):
         conversation_id="g1", target=EditTarget(sent_ts=1), sender_id="+852111",
     )
     assert found is not None and found.mentions == frozenset()
+
+
+async def test_find_edited_knows_whether_the_message_replies_to_nora(store):
+    """Read off the RECORDED quote, because an edit event need not repeat it."""
+    await store.append(message=_msg(body="hi from nora", ts=1, sender="nora"), is_nora=True)
+    await store.append(message=_msg(body="hi back", ts=2, quote=Quote(
+        author_id="nora", text="", quoted_ts=1,
+    )))
+    await store.append(message=_msg(body="unrelated", ts=3))
+    reply = await store.find_edited(
+        conversation_id="g1", target=EditTarget(sent_ts=2), sender_id="+852111",
+    )
+    plain = await store.find_edited(
+        conversation_id="g1", target=EditTarget(sent_ts=3), sender_id="+852111",
+    )
+    assert reply is not None and reply.replies_to_nora
+    assert plain is not None and not plain.replies_to_nora
+
+
+async def test_find_edited_carries_the_newest_edit_time(store):
+    row = await store.append(message=_msg(body="v1", ts=1))
+    found = await store.find_edited(
+        conversation_id="g1", target=EditTarget(sent_ts=1), sender_id="+852111",
+    )
+    assert found is not None and found.edited_ts is None
+    await store.append_edit(message_id=row, message=_edit("v2", 7))
+    found = await store.find_edited(
+        conversation_id="g1", target=EditTarget(sent_ts=1), sender_id="+852111",
+    )
+    assert found is not None and found.edited_ts == 7
+
+
+async def test_an_edit_that_could_not_see_mentions_records_unknown(store):
+    """`EditTarget.mentions_known=False` with nothing carried forward: NULL,
+    never `[]` — the platform never said the edit mentioned nobody."""
+    row = await store.append(message=_msg(body="v1", ts=1))
+    await store.append_edit(message_id=row, message=dataclasses.replace(
+        _edit("v2", 7), edit_of=EditTarget(sent_ts=1, mentions_known=False),
+    ))
+    found = await store.find_edited(
+        conversation_id="g1", target=EditTarget(sent_ts=1), sender_id="+852111",
+    )
+    assert found is not None and found.mentions is None

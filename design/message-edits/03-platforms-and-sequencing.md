@@ -16,7 +16,7 @@ edges: []
 | Signal | `envelope.editMessage` | `sent_ts = targetSentTimestamp` | envelope `source` | envelope `timestamp` |
 | WhatsApp | `message` event with `edit_of` | `message_id = edit_of` | `sender_phone`/lid, as today | `timestamp_ms` |
 | Instagram | `kind: "edit"` | `message_id` | none — `from_me` is null by contract | `timestamp_ms` when present, else arrival |
-| Discord | `on_raw_message_edit` | `message_id = snowflake` | `payload.message.author` | `edited_at` |
+| Discord | `on_raw_message_edit` | `message_id = snowflake` | `payload.message.author` | `edited_at`; an update with none is not an edit and is dropped |
 
 No bridge changes: both bridges already emit the edit (`bridge_helpers.js`
 `extractMessageEvent`, `instagram-bridge/main.go` `EditMessageEvent`).
@@ -61,7 +61,9 @@ Each claim is pinned by a test that reverting its line reddens:
   rehydration uses the edit's envelope for the body and the original's for
   `was`;
 - parsers: each network produces `edit_of` with the right target;
-- Discord: an embed-only update with unchanged text ends `edit_unchanged`.
+- Discord: an update to a never-edited message (no `edited_at`) never
+  reaches ingest;
+- the tag trace round-trips an edited row (`RowEdit` is not a JSON primitive).
 
 Read-back after deploy: edit a message in a test room on each network and
 read the `message_edit` row and the `edit_*` outcome counter on norty.

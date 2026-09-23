@@ -302,7 +302,9 @@ def _parse_edit(event: dict) -> NormalizedMessage | None:
         ),
         body=text,
         raw=event,
-        edit_of=EditTarget(message_id=target),
+        # The delta carries no mentions, so none are claimed: ingest carries
+        # the original's forward (`EditTarget.mentions_known`).
+        edit_of=EditTarget(message_id=target, mentions_known=False),
     )
 
 

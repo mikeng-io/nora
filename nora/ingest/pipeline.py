@@ -88,7 +88,8 @@ IngestOutcome = Literal[
     "edit_recorded",        # folded onto the message it edits
     "edit_engaged",         # folded, and it newly addresses her — a turn
     "edit_unchanged",       # the text did not change (a link preview, a pin); nothing written
-    "edit_orphaned",        # no original on record and no sender to attribute it to
+    "edit_stale",           # no newer than the edit on record (a redelivery); nothing written
+    "edit_orphaned",        # no original on record; dropped, whoever sent it
     "edit_refused",         # the original is hers, or its author is not the editor
 ]
 
@@ -304,24 +305,19 @@ class IngestPipeline:
 
         # AN EDIT takes its own path from here (design/message-edits/02 §4):
         # it is recorded beside the message it changes, never as a message of
-        # its own. The one exception is an orphan the platform attributed — the
-        # original was never recorded, so this is the only version Nora will
-        # see, and it continues below as the ordinary message it now is.
+        # its own — and an edit of nothing on record is dropped, not ingested.
         if message.edit_of is not None:
             with span("ingest.edit_target"):
                 found = await edit_target_stage.run(
                     message=message, target=message.edit_of, audit=self._audit,
                     persons=self._persons, metrics=m,
                 )
-            if found.ending is not None:
-                _outcome(m, message, found.ending)
+            if found.ending is not None or found.original is None:
+                _outcome(m, message, found.ending or "edit_orphaned")
                 return IngestResult(message=None, decision=None)
-            if found.original is not None:
-                return await self._run_edit(
-                    message=found.message, original=found.original,
-                )
-            annotate(**{"nora.edit_orphan": True})
-            message = dataclasses.replace(message, edit_of=None)
+            return await self._run_edit(
+                message=found.message, original=found.original,
+            )
 
         # Identity first, so the resolved person_id lands in the audit INSERT
         # instead of a second write. `Persons.resolve` is two dict lookups on a

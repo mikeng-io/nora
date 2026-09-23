@@ -2,18 +2,22 @@
 and may it change it? (design/message-edits/02 §4)
 
 Runs after the room gate and before anything is written. It answers one of
-four things, and the pipeline acts on each:
+three things, and the pipeline acts on each:
 
 * **found** — the original is on record and the editor is its author. The
-  returned message carries the original's sender when the platform named none
-  (Instagram's edit delta carries no sender at all), so identity resolves
-  exactly as it did for the original.
-* **orphan, ingestable** — nothing on record, but the platform named the
-  sender. The edit is the only version Nora will ever see, so the pipeline
-  ingests it as an ordinary message — what Signal and WhatsApp did with every
-  edit before this path existed.
-* **`edit_orphaned`** — nothing on record and no sender to attribute it to.
-  Dropped and counted.
+  returned message carries what the platform left out from the original:
+  the sender when it named none (Instagram's edit delta carries no sender at
+  all), and the mentions when it could not see them (the same delta carries
+  none), so identity and the gate compute on the same facts the original had.
+* **`edit_orphaned`** — nothing on record. Dropped and counted, whoever the
+  platform says sent it. An orphan is an edit to something Nora never
+  recorded — pruned past the retention window, from before she joined, from
+  before the room was allowlisted — or, on Discord, an update racing the
+  message it updates. Ingesting it as a new message (the first draft of this
+  stage) put an OLD message at the bottom of the transcript as if said just
+  now, where a tag in it opened a turn on something long settled, and a race
+  wrote a duplicate row. Losing the rare genuine edit of an unrecorded message
+  is the smaller cost.
 * **`edit_refused`** — the original is Nora's own (R-12: she never ingests her
   own words, edited or not), or somebody other than its author is editing it.
   An edit is not a way to put words under someone else's row, and platforms
@@ -27,9 +31,8 @@ message: both forms resolve to one person (`identity.toml` maps each account).
 An UNMAPPED sender whose two forms differ is refused — the one case where
 fail-closed costs a legitimate edit, and the cost is the edit, not the message.
 
-A lookup failure is an ERROR, not an orphan: an orphan is ingested as a new
-message, and treating «could not look» as «not there» would write a duplicate
-row every time the store hiccuped. It drops the edit and counts it.
+A lookup failure drops the edit too, and counts an error besides: «could not
+look» is not «not there», and the error counter is what tells them apart.
 """
 
 from __future__ import annotations
@@ -51,8 +54,8 @@ EditTargetEnding = Literal["edit_orphaned", "edit_refused"]
 
 @dataclass(frozen=True)
 class EditTargetResult:
-    """`original` set and `ending` None: fold onto it. Both None: an orphan
-    the pipeline ingests as an ordinary message. `ending` set: stop there."""
+    """`ending` None: fold onto `original`, which is then always set.
+    `ending` set: stop there."""
 
     message: NormalizedMessage
     original: EditedMessage | None
@@ -76,8 +79,6 @@ async def run(
         return EditTargetResult(message=message, original=None, ending="edit_orphaned")
 
     if original is None:
-        if message.sender_id:
-            return EditTargetResult(message=message, original=None, ending=None)
         return EditTargetResult(message=message, original=None, ending="edit_orphaned")
 
     if original.is_nora or not _same_author(message, original, persons):
@@ -85,6 +86,13 @@ async def run(
 
     if not message.sender_id:
         message = dataclasses.replace(message, sender_id=original.sender_id)
+    if not target.mentions_known and original.mentions is not None:
+        # The platform could not see mentions on the edit; carry the
+        # original's, and say they are now known so the edit row records them.
+        message = dataclasses.replace(
+            message, mentions=original.mentions,
+            edit_of=dataclasses.replace(target, mentions_known=True),
+        )
     return EditTargetResult(message=message, original=original, ending=None)
 
 
