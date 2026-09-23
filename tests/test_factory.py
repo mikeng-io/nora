@@ -645,3 +645,42 @@ async def test_invoke_carries_an_empty_partial_when_only_tool_use_blocks():
         )
 
     assert excinfo.value.partial_text == ""
+
+
+def test_create_agent_registers_the_tool_surfaces_hooks_after_the_guard():
+    """`tool_hooks` (`ToolSurface.hooks` — the `ShelfLoader`) must reach the
+    agent, and AFTER `ReplyGuard`: `BeforeToolCallEvent` dispatches in
+    registration order, and the loader must see the guard's veto so it never
+    loads a tool the guard cancelled. Drop the `hooks.extend(tool_hooks)` line
+    and a deferred turn's direct calls silently go back to «Unknown tool»."""
+    from strands.hooks import BeforeToolCallEvent, HookProvider
+
+    order: list[str] = []
+
+    class _Probe(HookProvider):
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def register_hooks(self, registry, **kwargs) -> None:
+            order.append(self.name)
+            registry.add_callback(BeforeToolCallEvent, lambda event: None)
+
+    guard = _guard()
+    real_register = guard.register_hooks
+
+    def _guard_register(registry, **kwargs):
+        order.append("guard")
+        return real_register(registry, **kwargs)
+
+    guard.register_hooks = _guard_register  # type: ignore[method-assign]
+    model = factory.create_model_provider(
+        model=MODEL, max_tokens=MAX_TOKENS, temperature=TEMPERATURE, client=_client()
+    )
+    factory.create_agent(
+        model=model, system_prompt="<d/>", tools=[],
+        pre_fill=[{"role": "user", "content": [{"text": "c"}]}],
+        guard=guard, tool_hooks=(_Probe("shelf"),),
+        trace_attributes={"tag_id": "t1"}, retry=RETRY,
+    )
+    assert "shelf" in order
+    assert order.index("guard") < order.index("shelf")
