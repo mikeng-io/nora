@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "Design bundle for giving Nora a generated sense of where she is and what she can do.",
+  "details": [],
+  "limitations": [],
+  "reason": "Design documents only (design/self-awareness/); nothing Nora does in a room changes. Proposes a generated per-turn <presence> block from the room table and adapter health, three room-awareness tools with separate disclosure tiers, and splitting social_fetch by action over one router and allowlist. Two operator decisions are open (unit boundary, proactive rendering); no code is written until they are made and the tool catalogue lands."
+}

@@ -1,0 +1,62 @@
+kind: design_index
+title: "Self-Awareness — who she is, where she is, what she can do"
+description: >
+  Nora is on four networks in several rooms across more than one unit, and is
+  told only which NETWORK a turn is on (`_where_line`, added after she answered
+  a Discord tag saying she was on Signal, 2026-08-14). She cannot say which
+  rooms she is in, which transports are up, or what she can do. Doctrine
+  cannot carry it: identity.md forbids concrete instances because a copy goes
+  stale in silence. So self-awareness is generated per turn from the system
+  that knows each fact, in three layers: WHO (identity.md, unchanged), WHERE
+  (a generated <presence> block from the room table and AdapterHealth, plus
+  three room tools with separate disclosure tiers), WHAT (the tool catalogue,
+  which already is the capability layer). Also splits social_fetch by action,
+  never by network, keeping one router and one read-only allowlist, so Threads
+  joins as a backend row rather than a tool.
+status: proposed
+governance: draft
+timestamp: '2026-09-23'
+origin: >
+  design conversation with miles, 2026-09-22/23 — opened from the Instagram
+  social-fetch capability table ("what can Nora actually get from Instagram"),
+  widened by miles to "the docs tell her how to behave but not who she is or
+  what she has", and to room awareness ("which channels, which groups, which
+  one has conversation — one tool cannot do all of it").
+members:
+  - 00-overview.md
+  - 01-three-layers.md
+  - 02-presence.md
+  - 03-room-tools.md
+  - 04-social-verbs.md
+  - 05-sequencing-and-measurement.md
+edges:
+  - {src: 01-three-layers, dst: 00-overview, rel: realizes, provenance: asserted}
+  - {src: 02-presence, dst: 01-three-layers, rel: realizes, provenance: asserted}
+  - {src: 03-room-tools, dst: 01-three-layers, rel: realizes, provenance: asserted}
+  - {src: 04-social-verbs, dst: 00-overview, rel: realizes, provenance: measured}
+  - {src: 05-sequencing-and-measurement, dst: 00-overview, rel: verifies, provenance: asserted}
+  - {src: 03-room-tools, dst: 02-presence, rel: depends_on, provenance: asserted}
+scope:
+  v1:
+    - "<presence>: generated per-turn block replacing _where_line; this room, this unit's other rooms with transport state, and other units per D1"
+    - "_PLATFORM_NAMES gains WhatsApp and Instagram"
+    - "my_rooms, room_activity, read_room, each with its own disclosure tier; R-27 statuses, no ids (R-18), read_room output untrusted (R-13)"
+    - "social_fetch split by action into social_profile / social_story / social_posts / social_post / social_search over one SocialRouter and one allowlist"
+    - "Instagram wiring fix ahead of the split: story and profile routed to the bridge's /accounts/* (PR #387)"
+  deferred:
+    - "Instagram posts/reels LIST — no backend can serve it (Go library's full query registry has none; OpenCLI's user returns Instagram's HTML shell). The verb ships as unavailable for Instagram"
+    - "Threads — a backend row in SocialRouter when a backend exists; no model-facing change"
+    - "social_post on Instagram via FetchMedia — never tried on a real post"
+  not_in_scope:
+    - "Editing identity.md. Its not_here rule is kept, not relaxed"
+    - "A generated capability block — the tool catalogue is that layer (DEC-150)"
+    - "Any new tool before the tool catalogue lands"
+open_decisions:
+  - "D1 unit boundary for <presence>/my_rooms/room_activity/read_room — recommended B: this unit by name, other units by existence only, read_room never crosses a unit"
+  - "D2 whether <presence> renders on the proactive loop — recommended yes"
+gates:
+  - "Read the assembled prompt back and confirm <presence> is present in the arm before any eval run"
+  - "Five eval cases in 05, n>=3 each, before and after, including the negative case (no unprompted room list)"
+decision: >
+  No DEC number claimed; taken from design/09-decision-index.md at merge time
+  per AGENTS.md.
