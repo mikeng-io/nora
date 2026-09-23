@@ -236,7 +236,10 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "planned file, created by P3 (the SocialSubjectIndex implementation); "
         "drop this entry in that PR"
     ),
-    ("design/instagram-adoption/17-implementation-plan.md", "nora/infra/social/instagram_links.py"): (
+    (
+        "design/instagram-adoption/17-implementation-plan.md",
+        "nora/infra/social/instagram_links.py",
+    ): (
         "planned file, created by P10 (Instagram link parsing); drop this entry in that PR"
     ),
     # --- the self-reference bundle, DEC-193 (merged 2026-09-22) ---
