@@ -28,6 +28,10 @@ SKILLS_DIR = Path(__file__).resolve().parents[1] / "nora" / "skills"
 _SCENARIOS: dict[str, tuple[str, ...]] = {
     "navigation": ("dinner", "airport", "shopping", "晚飯", "機場", "食飯", "買嘢"),
     "personalization": ("game", "restaurant", "film", "game night", "食飯", "睇戲"),
+    # The skill is about making ANY image and judging whether she is in it; a
+    # named occasion or subject is the closed set that fails its neighbour.
+    "image-generation": ("birthday", "a logo", "meme", "watercolour", "watercolor",
+                         "cat", "生日", "卡"),
 }
 
 #: The scenarios that produced #227: a bare hostname and a question about a
