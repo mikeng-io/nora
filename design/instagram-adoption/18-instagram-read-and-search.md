@@ -323,6 +323,11 @@ check (story only) produce them. The body is the curated DTO (`16`
 > the HOST only. It is to be read back live at deploy; until then R-18's «no
 > id reaches the model» holds for every field this client builds and is
 > unverified for the url's query.
+>
+> **Read back at deploy, 2026-09-24:** on one carousel and one reel the
+> author's igid was absent from all 3 urls, raw and with `efg` /
+> `ig_cache_key` decoded (17 §P12). n is 2; the host check remains the only
+> enforced rule.
 
 ## A story is opened only when a person asks (operator safety rule, 2026-09-24)
 

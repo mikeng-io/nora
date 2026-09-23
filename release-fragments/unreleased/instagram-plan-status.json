@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "Recorded the Instagram plan's status and the CDN-url measurement in the design bundle.",
+  "details": [],
+  "limitations": [],
+  "reason": "Design documents only (design/instagram-adoption/17 and 18). Records that P1 to P12 and P14 are live, that P13 has no mechanism, and that the author's igid was absent from the CDN urls of the two posts read back at deploy."
+}

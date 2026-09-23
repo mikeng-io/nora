@@ -34,6 +34,14 @@ P1 observability ──┬── P2 → P3 → P4 → P5      Nora's read path, 
                                                      P14 writes onto resources      (both; needs P8)
 ```
 
+**Status, 2026-09-24: P1 to P12 and P14 are merged and live on norty.**
+PRs: P1 #396, P2 #400, P3 #402, P4 #407, P5 #421, P6 #404, P7 #411, P8 #413,
+P9 #419 (measured), P10 #442 + #446, P11 #415 + #443, P12 #439 + #446, P14
+#447. Shared posts #435. P13 remains an investigation with no mechanism: the
+library has no list call, so a person's posts or reels list stays
+`unsupported`. Rollback images `nora:pre-p14` and `instagram-bridge:pre-p14`
+were kept on norty at the P14 deploy.
+
 **P1 first, alone**: every later PR is verified by its trace, so tracing has to
 exist before the first behaviour change it will verify. After P1, the Python
 track (P2–P5) and the bridge track (P6–P8) touch disjoint files and can run in
@@ -293,10 +301,14 @@ call, as a story is. The bridge's 404 is `nothing_found`, 501 is
 live probe on a real post is still outstanding, so the Nora half is tested
 on the generated fixtures only.
 
-**UNMEASURED: whether the CDN item urls carry account ids** (their `efg`
-and `ig_cache_key` query parameters). The urls reach the model as
-`media_fetch` input, and the client checks their host only. To be read back
-live at deploy (18 has the note).
+**Measured at deploy, 2026-09-24: the CDN item urls did not carry the
+author's igid.** On one carousel (2 images) and one reel (1 video), the
+author's igid (resolved through `GET /accounts?username=`) appeared nowhere in
+the 3 urls, raw or with `efg` / `ig_cache_key` base64-decoded. n is 2 posts;
+it is a finding, not a guarantee, and the client still checks the host only.
+The bridge half's live probe also passed on the same two: both shortcodes
+decoded to ids Instagram accepted, the carousel returned both items, the reel
+its video with a duration.
 
 ## P13: Posts and reels lists (investigation, not a build)
 
