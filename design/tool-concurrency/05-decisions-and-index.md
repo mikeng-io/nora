@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Decisions and index — DEC-196, and the collision on the media lane's number"
-description: "The decision: one shared, inheritable concurrency ceiling beneath the existing per-tool budget. Plus a delivery obligation to amend media-read-lane's deferred list, and a DEC-195 collision that must be resolved before either PR merges."
+description: "The decision: one shared, inheritable concurrency ceiling beneath the existing per-tool budget. Plus a delivery obligation to amend media-read-lane's deferred list, and a DEC-195 collision — RESOLVED 2026-09-23 before either PR merged."
 tags: [nora, decisions, dec-196, concurrency, governance, delivery]
 timestamp: '2026-09-23'
 edges:
@@ -24,7 +24,7 @@ $ git grep -l "DEC-196" origin/master        # repo-wide
 
 **This bundle claims DEC-196.**
 
-> ### ⚠️ A collision exists and must be resolved before either PR merges
+> ### ✅ RESOLVED 2026-09-23 — the collision, and how it closed
 >
 > **`design/media-read-lane/` claims DEC-195 — and `origin/master` now also has a
 > different DEC-195.**
@@ -41,12 +41,18 @@ $ git grep -l "DEC-196" origin/master        # repo-wide
 > number was genuinely free when it was claimed; master allocated it afterwards.
 > The media branch is **3 commits behind** `origin/master`.
 >
-> **Consequence:** `design/media-read-lane/` must renumber to **DEC-197** (or
-> whatever is next free after a fresh check) before it merges, and its internal
-> references — `05-decisions-and-index.md` §1, and the two `DEPRECATED IN PART
-> 2026-09-22 — see DEC-195` prefixes on DEC-161 / DEC-114(3) — must move with it.
-> **This bundle does not touch that branch**; it records the collision because
-> discovering it here and staying silent would let it merge broken.
+> **Consequence, and its resolution:** `design/media-read-lane/` renumbered to
+> **DEC-197**, and its internal references moved with it — `05-decisions-and-index.md`
+> §1 and the two `DEPRECATED IN PART 2026-09-22 — see DEC-195` prefixes on
+> DEC-161 / DEC-114(3) kept as history where they describe the collision itself.
+> That renumber (`df6aeb8c`, cherry-picked as `8e32eec1`) landed inside **PR #403**,
+> which merged as `0a79b0ba`. Three `DEC-195` references remain, all of them inside
+> this paragraph's subject matter — the collision being described — and none of them
+> a claim.
+>
+> **Verified on the merged master:** `design/09-decision-index.md` still ends at
+> DEC-195, and `DEC-196` is free (`grep -c "DEC-196"` → 0). **This bundle claimed
+> DEC-196 correctly and needs no renumber of its own.**
 
 ## 2. The decision
 
@@ -114,16 +120,24 @@ against the live store and `origin/master`.
 
 ## 3. Delivery obligations
 
-1. **Inject at BOTH `Agent(...)` sites** — `factory.py:402` and `factory.py:496`.
-   Missing either leaves a whole path (⚠️ **the adaptor that motivated this, `dreamer:fact-adjudication`, is DELETED — see the note at `02 §5`; a surviving adaptor must be identified and re-measured before this anchors an obligation.** Historical observation, 16 calls, 
-   reaching batches of 16) under the unbounded default.
-2. **Amend `design/media-read-lane/`'s deferred list.** It currently carries
-   *"Concurrent `media_fetch` tool calls inside one agent turn (whether Strands
-   parallelises multiple tool_use blocks is UNTESTED)"*. **This bundle answers that
-   question** — they do parallelise; here is the ceiling. That line should point
-   here rather than remain an open question. One-line edit; recorded here because
-   the other bundle is on a different branch.
-3. **Renumber `design/media-read-lane/`'s DEC-195 → DEC-197 or next free** (§1).
+1. **Inject at ALL FOUR `Agent(...)` construction sites, not the two this list first
+   named** — `factory.py:402`, `factory.py:496`, and the two the review found
+   (`06-review-round-1 §M6`; ⚠️ **`nora/compute/smith/agent.py:223` builds seven real
+   tools with no executor at all and is UNRESOLVED — it must be ruled on before this
+   anchors an obligation**). Missing any leaf leaves a whole path under the unbounded
+   default. (⚠️ The adaptor that motivated this, `dreamer:fact-adjudication`, is
+   DELETED — see `02 §5`; a surviving adaptor must be identified and re-measured
+   before this anchors an obligation. Historical observation, 16 calls, reaching
+   batches of 16.)
+2. ✅ **DONE 2026-09-23 (`0a79b0ba`).** **Amend `design/media-read-lane/`'s deferred
+   list.** It carried *"Concurrent `media_fetch` tool calls inside one agent turn
+   (whether Strands parallelises multiple tool_use blocks is UNTESTED)"*. **This
+   bundle answered that question** — they do parallelise; here is the ceiling. The
+   line now reads *"ANSWERED as of 2026-09-23: they DO parallelise, and already
+   have"* and names `design/tool-concurrency/ (DEC-196)` as the ceiling, with this
+   bundle's own caveat that DEC-196 **queues** rather than refuses.
+3. ✅ **DONE 2026-09-23 (`0a79b0ba`).** **Renumber `design/media-read-lane/`'s
+   DEC-195 → DEC-197** (§1).
 4. **A config key in the template**, with the comment §2 of `02-the-ceiling.md`
    specifies — the repo's config-key discipline requires every key to appear in the
    template.

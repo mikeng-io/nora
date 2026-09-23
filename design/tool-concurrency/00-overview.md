@@ -39,8 +39,12 @@ global pool is required instead is **deferred in `03 §6` and should be decided
 explicitly rather than left implicit here.** (Flagged 06-review-round-1 §M3.)
 
 sub-agents.** A custom `ToolExecutor` wraps the library's concurrent one and holds
-one `asyncio.Semaphore`; it is injected at both `Agent(...)` construction sites
-(`factory.py:402`, `factory.py:496`). It **queues** a call that would exceed the
+one `asyncio.Semaphore`; it is injected at **all four** `Agent(...)` construction
+sites (`factory.py:402`, `factory.py:496`, and the two `06-review-round-1 §M6`
+found — including `nora/compute/smith/agent.py:223`, which builds seven real tools
+with no executor at all and is **UNRESOLVED**, see `05 §3` item 1). The first
+version of this overview said "both", which the review falsified. It **queues** a
+call that would exceed the
 limit rather than refusing it, so the operator's own scenario — one post with four
 videos — keeps working while a hypothetical ten-call batch no longer runs ten at
 once.
