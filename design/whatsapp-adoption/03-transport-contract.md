@@ -97,8 +97,10 @@ Field rules:
   is a later phase; the event carries the FACT of media, never the blob.
 - `edit_of` is the target stanza id when Baileys delivers a
   `protocolMessage` of type MESSAGE_EDIT; `text`/`media` then describe the
-  NEW content. Like Signal, the edit is ingested as its own row — the
-  audit trail is append-only.
+  NEW content. Nora records it BESIDE the message it edits, never over it —
+  the audit trail is append-only — and the transcript shows the latest text
+  at the original's position (`design/message-edits/`, 2026-09-23; before
+  that it was ingested as its own row).
 
 ### `heartbeat`
 
