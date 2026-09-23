@@ -97,13 +97,11 @@ def _standing(
     conversation_id: str = CONV,
     fold_count: int = 1,
     updated_at: int = T0,
-    consumed_verdict_tag: str | None = None,
     last_folded_row_id: int | None = None,
 ) -> Standing:
     return Standing(
         platform=platform, conversation_id=conversation_id, body=body,
         fold_count=fold_count, updated_at=updated_at,
-        consumed_verdict_tag=consumed_verdict_tag,
         last_folded_row_id=last_folded_row_id,
     )
 
@@ -251,12 +249,12 @@ async def test_a_revision_carries_every_column_the_head_does(
     store: SqlStandingStore
 ) -> None:
     """A revision is the head's value, not a summary of it. A column dropped
-    from the append reads back as `None` — and on the two watermarks, `None` is
-    a MEANINGFUL value (nothing consumed / never folded), so a dropped column
-    would reconstruct as a real state rather than as a gap."""
+    from the append reads back as `None` — and on the row-id watermark, `None`
+    is a MEANINGFUL value (never folded), so a dropped column would
+    reconstruct as a real state rather than as a gap."""
     written = _standing(
         "a complete position", fold_count=7, updated_at=T0,
-        consumed_verdict_tag="tag-consumed", last_folded_row_id=4242,
+        last_folded_row_id=4242,
     )
     await store.write(standing=written)
     recovered = await store.read_as_of(

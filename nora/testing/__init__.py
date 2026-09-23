@@ -141,10 +141,6 @@ from nora.testing.scripted_agent import (
     limit_stop_reason,
 )
 from nora.testing.standing_store import InMemoryStandingStore
-from nora.testing.turn_verdict_store import (
-    DuplicateVerdictError,
-    InMemoryTurnVerdictStore,
-)
 
 __all__ = [
     "BACKED_TOOLS",
@@ -158,7 +154,6 @@ __all__ = [
     "CannedTransitSource",
     "CannedWeatherProvider",
     "DuplicateDecisionError",
-    "DuplicateVerdictError",
     "FakeAdapter",
     "FakeAgentRunner",
     "FakeArtifactIngest",
@@ -187,7 +182,6 @@ __all__ = [
     "InMemoryDreamScheduleClock",
     "InMemoryNoteStore",
     "InMemoryStandingStore",
-    "InMemoryTurnVerdictStore",
     "NoteCandidate",
     "ScriptedModel",
     "ScriptedTurn",

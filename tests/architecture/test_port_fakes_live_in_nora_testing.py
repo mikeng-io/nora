@@ -106,12 +106,6 @@ _ALLOWED: dict[str, str] = {
     # the Discord adapter; no in-memory Speaker exists in nora/testing yet, and
     # the voice-playout contract suite is not written (voice closure in flight).
     "tests/test_discord_adapter.py::_FakeSpeaker": _NO_SHARED_FAKE,
-    # TurnVerdictStore — wraps `InMemoryTurnVerdictStore` to make `latest_ungrounded`
-    # raise on demand (R-27's «I could not check»).
-    "tests/unit/test_debrief.py::_BlindableVerdicts": (
-        "FAULT_SWITCH_OVER_SHARED: composes InMemoryTurnVerdictStore to add a blind "
-        "switch on latest_ungrounded"
-    ),
 }
 
 

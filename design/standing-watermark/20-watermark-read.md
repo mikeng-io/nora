@@ -66,9 +66,10 @@ last_folded_row_id bigint  -- the audit row id the last fold read up to
   `body` and `last_folded_row_id` in one statement, so a crash between the
   two can never leave a position that claims to have read further than it
   did, or a watermark that advanced past a position that was never written.
-- The same atomicity the `consumed_verdict_tag` watermark already has
-  (`26-standing.md` §4: the row carries the verdict it acted on, advanced
-  only when the rebuild is WRITTEN).
+- The same atomicity the `consumed_verdict_tag` watermark had
+  (`26-standing.md` §4: the row carried the verdict it acted on, advanced
+  only when the rebuild was WRITTEN). That watermark's trigger was deleted
+  2026-09-24 — design/standing-compact/.
 
 ## The cap
 
@@ -84,11 +85,15 @@ last_folded_row_id bigint  -- the audit row id the last fold read up to
 
 ## Re-derivation and the watermark
 
-Re-derivation (the `ungrounded` / `ceiling` trigger) re-reads the SAME
-stretch — it must NOT advance the watermark, or it would skip the stretch it
-was re-deriving. The watermark advances only on a normal fold that read new
-rows. This mirrors the `consumed_verdict_tag` rule: a rebuild does not claim
-to have consumed a verdict it did not act on.
+(The `ungrounded` / `ceiling` re-derivation trigger described below was
+deleted 2026-09-24 — design/standing-compact/. Kept as the reasoning behind
+the watermark's atomicity, not as a live path.)
+
+Re-derivation re-read the SAME stretch — it had to NOT advance the
+watermark, or it would have skipped the stretch it was re-deriving. The
+watermark advances only on a normal fold that read new rows. This mirrored
+the `consumed_verdict_tag` rule: a rebuild did not claim to have consumed a
+verdict it did not act on.
 
 ## Status / Checkpoint
 

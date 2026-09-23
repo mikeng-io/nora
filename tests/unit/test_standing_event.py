@@ -19,12 +19,14 @@ and the real `ConversationSlots`. The properties from 40-verification.md:
 from __future__ import annotations
 
 import json
+import time
 
 import pytest
 
 from nora.domain.models import NormalizedMessage
 from nora.domain.standing import Standing
 from nora.engagement.slots import ConversationSlots
+from nora.engagement.stages.debrief import Completion
 from nora.ingest.stages import standing_event
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import TRACE_KIND, span
@@ -34,10 +36,13 @@ pytestmark = pytest.mark.asyncio
 
 
 class _Client:
-    """Records every prompt and counts every call. The script answers the
-    STANDING call with a fresh position per fold (so the prior-carrying
-    assertion can read which position reached the next prompt) and the VERDICT
-    call with a grounded verdict — the rollup makes BOTH calls (D4)."""
+    """Records every prompt and counts every call. It answers a STANDING call
+    — recognised by the max_chars sentence the fold's system prompt carries —
+    with a fresh position per fold, so the prior-carrying assertion can read
+    which position reached the next prompt. Anything else gets an empty
+    object, which no parser in the stage accepts: the rollup makes ONE call
+    per fold since the verdict was deleted (design/standing-compact/), and a
+    second call is counted rather than answered helpfully."""
 
     def __init__(self, *, malformed: bool = False) -> None:
         self.prompts: list[str] = []
@@ -54,7 +59,7 @@ class _Client:
 
     async def complete(
         self, *, system: str, prompt: str, trace_attributes=None,
-    ) -> standing_event.Completion:
+    ) -> Completion:
         self.trace_attributes.append(trace_attributes)
         self.calls += 1
         self.prompts.append(f"{system}\n\n{prompt}")
@@ -62,17 +67,16 @@ class _Client:
         if "The position you write must be at most" in system:
             # The STANDING call's prompt carries the max_chars sentence.
             if self._malformed:
-                return standing_event.Completion("not json", "stop")
-            return standing_event.Completion(
+                return Completion("not json", "stop")
+            return Completion(
                 json.dumps({"standing": f"position {self._n}"}), "stop")
-        return standing_event.Completion(
-            json.dumps({"grounded": True, "unsupported": []}), "stop")
+        return Completion("{}", "stop")
 
 
 class _Objective:
     def objective_body(self, name: str) -> str:
-        assert name in {standing_event.OBJECTIVE, standing_event.VERDICT_OBJECTIVE}
-        return "OBJECTIVE-TEXT" if name == standing_event.OBJECTIVE else "VERDICT-TEXT"
+        assert name == standing_event.OBJECTIVE, name
+        return "OBJECTIVE-TEXT"
 
 
 def _msg(conv: str = "g1") -> NormalizedMessage:
@@ -164,7 +168,7 @@ async def test_the_accumulator_threshold_fires_one_fold():
     await _seed(store, 200)
     harness = _Harness(record_store=store)
     await harness.run_one_spawn()
-    assert harness.client.calls == 2  # standing + verdict (D4)
+    assert harness.client.calls == 1  # one fold, one call
     assert _counter(harness.metrics, "nora_standing_event_folds_total") == 1
     assert _counter(harness.metrics, "nora_standing_rollup_folds_total") == 1
     row = await harness.read_row()
@@ -182,19 +186,18 @@ async def test_the_rollup_converges_500_rows_in_three_folds():
     await _seed(store, 500)
     harness = _Harness(record_store=store)
     await harness.run_one_spawn()
-    assert harness.client.calls == 6  # 3 folds x (standing + verdict)
+    assert harness.client.calls == 3  # 3 folds, one call each
     assert _counter(harness.metrics, "nora_standing_rollup_folds_total") == 3
     row = await harness.read_row()
     assert row is not None
     assert row.last_folded_row_id == 500
     assert row.fold_count == 0, "rollup folds must NOT increment fold_count (D3)"
-    # Each fold's standing prompt carries the PREVIOUS fold's position as the
-    # prior: the standing prompts are every other call (1st, 3rd, 5th).
-    standing_prompts = harness.client.prompts[0::2]
+    # Each fold's prompt carries the PREVIOUS fold's position as the prior.
+    standing_prompts = harness.client.prompts
     assert len(standing_prompts) == 3
     assert "no position yet" in standing_prompts[0]  # first fold: no prior
     assert "position 1" in standing_prompts[1]       # second fold: prior = fold 1
-    assert "position 3" in standing_prompts[2]       # third fold: prior = fold 2
+    assert "position 2" in standing_prompts[2]       # third fold: prior = fold 2
 
 
 async def test_the_rollup_is_bounded_at_rollup_max_folds_per_spawn():
@@ -208,13 +211,48 @@ async def test_the_rollup_is_bounded_at_rollup_max_folds_per_spawn():
     assert _counter(harness.metrics, "nora_standing_rollup_folds_total") == 5
     row = await harness.read_row()
     assert row is not None and row.last_folded_row_id == 1000
-    assert harness.client.calls == 10
+    assert harness.client.calls == 5
 
     # The next message's check continues from the watermark.
     await harness.run_one_spawn()
     assert _counter(harness.metrics, "nora_standing_rollup_folds_total") == 10
     row = await harness.read_row()
     assert row is not None and row.last_folded_row_id == 2000
+
+
+async def test_a_rollup_fold_makes_exactly_one_model_call():
+    """design/standing-compact/00: the event path used to gather a verdict
+    call beside every fold and persist nothing from it — a model call per
+    rollup with no reader. One fold is one call now, labelled `fold`."""
+    store = FakeRecordStore()
+    await _seed(store, 200)
+    harness = _Harness(record_store=store)
+    await harness.run_one_spawn()
+    assert _counter(harness.metrics, "nora_standing_rollup_folds_total") == 1
+    assert [ta["nora.debrief.call"] for ta in harness.client.trace_attributes] == [
+        "fold"]
+
+
+async def test_the_rollup_shows_a_prior_past_the_old_ceiling_with_its_age():
+    """design/standing-compact/10 §1-§2 on the event path: the prior is shown
+    whatever its `fold_count` (the tag path's deleted ceiling fired at 20), and
+    `<standing_prior>` says how long ago it was written, against the fold's own
+    clock — the rollup has no turn to measure against."""
+    harness = _Harness(record_store=FakeRecordStore())
+    await harness.wiring.store.write(standing=Standing(
+        platform="signal", conversation_id="g1",
+        body="tomorrow at 10 I owe Miles the route", fold_count=25,
+        updated_at=int(time.time() * 1000) - 3 * 86_400_000 - 60_000))
+    await _seed(harness.record_store, 200)
+    await harness.run_one_spawn()
+    [prompt] = harness.client.prompts
+    opening, rest = prompt.split("<standing_prior ", 1)[1].split(">", 1)
+    assert 'written="3d ago"' in opening, opening
+    assert "tomorrow at 10 I owe Miles the route" in rest.split("</standing_prior>")[0]
+    assert "no position yet" not in prompt
+    row = await harness.read_row()
+    assert row is not None and row.body == "position 1"
+    assert row.fold_count == 25, "rollup folds must NOT increment fold_count (D3)"
 
 
 async def test_a_refused_fold_advances_neither_body_nor_watermark():
@@ -282,7 +320,7 @@ async def test_an_event_fold_from_inside_plumbing_exports_one_generation_root(
     assert root.attributes["nora.trace_kind"] == "generation"
     assert root.attributes["nora.platform"] == "signal"
     assert root.attributes["nora.conversation_id"] == "g1"
-    # The debrief/verdict calls no longer open their own named spans (they
+    # The fold's call no longer opens its own named span (it
     # run through `nora.agent.structured.ask_text` in production, a real
     # Strands Agent invocation Strands instruments itself) — this file's
     # `_Client` fake, like `test_debrief.py`'s, never calls Strands, so no
@@ -293,7 +331,7 @@ async def test_an_event_fold_from_inside_plumbing_exports_one_generation_root(
 async def test_the_event_folds_tag_id_is_honestly_empty():
     """The event fold has no tag — `_complete`'s `trace_attributes` must
     carry an EMPTY `nora.tag_id`, never a borrowed or fabricated one
-    (issue #209), on both the debrief and verdict calls it makes."""
+    (issue #209), on the one call it makes."""
     store = FakeRecordStore()
     await _seed(store, 200)
     harness = _Harness(record_store=store)
@@ -360,8 +398,34 @@ async def test_a_queued_fold_dispatched_from_another_turns_span_still_opens_its_
         "the queued fold must open its OWN trace, never nest under whichever "
         "turn's span happened to be current when release_and_dispatch ran it"
     )
-    # The debrief/verdict calls no longer open their own named child spans
+    # The fold's call no longer opens its own named child span
     # under `standing.event_fold` — see the plumbing-root test's own note
     # above; the root-shape claim this test exists for (two SEPARATE trace
     # ids, not one fold nested under `unrelated.turn`) is unaffected and is
     # exactly what the `sorted(...)` assertion above already proves.
+
+
+async def test_the_rollups_prior_age_is_measured_from_the_last_write(monkeypatch):
+    """M7 from the review (design/standing-compact/10 §2 on the event path).
+    `written` is only honest if every rollup fold REWRITES `updated_at`. Two
+    folds in one spawn, on a clock that advances two hours between them: the
+    second fold's prior must read «2h ago» — the age since the FIRST fold's
+    write, not since the row the rollup started from thirty days earlier."""
+    start = 1_756_000_000.0  # seconds, as `time.time()` returns
+    ticks = iter([start, start + 2 * 3600])
+    monkeypatch.setattr(
+        standing_event, "time", type("_Clock", (), {"time": staticmethod(
+            lambda: next(ticks))}))
+    harness = _Harness(record_store=FakeRecordStore())
+    await harness.wiring.store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="an old position",
+        fold_count=4, updated_at=int(start * 1000) - 30 * 86_400_000))
+    await _seed(harness.record_store, 400)
+    await harness.run_one_spawn()
+    first, second = harness.client.prompts
+    assert 'written="30d ago"' in first.split("<standing_prior ", 1)[1].split(">", 1)[0]
+    opening = second.split("<standing_prior ", 1)[1].split(">", 1)[0]
+    assert 'written="2h ago"' in opening, opening
+    assert "position 1" in second
+    row = await harness.read_row()
+    assert row is not None and row.updated_at == int((start + 2 * 3600) * 1000)

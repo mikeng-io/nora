@@ -16,15 +16,26 @@ from pathlib import Path
 from evals.backbone import (
     ERROR,
     FAIL,
+    NORA_ERROR,
+    NORA_SHOWN,
     PASS,
     UNSTABLE,
+    Spec,
     base_name,
     drain_spend,
+    nora_task,
     read,
     sample_read,
 )
 from evals.rebuilt.grading import DEFAULT_JUDGE_MODEL, DEFAULT_SAMPLES, Judge
-from evals.scenarios import CORPUS_ENTRY, JUDGED_CORPORA, census, experiment_for
+from evals.scenarios import (
+    CORPUS_ENTRY,
+    JUDGE_REQUIRED,
+    JUDGED_CORPORA,
+    census,
+    experiment_for,
+    load_corpus,
+)
 from evals.subject_config import materialise
 
 #: Coarse S-class grouping for `--class`, per `10-the-scenario-map.md` §2/§15.
@@ -48,7 +59,15 @@ CORPUS_CLASS: dict[str, str] = {
     "participation": "S7",
     "injections": "S9",
     "transcript_injection": "S9",
+    # What a WRITE keeps: `carry` is #228's shape (an unrelated pass lost a
+    # thread it did not touch), the nearest class the map has. Its `stale`
+    # cases are S5-shaped (time misread) — approximate, as this map says.
+    "standing": "S6",
 }
+
+#: The entry points that honour `metadata.print_input` — render the model
+#: call's input, record it as `shown`, and call no model.
+_PRINTS_INPUT = frozenset({"standing"})
 
 
 def _list_corpora() -> None:
@@ -202,6 +221,45 @@ def _run_one(
     return reading.failed == 0 and reading.errored == 0
 
 
+def _print_input(name: str, case_name: str, *, source_url: str) -> int:
+    """Render one case's model input and print it; no model is called.
+
+    `design/standing-compact/20-verification.md` §1: «before any model call,
+    each arm's rendered input for one case is printed and diffed. A suite that
+    cannot see the change measures noise.» Run it once on each arm's checkout
+    and `diff` the two outputs. The master arm is master with the harness
+    commit applied — the corpus, `evals/` and `nora/subject/standing_fold.py`
+    apply to it unchanged — and the branch arm is the branch; the corpus
+    header (`evals/corpora/standing.yaml`) states the whole recipe.
+
+    The case runs the ONE path — sandbox, snapshot, frozen clock — with the
+    fold's model client swapped for a recorder, so what prints is exactly what
+    the deployed fold would have sent. It is always an ERROR as a verdict; the
+    exit code says only whether the input was rendered.
+    """
+    if CORPUS_ENTRY[name] not in _PRINTS_INPUT:
+        print(
+            f"--print-input is honoured by {sorted(_PRINTS_INPUT)} entry points; "
+            f"{name!r} enters at {CORPUS_ENTRY[name]!r}",
+            file=sys.stderr,
+        )
+        return 2
+    matches = [c for c in load_corpus(name) if c.name == case_name]
+    if not matches:
+        print(f"{name}: no active case named {case_name!r}", file=sys.stderr)
+        return 2
+    [case] = matches
+    case = case.model_copy(update={"metadata": {**(case.metadata or {}), "print_input": True}})
+    result = nora_task(Spec(source_url=source_url, entry=CORPUS_ENTRY[name]))(case)
+    state = {e.name: e.state for e in result.get("environment_state") or ()}
+    shown = state.get(NORA_SHOWN) or ""
+    if not shown:
+        print(f"nothing was rendered: {state.get(NORA_ERROR)}", file=sys.stderr)
+        return 1
+    print(shown)
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(prog="python -m evals")
     ap.add_argument("corpus", nargs="*", help="corpus name(s) — see --list")
@@ -215,6 +273,15 @@ def main() -> int:
              "re-measurement asks about the cases that moved, and paying for "
              "a whole corpus to re-draw four of them is how a sample count "
              "gets chosen by budget instead of by the question.",
+    )
+    ap.add_argument(
+        "--print-input", metavar="CASE",
+        help="render CASE's model input (the standing fold's system and user "
+             "prompt) and print it, calling no model — run on each arm and "
+             "diff, before any suite is paid for. One corpus only. The MASTER "
+             "arm is master with the harness commit applied (it applies "
+             "unchanged: evals/, nora/subject/standing_fold.py, the corpus); "
+             "the branch arm is the branch. See evals/corpora/standing.yaml.",
     )
     ap.add_argument(
         "--source-url", default=os.environ.get("NORA_EVAL_SOURCE_URL", ""),
@@ -278,6 +345,18 @@ def main() -> int:
     if not names:
         print("no corpus selected — pass names, --class, --all, or --list", file=sys.stderr)
         return 2
+    if args.print_input and len(names) != 1:
+        print("--print-input names a case OF ONE corpus", file=sys.stderr)
+        return 2
+    needs_judge = sorted(set(names) & JUDGE_REQUIRED)
+    if needs_judge and not args.judge and not args.print_input:
+        # Refused BEFORE anything is spent: every case would pay for its
+        # model call and then ERROR, because its only reading is the judge's.
+        print(
+            f"refusing to run: {needs_judge} graded by a judge only — pass --judge",
+            file=sys.stderr,
+        )
+        return 2
     try:
         source_url = source_url_for(args.source_url, Path(args.deployment_config).parent)
     except ValueError as exc:
@@ -317,6 +396,9 @@ def main() -> int:
         print(f"refusing to run: {exc}", file=sys.stderr)
         return 2
     print(f"subject config rebuilt from {args.deployment_config} -> {generated}")
+
+    if args.print_input:
+        return _print_input(names[0], args.print_input, source_url=source_url)
 
     judge = None if not args.judge else Judge(
         base_url=args.judge_base_url, model=args.judge, samples=args.judge_samples,

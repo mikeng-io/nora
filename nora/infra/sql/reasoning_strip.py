@@ -2,7 +2,7 @@
 instrument (migration 0057, issue #325, ADR 0013).
 
 `__init__(self, engine: AsyncEngine)` and nothing else, matching
-`SqlTurnVerdictStore`/`SqlToolCallLogStore`/`SqlParticipationStateStore`: no
+`SqlToolCallLogStore`/`SqlParticipationStateStore`: no
 config, no clock, no metrics, so a fixture in another session can build it from
 a bare `AsyncEngine`. `created_at` arrives on the observation.
 

@@ -65,6 +65,7 @@ is not the place that gets patched, the renderer is.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 
@@ -129,6 +130,29 @@ def _strings(value: object, path: str) -> Iterator[tuple[str, str]]:
             yield from _strings(sub, f"{path}[{i}]")
 
 
+#: What THIS screen refuses beyond the reply floor (design/standing-compact,
+#: security review 2026-09-24). `scan_identifiers` is the reply's R-18 floor
+#: and stays exactly what it is; a SINK injected into every later prompt has a
+#: stricter job, and from 2026-09-24 the standing fold is shown tool results
+#: at up to 4000 characters and asked to keep what it found. Measured against
+#: the real `screen()` before this: an email, an 18-digit platform id, a
+#: `where_is` result's `{'lat': …, 'lng': …}` and «lat 22.3 lng 114.1» all
+#: passed. Each maps onto an EXISTING reason label, so the metric's vocabulary
+#: does not move. Street addresses are not here: no pattern for them is
+#: reliable in two languages, and a guess is a screen that drops real prose.
+_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_LONG_ID = re.compile(r"(?<![\d.])\d{15,}(?![\d.])")
+_LABELLED_COORD = re.compile(
+    r"\b(?:lat|latitude)\b['\"]?\s*[:=]?\s*-?\d{1,2}\.\d{3,}"
+    r".{0,40}?\b(?:lng|lon|long|longitude)\b['\"]?\s*[:=]?\s*-?\d{1,3}\.\d{3,}",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _sink_identifier(text: str) -> bool:
+    return bool(_EMAIL.search(text) or _LONG_ID.search(text))
+
+
 def _offence(item: Mapping[str, object]) -> tuple[str, str] | None:
     """The first `(reason, path)` in `item`, or None if it is clean.
 
@@ -138,9 +162,9 @@ def _offence(item: Mapping[str, object]) -> tuple[str, str] | None:
     is dropped; only the label differs.
     """
     for text, path in _strings(item, ""):
-        if scan_identifiers(text) is not None:
+        if scan_identifiers(text) is not None or _sink_identifier(text):
             return "identifier", path
-        if looks_like_coordinate(text):
+        if looks_like_coordinate(text) or _LABELLED_COORD.search(text):
             return "coordinate", path
     return None
 
