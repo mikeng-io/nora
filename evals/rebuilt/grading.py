@@ -150,10 +150,23 @@ class Judge:
         client = self._client()
 
         async def one_sample() -> str:
-            answer = await client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0,
+            # A WALL-CLOCK bound on the whole call, not only the client's.
+            # The client's `timeout` is httpx's, which bounds each phase
+            # (connect, the gap between two reads) rather than the request, so
+            # a gateway that trickles bytes would never trip it. That is NOT
+            # what hung the 2026-09-24 presence run — a runner-only retry
+            # wrapper outside this file re-asked each timed-out sample up to
+            # six times with sleeps, ~40 minutes per sample, swallowing every
+            # error — but the unbounded case is real and costs nothing to
+            # close. A `TimeoutError` here becomes REVIEW: an ERROR about the
+            # instrument, never a verdict about her.
+            answer = await asyncio.wait_for(
+                client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0,
+                ),
+                self.timeout_seconds,
             )
             return answer.choices[0].message.content or ""
 

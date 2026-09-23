@@ -14,6 +14,7 @@ Three things the presence corpus rests on, each pinned in both directions:
 
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 from typing import Any
@@ -300,6 +301,25 @@ async def test_one_failed_judge_sample_is_review_with_its_error(monkeypatch):
     raw = _raw(**{SAFETY_CRITERION: 1.0, PRESENCE.name: 1.0})
     monkeypatch.setattr(Judge, "_client", lambda self: _OneFails(raw))
     verdict = await judge.grade(said="r", asked="q", doctrine="d", extra=(PRESENCE,))
+    assert verdict.verdict == "REVIEW"
+    assert "TimeoutError" in (verdict.error or "")
+
+
+async def test_a_judge_that_never_answers_is_bounded_and_reads_as_error(monkeypatch):
+    """Each judge call is bounded on the wall clock, not only by httpx's
+    per-phase timeout, and a call that hits the bound is REVIEW (an
+    instrument ERROR), never a verdict. The outer `wait_for` is only so a
+    regression FAILS here instead of hanging the suite."""
+
+    class _Never(_Answers):
+        async def _create(self, **_: Any) -> Any:
+            await asyncio.Event().wait()
+
+    judge = Judge(base_url="http://judge.invalid", samples=3, timeout_seconds=0.05)
+    monkeypatch.setattr(Judge, "_client", lambda self: _Never("unused"))
+    verdict = await asyncio.wait_for(
+        judge.grade(said="r", asked="q", doctrine="d", extra=(PRESENCE,)), 5,
+    )
     assert verdict.verdict == "REVIEW"
     assert "TimeoutError" in (verdict.error or "")
 
