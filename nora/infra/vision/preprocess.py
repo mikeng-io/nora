@@ -67,6 +67,16 @@ VIDEO_FPS_CAP = 24                  # ~1.3x token cut vs 30fps, no motion lost
 # a non-chunking caller (and every image caller) uses.
 VIDEO_MAX_SECONDS = 120             # one view's worth; see `cut_video`
 VIDEO_CRF = 26                      # x264 CRF 26 ≈ visually lossless for sampling
+# The audio track's own encode (DEC-197). Named rather than inherited from
+# ffmpeg's per-container default, so a clip's token cost does not depend on
+# which container it arrived in. AAC 64 kb/s is what the benchmark that measured
+# the audible read used (+~3.5 % prompt tokens on a 35 s clip).
+VIDEO_AUDIO_CODEC = "aac"
+VIDEO_AUDIO_BITRATE = "64k"
+# Stereo at most. Without it a 7.1 source encodes as eight channels sharing the
+# same 64 kb/s — ~8 kb/s each, worse speech for the same bytes — and the
+# channel count, like the codec above, would come from the container.
+VIDEO_AUDIO_CHANNELS = "2"
 
 # Chunk geometry (issue #117's decision). 1-2 minutes per chunk «picked per
 # situation» — 90 s is the middle of the operator's range, and the ceiling is
@@ -168,7 +178,9 @@ def _image_args(media_type: str) -> list[str]:
     ]
 
 
-def _video_args(*, start: float = 0.0, seconds: float = VIDEO_MAX_SECONDS) -> list[str]:
+def _video_args(
+    *, start: float = 0.0, seconds: float = VIDEO_MAX_SECONDS, audio: bool = True,
+) -> list[str]:
     """Scale + re-encode one window of a clip to ≤720p, ≤24fps, H.264 CRF 26.
 
     `-ss` BEFORE `-i` is deliberate: it makes ffmpeg seek the input rather than
@@ -177,10 +189,17 @@ def _video_args(*, start: float = 0.0, seconds: float = VIDEO_MAX_SECONDS) -> li
     is also why `_run_video`'s scratch file matters more here than for a single
     view — an input seek needs a seekable input, and a pipe is not one.
 
-    `-an` stays. The video path has stripped the audio track since it shipped,
-    the chunks stay silent, and issue #117 explicitly does not change that:
-    extracting the audio and running STT over it was proposed and rejected as
-    scope.
+    The audio track is KEPT (DEC-197, 2026-09-24). This used to pass `-an`
+    unconditionally — no flag, no branch — so every chunk of every video Nora
+    had described was silent: she could see a clip but never hear it. Issue
+    #117 kept that as scope (DEC-161); the operator overrode it. A clip with
+    no audio stream still encodes, simply without one — `-c:a` names the codec
+    for a stream that exists and asks for none that does not.
+
+    `audio=False` is the old silent encode, kept as the FALLBACK
+    (`_encode_window`): a clip whose selected audio track ffmpeg cannot decode
+    fails the audible encode outright, and before DEC-197 that same clip read
+    fine with its sound thrown away.
     """
     return [
         "ffmpeg", "-hide_banner", "-loglevel", "error",
@@ -192,11 +211,39 @@ def _video_args(*, start: float = 0.0, seconds: float = VIDEO_MAX_SECONDS) -> li
         ),
         "-t", f"{seconds:.3f}",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", str(VIDEO_CRF),
-        "-an",
+        *(
+            ["-c:a", VIDEO_AUDIO_CODEC, "-b:a", VIDEO_AUDIO_BITRATE,
+             "-ac", VIDEO_AUDIO_CHANNELS]
+            if audio else ["-an"]
+        ),
         "-f", "mp4",
         "-movflags", "frag_keyframe+empty_moov",
         "pipe:1",
     ]
+
+
+async def _encode_window(
+    run: Runner, *, start: float, seconds: float, budget_seconds: float, data: bytes,
+) -> tuple[int | None, bytes]:
+    """One window, WITH its audio — and silent if the audible encode fails.
+
+    Keeping the audio track must never cost a clip that used to be readable
+    (DEC-197 review): a selected audio stream ffmpeg has no decoder for exits
+    non-zero ("Decoding requested, but no decoder found") where `-an` succeeds.
+    So a refused audible encode is retried ONCE without audio — the picture is
+    still worth reading — and only a clip that fails both ways is refused.
+    """
+    returncode, out, _err = await run(
+        _video_args(start=start, seconds=seconds), budget_seconds, data)
+    if returncode == 0 and out:
+        return returncode, out
+    log.warning(
+        "ffmpeg refused the audible encode (rc=%s); retrying the window silent",
+        returncode,
+    )
+    returncode, out, _err = await run(
+        _video_args(start=start, seconds=seconds, audio=False), budget_seconds, data)
+    return returncode, out
 
 
 def _probe_args() -> list[str]:
@@ -377,8 +424,8 @@ async def cut_video(
         # and `duration_seconds=None` is what stops the caller claiming it read
         # the whole thing. Degrading to the old shape is right; degrading to
         # the old SILENCE is what this issue exists to end.
-        returncode, out, _err = await run(
-            _video_args(start=0.0, seconds=float(chunk_seconds)), timeout, data)
+        returncode, out = await _encode_window(
+            run, start=0.0, seconds=float(chunk_seconds), budget_seconds=timeout, data=data)
         if returncode != 0 or not out:
             return VideoCut(windows=(), duration_seconds=None, covered_seconds=0.0,
                             capped=False, reason="ffmpeg")
@@ -398,8 +445,8 @@ async def cut_video(
         length = min(float(chunk_seconds), duration - start)
         if length <= 0:
             break
-        returncode, out, _err = await run(
-            _video_args(start=start, seconds=length), timeout, data)
+        returncode, out = await _encode_window(
+            run, start=start, seconds=length, budget_seconds=timeout, data=data)
         if returncode != 0 or not out:
             # One refused window is not a refused read. Skipping it keeps the
             # windows that DID reach a model and shortens what the caller may
@@ -444,12 +491,13 @@ async def preprocess_media(
         return data
     timeout = timeout_seconds if timeout_seconds is not None else PREPROCESS_TIMEOUT_SECONDS
     run: Runner = runner if runner is not None else _run
-    args = _image_args(media_type) if top == "image" else _video_args()
     if top == "video":
         run = runner if runner is not None else _run_video
+        returncode, out = await _encode_window(
+            run, start=0.0, seconds=VIDEO_MAX_SECONDS, budget_seconds=timeout, data=data)
     else:
         run = runner if runner is not None else _run
-    returncode, out, _err = await run(args, timeout, data)
+        returncode, out, _err = await run(_image_args(media_type), timeout, data)
     if returncode != 0 or not out:
         # Same contract as the never-raises provider: a failed optimisation
         # passes the ORIGINAL through, so the outer byte gates still bind.

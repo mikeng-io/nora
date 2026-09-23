@@ -1004,6 +1004,10 @@ class _WindowVision:
     def __init__(self, *, answers: list[str] | None = None) -> None:
         self.answers = answers
         self.calls: list[bytes] = []
+        #: The `windows` each call carried — the serial factor the client's
+        #: per-call ceiling divides by. Recorded because a `media_fetch` that
+        #: dropped it passed every test (#403 post-merge review).
+        self.windows: list[int | None] = []
 
     async def describe(self, *, data: bytes, media_type: str,
                        prompt: str = "", model: str = "",
@@ -1011,6 +1015,7 @@ class _WindowVision:
                        max_bytes: int | None = None,
                        windows: int | None = None) -> VisionResult:
         self.calls.append(data)
+        self.windows.append(windows)
         if self.answers is None:
             return VisionResult(
                 available=True, description=f"segment {len(self.calls)}")
@@ -1068,6 +1073,10 @@ async def test_media_fetch_reads_a_clip_in_windows_and_admits_what_it_missed(
     # the ceiling binds on the rest. Master read ONE view of the first two
     # minutes and said nothing.
     assert len(vision.calls) == 10, "one call per window, not one view of the lot"
+    # Every window tells the client it is one of TEN, so each gets the
+    # ten-window ceiling — never the one-window one, which would let ten
+    # windows spend ten times the loop's share (#403 post-merge review).
+    assert vision.windows == [10] * 10
     assert "0:00 —" in out["description"]
     assert "1:30 —" in out["description"]
     assert "13:30 —" in out["description"], "the tenth window, not the third"

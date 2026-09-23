@@ -92,6 +92,7 @@ from ..domain.ports import (
     RosterSource,
 )
 from ..domain.reasoning_strip import dreamer_path
+from ..domain.turn_deadline import turn_deadline
 from ..obs.metrics import Metrics
 from ..obs.tracing import TRACE_KIND, annotate, span
 from . import factory
@@ -1726,17 +1727,20 @@ class DreamerRuntime:
                 retry=self._retry,
                 agent_name=f"dreamer:{adaptor.name}",
             )
-            result = await asyncio.wait_for(
-                factory.invoke(
-                    agent, prompt, invocation_state={},
-                    limits=factory.build_limits(
-                        output_tokens=budget.output_tokens,
-                        turns=budget.turns,
-                        total_tokens=budget.total_tokens,
+            # A room-scoped pass can replay `media_fetch`; its describer must
+            # see THIS pass's ceiling, not the `[llm]` loop it was built from.
+            with turn_deadline(budget.timeout_seconds):
+                result = await asyncio.wait_for(
+                    factory.invoke(
+                        agent, prompt, invocation_state={},
+                        limits=factory.build_limits(
+                            output_tokens=budget.output_tokens,
+                            turns=budget.turns,
+                            total_tokens=budget.total_tokens,
+                        ),
                     ),
-                ),
-                timeout=budget.timeout_seconds,
-            )
+                    timeout=budget.timeout_seconds,
+                )
         except TimeoutError:
             log.error(
                 "dream run timed out after %.0fs (adaptor=%s key=%s)",

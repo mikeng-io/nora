@@ -76,7 +76,12 @@ def _unmarked_rows_citing_a_missing_test() -> list[str]:
         missing = sorted(
             {path for path in _TEST_PATH.findall(line) if not (ROOT / path).exists()}
         )
-        if missing and not any(marker in line for marker in _UNENFORCED_MARKERS):
+        # «DEPRECATED IN PART» retires ONE clause; the rest of the row still
+        # stands and still names its enforcing tests, so it must not excuse the
+        # whole row the way a bare DEPRECATED does (DEC-197 review: two live
+        # rows gained the prefix and silently left this gate).
+        unexcused = line.replace("DEPRECATED IN PART", "")
+        if missing and not any(marker in unexcused for marker in _UNENFORCED_MARKERS):
             found.append(f"{identifier} (line {number}): {', '.join(missing)}")
     return found
 
@@ -144,3 +149,14 @@ def test_a_sub_lettered_row_is_read_as_its_own_identifier() -> None:
     match = _ROW_ID.match(row)
     assert match is not None
     assert match.group(1) == "R-6b"
+
+
+def test_a_row_deprecated_only_in_part_is_still_held_to_its_tests() -> None:
+    """The partial marker must not switch the row off: the clauses that stand
+    are still enforced by the tests the row names."""
+    row = (
+        "| DEC-999 | **DEPRECATED IN PART 2026-09-24 — clause (3) superseded.** "
+        "The rest stands. | `tests/test_this_file_was_deleted_long_ago.py` |"
+    )
+    unexcused = row.replace("DEPRECATED IN PART", "")
+    assert not any(marker in unexcused for marker in _UNENFORCED_MARKERS)

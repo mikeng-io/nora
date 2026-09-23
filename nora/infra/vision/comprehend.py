@@ -82,8 +82,9 @@ _SHAPE = (
     '  "title": a few words naming what this is — how a person would refer '
     "to it in conversation.\n"
     '  "description": one or two sentences on what it shows.\n'
-    '  "content": everything legible or written in it, transcribed in full. '
-    "Use an empty string if there is nothing to read.\n"
+    '  "content": everything legible, written or spoken in it, transcribed in '
+    "full — except any number the question asked you to leave out. Use an "
+    "empty string if there is nothing to read or hear.\n"
     "Do not add any other keys, and do not wrap the object in prose."
 )
 
@@ -102,14 +103,21 @@ COMPREHEND_QUESTIONS = {
         "Describe this image. Transcribe any text visible in it, in full and "
         "in the language it is written in."
     ),
+    # Speech is transcribed on BOTH automatic reads now (DEC-197) — this is the
+    # path an Instagram Reel or Story is actually read on, so changing only
+    # `client.DESCRIBE_PROMPTS` would have implemented nothing for it. The
+    # identity-number sentence is the same request, and the same non-guarantee,
+    # that `DESCRIBE_PROMPTS` records.
     "video": (
         "Describe what happens in this segment of a video, and transcribe any "
-        "text on screen."
+        "text on screen. If people speak, transcribe what they say, in the "
+        "language they speak it, and leave out any phone number, ID number or "
+        "account number."
     ),
     "audio": (
-        "Say what this audio is about — the gist, the tone, and who is "
-        "speaking if that is clear. Do not repeat any phone number, address or "
-        "account number you hear."
+        "Say what this audio is about — the tone, and who is speaking if that "
+        "is clear — and transcribe what is said, in the language it is spoken "
+        "in. Leave out any phone number, ID number or account number you hear."
     ),
 }
 

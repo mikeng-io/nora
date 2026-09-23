@@ -65,6 +65,9 @@ class FakeMimo:
                                          # only way a test can tell WHICH client
                                          # (omniroute vs kimi direct) sent a call
                                          # when both point at the same fake.
+        self.sessions: list[str] = []    # `x-opencode-session` per request
+        self.require_session = False     # answer 400 MissingSessionID without
+                                         # one, the way OpenCode Go does
         self.fail_times = 0          # how many leading calls answer 500
         self.stall_seconds = 0.0     # how long each call sleeps before answering
         self.reply = "A red square."
@@ -73,6 +76,15 @@ class FakeMimo:
         body = await request.json()
         self.requests.append(body)
         self.auths.append(request.headers.get("Authorization", ""))
+        self.sessions.append(request.headers.get("x-opencode-session", ""))
+        if self.require_session and not self.sessions[-1]:
+            # OpenCode Go's real answer, probed 2026-09-24.
+            return web.json_response({"type": "error", "error": {
+                "type": "MissingSessionID",
+                "message": (
+                    "Request is missing x-opencode-session and cannot be routed efficiently."
+                ),
+            }}, status=400)
         # Behave like the real server, INCLUDING its wrong-call shapes
         # (CLAUDE.md). A body with no media is a bad request, and so is media
         # carried in the wrong content block: a real OpenAI-compatible gateway
@@ -174,7 +186,7 @@ def _client_kimi(
     """
     return VisionClient(
         client=AsyncOpenAI(base_url=fake.url, api_key="omniroute-key", max_retries=0),  # type: ignore[attr-defined]
-        direct_client=AsyncOpenAI(base_url=fake.url, api_key="kimi-key", max_retries=0),  # type: ignore[attr-defined]
+        direct_clients={"kimi": AsyncOpenAI(base_url=fake.url, api_key="kimi-key", max_retries=0)},  # type: ignore[attr-defined]
         model="kimi-code/k3-256k",
         max_tokens=1024,
         reasoning_effort="low",
@@ -538,6 +550,11 @@ def test_composition_hands_the_client_the_derivations_inputs_not_a_budget():
         "count is not known until read time, so a number derived here is "
         "derived from the wrong wave count for every video"
     )
+    assert "direct_clients=_direct_describer_clients(cfg)" in call, (
+        "composition no longer hands VisionClient its DIRECT lanes — every "
+        "kimi and opencode-go read would answer unavailable, with no test red "
+        "(DEC-197 review)"
+    )
     assert "budget" not in call, (
         "a budget term is back in the vision timeout wiring — budgeted calls "
         "overlap in time and must not divide a wall-clock ceiling "
@@ -655,7 +672,7 @@ async def test_a_kimi_provider_without_a_direct_client_fails_closed(mimo):
     `unavailable`, not a silent fallback to the omniroute client. That fallback
     is exactly how a video gets sent to a router that drops `video_url` and
     "answers" about the text it did receive: an ERROR reported as a PASS."""
-    client = _client(mimo)  # no direct_client
+    client = _client(mimo)  # no direct clients
     result = await client.describe(
         data=RED_PNG, media_type="video/mp4", provider="kimi",
     )
@@ -665,7 +682,7 @@ async def test_a_kimi_provider_without_a_direct_client_fails_closed(mimo):
 
 
 async def test_a_kimi_provider_uses_the_direct_client(mimo):
-    """The kimi request must hit `_direct_client`, and its body must carry the
+    """The kimi request must hit its direct client, and its body must carry the
     same media block an omniroute request would — the transport changed, the
     payload did not. The fake records BOTH the body and the Authorization
     header (FakeMimo.auths); `_client_kimi` gives each client its own key, so
@@ -691,3 +708,180 @@ async def test_the_default_provider_is_still_omniroute(mimo):
     assert "image_url" in _block_types(mimo.requests[-1])
     auth = mimo.auths[-1] if mimo.auths else ""
     assert "omniroute-key" in auth, f"expected the omniroute client to travel, got auth {auth!r}"
+
+
+# ---- provider routing (DEC-197): OpenCode Go direct lane --------------------
+
+async def test_an_opencode_go_provider_without_its_client_fails_closed(mimo):
+    """A kimi client being present must not satisfy an `opencode-go` request:
+    each direct lane is its own transport, and a lane the composition root did
+    not build (its key was unset) is a wiring gap — `unavailable`, with no
+    request travelling through any other client."""
+    result = await _client_kimi(mimo).describe(
+        data=RED_PNG, media_type="video/mp4", provider="opencode-go",
+    )
+    assert result.available is False
+    assert result.reason == "error"
+    assert mimo.requests == [], "no request may travel through the wrong client"
+
+
+async def test_an_opencode_go_provider_travels_its_own_direct_client(mimo):
+    """Three clients on one fake, three keys: the bearer proves the
+    `opencode-go` request left through the opencode-go client, not kimi's and
+    not the gateway's."""
+    client = VisionClient(
+        client=AsyncOpenAI(base_url=mimo.url, api_key="omniroute-key", max_retries=0),  # type: ignore[attr-defined]
+        direct_clients={
+            "kimi": AsyncOpenAI(base_url=mimo.url, api_key="kimi-key", max_retries=0),  # type: ignore[attr-defined]
+            "opencode-go": AsyncOpenAI(base_url=mimo.url, api_key="go-key", max_retries=0),  # type: ignore[attr-defined]
+        },
+        model="mimo-v2.6-flash", max_tokens=4096, reasoning_effort="low",
+        max_bytes=8 * 1024 * 1024, timeout_seconds=5.0, loop_timeout_seconds=300.0,
+    )
+    result = await client.describe(
+        data=RED_PNG, media_type="video/mp4", provider="opencode-go",
+    )
+    assert result.available, result.reason
+    assert "go-key" in mimo.auths[-1], mimo.auths
+
+
+async def test_the_client_built_by_composition_sends_the_session_header(mimo, monkeypatch):
+    """design/media-read-lane/03 §3's verification obligation: the client
+    COMPOSITION builds — not one constructed here — must carry a fresh
+    `x-opencode-session` on every request, because OpenCode Go answers
+    `400 MissingSessionID` without one. The fake refuses exactly like the real
+    endpoint, so a lane built without the hook fails this as an unavailable
+    read, not merely a missing header.
+
+    The client is repointed at the fake with `with_options(base_url=…)`, which
+    keeps the transport (and so the hook) composition gave it."""
+    from nora.app.composition import _direct_describer_clients
+    from nora.config import Config, MediaConfig
+
+    monkeypatch.setenv("OPENCODE_GO_API_KEY", "go-key")
+    cfg = Config.model_construct(media=MediaConfig(describe={
+        "video": {"enabled": True, "model": "mimo-v2.6-flash", "provider": "opencode-go"},
+    }))
+    built = _direct_describer_clients(cfg)["opencode-go"]
+    assert str(built.base_url).startswith("https://opencode.ai/zen/go/v1")
+
+    mimo.require_session = True
+    client = VisionClient(
+        client=AsyncOpenAI(base_url=mimo.url, api_key="omniroute-key", max_retries=0),  # type: ignore[attr-defined]
+        direct_clients={"opencode-go": built.with_options(base_url=mimo.url, max_retries=0)},  # type: ignore[attr-defined]
+        model="mimo-v2.6-flash", max_tokens=4096, reasoning_effort="low",
+        max_bytes=8 * 1024 * 1024, timeout_seconds=5.0, loop_timeout_seconds=300.0,
+    )
+    for _ in range(2):
+        result = await client.describe(
+            data=RED_PNG, media_type="video/mp4", provider="opencode-go",
+        )
+        assert result.available, result.reason
+    assert all(s.startswith("ses_") for s in mimo.sessions), mimo.sessions
+    assert len(set(mimo.sessions)) == 2, "each request carries its OWN session id"
+
+
+# ---- the enclosing turn's deadline bounds a read (DEC-197 review) ------------
+#
+# `derive_vision_timeout` bounds ONE invocation. Reads the model issues in
+# SEPARATE loop turns run one after another and add up — three one-window reads
+# at 120 s are the whole of a 360 s loop — and a heartbeat turn runs under 120 s,
+# not the `[llm]` loop this client is built from. Langfuse: 6 of 11 multi-read
+# turns issued their reads one after another.
+
+def test_a_read_takes_at_most_the_share_of_what_is_left_of_the_turn():
+    from nora.domain.turn_deadline import turn_deadline
+
+    client = VisionClient(
+        client=AsyncOpenAI(base_url="http://127.0.0.1:1/v1", api_key="k", max_retries=0),
+        model="m", max_tokens=16, reasoning_effort="low", max_bytes=1,
+        timeout_seconds=120.0, loop_timeout_seconds=360.0,
+    )
+    assert client._call_timeout(None) == 120.0, "outside a turn: the derivation alone"
+    with turn_deadline(100.0):
+        assert 59.0 < client._call_timeout(None) <= 60.0, "0.6 of the 100 s left"
+    with turn_deadline(1000.0):
+        assert client._call_timeout(None) == 120.0, "never MORE than the derivation"
+
+
+async def test_a_heartbeat_sized_turn_cuts_a_slow_read_short(mimo):
+    """Behaviourally, through `describe`: a read inside a turn with 0.5 s left
+    gives up at ~0.3 s although its own ceiling is 5 s, and says `timeout`."""
+    import time as _time
+
+    from nora.domain.turn_deadline import turn_deadline
+
+    mimo.stall_seconds = 3.0
+    started = _time.monotonic()
+    with turn_deadline(0.5):
+        result = await _client(mimo, timeout_seconds=5.0).describe(
+            data=RED_PNG, media_type="image/png",
+        )
+    assert result.available is False
+    assert result.reason == "timeout"
+    assert _time.monotonic() - started < 1.5
+
+
+async def test_describe_hands_its_window_count_to_the_ceiling(mimo, monkeypatch):
+    """The link the #403 review found unpinned: `describe(windows=10)` must reach
+    `wait_for` with the ten-window ceiling (360 x 0.6 / 10 = 21.6 s), not the
+    one-window 120 — a `describe` that ignored `windows` passed every test."""
+    from nora.infra.vision import client as client_module
+
+    seen: list[float] = []
+    real_wait_for = asyncio.wait_for
+
+    async def spy(aw, timeout):
+        seen.append(timeout)
+        return await real_wait_for(aw, timeout)
+
+    monkeypatch.setattr(client_module.asyncio, "wait_for", spy)
+    client = _client(mimo, timeout_seconds=120.0, loop_timeout_seconds=360.0)
+    await client.describe(data=RED_PNG, media_type="video/mp4", windows=10)
+    await client.describe(data=RED_PNG, media_type="video/mp4")
+    assert seen == [pytest.approx(21.6), 120.0]
+
+
+# ---- speech is asked for on the live look too (DEC-197) ----------------------
+
+async def test_the_live_look_asks_for_what_is_said_in_audio_and_video(mimo):
+    """`DESCRIBE_PROMPTS` is the `media_fetch` family; reverting it to the old
+    «the gist, never the words» wording left every test green (DEC-197
+    review), because the one prompt test compared the request to the constant
+    itself. Asserted on the body the endpoint RECEIVED."""
+    client = _client(mimo)
+    await client.describe(data=b"ID3audio", media_type="audio/mpeg")
+    await client.describe(data=RED_PNG, media_type="video/mp4")
+    audio_prompt, video_prompt = (
+        r["messages"][-1]["content"][0]["text"] for r in mimo.requests
+    )
+    for prompt in (audio_prompt, video_prompt):
+        assert "transcribe what" in prompt, prompt
+        assert "phone number, ID number or account number" in prompt, prompt
+        assert "rather than writing out" not in prompt
+        assert "word-for-word" not in prompt
+
+
+async def test_a_direct_lane_with_no_key_sends_nothing_anywhere(mimo, monkeypatch):
+    """Design 05 §5's contract, end to end: composition with the lane's key
+    UNSET, then a read through that lane — `unavailable`, and ZERO requests
+    reach the gateway client (an OmniRoute fallback would drop the video and
+    answer about the text it did receive)."""
+    from nora.app.composition import _direct_describer_clients
+    from nora.config import Config, MediaConfig
+
+    monkeypatch.delenv("OPENCODE_GO_API_KEY", raising=False)
+    cfg = Config.model_construct(media=MediaConfig(describe={
+        "video": {"enabled": True, "model": "mimo-v2.6-flash", "provider": "opencode-go"},
+    }))
+    client = VisionClient(
+        client=AsyncOpenAI(base_url=mimo.url, api_key="omniroute-key", max_retries=0),  # type: ignore[attr-defined]
+        direct_clients=_direct_describer_clients(cfg),
+        model="mimo-v2.6-flash", max_tokens=4096, reasoning_effort="low",
+        max_bytes=8 * 1024 * 1024, timeout_seconds=5.0, loop_timeout_seconds=300.0,
+    )
+    result = await client.describe(
+        data=RED_PNG, media_type="video/mp4", provider="opencode-go",
+    )
+    assert result.available is False
+    assert mimo.requests == []

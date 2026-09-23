@@ -202,29 +202,66 @@ def test_the_composition_root_offers_providers_only_for_live_describers():
 
 
 def test_the_kimi_key_env_name_resolves_through_api_key_env():
-    """`_kimi_api_key_env` must honour `api_key_env` when a kimi describer
+    """`_direct_lane_key_env` must honour `api_key_env` when a kimi describer
     names one, and fall back to `KIMI_CODE_API_KEY` when it does not — the
     contract `DescriberConfig.api_key_env`'s docstring promises (DEC-8: config
     names the env var, never the key)."""
-    from nora.app.composition import _kimi_api_key_env
+    from nora.app.composition import _direct_lane_key_env
 
-    declared = _kimi_api_key_env(_cfg_with(
+    declared = _direct_lane_key_env(_cfg_with(
         image={"enabled": True, "model": "m/image"},
         video={"enabled": True, "model": "k3-256k",
                "provider": "kimi", "api_key_env": "MY_KIMI_KEY"},
-    ))
+    ), "kimi")
     assert declared == "MY_KIMI_KEY"
 
-    defaulted = _kimi_api_key_env(_cfg_with(
+    defaulted = _direct_lane_key_env(_cfg_with(
         image={"enabled": True, "model": "m/image"},
         video={"enabled": True, "model": "k3-256k", "provider": "kimi"},
-    ))
+    ), "kimi")
     assert defaulted == "KIMI_CODE_API_KEY"
 
-    nothing_kimi = _kimi_api_key_env(_cfg_with(
+    nothing_kimi = _direct_lane_key_env(_cfg_with(
         image={"enabled": True, "model": "m/image"},
-    ))
+    ), "kimi")
     assert nothing_kimi == "KIMI_CODE_API_KEY"
+
+
+def test_the_opencode_go_key_env_name_is_its_own_not_kimis():
+    """Each direct lane reads ITS key: an `opencode-go` describer falls back to
+    `OPENCODE_GO_API_KEY`, and a kimi describer's `api_key_env` beside it does
+    not leak across — one key source per lane (DEC-197)."""
+    from nora.app.composition import _direct_lane_key_env
+
+    cfg = _cfg_with(
+        audio={"enabled": True, "model": "mimo-v2.6-flash", "provider": "opencode-go"},
+        video={"enabled": True, "model": "k3-256k",
+               "provider": "kimi", "api_key_env": "MY_KIMI_KEY"},
+    )
+    assert _direct_lane_key_env(cfg, "opencode-go") == "OPENCODE_GO_API_KEY"
+    assert _direct_lane_key_env(cfg, "kimi") == "MY_KIMI_KEY"
+
+
+def test_a_direct_lane_whose_key_is_unset_is_not_built(monkeypatch):
+    """Fail-closed at the composition root: a selected lane with no key is
+    LEFT OUT of the direct clients, so `VisionClient` refuses that provider
+    (`unavailable`) rather than building a keyless client or falling back to
+    OmniRoute. A lane nothing selects is not built at all."""
+    from nora.app.composition import _direct_describer_clients
+
+    monkeypatch.delenv("OPENCODE_GO_API_KEY", raising=False)
+    monkeypatch.setenv("KIMI_CODE_API_KEY", "kimi-key")
+    cfg = _cfg_with(
+        audio={"enabled": True, "model": "mimo-v2.6-flash", "provider": "opencode-go"},
+        video={"enabled": True, "model": "k3-256k", "provider": "kimi"},
+    )
+    assert set(_direct_describer_clients(cfg)) == {"kimi"}
+
+    monkeypatch.setenv("OPENCODE_GO_API_KEY", "go-key")
+    assert set(_direct_describer_clients(cfg)) == {"kimi", "opencode-go"}
+
+    only_omniroute = _cfg_with(image={"enabled": True, "model": "m/image"})
+    assert _direct_describer_clients(only_omniroute) == {}
 
 
 # ---- the registry joint ------------------------------------------------------

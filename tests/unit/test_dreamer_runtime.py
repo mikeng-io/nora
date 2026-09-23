@@ -2169,3 +2169,31 @@ def test_the_phase_label_vocabulary_is_derived_from_the_type():
         f"emitted but not in the vocabulary: {emitted - dreamer.STORE_PHASES}"
     )
     assert {"inputs", "commit"} == dreamer.STORE_PHASES
+
+
+async def test_a_dream_pass_publishes_its_own_deadline_to_its_tools(monkeypatch):
+    """A room-scoped pass can replay `media_fetch`, whose describer is built
+    from the `[llm]` loop; the pass's OWN `timeout_seconds` is what must bound
+    it (DEC-197 review)."""
+    from nora.domain.turn_deadline import seconds_left
+
+    seen: list[float | None] = []
+
+    async def _invoke(*a, **kw):
+        seen.append(seconds_left())
+        return _Result()
+
+    monkeypatch.setattr(factory, "create_dream_agent", lambda **kw: object())
+    monkeypatch.setattr(factory, "invoke", _invoke)
+    monkeypatch.setattr(factory, "final_text", lambda result: '{"observations": []}')
+    runtime = DreamerRuntime(
+        models=_Models(), instructions=_InstructionStore(), tools=_ToolSource(),
+        budgets={}, default_budget=BUDGET,
+        retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
+        metrics=Metrics(), model_name="deepseek-v4-flash",
+    )
+
+    await runtime.run(adaptor=_Adaptor(sink=_Sink()), key="g1", batch=())
+
+    assert seen and seen[0] is not None, seen
+    assert BUDGET.timeout_seconds - 1.0 < seen[0] <= BUDGET.timeout_seconds
