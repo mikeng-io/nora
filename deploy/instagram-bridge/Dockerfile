@@ -19,6 +19,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY *.go ./
+# The layered packages (design/instagram-adoption/16 §Layers). Copied as a
+# tree: a `*.go` glob would silently leave them out and the build would fail
+# on an import it cannot resolve.
+COPY internal ./internal
 
 # CGO off, so the result is a static binary that runs on a slim runtime with no
 # libc version to match. -trimpath keeps build paths out of the binary.
@@ -28,7 +32,7 @@ COPY *.go ./
 # is a real account in daily use — so the unit suite is the only gate there is,
 # and a gate that has to be remembered is not a gate.
 RUN go vet ./... && go test ./... && \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/instagram-bridge ./...
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/instagram-bridge .
 
 FROM debian:bookworm-slim
 

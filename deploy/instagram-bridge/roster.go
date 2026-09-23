@@ -155,15 +155,15 @@ func (b *bridge) handleRoster(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	info, err := readRoster(r.Context(), cli, thread.Short, b.ownFBID())
+	info, err := readRoster(r.Context(), cli, thread.Short.String(), b.ownFBID())
 	if err != nil {
 		status := statusForError(err)
 		slog.WarnContext(r.Context(), "roster failed",
-			"room", thread.Short, "status", status, "error", err)
+			"room", thread.Short.String(), "status", status, "error", err)
 		writeJSON(w, status, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
-	info.RoomID = thread.Short
+	info.RoomID = thread.Short.String()
 	writeJSON(w, http.StatusOK, info)
 }
 

@@ -71,6 +71,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"instagram-bridge/internal/domain"
+
 	"go.mau.fi/mautrix-meta/pkg/messagix/responses"
 )
 
@@ -197,16 +199,15 @@ type socialProfile struct {
 	ProfilePicURL string `json:"profile_pic_url,omitempty"`
 }
 
-var (
-	// errNoProfile is a read that came back without a user. Distinct from a
-	// transport failure because it means the igid names nothing — a caller
-	// should say "I couldn't find that account", not "I couldn't look".
-	errNoProfile = errors.New("profile read returned no user")
-	// errBadIGID is a target that is not a decimal Instagram id. Its own error
-	// so it maps to 400 rather than joining the 500 bucket: it is the caller's
-	// mistake and no retry will fix it.
-	errBadIGID = errors.New("igid is not a decimal instagram id")
-)
+// errNoProfile is a read that came back without a user. Distinct from a
+// transport failure because it means the igid names nothing — a caller should
+// say "I couldn't find that account", not "I couldn't look". So it is
+// ErrNotFound, and 404.
+//
+// A target that is not a decimal Instagram id never reaches here: the handler
+// parses the path into a domain.IGID, and a malformed one is ErrInvalidID, the
+// caller's mistake, 400.
+var errNoProfile = domain.Classify(domain.ErrNotFound, errors.New("profile read returned no user"))
 
 // handleProfile answers GET /accounts/{igid}.
 //
@@ -225,15 +226,16 @@ func (b *bridge) handleProfile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	body, err := readProfile(r.Context(), cli, igid)
+	// Parsed at the edge, AFTER the session gate: a checkpointed session
+	// answers 409 before a malformed id answers 400, as it did before the id
+	// was a type.
+	id, err := domain.ParseIGID(igid)
+	var body profileBody
+	if err == nil {
+		body, err = readProfile(r.Context(), cli, id)
+	}
 	if err != nil {
 		status := statusForError(err)
-		if errors.Is(err, errBadIGID) {
-			status = http.StatusBadRequest
-		}
-		if errors.Is(err, errNoProfile) {
-			status = http.StatusNotFound
-		}
 		// The igid is logged and NOT echoed into the body: it is a person's
 		// identifier and the error text crosses a boundary, while the log
 		// stays on the host an operator already has.
@@ -246,15 +248,11 @@ func (b *bridge) handleProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 // readProfile reads one account.
-func readProfile(ctx context.Context, cli igClient, igid string) (profileBody, error) {
-	// Canonicalized through ParseInt/FormatInt for the reason threadRef.Short
-	// is: it makes "0903771081" and "276321323" the same id, so a caller
-	// cannot address one account two ways and a cache cannot hold it twice.
-	n, err := strconv.ParseInt(igid, 10, 64)
-	if err != nil || n <= 0 {
-		return profileBody{}, fmt.Errorf("%w: %q", errBadIGID, igid)
-	}
-	canonical := strconv.FormatInt(n, 10)
+func readProfile(ctx context.Context, cli igClient, igid domain.IGID) (profileBody, error) {
+	// Canonical by construction (domain.ParseIGID): "0903771081" and
+	// "276321323" are the same id, so a caller cannot address one account two
+	// ways and a cache cannot hold it twice.
+	canonical := igid.String()
 
 	resp, err := cli.GetProfile(ctx, canonical)
 	if err != nil {
@@ -463,12 +461,14 @@ func (b *bridge) handleStory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	body, err := readStory(r.Context(), cli, igid)
+	// Parsed at the edge, after the session gate, as handleProfile does.
+	id, err := domain.ParseIGID(igid)
+	var body storyBody
+	if err == nil {
+		body, err = readStory(r.Context(), cli, id)
+	}
 	if err != nil {
 		status := statusForError(err)
-		if errors.Is(err, errBadIGID) {
-			status = http.StatusBadRequest
-		}
 		slog.WarnContext(r.Context(), "story failed",
 			"igid", igid, "status", status, "error", err)
 		writeJSON(w, status, map[string]any{"ok": false, "error": err.Error()})
@@ -478,12 +478,8 @@ func (b *bridge) handleStory(w http.ResponseWriter, r *http.Request) {
 }
 
 // readStory reads one account's current story.
-func readStory(ctx context.Context, cli igClient, igid string) (storyBody, error) {
-	n, err := strconv.ParseInt(igid, 10, 64)
-	if err != nil || n <= 0 {
-		return storyBody{}, fmt.Errorf("%w: %q", errBadIGID, igid)
-	}
-	canonical := strconv.FormatInt(n, 10)
+func readStory(ctx context.Context, cli igClient, igid domain.IGID) (storyBody, error) {
+	canonical := igid.String()
 
 	// ONE id, never a list. See the file header: each extra id is another
 	// person who sees that Nora watched.

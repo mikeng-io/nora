@@ -27,14 +27,18 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
+
+	"instagram-bridge/internal/domain"
 
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
 )
 
-var errNotConnected = errors.New("instagram session is not connected")
+// errNotConnected is the session being (re)established: expected to heal, so
+// it is ErrUnavailable, and retryable.
+var errNotConnected = domain.Classify(domain.ErrUnavailable,
+	errors.New("instagram session is not connected"))
 
 const (
 	// maxJSONBody bounds the control routes. Generous relative to a message
@@ -217,7 +221,7 @@ func (b *bridge) handleSend(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	res, err := sendText(r.Context(), cli, thread.Short, req.Text, req.Mentions, req.ReplyTo)
+	res, err := sendText(r.Context(), cli, thread.Short.String(), req.Text, req.Mentions, req.ReplyTo)
 	if err != nil {
 		b.failSend(r.Context(), w, "send", req.RoomID, err)
 		return
@@ -271,14 +275,9 @@ func (b *bridge) handleSendMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// BOTH legs of /send-media take the short id, as one int64 so they cannot
-	// disagree. resolveRoom has already proved it parses, so this cannot fail;
-	// the error is still checked rather than dropped, because a silent 0 here
-	// would upload against /direct/t/0/.
-	shortID, err := strconv.ParseInt(thread.Short, 10, 64)
-	if err != nil || shortID <= 0 {
-		badRequest(w, "room_id must be a decimal thread_fbid")
-		return
-	}
+	// disagree. It is a parsed domain.ThreadFBID, so it cannot be 0 and cannot
+	// upload against /direct/t/0/.
+	shortID := thread.Short.Int64()
 	media := &httpclient.MercuryUploadMedia{
 		Filename:    orDefault(req.Filename, "upload.bin"),
 		MimeType:    orDefault(req.Mimetype, "application/octet-stream"),
@@ -334,7 +333,7 @@ func (b *bridge) handleReact(w http.ResponseWriter, r *http.Request) {
 	// (measured 2026-09-22), where a SEND was measured arriving either way.
 	// The long id is still resolved first: that lookup is what validates the
 	// room exists and what warms the reverse cache /typing reads.
-	err := sendReaction(r.Context(), cli, thread.Short,
+	err := sendReaction(r.Context(), cli, thread.Short.String(),
 		req.MessageID, req.Emoji, req.Remove, b.ownFBID())
 	if errors.Is(err, errReactionUnconfirmed) {
 		// 200 with the confirmation withheld, not a failure. The mutation was
@@ -385,7 +384,7 @@ func (b *bridge) handleTyping(w http.ResponseWriter, r *http.Request) {
 	// SHORT, following upstream (handlematrix.go:484). Typing arrival was
 	// never measured in either id space — there is no read-back for typing —
 	// so this is followed, not proven.
-	if err := cli.SetTyping(r.Context(), thread.Short, req.Typing); err != nil {
+	if err := cli.SetTyping(r.Context(), thread.Short.String(), req.Typing); err != nil {
 		b.failSend(r.Context(), w, "typing", req.RoomID, err)
 		return
 	}
@@ -417,7 +416,7 @@ func (b *bridge) handleUnsend(w http.ResponseWriter, r *http.Request) {
 	// LONG: the one verb that is genuinely long on both sides (upstream
 	// handlematrix.go:292 passes `meta.IGThreadID`), and the one every probe
 	// cleanup ran this way.
-	confirmed, err := unsendMessage(r.Context(), cli, thread.Long, req.MessageID)
+	confirmed, err := unsendMessage(r.Context(), cli, thread.Long.String(), req.MessageID)
 	if err != nil {
 		b.failSend(r.Context(), w, "unsend", req.RoomID, err)
 		return
@@ -465,18 +464,22 @@ func (b *bridge) ready(w http.ResponseWriter) (igClient, bool) {
 // thread ids. Which one a given verb takes is a per-verb fact, not a rule —
 // see the table at the top of outbound.go. The long id never crosses the HTTP
 // boundary in either direction.
-func (b *bridge) resolveRoom(w http.ResponseWriter, r *http.Request, roomID string) (threadRef, bool) {
-	thread, err := b.threads.resolve(r.Context(), roomID)
+func (b *bridge) resolveRoom(w http.ResponseWriter, r *http.Request, roomID string) (domain.ThreadRef, bool) {
+	// The room key is parsed into its value object HERE, at the edge: a value
+	// that is not a short thread id (the long one included) is the caller's
+	// 400 and never becomes a route lookup against Instagram.
+	short, err := domain.ParseThreadFBID(roomID)
+	if err != nil {
+		badRequest(w, err.Error())
+		return domain.ThreadRef{}, false
+	}
+	thread, err := b.threads.resolve(r.Context(), short)
 	if err == nil {
 		return thread, true
 	}
-	if errors.Is(err, errBadRoomID) {
-		badRequest(w, err.Error())
-		return threadRef{}, false
-	}
 	if errors.Is(err, errNotConnected) {
 		unavailable(w, err.Error())
-		return threadRef{}, false
+		return domain.ThreadRef{}, false
 	}
 	// A lookup that failed against Instagram is mapped through the same
 	// classifier as a send, so a checkpoint discovered here reads 409 and not
@@ -484,7 +487,7 @@ func (b *bridge) resolveRoom(w http.ResponseWriter, r *http.Request, roomID stri
 	writeJSON(w, statusForError(err), map[string]any{
 		"ok": false, "error": "thread_lookup_failed", "detail": err.Error(),
 	})
-	return threadRef{}, false
+	return domain.ThreadRef{}, false
 }
 
 func (b *bridge) failSend(ctx context.Context, w http.ResponseWriter, route, roomID string, err error) {
@@ -500,13 +503,18 @@ func (b *bridge) failSend(ctx context.Context, w http.ResponseWriter, route, roo
 // bridge cannot classify becomes 500, never 200 and never 503. 503 is a claim
 // that retrying will work, and making that claim on an unknown failure is how
 // a permanent error turns into an infinite retry loop.
+//
+// The domain kinds are read first; the library's own challenge errors are
+// still matched here directly until the gateway classifies them (17 P7).
 func statusForError(err error) int {
 	switch {
 	case err == nil:
 		return http.StatusOK
-	case errors.Is(err, errBadRoomID):
+	case errors.Is(err, domain.ErrInvalidID):
 		return http.StatusBadRequest
-	case errors.Is(err, errNotConnected):
+	case errors.Is(err, domain.ErrNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, domain.ErrUnavailable):
 		return http.StatusServiceUnavailable
 	case errors.Is(err, httpclient.ErrChallengeRequired),
 		errors.Is(err, httpclient.ErrCheckpointRequired),
