@@ -785,6 +785,7 @@ class EngagementPipeline:
                     runner=self._runner, doctrine=doctrine, tools=surface.tools, pre_fill=pre_fill,
                     guard=handle.guard, tool_call_log=handle.tool_call_log,
                     reasoning_watch=handle.reasoning_watch,
+                    tool_hooks=surface.hooks,
                     tag_message=tag_message, limits=surface.limits(self._limits), ctx=ctx,
                     timeout_seconds=self._timeout_seconds, metrics=self._metrics,
                     # This pipeline IS the tag path; the NAME stays at the

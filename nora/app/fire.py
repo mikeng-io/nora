@@ -2011,6 +2011,7 @@ class FirePath:
 
             failure, stop_reason, final_text = await self._invoke(
                 doctrine=doctrine, tools=surface.tools, limits=surface.limits(self._limits),
+                tool_hooks=surface.hooks,
                 pre_fill=pre_fill,
                 guard=handle.guard, tool_call_log=handle.tool_call_log,
                 reasoning_watch=handle.reasoning_watch,
@@ -2162,6 +2163,7 @@ class FirePath:
         doctrine: Any,
         tools: list[Any],
         limits: dict[str, Any],
+        tool_hooks: tuple[Any, ...],
         pre_fill: list[dict[str, Any]],
         guard: ReplyGuard,
         tool_call_log: Any = None,
@@ -2243,6 +2245,7 @@ class FirePath:
                 runner.invoke(
                     doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
                     tool_call_log=tool_call_log, reasoning_watch=reasoning_watch,
+                    tool_hooks=tool_hooks,
                     tag_message=tag_message, limits=limits, ctx=ctx,
                     trace_attributes=trace_attributes(ctx, doctrine),
                 ),

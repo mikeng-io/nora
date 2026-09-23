@@ -130,6 +130,7 @@ class ToolSurface:
         shelf: ToolShelf,
         admitted: Iterable[str],
         render: Callable[[Iterable[str], frozenset[str]], list[str]],
+        hooks: Iterable[Any] = (),
     ) -> None:
         self.scope = scope
         self.tools = list(tools)
@@ -137,6 +138,10 @@ class ToolSurface:
         self.shelf = shelf
         self.admitted = frozenset(admitted)
         self._render = render
+        #: Hook providers the agent this surface is handed to must register —
+        #: `ShelfLoader` when anything is shelved, nothing otherwise. Opaque
+        #: here (this module imports no `strands`); built by the registry.
+        self.hooks = tuple(hooks)
 
     @cached_property
     def catalogue(self) -> str:

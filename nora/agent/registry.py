@@ -66,6 +66,7 @@ from .mcp import McpToolGroup
 from .ports import ToolSpec, adapt
 from .relay import Relay
 from .room import Room
+from .shelf_hook import ShelfLoader
 from .surface import ToolScope, ToolShelf, ToolSurface
 from .tools import (
     HOT_TOOLS,
@@ -1026,4 +1027,8 @@ class ToolRegistry:
             shelf=shelf,
             admitted=(spec.name for spec in admitted),
             render=lambda names, hot: self._digest_lines(names, hot=hot),
+            # A shelved tool called by name loads on the spot (`ShelfLoader`'s
+            # docstring has the measurement): without it, every direct call
+            # cost a failed round trip and a cache miss.
+            hooks=(ShelfLoader(shelf),) if shelf else (),
         )

@@ -239,7 +239,12 @@ class _LoadThenCall(Model):
             for block in message.get("content", []):
                 if "toolResult" in block:
                     text = block["toolResult"]["content"][0]["text"]
-                    self.results.append(json.loads(text))
+                    try:
+                        self.results.append(json.loads(text))
+                    except ValueError:
+                        # Strands' own error results are plain text
+                        # («Unknown tool: …»), not a tool's JSON.
+                        self.results.append({"text": text})
         step = self._SCRIPT[len(self.offered) - 1]
         yield {"messageStart": {"role": "assistant"}}
         if step is None:
@@ -290,3 +295,53 @@ def test_a_loaded_schema_is_never_a_lookup_for_r97():
     lookups = ToolRegistry().lookup_tools()
     assert LOADER_TOOL not in lookups
     assert "web_search" in lookups  # positive control: the derivation still runs
+
+
+class _CallDirectly(_LoadThenCall):
+    """Calls a SHELVED tool straight from its catalogue line, never loading it
+    — what arm B measured her doing on most deferred turns."""
+
+    _SCRIPT: Sequence[tuple[str, dict] | None] = (
+        ("calculate", {"expression": "6*7"}),
+        None,
+    )
+
+
+async def test_a_shelved_tool_called_by_name_runs_on_the_first_call():
+    """The measured failure (design/tool-catalogue arm B): she called
+    `calculate` from its catalogue line without loading it, Strands answered
+    «Unknown tool», and she paid a round trip to load and retry. `ShelfLoader`
+    registers it at the call. Drop `surface.hooks` from the agent and this
+    turn's first result is an error instead of 42."""
+    surface = _surface(defer=True)
+    model = _CallDirectly()
+    agent = Agent(model=model, tools=surface.tools, hooks=list(surface.hooks),
+                  callback_handler=None, load_tools_from_directory=False)
+
+    await agent.invoke_async("what is six times seven")
+
+    assert "calculate" not in model.offered[0]
+    assert "calculate" in model.offered[1]   # registered for the rest of the turn
+    assert model.results and model.results[0].get("result") == "42"
+
+
+def test_nothing_shelved_means_no_hook():
+    assert _surface().hooks == ()
+    assert len(_surface(defer=True).hooks) == 1
+
+
+async def test_a_name_off_the_shelf_is_left_unknown():
+    """Only THIS turn's shelf: a tool the scope did not admit (music, on a
+    Signal room) stays «Unknown tool» — the hook cannot widen the scope."""
+    surface = _surface(platform="signal", defer=True)
+    assert "play_music" not in surface.shelf.names()
+
+    class _CallMusic(_LoadThenCall):
+        _SCRIPT = (("play_music", {"query": "x"}), None)
+
+    model = _CallMusic()
+    agent = Agent(model=model, tools=surface.tools, hooks=list(surface.hooks),
+                  callback_handler=None, load_tools_from_directory=False)
+    await agent.invoke_async("play something")
+    assert "play_music" not in model.offered[1]
+    assert any("Unknown tool" in r.get("text", "") for r in model.results)
