@@ -115,6 +115,7 @@ func TestTheSessionGateComesBeforeTheIDParse(t *testing.T) {
 		_, checks["account"] = svc.ReadAccount(t.Context(), "nka_bpumvg")
 		_, checks["story"] = svc.ReadStory(t.Context(), "nka_bpumvg")
 		_, checks["search"] = svc.SearchAccounts(t.Context(), "someone")
+		_, checks["lookup_by_username"] = svc.LookupAccountByUsername(t.Context(), mustUsername(t, "someone"))
 		_, checks["post"] = svc.ReadPost(t.Context(), mustShortcode(t, "CmiJBr2LAAB"))
 		checks["typing"] = svc.Typing(t.Context(), "not-a-thread", true)
 		for name, err := range checks {
@@ -235,6 +236,152 @@ func mustShortcode(t *testing.T, s string) domain.Shortcode {
 		t.Fatal(err)
 	}
 	return sc
+}
+
+func mustUsername(t *testing.T, s string) domain.Username {
+	t.Helper()
+	u, err := domain.ParseUsername(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u
+}
+
+// LookupAccountByUsername calls the SAME port SearchAccounts does (the
+// design's single search mechanism, 17 P9), addressed with the username's
+// own text.
+func TestLookupAccountByUsernameCallsSearchAccounts(t *testing.T) {
+	p := &fakePorts{searchHits: []domain.AccountSummary{{IGID: "1", Username: "target_user"}}}
+	_, err := service(ready(), p).LookupAccountByUsername(t.Context(), mustUsername(t, "target_user"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.searches) != 1 || p.searches[0] != "target_user" {
+		t.Fatalf("port was addressed with %v, want [target_user]", p.searches)
+	}
+}
+
+// The P9 case: the exact match is not the first hit, and items[0] is never
+// taken (17 §P9: "one exact match was not the first result").
+func TestLookupAccountByUsernameNeverTakesItemZero(t *testing.T) {
+	p := &fakePorts{searchHits: []domain.AccountSummary{
+		{IGID: "1", Username: "decoy_one"},
+		{IGID: "2", Username: "decoy_two"},
+		{IGID: "3", Username: "target_user"},
+	}}
+	matches, err := service(ready(), p).LookupAccountByUsername(t.Context(), mustUsername(t, "target_user"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 || matches[0].IGID != "3" {
+		t.Fatalf("matches = %+v, want exactly the exact match at rank 2", matches)
+	}
+}
+
+// The exact match at rank 0 works too.
+func TestLookupAccountByUsernameMatchAtRankZero(t *testing.T) {
+	p := &fakePorts{searchHits: []domain.AccountSummary{
+		{IGID: "1", Username: "target_user"},
+		{IGID: "2", Username: "decoy"},
+	}}
+	matches, err := service(ready(), p).LookupAccountByUsername(t.Context(), mustUsername(t, "target_user"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 || matches[0].IGID != "1" {
+		t.Fatalf("matches = %+v, want the exact match", matches)
+	}
+}
+
+// A case difference between the requested username and the hit still counts
+// as an exact match.
+func TestLookupAccountByUsernameIsCaseInsensitive(t *testing.T) {
+	p := &fakePorts{searchHits: []domain.AccountSummary{{IGID: "1", Username: "Target_User"}}}
+	matches, err := service(ready(), p).LookupAccountByUsername(t.Context(), mustUsername(t, "target_user"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 || matches[0].Username != "Target_User" {
+		t.Fatalf("matches = %+v, want the case-different exact match", matches)
+	}
+}
+
+// No hit equals the input exactly: an empty, non-error answer. Fuzzy hits
+// that merely contain the username do not count.
+func TestLookupAccountByUsernameNoExactMatchIsEmpty(t *testing.T) {
+	p := &fakePorts{searchHits: []domain.AccountSummary{
+		{IGID: "1", Username: "target_userx"},
+		{IGID: "2", Username: "xtarget_user"},
+	}}
+	matches, err := service(ready(), p).LookupAccountByUsername(t.Context(), mustUsername(t, "target_user"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Errorf("matches = %+v, want none", matches)
+	}
+}
+
+// A hit spelled with U+212A KELVIN SIGN, which Unicode case-folds to 'k',
+// must never match an ASCII "k" username: strings.EqualFold would call it a
+// match, and that is exactly the identity spoof LookupAccountByUsername's
+// pattern check exists to rule out (see its doc comment). The hit is not
+// pattern-conforming, so it is skipped entirely, not merely "not equal".
+func TestLookupAccountByUsernameRejectsKelvinSignHomoglyph(t *testing.T) {
+	const kelvinSign = "K" // KELVIN SIGN: strings.EqualFold("K", "K") is true
+	p := &fakePorts{searchHits: []domain.AccountSummary{
+		{IGID: "1", Username: kelvinSign + "elvin_user"},
+	}}
+	matches, err := service(ready(), p).LookupAccountByUsername(t.Context(), mustUsername(t, "kelvin_user"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("matches = %+v, want none: a Kelvin-sign homoglyph must never count as an exact match", matches)
+	}
+}
+
+// A hit whose username does not itself parse as a domain.Username (here: a
+// space, outside the pattern) is skipped rather than compared at all, and a
+// genuine exact match sitting next to it is still returned.
+func TestLookupAccountByUsernameSkipsANonPatternHitButKeepsTheValidOne(t *testing.T) {
+	p := &fakePorts{searchHits: []domain.AccountSummary{
+		{IGID: "1", Username: "target user"}, // a space: not [A-Za-z0-9._]
+		{IGID: "2", Username: "target_user"},
+	}}
+	matches, err := service(ready(), p).LookupAccountByUsername(t.Context(), mustUsername(t, "target_user"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 || matches[0].IGID != "2" {
+		t.Fatalf("matches = %+v, want exactly the pattern-conforming exact match", matches)
+	}
+}
+
+// Two exact, case-insensitive matches cannot happen for a real username, so
+// it is ErrUpstreamRejected — the transport maps that to 502 — never a
+// silent items[0] pick.
+func TestLookupAccountByUsernameTwoExactMatchesIsUpstreamRejected(t *testing.T) {
+	p := &fakePorts{searchHits: []domain.AccountSummary{
+		{IGID: "1", Username: "target_user"},
+		{IGID: "2", Username: "Target_User"},
+	}}
+	_, err := service(ready(), p).LookupAccountByUsername(t.Context(), mustUsername(t, "target_user"))
+	if !errors.Is(err, domain.ErrUpstreamRejected) {
+		t.Fatalf("err = %v, want ErrUpstreamRejected", err)
+	}
+}
+
+// A session being rebuilt is retryable, and nothing reaches the port.
+func TestLookupAccountByUsernameWhileRebuildingIsUnavailable(t *testing.T) {
+	p := &fakePorts{}
+	svc := service(&fakeSession{snap: domain.Session{State: domain.StateAuthenticated}}, p)
+	if _, err := svc.LookupAccountByUsername(t.Context(), mustUsername(t, "target_user")); !errors.Is(err, ErrRebuilding) {
+		t.Errorf("err = %v, want ErrRebuilding", err)
+	}
+	if len(p.searches) != 0 {
+		t.Error("a lookup reached the port with no client")
+	}
 }
 
 // ReadPost hands the port the SAME parsed shortcode it was given, once, and
