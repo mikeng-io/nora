@@ -1,0 +1,100 @@
+[
+  {
+    "name": "story goes back to the old verb-shaped route",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "status, payload = await self._get(f\"/accounts/{igid}/story\")",
+    "new": "status, payload = await self._get(\"/social/story\")",
+    "target": "tests/unit/test_instagram_social_client.py::test_a_story_is_a_get_on_the_account_story_resource"
+  },
+  {
+    "name": "story reads a falsy found as a miss",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "        if found is False:\n",
+    "new": "        if not found:\n",
+    "target": "tests/unit/test_instagram_social_client.py::test_a_story_body_without_a_boolean_found_is_unavailable"
+  },
+  {
+    "name": "story maps a 404 to nothing_found (the route has no such-account path)",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "        status, payload = await self._get(f\"/accounts/{igid}/story\")\n",
+    "new": "        status, payload = await self._get(f\"/accounts/{igid}/story\")\n        if status == 404:\n            return dict(NOTHING_FOUND)\n",
+    "target": "tests/unit/test_instagram_social_client.py::test_story_non_200_is_unavailable_never_a_miss"
+  },
+  {
+    "name": "profile 404 (errNoProfile) is not a miss",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "            if isinstance(payload, dict) and payload.get(\"ok\") is False:\n                return dict(NOTHING_FOUND)",
+    "new": "            if isinstance(payload, dict) and payload.get(\"ok\") is False:\n                return dict(UNAVAILABLE)",
+    "target": "tests/unit/test_instagram_social_client.py::test_the_account_routes_404_is_nothing_found"
+  },
+  {
+    "name": "any 404 on the account route reads as no such account",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "            if isinstance(payload, dict) and payload.get(\"ok\") is False:\n",
+    "new": "            if True:\n",
+    "target": "tests/unit/test_instagram_social_client.py::test_a_404_that_is_not_the_handlers_is_unavailable"
+  },
+  {
+    "name": "a non-decimal target is put in the URL path",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "        if not _IGID_RE.fullmatch(igid):\n",
+    "new": "        if not igid:\n",
+    "target": "tests/unit/test_instagram_social_client.py::test_a_target_that_is_not_an_igid_never_reaches_the_bridge"
+  },
+  {
+    "name": "posts joins the served set",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "    (\"instagram\", \"profile\"),\n})",
+    "new": "    (\"instagram\", \"profile\"),\n    (\"instagram\", \"posts\"),\n})",
+    "target": "tests/unit/test_instagram_social_client.py::test_posts_is_unserved_and_never_reaches_the_bridge"
+  },
+  {
+    "name": "expires_at read from a key the bridge never sends",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "expires_at = _as_int(payload.get(\"expiring_at\"))",
+    "new": "expires_at = _as_int(payload.get(\"expires_at\"))",
+    "target": "tests/unit/test_instagram_social_client.py::test_the_reels_expiring_at_rides_the_result_as_expires_at"
+  },
+  {
+    "name": "an unread bio is reported as an empty one",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "        lines.append(\n            \"Private/public, follower counts, whether they follow Nora, and \"\n            \"the bio could not be read just now.\"\n        )",
+    "new": "        lines.append(\"Bio: (none)\")",
+    "target": "tests/unit/test_instagram_social_client.py::test_social_unavailable_says_which_half_is_missing"
+  },
+  {
+    "name": "the profile renders the igid",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "    head = f\"@{username}\"\n",
+    "new": "    head = f\"@{username} [{body.get('igid')}]\"\n",
+    "target": "tests/unit/test_instagram_social_client.py::test_a_profile_never_renders_an_id_or_the_unstable_extra"
+  },
+  {
+    "name": "bridge calls stop carrying trace context",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "session.get(f\"{self._base_url}{path}\", headers=propagation_headers())",
+    "new": "session.get(f\"{self._base_url}{path}\", headers={})",
+    "target": "tests/unit/test_instagram_trace_propagation.py::test_a_social_read_carries_the_turns_trace"
+  },
+  {
+    "name": "the bridge's caption rides a story item",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "            \"url\": url,\n        }",
+    "new": "            \"url\": url,\n            \"caption\": row.get(\"caption\"),\n        }",
+    "target": "tests/unit/test_instagram_social_client.py::test_the_bridges_caption_and_alt_text_never_reach_the_result"
+  },
+  {
+    "name": "the profile render is not clamped",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "text, truncated = clamp_chars(rendered, self._content_max_chars)",
+    "new": "text, truncated = rendered, False",
+    "target": "tests/unit/test_instagram_social_client.py::test_the_profile_render_is_clamped"
+  },
+  {
+    "name": "the profile render is not wrapped as untrusted",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "\"text\": wrap_outside_text(\"social_post\", \"instagram profile\", text),",
+    "new": "\"text\": text,",
+    "target": "tests/unit/test_instagram_social_client.py::test_a_profile_renders_the_curated_fields"
+  }
+]
