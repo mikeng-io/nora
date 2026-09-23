@@ -236,3 +236,149 @@ def test_the_opening_paragraph_is_an_l1(tool: str, doc: str) -> None:
         f"(ceiling {L1_LINE_CEILING}). Split it: L1 first, the rest after a "
         "blank line."
     )
+
+
+# ---- ADR 0015 §3 / §6 (DEC-197): level, ceiling, language, punctuation --------
+#
+# Counted over the description Strands SENDS (`ToolRegistry._descriptions()`:
+# the docstring minus `Args:`), not the AST docstring the tests above read:
+# that is the text every call pays for.
+
+#: ADR 0015 §3's ceilings, cl100k tokens over the sent description. Starting
+#: values: each moves only with a measurement recorded beside it.
+LEVEL_CEILINGS = {1: 80, 2: 160, 3: 320}
+
+#: The tools not yet rewritten to ADR 0015. It only SHRINKS: it must stay a
+#: subset of the digest-pinned 2026-09-24 name snapshot, so a tool added after
+#: the ADR can never be exempted here. A rewrite batch removes its tools in the
+#: same commit that rewrites them.
+_NOT_YET_REWRITTEN = frozenset({
+    "about", "ask_memory", "calculate", "cancel_event", "cancel_reminder",
+    "create_event", "find_parking", "generate_image", "group_members",
+    "list_events", "list_reminders", "load_tools", "load_transcript",
+    "lookup_person", "make_artifact", "media_fetch", "media_search",
+    "media_send", "music_status", "note_create", "note_read", "note_search",
+    "note_update", "now", "online_now", "parking_status", "place_info",
+    "play_music", "recall_lookups", "remember", "remind", "reverse_geocode",
+    "route", "rsvp_event", "saved_places", "search_gifs", "search_memory",
+    "search_memory_workspace", "send_gif", "send_reply", "send_to",
+    "set_music_volume", "skills", "skip_music", "social_fetch", "stop_music",
+    "suggest_venue", "top_music", "transit", "update_event", "version",
+    "weather", "web_fetch", "web_search", "where_been", "where_is", "who_said",
+})
+
+#: A run of CJK, kana or hangul. ADR 0015 §3's unit: a distinct maximal run,
+#: counted once however often it repeats. Punctuation such as 「」 separates runs.
+_NON_LATIN_RUN = re.compile(r"[㐀-䶿一-鿿぀-ヿ가-힯]+")
+_DASHES = ("—", "–")  # em dash, en dash
+
+
+def _sent_descriptions() -> dict[str, str]:
+    from nora.agent.registry import ToolRegistry
+
+    return dict(ToolRegistry()._descriptions())
+
+
+def _rewritten() -> list[str]:
+    from nora.agent.tools import NATIVE_TOOLS
+
+    return sorted(n for n in NATIVE_TOOLS if n not in _NOT_YET_REWRITTEN)
+
+
+def test_the_allowlist_only_shrinks() -> None:
+    from tests.architecture.test_tool_names import _SNAPSHOT_2026_09_24
+
+    extra = sorted(_NOT_YET_REWRITTEN - _SNAPSHOT_2026_09_24)
+    assert not extra, (
+        f"{extra} added to _NOT_YET_REWRITTEN: a tool added after ADR 0015 "
+        "meets it from its first commit and is never exempted"
+    )
+
+
+def test_every_rewritten_tool_declares_a_level() -> None:
+    from nora.agent.tools import NATIVE_TOOLS
+
+    bad = {n: NATIVE_TOOLS[n].level for n in _rewritten()
+           if NATIVE_TOOLS[n].level not in LEVEL_CEILINGS}
+    assert not bad, f"declare level=1|2|3 on NativeTool (ADR 0015 §3): {bad}"
+
+
+def test_every_declared_level_is_on_the_ladder() -> None:
+    from nora.agent.tools import NATIVE_TOOLS
+
+    bad = {n: s.level for n, s in NATIVE_TOOLS.items()
+           if s.level is not None and s.level not in LEVEL_CEILINGS}
+    assert not bad, f"level must be one of {sorted(LEVEL_CEILINGS)}: {bad}"
+
+
+def test_a_rewritten_description_fits_its_level() -> None:
+    import tiktoken
+
+    from nora.agent.tools import NATIVE_TOOLS
+
+    enc = tiktoken.get_encoding("cl100k_base")
+    sent = _sent_descriptions()
+    over = {}
+    for name in _rewritten():
+        level = NATIVE_TOOLS[name].level
+        if name not in sent or level not in LEVEL_CEILINGS:
+            continue
+        tokens = len(enc.encode(sent[name]))
+        if tokens > LEVEL_CEILINGS[level]:
+            over[name] = f"{tokens} > {LEVEL_CEILINGS[level]} (level {level})"
+    assert not over, f"over the level ceiling (ADR 0015 §3): {over}"
+
+
+def test_no_dash_in_a_rewritten_description() -> None:
+    sent = _sent_descriptions()
+    bad = {n: sum(sent[n].count(d) for d in _DASHES)
+           for n in _rewritten() if n in sent and any(d in sent[n] for d in _DASHES)}
+    assert not bad, (
+        f"em or en dashes in the description (ADR 0015 §3), use a comma, full "
+        f"stop, colon or parentheses: {bad}"
+    )
+
+
+def test_at_most_one_non_english_string_in_a_rewritten_description() -> None:
+    sent = _sent_descriptions()
+    bad = {}
+    for name in _rewritten():
+        runs = set(_NON_LATIN_RUN.findall(sent.get(name, "")))
+        if len(runs) > 1:
+            bad[name] = sorted(runs)
+    assert not bad, (
+        f"more than one non-English string (ADR 0015 §3: keep only the trigger "
+        f"the tool fires on; examples go): {bad}"
+    )
+
+
+_SECTION_HEADERS = (
+    "Args:", "Returns:", "Raises:", "Yields:", "Examples:", "Example:", "Note:", "Notes:",
+)
+
+
+@pytest.mark.parametrize(
+    ("tool", "doc"),
+    _model_facing_docstrings(),
+    ids=[t for t, _ in _model_facing_docstrings()],
+)
+def test_no_text_after_args_is_silently_dropped(tool: str, doc: str) -> None:
+    """Strands drops the `Args:` section AND any unindented text after it that
+    is not a recognised section header: prose placed below the arguments never
+    reaches the model, with no error. Everything she must read goes above
+    `Args:`."""
+    import inspect
+
+    lines = inspect.cleandoc(doc).splitlines()
+    try:
+        start = next(i for i, ln in enumerate(lines) if ln.strip() == "Args:")
+    except StopIteration:
+        return
+    for ln in lines[start + 1:]:
+        if not ln.strip() or ln.startswith((" ", "\t")):
+            continue
+        assert ln.strip().startswith(_SECTION_HEADERS), (
+            f"{tool}: {ln.strip()[:60]!r} sits after Args: and is dropped by "
+            "Strands before the model sees it. Move it above Args:."
+        )
+        break

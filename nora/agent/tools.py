@@ -391,7 +391,12 @@ class NativeTool:
     # the second definition CLAUDE.md's label rule exists to prevent. See
     # `OUTPUT_CONTRACTS` / `OUTPUT_STATUSES` there.
     output_contract: str | None = None
-    # The description's length level, 1-3; `None` means not yet declared (ADR 0015 §3).
+    # `level` (ADR 0015 §3, DEC-197): how much the description may carry. 1 is
+    # what + when + what it returns (80 tokens), 2 adds one behaviour-changing
+    # constraint (160), 3 adds a contract of statuses or refusals she must act
+    # on differently (320), counted over the description Strands sends (the
+    # docstring minus `Args:`). `None` is "not yet declared": the tools not yet
+    # rewritten, on a shrink-only list in `tests/test_tool_surface_policy.py`.
     level: int | None = None
 
 
