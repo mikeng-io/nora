@@ -159,7 +159,14 @@ three layers from one vocabulary table covering every social tool.
 Each item is an existing test that goes red, applied to both tools:
 
 - **Catalogue line = the docstring's first sentence**, ≤40 tokens (cl100k),
-  mean ≤25 across tools, no identical lines. It names Instagram and separates
+  mean ≤25 across tools, no identical lines. Measured against the real
+  renderer: `instagram_read`'s draft is 25 tokens, `instagram_search`'s 12,
+  and the block goes from 1,019 to about 1,056 of its 1,400 ceiling.
+- **The first sentence is also what she calls from.** In the catalogue's
+  deferred arm she often calls a tool straight from its catalogue line,
+  before loading its schema (measured, porgy-58). So the line must name the
+  input the tool takes (a person, a link, a handle; free text), not only the
+  network, and the drafts below do. It names Instagram and separates
   each tool from its confusable siblings (`social_fetch`, `web_fetch`,
   `media_fetch`, and each other). Drafts:
   - `instagram_read`: *"Read Instagram: a person's profile, story or posts, or
@@ -180,6 +187,12 @@ It loses its Instagram rows **in the same PR** that lands `instagram_read`,
 so no Instagram read ever has two tools. Its `platform` enum becomes `{"x"}`
 and its docstring X-only, until `x_read` / `x_search` replace it and it is
 deleted.
+
+**Its first sentence changes in that same PR too.** It currently reads "Read a
+post, profile, or search results from X or Instagram", and it is `social_fetch`'s
+catalogue line. Left as is, it overlaps both new lines: exactly the
+confusable pair the catalogue gates exist to prevent (porgy-58, 2026-09-23).
+It must name X only.
 
 ## Order
 
