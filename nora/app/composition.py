@@ -225,7 +225,7 @@ def _unit_rooms(allowlist: Policy) -> dict[str, tuple[UnitRoom, ...]]:
                 description=conv.description,
                 # The same two facts `origin_rooms` keys `remind`'s refusal on,
                 # so the notes list and the refusal cannot disagree.
-                proactive=conv.proactive, ids=tuple(conv.ids),
+                proactive=conv.proactive, ids=tuple(sorted(conv.ids)),
             ),
         )
     return rooms_by_unit

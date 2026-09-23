@@ -1427,6 +1427,40 @@ async def test_a_roster_index_that_never_answers_is_bounded_and_counted():
         "nora_errors_total", stage="proactive_roster_index", platform="signal") == 1
 
 
+async def test_the_birth_room_mark_reads_policy_as_remind_does(tmp_path):
+    """The `room`/`unprompted` mark is only as true as the composition root's
+    `UnitRoom`: built without `proactive`, every note would read closed; built
+    without `also_ids`, a note born under an alias would read as outside the
+    unit. `origin_rooms` keys `remind`'s refusal on both, so this pins them from
+    `policy.toml` to the rendered prompt."""
+    from nora.app.composition import _unit_rooms
+    from nora.policy import load_policy
+
+    path = tmp_path / "policy.toml"
+    path.write_text(
+        'default = "deny"\n'
+        "[[conversations]]\n"
+        'platform = "signal"\nid = "sig-1"\nalso_ids = ["sig-alias"]\n'
+        f'label = "Friends"\npersons = "*"\nunit = "{WS}"\n'
+        "home_room = true\nproactive = true\n"
+        "[[conversations]]\n"
+        'platform = "discord"\nid = "1/2"\nlabel = "Zone 42"\npersons = "*"\n'
+        f'unit = "{WS}"\n'
+    )
+    rooms = _unit_rooms(load_policy(path))[WS]
+    notes = InMemoryNoteStore()
+    await _note(notes, title="said under an alias", established_in="sig-alias")
+    await _note(notes, title="said in the quiet room", established_in="1/2")
+    adaptor = _adaptor(notes=notes, rooms=rooms)
+
+    text = await adaptor.inputs(key=WS, batch=())
+
+    alias = text.split('title="said under an alias"')[1].split(">")[0]
+    quiet = text.split('title="said in the quiet room"')[1].split(">")[0]
+    assert 'room="Friends"' in alias and "unprompted=" not in alias
+    assert 'room="Zone 42" unprompted="not_allowed"' in quiet
+
+
 async def test_an_unlabelled_room_never_puts_its_id_in_the_proactive_prompt(tmp_path):
     """R-18, from `policy.toml` to the rendered prompt. The composition root
     built `UnitRoom.label` as `conv.label or conv.primary_id`, so an
