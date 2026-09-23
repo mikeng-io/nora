@@ -219,7 +219,8 @@ def build_offline_pipeline(
         debounce=debounce, canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
         ai_peer=cfg.memory.ai_peer,
         context_window=cfg.store.context_window, timeout_seconds=tier.timeout_seconds,
-        limits=limits, metrics=metrics, spawn=background.spawn, llm_state=None,
+        limits=limits, defer_tools=cfg.llm.defer_tools,
+        metrics=metrics, spawn=background.spawn, llm_state=None,
         # Defaults to None: an offline harness has no signal-cli to ask, and
         # `nora.agent.room.Room` reports an absent source as UNAVAILABLE rather
         # than as an empty room — so the three room-scoped tools degrade
@@ -266,7 +267,7 @@ def build_offline_pipeline(
             canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
             ai_peer=cfg.memory.ai_peer,
             context_window=cfg.store.context_window,
-            limits=limits,
+            limits=limits, defer_tools=cfg.llm.defer_tools,
             # `[heartbeat]`, not `[llm]` — the same choice production makes;
             # nobody is waiting on a fire turn.
             timeout_seconds=cfg.heartbeat.timeout_seconds,
