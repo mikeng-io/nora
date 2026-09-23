@@ -104,12 +104,14 @@ option buys nothing after 2026-11-02).
 
 ## 4. Conflicts between the provider and our convention (not resolved here)
 
-1. **Reference order.** The `generate_image` docstring says of the three
-   slots "the first that is set is not special". xAI says the output takes the
-   first image's aspect ratio unless one is set. The docstring is right about
-   the slots as a tool API and wrong about the output; the skill states the
-   provider fact. Recommend the docstring say it; not changed here because the
-   docstring is the tool's own surface and the change is a separate decision.
+1. **Reference order — resolved in review of #410.** The docstring said the
+   first slot "is not special" and the aspect "default 1:1". Observed: the
+   tool builds an `ImageSize` only when `size` or `aspect` is given
+   (defaulting the other), and the adapter sends `aspect_ratio` only then; with
+   neither, no aspect is sent and xAI's own default applies, which for edits is
+   the first image's aspect ratio. So both docstring claims were false for a
+   call with references and no aspect. The docstring now says what happens,
+   pinned by `tests/unit/test_canonical_self_reference.py::test_with_no_size_or_aspect_the_shape_is_left_to_the_provider`.
 2. **`<IMAGE_n>` placeholders.** The adapter appends `<IMAGE_0>…` names to a
    multi-reference prompt, citing docs.x.ai. None of the pages above mentions
    that syntax. Neither confirmed nor refuted; the skill does not mention it.

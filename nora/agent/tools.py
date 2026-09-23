@@ -5556,7 +5556,8 @@ Args:
         Reference photos: pass their marker codes (`a3f2c1` from
         `[image a3f2c1]`) in `reference` (one photo), `reference_2` (a
         second) and `reference_3` (a third) — UP TO 3 PHOTOS in one call,
-        in any order (the first that is set is not special). Multi-photo
+        in any order: no slot is required, but the FIRST photo you pass
+        sets the picture's shape unless you name an `aspect`. Multi-photo
         edits combine subjects, transfer styles, and compose scenes. Each
         photo must ALREADY be in this conversation — you cannot fetch an
         image from elsewhere to edit it; the one exception is your own
@@ -5571,8 +5572,11 @@ Args:
         the prompt — it goes to an outside service.
 
         `size` is one of "small", "medium", "large". `aspect` is "1:1",
-        "16:9", "9:16", "3:2", "2:3" (default 1:1). `quality` is "standard"
-        or "quality" (default provider standard).
+        "16:9", "9:16", "3:2", "2:3". Leave both unset and the shape is the
+        provider's choice (with photos, the first photo's shape); set either
+        one and the other is filled in, `aspect` as 1:1 and `size` as
+        medium. `quality` is "standard" or "quality" (default provider
+        standard).
 
         `status` tells you what happened:
           - `ok` — the image was already sent to this chat as an attachment;

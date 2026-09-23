@@ -51,9 +51,11 @@ class _ResolvingGenerator:
     def __init__(self) -> None:
         self.resolved: list[bytes | None] = []
         self.provider_calls = 0
+        self.sizes: list[object] = []
 
     async def generate(self, *, prompt, reference_images=None, size=None,
                        quality=None, reference_resolver=None) -> ImageResult:
+        self.sizes.append(size)
         if reference_images:
             if reference_resolver is None:
                 return ImageResult(status="unavailable", reason="no_reference_resolver")
@@ -244,3 +246,19 @@ async def test_the_skills_embedded_handle_resolves_to_the_ingested_asset(persons
 
 def test_the_skill_writes_the_handle_as_a_full_sha():
     assert re.fullmatch(r"[0-9a-f]{64}", skill_self_handle(SKILL))
+
+
+async def test_with_no_size_or_aspect_the_shape_is_left_to_the_provider(persons, world):
+    """What the docstring claims about shape, as the tool actually behaves: no
+    `size` and no `aspect` sends no `ImageSize`, so the adapter sends no
+    `aspect_ratio` and xAI's default applies (with references, the first
+    image's shape — docs.x.ai multi-image editing). Naming either fills the
+    other: `size` alone fixes 1:1."""
+    tool = _call(persons, world)
+    await tool(prompt="you", reference=SELF_SHA)
+    await tool(prompt="you", reference=SELF_SHA, size="large")
+    await tool(prompt="you", reference=SELF_SHA, aspect="16:9")
+    unset, size_only, aspect_only = world["gen"].sizes
+    assert unset is None
+    assert (size_only.tier, size_only.aspect_ratio) == ("large", "1:1")
+    assert (aspect_only.tier, aspect_only.aspect_ratio) == ("medium", "16:9")
