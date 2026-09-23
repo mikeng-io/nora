@@ -134,6 +134,21 @@ type IG struct {
 	SearchResults    []*slidetypes.SearchResult
 	SearchResultsSet bool
 	SearchErr        error
+
+	// --- the post read (UNMEASURED; see posts.go) ----------------------------
+	//
+	// MediaIDs records every media id FetchMedia was addressed with, and
+	// MediaShortcodes the referer shortcode beside it, so the shortcode
+	// decode is asserted against what went out.
+	MediaIDs        []string
+	MediaShortcodes []string
+	// MediaResp overrides the answer for ANY id. Unset, the fake answers only
+	// the three synthetic posts below, by media id, and 404s every other id
+	// exactly as the library reports a 404, so a wrong decode fails here the
+	// way it would against Instagram.
+	MediaResp *responses.FetchMediaResponse
+	MediaSet  bool
+	MediaErr  error
 }
 
 // The measured three-person room, as `Users[]` actually returns it: TWO rows,

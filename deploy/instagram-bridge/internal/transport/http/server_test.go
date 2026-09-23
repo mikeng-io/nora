@@ -56,6 +56,9 @@ func (f failingPorts) Story(context.Context, domain.IGID) (domain.Story, error) 
 func (f failingPorts) SearchAccounts(context.Context, string) ([]domain.AccountSummary, error) {
 	return nil, f.err
 }
+func (f failingPorts) Post(context.Context, domain.Shortcode) (domain.Post, error) {
+	return domain.Post{}, f.err
+}
 
 type noEvents struct{}
 

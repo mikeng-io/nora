@@ -29,6 +29,7 @@ type fakePorts struct {
 	unsendOK   bool
 	searchErr  error
 	searchHits []domain.AccountSummary
+	posts      []string
 }
 
 func (f *fakePorts) ResolveThread(_ context.Context, short domain.ThreadFBID) (domain.ThreadRef, error) {
@@ -91,6 +92,11 @@ func (f *fakePorts) SearchAccounts(_ context.Context, query string) ([]domain.Ac
 	return []domain.AccountSummary{{IGID: "221731317", Username: "nka_bpumvg"}}, nil
 }
 
+func (f *fakePorts) Post(_ context.Context, code domain.Shortcode) (domain.Post, error) {
+	f.posts = append(f.posts, code.String())
+	return domain.Post{Shortcode: code.String(), Items: []domain.PostItem{{Kind: "image"}}}, nil
+}
+
 func ready() *fakeSession {
 	return &fakeSession{snap: domain.Session{State: domain.StateAuthenticated, Connected: true, HasClient: true}}
 }
@@ -109,6 +115,7 @@ func TestTheSessionGateComesBeforeTheIDParse(t *testing.T) {
 		_, checks["account"] = svc.ReadAccount(t.Context(), "nka_bpumvg")
 		_, checks["story"] = svc.ReadStory(t.Context(), "nka_bpumvg")
 		_, checks["search"] = svc.SearchAccounts(t.Context(), "someone")
+		_, checks["post"] = svc.ReadPost(t.Context(), mustShortcode(t, "CmiJBr2LAAB"))
 		checks["typing"] = svc.Typing(t.Context(), "not-a-thread", true)
 		for name, err := range checks {
 			var nr *NotReadyError
@@ -119,7 +126,7 @@ func TestTheSessionGateComesBeforeTheIDParse(t *testing.T) {
 				t.Errorf("%s/%s: a refused session is not ErrNeedsHuman", state, name)
 			}
 		}
-		if len(p.resolved)+len(p.accounts)+len(p.stories)+len(p.searches)+p.typed != 0 {
+		if len(p.resolved)+len(p.accounts)+len(p.stories)+len(p.searches)+len(p.posts)+p.typed != 0 {
 			t.Errorf("%s: a port was reached while the session needs a human", state)
 		}
 	}
@@ -218,5 +225,43 @@ func TestSearchAccountsPassesTheQueryThrough(t *testing.T) {
 	}
 	if len(hits) != 1 || hits[0].Username != "nka_bpumvg" {
 		t.Errorf("hits = %+v, want the port's fixed answer passed through unchanged", hits)
+	}
+}
+
+func mustShortcode(t *testing.T, s string) domain.Shortcode {
+	t.Helper()
+	sc, err := domain.ParseShortcode(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sc
+}
+
+// ReadPost hands the port the SAME parsed shortcode it was given, once, and
+// passes the port's answer through unchanged.
+func TestReadPostPassesTheShortcodeThrough(t *testing.T) {
+	p := &fakePorts{}
+	post, err := service(ready(), p).ReadPost(t.Context(), mustShortcode(t, "CmiJBr2LAAB"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.posts) != 1 || p.posts[0] != "CmiJBr2LAAB" {
+		t.Fatalf("port was addressed with %v, want [CmiJBr2LAAB]", p.posts)
+	}
+	if post.Shortcode != "CmiJBr2LAAB" || len(post.Items) != 1 {
+		t.Errorf("post = %+v, want the port's answer unchanged", post)
+	}
+}
+
+// A session being rebuilt is retryable for a post read too, and nothing
+// reaches the port.
+func TestReadPostWhileRebuildingIsUnavailable(t *testing.T) {
+	p := &fakePorts{}
+	svc := service(&fakeSession{snap: domain.Session{State: domain.StateAuthenticated}}, p)
+	if _, err := svc.ReadPost(t.Context(), mustShortcode(t, "CmiJBr2LAAB")); !errors.Is(err, ErrRebuilding) {
+		t.Errorf("err = %v, want ErrRebuilding", err)
+	}
+	if len(p.posts) != 0 {
+		t.Error("a post read reached the port with no client")
 	}
 }
