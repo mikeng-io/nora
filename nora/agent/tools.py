@@ -5358,16 +5358,21 @@ Args:
             f"{_QUERY_FRAME}\n\n{question}" if question else ""
         )
 
-        async def _ask(payload: bytes):
+        async def _ask(payload: bytes, windows: int):
             """One describer call on this modality's model, provider and
             ceiling. Never raises: `VisionClient.describe` turns every failure
             into an unavailable result itself, and this is the belt for those
-            braces (`test_a_tool_never_raises_into_the_agent_loop`)."""
+            braces (`test_a_tool_never_raises_into_the_agent_loop`).
+
+            `windows` is how many windows THIS read covers — the serial factor
+            the per-call timeout divides by (`vision.derive_vision_timeout`).
+            It is passed through, never used to compute a timeout here: that
+            derivation lives in the client and nowhere else."""
             try:
                 return await vision_source.describe(
                     data=payload, media_type=media_type, model=describe_model,
                     provider=describe_provider, max_bytes=describe_ceiling,
-                    prompt=prompt,
+                    prompt=prompt, windows=windows,
                 )
             except Exception:
                 log.exception("media_fetch vision call raised")
@@ -5402,7 +5407,9 @@ Args:
                 # What must NOT degrade with it is the honesty: the coverage is
                 # unknown, and the answer says exactly that.
                 view = await preprocess_media(data_for_vision, media_type)
-                one = await _ask(view)
+                # ONE window — ffmpeg could not cut this clip, so this is a
+                # single view and a single wave, exactly like an image.
+                one = await _ask(view, 1)
                 if one is None or not getattr(one, "available", False):
                     _record_media(
                         metrics, "unavailable",
@@ -5438,7 +5445,8 @@ Args:
             # 1600px view the model can actually use. Custody is untouched;
             # only the transport view shrinks. On any failure the ORIGINAL
             # bytes pass through, so `describe_ceiling` still binds as before.
-            result = await _ask(await preprocess_media(data_for_vision, media_type))
+            # One view, one wave — an image or a voice note is never chunked.
+            result = await _ask(await preprocess_media(data_for_vision, media_type), 1)
             if result is None or not getattr(result, "available", False):
                 _record_media(
                     metrics, "unavailable",

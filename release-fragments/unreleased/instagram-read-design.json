@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "Design: instagram_read and instagram_search, and the per-network naming convention for social tools.",
+  "details": [],
+  "limitations": [],
+  "reason": "Design documents only (design/instagram-adoption/18, and 17 P5 replaced by it). Sets the convention every social network follows, from Nora's existing names: <network>_read takes a subject (person, pasted link, typed handle) and returns profiles, stories and posts, one item or a paged list; <network>_search takes free text; writes would be their own tools. _fetch was rejected: in Nora it means address-keyed retrieval, which 09 rejects. Reads return the text layer and media URLs; seeing the media stays media_fetch. Bridge-only, one resolution/authorization choke point, a GET-only client, the tool catalogue's contract, landing after the catalogue and removing social_fetch's Instagram rows in the same PR."
+}

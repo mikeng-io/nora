@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import inspect
 from pathlib import Path
 
 import pytest
@@ -33,9 +34,20 @@ from openai import AsyncOpenAI
 from nora.infra.vision import (
     DESCRIBE_PROMPTS,
     VISION_LOOP_SHARE,
+    VISION_WINDOW_CONCURRENCY,
     VisionClient,
     derive_vision_timeout,
+    read_video_windows,
+    vision_waves,
 )
+
+# The operator's settled settings (design/media-read-lane/07-timeout-derivation
+# .md §1). Asserted with the REAL numbers rather than round test ones, because
+# the defect being fixed was invisible at any other triple: at loop 360,
+# configured 120 and budget 4 the old formula derived 54 s, and nothing in the
+# suite looked at the configured value to notice it never took effect.
+OPERATOR_LOOP = 360.0
+OPERATOR_CONFIGURED = 120.0
 
 # A 1x1 red PNG — real bytes, so the base64 data URI the client builds is a real
 # one and the server can assert it received an image, not a placeholder.
@@ -130,7 +142,17 @@ async def mimo():
 
 def _client(
     fake: FakeMimo, *, timeout_seconds: float = 5.0, max_bytes: int = 8 * 1024 * 1024,
+    loop_timeout_seconds: float = 300.0,
 ) -> VisionClient:
+    """A client whose LOOP ceiling is wide enough not to bind.
+
+    The client derives its per-call ceiling now (`_call_timeout`) instead of
+    being handed one, so every scenario below must say what loop it is inside.
+    300 s x 0.6 = 180 s over one wave, so `timeout_seconds` is what binds and
+    each test's explicit value — including the 0.3 s the hang test needs — is
+    the one that reaches `wait_for`. The derivation's own arithmetic is asserted
+    directly, not through a live server.
+    """
     return VisionClient(
         client=AsyncOpenAI(base_url=fake.url, api_key="test-key", max_retries=0),
         model="opencode-go/mimo-v2.5",
@@ -138,6 +160,7 @@ def _client(
         reasoning_effort="low",
         max_bytes=max_bytes,
         timeout_seconds=timeout_seconds,
+        loop_timeout_seconds=loop_timeout_seconds,
     )
 
 
@@ -157,28 +180,246 @@ def _client_kimi(
         reasoning_effort="low",
         max_bytes=max_bytes,
         timeout_seconds=timeout_seconds,
+        loop_timeout_seconds=300.0,
     )
 
 
 # ---- the derived timeout is provably shorter than the loop budget -----------
 
-@pytest.mark.parametrize("loop,configured", [(30.0, 20.0), (30.0, 999.0), (10.0, 8.0), (8.0, 20.0)])
-@pytest.mark.parametrize("budget", [1, 2, 3])
-def test_the_budget_of_vision_calls_together_stays_under_the_loop(loop, configured, budget):
-    """The blocker (§2/§6.2) in its AGGREGATE form, which both reviews 2026-08-07
-    demanded: ONE call < loop is not enough — `media_fetch` has budget 2, so two
-    hung calls inside the shared `wait_for` must STILL leave headroom, or the
-    second is the loop's silent `invocation_timeout` (R-5). Dividing the per-call
-    ceiling by the budget guarantees `budget * derived <= loop * VISION_LOOP_SHARE
-    < loop` for ANY configured value; reverting to a per-call fraction (not
-    dividing by budget) turns the budget>=2 cases red, and a 999 s knob still
-    cannot outlive the loop."""
+# `(360.0, 120.0)` and `(120.0, 40.0)` are NOT filler: they are the operator's
+# settled pair and config.example.toml's own pair — the only two points in this
+# file where `configured` is SMALLER than `loop * 0.6 / waves`, i.e. where the
+# `min(configured, per_call)` actually binds. Every other pair here has the
+# derived value below `configured`, so the whole 48-case sweep passed with the
+# `min` deleted outright — the ceiling was untested. (Mutation sweep, 2026-09-23.)
+@pytest.mark.parametrize(
+    "loop,configured",
+    [(30.0, 20.0), (30.0, 999.0), (10.0, 8.0), (8.0, 20.0), (360.0, 120.0), (120.0, 40.0)],
+)
+@pytest.mark.parametrize("windows", [1, 2, 3, 10])
+@pytest.mark.parametrize("concurrency", [1, 2, 4])
+def test_the_waves_of_one_read_together_stay_under_the_loop(
+    loop, configured, windows, concurrency,
+):
+    """The blocker (§2/§6.2) in its WALL-CLOCK form: one call < loop is not
+    enough, because a video is cut into up to ten windows and one `media_fetch`
+    awaits them in sequence. If the waves together outlast the loop's shared
+    `wait_for`, the last of them is the loop's silent `invocation_timeout`
+    (R-5).
+
+    Dividing the per-call ceiling by the SERIAL factor — `ceil(windows /
+    concurrency)` — guarantees `waves * derived <= loop * VISION_LOOP_SHARE <
+    loop` for ANY configured value, so a 999 s knob still cannot outlive the
+    loop. Reverting to a per-call fraction (not dividing at all) turns every
+    `waves >= 2` case red.
+    """
+    waves = vision_waves(windows=windows, concurrency=concurrency)
     derived = derive_vision_timeout(
-        loop_timeout_seconds=loop, configured=configured, budget=budget,
+        loop_timeout_seconds=loop, configured=configured, waves=waves,
     )
     assert derived > 0
-    assert budget * derived <= loop * VISION_LOOP_SHARE
-    assert budget * derived < loop            # headroom for the text turns
+
+    # THE CEILING MUST ACTUALLY BIND when it is the smaller of the two. Without
+    # this the `min(configured, per_call)` could be deleted outright and this
+    # test would stay green: with the parameters above, `per_call` is already
+    # below `configured`, so `derived <= configured` holds either way — the
+    # assertion was checking a coincidence. (Found by the mutation sweep,
+    # 2026-09-23: reverting the `min` left these 48 cases passing.)
+    assert derived == min(configured, loop * VISION_LOOP_SHARE / waves)
+    assert derived <= configured, "the configured value is a CEILING, never a floor"
+    if configured < loop * VISION_LOOP_SHARE / waves:
+        assert derived == configured, (
+            "the configured value is the smaller of the two, so it must be what "
+            "binds — a derived value below it means the ceiling was bypassed"
+        )
+    # `+ 1e-9` is an ULP allowance, not slack in the invariant. The left side
+    # re-associates `loop * SHARE / waves` by multiplying back, and IEEE-754
+    # does not promise that round trip is exact — `8.0 * 0.6` is already
+    # 4.799999999999999822. The bound that a turn actually dies on is the
+    # strict one below, against the LOOP, and it has the whole 0.4 share of
+    # headroom.
+    assert waves * derived <= loop * VISION_LOOP_SHARE + 1e-9
+    assert waves * derived < loop            # headroom for the text turns
+
+
+def test_the_derived_timeout_honours_the_configured_value_at_the_instagram_window_count():
+    """THE REGRESSION THAT WOULD HAVE CAUGHT THE INERT 120.
+
+    An Instagram Reel, Story or Post is 90 seconds or less, so `cut_video`
+    produces ONE window and one invocation runs ONE wave. At the operator's
+    settled settings the configured 120 must therefore be what binds — the
+    whole point of setting it.
+
+    The old formula divided by the `media_fetch` budget (4) and derived
+    `min(120, 360 * 0.6 / 4) = 54 s`, against a measured 90-second-window median
+    of ~41.6 s with 13 of 19 runs over 36 s. Roughly a third of reads degraded
+    on a ceiling that existed to remove exactly that failure, and the suite had
+    nothing that looked at whether `configured` ever took effect
+    (design/media-read-lane/07-timeout-derivation.md §5.2).
+    """
+    derived = derive_vision_timeout(
+        loop_timeout_seconds=OPERATOR_LOOP,
+        configured=OPERATOR_CONFIGURED,
+        waves=vision_waves(windows=1),
+    )
+    assert derived == OPERATOR_CONFIGURED, (
+        f"one window must honour the configured {OPERATOR_CONFIGURED}s in full, "
+        f"got {derived}s — a divisor that is not the serial factor is back"
+    )
+
+
+def test_a_long_clip_tightens_the_per_call_timeout():
+    """The protection the old formula was reaching for, on the right quantity.
+
+    Ten windows is `VIDEO_MAX_CHUNKS` — fifteen minutes of clip — read one after
+    another, so each window gets a tenth of the share and the invocation still
+    fits inside the loop. Honouring the configured 120 for the short case must
+    not mean handing a fifteen-minute video ten x 120 s.
+    """
+    derived = derive_vision_timeout(
+        loop_timeout_seconds=OPERATOR_LOOP,
+        configured=OPERATOR_CONFIGURED,
+        waves=vision_waves(windows=10),
+    )
+    assert derived == pytest.approx(21.6)
+    assert derived < OPERATOR_CONFIGURED
+    assert 10 * derived < OPERATOR_LOOP
+
+
+def test_the_client_derives_one_ceiling_per_wave_count(mimo):
+    """`_call_timeout` is the path the CLIENT actually uses — the pure function
+    above is only half the change.
+
+    Found by the mutation sweep (2026-09-23): reverting `_call_timeout` to
+    always derive for a single window left every other test in this file
+    GREEN, because they all call `derive_vision_timeout`/`vision_waves`
+    directly and never touch the client's own derivation. The wiring that
+    decides `windows=None` vs a real count — the whole reason `describe` grew
+    the parameter — was unguarded.
+
+    Asserts on the client's own ceiling, not on the function's: a `windows=None`
+    read (image, voice note, the text pass) is one wave; a ten-window read is
+    ten, so it gets a tenth of the loop share.
+    """
+    # `_client`'s own default is `timeout_seconds=5.0`, which IS `configured` —
+    # so the operator's pair has to be passed explicitly, or this measures
+    # the helper's default rather than the deployment's numbers.
+    client = _client(
+        mimo, timeout_seconds=OPERATOR_CONFIGURED, loop_timeout_seconds=OPERATOR_LOOP,
+    )
+    assert client._call_timeout(None) == OPERATOR_CONFIGURED, (
+        "a single-view read must honour the configured ceiling"
+    )
+    assert client._call_timeout(1) == client._call_timeout(None), (
+        "one window is one wave — it must derive the same ceiling as a "
+        "single-view read, or a 90 s Instagram clip and a photo disagree"
+    )
+    long_read = client._call_timeout(10)
+    assert long_read < client._call_timeout(1), (
+        "ten windows must derive a tighter per-window ceiling than one"
+    )
+    assert long_read == pytest.approx(OPERATOR_LOOP * 0.6 / 10)
+
+
+def test_the_media_fetch_budget_is_not_an_input_to_the_derivation():
+    """THE INVERTED TEST. Its ancestor —
+    `test_the_budget_of_vision_calls_together_stays_under_the_loop` — asserted
+    `budget * derived < loop` and so PINNED the defect: it proved a property of
+    a quantity that never elapses.
+
+    Four `media_fetch` calls in one turn run CONCURRENTLY. They occupy
+    `max(their durations)` of wall clock, not the sum, so dividing a wall-clock
+    ceiling by their count shrank the result by a factor corresponding to no
+    elapsed time at all. `budget` bounds REFUSALS (DEC-10's count), not seconds.
+
+    So the assertion is now the negative one: the budget is not an input, and no
+    value of it may move the number. There is no `budget=` parameter left to
+    pass — this test states the property the signature enforces, in the terms an
+    operator raising `[llm.budgets] media_fetch` would ask it in.
+    """
+    # The property is enforced by the SIGNATURE, so assert the signature. The
+    # first version of this test was parametrised over `budget` and asserted
+    # `derived == OPERATOR_CONFIGURED` — but its body never read the parameter,
+    # so it ran five IDENTICAL computations and proved nothing five times. A
+    # test that cannot see what it claims to measure is decoration; this reads
+    # the thing that actually changed.
+    params = inspect.signature(derive_vision_timeout).parameters
+    assert "budget" not in params, (
+        "`budget` is back in the derivation's signature — budgeted calls run "
+        "concurrently and occupy max(their durations) of wall clock, never "
+        "their sum, so it must not divide a wall-clock ceiling"
+    )
+    assert set(params) == {"loop_timeout_seconds", "configured", "waves"}, (
+        f"the derivation's inputs changed: {sorted(params)}"
+    )
+
+    derived = derive_vision_timeout(
+        loop_timeout_seconds=OPERATOR_LOOP,
+        configured=OPERATOR_CONFIGURED,
+        waves=vision_waves(windows=1),
+    )
+    assert derived == OPERATOR_CONFIGURED, (
+        f"one window must honour the configured {OPERATOR_CONFIGURED}s, "
+        f"got {derived}s"
+    )
+
+
+def test_the_window_fan_out_and_the_wave_divisor_cannot_drift_apart():
+    """`VISION_WINDOW_CONCURRENCY` is the divisor's companion, and this is what
+    stops the two from separating.
+
+    `waves = ceil(windows / concurrency)`. If `read_video_windows` grows a
+    bounded `asyncio.gather` (design/media-read-lane/01-chunk-parallelism.md)
+    while the constant stays 1, every window gets a ceiling derived for a serial
+    read — ten times tighter than the wall clock actually permits, and every
+    long clip starts timing out. If the constant rises while the loop stays
+    sequential, the invariant this file proves is simply false.
+
+    Read from the SOURCE rather than by timing the calls: the property is «these
+    two agree», which no run of the current sequential code can falsify.
+    """
+    source = inspect.getsource(read_video_windows)
+    # CODE only, comments stripped. `read_video_windows`'s own comment NAMES
+    # `asyncio.gather` — it explains that this guard exists and what moving the
+    # two together would mean — so a substring check reads that explanation as
+    # the bug it warns about. This file's sibling test
+    # (`test_composition_hands_the_client_the_derivations_inputs_not_a_budget`)
+    # hit the identical trap and solved it the identical way; stripping is the
+    # house answer, not a local workaround.
+    code = "\n".join(
+        ln for ln in source.splitlines() if not ln.strip().startswith("#")
+    )
+    # EVERY way a window read can fan out, not just the one this file happens to
+    # name. The first version checked only `"gather" not in code`, and a
+    # `TaskGroup` fan-out walks straight through it: verified by injecting
+    # `async with asyncio.TaskGroup() ... create_task(ask(...))` into
+    # `read_video_windows`, which left this assertion GREEN while genuinely
+    # reading every window at once — the exact defect the test exists to catch.
+    # A guard that only knows one spelling of the thing it guards is decoration.
+    fan_out = ("gather", "TaskGroup", "asyncio.wait", "ensure_future", "create_task")
+    if VISION_WINDOW_CONCURRENCY == 1:
+        found = [k for k in fan_out if k in code]
+        assert not found, (
+            f"read_video_windows fans out ({', '.join(found)}) while "
+            f"VISION_WINDOW_CONCURRENCY is 1 — the per-call ceiling is being "
+            f"derived for a serial read that is no longer serial"
+        )
+    else:
+        # `code`, NOT `source`: both required strings already occur in this
+        # function's own comment block, so grepping the unstripped text passes
+        # against a purely sequential loop — a second form of the same trap the
+        # default branch above was fixed for. (Independent review round 1,
+        # 2026-09-23: executed the committed body with concurrency 1/2/4 against
+        # the committed sequential function and all three passed.)
+        assert "gather" in code, (
+            f"VISION_WINDOW_CONCURRENCY is {VISION_WINDOW_CONCURRENCY} but the "
+            f"window loop is still sequential — the divisor claims headroom the "
+            f"read does not take"
+        )
+        assert "VISION_WINDOW_CONCURRENCY" in code, (
+            "the fan-out limit must BE the constant the divisor uses, not a "
+            "second number that happens to match it today"
+        )
 
 
 # ---- a well-formed call ------------------------------------------------------
@@ -249,59 +490,59 @@ async def test_an_empty_answer_is_a_failure_not_a_blank_description(mimo):
     assert result.reason == "error"
 
 
-def test_the_vision_timeout_divides_by_the_resolved_budget_not_the_table():
-    """R-33's invariant — `budget * per_call < loop_timeout_seconds` — survives
-    a `[llm.budgets]` override.
+def test_composition_hands_the_client_the_derivations_inputs_not_a_budget():
+    """The wiring half of the fix, read from COMPOSITION'S OWN SOURCE.
 
-    `derive_vision_timeout`'s own docstring says the invariant "is one nobody
-    can violate if it is never written down twice". `[llm.budgets]` wrote it
-    twice: `nora/app/composition.py` read `NATIVE_TOOL_BUDGETS["media_fetch"]`
-    straight off the table while R-7's ceiling came from
-    `ToolRegistry.budgets()`, which the new knob moves.
+    This test used to assert the opposite — that composition resolved
+    `media_fetch`'s budget through `ToolRegistry.budgets()` and fed it to
+    `derive_vision_timeout`. That wiring was correct about the SECOND-READER
+    hazard it was written for (R-33: `[llm.budgets]` moving R-7's ceiling while
+    the timeout still divided by the raw table) and wrong about the quantity:
+    the budget counts calls that OVERLAP, and a wall-clock ceiling must not be
+    divided by those at all.
 
-    The failure that produces is the one R-33 exists to prevent, not a wrong
-    number: `media_fetch = 8` permits eight vision calls while the per-call
-    ceiling stays derived from four, so 8 x 18 s = 144 s against a 120 s loop.
-    The turn dies on the loop's `wait_for` and surfaces as a silent
-    `invocation_timeout` — no reply, and nothing that says why.
+    **Its second half is gone rather than adjusted.** It looped over
+    `[llm.budgets]` overrides asserting `budget * per_call < loop` — a property
+    of a quantity that no longer exists, since the budget is not an input to the
+    derivation and `derive_vision_timeout` has no `budget=` parameter to pass.
+    Keeping it would have meant re-deriving the concurrent count somewhere to
+    multiply by, which is the defect wearing a test's clothes.
+    `test_the_media_fetch_budget_does_not_move_the_derived_timeout` states what
+    replaced it. The budget is still resolved through `budgets()` — at
+    `tool_registry`, for the refusal ceiling it genuinely bounds — just not here.
 
-    Reads COMPOSITION'S OWN SOURCE, not a registry this test builds. The first
-    version constructed its own `ToolRegistry(budget_overrides=...)` and
-    computed the invariant from that — which is true by construction and stayed
-    green with the production fix reverted (external review, 2026-08-11). A test
-    that cannot see the wiring it narrates is decoration.
-
-    So: assert that composition resolves the budget through `budgets()` and does
-    NOT read the raw table. That is the actual defect, and it is what changed."""
-    from nora.agent.registry import ToolRegistry
-
+    What composition must do now is hand the client the derivation's INPUTS,
+    because the divisor (the window count) is only known per request: it comes
+    from `cut_video`, which runs a process after this object is built. Reading
+    the source is the only way to see that wiring; a test that built its own
+    client would be true by construction (external review, 2026-08-11)."""
     source = (Path(__file__).resolve().parents[1]
               / "nora" / "app" / "composition.py").read_text()
-    call = source[source.index("derive_vision_timeout("):]
-    call = call[:call.index("),\n    )")]
-    # CODE only. The comment above the argument explains the defect by naming
-    # `NATIVE_TOOL_BUDGETS`, and a substring check would read that as the bug.
+    call = source[source.index("vision_client = VisionClient("):]
+    call = call[:call.index("\n    )")]
+    # CODE only. The comment above the arguments explains the defect by naming
+    # the budget that was removed, and a substring check would read that as the
+    # bug still being wired.
     call = "\n".join(ln for ln in call.splitlines() if not ln.strip().startswith("#"))
 
-    assert "budgets()[\"media_fetch\"]" in call, (
-        "composition no longer resolves media_fetch's budget through "
-        "ToolRegistry.budgets() — an override would move R-7's ceiling while "
-        "the per-call vision timeout kept dividing by the table (R-33)"
+    assert "loop_timeout_seconds=tier.timeout_seconds" in call, (
+        "composition no longer passes the loop ceiling to VisionClient — the "
+        "client cannot derive a per-call timeout it is never told the loop for"
     )
-    assert "NATIVE_TOOL_BUDGETS" not in call
-
-    # And the property itself holds at every budget the knob can produce.
-    loop = 120.0
-    for override in ({}, {"media_fetch": 2}, {"media_fetch": 8}, {"media_fetch": 20}):
-        budget = ToolRegistry(budget_overrides=override).budgets()["media_fetch"]
-        per_call = derive_vision_timeout(
-            loop_timeout_seconds=loop, configured=20.0, budget=budget)
-
-        assert budget * per_call < loop, (
-            f"override {override} gives budget={budget} x {per_call}s = "
-            f"{budget * per_call}s, which exceeds the {loop}s loop — R-33"
-        )
-        assert per_call > 0
+    assert "timeout_seconds=cfg.media.vision_timeout_seconds" in call, (
+        "composition no longer passes the CONFIGURED ceiling — the operator's "
+        "vision_timeout_seconds would stop binding entirely"
+    )
+    assert "derive_vision_timeout" not in call, (
+        "composition is deriving the timeout at construction again — the window "
+        "count is not known until read time, so a number derived here is "
+        "derived from the wrong wave count for every video"
+    )
+    assert "budget" not in call, (
+        "a budget term is back in the vision timeout wiring — budgeted calls "
+        "overlap in time and must not divide a wall-clock ceiling "
+        "(design/media-read-lane/07-timeout-derivation.md §2)"
+    )
 
 
 # ---- the per-modality model override (2026-08-17 spec) ----------------------

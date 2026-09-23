@@ -1657,19 +1657,24 @@ class SocialSubjectIndex(Protocol):
     read answers `None` / `False`, which costs a read that should have
     happened and never grants one that should not have.
 
-    NO IMPLEMENTATION SHIPS YET, and that is the honest state rather than an
-    omission: it needs the `instagram` id kind (`fbid` + `igid`) in
-    `identity.toml`, which lands with the platform adapter
-    (design/instagram-adoption/11 M2) and is that milestone's to define, not
-    this one's. Until then the composition root wires no Instagram backend at
-    all and `social_fetch(instagram, story)` answers `unavailable` — inert,
-    honest, and exactly what `[social] enabled = false` already does for the
-    OpenCLI path.
+    `person_for_igid` is the REVERSE lookup, and it exists for links
+    (design/instagram-adoption/15 §Links): a link names ONE account, so its
+    reach check runs `igid -> person -> is_tier_zero` on the igid the link
+    named. Re-deriving through `igid_for` would turn a friend with two
+    accounts into `ambiguous` although the link said which one. An igid that
+    maps to no person is `None`, which the link path answers `refused`.
+
+    The production implementation is
+    `nora.infra.social.subjects.PersonsSubjectIndex` (`identity.toml` +
+    `policy.toml`); `tests/contract/test_social_subject_index_contract.py`
+    holds it and `nora.testing.FakeSocialSubjectIndex` to the same answers.
     """
 
     async def igid_for(self, *, person_id: str) -> str | None: ...
 
     async def is_tier_zero(self, *, person_id: str) -> bool: ...
+
+    async def person_for_igid(self, *, igid: str) -> str | None: ...
 
 
 @runtime_checkable

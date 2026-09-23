@@ -108,6 +108,13 @@ Two different questions, answered in two different places:
   0), because only a story read is visible to the person read. `profile` and
   `post` need resolution alone.
 
+**Tier 0's scope (operator, 2026-09-23).** "In a room Nora is in" means a
+person listed in the `persons` of at least one configured group room **on any
+network**, not only Instagram rooms: Tier 0 is a property of the person, not
+of where the question was asked. **DMs do not count**: Nora does not accept
+DMs, and they are not on the roadmap, so `[dm] persons` never makes anyone
+Tier 0. A `persons = "*"` room counts for nobody (`nora/infra/social/subjects.py`).
+
 ## Migration, in order
 
 The concrete, PR-by-PR plan is `17-implementation-plan.md`.

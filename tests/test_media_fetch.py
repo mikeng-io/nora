@@ -73,7 +73,8 @@ class CountingVision:
     async def describe(self, *, data: bytes, media_type: str,
                        prompt: str = "", model: str = "",
                        provider: str = "omniroute",
-                       max_bytes: int | None = None) -> VisionResult:
+                       max_bytes: int | None = None,
+                       windows: int | None = None) -> VisionResult:
         self.calls += 1
         self.prompts.append(prompt)
         if not self.available:
@@ -527,7 +528,8 @@ async def test_a_describe_that_raises_is_wrapped_not_propagated(wiring):
     if the vision collaborator raises, the tool lands on `unavailable`."""
     class _Exploding:
         async def describe(self, *, data, media_type, prompt="", model="",
-                           provider="omniroute", max_bytes: int | None = None):
+                           provider="omniroute", max_bytes: int | None = None,
+                           windows: int | None = None):
             raise RuntimeError("vision on fire")
 
     await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA)
@@ -654,7 +656,8 @@ class _RecordingVisionClient:
     async def describe(self, *, data: bytes, media_type: str,
                        prompt: str = "", model: str = "",
                        provider: str = "omniroute",
-                       max_bytes: int | None = None) -> VisionResult:
+                       max_bytes: int | None = None,
+                       windows: int | None = None) -> VisionResult:
         self.calls.append((data, media_type, prompt))
         return self.result
 
@@ -942,7 +945,8 @@ class _WindowVision:
     async def describe(self, *, data: bytes, media_type: str,
                        prompt: str = "", model: str = "",
                        provider: str = "omniroute",
-                       max_bytes: int | None = None) -> VisionResult:
+                       max_bytes: int | None = None,
+                       windows: int | None = None) -> VisionResult:
         self.calls.append(data)
         if self.answers is None:
             return VisionResult(

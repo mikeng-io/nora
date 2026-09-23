@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "Design note: the collector change that keeps tool spans in Jaeger is confirmed live.",
+  "details": [],
+  "limitations": [],
+  "reason": "Docs only. design/instagram-adoption/18 said the collector filter change (drop only chat spans) was not yet confirmed; Jaeger now holds invoke_agent, execute_event_loop_cycle and execute_tool spans from Nora and no chat spans."
+}
