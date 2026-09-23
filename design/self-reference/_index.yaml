@@ -28,6 +28,7 @@ members:
   - 03-reference-rules.md
   - 04-tests-and-files.md
   - 05-visual-identity-spec.md
+  - 06-implementation-plan.md
 edges:
   - {src: 01-appearance-doctrine, dst: 05-visual-identity-spec, rel: depends_on, provenance: asserted}
   - {src: 05-visual-identity-spec, dst: 00-overview, rel: realizes, provenance: asserted}
@@ -39,6 +40,9 @@ edges:
   - {src: 04-tests-and-files, dst: 01-appearance-doctrine, rel: depends_on, provenance: asserted}
   - {src: 04-tests-and-files, dst: 02-canonical-assets, rel: depends_on, provenance: asserted}
   - {src: 04-tests-and-files, dst: 03-reference-rules, rel: depends_on, provenance: asserted}
+  - {src: 06-implementation-plan, dst: 04-tests-and-files, rel: realizes, provenance: asserted}
+  - {src: 06-implementation-plan, dst: 01-appearance-doctrine, rel: depends_on, provenance: asserted}
+  - {src: 06-implementation-plan, dst: 02-canonical-assets, rel: depends_on, provenance: asserted}
 scope:
   v1:
     - "appearance.md doctrine file (kind: identity, order 15) describing Nora's visual form + recognition/conflict rules"
