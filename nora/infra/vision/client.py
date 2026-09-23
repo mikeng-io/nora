@@ -230,7 +230,13 @@ def vision_waves(
     A single-view read — an image, a voice note, the text synthesis, a clip
     ffmpeg could not cut — is one window and therefore exactly one wave.
     """
-    return ceil(max(1, windows) / max(1, concurrency))
+    # INTEGER ceiling division, not `ceil(a / b)`. The float form is off by one
+    # for `windows` above 2**53 (float division loses the low bit: 2**53 + 1
+    # returns 2**53) and raises `OverflowError` for a huge `windows`. Neither is
+    # reachable from video geometry, but the arithmetic should not have a
+    # precision cliff at all when the exact form is the same length.
+    # (Independent review round 1, 2026-09-23.)
+    return -(-max(1, windows) // max(1, concurrency))
 
 
 def derive_vision_timeout(

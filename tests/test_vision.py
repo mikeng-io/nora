@@ -332,19 +332,34 @@ def test_the_window_fan_out_and_the_wave_divisor_cannot_drift_apart():
     code = "\n".join(
         ln for ln in source.splitlines() if not ln.strip().startswith("#")
     )
+    # EVERY way a window read can fan out, not just the one this file happens to
+    # name. The first version checked only `"gather" not in code`, and a
+    # `TaskGroup` fan-out walks straight through it: verified by injecting
+    # `async with asyncio.TaskGroup() ... create_task(ask(...))` into
+    # `read_video_windows`, which left this assertion GREEN while genuinely
+    # reading every window at once — the exact defect the test exists to catch.
+    # A guard that only knows one spelling of the thing it guards is decoration.
+    _FAN_OUT = ("gather", "TaskGroup", "asyncio.wait", "ensure_future", "create_task")
     if VISION_WINDOW_CONCURRENCY == 1:
-        assert "gather" not in code, (
-            "read_video_windows fans out while VISION_WINDOW_CONCURRENCY is 1 — "
-            "the per-call ceiling is being derived for a serial read that is no "
-            "longer serial"
+        found = [k for k in _FAN_OUT if k in code]
+        assert not found, (
+            f"read_video_windows fans out ({', '.join(found)}) while "
+            f"VISION_WINDOW_CONCURRENCY is 1 — the per-call ceiling is being "
+            f"derived for a serial read that is no longer serial"
         )
     else:
-        assert "gather" in source, (
+        # `code`, NOT `source`: both required strings already occur in this
+        # function's own comment block, so grepping the unstripped text passes
+        # against a purely sequential loop — a second form of the same trap the
+        # default branch above was fixed for. (Independent review round 1,
+        # 2026-09-23: executed the committed body with concurrency 1/2/4 against
+        # the committed sequential function and all three passed.)
+        assert "gather" in code, (
             f"VISION_WINDOW_CONCURRENCY is {VISION_WINDOW_CONCURRENCY} but the "
             f"window loop is still sequential — the divisor claims headroom the "
             f"read does not take"
         )
-        assert "VISION_WINDOW_CONCURRENCY" in source, (
+        assert "VISION_WINDOW_CONCURRENCY" in code, (
             "the fan-out limit must BE the constant the divisor uses, not a "
             "second number that happens to match it today"
         )

@@ -898,11 +898,20 @@ class MediaConfig(BaseModel):
     # (DEC-56, the way `factory.build_retry_policy` derives its backoff from the
     # same timeout).
     #
-    # A single-view read — every image, every clip of 90 s or less — is ONE wave,
-    # so this value is honoured in full there. A ten-window clip divides it by
-    # ten. Which means the number set here is the ceiling an Instagram Reel
-    # actually gets, not a figure something else quietly divides
-    # (design/media-read-lane/07-timeout-derivation.md).
+    # A single-view read — every image, and every clip of `chunk_seconds` or
+    # less — is ONE wave, so THIS value is what binds there.
+    #
+    # Precisely: the derived ceiling is `min(this, llm.timeout_seconds * 0.6 /
+    # waves)`. This value binds exactly when it is no larger than the loop's own
+    # 0.6 share, which is the case at the deployment's settings (min(120, 216)).
+    # A `waves`-window clip divides the LOOP SHARE, not this number — a
+    # ten-window read of a 240 s loop gets 240 * 0.6 / 10 = 14.4 s regardless of
+    # what is set here. Stating it as «honoured in full» without that condition
+    # was wrong: an independent review (2026-09-23) caught the template's own
+    # 240/40 pair deriving 14.4 s for ten windows, not 40 divided by ten.
+    #
+    # So this is the ceiling a short clip actually gets, not a figure something
+    # else quietly divides (design/media-read-lane/07-timeout-derivation.md).
     vision_timeout_seconds: float = 20.0
     # The per-modality describers. `vision_model` above stays as the IMAGE
     # model's deprecated alias so a config written before this split keeps
