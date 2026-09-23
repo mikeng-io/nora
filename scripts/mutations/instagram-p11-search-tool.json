@@ -93,8 +93,8 @@
   {
     "name": "the search row leaves the bridge list, back to the OpenCLI default",
     "file": "nora/infra/social/router.py",
-    "old": "    (\"instagram\", \"search\"),\n})",
-    "new": "})",
+    "old": "    # deleted in the same change, so no Instagram read has two backends.\n    (\"instagram\", \"search\"),\n",
+    "new": "    # deleted in the same change, so no Instagram read has two backends.\n",
     "target": "tests/unit/test_social_router.py::test_x_goes_to_the_default_and_instagram_search_to_the_bridge"
   },
   {
