@@ -325,3 +325,35 @@ async def test_the_whole_chain_goes_red_if_fix_1s_bug_returns():
     assert metrics.get(
         "nora_tool_call_log_writes_total", tool="place_info", outcome="ok",
     ) == 0
+
+
+# ---- ADR 0015 §3: recall_lookups' statuses carry their own note -------------
+
+
+class _RaisingToolCallLogStore(FakeToolCallLogStore):
+    async def recent(self, **_kwargs):
+        raise ConnectionError("tool call log unreachable")
+
+
+async def test_every_non_ok_recall_lookups_status_carries_a_note():
+    """The description only NAMES `nothing_found` and `unavailable`. That a
+    failed read is not «I never checked» (the reason the tool exists) is the
+    result's `note` now, on each path, dash-free."""
+    def _recall(store):
+        specs = ToolRegistry(tool_call_log_store=store).specs(
+            store=_FakeStore(), conversation_id=CONVERSATION, conversation_type="group",
+            persons=_FakePersons(MILES), honcho=FakeMemoryStore(), deliverer=SinkSender(),
+            metrics=Metrics(), room=_e2e_room(),
+        )
+        return next(s for s in specs if s.name == "recall_lookups").call
+
+    cases = {
+        "unavailable/not_wired": _recall(None),
+        "unavailable/read_failed": _recall(_RaisingToolCallLogStore()),
+        "nothing_found/empty": _recall(FakeToolCallLogStore()),
+    }
+    for case, call in cases.items():
+        out = await call()
+        assert out["status"] == case.split("/")[0], (case, out)
+        assert isinstance(out.get("note"), str) and out["note"].strip(), case
+        assert "—" not in out["note"] and "–" not in out["note"], case

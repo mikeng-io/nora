@@ -555,3 +555,35 @@ async def test_who_said_finds_words_only_the_first_version_carried(persons):
     assert result["said_by"] == [
         {"who": "Miles Novak", "line": "2 3 4 5 6 7 8", "was": "2 3 4 5 7 8"},
     ]
+
+
+# ---- ADR 0015 §3: how to report a status rides in the result ---------------
+
+
+async def test_every_non_ok_who_said_status_carries_a_note(persons):
+    """The description only NAMES `nothing_found` and `unavailable`; what to
+    say for each (never «nobody said it» on an outage) is the result's
+    `note`, and it carries no dash."""
+    cases = {
+        "nothing_found": _build(persons),
+        "unavailable": _build(persons, window=()),
+    }
+    for status, (tools, _, _) in cases.items():
+        out = await _call(tools["who_said"], words="我請客")
+        assert out["status"] == status, out
+        assert isinstance(out.get("note"), str) and out["note"].strip(), status
+        assert "—" not in out["note"] and "–" not in out["note"], status
+
+
+async def test_load_transcript_explains_an_edit_only_when_one_came_back(persons):
+    """How to read `was`/`edited_ts` left the description (ADR 0015 §3). It
+    rides on the answer that holds an edited row, and on no other."""
+    window = _edited_window()
+    tools, _, _ = _build(persons, window=window, store=_StoreOf(window))
+    edited = await _call(tools["load_transcript"], limit=10)
+    plain_tools, _, _ = _build(persons, window=WINDOW, store=_StoreOf(WINDOW))
+    unedited = await _call(plain_tools["load_transcript"], limit=10)
+
+    assert "`was`" in edited["note"] and "edited_ts" in edited["note"]
+    assert "—" not in edited["note"] and "–" not in edited["note"]
+    assert unedited["messages"] and "note" not in unedited
