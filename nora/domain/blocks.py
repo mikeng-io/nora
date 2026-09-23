@@ -755,6 +755,21 @@ def render_messages(
     and so collapsed to one line; the body stays the message.
     """
     clock = now or datetime.now().astimezone()
+    stamps = [timestamp(r) for r in rows]
+
+    def _edited_after(i: int, changed: int) -> str | None:
+        """The `n` of the LAST later message sent before the edit, or None
+        when nothing came between. `age` is minute-grained, so a reply and the
+        edit that followed it both read «just now» and their ORDER — the one
+        thing `edited` exists to tell — was invisible (measured live
+        2026-09-24: she re-read an edited message after answering the first
+        version and said nothing had changed). An index is exact."""
+        last = None
+        for j in range(i, len(rows)):          # rows AFTER this one (1-based i)
+            ts_j = stamps[j]
+            if ts_j is not None and ts_j <= changed:
+                last = j + 1
+        return str(last) if last is not None else None
 
     def _attrs(row: Row, i: int) -> tuple[tuple[str, str | None], ...]:
         ts = timestamp(row)
@@ -766,6 +781,7 @@ def render_messages(
             ("from", one_line(speaker(row))),
             ("replying_to", None if parent is None else str(parent)),
             ("edited", age(changed, clock) if changed else None),
+            ("edited_after", _edited_after(i, changed) if changed else None),
             ("was", was(row) if changed else None),
         )
 
