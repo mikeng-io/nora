@@ -118,6 +118,7 @@ from nora.domain.ports import (
 from nora.domain.prompt import one_line
 from nora.domain.quote_window import QuoteWindow
 from nora.domain.reminders import Recurrence, Reminder, remaining_occurrences
+from nora.domain.self_presence import Presence
 from nora.domain.standing import (
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
     Standing,
@@ -125,6 +126,7 @@ from nora.domain.standing import (
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.engagement.context import StandingNotesReader
 from nora.engagement.mentions import MentionRenderer
+from nora.engagement.self_presence import PresenceReader
 from nora.engagement.stages import deliver, feedback
 from nora.engagement.stages.invoke import AgentRunner
 from nora.ingest.relevance_gate import SCORE_ABSENT
@@ -809,6 +811,7 @@ class FirePath:
         gate_shadow_channel: str | None = None,
         gate_shadow_platform: str = "discord",
         decisions: DecisionLogRecorder | None = None,
+        presence: PresenceReader | None = None,
     ) -> None:
         # S5 (15-roadmap §6.3): `<standing>` renders on the fire path too.
         #
@@ -1007,6 +1010,11 @@ class FirePath:
         # dormant default: a deployment that has not wired it fires exactly as
         # before.
         self._decisions = decisions
+        # `<presence>` (design/self-awareness/02) — the SAME reader the tag
+        # path's assembler holds, so a participation turn, a reminder and a
+        # proactive act turn know where they are the way a tag does. Read per
+        # turn; `None` renders the network alone.
+        self._presence = presence
 
     async def build_context(self, occasion: Event) -> TagContext:
         """§6.4's table, assembled HERE rather than by `ContextAssembler`.
@@ -1131,6 +1139,20 @@ class FirePath:
         # curated to the window's own text and keyed on the people in it.
         self_card, people = await self._read_memory(occasion, transcript)
 
+        # CONCURRENT, for `TranscriptInjection.assemble`'s reason: these five
+        # are independent reads, and awaited one after another their latencies
+        # stacked on the front of every fire turn — `<presence>` (a health
+        # read per network and a live Instagram handle read) was the fifth.
+        # Each helper keeps its own fail-soft handling and none raises, which
+        # is what makes one `gather` safe: an exception would otherwise cancel
+        # its siblings and take the turn down with it.
+        standing, culture, notes, decisions, presence = await asyncio.gather(
+            self._read_standing(occasion),
+            self._read_culture(occasion),
+            self._read_notes(occasion, unit),
+            self._read_decisions(occasion, unit),
+            self._read_presence(occasion),
+        )
         return TagContext(
             tag_id=uuid.uuid4().hex,
             message=_synthetic_message(occasion, ref),
@@ -1140,11 +1162,30 @@ class FirePath:
             started_at=time.perf_counter(),
             self_card=self_card,
             people_in_window=people,
-            standing=await self._read_standing(occasion),
-            culture=await self._read_culture(occasion),
-            notes=await self._read_notes(occasion, unit),
-            decisions=await self._read_decisions(occasion, unit),
+            standing=standing,
+            culture=culture,
+            notes=notes,
+            decisions=decisions,
+            presence=presence,
         )
+
+    async def _read_presence(self, occasion: Event) -> Presence | None:
+        """Where she is for this occasion's room, read now, or `None` with no
+        reader wired. Never raises: the reader is written not to, and a
+        failure here costs `<presence>` its detail, never the turn."""
+        if self._presence is None:
+            return None
+        try:
+            return await self._presence.read(
+                platform=occasion.platform, conversation_id=occasion.conversation_id,
+                direct=occasion.conversation_type == "dm",
+            )
+        except Exception:
+            log.exception("fire presence read failed; continuing with the network alone")
+            self._metrics.inc(
+                "nora_errors_total", stage="fire_presence", platform=occasion.platform,
+            )
+            return None
 
     async def _read_memory(
         self, occasion: Event, transcript: Sequence[TranscriptRow],

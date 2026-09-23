@@ -38,7 +38,9 @@ from nora.domain.ports import (
     StandingStore,
 )
 from nora.domain.quote_window import QuoteWindow
+from nora.domain.self_presence import Presence
 from nora.domain.standing import Standing
+from nora.engagement.self_presence import PresenceReader
 from nora.persons import Persons
 from nora.policy import Policy
 
@@ -91,6 +93,7 @@ class TranscriptInjection:
         policy: Policy | None = None,
         standing: StandingStore | None = None,
         media_join: MediaJoin | None = None,
+        presence: PresenceReader | None = None,
     ) -> None:
         self._audit = audit
         self._memory = memory
@@ -139,6 +142,10 @@ class TranscriptInjection:
         # exactly what is stored. The object itself is shared with seven other
         # transcript builders; see `nora.domain.media_join`.
         self._media_join = media_join
+        # WHERE SHE IS (design/self-awareness/02): the room, the unit's other
+        # rooms with live transport state, her handles. `None` is a harness
+        # with no reader, and the prefill then renders the network alone.
+        self._presence_reader = presence
 
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
@@ -172,15 +179,25 @@ class TranscriptInjection:
         # `_notes` is the one read scoped by UNIT rather than by room, and
         # it is gathered beside the rest anyway — where a read is scheduled says
         # nothing about what it is keyed on.
+        #
+        # `<presence>` (design/self-awareness/02) is the seventh read, and it
+        # is gathered BESIDE the six rather than inside them for exactly that
+        # overload limit: an outer gather of two keeps both halves typed. It is
+        # on the front of the turn like the rest because adapter health must
+        # be read now, not remembered.
         (
-            transcript, card, self_card, tagger_card, standing, notes,
+            (transcript, card, self_card, tagger_card, standing, notes),
+            presence,
         ) = await asyncio.gather(
-            self._recent(msg),
-            self._peer_card(ref, msg),
-            self._recall_self(msg),
-            self._recall_tagger(ref, msg),
-            self._standing(msg),
-            self._notes(msg),
+            asyncio.gather(
+                self._recent(msg),
+                self._peer_card(ref, msg),
+                self._recall_self(msg),
+                self._recall_tagger(ref, msg),
+                self._standing(msg),
+                self._notes(msg),
+            ),
+            self._presence(msg),
         )
 
         # One name space for the whole prompt (DEC-80) — see `Persons.name_transcript`.
@@ -212,7 +229,27 @@ class TranscriptInjection:
             tagger_card=tagger_card,
             notes=notes,
             standing=standing,
+            presence=presence,
         )
+
+    async def _presence(self, msg: NormalizedMessage) -> Presence | None:
+        """Where she is, read at turn start, or `None` with no reader wired.
+
+        `PresenceReader.read` is written never to raise; guarded anyway for
+        the reason `_peer_card` is — in a `gather`, an unreachable exception
+        is not a thinner prompt but six cancelled reads and a dead turn.
+        """
+        if self._presence_reader is None:
+            return None
+        try:
+            return await self._presence_reader.read(
+                platform=msg.platform, conversation_id=msg.conversation_id,
+                direct=msg.conversation_type == "dm",
+            )
+        except Exception:
+            log.exception("presence read failed; continuing with the network alone")
+            self._metrics.inc("nora_errors_total", stage="presence", platform=msg.platform)
+            return None
 
     async def _recent(self, msg: NormalizedMessage) -> tuple[TranscriptRow, ...]:
         """The transcript, or an empty one — a thinner reply beats no reply.

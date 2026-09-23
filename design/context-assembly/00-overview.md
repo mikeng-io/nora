@@ -19,8 +19,8 @@ Six occasions build a model-facing prompt. Measured 2026-09-22 by reading every
 
 | occasion | blocks it assembles | declared? |
 |---|---|---|
-| **tag / participation** (`agent/prefill.py`) | `self_card` `peer_card` `peer_history` `people_in_window` `notes` `loop_decisions` **`culture`** `standing` `group_transcript` `replying_to` `tag_message` | **YES** — `_BLOCKS`, with order and `BlockKey` |
-| **proactive** (`language/proactive.py`) | `self_card` `notes` `decisions` `people` `rooms` `home_room` `now` `loop_decisions` | **YES** (S1, 2026-09-22) |
+| **tag / participation** (`agent/prefill.py`) | `presence` `self_card` `peer_card` `peer_history` `people_in_window` `notes` `loop_decisions` **`culture`** `standing` `group_transcript` `replying_to` `tag_message` | **YES** — `_BLOCKS`, with order and `BlockKey` |
+| **proactive** (`language/proactive.py`) | `self_card` `notes` `decisions` `people` `rooms` `presence` (was `home_room` until 2026-09-23, design/self-awareness/02) `now` `loop_decisions` | **YES** (S1, 2026-09-22) |
 | **note curator** (`language/note_curator.py`) | `note` `evidence` `own_sends` `today` | **YES** (S1, 2026-09-22) |
 | **note candidates** (`language/note_candidates.py`) | `batch` `room` `notes` | **YES** (S1, 2026-09-22) |
 | **culture** (`language/culture.py`) | `previous_account` `room` `room_messages` `standing` `notes` | **YES** (S1, 2026-09-22) |

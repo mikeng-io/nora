@@ -68,7 +68,7 @@ from ...domain.ports import (
 from .listener import InstagramListener
 from .parser import parse_event
 from .react import InstagramReactor
-from .self_id import derive_identity
+from .self_id import derive_identity, read_username
 from .send import InstagramSender
 
 log = logging.getLogger("nora.instagram.adapter")
@@ -232,6 +232,17 @@ class InstagramAdapter:
         return await self._reactor.react(
             target=target, emoji=emoji, to_message_id=to_message_id, remove=remove,
         )
+
+    async def own_handle(self) -> str | None:
+        """Her handle on Instagram, read live from the bridge, or `None`.
+
+        Read per call and never memoized, unlike `resolve_identity`: the
+        identity is ids that never change, and this is a name the operator
+        can change from a phone (design/self-awareness/02). Display text for
+        `<presence>` only — it never enters `PlatformIdentity`, so it can
+        never become a mention id.
+        """
+        return await read_username(self._base_url)
 
     async def health(self) -> AdapterHealth:
         last = self._listener.last_event_at

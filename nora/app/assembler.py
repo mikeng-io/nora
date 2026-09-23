@@ -29,6 +29,7 @@ from nora.engagement.context import (
     StandingNotesReader,
     TranscriptInjection,
 )
+from nora.engagement.self_presence import PresenceReader
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import Policy
@@ -46,6 +47,7 @@ def build_assembler(
     standing: StandingStore | None = None,
     media_join: MediaJoin | None = None,
     quote_window: QuoteWindow | None = None,
+    presence: PresenceReader | None = None,
 ) -> TranscriptInjection:
     return TranscriptInjection(
         audit=audit, memory=memory, persons=persons,
@@ -69,4 +71,9 @@ def build_assembler(
         # handles, which is what the row actually says. The SAME instance is
         # handed to the five other transcript builders.
         media_join=media_join,
+        # `<presence>` (design/self-awareness/02). The SAME reader the fire
+        # path and the proactive pass hold, built once at the composition root
+        # over `policy.toml` and the live adapter map. `None` renders the
+        # network alone — what `_where_line` said before it was replaced.
+        presence=presence,
     )

@@ -1,0 +1,15 @@
+{
+  "type": "change",
+  "summary": "Every turn now tells Nora which room she is in, which other rooms her group has and whether each network is up, and her own public handles.",
+  "details": [
+    "A generated <presence> block replaces the one sentence that only named the network. It names the room she is in, the group's other rooms by network and label, and each network's live connection state: up, reconnecting, or down until a person fixes it.",
+    "WhatsApp and Instagram are now called WhatsApp and Instagram, not by their internal keys.",
+    "Other groups are only said to exist. Their names and rooms never reach a turn in a different group.",
+    "Her handles (@nora.000 on Signal; @noraexample on WhatsApp, X and Threads) are set in [agent.handles] in config.toml. The Instagram handle is read live from the bridge, so a rename needs no config edit.",
+    "The morning proactive pass gets the same block instead of <home_room>, so when it decides where to raise something it can see the group's other rooms and whether they are reachable."
+  ],
+  "limitations": [
+    "No tools yet for listing rooms, room activity or reading another room. Those wait for the tool catalogue.",
+    "Signal, WhatsApp, X and Threads handles are set by hand in config, so they go stale if an account is renamed. No eval has been run on the new block yet."
+  ]
+}
