@@ -145,11 +145,25 @@ def _is_checked_path(path: str) -> bool:
 
 
 def _paragraphs(markdown: str) -> list[tuple[int, list[str]]]:
-    """`(first line number, lines)` for each blank-line-delimited paragraph."""
+    """`(first line number, lines)` for each blank-line-delimited paragraph —
+    and each TABLE ROW on its own.
+
+    A table row is one record, not a sentence of a paragraph. Treated as one
+    blank-line-delimited block, a whole table was one «paragraph», so a
+    historical marker on ONE row exempted every other row in it: marking
+    DEC-145 deprecated (2026-09-24) silently unguarded R-83's and DEC-146's
+    live references in `design/09-decision-index.md`."""
     paragraphs: list[tuple[int, list[str]]] = []
     current: list[str] = []
     start = 1
     for lineno, line in enumerate(markdown.splitlines(), 1):
+        if line.lstrip().startswith("|"):
+            if current:
+                paragraphs.append((start, current))
+            paragraphs.append((lineno, [line]))
+            current = []
+            start = lineno + 1
+            continue
         if line.strip() == "":
             if current:
                 paragraphs.append((start, current))
@@ -232,6 +246,34 @@ def _tracked_markdown_files() -> list[str]:
 # the operator; do not mass-rewrite the docs to clear it, and do not add to it
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
+    # --- hidden by a NEIGHBOURING table row until 2026-09-24 ---
+    #
+    # A table was one «paragraph» to this gate, so one row carrying a
+    # historical marker exempted every row in its table. Splitting rows out
+    # (`_paragraphs`) surfaced these; none was introduced by that change.
+    # Pinned, not rewritten, per this gate's own rule — each needs checking
+    # whether the code moved, was renamed or was deleted (#422).
+    **dict.fromkeys(
+        (
+            ("design/09-decision-index.md", "deploy/compose/nora-db.compose.yml"),
+            ("design/09-decision-index.md", "deploy/compose/presence.compose.yml"),
+            ("design/09-decision-index.md", "deploy/egress.sh"),
+            ("design/09-decision-index.md", "deploy/watchdog.sh"),
+            ("design/09-decision-index.md", "evals/adversarial/identity_grounding.yaml"),
+            ("design/09-decision-index.md", "evals/adversarial/source_scope.yaml"),
+            ("design/09-decision-index.md", "evals/evaluators.py"),
+            ("design/09-decision-index.md", "evals/journeys.py"),
+            ("design/09-decision-index.md", "evals/judge.py"),
+            ("design/09-decision-index.md", "evals/run.py"),
+            ("design/09-decision-index.md", "nora/agent/disclosure.py"),
+            ("design/09-decision-index.md", "tests/test_evals_intent.py"),
+            ("design/09-decision-index.md", "tests/test_evals_journeys.py"),
+            ("design/09-decision-index.md", "tests/test_evals_live_runner.py"),
+            ("design/evaluation/02-the-rebuild.md", "nora/app/eval_support.py"),
+        ),
+        "surfaced 2026-09-24 when table rows became their own paragraphs; "
+        "not yet triaged (#422)",
+    ),
     (
         "design/instagram-adoption/17-implementation-plan.md",
         "nora/infra/social/instagram_links.py",

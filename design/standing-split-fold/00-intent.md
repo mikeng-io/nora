@@ -10,6 +10,8 @@ edges:
   - {dst: 30-verification, rel: sequences, provenance: asserted}
 ---
 
+> **SUPERSEDED IN PART 2026-09-24 by [design/standing-compact/](../standing-compact/00-intent.md).** The falsifier below fired: `turn_verdict` read 380 true / 25 false after the split, and 17 of the 25 came from a turn whose tool results the judge saw cut to 600 characters. Call B is deleted; the position call (A) and the ratchet/tiebreak rules stand.
+
 # Intent
 
 ## The claim
