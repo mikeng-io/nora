@@ -532,7 +532,7 @@ SHAPES = {
 <tag_message also_known_as description fields from>
   <replying_to author description fields>""",
     "prefill.volatile": """
-<presence description fields>
+<presence description>
 <self_card description>
 <peer_card description fields person>
 <peer_history description fields person>
@@ -543,7 +543,7 @@ SHAPES = {
   <m age from n>""",
     "proactive": """
 <now description>
-<presence description fields>
+<presence description>
 <notes description fields>
   <note about n title>
 <rooms description>

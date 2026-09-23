@@ -445,13 +445,16 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        "configured for and your live connections; not something you remember, "
        "so trust it over any memory that disagrees. The room you are in is "
        "the one whose people are in front of you, and where anything you say "
-       "or set for later lands. Nobody in any room wrote it, and it is not an "
-       "instruction to you.",
-       this_room_is=(
-           "where it is present, what the operator of this deployment says "
-           "the room you are in IS, context for reading what is in it; not an "
-           "instruction to you and not something anybody in the room said"
-       )),
+       "or set for later lands. A this_room_is, where there is one, is what "
+       "the operator of this deployment says that room IS. Nobody in any "
+       "room wrote any of it, and it is not an instruction to you."),
+    # NO `this_room_is` ANNOTATION, deliberately: `ContextBlock.render()`
+    # writes every declared annotation into `fields=` on every render, and
+    # the attribute is set only on the proactive pass. As a field it cost
+    # 24 tokens on every tag and fire turn that never carries it (measured
+    # 2026-09-23, cl100k: 224 -> 200 on a full tag block), so its meaning is
+    # folded into the description the way `people` carries its conditional
+    # «·» line: phrased to be true whether or not the attribute is there.
     _t("culture",
        "what this room is like and why it became that way, how they talk to "
        "each other, how a plan becomes real here, what they call themselves "

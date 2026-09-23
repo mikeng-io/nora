@@ -369,3 +369,15 @@ async def test_the_instagram_username_is_read_but_never_becomes_an_identifier():
 
     assert username == "noraexample"
     assert all(i.value != "noraexample" for i in identifiers)
+
+
+def test_a_tag_turn_pays_for_no_field_it_never_carries():
+    """`this_room_is` is set only on the proactive pass. Declared as a type
+    ANNOTATION it rendered into `fields=` on every tag and fire turn (24
+    tokens each, measured 2026-09-23); its meaning lives in the description
+    instead, phrased to be true whether or not the attribute is there."""
+    rendered = render_presence(Presence(platform="signal", label="Friends")).render()
+    opening = rendered.split(">", 1)[0]
+
+    assert "fields=" not in opening
+    assert "A this_room_is, where there is one" in opening
