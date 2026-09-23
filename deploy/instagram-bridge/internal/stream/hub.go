@@ -1,4 +1,5 @@
-package main
+// Package stream is the SSE fan-out behind GET /events.
+package stream
 
 // The SSE fan-out, and the one rule it exists to enforce: a message the bridge
 // received and could not deliver is COUNTED, never silently forgotten.
@@ -29,7 +30,7 @@ const (
 	clientQueue = 256
 )
 
-type hub struct {
+type Hub struct {
 	mu      sync.Mutex
 	clients map[cortez []byte]struct{}
 	buf     [][]byte
@@ -42,15 +43,15 @@ type hub struct {
 	notice bool
 }
 
-func newHub() *hub {
-	return &hub{clients: map[cortez []byte]struct{}{}}
+func NewHub() *Hub {
+	return &Hub{clients: map[cortez []byte]struct{}{}}
 }
 
-// emit serializes once and fans out. Marshalling here rather than per client
+// Emit serializes once and fans out. Marshalling here rather than per client
 // is not only cheaper — it guarantees every client sees byte-identical text,
 // so two adapters attached to the same bridge cannot disagree about what
 // arrived.
-func (h *hub) emit(event any) {
+func (h *Hub) Emit(event any) {
 	payload, err := json.Marshal(event)
 	if err != nil {
 		// An event we cannot serialize is a bug in this process, not a
@@ -84,7 +85,7 @@ func (h *hub) emit(event any) {
 // push appends to the offline buffer, evicting the OLDEST on overflow.
 // Oldest-first is deliberate: when Nora reconnects, the recent end of the
 // conversation is the part that still has a chance of being worth answering.
-func (h *hub) push(payload []byte) {
+func (h *Hub) push(payload []byte) {
 	if len(h.buf) >= bufferCap {
 		h.buf = h.buf[1:]
 		h.dropped++
@@ -93,14 +94,14 @@ func (h *hub) push(payload []byte) {
 	h.buf = append(h.buf, payload)
 }
 
-// subscribe registers a client and returns its channel plus whatever was
+// Subscribe registers a client and returns its channel plus whatever was
 // buffered while nobody was listening.
 //
 // Registration happens BEFORE the buffer snapshot, under one lock. The reverse
 // order has a window in which an event arrives after the snapshot and before
 // registration, is buffered, and is then dropped by the caller's clear() — a
 // loss that would show up as nothing at all.
-func (h *hub) subscribe() (cortez []byte, [][]byte, int) {
+func (h *Hub) Subscribe() (cortez []byte, [][]byte, int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	ch := make(cortez []byte, clientQueue)
@@ -115,7 +116,7 @@ func (h *hub) subscribe() (cortez []byte, [][]byte, int) {
 	return ch, replay, notice
 }
 
-func (h *hub) unsubscribe(ch cortez []byte) {
+func (h *Hub) Unsubscribe(ch cortez []byte) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if _, ok := h.clients[ch]; ok {
@@ -124,17 +125,17 @@ func (h *hub) unsubscribe(ch cortez []byte) {
 	}
 }
 
-func (h *hub) stats() (clients, buffered, dropped int) {
+func (h *Hub) Stats() (clients, buffered, dropped int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return len(h.clients), len(h.buf), h.dropped
 }
 
-// hasClients gates the heartbeat. A heartbeat exists to age
+// HasClients gates the heartbeat. A heartbeat exists to age
 // `last_event_age_seconds` on the consumer's side; buffering heartbeats for a
 // consumer that is not there would fill the offline buffer with ticks and
 // evict the real messages it was reserved for.
-func (h *hub) hasClients() bool {
+func (h *Hub) HasClients() bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return len(h.clients) > 0

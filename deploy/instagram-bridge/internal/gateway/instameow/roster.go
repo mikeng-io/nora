@@ -1,4 +1,4 @@
-package main
+package instameow
 
 // Roster: who is in one group thread, in BOTH id spaces.
 //
@@ -68,104 +68,25 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"strconv"
+
+	"instagram-bridge/internal/domain"
 
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 )
-
-// rosterMember is one account in the thread. `fbid` is the only field any
-// consumer matches on today; the rest are carried because the read already has
-// them and an operator debugging «who is this unmapped account?» from a log
-// line has nothing else to go on.
-//
-// `username` is EXPLICITLY not an identity. It is renameable and on Instagram
-// the freed name can be taken by somebody else, so matching on it would unmap
-// a person on a rename and resolve a stranger AS them — identity.example.toml
-// says the same thing at the other end of the wire.
-type rosterMember struct {
-	FBID     string `json:"fbid"`
-	IGID     string `json:"igid"`
-	Username string `json:"username"`
-	FullName string `json:"full_name"`
-}
-
-// rosterBody is the 200 shape. `members` is never null and never empty on a
-// 200 — see the fail-closed note in the file header — so a consumer that sees
-// `ok: true` has a list it can act on.
-type rosterBody struct {
-	OK     bool   `json:"ok"`
-	RoomID string `json:"room_id"`
-	Title  string `json:"title"`
-	// IsGroup is passed through rather than enforced. The bridge is transport;
-	// whether a 1:1 thread is admitted at all is Nora's policy decision and is
-	// already made in `nora.platform.instagram` (deny-by-default this phase).
-	IsGroup bool           `json:"is_group"`
-	Members []rosterMember `json:"members"`
-}
 
 var (
 	// errNoThread is a read that came back without the thread. Distinct from
 	// an empty member list because they mean different things to an operator:
 	// one is a thread id that names nothing, the other is a thread that reads
 	// as having nobody in it.
-	errNoThread = errors.New("thread read returned no thread")
+	errNoThread = domain.Classify(domain.ErrUpstreamRejected, errors.New("thread read returned no thread"))
 	// errEmptyRoster is a thread that read back with no users at all. A group
 	// Nora is in always has at least one other member, so this is the read
 	// failing, not the room emptying — and reporting it as an empty roster is
 	// the one answer that would be acted on as «there is nobody here».
-	errEmptyRoster = errors.New("thread read returned no members")
+	errEmptyRoster = domain.Classify(domain.ErrUpstreamRejected, errors.New("thread read returned no members"))
 )
-
-// handleRoster answers GET /threads/{thread_fbid}/members.
-//
-// A GET on the thread's own path rather than a POST body, because it is a read
-// with no side effect — the same shape /health and /events have,
-// and the opposite of the six mutating routes. The room key is the SHORT
-// thread id, exactly as every other route takes it; the long id never crosses
-// this boundary in either direction.
-//
-// The status mapping is the same one the send routes use, and for the same
-// reasons (see the table at the top of server.go): 409 for a checkpointed or
-// logged-out session because a human has to act and a retry would hammer a
-// challenged account, 503 for a session being re-established because that one
-// does heal itself, 400 for a room_id that is not a decimal thread_fbid, and
-// 500 for anything the bridge cannot classify — never a 200 with a partial
-// answer.
-func (b *bridge) handleRoster(w http.ResponseWriter, r *http.Request) {
-	// The path value, not a query string: the thread is the RESOURCE this
-	// read hangs off, and `?room_id=` made it look like a filter on a
-	// collection of rosters. Still the SHORT thread_fbid, exactly as every
-	// other route takes it.
-	roomID := r.PathValue("thread_fbid")
-	if roomID == "" {
-		badRequest(w, "thread_fbid is required")
-		return
-	}
-	cli, ok := b.ready(w)
-	if !ok {
-		return
-	}
-	// resolveRoom is doing two jobs here and only one of them is the long id,
-	// which this route never uses: it is also what validates that `room_id`
-	// parses (400, not a 5xx from Instagram) and what warms the short<->long
-	// cache the typing path reads. The lookup is cached after the first call,
-	// so this costs a round trip once per thread per process.
-	thread, ok := b.resolveRoom(w, r, roomID)
-	if !ok {
-		return
-	}
-	info, err := readRoster(r.Context(), cli, thread.Short.String(), b.ownFBID())
-	if err != nil {
-		status := statusForError(err)
-		slog.WarnContext(r.Context(), "roster failed",
-			"room", thread.Short.String(), "status", status, "error", err)
-		writeJSON(w, status, map[string]any{"ok": false, "error": err.Error()})
-		return
-	}
-	info.RoomID = thread.Short.String()
-	writeJSON(w, http.StatusOK, info)
-}
 
 // readRoster reads one thread's membership.
 //
@@ -174,27 +95,30 @@ func (b *bridge) handleRoster(w http.ResponseWriter, r *http.Request) {
 // starts including the viewer in `Users[]` — see the file header for why that
 // is a guard rather than the mechanism.
 func readRoster(
-	ctx context.Context, cli igClient, shortThreadID string, selfFBID int64,
-) (rosterBody, error) {
+	ctx context.Context, cli Client, shortThreadID string, selfFBID int64,
+) (domain.Thread, error) {
 	// The SHORT id, like every other read and like four of the five sends.
 	// `GetThreadInfoRequest.ThreadFBID` says so on the field itself, and this
 	// is the id the three-person roster was measured with.
-	resp, err := cli.GetThread(ctx, slidetypes.MakeGetThreadInfoRequest(shortThreadID))
+	req := slidetypes.MakeGetThreadInfoRequest(shortThreadID)
+	resp, err := call(ctx, "instagram.GetThread", nil, func(ctx context.Context) (*slidetypes.ThreadInfoResponse, error) {
+		return cli.GetThread(ctx, req)
+	})
 	if err != nil {
-		return rosterBody{}, err
+		return domain.Thread{}, err
 	}
 	if resp == nil || resp.ThreadInfo.AsIGDirectThread == nil {
-		return rosterBody{}, fmt.Errorf("%w: %s", errNoThread, shortThreadID)
+		return domain.Thread{}, fmt.Errorf("%w: %s", errNoThread, shortThreadID)
 	}
 	info := resp.ThreadInfo.AsIGDirectThread
-	members := make([]rosterMember, 0, len(info.Users))
+	members := make([]domain.Member, 0, len(info.Users))
 	dropped := 0
 	for _, user := range info.Users {
 		if user == nil {
 			// Not a member we can drop quietly: a nil row is a row whose
 			// account we cannot name, and the whole read is refused rather
 			// than silently shortened.
-			return rosterBody{}, fmt.Errorf(
+			return domain.Thread{}, fmt.Errorf(
 				"%w: thread %s returned a null user row", errNoThread, shortThreadID)
 		}
 		if user.InteropMessagingUserFBID == 0 {
@@ -203,18 +127,18 @@ func readRoster(
 			// mapped in identity.toml — so keeping the other rows would hand
 			// back a room that is short by one, which is the direction that
 			// lets a disclosure through.
-			return rosterBody{}, fmt.Errorf(
+			return domain.Thread{}, domain.Classify(domain.ErrUpstreamRejected, fmt.Errorf(
 				"thread %s returned a member with no interop_messaging_user_fbid "+
 					"(igid=%q username=%q); refusing the whole roster rather than "+
 					"under-report the room",
-				shortThreadID, user.ID, user.Username)
+				shortThreadID, user.ID, user.Username))
 		}
 		fbid := strconv.FormatInt(user.InteropMessagingUserFBID, 10)
 		if selfFBID != 0 && user.InteropMessagingUserFBID == selfFBID {
 			dropped++
 			continue
 		}
-		members = append(members, rosterMember{
+		members = append(members, domain.Member{
 			FBID:     fbid,
 			IGID:     user.ID,
 			Username: user.Username,
@@ -231,10 +155,9 @@ func readRoster(
 			"room", shortThreadID, "dropped", dropped)
 	}
 	if len(members) == 0 {
-		return rosterBody{}, fmt.Errorf("%w: %s", errEmptyRoster, shortThreadID)
+		return domain.Thread{}, fmt.Errorf("%w: %s", errEmptyRoster, shortThreadID)
 	}
-	return rosterBody{
-		OK:      true,
+	return domain.Thread{
 		Title:   info.ThreadTitle,
 		IsGroup: info.IsGroup,
 		Members: members,

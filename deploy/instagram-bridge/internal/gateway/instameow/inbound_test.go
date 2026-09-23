@@ -1,4 +1,4 @@
-package main
+package instameow
 
 // These tests are the executable half of
 // design/instagram-adoption/03-transport-contract.md's inbound section.

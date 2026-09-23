@@ -30,7 +30,7 @@ import (
 	"go.mau.fi/mautrix-meta/pkg/messagix/responses"
 )
 
-func getProfile(t *testing.T, b *bridge, query string) *httptest.ResponseRecorder {
+func getProfile(t *testing.T, b *server, query string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/accounts/"+query, nil)
 	rec := httptest.NewRecorder()
@@ -123,13 +123,13 @@ func TestProfileFailureIsNeverAZeroValueGate(t *testing.T) {
 			// 200 with no user: what a GraphQL read does when it finds
 			// nothing. NOT an error, which is why the route has to check.
 			name:  "no user in the response",
-			fake:  &fakeIG{profileUserSet: true, profileUser: nil},
+			fake:  &fakeIG{ProfileUserSet: true, ProfileUser: nil},
 			want:  http.StatusNotFound,
 			query: "221731317",
 		},
 		{
 			name:  "transport error",
-			fake:  &fakeIG{profileErr: errors.New("connection reset")},
+			fake:  &fakeIG{ProfileErr: errors.New("connection reset")},
 			want:  http.StatusInternalServerError,
 			query: "221731317",
 		},
@@ -137,7 +137,7 @@ func TestProfileFailureIsNeverAZeroValueGate(t *testing.T) {
 			// A human has to clear this one, and a retry hammers a challenged
 			// account — the same mapping every other route uses.
 			name:  "checkpointed session",
-			fake:  &fakeIG{profileErr: httpclient.ErrCheckpointRequired},
+			fake:  &fakeIG{ProfileErr: httpclient.ErrCheckpointRequired},
 			want:  http.StatusConflict,
 			query: "221731317",
 		},
@@ -193,9 +193,9 @@ func TestProfileAddressesTheIGIDSpaceAndCanonicalizes(t *testing.T) {
 	if rec := getProfile(t, b, "0221731317"); rec.Code != http.StatusOK {
 		t.Fatalf("/profile answered %d: %s", rec.Code, rec.Body.String())
 	}
-	if len(f.profileIGIDs) != 1 || f.profileIGIDs[0] != "221731317" {
+	if len(f.ProfileIGIDs) != 1 || f.ProfileIGIDs[0] != "221731317" {
 		t.Fatalf("GetProfile was addressed with %v, want [221731317] canonicalized",
-			f.profileIGIDs)
+			f.ProfileIGIDs)
 	}
 }
 
@@ -204,7 +204,7 @@ func TestProfileAddressesTheIGIDSpaceAndCanonicalizes(t *testing.T) {
 // read: refusing here would make every not-yet-messaged account unreadable,
 // which is exactly the set the operator's public-or-followed rule is for.
 func TestProfileWithNoMessagingIDStillAnswers(t *testing.T) {
-	f := &fakeIG{profileUserSet: true, profileUser: &slidetypes.User{
+	f := &fakeIG{ProfileUserSet: true, ProfileUser: &slidetypes.User{
 		ID: "276321323", Username: "_qnpdwdmqvgho",
 	}}
 	b := newTestBridge(t, f)
@@ -250,20 +250,16 @@ func (f *fakeGraphQLIssuer) MakeGraphQLRequest(
 // The regression this bundle actually fixed: the social call must be keyed
 // on the account's numeric igid, not its username. `parseSocialProfile`'s
 // own tests cannot see this — they start from response bytes, and this bug
-// is about what goes INTO the request that produces them. Only
-// `socialIssuerFor`'s injected seam can watch the value as it leaves
-// `readProfile`.
+// is about what goes INTO the request that produces them. Only an injected
+// issuer can watch the value as it leaves the account read.
 func TestProfileKeysTheSocialCallOnTheIGIDNotTheUsername(t *testing.T) {
 	issuer := &fakeGraphQLIssuer{body: []byte(`{"data":{"user":{"is_private":true}}}`)}
-	restore := socialIssuerFor
-	socialIssuerFor = func(igClient) (graphQLIssuer, error) { return issuer, nil }
-	t.Cleanup(func() { socialIssuerFor = restore })
 
 	// measuredProfile carries ID "221731317" and Username "nka_bpumvg" — two
 	// different strings, so a test that only checked "some string was sent"
 	// could not tell a regression to the old, wrong behaviour from a pass.
 	f := &fakeIG{}
-	b := newTestBridge(t, f)
+	b := newTestBridge(t, f, withIssuer(issuer))
 
 	rec := getProfile(t, b, "221731317")
 
@@ -292,7 +288,7 @@ func TestProfileKeysTheSocialCallOnTheIGIDNotTheUsername(t *testing.T) {
 // route must never batch, and it must never report "not permitted" as "nothing
 // posted".
 
-func getStory(t *testing.T, b *bridge, query string) *httptest.ResponseRecorder {
+func getStory(t *testing.T, b *server, query string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/accounts/"+query+"/story", nil)
 	rec := httptest.NewRecorder()
@@ -319,12 +315,12 @@ func TestStoryNeverBatchesTheRead(t *testing.T) {
 	if rec := getStory(t, b, "221731317"); rec.Code != http.StatusOK {
 		t.Fatalf("/story answered %d: %s", rec.Code, rec.Body.String())
 	}
-	if len(f.reelIDs) != 1 {
-		t.Fatalf("FetchReel called %d times, want 1", len(f.reelIDs))
+	if len(f.ReelIDs) != 1 {
+		t.Fatalf("FetchReel called %d times, want 1", len(f.ReelIDs))
 	}
-	if len(f.reelIDs[0]) != 1 || f.reelIDs[0][0] != "221731317" {
+	if len(f.ReelIDs[0]) != 1 || f.ReelIDs[0][0] != "221731317" {
 		t.Errorf("FetchReel was addressed with %v, want exactly one igid — a "+
-			"batched read is visible to everybody in the batch", f.reelIDs[0])
+			"batched read is visible to everybody in the batch", f.ReelIDs[0])
 	}
 }
 
@@ -349,7 +345,7 @@ func TestStoryFramesKeepBothTheClipAndTheStill(t *testing.T) {
 	}
 
 	image := body.Items[0]
-	if image.Kind != mediaImage {
+	if image.Kind != "image" {
 		t.Errorf("frame 1 kind = %q, want image", image.Kind)
 	}
 	if image.URL != "https://cdn/large.jpg" {
@@ -361,7 +357,7 @@ func TestStoryFramesKeepBothTheClipAndTheStill(t *testing.T) {
 	}
 
 	video := body.Items[1]
-	if video.Kind != mediaVideo {
+	if video.Kind != "video" {
 		t.Errorf("frame 2 kind = %q, want video", video.Kind)
 	}
 	if video.URL != "https://cdn/large.mp4" {
@@ -389,7 +385,7 @@ func TestStoryVideoWithNoClipDegradesToItsCover(t *testing.T) {
 	item.ImageVersions2.Candidates = []responses.Candidates{
 		{Width: 1080, URL: "https://cdn/cover.jpg"},
 	}
-	f := &fakeIG{reelSet: true, reelResp: &responses.ReelInfoResponse{
+	f := &fakeIG{ReelSet: true, ReelResp: &responses.ReelInfoResponse{
 		Reels: map[string]responses.ReelInfo{
 			"221731317": {ID: "221731317", Items: []*responses.ReelItem{item}},
 		},
@@ -405,7 +401,7 @@ func TestStoryVideoWithNoClipDegradesToItsCover(t *testing.T) {
 	if len(body.Items) != 1 {
 		t.Fatalf("got %d frames, want 1", len(body.Items))
 	}
-	if body.Items[0].Kind != mediaImage {
+	if body.Items[0].Kind != "image" {
 		t.Errorf("kind = %q; media_type alone is not evidence a clip exists",
 			body.Items[0].Kind)
 	}
@@ -420,7 +416,7 @@ func TestStoryVideoWithNoClipDegradesToItsCover(t *testing.T) {
 //
 // `found` is what separates them, and a caller has to be able to read it.
 func TestStoryEmptyIsNotAClaimThatNothingWasPosted(t *testing.T) {
-	f := &fakeIG{reelSet: true, reelResp: &responses.ReelInfoResponse{
+	f := &fakeIG{ReelSet: true, ReelResp: &responses.ReelInfoResponse{
 		Reels: map[string]responses.ReelInfo{},
 	}}
 	b := newTestBridge(t, f)
@@ -450,7 +446,7 @@ func TestStoryReadsTheFlatReelsMediaShapeToo(t *testing.T) {
 	item := &responses.ReelItem{}
 	item.Pk = "1"
 	item.ImageVersions2.Candidates = []responses.Candidates{{Width: 1080, URL: "https://cdn/a.jpg"}}
-	f := &fakeIG{reelSet: true, reelResp: &responses.ReelInfoResponse{
+	f := &fakeIG{ReelSet: true, ReelResp: &responses.ReelInfoResponse{
 		ReelsMedia: []responses.ReelInfo{
 			{ID: "221731317", Items: []*responses.ReelItem{item}},
 		},

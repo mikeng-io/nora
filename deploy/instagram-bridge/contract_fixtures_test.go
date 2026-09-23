@@ -33,6 +33,8 @@ import (
 	"strings"
 	"testing"
 
+	gateway "instagram-bridge/internal/gateway/instameow"
+
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
 	"go.mau.fi/mautrix-meta/pkg/messagix/responses"
@@ -44,6 +46,20 @@ var updateFixtures = flag.Bool("update", false,
 // fixtureDir is the repository's shared fixture directory, relative to this
 // package.
 const fixtureDir = "../../tests/fixtures/instagram_bridge"
+
+// skipOutsideTheRepo skips the fixture checks in ONE place only: the image
+// build, whose context is this directory, so `tests/fixtures` is not in it.
+// The Dockerfile says so explicitly with IG_BRIDGE_IMAGE_BUILD=1; anywhere
+// else a missing fixture directory is still a failure, never a skip.
+func skipOutsideTheRepo(t *testing.T) {
+	t.Helper()
+	if *updateFixtures || os.Getenv("IG_BRIDGE_IMAGE_BUILD") != "1" {
+		return
+	}
+	if _, err := os.Stat(fixtureDir); err != nil {
+		t.Skipf("image build: %s is outside the build context", fixtureDir)
+	}
+}
 
 // contractFixture is the on-disk shape. `route` and `path` document what was
 // asked; `status` and `body` are what the bridge answered.
@@ -140,70 +156,65 @@ type contractCase struct {
 	route  string
 	path   string
 	fake   func() *fakeIG
-	social func() graphQLIssuer // nil: the default issuer resolution
-	setup  func(b *bridge)      // optional, after newTestBridge
+	social func() gateway.GraphQLIssuer // nil: the default issuer resolution
+	opts   []bridgeOpt                  // optional session adjustments
 }
 
 func contractCases() []contractCase {
 	return []contractCase{
 		{
 			file: "account_ok.json", route: "GET /accounts/{igid}", path: "/accounts/" + synthIGID,
-			fake:   func() *fakeIG { return &fakeIG{profileUserSet: true, profileUser: synthProfileUser()} },
-			social: func() graphQLIssuer { return &fakeGraphQLIssuer{body: []byte(synthSocialEnvelope)} },
+			fake:   func() *fakeIG { return &fakeIG{ProfileUserSet: true, ProfileUser: synthProfileUser()} },
+			social: func() gateway.GraphQLIssuer { return &fakeGraphQLIssuer{body: []byte(synthSocialEnvelope)} },
 		},
 		{
 			// GetProfile answered; the second, social call did not. The read
 			// still succeeds, and `social_available: false` says what is
 			// missing — an empty bio here is NOT "this account has no bio".
 			file: "account_social_unavailable.json", route: "GET /accounts/{igid}", path: "/accounts/" + synthIGID,
-			fake:   func() *fakeIG { return &fakeIG{profileUserSet: true, profileUser: synthProfileUser()} },
-			social: func() graphQLIssuer { return &fakeGraphQLIssuer{body: []byte(synthGraphQLErrors)} },
+			fake:   func() *fakeIG { return &fakeIG{ProfileUserSet: true, ProfileUser: synthProfileUser()} },
+			social: func() gateway.GraphQLIssuer { return &fakeGraphQLIssuer{body: []byte(synthGraphQLErrors)} },
 		},
 		{
 			// 200 with no user: the igid names no account (`errNoProfile`).
 			file: "account_not_found_404.json", route: "GET /accounts/{igid}", path: "/accounts/" + synthIGID,
-			fake: func() *fakeIG { return &fakeIG{profileUserSet: true, profileUser: nil} },
+			fake: func() *fakeIG { return &fakeIG{ProfileUserSet: true, ProfileUser: nil} },
 		},
 		{
 			// The session needs a human; retrying hammers a challenged account.
 			file: "account_checkpointed_409.json", route: "GET /accounts/{igid}", path: "/accounts/" + synthIGID,
-			fake: func() *fakeIG { return &fakeIG{profileErr: httpclient.ErrCheckpointRequired} },
+			fake: func() *fakeIG { return &fakeIG{ProfileErr: httpclient.ErrCheckpointRequired} },
 		},
 		{
 			// Between sessions: no client to read with.
 			file: "account_reconnecting_503.json", route: "GET /accounts/{igid}", path: "/accounts/" + synthIGID,
-			fake:  func() *fakeIG { return &fakeIG{} },
-			setup: func(b *bridge) { b.out = nil },
+			fake: func() *fakeIG { return &fakeIG{} },
+			opts: []bridgeOpt{withNoClient()},
 		},
 		{
 			file: "story_found.json", route: "GET /accounts/{igid}/story", path: "/accounts/" + synthIGID + "/story",
-			fake: func() *fakeIG { return &fakeIG{reelSet: true, reelResp: synthReel()} },
+			fake: func() *fakeIG { return &fakeIG{ReelSet: true, ReelResp: synthReel()} },
 		},
 		{
 			// No reel for the igid: no story up, OR not permitted to see it.
 			// The route has no "no such account" answer; this is it too.
 			file: "story_not_found.json", route: "GET /accounts/{igid}/story", path: "/accounts/" + synthIGID + "/story",
-			fake: func() *fakeIG { return &fakeIG{reelSet: true, reelResp: &responses.ReelInfoResponse{}} },
+			fake: func() *fakeIG { return &fakeIG{ReelSet: true, ReelResp: &responses.ReelInfoResponse{}} },
 		},
 		{
 			file: "story_checkpointed_409.json", route: "GET /accounts/{igid}/story", path: "/accounts/" + synthIGID + "/story",
-			fake: func() *fakeIG { return &fakeIG{reelErr: httpclient.ErrCheckpointRequired} },
+			fake: func() *fakeIG { return &fakeIG{ReelErr: httpclient.ErrCheckpointRequired} },
 		},
 	}
 }
 
 func runContractCase(t *testing.T, tc contractCase) contractFixture {
 	t.Helper()
-	restore := socialIssuerFor
-	t.Cleanup(func() { socialIssuerFor = restore })
+	opts := append([]bridgeOpt{}, tc.opts...)
 	if tc.social != nil {
-		issuer := tc.social()
-		socialIssuerFor = func(igClient) (graphQLIssuer, error) { return issuer, nil }
+		opts = append(opts, withIssuer(tc.social()))
 	}
-	b := newTestBridge(t, tc.fake())
-	if tc.setup != nil {
-		tc.setup(b)
-	}
+	b := newTestBridge(t, tc.fake(), opts...)
 	req := httptest.NewRequest(http.MethodGet, tc.path, nil)
 	rec := httptest.NewRecorder()
 	b.routes().ServeHTTP(rec, req)
@@ -216,6 +227,7 @@ func runContractCase(t *testing.T, tc contractCase) contractFixture {
 // TestContractFixtures regenerates (with -update) or checks every shared
 // fixture against what the handlers answer today.
 func TestContractFixtures(t *testing.T) {
+	skipOutsideTheRepo(t)
 	for _, tc := range contractCases() {
 		t.Run(tc.file, func(t *testing.T) {
 			got := runContractCase(t, tc)
@@ -267,6 +279,7 @@ func TestContractFixtures(t *testing.T) {
 // case above. A fixture nothing regenerates is a shape the bridge is no longer
 // held to while the Python tests still read it.
 func TestContractFixturesHaveNoOrphans(t *testing.T) {
+	skipOutsideTheRepo(t)
 	entries, err := os.ReadDir(fixtureDir)
 	if err != nil {
 		t.Fatalf("cannot read %s: %v", fixtureDir, err)

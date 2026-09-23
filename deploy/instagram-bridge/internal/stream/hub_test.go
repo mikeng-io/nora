@@ -1,4 +1,4 @@
-package main
+package stream
 
 import (
 	"encoding/json"
@@ -25,17 +25,17 @@ func drain(ch cortez []byte) [][]byte {
 // With nobody listening, events wait. This is the whole reason the buffer
 // exists: Nora restarting must not cost the messages sent while she was down.
 func TestBufferedEventsReplayOnConnect(t *testing.T) {
-	h := newHub()
+	h := NewHub()
 	for i := range 3 {
-		h.emit(&probe{Kind: "message", N: i})
+		h.Emit(&probe{Kind: "message", N: i})
 	}
-	_, buffered, dropped := h.stats()
+	_, buffered, dropped := h.Stats()
 	if buffered != 3 || dropped != 0 {
 		t.Fatalf("buffered=%d dropped=%d, want 3/0", buffered, dropped)
 	}
 
-	ch, replay, notice := h.subscribe()
-	defer h.unsubscribe(ch)
+	ch, replay, notice := h.Subscribe()
+	defer h.Unsubscribe(ch)
 	if notice != 0 {
 		t.Errorf("drop notice %d raised with nothing dropped", notice)
 	}
@@ -52,7 +52,7 @@ func TestBufferedEventsReplayOnConnect(t *testing.T) {
 			t.Errorf("replay[%d].n = %d", i, got.N)
 		}
 	}
-	if _, buffered, _ := h.stats(); buffered != 0 {
+	if _, buffered, _ := h.Stats(); buffered != 0 {
 		t.Errorf("buffer still holds %d after replay", buffered)
 	}
 }
@@ -62,11 +62,11 @@ func TestBufferedEventsReplayOnConnect(t *testing.T) {
 // and for a transport feeding an audit trail that is the failure class Nora's
 // design history treats as a bug rather than a feature.
 func TestOverflowDropsOldestAndCounts(t *testing.T) {
-	h := newHub()
+	h := NewHub()
 	for i := range bufferCap + 10 {
-		h.emit(&probe{Kind: "message", N: i})
+		h.Emit(&probe{Kind: "message", N: i})
 	}
-	_, buffered, dropped := h.stats()
+	_, buffered, dropped := h.Stats()
 	if buffered != bufferCap {
 		t.Errorf("buffered=%d, want the cap %d", buffered, bufferCap)
 	}
@@ -74,8 +74,8 @@ func TestOverflowDropsOldestAndCounts(t *testing.T) {
 		t.Fatalf("dropped=%d, want 10 — a loss that is not counted is a loss nobody can see", dropped)
 	}
 
-	ch, replay, notice := h.subscribe()
-	defer h.unsubscribe(ch)
+	ch, replay, notice := h.Subscribe()
+	defer h.Unsubscribe(ch)
 	if notice != 10 {
 		t.Errorf("connecting client was told %d drops, want 10", notice)
 	}
@@ -92,22 +92,22 @@ func TestOverflowDropsOldestAndCounts(t *testing.T) {
 // miss anything before I got here?", which is only a question at connect time,
 // while the number on /health has to stay readable long afterwards.
 func TestDropNoticeIsOneShotButTheCounterPersists(t *testing.T) {
-	h := newHub()
+	h := NewHub()
 	for i := range bufferCap + 1 {
-		h.emit(&probe{Kind: "message", N: i})
+		h.Emit(&probe{Kind: "message", N: i})
 	}
-	ch1, _, notice1 := h.subscribe()
+	ch1, _, notice1 := h.Subscribe()
 	if notice1 != 1 {
 		t.Fatalf("first client notice = %d", notice1)
 	}
-	h.unsubscribe(ch1)
+	h.Unsubscribe(ch1)
 
-	ch2, _, notice2 := h.subscribe()
-	defer h.unsubscribe(ch2)
+	ch2, _, notice2 := h.Subscribe()
+	defer h.Unsubscribe(ch2)
 	if notice2 != 0 {
 		t.Errorf("second client was told about the same drop again (%d)", notice2)
 	}
-	if _, _, dropped := h.stats(); dropped != 1 {
+	if _, _, dropped := h.Stats(); dropped != 1 {
 		t.Errorf("counter reset to %d — /health would report a clean run", dropped)
 	}
 }
@@ -116,13 +116,13 @@ func TestDropNoticeIsOneShotButTheCounterPersists(t *testing.T) {
 // instameow dispatches deltas on the socket's own goroutine, so blocking here
 // would turn one stuck HTTP reader into a dead bridge.
 func TestSlowClientIsDroppedNotBlockedOn(t *testing.T) {
-	h := newHub()
-	ch, _, _ := h.subscribe()
-	defer h.unsubscribe(ch)
+	h := NewHub()
+	ch, _, _ := h.Subscribe()
+	defer h.Unsubscribe(ch)
 	for i := range clientQueue + 5 {
-		h.emit(&probe{Kind: "message", N: i})
+		h.Emit(&probe{Kind: "message", N: i})
 	}
-	if _, _, dropped := h.stats(); dropped != 5 {
+	if _, _, dropped := h.Stats(); dropped != 5 {
 		t.Fatalf("dropped=%d, want 5 overflow drops for the slow client", dropped)
 	}
 	if got := len(drain(ch)); got != clientQueue {
@@ -134,11 +134,11 @@ func TestSlowClientIsDroppedNotBlockedOn(t *testing.T) {
 // otherwise a long-lived connection would slowly fill the buffer reserved for
 // the next disconnection.
 func TestLiveClientBypassesTheBuffer(t *testing.T) {
-	h := newHub()
-	ch, _, _ := h.subscribe()
-	defer h.unsubscribe(ch)
-	h.emit(&probe{Kind: "message", N: 1})
-	if _, buffered, _ := h.stats(); buffered != 0 {
+	h := NewHub()
+	ch, _, _ := h.Subscribe()
+	defer h.Unsubscribe(ch)
+	h.Emit(&probe{Kind: "message", N: 1})
+	if _, buffered, _ := h.Stats(); buffered != 0 {
 		t.Errorf("buffered %d while a client was attached", buffered)
 	}
 	if got := len(drain(ch)); got != 1 {
@@ -150,23 +150,23 @@ func TestLiveClientBypassesTheBuffer(t *testing.T) {
 // failure — but the adapter still did not get it, so it is counted as a drop
 // rather than discarded.
 func TestUnserializableEventIsCountedAsADrop(t *testing.T) {
-	h := newHub()
-	h.emit(make(cortez int)) // channels have no JSON representation
-	_, buffered, dropped := h.stats()
+	h := NewHub()
+	h.Emit(make(cortez int)) // channels have no JSON representation
+	_, buffered, dropped := h.Stats()
 	if dropped != 1 || buffered != 0 {
 		t.Fatalf("dropped=%d buffered=%d, want 1/0", dropped, buffered)
 	}
 }
 
 func TestUnsubscribeIsIdempotent(t *testing.T) {
-	h := newHub()
-	ch, _, _ := h.subscribe()
-	h.unsubscribe(ch)
+	h := NewHub()
+	ch, _, _ := h.Subscribe()
+	h.Unsubscribe(ch)
 	// A second call must not close an already-closed channel: the HTTP handler
 	// defers this and an early return would otherwise panic the whole process
 	// over one disconnecting client.
-	h.unsubscribe(ch)
-	if clients, _, _ := h.stats(); clients != 0 {
+	h.Unsubscribe(ch)
+	if clients, _, _ := h.Stats(); clients != 0 {
 		t.Errorf("clients=%d after unsubscribe", clients)
 	}
 }

@@ -1,4 +1,4 @@
-package main
+package instameow
 
 // Outbound: the send half, and the trap that makes it non-trivial.
 //
@@ -66,38 +66,9 @@ import (
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
 	"go.mau.fi/mautrix-meta/pkg/messagix/methods"
-	"go.mau.fi/mautrix-meta/pkg/messagix/responses"
 	"go.mau.fi/mautrix-meta/pkg/messagix/types"
+	"go.opentelemetry.io/otel/attribute"
 )
-
-// igClient is the slice of *instameow.Client this bridge uses. It exists so
-// the HTTP layer can be exercised without a live Instagram session: the
-// account is real and in use, and "run it and see" is not an available test.
-type igClient interface {
-	SendMessage(context.Context, *slidetypes.SendTextRequest) (*slidetypes.SendTextResponse, error)
-	SendMedia(context.Context, *slidetypes.SendMediaRequest) (*slidetypes.SendMediaResponse, error)
-	SendReaction(context.Context, *slidetypes.CreateReactionRequest) (*slidetypes.SendReactionResponse, error)
-	UnsendMessage(context.Context, *slidetypes.UnsendMessageRequest) (*slidetypes.UnsendMessageResponse, error)
-	SetTyping(ctx context.Context, threadID string, typing bool) error
-	FetchThreadID(ctx context.Context, threadFBID int64) (*instameow.ThreadIGIDs, error)
-	// GetThread is the one READ on this interface. It belongs here rather
-	// than on a second narrowing because the fake that stands in for a live
-	// session has to be ONE object: a bridge holding two fakes could have
-	// them disagree about which threads exist.
-	GetThread(context.Context, *slidetypes.GetThreadInfoRequest) (*slidetypes.ThreadInfoResponse, error)
-	// GetProfile is the second read, and it is here for GetThread's reason:
-	// one fake, not two, so a test cannot have the roster and the profile
-	// disagree about who exists.
-	GetProfile(ctx context.Context, igid string) (*slidetypes.ProfilePageResponse, error)
-	// FetchReel is the ONLY path to a story anywhere — OpenCLI's `story`
-	// verb posts one rather than reading one, verified against the live
-	// tool. See social.go's /story section.
-	FetchReel(ctx context.Context, reelIDs []string, mediaID string) (*responses.ReelInfoResponse, error)
-}
-
-// uploader is SendMercuryUploadRequest, extracted as a function value for the
-// same reason: it hangs off *httpclient.HTTPClient, which cannot be faked.
-type uploader func(context.Context, int64, *httpclient.MercuryUploadMedia) (*types.MercuryUploadResponse, error)
 
 // threadIndex caches the short->long pair. The lookup is an HTTP round trip
 // against Instagram's route endpoint, so doing it per send would add a request
@@ -153,7 +124,8 @@ func (t *threadIndex) resolve(ctx context.Context, short domain.ThreadFBID) (dom
 		// Fail closed. Returning the short id as a "best effort" would produce
 		// a send that is accepted by the HTTP layer and never arrives, which
 		// is the single worst outcome available here.
-		return domain.ThreadRef{}, fmt.Errorf("thread %s resolved to no thread_igid", canonical)
+		return domain.ThreadRef{}, domain.Classify(domain.ErrUpstreamRejected,
+			fmt.Errorf("thread %s resolved to no thread_igid", canonical))
 	}
 	t.remember(canonical, long)
 	return domain.ThreadRef{Short: short, Long: long}, nil
@@ -188,12 +160,6 @@ func offlineThreadingID() string {
 	return strconv.FormatInt(methods.GenerateEpochID(), 10)
 }
 
-type sendResult struct {
-	OK          bool   `json:"ok"`
-	ID          string `json:"id,omitempty"`
-	TimestampMS int64  `json:"timestamp_ms,omitempty"`
-}
-
 // errNoMessageID is what a send that Instagram accepted without naming the
 // message becomes. It is an ERROR rather than a degraded success on purpose:
 // slidetypes.SentMessage is a VALUE field on the response, so a null or absent
@@ -203,7 +169,8 @@ type sendResult struct {
 // name the message it just sent can neither react to it, unsend it, nor quote
 // it — the same class of "accepted, invisible" failure the two-id trap
 // produces, arriving through the response instead of the request.
-var errNoMessageID = errors.New("send was accepted but returned no message id")
+var errNoMessageID = domain.Classify(domain.ErrUpstreamRejected,
+	errors.New("send was accepted but returned no message id"))
 
 // messageIDOf reads the id out of a send response.
 //
@@ -230,9 +197,9 @@ func messageIDOf(msg slidetypes.SentMessage) string {
 // budget and make it unraisable. The binding cross-platform limit stays
 // Discord's 2,000, which lives in Nora, not here.
 func sendText(
-	ctx context.Context, cli igClient, shortThreadID, text string,
-	mentions []eventMention, replyTo string,
-) (sendResult, error) {
+	ctx context.Context, cli Client, shortThreadID, text string,
+	mentions []domain.Mention, replyTo string,
+) (domain.Sent, error) {
 	// `IGThreadIGID` is a MISNOMER in the library, the same way
 	// Delta.ThreadIGID is on the inbound side: upstream puts `meta.IGID` — the
 	// SHORT id — in this field (from-matrix.go:81), and a send addressed that
@@ -250,7 +217,7 @@ func sendText(
 			// The measured interop fbids run 15 and 17 digits and share
 			// prefixes with each other; any length or prefix rule would reject
 			// real members.
-			return sendResult{}, fmt.Errorf("mention fbid %q is not numeric", m.FBID)
+			return domain.Sent{}, fmt.Errorf("mention fbid %q is not numeric", m.FBID)
 		}
 		req.Mentions = append(req.Mentions, slidetypes.InputMention{
 			Offset: m.Offset, Length: m.Length, FBID: fbid,
@@ -266,12 +233,14 @@ func sendText(
 		req.ReplyToMessageID = &replyTo
 		req.RepliedToItemID = &replyTo
 	}
-	resp, err := cli.SendMessage(ctx, req)
+	resp, err := call(ctx, "instagram.SendMessage", nil, func(ctx context.Context) (*slidetypes.SendTextResponse, error) {
+		return cli.SendMessage(ctx, req)
+	})
 	if err != nil {
-		return sendResult{}, err
+		return domain.Sent{}, err
 	}
 	if resp == nil {
-		return sendResult{}, errNoMessageID
+		return domain.Sent{}, errNoMessageID
 	}
 	return resultOf(resp.GetMessage())
 }
@@ -295,20 +264,22 @@ func sendText(
 // send leg was long — is an invitation to hand it a thread and a different
 // thread.
 func sendMedia(
-	ctx context.Context, cli igClient, up uploader,
+	ctx context.Context, cli Client, up Uploader,
 	shortThreadID int64,
 	media *httpclient.MercuryUploadMedia, replyTo string,
-) (sendResult, error) {
-	resp, err := up(ctx, shortThreadID, media)
+) (domain.Sent, error) {
+	resp, err := call(ctx, "instagram.Upload",
+		[]attribute.KeyValue{attribute.Int64("instagram.thread_fbid", shortThreadID)},
+		func(ctx context.Context) (*types.MercuryUploadResponse, error) { return up(ctx, shortThreadID, media) })
 	if err != nil {
-		return sendResult{}, fmt.Errorf("upload: %w", err)
+		return domain.Sent{}, fmt.Errorf("upload: %w", err)
 	}
 	if resp == nil || resp.Payload.RealMetadata == nil {
-		return sendResult{}, errors.New("upload returned no attachment metadata")
+		return domain.Sent{}, domain.Classify(domain.ErrUpstreamRejected, errors.New("upload returned no attachment metadata"))
 	}
 	attachID := resp.Payload.RealMetadata.GetFbId()
 	if attachID == 0 {
-		return sendResult{}, errors.New("upload returned attachment fbid 0")
+		return domain.Sent{}, domain.Classify(domain.ErrUpstreamRejected, errors.New("upload returned attachment fbid 0"))
 	}
 
 	req := &slidetypes.SendMediaRequest{
@@ -319,24 +290,26 @@ func sendMedia(
 	if replyTo != "" {
 		req.ReplyToMessageID = &replyTo
 	}
-	sent, err := cli.SendMedia(ctx, req)
+	sent, err := call(ctx, "instagram.SendMedia", nil, func(ctx context.Context) (*slidetypes.SendMediaResponse, error) {
+		return cli.SendMedia(ctx, req)
+	})
 	if err != nil {
-		return sendResult{}, err
+		return domain.Sent{}, err
 	}
 	if sent == nil {
-		return sendResult{}, errNoMessageID
+		return domain.Sent{}, errNoMessageID
 	}
 	return resultOf(sent.GetMessage())
 }
 
 // resultOf is the one place a send turns into a 200 body, so it is the one
 // place that can refuse to.
-func resultOf(msg slidetypes.SentMessage) (sendResult, error) {
+func resultOf(msg slidetypes.SentMessage) (domain.Sent, error) {
 	id := messageIDOf(msg)
 	if id == "" {
-		return sendResult{}, errNoMessageID
+		return domain.Sent{}, errNoMessageID
 	}
-	return sendResult{OK: true, ID: id, TimestampMS: unixMilliOrZero(msg)}, nil
+	return domain.Sent{ID: id, TimestampMS: unixMilliOrZero(msg)}, nil
 }
 
 // errReactionNotApplied is the read-back failing, not the request failing.
@@ -346,7 +319,7 @@ func resultOf(msg slidetypes.SentMessage) (sendResult, error) {
 // refusal — and is simply not in the thread afterwards. The ONLY signal that
 // separates that from a real reaction is the post-state list the mutation
 // returns, which is why it is read here instead of discarded.
-var errReactionNotApplied = errors.New("reaction mutation was accepted but the reaction is not on the message")
+var errReactionNotApplied = domain.Classify(domain.ErrUpstreamRejected, errors.New("reaction mutation was accepted but the reaction is not on the message"))
 
 // errReactionUnverifiable is the fail-closed half: with no own fbid there is
 // nothing to look for in the post-state list, so the mutation cannot be
@@ -365,7 +338,7 @@ var errReactionUnconfirmed = errors.New("reaction accepted; post-state did not c
 //
 // shortThreadID, not the long one — see the table at the top of this file.
 func sendReaction(
-	ctx context.Context, cli igClient,
+	ctx context.Context, cli Client,
 	shortThreadID, messageID, emoji string, remove bool, ownFBID int64,
 ) error {
 	status := slidetypes.ReactionStatusCreated
@@ -374,7 +347,7 @@ func sendReaction(
 		// Instagram still wants the emoji on a removal — the mutation
 		// identifies WHICH reaction is being retracted, not just that one is.
 	}
-	resp, err := cli.SendReaction(ctx, &slidetypes.CreateReactionRequest{
+	req := &slidetypes.CreateReactionRequest{
 		Input: slidetypes.ReactionInput{
 			Emoji:          emoji,
 			MessageID:      messageID,
@@ -382,6 +355,9 @@ func sendReaction(
 			ReactionStatus: status,
 			ThreadID:       shortThreadID,
 		},
+	}
+	resp, err := call(ctx, "instagram.SendReaction", nil, func(ctx context.Context) (*slidetypes.SendReactionResponse, error) {
+		return cli.SendReaction(ctx, req)
 	})
 	if err != nil {
 		return err
@@ -452,15 +428,38 @@ func sendReaction(
 // So: 200, with the observation attached. If the field is ever read back
 // against an unsend known to have failed, this becomes an error and the test
 // that pins the degradation is the one to delete.
-func unsendMessage(ctx context.Context, cli igClient, longThreadID, messageID string) (confirmed bool, err error) {
-	resp, err := cli.UnsendMessage(ctx, &slidetypes.UnsendMessageRequest{
+func unsendMessage(ctx context.Context, cli Client, longThreadID, messageID string) (confirmed bool, err error) {
+	req := &slidetypes.UnsendMessageRequest{
 		MessageID: messageID,
 		SendData:  slidetypes.SendData{ThreadID: longThreadID},
+	}
+	resp, err := call(ctx, "instagram.UnsendMessage", nil, func(ctx context.Context) (*slidetypes.UnsendMessageResponse, error) {
+		return cli.UnsendMessage(ctx, req)
 	})
 	if err != nil {
 		return false, err
 	}
 	return resp != nil && resp.DirectUnsendMessage, nil
+}
+
+// setTyping publishes the typing indicator. SHORT id, following upstream
+// (handlematrix.go:484); arrival was never verified in either id space.
+func setTyping(ctx context.Context, cli Client, shortThreadID string, typing bool) error {
+	_, err := call(ctx, "instagram.SetTyping",
+		[]attribute.KeyValue{attribute.String("instagram.thread_id", shortThreadID)},
+		func(ctx context.Context) (struct{}, error) {
+			return struct{}{}, cli.SetTyping(ctx, shortThreadID, typing)
+		})
+	return err
+}
+
+// lookupThread is the route lookup behind threadIndex, under its span.
+func lookupThread(ctx context.Context, cli Client, shortID int64) (*instameow.ThreadIGIDs, error) {
+	return call(ctx, "instagram.FetchThreadID",
+		[]attribute.KeyValue{attribute.Int64("instagram.thread_fbid", shortID)},
+		func(ctx context.Context) (*instameow.ThreadIGIDs, error) {
+			return cli.FetchThreadID(ctx, shortID)
+		})
 }
 
 // unixMilliOrZero guards the same zero-time trap normalizeMessage does:

@@ -94,7 +94,7 @@ the host-side bridge, per `(network, verb)`, and nothing above it knows:
 > Issuing `PolarisProfilePageContentQuery` a second time, raw, to reach past
 > `slidetypes.ProfilePageResponse`'s typed fields surfaced two more mistakes,
 > both now fixed and both regression-tested against literal bytes
-> (`deploy/instagram-bridge/social_profile_test.go`):
+> (`deploy/instagram-bridge/internal/gateway/instameow/social_profile_test.go`):
 >
 > 1. **The second call was keyed on the account's username.** The document
 >    does not take one — `slidetypes.GetProfilePageRequest` declares a single

@@ -12,10 +12,7 @@ package main
 //  5. a log line carries the trace id of the context it was logged in.
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -108,8 +105,7 @@ func TestServerSpanContinuesTheCallersTraceAndIsNamedByPattern(t *testing.T) {
 // and a session Instagram has challenged names its failure.
 func TestUpstreamSpanIsAChildAndClassifiesAChallenge(t *testing.T) {
 	rec := recordSpans(t)
-	b := newTestBridge(t, &fakeIG{profileErr: httpclient.ErrCheckpointRequired})
-	b.out = traceClient(b.out)
+	b := newTestBridge(t, &fakeIG{ProfileErr: httpclient.ErrCheckpointRequired})
 
 	w := getProfile(t, b, "221731317")
 	if w.Code != http.StatusConflict {
@@ -140,8 +136,6 @@ func TestUpstreamSpanIsAChildAndClassifiesAChallenge(t *testing.T) {
 func TestAColdRoomsThreadLookupIsASpanUnderTheRequest(t *testing.T) {
 	rec := recordSpans(t)
 	b := newTestBridge(t, &fakeIG{})
-	b.out = traceClient(b.out)
-	b.threads = newThreadIndex(b.fetchThreadID)
 
 	w := post(t, b, "/send", map[string]any{"room_id": threadShort, "text": "hi"})
 	if w.Code != http.StatusOK {
@@ -154,51 +148,12 @@ func TestAColdRoomsThreadLookupIsASpanUnderTheRequest(t *testing.T) {
 	}
 }
 
-// The regression this whole file exists for: a GraphQL failure that answers
-// HTTP 200. A span that looked only at the status would be green here.
-func TestGraphQLErrorsInsideA200MarkTheSpanFailed(t *testing.T) {
-	rec := recordSpans(t)
-	issuer := tracedIssuer{inner: &fakeGraphQLIssuer{body: []byte(fieldExceptionEnvelope)}}
-
-	_, _, err := issuer.MakeGraphQLRequest(context.Background(), "PolarisProfilePageContentQuery", nil)
-	if err != nil {
-		t.Fatalf("the transport call itself should succeed; got %v", err)
-	}
-	s := spanNamed(t, rec, "instagram.graphql PolarisProfilePageContentQuery")
-	if s.Status().Code != codes.Error {
-		t.Fatalf("span status = %v for a field_exception envelope; a failed "+
-			"document inside a 200 must read as a failure", s.Status().Code)
-	}
-	if v, _ := attrOf(s, "instagram.graphql.error_code"); v.AsInt64() != 1675030 {
-		t.Errorf("instagram.graphql.error_code = %d, want 1675030", v.AsInt64())
-	}
-	if v, _ := attrOf(s, "error.type"); v.AsString() != "upstream_rejected" {
-		t.Errorf("error.type = %q, want upstream_rejected", v.AsString())
-	}
-}
-
-// The positive half, so the failure above is not simply "every GraphQL span
-// is red".
-func TestASuccessfulGraphQLDocumentLeavesTheSpanUnset(t *testing.T) {
-	rec := recordSpans(t)
-	issuer := tracedIssuer{inner: &fakeGraphQLIssuer{body: []byte(realProfileEnvelope)}}
-
-	if _, _, err := issuer.MakeGraphQLRequest(context.Background(), "PolarisProfilePageContentQuery", nil); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	s := spanNamed(t, rec, "instagram.graphql PolarisProfilePageContentQuery")
-	if s.Status().Code == codes.Error {
-		t.Errorf("a successful document marked its span Error: %q", s.Status().Description)
-	}
-}
-
 // The negative: what people write never enters a span. Checked across every
 // place a span carries text, because a span that "looks fine" in Jaeger
 // cannot show what it should not contain.
 func TestMessageTextNeverEntersASpan(t *testing.T) {
 	rec := recordSpans(t)
 	b := newTestBridge(t, &fakeIG{})
-	b.out = traceClient(b.out)
 	const secret = "the-words-somebody-wrote-3f9c1"
 
 	w := post(t, b, "/send", map[string]any{"room_id": threadShort, "text": secret})
@@ -249,28 +204,5 @@ func TestHealthAndEventsAreNotTraced(t *testing.T) {
 	b.routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/events", nil).WithContext(ctx))
 	if n := len(rec.Ended()); n != 0 {
 		t.Errorf("/events produced %d span(s), want none", n)
-	}
-}
-
-// A log line inside a span carries that span's ids, which is the join between
-// a trace in Jaeger and the container's log.
-func TestALogLineCarriesItsTraceID(t *testing.T) {
-	recordSpans(t)
-	var buf bytes.Buffer
-	logger := slog.New(traceLogHandler{slog.NewJSONHandler(&buf, nil)})
-
-	ctx, span := tracer().Start(context.Background(), "unit")
-	logger.WarnContext(ctx, "something happened", "room", "1009543911792316")
-	span.End()
-
-	var line map[string]any
-	if err := json.Unmarshal(buf.Bytes(), &line); err != nil {
-		t.Fatalf("log line is not JSON: %v (%s)", err, buf.String())
-	}
-	if line["trace_id"] != span.SpanContext().TraceID().String() {
-		t.Errorf("trace_id = %v, want %s", line["trace_id"], span.SpanContext().TraceID())
-	}
-	if line["span_id"] != span.SpanContext().SpanID().String() {
-		t.Errorf("span_id = %v, want %s", line["span_id"], span.SpanContext().SpanID())
 	}
 }

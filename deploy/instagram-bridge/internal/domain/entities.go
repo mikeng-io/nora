@@ -1,0 +1,161 @@
+package domain
+
+// The entities a read or a send returns. They are what crosses from the
+// gateway to the HTTP layer; Instagram's wire structs never do
+// (design/instagram-adoption/16 §Layers). No JSON tags here: the response
+// shapes are the HTTP layer's decision, made once, in its DTOs.
+//
+// Ids that came BACK from Instagram are carried as the strings Instagram sent,
+// not re-parsed into value objects: they are output, not input, and a parse
+// that refused an odd value would turn a readable answer into a failed one.
+
+// SessionState is the `session` field of GET /health. The contract
+// (03-transport-contract.md) fixes these three spellings. It is deliberately
+// NOT a status code: a checkpointed session still answers /health with 200 so
+// the container healthcheck stays green while a human deals with the
+// challenge.
+type SessionState string
+
+const (
+	StateAuthenticated SessionState = "authenticated"
+	StateCheckpointed  SessionState = "checkpointed"
+	StateLoggedOut     SessionState = "logged_out"
+)
+
+// Self is the bridge's own account, in all three id spaces.
+type Self struct {
+	// FBID is GetOwnFBID(): the id a mention carries, and the ONLY one "was I
+	// tagged?" may compare against.
+	FBID string
+	// IGID is the public id. It is NOT a messaging id and must never be
+	// compared to a mention.
+	IGID     string
+	Username string
+}
+
+// Session is what the bridge can say about its own session at one instant.
+type Session struct {
+	State     SessionState
+	Detail    string
+	Connected bool
+	Seq       int64
+	Self      Self
+	// HasClient is whether a client exists to serve a request. False while
+	// the supervisor is (re)building one, which is retryable (503), not a
+	// state a human has to clear (409).
+	HasClient bool
+}
+
+// Account is one Instagram account as GetProfile reads it: who it is and the
+// follow facts that gate reading its content.
+type Account struct {
+	IGID     string
+	Username string
+	FullName string
+	// FBID is the messaging id, or "" for an account the messaging graph has
+	// no row for (a public account never messaged). A missing join key, not
+	// a failed read.
+	FBID            string
+	Following       bool
+	Blocking        bool
+	IsRestricted    bool
+	IsVerified      bool
+	LatestReelMedia int
+	// Extra is every wire key the library does not model, verbatim. It exists
+	// for `is_private`; it is not a stable contract.
+	Extra map[string]any
+}
+
+// SocialProfile is the named subset of `PolarisProfilePageContentQuery`'s
+// `data.user` that GetProfile's own response type throws away.
+type SocialProfile struct {
+	IsPrivate             bool
+	FollowedBy            bool
+	Biography             string
+	ExternalURL           string
+	FollowerCount         int
+	FollowingCount        int
+	MutualFollowersCount  int
+	MediaCount            int
+	TotalClipsCount       int
+	IsBusiness            bool
+	IsProfessionalAccount *bool
+	Category              *string
+	ProfilePicURL         string
+}
+
+// SocialRead is the SECOND, independent upstream call behind an account read.
+// It fails on its own, so its outcome is carried rather than collapsed: a 429
+// and a genuinely empty biography must not become the same empty string.
+type SocialRead struct {
+	// Profile is nil when the read failed; Err says why.
+	Profile *SocialProfile
+	Err     error
+	// Sent is whether a request left the bridge at all. False means there was
+	// no client able to issue one.
+	Sent bool
+	// Status is the HTTP status Instagram answered with (200 for a failure
+	// inside the body), or 0 when the request got no response.
+	Status int
+}
+
+// Story is one account's current story. Found separates "no story up" from
+// "a story Nora may not see": both come back with zero items.
+type Story struct {
+	IGID       string
+	Found      bool
+	Username   string
+	ExpiringAt int
+	Seen       int
+	Items      []StoryItem
+}
+
+// StoryItem is one frame.
+type StoryItem struct {
+	ID           string
+	Kind         string
+	URL          string
+	ThumbnailURL string
+	TakenAt      int
+	ExpiringAt   int
+	Caption      string
+	AltText      string
+}
+
+// Thread is one group thread's membership, never short and never empty.
+type Thread struct {
+	Title   string
+	IsGroup bool
+	Members []Member
+}
+
+// Member is one account in a thread, in BOTH id spaces.
+type Member struct {
+	FBID     string
+	IGID     string
+	Username string
+	FullName string
+}
+
+// Mention is one span of tagged text on an outbound message. FBID stays the
+// caller's string: it is parsed where the wire needs a number, with the
+// acceptance the send path has always had.
+type Mention struct {
+	FBID   string
+	Offset int
+	Length int
+}
+
+// Upload is one attachment to send.
+type Upload struct {
+	Filename  string
+	MimeType  string
+	Data      []byte
+	VoiceNote bool
+}
+
+// Sent is a message Instagram accepted AND named.
+type Sent struct {
+	ID          string
+	TimestampMS int64
+}

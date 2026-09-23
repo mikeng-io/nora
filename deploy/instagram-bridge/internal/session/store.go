@@ -1,13 +1,16 @@
-package main
-
-// Session: what the bridge keeps on disk so a restart is a RESUME and not a
-// fresh login, and the vocabulary it uses to describe an account Instagram is
-// currently unhappy with.
+// Package session is what the bridge keeps on disk so a restart is a RESUME
+// and not a fresh login: the cookie jar, the reconnection state, the sequence
+// id, and its own identity.
 //
 // The operational premise (design/instagram-adoption/01-bridge-container.md):
 // an Instagram challenge is a NORMAL operating state, not a crash. Every
 // function here is written so that "the account is checkpointed" ends with the
 // bridge still serving HTTP and saying so, never with a non-zero exit.
+//
+// The supervisor that drives the session lives with the client it builds, in
+// internal/gateway/instameow: every call it makes is an instameow call. This
+// package is the part that is only files.
+package session
 
 import (
 	"encoding/json"
@@ -19,51 +22,11 @@ import (
 	"strings"
 	"time"
 
+	"instagram-bridge/internal/domain"
+
 	"go.mau.fi/mautrix-meta/pkg/messagix/cookies"
-	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
 	"go.mau.fi/mautrix-meta/pkg/messagix/types"
 )
-
-// sessionState is the `session` field of GET /health, and the contract
-// (03-transport-contract.md) fixes these three spellings. It is deliberately
-// NOT a status code: a checkpointed session still answers /health with 200 so
-// the container healthcheck stays green while a human deals with the
-// challenge. Crashing on a checkpoint would make an ordinary Instagram event
-// look like a dead process.
-type sessionState string
-
-const (
-	stateAuthenticated sessionState = "authenticated"
-	stateCheckpointed  sessionState = "checkpointed"
-	stateLoggedOut     sessionState = "logged_out"
-)
-
-// classifyAuthError maps an instameow error onto the contract's vocabulary.
-//
-// The distinction is not cosmetic. `checkpointed` means Instagram wants a
-// human in a browser and the SAME cookies will work again afterwards;
-// `logged_out` means the cookies are dead and a new session must be handed
-// over. Collapsing them would tell the operator to do the wrong thing, and
-// collapsing either into "error" would make /send retry forever against a
-// wall — which is why the contract gives checkpointed its own non-retryable
-// 409 rather than a 503.
-func classifyAuthError(err error) sessionState {
-	switch {
-	case err == nil:
-		return stateAuthenticated
-	case errors.Is(err, httpclient.ErrChallengeRequired),
-		errors.Is(err, httpclient.ErrCheckpointRequired),
-		errors.Is(err, httpclient.ErrConsentRequired):
-		return stateCheckpointed
-	case errors.Is(err, httpclient.ErrTokenInvalidated):
-		return stateLoggedOut
-	default:
-		// An unclassified failure is NOT reported as authenticated. Reaching
-		// here means the session did something we do not have a name for, and
-		// the fail-closed reading is "a human should look", not "carry on".
-		return stateCheckpointed
-	}
-}
 
 // --- the session directory ---------------------------------------------------
 //
@@ -80,11 +43,13 @@ func classifyAuthError(err error) sessionState {
 //	              it means the stream resumes from "now" rather than from the
 //	              last delta we saw.
 //	self.json     own identity, cached so /health can answer it after a resume
-//	              that never called LoadIndex (see store.loadSelf).
+//	              that never called LoadIndex (see Store.LoadSelf).
 
-type store struct{ dir string }
+// Store is the session directory.
+type Store struct{ Dir string }
 
-func (s store) path(name string) string { return filepath.Join(s.dir, name) }
+// Path is the file `name` inside the session directory.
+func (s Store) Path(name string) string { return filepath.Join(s.Dir, name) }
 
 // writeAtomic is write-to-temp-then-rename, and it is load-bearing for
 // cookies.json and state.json specifically: both are rewritten while the
@@ -125,46 +90,45 @@ func writeAtomic(path string, data []byte) error {
 	return os.Rename(tmp, path)
 }
 
-type selfIdentity struct {
-	// FBID is `interop_messaging_user_fbid` — client.GetOwnFBID(). It is the
-	// id a mention carries, and the ONLY one "was I tagged?" may compare
-	// against. viewer.GetFBID() is a different number for the same account
-	// and matches nothing (02-identity-and-policy.md, measured).
-	FBID string `json:"fbid"`
-	// IGID is the public Instagram numeric id — what the Phase 2 social calls
-	// take. It is NOT a messaging id and must never be compared to a mention.
+// selfRecord is self.json's shape. Its field names are the ones the file has
+// always had, so a cache written before this package existed still loads.
+type selfRecord struct {
+	FBID     string `json:"fbid"`
 	IGID     string `json:"igid"`
 	Username string `json:"username"`
 }
 
-func (s store) saveSelf(self selfIdentity) error {
-	blob, err := json.Marshal(self)
+// SaveSelf caches the bridge's own identity.
+func (s Store) SaveSelf(self domain.Self) error {
+	blob, err := json.Marshal(selfRecord(self))
 	if err != nil {
 		return err
 	}
-	return writeAtomic(s.path("self.json"), blob)
+	return writeAtomic(s.Path("self.json"), blob)
 }
 
-// loadSelf exists because a resumed boot never calls LoadIndex, and LoadIndex
+// LoadSelf exists because a resumed boot never calls LoadIndex, and LoadIndex
 // is the only thing that returns the viewer (hence the username). Without this
 // cache /health would report an empty username for the entire life of a
 // resumed process — a field that reads "we don't know who we are" when in fact
 // we do.
-func (s store) loadSelf() (selfIdentity, bool) {
-	var self selfIdentity
-	blob, err := os.ReadFile(s.path("self.json"))
-	if err != nil || json.Unmarshal(blob, &self) != nil {
-		return selfIdentity{}, false
+func (s Store) LoadSelf() (domain.Self, bool) {
+	var rec selfRecord
+	blob, err := os.ReadFile(s.Path("self.json"))
+	if err != nil || json.Unmarshal(blob, &rec) != nil {
+		return domain.Self{}, false
 	}
-	return self, self.FBID != ""
+	return domain.Self(rec), rec.FBID != ""
 }
 
-func (s store) saveState(state json.RawMessage) error {
-	return writeAtomic(s.path("state.json"), state)
+// SaveState persists instameow's reconnection state.
+func (s Store) SaveState(state json.RawMessage) error {
+	return writeAtomic(s.Path("state.json"), state)
 }
 
-func (s store) loadState() (json.RawMessage, bool) {
-	blob, err := os.ReadFile(s.path("state.json"))
+// LoadState reads it back, if there is one.
+func (s Store) LoadState() (json.RawMessage, bool) {
+	blob, err := os.ReadFile(s.Path("state.json"))
 	if err != nil || len(blob) == 0 {
 		return nil, false
 	}
@@ -176,48 +140,51 @@ type seqRecord struct {
 	TS    time.Time `json:"ts"`
 }
 
-// The sequence id lives in its own file rather than inside state.json because
-// instameow's DumpState does not carry it: LoadState restores the HTTP configs
-// and nothing else, so a bridge that persisted only state.json would call
-// HasSeqID() and get false on every boot, do a full LoadIndex every time, and
-// look to Instagram like a client that never resumes anything.
-func (s store) saveSeq(seqID int64, ts time.Time) error {
+// SaveSeq persists the sequence id.
+//
+// It lives in its own file rather than inside state.json because instameow's
+// DumpState does not carry it: LoadState restores the HTTP configs and nothing
+// else, so a bridge that persisted only state.json would call HasSeqID() and
+// get false on every boot, do a full LoadIndex every time, and look to
+// Instagram like a client that never resumes anything.
+func (s Store) SaveSeq(seqID int64, ts time.Time) error {
 	blob, err := json.Marshal(seqRecord{SeqID: seqID, TS: ts})
 	if err != nil {
 		return err
 	}
-	return writeAtomic(s.path("seq.json"), blob)
+	return writeAtomic(s.Path("seq.json"), blob)
 }
 
-// clearSeq deletes the persisted sequence id.
+// ClearSeq deletes the persisted sequence id.
 //
-// This is the DURABLE half of forceReindex. The in-memory flag stops the
-// current process from resuming against a void sequence id; on its own it does
-// nothing about the number still sitting in seq.json, so a restart between the
-// invalidation and the next LoadIndex takes ensureSession's resume shortcut,
-// skips LoadIndex entirely, and subscribes from a sequence id Instagram has
-// already thrown away. Nothing errors and no message arrives — the room simply
-// goes quiet until somebody notices.
+// This is the DURABLE half of the supervisor's forced reindex. The in-memory
+// flag stops the current process from resuming against a void sequence id; on
+// its own it does nothing about the number still sitting in seq.json, so a
+// restart between the invalidation and the next LoadIndex takes the resume
+// shortcut, skips LoadIndex entirely, and subscribes from a sequence id
+// Instagram has already thrown away. Nothing errors and no message arrives —
+// the room simply goes quiet until somebody notices.
 //
 // A missing file is success: the point is that seq.json does not hold a stale
 // number afterwards, not that a delete happened.
-func (s store) clearSeq() error {
-	if err := os.Remove(s.path("seq.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+func (s Store) ClearSeq() error {
+	if err := os.Remove(s.Path("seq.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return nil
 }
 
-func (s store) loadSeq() (int64, time.Time) {
+// LoadSeq reads the sequence id, or 0 when there is none.
+func (s Store) LoadSeq() (int64, time.Time) {
 	var rec seqRecord
-	blob, err := os.ReadFile(s.path("seq.json"))
+	blob, err := os.ReadFile(s.Path("seq.json"))
 	if err != nil || json.Unmarshal(blob, &rec) != nil {
 		return 0, time.Time{}
 	}
 	return rec.SeqID, rec.TS
 }
 
-// saveCookies writes the jar back. Instagram rotates values inside the session
+// SaveCookies writes the jar back. Instagram rotates values inside the session
 // (`csrftoken`, `rur`, the routing cookie) and instameow mutates the jar in
 // place as responses arrive, so the jar in memory drifts away from the file
 // the operator originally supplied. Persisting it means a restart replays what
@@ -226,7 +193,7 @@ func (s store) loadSeq() (int64, time.Time) {
 // Guarded on IsLoggedIn: a jar that has been emptied by a logout response must
 // not be allowed to overwrite a good file, or a transient failure becomes a
 // permanent one.
-func (s store) saveCookies(jar *cookies.Cookies) error {
+func (s Store) SaveCookies(jar *cookies.Cookies) error {
 	if jar == nil || !jar.IsLoggedIn() {
 		return errors.New("refusing to persist a jar that is not logged in")
 	}
@@ -234,10 +201,10 @@ func (s store) saveCookies(jar *cookies.Cookies) error {
 	if err != nil {
 		return err
 	}
-	return writeAtomic(s.path("cookies.json"), blob)
+	return writeAtomic(s.Path("cookies.json"), blob)
 }
 
-// loadCookieJar reads cookies.json, or bootstraps it from a cURL paste.
+// LoadCookieJar reads cookies.json, or bootstraps it from a cURL paste.
 //
 // The second form exists because the documented operator flow is "log in at
 // instagram.com in a private window, take any graphql XHR, Copy as cURL"
@@ -245,7 +212,7 @@ func (s store) saveCookies(jar *cookies.Cookies) error {
 // of that blob is a step that gets done wrong; letting them drop the whole
 // thing in and normalizing it here is one less way to arrive at a half-session
 // that fails with an opaque auth error.
-func loadCookieJar(s store) (*cookies.Cookies, error) {
+func LoadCookieJar(s Store) (*cookies.Cookies, error) {
 	// A cookies.json that is PRESENT but unusable must not shadow the cURL
 	// bootstrap. Reaching the cURL path only on a read error meant an empty,
 	// truncated or half-written cookies.json made the documented re-auth
@@ -254,7 +221,7 @@ func loadCookieJar(s store) (*cookies.Cookies, error) {
 	// has to be usable, not merely readable, to win: parseable AND carrying
 	// the three cookies the client refuses to start without.
 	jsonErr := errors.New("no cookies.json")
-	if blob, readErr := os.ReadFile(s.path("cookies.json")); readErr == nil {
+	if blob, readErr := os.ReadFile(s.Path("cookies.json")); readErr == nil {
 		jar := &cookies.Cookies{Platform: types.PlatformFromString("instagram")}
 		switch {
 		case json.Unmarshal(blob, jar) != nil:
@@ -267,9 +234,9 @@ func loadCookieJar(s store) (*cookies.Cookies, error) {
 	}
 
 	jar := &cookies.Cookies{Platform: types.PlatformFromString("instagram")}
-	blob, err := os.ReadFile(s.path("cookies.curl"))
+	blob, err := os.ReadFile(s.Path("cookies.curl"))
 	if err != nil {
-		return nil, fmt.Errorf("%s, and no cookies.curl in %s", jsonErr, s.dir)
+		return nil, fmt.Errorf("%s, and no cookies.curl in %s", jsonErr, s.Dir)
 	}
 	pairs, err := cookiesFromCurl(string(blob))
 	if err != nil {
@@ -279,7 +246,7 @@ func loadCookieJar(s store) (*cookies.Cookies, error) {
 	// Normalize immediately: after this boot the cURL file is inert, so a
 	// stale paste left behind in the volume cannot silently resurrect an old
 	// session over the live one on some later restart.
-	if err := s.saveCookies(jar); err != nil {
+	if err := s.SaveCookies(jar); err != nil {
 		return nil, fmt.Errorf("cookies.curl did not yield a usable session: %w", err)
 	}
 	return jar, nil

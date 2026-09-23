@@ -1,4 +1,4 @@
-package main
+package instameow
 
 // The SOCIAL HALF of `GET /accounts/{igid}` — the fields `GetProfile`'s own
 // response type throws away.
@@ -75,28 +75,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
+
+	"instagram-bridge/internal/domain"
 
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
-	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
 )
 
-// socialClient is the slice of *instameow.Client this read needs.
-// `MakeGraphQLRequest` is exported on the HTTP client and `GetHTTP()` hands
-// one over, which is the whole reason this can be done from outside the
-// library.
-type socialClient interface {
-	GetHTTP() *httpclient.HTTPClient
-	GetEndpoint(name string) string
-}
-
-var errProfileHTTP = errors.New("profile query returned a non-200")
-
-// errProfileGraphQL is a 200 whose BODY says the query failed — a
-// `field_exception` and its relatives. Distinct from errProfileHTTP because
-// the failure is in the document, not the transport, and an operator needs
-// to tell them apart the same way a 429 needs telling from a 500.
-var errProfileGraphQL = errors.New("profile query returned a GraphQL error")
+// errProfileGraphQL is a 200 whose BODY says the document did not deliver
+// what it was asked for. The `errors`-array case is raised by the graphql
+// helper with the same wording; this one is the userless body that carries no
+// errors either.
+var errProfileGraphQL = domain.Classify(domain.ErrUpstreamRejected,
+	errors.New("profile query returned a GraphQL error"))
 
 // profileUserWire is `data.user`, decoded only as far as the fields
 // `socialProfile` keeps. Unnamed fields on the wire (65 measured, ~50 not
@@ -128,85 +118,51 @@ type profileUserWire struct {
 	} `json:"friendship_status"`
 }
 
-// graphQLIssuer is the one method this file needs off `*httpclient.HTTPClient`
-// — narrow on purpose. The concrete type has no interface of its own, so
-// depending on the full type (as this file's first version did, via
-// `socialClient.GetHTTP()`) left `readSocialProfile` with no seam a test
-// could stand in for: nothing here could assert WHICH VALUE a call was
-// actually keyed with, only what a hand-built response byte string parses
-// to. `*httpclient.HTTPClient` satisfies this interface structurally, so
-// production needs no adapter; `readProfile`'s tests use a fake that
-// implements only this.
-type graphQLIssuer interface {
-	MakeGraphQLRequest(ctx context.Context, name string, variables any) (*http.Response, []byte, error)
-}
-
-// readSocialProfile issues the SAME GraphQL document `GetProfile` uses and
-// returns the named fields the library's own response type discards. See
-// the file header for the two corrected mistakes behind this shape:
-// username-keyed (wrong field) and status-only error detection (missed the
-// GraphQL envelope's own `errors`).
+// readSocialProfile issues the SAME GraphQL document `GetProfile` uses,
+// through the graphql helper, and returns the named fields the library's own
+// response type discards. The helper owns the transport status and the
+// envelope's `errors` array; this function owns only `data.user`.
+//
+// The status is Instagram's (see graphql), for the operator-facing
+// `social_error`.
 func readSocialProfile(
-	ctx context.Context, issuer graphQLIssuer, igid string,
-) (socialProfile, int, error) {
-	resp, raw, err := issuer.MakeGraphQLRequest(
-		ctx, "PolarisProfilePageContentQuery", slidetypes.MakeProfilePageRequest(igid),
-	)
+	ctx context.Context, issuer GraphQLIssuer, igid domain.IGID,
+) (domain.SocialProfile, int, error) {
+	status, raw, err := graphql(ctx, issuer,
+		"PolarisProfilePageContentQuery", "profile query",
+		slidetypes.MakeProfilePageRequest(igid.String()))
 	if err != nil {
-		return socialProfile{}, statusForError(err), err
+		return domain.SocialProfile{}, status, err
 	}
-	if resp != nil && resp.StatusCode != http.StatusOK {
-		// FORWARDED, not flattened: telling a 429 from a challenge from a
-		// parse failure is why this exists as a named error rather than one
-		// bucket.
-		return socialProfile{}, resp.StatusCode,
-			fmt.Errorf("%w: %d", errProfileHTTP, resp.StatusCode)
-	}
-
 	out, err := parseSocialProfile(raw)
 	if err != nil {
-		return socialProfile{}, http.StatusOK, err
+		return domain.SocialProfile{}, status, err
 	}
-	return out, http.StatusOK, nil
+	return out, status, nil
 }
 
-// parseSocialProfile is the pure half of readSocialProfile — the GraphQL
-// envelope in, a curated profile or a named error out, with no network
-// underneath it. Split out on purpose: `*httpclient.HTTPClient` is a
-// concrete vendor type with no test seam, so this function is the only place
-// the two mistakes below can actually be asserted against a byte string
-// instead of a live account.
+// parseSocialProfile reads `data.user` out of a document the graphql helper
+// has already accepted, with no network underneath it.
 //
-// `Errors` is checked before `Data`: a failed GraphQL document is still an
-// HTTP 200, with an `errors` array where `data` would be. The first version
-// of this call checked only the HTTP status and treated that shape as a
-// successful read of an empty profile — no error, zero fields — which is
-// what let a `field_exception` masquerade as success on every call keyed by
-// username (see the file header).
-func parseSocialProfile(raw []byte) (socialProfile, error) {
+// A 200 with neither `errors` nor a `user` should not exist but, per this
+// bundle's own history of wrong field-set guesses, gets a named refusal rather
+// than a silent zero-value success if it ever does.
+func parseSocialProfile(raw []byte) (domain.SocialProfile, error) {
 	var envelope struct {
 		Data struct {
 			User *profileUserWire `json:"user"`
 		} `json:"data"`
-		Errors []struct {
-			Message string `json:"message"`
-			Code    int    `json:"code"`
-			Summary string `json:"summary"`
-		} `json:"errors"`
 	}
 	if err := json.Unmarshal(raw, &envelope); err != nil {
-		return socialProfile{}, fmt.Errorf("profile query did not return JSON (%d bytes): %w", len(raw), err)
-	}
-	if len(envelope.Errors) > 0 {
-		e := envelope.Errors[0]
-		return socialProfile{}, fmt.Errorf("%w: %s (code=%d): %s", errProfileGraphQL, e.Summary, e.Code, e.Message)
+		return domain.SocialProfile{}, domain.Classify(domain.ErrUpstreamRejected,
+			fmt.Errorf("profile query did not return JSON (%d bytes): %w", len(raw), err))
 	}
 	if envelope.Data.User == nil {
-		return socialProfile{}, fmt.Errorf("%w: no user in a 200 with no errors either", errProfileGraphQL)
+		return domain.SocialProfile{}, fmt.Errorf("%w: no user in a 200 with no errors either", errProfileGraphQL)
 	}
 
 	u := envelope.Data.User
-	return socialProfile{
+	return domain.SocialProfile{
 		IsPrivate:             u.IsPrivate,
 		FollowedBy:            u.FriendshipStatus.FollowedBy,
 		Biography:             u.Biography,

@@ -27,18 +27,20 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"instagram-bridge/internal/domain"
-
-	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
+	gateway "instagram-bridge/internal/gateway/instameow"
+	"instagram-bridge/internal/observability"
+	"instagram-bridge/internal/stream"
 )
 
-// errNotConnected is the session being (re)established: expected to heal, so
-// it is ErrUnavailable, and retryable.
-var errNotConnected = domain.Classify(domain.ErrUnavailable,
-	errors.New("instagram session is not connected"))
+// server is the HTTP surface over the gateway's one session.
+type server struct {
+	gw        *gateway.Bridge
+	hub       *stream.Hub
+	startedAt time.Time
+}
 
 const (
 	// maxJSONBody bounds the control routes. Generous relative to a message
@@ -50,7 +52,7 @@ const (
 	maxMediaBody = 32 << 20 // 32 MiB
 )
 
-func (b *bridge) routes() http.Handler {
+func (b *server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", b.handleHealth)
 	mux.HandleFunc("GET /events", b.handleEvents)
@@ -70,43 +72,43 @@ func (b *bridge) routes() http.Handler {
 	// spelling of one noun. Renamed 2026-09-22 while it was still free:
 	// `/profile` and `/story` had no caller at all, and `/roster` had exactly
 	// one.
-	mux.HandleFunc("GET /threads/{thread_fbid}/members", route("GET /threads/{thread_fbid}/members", b.handleRoster))
+	mux.HandleFunc("GET /threads/{thread_fbid}/members", observability.Route("GET /threads/{thread_fbid}/members", b.handleRoster))
 	// ONE account resource. `web_profile_info`'s fields are not a second
 	// noun — they are more of this one — so they are merged into this read
 	// rather than given a path of their own. The response says which upstream
 	// halves answered; see social.go.
-	mux.HandleFunc("GET /accounts/{igid}", route("GET /accounts/{igid}", b.handleProfile))
+	mux.HandleFunc("GET /accounts/{igid}", observability.Route("GET /accounts/{igid}", b.handleProfile))
 	// The only path to a story anywhere, and the only read VISIBLE to the
 	// person being read. A sub-resource of the account, because that is what
 	// it is.
-	mux.HandleFunc("GET /accounts/{igid}/story", route("GET /accounts/{igid}/story", b.handleStory))
-	mux.HandleFunc("POST /send", route("POST /send", b.handleSend))
-	mux.HandleFunc("POST /send-media", route("POST /send-media", b.handleSendMedia))
-	mux.HandleFunc("POST /react", route("POST /react", b.handleReact))
-	mux.HandleFunc("POST /typing", route("POST /typing", b.handleTyping))
-	mux.HandleFunc("POST /unsend", route("POST /unsend", b.handleUnsend))
-	return traceHTTP(mux)
+	mux.HandleFunc("GET /accounts/{igid}/story", observability.Route("GET /accounts/{igid}/story", b.handleStory))
+	mux.HandleFunc("POST /send", observability.Route("POST /send", b.handleSend))
+	mux.HandleFunc("POST /send-media", observability.Route("POST /send-media", b.handleSendMedia))
+	mux.HandleFunc("POST /react", observability.Route("POST /react", b.handleReact))
+	mux.HandleFunc("POST /typing", observability.Route("POST /typing", b.handleTyping))
+	mux.HandleFunc("POST /unsend", observability.Route("POST /unsend", b.handleUnsend))
+	return observability.TraceHTTP(mux)
 }
 
 // --- /health ------------------------------------------------------------------
 
 type healthBody struct {
-	OK        bool         `json:"ok"`
-	Session   sessionState `json:"session"`
-	Connected bool         `json:"connected"`
-	Seq       int64        `json:"seq"`
-	Detail    string       `json:"detail,omitempty"`
+	OK        bool                `json:"ok"`
+	Session   domain.SessionState `json:"session"`
+	Connected bool                `json:"connected"`
+	Seq       int64               `json:"seq"`
+	Detail    string              `json:"detail,omitempty"`
 	// Beyond the contract's four fields. `self` is here because the adapter's
 	// "was I tagged?" test binds on an fbid it would otherwise have to carry
 	// in config, and a config value that silently disagrees with the live
 	// session is a failure with no symptom. The event counters are the
 	// drop-and-count record: the number survives here permanently so a loss is
 	// readable long after the SSE notice that announced it.
-	Self           selfIdentity `json:"self"`
-	DroppedEvents  int          `json:"dropped_events"`
-	BufferedEvents int          `json:"buffered_events"`
-	Clients        int          `json:"clients"`
-	UptimeSeconds  int          `json:"uptime_seconds"`
+	Self           selfBody `json:"self"`
+	DroppedEvents  int      `json:"dropped_events"`
+	BufferedEvents int      `json:"buffered_events"`
+	Clients        int      `json:"clients"`
+	UptimeSeconds  int      `json:"uptime_seconds"`
 }
 
 // handleHealth ALWAYS answers 200 while the HTTP server serves.
@@ -116,16 +118,16 @@ type healthBody struct {
 // operating state the bridge must DESCRIBE, not a condition to fail on. A
 // non-200 would make the container healthcheck flap on an ordinary captcha
 // and restart a process whose restart fixes nothing.
-func (b *bridge) handleHealth(w http.ResponseWriter, r *http.Request) {
-	state, detail, connected, seq := b.snapshot()
-	clients, buffered, dropped := b.hub.stats()
+func (b *server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	snap := b.gw.Snapshot()
+	clients, buffered, dropped := b.hub.Stats()
 	writeJSON(w, http.StatusOK, healthBody{
 		OK:             true,
-		Session:        state,
-		Connected:      connected,
-		Seq:            seq,
-		Detail:         detail,
-		Self:           b.selfSnapshot(),
+		Session:        snap.State,
+		Connected:      snap.Connected,
+		Seq:            snap.Seq,
+		Detail:         snap.Detail,
+		Self:           selfBody(snap.Self),
 		DroppedEvents:  dropped,
 		BufferedEvents: buffered,
 		Clients:        clients,
@@ -135,7 +137,7 @@ func (b *bridge) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 // --- /events ------------------------------------------------------------------
 
-func (b *bridge) handleEvents(w http.ResponseWriter, r *http.Request) {
+func (b *server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "streaming unsupported"})
@@ -153,8 +155,8 @@ func (b *bridge) handleEvents(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, ":\n\n")
 	flusher.Flush()
 
-	ch, replay, droppedTotal := b.hub.subscribe()
-	defer b.hub.unsubscribe(ch)
+	ch, replay, droppedTotal := b.hub.Subscribe()
+	defer b.hub.Unsubscribe(ch)
 
 	// The drop notice goes FIRST, before the replay. A consumer that reads its
 	// backlog and only then learns some of it is missing has already made
@@ -193,13 +195,13 @@ func writeSSE(w http.ResponseWriter, payload []byte) {
 // --- send routes --------------------------------------------------------------
 
 type sendRequest struct {
-	RoomID   string         `json:"room_id"`
-	Text     string         `json:"text"`
-	Mentions []eventMention `json:"mentions"`
-	ReplyTo  string         `json:"reply_to"`
+	RoomID   string        `json:"room_id"`
+	Text     string        `json:"text"`
+	Mentions []mentionBody `json:"mentions"`
+	ReplyTo  string        `json:"reply_to"`
 }
 
-func (b *bridge) handleSend(w http.ResponseWriter, r *http.Request) {
+func (b *server) handleSend(w http.ResponseWriter, r *http.Request) {
 	var req sendRequest
 	if !readJSON(w, r, maxJSONBody, &req) {
 		return
@@ -213,20 +215,19 @@ func (b *bridge) handleSend(w http.ResponseWriter, r *http.Request) {
 	// 50,000 are refused. Enforcing 1000 here would hand Nora's reply budget a
 	// ceiling that does not exist, and a budget derived from a policy constant
 	// is a budget nobody can raise.
-	cli, ok := b.ready(w)
-	if !ok {
+	if !b.ready(w) {
 		return
 	}
 	thread, ok := b.resolveRoom(w, r, req.RoomID)
 	if !ok {
 		return
 	}
-	res, err := sendText(r.Context(), cli, thread.Short.String(), req.Text, req.Mentions, req.ReplyTo)
+	res, err := b.gw.SendText(r.Context(), thread, req.Text, mentionsOf(req.Mentions), req.ReplyTo)
 	if err != nil {
 		b.failSend(r.Context(), w, "send", req.RoomID, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, res)
+	writeJSON(w, http.StatusOK, sentBody{OK: true, ID: res.ID, TimestampMS: res.TimestampMS})
 }
 
 type sendMediaRequest struct {
@@ -248,7 +249,7 @@ type sendMediaRequest struct {
 // `caption` on the first attachment and skips /send so the group does not hear
 // the reply twice. Copying that shape here silently loses the text. On
 // Instagram the caller sends /send first, then /send-media per attachment.
-func (b *bridge) handleSendMedia(w http.ResponseWriter, r *http.Request) {
+func (b *server) handleSendMedia(w http.ResponseWriter, r *http.Request) {
 	var req sendMediaRequest
 	if !readJSON(w, r, maxMediaBody, &req) {
 		return
@@ -266,35 +267,27 @@ func (b *bridge) handleSendMedia(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "data_base64 decoded to zero bytes")
 		return
 	}
-	cli, ok := b.ready(w)
-	if !ok {
+	if !b.ready(w) {
 		return
 	}
 	thread, ok := b.resolveRoom(w, r, req.RoomID)
 	if !ok {
 		return
 	}
-	// BOTH legs of /send-media take the short id, as one int64 so they cannot
-	// disagree. It is a parsed domain.ThreadFBID, so it cannot be 0 and cannot
-	// upload against /direct/t/0/.
-	shortID := thread.Short.Int64()
-	media := &httpclient.MercuryUploadMedia{
-		Filename:    orDefault(req.Filename, "upload.bin"),
-		MimeType:    orDefault(req.Mimetype, "application/octet-stream"),
-		MediaData:   data,
-		IsVoiceClip: req.VoiceNote,
-	}
-	up := b.uploadFn()
-	if up == nil {
-		unavailable(w, "session is being re-established")
-		return
-	}
-	res, err := sendMedia(r.Context(), cli, up, shortID, media, req.ReplyTo)
+	// BOTH legs of /send-media take the short id, from the one parsed
+	// ThreadFBID, so they cannot disagree and cannot upload against
+	// /direct/t/0/.
+	res, err := b.gw.SendMedia(r.Context(), thread, domain.Upload{
+		Filename:  orDefault(req.Filename, "upload.bin"),
+		MimeType:  orDefault(req.Mimetype, "application/octet-stream"),
+		Data:      data,
+		VoiceNote: req.VoiceNote,
+	}, req.ReplyTo)
 	if err != nil {
 		b.failSend(r.Context(), w, "send-media", req.RoomID, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, res)
+	writeJSON(w, http.StatusOK, sentBody{OK: true, ID: res.ID, TimestampMS: res.TimestampMS})
 }
 
 type reactRequest struct {
@@ -304,7 +297,7 @@ type reactRequest struct {
 	Remove    bool   `json:"remove"`
 }
 
-func (b *bridge) handleReact(w http.ResponseWriter, r *http.Request) {
+func (b *server) handleReact(w http.ResponseWriter, r *http.Request) {
 	var req reactRequest
 	if !readJSON(w, r, maxJSONBody, &req) {
 		return
@@ -319,8 +312,7 @@ func (b *bridge) handleReact(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "emoji is required (also when remove is true)")
 		return
 	}
-	cli, ok := b.ready(w)
-	if !ok {
+	if !b.ready(w) {
 		return
 	}
 	thread, ok := b.resolveRoom(w, r, req.RoomID)
@@ -333,9 +325,12 @@ func (b *bridge) handleReact(w http.ResponseWriter, r *http.Request) {
 	// (measured 2026-09-22), where a SEND was measured arriving either way.
 	// The long id is still resolved first: that lookup is what validates the
 	// room exists and what warms the reverse cache /typing reads.
-	err := sendReaction(r.Context(), cli, thread.Short.String(),
-		req.MessageID, req.Emoji, req.Remove, b.ownFBID())
-	if errors.Is(err, errReactionUnconfirmed) {
+	confirmed, err := b.gw.React(r.Context(), thread, req.MessageID, req.Emoji, req.Remove)
+	if err != nil {
+		b.failSend(r.Context(), w, "react", req.RoomID, err)
+		return
+	}
+	if !confirmed {
 		// 200 with the confirmation withheld, not a failure. The mutation was
 		// accepted; only this response's post-state stayed silent about it,
 		// which production showed happening on every reaction while the
@@ -343,10 +338,6 @@ func (b *bridge) handleReact(w http.ResponseWriter, r *http.Request) {
 		// confirmed reaction omits it, so `confirmed: false` means something
 		// rather than being a default nobody set.
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "confirmed": false})
-		return
-	}
-	if err != nil {
-		b.failSend(r.Context(), w, "react", req.RoomID, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -364,16 +355,15 @@ type typingRequest struct {
 // a live connection context. So this is the only handler that answers 503 on
 // `connected == false` — the others would answer 503 for a condition that does
 // not actually stop them.
-func (b *bridge) handleTyping(w http.ResponseWriter, r *http.Request) {
+func (b *server) handleTyping(w http.ResponseWriter, r *http.Request) {
 	var req typingRequest
 	if !readJSON(w, r, maxJSONBody, &req) {
 		return
 	}
-	cli, ok := b.ready(w)
-	if !ok {
+	if !b.ready(w) {
 		return
 	}
-	if _, _, connected, _ := b.snapshot(); !connected {
+	if !b.gw.Snapshot().Connected {
 		unavailable(w, "realtime socket is not connected")
 		return
 	}
@@ -384,7 +374,7 @@ func (b *bridge) handleTyping(w http.ResponseWriter, r *http.Request) {
 	// SHORT, following upstream (handlematrix.go:484). Typing arrival was
 	// never measured in either id space — there is no read-back for typing —
 	// so this is followed, not proven.
-	if err := cli.SetTyping(r.Context(), thread.Short.String(), req.Typing); err != nil {
+	if err := b.gw.Typing(r.Context(), thread, req.Typing); err != nil {
 		b.failSend(r.Context(), w, "typing", req.RoomID, err)
 		return
 	}
@@ -396,7 +386,7 @@ type unsendRequest struct {
 	MessageID string `json:"message_id"`
 }
 
-func (b *bridge) handleUnsend(w http.ResponseWriter, r *http.Request) {
+func (b *server) handleUnsend(w http.ResponseWriter, r *http.Request) {
 	var req unsendRequest
 	if !readJSON(w, r, maxJSONBody, &req) {
 		return
@@ -405,8 +395,7 @@ func (b *bridge) handleUnsend(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, "message_id is required")
 		return
 	}
-	cli, ok := b.ready(w)
-	if !ok {
+	if !b.ready(w) {
 		return
 	}
 	thread, ok := b.resolveRoom(w, r, req.RoomID)
@@ -416,7 +405,7 @@ func (b *bridge) handleUnsend(w http.ResponseWriter, r *http.Request) {
 	// LONG: the one verb that is genuinely long on both sides (upstream
 	// handlematrix.go:292 passes `meta.IGThreadID`), and the one every probe
 	// cleanup ran this way.
-	confirmed, err := unsendMessage(r.Context(), cli, thread.Long.String(), req.MessageID)
+	confirmed, err := b.gw.Unsend(r.Context(), thread, req.MessageID)
 	if err != nil {
 		b.failSend(r.Context(), w, "unsend", req.RoomID, err)
 		return
@@ -444,27 +433,26 @@ func (b *bridge) handleUnsend(w http.ResponseWriter, r *http.Request) {
 // before this can succeed", which is precisely what 409 tells the adapter. It
 // does NOT check the socket — see handleTyping for why that would be wrong for
 // the other five routes.
-func (b *bridge) ready(w http.ResponseWriter) (igClient, bool) {
-	state, detail, _, _ := b.snapshot()
-	if state != stateAuthenticated {
+func (b *server) ready(w http.ResponseWriter) bool {
+	snap := b.gw.Snapshot()
+	if snap.State != domain.StateAuthenticated {
 		writeJSON(w, http.StatusConflict, map[string]any{
-			"ok": false, "error": string(state), "detail": detail,
+			"ok": false, "error": string(snap.State), "detail": snap.Detail,
 		})
-		return nil, false
+		return false
 	}
-	cli := b.sendClient()
-	if cli == nil {
+	if !snap.HasClient {
 		unavailable(w, "session is being re-established")
-		return nil, false
+		return false
 	}
-	return cli, true
+	return true
 }
 
 // resolveRoom turns the contract's room key (the SHORT thread_fbid) into BOTH
 // thread ids. Which one a given verb takes is a per-verb fact, not a rule —
 // see the table at the top of outbound.go. The long id never crosses the HTTP
 // boundary in either direction.
-func (b *bridge) resolveRoom(w http.ResponseWriter, r *http.Request, roomID string) (domain.ThreadRef, bool) {
+func (b *server) resolveRoom(w http.ResponseWriter, r *http.Request, roomID string) (domain.ThreadRef, bool) {
 	// The room key is parsed into its value object HERE, at the edge: a value
 	// that is not a short thread id (the long one included) is the caller's
 	// 400 and never becomes a route lookup against Instagram.
@@ -473,11 +461,11 @@ func (b *bridge) resolveRoom(w http.ResponseWriter, r *http.Request, roomID stri
 		badRequest(w, err.Error())
 		return domain.ThreadRef{}, false
 	}
-	thread, err := b.threads.resolve(r.Context(), short)
+	thread, err := b.gw.ResolveThread(r.Context(), short)
 	if err == nil {
 		return thread, true
 	}
-	if errors.Is(err, errNotConnected) {
+	if errors.Is(err, domain.ErrUnavailable) {
 		unavailable(w, err.Error())
 		return domain.ThreadRef{}, false
 	}
@@ -490,53 +478,13 @@ func (b *bridge) resolveRoom(w http.ResponseWriter, r *http.Request, roomID stri
 	return domain.ThreadRef{}, false
 }
 
-func (b *bridge) failSend(ctx context.Context, w http.ResponseWriter, route, roomID string, err error) {
+func (b *server) failSend(ctx context.Context, w http.ResponseWriter, route, roomID string, err error) {
 	status := statusForError(err)
 	// room_id is a group thread id, not a person. It is safe to log and is the
 	// only handle an operator has for correlating a failure with a room.
 	slog.WarnContext(ctx, "send route failed",
 		"route", route, "room", roomID, "status", status, "error", err)
 	writeJSON(w, status, map[string]any{"ok": false, "error": err.Error()})
-}
-
-// statusForError is the fail-closed half of the status mapping: an error the
-// bridge cannot classify becomes 500, never 200 and never 503. 503 is a claim
-// that retrying will work, and making that claim on an unknown failure is how
-// a permanent error turns into an infinite retry loop.
-//
-// The domain kinds are read first; the library's own challenge errors are
-// still matched here directly until the gateway classifies them (17 P7).
-func statusForError(err error) int {
-	switch {
-	case err == nil:
-		return http.StatusOK
-	case errors.Is(err, domain.ErrInvalidID):
-		return http.StatusBadRequest
-	case errors.Is(err, domain.ErrNotFound):
-		return http.StatusNotFound
-	case errors.Is(err, domain.ErrUnavailable):
-		return http.StatusServiceUnavailable
-	case errors.Is(err, httpclient.ErrChallengeRequired),
-		errors.Is(err, httpclient.ErrCheckpointRequired),
-		errors.Is(err, httpclient.ErrConsentRequired),
-		errors.Is(err, httpclient.ErrTokenInvalidated):
-		return http.StatusConflict
-	case isTooLarge(err):
-		return http.StatusRequestEntityTooLarge
-	default:
-		return http.StatusInternalServerError
-	}
-}
-
-// isTooLarge matches Instagram's own refusal text, because the library surfaces
-// it as an opaque error rather than a typed one. Matching on a string is
-// unpleasant and is confined to exactly this: the alternative is reporting a
-// 20,001-character message as a server fault the adapter would retry forever.
-func isTooLarge(err error) bool {
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "message too long") ||
-		strings.Contains(msg, "too large") ||
-		strings.Contains(msg, "entity too large")
 }
 
 func readJSON(w http.ResponseWriter, r *http.Request, limit int64, into any) bool {
