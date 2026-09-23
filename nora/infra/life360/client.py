@@ -176,11 +176,12 @@ class Life360Client:
         self._request_url = request_url
         self._timeout_seconds = timeout_seconds
         self._metrics = metrics
-        # Token mode (module docstring): a static operator-supplied bearer. When
-        # set it IS the token for the life of the process — never dropped on a
-        # 403, never replaced by a password grant.
+        # Token mode (module docstring): a static operator-supplied bearer.
+        # `_authenticate` is the ONE place a credential can be POSTed, so it is
+        # the one place token mode short-circuits — every read reaches it the
+        # same way it reaches the password grant.
         self._access_token = access_token or None
-        self._token: str | None = self._access_token
+        self._token: str | None = None
         self._auth_failures = 0
 
     @property
@@ -306,7 +307,7 @@ class Life360Client:
         """Every circle this account can see, each with its members' id + name —
         the mapping `nora presence members` prints for identity.toml. One-shot
         operator call: RAISES `Life360DiscoveryError` on any failure (see it)."""
-        token = self._access_token or await self._authenticate()
+        token = await self._authenticate()
         if token is None:
             raise Life360DiscoveryError(
                 "authentication failed — check LIFE360_CLIENT_CREDENTIAL, "
@@ -414,7 +415,8 @@ class Life360Client:
         returns the static token WITHOUT a request: the credential is never
         POSTed once the operator has handed over a bearer."""
         if self._access_token is not None:
-            return self._access_token
+            self._token = self._access_token
+            return self._token
         result = await request(
             "POST",
             self._token_url,
