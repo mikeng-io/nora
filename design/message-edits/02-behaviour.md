@@ -122,14 +122,26 @@ changed, each pinned by a test that fails when the fix is reverted:
   next edit, which names it, would be an orphan.
 - **Mentions are a change on their own**: in a Signal body every mention is
   one placeholder character.
-- **Stale is strictly older and waived for a Signal edit naming the latest
-  revision** (a linked device's clock can be behind). The fold therefore picks
-  the newest edit by ARRIVAL, not by its clock.
+- **Stale** is decided before custody: an edit whose timestamp is already on
+  record is a redelivery (on Signal a timestamp IS an edit's identity), and
+  one older than the NEWEST CLOCK on record is out of order — except a Signal
+  edit naming the latest revision, which is newer by definition whatever its
+  device's clock says. The fold picks the newest edit by ARRIVAL. A review of
+  the first version of this rule (judged against the version shown, not the
+  maximum) found that a skewed edit let a redelivered older one bring old
+  text back.
 - **Attachments** keep the original's handles; nothing is re-fetched unless
-  the attachment count differs.
+  the counts differ or the original held a gap (a bare placeholder), where
+  handles are not positional.
 - **A zero edit time** is stamped on arrival; the render tests `is not None`.
 - **Instagram** edits record mentions as unknown (the delta carries none);
-  the gate still compares against the original's.
+  the gate still compares against the original's. The trade, stated: an
+  Instagram message's SECOND and later edits never open a turn
+  (`edit_previous_unknown`). Fail-safe (a missed turn, never a second
+  answer); comparing text alone for Instagram would recover it and is the
+  reading that would reopen this.
+- **Quote remapping is Signal-only**: only Signal quotes a revision, and
+  elsewhere the lookup could only move a reply onto an unrelated message.
 - **Signal sender id form**: the lookup prefers the same id and falls back to
   any author at that timestamp; `_same_author` then decides by person.
 - **WhatsApp phone edits** arrive wrapped in `editedMessage`; the bridge now
