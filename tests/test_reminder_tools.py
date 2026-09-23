@@ -566,6 +566,81 @@ async def test_cancel_says_so_when_the_row_already_fired():
     assert (await store.get(done.id)).state is ReminderState.DONE
 
 
+class _ReadAndCancelFailingStore(FakeReminderStore):
+    async def pending_for(self, conversation_id: str):
+        raise ConnectionError("reminder store unreachable")
+
+    async def cancel(self, reminder_id, *, conversation_id: str) -> bool:
+        raise ConnectionError("reminder store unreachable")
+
+
+async def test_every_non_ok_list_and_cancel_status_carries_a_note():
+    """ADR 0015 §3/§6: `list_reminders` and `cancel_reminder` only NAME their
+    statuses; how to report each is the result's `note`. Every non-ok code
+    path is driven, so one that loses its note goes red."""
+    done = FakeReminderStore()
+    fired = _row(state=ReminderState.DONE)
+    await done.create(fired)
+    cases = {
+        "list/unavailable/no_store": _tools(reminders=None)["list_reminders"](),
+        "list/unavailable/read": _tools(
+            reminders=_ReadAndCancelFailingStore())["list_reminders"](),
+        "cancel/unavailable/no_store": _tools(reminders=None)["cancel_reminder"](
+            reminder_id=str(uuid.uuid4())),
+        "cancel/refused/not_an_id": _tools(
+            reminders=FakeReminderStore())["cancel_reminder"](reminder_id="洗衫"),
+        "cancel/refused/no_pending_row": _tools(reminders=done)["cancel_reminder"](
+            reminder_id=str(fired.id)),
+        "cancel/unavailable/write": _tools(
+            reminders=_ReadAndCancelFailingStore())["cancel_reminder"](
+            reminder_id=str(uuid.uuid4())),
+    }
+    for case, call in cases.items():
+        result = await call
+        assert result["status"] == case.split("/")[1], (case, result)
+        assert isinstance(result.get("note"), str) and result["note"].strip(), case
+        assert "\u2014" not in result["note"] and "\u2013" not in result["note"], case
+
+
+async def test_a_list_reminders_ok_note_carries_only_the_rules_its_rows_need():
+    """The reporting rules that left list_reminders' description arrive with
+    the rows they are about: empty is an answer; the rows are the room's; a
+    repeat is a series; an unnamed setter is still real. Each clause appears
+    only when its field does."""
+    empty = await _tools(reminders=FakeReminderStore())["list_reminders"]()
+    assert "real answer" in empty["note"]
+
+    plain_store = FakeReminderStore()
+    await plain_store.create(_row(requester_person_id="tyler"))
+    plain = await _tools(reminders=plain_store)["list_reminders"]()
+    assert "everyone's" in plain["note"]
+    for clause in ("real answer", "series", tools_module._UNKNOWN_OWNER):
+        assert clause not in plain["note"], clause
+
+    series_store = FakeReminderStore()
+    tools = _tools(reminders=series_store)
+    await tools["remind"](when=SOON, text="食藥", repeat="daily", times=3)
+    series = await tools["list_reminders"]()
+    assert "series" in series["note"]
+    assert tools_module._UNKNOWN_OWNER not in series["note"]
+
+    orphan_store = FakeReminderStore()
+    await orphan_store.create(_row(requester_person_id="someone_who_left"))
+    orphan = await _tools(reminders=orphan_store)["list_reminders"]()
+    assert tools_module._UNKNOWN_OWNER in orphan["note"]
+    assert "series" not in orphan["note"]
+    assert "\u2014" not in tools_module._SELF_OWNER
+
+
+async def test_a_cancel_ok_says_how_to_report_it():
+    store = FakeReminderStore()
+    mine = _row()
+    await store.create(mine)
+    result = await _tools(reminders=store)["cancel_reminder"](reminder_id=str(mine.id))
+    assert result["status"] == "ok"
+    assert "whole series" in result["note"] and "whose" in result["note"]
+
+
 # ---- the tool table (DEC-10, DEC-32) -----------------------------------------
 
 def test_none_of_the_three_is_a_terminal_verb():
