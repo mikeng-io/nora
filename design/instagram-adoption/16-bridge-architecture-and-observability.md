@@ -111,6 +111,7 @@ resource and keeps its operational paths.
 | bridge health | `GET /health` | — |
 | event stream | `GET /events` (SSE) | — |
 | account | `GET /accounts/{igid}` | — |
+| account by username | `GET /accounts?username=` (0 or 1 items) | nothing: links need it (`15` §Links) |
 | account search | `GET /accounts?query=` | OpenCLI `search` |
 | story | `GET /accounts/{igid}/story` | — |
 | posts | `GET /accounts/{igid}/posts?cursor=` | OpenCLI `user`; returns `ErrUnsupported` until a mechanism exists |

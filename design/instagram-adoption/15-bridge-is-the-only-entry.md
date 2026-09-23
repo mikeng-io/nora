@@ -63,7 +63,46 @@ different backend could do it.
 | List someone's reels | none | ❌ | same as posts |
 | Followers / following | none | ❌ | not investigated |
 
+## Links: how a pasted URL becomes a read
+
+People ask about Instagram mostly by pasting a link, and a link names an
+account by **username**. The bridge addresses accounts by **igid**, so every
+link needs one conversion: **username → igid, done by the bridge**
+(`GET /accounts?username=`, `16` §Resources).
+
+Not from `identity.toml`: its `username` is display metadata, *read, never
+matched*, because handles rename; and a link usually names someone who is not
+in the file at all.
+
+| Link | Becomes | Authorization |
+|---|---|---|
+| `instagram.com/<username>/` | username → igid → `GET /accounts/{igid}` | named (Tier 2): any account a person pasted |
+| `instagram.com/p/<shortcode>/`, `/reel/<shortcode>/` | `GET /posts/{shortcode}` | named (Tier 2) |
+| `instagram.com/stories/<username>/…` | username → igid → person (`Persons.resolve("instagram", igid)`) → `GET /accounts/{igid}/story` | **the room (Tier 0) only.** A story view appears in its author's viewer list; a link to a stranger's story is `refused`, never read |
+
+The username lookup is a search, invisible to the account it finds, so it may
+run before the Tier 0 decision; the story fetch, which is visible, runs only
+after it.
+
+Until the lookup route exists, a link answers `unavailable` (R-27), never a
+guess and never OpenCLI.
+
+## Resolution is not authorization
+
+Two different questions, answered in two different places:
+
+- **Resolution**: which igid is this? A `person_id` resolves through the
+  person index (kind-aware: the index must return the `igid`, never the
+  `fbid`, which is the same decimal-string trap `02` records). A username or
+  link resolves through the bridge.
+- **Authorization**: may Nora read it? Only `story` has a reach check (Tier
+  0), because only a story read is visible to the person read. `profile` and
+  `post` need resolution alone.
+
 ## Migration, in order
+
+The concrete, PR-by-PR plan is `17-implementation-plan.md`.
+
 
 **Cutover is per verb:** a verb's OpenCLI row is deleted in the same change
 that points it at the bridge, so no verb ever has two answers and none loses
@@ -73,8 +112,9 @@ its answer before the replacement exists.
    `GET /accounts/{igid}` for `profile` and `GET /accounts/{igid}/story` for
    `story`; their OpenCLI rows go in the same change.
 2. **Add the missing read routes** on the bridge, built to `16`'s
-   conventions: search, one post by shortcode. `search`'s OpenCLI row goes
-   when its bridge route lands.
+   conventions: username lookup (first, because links depend on it), search,
+   one post by shortcode. Each verb's OpenCLI row goes when its bridge route
+   lands.
 3. **Posts and reels lists** get routes that return `unavailable` honestly,
    with the reason, so the verb exists and fails closed (R-27) while the
    mechanism is found.
