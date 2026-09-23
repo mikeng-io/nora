@@ -210,7 +210,19 @@ New (persisted data — `02-§8`):
 New (budget):
 
 - `tests/test_composition.py::test_the_derived_vision_timeout_never_exceeds_the_loop`
-- `::test_moving_the_media_fetch_budget_moves_the_derived_timeout_with_it`
+  — **keep**, restated for the new invariant `waves × derived < loop × share`
+- ~~`::test_moving_the_media_fetch_budget_moves_the_derived_timeout_with_it`~~
+  — ⛔ **DELETE OR INVERT (2026-09-23).** This test pinned the very behaviour the
+  operator has now removed: after `07-timeout-derivation.md`, moving the budget must
+  **NOT** move the timeout, because the budget bounds *refusals*, not wall clock.
+  Keeping this test would hold the defect in place.
+- **NEW, required:**
+  `::test_the_derived_timeout_honours_the_configured_value_at_the_instagram_window_count`
+  — one window, one invocation → derived == configured (120). **This is the
+  regression that would have caught the inert-120 defect**; nothing in the current
+  suite comes close.
+- **NEW:** `::test_a_long_clip_tightens_the_per_call_timeout` — 10 windows →
+  derived ≪ configured, proving the loop is still protected on long clips.
 
 **Corrected gate names.** The first version cited
 `tests/architecture/test_config_comes_from_the_template.py` for new-key presence. That

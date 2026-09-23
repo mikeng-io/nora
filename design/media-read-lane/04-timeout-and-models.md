@@ -244,23 +244,37 @@ and the loop budget must clear `waves × tail × calls`.
 
 
 
-## 3c. ⛔ SETTLED IN INTENT, **BLOCKED IN EFFECT** — review round 2, 2026-09-23
+## 3c. ✅ SETTLED AND UNBLOCKED — operator decision 2026-09-23
 
 > **⛔ The settings below are the operator's decision and remain the intent. They are
 > NOT yet effective, for two reasons found by independent review and re-verified
 > against the code (see `06-review-round-2.md` §B1, §B2).**
 >
-> **B1 — the configured 120 s is INERT. The effective cap is 54 s.**
+> **B1 — ✅ RESOLVED 2026-09-23: the derivation itself is being fixed.** The
+> operator chose to keep the loop at **360** and correct the formula, rather than
+> raise the loop to 800. **See `07-timeout-derivation.md`** — the divisor becomes the
+> **SERIAL** factor (`ceil(windows / concurrency)`) instead of the concurrent call
+> count, which honours the configured 120 for the Instagram case while keeping 360.
+> The paragraph below is kept as the record of the defect that forced it.
+>
+> **B1 as originally found — the configured 120 s was INERT. The effective cap was 54 s.**
 > `derive_vision_timeout` is still in the path and still wins:
 > `min(configured, loop × 0.6 / budget)` = `min(120, 360 × 0.6 / 4)` = **54 s**
 > (`nora/infra/vision/client.py:210-211`). Nothing in this bundle removes or bypasses
 > it, and §5 below even mandates tests that *pin* it. Against this bundle's own n=19
 > pool, **7/19 ≈ 37% of runs exceed 54 s** — so the tail this decision exists to
-> clear still fails, at 54 s instead of 36 s. **A decision is needed on the
-> derivation itself** (remove the `/budget` division, remove the `min`, or replace the
-> invariant with a wave-based one), not on the number.
+> clear still fails, at 54 s instead of 36 s. **Decision taken:** replace the invariant with a wave-based one — `07-timeout-derivation.md`.
 >
-> **B2 — the numbers do not compose, and the failure is SILENT.**
+> **B2 — ⚠️ RETRACTED 2026-09-23 (my error, caught by the operator).** The
+> `4 × 3 waves × 120 s = 1,440 s` arithmetic multiplied **concurrent** calls as if
+> they were **serial**. They occupy `max(duration)`, not the sum. The operator's
+> real case — four Instagram clips — is **1 wave each**: 120 s wall clock against a
+> 360 s loop, **which fits.** The 1,440 s figure described a 15-minute-clip case this
+> bundle does not serve. See `06-review-round-2.md` §B2 for the retraction.
+> **The silent-failure observation itself is still live and still worth fixing**
+> (`invoke.py:171-179`), but it is a robustness item, not a blocker.
+>
+> **(B2 as originally written, kept for the record — do not act on it.)**
 > `4 invocations × ceil(10/4)=3 waves × 120 s = 1,440 s` against a 360 s loop; even
 > one wave per call is `4 × 120.8 = 483 s > 360`. The bundle's own median product
 > already exceeds the loop it chose (`3 × 41.6 × 3 = 374 s`, §4.2). And when the loop

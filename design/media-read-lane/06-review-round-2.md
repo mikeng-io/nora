@@ -59,7 +59,32 @@ wave-based one (`invocations × ceil(windows/concurrency) × derived < loop`). T
 add the `client.py:193-211` row to `03 §4`'s surface table and rewrite the two
 budget tests in `05 §5`.
 
-### B2. ✅ CONFIRMED — the settled numbers do not compose, and the failure is now SILENT.
+### B2. ⚠️ **PARTLY RETRACTED BY THE OPERATOR — my arithmetic was wrong. Read this first.**
+
+> **RETRACTION 2026-09-23.** The reviewer wrote, and I accepted and re-published,
+> `4 invocations × 3 waves × 120 s = 1,440 s vs a 360 s loop`. **That is wrong: it
+> multiplies concurrent calls as if they were serial.** The operator caught it:
+> «嗰四個 number 唔係會 concurrent 去做咩？»
+>
+> Concurrent invocations occupy `max(duration)` of wall clock, **not their sum**.
+> And the operator's actual case — a post with four Instagram clips — is
+> **1 wave each** (IG's ceiling is 90 s, so one window), giving **120 s wall clock
+> against a 360 s loop**. The four-video post fits comfortably.
+>
+> **The 1,440 s figure described a case this bundle does not serve** (a 15-minute
+> clip with 4 concurrent 3-wave invocations), and using it to argue the settings
+> "cannot compose" was a **mis-scoped counter-argument**. B2 is retracted as a
+> blocking finding.
+>
+> **What survives from B2 — and is still live:** the *loop-timeout failure mode* is
+> genuinely silent. `invoke.py:171-179` abandons the turn wholesale. That is worth
+> fixing, but it is a **robustness** finding, not evidence that the settled numbers
+> fail. Downgraded to MAJOR.
+>
+> **What actually blocks is B1** — and the operator's fix for it (§3 of
+> `07-timeout-derivation.md`) resolves it without raising the loop.
+
+### B2 (original text, kept for the record — see the retraction above).
 
 Per the bundle's own frame: **4 invocations × ceil(10/4)=3 waves × 120 s tail =
 1,440 s against a 360 s loop.** Even one wave per call fails: `4 × 120.8 = 483 s >
