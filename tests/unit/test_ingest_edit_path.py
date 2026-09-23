@@ -54,14 +54,6 @@ class RecordingMemory:
         return None
 
 
-class RoomCandidatePolicy:
-    """Like `RelevanceGatePolicy` in an opted-in room: never engages, marks
-    every message a quiescence candidate."""
-
-    async def should_engage(self, *, message: NormalizedMessage) -> EngageDecision:
-        return EngageDecision(engage=False, reason="relevance_gate_room", relevance_gate=True)
-
-
 def _persons() -> Persons:
     """Miles has TWO accounts on one platform — the WhatsApp phone/LID shape."""
     return Persons(
@@ -339,9 +331,23 @@ async def test_a_turn_an_edit_opens_is_answered_as_the_original_message():
 
 async def test_an_edit_is_never_a_relevance_gate_candidate():
     """It is not new room activity; the quiescence trigger counts messages."""
+    import tempfile
+    from pathlib import Path
+
+    from nora.ingest.policy import RelevanceGatePolicy
+    from nora.policy import load_policy
+
+    p = Path(tempfile.mkdtemp()) / "policy.toml"
+    p.write_text(
+        'default = "deny"\n[[conversations]]\nplatform = "signal"\n'
+        'id = "g1"\npersons = "*"\nrelevance_gate = true\n'
+    )
+    opted_in = RelevanceGatePolicy(load_policy(p))
     store = FakeRecordStore()
-    await store.append(message=_msg("dinner?"), person_id="miles")
-    result = await _pipeline(store, policy=RoomCandidatePolicy()).run(
+    plain = await _pipeline(store, policy=opted_in).run(message=_msg("dinner?"))
+    assert plain.decision is not None and plain.decision.relevance_gate, \
+        "positive control: a MESSAGE in this room is a candidate"
+    result = await _pipeline(store, policy=opted_in).run(
         message=_edit("dinner at 8?"),
     )
     assert result.decision is not None
