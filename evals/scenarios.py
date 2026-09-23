@@ -29,7 +29,7 @@ from typing import Any
 import yaml
 from strands_evals import Case, Experiment
 
-from evals.backbone import SNAPSHOT_KEYS, MeetsGrader, Spec, nora_task
+from evals.backbone import SNAPSHOT_KEYS, MeetsGrader, Spec, ToolRouteGrader, nora_task
 
 _CORPORA = Path(__file__).parent / "corpora"
 
@@ -236,7 +236,14 @@ CORPUS_ENTRY: dict[str, str] = {
     "note_candidates": "dreamer",
     "proactive_decide": "dreamer",
     "proactive_act": "proactive_act",
+    "tool_selection": "tag",
 }
+
+#: S2 — graded on WHICH TOOL ran, not on whether she replied
+#: (`design/tool-catalogue/05-measurement.md` §2c). One grader only:
+#: `sample_read` groups every evaluator's labels under one case, so adding
+#: `MeetsGrader` here would let a reply verdict blur a routing one.
+ROUTED_CORPORA = frozenset({"tool_selection"})
 
 #: S3 (grounding)/S9 (injection) — "did she reply" is structural; "was the
 #: reply right" needs a judge (`10-the-scenario-map.md` §3). Every case in
@@ -291,5 +298,6 @@ def experiment_for(
         entry=CORPUS_ENTRY[name],
         judge=judge if name in JUDGED_CORPORA else None,
     )
-    experiment = Experiment(cases=cases, evaluators=[MeetsGrader()])
+    grader = ToolRouteGrader() if name in ROUTED_CORPORA else MeetsGrader()
+    experiment = Experiment(cases=cases, evaluators=[grader])
     return experiment, nora_task(spec)

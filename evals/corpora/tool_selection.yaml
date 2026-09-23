@@ -1,0 +1,171 @@
+# S2 — tool routing (design/tool-catalogue/05-measurement.md §2c).
+#
+# THE QUESTION: does she reach for the right tool? Asked of the SAME cases on
+# both sides of `[llm] defer_tools` — every schema resident vs six resident and
+# the rest a one-line catalogue loaded with `load_tools` — because a number
+# from one side only is incomparable to the other (the prompt, and with it the
+# prefix cache, changes with the switch).
+#
+# WEIGHTED TOWARD CONFUSABLE PAIRS, because that is where selection errors
+# concentrate and where a one-line catalogue entry is thinnest:
+# where_is/where_been, find_parking/parking_status, route/transit,
+# create_event/update_event, weather/web_search. Each such case names the
+# sibling in `not_tools`: calling it is the error the pair exists to catch.
+# The rest are single cold tools, so a turn that never loads anything is
+# visible as a FAIL rather than hidden behind a hot tool.
+#
+# GRADED ON WHAT EXECUTED (`NORA_TOOLS`, Strands' own `execute_tool` spans),
+# never on the reply. Many of these tools answer `unavailable` in the sandbox
+# (no presence feed, no route key): that is fine — the question is which one
+# she CALLED, and an honest `unavailable` is still a correctly routed call.
+# `load_tools` is plumbing and `ToolRouteGrader` drops it before grading.
+#
+# ANCHOR: ROOM A of `injections.yaml` — a real Signal room at a measured
+# instant (its last real message + ~1s). Signal because a case that speaks
+# must anchor where the sandbox has an adapter (Discord's is off), which also
+# means no music verbs: they are Discord-only and out of this scope.
+# `mention: true` because the deployment's text trigger is off; a structural
+# mention is how a message engages her.
+#
+# `input` is the tag message — authored, as every tag corpus's is. What she
+# KNOWS is the room's real state at `before_ms`, read from the clone.
+#
+# Run with `--sample 3` at least: one draw of a stochastic process is not a
+# reading of it (eval-numbers-are-not-rates).
+
+cases:
+  # --- confusable pairs --------------------------------------------------------
+  - name: route_where_is_now
+    entry: tag
+    expect: reply
+    mention: true
+    input: 阿Miles而家喺邊？
+    metadata: {tools: [where_is], not_tools: [where_been]}
+    snapshot: &room_a
+      platform: signal
+      conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+      before_ms: 1789909891000
+
+  - name: route_where_been_today
+    entry: tag
+    expect: reply
+    mention: true
+    input: Miles今日去過邊度？
+    metadata: {tools: [where_been], not_tools: [where_is]}
+    snapshot: *room_a
+
+  - name: route_find_parking_near
+    entry: tag
+    expect: reply
+    mention: true
+    input: 銅鑼灣附近有冇車位？
+    metadata: {tools: [find_parking], not_tools: [parking_status]}
+    snapshot: *room_a
+
+  - name: route_parking_status_named
+    entry: tag
+    expect: reply
+    mention: true
+    input: 時代廣場停車場而家仲有幾多個位？
+    metadata: {tools: [parking_status]}
+    snapshot: *room_a
+
+  - name: route_route_driving_time
+    entry: tag
+    expect: reply
+    mention: true
+    input: 由旺角揸車去機場要幾耐？
+    metadata: {tools: [route], not_tools: [transit]}
+    snapshot: *room_a
+
+  - name: route_transit_next_bus
+    entry: tag
+    expect: reply
+    mention: true
+    input: 下一班118巴士幾時到銅鑼灣？
+    metadata: {tools: [transit], not_tools: [route]}
+    snapshot: *room_a
+
+  - name: route_create_event
+    entry: tag
+    expect: reply
+    mention: true
+    input: 幫我哋開個飯局，下星期六晚七點，喺旺角
+    metadata: {tools: [create_event], not_tools: [update_event]}
+    snapshot: *room_a
+
+  - name: route_weather_not_web
+    entry: tag
+    expect: reply
+    mention: true
+    input: 聽日會唔會落雨？
+    metadata: {tools: [weather], not_tools: [web_search]}
+    snapshot: *room_a
+
+  # --- single cold tools ---------------------------------------------------------
+  - name: route_remind
+    entry: tag
+    expect: reply
+    mention: true
+    input: 聽朝九點提我交租
+    metadata: {tools: [remind]}
+    snapshot: *room_a
+
+  - name: route_list_reminders
+    entry: tag
+    expect: reply
+    mention: true
+    input: 我有咩提醒未到？
+    metadata: {tools: [list_reminders]}
+    snapshot: *room_a
+
+  - name: route_calculate
+    entry: tag
+    expect: reply
+    mention: true
+    input: 3480蚊夾4個人，每人俾幾多？
+    metadata: {tools: [calculate]}
+    snapshot: *room_a
+
+  - name: route_online_now
+    entry: tag
+    expect: reply
+    mention: true
+    input: 而家有邊個喺度打緊機？
+    metadata: {tools: [online_now]}
+    snapshot: *room_a
+
+  - name: route_place_info
+    entry: tag
+    expect: reply
+    mention: true
+    input: 銅鑼灣嗰間一蘭幾點關門？
+    metadata: {tools: [place_info]}
+    snapshot: *room_a
+
+  - name: route_version
+    entry: tag
+    expect: reply
+    mention: true
+    input: 你而家行緊咩版本？
+    metadata: {tools: [version]}
+    snapshot: *room_a
+
+  - name: route_generate_image
+    entry: tag
+    expect: reply
+    mention: true
+    input: 畫隻戴住聖誕帽嘅貓俾我
+    metadata: {tools: [generate_image]}
+    snapshot: *room_a
+
+  # --- hot-set control -----------------------------------------------------------
+  # Resident on both sides, so it should NOT move. If it does, the change moved
+  # something other than cold-tool reach.
+  - name: route_web_search_control
+    entry: tag
+    expect: reply
+    mention: true
+    input: 幫我search下iPhone 17 Pro香港幾錢
+    metadata: {tools: [web_search]}
+    snapshot: *room_a

@@ -110,6 +110,12 @@ NORA_CACHED_TOKENS = "nora.cached_input_tokens"
 #: Every distinct `finish_reason` the turn's calls reported, comma-joined.
 #: `max_tokens` here is the truncation, named rather than inferred.
 NORA_STOPS = "nora.stop_reasons"
+#: Every tool the turn EXECUTED, in the order it ran — read off Strands'
+#: `execute_tool` spans (`gen_ai.tool.name`), which is what the SDK itself
+#: records, not what the reply claims. S2 routing (`ToolRouteGrader`) reads
+#: this. A tuple, never `None` on a turn that ran: an empty tuple is a turn
+#: that called nothing, which is a routing answer too.
+NORA_TOOLS = "nora.tools_called"
 #: `Outcome.written`/`len(.changed)`/`len(.staged)` off the FIRST drive —
 #: never surfaced to a grader before this (S6, `10-the-scenario-map.md` §3).
 #: `dream()`'s own `written`/`changed` are already PER-CALL DELTAS (it
@@ -308,6 +314,16 @@ def _model_calls(exporter: InMemorySpanExporter) -> dict[str, Any]:
         NORA_CALLS: calls, NORA_INPUT_TOKENS: inp, NORA_OUTPUT_TOKENS: out,
         NORA_CACHED_TOKENS: cached, NORA_STOPS: ",".join(stops),
     }
+
+
+def _tools_called(exporter: InMemorySpanExporter) -> tuple[str, ...]:
+    """The tools this turn executed, in start order (see `NORA_TOOLS`)."""
+    spans = [
+        span for span in exporter.get_finished_spans()
+        if "gen_ai.tool.name" in (span.attributes or {})
+    ]
+    spans.sort(key=lambda span: span.start_time or 0)
+    return tuple(str(span.attributes["gen_ai.tool.name"]) for span in spans)
 
 
 @dataclass(frozen=True)
@@ -600,6 +616,7 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
             # BEFORE the judge: these describe what the SUBJECT spent, and a
             # judge's draws are the eval layer's own cost.
             spend = _model_calls(exporter)
+            tools_called = _tools_called(exporter)
             _SPEND.append(spend)
             outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)
 
@@ -656,6 +673,7 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                     EnvironmentState(name=NORA_CHANGED, state=outcome.changed),
                     EnvironmentState(name=NORA_JUDGED, state=outcome.judged),
                     EnvironmentState(name=NORA_CHECKS_FAILED, state=outcome.checks_failed),
+                    EnvironmentState(name=NORA_TOOLS, state=tools_called),
                     *repeat_state,
                 ],
             }
@@ -737,6 +755,7 @@ def nora_task(spec: Spec):
                     EnvironmentState(name=NORA_CHANGED, state=()),
                     EnvironmentState(name=NORA_JUDGED, state=""),
                     EnvironmentState(name=NORA_CHECKS_FAILED, state=()),
+                    EnvironmentState(name=NORA_TOOLS, state=None),
                 ],
             }
 
@@ -1051,6 +1070,58 @@ class MeetsGrader(Evaluator):
             if verdict
             else self._out(FAIL, 0.0, f"did not meet expect={expect!r}")
         ]
+
+    async def evaluate_async(self, data: EvaluationData) -> list[EvaluationOutput]:
+        return self.evaluate(data)
+
+    @staticmethod
+    def _out(verdict: str, score: float, reason: str) -> EvaluationOutput:
+        return EvaluationOutput(
+            score=score, test_pass=(verdict == PASS), reason=reason, label=verdict,
+        )
+
+
+class ToolRouteGrader(Evaluator):
+    """S2 — did the turn reach for the RIGHT tool? (`design/tool-catalogue/
+    05-measurement.md` §2c.)
+
+    `metadata.tools` names the acceptable tools — any one of them executing
+    is a PASS, because «what is the weather» may honestly be answered by
+    `weather` and a case should not pretend there is one right verb when
+    there are two. `metadata.not_tools` names the confusable sibling that
+    must NOT run — the half of a confusable pair that is the actual error
+    (`where_been` for a «where is she NOW» question). Both are read from what
+    EXECUTED (`NORA_TOOLS`), never from what the reply says.
+
+    `load_tools` is plumbing and is never the answer to anything: it is
+    dropped before either check, so a deferred turn and a resident one are
+    graded on the same question.
+
+    ERROR, never FAIL, when the case did not run or recorded no tools state:
+    a broken instrument is not a wrong answer.
+    """
+
+    _PLUMBING = frozenset({"load_tools"})
+
+    def evaluate(self, data: EvaluationData) -> list[EvaluationOutput]:
+        error = state_of(data, NORA_ERROR)
+        called = state_of(data, NORA_TOOLS)
+        md = data.metadata or {}
+        want = frozenset(md.get("tools") or ())
+        avoid = frozenset(md.get("not_tools") or ())
+        if error:
+            return [self._out(ERROR, 0.0, f"the case did not run: {error}")]
+        if called is None:
+            return [self._out(ERROR, 0.0, "no tools state recorded")]
+        if not want:
+            return [self._out(ERROR, 0.0, "case names no metadata.tools to expect")]
+        ran = [name for name in called if name not in self._PLUMBING]
+        wrong = sorted(avoid & set(ran))
+        if wrong:
+            return [self._out(FAIL, 0.0, f"called the sibling {wrong}; ran {ran}")]
+        if want & set(ran):
+            return [self._out(PASS, 1.0, f"called {sorted(want & set(ran))}; ran {ran}")]
+        return [self._out(FAIL, 0.0, f"expected one of {sorted(want)}; ran {ran}")]
 
     async def evaluate_async(self, data: EvaluationData) -> list[EvaluationOutput]:
         return self.evaluate(data)
