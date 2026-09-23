@@ -135,6 +135,7 @@ func TestAccountsSearchValidationIsTheHandler(t *testing.T) {
 		"whitespace":     "?query=%20%20%20",
 		"too long":       "?query=" + repeat("a", maxSearchQueryLength+1),
 		"query+username": "?query=someone&username=someone",
+		"repeated query": "?query=a&query=b",
 	} {
 		t.Run(name, func(t *testing.T) {
 			rec := getSearch(h, rawQuery)
@@ -231,5 +232,25 @@ func TestAccountsSearchSessionGate(t *testing.T) {
 	}
 	if env.Error.Message != "checkpointed: challenge required" {
 		t.Errorf("message = %q, want the state and detail", env.Error.Message)
+	}
+}
+
+// Request-shape validation runs BEFORE the session gate: design 16 says "a
+// malformed id is 400 before any use case runs", and a blank query is that.
+// A checkpointed session must not change the answer — proof that the 400
+// check is not reachable only when the session happens to be healthy.
+func TestAccountsSearchValidationRunsBeforeSessionGate(t *testing.T) {
+	h := searchHandler(domain.Session{State: domain.StateCheckpointed, Detail: "captcha"},
+		searchOnlyPorts{err: errors.New("no use case should run")})
+
+	rec := getSearch(h, "?query=%20%20%20")
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("a checkpointed session with a blank query answered %d, want 400 "+
+			"(validation must run before the session gate)", rec.Code)
+	}
+	env := decodeEnvelope(t, rec)
+	if env.Error.Code != "invalid_id" {
+		t.Errorf("code = %q, want invalid_id", env.Error.Code)
 	}
 }

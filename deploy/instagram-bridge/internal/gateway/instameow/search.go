@@ -52,6 +52,23 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
+// upstreamSearchError wraps a SearchUsers failure so what REACHES call()'s
+// span-recording (`endUpstream` → `failSpan` → `span.RecordError`, which
+// writes `err.Error()` into the span's exception event) is a FIXED
+// description, never the upstream message. That message can echo the
+// query itself — a validation error quoting bad input is a normal GraphQL
+// shape — and the query must never enter a span, a log line, or the
+// envelope message, the same never-list `16` §Tracing puts message text on.
+//
+// `Unwrap` still exposes the real cause, so `classify`'s `needsHuman` and
+// `isGraphQLFailure` checks (call.go) — and anything downstream matching
+// with `errors.Is`/`errors.As` — see straight through it. Only the TEXT
+// `Error()` returns is replaced; the error's identity is not.
+type upstreamSearchError struct{ cause error }
+
+func (e *upstreamSearchError) Error() string { return "instagram account search failed" }
+func (e *upstreamSearchError) Unwrap() error { return e.cause }
+
 // searchAccounts issues one search and returns every hit the library gave
 // back, in its own order.
 //
@@ -63,7 +80,14 @@ func searchAccounts(ctx context.Context, cli Client, query string) ([]domain.Acc
 	resp, err := call(ctx, "instagram.SearchUsers",
 		[]attribute.KeyValue{attribute.Int("instagram.search.query_length", len(query))},
 		func(ctx context.Context) (*slidetypes.SearchResponse, error) {
-			return cli.SearchUsers(ctx, query)
+			resp, err := cli.SearchUsers(ctx, query)
+			if err != nil {
+				// Sanitized BEFORE it reaches call(): endUpstream records
+				// whatever fn returns, so the swap has to happen here, not
+				// after call() returns.
+				return nil, &upstreamSearchError{cause: err}
+			}
+			return resp, nil
 		})
 	if err != nil {
 		return nil, err

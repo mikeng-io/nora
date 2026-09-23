@@ -37,6 +37,7 @@ import (
 	"instagram-bridge/internal/observability"
 
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
+	"go.mau.fi/mautrix-meta/pkg/messagix/types"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -132,7 +133,12 @@ func graphql(
 // What it cannot name it leaves UNCLASSIFIED, and the HTTP layer answers that
 // as 500: an unknown failure is not claimed to be retryable (503) or the
 // caller's fault (400). Everything it does classify maps onto the same status
-// the bridge answered before the kinds existed.
+// the bridge answered before the kinds existed — INCLUDING the new
+// isGraphQLFailure case below: `statusForError` (transport/http/reads.go) has
+// no explicit case for ErrUpstreamRejected either, so it still falls to the
+// same 500 default the old routes answered before this case existed. Only a
+// route on the NEW conventions (transport/http/accounts_search.go) has an
+// explicit 502 for it.
 func classify(err error) error {
 	switch {
 	case err == nil:
@@ -143,9 +149,30 @@ func classify(err error) error {
 		return domain.Classify(domain.ErrNeedsHuman, err)
 	case isTooLarge(err):
 		return domain.Classify(domain.ErrTooLarge, err)
+	case isGraphQLFailure(err):
+		return domain.Classify(domain.ErrUpstreamRejected, err)
 	default:
 		return err
 	}
+}
+
+// isGraphQLFailure recognizes the AsError() shape instameow's own
+// makeGraphQLRequest returns for a TYPED call (graphql.Response[T], built on
+// types.ErrorResponse): either a single error with a top-level `error` code,
+// or one or more *types.GraphQLError from the `errors` array (possibly
+// joined via errors.Join — errors.As traverses that). Without this, a
+// GraphQL errors-in-200 failure from a typed call (SearchUsers, GetProfile,
+// ...) was UNCLASSIFIED and fell through to 500 on every route; the raw
+// graphql() helper already treats the same shape as ErrUpstreamRejected for
+// the RAW path (§One way to call Instagram above), so this closes the same
+// gap for the typed one.
+func isGraphQLFailure(err error) bool {
+	var gqlErr *types.GraphQLError
+	if errors.As(err, &gqlErr) {
+		return true
+	}
+	var resp *types.ErrorResponse
+	return errors.As(err, &resp)
 }
 
 // needsHuman is Instagram asking for a person: a challenge, a checkpoint, a

@@ -26,8 +26,9 @@ package httptransport
 //     ErrUpstreamRejected and has no 501 or 502. That table moves onto the
 //     old routes in P14, in the same PR that moves the Python client.
 //
-// # Validation, before any use case runs
+// # Validation, before any use case runs — INCLUDING the session gate
 //
+//   - `query` given more than once (`?query=a&query=b`): 400.
 //   - `query` missing, empty, or whitespace-only: 400.
 //   - `query` longer than `maxSearchQueryLength`: 400.
 //   - both `query` and `username` given: 400 (mutually exclusive).
@@ -38,17 +39,35 @@ package httptransport
 //     the reason attached — not a 404 that reads as "this API has no such
 //     thing", which is a different and false claim.
 //
+// Every check above runs BEFORE `s.app.SearchAccounts` is called, which is
+// where the session gate lives (`app.Service.ready`, checked first inside
+// every Instagram-facing use case). That is deliberate ordering, not an
+// accident of where the code happens to sit: design 16 §Resources says "a
+// malformed id is 400 before any use case runs", and a malformed or missing
+// `query` is exactly that. The OLD routes answer the session gate (409)
+// before a request-shape problem in some cases — that is P14's reorder debt
+// on THEM, not a pattern this route copies. See
+// TestAccountsSearchValidationRunsBeforeSessionGate.
+//
 // # The query text
 //
 // Never a span attribute, span name, status description, event, or log line
 // — `16` §Tracing's never-list, applied to a name typed about a person. See
-// TestSearchQueryNeverEntersASpan in cmd/instagram-bridge. A RESULT COUNT is
-// fine to record (fine to log, per the task that specified this route): it is
+// TestSearchQueryNeverEntersASpan and TestSearchQueryNeverLeaksOnFailure in
+// cmd/instagram-bridge. The failure path is the harder half: an upstream
+// error's own text can echo bad input back (a validation error quoting the
+// query), so `searchAccounts` (gateway/instameow/search.go) wraps any
+// SearchUsers failure in `upstreamSearchError`, whose `Error()` is a FIXED
+// description — never the original message — before it ever reaches a span,
+// a log line, or this file's envelope. A RESULT COUNT is fine to record on
+// success (fine to log, per the task that specified this route): it is
 // evidence P9's probe needs, and it says nothing about who was searched for.
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -139,20 +158,28 @@ func errorCode(err error) string {
 	}
 }
 
-// failEnvelope writes a use case's error in the new envelope. It never
-// includes the query — the handler already refused to pass it to anything an
-// error could echo back — and never logs it either.
-func failEnvelope(w http.ResponseWriter, err error) {
+// failEnvelope writes a use case's error in the new envelope, and logs the
+// STATUS and CODE only — never the query, and never `err.Error()` raw. By
+// the time an error reaches here it is either a NotReadyError (state/detail,
+// no query involved) or something that passed through searchAccounts'
+// upstreamSearchError wrapper, whose text is already fixed — but this
+// function does not rely on that upstream guarantee holding forever; it logs
+// the classification, not the message, so a future error source cannot
+// reintroduce a leak here by surprise.
+func failEnvelope(ctx context.Context, w http.ResponseWriter, err error) {
 	var notReady *app.NotReadyError
 	if errors.As(err, &notReady) {
 		msg := string(notReady.State)
 		if notReady.Detail != "" {
 			msg = msg + ": " + notReady.Detail
 		}
+		slog.WarnContext(ctx, "accounts_search failed", "status", http.StatusConflict, "code", "needs_human")
 		writeErrorEnvelope(w, http.StatusConflict, "needs_human", msg)
 		return
 	}
-	writeErrorEnvelope(w, statusForDomainError(err), errorCode(err), err.Error())
+	status, code := statusForDomainError(err), errorCode(err)
+	slog.WarnContext(ctx, "accounts_search failed", "status", status, "code", code)
+	writeErrorEnvelope(w, status, code, err.Error())
 }
 
 // --- GET /accounts?query= ------------------------------------------------
@@ -199,9 +226,17 @@ func accountSummariesOf(in []domain.AccountSummary) []accountSummary {
 // handleAccountsSearch answers GET /accounts?query=.
 func (s *Server) handleAccountsSearch(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	hasQuery, hasUsername := q.Has("query"), q.Has("username")
+	queryValues, usernameValues := q["query"], q["username"]
+	hasQuery, hasUsername := len(queryValues) > 0, len(usernameValues) > 0
 
 	switch {
+	case len(queryValues) > 1:
+		// `?query=a&query=b` silently took the first value before this
+		// check existed — a caller could not tell which one the bridge
+		// acted on. Refused instead, the same way a malformed id is.
+		writeErrorEnvelope(w, http.StatusBadRequest, "invalid_id",
+			"query must be given at most once")
+		return
 	case hasQuery && hasUsername:
 		writeErrorEnvelope(w, http.StatusBadRequest, "invalid_id",
 			"query and username are mutually exclusive; send exactly one")
@@ -229,7 +264,7 @@ func (s *Server) handleAccountsSearch(w http.ResponseWriter, r *http.Request) {
 
 	results, err := s.app.SearchAccounts(r.Context(), trimmed)
 	if err != nil {
-		failEnvelope(w, err)
+		failEnvelope(r.Context(), w, err)
 		return
 	}
 	// A result COUNT is allowed where the query text is not (file header).

@@ -14,6 +14,7 @@ import (
 
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
+	"go.mau.fi/mautrix-meta/pkg/messagix/types"
 )
 
 // The measured shape maps field for field: `pk` becomes the igid, the
@@ -34,10 +35,10 @@ func TestSearchAccountsMapsTheMeasuredWire(t *testing.T) {
 		t.Fatalf("got %d results, want 2", len(got))
 	}
 	first := got[0]
-	if first.IGID != "221731317" || first.Username != "nka_bpumvg" || first.FullName != "Miles Novak" {
+	if first.IGID != "900000001" || first.Username != "search_result_alpha" || first.FullName != "Search Result Alpha" {
 		t.Errorf("first result = %+v, want the measured pk/username/full_name", first)
 	}
-	if first.FBID != "110966695387753" {
+	if first.FBID != "900000000000001" {
 		t.Errorf("first result fbid = %q, want the formatted messaging id", first.FBID)
 	}
 	if first.IsVerified {
@@ -60,7 +61,7 @@ func TestSearchAccountsPreservesLibraryOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i, want := range []string{"221731317", "88700112233"} {
+	for i, want := range []string{"900000001", "900000002"} {
 		if got[i].IGID != want {
 			t.Errorf("result %d igid = %q, want %q (library order)", i, got[i].IGID, want)
 		}
@@ -77,7 +78,7 @@ func TestSearchAccountsSkipsANilEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0].IGID != "221731317" {
+	if len(got) != 1 || got[0].IGID != "900000001" {
 		t.Fatalf("got %+v, want only the non-nil measured hit", got)
 	}
 }
@@ -115,4 +116,43 @@ func TestSearchAccountsClassifiesAChallenge(t *testing.T) {
 	if !errors.Is(err, domain.ErrNeedsHuman) {
 		t.Errorf("err = %v, want ErrNeedsHuman", err)
 	}
+}
+
+// A GraphQL errors-in-200 shape from a TYPED call — the SAME AsError() shape
+// instameow's own makeGraphQLRequest returns — classifies as
+// ErrUpstreamRejected via call.go's isGraphQLFailure, so the new-convention
+// route answers 502 instead of falling through unclassified to 500.
+func TestSearchAccountsClassifiesGraphQLErrorsAsUpstreamRejected(t *testing.T) {
+	gqlErr := (&types.ErrorResponse{Errors: []*types.GraphQLError{
+		{Message: "synthetic field exception", Summary: "Query error", Code: 1675030},
+	}}).AsError()
+	f := &fakeIG{SearchErr: gqlErr}
+	_, err := searchAccounts(t.Context(), f, "someone")
+	if !errors.Is(err, domain.ErrUpstreamRejected) {
+		t.Errorf("err = %v, want ErrUpstreamRejected", err)
+	}
+}
+
+// The error TEXT that reaches the caller (and, before it, the span) is
+// FIXED, never the upstream message — which can echo bad input back, and the
+// upstream message here deliberately contains a value that must not survive.
+func TestSearchAccountsErrorTextIsSanitized(t *testing.T) {
+	const secret = "a-value-that-must-not-survive-3ee81"
+	f := &fakeIG{SearchErr: errors.New("upstream said: " + secret)}
+	_, err := searchAccounts(t.Context(), f, "someone")
+	if err == nil {
+		t.Fatal("want an error, got nil")
+	}
+	if got := err.Error(); got == "" || containsSubstring(got, secret) {
+		t.Errorf("err.Error() = %q, want a fixed description without the upstream text", got)
+	}
+}
+
+func containsSubstring(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
 }

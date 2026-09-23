@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
+	"go.mau.fi/mautrix-meta/pkg/messagix/types"
 )
 
 func getSearch(t *testing.T, b *testBridge, rawQuery string) *httptest.ResponseRecorder {
@@ -78,5 +79,30 @@ func TestAccountsSearchClassifiesAnUpstreamChallenge(t *testing.T) {
 
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("answered %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// A GraphQL errors-in-200 failure from SearchUsers — the AsError() shape
+// instameow's own makeGraphQLRequest returns — answers 502 with the new
+// envelope, end to end: gateway classification (call.go's
+// isGraphQLFailure), the app's pass-through, and the transport's status
+// table. Before call.go's fix this fell through unclassified to 500.
+func TestAccountsSearchUpstreamGraphQLErrorAnswers502(t *testing.T) {
+	gqlErr := (&types.ErrorResponse{Errors: []*types.GraphQLError{
+		{Message: "synthetic field exception", Summary: "Query error", Code: 1675030},
+	}}).AsError()
+	b := newTestBridge(t, &fakeIG{SearchErr: gqlErr})
+
+	rec := getSearch(t, b, "?query=someone")
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("answered %d, want 502: %s", rec.Code, rec.Body.String())
+	}
+	var env errorEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("body is not an error envelope: %v (%s)", err, rec.Body.String())
+	}
+	if env.Error.Code != "upstream_rejected" {
+		t.Errorf("code = %q, want upstream_rejected", env.Error.Code)
 	}
 }
