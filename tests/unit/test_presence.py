@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from types import SimpleNamespace
 
 import pytest
 from aiohttp import web
@@ -15,12 +16,15 @@ from aiohttp.test_utils import TestServer
 
 import nora.agent.prefill as prefill
 from nora.agent.prefill import _BLOCKS, build_prefill
+from nora.app.composition import _presence_reader
 from nora.domain.models import NormalizedMessage, TagContext
 from nora.domain.ports import AdapterHealth
 from nora.domain.self_presence import Presence, PresenceRoom
 from nora.engagement.self_presence import PresenceReader
 from nora.language.presence_render import render_presence
+from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.instagram.self_id import derive_identity, read_username
+from nora.platform.registry import AdapterRegistry
 from nora.policy import load_policy
 
 
@@ -282,6 +286,34 @@ async def test_a_live_read_with_nothing_declared_and_no_answer_is_omitted(policy
         policy=policy, adapters=_adapters(), live_handles={"instagram": live},
     )
     assert "on Instagram" not in await _body(reader)
+
+
+async def test_the_live_discord_handle_beats_the_declared_one(policy):
+    """The same precedence Instagram's live read uses (design/self-awareness/
+    02/06), wired through composition's `_presence_reader` — not just the
+    reader taking whatever callable it is handed, but the ACTUAL DiscordAdapter
+    registered under "discord"."""
+    async def me(request):
+        return web.json_response({"id": "9", "username": "nora", "discriminator": "4214"})
+
+    app = web.Application()
+    app.router.add_get("/users/@me", me)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        base = str(server.make_url("")).rstrip("/")
+        discord = DiscordAdapter("tok", base_url=base)
+        registry = AdapterRegistry(adapters={"discord": discord})
+        cfg = SimpleNamespace(
+            agent=SimpleNamespace(handles={"discord": "@old-name"}),
+        )
+        reader = _presence_reader(cfg, policy, registry)
+        body = await _body(reader, platform="discord", cid="111/222")
+    finally:
+        await server.close()
+
+    assert "@nora#0000 on Discord" in body
+    assert "old-name" not in body
 
 
 async def test_the_reader_never_raises_through_a_hanging_bridge(policy):

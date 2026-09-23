@@ -226,6 +226,43 @@ async def test_resolve_identity_returns_a_platform_identity(aiohttp_server):
     assert Identifier("discord", "user_id", "555") in identity.identifiers
 
 
+async def test_own_handle_reuses_the_startup_users_me_call(aiohttp_server):
+    """design/self-awareness/02/06: no extra per-turn network call — Discord's
+    `own_handle` must answer from the SAME `/users/@me` response
+    `resolve_identity()` fetches once, not a fresh request each time."""
+    calls = 0
+
+    async def handler(request):
+        nonlocal calls
+        calls += 1
+        return web.json_response({"id": "555", "username": "nora", "discriminator": "4214"})
+
+    app = web.Application()
+    app.router.add_get("/users/@me", handler)
+    server = await aiohttp_server(app)
+
+    adapter = DiscordAdapter("tok", base_url=str(server.make_url("")).rstrip("/"))
+    first = await adapter.own_handle()
+    second = await adapter.own_handle()
+
+    assert first == "@nora#0000"
+    assert second == "@nora#0000"
+    assert calls == 1, "own_handle must reuse resolve_identity()'s single call, never re-fetch"
+
+
+async def test_own_handle_drops_the_tag_for_a_migrated_discriminator(aiohttp_server):
+    async def handler(request):
+        return web.json_response({"id": "555", "username": "nora", "discriminator": "0"})
+
+    app = web.Application()
+    app.router.add_get("/users/@me", handler)
+    server = await aiohttp_server(app)
+
+    adapter = DiscordAdapter("tok", base_url=str(server.make_url("")).rstrip("/"))
+
+    assert await adapter.own_handle() == "@nora"
+
+
 class _FakeSpeaker:
     """The minimal shape `DiscordAdapter._send_voice` reads — same seam the
     production wiring uses (`nora.infra.tts.MiniMaxTtsSpeaker`)."""
