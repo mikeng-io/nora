@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from nora.app.fire import SENT, SILENT, participation_occasion
 from nora.subject import (
@@ -45,8 +45,10 @@ from nora.subject import (
     settle,
     silent_failures,
 )
+from nora.subject.standing_fold import fold, read_fold_turn
 
 from .domain import Case, Outcome
+from .fold_evidence import render_evidence, render_shown
 
 
 async def gate(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
@@ -417,6 +419,96 @@ async def proactive_act(subject: Subject, case: Case, *, now_ms: int) -> Outcome
     )
 
 
+async def standing(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
+    """The standing FOLD on one real tag turn, graded on the position it wrote.
+
+    `design/standing-compact/20-verification.md` §1. The case names a turn
+    (`metadata.tag_id`) and the instant it finished (`snapshot.before_ms`, the
+    turn's own `tag_trace.created_at`). The sandbox already holds the room up
+    to that instant; this reads the turn's record and the position as it stood
+    BEFORE the turn out of the source, and runs the deployed pipeline's own
+    fold on them (`nora.subject.standing_fold`).
+
+    Every way this can end without a written position is an ERROR, never a
+    verdict: a fold that timed out, answered prose instead of JSON, or was
+    refused for overflow has said nothing about whether a thread was carried —
+    and "nothing was written, so nothing stale was re-affirmed" would pass every
+    `stale` case on a dead provider.
+
+    **A turn with no prior is refused, not folded against a blank.** Migration
+    0059's chain did not backfill, so «no revision at or before this instant»
+    reads the same for a room that had never folded and for one whose position
+    simply predates the chain. Folding the second against «no position yet»
+    would grade a fold on an input it never had. Such a moment is parked in the
+    corpus; one reaching here is a mistake in the corpus, and says so.
+
+    `metadata.print_input` renders the fold's whole input and stops — no model
+    is reached — and returns it as `shown`. Always an ERROR: a run that called
+    no model has measured nothing, whatever it prints.
+    """
+    tag_id = str(case.metadata.get("tag_id") or "")
+    moment = case.moment
+    if not tag_id:
+        return Outcome(
+            admitted=None, source="fail_closed",
+            error="a standing case names the turn it folds (`metadata.tag_id`)",
+        )
+    if moment is None:
+        return Outcome(
+            admitted=None, source="fail_closed",
+            error="the fold reads its turn from the source and the runner handed no moment",
+        )
+    try:
+        turn = await read_fold_turn(subject, source_url=moment.source_url, tag_id=tag_id)
+    except (LookupError, ValueError) as exc:
+        return Outcome(admitted=None, source="fail_closed", error=str(exc))
+    stated = int((case.snapshot or {}).get("before_ms") or 0)
+    if turn.trace.created_at != stated:
+        return Outcome(
+            admitted=None, source="fail_closed",
+            error=(
+                f"the case's before_ms ({stated}) is not tag {tag_id!r}'s own "
+                f"instant ({turn.trace.created_at}); the sandbox would hold a "
+                "different room than the fold read"
+            ),
+        )
+    if turn.prior is None:
+        return Outcome(
+            admitted=None, source="fail_closed",
+            error=(
+                "no standing revision stood before this turn — the chain "
+                "(migration 0059) holds none, so the prior the fold read is "
+                "unknowable here; a moment like this is parked, never folded "
+                "against a blank"
+            ),
+        )
+    dry = bool(case.metadata.get("print_input"))
+    try:
+        folded = await fold(subject, turn, rows=moment.rows, call_model=not dry)
+    except (LookupError, ValueError, RuntimeError) as exc:
+        return Outcome(admitted=None, source="fail_closed", error=str(exc))
+    shown = render_shown(folded.calls)
+    if dry:
+        return Outcome(
+            admitted=None, source="fail_closed", shown=shown,
+            outcome_token=folded.outcome,
+            error="print-input: the fold's input was rendered and no model was called",
+        )
+    if folded.outcome != "written" or folded.position is None:
+        return Outcome(
+            admitted=None, source="fail_closed", shown=shown,
+            outcome_token=folded.outcome,
+            error=f"the fold wrote no position: {folded.outcome}",
+        )
+    return Outcome(
+        admitted=None,
+        position=folded.position,
+        evidence=render_evidence(turn, display_name=subject.cfg.doctrine.display_name),
+        shown=shown,
+        outcome_token=folded.outcome,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class EntryPoint:
     """One port implementation, plus the configuration it needs to EXIST.
@@ -466,6 +558,12 @@ class EntryPoint:
     #: nothing was scored as a verdict, but a confusing one. `gate` and
     #: `dreamer` are unaffected: they read and write, and never speak.
     drives_a_turn: bool = False
+
+    #: What a judge grades, when a judge is configured: `"reply"` — what she
+    #: said, against the reply rubric — or `"position"` — the standing position
+    #: a fold wrote, against the case's own stated property. Data here, not a
+    #: branch on the entry's name, for the reason `drives_a_turn` is.
+    judged_on: Literal["reply", "position"] = "reply"
 
 
 #: Both entry points turn on the SAME pair, and that is not duplication: since
@@ -534,5 +632,12 @@ ENTRY_POINTS = {
             "standing.enabled": True,
             "dreamer.enabled": True,
         },
+    ),
+    # The fold is the TAG PATH's post-turn stage, and composition builds its
+    # wiring only under `[standing] enabled`. No turn is driven — the turn
+    # already happened and is read from its record — so it may anchor in any
+    # room, Discord's included: nothing is spoken.
+    "standing": EntryPoint(
+        drive=standing, config={"standing.enabled": True}, judged_on="position",
     ),
 }

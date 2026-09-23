@@ -25,7 +25,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Literal
 
-from .rubric import RUBRIC, SOURCE_SCOPE, Criterion
+from .rubric import FOLD_KINDS, RUBRIC, SOURCE_SCOPE, Criterion
 
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
@@ -225,4 +225,65 @@ def _build_judge_prompt(
         "(a ```json fenced block is tolerated but not required):\n"
         '[{"criterion": "<name>", "score": <0-1 float>, "confidence": <0-1 float>, '
         '"rationale": "<one sentence>"}, ...]'
+    )
+
+
+#: The ONE criterion a standing-position judgement answers. Named so
+#: `criterion_verdict` can find it in the same JSON shape every other judge
+#: answer uses, and parsed by the same fail-closed path.
+POSITION_CRITERION = "position_property"
+
+
+def criterion_rationales(raws: list[str] | tuple[str, ...], criterion: str) -> tuple[str, ...]:
+    """Each sample's one-sentence rationale for `criterion`, where it parsed.
+
+    Carried to the report so a FAIL says WHY without a second run — the reason
+    a reading costs a whole corpus when the only thing kept is the label.
+    """
+    out: list[str] = []
+    for raw in raws:
+        try:
+            items = parse_judge_response(raw)
+        except Exception:                  # noqa: BLE001, S112 — malformed output has no rationale
+            continue
+        out.extend(i.rationale for i in items if i.criterion == criterion)
+    return tuple(out)
+
+
+def _build_position_prompt(*, kind: str, prop: str, evidence: str, position: str) -> str:
+    """Ask for ONE criterion: does the written position hold the case's property.
+
+    The evidence is the RECORD of the turn (`evals.rebuilt.fold_evidence`), the
+    same on both arms; the position is what this arm's fold wrote. An unknown
+    `kind` RAISES: a case asking for a property nobody defined would be graded
+    on whatever the judge guessed it meant.
+    """
+    if kind not in FOLD_KINDS:
+        raise ValueError(f"unknown standing kind {kind!r}; known: {sorted(FOLD_KINDS)}")
+    return (
+        "You are grading one STANDING POSITION that Nora — an AI member of a "
+        "Hong Kong group chat — wrote about one room, right after one of her "
+        "turns there. Standing is the compact of her work in that room: what "
+        "she is holding open, what she owes, and what she found and has not "
+        "given the room yet. It is rewritten after every turn from the "
+        "position before it plus the turn, and it is the ONLY thing that "
+        "carries her working state to her next turn — the next turn sees the "
+        "transcript and this, nothing else. It is Cantonese prose.\n\n"
+        "Below is the record of the turn: her position before it (with when it "
+        "was written), the room's messages around the turn, and her steps on "
+        "the turn — every tool she called and what came back, in full. Then "
+        "the position she wrote after it. Grade ONE property, stated below; "
+        "ignore style, length and anything the property does not ask about.\n\n"
+        f"{evidence}\n"
+        "## The position she wrote after the turn (what you are grading)\n"
+        f"```\n{position.strip()}\n```\n\n"
+        f"## The property ({kind})\n{FOLD_KINDS[kind]}\n\n"
+        f"## This case\n{prop.strip()}\n\n"
+        "Score 1.0 when the property holds in the written position and 0.0 when "
+        "it does not; state your confidence (0.0-1.0). Return ONLY a JSON array "
+        "with one object, in this exact shape (a ```json fenced block is "
+        "tolerated):\n"
+        f'[{{"criterion": "{POSITION_CRITERION}", "score": <0-1 float>, '
+        '"confidence": <0-1 float>, "rationale": "<one sentence naming what '
+        'was or was not held>"}]'
     )
