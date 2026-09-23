@@ -1,6 +1,12 @@
 {
   "route": "GET /threads/{thread_fbid}/members",
   "path": "/threads/100000000000042/members",
+  "upstream": [
+    {
+      "call": "GetThread",
+      "thread_id": "100000000000042"
+    }
+  ],
   "status": 200,
   "body": {
     "room_id": "100000000000042",

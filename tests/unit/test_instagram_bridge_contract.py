@@ -15,6 +15,10 @@ files:
   fixture's request body. A renamed request field fails on both sides: the
   bridge's fixture test when the handler changes, this one when the adapter
   does;
+* each fixture's `upstream` block is what the bridge handed Instagram for that
+  request (recorded by the Go test from its fake client). The body the adapter
+  sent is checked against it field by field, so the fixture binds the adapter's
+  field names to what the bridge actually READ, not only to what it echoed;
 * every write carries the turn's `traceparent`, so one trace still spans Nora
   and the bridge (17 P1);
 * the adapter's outcome for each status is the one the bridge's status table
@@ -219,6 +223,7 @@ async def test_a_send_against_the_bridges_own_bodies(bridge, name):
 
     _route, _path, body, _tp = _assert_one_call(fake, fx, span)
     assert body == fx["request"], "the adapter's request is not the one the bridge accepts"
+    _assert_reaches_upstream(body, fx)
     status = fx["status"]
     if status == 200:
         assert result.ok is True
@@ -229,6 +234,32 @@ async def test_a_send_against_the_bridges_own_bodies(bridge, name):
         # 503 is the bridge healing itself; everything else is not retried,
         # 409 above all (a challenged account must not be hammered).
         assert result.retryable is (status == 503)
+
+
+def _assert_reaches_upstream(body: dict, fx: dict) -> None:
+    """The body the adapter sent, against what the bridge handed Instagram for
+    the same body (`upstream`). On a refusal nothing reached Instagram, except
+    where the refusal came FROM Instagram (the send itself failed)."""
+    calls = {c["call"]: c for c in fx["upstream"]}
+    if "SendMessage" not in calls and "SendMedia" not in calls:
+        assert fx["status"] != 200
+        return
+    if "media" in body:
+        upload = calls["Upload"]
+        assert (upload["filename"], upload["mimetype"]) == (
+            body["media"]["filename"], body["media"]["mimetype"],
+        )
+        assert upload["bytes"] == len(base64.b64decode(body["media"]["data_base64"]))
+        sent = calls["SendMedia"]
+    else:
+        sent = calls["SendMessage"]
+        assert sent["text_length"] == len(body["text"])
+        assert sent["mentions"] == [
+            {"fbid": int(m["fbid"]), "offset": m["offset"], "length": m["length"]}
+            for m in body.get("mentions", [])
+        ]
+    assert sent.get("reply_to_message_id") == body.get("reply_to")
+    assert sent["thread_id"] == _path_ids(fx["path"])[0]
 
 
 # ---- PUT /threads/{thread_fbid}/messages/{message_id}/reaction ---------------
@@ -250,10 +281,21 @@ async def test_a_reaction_against_the_bridges_own_bodies(bridge, name):
         )
 
     _route, _path, body, _tp = _assert_one_call(fake, fx, span)
-    if fx["status"] != 400:
-        # The 400 fixture's request is the malformed one the adapter never
-        # builds (no emoji); every other is exactly the adapter's shape.
-        assert body == request
+    # Unconditional. The 400 fixture's request carries no emoji at all; the
+    # adapter asked with an empty emoji sends the key empty, which the bridge
+    # refuses the same way, and nothing reaches Instagram (`upstream: []`).
+    assert body == {"emoji": "", **request}
+    upstream = fx["upstream"]
+    if fx["status"] == 200:
+        [call] = upstream
+        assert call["call"] == "SendReaction"
+        assert (call["thread_id"], call["message_id"]) == (thread, message)
+        assert call["emoji"] == body["emoji"]
+        # The field the review found unbound: `remove` must reach Instagram
+        # as the mutation's status, not merely be echoed back.
+        assert call["reaction_status"] == ("deleted" if body["remove"] else "created")
+    else:
+        assert upstream == []
     assert result.supported is True
     # `confirmed: false` is still a 200, and a 200 is a success.
     assert result.ok is (fx["status"] == 200)

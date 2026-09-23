@@ -233,6 +233,30 @@ def _apply_mention_handles(
     return text, [payload_by_index[i] for i in range(len(mentions)) if i in payload_by_index]
 
 
+#: The bridge's own shape for a message id (`domain.ParseMessageID`): 1 to 256
+#: bytes, each printable ASCII other than a space.
+_MAX_MESSAGE_ID_LENGTH = 256
+
+
+def _usable_reply_to(message_id: str | None) -> str | None:
+    """The quote's platform message id if the bridge will accept it as a
+    `reply_to`, else None.
+
+    The bridge answers 400 to the WHOLE message when `reply_to` fails its
+    shape check, so forwarding a malformed one would cost Nora the reply. A
+    quote the wire cannot carry is dropped and the message goes unthreaded,
+    the same rule as a quote with no platform id at all: a reply that lost its
+    thread is still a reply."""
+    if not message_id:
+        return None
+    if len(message_id) > _MAX_MESSAGE_ID_LENGTH or not all(
+        "!" <= ch <= "~" for ch in message_id
+    ):
+        log.warning("dropping a reply_to the bridge would refuse; sending unthreaded")
+        return None
+    return message_id
+
+
 def messages_path(conversation_id: str) -> str:
     """`/threads/{thread_fbid}/messages` for one room. The id is quoted as ONE
     path segment, so no conversation id can address a different route."""
@@ -315,7 +339,11 @@ class InstagramSender:
         # the only handle this wire accepts. `OutboundQuote.ts`/`author_id` are
         # Signal's scheme and cannot reconstruct one, so a quote without the
         # id sends unthreaded — a reply that lost its thread is still a reply.
-        reply_to = quote.platform_message_id if quote is not None else None
+        # One the bridge would refuse is dropped the same way
+        # (`_usable_reply_to`), rather than losing the message to a 400.
+        reply_to = _usable_reply_to(
+            quote.platform_message_id if quote is not None else None,
+        )
 
         # Rewritten HERE, not upstream: `nora.agent.outbound.OutboundComposer`
         # owns the drafted TEXT (audited, guarded, identical for every

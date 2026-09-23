@@ -4,6 +4,13 @@
   "request": {
     "typing": true
   },
+  "upstream": [
+    {
+      "call": "SetTyping",
+      "thread_id": "100000000000042",
+      "typing": true
+    }
+  ],
   "status": 200,
   "body": {
     "typing": true

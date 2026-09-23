@@ -293,6 +293,39 @@ async def test_a_quote_with_no_platform_id_sends_UNTHREADED_rather_than_refusing
     assert "reply_to" not in box["calls"][0][1]
 
 
+@pytest.mark.parametrize("bad", [
+    pytest.param("mid.$a b", id="a space"),
+    pytest.param("mid.$a\tb", id="a control byte"),
+    pytest.param("mid.$é", id="non-ascii"),
+    pytest.param("m" * 257, id="over 256 bytes"),
+])
+async def test_a_reply_to_the_bridge_would_refuse_is_DROPPED_not_fatal(bridge, bad):
+    """The bridge 400s the WHOLE message when `reply_to` fails its shape
+    check (1 to 256 printable ASCII). Forwarding it would lose the reply; it
+    goes out unthreaded instead, text and attachment both."""
+    box, sender = bridge
+
+    result = await sender.send(
+        GROUP, "hi", attachments=(PNG,),
+        quote=OutboundQuote(ts=1, author_id="x", platform_message_id=bad),
+    )
+
+    assert result.ok is True
+    assert [_kind(body) for _, body in box["calls"]] == ["text", "media"]
+    assert all("reply_to" not in body for _, body in box["calls"])
+
+
+async def test_a_reply_to_at_the_limit_is_still_threaded(bridge):
+    """The positive control: 256 printable bytes is a valid id and rides."""
+    box, sender = bridge
+    edge = "m" * 256
+
+    quote = OutboundQuote(ts=1, author_id="x", platform_message_id=edge)
+    await sender.send(GROUP, "hi", quote=quote)
+
+    assert box["calls"][0][1]["reply_to"] == edge
+
+
 # --- posture and status mapping ----------------------------------------------
 
 

@@ -4,6 +4,7 @@
   "request": {
     "typing": true
   },
+  "upstream": [],
   "status": 503,
   "body": {
     "error": {

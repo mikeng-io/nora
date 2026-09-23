@@ -47,8 +47,12 @@ for the Go services under `deploy/` (the instagram-bridge):
 
 The first word after `go:` is the Go module's directory; the rest are
 `go test` arguments (no shell, so a `-run` regex needs no quoting). The same
-two rules hold: "collected" counts the `=== RUN` lines, so a mutant that no
-longer COMPILES collects nothing and is a BROKEN ENTRY, never a caught one.
+two rules hold: "collected" counts the `=== RUN` lines, and a run in which ANY
+package reports `[build failed]` or `[setup failed]` collects nothing, so a
+mutant that does not compile is a BROKEN ENTRY, never a caught one. Counting
+`=== RUN` lines alone is not enough for that: with `./...`, the packages that
+still compile run their tests, and the one that does not only turns the exit
+code red.
 
 Two harness rules are baked in, both learned the hard way on that branch:
 
@@ -81,18 +85,30 @@ _COLLECTED = re.compile(r"(\d+) (?:passed|failed|error)")
 _GO_RAN = re.compile(r"^=== RUN\s", re.MULTILINE)
 
 
-def run_go(target: str) -> tuple[bool, int]:
-    """`(green, collected)` for one `go:<module dir> <go test args>` target.
+# A package that did not compile, or whose test binary could not be set up.
+_GO_BROKEN = re.compile(r"\[(?:build|setup) failed\]")
 
-    A build failure prints no `=== RUN` line, so it is zero collected: a
-    mutant must die from its behaviour, not from failing to compile.
+
+def go_verdict(returncode: int, output: str) -> tuple[bool, int]:
+    """`(green, collected)` from one `go test -v` run's exit code and output.
+
+    Any `[build failed]` / `[setup failed]` is zero collected, whatever else
+    ran: a mutant must die from its behaviour, not from failing to compile,
+    and one uncompilable package in `./...` must not pass for a red test.
     """
+    if _GO_BROKEN.search(output):
+        return False, 0
+    return returncode == 0, len(_GO_RAN.findall(output))
+
+
+def run_go(target: str) -> tuple[bool, int]:
+    """`(green, collected)` for one `go:<module dir> <go test args>` target."""
     module, *args = target.split()
     proc = subprocess.run(  # noqa: S603 - fixed go argv, repo-local only
         ["go", "test", "-count=1", "-v", *args],  # noqa: S607
         cwd=ROOT / module, capture_output=True, text=True, check=False,
     )
-    return proc.returncode == 0, len(_GO_RAN.findall(proc.stdout))
+    return go_verdict(proc.returncode, proc.stdout + proc.stderr)
 
 
 def run(target: str) -> tuple[bool, int]:

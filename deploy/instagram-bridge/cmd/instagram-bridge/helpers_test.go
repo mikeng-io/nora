@@ -6,7 +6,6 @@ package main
 // cannot assemble the layers differently from production.
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -21,9 +20,6 @@ import (
 	"instagram-bridge/internal/gateway/instameow/fakeig"
 	"instagram-bridge/internal/session"
 	"instagram-bridge/internal/stream"
-
-	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
-	"go.mau.fi/mautrix-meta/pkg/messagix/types"
 )
 
 // The measured-wire fake, under the names these tests have always used.
@@ -78,11 +74,9 @@ func newTestBridge(t *testing.T, f *fakeIG, opts ...bridgeOpt) *testBridge {
 		Seq:       22,
 		Self:      domain.Self{FBID: "14963523149149302", IGID: "79597894900", Username: "not_____nora"},
 		Client:    f,
-		Upload: func(context.Context, int64, *httpclient.MercuryUploadMedia) (*types.MercuryUploadResponse, error) {
-			return &types.MercuryUploadResponse{
-				Payload: types.MediaPayloads{RealMetadata: &types.FileMetadata{ImageID: 2280432885466163}},
-			}, nil
-		},
+		// The fake records every upload, so a test can assert what reached
+		// the library (filename, mimetype, bytes), not only that one happened.
+		Upload: f.Upload,
 	}
 	for _, opt := range opts {
 		opt(&o)

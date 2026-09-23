@@ -15,9 +15,15 @@ package main
 // then read. Neither side can drift alone.
 //
 // A write route's fixture also carries the REQUEST it was generated from
-// (`request`). The Python adapter's tests assert that the adapter sends that
-// same body for the same message, so a renamed request field fails on both
-// sides too, not only a renamed response field.
+// (`request`), and what that request made the bridge hand INSTAGRAM
+// (`upstream`: the calls the fake Instagram client received, with the fields
+// the bridge read out of the request, and never the message text). The Python
+// adapter's tests assert the adapter sends exactly `request`; this file
+// asserts the handler turns `request` into exactly `upstream`. A renamed
+// request field therefore fails here even when the response is unchanged: a
+// `remove` the handler no longer reads still answers 200 {"confirmed": true},
+// but places a reaction where one was meant to be retracted, and `upstream`
+// says `created` instead of `deleted`.
 //
 // Every value is SYNTHETIC — made-up igids, usernames, bios and CDN paths in
 // the placeholder ranges `identity.example.toml` uses. Nothing is copied
@@ -77,11 +83,92 @@ func skipOutsideTheRepo(t *testing.T) {
 // write route's JSON body, absent on a read) document what was asked;
 // `status` and `body` are what the bridge answered.
 type contractFixture struct {
-	Route   string          `json:"route"`
-	Path    string          `json:"path"`
-	Request json.RawMessage `json:"request,omitempty"`
-	Status  int             `json:"status"`
-	Body    json.RawMessage `json:"body"`
+	Route    string          `json:"route"`
+	Path     string          `json:"path"`
+	Request  json.RawMessage `json:"request,omitempty"`
+	Upstream json.RawMessage `json:"upstream,omitempty"`
+	Status   int             `json:"status"`
+	Body     json.RawMessage `json:"body"`
+}
+
+// upstreamCall is one call the fake Instagram client received, with the
+// fields the bridge filled from the caller's request. Text is recorded only as
+// its length: message text never enters a fixture any more than a span.
+type upstreamCall struct {
+	Call           string            `json:"call"`
+	ThreadID       string            `json:"thread_id,omitempty"`
+	TextLength     *int              `json:"text_length,omitempty"`
+	Mentions       []upstreamMention `json:"mentions,omitempty"`
+	ReplyTo        string            `json:"reply_to_message_id,omitempty"`
+	MessageID      string            `json:"message_id,omitempty"`
+	Emoji          string            `json:"emoji,omitempty"`
+	ReactionStatus string            `json:"reaction_status,omitempty"`
+	Filename       string            `json:"filename,omitempty"`
+	MimeType       string            `json:"mimetype,omitempty"`
+	Bytes          *int              `json:"bytes,omitempty"`
+	VoiceClip      *bool             `json:"voice_clip,omitempty"`
+	Typing         *bool             `json:"typing,omitempty"`
+}
+
+type upstreamMention struct {
+	FBID   int64 `json:"fbid"`
+	Offset int   `json:"offset"`
+	Length int   `json:"length"`
+}
+
+// upstreamOf is what a request made the bridge send Instagram, in a FIXED
+// call order (the fake records per call kind, not a timeline). An empty list
+// is a fact too: nothing reached Instagram, which is what every refusal
+// before the session gate, and the gate itself, must produce.
+func upstreamOf(f *fakeIG) []upstreamCall {
+	calls := []upstreamCall{}
+	for _, id := range f.GetThreadIDs {
+		calls = append(calls, upstreamCall{Call: "GetThread", ThreadID: id})
+	}
+	if f.TextReq != nil {
+		n := len([]rune(f.TextReq.Text.Value))
+		c := upstreamCall{Call: "SendMessage", TextLength: &n}
+		if f.TextReq.IGThreadIGID != nil {
+			c.ThreadID = *f.TextReq.IGThreadIGID
+		}
+		for _, m := range f.TextReq.Mentions {
+			c.Mentions = append(c.Mentions, upstreamMention{FBID: m.FBID, Offset: m.Offset, Length: m.Length})
+		}
+		if f.TextReq.ReplyToMessageID != nil {
+			c.ReplyTo = *f.TextReq.ReplyToMessageID
+		}
+		calls = append(calls, c)
+	}
+	for _, u := range f.Uploads {
+		n, voice := len(u.MediaData), u.IsVoiceClip
+		calls = append(calls, upstreamCall{
+			Call: "Upload", Filename: u.Filename, MimeType: u.MimeType, Bytes: &n, VoiceClip: &voice,
+		})
+	}
+	if f.MediaReq != nil {
+		c := upstreamCall{Call: "SendMedia", ThreadID: f.MediaReq.ThreadID}
+		if f.MediaReq.ReplyToMessageID != nil {
+			c.ReplyTo = *f.MediaReq.ReplyToMessageID
+		}
+		calls = append(calls, c)
+	}
+	if f.ReactReq != nil {
+		in := f.ReactReq.Input
+		calls = append(calls, upstreamCall{
+			Call: "SendReaction", ThreadID: in.ThreadID, MessageID: in.MessageID,
+			Emoji: in.Emoji, ReactionStatus: string(in.ReactionStatus),
+		})
+	}
+	if f.Unsend != nil {
+		calls = append(calls, upstreamCall{
+			Call: "UnsendMessage", ThreadID: f.Unsend.SendData.ThreadID, MessageID: f.Unsend.MessageID,
+		})
+	}
+	for i, id := range f.Typing {
+		typing := f.TypingValues[i]
+		calls = append(calls, upstreamCall{Call: "SetTyping", ThreadID: id, Typing: &typing})
+	}
+	return calls
 }
 
 const (
@@ -233,9 +320,12 @@ type contractCase struct {
 	path    string
 	method  string
 	request any
-	fake    func() *fakeIG
-	social  func() gateway.GraphQLIssuer // nil: the default issuer resolution
-	opts    []bridgeOpt                  // optional session adjustments
+	// upstream records what reached the fake Instagram client into the
+	// fixture. Set for every thread route (writeContractCases).
+	upstream bool
+	fake     func() *fakeIG
+	social   func() gateway.GraphQLIssuer // nil: the default issuer resolution
+	opts     []bridgeOpt                  // optional session adjustments
 }
 
 // The request bodies the write fixtures are generated from. The Python
@@ -384,7 +474,11 @@ func writeContractCases() []contractCase {
 }
 
 func contractCases() []contractCase {
-	return append(readContractCases(), writeContractCases()...)
+	writes := writeContractCases()
+	for i := range writes {
+		writes[i].upstream = true
+	}
+	return append(readContractCases(), writes...)
 }
 
 func readContractCases() []contractCase {
@@ -548,7 +642,8 @@ func runContractCase(t *testing.T, tc contractCase) contractFixture {
 	if tc.social != nil {
 		opts = append(opts, withIssuer(tc.social()))
 	}
-	b := newTestBridge(t, tc.fake(), opts...)
+	f := tc.fake()
+	b := newTestBridge(t, f, opts...)
 	method := tc.method
 	if method == "" {
 		method = http.MethodGet
@@ -564,8 +659,16 @@ func runContractCase(t *testing.T, tc contractCase) contractFixture {
 	req := httptest.NewRequest(method, tc.path, bytes.NewReader(reqBody))
 	rec := httptest.NewRecorder()
 	b.routes().ServeHTTP(rec, req)
+	var upstream json.RawMessage
+	if tc.upstream {
+		blob, err := json.Marshal(upstreamOf(f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		upstream = blob
+	}
 	return contractFixture{
-		Route: tc.route, Path: tc.path, Request: reqBody, Status: rec.Code,
+		Route: tc.route, Path: tc.path, Request: reqBody, Upstream: upstream, Status: rec.Code,
 		Body: json.RawMessage(bytes.TrimSpace(rec.Body.Bytes())),
 	}
 }
@@ -606,6 +709,11 @@ func TestContractFixtures(t *testing.T) {
 			if !jsonEqual(t, got.Request, want.Request) {
 				t.Errorf("%s: the request no longer matches the fixture's: got %s, want %s",
 					tc.file, got.Request, want.Request)
+			}
+			if !jsonEqual(t, got.Upstream, want.Upstream) {
+				t.Errorf("%s: the request no longer reaches Instagram as the fixture says — "+
+					"the handler reads the request differently (a renamed field?).\n got: %s\nwant: %s",
+					tc.file, got.Upstream, want.Upstream)
 			}
 			// Compared as decoded JSON, not bytes: indentation is the
 			// fixture's, key order and spacing are the encoder's.

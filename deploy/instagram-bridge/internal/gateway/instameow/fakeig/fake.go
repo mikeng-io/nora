@@ -13,7 +13,9 @@ import (
 
 	"go.mau.fi/mautrix-meta/pkg/instameow"
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
+	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
 	"go.mau.fi/mautrix-meta/pkg/messagix/responses"
+	"go.mau.fi/mautrix-meta/pkg/messagix/types"
 )
 
 // The two ids for the same thread, from 02-identity-and-policy.md, and the own
@@ -82,7 +84,12 @@ type IG struct {
 	ReactReq *slidetypes.CreateReactionRequest
 	Unsend   *slidetypes.UnsendMessageRequest
 	Typing   []string
-	Fetches  int
+	// TypingValues is the indicator state each SetTyping call carried,
+	// beside Typing's thread ids.
+	TypingValues []bool
+	// Uploads is every media upload the bridge made, in order (Upload).
+	Uploads []*httpclient.MercuryUploadMedia
+	Fetches int
 
 	// reactions is the fake thread's post-state, keyed by message id: what
 	// Instagram would return on the next read-back.
@@ -436,11 +443,24 @@ func (f *IG) UnsendMessage(_ context.Context, req *slidetypes.UnsendMessageReque
 	}, nil
 }
 
-func (f *IG) SetTyping(_ context.Context, threadID string, _ bool) error {
+func (f *IG) SetTyping(_ context.Context, threadID string, typing bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Typing = append(f.Typing, threadID)
+	f.TypingValues = append(f.TypingValues, typing)
 	return f.TypingErr
+}
+
+// Upload is the media upload leg (gateway Options.Upload), recording what the
+// bridge handed the library. It answers the attachment fbid the measured
+// upload returned.
+func (f *IG) Upload(_ context.Context, _ int64, media *httpclient.MercuryUploadMedia) (*types.MercuryUploadResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Uploads = append(f.Uploads, media)
+	return &types.MercuryUploadResponse{
+		Payload: types.MediaPayloads{RealMetadata: &types.FileMetadata{ImageID: 2280432885466163}},
+	}, nil
 }
 
 func (f *IG) FetchThreadID(_ context.Context, short int64) (*instameow.ThreadIGIDs, error) {

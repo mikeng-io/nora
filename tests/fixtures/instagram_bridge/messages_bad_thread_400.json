@@ -12,6 +12,7 @@
     "reply_to": "mid.$syntheticparent",
     "text": "@example_friend synthetic message text"
   },
+  "upstream": [],
   "status": 400,
   "body": {
     "error": {

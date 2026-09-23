@@ -1,6 +1,7 @@
 {
   "route": "GET /threads/{thread_fbid}/members",
   "path": "/threads/not-a-thread/members",
+  "upstream": [],
   "status": 400,
   "body": {
     "error": {

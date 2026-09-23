@@ -4,6 +4,7 @@
   "request": {
     "remove": true
   },
+  "upstream": [],
   "status": 400,
   "body": {
     "error": {

@@ -238,8 +238,8 @@ func sendText(
 		if err != nil {
 			// Sanitized BEFORE it reaches call(): endUpstream records whatever
 			// this returns (RecordError writes err.Error() into the span), and
-			// the HTTP layer puts the text in the envelope. See sendTextError.
-			return nil, newSendTextError(err)
+			// the HTTP layer puts the text in the envelope. See sendError.
+			return nil, newSendError(err, "message")
 		}
 		return resp, nil
 	})
@@ -252,11 +252,12 @@ func sendText(
 	return resultOf(resp.GetMessage())
 }
 
-// sendTextError replaces a SendMessage failure's TEXT with a fixed one, so the
-// message Nora was sending never reaches a span, a log line or an error
-// envelope (16 §Tracing's never-list; P14). An upstream refusal can quote what
-// it refused, the same shape `upstreamSearchError` exists for on the search
-// path.
+// sendError replaces a send failure's TEXT with a fixed one, so what Nora was
+// sending never reaches a span, a log line or an error envelope (16 §Tracing's
+// never-list; P14). An upstream refusal can quote what it refused (the
+// message, an upload's filename), the same shape `upstreamSearchError` exists
+// for on the search path. It covers all three send legs: the text message,
+// the media upload and the media message.
 //
 // The CLASSIFICATION is taken from the raw error first, because two kinds are
 // read off its text or identity: "Message Too Long" is ErrTooLarge (413,
@@ -265,22 +266,24 @@ func sendText(
 // error as it is, so the fixed text is what everything downstream sees.
 // `Unwrap` still reaches the cause, so `errors.Is` against a library sentinel
 // keeps working.
-type sendTextError struct {
+type sendError struct {
 	cause error
 	msg   string
 }
 
-func (e *sendTextError) Error() string { return e.msg }
-func (e *sendTextError) Unwrap() error { return e.cause }
+func (e *sendError) Error() string { return e.msg }
+func (e *sendError) Unwrap() error { return e.cause }
 
-func newSendTextError(err error) error {
+// newSendError classifies err, then replaces its text. `what` names the leg
+// ("message", "upload", "media message") and is the only variable part.
+func newSendError(err error, what string) error {
 	switch kind := classify(err); {
 	case errors.Is(kind, domain.ErrTooLarge):
-		return domain.Classify(domain.ErrTooLarge, &sendTextError{cause: err, msg: "instagram refused the message as too long"})
+		return domain.Classify(domain.ErrTooLarge, &sendError{cause: err, msg: "instagram refused the " + what + " as too large"})
 	case domain.KindOf(kind) != nil:
-		return domain.Classify(domain.KindOf(kind), &sendTextError{cause: err, msg: "instagram refused the message (" + errorType(err) + ")"})
+		return domain.Classify(domain.KindOf(kind), &sendError{cause: err, msg: "instagram refused the " + what + " (" + errorType(err) + ")"})
 	default:
-		return &sendTextError{cause: err, msg: "instagram message send failed"}
+		return &sendError{cause: err, msg: "instagram " + what + " failed"}
 	}
 }
 
@@ -309,9 +312,18 @@ func sendMedia(
 ) (domain.Sent, error) {
 	resp, err := call(ctx, "instagram.Upload",
 		[]attribute.KeyValue{attribute.Int64("instagram.thread_fbid", shortThreadID)},
-		func(ctx context.Context) (*types.MercuryUploadResponse, error) { return up(ctx, shortThreadID, media) })
+		func(ctx context.Context) (*types.MercuryUploadResponse, error) {
+			resp, err := up(ctx, shortThreadID, media)
+			if err != nil {
+				// A FIXED text, before call() records it on the span: the
+				// library's upload error can carry the filename, which is the
+				// caller's string. See sendError.
+				return nil, newSendError(err, "upload")
+			}
+			return resp, nil
+		})
 	if err != nil {
-		return domain.Sent{}, fmt.Errorf("upload: %w", err)
+		return domain.Sent{}, err
 	}
 	if resp == nil || resp.Payload.RealMetadata == nil {
 		return domain.Sent{}, domain.Classify(domain.ErrUpstreamRejected, errors.New("upload returned no attachment metadata"))
@@ -330,7 +342,11 @@ func sendMedia(
 		req.ReplyToMessageID = &replyTo
 	}
 	sent, err := call(ctx, "instagram.SendMedia", nil, func(ctx context.Context) (*slidetypes.SendMediaResponse, error) {
-		return cli.SendMedia(ctx, req)
+		sent, err := cli.SendMedia(ctx, req)
+		if err != nil {
+			return nil, newSendError(err, "media message")
+		}
+		return sent, nil
 	})
 	if err != nil {
 		return domain.Sent{}, err

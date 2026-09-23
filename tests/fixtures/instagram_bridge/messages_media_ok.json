@@ -8,6 +8,19 @@
       "mimetype": "image/png"
     }
   },
+  "upstream": [
+    {
+      "call": "Upload",
+      "filename": "synthetic.png",
+      "mimetype": "image/png",
+      "bytes": 15,
+      "voice_clip": false
+    },
+    {
+      "call": "SendMedia",
+      "thread_id": "100000000000042"
+    }
+  ],
   "status": 200,
   "body": {
     "id": "mid.$media",

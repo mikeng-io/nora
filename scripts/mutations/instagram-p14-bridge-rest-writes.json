@@ -30,7 +30,7 @@
   {
     "name": "message text on a failure path (upstream error text not replaced)",
     "file": "deploy/instagram-bridge/internal/gateway/instameow/outbound.go",
-    "old": "\t\t\treturn nil, newSendTextError(err)",
+    "old": "\t\t\treturn nil, newSendError(err, \"message\")",
     "new": "\t\t\treturn nil, err",
     "target": "go:deploy/instagram-bridge ./... -run TestMessageTextNeverLeaksOnFailure|TestAFailedSendCarriesNoTextAndKeepsItsKind"
   },
@@ -117,5 +117,54 @@
     "old": "            if isinstance(error, dict) and error.get(\"code\") == \"not_found\":",
     "new": "            if isinstance(payload, dict) and payload.get(\"ok\") is False:",
     "target": "tests/unit/test_instagram_social_client.py"
+  },
+  {
+    "name": "review 1: the reaction's `remove` JSON tag renamed (the handler no longer reads it)",
+    "file": "deploy/instagram-bridge/internal/transport/http/messages.go",
+    "old": "\tRemove bool   `json:\"remove\"`",
+    "new": "\tRemove bool   `json:\"removed\"`",
+    "target": "go:deploy/instagram-bridge ./... -run TestContractFixtures"
+  },
+  {
+    "name": "review 1: a text message's reply_to no longer read by the handler",
+    "file": "deploy/instagram-bridge/internal/transport/http/messages.go",
+    "old": "\tReplyTo  string        `json:\"reply_to\"`",
+    "new": "\tReplyTo  string        `json:\"reply_to_id\"`",
+    "target": "go:deploy/instagram-bridge ./... -run TestContractFixtures"
+  },
+  {
+    "name": "review 1: the upload's mimetype no longer read by the handler",
+    "file": "deploy/instagram-bridge/internal/transport/http/messages.go",
+    "old": "\tMimetype   string `json:\"mimetype\"`",
+    "new": "\tMimetype   string `json:\"mime_type\"`",
+    "target": "go:deploy/instagram-bridge ./... -run TestContractFixtures"
+  },
+  {
+    "name": "review 4: a reply_to the bridge would refuse is forwarded (the whole message 400s)",
+    "file": "nora/platform/instagram/send.py",
+    "old": "    if len(message_id) > _MAX_MESSAGE_ID_LENGTH or not all(",
+    "new": "    if False and not all(",
+    "target": "tests/unit/test_instagram_send.py"
+  },
+  {
+    "name": "review 5: a Go build failure read as a red test (a false 'caught')",
+    "file": "scripts/mutate.py",
+    "old": "    if _GO_BROKEN.search(output):\n        return False, 0",
+    "new": "    if _GO_BROKEN.search(output) and False:\n        return False, 0",
+    "target": "tests/unit/test_mutate_go_targets.py"
+  },
+  {
+    "name": "review 6: the upload's raw error text reaches the span and the envelope",
+    "file": "deploy/instagram-bridge/internal/gateway/instameow/outbound.go",
+    "old": "\t\t\t\treturn nil, newSendError(err, \"upload\")",
+    "new": "\t\t\t\treturn nil, err",
+    "target": "go:deploy/instagram-bridge ./... -run TestAFailedUploadCarriesAFixedTextAndKeepsItsKind"
+  },
+  {
+    "name": "review 6: the media message's raw error text reaches the span and the envelope",
+    "file": "deploy/instagram-bridge/internal/gateway/instameow/outbound.go",
+    "old": "\t\t\treturn nil, newSendError(err, \"media message\")",
+    "new": "\t\t\treturn nil, err",
+    "target": "go:deploy/instagram-bridge ./... -run TestAFailedMediaMessageCarriesAFixedText"
   }
 ]

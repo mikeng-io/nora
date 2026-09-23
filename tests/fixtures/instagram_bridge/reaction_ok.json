@@ -5,6 +5,15 @@
     "emoji": "❤️",
     "remove": false
   },
+  "upstream": [
+    {
+      "call": "SendReaction",
+      "thread_id": "100000000000042",
+      "message_id": "mid.$synthetic0001",
+      "emoji": "❤️",
+      "reaction_status": "created"
+    }
+  ],
   "status": 200,
   "body": {
     "confirmed": true
