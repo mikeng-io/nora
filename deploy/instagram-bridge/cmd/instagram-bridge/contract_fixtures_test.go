@@ -115,6 +115,17 @@ const synthSocialEnvelope = `{"data":{"user":{
 // synthGraphQLErrors is the 200-with-`errors` shape the social half refuses.
 const synthGraphQLErrors = `{"errors":[{"message":"synthetic field exception","code":1675030,"summary":"Query error"}],"data":null}`
 
+// synthSearchResults is GET /accounts?query='s hit list, in the synthetic
+// placeholder ranges the rest of this file uses. No is_private: the search
+// this route calls does not carry that field (domain.AccountSummary's doc
+// comment says why), so there is nothing to fake for it.
+func synthSearchResults() []*slidetypes.SearchResult {
+	return []*slidetypes.SearchResult{
+		{PK: synthIGID, Username: synthUsername, FullName: "Example Friend", InteropMessagingUserFBID: synthFBID},
+		{PK: "10000002", Username: "example_second_result", IsVerified: true},
+	}
+}
+
 func synthReel() *responses.ReelInfoResponse {
 	image := &responses.ReelItem{ExpiringAt: 1700086400}
 	image.Pk = "900000000000000001"
@@ -207,6 +218,29 @@ func contractCases() []contractCase {
 		{
 			file: "story_checkpointed_409.json", route: "GET /accounts/{igid}/story", path: "/accounts/" + synthIGID + "/story",
 			fake: func() *fakeIG { return &fakeIG{ReelErr: httpclient.ErrCheckpointRequired} },
+		},
+		{
+			// The first fixture on the NEW response conventions (16 §Resources):
+			// {"items":[...],"next_cursor":null}, no "ok" field.
+			file: "accounts_search_ok.json", route: "GET /accounts", path: "/accounts?query=example",
+			fake: func() *fakeIG {
+				return &fakeIG{SearchResultsSet: true, SearchResults: synthSearchResults()}
+			},
+		},
+		{
+			// A search that matched nobody is a normal 200 with an empty list,
+			// not an error.
+			file: "accounts_search_empty.json", route: "GET /accounts", path: "/accounts?query=nobody-matches-this",
+			fake: func() *fakeIG { return &fakeIG{SearchResultsSet: true, SearchResults: nil} },
+		},
+		{
+			// The new envelope's failure shape: {"error":{"code","message"}}.
+			file: "accounts_search_bad_query_400.json", route: "GET /accounts", path: "/accounts?query=",
+			fake: func() *fakeIG { return &fakeIG{} },
+		},
+		{
+			file: "accounts_search_username_not_built_501.json", route: "GET /accounts", path: "/accounts?username=example",
+			fake: func() *fakeIG { return &fakeIG{} },
 		},
 	}
 }

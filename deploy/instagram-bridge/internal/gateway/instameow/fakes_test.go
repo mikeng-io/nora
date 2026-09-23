@@ -13,7 +13,8 @@ const (
 )
 
 var (
-	measuredUsers   = fakeig.MeasuredUsers
-	measuredProfile = fakeig.MeasuredProfile
-	measuredReel    = fakeig.MeasuredReel
+	measuredUsers         = fakeig.MeasuredUsers
+	measuredProfile       = fakeig.MeasuredProfile
+	measuredReel          = fakeig.MeasuredReel
+	measuredSearchResults = fakeig.MeasuredSearchResults
 )

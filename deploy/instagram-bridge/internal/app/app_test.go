@@ -19,13 +19,16 @@ func (f *fakeSession) Snapshot() domain.Session { return f.snap }
 // about is a failure: a use case that calls something it should not is a
 // test failure, not a silent pass.
 type fakePorts struct {
-	resolved  []string
-	accounts  []string
-	socials   []string
-	stories   []string
-	typed     int
-	lookupErr error
-	unsendOK  bool
+	resolved   []string
+	accounts   []string
+	socials    []string
+	stories    []string
+	searches   []string
+	typed      int
+	lookupErr  error
+	unsendOK   bool
+	searchErr  error
+	searchHits []domain.AccountSummary
 }
 
 func (f *fakePorts) ResolveThread(_ context.Context, short domain.ThreadFBID) (domain.ThreadRef, error) {
@@ -77,6 +80,17 @@ func (f *fakePorts) Story(_ context.Context, igid domain.IGID) (domain.Story, er
 	return domain.Story{IGID: igid.String()}, nil
 }
 
+func (f *fakePorts) SearchAccounts(_ context.Context, query string) ([]domain.AccountSummary, error) {
+	f.searches = append(f.searches, query)
+	if f.searchErr != nil {
+		return nil, f.searchErr
+	}
+	if f.searchHits != nil {
+		return f.searchHits, nil
+	}
+	return []domain.AccountSummary{{IGID: "221731317", Username: "nka_bpumvg"}}, nil
+}
+
 func ready() *fakeSession {
 	return &fakeSession{snap: domain.Session{State: domain.StateAuthenticated, Connected: true, HasClient: true}}
 }
@@ -94,6 +108,7 @@ func TestTheSessionGateComesBeforeTheIDParse(t *testing.T) {
 		_, _, checks["members"] = svc.Members(t.Context(), "not-a-thread")
 		_, checks["account"] = svc.ReadAccount(t.Context(), "nka_bpumvg")
 		_, checks["story"] = svc.ReadStory(t.Context(), "nka_bpumvg")
+		_, checks["search"] = svc.SearchAccounts(t.Context(), "someone")
 		checks["typing"] = svc.Typing(t.Context(), "not-a-thread", true)
 		for name, err := range checks {
 			var nr *NotReadyError
@@ -104,7 +119,7 @@ func TestTheSessionGateComesBeforeTheIDParse(t *testing.T) {
 				t.Errorf("%s/%s: a refused session is not ErrNeedsHuman", state, name)
 			}
 		}
-		if len(p.resolved)+len(p.accounts)+len(p.stories)+p.typed != 0 {
+		if len(p.resolved)+len(p.accounts)+len(p.stories)+len(p.searches)+p.typed != 0 {
 			t.Errorf("%s: a port was reached while the session needs a human", state)
 		}
 	}
@@ -186,5 +201,22 @@ func TestMembersEchoesTheCanonicalRoom(t *testing.T) {
 	room, thread, err := service(ready(), &fakePorts{}).Members(t.Context(), "01009543911792316")
 	if err != nil || room.String() != "1009543911792316" || len(thread.Members) != 1 {
 		t.Errorf("Members = %v, %+v, %v", room, thread, err)
+	}
+}
+
+// SearchAccounts passes the query straight through — it is free text, not an
+// id, so there is no parse step to prove separately from the session gate
+// (already covered by TestTheSessionGateComesBeforeTheIDParse's "search" case).
+func TestSearchAccountsPassesTheQueryThrough(t *testing.T) {
+	p := &fakePorts{}
+	hits, err := service(ready(), p).SearchAccounts(t.Context(), "someone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.searches) != 1 || p.searches[0] != "someone" {
+		t.Fatalf("port was addressed with %v, want [someone]", p.searches)
+	}
+	if len(hits) != 1 || hits[0].Username != "nka_bpumvg" {
+		t.Errorf("hits = %+v, want the port's fixed answer passed through unchanged", hits)
 	}
 }

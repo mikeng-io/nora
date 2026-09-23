@@ -122,6 +122,18 @@ type IG struct {
 	ReelResp *responses.ReelInfoResponse
 	ReelSet  bool
 	ReelErr  error
+
+	// --- the account search --------------------------------------------------
+	//
+	// SearchQueries records every query text SearchUsers was addressed with —
+	// the seam the observability test needs to prove the query text stays OUT
+	// of every span while still confirming it reached the library call.
+	SearchQueries []string
+	// SearchResults overrides the answer. nil (and SearchResultsSet false)
+	// means "the measured two hits".
+	SearchResults    []*slidetypes.SearchResult
+	SearchResultsSet bool
+	SearchErr        error
 }
 
 // The measured three-person room, as `Users[]` actually returns it: TWO rows,
@@ -257,6 +269,37 @@ func (f *IG) FetchReel(_ context.Context, reelIDs []string, _ string) (*response
 		return f.ReelResp, nil
 	}
 	return MeasuredReel(), nil
+}
+
+// MeasuredSearchResults is two hits in the SHAPE SearchUsers actually
+// returns: `pk`, `username`, `full_name`, `is_verified`,
+// `interop_messaging_user_fbid` — and nothing else. No `is_private`: that
+// field is not on `slidetypes.SearchResult` at all (see search.go), so a fake
+// that invented one here would test a shape the wire never sends.
+//
+// The VALUES are synthetic, deliberately not reusing MeasuredProfile's or
+// MeasuredUsers' ids/names above: this fixture is new, and a new fixture does
+// not get to carry a name and id that read as a real account just because an
+// older one in this file already does.
+var MeasuredSearchResults = []*slidetypes.SearchResult{
+	{PK: "900000001", Username: "search_result_alpha", FullName: "Search Result Alpha", InteropMessagingUserFBID: 900000000000001},
+	{PK: "900000002", Username: "search_result_beta", FullName: "", IsVerified: true},
+}
+
+func (f *IG) SearchUsers(_ context.Context, query string) (*slidetypes.SearchResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.SearchQueries = append(f.SearchQueries, query)
+	if f.SearchErr != nil {
+		return nil, f.SearchErr
+	}
+	results := MeasuredSearchResults
+	if f.SearchResultsSet {
+		results = f.SearchResults
+	}
+	resp := &slidetypes.SearchResponse{}
+	resp.Data.Results = results
+	return resp, nil
 }
 
 func (f *IG) SendMessage(_ context.Context, req *slidetypes.SendTextRequest) (*slidetypes.SendTextResponse, error) {

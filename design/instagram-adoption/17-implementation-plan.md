@@ -182,6 +182,12 @@ decision.
 OpenCLI serves X only, and `test_r86` asserts **no `instagram` key** remains
 in `READ_ONLY_ALLOWLIST`.
 
+**The bridge half landed early**, to serve P9: `GET /accounts?query=` exists
+today (gateway, domain, app and transport, on the new response conventions),
+since P9's probe needed to run through the real route rather than a second
+client on the live session. The Nora half — moving `instagram/search` off
+OpenCLI and the allowlist assertion above — is still pending.
+
 ## P12: One post from a link
 
 Probe first: `FetchMedia` on a real feed post, not the story id that returned
