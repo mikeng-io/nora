@@ -557,7 +557,9 @@ async def test_a_rejected_access_token_backs_off_alarms_and_never_posts_a_creden
     assert "token" not in fake.requests
     assert fake.requests.count("members") == reads
     assert metrics.get("nora_presence_auth_alarms_total", reason="token_rejected") == reads
-    assert metrics.get("nora_presence_auth_alarms_total", reason="banned") == reads
+    # ONE alarm per dead-token read: a `banned` alongside would page the generic
+    # PresenceAuthRefused rule for the same token as well.
+    assert metrics.get("nora_presence_auth_alarms_total", reason="banned") == 0
 
 
 async def test_a_rejected_access_token_on_places_and_the_ping_never_posts_a_credential(life360):
@@ -573,6 +575,7 @@ async def test_a_rejected_access_token_on_places_and_the_ping_never_posts_a_cred
     assert await client.request_location(circle_id="c1", member_id="m-live") is False
     assert "token" not in fake.requests
     assert metrics.get("nora_presence_auth_alarms_total", reason="token_rejected") == 2
+    assert metrics.get("nora_presence_auth_alarms_total", reason="banned") == 0
 
 
 async def test_password_mode_still_reauths_once_on_a_stale_token(life360):

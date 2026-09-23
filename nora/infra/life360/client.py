@@ -204,7 +204,7 @@ class Life360Client:
 
         result = await self._get_members(circle_id, token)
         if self._token_rejected(result):
-            return self._banned(self._TOKEN_REJECTED)
+            return self._banned(self._TOKEN_REJECTED, alarm=None)
         # A stale-token 403: re-auth ONCE and retry the read ONCE. This is the
         # only place a second token POST can happen in a read, which is what
         # bounds the credential-POST rate the study warns about.
@@ -280,7 +280,7 @@ class Life360Client:
                 return self._places_banned("initial authentication failed")
         result = await self._get(self._places_url.format(circle_id=circle_id), token)
         if self._token_rejected(result):
-            return self._places_banned(self._TOKEN_REJECTED)
+            return self._places_banned(self._TOKEN_REJECTED, alarm=None)
         if result.status == 403:
             self._token = None
             token = await self._authenticate()
@@ -446,7 +446,7 @@ class Life360Client:
         self._token = token
         return token
 
-    def _places_banned(self, detail: str) -> PlacesRead:
+    def _places_banned(self, detail: str, *, alarm: str | None = "banned") -> PlacesRead:
         """The places-read twin of `_banned` — council 2026-08-07 HIGH. The
         three ban-class places outcomes MUST go through here, not construct
         `PlacesRead(BANNED)` inline: inline construction skipped the
@@ -457,14 +457,19 @@ class Life360Client:
         non-OK (`_refresh_places`), so this is the visibility half; that is the
         rate half."""
         self._auth_failures += 1
-        self._alarm("banned")
+        if alarm is not None:
+            self._alarm(alarm)
         log.warning("life360 places banned/refused: %s (failures=%d)",
                     detail, self._auth_failures)
         return PlacesRead(ReadStatus.BANNED, detail=detail)
 
-    def _banned(self, detail: str) -> CircleRead:
+    def _banned(self, detail: str, *, alarm: str | None = "banned") -> CircleRead:
+        # `alarm=None` for a rejected token: `_token_rejected` already raised
+        # the one alarm that carries its fix, and a second `banned` would page
+        # the generic PresenceAuthRefused rule for the same dead token.
         self._auth_failures += 1
-        self._alarm("banned")
+        if alarm is not None:
+            self._alarm(alarm)
         log.warning("life360 read banned/refused: %s (failures=%d)", detail, self._auth_failures)
         return CircleRead(ReadStatus.BANNED, detail=detail)
 
