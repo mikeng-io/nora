@@ -113,12 +113,12 @@ docstring.) Counts in this ADR are over that extracted text.
   0004 measured was a shared token across two different domains. Cross-domain
   overlap stays forbidden. A new same-domain pair is added to
   `evals/corpora/tool_selection.yaml` so its routing is measured, not assumed.
-- **Planned names are renamed before they are built.** The self-awareness
-  bundle (`design/self-awareness/03-room-tools.md`) plans `my_rooms`,
-  `read_room` and `room_activity`, none of which fits. They are renamed (for
-  example `room_list`, `room_read`, and `room_activity` as an arm of
-  `room_read` or a verb added with a reason) before that bundle's step 4. Its
-  owner was told on 2026-09-24. The test above rejects them as written.
+- **Planned names follow the rule before they are built.** The self-awareness
+  bundle planned `my_rooms`, `read_room` and `room_activity`. On 2026-09-24
+  its owner made them two tools, `room_list` (a room exists, and its activity:
+  one scope, no message text) and `room_read` (its content, where other
+  people's words start), in `design/self-awareness/03-room-tools.md`. Both fit
+  the rule without a new verb.
 - **Existing names stay.** A rename is measured one at a time (0004), and only
   when `tool_selection` shows the name causing a misroute.
 - **Split or unify is decided by a `tool_selection` arm**, and the numbers are
