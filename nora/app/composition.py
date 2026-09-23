@@ -2356,6 +2356,26 @@ async def build_dependencies(
     if giphy_key := os.environ.get("GIPHY_API_KEY"):
         from nora.infra.giphy import GiphyClient
         giphy_client = GiphyClient(api_key=giphy_key)
+    reaction_picker = None
+    if cfg.reaction.enabled and giphy_client is not None:
+        from nora.agent.reaction import ReactionPicker
+        reaction_picker = ReactionPicker(
+            client=_DebriefModelClient(
+                base_url=cfg.llm.base_url,
+                api_key=os.environ.get(cfg.llm.api_key_env, ""),
+                max_tokens=cfg.reaction.max_tokens,
+                temperature=0.3,
+                model=cfg.reaction.model or cfg.llm.model,
+                timeout_seconds=cfg.reaction.timeout_seconds,
+                reasoning_effort=_reasoning_effort(
+                    cfg.reaction.reasoning_effort or cfg.llm.reasoning_effort,
+                    source="[reaction] reasoning_effort",
+                ),
+                agent_name="reaction",
+            ),
+            prompts=doctrine_store, gifs=giphy_client, metrics=metrics,
+            timeout_seconds=cfg.reaction.timeout_seconds,
+        )
     games_client = None
     if pulse_api_token := os.environ.get("PULSE_API_TOKEN"):
         games_client = PulseGamesClient(token=pulse_api_token)
@@ -2514,6 +2534,7 @@ async def build_dependencies(
         unit_for=_note_unit_of(allowlist),
         versions=version_manifest,
         giphy=giphy_client,
+        reaction=reaction_picker,
         music=music_bridge,
         # `online_now`'s two live-state reads (design/online-status/). Either
         # None leaves its arms answering `unavailable` (R-5), never

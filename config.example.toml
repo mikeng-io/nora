@@ -442,6 +442,19 @@ shadow = true
 # shadow_channel = "1234567890123456789/9876543210987654321"  # required when enabled AND shadow
 # shadow_platform = "discord"
 
+[reaction]
+# The reaction picker (nora/agent/reaction.py): on a TAG turn's first reply,
+# one cheap call asks whether a GIF would make the reply land better, under
+# her words or in place of a reply that was only a reaction, and a second
+# picks one from Giphy's described results. Needs GIPHY_API_KEY in .env too.
+# Every failure sends her words exactly as written. Participation, proactive
+# and reminder turns never get one. Instruction: nora/doctrine/reaction.md.
+enabled = false
+model = ""                 # empty = [llm] model
+reasoning_effort = ""      # empty = [llm] reasoning_effort
+timeout_seconds = 6.0      # bounds the whole pick; it is time before her reply arrives
+max_tokens = 200
+
 [engagement]
 policy = "trigger_text"
 

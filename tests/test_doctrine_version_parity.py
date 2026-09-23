@@ -121,7 +121,19 @@ PINNED: dict[str, tuple[int, str]] = {
     # suite, not this table.
     # ---------------------------------------------------------------------
     # v10: dashes out (16 of them), no other change.
-    "identity": (10, "dc9ebe6588d399fb26742ee149dfd1ebc0613d7a049059f8fde16d019a8b9715"),
+    # 2026-09-24 (operator): «a friend's place» pass, and the first time the
+    # 09-22 pass's owed reading was taken. Replaying 40 recorded tag turns
+    # against the deployed alias, her replies carried an em dash 49% of the
+    # time with the doctrine as it was, 42% with this pass, 20% once her own
+    # past lines were dash-free and 3% once NOTHING she reads carried one.
+    # So the prose moved little and the input moved almost everything, which
+    # is why the dash now leaves at the transport (`nora.agent.punctuation`)
+    # rather than in another rule. The rest of this pass is judged by the
+    # operator reading her in the room, not by that count.
+    # v11: she holds a friend's place in the circle rather than serving it,
+    # and what that place is for: letting a joke land, taking the heat out,
+    # moving a stalled plan along without chasing anybody.
+    "identity": (11, "da2e843cd234db7265aca88e81838556f851b4008c16ca6f98987c28ba85bdbf"),
     # v19 (2026-09-10): same room-name removal as identity v8.
     # v20: the REVISION half of the same pass, and the only file that grew.
     # Three positions it did not carry: the dash is a written-register
@@ -139,7 +151,13 @@ PINNED: dict[str, tuple[int, str]] = {
     # premise rather than at wording, because rephrasing the same joke was the
     # measured failure. The dash rule lost its 「通常」, which was an exception the
     # model could take.
-    "voice": (21, "b6fc1844cd7aa2a10f573604ee1d917d56c47cc77c07a19dbd1c02731b1f3075"),
+    # v22 (2026-09-24): one of the friends, roasting AND helping; the room
+    # talks in stickers one line in ten and so may she; reasoning is not typed
+    # out; standing firm is for facts somebody will act on, not for winning a
+    # tease; «唔係 X 係 Y» and quoting a friend's words back at them join the
+    # tells. In the busiest room 22 of her 173 replies were the first and 28
+    # the second before this.
+    "voice": (22, "da8bc6adf24544cae365a4cfc733a31b382d1651cd1da79821fc7f7226e7873e"),
     # conduct v25 / silence v3 (2026-09-10, `14a55ab8`): that commit edited both
     # bodies and bumped both versions in their front matter, and never came back
     # here. So the contract held in the direction that matters -- the version a
@@ -182,7 +200,12 @@ PINNED: dict[str, tuple[int, str]] = {
     # the defence after conceding. One mistranslation was corrected: 「唔講點解 fit」
     # is an ARTICULATION duty and the English "no reason it fits" had softened it
     # to an existence condition, so the rule now says SAY why.
-    "conduct": (28, "265cdbe06d92adf2f5e88de0a70b6cbdb7fa5f24ddba92e3fe761970ecb8bcdb"),
+    # v29 (2026-09-24): «When the group is sorting something out», helping a
+    # plan land without running it (in ten minutes one evening she asked one person
+    # for a place and a time nine times); banter she is in rather than above;
+    # «being contradicted» scoped to facts somebody may act on; memory used the
+    # way a friend uses it, not recited with dates and figures.
+    "conduct": (29, "805bb048042ea4722ae0ae183fba693a326425d1faac4b60b97b0001e8b07725"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —
@@ -200,6 +223,11 @@ PINNED: dict[str, tuple[int, str]] = {
     # trusted on the gate path.
     "participation": (
         6, "1cc2d5dbc564b6ff07a33ea03fe8e11389540fc968f48d454979febbb088f6ad",
+    ),
+    # v1 (2026-09-24): the reaction picker's instruction (`nora.agent.reaction`).
+    # Prototyped against 104 replayed replies: a GIF on 17, all banter.
+    "reaction": (
+        1, "936beedf3467b22e8a578ad293b5cb7b7e118dbb0af2d8873ce9f833f4b50040",
     ),
     "participation-conduct": (
         1, "23d144d3431e9844d2688c13ad8228497a9db3ab8f6bcf7f86f269053f3e19b7",

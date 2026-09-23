@@ -43,6 +43,7 @@ from strands.vended_plugins.skills import AgentSkills
 
 from ..domain.errors import PartialReplyError
 from .guards import ReplyGuard, ToolCallLog
+from .punctuation import DashFreeOpenAIModel
 from .tool_choice import FIRST_CALL
 
 log = logging.getLogger("nora.factory")
@@ -125,8 +126,11 @@ def create_model_provider(
     observation to make. So it passes `"auto"` — for the same reason
     `ReplyGuard` flips to `AFTER_SPEAKING` after she has spoken, one step
     earlier: a loop that is permitted to stop is a loop that can stop.
+
+    **Dash-free** (`nora.agent.punctuation`): the request carries no em dash,
+    because she copies the ones she is shown.
     """
-    return OpenAIModel(
+    return DashFreeOpenAIModel(
         model_id=model,
         client=client,
         params={

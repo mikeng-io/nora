@@ -589,6 +589,30 @@ class ParticipationConfig(BaseModel):
         return self
 
 
+class ReactionConfig(BaseModel):
+    """The reaction picker (`nora.agent.reaction`): on a tag turn's first
+    reply, one cheap call asks whether a GIF lands it better, and a second
+    picks one from Giphy's described results. Needs `GIPHY_API_KEY` as well;
+    without it this does nothing whatever `enabled` says.
+
+    Ships INERT. `model` and `reasoning_effort` empty inherit `[llm]`; the
+    replay that measured it (17 GIFs on 104 replies, all on banter) ran on the
+    `nora` alias at `reasoning_effort = "none"`. `timeout_seconds` bounds the
+    WHOLE pick, both calls and the search, and on expiry the reply goes out as
+    written: it is time added before her words arrive, so it is kept short.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    model: str = ""
+    reasoning_effort: Literal[
+        "", "none", "minimal", "low", "medium", "high", "xhigh", "max"
+    ] = ""
+    timeout_seconds: float = Field(default=6.0, gt=0)
+    max_tokens: int = Field(default=200, ge=16)
+
+
 class RelevanceGateConfig(BaseModel):
     """The Relevance Gate (design/dreamer-agent-loop/36): ONE cheap structured
     call that decides whether a quiescence-closed window is worth a
@@ -3296,6 +3320,7 @@ class Config(BaseModel):
     # FRONT of the participation turn. Ships INERT; see the cross-section
     # validator below for why it cannot be enabled on its own.
     relevance_gate: RelevanceGateConfig = RelevanceGateConfig()
+    reaction: ReactionConfig = ReactionConfig()
     engagement: EngagementConfig
     doctrine: DoctrineConfig
     # Optional and defaulted — see `DreamerConfig`. A config.toml with no

@@ -1995,6 +1995,19 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # verdict landing in `nora_engagement_outcomes_total` or
     # `nora_participation_silence_total` would corrupt the very measurement
     # the flip decision reads.
+    # One per TAG turn that reached `send_reply` with a picker wired
+    # (`nora.agent.reaction`). `with`/`alone` are GIFs that went out with the
+    # reply; `none` is the model deciding against one; the rest are the ways a
+    # pick fails, every one of which sends the reply as written. The GIF rate
+    # is (with+alone)/all, and it was 17/104 in the replay that justified the
+    # picker, so a rate far from that is the first thing to read.
+    _CounterSpec(
+        "nora_reaction_total",
+        "Reaction-picker outcomes on a tag turn's first reply: with, alone, "
+        "none, bad_query, no_candidates, no_pick, no_instruction, timeout, "
+        "error. Every outcome but with/alone sends her words unchanged.",
+        ("outcome",),
+    ),
     _CounterSpec(
         "nora_relevance_gate_total",
         "Relevance Gate verdicts the MODEL returned, by verdict and platform "
