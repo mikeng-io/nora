@@ -16,10 +16,12 @@ the window to matter. `ON CONFLICT` makes the race unrepresentable rather than
 unlikely.
 
 **`fold_count` is written, never incremented in SQL.** The caller holds the
-prior it just read and computes `prior.fold_count + 1` there, because the
-re-derivation path also has to be able to RESET it to zero, and a store that
-only knows how to increment cannot express that. Arithmetic in the sink, not in
-the statement.
+prior it just read and computes `prior.fold_count + 1` there. Until
+2026-09-24 this was also how the re-derivation path could RESET it to zero —
+a store that only knows how to increment cannot express that — but that path
+is deleted (design/standing-compact/); `fold_count` is now a plain count
+nothing resets, still computed in the caller rather than in SQL. Arithmetic in
+the sink, not in the statement.
 
 **The upsert now carries an APPEND beside it, in the same transaction.** The
 head keeps its shape, its semantics and its statement exactly — nothing about
@@ -112,17 +114,17 @@ class SqlStandingStore:
         ordering on it picks the later fold rather than the luckier uuid.
 
         **Where `fold_count` is not enough, stated rather than left to be
-        found.** It is not strictly increasing: a rebuild resets it to 1
-        (`debrief`), and a rollup fold carries the prior's value forward
-        unchanged (`standing_event`). So two revisions that share BOTH a
-        millisecond and a `fold_count` are still a tie, and a rebuild landing in
-        the same millisecond as the fold it replaces sorts below it. `id DESC`
-        stays on as the final key purely to make the ordering TOTAL — with two
-        keys the planner would be free to return either row of such a tie, and
-        a total order at least answers one way. Sub-millisecond ties are not
-        reachable on the fold path in practice (one fold per turn, per room);
-        the ordering is written for the case that is, and says what it does not
-        cover.
+        found.** It is not strictly increasing: a rollup fold carries the
+        prior's value forward unchanged (`standing_event`), rather than
+        incrementing it. (Before 2026-09-24 a rebuild also reset it to 1
+        — deleted with the ceiling trigger, design/standing-compact/.) So two
+        revisions that share BOTH a millisecond and a `fold_count` are still a
+        tie. `id DESC` stays on as the final key purely to make the ordering
+        TOTAL — with two keys the planner would be free to return either row
+        of such a tie, and a total order at least answers one way.
+        Sub-millisecond ties are not reachable on the fold path in practice
+        (one fold per turn, per room); the ordering is written for the case
+        that is, and says what it does not cover.
 
         The `(platform, conversation_id, updated_at DESC)` prefix of
         `idx_standing_revision_room_updated` still serves the filter and the

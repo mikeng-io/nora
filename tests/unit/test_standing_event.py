@@ -403,3 +403,29 @@ async def test_a_queued_fold_dispatched_from_another_turns_span_still_opens_its_
     # above; the root-shape claim this test exists for (two SEPARATE trace
     # ids, not one fold nested under `unrelated.turn`) is unaffected and is
     # exactly what the `sorted(...)` assertion above already proves.
+
+
+async def test_the_rollups_prior_age_is_measured_from_the_last_write(monkeypatch):
+    """M7 from the review (design/standing-compact/10 §2 on the event path).
+    `written` is only honest if every rollup fold REWRITES `updated_at`. Two
+    folds in one spawn, on a clock that advances two hours between them: the
+    second fold's prior must read «2h ago» — the age since the FIRST fold's
+    write, not since the row the rollup started from thirty days earlier."""
+    start = 1_756_000_000.0  # seconds, as `time.time()` returns
+    ticks = iter([start, start + 2 * 3600])
+    monkeypatch.setattr(
+        standing_event, "time", type("_Clock", (), {"time": staticmethod(
+            lambda: next(ticks))}))
+    harness = _Harness(record_store=FakeRecordStore())
+    await harness.wiring.store.write(standing=Standing(
+        platform="signal", conversation_id="g1", body="an old position",
+        fold_count=4, updated_at=int(start * 1000) - 30 * 86_400_000))
+    await _seed(harness.record_store, 400)
+    await harness.run_one_spawn()
+    first, second = harness.client.prompts
+    assert 'written="30d ago"' in first.split("<standing_prior ", 1)[1].split(">", 1)[0]
+    opening = second.split("<standing_prior ", 1)[1].split(">", 1)[0]
+    assert 'written="2h ago"' in opening, opening
+    assert "position 1" in second
+    row = await harness.read_row()
+    assert row is not None and row.updated_at == int((start + 2 * 3600) * 1000)

@@ -1351,6 +1351,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     #                  wants to raise six has started narrating; the note index
     #                  is uncapped, so those would cost every later prompt
     #   malformed    — an entry that was not even a mapping
+    #   screened     — carried an identifier or a coordinate (§4.3's screen,
+    #                  applied to notes since 2026-09-24; counted per reason
+    #                  on nora_dream_screened_total{adaptor="debrief_note"})
     #   unwritten    — the sink refused the whole batch (TypeError,
     #                  StaleNoteHeadError, ValueError). Never folded in with
     #                  `refused`: one is our boundary, the other is the store's
@@ -1362,7 +1365,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_debrief_note_proposals_total",
         "Notes the debrief raised, by disposition: proposed, already_read, "
-        "refused, over_cap, malformed, unwritten (the propose did not "
+        "refused, over_cap, malformed, screened (an identifier or a "
+        "coordinate), unwritten (the propose did not "
         "complete; whether it committed is unknown), broken_turn (the turn "
         "ended llm_error or timeout — a dead turn raises no notes), "
         "no_unit (policy "
@@ -1390,7 +1394,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # the clip rate UNREPORTABLE rather than merely unreported.
     #
     # `block` is `ClipKind` (`nora.engagement.debrief_render`):
-    #   reasoning   — the model's own text or thinking output was cut
+    #   reasoning   — the model's own narration was cut (at 600)
+    #   thinking    — a step of private reasoning was cut (at 4000); its own
+    #                 label since 2026-09-24 so the two bounds read apart
     #   tool_call   — the model's own request to a tool was cut (what she
     #                 asked, not what she was told)
     #   tool_result — what a tool RETURNED was cut — the evidence half, and
@@ -1406,7 +1412,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_debrief_clips_total",
         "Blocks the debrief render cut at its bound before the fold saw "
-        "them, by which kind of block (reasoning / tool_call / tool_result).",
+        "them, by which kind of block (reasoning = her own narration / "
+        "thinking / tool_call / tool_result).",
         ("block",),
     ),
     # `nora_standing_rederivations_total`, `..._written_total`,

@@ -50,8 +50,9 @@ run while the per-conversation lock is held. A Postgres connection hanging
 mid-query during the post-reply fold wedged that conversation indefinitely — on
 a turn that had already delivered its reply successfully (found by independent
 review, 2026-08-27, before the tier had run a single fold). The model call is
-bounded by `[standing] timeout_seconds`; the two store calls by
-`[standing] store_timeout_seconds`; and the SUM is asserted at startup against
+bounded by `[standing] timeout_seconds`; the store calls (five now, see
+`STORE_CALLS_PER_FOLD` below) by `[standing] store_timeout_seconds`; and the
+SUM is asserted at startup against
 `[standing] max_slot_hold_seconds` rather than argued in a comment — see
 `nora.config.Config._the_standing_slot_hold_fits_its_budget`, which exists
 because the comment here was wrong by 2x and nothing checked it.
@@ -260,18 +261,22 @@ OBJECTIVE = "standing-debrief"
 #: **It has been wrong three times.** It was written as 2 when only
 #: `store.read` and `store.write` existed; the (since deleted) `TurnVerdict`
 #: added a verdict save and S2's (since deleted) re-derivation trigger added a
-#: verdict read, and neither updated the sum — so the declared ceiling was under the real worst
-#: case by ten seconds, with the next person in that room waiting for it. The
-#: validator was the instrument built to catch exactly that arithmetic and it
-#: was carrying the stale figure itself.
+#: verdict read, taking it to 4, and neither updated the sum — so the declared
+#: ceiling was under the real worst case by ten seconds, with the next person
+#: in that room waiting for it. The validator was the instrument built to
+#: catch exactly that arithmetic and it was carrying the stale figure itself.
 #:
-#: It went 4 -> 5 when note proposals added `notes_sink.propose`, and the
-#: test below caught that within seconds of the call being written — which
-#: is the whole point of having it rather than a number in two places.
+#: It went 4 -> 5 when note proposals added `notes_sink.propose`, 5 -> 6 for
+#: the watermark batch read (standing-watermark 20), and 6 -> 7 for the media
+#: join (issue #116, 2026-09-08); the test below caught each within seconds of
+#: the call being written — which is the whole point of having it rather than
+#: a number in two places. It went back to 5 on 2026-09-24, when the turn
+#: verdict's save and the re-derivation trigger's verdict read were deleted
+#: with the verdict itself (design/standing-compact/).
 #:
 #: `test_the_slot_hold_counts_every_store_await_the_stage_makes` counts the
 #: `asyncio.wait_for` calls in `run` and asserts this matches, so adding a
-#: fifth store call fails a test instead of silently widening the hold.
+#: sixth store call fails a test instead of silently widening the hold.
 #: Re-exported from `nora.domain.standing`, where it lives so `nora.config`
 #: can read it without importing this package (see its own comment there).
 STORE_CALLS_PER_FOLD = STANDING_STORE_CALLS_PER_FOLD
@@ -356,6 +361,14 @@ def _consolidate_prompt(
     her judgements — so recency is scoped to a tie between two things of the
     SAME KIND, and the synthesis rule outranks it when the kinds differ.
 
+    Since 2026-09-24 there is a THIRD kind between the two: what she FOUND on
+    a turn and has not shared (design/standing-compact/10 §4). It ranks below
+    what she concluded or owes, because it is the part of the position most
+    harmless to lose, and above what the room said, because the transcript
+    keeps the room's words and nothing keeps an unsent tool result. Without a
+    rank it was always the most recent clause and so the last one dropped,
+    which evicted older commitments first (review 2026-09-24).
+
     The rule ran the OPPOSITE way until 2026-08-29 — «what the room SAID
     outranks what you concluded about it» — and that phrasing is part of why a
     recap-shaped standing row survived: the shrink was taught to prefer exactly
@@ -373,11 +386,11 @@ def _consolidate_prompt(
         f"{max_chars}-character limit, so it was NOT saved. Consolidate it now "
         f"and answer again, within the limit. Drop the oldest and least "
         f"consequential thing in it, never the most recent. "
-        f"What you CONCLUDED outranks what the room SAID: if the choice is "
-        f"between dropping a judgement of your own and dropping something "
-        f"someone actually said, drop what they said — even when their words "
-        f"are the more recent of the two. Recency decides only between two "
-        f"things of the same kind.\n\n"
+        f"What you CONCLUDED or COMMITTED to outranks what you FOUND and have "
+        f"not shared, and what you found outranks what the room SAID: drop in "
+        f"the reverse of that order, even when the thing you drop is the more "
+        f"recent. Recency decides only between two things of the same "
+        f"kind.\n\n"
         f"Your previous answer was:\n{over}"
     )
 
@@ -534,6 +547,18 @@ def _note_proposals(
             # A non-string where a string belongs is MALFORMED, not something
             # to render. See `_text_fields`.
             metrics.inc("nora_debrief_note_proposals_total", outcome="malformed")
+            continue
+        # §4.3's screen, on the note too. The position has been screened
+        # before its write since the stage existed; a note proposal from the
+        # SAME completion went to the sink unscreened (review 2026-09-24), and
+        # a note renders into `<notes>` on every later turn just as the
+        # position does. Its own adaptor label, so a dropped note reads apart
+        # from a dropped position on `nora_dream_screened_total`.
+        kept, _rejected = screen(
+            adaptor="debrief_note", items=[fields], metrics=metrics,
+        )
+        if not kept:
+            metrics.inc("nora_debrief_note_proposals_total", outcome="screened")
             continue
         title = fields["title"]
         if title and note_handle(title) in notes_read:

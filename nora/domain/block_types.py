@@ -341,7 +341,8 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
     _t("what_happened", "this turn's outcome, in your own machinery's words."),
     _t("conversation",
        "the stretch of the room you are folding. What is inside says what it "
-       "is; this block is only the boundary around it."),
+       "is; this block is only the boundary around it.",
+       at="when you are folding it: now, for everything inside"),
     _t("rooms",
        "where each room of this group stood the last time you were in it, with "
        "the age of that reading, your own working position, rewritten after "

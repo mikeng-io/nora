@@ -208,7 +208,7 @@ async def ask_text(
     translated into the raw-completion vocabulary its callers already check.
 
     `agent_name` means what it means in `ask_structured`: the span the call
-    traces under, so the debrief's fold/verdict calls are distinguishable
+    traces under, so the debrief's fold/consolidate calls are distinguishable
     from the event fold's in Langfuse instead of all reading
     `invoke_agent Strands Agents`.
 

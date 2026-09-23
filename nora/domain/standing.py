@@ -76,8 +76,8 @@ DEFAULT_STANDING_STORE_TIMEOUT_SECONDS = 5.0
 #: is where a number two packages must agree on belongs.
 #:
 #: `test_the_slot_hold_counts_every_store_await_the_stage_makes` counts the
-#: `asyncio.wait_for` calls in the stage and asserts they match, so adding an
-#: eighth fails a test instead of silently widening the hold.
+#: `asyncio.wait_for` calls in the stage and asserts they match, so adding a
+#: sixth fails a test instead of silently widening the hold.
 #:
 #: 6 -> 7 on 2026-09-08: the media join (issue #116). The fold renders these
 #: rows for a model, so it reads `media_objects` for whatever the

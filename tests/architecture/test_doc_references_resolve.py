@@ -620,6 +620,25 @@ def test_a_deprecated_paragraph_suppresses_the_reference_it_contains() -> None:
     assert candidate_references(markdown) == []
 
 
+def test_a_deprecated_table_row_does_not_exempt_the_live_row_beside_it() -> None:
+    """A table row is its own record (2026-09-24). While a whole table was
+    one «paragraph», marking DEC-145 deprecated silently unguarded R-83's and
+    DEC-146's live references in the decision index. Two adjacent rows: the
+    deprecated one's path is suppressed, the live one's is still reported —
+    each assertion is the other's control."""
+    markdown = (
+        "| id | decision |\n"
+        "|---|---|\n"
+        "| DEC-1 | DEPRECATED — was `nora/deprecated_row_module_for_this_test.py` |\n"
+        "| DEC-2 | lives in `nora/live_row_module_for_this_test.py` |\n"
+    )
+    found = candidate_references(markdown)
+    assert (4, "nora/live_row_module_for_this_test.py") in found, found
+    assert all(
+        path != "nora/deprecated_row_module_for_this_test.py" for _, path in found
+    ), found
+
+
 def test_a_file_level_deprecated_banner_exempts_the_whole_file() -> None:
     markdown = (
         "---\ntitle: x\n---\n\n"

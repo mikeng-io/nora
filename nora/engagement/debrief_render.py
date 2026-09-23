@@ -151,7 +151,7 @@ _CARRIED_CHARS = 4000
 #: this module clips a `TranscriptRow.body` (`_transcript` renders it whole),
 #: so a `transcript` label would be a declared value with no call site ever
 #: incrementing it — the CMS rule this whole issue is about, one level down.
-ClipKind = Literal["reasoning", "tool_call", "tool_result"]
+ClipKind = Literal["reasoning", "tool_call", "tool_result", "thinking"]
 CLIP_KINDS: tuple[str, ...] = get_args(ClipKind)
 
 #: The metric issue #189 step 1 asks for: one clip, one increment, labelled by
@@ -204,7 +204,12 @@ def _clock(ts_ms: int, tz: tzinfo | None) -> str:
     prompt (`prefill._now_line`); it is a parameter so a test can pin one and
     so a deployment in another zone renders its own.
     """
-    return datetime.fromtimestamp(ts_ms / 1000, tz=tz).strftime("%H:%M")
+    # WITH the date (design/standing-compact, review 2026-09-24). A watermark
+    # batch can span days, and the objective asks the fold to write dates
+    # instead of «tomorrow»: a row stamped only «22:12» leaves a member's
+    # «tomorrow» from three days back unconvertible, which is the Relevance
+    # Gate's defect — a judgement about WHEN over an input with no date.
+    return datetime.fromtimestamp(ts_ms / 1000, tz=tz).strftime("%Y-%m-%d %H:%M")
 
 
 def _speaker(row: TranscriptRow, display_name: str) -> str:
@@ -374,10 +379,13 @@ def _standing_prior(prior: Standing | None, *, now_ms: int) -> str:
     ).render()
 
 
-def _conversation(block: str) -> str:
-    """The event-path fold's envelope around an already-rendered transcript."""
+def _conversation(block: str, *, at: str) -> str:
+    """The event-path fold's envelope around an already-rendered transcript.
+
+    `at` is when this fold runs. The rollup has no `<turn at=…>`, so without it
+    the fold is told to write dates and shown no «now» to write them from."""
     return ContextBlock(
-        name="conversation", body=block,
+        name="conversation", attrs=(("at", at),), body=block,
     ).render()
 
 
@@ -389,7 +397,7 @@ def _clip(
     The increment fires only on an actual cut, never on every call: a series
     that moved on every block, clipped or not, would say nothing about how
     often the ceiling is hit, which is the number step 3 needs. The mark is
-    appended to the TEXT itself, ahead of `escape()` at every call site, so it
+    appended to the TEXT itself, ahead of the element render's escape, so it
     travels with the block through whichever prefix wraps it
     (`(called … with …)`, `(tool result: …)`) and reaches the model as part of what
     it is reading, not as a side channel it has no reason to trust more than
@@ -455,30 +463,35 @@ def _block(
     block: Mapping[str, Any], *, metrics: Metrics,
 ) -> tuple[str, str | None]:
     """One content block as `(rendered, kind)`; `kind` is `"thinking"` for a
-    step of private reasoning and `None` for everything else."""
+    step of private reasoning and `None` for everything else.
+
+    RAW text: `render_elements` escapes every step body, so escaping here too
+    rendered `<` as `&amp;lt;` — harmless to the boundary, but 4000 characters
+    of web content reached the fold garbled and a URL it carried into the
+    position came out mangled (review, 2026-09-24)."""
     text = block.get("text")
     if isinstance(text, str) and text.strip():
-        return escape(_clip(text, kind="reasoning", metrics=metrics)), None
+        return _clip(text, kind="reasoning", metrics=metrics), None
     reasoning = block.get("reasoningContent")
     if isinstance(reasoning, Mapping):
         inner = reasoning.get("reasoningText")
         raw = inner.get("text") if isinstance(inner, Mapping) else None
         if isinstance(raw, str) and raw.strip():
-            return escape(_clip(
-                raw, kind="reasoning", metrics=metrics, limit=_CARRIED_CHARS,
-            )), "thinking"
+            return _clip(
+                raw, kind="thinking", metrics=metrics, limit=_CARRIED_CHARS,
+            ), "thinking"
     use = block.get("toolUse")
     if isinstance(use, Mapping):
-        name = escape(str(use.get("name") or "?"))
+        name = str(use.get("name") or "?")
         clipped = _clip(str(use.get("input")), kind="tool_call", metrics=metrics)
-        return f"(called {name} with {escape(clipped)})", None
+        return f"(called {name} with {clipped})", None
     result = block.get("toolResult")
     if isinstance(result, Mapping):
         clipped = _clip(
             str(result.get("content")), kind="tool_result", metrics=metrics,
             limit=_CARRIED_CHARS,
         )
-        return f"(tool result: {escape(clipped)})", None
+        return f"(tool result: {clipped})", None
     return "", None
 
 
@@ -607,9 +620,11 @@ def render_rollup_input(
     cannot see the prior position cannot correct it.
     """
     prior_block = _standing_prior(prior, now_ms=now_ms)
+    at = datetime.fromtimestamp(now_ms / 1000, tz=tz).strftime(
+        "%Y-%m-%d %H:%M %Z").strip()
     block = _transcript_block(
         rows, display_name=display_name, tz=tz, name="stretch",
     )
     return (
-        f"{prior_block}\n\n" + _conversation(block)
+        f"{prior_block}\n\n" + _conversation(block, at=at)
     )

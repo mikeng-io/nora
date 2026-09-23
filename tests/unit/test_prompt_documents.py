@@ -481,7 +481,7 @@ SHAPES = {
     <step role>""",
     "debrief.rollup": """
 <standing_prior description fields written>
-<conversation description>
+<conversation at description fields>
   <stretch description fields>
     <m at from>""",
     "debrief.turn": """

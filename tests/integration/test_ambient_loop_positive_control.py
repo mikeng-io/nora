@@ -544,7 +544,8 @@ async def _drive(tmp_path: Path) -> _Journey:
     # Patched for the same reason the tag dispatch below is, and for a row that
     # matters more: her OWN message's timestamp is stamped by
     # `nora/agent/guards.py`'s `send_reply` from `time.time()`, and that row is
-    # the one the fold's transcript window renders as `<m at="16:43" from="Nora" …>`. Left on
+    # the one the fold's transcript window renders as
+    # `<m at="2026-09-11 16:43" from="Nora" …>`. Left on
     # the wall clock it renders as whatever time the suite runs at — so the
     # instrument's rendered input would differ from the incident's at exactly
     # the place #199 says it matters, and any ordering check ("a `Nora:` row in
@@ -737,7 +738,7 @@ def test_0_every_stage_of_the_journey_actually_ran(journey: _Journey) -> None:
     # row went out"; pinning the full tag would make this control refuse a fix
     # `3a2` was written to pass, exactly as pinning the trailing colon would
     # have under the flat grammar.
-    assert 'at="16:43"' in lines[1] and 'from="Nora"' in lines[1], (
+    assert 'at="2026-09-11 16:43"' in lines[1] and 'from="Nora"' in lines[1], (
         f"her sent row must render at 16:43 as the middle element; got {lines}"
     )
     assert ROUTE_ANSWER[:12] in lines[1], (
@@ -913,7 +914,7 @@ def test_3a2_the_fold_is_told_her_row_in_the_window_was_delivered(
     window = journey.fold_input.split("<transcript ")[1].split("</transcript>")[0]
     her_row = next(
         line for line in window.splitlines()
-        if 'at="16:43"' in line and 'from="Nora"' in line
+        if 'at="2026-09-11 16:43"' in line and 'from="Nora"' in line
     )
     assert any(
         token in her_row.lower() for token in ("delivered", "was sent", "went out")

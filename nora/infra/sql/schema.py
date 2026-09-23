@@ -2252,19 +2252,24 @@ STANDING = sa.Table(
     sa.Column("platform", sa.Text, primary_key=True),
     sa.Column("conversation_id", sa.Text, primary_key=True),
     sa.Column("body", sa.Text, nullable=False),
-    # Folds written onto this row since the last re-derivation — the ceiling
-    # half of S2's trigger. On the row rather than counted from `tag_trace`,
-    # which is retained for a bounded window and prunes out from under it.
+    # A plain count of folds written onto this row; nothing resets it. On the
+    # row rather than counted from `tag_trace`, which is retained for a
+    # bounded window and prunes out from under it. Until 2026-09-24 this was
+    # also the ceiling half of S2's trigger, which read it and reset it to
+    # zero; that trigger is deleted (design/standing-compact/).
     sa.Column("fold_count", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column("updated_at", sa.BigInteger, nullable=False),
-    # S2's ACTED-ON WATERMARK: the `tag_id` of the ungrounded `TurnVerdict` a
-    # re-derivation consumed. NULLABLE, and null is the only "nothing consumed"
-    # — anything that could compare equal to a real tag is a watermark
-    # satisfiable by accident. It replaces a comparison against `updated_at`,
-    # which was a PROXY for "a rebuild consumed this verdict" and was
-    # falsifiable by one transient failure of the verdict read; it holds the
-    # TAG rather than the `created_at` because a timestamp is a second proxy —
-    # two verdicts can share a millisecond (migration 0037).
+    # NO WRITER SINCE 2026-09-24. Was S2's ACTED-ON WATERMARK: the `tag_id` of
+    # the ungrounded `TurnVerdict` a re-derivation consumed. NULLABLE, and null
+    # was the only "nothing consumed" — anything that could compare equal to a
+    # real tag is a watermark satisfiable by accident. It replaced a comparison
+    # against `updated_at`, which was a PROXY for "a rebuild consumed this
+    # verdict" and was falsifiable by one transient failure of the verdict
+    # read; it held the TAG rather than the `created_at` because a timestamp
+    # is a second proxy — two verdicts can share a millisecond (migration
+    # 0037). The verdict and the re-derivation trigger that read this column
+    # are deleted (design/standing-compact/); the column stays, as dropped
+    # tiers' columns do.
     sa.Column("consumed_verdict_tag", sa.Text, nullable=True),
     # The ROW-ID watermark (design/standing-watermark/20): the `messages.id`
     # the last fold read up to. NULLABLE, and null is the only "never folded" —
@@ -2368,20 +2373,21 @@ IDX_STANDING_REVISION_ROOM_UPDATED = sa.Index(
 # were deleted (design/standing-compact/); the table stays, as dropped tiers'
 # tables do — dropping it is a separate explicit decision. Likewise
 # `standing.consumed_verdict_tag` above.
-# The debrief's per-TURN judgement, written once and NEVER rewritten — the
-# opposite cardinality to `standing` beside it, and the split is structural
+# The debrief's per-TURN judgement, written once and never rewritten — the
+# opposite cardinality to `standing` beside it, and the split was structural
 # rather than stylistic. It was found by a bug: the first draft put these
 # fields on the per-conversation row, so the re-derivation trigger read a
 # `grounded` flag the NEXT TURN had already overwritten. A per-turn fact on a
 # row revised every turn is a fact with a lifetime of one turn.
 #
-# **`tag_id` is the PRIMARY KEY, and that IS the never-rewritten guarantee.**
-# Exactly one verdict exists per turn by definition, so a surrogate id would
-# make "two verdicts for one turn" representable. With the natural key, a
-# second write for the same turn is a duplicate-key error from Postgres rather
-# than a convention a future writer has to have read. `SqlTurnVerdictStore.save`
-# uses a plain INSERT with no ON CONFLICT clause for the same reason: there is
-# no update path to take.
+# **`tag_id` was the PRIMARY KEY, and that WAS the never-rewritten guarantee.**
+# Exactly one verdict existed per turn by definition, so a surrogate id would
+# have made "two verdicts for one turn" representable. With the natural key, a
+# second write for the same turn was a duplicate-key error from Postgres
+# rather than a convention a future writer had to have read.
+# `SqlTurnVerdictStore.save` (deleted with the verdict) used a plain INSERT
+# with no ON CONFLICT clause for the same reason: there was no update path to
+# take.
 TURN_VERDICT = sa.Table(
     "turn_verdict",
     METADATA,
