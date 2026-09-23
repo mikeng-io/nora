@@ -13,7 +13,7 @@ tools wait for the catalogue. Work that adds no tool does not.
 |---|---|---|---|
 | **0** | Operator decides D1 (unit boundary) and D2 (proactive): **done 2026-09-23, D1 = B, D2 = yes** | — | — |
 | **1** | `_PLATFORM_NAMES` gains WhatsApp and Instagram | nothing | no |
-| **2** | `<presence>` replaces `_where_line` (`02`) | D1, D2 | no |
+| **2** | `<presence>` replaces `_where_line`; `<accounts>` from config (`02`) | D1, D2 | no |
 | **3** | Tool catalogue lands (separate session, its own bundle) | — | — |
 | **4** | `my_rooms`, `room_activity` (`03`) | 2, 3 | yes |
 | **5** | `read_room` (`03`) | 4, D1 | yes |
@@ -37,7 +37,8 @@ each, before and after:
 | "are you on WhatsApp?" | yes, and in which room of this unit | guesses, or answers from memory |
 | Discord adapter degraded; "tell the Discord lot we're late" | says Discord is down before trying `send_to` | promises a send that then fails |
 | tag on Instagram; "where are you right now?" | "Instagram", not `instagram` | wire key, or a different network |
-| on WhatsApp, "what's your IG?" | `@noraexample`, read from `<presence>` | invents a handle, or says she has none |
+| on WhatsApp, "what's your IG?" | `@noraexample`, read from `<accounts>` | invents a handle, or says she has none |
+| on Discord, "what's your Signal?" | `@nora.000` | gives the Instagram handle for every network |
 | no question about rooms at all | no mention of other rooms | volunteers the room list unprompted |
 
 The last row is the negative case. `<presence>` is situation, not a topic; if

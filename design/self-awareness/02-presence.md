@@ -16,22 +16,28 @@ Three facts, all generated, none typed anywhere:
    has to guess which networks the unit has.
 3. **Beyond this unit**: D1 = B (`03-room-tools.md`): it says only that
    other groups exist, never which.
-4. **Her own handle**: the public name people use to reach her. Today that is
-   `@noraexample` on WhatsApp, X, Instagram and Threads (operator,
-   2026-09-23). Without it she cannot recognise "@noraexample" as herself in
-   text that is not a platform mention, or answer "what's your IG?".
+## Her own handles: a companion block, not part of `<presence>`
 
-### Why the handle is generated, not written into `identity.md`
+The public names people use to reach her (operator, 2026-09-23): `@nora.000`
+on Signal; `@noraexample` on WhatsApp, X, Instagram and Threads. Without them
+she cannot recognise "@noraexample" as herself in text that is not a platform
+mention, or answer "what's your IG?".
 
-`identity.md`'s `not_here` forbids it by name: "no page name… no address".
-A handle is an address, and a changed or added one is exactly the silent
-staleness that rule exists for. So it is declared once in config, beside the
-accounts it belongs to, and rendered here. Where an adapter can report its
-own username at startup (the `self_id` modules already derive her
-identifiers per platform), a mismatch with the declared handle is logged,
-not rendered, so the config cannot drift from the account unnoticed. X and
-Threads have no adapter; their handles are declared only. A public handle is
-not an id in R-18's sense: it is the name she would give anyone who asked.
+They are the same in every room and change rarely, so they do not belong in
+the per-turn block. They are an `<accounts>` block keyed `global`, in the
+cached prefix: under the registry's rule (`nora/domain/blocks.py`, `BlockKey`)
+only a `global` block may sit there, and this one is.
+
+**Static, but data, not doctrine.** `identity.md`'s `not_here` forbids it by
+name ("no page name… no address"), and a new doctrine `.md` would carry the
+same risk that rule names: prose nobody checks, stale in silence. So the
+handles are declared once in `config.toml`, beside each platform's settings,
+and X and Threads (no adapter) in a small table of their own. Config can be
+checked where prose cannot: where an adapter can report its own username at
+startup (the `self_id` modules already derive her identifiers per platform),
+a mismatch with the declared handle is logged, not rendered. A public handle
+is not an id in R-18's sense (R-18 is somebody else's identifiers): it is the
+name she would give anyone who asked.
 
 Transport state uses `AdapterHealth` (`nora/domain/ports.py`) and nothing
 finer. The type is two booleans, `connected` and `degraded`, so all four
@@ -50,14 +56,13 @@ after.
   the rooms you are configured for and your live connections; not something
   you remember, so trust it over any memory that disagrees.">
 You are in <room name> on Instagram.
-You are @noraexample on WhatsApp, X, Instagram and Threads.
 This group also has rooms on Signal, WhatsApp and Discord.
 Discord is reconnecting right now; the others are up.
 You are also in other groups, which you do not discuss here.
 </presence>
 ```
 
-Roughly 70–90 tokens. The last line is the D1 = B wording.
+Roughly 60–80 tokens. The last line is the D1 = B wording.
 
 ## Where it goes
 
