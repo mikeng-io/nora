@@ -1139,6 +1139,20 @@ class FirePath:
         # curated to the window's own text and keyed on the people in it.
         self_card, people = await self._read_memory(occasion, transcript)
 
+        # CONCURRENT, for `TranscriptInjection.assemble`'s reason: these five
+        # are independent reads, and awaited one after another their latencies
+        # stacked on the front of every fire turn — `<presence>` (a health
+        # read per network and a live Instagram handle read) was the fifth.
+        # Each helper keeps its own fail-soft handling and none raises, which
+        # is what makes one `gather` safe: an exception would otherwise cancel
+        # its siblings and take the turn down with it.
+        standing, culture, notes, decisions, presence = await asyncio.gather(
+            self._read_standing(occasion),
+            self._read_culture(occasion),
+            self._read_notes(occasion, unit),
+            self._read_decisions(occasion, unit),
+            self._read_presence(occasion),
+        )
         return TagContext(
             tag_id=uuid.uuid4().hex,
             message=_synthetic_message(occasion, ref),
@@ -1148,11 +1162,11 @@ class FirePath:
             started_at=time.perf_counter(),
             self_card=self_card,
             people_in_window=people,
-            standing=await self._read_standing(occasion),
-            culture=await self._read_culture(occasion),
-            notes=await self._read_notes(occasion, unit),
-            decisions=await self._read_decisions(occasion, unit),
-            presence=await self._read_presence(occasion),
+            standing=standing,
+            culture=culture,
+            notes=notes,
+            decisions=decisions,
+            presence=presence,
         )
 
     async def _read_presence(self, occasion: Event) -> Presence | None:

@@ -2986,3 +2986,47 @@ async def test_a_fire_turn_reads_presence_for_the_occasions_room(
 
     assert asked == [(reminder.platform, reminder.conversation_id)]
     assert ctx.presence is not None and ctx.presence.label == "Friends"
+
+
+async def test_the_fire_context_reads_run_concurrently_not_one_after_another(
+    persons: Persons, record_store: FakeRecordStore, memory_store: FakeMemoryStore,
+    doctrine_store, metrics: Metrics,
+) -> None:
+    """The standing read below cannot finish until the presence read has
+    STARTED. Awaited in sequence (standing first), presence never starts, the
+    standing read hits its own timeout and the turn gets no `<standing>`;
+    gathered, both complete. So a green run is only possible concurrently."""
+    import asyncio
+
+    from nora.domain.self_presence import Presence
+    from nora.domain.standing import Standing
+
+    presence_started = asyncio.Event()
+
+    class _Reader:
+        async def read(self, *, platform: str, conversation_id: str, direct: bool = False):
+            presence_started.set()
+            return Presence(platform=platform)
+
+    class _Standing:
+        async def read(self, *, platform: str, conversation_id: str):
+            await presence_started.wait()
+            return Standing(platform=platform, conversation_id=conversation_id,
+                            body="dinner is still open", fold_count=1, updated_at=1)
+
+    path = FirePath(
+        persons=persons, records=record_store, memory=memory_store,
+        doctrine_store=doctrine_store, metrics=metrics,
+        runner=None, adapters={}, registry=None,                # type: ignore[arg-type]
+        canary="test-canary", display_name="Nora",
+        ai_peer="nora", context_window=40, limits={},
+        timeout_seconds=120.0, clock=lambda: T0,
+        standing=_Standing(),                                   # type: ignore[arg-type]
+        standing_store_timeout_seconds=0.5,
+        presence=_Reader(),                                     # type: ignore[arg-type]
+    )
+
+    ctx = await path.build_context(reminder_occasion([_reminder()]))
+
+    assert ctx.standing is not None and ctx.standing.body == "dinner is still open"
+    assert ctx.presence is not None
