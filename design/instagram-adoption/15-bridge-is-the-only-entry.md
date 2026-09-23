@@ -56,7 +56,7 @@ different backend could do it.
 | Messaging: send, receive, react, typing, unsend, media | `/events`, `/send`, `/send-media`, `/react`, `/typing`, `/unsend` | ✅ live | routes are verb-shaped; see `16` §Resources |
 | Room members | `GET /threads/{thread_fbid}/members` | ✅ live | — |
 | Account profile incl. social fields | `GET /accounts/{igid}` | ⚠️ bridge ✅ (PR #387); Python still routes `profile` to OpenCLI | repoint Python |
-| Story | `GET /accounts/{igid}/story` | ❌ Python POSTs `/social/story` → 404 (`nora/infra/social/instagram_client.py`) | repoint Python |
+| Story | `GET /accounts/{igid}/story` | ❌ **never reached**: the Python Instagram backend is not wired (`nora/app/composition.py` hard-codes it to `None`) because no `SocialSubjectIndex` implementation exists, so the router answers `unavailable`; and the client it would use targets `POST /social/story` with a `status` envelope the bridge never implemented | implement the subject index (its blocker, igids in `identity.toml`, is met since 2026-09-22); rewrite the client to the bridge's real contract |
 | User search | none | ❌ Python routes `search` to OpenCLI | bridge route over `SearchUsers` |
 | One post from a link | none | ❌ | bridge route over `FetchMedia`; never tried on a real post |
 | List someone's posts | none | ❌ | **no known mechanism**: the Go library's full GraphQL registry (28 documents, all DM plus one profile query) has none; OpenCLI's `user` returns Instagram's HTML shell even from its own browser |
