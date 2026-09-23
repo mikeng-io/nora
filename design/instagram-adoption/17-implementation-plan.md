@@ -196,6 +196,18 @@ mechanism.
   to one of them reads *that* account's story, while a request naming the same
   friend by `person` stays `ambiguous`.
 
+**The bridge half is built (2026-09-24)**: `GET /accounts?username=`
+(`accounts_search.go`), over the SAME search port `?query=` uses
+(`app.LookupAccountByUsername`), filtering to an exact, case-insensitive
+username match and never `items[0]` — P9's own measurement, applied. It
+answers in the LIST shape `16` §Resources and `?query=` already use
+(`{"items":[...],"next_cursor":null}`, 0 or 1 items), not the single-resource
+shape this section's first bullet named before P9 measured the mechanism.
+Two exact matches is 502 `upstream_rejected` (usernames are unique, so more
+than one means the upstream data disagreed with itself). The Nora half
+(`instagram_links.py`, the router, and the negative and multi-account tests
+above) is not started.
+
 ## P11: Search onto the bridge
 
 `GET /accounts?query=`. The `instagram/search` row leaves OpenCLI. After this

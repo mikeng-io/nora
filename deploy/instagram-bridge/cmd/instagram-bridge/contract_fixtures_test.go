@@ -127,6 +127,28 @@ func synthSearchResults() []*slidetypes.SearchResult {
 	}
 }
 
+// synthUsernameLookupResults is GET /accounts?username='s raw hits BEFORE the
+// exact-match filter (app.LookupAccountByUsername): a fuzzy hit ranks ahead
+// of the exact one, the P9 shape (17 §P9: "one exact match was not the first
+// result"). A route that ever took items[0] would answer the wrong account
+// against this fixture.
+func synthUsernameLookupResults() []*slidetypes.SearchResult {
+	return []*slidetypes.SearchResult{
+		{PK: "10000010", Username: "example_friendlier", FullName: "Not The One"},
+		{PK: synthIGID, Username: synthUsername, FullName: "Example Friend", InteropMessagingUserFBID: synthFBID},
+	}
+}
+
+// synthUsernameLookupAmbiguous is two hits that both match synthUsername
+// case-insensitively — data Instagram would never really produce (usernames
+// are unique), which is exactly what makes it the ErrUpstreamRejected case.
+func synthUsernameLookupAmbiguous() []*slidetypes.SearchResult {
+	return []*slidetypes.SearchResult{
+		{PK: synthIGID, Username: synthUsername},
+		{PK: "10000099", Username: strings.ToUpper(synthUsername)},
+	}
+}
+
 func synthReel() *responses.ReelInfoResponse {
 	image := &responses.ReelItem{ExpiringAt: 1700086400}
 	image.Pk = "900000000000000001"
@@ -253,8 +275,38 @@ func contractCases() []contractCase {
 			fake: func() *fakeIG { return &fakeIG{} },
 		},
 		{
-			file: "accounts_search_username_not_built_501.json", route: "GET /accounts", path: "/accounts?username=example",
+			// The exact-match rule (app.LookupAccountByUsername, 17 P9/P10):
+			// a fuzzy hit ranks first, and this route must still answer the
+			// exact one rather than items[0] — the P9 case where "one exact
+			// match was not the first result".
+			file: "accounts_by_username_found.json", route: "GET /accounts", path: "/accounts?username=" + synthUsername,
+			fake: func() *fakeIG {
+				return &fakeIG{SearchResultsSet: true, SearchResults: synthUsernameLookupResults()}
+			},
+		},
+		{
+			// No hit equals the input exactly: an empty list, the same
+			// "search found nobody" convention ?query= already uses.
+			file: "accounts_by_username_not_found.json", route: "GET /accounts", path: "/accounts?username=nonexistent_handle",
+			fake: func() *fakeIG {
+				return &fakeIG{SearchResultsSet: true, SearchResults: synthUsernameLookupResults()}
+			},
+		},
+		{
+			// Malformed input never reaches the use case: 400 before the
+			// session gate, and domain.ParseUsername's own text (which
+			// embeds the raw input) never reaches this envelope.
+			file: "accounts_by_username_bad_username_400.json", route: "GET /accounts", path: "/accounts?username=bad-username",
 			fake: func() *fakeIG { return &fakeIG{} },
+		},
+		{
+			// Two exact, case-insensitive matches for one username cannot
+			// happen for real data (usernames are unique): 502
+			// upstream_rejected, never a silent items[0] pick.
+			file: "accounts_by_username_ambiguous_502.json", route: "GET /accounts", path: "/accounts?username=" + synthUsername,
+			fake: func() *fakeIG {
+				return &fakeIG{SearchResultsSet: true, SearchResults: synthUsernameLookupAmbiguous()}
+			},
 		},
 		// GET /posts/{shortcode} (17 P12), on the new conventions. The
 		// upstream bytes behind these are UNMEASURED and synthetic

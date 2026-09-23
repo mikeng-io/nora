@@ -12,7 +12,9 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"strings"
 
 	"instagram-bridge/internal/domain"
 )
@@ -264,6 +266,49 @@ func (s *Service) SearchAccounts(ctx context.Context, query string) ([]domain.Ac
 		return nil, err
 	}
 	return s.social.SearchAccounts(ctx, query)
+}
+
+// LookupAccountByUsername resolves a username to at most one account
+// (design/instagram-adoption/16 §Resources, 17 P9, P10).
+//
+// It calls the SAME search port `SearchAccounts` uses (SearchUsers, over the
+// DM contact picker's search), then filters the raw hits to an exact,
+// case-insensitive username match. `items[0]` is never taken: P9 measured a
+// real case where the exact match was not the first result (17 §P9), so
+// ranking cannot stand in for identity here. The filter runs HERE, in the
+// use case, not in the transport layer, so the rule is provable independent
+// of the HTTP shape around it.
+//
+// Zero matches is a normal empty answer, not ErrNotFound: P9 also measured
+// zero items for a username that does not exist, and the search returning
+// nothing for a real one it simply missed would look identical, so there is
+// no way to tell "no such account" from "the search didn't surface it" —
+// answering ErrNotFound would claim a certainty the mechanism does not have.
+// More than one match cannot happen for a genuine username, since usernames
+// are unique on Instagram, so it means the upstream data disagreed with
+// itself: ErrUpstreamRejected, which the transport maps to 502.
+func (s *Service) LookupAccountByUsername(ctx context.Context, username domain.Username) ([]domain.AccountSummary, error) {
+	if _, err := s.ready(); err != nil {
+		return nil, err
+	}
+	hits, err := s.social.SearchAccounts(ctx, username.String())
+	if err != nil {
+		return nil, err
+	}
+	want := username.String()
+	matches := make([]domain.AccountSummary, 0, 1)
+	for _, hit := range hits {
+		if strings.EqualFold(hit.Username, want) {
+			matches = append(matches, hit)
+		}
+	}
+	if len(matches) > 1 {
+		// The count is safe to say; the username is not (it is never put in
+		// this error's text, by construction — `want` never appears above).
+		return nil, domain.Classify(domain.ErrUpstreamRejected,
+			fmt.Errorf("username search matched %d accounts, want at most 1", len(matches)))
+	}
+	return matches, nil
 }
 
 // ReadPost reads one post by its shortcode (17 P12).
