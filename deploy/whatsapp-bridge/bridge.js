@@ -31,7 +31,7 @@
 import http from 'node:http';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, proto } from '@whiskeysockets/baileys';
 
 import {
   buildLidMap,
@@ -43,6 +43,7 @@ import {
   ensureDir,
   extractMessageEvent,
   getMessageContent,
+  decryptSecretEdit,
   invertLidMap,
   isValidTargetJid,
   jidUserDigits,
@@ -250,7 +251,28 @@ async function startSocket() {
     for (const msg of messages || []) {
       if (!msg?.key?.id || !msg.message) continue;
       recentMessages.remember(msg);
-      const event = extractMessageEvent(msg, { lidToPhone, phoneToLid, recentCache: recentMessages });
+      let source = msg;
+      if (getMessageContent(msg)?.secretEncryptedMessage) {
+        // A phone's edit, encrypted with the original's message secret.
+        let opened;
+        try {
+          opened = decryptSecretEdit(msg, {
+            recentCache: recentMessages, decode: (b) => proto.Message.decode(b),
+            lidToPhone, phoneToLid,
+          });
+        } catch (err) {
+          // Untrusted input: whatever it does, it must not take the rest of
+          // this batch down with it.
+          opened = { reason: `error:${err?.code || err?.name || 'unknown'}` };
+        }
+        if (!opened.msg) {
+          log(`secret edit not decrypted id=${msg.key.id} chat=${redactJid(msg.key.remoteJid)} reason=${opened.reason}${opened.shape ? ` shape=[${opened.shape}]` : ''}`);
+          continue;
+        }
+        log(`secret edit decrypted id=${msg.key.id} chat=${redactJid(msg.key.remoteJid)} shape=[${opened.shape}]`);
+        source = opened.msg;
+      }
+      const event = extractMessageEvent(source, { lidToPhone, phoneToLid, recentCache: recentMessages });
       if (!event) {
         // WHAT WAS DROPPED, by SHAPE only — the message's own keys and the
         // unwrapped content's, never a value. A phone's edit produced no event
