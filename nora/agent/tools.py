@@ -1863,6 +1863,14 @@ def _handle_hex(raw: str) -> str:
     return "".join(c for c in tail.lower() if c in "0123456789abcdef")
 
 
+def _is_external_reference(raw: str) -> bool:
+    """A reference code that names a LOCATION rather than a held blob: a URL or
+    a data URI. `generate_image` refuses these before any lookup (ImageReference:
+    Nora never fetches an image because she was asked to edit it)."""
+    text = raw.strip().lower()
+    return "://" in text or text.startswith("data:")
+
+
 def _spec(name: str, call) -> ToolSpec:
     """One `ToolSpec`, with every declared field taken from `NATIVE_TOOLS[name]`.
 
@@ -5548,10 +5556,12 @@ Args:
         Reference photos: pass their marker codes (`a3f2c1` from
         `[image a3f2c1]`) in `reference` (one photo), `reference_2` (a
         second) and `reference_3` (a third) — UP TO 3 PHOTOS in one call,
-        in any order (the first that is set is not special). Multi-photo
+        in any order: no slot is required, but the FIRST photo you pass
+        sets the picture's shape unless you name an `aspect`. Multi-photo
         edits combine subjects, transfer styles, and compose scenes. Each
         photo must ALREADY be in this conversation — you cannot fetch an
-        image from elsewhere to edit it, and you should say plainly in your
+        image from elsewhere to edit it; the one exception is your own
+        canonical picture, which works in any room. Say plainly in your
         reply when a generated image used reference photos. When the
         transformation depends on what the photos show, call `media_fetch`
         on each marker FIRST and read its description, then write the prompt
@@ -5562,8 +5572,11 @@ Args:
         the prompt — it goes to an outside service.
 
         `size` is one of "small", "medium", "large". `aspect` is "1:1",
-        "16:9", "9:16", "3:2", "2:3" (default 1:1). `quality` is "standard"
-        or "quality" (default provider standard).
+        "16:9", "9:16", "3:2", "2:3". Leave both unset and the shape is the
+        provider's choice (with photos, the first photo's shape); set either
+        one and the other is filled in, `aspect` as 1:1 and `size` as
+        medium. `quality` is "standard" or "quality" (default provider
+        standard).
 
         `status` tells you what happened:
           - `ok` — the image was already sent to this chat as an attachment;
@@ -5608,6 +5621,16 @@ Args:
         if wanted_refs:
             markers: list[str] = []
             for code in wanted_refs:
+                # A reference is a handle Nora holds, never a location
+                # (ImageReference, DEC-193). `_handle_hex` keeps only the hex
+                # characters of whatever it is given, so without this a URL
+                # wrapping a sha reduces to that sha and resolves.
+                if _is_external_reference(code):
+                    return {
+                        "status": "nothing_found",
+                        "note": "That is a link, not a photo I hold. I can only "
+                                "use photos already sent here, or my own picture.",
+                    }
                 marker = _handle_hex(code)
                 if len(marker) < HANDLE_CHARS:
                     return {
@@ -5634,10 +5657,35 @@ Args:
         if quality == "quality":
             quality_kind = "quality"
 
+        async def _canonical_self(marker: str) -> str | None:
+            """DEC-193's narrow custody exemption: the sha of her canonical self
+            row, or None. A FULL sha256 only (a short handle is a conversation
+            handle and never reaches this), and the row's role must be exactly
+            the string "self": no case-folding, no strip, no prefix, no set.
+            The marker is written by the operator's ingest alone
+            (`scripts/ingest_self_asset.py`); nothing a message reaches writes
+            `provenance.role`."""
+            if len(marker) != 64 or media_store is None:
+                return None
+            try:
+                row = await media_store.get(sha256=marker)
+            except Exception:
+                log.exception("generate_image could not read the media index")
+                return None
+            if row is None or row.sha256 != marker:
+                return None
+            role = (row.provenance or {}).get("role")
+            if not isinstance(role, str) or role != "self":
+                return None
+            return marker
+
         async def resolve(marker: str) -> bytes | None:
-            """The custody check, conversation-scoped: a code in THIS
-            conversation's own media window resolves to its blob bytes;
-            anything else is None (never a fetch attempt)."""
+            """The custody check, conversation FIRST: a code in THIS
+            conversation's own media window resolves to its blob bytes. Only
+            when the window has no match at all may the one exemption apply
+            (DEC-193): the FULL sha256 of the row whose `provenance.role` is
+            exactly `"self"`, her canonical picture. Ambiguity in the window
+            is never settled by it. Anything else is None (never a fetch)."""
             try:
                 rows = await store.recent(
                     conversation_id=conversation_id, limit=_media_window,
@@ -5660,13 +5708,20 @@ Args:
                     sha = str(blob.get("sha256", ""))
                     if sha.startswith(hex_handle):
                         matches.setdefault(sha, str(blob.get("media_type", "")))
-            if len(matches) != 1:
-                # Absent OR ambiguous — both mean "not a resolvable reference
-                # for this edit" (never pick the first).
+            if len(matches) > 1:
+                # Ambiguous — "not a resolvable reference for this edit"
+                # (never pick the first, and never fall through to the
+                # canonical row below).
                 return None
+            if matches:
+                sha256 = next(iter(matches))
+            else:
+                canonical = await _canonical_self(hex_handle)
+                if canonical is None:
+                    return None
+                sha256 = canonical
             if blob_store is None:
                 return None
-            sha256 = next(iter(matches))
             try:
                 data = await blob_store.get(key=sha256)
             except Exception:
