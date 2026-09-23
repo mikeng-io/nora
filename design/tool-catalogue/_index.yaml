@@ -14,7 +14,7 @@ description: >
   observed max is 7. The third category (result-handling relocation) is
   PARKED by operator decision 2026-09-22 — its measurement is retained in
   03-result-handling.md, its implementation is not in scope.
-status: proposed-reviewed-parked-phase3
+status: built-switch-off-by-measurement
 governance: draft
 timestamp: '2026-09-22'
 revision: >

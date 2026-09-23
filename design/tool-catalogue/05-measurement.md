@@ -218,6 +218,52 @@ The per-turn token target is deliberately ~30% rather than the ~50% the
 per-call arithmetic suggests — that gap IS the extra round trip, priced in
 rather than assumed away.
 
+## 3a. The result — measured 2026-09-23/24, and the switch stays OFF
+
+`evals/corpora/tool_selection.yaml`, 16 routing cases on one anchored Signal
+room, `python -m evals tool_selection --sample N --reasons`, graded on what
+EXECUTED (`ToolRouteGrader`). Per-turn numbers are the subject's own calls
+only (`_model_calls(agent=…)`, after fixing a double count). Five arms, the
+same build except the named variable:
+
+| arm | schemas | catalogue line | direct-call hook | n | routing | calls/turn | uncached in/turn | cached in/turn |
+|---|---|---|---|---|---|---|---|---|
+| A2 | all resident | first sentence | — | 3 | 48/48 | 3.54 | 6.7k | 114.7k |
+| B2 | 6 hot + catalogue | first sentence | no | 3 | 45/48 | 5.15 | 14.0k | 78.3k |
+| C | 6 hot + catalogue | first sentence | yes | 3 | 46/48 | 4.73 | 13.3k | 72.1k |
+| A′ | all resident | L1 (what + when) | — | 5 | **80/80** | 3.56 | 10.3k | 113.6k |
+| D | 6 hot + catalogue | L1 (what + when) | yes | 5 | 79/80 | 4.92 | 19.5k | 73.0k |
+
+**What it says.**
+
+- Deferring saves ~36% of input tokens and moves them from CACHED to
+  UNCACHED: the tools array changes after a load, so the prefix misses. The
+  resident prompt already caches ~92–94%. D is cheaper than A′ only if a
+  cached token costs more than ~23% of an uncached one
+  (10.3 + 113.6r = 19.5 + 73.0r); at the usual cache discounts it costs more,
+  and it adds ~1.4 model calls a turn. **§3's per-turn gate fails; the switch
+  (`[llm] defer_tools`) stays `false`.**
+- The per-call framing in §0/§3 was the error this whole section warned
+  about, one level down: tokens were measured, PRICE was assumed.
+- The first-sentence catalogue line was the selection defect: 2 of 55 lines
+  carried a when-to-call clause, and B2/C lost `calculate`. Redefining the
+  line as ADR 0007's L1 (gated by `test_the_opening_paragraph_is_an_l1`) fixed
+  it (D 5/5) and was neutral with every schema resident (A′ 80/80) — ADR 0007
+  §3's re-measure for 40 opening rewrites.
+- With the hook she still often calls a shelved tool twice: the first call's
+  arguments are guessed from the catalogue line and fail validation.
+- D's one miss: `online_now` lost to the always-resident `pulse_*` MCP tools.
+
+**What ships regardless of the switch:** one builder (`ToolRegistry.surface`,
+`ToolScope`, `ToolSurface`) for every loop; the L1 opening convention and its
+gate; the catalogue derived from both; `tool_selection` and the eval-spend
+fixes. `load_tools` and `ShelfLoader` stay built, tested and switched off.
+
+**When to re-measure:** the tool set grows with the per-network social split
+(`instagram_read`/`instagram_search`, then X and Threads), which raises the
+resident cost; or the provider's cache discount changes. Either can move
+the break-even — the same corpus, both arms, one command.
+
 ## 4. After it ships
 
 - **Re-derive the hot set quarterly**, or when a tool's share moves more than
