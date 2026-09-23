@@ -165,6 +165,35 @@ cases:
     metadata: {tools: [generate_image]}
     snapshot: *room_a
 
+  # --- the room tools (design/self-awareness/07) ----------------------------------
+  # A same-domain pair (ADR 0015 §1), and each has a neighbour it could steal
+  # from: `room_list` from `group_members` (who is HERE vs which rooms exist),
+  # `room_read` from `load_transcript` (another room vs this one). The third
+  # case is the negative: a membership question neither room tool answers.
+  - name: route_room_list_which_groups
+    entry: tag
+    expect: reply
+    mention: true
+    input: 你喺邊幾個group度？
+    metadata: {tools: [room_list], not_tools: [group_members]}
+    snapshot: *room_a
+
+  - name: route_room_read_other_network
+    entry: tag
+    expect: reply
+    mention: true
+    input: WhatsApp個group而家講緊咩？
+    metadata: {tools: [room_read], not_tools: [load_transcript]}
+    snapshot: *room_a
+
+  - name: route_group_members_not_the_room_tools
+    entry: tag
+    expect: reply
+    mention: true
+    input: 呢個group有邊啲人？
+    metadata: {tools: [group_members], not_tools: [room_list, room_read]}
+    snapshot: *room_a
+
   # --- hot-set control -----------------------------------------------------------
   # Resident on both sides, so it should NOT move. If it does, the change moved
   # something other than cold-tool reach.

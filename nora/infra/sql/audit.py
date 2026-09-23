@@ -39,6 +39,7 @@ from nora.domain.models import (
     mentions_json,
     parse_mentions_json,
 )
+from nora.domain.ports import RoomActivity
 from nora.infra.sql.migrations_runner import head_revision
 from nora.infra.sql.schema import MESSAGE_EDIT, MESSAGES
 
@@ -521,6 +522,28 @@ class SqlRecordStore:
         )
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
+
+    async def room_activity(self, *, conversation_id: str, since_ts: int) -> RoomActivity:
+        """See `nora.domain.ports.RecordStore.room_activity`.
+
+        One aggregate over `idx_messages_conv_ts (conversation_id, ts DESC)`,
+        the index `recent` seeks: `count(*) FILTER (WHERE ts >= :since)` and
+        `max(ts)`, both over human rows only. `max` over no rows is NULL,
+        which is `last_ts=None`, never 0.
+        """
+        stmt = sa.select(
+            sa.func.count().filter(MESSAGES.c.ts >= since_ts).label("recent"),
+            sa.func.max(MESSAGES.c.ts).label("last_ts"),
+        ).where(
+            MESSAGES.c.conversation_id == conversation_id,
+            MESSAGES.c.is_nora == 0,
+        )
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(stmt)).one()
+        return RoomActivity(
+            count=int(row.recent),
+            last_ts=None if row.last_ts is None else int(row.last_ts),
+        )
 
     async def stats(self) -> dict[str, Any]:
         """`schema_revision` replaces the retired `schema_version`.

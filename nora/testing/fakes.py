@@ -44,6 +44,7 @@ from nora.domain.ports import (
     PlatformIdentity,
     ReactionResult,
     Recollection,
+    RoomActivity,
     Roster,
     SendResult,
     SttResult,
@@ -360,6 +361,23 @@ class FakeRecordStore:
             if row["id"] == row_id:
                 row["person_id"] = person_id
                 return
+
+    async def room_activity(self, *, conversation_id: str, since_ts: int) -> RoomActivity:
+        """Mirrors `SqlRecordStore.room_activity`: human rows only, the count from
+        `since_ts` on, the newest `ts` at any time, `None` when there is none.
+        `fail_on_recent` covers this read too: it is the switch for «the
+        message store is down», and a store that is down for one read is down
+        for both."""
+        if self.fail_on_recent:
+            raise RuntimeError("db down")
+        human = [
+            r["ts"] for r in self.rows
+            if r["conversation_id"] == conversation_id and not r["is_nora"]
+        ]
+        return RoomActivity(
+            count=sum(1 for ts in human if ts >= since_ts),
+            last_ts=max(human, default=None),
+        )
 
     async def stats(self) -> dict[str, Any]:
         return {
