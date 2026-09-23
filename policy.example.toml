@@ -187,8 +187,9 @@ description = "a games room; 2200 is when people log on, not an appointment"
                              # its regular shorthand means, what a stranger reading a week of
                              # it would misunderstand. Omit it entirely if you have nothing to
                              # say — a room with no description is described by nothing, never
-                             # by a guess. It also reaches the proactive pass's `<home_room>`
-                             # block on whichever room is `home_room = true`.
+                             # by a guess. It also reaches the proactive pass, as the
+                             # `this_room_is` of its `<presence>` block, on whichever room
+                             # is `home_room = true`.
 
 # WhatsApp (design/whatsapp-adoption/): the id is the group JID exactly as the
 # bridge reports it, `...@g.us`. Find it in the audit DB or in the bridge's
