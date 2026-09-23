@@ -85,3 +85,19 @@ def test_an_empty_canary_never_matches(doctrine):
 # module about doctrine leaks was already a mid-file `noqa: E402` import
 # apologising for itself. What stays here is the half that is genuinely about
 # LeakGuard — the haystack speaking the same dialect as the candidate, above.
+
+
+def test_a_recital_of_what_the_model_was_shown_is_caught_across_a_dash(tmp_path):
+    """The model reads doctrine with its em dashes turned into commas
+    (`nora.agent.punctuation`), so a verbatim recital carries the comma. The
+    haystack has to be what she was SHOWN, or every window across a dash is a
+    blind spot."""
+    body = ("Silence is never a failure here — when you cannot answer "
+            "properly, you say nothing at all and let the room carry on.")
+    d = tmp_path / "doctrine"
+    d.mkdir()
+    write(d, "constraints.md", name="guardrails", order=40, body=body)
+    guard = LeakGuard(DoctrineStore(d, canary="C", metrics=Metrics()).get(), canary="C",
+                      min_span=40)
+    shown = "failure here, when you cannot answer properly, you say nothing"
+    assert guard.check(shown) == "doctrine_span"

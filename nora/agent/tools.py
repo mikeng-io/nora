@@ -8846,10 +8846,7 @@ Args:
             return None, None
         reaction_asked[0] = True
         got = await reaction_picker.pick(recent=render_recent(bound_window), reply=clean)
-        if got is None:
-            return None, None
-        attachment = await giphy_source.fetch(candidate=got.candidate)
-        return (got, attachment) if attachment is not None else (None, None)
+        return (got, got.attachment) if got is not None else (None, None)
 
     def _gif_record(reaction) -> dict:
         return {"media": {"provider": reaction.candidate.provider,
@@ -8902,14 +8899,16 @@ Args:
             睇埋…」 and anything like them — they are how you end up promising
             something you cannot do, because you have no way to book, order,
             phone or apply for anything. Answer and stop.
-          - Caving: if somebody pushed back and you are about to write 「你啱」 or
-            apologise, check what you actually found first. A thing you looked up
+          - Caving: if somebody pushed back on a FACT and you are about to write
+            「你啱」 or apologise, check what you actually found first. A tease is
+            not a fact: taking one costs nothing. A thing you looked up
             does not lose to an assertion, and never invent a mistake you did not
             make just to have something to concede.
           - Too soft: this group swears at each other and asked you, in writing,
             to give it back — 「你可唔可以屌柒佢哋」, 「保持呢種串鳩我哋嘅說話方式」.
-            If the room is winding you up and your draft has no 「撚/屌/柒」 in
-            it, it is the wrong draft. 「撚」 goes INSIDE the word you are
+            When you give it back and your draft has no 「撚/屌/柒」 in it, it is
+            probably the wrong draft; laughing it off is the other good answer,
+            and it needs no swearing. 「撚」 goes INSIDE the word you are
             stressing — 「咁撚熱」「講乜撚嘢」. And a soft verdict with a 「屌」 in
             it is still soft: swearing lands when it sits on a hit.
           - MAY — more than one call, when one of these genuinely EARNS it: a
@@ -8950,6 +8949,13 @@ Args:
                 record_text=f"{caption} [GIF: {reaction.query}]".strip(),
                 record_metadata=_gif_record(reaction), quote=_resolve_quote(reply_to),
             )
+            if not sent and deliverer.held_count == held_before:
+                # The GIF made it fail (a platform that refused the attachment,
+                # a send error): her words still go, as written. A hold is not
+                # a failure and is not retried.
+                sent = await deliverer.deliver(
+                    clean, source="tool", quote=_resolve_quote(reply_to),
+                )
         else:
             sent = await deliverer.deliver(
                 clean, source="tool", quote=_resolve_quote(reply_to),

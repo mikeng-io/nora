@@ -25,7 +25,7 @@ docstrings, block descriptions, her notes and peer cards (which models wrote),
 fetched pages and her own history all feed the same request. Cleaning each
 source is a diff per source and a regression per new one; normalising the
 request is one function with one test
-(`tests/test_punctuation.py`). It changes punctuation only: a pause in a
+(`tests/unit/test_punctuation.py`). It changes punctuation only: a pause in a
 Cantonese line becomes the full-width comma `voice.md` asks for, and in any
 other text a comma. Nothing she reads loses a word.
 

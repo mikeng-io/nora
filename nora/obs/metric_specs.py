@@ -2003,9 +2003,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # picker, so a rate far from that is the first thing to read.
     _CounterSpec(
         "nora_reaction_total",
-        "Reaction-picker outcomes on a tag turn's first reply: with, alone, "
-        "none, bad_query, no_candidates, no_pick, no_instruction, timeout, "
-        "error. Every outcome but with/alone sends her words unchanged.",
+        "Reaction-picker outcomes on a tag turn's first reply: with, alone "
+        "(a GIF judged, picked AND downloaded), none, truncated, bad_query, "
+        "no_candidates, no_pick, no_bytes, no_instruction, timeout, error. "
+        "Every outcome but with/alone sends her words unchanged.",
         ("outcome",),
     ),
     _CounterSpec(

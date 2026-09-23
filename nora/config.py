@@ -606,9 +606,11 @@ class ReactionConfig(BaseModel):
 
     enabled: bool = False
     model: str = ""
+    # "none", not inherited: the replay was measured at "none", and a
+    # reasoning budget spent inside `max_tokens` truncates the verdict.
     reasoning_effort: Literal[
         "", "none", "minimal", "low", "medium", "high", "xhigh", "max"
-    ] = ""
+    ] = "none"
     timeout_seconds: float = Field(default=6.0, gt=0)
     max_tokens: int = Field(default=200, ge=16)
 

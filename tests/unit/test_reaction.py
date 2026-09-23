@@ -25,6 +25,7 @@ CLAP = GifCandidate("giphy", "clap-1", "Slow Clap", "Someone claps slowly", ("cl
 @dataclass
 class _Said:
     content: str
+    finish_reason: str = "stop"
 
 
 class _Model:
@@ -55,8 +56,9 @@ class _Prompts:
 
 
 class _Gifs:
-    def __init__(self, *found: GifCandidate) -> None:
+    def __init__(self, *found: GifCandidate, bytes_arrive: bool = True) -> None:
         self.found = found
+        self.bytes_arrive = bytes_arrive
         self.queries: list[str] = []
 
     async def search(self, *, query: str) -> tuple[GifCandidate, ...]:
@@ -64,7 +66,7 @@ class _Gifs:
         return self.found
 
     async def fetch(self, *, candidate: GifCandidate) -> OutboundAttachment | None:
-        return OutboundAttachment(b"GIF89a", "image/gif", "r.gif")
+        return OutboundAttachment(b"GIF89a", "image/gif", "r.gif") if self.bytes_arrive else None
 
 
 def _picker(model, gifs=None, prompts=None, timeout=1.0):
@@ -148,3 +150,39 @@ def test_the_picker_reads_only_the_latest_lines_one_per_row() -> None:
     assert len(got) == RECENT_LINES - 1
     assert got[-1] == "Nora: slow clap 呢個 第二行"
     assert "line 0" not in "\n".join(got)
+
+
+async def test_a_gif_whose_bytes_never_arrive_is_no_gif() -> None:
+    picker, metrics = _picker(
+        _Model('{"mode": "with", "query": "dog nodding"}', '{"id": "nod-1"}'),
+        _Gifs(NOD, bytes_arrive=False),
+    )
+    assert await picker.pick(recent="", reply="乖你個頭") is None
+    assert _count(metrics, "no_bytes") == 1 and _count(metrics, "with") == 0
+
+
+async def test_a_cut_off_verdict_is_not_the_model_declining() -> None:
+    model = _Model("")
+    model.answers = []
+
+    async def cut(*, system: str, prompt: str) -> _Said:
+        return _Said('{"mode": "wi', finish_reason="length")
+    model.complete = cut  # type: ignore[method-assign]
+    picker, metrics = _picker(model)
+    assert await picker.pick(recent="", reply="係囉") is None
+    assert _count(metrics, "truncated") == 1 and _count(metrics, "none") == 0
+
+
+class _SlowFetch(_Gifs):
+    async def fetch(self, *, candidate: GifCandidate) -> OutboundAttachment | None:
+        await asyncio.sleep(10)
+        return None
+
+
+async def test_the_timeout_covers_the_download_too() -> None:
+    picker, metrics = _picker(
+        _Model('{"mode": "alone", "query": "salute"}', '{"id": "nod-1"}'),
+        _SlowFetch(NOD), timeout=0.05,
+    )
+    assert await picker.pick(recent="", reply="收到") is None
+    assert _count(metrics, "timeout") == 1

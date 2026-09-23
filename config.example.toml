@@ -451,8 +451,8 @@ shadow = true
 # and reminder turns never get one. Instruction: nora/doctrine/reaction.md.
 enabled = false
 model = ""                 # empty = [llm] model
-reasoning_effort = ""      # empty = [llm] reasoning_effort
-timeout_seconds = 6.0      # bounds the whole pick; it is time before her reply arrives
+reasoning_effort = "none"  # measured at "none"; empty inherits [llm]
+timeout_seconds = 6.0      # bounds the whole pick, download included
 max_tokens = 200
 
 [engagement]

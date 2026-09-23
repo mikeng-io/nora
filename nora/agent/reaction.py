@@ -49,7 +49,7 @@ from typing import Any, Protocol
 from nora.domain.blocks import ContextBlock, speaker_name
 from nora.domain.media import GifCandidate
 from nora.domain.models import TranscriptRow
-from nora.domain.ports import GifSource
+from nora.domain.ports import GifSource, OutboundAttachment
 from nora.domain.prompt import escape, one_line
 
 from .egress import scan_identifiers
@@ -67,6 +67,9 @@ RECENT_LINES = 8
 class Completion(Protocol):
     @property
     def content(self) -> str: ...
+
+    @property
+    def finish_reason(self) -> str: ...
 
 
 class ModelClient(Protocol):
@@ -89,6 +92,10 @@ class Reaction:
     mode: str
     query: str
     candidate: GifCandidate
+    #: The GIF's bytes, fetched INSIDE the pick's timeout: a reaction with no
+    #: bytes is not a reaction, and a download that hangs must cost the same
+    #: bounded wait as a model call that hangs.
+    attachment: OutboundAttachment
 
 
 def render_recent(rows: Sequence[TranscriptRow], *, display_name: str = "Nora") -> str:
@@ -168,6 +175,11 @@ class ReactionPicker:
         first = await self._client.complete(
             system=instruction, prompt=f"{material}\n\nAnswer the first question.",
         )
+        if first.finish_reason == "length":
+            # A cut-off body can still parse into something; it is not the
+            # model declining, so it is not counted as `none`.
+            self._count("truncated")
+            return None
         verdict = _json(first.content)
         mode = verdict.get("mode")
         query = " ".join(str(verdict.get("query") or "").split())
@@ -196,5 +208,9 @@ class ReactionPicker:
         if chosen is None:
             self._count("no_pick")
             return None
+        attachment = await self._gifs.fetch(candidate=chosen)
+        if attachment is None:
+            self._count("no_bytes")
+            return None
         self._count(mode)
-        return Reaction(mode=mode, query=query, candidate=chosen)
+        return Reaction(mode=mode, query=query, candidate=chosen, attachment=attachment)

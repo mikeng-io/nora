@@ -205,7 +205,10 @@ PINNED: dict[str, tuple[int, str]] = {
     # for a place and a time nine times); banter she is in rather than above;
     # «being contradicted» scoped to facts somebody may act on; memory used the
     # way a friend uses it, not recited with dates and figures.
-    "conduct": (29, "805bb048042ea4722ae0ae183fba693a326425d1faac4b60b97b0001e8b07725"),
+    # v30: review of v29. «When the joke is on you, take it» contradicted
+    # send_reply's own «give it back» guidance, which she reads at the moment
+    # of writing; it is now «take it or give it back once».
+    "conduct": (30, "c96c45e2d5abbce57e92178ec21d870a24b99900f7778b7c632d71e61daf274f"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —

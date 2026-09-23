@@ -18,7 +18,7 @@ from nora.agent.tools import (
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.media import GifCandidate, MediaObject
 from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef, Quote
-from nora.domain.ports import ImageResult, MessageHits, OutboundAttachment
+from nora.domain.ports import ImageResult, MessageHits, OutboundAttachment, SendResult
 from nora.domain.utf16 import utf16_len
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
@@ -891,7 +891,8 @@ class _Picker:
 
 def _nod(mode: str):
     from nora.agent.reaction import Reaction
-    return Reaction(mode=mode, query="dog nodding", candidate=_GifSource.candidate)
+    return Reaction(mode=mode, query="dog nodding", candidate=_GifSource.candidate,
+                    attachment=_GifSource().attachment)
 
 
 async def test_a_picked_gif_goes_out_under_her_words_in_one_message(wiring, wiring_with):
@@ -953,12 +954,31 @@ async def test_only_the_first_reply_of_a_turn_is_offered_to_the_picker(wiring, w
     assert wiring["sink"].sent_attachments == [(), ()]
 
 
-async def test_a_gif_whose_bytes_never_arrive_sends_her_words_as_written(wiring, wiring_with):
-    source = _GifSource()
-    source.attachment = None  # the real fetch's failure: it returns nothing
-    tools = wiring_with(giphy_source=source, reaction_picker=_Picker(_nod("alone")))
+class _NoAttachmentsSink(SinkSender):
+    """A platform that refuses any send carrying an attachment."""
+
+    async def send(self, target, text, mentions=(), styles=(), preview=None,
+                   attachments=(), quote=None):
+        if attachments:
+            return SendResult(ok=False, timestamp=None)
+        return await super().send(target, text, mentions, styles, preview, attachments, quote)
+
+
+async def test_a_gif_the_platform_refuses_still_sends_her_words(wiring):
+    sink = _NoAttachmentsSink()
+    deliverer = Deliverer(
+        store=wiring["store"], adapter=sink, target=TARGET, doctrine=wiring["doctrine"],
+        canary="C", tag_id="t-noatt", nora_sender_id="nora",
+        message_cap=NATIVE_TOOL_BUDGETS["send_reply"], audience="tag", metrics=Metrics(),
+    )
+    tools = {t.tool_name: t for t in build_tools(
+        store=wiring["store"], conversation_id="g1", conversation_type="group",
+        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=deliverer,
+        metrics=Metrics(), room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
+        giphy_source=_GifSource(), reaction_picker=_Picker(_nod("alone")),
+    )}
     assert await _call(tools["send_reply"], text="係囉") == "sent"
-    assert wiring["sink"].texts == ["係囉"] and wiring["sink"].sent_attachments == [()]
+    assert sink.texts == ["係囉"]
 
 
 async def test_a_fire_turn_never_asks_the_picker(wiring):
