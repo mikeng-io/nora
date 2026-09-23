@@ -210,6 +210,7 @@ def test_the_census_can_only_shrink():
 #: checking that they never start.
 CONVERTED = (
     "nora/agent/prefill.py",
+    "nora/agent/reaction.py",
     "nora/domain/decision_log.py",
     "nora/ingest/relevance_gate.py",
     "nora/language/culture_render.py",

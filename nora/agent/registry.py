@@ -64,6 +64,7 @@ from ..infra.vision.preprocess import VIDEO_CHUNK_SECONDS, VIDEO_MAX_CHUNKS
 from .links import LinkCarry
 from .mcp import McpToolGroup
 from .ports import ToolSpec, adapt
+from .reaction import ReactionPicker
 from .relay import Relay
 from .room import Room
 from .shelf_hook import ShelfLoader
@@ -178,6 +179,7 @@ class ToolRegistry:
         mcp_tools: Mapping[str, McpToolGroup] | None = None,
         versions: VersionManifest | None = None,
         giphy: GifSource | None = None,
+        reaction: ReactionPicker | None = None,
         music: MusicToolBridge | None = None,
         online: SteamPresenceProvider | None = None,
         voice: VoicePresenceSource | None = None,
@@ -393,6 +395,8 @@ class ToolRegistry:
         # test-seam policy forbids.
         self._versions = versions if versions is not None else VersionManifest()
         self._giphy = giphy
+        # `nora.agent.reaction`: None keeps every reply exactly as written.
+        self._reaction = reaction
         # `MusicToolBridge` (design/discord-music/07-agent-tool.md), wired the
         # identical honest way `events`/`compute_backend` are: NOT
         # default-constructed — there is no bridgeless default, and every
@@ -886,6 +890,7 @@ class ToolRegistry:
             relay=self._relay,
             versions=self._versions,
             giphy_source=self._giphy,
+            reaction_picker=self._reaction,
             compute_backend=self._compute_backend, compute_jobs=self._compute_jobs,
             tool_call_log_store=self._tool_call_log_store,
             music=self._music,

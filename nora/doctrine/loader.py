@@ -93,11 +93,12 @@ KINDS = (*AUTHORED_KINDS, *DERIVED_KINDS)
 # Each name is a real consumer: `tag` and `heartbeat` are `Doctrine.get`'s two
 # call sites in the engagement and fire paths, `participation` and `proactive`
 # are the two occasions that may decline the floor, `relevance_gate` is the
-# gate's own instrument file, and `dreamer` is the background tier's. Adding an
+# gate's own instrument file, `dreamer` is the background tier's, and
+# `reaction` is the reaction picker's (`nora.agent.reaction`). Adding an
 # occasion means adding it here — which is the point.
 AUDIENCES = (
     "tag", "heartbeat", "participation", "proactive",
-    "relevance_gate", "dreamer",
+    "relevance_gate", "dreamer", "reaction",
 )
 
 AUTHORITY_TERMINALS = ("situation", "message-content", "tool-output")
