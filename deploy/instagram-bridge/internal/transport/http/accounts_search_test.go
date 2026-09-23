@@ -168,17 +168,212 @@ func repeat(s string, n int) string {
 	return string(out[:n])
 }
 
-// GET /accounts?username= alone is P10's route, not this one, and it answers
-// 501 rather than 404: R-27's `unavailable`, not "no such endpoint".
-func TestAccountsSearchByUsernameAloneIsNotBuiltYet(t *testing.T) {
-	h := searchHandler(authenticated, searchOnlyPorts{err: errors.New("no use case should run")})
-	rec := getSearch(h, "?username=someone")
-	if rec.Code != http.StatusNotImplemented {
-		t.Fatalf("answered %d, want 501: %s", rec.Code, rec.Body.String())
+// --- GET /accounts?username= (17 P10) --------------------------------------
+//
+// The exact-match rule itself lives in app.LookupAccountByUsername and is
+// proven there (internal/app/app_test.go); these tests prove the ROUTE:
+// which status and shape reach the caller, and that validation and the
+// session gate order the same way ?query='s already do.
+
+// The P9 case: the exact match is not the first hit, and this route must
+// still return it rather than items[0].
+func TestAccountsByUsernameExactMatchNotAtRankZero(t *testing.T) {
+	h := searchHandler(authenticated, searchOnlyPorts{hits: []domain.AccountSummary{
+		{IGID: "1", Username: "decoy_one", FullName: "Not The One"},
+		{IGID: "2", Username: "decoy_two", FullName: "Still Not It"},
+		{IGID: "3", Username: "target_user", FullName: "The Target"},
+	}})
+	rec := getSearch(h, "?username=target_user")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("answered %d: %s", rec.Code, rec.Body.String())
+	}
+	body := decodeSearchBody(t, rec)
+	if len(body.Items) != 1 || body.Items[0].Username != "target_user" || body.Items[0].IGID != "3" {
+		t.Fatalf("items = %+v, want exactly the exact match at rank 2", body.Items)
+	}
+}
+
+// The easy case: the exact match is also the first hit.
+func TestAccountsByUsernameExactMatchAtRankZero(t *testing.T) {
+	h := searchHandler(authenticated, searchOnlyPorts{hits: []domain.AccountSummary{
+		{IGID: "1", Username: "target_user", FullName: "The Target"},
+		{IGID: "2", Username: "decoy", FullName: "Not It"},
+	}})
+	rec := getSearch(h, "?username=target_user")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("answered %d: %s", rec.Code, rec.Body.String())
+	}
+	body := decodeSearchBody(t, rec)
+	if len(body.Items) != 1 || body.Items[0].Username != "target_user" {
+		t.Fatalf("items = %+v, want exactly the exact match", body.Items)
+	}
+}
+
+// A case difference between the request and the hit still matches.
+func TestAccountsByUsernameIsCaseInsensitive(t *testing.T) {
+	h := searchHandler(authenticated, searchOnlyPorts{hits: []domain.AccountSummary{
+		{IGID: "1", Username: "Target_User", FullName: "The Target"},
+	}})
+	rec := getSearch(h, "?username=target_user")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("answered %d: %s", rec.Code, rec.Body.String())
+	}
+	body := decodeSearchBody(t, rec)
+	if len(body.Items) != 1 || body.Items[0].Username != "Target_User" {
+		t.Fatalf("items = %+v, want the case-different exact match", body.Items)
+	}
+}
+
+// No hit equals the input exactly: an empty list, the same "search found
+// nobody" convention ?query= already uses, never a 404.
+func TestAccountsByUsernameNoExactMatchIsEmptyList(t *testing.T) {
+	h := searchHandler(authenticated, searchOnlyPorts{hits: []domain.AccountSummary{
+		{IGID: "1", Username: "target_userx"},
+		{IGID: "2", Username: "xtarget_user"},
+	}})
+	rec := getSearch(h, "?username=target_user")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("answered %d, want 200 with an empty list: %s", rec.Code, rec.Body.String())
+	}
+	body := decodeSearchBody(t, rec)
+	if len(body.Items) != 0 {
+		t.Errorf("items = %v, want none", body.Items)
+	}
+}
+
+// Two exact, case-insensitive matches cannot happen for a real username
+// (they are unique), so it means the upstream data disagreed with itself:
+// 502 upstream_rejected, never items[0] or a silent pick.
+func TestAccountsByUsernameTwoExactMatchesIs502(t *testing.T) {
+	h := searchHandler(authenticated, searchOnlyPorts{hits: []domain.AccountSummary{
+		{IGID: "1", Username: "target_user"},
+		{IGID: "2", Username: "Target_User"},
+	}})
+	rec := getSearch(h, "?username=target_user")
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("answered %d, want 502: %s", rec.Code, rec.Body.String())
 	}
 	env := decodeEnvelope(t, rec)
-	if env.Error.Code != "unsupported" {
-		t.Errorf("code = %q, want unsupported", env.Error.Code)
+	if env.Error.Code != "upstream_rejected" {
+		t.Errorf("code = %q, want upstream_rejected", env.Error.Code)
+	}
+}
+
+// The empty list and the single-account cases both ride the SAME shape
+// ?query= uses: {"items":[...],"next_cursor":null}, no "ok" field.
+func TestAccountsByUsernameSucceedsInTheListShape(t *testing.T) {
+	h := searchHandler(authenticated, searchOnlyPorts{hits: []domain.AccountSummary{
+		{IGID: "1", Username: "target_user", FullName: "The Target", FBID: "10", IsVerified: true},
+	}})
+	rec := getSearch(h, "?username=target_user")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("answered %d: %s", rec.Code, rec.Body.String())
+	}
+	if raw := rec.Body.String(); containsToken(raw, `"ok"`) {
+		t.Errorf("body carries an ok field, which the new conventions drop: %s", raw)
+	}
+	body := decodeSearchBody(t, rec)
+	if body.NextCursor != nil {
+		t.Errorf("next_cursor = %v, want null", body.NextCursor)
+	}
+	if len(body.Items) != 1 || body.Items[0].FBID != "10" || !body.Items[0].IsVerified {
+		t.Errorf("items = %+v, want the port's one match forwarded", body.Items)
+	}
+}
+
+// The ways a `username` request is refused before any use case runs: bad
+// characters, over length, repeated, and combined with `query`. A leading
+// `@` is accepted (ParseUsername strips it) and covered separately below.
+func TestAccountsByUsernameValidation(t *testing.T) {
+	h := searchHandler(authenticated, searchOnlyPorts{err: errors.New("no use case should run")})
+
+	for name, rawQuery := range map[string]string{
+		"bad characters": "?username=not-a-username!",
+		"31 characters":  "?username=" + repeat("a", 31),
+		"repeated":       "?username=a&username=b",
+		"query+username": "?query=someone&username=someone",
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := getSearch(h, rawQuery)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("%s: answered %d, want 400: %s", name, rec.Code, rec.Body.String())
+			}
+			env := decodeEnvelope(t, rec)
+			if env.Error.Code != "invalid_id" {
+				t.Errorf("%s: code = %q, want invalid_id", name, env.Error.Code)
+			}
+		})
+	}
+
+	// At the boundary: exactly 30 characters is accepted (falls through to
+	// the use case, which this test's port refuses loudly).
+	rec := getSearch(h, "?username="+repeat("a", 30))
+	if rec.Code == http.StatusBadRequest {
+		t.Errorf("a username of exactly 30 characters was refused as too long")
+	}
+}
+
+// A malformed username's envelope message is the FIXED string, never the
+// raw input — domain.ParseUsername's own error text embeds it, and this
+// route must not forward that text (file header's never-list).
+func TestAccountsByUsernameInvalidMessageIsFixedNeverTheInput(t *testing.T) {
+	h := searchHandler(authenticated, searchOnlyPorts{err: errors.New("no use case should run")})
+	const secret = "not-a-valid-handle!!!"
+	rec := getSearch(h, "?username="+secret)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("answered %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	if containsToken(rec.Body.String(), secret) {
+		t.Errorf("the envelope carries the raw username: %s", rec.Body.String())
+	}
+	env := decodeEnvelope(t, rec)
+	if env.Error.Message != invalidUsernameMessage {
+		t.Errorf("message = %q, want the fixed message %q", env.Error.Message, invalidUsernameMessage)
+	}
+}
+
+// A leading `@` is stripped, the same as domain.ParseUsername does for every
+// other caller of it.
+func TestAccountsByUsernameStripsALeadingAt(t *testing.T) {
+	h := searchHandler(authenticated, searchOnlyPorts{hits: []domain.AccountSummary{
+		{IGID: "1", Username: "target_user"},
+	}})
+	rec := getSearch(h, "?username=%40target_user")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("answered %d: %s", rec.Code, rec.Body.String())
+	}
+	body := decodeSearchBody(t, rec)
+	if len(body.Items) != 1 || body.Items[0].Username != "target_user" {
+		t.Fatalf("items = %+v, want the @-stripped match", body.Items)
+	}
+}
+
+// The session gate answers 409 the same way ?query='s does.
+func TestAccountsByUsernameSessionGate(t *testing.T) {
+	h := searchHandler(domain.Session{State: domain.StateCheckpointed, Detail: "challenge required"},
+		searchOnlyPorts{err: errors.New("no use case should run")})
+	rec := getSearch(h, "?username=target_user")
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("answered %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	env := decodeEnvelope(t, rec)
+	if env.Error.Code != "needs_human" {
+		t.Errorf("code = %q, want needs_human", env.Error.Code)
+	}
+}
+
+// Validation runs BEFORE the session gate for `username` too: a checkpointed
+// session must not change a malformed username's answer.
+func TestAccountsByUsernameValidationRunsBeforeSessionGate(t *testing.T) {
+	h := searchHandler(domain.Session{State: domain.StateCheckpointed, Detail: "captcha"},
+		searchOnlyPorts{err: errors.New("no use case should run")})
+	rec := getSearch(h, "?username=not-valid!")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("a checkpointed session with a malformed username answered %d, want 400", rec.Code)
+	}
+	env := decodeEnvelope(t, rec)
+	if env.Error.Code != "invalid_id" {
+		t.Errorf("code = %q, want invalid_id", env.Error.Code)
 	}
 }
 

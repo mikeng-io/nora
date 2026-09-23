@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
 	"go.mau.fi/mautrix-meta/pkg/messagix/types"
 )
@@ -94,6 +95,87 @@ func TestAccountsSearchUpstreamGraphQLErrorAnswers502(t *testing.T) {
 	b := newTestBridge(t, &fakeIG{SearchErr: gqlErr})
 
 	rec := getSearch(t, b, "?query=someone")
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("answered %d, want 502: %s", rec.Code, rec.Body.String())
+	}
+	var env errorEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("body is not an error envelope: %v (%s)", err, rec.Body.String())
+	}
+	if env.Error.Code != "upstream_rejected" {
+		t.Errorf("code = %q, want upstream_rejected", env.Error.Code)
+	}
+}
+
+// --- GET /accounts?username= (17 P10), wired end to end --------------------
+
+// The exact match, over the real gateway, real use case and real HTTP
+// surface: the fixture's fuzzy hit is dropped and the exact one kept, in
+// the same list shape as ?query=.
+func TestAccountsByUsernameReturnsTheExactMatch(t *testing.T) {
+	b := newTestBridge(t, &fakeIG{SearchResultsSet: true, SearchResults: []*slidetypes.SearchResult{
+		{PK: "900000010", Username: "decoy_result", FullName: "Not The One"},
+		{PK: "900000011", Username: "example_target", FullName: "The Target"},
+	}})
+
+	rec := getSearch(t, b, "?username=example_target")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/accounts?username= answered %d: %s", rec.Code, rec.Body.String())
+	}
+	var body searchAccountsBody
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body did not decode: %v (%s)", err, rec.Body.String())
+	}
+	if body.NextCursor != nil {
+		t.Errorf("next_cursor = %v, want null", body.NextCursor)
+	}
+	if len(body.Items) != 1 || body.Items[0].Username != "example_target" || body.Items[0].IGID != "900000011" {
+		t.Fatalf("items = %+v, want exactly the exact match", body.Items)
+	}
+}
+
+// A checkpointed session refuses through the same 409 ?query= uses.
+func TestAccountsByUsernameRefusesOnACheckpoint(t *testing.T) {
+	b := newTestBridge(t, &fakeIG{}, withState("checkpointed", "captcha"))
+
+	rec := getSearch(t, b, "?username=example_target")
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("answered %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	var env errorEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("body is not an error envelope: %v (%s)", err, rec.Body.String())
+	}
+	if env.Error.Code != "needs_human" {
+		t.Errorf("code = %q, want needs_human", env.Error.Code)
+	}
+}
+
+// An upstream challenge surfaced through the search call itself classifies
+// exactly like every other route's upstream call.
+func TestAccountsByUsernameClassifiesAnUpstreamChallenge(t *testing.T) {
+	b := newTestBridge(t, &fakeIG{SearchErr: httpclient.ErrCheckpointRequired})
+
+	rec := getSearch(t, b, "?username=example_target")
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("answered %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// A GraphQL errors-in-200 failure from SearchUsers answers 502 with the new
+// envelope, end to end — the same shape TestAccountsSearchUpstreamGraphQLErrorAnswers502
+// proves for ?query=.
+func TestAccountsByUsernameUpstreamGraphQLErrorAnswers502(t *testing.T) {
+	gqlErr := (&types.ErrorResponse{Errors: []*types.GraphQLError{
+		{Message: "synthetic field exception", Summary: "Query error", Code: 1675030},
+	}}).AsError()
+	b := newTestBridge(t, &fakeIG{SearchErr: gqlErr})
+
+	rec := getSearch(t, b, "?username=example_target")
 
 	if rec.Code != http.StatusBadGateway {
 		t.Fatalf("answered %d, want 502: %s", rec.Code, rec.Body.String())
