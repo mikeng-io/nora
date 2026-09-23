@@ -14,6 +14,28 @@ edges:
 
 ## Recommendation
 
+> **REOPENED 2026-09-23 (operator).** Miles's direction is to split
+> `social_fetch` per NETWORK as a later step: `x_fetch`, `instagram_fetch`,
+> `threads_fetch`, `linkedin_fetch`. This is a direction, **not yet a written
+> design**, and until one lands `social_fetch` remains the shipped tool and
+> this document's vocabulary rules still govern it. What changed the
+> calculation: the tool catalogue (`design/tool-catalogue/`) drops a tool's
+> resident cost from about 400 tokens to about 18, and `15-bridge-is-the-only-entry.md`
+> gives each network exactly one backend, so one tool per network maps onto
+> one backend per tool. The two reasons this document gives against the split
+> are **kept as conditions on it, not discarded**:
+>
+> 1. **The model names the network, never the account.** A per-network tool
+>    takes a PERSON (or a link, or a handle a human typed); the person index
+>    resolves that person's account on that network. The "subject, not an
+>    address" rule below survives the split intact.
+> 2. **One read-only allowlist underneath.** R-86's table stays one table,
+>    however many tools sit on top of it, so "what may Nora read" is still
+>    answered in one place.
+>
+> The reasoning below is kept as the record of why the single tool was right
+> while tool count cost prompt tokens and backends were split per verb.
+
 **One tool — `social_fetch` — however many networks arrive.** Per-network
 tools (`instagram_fetch`, `x_fetch`, `threads_fetch`) should not be built.
 
@@ -118,7 +140,9 @@ sparse matrix already expresses.
 
 ## What this forbids
 
-- **No per-network social tool**, now or when Threads arrives.
+- ~~No per-network social tool, now or when Threads arrives.~~ **Reopened
+  2026-09-23**, see the note under §Recommendation; the two conditions
+  there replace this line.
 - **No free-form network string.** `platform` stays a closed enum; an unknown
   value is refused, not passed through.
 - **No inferring a network from a name.** If the subject is not a known person
