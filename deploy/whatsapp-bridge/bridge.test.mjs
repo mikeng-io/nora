@@ -12,6 +12,7 @@
 
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
+import { createCipheriv } from 'node:crypto';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -583,4 +584,78 @@ test('a wrong secret never yields a message', () => {
   cache.get('3EB0ORIGID').message_secret = Buffer.alloc(32, 7);
   const opened = decryptSecretEdit(edit, { recentCache: cache, decode: (b) => proto.Message.decode(b) });
   assert.equal(opened.reason, 'undecryptable');
+});
+
+// Encrypt a plaintext Message the way a sender would, with the key scheme the
+// whatsmeow vectors above pin — so the tests below can choose the SHAPE of
+// the plaintext, which a vector with a fixed plaintext cannot.
+function sealEdit(plainMessage, { origId = '3EB0ORIGID', orig = '149242447412@lid', editor = '149242447412@lid' } = {}) {
+  const key = deriveEditKey(WM_SECRET, origId, orig, editor);
+  const iv = Buffer.alloc(12, 3);
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  const body = Buffer.concat([cipher.update(Buffer.from(proto.Message.encode(plainMessage).finish())), cipher.final()]);
+  return { encIv: iv, encPayload: Buffer.concat([body, cipher.getAuthTag()]) };
+}
+
+function sealedFixture(plainMessage, opts = {}) {
+  const { cache, edit } = secretEditFixture(opts.fixture || {});
+  Object.assign(edit.message.secretEncryptedMessage, sealEdit(plainMessage, opts.seal || {}));
+  return { cache, edit };
+}
+
+test('a plaintext that is itself a MESSAGE_EDIT is unwrapped, with its own millisecond clock', () => {
+  // mautrix-whatsapp reads the plaintext this way. Treated as bare content it
+  // yielded an event with no text, silently dropped downstream.
+  const { cache, edit } = sealedFixture({
+    protocolMessage: {
+      type: 14, key: { id: '3EB0ORIGID', remoteJid: '176569@g.us' },
+      editedMessage: { conversation: 'dinner at 8' }, timestampMs: 1756963100456,
+    },
+  });
+  const opened = decryptSecretEdit(edit, { recentCache: cache, decode: (b) => proto.Message.decode(b) });
+  assert.ok(opened.msg, `not decrypted: ${opened.reason}`);
+  const event = extractMessageEvent(opened.msg, {});
+  assert.equal(event.text, 'dinner at 8');
+  assert.equal(event.edit_of, '3EB0ORIGID');
+  assert.equal(event.timestamp_ms, 1756963100456);
+  assert.equal(opened.shape, 'protocolMessage');
+});
+
+test('the same, inside an editedMessage shell', () => {
+  const { cache, edit } = sealedFixture({
+    editedMessage: { message: { protocolMessage: {
+      type: 14, key: { id: '3EB0ORIGID' }, editedMessage: { conversation: 'wrapped' },
+    } } },
+  });
+  const opened = decryptSecretEdit(edit, { recentCache: cache, decode: (b) => proto.Message.decode(b) });
+  assert.equal(extractMessageEvent(opened.msg, {}).text, 'wrapped');
+});
+
+test('a plaintext with no text or media is reported, never passed on empty', () => {
+  const { cache, edit } = sealedFixture({ protocolMessage: { type: 0 } });
+  const opened = decryptSecretEdit(edit, { recentCache: cache, decode: (b) => proto.Message.decode(b) });
+  assert.equal(opened.reason, 'empty_edit');
+});
+
+test('an over-long original id is «cannot decrypt», never a throw', () => {
+  // hkdfSync throws on info over 1024 bytes; the id is sender-chosen.
+  const { cache, edit } = secretEditFixture();
+  const longId = 'X'.repeat(1100);
+  cache.remember({
+    key: { id: longId, remoteJid: '176569@g.us', participant: '149242447412@lid' },
+    message: { conversation: 'x', messageContextInfo: { messageSecret: WM_SECRET } },
+  });
+  edit.message.secretEncryptedMessage.targetMessageKey.id = longId;
+  const opened = decryptSecretEdit(edit, { recentCache: cache, decode: (b) => proto.Message.decode(b) });
+  assert.equal(opened.reason, 'undecryptable');
+});
+
+test('the editor is tried as the original sender, whatsmeow\'s first choice', () => {
+  // Original cached under a phone JID nothing maps to the editor's LID; the
+  // key was derived with the editor's form on both sides.
+  const { cache, edit } = sealedFixture({ conversation: 'via editor' }, {
+    fixture: { originalParticipant: '85200000000@s.whatsapp.net' },
+  });
+  const opened = decryptSecretEdit(edit, { recentCache: cache, decode: (b) => proto.Message.decode(b) });
+  assert.ok(opened.msg, `not decrypted: ${opened.reason}`);
 });

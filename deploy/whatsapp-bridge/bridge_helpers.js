@@ -220,6 +220,10 @@ export function messageSecretOf(msg) {
 
 export function deriveEditKey(secret, origId, origSender, editor) {
   const info = Buffer.from(`${origId}${origSender}${editor}${MESSAGE_EDIT_USE_CASE}`, 'utf8');
+  // `hkdfSync` THROWS on info over 1024 bytes, and the id is sender-chosen:
+  // an over-long one must be «cannot decrypt», never an exception out of the
+  // upsert loop that skips the rest of the batch.
+  if (info.length > 1024) return null;
   return Buffer.from(hkdfSync('sha256', secret, Buffer.alloc(0), info, 32));
 }
 
@@ -261,44 +265,74 @@ export function decryptSecretEdit(msg, { recentCache, decode, lidToPhone = {}, p
   if (!target.id || !cached || !cached.message_secret) return { reason: 'secret_unknown' };
   if (!sem.encIv || !sem.encPayload) return { reason: 'malformed' };
 
-  const origForms = new Set([
-    ...jidForms(target.participant || target.remoteJid, lidToPhone, phoneToLid),
-    ...jidForms(cached.sender_jid, lidToPhone, phoneToLid),
-    ...jidForms(cached.sender_alt, lidToPhone, phoneToLid),
-  ]);
   const editorForms = new Set([
     ...jidForms(msg.key.participant || msg.key.remoteJid, lidToPhone, phoneToLid),
     ...jidForms(msg.key.participantAlt || msg.key.remoteJidAlt, lidToPhone, phoneToLid),
   ]);
+  // The EDITOR first: only a sender edits their own message, and whatsmeow's
+  // `getOrigSenderFromKey` takes the editor as the original's sender for a
+  // `fromMe` key — its first choice. Then every form the cache and the target
+  // key know, for the phone/LID migration.
+  const origForms = new Set([
+    ...editorForms,
+    ...jidForms(target.participant || target.remoteJid, lidToPhone, phoneToLid),
+    ...jidForms(cached.sender_jid, lidToPhone, phoneToLid),
+    ...jidForms(cached.sender_alt, lidToPhone, phoneToLid),
+  ]);
   for (const orig of origForms) {
     for (const editor of editorForms) {
-      const plain = gcmOpen(deriveEditKey(cached.message_secret, target.id, orig, editor),
-        sem.encIv, sem.encPayload);
+      const key = deriveEditKey(cached.message_secret, target.id, orig, editor);
+      const plain = key && gcmOpen(key, sem.encIv, sem.encPayload);
       if (!plain) continue;
-      let edited;
+      let decoded;
       try {
-        edited = decode(plain);
+        decoded = decode(plain);
       } catch {
         return { reason: 'undecodable' };
       }
-      const seconds = toNumber(msg.messageTimestamp);
-      return {
-        msg: {
-          ...msg,
-          message: {
-            protocolMessage: {
-              type: 14,
-              key: { id: target.id, remoteJid: target.remoteJid, fromMe: Boolean(target.fromMe),
-                ...(target.participant ? { participant: target.participant } : {}) },
-              editedMessage: edited,
-              ...(seconds !== null ? { timestampMs: seconds * 1000 } : {}),
-            },
-          },
-        },
-      };
+      return synthesizeEdit(msg, target, decoded);
     }
   }
   return { reason: 'undecryptable' };
+}
+
+/**
+ * The decrypted plaintext in whichever shape it arrives. mautrix-whatsapp
+ * reads it as a WHOLE message that is itself an edit — a `protocolMessage`
+ * MESSAGE_EDIT carrying `editedMessage` and `timestampMs`, possibly inside the
+ * `editedMessage` shell `getMessageContent` unwraps — so that shape is
+ * preferred, with its own millisecond clock; a bare content message (the new
+ * text itself) is the fallback. Reading the wrapped shape as bare content
+ * produced an event with no text, which the adapter drops: every edit lost
+ * while the log said it had worked (review, 2026-09-24). `shape` is the
+ * decoded message's top-level KEYS, for the log, never a value.
+ */
+function synthesizeEdit(msg, target, decoded) {
+  const inner = getMessageContent({ message: decoded })?.protocolMessage;
+  const isEdit = inner && (inner.type === 14 || inner.type === 'MESSAGE_EDIT') && inner.editedMessage;
+  const editedMessage = isEdit ? inner.editedMessage : decoded;
+  const innerMs = isEdit ? toNumber(inner.timestampMs) : null;
+  const seconds = toNumber(msg.messageTimestamp);
+  const timestampMs = innerMs || (seconds !== null ? seconds * 1000 : null);
+  const content = getMessageContent({ message: editedMessage });
+  const hasBody = Boolean(ownText(content, mediaDescriptors(content)) || mediaDescriptors(content).length);
+  const shape = Object.keys(decoded || {}).join(',');
+  if (!hasBody) return { reason: 'empty_edit', shape };
+  return {
+    shape,
+    msg: {
+      ...msg,
+      message: {
+        protocolMessage: {
+          type: 14,
+          key: { id: target.id, remoteJid: target.remoteJid, fromMe: Boolean(target.fromMe),
+            ...(target.participant ? { participant: target.participant } : {}) },
+          editedMessage,
+          ...(timestampMs !== null ? { timestampMs } : {}),
+        },
+      },
+    },
+  };
 }
 
 // -- Bounded event buffer with drop-and-count (contract §dropped) ----------

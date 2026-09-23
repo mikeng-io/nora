@@ -254,14 +254,22 @@ async function startSocket() {
       let source = msg;
       if (getMessageContent(msg)?.secretEncryptedMessage) {
         // A phone's edit, encrypted with the original's message secret.
-        const opened = decryptSecretEdit(msg, {
-          recentCache: recentMessages, decode: (b) => proto.Message.decode(b),
-          lidToPhone, phoneToLid,
-        });
+        let opened;
+        try {
+          opened = decryptSecretEdit(msg, {
+            recentCache: recentMessages, decode: (b) => proto.Message.decode(b),
+            lidToPhone, phoneToLid,
+          });
+        } catch (err) {
+          // Untrusted input: whatever it does, it must not take the rest of
+          // this batch down with it.
+          opened = { reason: `error:${err?.code || err?.name || 'unknown'}` };
+        }
         if (!opened.msg) {
-          log(`secret edit not decrypted id=${msg.key.id} chat=${redactJid(msg.key.remoteJid)} reason=${opened.reason}`);
+          log(`secret edit not decrypted id=${msg.key.id} chat=${redactJid(msg.key.remoteJid)} reason=${opened.reason}${opened.shape ? ` shape=[${opened.shape}]` : ''}`);
           continue;
         }
+        log(`secret edit decrypted id=${msg.key.id} chat=${redactJid(msg.key.remoteJid)} shape=[${opened.shape}]`);
         source = opened.msg;
       }
       const event = extractMessageEvent(source, { lidToPhone, phoneToLid, recentCache: recentMessages });
