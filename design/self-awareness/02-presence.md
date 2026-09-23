@@ -16,38 +16,50 @@ Three facts, all generated, none typed anywhere:
    has to guess which networks the unit has.
 3. **Beyond this unit**: D1 = B (`03-room-tools.md`): it says only that
    other groups exist, never which.
-## Her own handles: a companion block, not part of `<presence>`
+## Her own handles: a line in `<presence>`, read live
 
-The public names people use to reach her (operator, 2026-09-23): `@nora.000`
-on Signal; `@noraexample` on WhatsApp, X, Instagram and Threads. Without them
-she cannot recognise "@noraexample" as herself in text that is not a platform
-mention, or answer "what's your IG?".
+The public names people use to reach her: `@nora.000` on Signal;
+`@noraexample` on WhatsApp, X, Instagram and Threads (operator, 2026-09-23).
+Without them she cannot recognise "@noraexample" as herself in text that is
+not a platform mention, or answer "what's your IG?".
 
-They are the same in every room and change rarely, so they do not belong in
-the per-turn block. They are an `<accounts>` block keyed `global`, in the
-cached prefix: under the registry's rule (`nora/domain/blocks.py`, `BlockKey`)
-only a `global` block may sit there, and this one is.
+**Read from the adapter, not copied.** The Instagram account was renamed
+from `not_____nora` to `noraexample` between 2026-09-22 (measured on the live
+session) and 2026-09-23 (operator). A copy in config would have been wrong
+from that moment, silently: the failure `identity.md`'s `not_here` names
+("no page name… no address"), moved from prose into TOML. So the handle
+is read live wherever something can report it, and declared only where
+nothing can:
 
-**Static, but data, not doctrine.** `identity.md`'s `not_here` forbids it by
-name ("no page name… no address"), and a new doctrine `.md` would carry the
-same risk that rule names: prose nobody checks, stale in silence. So the
-handles are declared once in `config.toml`, beside each platform's settings,
-and X and Threads (no adapter) in a small table of their own. Config can be
-checked where prose cannot: where an adapter can report its own username at
-startup (the `self_id` modules already derive her identifiers per platform),
-a mismatch with the declared handle is logged, not rendered. A public handle
-is not an id in R-18's sense (R-18 is somebody else's identifiers): it is the
-name she would give anyone who asked.
+| Network | Source today | Why |
+|---|---|---|
+| Instagram | live: the bridge's `GET /health` carries `self.username` (`design/instagram-adoption/03-transport-contract.md`); `nora/platform/instagram/self_id.py` reads that response and ignores the field today, so the build reads it | the adapter knows the logged-in account |
+| Signal, Discord | declared, until the build confirms the adapter can report it | each `self_id.py` derives her ids and deliberately drops the username (below); whether the transport exposes her own handle is a build-time check, not assumed here |
+| WhatsApp | declared | the bridge contract (`design/whatsapp-adoption/03-transport-contract.md`) exposes `{phone, lid}` only; there is no handle to read |
+| X, Threads | declared | no adapter |
 
-Transport state uses `AdapterHealth` (`nora/domain/ports.py`) and nothing
-finer. The type is two booleans, `connected` and `degraded`, so all four
-combinations are reachable; the render reads them in this order: `degraded`
-→ `needs a person` (whatever `connected` says, because a degraded adapter
-cannot act until a human intervenes); else `connected` → `up`; else
-`reconnecting` (disconnected, expected to heal). `detail` is not rendered: it
-is operator-facing text and may name an account. A room she is in but cannot reach is worth one word, because
-`send_to` into it will fail and she should say so before trying rather than
-after.
+A declared handle is a copy, with exactly the risk above. It is the fallback,
+not the design, and each declared row is replaced by a live read the day its
+adapter can report one. A handle neither source has is rendered from nothing,
+not guessed.
+
+**This does not reopen the no-username rule.** `nora/domain/identity.py`
+(operator, 2026-08-14): no `username` is ever INDEXED on any platform,
+because a handle is re-assignable and matching on it resolves a stranger
+as a known person. That rule is about recognising other people. Her own
+handle here is display text in her prompt: it is never an `Identifier`,
+never matched against a sender, and never enters `self_aliases()`, so
+mention detection stays on her immutable ids.
+
+**Inside `<presence>`, not a block of its own in the cached head.** The head is
+one fixed `context_header` block (`_context_header`), and no `_BLOCKS` row is
+served there (`test_no_block_in_this_table_belongs_in_the_cached_head`
+rejects a `global` key). A `global` block for about 20 tokens would need a
+new head-assembly path, and a live-read value would break the prefix cache
+on every rename anyway. One line per turn is the cheaper shape.
+
+A public handle is not an id in R-18's sense (R-18 is somebody else's
+identifiers): it is the name she would give anyone who asked.
 
 ## What it looks like
 
@@ -56,28 +68,34 @@ after.
   the rooms you are configured for and your live connections; not something
   you remember, so trust it over any memory that disagrees.">
 You are in <room name> on Instagram.
+You are @noraexample on WhatsApp, X, Instagram and Threads, and @nora.000 on Signal.
 This group also has rooms on Signal, WhatsApp and Discord.
 Discord is reconnecting right now; the others are up.
 You are also in other groups, which you do not discuss here.
 </presence>
 ```
 
-Roughly 60–80 tokens. The last line is the D1 = B wording.
+Roughly 80–100 tokens. The last line is the D1 = B wording.
 
 ## Where it goes
 
 - **Per-turn message, not cached prefix.** Health varies turn to turn;
   `_where_line` already lives in the per-turn message for the same reason.
-- **Registered as a block** in the context-assembly registry with key `turn`,
-  so every occasion that declares it gets the same builder. No occasion builds
-  its own copy.
+- **A `ContextBlock` with a row in `prefill._BLOCKS`**, key `turn`, rendered
+  through `assemble` like `standing` and `culture`. Today `_where_line` is not
+  one: it is a bare string concatenated in front of `assemble(declared)`
+  (`nora/agent/prefill.py`, the per-turn message). Replacing it removes that
+  special case. One builder; no occasion builds its own copy.
 - **Occasions:** tag, participation, and proactive (D2, decided yes
   2026-09-23): the proactive loop decides *where* to raise something, and it
-  cannot choose a room it does not know exists. The proactive prompt is
-  built on its own path (`nora/language/proactive.py`,
-  `nora/subject/proactive.py`), not through `prefill._BLOCKS`, so D2 is a
-  second call site that must call the same builder. It is not free, and it
-  is not done by registering the block.
+  cannot choose a room it does not know exists. The proactive prompt has
+  its own `_BLOCKS` table (`nora/language/proactive.py`), and it already
+  carries part of this: `home_room` (platform, label, the operator's
+  description) and `rooms` (standing lines per room). So D2 is a second row
+  calling the same builder, and `<presence>` **replaces `home_room`**,
+  keeping the operator's description as an attribute, rather than becoming a
+  second statement of where she is. `rooms` stays: it is what each room
+  stands on, not which rooms exist.
 
 ## What it must not do
 
