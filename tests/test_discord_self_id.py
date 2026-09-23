@@ -2,12 +2,15 @@ import pytest
 from aiohttp import web
 
 from nora.domain.identity import Identifier
-from nora.platform.discord.self_id import DiscordIdentityError, derive_identity
+from nora.platform.discord.self_id import DiscordIdentityError, derive_identity, render_handle
 
 
 @pytest.fixture
 async def me_server(aiohttp_server):
-    body = {"id": "100000000000000100", "username": "nora", "bot": True}
+    body = {
+        "id": "100000000000000100", "username": "nora", "discriminator": "4214",
+        "bot": True,
+    }
     seen_auth: list[str | None] = []
 
     async def handler(request: web.Request) -> web.Response:
@@ -22,7 +25,7 @@ async def me_server(aiohttp_server):
 
 
 async def test_derive_identity_returns_the_bots_own_id_and_never_its_username(me_server):
-    primary, identifiers = await derive_identity(
+    primary, identifiers, _handle = await derive_identity(
         "tok", base_url=str(me_server.make_url("")).rstrip("/")
     )
 
@@ -33,6 +36,18 @@ async def test_derive_identity_returns_the_bots_own_id_and_never_its_username(me
     # stable. The /users/@me response DOES carry a username (the fixture
     # returns one), so this asserts it is dropped, not merely absent.
     assert {i.kind for i in identifiers} == {"user_id"}
+
+
+async def test_derive_identity_also_returns_the_rendered_handle(me_server):
+    """The handle `<presence>` wants (design/self-awareness/02/06), read off
+    the SAME response `derive_identity` already fetches — never a second
+    call. `nora/domain/identity.py`'s no-username rule (above) covers the
+    identifiers; this covers the display-text side of the same response."""
+    _primary, _identifiers, handle = await derive_identity(
+        "tok", base_url=str(me_server.make_url("")).rstrip("/")
+    )
+
+    assert handle == "@nora#0000"
 
 
 async def test_derive_identity_authenticates_with_the_bot_token(me_server):
@@ -63,3 +78,31 @@ async def test_derive_identity_raises_when_the_body_has_no_id(aiohttp_server):
 
     with pytest.raises(DiscordIdentityError):
         await derive_identity("tok", base_url=str(server.make_url("")).rstrip("/"))
+
+
+# ---- render_handle: the live-vs-declared precedence's formatting half ------
+#
+# `discriminator = "0"` is what Discord reports for every account migrated to
+# unique usernames (2023); `derive_identity_also_returns_the_rendered_handle`
+# above pins the pre-migration, numbered-tag shape (`discriminator = "4214"`,
+# the value measured live on 2026-09-24).
+
+
+def test_render_handle_with_a_real_discriminator_keeps_the_tag():
+    assert render_handle("nora", "4214") == "@nora#0000"
+
+
+def test_render_handle_with_discriminator_zero_drops_the_tag():
+    """The migrated-account shape — Discord reports `"0"`, never absent, for
+    a unique username."""
+    assert render_handle("nora", "0") == "@nora"
+
+
+def test_render_handle_with_no_discriminator_field_drops_the_tag():
+    assert render_handle("nora", None) == "@nora"
+
+
+def test_render_handle_with_no_username_is_none():
+    assert render_handle(None, "4214") is None
+    assert render_handle("", "4214") is None
+    assert render_handle("   ", "0") is None

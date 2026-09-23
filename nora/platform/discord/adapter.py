@@ -64,6 +64,12 @@ class DiscordAdapter:
         self._reactor = DiscordReactor(token, base_url=base_url)
         self._identity: PlatformIdentity | None = None
         self._own_id = ""
+        # Her Discord handle, cached from the SAME `/users/@me` response
+        # `resolve_identity()` fetches once — `own_handle()` reuses it rather
+        # than reading it live per turn (design/self-awareness/02/06). `None`
+        # until the first `resolve_identity()`, and stays `None` if Discord
+        # reported no username.
+        self._own_handle: str | None = None
         # design/discord-music/02-control-surface.md — `None` when
         # `[music] enabled = false` (nora/app/composition.py), which is what
         # keeps this adapter unchanged for every deployment that hasn't
@@ -108,14 +114,31 @@ class DiscordAdapter:
     async def resolve_identity(self) -> PlatformIdentity:
         """Memoized after the first call — same rationale as
         `SignalAdapter.resolve_identity`: a stable answer to "who am I" that
-        `/health` can poll without a network round trip every time."""
+        `/health` can poll without a network round trip every time. The same
+        `/users/@me` response also fills `_own_handle` for `own_handle()`."""
         if self._identity is None:
-            primary, identifiers = await derive_identity(self._token, base_url=self._base_url)
+            primary, identifiers, handle = await derive_identity(
+                self._token, base_url=self._base_url,
+            )
             self._own_id = primary
+            self._own_handle = handle
             self._identity = PlatformIdentity(
                 platform=self.platform, primary=primary, identifiers=identifiers,
             )
         return self._identity
+
+    async def own_handle(self) -> str | None:
+        """Her handle on Discord — `@username#discriminator`, or `@username`
+        alone once the account is on unique usernames — read from the SAME
+        `/users/@me` response `resolve_identity()` fetches once at startup,
+        never a second call per turn (design/self-awareness/02/06). Ensures
+        that call has happened (a no-op once memoized) rather than answering
+        `None` merely because nothing has asked yet. Display text for
+        `<presence>` only — it never enters `PlatformIdentity`, so it can
+        never become a mention id."""
+        if self._identity is None:
+            await self.resolve_identity()
+        return self._own_handle
 
     async def listen(
         self, *, on_message: Callable[[NormalizedMessage], Awaitable[None]]
