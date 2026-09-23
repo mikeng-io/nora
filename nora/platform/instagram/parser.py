@@ -174,9 +174,22 @@ _INSTAGRAM_HOSTS = frozenset({"instagram.com", "www.instagram.com"})
 _SHORTCODE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _USERNAME = re.compile(r"[A-Za-z0-9._]{1,30}")
 _STORY_PK = re.compile(r"[0-9]{1,25}")
+# A username must carry at least one non-digit. The charset above admits an
+# all-digit segment, and an all-digit "username" in a story path is exactly the
+# shape an igid takes — which `scan_identifiers` deliberately lets through,
+# because bare digit runs are ordinary chat content.
+_HAS_NON_DIGIT = re.compile(r"[^0-9]")
 
 
-def _shared_target(target_url: object) -> tuple[str, str]:
+def _is_handle(value: str) -> bool:
+    """A string that can be rendered as an Instagram handle: the username
+    charset, whole, with at least one non-digit (see `_HAS_NON_DIGIT`). One
+    predicate for the story segment and the rendered author, so an igid
+    cannot ride in through whichever of the two was checked less."""
+    return bool(_USERNAME.fullmatch(value)) and bool(_HAS_NON_DIGIT.search(value))
+
+
+def _shared_target(target_url: object, author: str = "") -> tuple[str, str]:
     """`(kind, link)` for a shared item, both read off `target_url`'s PATH.
 
     **The kind comes from the url, because nothing else on the wire carries
@@ -197,6 +210,14 @@ def _shared_target(target_url: object) -> tuple[str, str]:
     entirely (`""`) rather than render anything raw. The kind survives a
     rejected link: it is a label about the path's shape, not a claim about
     where it points.
+
+    **A story's username segment must BE the author.** The segment is the
+    one place in any of the three shapes where a path carries a name, and the
+    charset alone admits an all-digit one — which is what an igid looks like.
+    So the segment must hold a non-digit AND match `author` (the bridge's
+    `shared.author`, `@` stripped) case-insensitively; anything else leaves
+    no link. That binds the rendered name to a value the delta already
+    carries, rather than to whatever the url's path happens to say.
     """
     if not isinstance(target_url, str) or not target_url.strip():
         return "post", ""
@@ -217,8 +238,12 @@ def _shared_target(target_url: object) -> tuple[str, str]:
         clean = f"/p/{segments[1]}/"
     elif len(segments) == 3 and segments[0] == "stories":
         kind = "story"
-        valid = bool(_USERNAME.fullmatch(segments[1])) and bool(
-            _STORY_PK.fullmatch(segments[2]))
+        user = segments[1]
+        valid = (
+            _is_handle(user)
+            and user.lower() == author.strip().lstrip("@").lower()
+            and bool(_STORY_PK.fullmatch(segments[2]))
+        )
         clean = f"/stories/{segments[1]}/{segments[2]}/"
     else:
         return "post", ""
@@ -302,15 +327,25 @@ def _shared_line(shared: object) -> str:
     # the rare one this function was written for.
     if not isinstance(shared, dict) or not shared:
         return ""
-    kind, link = _shared_target(shared.get("target_url"))
-    # `@` because it is an Instagram handle, and exactly one `@` however the
-    # bridge spelled it.
-    author = str(shared.get("author") or "").strip().lstrip("@")
+    raw_author = str(shared.get("author") or "").strip().lstrip("@")
+    kind, link = _shared_target(shared.get("target_url"), raw_author)
+    # THE AUTHOR RENDERS ONLY AS A HANDLE. It is a stranger's string inside a
+    # bracket the transcript join parses, so anything outside the username
+    # charset — a `]`, a space, `The Site Title` from a link-preview XMA, or
+    # an all-digit string shaped like an igid — is dropped rather than
+    # escaped: an author that is not a handle is not worth an `@`. One `@`,
+    # however the bridge spelled it.
+    author = raw_author if _is_handle(raw_author) else ""
     caption = str(shared.get("caption") or "").strip()
     if not caption:
         # `title` is sometimes the only text on the delta — the library
         # declares both and no probe has shown which a live one populates.
         caption = str(shared.get("title") or "").strip()
+    # NO SQUARE BRACKETS FROM A STRANGER. A caption of `x] [image 0a1b2c] [y`
+    # closes this bracket and opens a forged placeholder, and
+    # `enrich_placeholders` would then hang whatever reading `0a1b2c` resolves
+    # to off it. Round brackets read the same to a model and parse as nothing.
+    caption = caption.replace("[", "(").replace("]", ")")
     # The bridge answers `null` rather than an empty object for an XMA it
     # could not read, so a dict with nothing readable in it is a shape it read
     # that carried neither name nor words nor link. It still renders

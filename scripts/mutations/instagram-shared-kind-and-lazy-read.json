@@ -82,5 +82,40 @@
     "old": "            if stored is not None and stored.comprehended:\n                return _serve_media(",
     "new": "            if stored is not None:\n                return _serve_media(",
     "target": "tests/test_media_fetch.py -k shared_items_thumbnail"
+  },
+  {
+    "name": "an all-digit username counts as a handle (the non-digit check is dropped)",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "    return bool(_USERNAME.fullmatch(value)) and bool(_HAS_NON_DIGIT.search(value))",
+    "new": "    return bool(_USERNAME.fullmatch(value))",
+    "target": "tests/unit/test_instagram_parser.py -k all_digit_story_username"
+  },
+  {
+    "name": "the story segment is not bound to the author",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "            and user.lower() == author.strip().lstrip(\"@\").lower()\n",
+    "new": "",
+    "target": "tests/unit/test_instagram_parser.py -k names_the_author_or_is_left_out"
+  },
+  {
+    "name": "the author renders unvalidated",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "    author = raw_author if _is_handle(raw_author) else \"\"",
+    "new": "    author = raw_author",
+    "target": "tests/unit/test_instagram_parser.py -k author_that_is_not_a_handle"
+  },
+  {
+    "name": "square brackets in the caption are left in (a handle can be forged)",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "    caption = caption.replace(\"[\", \"(\").replace(\"]\", \")\")",
+    "new": "    caption = caption",
+    "target": "tests/unit/test_instagram_parser.py -k caption_cannot_forge"
+  },
+  {
+    "name": "the host is matched by suffix rather than exactly",
+    "file": "nora/platform/instagram/parser.py",
+    "old": "            and parts.hostname in _INSTAGRAM_HOSTS",
+    "new": "            and (parts.hostname or \"\").rstrip(\".\").endswith(\"instagram.com\")",
+    "target": "tests/unit/test_instagram_parser.py -k fails_validation"
   }
 ]

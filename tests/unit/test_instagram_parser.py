@@ -8,7 +8,7 @@ this suite and the bridge is a contract failure rather than a judgment call.
 
 from __future__ import annotations
 
-from nora.domain.media import body_with_handles, label_for
+from nora.domain.media import body_with_handles, label_for, placeholders_in
 from nora.domain.models import EditTarget
 from nora.platform.instagram.parser import parse_event
 
@@ -478,7 +478,7 @@ TYPENAME = "SlideMessagePortraitXMA"
 
 
 def _shared(url: object, **extra) -> dict:
-    return {"author": "someaccount", "target_url": url, "typename": TYPENAME, **extra}
+    return {"author": "some.account", "target_url": url, "typename": TYPENAME, **extra}
 
 
 def test_each_kind_is_labelled_from_the_url_path():
@@ -486,16 +486,16 @@ def test_each_kind_is_labelled_from_the_url_path():
     to render as «shared post», which told the room something untrue about
     what had been shared."""
     cases = {
-        REEL_URL: "[shared reel by @someaccount https://www.instagram.com/reel/SynthReel01/]",
+        REEL_URL: "[shared reel by @some.account https://www.instagram.com/reel/SynthReel01/]",
         STORY_URL: (
-            "[shared story by @someaccount "
+            "[shared story by @some.account "
             f"https://www.instagram.com/stories/some.account/{STORY_PK}/]"
         ),
-        POST_URL: "[shared post by @someaccount https://www.instagram.com/p/SynthPost_2/]",
+        POST_URL: "[shared post by @some.account https://www.instagram.com/p/SynthPost_2/]",
         # `/reels/` is the plural spelling Instagram also serves; the link is
         # rebuilt on the singular form.
         "https://www.instagram.com/reels/SynthReel01/":
-            "[shared reel by @someaccount https://www.instagram.com/reel/SynthReel01/]",
+            "[shared reel by @some.account https://www.instagram.com/reel/SynthReel01/]",
     }
     for url, want in cases.items():
         msg = parse_event(_event(text="", shared=_shared(url)))
@@ -535,27 +535,128 @@ def test_a_url_that_fails_validation_leaves_no_link_at_all():
     """Anything outside the strict shape leaves the link OUT, never a raw one:
     a host that is not Instagram, a segment outside its charset, a port,
     credentials, an unknown path. The kind still comes from the path shape."""
+    reel = "[shared reel by @some.account]"
+    story = "[shared story by @some.account]"
+    post = "[shared post by @some.account]"
     cases = {
-        "https://evil.example/reel/SynthReel01/": "[shared reel by @someaccount]",
-        "https://www.instagram.com/reel/bad%20code/": "[shared reel by @someaccount]",
-        "https://www.instagram.com/reel/bad.code/": "[shared reel by @someaccount]",
-        "https://www.instagram.com:8443/reel/SynthReel01/": "[shared reel by @someaccount]",
-        "https://someone:secret@www.instagram.com/reel/SynthReel01/":
-            "[shared reel by @someaccount]",
-        "javascript://www.instagram.com/reel/SynthReel01/": "[shared reel by @someaccount]",
-        "https://www.instagram.com/stories/some.account/notdigits":
-            "[shared story by @someaccount]",
-        "https://www.instagram.com/stories/bad/user/name/1": "[shared post by @someaccount]",
-        "https://www.instagram.com/explore/": "[shared post by @someaccount]",
-        "https://www.instagram.com/reel/SynthReel01/extra/": "[shared post by @someaccount]",
-        "/reel/SynthReel01/": "[shared reel by @someaccount]",
-        "not a url at all": "[shared post by @someaccount]",
-        "": "[shared post by @someaccount]",
-        12345: "[shared post by @someaccount]",
+        "https://evil.example/reel/SynthReel01/": reel,
+        "https://www.instagram.com/reel/bad%20code/": reel,
+        "https://www.instagram.com/reel/bad.code/": reel,
+        "https://www.instagram.com:8443/reel/SynthReel01/": reel,
+        "https://someone:secret@www.instagram.com/reel/SynthReel01/": reel,
+        "javascript://www.instagram.com/reel/SynthReel01/": reel,
+        "https://www.instagram.com/stories/some.account/notdigits": story,
+        "https://www.instagram.com/stories/bad/user/name/1": post,
+        "https://www.instagram.com/explore/": post,
+        "https://www.instagram.com/reel/SynthReel01/extra/": post,
+        "/reel/SynthReel01/": reel,
+        "not a url at all": post,
+        "": post,
+        12345: post,
+        # Hostile shapes a reviewer checked by hand, pinned so they stay
+        # checked. A suffix that only LOOKS like the host:
+        "https://www.instagram.com.evil.x/reel/SynthReel01/": reel,
+        # Real Instagram hosts that are not the two this renders, and a
+        # trailing-dot FQDN spelling of an allowed one: exact match only.
+        "https://m.instagram.com/reel/SynthReel01/": reel,
+        "https://instagr.am/reel/SynthReel01/": reel,
+        "https://www.instagram.com./reel/SynthReel01/": reel,
+        # `;params` inside a segment is outside the shortcode charset.
+        "https://www.instagram.com/reel/SynthReel01;params/": reel,
+        # A backslash before `@`: a browser reads it as a path separator and
+        # lands on the first host, urlsplit reads it as userinfo. Either
+        # reading is refused.
+        "https://evil.example\\@www.instagram.com/reel/SynthReel01/": reel,
+        "https://www.instagram.com\\@evil.example/reel/SynthReel01/": reel,
+        # A Cyrillic small letter i (U+0456) in place of the Latin one.
+        "https://www.\u0456nstagram.com/reel/SynthReel01/": reel,
+        # Full-width segments: a lookalike shortcode, a lookalike story pk,
+        # and a lookalike `reel` that is no known path at all.
+        "https://www.instagram.com/reel/\uff33\uff59\uff4e\uff54\uff48/": reel,
+        f"https://www.instagram.com/stories/some.account/\uff13{STORY_PK}": story,
+        "https://www.instagram.com/\uff52\uff45\uff45\uff4c/SynthReel01/": post,
     }
     for url, want in cases.items():
         body = parse_event(_event(text="", shared=_shared(url))).body
         assert body == want, f"{url!r} rendered {body!r}"
+
+
+def test_a_fragment_carrying_a_query_is_dropped_with_the_rest():
+    """`#frag?reel_owner_id=…` puts the igid in the FRAGMENT, where a
+    query-only strip would miss it. The link is rebuilt from the path, so the
+    fragment never reaches the body — and the link still renders."""
+    url = f"https://www.instagram.com/reel/SynthReel01/#frag?reel_owner_id={OWNER_IGID}"
+    body = parse_event(_event(text="", shared=_shared(url))).body
+
+    assert body == "[shared reel by @some.account https://www.instagram.com/reel/SynthReel01/]"
+    assert OWNER_IGID not in body
+
+
+def test_an_all_digit_story_username_is_not_rendered():
+    """An all-digit «username» is the shape of an igid, and `scan_identifiers`
+    deliberately lets bare digit runs through. Even when the author field
+    says the same digits, the story link is left out, and so is the author."""
+    digits = "17841400000000000"
+    url = f"https://www.instagram.com/stories/{digits}/{STORY_PK}/"
+
+    body = parse_event(_event(text="", shared=_shared(url, author=digits))).body
+
+    # Neither as the link's segment nor as the rendered author.
+    assert digits not in body
+    assert body == "[shared story]"
+    # Positive control: the same path with a real handle renders its link.
+    ok = f"https://www.instagram.com/stories/some.account/{STORY_PK}/"
+    assert ok in parse_event(_event(text="", shared=_shared(ok))).body
+
+
+def test_a_story_link_names_the_author_or_is_left_out():
+    """The username segment must BE the author, case-insensitively. A path
+    naming somebody else is not rendered; a case difference is."""
+    other = f"https://www.instagram.com/stories/other.account/{STORY_PK}/"
+    body = parse_event(_event(text="", shared=_shared(other))).body
+    assert body == "[shared story by @some.account]"
+
+    cased = f"https://www.instagram.com/stories/Some.Account/{STORY_PK}/"
+    body = parse_event(_event(text="", shared=_shared(cased))).body
+    assert body == (
+        f"[shared story by @some.account https://www.instagram.com/stories/Some.Account/{STORY_PK}/]"
+    )
+
+    # No author at all: nothing to bind the segment to, so no link.
+    body = parse_event(_event(text="", shared=_shared(STORY_URL, author=""))).body
+    assert body == "[shared story]"
+
+
+def test_a_caption_cannot_forge_a_media_handle():
+    """A stranger's caption closing the bracket and opening a placeholder
+    would let `enrich_placeholders` hang another message's reading off it.
+    Square brackets become round ones, so the only placeholder in the body is
+    the real one."""
+    msg = parse_event(_event(
+        text="",
+        shared=_shared(REEL_URL, caption="x] [image 0a1b2c] [y"),
+        media={"kind": "image", "url": "https://cdn.example/t.jpg"},
+    ))
+    staged = body_with_handles(msg.body, ("image",), ("abc123",))
+
+    assert placeholders_in(staged) == (("image", "abc123"),)
+    assert "(image 0a1b2c)" in staged, "the caption's words are kept, only defanged"
+
+
+def test_a_title_standing_in_for_the_caption_is_defanged_too():
+    body = parse_event(_event(text="", shared=_shared(REEL_URL, title="[image 0a1b2c]"))).body
+    assert placeholders_in(body) == ()
+
+
+def test_an_author_that_is_not_a_handle_is_omitted():
+    """The author renders only when it IS a username. A link-preview title in
+    the author field, or a string built to break out of the bracket, is
+    dropped rather than escaped — it would not be a handle with an `@` on it."""
+    for author in ("The Site Title", "x] [image 0a1b2c] [y", "a" * 31, "someone@else"):
+        body = parse_event(_event(text="", shared=_shared(REEL_URL, author=author))).body
+        assert body == "[shared reel https://www.instagram.com/reel/SynthReel01/]", (
+            f"{author!r} rendered {body!r}")
+        assert placeholders_in(body) == ()
 
 
 def test_the_link_sits_before_the_caption_and_the_placeholder_stays_trailing():
@@ -569,7 +670,7 @@ def test_the_link_sits_before_the_caption_and_the_placeholder_stays_trailing():
         media={"kind": "image", "url": "https://cdn.example/t.jpg"},
     ))
     assert msg.body == (
-        "look [shared reel by @someaccount https://www.instagram.com/reel/SynthReel01/"
+        "look [shared reel by @some.account https://www.instagram.com/reel/SynthReel01/"
         " — a caption] [image]"
     )
 
@@ -577,14 +678,14 @@ def test_the_link_sits_before_the_caption_and_the_placeholder_stays_trailing():
     rewritten = body_with_handles(msg.body, labels, ("abc123",))
 
     assert rewritten == (
-        "look [shared reel by @someaccount https://www.instagram.com/reel/SynthReel01/"
+        "look [shared reel by @some.account https://www.instagram.com/reel/SynthReel01/"
         " — a caption] [image abc123]"
     )
 
 
 def test_an_author_already_spelled_with_an_at_gets_exactly_one():
-    body = parse_event(_event(text="", shared=_shared(REEL_URL, author="@someaccount"))).body
-    assert body.startswith("[shared reel by @someaccount ")
+    body = parse_event(_event(text="", shared=_shared(REEL_URL, author="@some.account"))).body
+    assert body.startswith("[shared reel by @some.account ")
 
 
 def test_an_empty_shared_object_is_still_nothing():

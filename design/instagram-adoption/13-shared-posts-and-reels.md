@@ -183,6 +183,20 @@ digits, `.`, `_`, at most 30; pk: digits). A host that is not Instagram's, a
 port, credentials in the netloc, or any segment outside its charset leaves
 the link **out** rather than rendering a raw one. The kind still renders.
 
+**A story's username segment must be the author.** The one segment in any
+shape that carries a name must hold a non-digit (an all-digit segment is the
+shape of an igid, and the egress screen deliberately lets bare digit runs
+through) AND equal `shared.author`, `@` stripped, case-insensitively.
+Anything else leaves no story link.
+
+**Nothing a stranger wrote can open a bracket.** The author renders, with its
+`@`, only when it is a whole handle by the same rule (username charset, at
+least one non-digit); otherwise it is omitted — which also drops a
+link-preview title such as `The Site Title` from the author slot. In the
+caption, `[` and `]` become `(` and `)`. Without both, a caption like
+`x] [image 0a1b2c] [y` closed the bracket and forged a media placeholder, and
+the render join would have hung another message's reading off it.
+
 The line is now `[shared <kind> by @<author> <link> — <caption>]`, each part
 present only when it is. The link sits inside the bracket, before the
 caption: inside, because it belongs to the shared item and not to the
@@ -208,3 +222,18 @@ because the CDN url expires, and the handle is rendered — so:
   nothing.
 
 Photos and videos people send directly are read at ingest exactly as before.
+
+### Known gaps, recorded and not fixed here
+
+- **A shortcode can look like a key to the egress screen.** The shortcode
+  charset admits `-` and `_`, so a code beginning `sk-`, `pk_`, `api-` and so
+  on with 16 or more characters after it matches `_KEYLIKE` in
+  `nora/agent/egress.py`. The failure is closed, not open: a reply that
+  quotes such a link is refused, and nothing leaks. It costs an answer, rarely.
+- **An XMA whose text fields are all empty still brings its thumbnail.** The
+  bridge's `sharedOf` answers `nil` rather than an empty object when an XMA
+  carries nothing readable, but the preview image is extracted separately
+  (`fromXMAPreview`). Such a message reaches the adapter with media and no
+  `shared`, so its thumbnail is NOT marked on-demand: it renders as a bare
+  `[image]` as if a member had sent a photo, and it is read at ingest. Not
+  seen in the 2026-09-24 capture, where both shares carried an author.
