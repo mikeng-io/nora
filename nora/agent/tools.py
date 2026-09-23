@@ -8287,7 +8287,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
     notes_off = {
         "status": "unavailable",
-        "note": "I can't reach my notes right now. Say so plainly — «there's "
+        "note": "I can't reach my notes right now. Say so plainly: «there's "
                 "nothing written down» and «I couldn't look» are different "
                 "answers.",
     }

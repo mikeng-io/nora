@@ -700,10 +700,10 @@ async def test_every_non_ok_note_status_carries_a_note():
     the result's `note`. Every non-ok path the fakes reach is driven here, so
     one that loses its note goes red.
 
-    Two notes are exempt from the dash check, and each for a reason outside
-    these tools: `notes_off` is shared with `remind` (another batch's tool), and
-    a domain refusal is `nora.domain.notes`' own sentence, which the curator
-    reads too."""
+    One note is exempt from the dash check: a domain refusal is
+    `nora.domain.notes`' own sentence, which the curator reads too.
+    (`notes_off` was exempt while `remind` still shared an unrewritten copy;
+    both are rewritten now and it is checked like the rest.)"""
     store = InMemoryNoteStore()
     await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked.")
     await _seed(store, title="Wedding", body="Grant's")
@@ -747,7 +747,7 @@ async def test_every_non_ok_note_status_carries_a_note():
             stale_tools["note_update"], {"title": "Dinner, 9 Sept", "body": "b"},
         ),
     }
-    exempt = {"unavailable/read_no_store", "refused/create_domain"}
+    exempt = {"refused/create_domain"}
     for case, (call, kwargs) in cases.items():
         out = await call(**kwargs)
         assert out["status"] == case.split("/")[0], (case, out)

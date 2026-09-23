@@ -383,8 +383,9 @@ async def test_every_non_ok_status_carries_a_note():
             _tools(reminders=FakeReminderStore()), {"note": "AI Hackathon dinner plan"},
         ),
     }
-    # `notes_off` is shared with the note tools, which ADR 0015 has not reached.
-    shared = {"unavailable/notes_off"}
+    # `notes_off` is shared with the note tools; both are rewritten now, so
+    # nothing is exempt.
+    shared: set[str] = set()
     for case, (tools, kwargs) in cases.items():
         result = await tools["remind"](**{"when": SOON, "text": "洗衫", **kwargs})
         assert result["status"] == case.split("/")[0], (case, result)
