@@ -1,7 +1,14 @@
 {
   "type": "fix",
-  "summary": "A second edit of the same Signal message is now recognised instead of being ignored.",
+  "summary": "Message edits are handled correctly across all four networks after an audit of each one.",
   "details": [
-    "Signal can address a follow-up edit by the previous edit's timestamp; Nora now matches either the original message or any of its earlier edits."
+    "WhatsApp edits made from a phone now reach Nora; the bridge used to drop them silently.",
+    "On Signal, a second edit of the same message, a reply to an edited message, and an edit that only changes who is mentioned are all recognised.",
+    "An edit made from a device whose clock is slightly behind, or two edits within the same second, no longer lose the newer text.",
+    "Editing a caption keeps the attachment Nora already holds instead of downloading it again.",
+    "On Discord, an edit made while its message is still being processed is no longer lost."
+  ],
+  "limitations": [
+    "Instagram edits do not say who is mentioned, so adding @Nora by editing an Instagram message does not open a turn."
   ]
 }

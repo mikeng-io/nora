@@ -531,3 +531,29 @@ async def test_an_edit_does_not_count_toward_the_standing_fold(monkeypatch):
     await pipe.run(message=_msg("dinner at 7"))
     await pipe.run(message=_edit("dinner at 8"))
     assert calls == ["dinner at 7"]
+
+
+async def test_an_edited_caption_keeps_the_attachment_handle_without_refetching():
+    """No network lets an edit ADD media, so an edit with as many attachments
+    as the original holds gets the original's handles back — nothing is
+    downloaded. Re-running custody (the first draft) re-fetched on every
+    update, and a failed re-fetch left `[image]` where the record said
+    `[image a3f2c1]`: compared as a change, and the handle vanished."""
+    from nora.domain.media import MediaBlob, MediaRef, label_for, render_placeholder
+
+    ref = MediaRef(platform_id="att1", media_type="image/png")
+    blob = MediaBlob(sha256="a3f2c1" + "0" * 58, media_type="image/png", size=10)
+    held = f"look {render_placeholder(label_for(ref), blob.handle)}"
+    store = FakeRecordStore()
+    await store.append(
+        message=dataclasses.replace(_msg(held), media=(ref,), media_blobs=(blob,)),
+        person_id="miles",
+    )
+    edit = dataclasses.replace(
+        _edit(f"look here {render_placeholder(label_for(ref))}"), media=(ref,),
+    )
+    # No media sources wired: custody, had it run, could only leave a bare
+    # placeholder — so a handle in the fold proves it was carried, not fetched.
+    await _pipeline(store).run(message=edit)
+    rows = await store.recent(conversation_id="g1", limit=5)
+    assert rows[0].body == f"look here {render_placeholder(label_for(ref), blob.handle)}"
