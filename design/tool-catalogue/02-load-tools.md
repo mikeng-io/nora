@@ -7,7 +7,7 @@ what format?*
 
 ```
 load_tools(names: list[str])  # max 4 names per call
-    -> {status, tools: [...], unknown: [...], refused: [...]}
+    -> {status, loaded: [...], already_loaded: [...], unknown: [...], refused: [...]}
 ```
 
 **`names` is capped at 4 per call.** `budget: 3` caps *calls*, not *tokens* —
@@ -17,8 +17,11 @@ undoes the whole change in a single line. Names past the cap come back in
 and usable. 4 covers p90 (2 cold tools) with headroom; max observed is 7,
 which is two calls.
 
-Takes names from the catalogue, returns their full schemas into the turn.
-Nora then calls the tool in the normal way.
+Takes names from the catalogue and registers those tools on the running agent;
+the **next** model call carries their schemas natively (§"The mechanism").
+Nora then calls the tool in the normal way. The result reports names, never
+schemas — a schema in the result body would be paid twice, once there and once
+in the `tools` array.
 
 It is a **fetch**, not a search. At 54 tools a resident index beats retrieval
 on every axis that matters here: it cannot miss, it needs no embedding store
@@ -71,7 +74,8 @@ each is stated rather than inherited:
 | `time_shiftable` | `None` | no time dimension. |
 | `read_only` | `True` | it reads the registry. It must be in the Dreamer's ceiling or the Dreamer cannot reach its own deferred tools. |
 | `source_tier` | `None` | not a fact source — it is registry plumbing, and it must stay out of the sourcing nudge. |
-| `plugin` | `False` | built and described by this registry. |
+| `plugin` | `False` | built by `build_tool_specs` like every other tool, closed over a per-turn `ToolShelf` (`None` → `unavailable`, the codebase's usual unwired shape). |
+| `output_contract` | unset | a `three_state` read-only tool counts as a LOOKUP for R-97 (`lookup_tools()`), and «did I load a schema» is not «did this turn come back with something». |
 
 **`budget` interacts with `tool_calls`.** Per the existing measurement, a
 per-tool budget is inert under a shared pass ceiling — `max_memory_calls`
@@ -85,15 +89,23 @@ real tool call. `04-code-surface.md` §5.
 ```json
 {
   "status": "ok",
-  "tools":   [ {"name": "find_parking", "description": "...", "inputSchema": {...}} ],
+  "loaded": ["find_parking"],
+  "already_loaded": [],
   "unknown": [],
   "refused": []
 }
 ```
 
+*Corrected 2026-09-23 while building phase B:* the draft shape returned each
+tool's `description`/`inputSchema` in `tools`. That belonged to the abandoned
+schemas-as-text mechanism; under `register_dynamic_tool` it would pay every
+fetched schema twice.
+
 Three statuses, R-27's shape:
 
-- **`ok`** — every name resolved; `tools` carries their schemas.
+- **`ok`** — at least one name is usable: in `loaded`, or `already_loaded`
+  (resident, or loaded earlier this turn — `register_dynamic_tool` raises on a
+  duplicate, so this is checked first and is not an error).
 - **`nothing_found`** — no name resolved. `unknown` lists them. The catalogue
   is in front of her, so this means she invented a name or mistyped one; the
   correct next act is to re-read the catalogue, not to retry the same string.
@@ -136,14 +148,19 @@ measurement shows this happening, the marker is the thing to fix.
 `tool_calls` ceiling), cold tools per turn are median 1 / p90 2, and
 re-fetching would spend a round trip to save ~407 tokens.
 
-**The registry must be per-turn, not shared.** `ToolRegistry` in this repo is
-constructed per turn by `build()`, and that must stay true: a process-wide
-registry accumulating `dynamic_tools` would leak tool availability between
-concurrent turns in different rooms, and — worse — would silently re-grow the
-resident set back toward 22,130 over the process's lifetime while every
-per-call measurement kept looking fine. `04` §4 makes the per-turn lifetime
-explicit and `05` §3 watches resident size as a gauge so the regrowth mode
-cannot hide.
+**The registry that holds `dynamic_tools` must be per-turn, not shared.**
+*Corrected 2026-09-23:* an earlier version of this paragraph said Nora's
+`ToolRegistry` "is constructed per turn by `build()`". It is not — its own
+docstring says it is built **once per process** by the composition root, and
+it holds process-lifetime collaborators (the transit catalogue, the vision
+cache). The object that must be per-turn is the **Strands agent's**
+`tool_registry`, which is where `dynamic_tools` lives — and it is: every loop
+builds a fresh `Agent` per turn (`factory.create_agent` takes that turn's
+`pre_fill`; `create_dream_agent` is built per run). The shelf `load_tools`
+loads from is also per-turn by construction — `ToolRegistry.surface()` creates
+it. A shared registry would leak tool availability between concurrent rooms
+and silently regrow the resident set toward 22,130 while every per-call
+number kept looking fine; `05` §3 still watches resident size as a gauge.
 
 Across turns nothing persists: each turn builds its own prompt and its own
 registry.
@@ -204,3 +221,42 @@ measures it instead of asserting it.
 OmniRoute's Chat Completions path drops reasoning on multi-turn (#325, open).
 `load_tools` adds a turn on cold paths. If post-change measurements show
 sample loss rather than quality loss, suspect #325 first.
+
+## One builder for every loop — `ToolRegistry.surface()` (phase B, built)
+
+Operator direction, 2026-09-23: the tag path, participation, proactive act,
+reminders and every Dreamer adaptor use **the same** builder — not one each.
+
+Before phase B, «which tools does this occasion see» was decided in three
+places: the Discord-only music cut and the Dreamer-only `search_memory_workspace`
+gate (#350) inside `build_tool_specs`, the MCP allowlist inside `build()`, and
+a name filter `RegistryToolSource` ran over `build()`'s output. Now:
+
+| object | module | what it is |
+|---|---|---|
+| `ToolScope` | `nora/agent/surface.py` | value object — which tools an occasion may see: platform, whether the Dreamer built it, an optional `grant` ceiling |
+| `ToolShelf` | `nora/agent/surface.py` | per-turn holder of the deferred tools `load_tools` fetches from |
+| `ToolSurface` | `nora/agent/surface.py` | the result: `tools` for `Agent(tools=)`, `resident`, `shelf`, `admitted`, and a lazily rendered `catalogue` |
+| `ToolRegistry.surface()` | `nora/agent/registry.py` | the one builder; `build()` is `surface(...).tools` |
+
+| loop | call site | scope |
+|---|---|---|
+| tag / engagement | `nora/engagement/pipeline.py` | the room's platform; `allowed_mcp` |
+| participation, proactive act, reminders | `nora/app/fire.py` (`FirePath`) | the room's platform |
+| every Dreamer adaptor | `nora/agent/dreamer.py` (`RegistryToolSource`) | `grant` = the adaptor's tools ∩ (read-only ∪ granted acts); `dreamer=True` |
+| relevance gate | — | holds no tools. `capability_digest()` shares the line renderer; still **off** (see below) |
+
+**Invariant:** the catalogue, the resident set and the shelf are all derived
+from ONE admitted set. The catalogue cannot name a tool the turn cannot load
+— which a catalogue rendered from the declared table would, in every Signal
+room, for the six music verbs.
+
+**The relevance gate stays off.** Handing the gate this surface (#144) was
+measured on the 40-case suite and reversed on 2026-09-10: false NO_GO 3 → 5, no
+capability improved, +707 tokens per quiet window. It shares the renderer so
+there is one source; switching it on needs that suite re-run first.
+
+Phase B ships **inert**: every caller passes `defer=False`, so every turn is
+handed exactly the tools it was before and `load_tools` is never in the
+array. `tests/unit/test_tool_surface.py` pins that, and drives a real Strands
+loop to show a shelved tool absent on call 1, offered on call 2, dispatched.
