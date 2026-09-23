@@ -85,7 +85,38 @@ says how. The sandbox seeds `turn_verdict` as of each case's instant, so on
 master the verdict-triggered re-derivation happens where it happened in
 production.
 
+## 5. Measured, 2026-09-24
+
+Both arms on master `f5a1bb97` (the master arm has the harness applied),
+`--sample 3`, 13 anchored cases. Arms proven to differ first: the master
+input renders twice (fold + verdict), `<reasoning>`, `at="04:06"` and no
+`written`; the branch input renders once, `<steps>`,
+`at="2026-09-06 04:06"` and `written=`.
+
+| kind | master | branch |
+|---|---|---|
+| carry (4) | 6/12, 1 error (judge 504) | **12/12** |
+| stale (4) | 1/12 | **8/12** |
+| recap control (2) | 6/6 | 6/6 |
+| residue (3) | 0/9 | **0/9** |
+
+**Claims 1 and 2 hold on this corpus. Claim 3 does not.** Master failed
+carry exactly where production re-derived: the two rooms whose priors were
+blanked by the verdict and by the ceiling. On the branch, the fold keeps
+them. Stale clauses are re-affirmed on 11 of 12 master draws and 4 of 12
+branch draws.
+
+Residue is 0/9 on both arms, although `--print-input` shows the tool results
+reaching the fold whole. Two of the three residue cases ask it to carry page
+detail nobody in the room could use, which the objective's own «still useful
+to someone here» excludes. The third, a valid case, fails on both arms. One
+added objective sentence («a finding passes the recap test by construction»)
+was measured on a second branch run and moved nothing (residue 0/9, stale
+9/12), so it was reverted. Tracked in #445: read the written positions
+before touching the instruction again. Is the 1200-character cap evicting
+the finding, or does the working set need its own field?
+
 ## Status / Checkpoint
 
-2026-09-24: written. The corpus and the unit tests are built on this branch.
-Numbers go here when the suite has run.
+2026-09-24: written, built and measured (§5). Claims 1 and 2 hold; claim 3
+is open in #445.

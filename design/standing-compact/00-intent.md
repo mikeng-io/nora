@@ -132,3 +132,6 @@ What would falsify each is in [20-verification](20-verification.md).
 ## Status / Checkpoint
 
 2026-09-24: accepted by the operator the same day the read-back was presented.
+Measured the same day (20-verification §5): claims 1 and 2 hold (carry 6/12
+→ 12/12, stale 1/12 → 8/12, recap unchanged at 6/6); claim 3 does not yet
+hold (residue 0/9 on both arms), and #445 tracks it.
