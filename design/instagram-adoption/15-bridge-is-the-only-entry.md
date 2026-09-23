@@ -108,8 +108,8 @@ Two different questions, answered in two different places:
 
   > **Reason corrected 2026-09-24 (P11 PR).** This line first said the
   > reason was that only a story read is visible to the person read. That was
-  > never measured; a 2026-09-21 probe found `FetchReel` does not mark a
-  > story seen (not re-measured since). The rule stands for a different
+  > never measured: whether the author sees the view is unmeasured (design
+  > 04, 05 §Reading a story). The rule stands for a different
   > reason: Nora does not read the stories of people the operator has not
   > listed, as a privacy choice (`18` §"A story is opened only when a person
   > asks").

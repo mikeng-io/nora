@@ -329,3 +329,42 @@ async def test_a_moved_row_is_counted_as_unavailable_not_as_a_miss():
     assert metrics.get(
         "nora_tool_calls_total", tool="social_fetch", status="nothing_found",
     ) == 0
+
+
+
+@pytest.mark.parametrize(
+    "platform", ["instagram", "Instagram", " INSTAGRAM ", "ig", "IG", "insta", " Insta"],
+)
+async def test_every_instagram_name_is_redirected_to_both_instagram_tools(platform):
+    """`platform` is normalized once (`.strip().lower()`), and every name a
+    model reaches for when it means Instagram gets the redirect. Before the
+    normalization, `ig` fell through to «I can only read X», which reads as
+    «Instagram can't be read at all»."""
+    fake = _FakeSocialProvider()
+    tools = _tools(social=fake)
+    out = await tools["social_fetch"](platform=platform, what="search", target="hk hiking")
+    assert out["status"] == "unavailable"
+    assert "instagram_read" in out["note"] and "instagram_search" in out["note"]
+    assert fake.read_calls == []
+
+
+@pytest.mark.parametrize("platform", ["x", "X", " x ", "twitter", "Twitter"])
+async def test_every_x_name_is_read_as_x_and_sent_as_x(platform):
+    """The positive half: X under any casing or padding is served, and the
+    backend is handed the canonical `x`, never the model's spelling."""
+    fake = _FakeSocialProvider()
+    tools = _tools(social=fake)
+    out = await tools["social_fetch"](platform=platform, what="profile", target="nasa")
+    assert out["status"] == "ok"
+    assert fake.read_calls == [
+        {"platform": "x", "what": "profile", "target": "nasa", "limit": 5}
+    ]
+
+
+async def test_an_unknown_platform_names_both_instagram_tools():
+    fake = _FakeSocialProvider()
+    tools = _tools(social=fake)
+    out = await tools["social_fetch"](platform="tiktok", what="profile", target="nasa")
+    assert out["status"] == "nothing_found"
+    assert "instagram_read" in out["note"] and "instagram_search" in out["note"]
+    assert fake.read_calls == []

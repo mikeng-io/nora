@@ -211,11 +211,24 @@ follow-up read can name one; it never reads anyone's content itself.
 >   the ceiling); a bad query is `unavailable` and nothing is sent. The
 >   egress screen `social_fetch` applies to its target also runs here: a
 >   phone number, an id or a raw coordinate is `refused` and never sent.
-> - **Allowed in every turn, background ones included.** A search is
->   invisible to the accounts it finds, so unlike a story it is not held to
->   a turn a person asked for, and it is in `UNIT_SAFE_TOOLS` (no room state
->   in the answer). `cacheable=True`, like `web_search`: it carries no roster
->   or Tier 0 decision.
+> - **Not held to a turn a person asked for.** No rule restricts it the
+>   way the story rule does. It is in `UNIT_SAFE_TOOLS` because its answer
+>   carries no room state (no name resolved against a roster), the same
+>   shape as `web_search`. `cacheable=True`, like `web_search`: it carries
+>   no roster or Tier 0 decision.
+> - **OPEN operator decision: may Nora look people up unprompted in fire
+>   and Dreamer turns?** Being unit-safe makes the tool grantable to a
+>   Dreamer adaptor; it does not grant it. **No Dreamer adaptor declares
+>   `instagram_search` today** (proactive and culture list their tools, and
+>   neither names it). A FIRE turn (reminder, proactive, participation) is
+>   built with the whole tool surface, so it carries the tool now, with no
+>   rule against using it. Whether Nora may search Instagram for people in a
+>   turn nobody asked for is the operator's call. It is recorded here so the
+>   current state reads as undecided rather than as a default somebody
+>   chose; a story-style turn rule in the tool is the one-line answer if the
+>   decision is no. The first draft of this PR argued "a
+>   search is not seen by the account it finds" as the permission; that is
+>   a fact about Instagram, not an answer to the privacy question.
 > - **Router.** `(instagram, search)` joined `EXCEPTION_ROUTES` with a
 >   `named` input: the query reaches the bridge as typed and the person index
 >   is never consulted, so wiring the search row needs no index.
@@ -249,12 +262,11 @@ the tool is. Pinned by
 the operator decides otherwise.**
 
 > **Reason corrected 2026-09-24 (P11 PR).** This section first justified the
-> rule by saying a story view is visible to its author. That was not
-> measured, and the one measurement points the other way: a 2026-09-21
-> probe found `FetchReel` does not mark a story seen (`seen` unchanged
-> across two reads 20 s apart); not re-measured since. `05` §"Reading a
-> story and the viewer list" records why `seen` may not be the author's
-> viewer list at all, so visibility stays an open question. The rule and its
+> rule by saying a story view is visible to its author. That was never
+> measured: whether the author sees the view is unmeasured (design 04, 05
+> §Reading a story). The `seen` watermark that did not move across two
+> reads on 2026-09-21 is withdrawn evidence: it tracks the account
+> holder's own viewing, so it cannot see this property. The rule and its
 > code are unchanged; only the reason is: privacy, not visibility. The
 > `refused` note no longer tells the model the author can see the view.
 
@@ -391,7 +403,8 @@ Each item is an existing test that goes red, applied to both tools:
   > one-line change and a separate decision.
   > **`instagram_search` IS unit-safe (P11, 2026-09-24)**: it takes free
   > text, resolves no name against a roster and runs no Tier 0 check, so
-  > nothing in its answer is room state.
+  > nothing in its answer is room state. No adaptor declares it; whether one
+  > may is open (§`instagram_search`).
 - **Not in `HOT_TOOLS`**: that set is measured, not hand-picked.
 - No `ToolScope` change: they read Instagram from any room.
 
@@ -471,8 +484,11 @@ not exist:
 > `route_instagram_search_find_person` ("find <name>'s Instagram"),
 > `route_instagram_search_handle` ("what's <name>'s IG handle") and
 > `route_social_fetch_x_search` (an X search stays on `social_fetch`). The
-> X link row also names `instagram_search` as a tool it must not call. Not
-> yet run.
+> X link row also names `instagram_search` as a tool it must not call.
+> `route_instagram_read_find_member` pins the boundary as a pair: "find
+> Miles's Instagram", about a member of room A, expects `instagram_read` (a
+> read by name), while the same request about a synthetic name in no room
+> expects `instagram_search`. Not yet run.
 
 | Message | Must call | Must not call |
 |---|---|---|

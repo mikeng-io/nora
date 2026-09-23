@@ -386,9 +386,9 @@ async def test_a_person_known_elsewhere_but_not_in_this_room_is_nothing_found(wo
     ids=["fire_turn", "dreamer"],
 )
 async def test_a_story_is_never_opened_in_a_turn_nobody_asked_for(world, turn):
-    """Nora does not read people's stories unprompted (a privacy choice; a
-    2026-09-21 probe found `FetchReel` does not mark a story seen, not
-    re-measured since), so a background pass (a reminder or proactive fire
+    """Nora does not read people's stories unprompted (a privacy choice;
+    whether the author sees the view is unmeasured, design 04, 05 §Reading a
+    story), so a background pass (a reminder or proactive fire
     turn, a Dreamer run with a home room) must never open one. `refused`
     before anything is resolved or sent (design/instagram-adoption/18,
     2026-09-24).

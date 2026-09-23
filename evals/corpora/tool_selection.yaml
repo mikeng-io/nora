@@ -215,6 +215,19 @@ cases:
     metadata: {tools: [instagram_search], not_tools: [social_fetch, web_search]}
     snapshot: *room_a
 
+  # The boundary with the row above, pinned as a pair: the same request about
+  # someone who IS in the room is a read of that person's profile by name,
+  # not a search. `Miles` is the one name this corpus already uses for a
+  # member of room A (`route_where_is_now`); every other name here is
+  # synthetic and in no room.
+  - name: route_instagram_read_find_member
+    entry: tag
+    expect: reply
+    mention: true
+    input: 幫我搵下Miles個Instagram
+    metadata: {tools: [instagram_read], not_tools: [instagram_search, social_fetch]}
+    snapshot: *room_a
+
   - name: route_instagram_search_handle
     entry: tag
     expect: reply

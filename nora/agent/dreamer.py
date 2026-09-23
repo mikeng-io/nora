@@ -580,9 +580,10 @@ UNIT_SAFE_TOOLS: frozenset[str] = frozenset({
     "social_fetch",
     # `instagram_search` (design/instagram-adoption/18, P11): free text in,
     # Instagram accounts out, with no name resolved against a roster and no
-    # Tier 0 check, so no room state in the answer. A search is invisible to
-    # the accounts it finds, which is why it may run in a background turn at
-    # all (unlike a story read; `instagram_read` is room-scoped).
+    # Tier 0 check, so no room state in the answer: the same shape as
+    # `web_search`. Being here makes it grantable, not granted: no adaptor
+    # declares it today, and whether Nora may look people up unprompted in a
+    # Dreamer or fire turn is an open operator decision (18, 2026-09-24).
     "instagram_search",
     # Nora's OWN generated-image library — reads her library across every
     # conversation (the store records platform/conversation as provenance,

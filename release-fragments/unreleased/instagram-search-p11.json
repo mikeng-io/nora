@@ -4,9 +4,9 @@
   "details": [
     "She gets back up to 5 accounts in Instagram's own order, each with its handle, its display name and whether it is verified. Instagram's first result is not always the person you mean, and she is told so, so she says which account looks like a match and why, or lists them.",
     "If nothing matches she says she couldn't find one rather than guessing a handle. If the bridge cannot search right now (the session needs attention, Instagram refused, or it is reconnecting) she says she couldn't check, never that nobody matched.",
-    "A search is not seen by the accounts it finds, so it also works in reminders, proactive messages and background passes. A phone number, an ID or a raw coordinate is never sent as a search.",
+    "Whether she may look people up on Instagram unprompted (in a reminder, a proactive message or a background pass) is still an open decision. No background pass is given the tool today; reminder and proactive turns carry it like every other tool. A phone number, an ID or a raw coordinate is never sent as a search.",
     "The general social reader is now X only. Asked there for anything on Instagram, it points to the two Instagram tools instead of answering.",
-    "Correction: the Instagram story rule (stories are opened only for people the operator listed, and only when someone asks) stands, but its reason is privacy. The earlier note said the person would see Nora in their viewer list; that was never measured, and a probe on 2026-09-21 found reading a story did not mark it seen."
+    "Correction: the Instagram story rule (stories are opened only for people the operator listed, and only when someone asks) stands, but its reason is privacy. The earlier note said the person would see Nora in their viewer list; whether the author sees the view is unmeasured."
   ],
   "limitations": [
     "A search needs a short name or handle: at most 64 bytes, which is 21 characters for a name written in Chinese.",

@@ -86,7 +86,7 @@
   {
     "name": "social_fetch's Instagram redirect is removed",
     "file": "nora/agent/tools.py",
-    "old": "if platform.strip().lower() == \"instagram\":",
+    "old": "if platform == \"instagram\":",
     "new": "if False:",
     "target": "tests/test_social_fetch_tool.py::test_every_instagram_request_is_redirected_and_never_sent"
   },
@@ -96,5 +96,40 @@
     "old": "    (\"instagram\", \"search\"),\n})",
     "new": "})",
     "target": "tests/unit/test_social_router.py::test_x_goes_to_the_default_and_instagram_search_to_the_bridge"
+  },
+  {
+    "name": "the badge goes back after the display name (the forgeable order)",
+    "file": "nora/infra/social/instagram_client.py",
+    "old": "        line = f\"{number}. @{row['username']}, {badge}\"\n        if name is not None:\n            line += f\", name: {name}\"\n",
+    "new": "        line = f\"{number}. @{row['username']}\"\n        if name is not None:\n            line += f\" ({name})\"\n        if row[\"is_verified\"]:\n            line += \", verified\"\n",
+    "target": "tests/unit/test_instagram_search_tool.py::test_a_display_name_cannot_forge_the_verified_badge"
+  },
+  {
+    "name": "social_fetch drops the platform normalization",
+    "file": "nora/agent/tools.py",
+    "old": "platform.strip().lower() if isinstance(platform, str) else \"\", \"\",",
+    "new": "platform if isinstance(platform, str) else \"\", \"\",",
+    "target": "tests/test_social_fetch_tool.py::test_every_instagram_name_is_redirected_to_both_instagram_tools"
+  },
+  {
+    "name": "social_fetch drops the normalization (the X half)",
+    "file": "nora/agent/tools.py",
+    "old": "platform.strip().lower() if isinstance(platform, str) else \"\", \"\",",
+    "new": "platform if isinstance(platform, str) else \"\", \"\",",
+    "target": "tests/test_social_fetch_tool.py::test_every_x_name_is_read_as_x_and_sent_as_x"
+  },
+  {
+    "name": "a dash comes back into a shared note",
+    "file": "nora/infra/social/results.py",
+    "old": "\"note\": \"I couldn't read that just now. Say so. Don't answer as if \"",
+    "new": "\"note\": \"I couldn't read that just now. Say so \\u2014 don't answer as if \"",
+    "target": "tests/unit/test_social_tool_notes.py"
+  },
+  {
+    "name": "a dash comes back into a social_fetch note",
+    "file": "nora/agent/tools.py",
+    "old": "\"note\": \"That isn't something I can read. I can read a post, \"",
+    "new": "\"note\": \"That isn't something I can read \\u2014 I can read a post, \"",
+    "target": "tests/unit/test_social_tool_notes.py"
   }
 ]

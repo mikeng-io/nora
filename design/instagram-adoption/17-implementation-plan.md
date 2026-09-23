@@ -236,6 +236,15 @@ answers any Instagram request `unavailable`, naming `instagram_read` and
 detail. Still open for this PR's "done": the deploy (an image rebuild of
 `nora`), the routing eval run, and the live Jaeger read-back.
 
+**Deploy step for P11 (2026-09-24): restart the host social bridge.** After
+the `nora` image is rebuilt and recreated, run
+`systemctl --user restart nora-social-bridge` on norty. The OpenCLI bridge
+is not in the image: it is a systemd user service running the host
+checkout's code, so it keeps the old `READ_ONLY_ALLOWLIST` (with its
+`instagram/search` row) until it is restarted. Until then nothing in Nora
+sends it an Instagram request, but the host would still spawn one for
+anything that asked.
+
 ## P12: One post from a link
 
 Probe first: `FetchMedia` on a real feed post, not the story id that returned

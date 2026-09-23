@@ -77,10 +77,9 @@ a duplicated authorization rule is one that diverges.
   Only `instagram/story` has a reach check: the person must be Tier 0,
   listed in a group room Nora is in on any network. That is a privacy
   choice, not a claim about Instagram: Nora does not read people's stories
-  unprompted or beyond the people the operator listed (a 2026-09-21 probe
-  found `FetchReel` does not mark a story seen; not re-measured since, and
-  design/instagram-adoption/05 records why `seen` may not be the author's
-  viewer list). A profile, and an account search, need resolution alone.
+  unprompted or beyond the people the operator listed; whether the
+  author sees the view is unmeasured (design/instagram-adoption/04, 05
+  §Reading a story). A profile, and an account search, need resolution alone.
 
 Writing both as tables rather than as an `if what == "story"` is the point:
 the absence of a check is spelled, dated and tested, so the next row added has
@@ -150,8 +149,8 @@ SUBJECT_INPUTS: frozenset[tuple[str, str, str]] = frozenset({
 #: AUTHORIZATION, keyed on the READ alone: the reads with a Tier 0 reach check.
 #: Only a story (15 §"Resolution is not authorization"), as a privacy choice:
 #: Nora does not open the stories of people the operator has not listed. It
-#: is not a claim that the author sees the view (a 2026-09-21 probe found
-#: `FetchReel` does not mark a story seen; not re-measured since). Tier 0 is a
+#: is not a claim that the author sees the view: whether the author sees
+#: the view is unmeasured (design 04, 05 §Reading a story). Tier 0 is a
 #: property of the PERSON (listed in a group room on any network, never a `*`
 #: room, never a DM), answered by `SocialSubjectIndex.is_tier_zero` and by
 #: nothing else.

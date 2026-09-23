@@ -815,11 +815,9 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # closed vocabulary and the client that only ever issues GET.
     # `time_shiftable=False`: a story is what is up RIGHT NOW and a profile's
     # counts drift, so the answer describes this instant and decays.
-    # `side_effect_state="none"` is written with a caveat: whether a STORY
-    # view reaches its author's viewer list is not settled (a 2026-09-21
-    # probe found `FetchReel` does not mark a story seen; not re-measured
-    # since, and design/instagram-adoption/05 says why `seen` may be the
-    # wrong instrument). ADR 0008 §1 binds `read_only=True` to `none`
+    # `side_effect_state="none"` is written with a caveat: whether the
+    # author sees a STORY view is unmeasured (design/instagram-adoption/04,
+    # 05 §Reading a story). ADR 0008 §1 binds `read_only=True` to `none`
     # (`test_a_read_only_tool_never_declares_a_side_effect`), and `unknown`
     # would make this an act verb, out of the Relevance Gate's digest, R-97's
     # lookup set and the Dreamer's ceiling for the profile read too. What
@@ -840,8 +838,9 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `GET /accounts?query=`. Budget 2: one search, and one refinement when
     # the first list does not hold the person. `read_only=True` is the third
     # R-86 layer, beside the one-row vocabulary and the client's GET.
-    # A search is invisible to the accounts it finds, so it has no reach
-    # check and runs in background turns too, like a profile read.
+    # No reach check (it reads nobody's content) and no turn rule: the tool
+    # itself does not refuse a background turn. Whether it should is an open
+    # operator decision (18).
     # `time_shiftable=False`: Instagram's ranking and the accounts it finds
     # change, so the answer describes this instant. `cacheable=True`: it
     # carries no room decision (no name resolved against a roster, no Tier 0
@@ -2329,8 +2328,8 @@ _FETCH_OFF: Mapping[str, object] = {
 # wired), so this is the ordinary state, not a failure.
 _SOCIAL_OFF: Mapping[str, object] = {
     "status": "unavailable",
-    "note": "I can't read X right now. Say you couldn't check — "
-            "don't answer as if you had.",
+    "note": "I can't read X right now. Say you couldn't check. "
+            "Don't answer as if you had.",
 }
 # The same for `instagram_read` (design/instagram-adoption/18) when no social
 # router is composed at all: a CONFIGURATION state, so a stable sentence that
@@ -2345,8 +2344,8 @@ _INSTAGRAM_OFF: Mapping[str, object] = {
 # failure of this call, not configuration.
 _INSTAGRAM_FAILED: Mapping[str, object] = {
     "status": "unavailable",
-    "note": "I couldn't read Instagram just now. Say you couldn't check — "
-            "don't answer as if you had.",
+    "note": "I couldn't read Instagram just now. Say you couldn't check. "
+            "Don't answer as if you had.",
 }
 # `social_fetch`'s closed vocabularies (DEC-151). Layer ONE of the read-only
 # boundary: the tool only ever constructs these (platform, what) pairs — there
@@ -2363,6 +2362,18 @@ _INSTAGRAM_FAILED: Mapping[str, object] = {
 # `search` left with P11 (`instagram_search`). A request naming Instagram is
 # answered `unavailable` with a note naming those two tools, never sent.
 _SOCIAL_PLATFORMS = frozenset({"x"})
+# What `social_fetch` accepts for `platform`, after `.strip().lower()`, and
+# the ONE value each means. `twitter` is X's old name. The Instagram names
+# all mean "the redirect", and anything unlisted is "" (not a platform).
+_SOCIAL_PLATFORM_ALIASES: Mapping[str, str] = MappingProxyType({
+    "x": "x", "twitter": "x",
+    "instagram": "instagram", "ig": "instagram", "insta": "instagram",
+})
+# The note for any Instagram request `social_fetch` receives.
+_SOCIAL_INSTAGRAM_MOVED = (
+    "Instagram is read with instagram_read (a person's profile or story, by "
+    "their name) or instagram_search (find an account), not with this tool."
+)
 _SOCIAL_WHATS = frozenset({"post", "profile", "posts", "search"})
 # `instagram_read`'s closed vocabulary (design/instagram-adoption/18). Layer
 # ONE of R-86 for that tool, as `_SOCIAL_WHATS` is for `social_fetch`. A verb
@@ -6622,9 +6633,16 @@ Args:
             return {
                 "status": "unavailable",
                 "note": "Stories are read with instagram_read, by the person's "
-                        "name — not with this tool.",
+                        "name, not with this tool.",
             }
-        if platform.strip().lower() == "instagram":
+        # Normalized ONCE, and everything below reads the normalized value:
+        # `X` and ` x ` are X, and the names a model reaches for when it
+        # means Instagram all get the redirect rather than a «no such
+        # platform» that reads as «Instagram can't be read».
+        platform = _SOCIAL_PLATFORM_ALIASES.get(
+            platform.strip().lower() if isinstance(platform, str) else "", "",
+        )
+        if platform == "instagram":
             # Every Instagram read left this tool (P5, P11). The model reaching
             # here is asking the right question of the wrong tool, so it is
             # told which tools read Instagram now: `unavailable` («not here»),
@@ -6632,26 +6650,22 @@ Args:
             # not there. Nothing is sent: OpenCLI has no Instagram row left
             # to serve it (`test_r86_…`).
             _record(metrics, "social_fetch", "unavailable", reason="moved")
-            return {
-                "status": "unavailable",
-                "note": "Instagram is read with instagram_read (a person's "
-                        "profile or story, by their name) or instagram_search "
-                        "(find an account), not with this tool.",
-            }
+            return {"status": "unavailable", "note": _SOCIAL_INSTAGRAM_MOVED}
         if platform not in _SOCIAL_PLATFORMS:
             # Honest, and the bad value is NOT echoed back (it is the model's
             # own string, and an identifier is unsafe at every exit).
             _record(metrics, "social_fetch", "nothing_found", reason="platform")
             return {
                 "status": "nothing_found",
-                "note": "I can only read X with this, no other platform. "
-                        "Say so plainly.",
+                "note": "I can only read X with this, no other platform. For "
+                        "Instagram use instagram_read (a person's profile or "
+                        "story) or instagram_search (find an account).",
             }
         if what not in _SOCIAL_WHATS:
             _record(metrics, "social_fetch", "nothing_found", reason="what")
             return {
                 "status": "nothing_found",
-                "note": "That isn't something I can read — I can read a post, "
+                "note": "That isn't something I can read. I can read a post, "
                         "a profile, someone's posts, or run a search.",
             }
         # The egress screen (design/14 §2.2), BEFORE anything leaves: an
@@ -6695,7 +6709,7 @@ Args:
                     "status": "nothing_found",
                     "note": "That doesn't look like a username I can look up. "
                             "Ask for the account name (letters, digits, dots, "
-                            "underscores — no @).",
+                            "underscores, no @).",
                 }
             target = target.strip()
         elif not target.strip() or len(target) > _SOCIAL_QUERY_MAX_CHARS:
@@ -6783,9 +6797,9 @@ Args:
             }
         if what == "story" and (fire_turn or dream_adaptor):
             # Nora does not read people's stories unprompted: a privacy
-            # choice, not a claim about what Instagram shows the author (a
-            # 2026-09-21 probe found `FetchReel` does not mark a story seen;
-            # not re-measured since). So a story is opened only in a turn that
+            # choice, not a claim about what Instagram shows the author
+            # (whether the author sees the view is unmeasured, design 04, 05
+            # §Reading a story). So a story is opened only in a turn that
             # answers a PERSON (a tag or a reply), never in one nobody asked
             # for: a fire turn (a reminder, a proactive or participation turn)
             # or a Dreamer pass. Both carry their provenance into this closure
@@ -6806,7 +6820,7 @@ Args:
             return {
                 "status": "unavailable",
                 "note": "I can't work out who that is right now. Say you can't "
-                        "check — don't answer as if you had.",
+                        "check. Don't answer as if you had.",
             }
         matches = view.find(person)
         if not matches:
@@ -6827,7 +6841,7 @@ Args:
             return {
                 "status": "nothing_found", **_asked_about(person),
                 "note": "Nobody in this conversation goes by that. Say you're "
-                        "not sure who they mean — do not guess an account.",
+                        "not sure who they mean. Do not guess an account.",
             }
         if len(matches) > 1:
             _record(metrics, "instagram_read", "ambiguous", reason="person")
@@ -6872,11 +6886,14 @@ Args:
     # every account with its display name, wrapped as untrusted and clamped,
     # and no igid or fbid is anywhere in it (R-18).
     #
-    # **Allowed in every turn, background ones included.** A search is
-    # invisible to the accounts it finds (it reads nobody's content, and the
-    # searched account is not told), so unlike a story it needs neither a
-    # person asking nor a Tier 0 check, the same as a profile read. It is in
-    # `UNIT_SAFE_TOOLS` for the same reason: no room state in the answer.
+    # **Not held to a turn a person asked for, today.** Unlike a story read,
+    # no rule restricts it: it reads nobody's content, and it needs no Tier 0
+    # check. It is in `UNIT_SAFE_TOOLS` because its answer carries no room
+    # state (no name resolved against a roster). Whether Nora may look people
+    # up UNPROMPTED in a fire or Dreamer turn is an OPEN operator decision
+    # (design/instagram-adoption/18, 2026-09-24). Today no Dreamer adaptor
+    # declares this tool, but a fire turn (reminder, proactive,
+    # participation) is built with the whole surface and so carries it.
     #
     # What lives HERE is layer one: the query checks the bridge makes
     # (trimmed, non-empty, at most 64 bytes), mirrored so a bad query never
@@ -6908,8 +6925,8 @@ Args:
             _record(metrics, "instagram_search", "unavailable", reason="query")
             return {
                 "status": "unavailable",
-                "note": "I need a short name or handle to search for (at most "
-                        "64 characters). Ask what to search.",
+                "note": "I need a shorter name or handle to search for. Ask "
+                        "what to search.",
             }
         # The egress screen (design/14 §2.2), the same one `social_fetch`
         # applies to its target: a phone number or ID, or a raw coordinate,
@@ -6935,7 +6952,9 @@ Args:
             # those braces, landing on `unavailable`.
             log.exception("instagram_search failed")
             out = dict(_INSTAGRAM_FAILED)
-        # The query is not logged: it is a name typed about a person.
+        # The query is on no log line here: it is a name typed about a
+        # person. It is NOT absent everywhere: tool spans and the ToolCallLog
+        # carry a tool's arguments, this one's like every tool's.
         _record(metrics, "instagram_search", out["status"])
         return out
 

@@ -76,7 +76,7 @@ func TestProfileCarriesTheGateIncludingUnmodelledKeys(t *testing.T) {
 	}
 	if !body.HasStory {
 		t.Error("has_story was false with latest_reel_media set; a caller uses " +
-			"this to SKIP a story fetch, and a story fetch is visible to its author")
+			"this to SKIP a story fetch, and Nora opens a story only when asked")
 	}
 }
 
@@ -320,7 +320,7 @@ func TestStoryNeverBatchesTheRead(t *testing.T) {
 	}
 	if len(f.ReelIDs[0]) != 1 || f.ReelIDs[0][0] != "221731317" {
 		t.Errorf("FetchReel was addressed with %v, want exactly one igid — a "+
-			"batched read is visible to everybody in the batch", f.ReelIDs[0])
+			"batched read opens stories nobody asked about", f.ReelIDs[0])
 	}
 }
 
