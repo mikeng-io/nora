@@ -30,14 +30,83 @@ from nora.domain.bounds import cut, over_fetch
 from nora.domain.media import media_json
 from nora.domain.models import (
     DeliveryStatus,
+    EditedMessage,
+    EditTarget,
     NormalizedMessage,
+    RowEdit,
     TranscriptRow,
     UnattributedRow,
+    mentions_json,
+    parse_mentions_json,
 )
 from nora.infra.sql.migrations_runner import head_revision
-from nora.infra.sql.schema import MESSAGES
+from nora.infra.sql.schema import MESSAGE_EDIT, MESSAGES
 
 DEFAULT_MAX_PER_CONVERSATION = 500
+
+
+def _latest_edit(*, edits_before: int | None = None) -> Any:
+    """The newest `message_edit` of the `messages` row in the enclosing
+    query, as a LATERAL subquery — one backwards seek on
+    `idx_message_edit_message_ts` per row read (design/message-edits/01 §3).
+    `id DESC` breaks a shared millisecond the same way `recent` does.
+
+    `edits_before` is the as-of bound `nora.infra.sql.snapshot` reads at: an
+    edit made after the instant being reconstructed had not happened yet."""
+    stmt = sa.select(
+        MESSAGE_EDIT.c.ts, MESSAGE_EDIT.c.body, MESSAGE_EDIT.c.raw_json,
+        MESSAGE_EDIT.c.mentions_json,
+    ).where(MESSAGE_EDIT.c.message_id == MESSAGES.c.id)
+    if edits_before is not None:
+        stmt = stmt.where(MESSAGE_EDIT.c.ts <= edits_before)
+    return (
+        stmt.order_by(MESSAGE_EDIT.c.ts.desc(), MESSAGE_EDIT.c.id.desc())
+        .limit(1)
+        .lateral("latest_edit")
+    )
+
+
+def transcript_select(*, edits_before: int | None = None) -> Any:
+    """The columns every transcript read returns, with the newest edit
+    folded in. ONE select for `recent`, `since`, `since_including_nora` and
+    the snapshot's as-of read, so the fold cannot reach one and miss another;
+    `transcript_row` is its mapping."""
+    latest = _latest_edit(edits_before=edits_before)
+    return sa.select(
+        MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.sender_name,
+        MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.is_nora,
+        MESSAGES.c.delivery_status, MESSAGES.c.raw_json,
+        MESSAGES.c.quoted_ts, MESSAGES.c.media_json, MESSAGES.c.person_id,
+        latest.c.ts.label("edit_ts"), latest.c.body.label("edit_body"),
+        latest.c.raw_json.label("edit_raw_json"),
+    ).select_from(MESSAGES.outerjoin(latest, sa.true()))
+
+
+def transcript_row(r: Any) -> TranscriptRow:
+    """The column-row -> `TranscriptRow` mapping for every `transcript_select`
+    read — they select the same columns, so the mapping exists once.
+
+    An edited row carries its LATEST body and keeps its own `raw_json`;
+    what it first said and the latest envelope ride on `edit`
+    (design/message-edits/01 §3)."""
+    edited = r.edit_ts is not None
+    return TranscriptRow(
+        id=r.id,
+        sender_id=r.sender_id,
+        sender_name=r.sender_name,
+        ts=r.ts,
+        body=r.edit_body if edited else r.body,
+        is_nora=bool(r.is_nora),
+        delivery_status=DeliveryStatus(r.delivery_status),
+        raw_json=r.raw_json,
+        quoted_ts=r.quoted_ts,
+        media_json=r.media_json,
+        person_id=r.person_id,
+        edit=(
+            RowEdit(ts=r.edit_ts, was=r.body, raw_json=r.edit_raw_json)
+            if edited else None
+        ),
+    )
 
 
 class SqlRecordStore:
@@ -97,6 +166,11 @@ class SqlRecordStore:
             # in which the record says `[image a3f2c1]` while nothing can
             # produce `a3f2c1`.
             media_json=media_json(message.media_blobs),
+            # Same INSERT, both (design/message-edits/01 §2): the handle an
+            # edit names its target by, and the mentions the gate compares an
+            # edit against. "" is the parsers' «no handle» and stores as NULL.
+            platform_message_id=message.message_id or None,
+            mentions_json=mentions_json(message.mentions),
         ).returning(MESSAGES.c.id)
         # `RETURNING id` + `scalar_one`, not `lastrowid`: asyncpg has no
         # `lastrowid` (it is always `None`), so the id the row was assigned is
@@ -118,12 +192,7 @@ class SqlRecordStore:
         if limit <= 0:
             return []
         stmt = (
-            sa.select(
-                MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.sender_name,
-                MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.is_nora,
-                MESSAGES.c.delivery_status, MESSAGES.c.raw_json,
-                MESSAGES.c.quoted_ts, MESSAGES.c.media_json, MESSAGES.c.person_id,
-            )
+            transcript_select()
             .where(MESSAGES.c.conversation_id == conversation_id)
             .order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc())
             # OVER-FETCH BY ONE (`nora.domain.bounds`). This window is what
@@ -183,12 +252,7 @@ class SqlRecordStore:
         if limit <= 0:
             return []
         stmt = (
-            sa.select(
-                MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.sender_name,
-                MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.is_nora,
-                MESSAGES.c.delivery_status, MESSAGES.c.raw_json,
-                MESSAGES.c.quoted_ts, MESSAGES.c.media_json, MESSAGES.c.person_id,
-            )
+            transcript_select()
             .where(
                 MESSAGES.c.conversation_id == conversation_id,
                 MESSAGES.c.id > after_id,
@@ -216,12 +280,7 @@ class SqlRecordStore:
         if limit <= 0:
             return []
         stmt = (
-            sa.select(
-                MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.sender_name,
-                MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.is_nora,
-                MESSAGES.c.delivery_status, MESSAGES.c.raw_json,
-                MESSAGES.c.quoted_ts, MESSAGES.c.media_json, MESSAGES.c.person_id,
-            )
+            transcript_select()
             .where(
                 MESSAGES.c.conversation_id == conversation_id,
                 MESSAGES.c.id > after_id,
@@ -235,21 +294,68 @@ class SqlRecordStore:
 
     @staticmethod
     def _row(r: Any) -> TranscriptRow:
-        """The shared column-row -> `TranscriptRow` mapping for `recent` and
-        `since` — both select the same columns, so the mapping exists once."""
-        return TranscriptRow(
-            id=r.id,
-            sender_id=r.sender_id,
-            sender_name=r.sender_name,
-            ts=r.ts,
-            body=r.body,
-            is_nora=bool(r.is_nora),
-            delivery_status=DeliveryStatus(r.delivery_status),
-            raw_json=r.raw_json,
-            quoted_ts=r.quoted_ts,
-            media_json=r.media_json,
-            person_id=r.person_id,
+        return transcript_row(r)
+
+    async def find_edited(
+        self, *, conversation_id: str, target: EditTarget, sender_id: str,
+    ) -> EditedMessage | None:
+        """See `nora.domain.ports.RecordStore.find_edited`.
+
+        Both lookups are index reads: the handle on
+        `idx_messages_conv_platform_message_id`, Signal's pair on
+        `idx_messages_conv_ts`. A target naming neither answers None without a
+        query. Should two rows match — a platform re-delivering a message, a
+        duplicated millisecond — the EARLIEST wins, `prefill._by_ts`'s rule:
+        an edit changes something that already existed."""
+        if target.message_id:
+            match = MESSAGES.c.platform_message_id == target.message_id
+        elif target.sent_ts is not None and sender_id:
+            match = sa.and_(
+                MESSAGES.c.ts == target.sent_ts, MESSAGES.c.sender_id == sender_id,
+            )
+        else:
+            return None
+        latest = _latest_edit()
+        stmt = (
+            sa.select(
+                MESSAGES.c.id, MESSAGES.c.ts, MESSAGES.c.sender_id,
+                MESSAGES.c.person_id, MESSAGES.c.is_nora, MESSAGES.c.body,
+                MESSAGES.c.mentions_json,
+                latest.c.ts.label("edit_ts"), latest.c.body.label("edit_body"),
+                latest.c.mentions_json.label("edit_mentions_json"),
+            )
+            .select_from(MESSAGES.outerjoin(latest, sa.true()))
+            .where(MESSAGES.c.conversation_id == conversation_id, match)
+            .order_by(MESSAGES.c.id.asc())
+            .limit(1)
         )
+        async with self._engine.connect() as conn:
+            r = (await conn.execute(stmt)).first()
+        if r is None:
+            return None
+        edited = r.edit_ts is not None
+        return EditedMessage(
+            id=r.id, ts=r.ts, sender_id=r.sender_id, person_id=r.person_id,
+            is_nora=bool(r.is_nora),
+            body=r.edit_body if edited else r.body,
+            mentions=parse_mentions_json(
+                r.edit_mentions_json if edited else r.mentions_json
+            ),
+            first_body=r.body,
+        )
+
+    async def append_edit(self, *, message_id: int, message: NormalizedMessage) -> None:
+        """See `nora.domain.ports.RecordStore.append_edit`. One INSERT; the
+        edited row is never touched."""
+        stmt = sa.insert(MESSAGE_EDIT).values(
+            message_id=message_id,
+            ts=message.timestamp,
+            body=message.body,
+            raw_json=json.dumps(message.raw),
+            mentions_json=mentions_json(message.mentions),
+        )
+        async with self._engine.begin() as conn:
+            await conn.execute(stmt)
 
     async def aclose(self) -> None:
         await self._engine.dispose()

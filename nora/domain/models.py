@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -69,6 +70,21 @@ class Quote:
 
 
 @dataclass(frozen=True)
+class EditTarget:
+    """Which recorded message an EDIT changes (design/message-edits/01 §1).
+
+    Two schemes because the platforms have two: WhatsApp, Instagram and
+    Discord name the edited message by their own handle (`message_id`, stored
+    as `messages.platform_message_id`); Signal names it by its author and its
+    original sent-timestamp (`sent_ts`, signal-cli's `targetSentTimestamp`),
+    the same pair it addresses a quote or a reaction by. Exactly one is set.
+    """
+
+    message_id: str = ""
+    sent_ts: int | None = None
+
+
+@dataclass(frozen=True)
 class NormalizedMessage:
     platform: str                  # "signal"
     conversation_id: str           # base64 group id for Signal — platform-neutral key
@@ -119,6 +135,14 @@ class NormalizedMessage:
     # leaves it False. It rides the message so the reply can be routed back
     # out the way it came in — see `ConversationTarget.voice`.
     voice: bool = False
+    # Set when this message is an EDIT of an earlier one; everything else on
+    # the message then describes the NEW version — `body`, `mentions`,
+    # `media`, `raw`, and `timestamp` (when it was edited). `sender_id` is who
+    # the platform says edited it, and is `""` where the platform does not say
+    # (Instagram's edit delta carries no sender). Ingest records it beside the
+    # message it edits rather than as a message of its own
+    # (design/message-edits/02 §4). Every parser leaves it None otherwise.
+    edit_of: EditTarget | None = None
 
     def target(self) -> ConversationTarget:
         return ConversationTarget(
@@ -204,6 +228,78 @@ class TranscriptRow:
     # id, and it is what anything joining across stores keys on (design/20).
     # Defaulted so existing positional construction stays valid.
     person_id: str | None = None
+    # The newest EDIT of this message, or None when it was never edited
+    # (design/message-edits/01 §3). When set, `body` above is the LATEST text
+    # and the row keeps its original `id`, `ts` and `raw_json` — the position
+    # it was said at, and the envelope a reply or a reaction reads the
+    # platform handle from. What it first said and the latest envelope ride
+    # here.
+    edit: RowEdit | None = None
+
+
+@dataclass(frozen=True)
+class RowEdit:
+    """What a transcript row needs to say it was edited.
+
+    `ts` is when it was LAST edited (the platform's clock). `was` is what it
+    FIRST said — `messages.body`, not the previous edit: a reply between two
+    versions answered some earlier one, and the first is the one the room most
+    likely read. `raw_json` is the latest edit's own envelope, which is the one
+    the latest body's @-mention spans index into
+    (`nora.engagement.mentions`).
+    """
+
+    ts: int
+    was: str | None
+    raw_json: str | None = None
+
+
+@dataclass(frozen=True)
+class EditedMessage:
+    """The recorded message an edit targets, as the edit path needs it
+    (`RecordStore.find_edited`, design/message-edits/01 §2).
+
+    `body` and `mentions` are the CURRENT version — its newest edit folded in,
+    or the message itself if it was never edited — because the gate compares
+    an edit against the version it REPLACES. `mentions` is None when that
+    version predates `messages.mentions_json`, which the gate reads as
+    «unknown». `first_body` is what it first said, for Honcho's framing.
+    """
+
+    id: int
+    ts: int
+    sender_id: str
+    person_id: str | None
+    is_nora: bool
+    body: str | None
+    mentions: frozenset[str] | None
+    first_body: str | None
+
+
+def mentions_json(mentions: frozenset[str]) -> str:
+    """`messages.mentions_json` / `message_edit.mentions_json` for one message.
+
+    HERE, beside the type, for `nora.domain.media.media_json`'s reason: the SQL
+    store and `FakeRecordStore` must write the identical string, and they are
+    in layers that cannot reach each other. Sorted, so the same set is the same
+    text. An empty set is `"[]"`, never NULL — NULL is reserved for «stored
+    before the column existed», which the gate treats as unknown.
+    """
+    return json.dumps(sorted(mentions))
+
+
+def parse_mentions_json(text: str | None) -> frozenset[str] | None:
+    """The inverse, total: NULL or anything that is not a JSON list of
+    strings is None («unknown»), never an empty set («mentioned nobody»)."""
+    if text is None:
+        return None
+    try:
+        value = json.loads(text)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        return None
+    return frozenset(value)
 
 
 @dataclass(frozen=True)
