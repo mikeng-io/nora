@@ -9,7 +9,7 @@ description: >
   stale in silence. So self-awareness is generated per turn from the system
   that knows each fact, in three layers: WHO (identity.md, unchanged), WHERE
   (a generated <presence> block from the room table and AdapterHealth, plus
-  three room tools with separate disclosure tiers), WHAT (the tool catalogue,
+  two room tools, room_list and room_read, split where content starts), WHAT (the tool catalogue,
   which already is the capability layer). Social fetching (Instagram and the
   per-network split) is a separate topic and lives in design/instagram-adoption/.
 status: proposed
@@ -41,7 +41,7 @@ scope:
     - "_PLATFORM_NAMES gains WhatsApp and Instagram"
     - "Her own handles (@nora.000 on Signal; @noraexample on WhatsApp, X, Instagram, Threads) as a line in <presence>, read live from each adapter's self report; a config table only for X and Threads (no adapter); never in identity.md, whose not_here forbids addresses"
     - "<presence> is a ContextBlock row in prefill._BLOCKS (key turn) and replaces proactive's home_room row (D2)"
-    - "my_rooms, room_activity, read_room, each with its own disclosure tier; R-27 statuses, no ids (R-18), read_room output untrusted (R-13)"
+    - "room_list (existence + activity, one boundary under D1 = B) and room_read (content), named to ADR 0015; R-27 statuses, no ids (R-18), read_room output untrusted (R-13)"
   not_in_scope:
     - "Editing identity.md. Its not_here rule is kept, not relaxed"
     - "A generated capability block — the tool catalogue is that layer (DEC-150)"
@@ -49,7 +49,7 @@ scope:
     - "Social fetching (social_fetch, its per-network split, Instagram wiring) — design/instagram-adoption/"
     - "Her profile on each network (avatar, display name, bio) — a separate bundle; appearance for drawing herself is design/self-reference/ (DEC-193)"
 operator_decisions:
-  - "D1 unit boundary for <presence>/my_rooms/room_activity/read_room — DECIDED B (2026-09-23): this unit by name, other units by existence only, read_room never crosses a unit"
+  - "D1 unit boundary for <presence>/room_list/room_read — DECIDED B (2026-09-23): this unit by name, other units by existence only, read_room never crosses a unit"
   - "D2 whether <presence> renders on the proactive loop — DECIDED yes (2026-09-23)"
 gates:
   - "Read the assembled prompt back and confirm <presence> is present in the arm before any eval run"

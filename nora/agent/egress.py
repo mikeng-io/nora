@@ -56,6 +56,7 @@ import re
 
 from ..doctrine.loader import Doctrine
 from .markdown import strip_markdown
+from .punctuation import undash
 
 # E.164 as Signal actually presents it: a leading +, country code, 7-14 more
 # digits. Requires the +, so "call me at 12345678" stays sendable while the
@@ -165,8 +166,12 @@ class LeakGuard:
         # not a lookalike, so the two sides cannot drift apart on what a
         # delimiter is. `Deliverer` additionally checks the RAW reply, so a span
         # is caught whichever dialect it was written in.
-        self._haystack = _normalize(strip_markdown(doctrine.doctrine_text))
-        self._raw_haystack = _normalize(doctrine.doctrine_text)
+        # And the SAME punctuation: the model reads the doctrine with its em
+        # dashes turned into commas (`nora.agent.punctuation`), so a verbatim
+        # recital carries the comma and a window across one would miss a
+        # haystack that kept the dash.
+        self._haystack = _normalize(undash(strip_markdown(doctrine.doctrine_text)))
+        self._raw_haystack = _normalize(undash(doctrine.doctrine_text))
 
     def check(self, text: str) -> str | None:
         if not text:

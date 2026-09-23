@@ -442,6 +442,19 @@ shadow = true
 # shadow_channel = "1234567890123456789/9876543210987654321"  # required when enabled AND shadow
 # shadow_platform = "discord"
 
+[reaction]
+# The reaction picker (nora/agent/reaction.py): on a TAG turn's first reply,
+# one cheap call asks whether a GIF would make the reply land better, under
+# her words or in place of a reply that was only a reaction, and a second
+# picks one from Giphy's described results. Needs GIPHY_API_KEY in .env too.
+# Every failure sends her words exactly as written. Participation, proactive
+# and reminder turns never get one. Instruction: nora/doctrine/reaction.md.
+enabled = false
+model = ""                 # empty = [llm] model
+reasoning_effort = "none"  # measured at "none"; empty inherits [llm]
+timeout_seconds = 6.0      # bounds the whole pick, download included
+max_tokens = 200
+
 [engagement]
 policy = "trigger_text"
 
@@ -860,6 +873,11 @@ enabled = false
 client_credential_env = "LIFE360_CLIENT_CREDENTIAL"
 username_env = "LIFE360_USERNAME"
 password_env = "LIFE360_PASSWORD"
+# OPTIONAL. When Life360 refuses the password grant ("Invalid login and password"
+# with the right password: an account with a verified phone number), put the
+# LIFE360_AUTH_TOKEN cookie from a life360.com browser login in this env var.
+# Token mode never POSTs the password; a rejected token alarms `token_rejected`.
+auth_token_env = "LIFE360_AUTH_TOKEN"
 cadence_seconds = 90
 # Adaptive cadence (design/19 §4.1): floor while a circle has a driver, ceiling
 # once it's been still long enough to hit the ramp. `cadence_seconds` above
@@ -1022,9 +1040,11 @@ api_key_env = "STEAM_WEB_API_KEY"
 # timeout_seconds = 8.0
 
 [social]
-# social_fetch (DEC-151) — READ-ONLY X/Instagram reads via the host-side
-# OpenCLI bridge (`python -m nora.infra.social`, run as the systemd user
-# service in deploy/social-bridge/). KEYLESS, so `enabled` is the whole gate
+# social_fetch (DEC-151) — READ-ONLY X reads, and Instagram ACCOUNT search
+# until P11, via the host-side OpenCLI bridge (`python -m nora.infra.social`,
+# run as the systemd user service in deploy/social-bridge/). Instagram
+# profiles and stories are NOT here: they are instagram_read's, over
+# [social.instagram] below. KEYLESS, so `enabled` is the whole gate
 # (the [preview] shape). Off here for the "explicitly on" house rule; even on,
 # the tool can only construct allowlisted reads — the bridge re-enforces the
 # read-only (site, command) mapping host-side, so no posting, liking,
@@ -1041,12 +1061,11 @@ bridge_url = "http://127.0.0.1:19826"
 # content_max_chars = 4000                # retrieved-text clamp (bounds re-sent tokens)
 
 [social.instagram]
-# The SECOND social backend, serving the one read OpenCLI structurally cannot:
-# what is on someone's Instagram story right now. OpenCLI 1.8.7 has no story
-# READ anywhere (its `story` verb POSTS one), so the instameow bridge is the
-# only path that exists — and that proof of impossibility is the entry ticket.
-# Every other Instagram verb stays on the default backend above; nothing else
-# is routed here, now or later, without its own recorded measurement.
+# The Instagram backend for instagram_read: a person's profile and what is on
+# their story right now, over the instagram-bridge container
+# (design/instagram-adoption/15, /18). Every Instagram read goes through the
+# bridge; account search is the one Instagram verb still on OpenCLI above,
+# until P11 moves it here too.
 #
 # Its own `enabled` rather than riding [social] above, because the two are
 # provisioned and fail independently: that one needs a systemd service and a
@@ -1055,9 +1074,12 @@ bridge_url = "http://127.0.0.1:19826"
 # checkpointed Instagram session, or turning on stories to get profiles back.
 #
 # OFF here and off in the code, the house rule for anything that reads other
-# people. Turning it on ALSO needs the person index to carry Instagram ids —
-# a story read names a PERSON, never a handle, and Nora does not guess one
-# from a name — so until then it stays honest and says it couldn't check.
+# people. Turning it on ALSO needs identity.toml to carry each person's `igid`
+# ([[persons.<id>.instagram]]): a read names a PERSON, never a handle, and
+# Nora does not guess an account from a name: a person with no igid is
+# answered "no Instagram account on file", one with two is ambiguous, and a
+# story is read only for someone listed in a group room of policy.toml, and
+# only on a turn where somebody asked.
 #
 # The HEADER is live and `enabled` is written out, unlike the two settings
 # below it. A wholly commented-out section is not "the default, shown": it

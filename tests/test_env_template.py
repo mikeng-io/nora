@@ -26,7 +26,8 @@ def test_config_example_exists_and_parses():
         "search", "online", "weather", "preview", "heartbeat", "reminders",
         "speech", "social",
         "notes", "culture", "standing", "music", "image_gen",
-        "version", "engagement", "participation", "relevance_gate", "doctrine", "dreamer",
+        "version", "engagement", "participation", "relevance_gate", "reaction",
+        "doctrine", "dreamer",
         "identity_file", "policy_file",
         "obs", "evals", "tools",
     }

@@ -2019,8 +2019,9 @@ async def build_dependencies(
                 cfg.search.provider,
                 cfg.search.api_key_env,
             )
-    # `social_fetch` (DEC-151) gets ONE `SocialProvider` — `SocialRouter` —
-    # and the registry stays unaware that there are two backends under it
+    # `social_fetch` (DEC-151) and `instagram_read` (design/instagram-
+    # adoption/18) get ONE `SocialProvider` — `SocialRouter` — and the
+    # registry stays unaware that there are two backends under it
     # (design/instagram-adoption/08). Each backend is wired independently and
     # there is NO credential on either, so `enabled` alone is the gate (the
     # `[preview]` shape); an unwired backend answers `unavailable` for ITS OWN
@@ -2038,38 +2039,38 @@ async def build_dependencies(
             timeout_seconds=cfg.social.timeout_seconds,
             content_max_chars=cfg.social.content_max_chars,
         )
-    # The EXCEPTION backend serves the one row OpenCLI structurally cannot
-    # (`instagram/story`). It is not built yet, and the reason is a real
-    # dependency rather than an omission: that row is Tier 0, so the ROUTER
-    # needs a `SocialSubjectIndex` — `person_id -> igid`, plus the reach check
-    # — and that needs the `instagram` id kind (`fbid` + `igid`) in
-    # `identity.toml`, which belongs to the platform-adapter milestone
-    # (design/instagram-adoption/11 M2) and is ITS schema to define, not the
-    # social axis's. `SocialRouter` refuses to be constructed with a Tier 0
-    # backend and no index, so this is not a discipline to remember.
+    # The INSTAGRAM backend serves every Instagram read the bridge has a route
+    # for — `instagram/story` and `instagram/profile`, `instagram_read`'s two
+    # (design/instagram-adoption/15, /18, P5). Both rows take a PERSON, so the
+    # router needs a `SocialSubjectIndex`: `PersonsSubjectIndex` resolves
+    # person -> igid off `identity.toml` (kind-aware; none or several is
+    # `ambiguous`) and answers Tier 0 off `policy.toml`'s group rooms (a `*`
+    # room and `[dm]` never count). `SocialRouter` refuses to be constructed
+    # with that backend and no index, so the pairing is not a discipline to
+    # remember.
     #
-    # Wiring it with a resolver that answers `None` for everybody would be
-    # worse than not wiring it: the tool would say `ambiguous` («I don't know
-    # whose account that is») about people Nora knows perfectly well, which is
-    # a false statement about HER OWN index manufactured out of a wiring gap.
-    # Unwired, the router answers `unavailable` — «I couldn't check» — which
-    # is true. `[social.instagram] enabled` exists so turning it on is a
-    # one-line change once the index can answer.
+    # Its own `enabled`, because the two backends are provisioned and fail
+    # independently: turning Instagram on must not need the host's OpenCLI
+    # service, and a checkpointed Instagram session must not take X with it.
     instagram_social: SocialProvider | None = None
+    social_subjects = None
     if cfg.social.instagram.enabled:
-        log.warning(
-            "[social.instagram] is enabled but no subject index exists yet — "
-            "Instagram story reads stay unavailable until the person index "
-            "carries igids (design/instagram-adoption/11 M2)",
+        from nora.infra.social import InstagramSocialClient, PersonsSubjectIndex
+        instagram_social = InstagramSocialClient(
+            base_url=cfg.social.instagram.base_url,
+            timeout_seconds=cfg.social.instagram.timeout_seconds,
+            content_max_chars=cfg.social.content_max_chars,
         )
+        social_subjects = PersonsSubjectIndex(persons, allowlist)
     if opencli_client is not None or instagram_social is not None:
-        from nora.infra.social import SocialRouter
+        from nora.infra.social import EXCEPTION_ROUTES, SocialRouter
         social_client = SocialRouter(
             default=opencli_client,
             exceptions=(
-                {("instagram", "story"): instagram_social}
+                dict.fromkeys(EXCEPTION_ROUTES, instagram_social)
                 if instagram_social is not None else {}
             ),
+            subjects=social_subjects,
         )
     # `weather` (DEC-70) is wired on `[weather] enabled` alone — the HK Observatory
     # provider is KEYLESS, so unlike `route`/`search` there is no key to resolve;
@@ -2350,6 +2351,26 @@ async def build_dependencies(
     if giphy_key := os.environ.get("GIPHY_API_KEY"):
         from nora.infra.giphy import GiphyClient
         giphy_client = GiphyClient(api_key=giphy_key)
+    reaction_picker = None
+    if cfg.reaction.enabled and giphy_client is not None:
+        from nora.agent.reaction import ReactionPicker
+        reaction_picker = ReactionPicker(
+            client=_DebriefModelClient(
+                base_url=cfg.llm.base_url,
+                api_key=os.environ.get(cfg.llm.api_key_env, ""),
+                max_tokens=cfg.reaction.max_tokens,
+                temperature=0.3,
+                model=cfg.reaction.model or cfg.llm.model,
+                timeout_seconds=cfg.reaction.timeout_seconds,
+                reasoning_effort=_reasoning_effort(
+                    cfg.reaction.reasoning_effort or cfg.llm.reasoning_effort,
+                    source="[reaction] reasoning_effort",
+                ),
+                agent_name="reaction",
+            ),
+            prompts=doctrine_store, gifs=giphy_client, metrics=metrics,
+            timeout_seconds=cfg.reaction.timeout_seconds,
+        )
     games_client = None
     if pulse_api_token := os.environ.get("PULSE_API_TOKEN"):
         games_client = PulseGamesClient(token=pulse_api_token)
@@ -2508,6 +2529,7 @@ async def build_dependencies(
         unit_for=_note_unit_of(allowlist),
         versions=version_manifest,
         giphy=giphy_client,
+        reaction=reaction_picker,
         music=music_bridge,
         # `online_now`'s two live-state reads (design/online-status/). Either
         # None leaves its arms answering `unavailable` (R-5), never

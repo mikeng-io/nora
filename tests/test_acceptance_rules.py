@@ -555,6 +555,11 @@ RULE_TESTS = {
     # once #213 made its ages honest — four of them false-spoke, and reverting
     # either production line puts all four back in the room.
     "R-97": "test_the_five_silence_twins_stay_silent",
+    # R-98 (design/instagram-adoption/18, P5): a story is read only for a Tier 0
+    # person. The named test asserts on the fake bridge's OWN request log that
+    # no story request was sent for a person in no room, beside a positive
+    # control showing the same person's profile does reach the bridge.
+    "R-98": "test_a_story_for_someone_in_no_room_is_refused_and_never_requested",
 }
 
 
@@ -952,38 +957,40 @@ def test_the_verdict_position_names_the_mechanism_that_performs_a_tag():
 
 
 def test_r86_social_fetch_is_read_only_at_three_layers():
-    """R-86 / DEC-151. `social_fetch` reads X and Instagram through OpenCLI,
-    whose write commands (`twitter post`/`like`/`follow`/`delete`, …) drive an
-    AUTHENTICATED browser — a model that can be prompt-injected by the very
-    content it fetches must never reach one. The read-only property is
-    enforced at three layers, and this test DERIVES all three from the code
-    (never hand-copied duplicates), so an edit to any one layer that drifts
-    from the others goes red here:
+    """R-86 / DEC-151, extended to EVERY social tool by design/instagram-
+    adoption/18 §"Read-only, at three layers" (the name is kept so the
+    decision index and `RULE_TESTS` keep pointing at it). Social tools read
+    content a model can be prompt-injected by, over backends that also serve
+    writes — OpenCLI drives an AUTHENTICATED browser with `twitter post`/
+    `like`/`follow`/`delete`; the instagram-bridge serves `/send`, `/react`, …
+    — so none of them may reach a write. Read-only is enforced at three
+    layers, and this test DERIVES all three from the code, from ONE vocabulary
+    table covering every social tool (`nora.agent.tools.
+    social_read_vocabulary`), so an edit to any layer that drifts from the
+    others goes red here:
 
-    1. the tool's closed `(platform, what)` vocabulary
-       (`nora.agent.tools._SOCIAL_PLATFORMS`/`_SOCIAL_WHATS`) — there is no
+    1. each tool's closed `(platform, what)` vocabulary — there is no
        free-form command passthrough;
-    2. the BACKEND allowlists — plural since social v1 added a second backend
-       (design/instagram-adoption/08). The host-side bridge's
-       `READ_ONLY_ALLOWLIST` is the single source of truth for the OpenCLI
-       argv mapping — its command slot is only ever filled from the mapping's
-       values, so no write verb is constructible (the behavioural half — a
-       refused pair never spawns — is pinned by
-       `tests/unit/test_social_bridge_server.py`). The Instagram backend's own
-       allowlist lives in its Go process, so what is checkable FROM PYTHON is
-       the router's exception list (`nora.infra.social.EXCEPTION_ROUTES`),
-       which is what decides that a pair reaches that process at all;
-    3. the `NativeTool` declaration `read_only=True`, the Dreamer's ceiling.
+    2. the BACKEND allowlists: the host-side bridge's `READ_ONLY_ALLOWLIST`
+       for OpenCLI (its command slot is only ever filled from the mapping's
+       values; the behavioural half is `tests/unit/test_social_bridge_server.
+       py`), and the router's `EXCEPTION_ROUTES` for the instagram-bridge,
+       whose client issues only `GET /accounts/…` (pinned on a recording fake
+       bridge in `tests/unit/test_instagram_read_tool.py`);
+    3. each tool's `NativeTool` declaration `read_only=True`, the Dreamer's
+       ceiling.
 
-    The derivation stays TOTAL across the two backends: every pair the tool can
-    construct must be served by the default backend, be on the exception list,
-    or be declared unsupported. A vocabulary row added with no backend and no
-    declaration would otherwise reach the router and resolve to nothing —
-    `unavailable` forever, silently, which is the shape of a wiring gap that
-    reports as a feature.
+    The derivation is TOTAL: every pair a tool can construct is served by
+    exactly one backend, every pair a backend serves is constructed by exactly
+    one tool (no Instagram read ever has two tools, 18 §"What happens to
+    social_fetch"), and every other pair in a tool's closed product is
+    declared unsupported.
     """
     from nora.agent import tools as tools_module
     from nora.infra.social import EXCEPTION_ROUTES, bridge_server
+
+    vocabulary = tools_module.social_read_vocabulary()
+    assert set(vocabulary) == {"social_fetch", "instagram_read"}
 
     # Layer 2: every command the bridge can spawn is disjoint from OpenCLI's
     # write verbs (the set in `bridge_server.OPENCLI_WRITE_VERBS`, verified
@@ -993,32 +1000,43 @@ def test_r86_social_fetch_is_read_only_at_three_layers():
             f"the bridge can spawn a WRITE verb: {command}"
         )
 
-    # Layer 1 matches layer 2 exactly: the tool's vocabulary IS the host
-    # allowlist, PLUS the router's exception rows, PLUS the recorded
-    # limitations (`instagram post` — OpenCLI 1.8.7 has no caption-by-URL
-    # command; `x story` — X has no story concept), which the tool answers
-    # `unavailable` itself and no backend is ever asked about.
-    tool_pairs = {
-        (platform, what)
-        for platform in tools_module._SOCIAL_PLATFORMS
-        for what in tools_module._SOCIAL_WHATS
-    }
+    # Layer 1 matches layer 2 exactly: what the tools construct, together, IS
+    # what the two backends serve, together.
     served = set(bridge_server.READ_ONLY_ALLOWLIST) | EXCEPTION_ROUTES
-    assert tool_pairs - served == tools_module._SOCIAL_UNSUPPORTED
+    constructed = set().union(*vocabulary.values())
+    assert constructed == served
 
-    # The exception list is an EXCEPTION list: a row on it must be one the
-    # default backend cannot serve. A pair in both places means somebody moved
-    # a verb to the second backend because it was better there, which is the
-    # "two parallel integrations in a year" drift the rule exists to stop —
-    # and it would also make the routing silently depend on lookup order.
+    # One read, one tool, one backend.
+    fetch, read = vocabulary["social_fetch"], vocabulary["instagram_read"]
+    assert not (fetch & read), "an Instagram read has two tools"
+    assert read == EXCEPTION_ROUTES, (
+        "instagram_read reads through the instagram-bridge only "
+        "(design/instagram-adoption/15)"
+    )
     assert not (EXCEPTION_ROUTES & set(bridge_server.READ_ONLY_ALLOWLIST)), (
-        "a pair is on the exception list AND in the default backend's "
-        "allowlist — the exception list admits only what the default "
-        "structurally cannot do (design/instagram-adoption/08)"
+        "a pair is on the bridge's list AND in OpenCLI's allowlist — a verb "
+        "has two backends"
+    )
+
+    # A pair `social_fetch` declares unsupported must NOT be one its own
+    # backend serves: that is a working OpenCLI row the tool can never reach —
+    # a cutover done on one side only (the tool dropped the verb, the
+    # allowlist kept it, and the host still spawns it for anything that asks).
+    # And one served by the bridge must be another tool's read. (This replaced
+    # `product - fetch == _SOCIAL_UNSUPPORTED`, which held by construction:
+    # `fetch` IS `product - _SOCIAL_UNSUPPORTED`, so it could only fail if
+    # the declaration named a pair outside the product.)
+    unsupported = tools_module._SOCIAL_UNSUPPORTED
+    assert not (unsupported & set(bridge_server.READ_ONLY_ALLOWLIST)), (
+        "social_fetch declares a pair unsupported that OpenCLI still serves"
+    )
+    assert unsupported & EXCEPTION_ROUTES <= read, (
+        "social_fetch declares a bridge pair unsupported that no tool reads"
     )
 
     # Layer 3: the declaration the Dreamer's ceiling is derived from.
-    assert tools_module.NATIVE_TOOLS["social_fetch"].read_only is True
+    for tool in vocabulary:
+        assert tools_module.NATIVE_TOOLS[tool].read_only is True, tool
 
 
 async def write_prior(store) -> None:

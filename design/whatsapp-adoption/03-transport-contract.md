@@ -96,7 +96,10 @@ Field rules:
   `voice_note` is Baileys' `ptt` flag on `audioMessage`. No bytes — custody
   is a later phase; the event carries the FACT of media, never the blob.
 - `edit_of` is the target stanza id when Baileys delivers a
-  `protocolMessage` of type MESSAGE_EDIT; `text`/`media` then describe the
+  `protocolMessage` of type MESSAGE_EDIT — including one the bridge DECRYPTED
+  from a phone's `secretEncryptedMessage` (2026-09-24; an edit of a message the
+  bridge holds no secret for, e.g. from before a restart, is logged and
+  dropped); `text`/`media` then describe the
   NEW content. Nora records it BESIDE the message it edits, never over it —
   the audit trail is append-only — and the transcript shows the latest text
   at the original's position (`design/message-edits/`, 2026-09-23; before

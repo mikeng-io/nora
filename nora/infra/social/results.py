@@ -42,28 +42,55 @@ UNAVAILABLE: dict[str, Any] = {
             "you'd checked.",
 }
 
-#: The subject did not resolve. `target` is a `person_id` on a subject-keyed
-#: read and the person index is the only thing that may turn it into a network
-#: id (design/instagram-adoption/09) — so «I don't know which account that is»
-#: is the answer, and guessing a handle from a name is the failure this status
-#: exists to make impossible. NOT `nothing_found`: nothing was looked at.
+#: The person has SEVERAL accounts on file. The person index is the only
+#: thing that may turn a `person_id` into a network id
+#: (design/instagram-adoption/09), and it holds more than one with nothing to
+#: say which was meant — so nothing is read, and picking one is the failure
+#: this status exists to make impossible. It does not tell the model to ASK:
+#: the person in the room cannot resolve it either, only the operator's file
+#: can (design/instagram-adoption/18, 2026-09-24).
 AMBIGUOUS: dict[str, Any] = {
     "status": "ambiguous",
-    "note": "I don't know which account that is, so I didn't look. Say you'd "
-            "need to be told whose account it is — don't guess one from "
-            "their name.",
+    "note": "They have more than one account on file and I can't tell which, "
+            "so I didn't look. Say so; don't pick one.",
 }
 
-#: The subject resolved and is out of reach. v1 is Tier 0 only — someone in a
-#: room Nora is in (design/instagram-adoption/07). Distinct from `unavailable`
-#: because calling again cannot help and nothing is broken: «I may not» and «I
-#: couldn't» are different claims, and collapsing them would have Nora
-#: reporting a policy boundary as an outage.
+#: The person has NO account on file. `nothing_found` — the honest «there is
+#: nothing to read» — but the note says what the nothing is: no account on
+#: file, not «no story up», and nothing was fetched. Split out of `AMBIGUOUS`
+#: on 2026-09-24; the two used to share one word and one sentence, which
+#: told the model to ask about an account nobody had recorded.
+NO_ACCOUNT: dict[str, Any] = {
+    "status": "nothing_found",
+    "note": "I don't have an Instagram account on file for them, so I didn't "
+            "look. Say that; don't guess one from their name.",
+}
+
+#: The subject resolved and is out of reach. A story is Tier 0 only — a
+#: person the operator LISTED in a group room (design/instagram-adoption/07,
+#: /15) — and it is refused in a turn nobody asked for (/18, 2026-09-24).
+#: Distinct from `unavailable` because calling again cannot help and nothing
+#: is broken: «I may not» and «I couldn't» are different claims. The note
+#: names the listing, not "the rooms I'm in": someone can be IN the chat and
+#: not listed, and "outside my rooms" would be false about them.
 REFUSED: dict[str, Any] = {
     "status": "refused",
-    "note": "I don't look up people outside the rooms I'm in. Say that "
-            "plainly — it's a boundary, not a failure.",
+    "note": "I only open stories of people the operator has listed in one of "
+            "my rooms. Say it's a boundary.",
 }
+
+
+def not_set_up(platform: str) -> dict[str, Any]:
+    """The answer for a read whose backend is not composed at all — a
+    CONFIGURATION state, stable across calls, not «couldn't read that just
+    now», which invites a retry that cannot help. The platform name comes
+    from a closed map, never from the caller's string."""
+    name = {"instagram": "Instagram", "x": "X"}.get(platform, "That")
+    return {
+        "status": "unavailable",
+        "note": f"{name} isn't set up for me, so I can't read it. Say so "
+                "plainly; it isn't a passing failure.",
+    }
 
 
 #: The read RAN and there was nothing — «I looked, nothing there», which is a

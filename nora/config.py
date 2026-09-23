@@ -589,6 +589,32 @@ class ParticipationConfig(BaseModel):
         return self
 
 
+class ReactionConfig(BaseModel):
+    """The reaction picker (`nora.agent.reaction`): on a tag turn's first
+    reply, one cheap call asks whether a GIF lands it better, and a second
+    picks one from Giphy's described results. Needs `GIPHY_API_KEY` as well;
+    without it this does nothing whatever `enabled` says.
+
+    Ships INERT. `model` and `reasoning_effort` empty inherit `[llm]`; the
+    replay that measured it (17 GIFs on 104 replies, all on banter) ran on the
+    `nora` alias at `reasoning_effort = "none"`. `timeout_seconds` bounds the
+    WHOLE pick, both calls and the search, and on expiry the reply goes out as
+    written: it is time added before her words arrive, so it is kept short.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    model: str = ""
+    # "none", not inherited: the replay was measured at "none", and a
+    # reasoning budget spent inside `max_tokens` truncates the verdict.
+    reasoning_effort: Literal[
+        "", "none", "minimal", "low", "medium", "high", "xhigh", "max"
+    ] = "none"
+    timeout_seconds: float = Field(default=6.0, gt=0)
+    max_tokens: int = Field(default=200, ge=16)
+
+
 class RelevanceGateConfig(BaseModel):
     """The Relevance Gate (design/dreamer-agent-loop/36): ONE cheap structured
     call that decides whether a quiescence-closed window is worth a
@@ -1170,6 +1196,10 @@ class PresenceConfig(BaseModel):
     the env var holding the Basic client credential (the study's auth), and
     `username_env`/`password_env` the account login. The collector reads the
     VALUES from the environment; a committed file never carries them.
+    `auth_token_env` names an OPTIONAL static bearer (the `LIFE360_AUTH_TOKEN`
+    cookie from a life360.com browser login) for an account Life360 refuses the
+    password grant to; when its value is set the client runs in token mode and
+    the three login vars are not required (nora/infra/life360/client.py).
 
     `cadence_seconds` is the per-circle poll interval - ~60-120 s, roughly what
     the Life360 app itself does (§1). `retention_days` is the prune window
@@ -1183,6 +1213,7 @@ class PresenceConfig(BaseModel):
     client_credential_env: str = "LIFE360_CLIENT_CREDENTIAL"
     username_env: str = "LIFE360_USERNAME"
     password_env: str = "LIFE360_PASSWORD"  # noqa: S105 — names an env var, not a secret
+    auth_token_env: str = "LIFE360_AUTH_TOKEN"  # noqa: S105 — names an env var, not a secret
     # ~60-120 s (§1). `ge=1` guards a zero/negative that would busy-loop; the
     # 60-120 band is guidance in config.example.toml, not a hard clamp, so an
     # operator can widen it deliberately without editing code.
@@ -1542,13 +1573,16 @@ class SearchConfig(BaseModel):
 
 
 class InstagramSocialConfig(BaseModel):
-    """The SECOND social backend — Instagram stories via the instagram-bridge
-    container (design/instagram-adoption/08).
+    """The Instagram social backend — `instagram_read`'s profile and story
+    reads via the instagram-bridge container (design/instagram-adoption/15,
+    /18).
 
-    It serves exactly one `(platform, what)` row, `(instagram, story)`, which
-    is the whole of `SocialRouter`'s exception list: OpenCLI 1.8.7 has no
-    story read anywhere, so `FetchReel` behind this bridge is the only path
-    that exists. Everything else Instagram stays on the OpenCLI default.
+    It serves the rows on `SocialRouter`'s exception list, `(instagram,
+    story)` and `(instagram, profile)`: every Instagram read goes through the
+    bridge, and a verb joins when its bridge route works end to end.
+    Instagram account search is the one verb still on the OpenCLI default,
+    until P11. Enabling it also composes `PersonsSubjectIndex`, because both
+    rows take a PERSON and only the person index may resolve one to an igid.
 
     **Its own `enabled` rather than riding `[social] enabled`**, because the
     two backends fail and are provisioned independently: the OpenCLI path
@@ -1586,9 +1620,10 @@ class InstagramSocialConfig(BaseModel):
 
 
 class SocialConfig(BaseModel):
-    """READ-ONLY X/Instagram reads for the `social_fetch` tool (DEC-151), via
-    the host-side OpenCLI bridge (`python -m nora.infra.social`, deployed as
-    `deploy/social-bridge/`) and — for the one row it cannot serve — the
+    """READ-ONLY social reads: X (and Instagram account search, until P11)
+    for the `social_fetch` tool (DEC-151) via the host-side OpenCLI bridge
+    (`python -m nora.infra.social`, deployed as `deploy/social-bridge/`), and
+    Instagram profiles and stories for `instagram_read` via the
     instagram-bridge container (`[social.instagram]` below).
 
     **Optional and every field defaults**, the `RouteConfig` shape. `enabled`
@@ -3281,6 +3316,7 @@ class Config(BaseModel):
     # FRONT of the participation turn. Ships INERT; see the cross-section
     # validator below for why it cannot be enabled on its own.
     relevance_gate: RelevanceGateConfig = RelevanceGateConfig()
+    reaction: ReactionConfig = ReactionConfig()
     engagement: EngagementConfig
     doctrine: DoctrineConfig
     # Optional and defaulted — see `DreamerConfig`. A config.toml with no
