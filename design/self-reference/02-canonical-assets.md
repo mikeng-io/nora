@@ -37,7 +37,7 @@ with two distinct roles:
 - **`assets/nora-character-reference-sheet.png`** (1254×1254) — **THE
   DESCRIPTIVE SOURCE, not an asset.** Multi-panel "Mini Form" sheet
   (turnaround, expressions, poses, details, colour palette, size reference);
-  with `05-visual-identity-spec.md` it is what the doctrine text is written
+  with `05-visual-identity-spec.md` it is what the skill's appearance section is written
   from, and it is deliberately NOT ingested as a reference image — a
   multi-panel image muddles identity in generation.
 - **`assets/nora-social-avatar.png`** (1374×1145) and
@@ -49,7 +49,7 @@ with two distinct roles:
 
 At build time the ingest one-shot (`scripts/ingest_self_asset.py`) ingests the
 canonical single image into Nora's media library, marks `role: self`, and the
-doctrine's `<SELF_HANDLE>` is pinned to the ingested row's full sha256 as
+skill's `<SELF_HANDLE>` (the image-generation skill, 06) is pinned to the ingested row's full sha256 as
 normal. Source sha256 at acceptance (2026-09-23): `535e4da56b933c9c30ea28182ba651246ce9bc65608ebdf92363e6342ab8567c`. The 2026-09-16 image (`4b8825fe…`) is superseded.
 
 ## Storage
@@ -62,14 +62,15 @@ difference is a marker in `provenance` jsonb:
 {"role": "self", "source": "operator-provided", "canonical": true}
 ```
 
-Using `provenance` jsonb (existing column, `schema.py:792`) avoids a schema
+Using `provenance` jsonb (existing column on `media_objects`) avoids a schema
 migration. The `source` stays `fetched` (no new enum value; marker-only).
 
 ## Custody exemption
 
 `resolve(marker, conversation_id)` currently returns nothing when the
 marker's row is not in the caller's conversation store (design/30 §5,
-`ports.py:1781-1798`; the resolver closure at `tools.py:3316-3354` reads only
+the `ImageReference` docstring in `nora/domain/ports.py`; the `resolve` closure inside
+`generate_image` in `nora/agent/tools.py` reads only
 this conversation's transcript `media_json` via `store.recent(
 conversation_id=...)`). The exemption: **if the row's `provenance.role` is
 `self`, resolve regardless of conversation.** This is safe because:
@@ -78,7 +79,7 @@ conversation_id=...)`). The exemption: **if the row's `provenance.role` is
   content, not a user's photo.
 - It is a single, known, canonical row — no attacker-controlled path can mark
   arbitrary content with a canonical role (the marker is written by the
-  operator's ingest path, which is the same trust level as doctrine files
+  operator's ingest path, which is the same trust level as the skill and doctrine files
   themselves).
 - No data leaves Nora: resolution only ever produces bytes *she already holds*
   and sends to her configured image provider.
@@ -91,21 +92,31 @@ prefix or a set that could be widened by accident.
 The resolver looks up the conversation window FIRST; the canonical-role row is a
 FALLBACK only. A canonical handle is matched on the FULL sha256, never a
 short prefix, so a conversation asset and the canonical asset can never collide
-on the same marker code. The existing single-match rule (`tools.py:3342-3345`)
+on the same marker code. The existing single-match rule (the `len(matches)` check in `resolve`)
 still applies inside each lookup source: ambiguity inside either source
 resolves to nothing (safe, opaque), never to a guess.
 
-## Files touched (this layer)
+## As built (2026-09-23, see 06)
+
+- No `provenance->>'role'` query was added to `nora/infra/sql/media_objects.py`:
+  the resolver reads the existing `MediaObjectStore.get(sha256=)` and checks
+  the role in code, exact string equality. One read, already contract-tested.
+- "Collision resolves to nothing" is reachable only as a SHORT-handle
+  collision: two distinct blobs cannot share a full sha, and the canonical
+  needs a full sha. The pinned forms: a conversation blob sharing the
+  canonical's short handle wins; two such blobs resolve to nothing.
+- A URL or data URI reference is refused before any lookup (new; the hex
+  extraction would otherwise turn a URL wrapping the sha into the handle).
+- The resolver tests are unit tests (`tests/unit/test_canonical_self_reference.py`),
+  not in the adapter's contract suite, which cannot reach the closure.
+
+## Files touched (as built)
 
 ```
-nora/domain/ports.py                           # ImageReference docstring: canonical-role exemption
-nora/agent/tools.py                            # resolver closure: role == 'self' bypasses
-                                               #   conversation scope; conversation-first precedence;
-                                               #   full-sha match for the canonical handle
-nora/infra/sql/media_objects.py                # query for provenance->>'role' = 'self'
-scripts/ingest_self_asset.py                   # operator one-shot: ingest design image + mark role
-tests/contract/test_image_generator_contract.py # + canonical-role resolves cross-conversation;
-                                               #   non-canonical still refused; collision resolves
-                                               #   to nothing; external URL still refused; doctrine
-                                               #   embedded handle resolves to the canonical row
+nora/domain/ports.py                           # ImageReference docstring: the exemption
+nora/agent/tools.py                            # resolve: conversation first, then _canonical_self
+                                               #   (full sha, role == "self"); URL/data refusal
+scripts/ingest_self_asset.py                   # operator one-shot, checked against the skill's handle
+tests/unit/test_canonical_self_reference.py    # the exemption and every negative
+tests/unit/test_ingest_self_asset.py           # the ingest
 ```

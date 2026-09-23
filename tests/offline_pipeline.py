@@ -59,6 +59,7 @@ from nora.domain.ports import (
 from nora.domain.quote_window import QuoteWindow
 from nora.engagement.context import StandingNotesReader
 from nora.engagement.pipeline import EngagementPipeline
+from nora.engagement.self_presence import PresenceReader
 from nora.engagement.slots import ConversationSlots
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import CompositePolicy, RelevanceGatePolicy, TriggerTextPolicy
@@ -144,6 +145,15 @@ def build_offline_pipeline(
         )
     if extra_engage_policies:
         policy = CompositePolicy((policy, *extra_engage_policies))
+    # `<presence>` (design/self-awareness/02) — the production reader over this
+    # harness's own policy and adapter, so an eval prompt carries the block a
+    # production turn carries: the network, the harness's (empty) room table,
+    # the fake adapter's health, and the handles `config.evaluation.toml`
+    # declares.
+    presence_reader = PresenceReader(
+        policy=permissive_policy(), adapters={adapter.platform: adapter},
+        handles=cfg.agent.handles,
+    )
     assembler = build_assembler(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
         policy=permissive_policy(),
@@ -158,6 +168,7 @@ def build_offline_pipeline(
         # threading fix builds one over the SAME `audit` this module already
         # takes.
         quote_window=quote_window,
+        presence=presence_reader,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -300,6 +311,8 @@ def build_offline_pipeline(
             # passes a real recorder; both sides name the collaborator, which
             # is what that gate is for.
             decisions=None,
+            # `<presence>`: the SAME reader the assembler above holds.
+            presence=presence_reader,
             # The SAME tier stores the assembler above was handed: the
             # participation determination's prompt is supposed to carry
             # whatever standing/notes the room has — an eval whose

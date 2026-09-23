@@ -25,8 +25,10 @@ from ..domain.decision_log import (
 )
 from ..domain.models import TagContext, TranscriptRow
 from ..domain.prompt import escape
+from ..domain.self_presence import Presence
 from ..language.culture_render import render_culture
 from ..language.note_render import render_notes
+from ..language.presence_render import render_presence
 from ..language.self_card_render import render_self_card
 from ..language.standing_render import render_standing
 from ..obs.tracing import annotate, span
@@ -56,43 +58,16 @@ TAG_HEADER = (
 )
 
 
-# How each platform is named to her. A display name, not the internal key:
-# `signal` is a wire value, `Signal` is what the room calls it. A platform with
-# no entry falls back to the key itself rather than being hidden — «I am
-# somewhere I have no name for» is still a better situational model than
-# silence, which is what produced the bug this table exists for.
-_PLATFORM_NAMES = {"signal": "Signal", "discord": "Discord"}
-
-
-def _where_line(platform: str) -> str:
-    """Which platform this turn is happening on, stated plainly.
-
-    She had no idea WHERE she was — not here, not in the doctrine — so with two
-    platforms live she answered a Discord tag saying she was on Signal
-    (operator, live, 2026-08-14). Exactly the failure `_now_line` above exists
-    to prevent, on the other axis: a model with no situational model invents
-    one, and it does not know that it is inventing.
-
-    It matters beyond her getting it right when asked. «Send this to the
-    others» means a different room depending on where she is standing, and any
-    cross-platform capability is unanswerable without it.
-
-    Deliberately NOT a tool, for `_now_line`'s reasons exactly: it is relevant
-    to every turn, so a tool means either a round trip every time or a model
-    deciding it does not need one. It costs a handful of tokens and cannot fail.
-
-    Deliberately NOT in `_context_header` either, and that is the subtler
-    constraint: that block is the cache PREFIX and must not carry anything that
-    varies between tags. The platform varies — that is the entire point of it —
-    so it belongs here in the per-turn message, which is where the clock was
-    moved to for the same reason.
-
-    Carries no conversation id: R-18 keeps identifiers off the wire, and the
-    platform NAME is not one. She is told where she is, never the room's id.
-    """
-    if not platform:
-        return ""
-    return f"You are on {_PLATFORM_NAMES.get(platform, platform)} right now.\n"
+# THERE IS NO `_where_line` ANY MORE (design/self-awareness/02). It was one
+# sentence — «You are on Discord right now.» — added after she answered a
+# Discord tag saying she was on Signal (operator, 2026-08-14), and it was the
+# only situational fact she got: the network, not the room, not the group's
+# other rooms, not whether any of them was reachable. `<presence>` replaced it
+# and says all four, generated each turn. It is a row in `_BLOCKS` below and
+# goes through `assemble` like every other block, where `_where_line` was a
+# bare string concatenated in front of it. The name table it read moved to
+# `nora.domain.self_presence.PLATFORM_NAMES`, because the proactive pass
+# renders the same block and may not import this module.
 
 
 def _message(role: str, text: str) -> dict:
@@ -140,11 +115,17 @@ def _now_line(now: datetime | None) -> str:
 #: had to survive its block being absent goes with it, because a block that is
 #: absent now says nothing rather than saying something unguarded.
 #:
-#: `key` is narrower than `global` for all eight — they vary per turn, per room
+#: `key` is narrower than `global` for every row — they vary per turn, per room
 #: or per person — which is why every one of them is served in the per-turn
 #: message rather than the cached head. `BlockKey`'s docstring argues that rule
 #: and `test_no_block_in_this_table_belongs_in_the_cached_head` pins it.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
+    # WHERE SHE IS, FIRST (design/self-awareness/02). Where `_where_line`
+    # sat — straight after the clock — so the turn opens on when and where,
+    # then her past, then theirs. `turn`, not `room`: transport health varies
+    # between two turns in the same room, which is why it is read at turn
+    # start and never cached.
+    ("presence", 5, "turn"),
     ("self_card", 10, "person"),
     ("peer_card", 20, "person"),
     ("peer_history", 30, "person"),
@@ -754,6 +735,23 @@ def _notes_block(ctx: TagContext, *, now: datetime) -> ContextBlock | None:
 
 
 
+def _presence_block(ctx: TagContext) -> ContextBlock:
+    """Where she is on this turn, as `<presence>` (design/self-awareness/02).
+
+    Always a block. A context nobody read a presence for — an offline harness
+    with no reader — renders `Presence.minimal`: the network alone, which is
+    exactly what `_where_line` said, so no harness regresses to the 2026-08-14
+    bug of a turn with no idea where it is.
+
+    Rendered by `render_presence`, the one builder the proactive pass calls
+    too. Nothing here composes a line of its own.
+    """
+    presence = ctx.presence or Presence.minimal(
+        ctx.message.platform, direct=ctx.message.conversation_type == "dm",
+    )
+    return render_presence(presence)
+
+
 def _standing_block(ctx: TagContext) -> ContextBlock | None:
     """Her own position in THIS conversation, as the debrief left it last turn
     (`design/dreamer-agent-loop/26-standing.md`). Same volatile-tier placement
@@ -906,6 +904,7 @@ def build_prefill(
         # `_BLOCKS` — so a block cannot be served without an entry, and an
         # entry cannot survive a block that stopped rendering.
         declared = _declared([
+            _restamp(_presence_block(ctx)),
             _self_card_block(ctx),
             _peer_card_block(ctx),
             _peer_history_block(ctx),
@@ -949,9 +948,7 @@ def build_prefill(
                 # `<loop_decisions>` came to ship with no catalogue entry. The
                 # argument is now the `order` column and the comment above
                 # that table.
-                _now_line(clock)
-                + _where_line(ctx.message.platform)
-                + assemble(declared),
+                _now_line(clock) + assemble(declared),
             ),
             _message("assistant", _CLOSING_LINE),
         ]

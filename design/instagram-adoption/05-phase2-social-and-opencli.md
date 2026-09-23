@@ -183,7 +183,7 @@ one — it does not exist. So:
 > returns all of it: `is_private`, `follower_count`, `following_count`,
 > `mutual_followers_count`, `media_count`, `total_clips_count`, `biography`,
 > `is_business`, `is_professional_account`, `followed_by`. Full account,
-> `deploy/instagram-bridge/social_profile.go` and `07`'s matching correction.
+> `deploy/instagram-bridge/internal/gateway/instameow/social_profile.go` and `07`'s matching correction.
 >
 > **Posts-as-a-LIST is unaffected** — `media_count` is a count, not a feed,
 > and instameow's client surface still has no call that pages a user's

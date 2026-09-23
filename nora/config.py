@@ -3112,6 +3112,42 @@ class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     name: str = "nora"
+    # HER OWN PUBLIC HANDLES, by network key — `signal = "@nora.000"`
+    # (design/self-awareness/02). What people type to reach her, rendered in
+    # `<presence>` so she can recognise «@noraexample» as herself in plain text
+    # and answer «what's your IG?».
+    #
+    # DECLARED ONLY WHERE NOTHING CAN REPORT IT. A handle here is a copy, and
+    # a copy goes stale in silence the day the account is renamed — which is
+    # what Instagram did between 2026-09-22 and 09-23. So a network whose
+    # adapter reports its own handle live (Instagram, from the bridge's
+    # `/health`) is read from there and this value is only its fallback; X
+    # and Threads have no adapter, and WhatsApp's bridge exposes no handle.
+    #
+    # DISPLAY TEXT, NEVER AN IDENTITY. Nothing matches a sender against these
+    # and they never reach `self_aliases()` (`nora.domain.identity`: a handle
+    # is re-assignable, so matching on one resolves a stranger as a known
+    # person). Empty — the default — renders no handle line at all.
+    handles: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("handles")
+    @classmethod
+    def _handles_are_network_keys(cls, value: dict[str, str]) -> dict[str, str]:
+        """Network keys are the wire keys (`signal`, `whatsapp`, `x`), because
+        they are joined against the platform a turn is on. `Signal` would
+        silently name a network no turn is ever on."""
+        for network, handle in value.items():
+            if network != network.strip().lower() or not network:
+                raise ValueError(
+                    f"[agent.handles] key {network!r} must be a lowercase network "
+                    "key such as \"signal\" or \"whatsapp\""
+                )
+            if not handle.strip().lstrip("@"):
+                raise ValueError(
+                    f"[agent.handles] {network} is empty; delete the key instead "
+                    "of declaring a handle with nothing in it"
+                )
+        return value
 
 
 class McpMountConfig(BaseModel):

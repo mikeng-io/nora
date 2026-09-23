@@ -87,6 +87,7 @@ from nora.domain.quote_window import QuoteWindow
 from nora.domain.reminders import ReminderCaps, ReminderStore
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.engagement.pipeline import EngagementPipeline
+from nora.engagement.self_presence import PresenceReader
 from nora.engagement.slots import ConversationSlots
 from nora.engagement.stages.debrief import Completion as DebriefCompletion
 from nora.engagement.stages.debrief import Wiring as DebriefWiring
@@ -155,6 +156,7 @@ from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.media import DiscordMediaSource
 from nora.platform.discord.music_manager import MusicPlayerManager
 from nora.platform.discord.music_tool_bridge import DiscordMusicToolBridge
+from nora.platform.instagram.adapter import InstagramAdapter
 from nora.platform.instagram.media import InstagramMediaSource
 from nora.platform.registry import AdapterRegistry, AdapterRegistryError, MediaSourceRegistry
 from nora.platform.signal.adapter import SignalAdapter
@@ -198,6 +200,54 @@ class StartupError(Exception):
 _REASONING_EFFORTS: frozenset[str] = frozenset(
     {"none", "minimal", "low", "medium", "high", "xhigh", "max"}
 )
+
+
+def _unit_rooms(allowlist: Policy) -> dict[str, tuple[UnitRoom, ...]]:
+    """Unit -> its rooms, as the proactive adaptor names them.
+
+    `label` is the operator's `policy.toml` label or `""` — NEVER `primary_id`.
+    It fell back to the id until 2026-09-23, and every model-facing render of
+    it (`<rooms>`, `<loop_decisions>`, the no-reader `<presence>`) then put a
+    room id on the wire for an unlabelled room (R-18). Nothing reads it as a
+    key: `conversation_id` is the key, and the renders supply their own
+    stand-in for a room with no name.
+    """
+    rooms_by_unit: dict[str, tuple[UnitRoom, ...]] = {}
+    for conv in allowlist.conversations:
+        rooms_by_unit[conv.unit] = (
+            *rooms_by_unit.get(conv.unit, ()),
+            UnitRoom(
+                platform=conv.platform, conversation_id=conv.primary_id,
+                label=conv.label, home=conv.home_room,
+                # The operator's own description of the room (issue #161) —
+                # the SAME `policy.toml` field the note candidates pass reads,
+                # so the two passes cannot hold two ideas of what a room is.
+                description=conv.description,
+            ),
+        )
+    return rooms_by_unit
+
+
+def _presence_reader(
+    cfg: Config, allowlist: Policy, registry: AdapterRegistry,
+) -> PresenceReader:
+    """The one `PresenceReader` (design/self-awareness/02).
+
+    Her handles come from two places and the order is the design: `[agent.
+    handles]` is the DECLARED fallback, and any adapter that can report its own
+    handle overrides it, read live on every turn. Today that is Instagram
+    alone — its bridge's `/health` carries `self.username`. Signal and
+    Discord derive ids and drop the username by design, and WhatsApp's bridge
+    exposes none, so theirs stay declared until an adapter can say.
+    """
+    live: dict[str, Callable[[], Awaitable[str | None]]] = {}
+    instagram = registry.adapters.get("instagram")
+    if isinstance(instagram, InstagramAdapter):
+        live["instagram"] = instagram.own_handle
+    return PresenceReader(
+        policy=allowlist, adapters=dict(registry.adapters),
+        handles=cfg.agent.handles, live_handles=live,
+    )
 
 
 def _home_room_people(
@@ -1521,6 +1571,12 @@ async def build_dependencies(
     if cfg.relevance_gate.enabled:
         engage_policies.append(RelevanceGatePolicy(allowlist))
     policy = CompositePolicy(tuple(engage_policies))
+    # `<presence>` (design/self-awareness/02): ONE reader, handed to the tag
+    # path's assembler, the fire path and the proactive pass, so none of the
+    # three holds its own idea of which rooms exist or which networks are up.
+    # Over the SAME allowlist ingest admits against and the SAME adapter map
+    # the tag path sends through.
+    presence_reader = _presence_reader(cfg, allowlist, registry)
     assembler = build_assembler(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
         # `None` while `[notes] enabled = false`. `policy=allowlist` is the
@@ -1552,6 +1608,7 @@ async def build_dependencies(
         # The shared quote-window resolver (DEC-195). Same instance
         # `FirePath` below is given — the point of building it once.
         quote_window=quote_window,
+        presence=presence_reader,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -2776,6 +2833,10 @@ async def build_dependencies(
             # act turns only; a reminder firing is not a decision
             # about whether to speak.
             decisions=decision_log,
+            # `<presence>` — the SAME reader the tag path's assembler holds, so
+            # a participation turn or a reminder knows where it is the way a
+            # tag does (design/self-awareness/02).
+            presence=presence_reader,
             # The note tier (design/dreamer-agent-loop/35 Phase 2) — S5's
             # precedent one tier later: the participation determination grounds
             # on «transcript + standing/notes», which Phase 1's header already
@@ -3444,20 +3505,7 @@ async def build_dependencies(
             # the same room (39 D2: two readers with two ideas of a
             # unit's home would put the decide turn in one room and the
             # act turn in another).
-            rooms_by_unit: dict[str, tuple[UnitRoom, ...]] = {}
-            for conv in allowlist.conversations:
-                rooms_by_unit[conv.unit] = (
-                    *rooms_by_unit.get(conv.unit, ()),
-                    UnitRoom(
-                        platform=conv.platform, conversation_id=conv.primary_id,
-                        label=conv.label or conv.primary_id, home=conv.home_room,
-                        # The operator's own description of the room (issue
-                        # #161) — the SAME `policy.toml` field the note
-                        # candidates pass reads, so the two passes cannot hold
-                        # two ideas of what a room is.
-                        description=conv.description,
-                    ),
-                )
+            rooms_by_unit = _unit_rooms(allowlist)
             dream_schedules = {
                 **dream_schedules,
                 # Daily, on the Dreamer's existing clock (39 D10), phased to
@@ -3501,6 +3549,13 @@ async def build_dependencies(
                     # a turn cannot disagree about who is in a room. No roster
                     # for the platform means no block, not a failure.
                     people_of=_home_room_people(rosters, persons),
+                    # WHERE SHE STANDS (design/self-awareness/02, D2): the
+                    # SAME reader the tag and fire paths hold, read on the
+                    # home room at pass time. `<presence>` replaced
+                    # `<home_room>` in this prompt.
+                    presence_of=lambda home: presence_reader.read(
+                        platform=home.platform, conversation_id=home.conversation_id,
+                    ),
                     ai_peer=cfg.memory.ai_peer,
                     clock=clock,
                     timezone=ZoneInfo(cfg.reminders.timezone),

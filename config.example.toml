@@ -10,6 +10,19 @@ policy_file = "policy.toml"   # WHO may talk to her, and where. See policy.examp
 # workspace_id.
 name = "nora"
 
+# HER OWN PUBLIC HANDLES, by network key (design/self-awareness/02). Rendered
+# in <presence> each turn so she knows what people call her on each network.
+# Declared ONLY where nothing can report it: Instagram's is read live from the
+# bridge's /health (a value here is only its fallback), and a rename there
+# needs no edit here. Display text only — never matched against anyone, never
+# one of her mention ids. A network with no entry and no live read is left out,
+# never guessed. Discord: add one only if she has a handle worth giving.
+[agent.handles]
+signal = "@nora.000"
+whatsapp = "@noraexample"
+x = "@noraexample"
+threads = "@noraexample"
+
 [platforms.signal]
 base_url = "http://127.0.0.1:18080"
 account = ""                     # empty = derive from the signal-cli daemon (D5)
@@ -704,6 +717,14 @@ allow_reference_images = false
 # edits lane ran made reference-image output noticeably worse; xAI's own
 # edits docs use 2.0 (multi-ref support + current-generation quality).
 model = "grok-imagine-image-2.0"
+# 2026-09-23: xAI retires `grok-imagine-image-quality` on 2026-11-02. From
+# that date requests to it "are served by grok-imagine-image-2.0 with quality
+# set to low" (https://docs.x.ai/developers/migration/imagine-image-quality-nov-2),
+# i.e. the same model as `model` above at its lowest quality, so the quality
+# option stops buying anything. The docs name no separate quality successor,
+# so the default is left alone until then rather than retiring the option
+# early; the durable fix is sending 2.0's own `quality` parameter from the
+# adapter, which it does not do today.
 quality_model = "grok-imagine-image-quality"
 refresh_token_env = "XAI_OAUTH_REFRESH_TOKEN"
 timeout_seconds = 90.0

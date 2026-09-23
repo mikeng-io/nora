@@ -41,15 +41,17 @@ async def bridge():
         if request.path.endswith("/members"):
             return web.json_response({"ok": True, "room_id": ROOM, "title": "g",
                                       "is_group": True, "members": []})
-        if request.path == "/social/story":
-            return web.json_response({"status": "nothing_found"})
+        if request.path.startswith("/accounts/"):
+            return web.json_response({"ok": True, "igid": "10000001", "found": False,
+                                      "items": []})
         return web.json_response({"ok": True, "id": "mid.$x", "timestamp_ms": 1})
 
     app = web.Application()
     app.router.add_post("/send", record)
     app.router.add_post("/react", record)
     app.router.add_get("/threads/{thread_fbid}/members", record)
-    app.router.add_post("/social/story", record)
+    app.router.add_get("/accounts/{igid}", record)
+    app.router.add_get("/accounts/{igid}/story", record)
     server = TestServer(app)
     await server.start_server()
     yield str(server.make_url("")).rstrip("/"), seen
@@ -100,10 +102,14 @@ async def test_a_roster_read_carries_the_turns_trace(bridge):
     assert seen[0][1] is not None and _trace_id(span) in seen[0][1]
 
 
-async def test_a_social_read_carries_the_turns_trace(bridge):
+@pytest.mark.parametrize(
+    ("what", "path"),
+    [("story", "/accounts/10000001/story"), ("profile", "/accounts/10000001")],
+)
+async def test_a_social_read_carries_the_turns_trace(bridge, what, path):
     base_url, seen = bridge
     client = InstagramSocialClient(base_url=base_url)
     with _tracer.start_as_current_span("turn") as span:
-        await client.read(platform="instagram", what="story", target="221731317", limit=1)
-    assert seen and seen[0][0] == "/social/story"
+        await client.read(platform="instagram", what=what, target="10000001", limit=1)
+    assert seen and seen[0][0] == path
     assert seen[0][1] is not None and _trace_id(span) in seen[0][1]

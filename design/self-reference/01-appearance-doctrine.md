@@ -1,23 +1,35 @@
 ---
 type: design
-title: "Self-Reference — Layer 1: appearance.md doctrine file"
-description: "A new authored doctrine file (kind: identity, order 15) describing Nora's visual form and her recognition rule. Zero code: loader auto-discovery injects it every turn."
+title: "Self-Reference — Layer 1: her appearance, as a section of the image-generation skill"
+description: "Her visual form and recognition rules. Designed as an always-loaded doctrine file; BUILT as a section of the on-demand image-generation skill (operator, 2026-09-23). See 06."
 tags: [nora, doctrine, identity, appearance]
 timestamp: '2026-08-27'
 edges:
   - {src: 01-appearance-doctrine, dst: 00-overview, rel: realizes, provenance: asserted}
 ---
 
-# Layer 1 — appearance.md (doctrine file)
+# Layer 1 — her appearance
+
+> **Superseded placement (operator, 2026-09-23).** This node designed
+> an `appearance.md` doctrine file (never created), injected every turn. It was never built. The
+> operator placed the content in a SKILL instead,
+> `nora/skills/image-generation/SKILL.md`, loaded on demand when she makes or
+> edits an image, with her appearance as one section: her look is needed only
+> then, and design/12's placement rule puts occasional domain instruction in a
+> skill. The trade-off: a turn that does not load the skill draws without the
+> canon. The CONTENT requirements below (§Contents) still hold and were built;
+> the doctrine mechanics (kind, order, `applies_to`, authority fields, the
+> doctrine tests) do not apply. `06-implementation-plan.md` is the as-built
+> record. The loader line numbers this node cited had drifted and are removed.
 
 ## What
 
-A new authored file in `nora/doctrine/`, `kind: identity` (same kind as
-`identity.md`/`voice.md`, so it inherits the existing authority model and
-audience filtering). The loader auto-discovers `*.md` (`loader.py:536`),
-orders by numeric `order` (`loader.py:573`), filters by `applies_to`
-(`loader.py:615`), and injects the assembled doctrine into the system prompt —
-so a new file needs **zero code changes** to reach the model every turn.
+As built: the "What you look like" section of
+`nora/skills/image-generation/SKILL.md`, an operator-authored skill loaded on
+demand through the `skills` tool (DEC-50), with two sibling sections on the
+same page: whether she is in the picture at all, and whose photo is whose.
+The designed doctrine file (`kind: identity`, order 15, injected every turn)
+was not built; see the banner.
 
 ## Contents
 
@@ -56,37 +68,28 @@ so a new file needs **zero code changes** to reach the model every turn.
 4. **Conflict rule** — when a user supplies their own reference image AND asks
    for "your style", use both; the reference slot budget is a **tool-surface
    convention** (three params `reference`/`reference_2`/`reference_3`,
-   `tools.py:3265-3266`) rather than a provider limit — the adapter sends N
-   images via `images[]` (`xai_adapter.py:162`). With no operator anchor, "self
+   the `generate_image` signature) rather than a provider limit — the adapter sends N
+   images via `images[]` (`XaiImageGenerator`). With no operator anchor, "self
    wins over a second user image" is doctrine guidance, labelled advisory not
    mechanical — it decides slot order, not correctness.
 
-## Authority fields (loader-enforced)
+## Authority, ordering, audiences
 
-The loader requires `authority_above` / `authority_below` / `not_here` /
-`change_policy` and enforces cross-file symmetry (`loader.py:51-54`,
-`459-472`). Explicit here so the build does not rediscover the loader by
-error:
+Not applicable as designed. A skill carries `authority_above: [situation]`,
+`authority_below: [message-content, tool-output]` and `change_policy:
+operator-only` like its two siblings, and none of that is enforced by a loader
+(#241). There is no assembly order and no `applies_to`: the skill reaches any
+occasion whose agent has the skills plugin, when she loads it.
 
-- `appearance.md` is a **peer of `identity`/`voice`** — same tier, names
-  neither.
-- `authority_above: [constraints]`
-- `authority_below: [tool-output]` (both terminals, no reciprocity)
-- a substantive `not_here` (len > 40, per `test_doctrine_content.py:71-73`)
+Item 4's "self wins over a second user image" slot order is replaced in the
+build by a provider fact (06 §3): the output takes the first reference's
+aspect ratio unless one is named, so the skill orders references by the
+framing wanted.
 
-## Ordering
-
-`order: 15` places it between `identity` and `voice` in the assembly. The
-exact section-list assertions in `tests/test_doctrine_content.py:55-56` and
-`tests/test_doctrine_assembly.py:44-45,56-57` must both include `appearance`
-(see `04-tests-and-files.md`).
-
-## Files touched (this layer)
+## Files touched (as built)
 
 ```
-nora/doctrine/appearance.md                    # new — kind: identity, order 15
-tests/test_doctrine_content.py                 # authored set + exact-order include appearance.md
-tests/test_doctrine_assembly.py                # exact section-list assertions include appearance.md
-tests/test_doctrine_audiences.py               # appearance is tag-only; excluded from AUTHORED,
-                                               #   mirroring silence
+nora/skills/image-generation/SKILL.md          # new — the skill; appearance is one section
+tests/test_skill_content.py                    # skill content, handle, anchors, not-in-doctrine
+tests/test_factory.py                          # available-skill list gains image-generation
 ```

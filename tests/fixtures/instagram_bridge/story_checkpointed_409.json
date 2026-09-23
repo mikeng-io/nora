@@ -1,0 +1,9 @@
+{
+  "route": "GET /accounts/{igid}/story",
+  "path": "/accounts/10000001/story",
+  "status": 409,
+  "body": {
+    "error": "checkpoint required",
+    "ok": false
+  }
+}

@@ -1,15 +1,24 @@
 ---
 type: design
-title: "Self-Reference — Layer 3: reference rules (doctrine text)"
+title: "Self-Reference — Layer 3: reference rules (skill text)"
 description: "Doctrine teaches Nora when to use her canonical self handle — and the deterministic no-guess rule that carries the operator-photo ambiguity, since v1 pins no operator asset — and why tool-level intent detection is rejected."
-tags: [nora, doctrine, image-gen, reference]
+tags: [nora, skill, image-gen, reference]
 timestamp: '2026-08-27'
 edges:
   - {src: 03-reference-rules, dst: 00-overview, rel: realizes, provenance: asserted}
   - {src: 03-reference-rules, dst: 02-canonical-assets, rel: depends_on, provenance: asserted}
 ---
 
-# Layer 3 — reference rules (doctrine text)
+# Layer 3 — reference rules (skill text)
+
+> **As built (2026-09-23):** these rules live in the image-generation skill
+> (`nora/skills/image-generation/SKILL.md`), not in a doctrine file; see 01's
+> banner and 06. The skill leads with a judgement the design did not have:
+> whether she herself is in the picture asked for. If she is, her canonical
+> picture keeps her recognisable; if she is not, attaching it puts her where
+> she was not asked to be. Written as a judgement with its goal, never as a
+> list of trigger phrases (operator rule). Wherever "doctrine" appears below,
+> read "the skill".
 
 ## What
 
@@ -55,5 +64,5 @@ normal wrong image, never a security issue.
 ## Files touched (this layer)
 
 ```
-nora/doctrine/appearance.md                    # the rules live here (Layer 1 file)
+nora/skills/image-generation/SKILL.md          # the rules live here (as built)
 ```

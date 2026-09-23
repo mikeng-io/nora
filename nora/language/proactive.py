@@ -118,8 +118,10 @@ from nora.domain.ports import (
 )
 from nora.domain.prompt import escape, one_line
 from nora.domain.reminders import Reminder
+from nora.domain.self_presence import Presence
 from nora.domain.standing import Standing
 from nora.language.note_render import render_note_rows, standing_only
+from nora.language.presence_render import render_presence
 from nora.language.self_card_render import render_self_card
 from nora.obs.metrics import Metrics
 
@@ -266,6 +268,16 @@ DEFAULT_ROSTER_INDEX_MEMBERS = 12
 _ROOM_STYLE = RowStyle(handle="bullet")
 
 
+#: What a room with no `policy.toml` label is called on a `<rooms>` line.
+#: Never its id (R-18) — the line's suffix already names the network.
+UNNAMED_ROOM = "a room with no name"
+
+
+def _room_name(room: UnitRoom) -> str:
+    """The speaker position of a `<rooms>` line: the label, or the stand-in."""
+    return room.label or UNNAMED_ROOM
+
+
 def _room_body(_room: UnitRoom, *, text: str) -> str:
     """The position itself, already collapsed and clipped by the caller."""
     return text
@@ -320,12 +332,16 @@ class UnitRoom:
 
     platform: str
     conversation_id: str
+    #: The operator's `policy.toml` label, or `""`. Never the id: every render
+    #: of it is model-facing (R-18), and the renders say «a room with no name»
+    #: rather than falling back.
     label: str
     home: bool = False
     #: What the operator says this room IS (`policy.Conversation.description`,
     #: issue #161) — «a games room; 2200 is when people log on, not an
     #: appointment». `None` where the operator wrote nothing, which is the
-    #: shipped state. Rendered only for the HOME room, inside `<home_room>`,
+    #: shipped state. Rendered only for the HOME room, as `<presence>`'s
+    #: `this_room_is` (it was `<home_room>`'s body until 2026-09-23),
     #: because that is the only room this pass reads people and positions
     #: through; the other rooms appear as positions, not as batches to
     #: interpret.
@@ -429,7 +445,12 @@ class _SelfMemory(Protocol):
 #: routes on `key` yet either way (`00-overview.md` §3).
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("now", 10, "turn"),
-    ("home_room", 20, "turn"),
+    # `<presence>` REPLACES `<home_room>` (design/self-awareness/02, D2):
+    # the same block the tag path renders, from the same renderer, with the
+    # home room as the room she is in and the operator's description as an
+    # attribute. Two statements of where she is would be two sources for
+    # one fact.
+    ("presence", 20, "turn"),
     ("people", 30, "turn"),
     ("notes", 40, "turn"),
     ("rooms", 50, "turn"),
@@ -481,6 +502,12 @@ class ProactiveAdaptor:
         # `None` renders no block, which is the pre-2026-09-10 behaviour and
         # what a composition with no roster degrades to.
         people_of: Callable[[UnitRoom], Awaitable[Sequence[_Person]]] | None = None,
+        # WHERE SHE IS (design/self-awareness/02, D2): the unit's rooms, their
+        # transport state, that other groups exist, her handles. A callable
+        # for `rooms_of`'s reason — reading policy and adapter health is the
+        # composition root's `PresenceReader`, which this layer may not
+        # import. `None` renders the home room's network and label alone.
+        presence_of: Callable[[UnitRoom], Awaitable[Presence | None]] | None = None,
         ai_peer: str,
         clock: Callable[[], datetime],
         timezone: ZoneInfo,
@@ -519,6 +546,7 @@ class ProactiveAdaptor:
         # through which the adaptor learns about rooms at all.
         self._rooms_of = rooms_of
         self._people_of = people_of
+        self._presence_of = presence_of
         self._ai_peer = ai_peer
         # An AWARE datetime, threaded rather than read: the decision log's
         # window and every «in N days» in the prompt are comparisons against
@@ -630,29 +658,7 @@ class ProactiveAdaptor:
             body=f"{now.astimezone(self._tz):%Y-%m-%d %a %H:%M} ({self._tz.key})",
         ).render()]
         home = next(room for room in rooms if room.home)
-        # The attributes say what the room is FOR; the operator's own
-        # `description` (issue #161) says what it IS, and only they can state
-        # it. Absent — the shipped state, and every deployment's state until
-        # somebody writes one — the block renders self-closing, as it always
-        # has.
-        #
-        # **What the block SAYS no longer varies with that** (#314). It used to
-        # append a sentence about the operator's words only when there were
-        # any, which is a description composed at inject time; the type's now
-        # says «anything inside this block is what the operator says», which is
-        # true of a self-closing block as much as a filled one.
-        home_order, home_key = _ROW["home_room"]
-        home_block = ContextBlock(
-            name="home_room", order=home_order, key=home_key,
-            attrs=(("platform", home.platform), ("label", home.label)),
-            # The operator's sentence and the platform's own label. Neither is
-            # member-authored.
-            body=escape(home.description or ""),
-        )
-        parts.append(
-            home_block.render() if home.description
-            else home_block.render().split(">", 1)[0] + "/>"
-        )
+        parts.append(await self._presence_block(home))
         people = await self._people_block(home)
         if people:
             parts.append(people)
@@ -668,6 +674,34 @@ class ProactiveAdaptor:
         if self_card:
             parts.append(self_card)
         return "\n\n".join(parts)
+
+    async def _presence_block(self, home: UnitRoom) -> str:
+        """Where she stands for this unit, as `<presence>` — the tag path's
+        block from the tag path's renderer (design/self-awareness/02, D2).
+
+        It replaced `<home_room>`, which said the platform and the label and
+        nothing about the unit's other rooms or whether any of them was
+        reachable: a pass deciding WHERE to raise something could not choose
+        a room it did not know existed. The operator's description (issue
+        #161) rides as `this_room_is`, where `<home_room>` carried it as its
+        body.
+
+        `presence_of` is the composition root's `PresenceReader`, read on the
+        home room at pass time and never cached. `None` (no reader wired, the
+        contract fake and a bare eval drive) or a reader that could not place
+        the room renders the network ALONE — never a claim about rooms or
+        health nobody read, and never `home.label`. `UnitRoom.label` is built
+        as `conv.label or conv.primary_id` by the composition root, so for an
+        unlabelled room it IS the room id, and R-18 keeps ids off the wire.
+        The reader reads the policy label itself and never falls back.
+        """
+        presence: Presence | None = None
+        if self._presence_of is not None:
+            presence = await self._presence_of(home)
+        if presence is None:
+            presence = Presence(platform=home.platform)
+        block = restamp(render_presence(presence, room_is=home.description), _ROW)
+        return block.render()
 
     async def _people_block(self, home: UnitRoom) -> str:
         """Who is in the home room, what they are called there, and ONE LINE of
@@ -713,7 +747,8 @@ class ProactiveAdaptor:
         try:
             people = await self._people_of(home)
         except Exception:
-            log.exception("proactive people block failed (home=%s)", home.label)
+            log.exception("proactive people block failed (home=%s)",
+                          home.label or home.conversation_id)
             return ""
         if not people:
             return ""
@@ -880,7 +915,7 @@ class ProactiveAdaptor:
 
         THE HOME ROOM AND NOT EVERY ROOM (revised 2026-09-10 by the operator;
         design 39 D10 said "every room of the unit"). A proactive row
-        fires into the home room — `inputs` renders exactly one `<home_room>`
+        fires into the home room — `inputs` renders exactly one `<presence>`
         and `policy.py` refuses a row anywhere else — so the home room is the
         ONLY room this pass can interrupt. Every other room of the unit
         was a proxy for that, and on the live `friends` unit the proxy
@@ -918,7 +953,8 @@ class ProactiveAdaptor:
                     conversation_id=room.conversation_id, limit=1,
                 )
             except Exception:
-                log.exception("proactive: quiet read failed for %s", room.label)
+                log.exception("proactive: quiet read failed for %s",
+                              room.label or room.conversation_id)
                 return False
             if rows and now_ms - rows[-1].ts < self._quiet_ms:
                 return False
@@ -939,14 +975,15 @@ class ProactiveAdaptor:
                 # Fail-soft, counted where the tag path counts it: a room
                 # whose position could not be read is rendered as unread,
                 # never as «no position».
-                log.exception("proactive: standing read failed for %s", room.label)
+                log.exception("proactive: standing read failed for %s",
+                              room.label or room.conversation_id)
                 self._inc(
                     "nora_errors_total", stage="proactive_standing",
                     platform=room.platform,
                 )
                 lines.append(render_rows(
                     [room], style=_ROOM_STYLE,
-                    speaker=lambda r: r.label,
+                    speaker=_room_name,
                     suffix=lambda r: f"({r.platform})",
                     body=lambda _r: "(could not read the position)",
                 ))
@@ -973,7 +1010,7 @@ class ProactiveAdaptor:
             shown = _clip(one_line(position.body))
             lines.append(render_rows(
                 [room], style=_ROOM_STYLE,
-                speaker=lambda r: r.label,
+                speaker=_room_name,
                 # Bound as defaults, not captured: these read the LOOP's
                 # variables and a late-bound closure would render every room
                 # with the last room's age and position (ruff B023).

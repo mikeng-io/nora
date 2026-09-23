@@ -11,6 +11,7 @@ from .culture import CultureRevision
 from .decision_log import DecisionRow
 from .media import MediaBlob, MediaRef
 from .notes import Note
+from .self_presence import Presence
 from .standing import Standing
 
 
@@ -531,6 +532,17 @@ class TagContext:
     # nothing for an empty tuple, so a deployed prompt gains nothing until
     # something populates it.
     people_in_window: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    # `<presence>` (design/self-awareness/02) — where she is on this turn: the
+    # room, the group's other rooms with each network's transport state, that
+    # other groups exist (never which), and her own public handles. Read at
+    # turn start by `nora.engagement.self_presence.PresenceReader`, never
+    # cached across turns: a cached "up" is how she promises a send that then
+    # fails.
+    #
+    # `None` is a context nobody read one for (an offline harness); the
+    # prefill then renders `Presence.minimal` — the network alone, exactly
+    # what `_where_line` said before this replaced it.
+    presence: Presence | None = None
 
 
 @dataclass(frozen=True)

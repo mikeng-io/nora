@@ -46,6 +46,10 @@ _SHARED_BUILDER_NAMES = {
     "render_standing": "standing",
     "render_decisions": "loop_decisions",
     "render_self_card": "self_card",
+    # `nora.language.presence_render` (design/self-awareness/02): the tag
+    # path and the proactive pass render `<presence>` through it, and no
+    # occasion builds its own copy.
+    "render_presence": "presence",
 }
 
 

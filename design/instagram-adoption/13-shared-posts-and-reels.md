@@ -26,7 +26,7 @@ reels never need to be fetched at all.**
 
 A reel or post shared into a group is a `MessageContentXMA`
 (`SlideMessageXMAContent`). The bridge's content-type switch
-(`deploy/instagram-bridge/inbound.go`) does not handle it, so it falls to the
+(`deploy/instagram-bridge/internal/gateway/instameow/inbound.go`) does not handle it, so it falls to the
 default and produces `{text: "", media: null}`.
 
 **Nora does not see "someone shared a reel". She sees an empty message.** In a
