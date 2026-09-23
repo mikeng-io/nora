@@ -202,6 +202,12 @@ much larger sacrifice than it first looks.
 
 ## Recommendation
 
+> **SUPERSEDED FOR INSTAGRAM 2026-09-23 by `15-bridge-is-the-only-entry.md`.**
+> The per-row split below (OpenCLI for posts lists, instameow for the rest)
+> is replaced by one rule: every Instagram verb goes through instagram-bridge.
+> A verb with no bridge mechanism answers `unavailable`; it does not fall back
+> to OpenCLI.
+
 **Keep the tool. Add a backend for what instameow is actually better at. Do
 not add a second tool.**
 

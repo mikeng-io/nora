@@ -64,6 +64,12 @@ messaging side.
 
 ## Backends live BELOW the port and Nora never learns there are two
 
+> **SUPERSEDED FOR INSTAGRAM 2026-09-23 by `15-bridge-is-the-only-entry.md`.**
+> Every Instagram verb goes through instagram-bridge's HTTP API; OpenCLI serves
+> no Instagram row. The table and notes below are kept as the record of how
+> the split was reasoned and measured. They are not the current routing. X is
+> unaffected.
+
 The operator's concern — mixing up OpenCLI and the Go package — is exactly a
 port violation. The fix is that backend selection is a routing table inside
 the host-side bridge, per `(network, verb)`, and nothing above it knows:

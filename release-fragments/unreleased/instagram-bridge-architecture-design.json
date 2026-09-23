@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "Design: instagram-bridge becomes the only way Nora reaches Instagram, and gets application architecture, tracing and logging conventions.",
+  "details": [],
+  "limitations": [],
+  "reason": "Design documents only (design/instagram-adoption/15, 16, and supersede notes in 05/07/08); nothing Nora does in a room changes. 15 makes the bridge's HTTP API the single door for every Instagram read and write, with per-verb cutover away from OpenCLI and a measured status table. 16 sets the bridge's layers (Clean Architecture, typed ids, one upstream-call helper that checks GraphQL errors), REST resource paths with one error envelope, OpenTelemetry export into the existing collector with traceparent propagation from Nora, and slog JSON logging with trace ids, migrated incrementally with observability first."
+}
