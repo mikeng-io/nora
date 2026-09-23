@@ -1594,8 +1594,15 @@ async def test_the_reply_does_not_wait_for_the_reaction():
 async def test_a_slow_reaction_is_not_counted_as_tag_overhead():
     """`nora_overhead_seconds` is the metric that would catch a decoration
     creeping onto the critical path, so it is asserted directly rather than
-    inferred from wall-clock."""
-    adapter = _ReactingAdapter(react_delay=0.2)
+    inferred from wall-clock.
+
+    The reaction's delay and the bound sit FAR apart on purpose. They were
+    both 0.2 s, so the test could not tell «the reaction is on the critical
+    path» (overhead >= 0.2) from «the machine is busy» — and under `make
+    gate`'s parallel load an ordinary tag measured 0.228 s and went red
+    (2026-09-24). With a 1.0 s reaction, a critical-path regression reads
+    >= 1.0 and a loaded box stays well under 0.5."""
+    adapter = _ReactingAdapter(react_delay=1.0)
     pipeline, metrics, _audit, _memory, background = _build_pipeline(adapter=adapter)
 
     await pipeline.run(_request())
@@ -1603,7 +1610,7 @@ async def test_a_slow_reaction_is_not_counted_as_tag_overhead():
     await _drain(background)
 
     assert len(overhead) == 1
-    assert overhead[0] < 0.2
+    assert overhead[0] < 0.5
 
 
 async def test_a_timed_out_turn_resolves_to_a_caution_too():
@@ -2241,10 +2248,10 @@ def _wiring() -> object:
     own suite."""
     from nora.engagement.stages.debrief import Wiring
 
-    return Wiring(store=object(), store_verdict=object(), client=object(),
+    return Wiring(store=object(), client=object(),
                   objective=object(), record_store=object(),
                   max_chars=1200, fold_batch=200, timeout_seconds=5.0,
-                  store_timeout_seconds=5.0, rebuild_after_folds=20,
+                  store_timeout_seconds=5.0,
                   notes_sink=None, unit_of=lambda p, c: "ws")
 
 

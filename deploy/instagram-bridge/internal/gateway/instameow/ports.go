@@ -166,12 +166,33 @@ func (b *Bridge) SocialProfile(ctx context.Context, igid domain.IGID) domain.Soc
 	return readSocial(ctx, issuer, err, igid)
 }
 
-// Story reads one account's current story. ONE igid, never a batch: a story
-// read is visible to its author.
+// Story reads one account's current story. ONE igid, never a batch: a batch
+// would open stories nobody asked about (whether the author sees the view is
+// unmeasured, design 04, 05 §Reading a story).
 func (b *Bridge) Story(ctx context.Context, igid domain.IGID) (domain.Story, error) {
 	cli, err := b.client()
 	if err != nil {
 		return domain.Story{}, err
 	}
 	return readStory(ctx, cli, igid)
+}
+
+// SearchAccounts searches Instagram accounts by free text, in the library's
+// own order (16 §Resources, 17 P9, P11).
+func (b *Bridge) SearchAccounts(ctx context.Context, query string) ([]domain.AccountSummary, error) {
+	cli, err := b.client()
+	if err != nil {
+		return nil, err
+	}
+	return searchAccounts(ctx, cli, query)
+}
+
+// Post reads one post by its shortcode, every carousel item in order
+// (17 P12). See posts.go.
+func (b *Bridge) Post(ctx context.Context, code domain.Shortcode) (domain.Post, error) {
+	cli, err := b.client()
+	if err != nil {
+		return domain.Post{}, err
+	}
+	return readPost(ctx, cli, code)
 }

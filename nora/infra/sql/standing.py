@@ -16,10 +16,12 @@ the window to matter. `ON CONFLICT` makes the race unrepresentable rather than
 unlikely.
 
 **`fold_count` is written, never incremented in SQL.** The caller holds the
-prior it just read and computes `prior.fold_count + 1` there, because the
-re-derivation path also has to be able to RESET it to zero, and a store that
-only knows how to increment cannot express that. Arithmetic in the sink, not in
-the statement.
+prior it just read and computes `prior.fold_count + 1` there. Until
+2026-09-24 this was also how the re-derivation path could RESET it to zero —
+a store that only knows how to increment cannot express that — but that path
+is deleted (design/standing-compact/); `fold_count` is now a plain count
+nothing resets, still computed in the caller rather than in SQL. Arithmetic in
+the sink, not in the statement.
 
 **The upsert now carries an APPEND beside it, in the same transaction.** The
 head keeps its shape, its semantics and its statement exactly — nothing about
@@ -47,7 +49,7 @@ from nora.infra.sql.schema import STANDING, STANDING_REVISION
 def _standing(row: sa.Row[Any]) -> Standing:
     """The shared row -> `Standing` mapping for `read` and `read_as_of`.
 
-    One mapping rather than two, because the two tables carry the same seven
+    One mapping rather than two, because the two tables carry the same six
     values by construction — `write` copies them across in one transaction — and
     a second mapping is a second place for a column to be dropped. `audit.py`'s
     `_row` is the same argument for the same reason.
@@ -58,7 +60,6 @@ def _standing(row: sa.Row[Any]) -> Standing:
         body=row.body,
         fold_count=row.fold_count,
         updated_at=row.updated_at,
-        consumed_verdict_tag=row.consumed_verdict_tag,
         last_folded_row_id=row.last_folded_row_id,
     )
 
@@ -113,17 +114,17 @@ class SqlStandingStore:
         ordering on it picks the later fold rather than the luckier uuid.
 
         **Where `fold_count` is not enough, stated rather than left to be
-        found.** It is not strictly increasing: a rebuild resets it to 1
-        (`debrief`), and a rollup fold carries the prior's value forward
-        unchanged (`standing_event`). So two revisions that share BOTH a
-        millisecond and a `fold_count` are still a tie, and a rebuild landing in
-        the same millisecond as the fold it replaces sorts below it. `id DESC`
-        stays on as the final key purely to make the ordering TOTAL — with two
-        keys the planner would be free to return either row of such a tie, and
-        a total order at least answers one way. Sub-millisecond ties are not
-        reachable on the fold path in practice (one fold per turn, per room);
-        the ordering is written for the case that is, and says what it does not
-        cover.
+        found.** It is not strictly increasing: a rollup fold carries the
+        prior's value forward unchanged (`standing_event`), rather than
+        incrementing it. (Before 2026-09-24 a rebuild also reset it to 1
+        — deleted with the ceiling trigger, design/standing-compact/.) So two
+        revisions that share BOTH a millisecond and a `fold_count` are still a
+        tie. `id DESC` stays on as the final key purely to make the ordering
+        TOTAL — with two keys the planner would be free to return either row
+        of such a tie, and a total order at least answers one way.
+        Sub-millisecond ties are not reachable on the fold path in practice
+        (one fold per turn, per room); the ordering is written for the case
+        that is, and says what it does not cover.
 
         The `(platform, conversation_id, updated_at DESC)` prefix of
         `idx_standing_revision_room_updated` still serves the filter and the
@@ -157,7 +158,6 @@ class SqlStandingStore:
             body=standing.body,
             fold_count=standing.fold_count,
             updated_at=standing.updated_at,
-            consumed_verdict_tag=standing.consumed_verdict_tag,
             last_folded_row_id=standing.last_folded_row_id,
         )
         stmt = stmt.on_conflict_do_update(
@@ -166,16 +166,14 @@ class SqlStandingStore:
                 "body": stmt.excluded.body,
                 "fold_count": stmt.excluded.fold_count,
                 "updated_at": stmt.excluded.updated_at,
-                # WRITTEN ON EVERY UPSERT, never left out of the `set_`. The
-                # caller carries the prior's watermark forward on a revise, so
-                # the value handed here is always the intended one — but an
-                # omitted key would make the column keep its old value by
-                # accident rather than by decision, and "correct because the
-                # writer happens to agree with the previous row" is exactly
-                # what stops being true the first time it does not.
-                "consumed_verdict_tag": stmt.excluded.consumed_verdict_tag,
-                # The row-id watermark, same rule as the verdict watermark
-                # above: written on every upsert, never omitted, so a revise
+                # `consumed_verdict_tag` is NOT written: it was the watermark
+                # of the ungrounded re-derivation trigger, deleted 2026-09-24
+                # with the verdict (design/standing-compact/). The column
+                # stays, as dropped tiers' columns do; nothing reads it.
+                #
+                # The row-id watermark: written on every upsert, never
+                # omitted — an omitted key would keep its old value by
+                # accident rather than by decision — so a revise
                 # that carries the prior's watermark forward does so by
                 # decision and a fold that advanced it writes the advance in
                 # the SAME statement as the position it belongs to
@@ -189,7 +187,7 @@ class SqlStandingStore:
         # values, no derivation: whatever the head was set to is what history
         # records, so there is no arithmetic here that could disagree with the
         # statement above. It is a plain `INSERT` with no `ON CONFLICT` for
-        # `SqlTurnVerdictStore.save`'s reason — there is no update path to take,
+        # an append-only log's reason — there is no update path to take,
         # and `id` defaults to a fresh uuid, so two folds that agree in every
         # other column are two rows rather than one silently replaced.
         #
@@ -203,7 +201,6 @@ class SqlStandingStore:
             body=standing.body,
             fold_count=standing.fold_count,
             updated_at=standing.updated_at,
-            consumed_verdict_tag=standing.consumed_verdict_tag,
             last_folded_row_id=standing.last_folded_row_id,
         )
         async with self._engine.begin() as conn:

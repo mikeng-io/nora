@@ -16,7 +16,14 @@ from nora.domain.compute import (
     ensure_utc_job,
     normalise_compute_job,
 )
-from nora.domain.media import MediaBlob, MediaBytes, MediaObject, MediaRef, media_json
+from nora.domain.media import (
+    MediaBlob,
+    MediaBytes,
+    MediaObject,
+    MediaRef,
+    VideoReadingKey,
+    media_json,
+)
 from nora.domain.models import (
     ConversationTarget,
     DeliveryStatus,
@@ -175,9 +182,9 @@ class FakeRecordStore:
         return row_id
 
     def _latest_edit(self, row_id: int) -> dict[str, Any] | None:
-        """Mirrors `audit._latest_edit`: newest by `(ts, id)`."""
+        """Mirrors `audit._latest_edit`: newest by arrival (`id`)."""
         mine = [e for e in self.edits if e["message_id"] == row_id]
-        return max(mine, key=lambda e: (e["ts"], e["id"])) if mine else None
+        return max(mine, key=lambda e: e["id"]) if mine else None
 
     async def find_edited(
         self, *, conversation_id: str, target: EditTarget, sender_id: str,
@@ -189,13 +196,19 @@ class FakeRecordStore:
                 return r["platform_message_id"] == target.message_id
         elif target.sent_ts is not None and sender_id:
             def match(r: dict[str, Any]) -> bool:
-                return r["ts"] == target.sent_ts and r["sender_id"] == sender_id
+                # Mirrors the SQL: the original's ts, or one of its edits'.
+                return (
+                    r["ts"] == target.sent_ts
+                    or any(e["message_id"] == r["id"] and e["ts"] == target.sent_ts
+                           for e in self.edits)
+                )
         else:
             return None
+        # The sender PREFERRED, then the earliest — mirrors the SQL ordering.
         found = sorted(
             (r for r in self.rows
              if r["conversation_id"] == conversation_id and match(r)),
-            key=lambda r: r["id"],
+            key=lambda r: (r["sender_id"] != sender_id, r["id"]),
         )
         if not found:
             return None
@@ -217,7 +230,21 @@ class FakeRecordStore:
                 for q in self.rows
             ),
             edited_ts=latest["ts"] if latest else None,
+            media_json=r["media_json"],
+            edit_timestamps=frozenset(
+                e["ts"] for e in self.edits if e["message_id"] == r["id"]
+            ),
         )
+
+    async def quoted_ts_of(self, *, conversation_id: str, ts: int) -> int:
+        """Mirrors `SqlRecordStore.quoted_ts_of`."""
+        rows = [r for r in self.rows if r["conversation_id"] == conversation_id]
+        if any(r["ts"] == ts for r in rows):
+            return ts
+        for r in sorted(rows, key=lambda r: r["id"]):
+            if any(e["message_id"] == r["id"] and e["ts"] == ts for e in self.edits):
+                return int(r["ts"])
+        return ts
 
     async def append_edit(self, *, message_id: int, message: NormalizedMessage) -> None:
         self.edits.append({
@@ -849,6 +876,35 @@ class FakeMediaDescriptionStore:
             return
         self.index[(platform, token)] = blob
         self.descriptions[blob.sha256] = description
+
+
+class FakeVideoReadingStore:
+    """In-memory `VideoReadingStore`, bound to `SqlVideoReadingStore` by
+    `tests/contract/test_video_reading_store_contract.py`.
+
+    Keyed on the WHOLE `VideoReadingKey`, exactly as the table is, so a caller
+    that builds the key from the wrong geometry or model misses here as it
+    would against Postgres. `unavailable` is the store being down: `get`
+    misses and `put` swallows.
+    """
+
+    def __init__(self, *, unavailable: bool = False) -> None:
+        self.unavailable = unavailable
+        self.readings: dict[VideoReadingKey, str] = {}
+        self.gets: list[VideoReadingKey] = []
+        self.puts: list[tuple[VideoReadingKey, str]] = []
+
+    async def get(self, *, key: VideoReadingKey) -> str | None:
+        self.gets.append(key)
+        if self.unavailable:
+            return None
+        return self.readings.get(key) or None
+
+    async def put(self, *, key: VideoReadingKey, reading: str) -> None:
+        self.puts.append((key, reading))
+        if self.unavailable or not reading:
+            return
+        self.readings[key] = reading
 
 
 class FakeMediaObjectStore:
@@ -1567,14 +1623,17 @@ class FakeSocialSubjectIndex:
     can produce are the three the tier ladder produces, and collapsing any two
     of them is the defect the port exists to prevent:
 
-    * a person it holds an igid for, in reach → that igid, Tier 0 true;
-    * a person it holds an igid for, out of reach → the igid, Tier 0 false,
+    * a person it holds one igid for, in reach → `{igid}`, Tier 0 true;
+    * a person it holds one igid for, out of reach → `{igid}`, Tier 0 false,
       which is `refused` at the router — a boundary, not an outage;
-    * a person it has never heard of → `None`, which is `ambiguous` — and
-      NEVER a handle derived from the id, because a wrong binding does not
-      degrade the answer, it reads a different human's stories silently.
+    * a person it holds several igids for (a `frozenset` value) → all of
+      them, which is `ambiguous` at the router — never a pick;
+    * a person it has never heard of → the EMPTY set, which is «no account on
+      file» (`nothing_found`) — and NEVER a handle derived from the id,
+      because a wrong binding does not degrade the answer, it reads a
+      different human's stories silently.
 
-    Both methods fail CLOSED and neither raises, exactly as the port requires:
+    Every method fails CLOSED and none raises, exactly as the port requires:
     `unavailable=True` models an index that cannot be read at all and answers
     `None` / `False`, which costs a read that should have happened rather than
     granting one that should not have.
@@ -1585,21 +1644,26 @@ class FakeSocialSubjectIndex:
 
     def __init__(
         self,
-        igids: dict[str, str] | None = None,
+        igids: dict[str, str | frozenset[str]] | None = None,
         *,
         out_of_reach: frozenset[str] = frozenset(),
         unavailable: bool = False,
     ) -> None:
-        self.igids = dict(igids or {})
+        # One igid (a str) or several (a frozenset) per person, normalised to
+        # sets so every method reads one shape.
+        self.igids: dict[str, frozenset[str]] = {
+            pid: frozenset({held}) if isinstance(held, str) else frozenset(held)
+            for pid, held in (igids or {}).items()
+        }
         self.out_of_reach = out_of_reach
         self.unavailable = unavailable
         self.asked: list[str] = []
 
-    async def igid_for(self, *, person_id: str) -> str | None:
+    async def igids_for(self, *, person_id: str) -> frozenset[str] | None:
         self.asked.append(person_id)
         if self.unavailable:
             return None
-        return self.igids.get(person_id)
+        return self.igids.get(person_id, frozenset())
 
     async def is_tier_zero(self, *, person_id: str) -> bool:
         if self.unavailable:
@@ -1612,4 +1676,4 @@ class FakeSocialSubjectIndex:
         closed)."""
         if self.unavailable:
             return None
-        return next((pid for pid, held in self.igids.items() if held == igid), None)
+        return next((pid for pid, held in self.igids.items() if igid in held), None)

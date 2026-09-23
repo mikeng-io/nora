@@ -49,6 +49,7 @@ from ..domain.ports import (
     SocialProvider,
     SteamPresenceProvider,
     StreetParkingProvider,
+    VideoReadingStore,
     VoicePresenceSource,
     WeatherProvider,
 )
@@ -64,6 +65,7 @@ from ..infra.vision.preprocess import VIDEO_CHUNK_SECONDS, VIDEO_MAX_CHUNKS
 from .links import LinkCarry
 from .mcp import McpToolGroup
 from .ports import ToolSpec, adapt
+from .reaction import ReactionPicker
 from .relay import Relay
 from .room import Room
 from .shelf_hook import ShelfLoader
@@ -143,6 +145,7 @@ class ToolRegistry:
         media_join: MediaJoin | None = None,
         blobs: BlobStore | None = None,
         descriptions: MediaDescriptionStore | None = None,
+        video_readings: VideoReadingStore | None = None,
         search: SearchProvider | None = None,
         social: SocialProvider | None = None,
         weather: WeatherProvider | None = None,
@@ -178,6 +181,7 @@ class ToolRegistry:
         mcp_tools: Mapping[str, McpToolGroup] | None = None,
         versions: VersionManifest | None = None,
         giphy: GifSource | None = None,
+        reaction: ReactionPicker | None = None,
         music: MusicToolBridge | None = None,
         online: SteamPresenceProvider | None = None,
         voice: VoicePresenceSource | None = None,
@@ -255,6 +259,9 @@ class ToolRegistry:
         # description on every deploy — `None` (every composition that has not
         # wired one) leaves it exactly as it was before this task.
         self._vision_cache = VisionCache(store=descriptions)
+        # `media_fetch`'s VIDEO reading cache (migration 0061); None leaves
+        # every video read uncached, exactly as before it existed.
+        self._video_readings = video_readings
         # `search` (Tavily, DEC-73/DEC-116) is NOT default-constructed, for the
         # same reason `route` is not: `web_search`/`web_fetch` ship INERT behind
         # `[search] enabled` AND a key, so every composition that has not wired
@@ -393,6 +400,8 @@ class ToolRegistry:
         # test-seam policy forbids.
         self._versions = versions if versions is not None else VersionManifest()
         self._giphy = giphy
+        # `nora.agent.reaction`: None keeps every reply exactly as written.
+        self._reaction = reaction
         # `MusicToolBridge` (design/discord-music/07-agent-tool.md), wired the
         # identical honest way `events`/`compute_backend` are: NOT
         # default-constructed — there is no bridgeless default, and every
@@ -858,7 +867,8 @@ class ToolRegistry:
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
             room=room, transit_source=self._transit, route_source=self._route,
             vision_source=self._vision, blob_store=self._blobs,
-            vision_cache=self._vision_cache, describe_models=self._describe_models,
+            vision_cache=self._vision_cache, video_readings=self._video_readings,
+            describe_models=self._describe_models,
             describe_providers=self._describe_providers,
             describe_max_bytes=self._describe_max_bytes,
             video_chunk_seconds=self._video_chunk_seconds,
@@ -886,6 +896,7 @@ class ToolRegistry:
             relay=self._relay,
             versions=self._versions,
             giphy_source=self._giphy,
+            reaction_picker=self._reaction,
             compute_backend=self._compute_backend, compute_jobs=self._compute_jobs,
             tool_call_log_store=self._tool_call_log_store,
             music=self._music,

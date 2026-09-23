@@ -324,8 +324,11 @@ QUESTIONS per unit — written by people on a tag and by the
 herself says (her rows are excluded from what the tier reads: the one
 structural brake on her talking to herself, 39 §1). **Standing** (`design/
 dreamer-agent-loop/26`; table `standing`) is her own one-paragraph position
-per room, folded after each tag turn, rewritten in place, and injected as
-`<standing>` — a stance, not a record. The **proactive adaptor** (`39`) reads
+per room, folded after each tag turn by ONE model call, rewritten in place,
+and injected as `<standing>` — a stance, not a record. Since 2026-09-24 it is
+also where she keeps what she found on a turn and has not yet given the room
+— the compact of her work in that room (design/standing-compact/). The
+**proactive adaptor** (`39`) reads
 both, plus its own decision log (her `kind="proactive"` reminder rows) and
 `<self_card>`, standing in a `home_room` `policy.toml` names per unit.
 

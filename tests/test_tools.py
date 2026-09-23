@@ -11,13 +11,14 @@ from nora.agent.tools import (
     LOAD_TRANSCRIPT_DEFAULT,
     LOAD_TRANSCRIPT_MAX,
     NATIVE_TOOL_BUDGETS,
+    build_tool_specs,
     build_tools,
     note_handle,
 )
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.media import GifCandidate, MediaObject
 from nora.domain.models import ConversationTarget, NormalizedMessage, PersonRef, Quote
-from nora.domain.ports import ImageResult, MessageHits, OutboundAttachment
+from nora.domain.ports import ImageResult, MessageHits, OutboundAttachment, SendResult
 from nora.domain.utf16 import utf16_len
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
@@ -157,8 +158,14 @@ def test_every_declared_tool_is_built(wiring):
         "generate_image",
         "media_search", "media_send",
         "web_search", "web_fetch",
-        # social_fetch (DEC-151): READ-ONLY X/Instagram via the host bridge.
+        # social_fetch (DEC-151): READ-ONLY X via the host bridge.
         "social_fetch",
+        # instagram_read (design/instagram-adoption/18): a person's Instagram
+        # profile or story, over the instagram-bridge.
+        "instagram_read",
+        # instagram_search (design/instagram-adoption/18, P11): Instagram
+        # accounts matching free text, over the instagram-bridge.
+        "instagram_search",
         "weather",
         # TD open-data parking vacancy (data.gov.hk hk-td-tis_5, 2026-08-31).
         "parking_status",
@@ -203,7 +210,7 @@ def test_read_peer_card_is_gone_from_the_table():
     assert "read_peer_card" not in NATIVE_TOOL_BUDGETS
 
 
-def test_exactly_eight_tools_are_cacheable():
+def test_exactly_nine_tools_are_cacheable():
     from nora.agent.tools import NATIVE_TOOLS
     cacheable = {name for name, spec in NATIVE_TOOLS.items() if spec.cacheable}
     assert cacheable == {
@@ -212,6 +219,9 @@ def test_exactly_eight_tools_are_cacheable():
         # disclosure decision baked into the moment it ran — same exemption
         # shape as `web_search`/`web_fetch`.
         "music_status", "social_fetch",
+        # instagram_search (design/instagram-adoption/18, P11): free text in,
+        # public accounts out, no roster or Tier 0 decision in the answer.
+        "instagram_search",
         # where_been is deliberately NOT cacheable (Kimi audit B1): its R-31
         # gate runs against the live roster, and the recall log replays
         # verbatim with no guard re-check.
@@ -850,7 +860,7 @@ async def test_gif_tools_bind_turn_candidate_and_audit_a_gif_only_reply(wiring):
     assert wiring["sink"].texts == [""]
     assert wiring["sink"].sent_attachments == [(source.attachment,)]
     row = (await wiring["store"].recent(conversation_id="g1", limit=1))[0]
-    assert row.body == "[GIF via giphy]"
+    assert row.body == "[GIF: happy dance]"
     assert json.loads(row.raw_json or "{}")["media"] == {
         "provider": "giphy", "id": "happy-1", "type": "gif",
     }
@@ -871,6 +881,126 @@ async def test_gif_send_failure_raises_so_the_agent_can_send_a_text_reply(wiring
     with pytest.raises(RuntimeError, match="GIF unavailable"):
         await _call(tools["send_gif"], candidate_id="happy-1")
     assert await _call(tools["send_reply"], text="搵唔到張啱嘅 GIF，不過笑死") == "sent"
+
+
+# ---- the reaction picker on send_reply (nora/agent/reaction.py) -----------
+
+
+class _Picker:
+    """Stands in for `ReactionPicker`: answers from a script, counts asks."""
+
+    def __init__(self, reaction=None) -> None:
+        self.reaction = reaction
+        self.asked: list[str] = []
+
+    async def pick(self, *, recent: str, reply: str):
+        self.asked.append(reply)
+        return self.reaction
+
+
+def _nod(mode: str):
+    from nora.agent.reaction import Reaction
+    return Reaction(mode=mode, query="dog nodding", candidate=_GifSource.candidate,
+                    attachment=_GifSource().attachment)
+
+
+async def test_a_picked_gif_goes_out_under_her_words_in_one_message(wiring, wiring_with):
+    picker, source = _Picker(_nod("with")), _GifSource()
+    tools = wiring_with(giphy_source=source, reaction_picker=picker)
+    assert await _call(tools["send_reply"], text="乖你個頭") == "sent"
+    assert wiring["sink"].texts == ["乖你個頭"]
+    assert wiring["sink"].sent_attachments == [(source.attachment,)]
+    row = (await wiring["store"].recent(conversation_id="g1", limit=1))[0]
+    assert row.body == "乖你個頭 [GIF: dog nodding]"
+
+
+async def test_a_reaction_only_reply_can_be_replaced_by_the_gif(wiring, wiring_with):
+    picker, source = _Picker(_nod("alone")), _GifSource()
+    tools = wiring_with(giphy_source=source, reaction_picker=picker)
+    assert await _call(tools["send_reply"], text="好，抖下。") == "sent"
+    assert wiring["sink"].texts == [""]
+    assert wiring["sink"].sent_attachments == [(source.attachment,)]
+
+
+async def test_a_longer_reply_goes_out_first_and_the_gif_follows_it(wiring, wiring_with):
+    long = "10 點開波，12 點左右散，三多見，陀螺盤記得帶埋出嚟"
+    picker, source = _Picker(_nod("alone")), _GifSource()
+    tools = wiring_with(giphy_source=source, reaction_picker=picker)
+    assert await _call(tools["send_reply"], text=long) == "sent"
+    # Never replaced, whatever the picker said: it was judged after it went.
+    assert wiring["sink"].texts == [long, ""]
+    assert wiring["sink"].sent_attachments == [(), (source.attachment,)]
+    row = (await wiring["store"].recent(conversation_id="g1", limit=1))[0]
+    assert row.body == "[GIF: dog nodding]"
+
+
+async def test_a_held_reply_gets_no_gif_after_it(wiring):
+    picker = _Picker(_nod("with"))
+    store, doctrine = wiring["store"], wiring["doctrine"]
+    held = Deliverer(
+        store=store, adapter=SinkSender(), target=TARGET, doctrine=doctrine,
+        canary="C", tag_id="t-held", nora_sender_id="nora",
+        message_cap=NATIVE_TOOL_BUDGETS["send_reply"], audience="tag",
+        metrics=Metrics(), send_permitted=False,
+    )
+    tools = {t.tool_name: t for t in build_tools(
+        store=store, conversation_id="g1", conversation_type="group",
+        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=held,
+        metrics=Metrics(), room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
+        giphy_source=_GifSource(), reaction_picker=picker,
+    )}
+    long = "一個幾長嘅答案，講晒成件事點解會咁，同埋下一步點做"
+    answer = await _call(tools["send_reply"], text=long)
+    assert answer == "held_for_review" and picker.asked == []
+
+
+async def test_only_the_first_reply_of_a_turn_is_offered_to_the_picker(wiring, wiring_with):
+    picker = _Picker(None)
+    tools = wiring_with(giphy_source=_GifSource(), reaction_picker=picker)
+    await _call(tools["send_reply"], text="一")
+    await _call(tools["send_reply"], text="二")
+    assert picker.asked == ["一"]
+    assert wiring["sink"].sent_attachments == [(), ()]
+
+
+class _NoAttachmentsSink(SinkSender):
+    """A platform that refuses any send carrying an attachment."""
+
+    async def send(self, target, text, mentions=(), styles=(), preview=None,
+                   attachments=(), quote=None):
+        if attachments:
+            return SendResult(ok=False, timestamp=None)
+        return await super().send(target, text, mentions, styles, preview, attachments, quote)
+
+
+async def test_a_gif_the_platform_refuses_still_sends_her_words(wiring):
+    sink = _NoAttachmentsSink()
+    deliverer = Deliverer(
+        store=wiring["store"], adapter=sink, target=TARGET, doctrine=wiring["doctrine"],
+        canary="C", tag_id="t-noatt", nora_sender_id="nora",
+        message_cap=NATIVE_TOOL_BUDGETS["send_reply"], audience="tag", metrics=Metrics(),
+    )
+    tools = {t.tool_name: t for t in build_tools(
+        store=wiring["store"], conversation_id="g1", conversation_type="group",
+        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=deliverer,
+        metrics=Metrics(), room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
+        giphy_source=_GifSource(), reaction_picker=_Picker(_nod("alone")),
+    )}
+    assert await _call(tools["send_reply"], text="係囉") == "sent"
+    assert sink.texts == ["係囉"]
+
+
+async def test_a_fire_turn_never_asks_the_picker(wiring):
+    picker = _Picker(_nod("with"))
+    specs = build_tool_specs(
+        store=wiring["store"], conversation_id="g1", conversation_type="group",
+        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=wiring["deliverer"],
+        metrics=wiring["metrics"], room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
+        giphy_source=_GifSource(), reaction_picker=picker, fire_turn=True,
+    )
+    reply = next(s for s in specs if s.name == "send_reply")
+    assert await reply.call("聽日食飯") == "sent"
+    assert picker.asked == [] and wiring["sink"].sent_attachments == [()]
 
 
 # ---- generate_image (DEC-137, design/proposed/29) -------------------------

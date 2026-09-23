@@ -368,6 +368,11 @@ appearing in anyone's viewer list. That is technically less intrusive and
 ethically more so, because the author gets no signal at all — the ordinary
 social contract of "I can see who watched" silently does not apply to her.
 
+[2026-09-24: this paragraph is part of the withdrawn claim above and states
+invisibility as settled. It is not: whether the author sees the view is
+unmeasured (design 04, 05 §Reading a story). Kept as written, as the record
+of what the story-read approval was partly based on.]
+
 This is now a decision with the facts in hand rather than a risk to weigh:
 the operator has approved story reads for the circle, starting with their own
 and widening in a second wave. Recorded here so the reason the question was

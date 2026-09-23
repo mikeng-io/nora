@@ -80,6 +80,11 @@ _EXCEPTION_READ = {
 #: (design/instagram-adoption/10 §"Who owns what"), so the client no longer
 #: has an index and a `person_id` arriving there would be a routing bug.
 _BACKEND_READ = {**_EXCEPTION_READ, "target": "10000001"}
+#: The same read as `instagram_read` sends it: a PERSON input, which the router
+#: resolves through the index (design/instagram-adoption/18). `target_kind` is
+#: the router's own argument, not the port's — the backends only ever see a
+#: resolved target — so it rides only the reads handed to a router.
+_ROUTER_EXCEPTION_READ = {**_EXCEPTION_READ, "target_kind": "person"}
 #: The person index as the story arm needs it: `miles` resolves and is in a
 #: room Nora is in, which is Tier 0 and the only tier v1 serves.
 _SUBJECTS = {"miles": "10000001"}
@@ -170,7 +175,7 @@ async def arm(request):
         )
         built = (
             router,
-            _DEFAULT_READ if request.param == "router/default" else _EXCEPTION_READ,
+            _DEFAULT_READ if request.param == "router/default" else _ROUTER_EXCEPTION_READ,
         )
     yield (fake, *built)
     await server.close()
@@ -193,7 +198,7 @@ def dead_arm(request):
         exceptions={("instagram", "story"): instagram},
         subjects=FakeSocialSubjectIndex(_SUBJECTS),
     )
-    return router, _EXCEPTION_READ
+    return router, _ROUTER_EXCEPTION_READ
 
 
 # ---- the port's shape ------------------------------------------------------
@@ -217,10 +222,10 @@ def test_read_takes_every_argument_keyword_only(impl):
 
 
 def test_the_subject_index_port_is_keyword_only():
-    """The other half of the same argument. `igid_for(person_id=…)` is handed
+    """The other half of the same argument. `igids_for(person_id=…)` is handed
     a `person_id` and must never be handed an igid or a handle by a caller
     that got the order right by accident."""
-    for method in (SocialSubjectIndex.igid_for, SocialSubjectIndex.is_tier_zero):
+    for method in (SocialSubjectIndex.igids_for, SocialSubjectIndex.is_tier_zero):
         params = inspect.signature(method).parameters
         assert params["person_id"].kind is inspect.Parameter.KEYWORD_ONLY
 
@@ -317,15 +322,16 @@ async def test_no_result_carries_a_content_key(arm):
 @pytest.mark.parametrize(
     ("subjects", "expected"),
     [
-        (FakeSocialSubjectIndex(), "ambiguous"),
+        (FakeSocialSubjectIndex({"miles": frozenset({"10000001", "10000002"})}),
+         "ambiguous"),
         (FakeSocialSubjectIndex(_SUBJECTS, out_of_reach=frozenset({"miles"})),
          "refused"),
     ],
 )
 async def test_the_tier_ladder_answers_outside_r27s_three_states(subjects, expected):
-    """`target` is a `person_id`. No index entry means Nora does NOT fall back
-    to treating the string as a handle — a wrong binding does not degrade the
-    answer, it reads a different human's stories silently. Out of tier is
+    """`target` is a `person_id`. Several accounts on file means Nora does NOT
+    pick one — a wrong binding does not degrade the answer, it reads a
+    different human's stories silently. Out of tier is
     `refused`: «I may not look him up» and «I couldn't look» are different
     claims, one a boundary the operator set and the other an outage somebody
     should fix.
@@ -341,7 +347,7 @@ async def test_the_tier_ladder_answers_outside_r27s_three_states(subjects, expec
         exceptions={("instagram", "story"): client},
         subjects=subjects,
     )
-    out = await router.read(**_EXCEPTION_READ)
+    out = await router.read(**_ROUTER_EXCEPTION_READ)
     assert out["status"] == expected
     assert expected not in R27_CORE_STATES   # positive control: it is an extension
 
@@ -350,7 +356,7 @@ async def test_the_tier_ladder_answers_outside_r27s_three_states(subjects, expec
     ("read", "exceptions"),
     [
         (_DEFAULT_READ, False),
-        (_EXCEPTION_READ, True),
+        (_ROUTER_EXCEPTION_READ, True),
     ],
 )
 async def test_the_router_passes_a_backends_status_through_verbatim(read, exceptions):

@@ -414,11 +414,8 @@ def test_no_shipped_description_reaches_the_model():
 # naming each objective here makes adding one a deliberate act.
 NATIVELY_AUTHORED = {
     "standing-debrief",
-    # Phase 2 of issue #78 split the debrief's judge into its own objective.
-    # Same directory for the same reason as `standing-debrief` below: a
-    # TAG-PATH stage's hot-reloading instruction text, read through
-    # `objective_body` and never `for_objective`.
-    "standing-verdict",
+    # `standing-verdict` (issue #78 Phase 2's judge) was deleted 2026-09-24
+    # with the grounding verdict (design/standing-compact/).
     # Written for the curator, never lifted: the note tier had no
     # background pass before it, so there is no prior prompt to have
     # moved and no fixture that could pin one. Version 2 (issue #99) folds in

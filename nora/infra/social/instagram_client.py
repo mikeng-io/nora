@@ -1,14 +1,20 @@
 """`InstagramSocialClient` — Nora's Instagram `SocialProvider`, on the
 instagram-bridge's REAL contract (design/instagram-adoption/15, /17 P4).
 
-It serves two `(platform, what)` rows over the bridge's account resources on
-the private compose `nora` network:
+It serves three `(platform, what)` rows over the bridge's account resources
+on the private compose `nora` network:
 
 * `instagram/story` → `GET /accounts/{igid}/story`. 200 with `found: true`
   → `ok`; 200 with `found: false` → `nothing_found`; anything else →
   `unavailable`.
 * `instagram/profile` → `GET /accounts/{igid}`. 200 → `ok`; the handler's
   own 404 (`errNoProfile`) → `nothing_found`; anything else → `unavailable`.
+* `instagram/search` → `GET /accounts?query=` (P11, `instagram_search`). 200
+  with items → `ok`, at most `SEARCH_MAX_ACCOUNTS` of them, in the bridge's
+  order: `accounts` is `{username, is_verified}` per account, and `text` is
+  every account with its display name, wrapped; no igid or fbid anywhere.
+  200 with no items → `nothing_found`; anything
+  else (409, 502, 503, …) → `unavailable`. See `_search` and `_accounts`.
 
 `instagram/posts` is deliberately NOT served: no bridge route exists, and the
 row answers `unavailable` without a call (P13 is the investigation).
@@ -63,8 +69,15 @@ line (so a caption cannot forge a frame line of its own), rendered into
 `text`, then `wrap_outside_text` (R-13) and `clamp_chars`. They are NOT copied
 into `items`: `social_fetch` hands the whole result dict to the model, so a
 caption in `items` would be stranger prose OUTSIDE the untrusted wrap and
-outside the clamp. `items` stays `{id, kind, taken_at, url}` — the
+outside the clamp. `items` stays `{kind, taken_at, url}` — the
 machine-usable handoff to `media_fetch(url=…)`, which needs nothing else.
+
+**No `id`, since 2026-09-24.** A frame's id was carried as a "reference" and
+nothing ever used it — `media_fetch` takes the URL. It was also an identifier
+leak: when a reel item has no `pk`, the bridge's `storyFrame` falls back to
+`item.ID`, which Instagram shapes as `<pk>_<owner igid>`, and the id charset
+admitted `_` — so the story OWNER's igid could reach the model (R-18). The
+field is not read at all now, so no shape check can be the thing that fails.
 `author` also rides the result top-level, because it is shape-checked as an
 Instagram handle and so cannot carry prose. A non-string caption is dropped,
 never `str()`-ed.
@@ -79,7 +92,7 @@ so `id={"caption": "at the beach with tyler"}` put that caption in the result
 while the guard test — which asserted the key SET and that "beach" was not in
 `text` — stayed green on both counts. So every value is bound to its own
 shape: nothing the bridge writes lands in `note`, the URL host must be a
-MEASURED Instagram CDN host, the id must look like an id, and the only
+MEASURED Instagram CDN host, the id is not read at all, and the only
 free-text fields (caption, alt text) are strings that reach the model inside
 the wrap and nowhere else. A key whitelist answers "which fields"; only a
 value check answers "carrying what".
@@ -179,21 +192,58 @@ PROFILE_SOURCE_KIND = "instagram_profile"
 #: contrast rather than a rule, because the failure is a phrasing that reads
 #: as knowledge rather than a phrasing that breaks a policy.
 _STORY_FRAMING = (
-    "This is their Instagram STORY — it disappears about 24h after it was "
+    "This is their Instagram STORY: it disappears about 24h after it was "
     "posted (`taken_at`, and `expires_at` is when the links die). If you "
     "mention any of it, say it was their story and when: «his story from "
     "this morning», never «he was at the gym». You saw something "
     "perishable; you don't know where he was."
 )
 
+#: What an account search result IS (design/instagram-adoption/18, P11).
+SEARCH_SOURCE_KIND = "instagram_account_search"
+
 #: The rows this backend serves. A request for anything else reaching here is
 #: a ROUTING bug, not a user error, so it is `unavailable` (a wiring gap), is
 #: logged, and never reaches the bridge. `instagram/posts` is absent on
 #: purpose: the bridge has no route for it (design/instagram-adoption/17 P5).
+#: `instagram/search` joined with P11, when it left OpenCLI.
 _SERVES: frozenset[tuple[str, str]] = frozenset({
     ("instagram", "story"),
     ("instagram", "profile"),
+    ("instagram", "search"),
 })
+
+#: At most this many accounts reach the model from one search, whatever the
+#: bridge returned and whatever `limit` said. Stated in `instagram_search`'s
+#: description, so the model knows a short list is not the whole of
+#: Instagram. Five is design 18's default; a person's account was at rank 0
+#: in 20 of 21 exact-username probes (17 §P9), so a refined query, not a
+#: longer list, is what finds the rest. Every account costs its tokens again
+#: on every later model call of the turn.
+SEARCH_MAX_ACCOUNTS = 5
+
+#: A display name's own ceiling, before the wrap. Instagram caps a full name
+#: at 30 characters today; 64 leaves room without letting one field carry a
+#: paragraph of stranger prose.
+_FULL_NAME_MAX_CHARS = 64
+
+#: The framing for an `ok` search, carried by the result (ADR 0015 §3: the
+#: result explains the status). Short, because it is re-sent on every later
+#: model call of the turn. It says the one thing P9 measured that a model
+#: would otherwise assume: the first result is not always the person.
+_SEARCH_FRAMING = (
+    "Accounts Instagram's search matched, in its own order. The first is not "
+    "always the one they mean: say which looks like a match and why, or list "
+    "them. Display names are written by the account owners."
+)
+
+#: Zero accounts: the search RAN and matched nobody. Nora's sentence, never
+#: the bridge's (`results.py`).
+SEARCH_NOTHING_FOUND: dict[str, Any] = {
+    "status": "nothing_found",
+    "note": "Instagram's search matched no account. Say you couldn't find "
+            "one; don't guess a handle.",
+}
 
 #: An igid, as the bridge parses one (`domain.ParseIGID`: a positive int64,
 #: so at most 19 digits). Checked
@@ -231,11 +281,6 @@ _MAX_ITEMS = 20
 #: `https://evil.test/?u=.fbcdn.net` both defeat a substring test.
 _CDN_HOST_SUFFIXES: tuple[str, ...] = (".fbcdn.net", ".cdninstagram.com")
 
-#: What a media id may look like. Instagram's are decimal, but the point is
-#: not the charset — it is that the value is TYPE-checked and SHAPE-checked
-#: before `str()` touches it. `str(row.get("id") or "")` rendered whatever
-#: arrived, so a dict smuggled a caption into the result through the id slot.
-_ID_RE = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 
 
 class InstagramSocialClient(SocialProvider):
@@ -291,6 +336,11 @@ class InstagramSocialClient(SocialProvider):
         if (platform, what) not in _SERVES:
             log.warning("instagram social client asked for a row it does not serve")
             return dict(UNAVAILABLE)
+        if what == "search":
+            # A search's target is FREE TEXT a person typed (a `named` input,
+            # never resolved), not an igid, so it takes the query path and
+            # never the igid shape check below.
+            return await self._search(query=target, limit=limit)
         # `target` is the igid the router resolved out of the person index —
         # never a `person_id` and never a handle. One that is not a decimal
         # id is a routing bug in the same family as the row check above, so
@@ -406,6 +456,62 @@ class InstagramSocialClient(SocialProvider):
             "truncated": truncated,
         }
 
+    async def _search(self, *, query: str, limit: int) -> dict[str, Any]:
+        """`GET /accounts?query=` → up to `SEARCH_MAX_ACCOUNTS` accounts, in
+        the bridge's order (design/instagram-adoption/18 §`instagram_search`,
+        17 P11).
+
+        The query is not validated here: the tool refuses a blank or
+        over-long one before anything is sent, and the bridge re-validates
+        (400). A 400 reaching this line is therefore our bug, and it is
+        `unavailable`, never a claim about Instagram.
+
+        The route is on the NEW conventions (`16` §Resources): success is
+        `{"items": [...], "next_cursor": null}` with no `ok` field, failure is
+        `{"error": {"code", "message"}}`. Only a 200 is read. 409 (the session
+        needs a human), 502 (Instagram rejected the search), 503 (no session)
+        and every status nobody mapped are `unavailable`, and the envelope's
+        `message` never reaches the model.
+        """
+        path = "/accounts?" + urllib.parse.urlencode({"query": query})
+        status, payload = await self._get(path)
+        if status != 200 or not isinstance(payload, dict):
+            return dict(UNAVAILABLE)
+        raw = payload.get("items")
+        if not isinstance(raw, list):
+            # No list at all is not the documented shape: a wiring gap, never
+            # read as «matched nobody».
+            log.warning("instagram bridge search body carried no `items` list")
+            return dict(UNAVAILABLE)
+        if not raw:
+            # The ONLY path to `nothing_found`: the search ran and the bridge
+            # said, in its own documented shape, that it matched nobody.
+            return dict(SEARCH_NOTHING_FOUND)
+        accounts = _accounts(raw)
+        if not accounts:
+            # Items came back and none was usable: our failure to read a
+            # body, not a fact about who exists on Instagram.
+            log.warning("instagram bridge search returned no usable account")
+            return dict(UNAVAILABLE)
+        cap = max(1, min(_cap(limit), SEARCH_MAX_ACCOUNTS))
+        # The bridge's order, kept: it is Instagram's ranking, and the note
+        # tells the model the first is not always the one.
+        shown = accounts[:cap]
+        text, _clamped = clamp_chars(_render_accounts(shown), self._content_max_chars)
+        return {
+            "status": "ok",
+            "source_kind": SEARCH_SOURCE_KIND,
+            "note": _SEARCH_FRAMING,
+            # References only, shape-checked, no prose: the handle a
+            # follow-up names and the badge. Display names are NOT here
+            # (`_accounts`).
+            "accounts": [row for row, _name in shown],
+            # Every account with its display name, WRAPPED and CLAMPED as one
+            # block (R-13), the only place a display name goes.
+            "text": wrap_outside_text("social_post", "instagram account search", text),
+            "truncated": len(accounts) > cap,
+        }
+
     async def _get(self, path: str) -> tuple[int, Any]:
         """One GET on the bridge → `(status, parsed JSON or None)`. The body
         is parsed whatever the status, because the account route's 404 is
@@ -498,6 +604,68 @@ def _render_profile(body: dict[str, Any]) -> str | None:
     return "\n".join(lines)
 
 
+def _accounts(raw: list[Any]) -> list[tuple[dict[str, Any], str | None]]:
+    """The search body's `items` → `(reference row, display name)` pairs, in
+    the bridge's order.
+
+    **No id is read.** The bridge sends `igid` and `fbid` on every hit;
+    neither is read, so neither can reach the model (R-18). A follow-up read
+    names the account by its handle.
+
+    * `username`: shape-checked as an Instagram handle, so it carries no
+      prose; a row without a valid one is dropped (it is not an account
+      anyone can name).
+    * `is_verified`: `True` only when the bridge says `true`. A missing or
+      malformed flag must never make an account read as verified.
+    * the display name (`full_name`): stranger-written, so it goes down the
+      path every such field on this client uses: a `str` or nothing,
+      collapsed onto one line, clamped, and rendered only into the wrapped
+      `text` (`_render_accounts`). It is kept OUT of the reference row for
+      the reason a story caption is kept out of `items`: the result dict
+      reaches the model whole, and prose in the row would sit outside the
+      untrusted wrap. One wrap for the list rather than one per name, too:
+      a `social_post` block carries its own description, about 60 tokens,
+      and five of them would cost more than the names they wrap.
+    """
+    out: list[tuple[dict[str, Any], str | None]] = []
+    for row in raw:
+        if not isinstance(row, dict):
+            continue
+        username = _username(row.get("username"))
+        if username is None:
+            continue
+        name = _one_line(row.get("full_name"))
+        if name is not None:
+            name, _clamped = clamp_chars(name, _FULL_NAME_MAX_CHARS)
+        out.append((
+            {"username": username, "is_verified": row.get("is_verified") is True},
+            name,
+        ))
+    return out
+
+
+def _render_accounts(accounts: list[tuple[dict[str, Any], str | None]]) -> str:
+    """One numbered line per account, in order: handle, then the badge
+    stated either way, then the display name, LABELLED and LAST. The caller
+    wraps and clamps.
+
+    The order is the defence, not taste. The name is stranger-written, and
+    anything after it on the line reads as its continuation, so nothing Nora
+    states may follow it: a name of `Nike), verified (official` rendered as
+    `@handle (Nike), verified (official)` forged the badge. With the badge
+    first and stated for every account («verified» or «not verified»), a name
+    claiming the badge lands after the real answer, under `name:`. Each name
+    is already one line, so it cannot forge a line of its own either."""
+    lines = []
+    for number, (row, name) in enumerate(accounts, start=1):
+        badge = "verified" if row["is_verified"] else "not verified"
+        line = f"{number}. @{row['username']}, {badge}"
+        if name is not None:
+            line += f", name: {name}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def _yes_no(value: Any) -> str | None:
     """A bool → "yes"/"no"; anything else → `None` (left out, not guessed)."""
     if isinstance(value, bool):
@@ -521,7 +689,7 @@ def _items(
     `(reference row, text layer)`.
 
     **Built field by field, never copied, and every value bound to a shape.**
-    The reference row is `{id, kind, taken_at, url}` and nothing else; the
+    The reference row is `{kind, taken_at, url}` and nothing else; the
     text layer is `{caption, alt_text}`, each present only when the bridge
     sent a non-empty STRING. The two are kept apart because they go to
     different places: the row into `items` (unwrapped, machine-usable), the
@@ -561,15 +729,14 @@ def _items(
         # to go and fetch it.
         if not _is_cdn_url(url):
             continue
-        # The id is TYPE-checked before it is rendered. `str(row.get("id"))`
-        # accepted anything — a dict, a list — and stringified it into the
-        # result, which is a content channel wearing a reference field's name.
-        item_id = _media_id(row.get("id"))
-        if item_id is None:
-            continue
+        # The frame's `id` is deliberately NOT read. The model needs only the
+        # URL, and the bridge's id can be `<pk>_<owner igid>` (its `storyFrame`
+        # falls back to `item.ID` when a reel item has no `pk`), so carrying it
+        # would hand the story owner's igid to the model (R-18). Once it was
+        # also a content channel: `str()` of a dict in that slot put a caption
+        # in the result.
         kind = row.get("kind")
         item: dict[str, Any] = {
-            "id": item_id,
             "kind": kind if kind in _KINDS else "media",
             "url": url,
         }
@@ -614,20 +781,6 @@ def _is_cdn_url(value: Any) -> bool:
     return any(host == suffix[1:] or host.endswith(suffix) for suffix in _CDN_HOST_SUFFIXES)
 
 
-def _media_id(value: Any) -> str | None:
-    """A media id, or None for anything that is not one.
-
-    A bool is refused although Python would `str()` it happily, for the same
-    reason `_as_int` refuses one: `True` is not an identifier, and a value
-    that only LOOKS renderable is how a non-reference gets into a reference
-    field.
-    """
-    if isinstance(value, bool) or not isinstance(value, (str, int)):
-        return None
-    text = str(value)
-    return text if _ID_RE.fullmatch(text) else None
-
-
 def _render(
     frames: list[tuple[dict[str, Any], dict[str, str]]], author: str | None,
 ) -> str:
@@ -667,7 +820,7 @@ def _one_line(value: Any) -> str | None:
     """A free-text field (caption, alt text) → one line of text, or `None`.
 
     Only a `str` is accepted: anything else is dropped, never `str()`-ed, for
-    the same reason `_media_id` refuses a dict — `str()` is how a structure
+    the same reason the frame id is not read — `str()` is how a structure
     becomes content nobody checked. Whitespace, newlines included, collapses
     to single spaces, so a caption cannot start a line of its own and pass
     itself off as a `[video https://…]` marker for another frame."""

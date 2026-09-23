@@ -174,6 +174,8 @@ def _check(name: str, row: dict[str, Any]) -> None:
                 f"{name}: case {row['name']!r}'s `metadata.transport` must map "
                 f"networks to one of {sorted(TRANSPORT_STATES)}; got {varied!r}"
             )
+    if CORPUS_ENTRY.get(name) == "standing":
+        _check_fold_case(name, row)
     parked = row.get("parked") or {}
     if parked:
         if counterfactual:
@@ -194,6 +196,28 @@ def _check(name: str, row: dict[str, Any]) -> None:
                 "— P-B (a seam this rebuild owes) is NOT a parking reason; "
                 "such a case stays unanchored and ERRORs (§7.1)"
             )
+
+
+def _check_fold_case(name: str, row: dict[str, Any]) -> None:
+    """A standing case states the turn, the kind, and the property — at LOAD.
+
+    Refused here rather than at run time because run time is after the fold's
+    model call: a typo'd kind would spend a fold and then ERROR in the judge.
+    """
+    from evals.rebuilt.rubric import FOLD_KINDS
+
+    meta = row.get("metadata") or {}
+    problems = []
+    if row.get("expect") != "fold":
+        problems.append("expect must be `fold`")
+    if meta.get("kind") not in FOLD_KINDS:
+        problems.append(f"metadata.kind must be one of {sorted(FOLD_KINDS)}")
+    if not str(meta.get("tag_id") or "").strip():
+        problems.append("metadata.tag_id must name the turn")
+    if not str(row.get("expected_output") or "").strip():
+        problems.append("expected_output must state the ONE property graded")
+    if problems:
+        raise ValueError(f"{name}: case {row['name']!r}: {'; '.join(problems)}")
 
 
 def _case(row: dict[str, Any]) -> Case:
@@ -265,6 +289,7 @@ CORPUS_ENTRY: dict[str, str] = {
     # judged — "did she reply" says nothing about whether the reply named the
     # right networks, or recited them unasked.
     "presence": "tag",
+    "standing": "standing",
 }
 
 #: S2 — graded on WHICH TOOL ran, not on whether she replied
@@ -279,8 +304,16 @@ ROUTED_CORPORA = frozenset({"tool_selection"})
 #: judge is configured) adds no second selection rule.
 JUDGED_CORPORA = frozenset({
     "being_contradicted", "identity_grounding", "source_scope",
-    "injections", "transcript_injection", "presence",
+    "injections", "transcript_injection", "standing", "presence",
 })
+
+#: Corpora with NO structural reading at all: every case's verdict IS the
+#: judge's. `standing` grades a Cantonese position against a semantic property
+#: (`design/standing-compact/20-verification.md` §1), and "a fold wrote
+#: something" is true of every fold that did not fail. Run without a judge,
+#: every case would pay for a fold and then ERROR, so `python -m evals` refuses
+#: to start one instead.
+JUDGE_REQUIRED = frozenset({"standing"})
 
 
 def experiment_for(

@@ -589,6 +589,32 @@ class ParticipationConfig(BaseModel):
         return self
 
 
+class ReactionConfig(BaseModel):
+    """The reaction picker (`nora.agent.reaction`): on a tag turn's first
+    reply, one cheap call asks whether a GIF lands it better, and a second
+    picks one from Giphy's described results. Needs `GIPHY_API_KEY` as well;
+    without it this does nothing whatever `enabled` says.
+
+    Ships INERT. `model` and `reasoning_effort` empty inherit `[llm]`; the
+    replay that measured it (17 GIFs on 104 replies, all on banter) ran on the
+    `nora` alias at `reasoning_effort = "none"`. `timeout_seconds` bounds the
+    WHOLE pick, both calls and the search, and on expiry the reply goes out as
+    written: it is time added before her words arrive, so it is kept short.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    model: str = ""
+    # "none", not inherited: the replay was measured at "none", and a
+    # reasoning budget spent inside `max_tokens` truncates the verdict.
+    reasoning_effort: Literal[
+        "", "none", "minimal", "low", "medium", "high", "xhigh", "max"
+    ] = "none"
+    timeout_seconds: float = Field(default=6.0, gt=0)
+    max_tokens: int = Field(default=200, ge=16)
+
+
 class RelevanceGateConfig(BaseModel):
     """The Relevance Gate (design/dreamer-agent-loop/36): ONE cheap structured
     call that decides whether a quiescence-closed window is worth a
@@ -758,18 +784,26 @@ class DescriberConfig(BaseModel):
     tokens 95 vs native 3164 for the same payload); Kimi's own endpoint accepts
     base64 video data-URIs and `ms://` file references.
 
+    `"opencode-go"` (DEC-197, 2026-09-24) builds a DIRECT client to OpenCode
+    Go's own endpoint, `opencode.ai/zen/go/v1`, for MiMo v2.6 Flash — which
+    reads video WITH its audio track and standalone audio, and which neither
+    OmniRoute (drops `video_url`) nor `api.kimi.com` (does not serve it) can
+    reach. That endpoint refuses any request without an `x-opencode-session`
+    header (`400 MissingSessionID`), so its client carries one per request.
+
     `api_key_env` NAMES the env var holding the direct lane's key (DEC-8):
-    the value never lands in config.toml. Empty with `provider="kimi"` falls
-    back to `KIMI_CODE_API_KEY`. A kimi provider whose key does not resolve is
-    a wiring gap — the modality answers `unavailable` («I couldn't check»),
-    never a half-built client call.
+    the value never lands in config.toml. Empty falls back to the provider's
+    own default — `KIMI_CODE_API_KEY` for `"kimi"`, `OPENCODE_GO_API_KEY` for
+    `"opencode-go"`. A direct provider whose key does not resolve is a wiring
+    gap — the modality answers `unavailable` («I couldn't check»), never a
+    half-built client call and never a silent fallback to OmniRoute.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
     model: str = ""
-    provider: Literal["omniroute", "kimi"] = "omniroute"
+    provider: Literal["omniroute", "kimi", "opencode-go"] = "omniroute"
     api_key_env: str = ""
     # ---- video chunking (issue #117) ---------------------------------------
     #
@@ -1170,6 +1204,10 @@ class PresenceConfig(BaseModel):
     the env var holding the Basic client credential (the study's auth), and
     `username_env`/`password_env` the account login. The collector reads the
     VALUES from the environment; a committed file never carries them.
+    `auth_token_env` names an OPTIONAL static bearer (the `LIFE360_AUTH_TOKEN`
+    cookie from a life360.com browser login) for an account Life360 refuses the
+    password grant to; when its value is set the client runs in token mode and
+    the three login vars are not required (nora/infra/life360/client.py).
 
     `cadence_seconds` is the per-circle poll interval - ~60-120 s, roughly what
     the Life360 app itself does (§1). `retention_days` is the prune window
@@ -1183,6 +1221,7 @@ class PresenceConfig(BaseModel):
     client_credential_env: str = "LIFE360_CLIENT_CREDENTIAL"
     username_env: str = "LIFE360_USERNAME"
     password_env: str = "LIFE360_PASSWORD"  # noqa: S105 — names an env var, not a secret
+    auth_token_env: str = "LIFE360_AUTH_TOKEN"  # noqa: S105 — names an env var, not a secret
     # ~60-120 s (§1). `ge=1` guards a zero/negative that would busy-loop; the
     # 60-120 band is guidance in config.example.toml, not a hard clamp, so an
     # operator can widen it deliberately without editing code.
@@ -1542,13 +1581,17 @@ class SearchConfig(BaseModel):
 
 
 class InstagramSocialConfig(BaseModel):
-    """The SECOND social backend — Instagram stories via the instagram-bridge
-    container (design/instagram-adoption/08).
+    """The Instagram social backend — `instagram_read`'s profile and story
+    reads and `instagram_search`'s account search, via the instagram-bridge
+    container (design/instagram-adoption/15, /18).
 
-    It serves exactly one `(platform, what)` row, `(instagram, story)`, which
-    is the whole of `SocialRouter`'s exception list: OpenCLI 1.8.7 has no
-    story read anywhere, so `FetchReel` behind this bridge is the only path
-    that exists. Everything else Instagram stays on the OpenCLI default.
+    It serves the rows on `SocialRouter`'s exception list, `(instagram,
+    story)`, `(instagram, profile)` and, since P11, `(instagram, search)`:
+    every Instagram read goes through the bridge, and a verb joins when its
+    bridge route works end to end. Enabling it also composes
+    `PersonsSubjectIndex`, because the profile and story rows take a PERSON
+    and only the person index may resolve one to an igid (the search row
+    takes free text and needs none).
 
     **Its own `enabled` rather than riding `[social] enabled`**, because the
     two backends fail and are provisioned independently: the OpenCLI path
@@ -1586,9 +1629,10 @@ class InstagramSocialConfig(BaseModel):
 
 
 class SocialConfig(BaseModel):
-    """READ-ONLY X/Instagram reads for the `social_fetch` tool (DEC-151), via
+    """READ-ONLY social reads: X for the `social_fetch` tool (DEC-151) via
     the host-side OpenCLI bridge (`python -m nora.infra.social`, deployed as
-    `deploy/social-bridge/`) and — for the one row it cannot serve — the
+    `deploy/social-bridge/`), and Instagram profiles, stories and account
+    search for `instagram_read` and `instagram_search` via the
     instagram-bridge container (`[social.instagram]` below).
 
     **Optional and every field defaults**, the `RouteConfig` shape. `enabled`
@@ -2189,21 +2233,6 @@ class StandingConfig(BaseModel):
     # in front of the next person in the room.
     store_timeout_seconds: float = Field(
         default=DEFAULT_STANDING_STORE_TIMEOUT_SECONDS, gt=0)
-    # S2's ceiling: rebuild the position from the window rather than revising
-    # it once this many folds have accumulated SINCE THE LAST REBUILD.
-    #
-    # It is the WEAKER of the two triggers on purpose. 26 §4: "Time alone
-    # re-derives healthy conversations for nothing" — the forced case catches
-    # the turn that actually went wrong, and this only bounds how far drift can
-    # accumulate when nothing does. If `nora_standing_rederivations_total`
-    # comes back dominated by `ceiling`, the trigger has degraded into a clock
-    # wearing a condition (§6) and the answer is to look at why the ungrounded
-    # case is not firing, not to raise this.
-    #
-    # 20 is a starting point and not a measured value: at one fold per tagged
-    # turn it is roughly a busy evening in one room. Nothing has run long
-    # enough to say what the right number is.
-    rebuild_after_folds: int = Field(default=20, ge=1)
     model: str = ""
     # The fold's reasoning budget, DECLARED rather than inherited.
     #
@@ -3296,6 +3325,7 @@ class Config(BaseModel):
     # FRONT of the participation turn. Ships INERT; see the cross-section
     # validator below for why it cannot be enabled on its own.
     relevance_gate: RelevanceGateConfig = RelevanceGateConfig()
+    reaction: ReactionConfig = ReactionConfig()
     engagement: EngagementConfig
     doctrine: DoctrineConfig
     # Optional and defaulted — see `DreamerConfig`. A config.toml with no
@@ -3496,15 +3526,10 @@ class Config(BaseModel):
             # wrong on the page, which is the argument this validator exists
             # to enforce.
             self.standing.timeout_seconds
-            # SIX. The stage holds six bounded store awaits:
-            # `store_verdict.latest` (the trigger's read), `store.read` (the
-            # prior), `record_store.since_including_nora` (the watermark batch,
-            # design/standing-watermark/20), `store.write` (the revised
-            # position), `store_verdict.save` and `notes_sink.propose`. It was
-            # written as 2x when only the middle pair existed, then as 4x once
-            # the verdict landed, then 5x when the notes sink arrived, and each
-            # time the prose disagreed with the code. The constant is the one
-            # source and the stage's own test counts the awaits against it.
+            # The stage's bounded store awaits, counted by the constant and
+            # nowhere else: this comment named a number four times and was
+            # wrong each time the stage changed (2, 4, 5, 6 while the code held
+            # 7). The stage's own test counts the awaits against the constant.
             + STANDING_STORE_CALLS_PER_FOLD * self.standing.store_timeout_seconds
         )
         if hold > self.standing.max_slot_hold_seconds:

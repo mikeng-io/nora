@@ -41,16 +41,13 @@ R27_CORE_STATES: frozenset[str] = frozenset({"ok", "nothing_found", "unavailable
 DECLARED_STATUS_EXTENSIONS: Mapping[str, str] = {
     "refused": "disclosure veto (R-31) — may not say, not couldn't check",
     "withheld": "disclosure veto on the memory axis (R-31)",
-    "ambiguous": "the subject did not resolve to one thing, so nothing was "
-                 "looked at — either several candidates and no way to pick "
-                 "one, or NO entry at all where only an index may make the "
-                 "binding (a subject-keyed social read: `target` is a "
-                 "person_id and guessing a handle from a name reads a "
-                 "different human). Both are «I don't know which one you "
-                 "mean, so I didn't look», which is why they share a word and "
-                 "why neither is `nothing_found` — nothing ran. The second "
-                 "sense was in use on the Instagram story row for a week "
-                 "while this line still declared only the first.",
+    "ambiguous": "the subject did not resolve to ONE thing because there "
+                 "are several candidates and no way to pick one, so nothing "
+                 "was looked at — two people answering to a name, or a person "
+                 "with several accounts on file. NOT «no entry at all»: that "
+                 "sense rode this word on the Instagram rows until "
+                 "2026-09-24 and now answers `nothing_found` with a note "
+                 "saying no account is on file (design/instagram-adoption/18).",
     "not_found": "the thing does not exist (R-27b) — a place a route does not "
                  "serve is not «no such place», so this is not `nothing_found`",
     "nothing_known": "no durable knowledge yet (the recall ladder)",

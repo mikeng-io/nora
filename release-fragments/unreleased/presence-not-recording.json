@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Operator alerting only: PresenceNotRecording pages when no location fix has been written for 2h, across collector restarts.",
+  "details": [],
+  "limitations": []
+}

@@ -346,19 +346,22 @@ async def cmd_presence_members(args: argparse.Namespace) -> int:
         presence.username_env: os.environ.get(presence.username_env, ""),
         presence.password_env: os.environ.get(presence.password_env, ""),
     }
-    missing = [name for name, value in creds.items() if not value]
+    access_token = os.environ.get(presence.auth_token_env, "")
+    missing = [name for name, value in creds.items() if not value and not access_token]
     if missing:
         raise CliError(
             "these Life360 env vars are unset: " + ", ".join(missing) + "\n"
             f"Add them to .env. {presence.client_credential_env} is the Life360 "
             "app's Basic credential (a public app constant, the same for every "
             f"unofficial client); {presence.username_env}/{presence.password_env} "
-            "are your Life360 login."
+            f"are your Life360 login — or set {presence.auth_token_env} if "
+            "Life360 refuses the password login."
         )
     client = Life360Client(
         client_credential=creds[presence.client_credential_env],
         username=creds[presence.username_env],
         password=creds[presence.password_env],
+        access_token=access_token or None,
     )
     try:
         circles = await client.discover()

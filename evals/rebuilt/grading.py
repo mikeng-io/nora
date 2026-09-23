@@ -32,9 +32,12 @@ from typing import Literal
 from openai import AsyncOpenAI
 
 from .judge import (
+    POSITION_CRITERION,
     SAFETY_CRITERION,
     _build_judge_prompt,
+    _build_position_prompt,
     case_verdict,
+    criterion_rationales,
     criterion_verdict,
     majority_verdict,
 )
@@ -87,6 +90,15 @@ class Judgement:
     verdict: Literal["PASS", "FAIL", "REVIEW"]
     samples: tuple[str, ...]
     error: str | None = None
+
+    @property
+    def why(self) -> str:
+        """The distinct rationales the samples gave for each bound criterion
+        (`criterion` is comma-joined when a case opted into more than one)."""
+        return " | ".join(dict.fromkeys(
+            why for name in self.criterion.split(",")
+            for why in criterion_rationales(self.samples, name)
+        ))
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +159,20 @@ class Judge:
             tag_input=asked, reply_text=said, doctrine_text=doctrine,
             source_data=source, extra_criteria=extra, facts=facts,
         )
+        return await self._draw(prompt, bound)
+
+    async def grade_position(
+        self, *, position: str, evidence: str, kind: str, prop: str,
+    ) -> Judgement:
+        """One written standing position, the case's ONE property, `samples`
+        draws, majority verdict — the same fail-closed reading `grade` makes,
+        over `evals.rebuilt.judge._build_position_prompt`."""
+        prompt = _build_position_prompt(
+            kind=kind, prop=prop, evidence=evidence, position=position,
+        )
+        return await self._draw(prompt, (POSITION_CRITERION,))
+
+    async def _draw(self, prompt: str, bound: tuple[str, ...]) -> Judgement:
         client = self._client()
 
         async def one_sample() -> str:

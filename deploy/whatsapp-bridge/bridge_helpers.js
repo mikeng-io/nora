@@ -12,6 +12,7 @@
  * allowlist/mode gating, polls, and the Hermes env coupling.
  */
 
+import { createDecipheriv, hkdfSync } from 'node:crypto';
 import { mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -157,6 +158,11 @@ export function createRecentMessageCache(limit = 1000) {
       sender_jid: msg.key.participant || msg.key.remoteJid || null,
       from_me: Boolean(msg.key.fromMe),
       timestamp_ms: timestampMs(msg.messageTimestamp),
+      // The per-message secret an EDIT of this message is encrypted with
+      // (`secretEncryptedMessage`, see `decryptSecretEdit`), and the sender's
+      // other JID form, which the key derivation may have used instead.
+      message_secret: messageSecretOf(msg),
+      sender_alt: msg.key.participantAlt || msg.key.remoteJidAlt || null,
       key: {
         id,
         remoteJid: msg.key.remoteJid,
@@ -178,6 +184,155 @@ export function createRecentMessageCache(limit = 1000) {
   }
 
   return { remember, get, get size() { return byId.size; } };
+}
+
+// -- Secret-encrypted edits (`secretEncryptedMessage`, MESSAGE_EDIT) -------
+
+/**
+ * WhatsApp phones now send an edit ENCRYPTED with the original message's
+ * `messageContextInfo.messageSecret`, not as a plain `protocolMessage`
+ * (measured live 2026-09-24: `outer=[messageContextInfo,
+ * secretEncryptedMessage]`). Baileys up to rc14 does not decrypt it, so the
+ * bridge does, porting whatsmeow's `decryptMsgSecret` (msgsecret.go):
+ *
+ *   key = HKDF-SHA256(ikm = messageSecret, salt = none,
+ *                     info = origId + origSender + editor + "Message Edit", 32)
+ *   plaintext = AES-256-GCM(key, encIv, encPayload), no additional data
+ *
+ * with both JIDs in their non-device form. WhatsApp is mid-migration to LIDs,
+ * so which form (phone or LID) each side used is not knowable in advance;
+ * every candidate pair is tried and GCM's tag rejects a wrong key, so trying
+ * is safe. The secret comes from the recent-message cache: an edit of a
+ * message older than the cache, or from before a bridge restart, cannot be
+ * decrypted and is reported as such. `bridge.test.mjs` pins the derivation
+ * against a vector whatsmeow itself produced.
+ */
+export const SECRET_ENC_MESSAGE_EDIT = 2;
+const MESSAGE_EDIT_USE_CASE = 'Message Edit';
+
+export function messageSecretOf(msg) {
+  const secret = msg?.message?.messageContextInfo?.messageSecret
+    || getMessageContent(msg)?.messageContextInfo?.messageSecret;
+  if (!secret) return null;
+  if (typeof secret === 'string') return Buffer.from(secret, 'base64');
+  return Buffer.from(secret);
+}
+
+export function deriveEditKey(secret, origId, origSender, editor) {
+  const info = Buffer.from(`${origId}${origSender}${editor}${MESSAGE_EDIT_USE_CASE}`, 'utf8');
+  // `hkdfSync` THROWS on info over 1024 bytes, and the id is sender-chosen:
+  // an over-long one must be «cannot decrypt», never an exception out of the
+  // upsert loop that skips the rest of the batch.
+  if (info.length > 1024) return null;
+  return Buffer.from(hkdfSync('sha256', secret, Buffer.alloc(0), info, 32));
+}
+
+function gcmOpen(key, iv, payload) {
+  const data = Buffer.from(payload);
+  if (data.length < 17) return null;
+  try {
+    const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(iv));
+    decipher.setAuthTag(data.subarray(data.length - 16));
+    return Buffer.concat([decipher.update(data.subarray(0, data.length - 16)), decipher.final()]);
+  } catch {
+    return null;                        // wrong key (tag mismatch) or malformed
+  }
+}
+
+function jidForms(jid, lidToPhone, phoneToLid) {
+  const out = new Set();
+  const base = normalizeJid(jid);
+  if (!base) return out;
+  out.add(base);
+  const id = resolveIdentity(base, lidToPhone, phoneToLid);
+  if (id.phone) out.add(`${id.phone}@s.whatsapp.net`);
+  if (id.lid) out.add(`${id.lid}@lid`);
+  return out;
+}
+
+/**
+ * A `secretEncryptedMessage` MESSAGE_EDIT → `{ msg }`, a Baileys-shaped message
+ * carrying the plain `protocolMessage` edit `extractMessageEvent` already
+ * understands; or `{ reason }` saying why it could not be. `decode` is
+ * Baileys' `proto.Message.decode`, injected so this module stays pure.
+ */
+export function decryptSecretEdit(msg, { recentCache, decode, lidToPhone = {}, phoneToLid = {} } = {}) {
+  const sem = getMessageContent(msg)?.secretEncryptedMessage;
+  if (!sem) return { reason: 'not_secret_encrypted' };
+  if (Number(sem.secretEncType) !== SECRET_ENC_MESSAGE_EDIT) return { reason: 'not_a_message_edit' };
+  const target = sem.targetMessageKey || {};
+  const cached = recentCache ? recentCache.get(target.id) : null;
+  if (!target.id || !cached || !cached.message_secret) return { reason: 'secret_unknown' };
+  if (!sem.encIv || !sem.encPayload) return { reason: 'malformed' };
+
+  const editorForms = new Set([
+    ...jidForms(msg.key.participant || msg.key.remoteJid, lidToPhone, phoneToLid),
+    ...jidForms(msg.key.participantAlt || msg.key.remoteJidAlt, lidToPhone, phoneToLid),
+  ]);
+  // The EDITOR first: only a sender edits their own message, and whatsmeow's
+  // `getOrigSenderFromKey` takes the editor as the original's sender for a
+  // `fromMe` key — its first choice. Then every form the cache and the target
+  // key know, for the phone/LID migration.
+  const origForms = new Set([
+    ...editorForms,
+    ...jidForms(target.participant || target.remoteJid, lidToPhone, phoneToLid),
+    ...jidForms(cached.sender_jid, lidToPhone, phoneToLid),
+    ...jidForms(cached.sender_alt, lidToPhone, phoneToLid),
+  ]);
+  for (const orig of origForms) {
+    for (const editor of editorForms) {
+      const key = deriveEditKey(cached.message_secret, target.id, orig, editor);
+      const plain = key && gcmOpen(key, sem.encIv, sem.encPayload);
+      if (!plain) continue;
+      let decoded;
+      try {
+        decoded = decode(plain);
+      } catch {
+        return { reason: 'undecodable' };
+      }
+      return synthesizeEdit(msg, target, decoded);
+    }
+  }
+  return { reason: 'undecryptable' };
+}
+
+/**
+ * The decrypted plaintext in whichever shape it arrives. mautrix-whatsapp
+ * reads it as a WHOLE message that is itself an edit — a `protocolMessage`
+ * MESSAGE_EDIT carrying `editedMessage` and `timestampMs`, possibly inside the
+ * `editedMessage` shell `getMessageContent` unwraps — so that shape is
+ * preferred, with its own millisecond clock; a bare content message (the new
+ * text itself) is the fallback. Reading the wrapped shape as bare content
+ * produced an event with no text, which the adapter drops: every edit lost
+ * while the log said it had worked (review, 2026-09-24). `shape` is the
+ * decoded message's top-level KEYS, for the log, never a value.
+ */
+function synthesizeEdit(msg, target, decoded) {
+  const inner = getMessageContent({ message: decoded })?.protocolMessage;
+  const isEdit = inner && (inner.type === 14 || inner.type === 'MESSAGE_EDIT') && inner.editedMessage;
+  const editedMessage = isEdit ? inner.editedMessage : decoded;
+  const innerMs = isEdit ? toNumber(inner.timestampMs) : null;
+  const seconds = toNumber(msg.messageTimestamp);
+  const timestampMs = innerMs || (seconds !== null ? seconds * 1000 : null);
+  const content = getMessageContent({ message: editedMessage });
+  const hasBody = Boolean(ownText(content, mediaDescriptors(content)) || mediaDescriptors(content).length);
+  const shape = Object.keys(decoded || {}).join(',');
+  if (!hasBody) return { reason: 'empty_edit', shape };
+  return {
+    shape,
+    msg: {
+      ...msg,
+      message: {
+        protocolMessage: {
+          type: 14,
+          key: { id: target.id, remoteJid: target.remoteJid, fromMe: Boolean(target.fromMe),
+            ...(target.participant ? { participant: target.participant } : {}) },
+          editedMessage,
+          ...(timestampMs !== null ? { timestampMs } : {}),
+        },
+      },
+    },
+  };
 }
 
 // -- Bounded event buffer with drop-and-count (contract §dropped) ----------
@@ -285,13 +440,33 @@ export function createReconnectScheduler(startFn, {
 
 // -- Inbound message extraction (contract §message event) -------------------
 
-/** Unwrap ephemeral / view-once / document-with-caption shells. */
+/**
+ * Unwrap the "future-proof" shells — ephemeral, view-once, document-with-
+ * caption, and `editedMessage` — as many levels deep as they nest.
+ *
+ * `editedMessage` is how a PHONE sends an edit: `{editedMessage: {message:
+ * {protocolMessage: {type: MESSAGE_EDIT, …}}}}`. Baileys' own
+ * `normalizeMessageContent` unwraps it in a bounded loop (rc13,
+ * `Utils/messages.js`); this function unwrapped one fixed level and not that
+ * shell at all, so a phone's edit reached `extractMessageEvent` with no
+ * `protocolMessage`, no text and no media, and was dropped as an empty turn —
+ * silently, before Nora could see it (design/message-edits audit, 2026-09-24).
+ * Bounded at 5 like Baileys', so a malformed self-nesting message cannot loop.
+ */
 export function getMessageContent(msg) {
-  const content = msg?.message || {};
-  if (content.ephemeralMessage?.message) return content.ephemeralMessage.message;
-  if (content.viewOnceMessage?.message) return content.viewOnceMessage.message;
-  if (content.viewOnceMessageV2?.message) return content.viewOnceMessageV2.message;
-  if (content.documentWithCaptionMessage?.message) return content.documentWithCaptionMessage.message;
+  let content = msg?.message || {};
+  for (let i = 0; i < 5; i++) {
+    const inner = (
+      content.ephemeralMessage ||
+      content.viewOnceMessage ||
+      content.viewOnceMessageV2 ||
+      content.viewOnceMessageV2Extension ||
+      content.documentWithCaptionMessage ||
+      content.editedMessage
+    )?.message;
+    if (!inner) break;
+    content = inner;
+  }
   return content;
 }
 
@@ -465,7 +640,10 @@ export function extractMessageEvent(msg, { lidToPhone = {}, phoneToLid = {}, rec
     sender_lid: sender.lid,
     push_name: msg.pushName || null,
     text,
-    timestamp_ms: timestampMs(msg.messageTimestamp),
+    // An edit's own clock when it carries one: `protocolMessage.timestampMs`
+    // is milliseconds, where `messageTimestamp` is whole seconds — two edits
+    // in one second would otherwise tie, and the later could be discarded.
+    timestamp_ms: (editOf && toNumber(proto?.timestampMs)) || timestampMs(msg.messageTimestamp),
     mentioned,
     quoted,
     media,

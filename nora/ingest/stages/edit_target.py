@@ -18,6 +18,7 @@ three things, and the pipeline acts on each:
   now, where a tag in it opened a turn on something long settled, and a race
   wrote a duplicate row. Losing the rare genuine edit of an unrecorded message
   is the smaller cost.
+* **`edit_stale`** — older than the newest edit on record (see `_is_stale`).
 * **`edit_refused`** — the original is Nora's own (R-12: she never ingests her
   own words, edited or not), or somebody other than its author is editing it.
   An edit is not a way to put words under someone else's row, and platforms
@@ -39,6 +40,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -49,7 +51,7 @@ from nora.persons import Persons
 log = logging.getLogger("nora.ingest.edit_target")
 
 #: The two endings this stage can decide by itself; `None` means «go on».
-EditTargetEnding = Literal["edit_orphaned", "edit_refused"]
+EditTargetEnding = Literal["edit_orphaned", "edit_refused", "edit_stale"]
 
 
 @dataclass(frozen=True)
@@ -68,6 +70,12 @@ async def run(
 ) -> EditTargetResult:
     """`target` is `message.edit_of`, passed on its own so its presence is a
     type rather than a runtime check."""
+    if message.timestamp <= 0:
+        # A parser with no time for the edit (WhatsApp and Signal fall back to
+        # 0). Zero would render no `edited` marker and lose to every other
+        # edit, so it is stamped on ARRIVAL — seconds late, never wrong in
+        # kind, the fallback Instagram's parser already takes.
+        message = dataclasses.replace(message, timestamp=int(time.time() * 1000))
     try:
         original = await audit.find_edited(
             conversation_id=message.conversation_id, target=target,
@@ -84,16 +92,41 @@ async def run(
     if original.is_nora or not _same_author(message, original, persons):
         return EditTargetResult(message=message, original=original, ending="edit_refused")
 
+    if _is_stale(message, target, original):
+        return EditTargetResult(message=message, original=original, ending="edit_stale")
+
     if not message.sender_id:
         message = dataclasses.replace(message, sender_id=original.sender_id)
-    if not target.mentions_known and original.mentions is not None:
-        # The platform could not see mentions on the edit; carry the
-        # original's, and say they are now known so the edit row records them.
-        message = dataclasses.replace(
-            message, mentions=original.mentions,
-            edit_of=dataclasses.replace(target, mentions_known=True),
-        )
+    if not target.mentions_known:
+        # The platform cannot see mentions on an edit (Instagram). The gate
+        # compares against the original's, so it gets them — but the edit row
+        # still records «unknown» (`mentions_known` stays False): nobody
+        # observed what this version mentions, and recording the original's
+        # as if they had would let the NEXT edit be judged against a guess.
+        message = dataclasses.replace(message, mentions=original.mentions or frozenset())
     return EditTargetResult(message=message, original=original, ending=None)
+
+
+def _is_stale(
+    message: NormalizedMessage, target: EditTarget, original: EditedMessage,
+) -> bool:
+    """Older than the newest edit on record: a redelivery, or out of order.
+    Decided HERE, before custody, so a stale update fetches nothing.
+
+    Older than the NEWEST CLOCK on record — the maximum, not the version
+    shown, which a skewed edit can make lower (review, 2026-09-24: judging
+    against it let a redelivered older edit bring old text back). An edit
+    whose timestamp is already on record is a redelivery. And a Signal edit that names the latest
+    revision's own timestamp is newer BY DEFINITION, whatever its clock says:
+    each device stamps its own sends, so a linked desktop running behind the
+    phone would otherwise have every edit it makes thrown away."""
+    if message.timestamp in original.edit_timestamps:
+        # Already on record: a redelivery. Checked FIRST, because the waiver
+        # below must never re-admit an edit Nora already holds.
+        return True
+    if not original.edit_timestamps or message.timestamp >= max(original.edit_timestamps):
+        return False
+    return not (target.sent_ts is not None and target.sent_ts == original.edited_ts)
 
 
 def _same_author(

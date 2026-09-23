@@ -66,6 +66,31 @@ type Account struct {
 	Extra map[string]any
 }
 
+// AccountSummary is one hit from `GET /accounts?query=` — the account-search
+// resource (16 §Resources, 17 P9, P11). It is the OmniPicker's own shape
+// (`slidetypes.SearchResult`, behind `SearchUsers` /
+// `IGDOmniPickerSearchResultsListQuery`), not the fuller GetProfile read that
+// backs Account above.
+//
+// There is NO IsPrivate field here, unlike the task that named this entity
+// expected: `slidetypes.SearchResult` carries `interop_messaging_user_fbid`,
+// `username`, `full_name`, `pk`, `profile_pic_url` and `is_verified` and
+// nothing else — measured against the library's own struct
+// (go.mau.fi/mautrix-meta/pkg/instameow/slidetypes/user.go). `is_private` is
+// on `PolarisProfilePageContentQuery`'s `data.user` (SocialProfile below),
+// a different document. Leaving it off is the "do not invent fields" rule
+// applied to a field the search genuinely does not return; a bool defaulting
+// to false here would read as "measured public" for every hit.
+type AccountSummary struct {
+	IGID     string
+	Username string
+	FullName string
+	// FBID is the messaging id, or "" when the search has no row for it — a
+	// missing join key, not a failed read, same as Account.FBID above.
+	FBID       string
+	IsVerified bool
+}
+
 // SocialProfile is the named subset of `PolarisProfilePageContentQuery`'s
 // `data.user` that GetProfile's own response type throws away.
 type SocialProfile struct {
@@ -158,4 +183,37 @@ type Upload struct {
 type Sent struct {
 	ID          string
 	TimestampMS int64
+}
+
+// Post is one feed post or reel, read by its shortcode (`GET
+// /posts/{shortcode}`, 17 P12): who posted it, what they wrote, when, and
+// EVERY item in it, in the author's order. A carousel is the reason this read
+// exists: a shared post carries only its cover thumbnail, so without this a
+// ten-image carousel reads as one image.
+//
+// Only fields `FetchMedia`'s response carries (responses.FetchMediaResponse):
+// `user.username`, `caption.text`, `taken_at`, and per item the chosen
+// `image_versions2` / `video_versions` candidate and `video_duration`. No ids
+// cross into it: the shortcode is what the caller asked with, and the numeric
+// ids are the gateway's business.
+type Post struct {
+	Shortcode string
+	Author    string
+	// Caption is the author's free text. It must not enter a span, a log
+	// line or an error (16 §Tracing's never-list).
+	Caption string
+	// TakenAt is Unix seconds, as Instagram sends it.
+	TakenAt int64
+	Items   []PostItem
+}
+
+// PostItem is one image or video of a post. For a video, URL is the clip and
+// Width/Height are the clip's; DurationSeconds is set only when Instagram
+// sent a duration.
+type PostItem struct {
+	Kind            string
+	URL             string
+	Width           int
+	Height          int
+	DurationSeconds *float64
 }

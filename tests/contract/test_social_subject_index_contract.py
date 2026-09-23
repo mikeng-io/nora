@@ -86,7 +86,7 @@ def test_every_method_is_keyword_only():
     would typecheck."""
     for impl in (SocialSubjectIndex, PersonsSubjectIndex, FakeSocialSubjectIndex):
         for name, arg in (
-            ("igid_for", "person_id"), ("is_tier_zero", "person_id"),
+            ("igids_for", "person_id"), ("is_tier_zero", "person_id"),
             ("person_for_igid", "igid"),
         ):
             params = inspect.signature(getattr(impl, name)).parameters
@@ -94,18 +94,19 @@ def test_every_method_is_keyword_only():
 
 
 async def test_a_listed_person_resolves_and_is_in_reach(index):
-    assert await index.igid_for(person_id="jordan") == _JORDAN
+    assert await index.igids_for(person_id="jordan") == frozenset({_JORDAN})
     assert await index.is_tier_zero(person_id="jordan") is True
 
 
 async def test_a_person_in_no_room_resolves_and_is_out_of_reach(index):
     """`refused`, not `ambiguous`: Nora knows exactly who this is."""
-    assert await index.igid_for(person_id="sam") == _SAM
+    assert await index.igids_for(person_id="sam") == frozenset({_SAM})
     assert await index.is_tier_zero(person_id="sam") is False
 
 
 async def test_an_unknown_person_resolves_to_nothing_and_is_out_of_reach(index):
-    assert await index.igid_for(person_id="nobody") is None
+    # EMPTY, not `None`: the index was read and holds nothing for them.
+    assert await index.igids_for(person_id="nobody") == frozenset()
     assert await index.is_tier_zero(person_id="nobody") is False
 
 
@@ -118,6 +119,8 @@ async def test_the_reverse_lookup_names_the_owner_or_nobody(index):
 async def test_an_unreadable_index_fails_closed_and_never_raises(broken):
     """A broken index costs a read that should have happened; it never grants
     one that should not have."""
-    assert await broken.igid_for(person_id="jordan") is None
+    # `None` — «could not read» — never the empty set, which would claim the
+    # index was read and holds no account.
+    assert await broken.igids_for(person_id="jordan") is None
     assert await broken.is_tier_zero(person_id="jordan") is False
     assert await broken.person_for_igid(igid=_JORDAN) is None

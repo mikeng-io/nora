@@ -361,9 +361,11 @@ def _context_header(header: str = TAG_HEADER) -> str:
         name="context_header",
         body=(
             f"{header}\n"
-            "This is your material, not just scenery. Quote what they said, "
-            "point at what you remember — a reply that uses none of it is a "
-            "thin reply."
+            "This is your material, not just scenery: what you know about these "
+            "people is what makes a reply theirs rather than anybody's. Use it "
+            "the way a friend who was there would, where it fits. Quoting "
+            "somebody's own words back at them is for when they asked what was "
+            "said, not for winning a point."
         ),
     ).render()
 

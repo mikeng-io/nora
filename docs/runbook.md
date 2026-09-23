@@ -485,6 +485,51 @@ delivered to the Discord review channel; the old `watchdog.sh` was deleted 2026-
 while Nora was disconnected — audit rows were lost; that is counted, never
 silent.
 
+## 4c. "Nora says everyone is home" — Life360 refused the collector's login
+
+The presence collector stops recording, and every `where_is`/`where_been`
+answer freezes on the last fix. In `docker logs presence`:
+
+```
+life360 auth failed: status=403 json=True
+life360 read banned/refused: initial authentication failed (failures=N)
+```
+
+Read the token endpoint's body once from inside the container. If it says
+`{"errorMessage":"Invalid login and password. ..."}` while the password in
+`.env` is right, Life360 is refusing the **password grant** for this account.
+Once an account's phone number is verified, Life360 blocks the password grant
+for it (pnbruckner/life360 README). On 2026-09-23 the phone and email on Nora's
+account were verified in the afternoon. The collector's cached token kept
+working until Life360 revoked it at 00:12 HKT on 09-24, and every re-auth after
+that got this 403. Changing the password does not bring it back. Switch the
+collector to **token mode**:
+
+1. In a browser, sign in at <https://life360.com/login> as **Nora's** Life360
+   account (the one `LIFE360_USERNAME` names), not your own.
+2. Open DevTools, then Application → Storage → Cookies → `life360.com`, and copy
+   the value of `LIFE360_AUTH_TOKEN`.
+3. On norty, add it to the deploy checkout's `.env` (never commit it):
+
+   ```bash
+   LIFE360_AUTH_TOKEN=<the cookie value>
+   ```
+
+4. Recreate the collector. A plain `restart` keeps the old environment:
+
+   ```bash
+   docker compose up -d --force-recreate presence
+   ```
+
+5. Read it back. `docker logs presence` shows `life360 auth: token mode`, and new
+   rows land in `presence_fixes` within a cadence or two.
+
+In token mode the password is never POSTed. When Life360 stops accepting the
+token, the log reads `access token rejected — replace LIFE360_AUTH_TOKEN` and
+`nora_presence_auth_alarms_total{reason="token_rejected"}` climbs. The collector
+backs off rather than falling back to the password, so repeat steps 1–4. Unset
+the variable to go back to password mode.
+
 ## 5. "Which doctrine produced this reply?"
 
 Every reply's log line and trace carry `doctrine_sha256` — the sha256 of the doctrine version

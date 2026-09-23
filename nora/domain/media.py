@@ -151,6 +151,19 @@ class MediaRef:
     # never rendered, never logged above debug, never fed to Honcho, and never
     # placed in model context. Only the adapter that wrote it reads it.
     fetch_token: str = ""
+    # READ ONLY WHEN ASKED. Custody is unchanged: the bytes are still copied
+    # and the handle is still rendered. What this turns off is the ingest
+    # comprehension pass (`nora/ingest/stages/media.py` schedules no subject
+    # for it), so no model looks at the bytes until `media_fetch` is called on
+    # the handle. Set by an adapter for an attachment that is a PREVIEW of
+    # something posted elsewhere rather than something a member sent: an
+    # Instagram reel, post or story shared into a room arrives with its
+    # thumbnail. The operator's rule (2026-09-24) is that Nora reads shared
+    # content only when tagged, never on every share. A property of the ref,
+    # never of the bytes: the same bytes later sent as a direct photo are
+    # read then, because the comprehension job keys on whether the ROW has
+    # been read, not on whether the bytes were ever seen.
+    on_demand: bool = False
 
 
 @dataclass(frozen=True)
@@ -734,6 +747,27 @@ def media_json(blobs: tuple[MediaBlob, ...]) -> str | None:
     ])
 
 
+def blobs_from_media_json(text: str | None) -> tuple[MediaBlob, ...]:
+    """`media_json`'s inverse, total: NULL or anything malformed is `()`."""
+    if not text:
+        return ()
+    try:
+        items = json.loads(text)
+    except (TypeError, ValueError):
+        return ()
+    if not isinstance(items, list):
+        return ()
+    out = []
+    for item in items:
+        if not isinstance(item, dict) or not isinstance(item.get("sha256"), str):
+            return ()
+        out.append(MediaBlob(
+            sha256=item["sha256"], media_type=str(item.get("media_type") or ""),
+            size=int(item.get("size") or 0), filename=item.get("filename"),
+        ))
+    return tuple(out)
+
+
 def body_with_handles(
     body: str,
     labels: tuple[str, ...],
@@ -762,3 +796,35 @@ def body_with_handles(
     if not body.endswith(old):
         return body
     return body[: len(body) - len(old)] + placeholder_suffix(labels, handles)
+
+
+@dataclass(frozen=True)
+class VideoReadingKey:
+    """Everything a question-less video reading is a function of.
+
+    An image description is a pure function of its bytes, which is why the
+    vision cache keys on the sha256 alone. A chunked VIDEO reading is not
+    (issue #117): which windows were cut depends on `chunk_seconds` and
+    `chunk_max`, and the coverage sentence that says what was missed depends on
+    them too. Caching on the sha256 alone put #117's bug back through the cache,
+    so video was excluded from it entirely. Every input goes in the key instead:
+
+    * `sha256` — the bytes.
+    * `provider`, `model` — the lane and describer that read it. BOTH: the
+      same model name through OmniRoute answers «I cannot see any video» as a
+      200 (it drops `video_url`), and that must never be served once the lane
+      moves to a direct provider.
+    * `chunk_seconds`, `chunk_max` — the geometry; raising `chunk_max` must
+      miss, or a stale «I have not seen the rest» is served forever.
+    * `reading_digest` — everything else the model's view depends on: the
+      question it was asked, the declared media type, the reasoning effort and
+      every encode setting (`preprocess.video_encode_signature`). Turning on
+      speech (DEC-197), or changing the resolution or audio encode, misses.
+    """
+
+    sha256: str
+    provider: str
+    model: str
+    chunk_seconds: int
+    chunk_max: int
+    reading_digest: str

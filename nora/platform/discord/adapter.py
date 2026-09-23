@@ -9,6 +9,7 @@ REST calls instead of signal-cli's JSON-RPC.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import time
@@ -64,6 +65,12 @@ class DiscordAdapter:
         self._reactor = DiscordReactor(token, base_url=base_url)
         self._identity: PlatformIdentity | None = None
         self._own_id = ""
+        # Her Discord handle, cached from the SAME `/users/@me` response
+        # `resolve_identity()` fetches once — `own_handle()` reuses it rather
+        # than reading it live per turn (design/self-awareness/02/06). `None`
+        # until the first `resolve_identity()`, and stays `None` if Discord
+        # reported no username.
+        self._own_handle: str | None = None
         # design/discord-music/02-control-surface.md — `None` when
         # `[music] enabled = false` (nora/app/composition.py), which is what
         # keeps this adapter unchanged for every deployment that hasn't
@@ -108,14 +115,31 @@ class DiscordAdapter:
     async def resolve_identity(self) -> PlatformIdentity:
         """Memoized after the first call — same rationale as
         `SignalAdapter.resolve_identity`: a stable answer to "who am I" that
-        `/health` can poll without a network round trip every time."""
+        `/health` can poll without a network round trip every time. The same
+        `/users/@me` response also fills `_own_handle` for `own_handle()`."""
         if self._identity is None:
-            primary, identifiers = await derive_identity(self._token, base_url=self._base_url)
+            primary, identifiers, handle = await derive_identity(
+                self._token, base_url=self._base_url,
+            )
             self._own_id = primary
+            self._own_handle = handle
             self._identity = PlatformIdentity(
                 platform=self.platform, primary=primary, identifiers=identifiers,
             )
         return self._identity
+
+    async def own_handle(self) -> str | None:
+        """Her handle on Discord — `@username#discriminator`, or `@username`
+        alone once the account is on unique usernames — read from the SAME
+        `/users/@me` response `resolve_identity()` fetches once at startup,
+        never a second call per turn (design/self-awareness/02/06). Ensures
+        that call has happened (a no-op once memoized) rather than answering
+        `None` merely because nothing has asked yet. Display text for
+        `<presence>` only — it never enters `PlatformIdentity`, so it can
+        never become a mention id."""
+        if self._identity is None:
+            await self.resolve_identity()
+        return self._own_handle
 
     async def listen(
         self, *, on_message: Callable[[NormalizedMessage], Awaitable[None]]
@@ -176,10 +200,25 @@ class DiscordAdapter:
             client, self._token, on_ready_extra=_register_music_commands,
         )
 
+        # ONE EVENT AT A TIME PER CHANNEL. discord.py dispatches every gateway
+        # event as its own task, so a message and its edit could be ingested
+        # CONCURRENTLY — and a new message's insert waits on attachment custody
+        # and transcription, so an edit made in that window found nothing and
+        # was dropped as an orphan (audit, 2026-09-24). Signal, WhatsApp and
+        # Instagram already ingest one event at a time off a single stream;
+        # this gives Discord the same order within a channel, which is the only
+        # order an edit depends on, without serialising unrelated channels.
+        channel_locks: dict[str, asyncio.Lock] = {}
+
+        def _lock_for(raw_message: Any) -> asyncio.Lock:
+            key = str(getattr(getattr(raw_message, "channel", None), "id", ""))
+            return channel_locks.setdefault(key, asyncio.Lock())
+
         async def _on_discord_message(raw_message: Any) -> None:
             message = parse_discord_message(raw_message, own_id=self._own_id)
             if message is not None:
-                await on_message(message)
+                async with _lock_for(raw_message):
+                    await on_message(message)
 
         # An edit reaches the SAME `on_message` as a new message: it is a
         # `NormalizedMessage` with `edit_of` set, and ingest routes it
@@ -187,7 +226,8 @@ class DiscordAdapter:
         async def _on_discord_edit(raw_message: Any) -> None:
             message = parse_discord_edit(raw_message, own_id=self._own_id)
             if message is not None:
-                await on_message(message)
+                async with _lock_for(raw_message):
+                    await on_message(message)
 
         try:
             await self._listener.listen(_on_discord_message, _on_discord_edit)

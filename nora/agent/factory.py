@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import httpx
 from openai import AsyncOpenAI
 from strands import Agent, ModelRetryStrategy
 from strands.agent.conversation_manager import NullConversationManager
@@ -43,6 +44,7 @@ from strands.vended_plugins.skills import AgentSkills
 
 from ..domain.errors import PartialReplyError
 from .guards import ReplyGuard, ToolCallLog
+from .punctuation import DashFreeOpenAIModel
 from .tool_choice import FIRST_CALL
 
 log = logging.getLogger("nora.factory")
@@ -69,10 +71,16 @@ DEFAULT_DREAM_AGENT_NAME = "dreamer"
 RETRY_BACKOFF_FRACTION = 0.25
 
 
-def create_client(*, base_url: str, api_key: str) -> AsyncOpenAI:
+def create_client(
+    *, base_url: str, api_key: str, http_client: httpx.AsyncClient | None = None,
+) -> AsyncOpenAI:
+    """`http_client` is the transport seam a direct describer lane needs when
+    its endpoint wants something on EVERY request that the SDK does not send —
+    OpenCode Go's mandatory `x-opencode-session` (DEC-197). `None` keeps the
+    SDK's own client, so every existing caller is unchanged."""
     if not api_key:
         raise RuntimeError("api_key is empty — refusing to start")
-    return AsyncOpenAI(api_key=api_key, base_url=base_url)
+    return AsyncOpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
 
 
 def create_model_provider(
@@ -125,8 +133,11 @@ def create_model_provider(
     observation to make. So it passes `"auto"` — for the same reason
     `ReplyGuard` flips to `AFTER_SPEAKING` after she has spoken, one step
     earlier: a loop that is permitted to stop is a loop that can stop.
+
+    **Dash-free** (`nora.agent.punctuation`): the request carries no em dash,
+    because she copies the ones she is shown.
     """
-    return OpenAIModel(
+    return DashFreeOpenAIModel(
         model_id=model,
         client=client,
         params={

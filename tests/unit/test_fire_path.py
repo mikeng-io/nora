@@ -3060,3 +3060,29 @@ async def test_a_deferred_participation_turn_gets_the_same_surface_as_a_tag(
     )
     assert "<tool_catalogue" in prompt
     assert call["limits"]["turns"] == LIMITS["turns"] + 1
+
+
+async def test_a_fire_turn_publishes_the_heartbeat_deadline_not_the_loops(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """A fire turn is bounded by `[heartbeat].timeout_seconds` (120 in
+    production), while the vision describer is built from the `[llm]` loop
+    (360). Without the heartbeat's own deadline published, one slow read takes
+    the whole heartbeat budget and the reminder turn dies (DEC-197 review)."""
+    from nora.domain.turn_deadline import seconds_left
+
+    seen: list[float | None] = []
+
+    class _Reads(FakeAgentRunner):
+        async def invoke(self, **kwargs: object) -> str | None:
+            seen.append(seconds_left())
+            return await super().invoke(**kwargs)
+
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        timeout_seconds=7.0, runner=_Reads(_send_turns("記得食藥")),
+    )
+
+    await path.run([_reminder()])
+
+    assert seen and seen[0] is not None and 6.0 < seen[0] <= 7.0, seen

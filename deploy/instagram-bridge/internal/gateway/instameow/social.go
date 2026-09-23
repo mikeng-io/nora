@@ -193,19 +193,20 @@ func issuerFor(cli Client) (GraphQLIssuer, error) {
 // (only path anywhere)` and why this route is on this bridge rather than the
 // social one.
 //
-// # A story read is VISIBLE to its author, and that changes the rules
+// # A story read is a deliberate act, and that changes the rules
 //
-// Every other read in this system is invisible to the person being read.
-// Fetching a story puts Nora in the author's viewer list, and it cannot be
-// taken back. Two consequences are built into the route rather than left to
-// the caller:
+// Whether the author sees the view is unmeasured (design/instagram-adoption/
+// 04, 05 §Reading a story): the `seen` watermark cannot see that property.
+// Nora opens only the stories she was asked to, as a privacy choice
+// (design/instagram-adoption/18), so two consequences are built into the
+// route rather than left to the caller:
 //
 //  1. it takes exactly ONE igid and never a list, although `FetchReel` accepts
-//     several. A batched read would view several people's stories to answer a
-//     question about one, and each of them would see it;
+//     several. A batched read would open several people's stories to answer a
+//     question about one;
 //  2. `has_story` on /profile exists so a caller can decide NOT to call this.
-//     Checking first is free and invisible; calling and finding nothing is
-//     neither.
+//     Checking first opens nothing; calling and finding nothing opened a
+//     story read for no answer.
 //
 // # Private plus followed is a NORMAL success, not an exception
 //

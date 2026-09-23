@@ -37,10 +37,12 @@ import (
 	"testing"
 
 	gateway "instagram-bridge/internal/gateway/instameow"
+	"instagram-bridge/internal/gateway/instameow/fakeig"
 
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
 	"go.mau.fi/mautrix-meta/pkg/messagix/responses"
+	"go.mau.fi/mautrix-meta/pkg/messagix/types"
 )
 
 var updateFixtures = flag.Bool("update", false,
@@ -115,6 +117,39 @@ const synthSocialEnvelope = `{"data":{"user":{
 // synthGraphQLErrors is the 200-with-`errors` shape the social half refuses.
 const synthGraphQLErrors = `{"errors":[{"message":"synthetic field exception","code":1675030,"summary":"Query error"}],"data":null}`
 
+// synthSearchResults is GET /accounts?query='s hit list, in the synthetic
+// placeholder ranges the rest of this file uses. No is_private: the search
+// this route calls does not carry that field (domain.AccountSummary's doc
+// comment says why), so there is nothing to fake for it.
+func synthSearchResults() []*slidetypes.SearchResult {
+	return []*slidetypes.SearchResult{
+		{PK: synthIGID, Username: synthUsername, FullName: "Example Friend", InteropMessagingUserFBID: synthFBID},
+		{PK: "10000002", Username: "example_second_result", IsVerified: true},
+	}
+}
+
+// synthUsernameLookupResults is GET /accounts?username='s raw hits BEFORE the
+// exact-match filter (app.LookupAccountByUsername): a fuzzy hit ranks ahead
+// of the exact one, the P9 shape (17 §P9: "one exact match was not the first
+// result"). A route that ever took items[0] would answer the wrong account
+// against this fixture.
+func synthUsernameLookupResults() []*slidetypes.SearchResult {
+	return []*slidetypes.SearchResult{
+		{PK: "10000010", Username: "example_friendlier", FullName: "Not The One"},
+		{PK: synthIGID, Username: synthUsername, FullName: "Example Friend", InteropMessagingUserFBID: synthFBID},
+	}
+}
+
+// synthUsernameLookupAmbiguous is two hits that both match synthUsername
+// case-insensitively — data Instagram would never really produce (usernames
+// are unique), which is exactly what makes it the ErrUpstreamRejected case.
+func synthUsernameLookupAmbiguous() []*slidetypes.SearchResult {
+	return []*slidetypes.SearchResult{
+		{PK: synthIGID, Username: synthUsername},
+		{PK: "10000099", Username: strings.ToUpper(synthUsername)},
+	}
+}
+
 func synthReel() *responses.ReelInfoResponse {
 	image := &responses.ReelItem{ExpiringAt: 1700086400}
 	image.Pk = "900000000000000001"
@@ -140,6 +175,19 @@ func synthReel() *responses.ReelInfoResponse {
 		{Width: 1080, URL: "https://instagram.fxxx1-1.fbcdn.net/v/t50/synthetic-2.mp4?oh=00_C&oe=0"},
 	}
 
+	// A frame with NO `pk`. `storyFrame` then falls back to `item.ID`, which
+	// Instagram shapes as `<pk>_<owner igid>` — so the frame's `id` carries
+	// the story OWNER's igid. The Python client must never hand that to the
+	// model (design/instagram-adoption/18, R-18); this row is what it is
+	// tested against.
+	fallback := &responses.ReelItem{ExpiringAt: 1700086400}
+	fallback.ID = "900000000000000003_" + synthIGID
+	fallback.TakenAt = 1700007200
+	fallback.MediaType = 1
+	fallback.ImageVersions2.Candidates = []responses.Candidates{
+		{Width: 1080, Height: 1920, URL: "https://scontent.cdninstagram.com/v/t51/synthetic-3.jpg?oh=00_D&oe=0"},
+	}
+
 	return &responses.ReelInfoResponse{
 		Reels: map[string]responses.ReelInfo{
 			synthIGID: {
@@ -147,7 +195,7 @@ func synthReel() *responses.ReelInfoResponse {
 				ExpiringAt: 1700086400,
 				Seen:       0,
 				User:       &responses.User{Username: synthUsername},
-				Items:      []*responses.ReelItem{image, video},
+				Items:      []*responses.ReelItem{image, video, fallback},
 			},
 		},
 	}
@@ -207,6 +255,113 @@ func contractCases() []contractCase {
 		{
 			file: "story_checkpointed_409.json", route: "GET /accounts/{igid}/story", path: "/accounts/" + synthIGID + "/story",
 			fake: func() *fakeIG { return &fakeIG{ReelErr: httpclient.ErrCheckpointRequired} },
+		},
+		{
+			// The first fixture on the NEW response conventions (16 §Resources):
+			// {"items":[...],"next_cursor":null}, no "ok" field.
+			file: "accounts_search_ok.json", route: "GET /accounts", path: "/accounts?query=example",
+			fake: func() *fakeIG {
+				return &fakeIG{SearchResultsSet: true, SearchResults: synthSearchResults()}
+			},
+		},
+		{
+			// A search that matched nobody is a normal 200 with an empty list,
+			// not an error.
+			file: "accounts_search_empty.json", route: "GET /accounts", path: "/accounts?query=nobody-matches-this",
+			fake: func() *fakeIG { return &fakeIG{SearchResultsSet: true, SearchResults: nil} },
+		},
+		{
+			// The new envelope's failure shape: {"error":{"code","message"}}.
+			file: "accounts_search_bad_query_400.json", route: "GET /accounts", path: "/accounts?query=",
+			fake: func() *fakeIG { return &fakeIG{} },
+		},
+		{
+			// The exact-match rule (app.LookupAccountByUsername, 17 P9/P10):
+			// a fuzzy hit ranks first, and this route must still answer the
+			// exact one rather than items[0] — the P9 case where "one exact
+			// match was not the first result".
+			file: "accounts_by_username_found.json", route: "GET /accounts", path: "/accounts?username=" + synthUsername,
+			fake: func() *fakeIG {
+				return &fakeIG{SearchResultsSet: true, SearchResults: synthUsernameLookupResults()}
+			},
+		},
+		{
+			// No hit equals the input exactly: an empty list, the same
+			// "search found nobody" convention ?query= already uses.
+			file: "accounts_by_username_not_found.json", route: "GET /accounts", path: "/accounts?username=nonexistent_handle",
+			fake: func() *fakeIG {
+				return &fakeIG{SearchResultsSet: true, SearchResults: synthUsernameLookupResults()}
+			},
+		},
+		{
+			// Malformed input never reaches the use case: 400 before the
+			// session gate, and domain.ParseUsername's own text (which
+			// embeds the raw input) never reaches this envelope.
+			file: "accounts_by_username_bad_username_400.json", route: "GET /accounts", path: "/accounts?username=bad-username",
+			fake: func() *fakeIG { return &fakeIG{} },
+		},
+		{
+			// Two exact, case-insensitive matches for one username cannot
+			// happen for real data (usernames are unique): 502
+			// upstream_rejected, never a silent items[0] pick.
+			file: "accounts_by_username_ambiguous_502.json", route: "GET /accounts", path: "/accounts?username=" + synthUsername,
+			fake: func() *fakeIG {
+				return &fakeIG{SearchResultsSet: true, SearchResults: synthUsernameLookupAmbiguous()}
+			},
+		},
+		// GET /posts/{shortcode} (17 P12), on the new conventions. The
+		// upstream bytes behind these are UNMEASURED and synthetic
+		// (fakeig/posts.go): a carousel of three, mixed, in order.
+		{
+			file: "posts_carousel_ok.json", route: "GET /posts/{shortcode}", path: "/posts/" + fakeig.CarouselShortcode,
+			fake: func() *fakeIG { return &fakeIG{} },
+		},
+		{
+			// A shortcode outside base64url: refused at the edge.
+			file: "posts_bad_shortcode_400.json", route: "GET /posts/{shortcode}", path: "/posts/not.a.shortcode",
+			fake: func() *fakeIG { return &fakeIG{} },
+		},
+		{
+			// Instagram answered 404 for the decoded id.
+			file: "posts_not_found_404.json", route: "GET /posts/{shortcode}", path: "/posts/C3L9IQOygAE",
+			fake: func() *fakeIG { return &fakeIG{} },
+		},
+		{
+			// Any other refusal, including a failure inside an HTTP 200. A
+			// deleted post and a private one Nora does not follow are
+			// expected to land here or at 404; which, is the live probe's.
+			file: "posts_upstream_rejected_502.json", route: "GET /posts/{shortcode}", path: "/posts/" + fakeig.CarouselShortcode,
+			fake: func() *fakeIG {
+				return &fakeIG{MediaErr: fakeig.LibraryStatusError(fakeig.CarouselMediaID, 400)}
+			},
+		},
+		{
+			// Longer than 11 characters: well formed, no decoding known.
+			file: "posts_long_shortcode_501.json", route: "GET /posts/{shortcode}", path: "/posts/" + fakeig.CarouselShortcode + "xyz",
+			fake: func() *fakeIG { return &fakeIG{} },
+		},
+		// The three failure envelopes Nora's `instagram_search` reads as
+		// `unavailable` (design/instagram-adoption/17 P11): the session
+		// needs a human (409), Instagram rejected the search (502), and no
+		// session to search with (503). Each is the envelope, never the old
+		// `{"ok": false}` body, so the Python client is tested against the
+		// shape this route actually answers.
+		{
+			file: "accounts_search_checkpointed_409.json", route: "GET /accounts", path: "/accounts?query=example",
+			fake: func() *fakeIG { return &fakeIG{SearchErr: httpclient.ErrCheckpointRequired} },
+		},
+		{
+			file: "accounts_search_upstream_rejected_502.json", route: "GET /accounts", path: "/accounts?query=example",
+			fake: func() *fakeIG {
+				return &fakeIG{SearchErr: (&types.ErrorResponse{Errors: []*types.GraphQLError{
+					{Message: "synthetic field exception", Summary: "Query error", Code: 1675030},
+				}}).AsError()}
+			},
+		},
+		{
+			file: "accounts_search_reconnecting_503.json", route: "GET /accounts", path: "/accounts?query=example",
+			fake: func() *fakeIG { return &fakeIG{} },
+			opts: []bridgeOpt{withNoClient()},
 		},
 	}
 }

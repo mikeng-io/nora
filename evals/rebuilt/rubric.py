@@ -240,3 +240,50 @@ PARTICIPATION_RUBRIC: tuple[Criterion, ...] = (
     RUBRIC[4],   # voice — unchanged by occasion
     RUBRIC[5],   # platform_fit — unchanged by occasion
 )
+
+
+#: The standing corpus's four kinds (`design/standing-compact/20-verification.md`
+#: §1), each ONE property of a written position. The case states the instance
+#: in its own words (`expected_output`); this states what the kind MEANS, so a
+#: judge reads the same definition on every case of a kind and on both arms.
+#:
+#: Each is a single reading with its failure named, not a menu of branches — the
+#: shape the operator objected to twice (`CONTRADICTED`'s rewrite above).
+#: What standing IS rides in the prompt beside it: the definitions only make
+#: sense against «the compact of her work in one room», not a summary.
+FOLD_KINDS: dict[str, str] = {
+    "carry": (
+        "Something her earlier position held — a question she is waiting on, "
+        "something she owes, a finding she kept — that nothing in this turn "
+        "touched, answered, closed or replaced, is STILL held in the new "
+        "position. Rewording and compressing it is fine; dropping it is the "
+        "failure, because the turn gave no reason to let it go. A thread the "
+        "turn did settle or overtake may go."
+    ),
+    "stale": (
+        "A clause in her earlier position placed something in time relative to "
+        "when that position was written (today, tonight, tomorrow, now, this "
+        "week) or on a date, and by the turn's own time that moment has "
+        "passed. The new position must not present it as still current or "
+        "still ahead: dropping it, or restating it as past or with its actual "
+        "date, both satisfy. Re-affirming it in the same relative words as if "
+        "no time had passed is the failure — compute from the two times given, "
+        "not from how the clause sounds."
+    ),
+    "residue": (
+        "A tool result on this turn held something she found or worked out "
+        "that her reply did NOT give the room, and that still bears on "
+        "something open there. The new position must carry at least one such "
+        "unsent finding — a name, a fact, a conclusion (addresses, phone "
+        "numbers and ids are excluded from standing by rule and do not count "
+        "either way). Carrying only what the reply already sent does not "
+        "satisfy, because the transcript already holds that."
+    ),
+    "recap": (
+        "The new position is her working state — what she is holding open, "
+        "what she owes, what she found and kept — and NOT a recap of the "
+        "conversation. It fails if it mostly narrates who said what in order, "
+        "reads like minutes of the exchange, or restates the turn without "
+        "saying what she is holding."
+    ),
+}

@@ -87,15 +87,25 @@ func (s *Server) Routes() http.Handler {
 	// field came from, which is not a resource and would have been the fourth
 	// spelling of one noun. Renamed 2026-09-22 while it was still free.
 	mux.HandleFunc("GET /threads/{thread_fbid}/members", observability.Route("GET /threads/{thread_fbid}/members", s.handleRoster))
+	// Account search: P11's route, built early to be P9's probe instrument
+	// (design/instagram-adoption/17 P9, P11). The FIRST route on the new
+	// response conventions (accounts_search.go) — no old body to migrate, so
+	// it starts there rather than joining the old routes' {"ok": ...} shape.
+	mux.HandleFunc("GET /accounts", observability.Route("GET /accounts", s.handleAccountsSearch))
 	// ONE account resource. The social fields are not a second noun — they
 	// are more of this one — so they are merged into this read rather than
 	// given a path of their own. The response says which upstream halves
 	// answered.
 	mux.HandleFunc("GET /accounts/{igid}", observability.Route("GET /accounts/{igid}", s.handleProfile))
-	// The only path to a story anywhere, and the only read VISIBLE to the
-	// person being read. A sub-resource of the account, because that is what
-	// it is.
+	// The only path to a story anywhere. Whether the author sees the view
+	// is unmeasured (design 04, 05 §Reading a story); Nora opens one only
+	// when asked. A sub-resource of the account, because that is what it is.
 	mux.HandleFunc("GET /accounts/{igid}/story", observability.Route("GET /accounts/{igid}/story", s.handleStory))
+	// One post, every item in it (17 P12). A post is its own noun: a link
+	// names it by shortcode, with no account in the path. On the new
+	// conventions (posts.go), and traced by PATTERN ONLY: the shortcode names
+	// somebody's post and never becomes a span attribute value.
+	mux.HandleFunc("GET /posts/{shortcode}", observability.PatternOnlyRoute("GET /posts/{shortcode}", s.handlePost))
 	mux.HandleFunc("POST /send", observability.Route("POST /send", s.handleSend))
 	mux.HandleFunc("POST /send-media", observability.Route("POST /send-media", s.handleSendMedia))
 	mux.HandleFunc("POST /react", observability.Route("POST /react", s.handleReact))

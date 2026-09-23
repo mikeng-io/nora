@@ -40,6 +40,9 @@ class _ChunkingVision:
         #: records the bytes to prove each window was its own call.
         self.windows: list[int | None] = []
         self.completions: list[str] = []
+        #: (prompt, provider) per call — what the MODEL was actually asked, and
+        #: over which transport, after every call-site re-templating.
+        self.asked: list[tuple[str, str]] = []
 
     async def describe(
         self, *, data: bytes, media_type: str, prompt: str = "", model: str = "",
@@ -48,6 +51,7 @@ class _ChunkingVision:
     ) -> VisionResult:
         self.calls.append(data)
         self.windows.append(windows)
+        self.asked.append((prompt, provider))
         if self.answers is None:
             return VisionResult(
                 available=True, description=f"segment {len(self.calls)}")
@@ -390,3 +394,33 @@ async def test_two_concurrent_reads_do_not_share_provenance():
     assert video.provenance is not None
     assert video.provenance["video_capped"] is True
     assert still.provenance is None, "a still leaves no video record behind"
+
+
+async def test_the_automatic_comprehension_question_asks_for_speech():
+    """DEC-197: the AUTOMATIC read — the one an Instagram Reel or Story goes
+    through, not `media_fetch` — must ask for what is SAID, now that the window
+    carries its audio track. Asserted on the prompt the describer was actually
+    handed, after `_comprehend_video` re-templates it at the call site, and on
+    the transport it travelled: the configured `opencode-go` lane.
+
+    The identity-number request rides with it (the operator's line: phone, ID
+    and account numbers — design/media-read-lane/02 §5). It is a request to a
+    model, not a screen; the DEC row records the exposure that remains."""
+    client = _ChunkingVision()
+    comprehender = MediaComprehender(
+        client=client,
+        describe_models={"video": "mimo-v2.6-flash", "audio": "mimo-v2.6-flash"},
+        describe_providers={"video": "opencode-go", "audio": "opencode-go"},
+        text_model="", chunk_seconds=90, max_chunks=10,
+        cut=_cut(starts=[0.0], duration=30.0),
+    )
+
+    await comprehender.describe(data=b"video-bytes", media_type="video/mp4")
+    await comprehender.describe(data=b"audio-bytes", media_type="audio/mp4")
+
+    (video_prompt, video_provider), (audio_prompt, audio_provider) = client.asked
+    for prompt in (video_prompt, audio_prompt):
+        assert "transcribe what" in prompt, prompt
+        assert "phone number, ID number or account number" in prompt, prompt
+    assert "text on screen" in video_prompt
+    assert (video_provider, audio_provider) == ("opencode-go", "opencode-go")

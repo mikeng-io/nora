@@ -55,6 +55,20 @@ def _member(mid, *, ts=None, share="1", disconnected="0", lat="22.44", lng="114.
     return m
 
 
+def _refused(fake, request):
+    """The shared bearer gate for the data endpoints: None to proceed, or the
+    refusal a real host gives a missing or dead token."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return web.json_response({"errorMessage": "no token"}, status=403)
+    bearer = auth.removeprefix("Bearer ")
+    fake.bearers.append(bearer)
+    if bearer in fake.rejected_bearers:
+        return web.json_response({"errorMessage": "unauthorized"},
+                                 status=fake.rejected_status)
+    return None
+
+
 class _Life360:
     """The two Life360 endpoints, each behaving like the real host — including
     the wrong verb, the ban 403 and the challenge page."""
@@ -69,6 +83,12 @@ class _Life360:
         self.members_403_countdown = 0
         self.places_mode = "ok"            # ok | 403 | challenge
         self.requests: list[str] = []      # path log, for the no-loop assertion
+        # Token mode: every bearer a data endpoint saw, and the ones it refuses
+        # (with `rejected_status` — Life360's refusal of a dead bearer may be a
+        # 401 or a 403, and token mode must treat both as a rejected token).
+        self.bearers: list[str] = []
+        self.rejected_bearers: set[str] = set()
+        self.rejected_status = 403
         self.members_body = {"members": [
             _member("m-live", ts=NOW_MS // 1000),               # fresh → live
             _member("m-stale", ts=NOW_MS // 1000 - 3600),       # 1h old → stale
@@ -100,16 +120,16 @@ class _Life360:
 
     async def circles(self, request: web.Request) -> web.Response:
         self.requests.append("circles")
-        if not request.headers.get("Authorization", "").startswith("Bearer "):
-            return web.json_response({"errorMessage": "no token"}, status=403)
+        if (refused := _refused(self, request)) is not None:
+            return refused
         return web.json_response({"circles": [{"id": "c1", "name": "Ridgeline"}]})
 
     async def places(self, request: web.Request) -> web.Response:
         """The places endpoint, shaped like the live probe (2026-08-07): string
         coordinates, `circleId` echoed, nullable type fields."""
         self.requests.append("places")
-        if not request.headers.get("Authorization", "").startswith("Bearer "):
-            return web.json_response({"errorMessage": "no token"}, status=403)
+        if (refused := _refused(self, request)) is not None:
+            return refused
         if self.places_mode == "403":
             return web.json_response({"errorMessage": "forbidden"}, status=403)
         if self.places_mode == "challenge":
@@ -129,8 +149,8 @@ class _Life360:
 
     async def members(self, request: web.Request) -> web.Response:
         self.requests.append("members")
-        if not request.headers.get("Authorization", "").startswith("Bearer "):
-            return web.json_response({"errorMessage": "no token"}, status=403)
+        if (refused := _refused(self, request)) is not None:
+            return refused
         if self.members_403_countdown > 0:
             self.members_403_countdown -= 1
             return web.json_response({"errorMessage": "forbidden"}, status=403)
@@ -151,8 +171,8 @@ class _Life360:
         return web.json_response(self.members_body, status=200)
 
     async def request_location(self, request: web.Request) -> web.Response:
-        if not request.headers.get("Authorization", "").startswith("Bearer "):
-            return web.json_response({"errorMessage": "no token"}, status=403)
+        if (refused := _refused(self, request)) is not None:
+            return refused
         data = await request.post()
         self.location_requests.append((request.match_info["mid"], data.get("type", "")))
         return web.json_response({"requestId": "r1", "isPollable": True}, status=200)
@@ -174,8 +194,9 @@ async def life360():
     await server.close()
 
 
-def _client(base, *, metrics=None) -> Life360Client:
+def _client(base, *, metrics=None, access_token=None) -> Life360Client:
     return Life360Client(
+        access_token=access_token,
         client_credential=CREDENTIAL, username="u", password="p", user_agent=UA,  # noqa: S106
         token_url=f"{base}token.json",
         members_url=f"{base}circles/{{circle_id}}/members",
@@ -489,3 +510,84 @@ async def test_a_places_challenge_page_is_its_own_status(life360):
     read = await _client(base, metrics=metrics).read_places(circle_id="c1", now_ms=NOW_MS)
     assert read.status is ReadStatus.CHALLENGE
     assert metrics.get("nora_presence_auth_alarms_total", reason="challenge") == 1.0
+
+
+# ── token mode (2026-09-24): Life360 refused the password grant outright ─────
+
+STATIC = "tok-static-from-the-browser-cookie"
+
+
+async def test_token_mode_reads_on_the_static_token_and_never_posts_the_credential(life360):
+    """With `access_token`, every call — circle read, places read, the location
+    ping, operator discovery — carries the operator's bearer, and the token
+    endpoint is NEVER hit: the account's password grant is the thing Life360
+    refuses, so POSTing it is pure ban risk. Reverting `_authenticate`'s
+    token-mode early return turns this red."""
+    fake, base = life360
+    client = _client(base, access_token=STATIC)
+    assert (await client.read_circle(circle_id="c1", now_ms=NOW_MS)).status is ReadStatus.OK
+    assert (await client.read_places(circle_id="c1", now_ms=NOW_MS)).status is ReadStatus.OK
+    assert await client.request_location(circle_id="c1", member_id="m-live") is True
+    assert [c.circle_id for c in await client.discover()] == ["c1"]
+    assert "token" not in fake.requests
+    assert fake.bearers and set(fake.bearers) == {STATIC}
+
+
+@pytest.mark.parametrize("status", [401, 403])
+async def test_a_rejected_access_token_backs_off_alarms_and_never_posts_a_credential(
+    life360, status,
+):
+    """A dead static token is `banned` with its OWN detail and alarm — the
+    operator must mint a new one — and it drives the same `auth_failures`
+    back-off. It never re-auths with the password (no token POST) and never
+    retries the read (one members GET per read). Without `_token_rejected`, a 403
+    falls into password mode's re-auth path and POSTs the credential; a 401 reads
+    as plain `unavailable` with no back-off at all."""
+    fake, base = life360
+    fake.rejected_bearers = {STATIC}
+    fake.rejected_status = status
+    metrics = Metrics()
+    client = _client(base, metrics=metrics, access_token=STATIC)
+    reads = 3
+    for _ in range(reads):
+        read = await client.read_circle(circle_id="c1", now_ms=NOW_MS)
+        assert read.status is ReadStatus.BANNED
+        assert "LIFE360_AUTH_TOKEN" in read.detail
+    assert client.auth_failures == reads
+    assert "token" not in fake.requests
+    assert fake.requests.count("members") == reads
+    assert metrics.get("nora_presence_auth_alarms_total", reason="token_rejected") == reads
+    # ONE alarm per dead-token read: a `banned` alongside would page the generic
+    # PresenceAuthRefused rule for the same token as well.
+    assert metrics.get("nora_presence_auth_alarms_total", reason="banned") == 0
+
+
+async def test_a_rejected_access_token_on_places_and_the_ping_never_posts_a_credential(life360):
+    """The places read and the on-demand ping hold the same rule: banned / False,
+    alarmed, and no password grant behind them."""
+    fake, base = life360
+    fake.rejected_bearers = {STATIC}
+    metrics = Metrics()
+    client = _client(base, metrics=metrics, access_token=STATIC)
+    places = await client.read_places(circle_id="c1", now_ms=NOW_MS)
+    assert places.status is ReadStatus.BANNED
+    assert "LIFE360_AUTH_TOKEN" in places.detail
+    assert await client.request_location(circle_id="c1", member_id="m-live") is False
+    assert "token" not in fake.requests
+    assert metrics.get("nora_presence_auth_alarms_total", reason="token_rejected") == 2
+    assert metrics.get("nora_presence_auth_alarms_total", reason="banned") == 0
+
+
+async def test_password_mode_still_reauths_once_on_a_stale_token(life360):
+    """Token mode is opt-in: with no `access_token`, a 403 still drops the token
+    and re-POSTs the password grant exactly once (DEC-55), and no
+    `token_rejected` alarm fires."""
+    fake, base = life360
+    metrics = Metrics()
+    client = _client(base, metrics=metrics)
+    await client.read_circle(circle_id="c1", now_ms=NOW_MS)
+    fake.members_403_countdown = 1
+    read = await client.read_circle(circle_id="c1", now_ms=NOW_MS)
+    assert read.status is ReadStatus.OK
+    assert fake.requests.count("token") == 2
+    assert metrics.get("nora_presence_auth_alarms_total", reason="token_rejected") == 0

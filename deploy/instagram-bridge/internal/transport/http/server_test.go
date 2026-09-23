@@ -53,6 +53,12 @@ func (f failingPorts) SocialProfile(context.Context, domain.IGID) domain.SocialR
 func (f failingPorts) Story(context.Context, domain.IGID) (domain.Story, error) {
 	return domain.Story{}, f.err
 }
+func (f failingPorts) SearchAccounts(context.Context, string) ([]domain.AccountSummary, error) {
+	return nil, f.err
+}
+func (f failingPorts) Post(context.Context, domain.Shortcode) (domain.Post, error) {
+	return domain.Post{}, f.err
+}
 
 type noEvents struct{}
 

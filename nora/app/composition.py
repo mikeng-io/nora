@@ -118,7 +118,7 @@ from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.tag_debounce import SqlTagDebounceStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
-from nora.infra.sql.turn_verdicts import SqlTurnVerdictStore
+from nora.infra.sql.video_readings import SqlVideoReadingStore
 from nora.infra.version import OK as VERSION_OK
 from nora.infra.version import VersionManifest
 from nora.infra.vision import MediaComprehender, VisionClient
@@ -223,6 +223,9 @@ def _unit_rooms(allowlist: Policy) -> dict[str, tuple[UnitRoom, ...]]:
                 # the SAME `policy.toml` field the note candidates pass reads,
                 # so the two passes cannot hold two ideas of what a room is.
                 description=conv.description,
+                # The same two facts `origin_rooms` keys `remind`'s refusal on,
+                # so the notes list and the refusal cannot disagree.
+                proactive=conv.proactive, ids=tuple(sorted(conv.ids)),
             ),
         )
     return rooms_by_unit
@@ -235,15 +238,21 @@ def _presence_reader(
 
     Her handles come from two places and the order is the design: `[agent.
     handles]` is the DECLARED fallback, and any adapter that can report its own
-    handle overrides it, read live on every turn. Today that is Instagram
-    alone — its bridge's `/health` carries `self.username`. Signal and
-    Discord derive ids and drop the username by design, and WhatsApp's bridge
-    exposes none, so theirs stay declared until an adapter can say.
+    handle overrides it. Instagram's `own_handle` reads its bridge's `/health`
+    live, per call. Discord's reuses the ONE `/users/@me` response
+    `resolve_identity()` already fetched at startup instead of a second call
+    per turn (design/self-awareness/02/06) — `DiscordAdapter.own_handle`
+    answers from that cache. Signal derives an id and drops the username by
+    design, and WhatsApp's bridge exposes none, so theirs stay declared until
+    an adapter can say.
     """
     live: dict[str, Callable[[], Awaitable[str | None]]] = {}
     instagram = registry.adapters.get("instagram")
     if isinstance(instagram, InstagramAdapter):
         live["instagram"] = instagram.own_handle
+    discord_adapter = registry.adapters.get("discord")
+    if isinstance(discord_adapter, DiscordAdapter):
+        live["discord"] = discord_adapter.own_handle
     return PresenceReader(
         policy=allowlist, adapters=dict(registry.adapters),
         handles=cfg.agent.handles, live_handles=live,
@@ -672,8 +681,8 @@ def _describe_providers(cfg: Config) -> dict[str, str]:
     when it can actually describe — so the two maps cannot disagree about which
     modalities are live. The provider DEFAULT is `"omniroute"` everywhere: a
     config written before the field existed describes through the process-wide
-    gateway client exactly as before. Only a modality whose config names
-    `provider = "kimi"` routes direct.
+    gateway client exactly as before. Only a modality whose config names a
+    DIRECT provider (`"kimi"`, `"opencode-go"`) routes direct.
     """
     resolved: dict[str, str] = {}
     for modality in ("image", "audio", "video"):
@@ -683,13 +692,48 @@ def _describe_providers(cfg: Config) -> dict[str, str]:
     return resolved
 
 
-def _kimi_api_key_env(cfg: Config) -> str:
-    """The env var name a kimi describer's direct lane reads its key from.
+@dataclass(frozen=True)
+class _DirectLane:
+    """One DIRECT describer transport: where it goes, and whose key it reads.
+
+    `session_header` is OpenCode Go's mandatory `x-opencode-session` (DEC-197):
+    its endpoint answers `400 MissingSessionID` without one, so its client is
+    built on `opencode_go_http_client`, which stamps a fresh id per request.
+    """
+
+    base_url: str
+    default_key_env: str
+    session_header: bool = False
+
+
+# Provider name (`DescriberConfig.provider`) → its direct lane. `"omniroute"`
+# is NOT here: it is the process-wide gateway client, built once above for
+# every model call, not a describer lane.
+_DIRECT_LANES = {
+    # OmniRoute drops `video_url` content blocks (probe 2026-08-30), so video
+    # needs a lane of its own; Kimi's endpoint serves K3 with base64 video.
+    "kimi": _DirectLane(
+        base_url="https://api.kimi.com/coding/v1",
+        default_key_env="KIMI_CODE_API_KEY",
+    ),
+    # MiMo v2.6 Flash, which Kimi's endpoint does not serve and OmniRoute
+    # cannot carry video to (design/media-read-lane/03).
+    "opencode-go": _DirectLane(
+        base_url="https://opencode.ai/zen/go/v1",
+        default_key_env="OPENCODE_GO_API_KEY",
+        session_header=True,
+    ),
+}
+
+
+def _direct_lane_key_env(cfg: Config, provider: str) -> str:
+    """The env var name `provider`'s direct lane reads its key from.
 
     `DescriberConfig.api_key_env` NAMES the variable (DEC-8 — the value never
-    lands in config.toml); empty falls back to `KIMI_CODE_API_KEY` exactly as
-    the field's docstring promises. When several modalities select kimi, the
-    first enabled one's name wins — one direct client, one key source.
+    lands in config.toml); empty falls back to the lane's own default exactly as
+    the field's docstring promises. When several modalities select the same
+    provider, the first enabled one's name wins — one direct client per lane,
+    one key source.
     """
     for modality in ("image", "audio", "video"):
         describer = cfg.media.describer_for(modality)
@@ -697,10 +741,42 @@ def _kimi_api_key_env(cfg: Config) -> str:
             describer is not None
             and describer.enabled
             and describer.model
-            and describer.provider == "kimi"
+            and describer.provider == provider
         ):
-            return describer.api_key_env or "KIMI_CODE_API_KEY"
-    return "KIMI_CODE_API_KEY"
+            return describer.api_key_env or _DIRECT_LANES[provider].default_key_env
+    return _DIRECT_LANES[provider].default_key_env
+
+
+def _direct_describer_clients(cfg: Config) -> dict[str, AsyncOpenAI]:
+    """Provider → its direct client, for every lane some live describer selects.
+
+    Built only for a lane something USES, so a deployment that stays on
+    omniroute builds nothing new and needs no extra key. A selected lane whose
+    key is unset is left OUT, and `VisionClient._create` refuses a provider it
+    has no client for — the modality answers `unavailable`, never a silent
+    OmniRoute fallback that would drop the video and answer anyway.
+    """
+    from nora.agent.factory import create_client
+    from nora.infra.vision.client import opencode_go_http_client
+
+    clients: dict[str, AsyncOpenAI] = {}
+    for provider in sorted(set(_describe_providers(cfg).values()) & set(_DIRECT_LANES)):
+        lane = _DIRECT_LANES[provider]
+        key_env = _direct_lane_key_env(cfg, provider)
+        api_key = os.environ.get(key_env, "")
+        if not api_key:
+            log.warning(
+                "media describer provider %r selected but %s is unset — "
+                "its modalities answer unavailable",
+                provider, key_env,
+            )
+            continue
+        clients[provider] = create_client(
+            base_url=lane.base_url,
+            api_key=api_key,
+            http_client=opencode_go_http_client() if lane.session_header else None,
+        )
+    return clients
 
 
 def _describe_max_bytes(cfg: Config) -> dict[str, int]:
@@ -1192,13 +1268,8 @@ async def build_dependencies(
         quote_margin=cfg.store.quote_margin,
         quote_window_multiplier=cfg.store.quote_window_multiplier,
     )
-    # The per-turn verdict's store (26 §3). Built unconditionally beside
-    # `standing_store` for the same reason: it costs one attribute with
-    # the tier off, and the debrief's own `store_verdict is None` guard
-    # is what makes it inert rather than a second flag to forget.
-    turn_verdict_store = SqlTurnVerdictStore(engine)
     # The shared decision log (issue #199). Built unconditionally beside
-    # `standing_store` and `turn_verdict_store` for their reason — it costs one
+    # `standing_store` for its reason — it costs one
     # attribute where nothing reads it — and there is a second reason here: the
     # log has FOUR writers on three different paths, so a flag gating it would
     # be four places to forget rather than one, and a half-wired log is worse
@@ -1797,34 +1868,15 @@ async def build_dependencies(
     # lifecycle; a second `create_sql_engine` would fork the pool and its own
     # `aclose()` would dispose the engine everything else is still using).
     media_descriptions = SqlMediaDescriptionStore(engine)
-    # The per-modality DIRECT lanes (provider-aware describers, 2026-08-30):
-    # a describer configured `provider = "kimi"` travels through a client
-    # pointed at `api.kimi.com/coding/v1`, NOT the process-wide OmniRoute
+    # The per-modality DIRECT lanes (provider-aware describers, 2026-08-30;
+    # OpenCode Go added by DEC-197): a describer configured with a direct
+    # provider travels through its own client, NOT the process-wide OmniRoute
     # client — OmniRoute drops `video_url` content blocks (probe 2026-08-30:
     # router prompt tokens 95 vs native 3164 for the same payload), so a
-    # video described through it would reach the model as text only. Built
-    # only when SOME describer selects kimi, so a deployment that stays on
-    # omniroute builds nothing new and needs no KIMI_CODE_API_KEY.
-    describe_providers = _describe_providers(cfg)
-    kimi_direct_client: AsyncOpenAI | None = None
-    if "kimi" in describe_providers.values():
-        from nora.agent.factory import create_client
-        kimi_key_env = _kimi_api_key_env(cfg)
-        kimi_api_key = os.environ.get(kimi_key_env, "")
-        if not kimi_api_key:
-            log.warning(
-                "media describer provider 'kimi' selected but %s "
-                "is unset — kimi-modality describers answer unavailable",
-                kimi_key_env,
-            )
-        else:
-            kimi_direct_client = create_client(
-                base_url="https://api.kimi.com/coding/v1",
-                api_key=kimi_api_key,
-            )
+    # video described through it would reach the model as text only.
     vision_client = VisionClient(
         client=client,
-        direct_client=kimi_direct_client,
+        direct_clients=_direct_describer_clients(cfg),
         model=cfg.media.vision_model,
         max_tokens=cfg.media.vision_max_tokens,
         reasoning_effort=cfg.media.vision_reasoning_effort,
@@ -1885,7 +1937,7 @@ async def build_dependencies(
             interpreter=MediaComprehender(
                 client=vision_client,
                 describe_models=_describe_models(cfg),
-                describe_providers=describe_providers,
+                describe_providers=_describe_providers(cfg),
                 describe_max_bytes=_describe_max_bytes(cfg),
                 text_model=cfg.media.comprehension_text_model,
                 chunk_seconds=cfg.media.describe.video.chunk_seconds,
@@ -2025,8 +2077,9 @@ async def build_dependencies(
                 cfg.search.provider,
                 cfg.search.api_key_env,
             )
-    # `social_fetch` (DEC-151) gets ONE `SocialProvider` — `SocialRouter` —
-    # and the registry stays unaware that there are two backends under it
+    # `social_fetch` (DEC-151), `instagram_read` and `instagram_search`
+    # (design/instagram-adoption/18) get ONE `SocialProvider` — `SocialRouter`
+    # — and the registry stays unaware that there are two backends under it
     # (design/instagram-adoption/08). Each backend is wired independently and
     # there is NO credential on either, so `enabled` alone is the gate (the
     # `[preview]` shape); an unwired backend answers `unavailable` for ITS OWN
@@ -2044,38 +2097,40 @@ async def build_dependencies(
             timeout_seconds=cfg.social.timeout_seconds,
             content_max_chars=cfg.social.content_max_chars,
         )
-    # The EXCEPTION backend serves the one row OpenCLI structurally cannot
-    # (`instagram/story`). It is not built yet, and the reason is a real
-    # dependency rather than an omission: that row is Tier 0, so the ROUTER
-    # needs a `SocialSubjectIndex` — `person_id -> igid`, plus the reach check
-    # — and that needs the `instagram` id kind (`fbid` + `igid`) in
-    # `identity.toml`, which belongs to the platform-adapter milestone
-    # (design/instagram-adoption/11 M2) and is ITS schema to define, not the
-    # social axis's. `SocialRouter` refuses to be constructed with a Tier 0
-    # backend and no index, so this is not a discipline to remember.
+    # The INSTAGRAM backend serves every Instagram read the bridge has a route
+    # for — `instagram/story` and `instagram/profile`, `instagram_read`'s two
+    # (design/instagram-adoption/15, /18, P5), and `instagram/search`,
+    # `instagram_search`'s (P11), which takes free text and needs no index.
+    # The two read rows take a PERSON, so the router needs a
+    # `SocialSubjectIndex`: `PersonsSubjectIndex` resolves
+    # person -> igid off `identity.toml` (kind-aware; none or several is
+    # `ambiguous`) and answers Tier 0 off `policy.toml`'s group rooms (a `*`
+    # room and `[dm]` never count). `SocialRouter` refuses to be constructed
+    # with that backend and no index, so the pairing is not a discipline to
+    # remember.
     #
-    # Wiring it with a resolver that answers `None` for everybody would be
-    # worse than not wiring it: the tool would say `ambiguous` («I don't know
-    # whose account that is») about people Nora knows perfectly well, which is
-    # a false statement about HER OWN index manufactured out of a wiring gap.
-    # Unwired, the router answers `unavailable` — «I couldn't check» — which
-    # is true. `[social.instagram] enabled` exists so turning it on is a
-    # one-line change once the index can answer.
+    # Its own `enabled`, because the two backends are provisioned and fail
+    # independently: turning Instagram on must not need the host's OpenCLI
+    # service, and a checkpointed Instagram session must not take X with it.
     instagram_social: SocialProvider | None = None
+    social_subjects = None
     if cfg.social.instagram.enabled:
-        log.warning(
-            "[social.instagram] is enabled but no subject index exists yet — "
-            "Instagram story reads stay unavailable until the person index "
-            "carries igids (design/instagram-adoption/11 M2)",
+        from nora.infra.social import InstagramSocialClient, PersonsSubjectIndex
+        instagram_social = InstagramSocialClient(
+            base_url=cfg.social.instagram.base_url,
+            timeout_seconds=cfg.social.instagram.timeout_seconds,
+            content_max_chars=cfg.social.content_max_chars,
         )
+        social_subjects = PersonsSubjectIndex(persons, allowlist)
     if opencli_client is not None or instagram_social is not None:
-        from nora.infra.social import SocialRouter
+        from nora.infra.social import EXCEPTION_ROUTES, SocialRouter
         social_client = SocialRouter(
             default=opencli_client,
             exceptions=(
-                {("instagram", "story"): instagram_social}
+                dict.fromkeys(EXCEPTION_ROUTES, instagram_social)
                 if instagram_social is not None else {}
             ),
+            subjects=social_subjects,
         )
     # `weather` (DEC-70) is wired on `[weather] enabled` alone — the HK Observatory
     # provider is KEYLESS, so unlike `route`/`search` there is no key to resolve;
@@ -2356,6 +2411,26 @@ async def build_dependencies(
     if giphy_key := os.environ.get("GIPHY_API_KEY"):
         from nora.infra.giphy import GiphyClient
         giphy_client = GiphyClient(api_key=giphy_key)
+    reaction_picker = None
+    if cfg.reaction.enabled and giphy_client is not None:
+        from nora.agent.reaction import ReactionPicker
+        reaction_picker = ReactionPicker(
+            client=_DebriefModelClient(
+                base_url=cfg.llm.base_url,
+                api_key=os.environ.get(cfg.llm.api_key_env, ""),
+                max_tokens=cfg.reaction.max_tokens,
+                temperature=0.3,
+                model=cfg.reaction.model or cfg.llm.model,
+                timeout_seconds=cfg.reaction.timeout_seconds,
+                reasoning_effort=_reasoning_effort(
+                    cfg.reaction.reasoning_effort or cfg.llm.reasoning_effort,
+                    source="[reaction] reasoning_effort",
+                ),
+                agent_name="reaction",
+            ),
+            prompts=doctrine_store, gifs=giphy_client, metrics=metrics,
+            timeout_seconds=cfg.reaction.timeout_seconds,
+        )
     games_client = None
     if pulse_api_token := os.environ.get("PULSE_API_TOKEN"):
         games_client = PulseGamesClient(token=pulse_api_token)
@@ -2443,7 +2518,8 @@ async def build_dependencies(
         video_max_chunks=cfg.media.describe.video.chunk_max,
         media_join=media_join,
         describe_max_bytes=_describe_max_bytes(cfg),
-        blobs=blobs, descriptions=media_descriptions, search=search_client,
+        blobs=blobs, descriptions=media_descriptions,
+        video_readings=SqlVideoReadingStore(engine), search=search_client,
         social=social_client,
         weather=weather_client,
         presence=presence_store, circles=presence_circles,
@@ -2514,6 +2590,7 @@ async def build_dependencies(
         unit_for=_note_unit_of(allowlist),
         versions=version_manifest,
         giphy=giphy_client,
+        reaction=reaction_picker,
         music=music_bridge,
         # `online_now`'s two live-state reads (design/online-status/). Either
         # None leaves its arms answering `unavailable` (R-5), never
@@ -2613,7 +2690,6 @@ async def build_dependencies(
     if cfg.standing.enabled:
         debrief_wiring = DebriefWiring(
             store=standing_store,
-            store_verdict=turn_verdict_store,
             media_join=media_join,
             # The note tier's sink. `None` while `[notes] enabled = false`,
             # so the debrief parses no proposals and raises none — the
@@ -2649,7 +2725,6 @@ async def build_dependencies(
             fold_batch=cfg.standing.fold_batch,
             timeout_seconds=cfg.standing.timeout_seconds,
             store_timeout_seconds=cfg.standing.store_timeout_seconds,
-            rebuild_after_folds=cfg.standing.rebuild_after_folds,
         )
     engagement = EngagementPipeline(
         # EVERY built adapter, not just Signal's: a tag is answered on the

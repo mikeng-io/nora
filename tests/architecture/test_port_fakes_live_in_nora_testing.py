@@ -85,6 +85,7 @@ _ALLOWED: dict[str, str] = {
     # every query `ok` and is not under it either.
     "tests/test_web_fetch_tool.py::_FakeSearchProvider": _NO_SHARED_FAKE,
     "tests/test_tools.py::_GifSource": _NO_SHARED_FAKE,
+    "tests/unit/test_reaction.py::_Gifs": _NO_SHARED_FAKE,
     "tests/test_social_fetch_tool.py::_FakeSocialProvider": _NO_SHARED_FAKE,
     # ImageGenerator — the only implementation is `XaiImageGenerator`
     # (`nora/infra/image_gen/xai_adapter.py`), and its own contract suite
@@ -105,12 +106,6 @@ _ALLOWED: dict[str, str] = {
     # the Discord adapter; no in-memory Speaker exists in nora/testing yet, and
     # the voice-playout contract suite is not written (voice closure in flight).
     "tests/test_discord_adapter.py::_FakeSpeaker": _NO_SHARED_FAKE,
-    # TurnVerdictStore — wraps `InMemoryTurnVerdictStore` to make `latest_ungrounded`
-    # raise on demand (R-27's «I could not check»).
-    "tests/unit/test_debrief.py::_BlindableVerdicts": (
-        "FAULT_SWITCH_OVER_SHARED: composes InMemoryTurnVerdictStore to add a blind "
-        "switch on latest_ungrounded"
-    ),
 }
 
 

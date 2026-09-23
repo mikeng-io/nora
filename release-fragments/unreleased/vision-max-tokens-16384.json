@@ -1,0 +1,6 @@
+{
+  "type": "fix",
+  "summary": "Video reads no longer fail for running out of room: the describer's per-read token allowance is raised so its reasoning and its transcript both fit.",
+  "details": [],
+  "limitations": []
+}

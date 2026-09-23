@@ -265,10 +265,12 @@ services:
       #   GOOGLE_MAPS_API_KEY   — the `route` tool (Routes+Places+Geocoding)
       #   MEDIA_ENCRYPTION_KEY  — AES-256-GCM at rest for attachment custody
       #   LIFE360_USERNAME/PASSWORD — the presence collector's observer account
+      #   LIFE360_AUTH_TOKEN  — its browser-issued bearer, when Life360 refuses the password
       - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
       - MEDIA_ENCRYPTION_KEY=${MEDIA_ENCRYPTION_KEY:-}
       - LIFE360_USERNAME=${LIFE360_USERNAME:-}
       - LIFE360_PASSWORD=${LIFE360_PASSWORD:-}
+      - LIFE360_AUTH_TOKEN=${LIFE360_AUTH_TOKEN:-}
       # [media.rustfs] (DEC-136), off by default. Same OPTIONAL posture and
       # the SAME two values `rustfs:`'s own environment below already
       # requires (`:?`) whenever this compose file runs at all — reusing them
@@ -310,6 +312,11 @@ services:
       #   provider whose key is unset answers `unavailable`, never a silent
       #   omniroute fallback — but a deployment that enables video MUST set it.
       - KIMI_CODE_API_KEY=${KIMI_CODE_API_KEY:-}
+      #   OPENCODE_GO_API_KEY — the OpenCode Go DIRECT describer lane
+      #   (provider="opencode-go", DEC-197): MiMo v2.6 Flash for video with
+      #   sound and for audio. Same OPTIONAL posture: unset means those
+      #   modalities answer `unavailable`, never an omniroute fallback.
+      - OPENCODE_GO_API_KEY=${OPENCODE_GO_API_KEY:-}
       #   XAI_OAUTH_REFRESH_TOKEN — the xAI image-generation lane (DEC-137).
       #   Written by `nora xai-login` (device flow) into the host `.env`;
       #   passed through here so the container can refresh access tokens
@@ -496,6 +503,7 @@ services:
       - LIFE360_CLIENT_CREDENTIAL=${LIFE360_CLIENT_CREDENTIAL:-}
       - LIFE360_USERNAME=${LIFE360_USERNAME:-}
       - LIFE360_PASSWORD=${LIFE360_PASSWORD:-}
+      - LIFE360_AUTH_TOKEN=${LIFE360_AUTH_TOKEN:-}
       # No Google Maps key here (2026-08-14) — the collector talks to Life360
       # ONLY. Reverse-geocoding moved to Nora's own process (`where_is`,
       # on demand), which already has GOOGLE_MAPS_API_KEY for `route`/

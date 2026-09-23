@@ -1,5 +1,6 @@
-"""`OpenCliBridgeClient` — the `social_fetch` tool's read path to X and
-Instagram, over the host-side bridge (DEC-151).
+"""`OpenCliBridgeClient` — the `social_fetch` tool's read path to X, over the
+host-side bridge (DEC-151). It served Instagram too until design/instagram-
+adoption/18 moved every Instagram read to the instagram-bridge (P5, P11).
 
 Nora's container cannot run `opencli` (it exists only on the host), so this
 client POSTs `{platform, what, target, limit}` to the bridge's `/read` and
@@ -43,7 +44,7 @@ log = logging.getLogger("nora.social")
 
 
 class OpenCliBridgeClient(SocialProvider):
-    """READ-ONLY X/Instagram reads via the host bridge's `POST /read`.
+    """READ-ONLY X reads via the host bridge's `POST /read`.
     Constructed once per process at the composition root, only when
     `[social] enabled` (there is no credential — `enabled` is the whole gate);
     unwired, `social_fetch` answers `unavailable`."""
