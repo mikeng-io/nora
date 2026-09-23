@@ -9,9 +9,15 @@ from __future__ import annotations
 
 import logging
 
-from opentelemetry import propagate
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 log = logging.getLogger("nora.infra.trace_propagation")
+
+#: W3C Trace Context, explicitly, not the global propagator. The bridge
+#: extracts W3C `traceparent`; that header IS the contract, so it is named here
+#: rather than inherited from whatever `OTEL_PROPAGATORS` or a later
+#: `set_global_textmap` call happens to install.
+_W3C = TraceContextTextMapPropagator()
 
 
 def propagation_headers() -> dict[str, str]:
@@ -31,7 +37,7 @@ def propagation_headers() -> dict[str, str]:
     """
     carrier: dict[str, str] = {}
     try:
-        propagate.inject(carrier)
+        _W3C.inject(carrier)
     except Exception:  # a broken propagator must not break a send
         log.debug("trace context could not be propagated", exc_info=True)
         return {}

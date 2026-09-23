@@ -152,13 +152,7 @@ func main() {
 	// The cache outlives any single client: thread ids do not change, and a
 	// reconnect that rebuilt the client should not also re-pay a route lookup
 	// per room.
-	b.threads = newThreadIndex(func(ctx context.Context, shortID int64) (*instameow.ThreadIGIDs, error) {
-		cli := b.currentClient()
-		if cli == nil {
-			return nil, errNotConnected
-		}
-		return cli.FetchThreadID(ctx, shortID)
-	})
+	b.threads = newThreadIndex(b.fetchThreadID)
 	if self, ok := b.store.loadSelf(); ok {
 		b.self = self
 	}
@@ -223,7 +217,13 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shutdownCtx)
-	_ = shutdownTracing(shutdownCtx)
+	// Its OWN budget. srv.Shutdown waits for open connections and does not
+	// close them, and Nora keeps /events open, so it can spend its whole
+	// deadline; sharing it would leave the span flush nothing, dropping the
+	// traces from the moments before a restart.
+	flushCtx, cancelFlush := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelFlush()
+	_ = shutdownTracing(flushCtx)
 	if cli := b.currentClient(); cli != nil {
 		cli.Disconnect()
 	}
@@ -648,6 +648,19 @@ func (b *bridge) setClient(cli *instameow.Client) {
 	}
 	b.out = traceClient(cli)
 	b.up = traceUpload(cli.GetHTTP().SendMercuryUploadRequest)
+}
+
+// fetchThreadID resolves a short thread id through the HANDLERS' client, the
+// traced one, so a cache miss during a request is a span under that request.
+// It used to call the raw session client directly, which left every cold
+// room's first send, reaction or roster read with an untraced Instagram round
+// trip inside it.
+func (b *bridge) fetchThreadID(ctx context.Context, shortID int64) (*instameow.ThreadIGIDs, error) {
+	cli := b.sendClient()
+	if cli == nil {
+		return nil, errNotConnected
+	}
+	return cli.FetchThreadID(ctx, shortID)
 }
 
 func (b *bridge) currentClient() *instameow.Client {

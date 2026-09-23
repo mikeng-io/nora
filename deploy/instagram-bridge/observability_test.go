@@ -131,6 +131,29 @@ func TestUpstreamSpanIsAChildAndClassifiesAChallenge(t *testing.T) {
 	}
 }
 
+// A room the bridge has not resolved yet costs an Instagram round trip inside
+// the request, and that round trip must be a span. It is wired here the way
+// `main` wires it (`newThreadIndex(b.fetchThreadID)`) rather than the way
+// newTestBridge does (straight to the fake), because the bug this pins lived
+// exactly in that difference: production resolved through the raw session
+// client, bypassing the tracing decorator, and every test passed.
+func TestAColdRoomsThreadLookupIsASpanUnderTheRequest(t *testing.T) {
+	rec := recordSpans(t)
+	b := newTestBridge(t, &fakeIG{})
+	b.out = traceClient(b.out)
+	b.threads = newThreadIndex(b.fetchThreadID)
+
+	w := post(t, b, "/send", map[string]any{"room_id": threadShort, "text": "hi"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("/send answered %d: %s", w.Code, w.Body.String())
+	}
+	server := spanNamed(t, rec, "POST /send")
+	lookup := spanNamed(t, rec, "instagram.FetchThreadID")
+	if lookup.Parent().SpanID() != server.SpanContext().SpanID() {
+		t.Error("the thread lookup is not a child of the request's server span")
+	}
+}
+
 // The regression this whole file exists for: a GraphQL failure that answers
 // HTTP 200. A span that looked only at the status would be green here.
 func TestGraphQLErrorsInsideA200MarkTheSpanFailed(t *testing.T) {

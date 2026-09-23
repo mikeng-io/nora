@@ -52,8 +52,14 @@ parallel. New bridge routes (P10–P12) are built only on the layers from P8
 - **Compose.** `extra_hosts: host.docker.internal:host-gateway` on
   `instagram-bridge`, plus the endpoint env.
 - **Nora.** One helper injects W3C `traceparent` into outbound headers, used
-  by every bridge client: `nora/platform/instagram/` (send, react, roster,
-  listener) and `nora/infra/social/instagram_client.py`.
+  by every bridge client that makes a request inside a turn:
+  `nora/platform/instagram/` (send, react, roster) and
+  `nora/infra/social/instagram_client.py`. **Not the listener**: it opens
+  `/events` from a background task with no current span, and the bridge does
+  not trace `/events`, so a header there would carry nothing. Inbound traces
+  arrive in phase 2, carried inside each event's payload (`16` §Tracing).
+  Not the Instagram CDN fetch (`media.py`) either: that goes to a third
+  party.
 - **Tests.** Go, using the SDK's in-memory exporter: a server span named
   `GET /accounts/{igid}`; an upstream span with status ERROR for the captured
   `field_exception` envelope; **no attribute carrying message text** (the
