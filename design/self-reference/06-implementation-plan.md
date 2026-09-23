@@ -1,8 +1,8 @@
 ---
 type: design
-title: "Self-Reference — implementation plan (build of DEC-193)"
-description: "The concrete build: files, functions, the test list re-derived from the code as it stands on 2026-09-23 (not copied from 04), the audiences decision for appearance.md, and where the earlier nodes were wrong against the code."
-tags: [nora, design, build, tests]
+title: "Self-Reference — implementation (the build of DEC-193)"
+description: "What was built and why it differs from 01-04: an on-demand image-generation skill (not always-loaded doctrine), the resolver's custody exemption, the operator ingest, the tests re-derived from the tree, the provider research with its sources, and the conflicts found."
+tags: [nora, design, build, tests, skill, image-gen]
 timestamp: '2026-09-23'
 edges:
   - {src: 06-implementation-plan, dst: 04-tests-and-files, rel: realizes, provenance: asserted}
@@ -10,157 +10,207 @@ edges:
   - {src: 06-implementation-plan, dst: 02-canonical-assets, rel: depends_on, provenance: asserted}
 ---
 
-# Implementation plan (2026-09-23)
+# Implementation (2026-09-23)
 
-Written before the code, from the code. Where 01/02/04 disagree with the tree,
-the tree wins and the node is corrected in the same PR (§"Bundle corrections").
+Written from the code. Where 01-04 disagree with the tree, the tree wins and
+the node is corrected in the same PR (§7).
 
-## 1. Doctrine: `nora/doctrine/appearance.md`
+## 1. Placement: a skill, not doctrine (operator decision, 2026-09-23)
 
-- `kind: identity`, `order: 15` (between `identity` 10 and `voice` 20; no
-  other file holds 15).
-- **Audiences: `[tag, heartbeat, participation, proactive]`, not `[tag]`.**
-  04 Q4's default assumed image generation happens only on tagged turns. The
-  code says otherwise: `build_tool_specs` returns `generate_image` in the ONE
-  tool tuple every occasion builds (`nora/agent/tools.py`, the `return (...)`
-  at the end of `build_tool_specs`), and `nora/app/fire.py` builds the heartbeat,
-  participation and proactive turns through the same `ToolRegistry.build`. Only
-  the Dreamer's loops are narrowed (`read_only_tools()`), and `generate_image`
-  is `read_only=False`, so the Dreamer never sees it and is not an audience.
-  A reminder that says «draw me a card at 8» fires on the heartbeat audience and
-  can call the tool; that turn needs to know what she looks like as much as a
-  tag does. So appearance.md is occasion-neutral, like identity.md, and it
-  joins `AUTHORED` in `tests/test_doctrine_audiences.py` rather than being
-  excluded from it the way `silence` is.
-- **Authority: a true peer of identity/voice.** The loader's own docstring
-  (`check_authority_graph`) defines "peer" as byte-identical authority fields
-  that do not name each other. 01 proposed `authority_below: [tool-output]`
-  only, which would leave appearance UNRANKED against `silence`/`conduct` —
-  i.e. not on the identity rung at all. So:
-  `authority_above: [constraints]`,
-  `authority_below: [silence, conduct, participation-conduct, situation, message-content, tool-output]`,
-  and the symmetry the loader enforces adds `appearance` to
-  `constraints.authority_below` and to `authority_above` of `silence`,
-  `conduct`, `participation-conduct`. Authority fields are not rendered, so
-  none of those four files' served sha moves and no version bumps.
-- Register constraints the loader enforces on `kind: identity`: no RFC 2119
-  uppercase keyword, no snake_case identifier, no backticked tool name. The
-  doctrine carries no em dash (the 2026-09-22 pass), so none here either.
-- Content: the spec (05) compressed without dropping a rule, plus the
-  self-recognition rule with the full-sha handle, the user-reference rule, the
-  no-guess ask rule and the conflict/slot-order guidance (01 §Contents, 03).
+01 designed an `appearance.md` doctrine file (never created), injected every turn. The operator
+reversed that before it was built: her look matters only when she makes an
+image, and design/12's placement rule puts occasional, domain-specific
+instruction in a skill, loaded on demand, not in the system prompt. A second
+refinement the same day widened it from "appearance" to **image generation**,
+with her appearance as one section of it.
 
-## 2. Resolver: `generate_image`'s `resolve` closure (`nora/agent/tools.py`)
+So the build is `nora/skills/image-generation/SKILL.md`, and there is no
+`appearance.md`.
 
-Order, conversation-first:
+**The trade-off, stated rather than hidden.** A skill reaches the model only
+if she spends a `skills` call on it before `generate_image`. A turn that skips
+the skill draws without the canon: no handle, no anchors, no in-the-picture
+judgement. The description is therefore written to fire on making or editing
+ANY image (not only on drawing herself), because the judgement of whether she
+is in the picture lives inside it. The same cost was named for the retired
+`self-description` skill (#227), which moved INTO doctrine for the opposite
+reason; here the content is needed on a small fraction of turns, which is
+what makes the skill the right home. Also true of a skill and recorded here:
+its `authority_above` reaches nothing (#241) and `LeakGuard` does not cover
+skill bodies, so she may recite her own description; nothing in it is secret.
 
-1. Read the conversation window exactly as today. One match: that blob. More
-   than one: `None` (ambiguous), and the canonical fallback is NOT consulted.
-2. Zero matches: the canonical fallback, and only if the marker is a FULL
-   64-hex sha256. `media_store.get(sha256=marker)`; the row must exist, its
-   `sha256` must equal the marker, and `provenance["role"]` must be exactly the
-   string `"self"` (no case-folding, no strip, no prefix, no set).
-3. Anything else, including an unreadable conversation or an absent
-   `media_store`: `None`.
+Skills are baked into the image (`Dockerfile` copies `nora/`, and compose
+bind-mounts only `nora/doctrine` and `nora/dreamer`), so the skill ships with
+the image rebuild, not on `git pull`.
 
-**No new port method.** 02 named a `provenance->>'role' = 'self'` query in
-`nora/infra/sql/media_objects.py`; the existing `MediaObjectStore.get(sha256=)`
-already answers the only question the resolver asks (is THIS full sha the
-self row), exactly, in one indexed read, and is already contract-tested
-against the SQL store. A second read path would be a second implementation
-to keep in step for no new question. 02 is corrected.
+## 2. The skill
 
-**External references refused at the tool, before any lookup.** `_handle_hex`
-reduces any string to its hex characters, so `https://x/<canonical sha>`
-reduces to the canonical sha and, with the exemption, would resolve. Nothing
-would be fetched (resolution only returns bytes she holds), but the port's
-docstring promises a URL is refused, so a code containing `://` or starting
-`data:` is `nothing_found` before resolution. The `ImageReference` docstring
-gains the exemption and the tool docstring gains one sentence, because it
-currently says every reference must already be in this conversation, which
-would contradict the doctrine.
+Sections, in order:
 
-## 3. Ingest: `scripts/ingest_self_asset.py`
+1. **Are you in the picture?** A judgement with its goal, never a menu of
+   trigger phrases (operator rule): decide whether she herself appears in the
+   picture asked for; if she does, her canonical picture keeps her
+   recognisable; if not, attaching it puts her where she was not asked to be.
+   Never a default. When reference photos are switched off
+   (`[image_gen] allow_reference_images = false`, the template default), her
+   picture cannot travel either, and she describes herself with the anchors.
+2. **Whose photo is whose.** A person in the room is not her; the user's own
+   photo is the user; style-merge uses both; more than one candidate photo →
+   ask, never guess (03's rule, the sole cover for the operator-photo class).
+3. **What you look like.** Every rule of 05 (see §6 for the audit).
+4. **Writing for the model that draws it**, one subsection per configured
+   model; a new model or provider adds a subsection.
 
-`ingest_self(*, data, expected_sha256, blob_store, media_store) -> MediaObject`:
-refuse if `sha256(data) != expected_sha256` (the doctrine's handle, read from
-`appearance.md`, so the two can never disagree silently); `blob_store.put`;
-`media_store.save(MediaObject(source="fetched", provenance=SELF_PROVENANCE, ...))`;
-then `media_store.comprehend(..., provenance=SELF_PROVENANCE)`, which is an
-upsert that MERGES provenance, so a row that already existed (the operator
-once sent the same bytes into a room, first-source-wins kept it `inbound`) is
-marked too; then `get` and verify `role == "self"`, or fail. No new store
-method. `main()` reads config, builds the SAME blob store the daemon uses
-(`nora.app.composition._build_blob_store`) and `SqlMediaObjectStore`, and
-exits non-zero on any refusal.
+**What it does not restate.** DEC-150 made the tool schema the one place a
+tool is described. `generate_image`'s docstring already carries our prompt
+convention (design/proposed/29 §5.2: `media_fetch` before transforming;
+`[what the photos show] + [what to change] + [what to keep]`; no identifiers
+in the prompt; a pure style transfer needs no description) and the three-slot
+limit. The skill adds only what the docstring lacks. The docstring gained one
+clause: the canonical picture is the one reference that works in any room
+(without it the docstring would contradict the skill).
 
-## 4. Tests (re-derived from the tree, not from 04)
+**Size.** 49 non-blank body lines against a 30-line default ceiling in
+`tests/test_skill_content.py`; the operator ruled completeness over brevity
+for a skill that loads only on image turns, so that test now carries a
+per-skill ceiling (60) with the reason beside it.
 
-Doctrine, existing files:
+## 3. Provider research (xAI), sources
 
-- `tests/test_doctrine_content.py`: `EXPECTED` gains `appearance: (identity,
-  15, (tag, heartbeat, participation, proactive))`; the strict assembly list
-  becomes `[identity, appearance, voice, silence, conduct, constraints]`; the
-  authority and peer tests include appearance; a new content test pins the
-  spec's substance (8 anchors, proportion rule, earphones, backpack optional,
-  no human form) and that the embedded handle equals the asset's sha256.
-- `tests/test_doctrine_assembly.py`: the shipped list, same six names. **No
-  `capability` entry** (04 listed one; DEC-150 deleted the tier).
-- `tests/test_doctrine_audiences.py`: `AUTHORED` gains `appearance`.
-- `tests/test_doctrine_version_parity.py`: `PINNED["appearance"] = (1, sha)`.
-- `tests/web/test_doctrine.py`: the tag-audience list (04 did not know it
-  existed).
-- `tests/unit/test_fire_path.py`: the proactive occasion-neutral list.
+Only statements the documentation makes, fetched 2026-09-23:
 
-New, `tests/unit/test_canonical_self_reference.py` (fakes only; the resolver
-is exercised through `build_tool_specs` and a generator fake that calls the
-resolver the way the real adapter does):
+- Editing takes a source image with the prompt and "applies your requested
+  changes"; styles are changed by "describing the desired aesthetic in your
+  prompt"; edits can be chained, "using each output as the input for the
+  next". <https://docs.x.ai/developers/model-capabilities/images/editing>
+- Multi-image editing takes up to five source images; "by default, the output
+  aspect ratio follows the first input image", overridable with
+  `aspect_ratio`.
+  <https://docs.x.ai/developers/model-capabilities/images/multi-image-editing>
+- Parameters (`image` vs `images`, `aspect_ratio`, `resolution` 1k/2k,
+  `response_format`): <https://docs.x.ai/developers/rest-api-reference/inference/images>
+  and <https://docs.x.ai/developers/model-capabilities/images/generation>.
+- `grok-imagine-image-quality` is retired on 2026-11-02; from then requests
+  to it "are served by `grok-imagine-image-2.0` with `quality` set to `low`".
+  <https://docs.x.ai/developers/migration/imagine-image-quality-nov-2>
+- The docs carry **no prompting guidance** as such: the generation and
+  overview pages show example prompts only.
+  <https://docs.x.ai/developers/model-capabilities/imagine>
 
-- the canonical full sha resolves from a conversation that never held it;
-- the doctrine-embedded handle resolves after `ingest_self` of the real asset;
-- a non-canonical row in another conversation is refused, for every role that
-  is not exactly `"self"` (absent, `Self`, `SELF`, `self `, `selfie`,
-  `operator`, a list);
-- a short or truncated prefix of the canonical sha never reaches it;
-- collision: a conversation blob sharing the canonical's short handle wins
-  (one match) or resolves to nothing (two), never the canonical;
-- an external URL (including one wrapping the canonical sha) and a data URI
-  are refused before the provider is called;
-- no `media_store` wired: the canonical sha resolves to nothing.
+What the skill says per model is exactly those facts, turned into what she
+does with them (order references by the framing wanted or name an aspect;
+describe a style in words; refine by editing the last output; the quality
+option buys nothing after 2026-11-02).
 
-New, `tests/unit/test_ingest_self_asset.py`: marks role/source/provenance;
-marks a pre-existing inbound row; refuses a sha mismatch and writes nothing;
-re-run is idempotent.
+## 4. Conflicts between the provider and our convention (not resolved here)
 
-04 put the resolver tests in `tests/contract/test_image_generator_contract.py`.
-That suite exercises the xAI ADAPTER against a local server and takes the
-resolver as an injected callable; the closure under change is not reachable
-from it, so tests placed there would pin a fake. They go in `tests/unit/`.
+1. **Reference order.** The `generate_image` docstring says of the three
+   slots "the first that is set is not special". xAI says the output takes the
+   first image's aspect ratio unless one is set. The docstring is right about
+   the slots as a tool API and wrong about the output; the skill states the
+   provider fact. Recommend the docstring say it; not changed here because the
+   docstring is the tool's own surface and the change is a separate decision.
+2. **`<IMAGE_n>` placeholders.** The adapter appends `<IMAGE_0>…` names to a
+   multi-reference prompt, citing docs.x.ai. None of the pages above mentions
+   that syntax. Neither confirmed nor refuted; the skill does not mention it.
+3. **The quality model's retirement.** `config.example.toml` still names
+   `grok-imagine-image-quality`; after 2026-11-02 it silently becomes
+   2.0-at-low. That is a config change owed before that date, outside this
+   bundle.
+4. **Slot count.** The provider takes five references, the tool three
+   (a tool-surface convention, 01). No conflict of behaviour; noted.
 
-## 5. Proof by revert
+## 5. Resolver and ingest (as built)
 
-`scripts/mutations/dec-193-self-reference.json`: drop the canonical fallback,
-widen the role match, match the canonical by prefix, drop the URL guard. Each
-must turn a named test red; run after the first commit.
+`generate_image`'s `resolve` (`nora/agent/tools.py`): the conversation window
+first, unchanged; more than one match → nothing, and the canonical row is
+never a tie-breaker; zero matches → `_canonical_self`, which accepts only a
+FULL 64-hex sha, reads `media_store.get`, and requires the row's
+`provenance["role"]` to be exactly the string `"self"`. No new port method:
+`get(sha256=)` answers the only question asked, and is already
+contract-tested against the SQL store (02's `provenance->>'role'` query was not
+needed). A reference that is a URL or a data URI is refused before any lookup:
+`_handle_hex` keeps only hex characters, so `https://x/<sha>` would otherwise
+reduce to the self handle.
 
-## 6. Deploy (operator, on norty; not done by this PR)
+`scripts/ingest_self_asset.py`: reads the single `[image <sha>]` handle out of
+the shipped skill, refuses bytes that do not hash to it, `put`s the blob,
+`save`s the row (`source="fetched"`, provenance
+`{"role":"self","source":"operator-provided","canonical":true}`), then
+`comprehend`s with the same provenance (the port's merge-upsert, so a row that
+first-source-wins had already claimed as `inbound` is marked too), and reads
+it back, failing unless `role == "self"`.
 
-The doctrine hot-reloads on pull, the resolver needs the image. The ingest
-uses only store verbs the running image already has, so:
-`git pull` → copy the script and the PNG into the running `nora` container
-and run the ingest (it reads the pulled `appearance.md` for the handle) →
-build the image → `up -d --force-recreate` → read back. Between pull and
-recreate the doctrine names a handle the old resolver refuses cross-room,
-which degrades to `nothing_found`, never a wrong image.
+## 6. Tests and proof
 
-## Bundle corrections made in this PR
+- `tests/unit/test_canonical_self_reference.py`: canonical resolves in a room
+  that never held it (bare and `[image …]` forms); every role that is not
+  exactly `"self"` refused (absent, `Self`, `SELF`, `"self "`, `" self"`,
+  `selfie`, `operator`, a list, `True`); a 6/12/63-char prefix never reaches
+  it; a conversation blob sharing the short handle wins; two such blobs →
+  nothing; the full sha still resolves beside that collision; URL / data URI
+  refused before the provider; no media store → nothing; missing bytes →
+  nothing; the skill's handle resolves after `ingest_self` of the real asset.
+- `tests/unit/test_ingest_self_asset.py`: marks role/source; marks a
+  pre-existing inbound row; refuses a sha mismatch writing nothing; refuses an
+  unreadable index; idempotent; handle parsing.
+- `tests/test_skill_content.py`: discoverable and triggers on any image; the
+  handle equals the asset's sha256; the in-the-picture judgement is first and
+  is not a phrase menu; user-photo and no-guess rules; a needle per load-
+  bearing clause of 05 plus a count of eight anchors; one section per
+  configured model; no restatement of the docstring; not in any assembled
+  doctrine audience, and no `appearance.md`.
+- `tests/test_factory.py`: the available-skill list gains `image-generation`.
 
-- 04 §Enforcing tests listed a `capability` section (deleted by DEC-150) and
-  "appearance excluded from AUTHORED, mirroring silence" (wrong once the
-  audiences are all four).
-- 01 authority: `[tool-output]` alone does not make a peer; corrected.
+04 placed the resolver tests in `tests/contract/test_image_generator_contract.py`.
+That suite drives the xAI adapter against a local server with an injected
+resolver; the closure under change is unreachable from it, so they are unit
+tests here.
+
+**Proof by revert**, `scripts/mutations/dec-193-self-reference.json`, all
+eight RED: fallback dropped (two targets), role case-folded, role check
+dropped, prefix match, URL guard dropped, ingest never marks, ingest skips the
+sha check. **One equivalent mutant, recorded:** letting an ambiguous window
+fall through to the canonical row cannot change a result, because the window
+matches by prefix and the canonical needs a full sha, and two distinct blobs
+cannot share a full sha. So "collision resolves to nothing" (02/04) is pinned
+in its reachable form, the short-handle collision.
+
+### Spec audit (05 → skill)
+
+Every clause is carried, compressed; wording changed, no rule dropped. Four
+places are softer than the spec's words and are named: the backpack's
+"everyday-life scenes" is written as "errands"; "high-quality 3D/CGI
+rendering" is carried as "stylized 3D, tactile and collectible" without the
+word high-quality; the outfit's "casual, understated, contemporary,
+functional" adjectives are carried by the item list and the no-logo rule
+rather than stated; "the jeans should not produce a fashion-model
+silhouette" is written "never fitted".
+
+## 7. Deploy (operator, on norty; not done by this PR)
+
+The skill and the resolver both ship in the image; the ingest reads the
+handle from the running container's copy of the skill.
+
+1. `git pull` on norty's checkout (after `git status -sb` is clean).
+2. Build the image, then `docker compose up -d --force-recreate nora`.
+3. `docker cp scripts/ingest_self_asset.py nora:/tmp/ingest_self_asset.py`
+   and `docker cp assets/nora-canonical-self.png nora:/tmp/nora-canonical-self.png`.
+4. `docker compose exec -T nora uv run --no-sync python /tmp/ingest_self_asset.py /tmp/nora-canonical-self.png`
+   → `ok: 535e4da5… role=self source=fetched`.
+5. Read back: `select provenance from media_objects where sha256 = '535e4da5…'`.
+
+Between 2 and 4 the handle resolves to nothing (`nothing_found`), never a
+wrong image. Reference images stay off unless `[image_gen]
+allow_reference_images = true` in the live config; with it off, the skill
+tells her to describe herself instead.
+
+## 8. Bundle corrections made in this PR
+
+- 01 is now the skill's appearance section, not a doctrine file; its
+  authority, order and audience fields no longer apply.
+- 04's test list named a `capability` doctrine section (deleted by DEC-150)
+  and doctrine assembly/audience tests that no longer apply.
 - 01/02 file:line citations had drifted; replaced by symbol names.
-- 02/04 "the media query in `media_objects.py`": not needed (§2).
-- 02/04 "collision resolves to nothing": with full-sha canonical matching and
-  content addressing, two distinct blobs cannot share a full-sha marker, so the
-  pinned form is the short-handle collision above.
+- 02/04's `provenance->>'role'` query was not needed (§5).
+- 02/04's "collision resolves to nothing": see the equivalent mutant (§6).

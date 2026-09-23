@@ -1,0 +1,15 @@
+{
+  "type": "feature",
+  "summary": "Nora can put herself in a picture: an image-generation skill tells her when she is in the image and what she looks like, and her canonical self picture works as a reference in any room.",
+  "details": [
+    "A new on-demand image-generation skill leads with one judgement, whether she herself appears in the picture asked for; only then does she attach her canonical self picture.",
+    "The skill carries her full visual identity (the mascot form, its proportions and eight anchors) and asks which photo is meant when more than one could be the subject.",
+    "Her canonical self picture resolves as an image reference in any conversation; every other reference still has to be a photo already sent in that conversation.",
+    "A reference given as a web link or data URI is now refused outright instead of being read as a photo code."
+  ],
+  "limitations": [
+    "The canonical picture must be ingested once on the deployment with scripts/ingest_self_asset.py after the image is rebuilt; until then her own reference resolves to nothing.",
+    "The skill is loaded on demand: a turn that makes an image without loading it draws without her canonical look.",
+    "Reference images stay off unless [image_gen] allow_reference_images is enabled; with it off she describes herself in words instead."
+  ]
+}

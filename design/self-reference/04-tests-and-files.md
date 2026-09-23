@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Self-Reference — Files touched, enforcing tests, DEC-193"
-description: "Consolidated build checklist, enforcing tests across doctrine/media/contract layers, and the DEC-193 index row for design/09-decision-index.md."
+description: "Files touched, enforcing tests and the DEC-193 index row, as BUILT (2026-09-23): an image-generation skill, the resolver exemption, the ingest. The design-time list it replaces was stale against the code; 06 records why."
 tags: [nora, design, tests, dec]
 timestamp: '2026-08-27'
 edges:
@@ -13,37 +13,38 @@ edges:
 
 # Files touched, enforcing tests, DEC-193
 
-## Files touched (when built)
+## Files touched (as built, 2026-09-23)
+
+The design-time list here named a doctrine file, three doctrine test files
+and an exact assembly list that still included a `capability` section DEC-150
+had deleted. None of that was built: the operator placed the content in an
+on-demand skill (01's banner, 06 §1). What was built:
 
 ```
-nora/doctrine/appearance.md                    # new — kind: identity, order 15
-nora/domain/ports.py                           # ImageReference docstring: canonical-role exemption
-nora/agent/tools.py                            # resolver closure: role == 'self' bypasses
-                                               #   conversation scope; conversation-first precedence;
-                                               #   full-sha match for the canonical handle
-nora/infra/sql/media_objects.py                # query for provenance->>'role' = 'self'
-scripts/ingest_self_asset.py                   # operator one-shot: ingest design image + mark role
-tests/contract/test_image_generator_contract.py # + canonical-role resolves cross-conversation;
-                                               #   non-canonical still refused; collision resolves
-                                               #   to nothing; external URL still refused; doctrine
-                                               #   embedded handle resolves to the canonical row
-tests/test_doctrine_content.py                 # authored set + exact-order now include appearance.md
-tests/test_doctrine_assembly.py                # exact section-list assertions include appearance.md
-tests/test_doctrine_audiences.py               # appearance is tag-only; excluded from AUTHORED,
-                                               #   mirroring silence
-design/09-decision-index.md                    # + DEC-193 row (see below)
-config.toml                                    # (none expected — asset handle goes in doctrine, not config)
+nora/skills/image-generation/SKILL.md          # new — in-the-picture judgement, whose photo is
+                                               #   whose, her appearance (05), per-model notes
+nora/domain/ports.py                           # ImageReference docstring: the exemption
+nora/agent/tools.py                            # resolve: conversation first, then the full-sha
+                                               #   role == "self" row; URL/data refusal; docstring
+scripts/ingest_self_asset.py                   # operator one-shot, checked against the skill's handle
+scripts/mutations/dec-193-self-reference.json  # the revert proofs (06 §6)
+tests/unit/test_canonical_self_reference.py    # the exemption and every negative
+tests/unit/test_ingest_self_asset.py           # the ingest
+tests/test_skill_content.py                    # the skill (and a per-skill line ceiling)
+tests/test_factory.py                          # available-skill list
+design/09-decision-index.md                    # DEC-193 row: built, with selectors
 ```
 
-## Enforcing tests
+No config change and no migration.
+
+## Enforcing tests (as built)
 
 | Layer | Test | Pins |
 |---|---|---|
-| Doctrine content | `tests/test_doctrine_content.py` | appearance.md present, kind=identity, no constraint keywords; exact-order list includes appearance |
-| Doctrine assembly | `tests/test_doctrine_assembly.py` | exact section lists `[identity, appearance, voice, silence, conduct, capability, constraints]` (and the no-capability variant) |
-| Doctrine audiences | `tests/test_doctrine_audiences.py` | applies_to includes tag; appearance excluded from AUTHORED mirroring silence (so the heartbeat-degeneracy test stays green) |
-| Resolver contract | `tests/contract/test_image_generator_contract.py` | canonical-role resolves cross-conversation; a non-canonical row in another conversation is still refused; collision between conversation asset and canonical asset resolves to nothing; external URL still refused; the doctrine-embedded handle resolves to the canonical row (a re-ingest that changes a sha fails loudly at test time instead of silently producing a dead handle) |
-| Live smoke | vision-verified manual check | "draw yourself" with no user reference yields an image consistent with the canonical design |
+| Resolver | `tests/unit/test_canonical_self_reference.py` | canonical full sha resolves in a room that never held it; a role other than exactly `"self"` never gets the exemption; a short handle never reaches it; a conversation blob sharing the short handle wins, two resolve to nothing; URL/data refused before the provider; no store or no bytes → nothing; the skill's handle resolves after ingesting the real asset |
+| Ingest | `tests/unit/test_ingest_self_asset.py` | role/source marked; a pre-existing row marked; a sha the skill does not name refused with nothing written; an unreadable index refused; idempotent |
+| Skill | `tests/test_skill_content.py` | discoverable, triggers on any image; handle equals the asset's sha256; in-the-picture judgement first and not a phrase menu; no-guess rule; every load-bearing clause of 05 and eight anchors; one section per configured model; no docstring restatement; not in any doctrine audience |
+| Live smoke | vision-verified manual check (owed, not run) | "draw yourself" with no user reference yields an image consistent with the canonical design |
 
 ## Open questions (operator decision needed)
 
@@ -89,7 +90,10 @@ config.toml                                    # (none expected — asset handle
    built, so no handle needed re-pinning.
 4. **Should `appearance.md` also be injected for `heartbeat` audiences?**
    Default: `[tag]` only (image generation happens in tagged turns). If
-   heartbeat turns can also generate images, widen.
+   heartbeat turns can also generate images, widen. **Moot 2026-09-23:** the
+   code shows `generate_image` in every occasion's tool set (fire turns
+   included), and the content became an on-demand skill, which has no
+   audience field at all.
 
 ## DEC-193 (index row for `design/09-decision-index.md`)
 
@@ -100,6 +104,4 @@ already hold DEC-141…144 (the trace series, issue #64) and DEC-145…192. The 
 never previously registered in the repo-wide index, so the move collides with no
 published number.
 
-| ID | Statement | Enforcing test |
-|---|---|---|
-| DEC-193 | **Nora has a canonical visual identity: a doctrine `appearance.md` (kind: identity) describing her look, plus ONE canonical asset in her media library (marked `provenance.role` = `self` — v1 pins no `operator` asset, operator decision 2026-09-16), which resolves as an image reference in ANY conversation (narrow custody exemption, operator-provided assets only, exact role match) so she can reference her own design image when asked to draw herself; because no operator asset is pinned, when more than one user photo could be the requested subject she ASKS rather than guessing — that ask rule is the sole cover for the operator-photo ambiguity class; doctrine text, not tool-level intent detection, decides when the canonical asset is used.** | `tests/contract/test_image_generator_contract.py` (canonical-role resolves cross-conversation; a non-canonical row in another conversation is still refused; collision between conversation asset and canonical asset resolves to nothing; external URL still refused; the doctrine-embedded handle resolves to the canonical row), `tests/test_doctrine_content.py` (appearance.md present, kind=identity, no constraint keywords), `tests/test_doctrine_assembly.py` (exact section lists include appearance), `tests/test_doctrine_audiences.py` (applies_to includes tag; appearance excluded from AUTHORED mirroring silence), vision-verified smoke: "draw yourself" with no user reference yields an image consistent with the canonical design |
+(The live row is in `design/09-decision-index.md`; it was rewritten when this was built, and is not copied here, so the two cannot drift.)

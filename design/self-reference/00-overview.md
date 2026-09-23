@@ -153,3 +153,23 @@ retired.**
    network is not this bundle; it is the per-network profile bundle
    `design/self-awareness/` scopes out.
 
+_2026-09-23 (later)_ — **built, as a skill.**
+
+1. *Placement (operator decision).* Her appearance is NOT always-loaded
+   doctrine: it is one section of an on-demand skill,
+   `nora/skills/image-generation/SKILL.md`, loaded when she makes or edits any
+   image. Her look is needed only then (design/12's placement rule). The
+   trade-off, accepted: a turn that does not load the skill draws without the
+   canon.
+2. *The skill leads with a judgement:* is she herself in the picture asked
+   for? If so her canonical picture keeps her recognisable; if not, attaching
+   it puts her where she was not asked to be. Then whose photo is whose (the
+   ask rule), her appearance (every rule of 05), and per-model notes sourced
+   from xAI's own documentation.
+3. *Built:* the resolver exemption (full sha, role exactly `self`,
+   conversation first), a URL/data-URI refusal, the operator ingest
+   `scripts/ingest_self_asset.py`, and their tests. `06-implementation-plan.md`
+   is the as-built record, including where 01-04 were wrong against the code.
+4. *Still owed:* the operator's ingest on norty after the image rebuild, and
+   the vision-verified live smoke.
+

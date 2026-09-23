@@ -242,20 +242,10 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ): (
         "planned file, created by P10 (Instagram link parsing); drop this entry in that PR"
     ),
-    # --- the self-reference bundle, DEC-193 (merged 2026-09-22) ---
+    # --- the self-reference bundle, DEC-193 ---
     #
-    # Both are this gate's own stated case: "a design brief predating the code
-    # it describes, not a broken link to fix by editing prose". DEC-193 is
-    # registered and marked **Designed, not built** — nothing in the bundle
-    # exists as code, so its forward references cannot resolve yet, and
-    # rewriting them to pretend otherwise is the opposite of the fix.
-    #
-    # DROP EACH LINE when the file lands; the gate checks a fixed pin is
-    # removed, so neither can rot here silently.
-    ("design/self-reference/02-canonical-assets.md", "scripts/ingest_self_asset.py"): (
-        "not built — the operator ingest script DEC-193 owes; drop this pin "
-        "when it lands (design/self-reference/04-tests-and-files.md)"
-    ),
+    # The ingest-script pin was dropped when DEC-193 was built (2026-09-23,
+    # `scripts/ingest_self_asset.py` exists). What remains is history.
     ("design/self-reference/00-overview.md", "design/proposed/31-self-reference.md"): (
         "the single-file draft this bundle replaced; deleted when it was "
         "restructured into design/self-reference/, and the line records that "
