@@ -262,7 +262,7 @@ _NOT_YET_REWRITTEN = frozenset({
     "play_music", "recall_lookups", "remember", "reverse_geocode",
     "route", "rsvp_event", "saved_places", "search_gifs", "search_memory",
     "search_memory_workspace", "send_gif", "send_reply", "send_to",
-    "set_music_volume", "skills", "skip_music", "social_fetch", "stop_music",
+    "set_music_volume", "skills", "skip_music", "stop_music",
     "suggest_venue", "top_music", "transit", "update_event", "version",
     "weather", "web_fetch", "web_search", "who_said",
 })
@@ -277,6 +277,40 @@ def _sent_descriptions() -> dict[str, str]:
     from nora.agent.registry import ToolRegistry
 
     return dict(ToolRegistry()._descriptions())
+
+
+def _sent_specs() -> dict[str, str]:
+    """Each tool's WHOLE spec as Strands sends it (description, parameter
+    descriptions, schema), as JSON text. The dash and language rules apply to
+    all of it: an `Args:` line is model-facing text too, and a check over the
+    description alone would let one hide there. Built for a Discord room and a
+    Dreamer adaptor so the platform- and Dreamer-scoped tools are included."""
+    import json
+
+    from nora.agent.ports import adapt
+    from nora.agent.registry import ToolRegistry
+    from nora.agent.room import Room
+    from nora.obs.metrics import Metrics
+    from nora.testing.fakes import FakeMemoryStore
+
+    class _Persons:
+        def resolve(self, platform: str, sender_id: str):
+            return None
+
+    class _Store:
+        async def recent(self, *, conversation_id: str, limit: int):
+            return []
+
+    room = Room(platform="discord", conversation_id="g1", roster_source=None,
+                persons=_Persons())
+    specs = ToolRegistry().specs(
+        store=_Store(), conversation_id="g1", conversation_type="group",
+        persons=_Persons(), honcho=FakeMemoryStore(), deliverer=None,
+        metrics=Metrics(), room=room, dream_adaptor="policy",
+    )
+    return {
+        s.name: json.dumps(adapt(s).tool_spec, ensure_ascii=False) for s in specs
+    }
 
 
 def _rewritten() -> list[str]:
@@ -329,26 +363,26 @@ def test_a_rewritten_description_fits_its_level() -> None:
     assert not over, f"over the level ceiling (ADR 0015 §3): {over}"
 
 
-def test_no_dash_in_a_rewritten_description() -> None:
-    sent = _sent_descriptions()
+def test_no_dash_in_a_rewritten_tool_spec() -> None:
+    sent = _sent_specs()
     bad = {n: sum(sent[n].count(d) for d in _DASHES)
            for n in _rewritten() if n in sent and any(d in sent[n] for d in _DASHES)}
     assert not bad, (
-        f"em or en dashes in the description (ADR 0015 §3), use a comma, full "
-        f"stop, colon or parentheses: {bad}"
+        f"em or en dashes in the tool spec, description or arguments (ADR 0015 "
+        f"§3); use a comma, full stop, colon or parentheses: {bad}"
     )
 
 
-def test_at_most_one_non_english_string_in_a_rewritten_description() -> None:
-    sent = _sent_descriptions()
+def test_at_most_one_non_english_string_in_a_rewritten_tool_spec() -> None:
+    sent = _sent_specs()
     bad = {}
     for name in _rewritten():
         runs = set(_NON_LATIN_RUN.findall(sent.get(name, "")))
         if len(runs) > 1:
             bad[name] = sorted(runs)
     assert not bad, (
-        f"more than one non-English string (ADR 0015 §3: keep only the trigger "
-        f"the tool fires on; examples go): {bad}"
+        f"more than one non-English string in the tool spec (ADR 0015 §3: keep "
+        f"only the trigger the tool fires on; examples go): {bad}"
     )
 
 
