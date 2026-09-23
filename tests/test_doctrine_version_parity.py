@@ -224,10 +224,15 @@ PINNED: dict[str, tuple[int, str]] = {
     "participation": (
         6, "1cc2d5dbc564b6ff07a33ea03fe8e11389540fc968f48d454979febbb088f6ad",
     ),
-    # v1 (2026-09-24): the reaction picker's instruction (`nora.agent.reaction`).
-    # Prototyped against 104 replayed replies: a GIF on 17, all banter.
+    # The reaction picker's instruction (`nora.agent.reaction`), measured over
+    # the same 104 replayed replies each time, both calls and real Giphy
+    # candidates. v1 said «most replies are this» and «a GIF that does not
+    # match is worse than none»: 6 judged, 3 sent. v2 (never deployed before
+    # it) says when trading shots a GIF is usually right and lets selection
+    # take the closest fit: 11 judged, 11 sent, all banter, about the room's
+    # own one-sticker-in-ten rate.
     "reaction": (
-        1, "936beedf3467b22e8a578ad293b5cb7b7e118dbb0af2d8873ce9f833f4b50040",
+        2, "e8c15044e46761a581fe655afb04fcf7d6eab58a92d092c172b742073b4f1c58",
     ),
     "participation-conduct": (
         1, "23d144d3431e9844d2688c13ad8228497a9db3ab8f6bcf7f86f269053f3e19b7",

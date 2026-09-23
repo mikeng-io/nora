@@ -3,7 +3,7 @@ name: reaction
 description: "The reaction picker's whole instruction, whether a GIF makes Nora's reply land better and which one."
 order: 6
 applies_to: [reaction]
-version: 1
+version: 2
 kind: instrument
 authority_above: []
 authority_below: []

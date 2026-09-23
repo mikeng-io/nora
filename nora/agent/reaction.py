@@ -64,7 +64,8 @@ RECENT_LINES = 8
 
 
 class Completion(Protocol):
-    content: str
+    @property
+    def content(self) -> str: ...
 
 
 class ModelClient(Protocol):
