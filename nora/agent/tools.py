@@ -517,10 +517,14 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # result so the model can say «20 分鐘前», but asked where someone will be
     # LATER this tool has nothing. `terminal=False`: a position is the middle of
     # an answer, never the end of one.
+    #
+    # `level=2` (ADR 0015 §3): L1 plus one pre-call constraint (only a member id
+    # goes out, never a coordinate). Its five statuses are NAMED in the
+    # description and explained in each result's `note`, not listed there.
     "where_is": NativeTool(8,
                           time_shiftable=False, source_tier="confirmed", read_only=True,
                            side_effect_state="none", idempotency="idempotent", retry="safe",
-                           output_contract="three_state"),
+                           output_contract="three_state", level=2),
     # 2, sized like `route`: one message can ask after two spots («邊間好啲»),
     # each a single Google Places lookup. `time_shiftable=None`: a place's rating
     # has no time dimension the way `route` does — «幾好食» is the same question
@@ -567,11 +571,15 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # exactly the case the `cacheable` field's own contract excludes
     # (tools.py:222-227: "none of this table's cacheable=True entries do").
     # The spec pinned True; the audit overturned it.
+    #
+    # `level=2` (ADR 0015 §3): L1 plus one constraint (never for RIGHT NOW, that
+    # is `where_is`) and the four arms. Reporting rules, the `unlabeled` one
+    # included, ride in each result's `note`.
     "where_been": NativeTool(8,
                              time_shiftable=True, source_tier="confirmed", cacheable=False,
                              read_only=True,
                              side_effect_state="none", idempotency="idempotent", retry="safe",
-                             output_contract="three_state"),
+                             output_contract="three_state", level=2),
     # 4, sized on NETWORK cost like `transit` (design/online-status/04's own
     # budgets row): one question is ONE batched GetPlayerSummaries call — the
     # room's whole id set goes out in a single request, up to Steam's
@@ -584,11 +592,15 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # later is the exact stale-note failure (#248) this tool exists to kill.
     # Contrast `transit`'s cacheable=True — transit answers a STABLE schedule;
     # this answers a mutable instant.
+    #
+    # `level=1` (ADR 0015 §3): what + when + what it returns (the three arms).
+    # The honesty rules (away/snooze, profile_hidden, the *_wired halves) are in
+    # the `ok` result's `note`, and only when the field they are about is there.
     "online_now": NativeTool(4,
                              time_shiftable=False, source_tier="confirmed", cacheable=False,
                              read_only=True,
                              side_effect_state="none", idempotency="idempotent", retry="safe",
-                             output_contract="three_state"),
+                             output_contract="three_state", level=1),
     # DEC-146/R-82. The THIRD rung of the recall ladder and the shortest one:
     # `who_said` reads the window the prefill already rendered, `load_transcript`
     # reads OLDER rows off the store, `search_memory` reaches past what
@@ -926,9 +938,16 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `repeat` support); before DEC-85's fix the model answered 「我 set 唔到
     # recurring 每日提嘅 reminder」 about a tool she had, because nothing she was
     # shown said recurrence existed.
+    #
+    # `level=3` (ADR 0015 §3): more than L2's one constraint. How to CALL it
+    # carries several, each from a real failure: resolve `when` yourself and
+    # never ask for a restatement, lead time is arithmetic on `when` (DEC-85),
+    # one call per series, every series ends, the sub-minute floor (#109). Plus
+    # one SHOULD that stays in the description because the `ok` result's `note`
+    # key already holds the linked note's title (see the closure).
     "remind": NativeTool(2,
                          side_effect_state="unknown", idempotency="non_idempotent", retry="never",
-                         output_contract="three_state"),
+                         output_contract="three_state", level=3),
     "list_reminders": NativeTool(2, read_only=True,
                                  side_effect_state="none", idempotency="idempotent", retry="safe",
                                  output_contract="three_state"),
@@ -1761,7 +1780,7 @@ def _parse_repeat(
         return _RepeatRefusal(
             "bad_repeat",
             f"I can't repeat something {word!r}. I do minutely, hourly, daily, "
-            "weekly, monthly or yearly, and `every_n` multiplies any of them — "
+            "weekly, monthly or yearly, and `every_n` multiplies any of them; "
             "say which is closest.",
         )
     if every is Recurrence.NONE:
@@ -1781,7 +1800,7 @@ def _parse_repeat(
         except (TypeError, ValueError):
             return _RepeatRefusal(
                 "bad_repeat",
-                "I couldn't read how many units apart. Give a plain number — "
+                "I couldn't read how many units apart. Give a plain number: "
                 "`repeat=\"minutely\", every_n=10` is every ten minutes.",
             )
         if step < 1:
@@ -1801,7 +1820,7 @@ def _parse_repeat(
         floor_minutes = caps.min_interval_seconds // 60
         return _RepeatRefusal(
             "too_often",
-            f"I can't repeat faster than every {floor_minutes} minutes — I only "
+            f"I can't repeat faster than every {floor_minutes} minutes. I only "
             f"wake up to check periodically, so anything quicker would just "
             f"arrive late and in clumps. Offer them every {floor_minutes} "
             "minutes, or a one-off nearer the time.",
@@ -1820,7 +1839,7 @@ def _parse_repeat(
             return _RepeatRefusal(
                 "bad_bound",
                 "That end date is before the first one would even go off. Check "
-                "which date they meant — one of the two is wrong.",
+                "which date they meant: one of the two is wrong.",
             )
 
     # EVERYTHING that can raise on a bad rule lives inside ONE try, and that is
@@ -1849,8 +1868,8 @@ def _parse_repeat(
         log.exception("recurrence timezone %r is not resolvable", caps.timezone)
         return _RepeatRefusal(
             "unavailable",
-            "I can't set a repeating one right now — my calendar isn't set up "
-            "properly. Say so plainly rather than promising.",
+            "I can't set a repeating one right now because my calendar isn't "
+            "set up properly. Say so plainly rather than promising.",
             outcome="unavailable",
         )
     except (ValueError, OverflowError):
@@ -1862,7 +1881,7 @@ def _parse_repeat(
         # refusal it can fix rather than a deployment fault.
         return _RepeatRefusal(
             "bad_repeat",
-            "That is too far apart for me to keep track of. Say a smaller gap — "
+            "That is too far apart for me to keep track of. Say a smaller gap: "
             "every few minutes, hours, days, weeks, months or years.",
         )
 
@@ -4131,56 +4150,17 @@ Args:
                 "addresses": addresses or None}
 
     async def where_is(person: str) -> dict:
-        """Where somebody in this conversation is RIGHT NOW — a live reading, not a pattern.
+        """Where somebody in this conversation is RIGHT NOW: a live reading, not a pattern.
         Call this when somebody asks where a person is.
 
-        Call this when somebody asks where a person is («佢喺邊», «阿媽返咗
-        屋企未»). Give it the person the way they were named — a name or
-        nickname of somebody IN this conversation. It reads a location this
-        household already shares with you, forcing a fresh reading first so the
-        answer is where they ARE, not where they were last seen (it may pause a
-        moment for that). Nothing you send leaves — only a member id, never a
-        coordinate.
+        Give `person` as they were named. It forces a fresh reading first, so it
+        may take a moment; only a member id goes out for that, never a coordinate.
 
-        `status` is one of five and they mean different things:
-          - `ok` — where they were last recorded. `age_seconds` says how OLD
-            that fix is — ALWAYS carry the age into your reply («大概 20 分鐘前
-            喺…»): a position said without its age reads as «right now», which
-            you do not know. `recorded_iso` is when it was recorded. When
-            `stale` is present, location tracking has recorded NOTHING for them
-            since that time — you are reading the last place anything saw
-            them, and whatever they did after it is unknown to you. `place`
-            is this household's own name for the spot («Home») — prefer it
-            in your reply. There is NO street address
-            here by design: when the group wants one, pass `lat`/`lng` (always
-            present — never read them aloud) to `reverse_geocode` and say the
-            address THAT returns (DEC-156). You may also get MEASURED
-            movement: `driving` (their phone says they are in a vehicle),
-            `moving` (their recent positions are apart), `towards` (the saved
-            place their distance has been CLOSING on), and `speed_kmh` (their
-            phone's own reported ground speed, in km/h — only present when it
-            is above walking-jitter and they are not at a saved place).
-            These are measurements, not intentions — say «好似向緊屋企方向»,
-            «喺車度», or «時速大概 60», never promise where someone will end up
-            or when. That is a GUESS from movement — a real travel-time
-            ESTIMATE is different: you may pass `address` to `route` as the
-            origin toward a `saved_places` destination for one, computed, never
-            invented. Try it if asked how long until they arrive. Some rooms
-            don't extend that trust — if `route` comes back `refused` with
-            `untrusted_position`, don't retry, just answer with the position
-            and its age, exactly as you would have otherwise.
-          - `refused` — you may not say here: someone in this conversation is
-            outside the location-sharing circle, or you can't confirm who is
-            here. Say that in one clause; do not hint at the location.
-          - `not_found` — nobody in this conversation goes by that name. Say
-            you're not sure who they mean — do not guess.
-          - `ambiguous` — more than one person here matches; `could_be` lists
-            them. Ask which one.
-          - `unavailable` — no recorded position, or you could not check. Say
-            so — never guess a place, never make one up.
+        Returns `status`: ok, refused, not_found, ambiguous or unavailable, with
+        a `note` on how to report it.
 
         Args:
-            person: Who they asked about, exactly as they said it («阿豹», «Miles»).
+            person: Who they asked about, exactly as they said it.
         """
         if presence_source is None or not presence_circles:
             # Presence not wired (offline/eval compositions, or `[presence]`
@@ -4191,7 +4171,7 @@ Args:
             return {
                 "status": "unavailable",
                 "note": "I can't check where people are right now. Say you have no "
-                        "way to see that — do not guess.",
+                        "way to see that, and do not guess.",
             }
         # One `Whereis` per circle, first `ok` wins. With one circle (today's
         # deployment) this is exactly the seam's own behaviour. With several, a
@@ -4270,86 +4250,33 @@ Args:
         )
 
     async def where_been(
-        what: str, name: str | None = None, days: int = 7, date: str | None = None,
+        what: Literal["day", "places", "rhythm", "routes"],
+        name: str | None = None, days: int = 7, date: str | None = None,
     ) -> dict:
-        """Where somebody in this conversation HAS BEEN — today, usually, repeatedly.
+        """Where somebody in this conversation HAS BEEN: today, usually, repeatedly.
         Call this for HISTORY questions about movement patterns.
 
-        Call this for HISTORY questions about movement patterns — never about
-        where someone is RIGHT NOW:
-          - `what="day"` — 「X 今日去咗邊度?」「X 今日做咗啲乜?」「X 琴日去咗邊?」 (pass
-            `date`): that day's trips and the stops they made. 「X 今日有冇返工?」
-            reads this together with `what="places"` (work presence that day).
-          - `what="places"` — 「X 平日去開邊度?」「X 成日去邊?」: the places this
-            household's sharing history derives for them — `kind` is `home`,
-            `work` or `unlabeled` — with confidence, stay counts and dwell.
-          - `what="rhythm"` — 「X 通常幾點返屋企?」「X 平日幾點起身?」: which hours of
-            the week they are usually stopping somewhere, with counts and dwell
-            per hour.
-          - `what="routes"` — 「你哋成日行嗰條路綫」: repeated trips, and the
-            corridors (shared routes) they ran along, with how often each has
-            been seen.
+        Never for where someone is RIGHT NOW; that is `where_is`. A personal
+        place name resolves through `saved_places`.
 
-        The boundary with `where_is` is the first rule: 「X 喺邊」「X 返咗屋企未」 is
-        a LIVE question — that is `where_is`. Anything about a PATTERN or a PAST
-        day is this tool, and a rhythm answer is about the past N days, never a
-        claim about right now — never present a pattern as a live location. A
-        PERSONAL place name (「屋企」「阿媽屋企」「公司」) resolves through
-        `saved_places`; a PATTERN (「平日去開邊」) is this tool.
+        `what` is `day` (one day's trips and stops), `places` (their usual
+        places, each `home`, `work` or `unlabeled`), `rhythm` (the hours of the
+        week they usually stop somewhere) or `routes` (repeated trips and their
+        corridors). Went to work today? Read `day` with `places`.
 
-        `status` is one of six and they mean different things:
-          - `ok` — derived facts for the window. `people` lists who the
-            substrate has derived data for. A place's `kind` is `home`, `work`
-            or `unlabeled` — ALWAYS one of those three: if it is `unlabeled`,
-            say there is no pattern yet, confidently — never manufacture a
-            place from a label plus a guess. Numbers carry their window: quote
-            a stay count or dwell time only with 「過去 7 日」/ "over the past 7
-            days" (or name the date, for `day`).
-          - `refused` — you may not say here: someone in this conversation is
-            outside the location-sharing circle, or you can't confirm who is
-            here. Say that in one clause; do not hint at the pattern.
-          - `not_found` — nobody in this conversation goes by that name. Say
-            you're not sure who they mean — do not guess.
-          - `ambiguous` — more than one person here matches; `could_be` lists
-            them. Ask which one.
-          - `unavailable` — you could not check (nothing wired here, or the
-            read failed). Say so — never report it as "no pattern".
-          - `nothing_found` — the read worked and there is no derived pattern
-            for them in this window yet. Say there is nothing yet; do not
-            invent one.
-
-        A `day`-arm stay whose `place_kind` is null has NO label — the
-        substrate has nothing for that stop. Say so, confidently, the same
-        way you would say `unlabeled`: 「嗰個 stop 冇記錄到地方」. NEVER
-        infer a neighbourhood from the coordinates — 「睇座標估係旺角」 is
-        the exact failure this rule exists to prevent (2026-09-06: guessed
-        Mong Kok/Sham Shui Po from lat/lng, was wrong, the group caught it).
-        No label is an ANSWER, not a gap to paper over.
-
-        Each person carries `last_recorded_iso` — the last time location
-        tracking recorded them at all. Stays and trips are built from those
-        recordings, so the history ENDS there. `recording_stopped` names
-        anyone whose recordings stop before the window does: after their
-        `last_recorded_iso` you are reading missing data, not a quiet stretch
-        — an empty evening after it is not them staying home.
-
-        `label`/`kind`/`confidence`/`stay_count` and times may enter your
-        reply. A raw coordinate (lat/lng) and a corridor's road `sequence`
-        NEVER do — never read one aloud and never pass one to another tool,
-        the same rule `where_is` carries. (These results carry neither; keep
-        it that way.)
+        Returns `status`: ok, nothing_found, unavailable, refused, not_found or
+        ambiguous, with a `note` on how to report it.
 
         Args:
-            what: "day", "places", "rhythm" or "routes" — exactly one of the
-                four.
-            name: Who they asked about, exactly as they said it (「阿豹」,
-                "Miles"). Leave it out for the people in THIS conversation (or
-                pass "everyone"/「大家」) — the group asking about the group.
+            what: Which arm: "day", "places", "rhythm" or "routes".
+            name: Who they asked about, exactly as they said it. Leave it out
+                for the people in THIS conversation (or pass "everyone"): the
+                group asking about the group.
             days: How far back, in days (default 7, capped at 90). Used by
                 "rhythm" and "routes"; "places" carries its own first/last
                 seen.
-            date: For "day" only: the day they mean, "YYYY-MM-DD" (e.g.
-                "2026-09-04" for yesterday). Leave out for today.
+            date: For "day" only: the day they mean, "YYYY-MM-DD". Leave out
+                for today.
         """
         # The closed `what` vocabulary (DEC-151's frozen `(platform, what)`
         # shape). Anything else is ONE `unavailable` — fail-closed, never a
@@ -4358,7 +4285,7 @@ Args:
             _record(metrics, "where_been", "unavailable", reason="what")
             return {
                 "status": "unavailable",
-                "note": "I can't answer that with where_been — it answers a day, "
+                "note": "I can't answer that with where_been. It answers a day, "
                         "usual places, a usual weekly rhythm, or repeated routes.",
             }
         if mobility is None or not presence_circles:
@@ -4370,7 +4297,7 @@ Args:
             return {
                 "status": "unavailable",
                 "note": "I can't check where people have been right now. Say you "
-                        "have no way to see that — do not guess.",
+                        "have no way to see that, and do not guess.",
             }
         # The window arithmetic, once per call: `days` for the rhythm/routes
         # arms (clamped exactly as the store clamps: 0 answers an empty
@@ -4385,7 +4312,8 @@ Args:
             _record(metrics, "where_been", "unavailable", reason="window")
             return {
                 "status": "unavailable",
-                "note": "I couldn't read the window you gave me. Say so — do not guess one.",
+                "note": "I couldn't read the window you gave me. Say so, and do "
+                        "not guess one.",
             }
         window_ms = window_days * _been_day_ms
         day_start_ms = day_end_ms = day_iso = None
@@ -4401,8 +4329,8 @@ Args:
                 _record(metrics, "where_been", "unavailable", reason="date")
                 return {
                     "status": "unavailable",
-                    "note": "Give me the day as YYYY-MM-DD — e.g. 2026-09-04 for "
-                            "yesterday.",
+                    "note": "I couldn't read that date. Give it as YYYY-MM-DD, "
+                            "or leave it out for today.",
                 }
             day_start_ms = int(
                 datetime(day.year, day.month, day.day, tzinfo=hk).timestamp() * 1000,
@@ -4528,6 +4456,49 @@ Args:
                 return {}
             return {"stays": day_stays, "trips": day_trips}
 
+        def _been_ok_note(people: list[dict]) -> str:
+            """How to report an `ok` (ADR 0015 §3), per arm and with the window
+            this answer was read over, so a number is never quoted without it.
+            The `unlabeled` and unmatched-stay clauses only when one is there:
+            they carry the 2026-09-06 rule (a neighbourhood guessed from lat/lng,
+            wrong, caught by the group) to the answer it is about."""
+            if what == "day":
+                note = (
+                    f"Give the date ({day_iso}) with anything you quote, and "
+                    "never read lat/lng aloud."
+                )
+                if any(
+                    s.get("place_kind") is None
+                    for p in people for s in p.get("stays", ())
+                ):
+                    note += (
+                        " A stay with no place_kind was not matched to a place: "
+                        "say that plainly, and never guess a neighbourhood from "
+                        "its lat/lng (reverse_geocode can name the spot)."
+                    )
+                return note
+            if what == "places":
+                note = (
+                    "These are usual places and say nothing about where anyone is "
+                    "now. Quote a stay count or dwell time with its span "
+                    "(first_seen_iso to last_seen_iso)."
+                )
+                if any(
+                    pl.get("kind") == "unlabeled"
+                    for p in people for pl in p.get("places", ())
+                ):
+                    note += (
+                        " A place of kind unlabeled means there is no pattern "
+                        "there yet: say that plainly, and do not name a place "
+                        "for it."
+                    )
+                return note
+            return (
+                f"This is a pattern over the past {window_days} days and says "
+                "nothing about where anyone is now. Quote every count with that "
+                "window."
+            )
+
         async def _been_through(circle) -> dict:
             """THE SAME three-way fail-closed `Whereis.locate` runs
             (nora/agent/whereis.py), composed directly against
@@ -4562,8 +4533,8 @@ Args:
                     "status": "unavailable",
                     "note": "I can't confirm who is in this group right now, so I "
                             "can't say where anyone has been. Say you couldn't "
-                            "check — do not guess, and do not blame anyone's "
-                            "sharing settings.",
+                            "check, without guessing or blaming anyone's sharing "
+                            "settings.",
                 }
             if unnamed_blocks or not subset_ok:
                 # WHICH condition fired, so a refusal is diagnosable from the
@@ -4582,9 +4553,10 @@ Args:
                 return {
                     "status": "refused",
                     "note": "I can't share where people have been in this "
-                            "conversation — someone here is outside the "
+                            "conversation: someone here is outside the "
                             "location-sharing circle, or I can't confirm who is "
-                            "here. Say so; do not guess.",
+                            "here. Say so in one clause and do not hint at the "
+                            "pattern.",
                 }
             # A WAIVED guard is counted, not silent — the same DEC-79 rule
             # `Whereis.locate` runs one branch below its own guard.
@@ -4609,8 +4581,8 @@ Args:
                     return {
                         "status": "nothing_found",
                         "note": "I can't see who is in this conversation, so there "
-                                "is no derived pattern to report. Say so — do not "
-                                "guess.",
+                                "is no derived pattern to report. Say so, and do "
+                                "not guess.",
                     }
             else:
                 matches = _dedupe(find_by_name(circle.people, asked) + view.find(asked))
@@ -4618,7 +4590,7 @@ Args:
                     return {
                         "status": "not_found",
                         "note": "Nobody in this conversation goes by that. Say "
-                                "you're not sure who they mean — do not guess.",
+                                "you're not sure who they mean, and do not guess.",
                     }
                 if len(matches) > 1:
                     return {
@@ -4659,7 +4631,7 @@ Args:
                 return {
                     "status": "unavailable",
                     "note": "I couldn't check where they've been just now. Say you "
-                            "couldn't look — don't say there's no pattern.",
+                            "couldn't look, not that there is no pattern.",
                 }
             coverage: dict = {}
             if stopped:
@@ -4681,9 +4653,9 @@ Args:
                     target = f"{target} on {day_iso}"
                 return {
                     "status": "nothing_found",
-                    "note": f"I have no derived pattern for {target} yet — nothing "
-                            "recorded in this window. Say there's nothing yet; "
-                            "do not invent one.",
+                    "note": f"I have no derived pattern for {target} yet; nothing "
+                            "is recorded in this window. Say there's nothing yet, "
+                            "and do not invent one.",
                     **coverage,
                 }
             return {
@@ -4692,6 +4664,7 @@ Args:
                 "window": {"date": day_iso} if what == "day" else {"days": window_days},
                 "people": people,
                 **coverage,
+                "note": _been_ok_note(people),
             }
 
         # The fold `where_is` runs: one gate per circle, first `ok` wins. With
@@ -4730,63 +4703,24 @@ Args:
     }
     _online_arms = ("online", "playing", "voice")
 
-    async def online_now(what: str, names: list[str] | None = None) -> dict:
+    async def online_now(
+        what: Literal["online", "playing", "voice"], names: list[str] | None = None,
+    ) -> dict:
         """Live digital activity for the people in this room. Call this when a
         question or a decision turns on whether someone is actually present
         or playing right now.
 
-        That covers who is online, who is in a voice channel, and who is
-        playing what.
+        `what`: online (Steam and Discord presence), playing (which game) or
+        voice (which Discord voice channel).
 
-        One of three arms, exactly one per call:
-          - `what="online"` — 「Blake 而家 online 嗎」「而家有冇人喺度」: who is
-            around digitally right now — Steam presence merged with Discord
-            per-person PRESENCE (`discord_status`: Discord's own word —
-            online/idle/dnd/offline — plus rich presence: `discord_game`
-            when they are playing a game there, `discord_listening` when
-            they are listening to music). `away`/`snooze` are Steam's words,
-            never Discord's. NEVER answer "Discord online" from voice
-            membership — an online Discord user may be in no channel at all;
-            voice membership appears only as an extra `in_voice` fact.
-            `steam_wired`/`discord_wired`/`voice_wired` in the result say
-            which halves could actually be checked; `false` means that half
-            could not be checked at all — never present the answer as the
-            whole picture. An entry carries `state` when Steam answered for
-            that person and the `discord_*` fields when the Discord half
-            checked them — either or both.
-          - `what="playing"` — 「而家有咩人打緊機」「Blake 打緊咩」: who is in a
-            game right now, and the title.
-          - `what="voice"` — 「有冇人喺 voice channel 傾緊偈」: who is in which
-            Discord voice channel right now.
-
-        `status` is one of three and they mean different things:
-          - `ok` — live state for the people asked about. It describes THIS
-            instant: report it as right now, and never carry it forward as
-            still true minutes later.
-          - `nothing_found` — nobody asked about could be checked (no linked
-            account, or the name matches nobody in this room). Say there is
-            nothing to see — do not guess.
-          - `unavailable` — you could not check (that half is not wired, or
-            the read failed). Say so — never report it as "everyone is
-            offline" and never as "nobody is playing".
-
-        Honesty rules that are part of the result, not style:
-          - `state` is Steam's own word: `away` and `snooze` are answers.
-            NEVER flatten them to "online", and never to "offline" either.
-          - `profile_hidden` means Steam withholds the play state — the
-            profile is private, so you cannot see whether they are in a
-            game. It is NOT "not playing" and NOT "offline"; say you cannot
-            see.
-          - An entry with `state="unknown"` names a person who could not be
-            checked at all, and its `reason` says why (`no_steam_id`,
-            `not_on_steam`, `no_discord_id`). Never fill the gap.
+        Returns `status`: ok, nothing_found or unavailable, with a `note` on
+        how to report it.
 
         Args:
-            what: "online", "playing" or "voice" — exactly one of the three.
-            names: Who they asked about, exactly as said (["Blake"], [「阿豹」]).
-                Leave it out for the people in THIS conversation — the room
-                asking about the room. A name outside the room is dropped,
-                never looked up.
+            what: Which arm: "online", "playing" or "voice".
+            names: Who they asked about, exactly as said. Leave it out for the
+                people in THIS conversation: the room asking about the room. A
+                name outside the room is dropped, never looked up.
         """
         # The closed `what` vocabulary (the `where_been` shape). Anything else
         # is ONE `unavailable` — fail-closed, never a silent `{}` and never a
@@ -4795,7 +4729,7 @@ Args:
             _record(metrics, "online_now", "unavailable", reason="what")
             return {
                 "status": "unavailable",
-                "note": "I can't answer that with online_now — it answers who "
+                "note": "I can't answer that with online_now. It answers who "
                         "is online, who is playing what, or who is in a voice "
                         "channel.",
             }
@@ -4814,7 +4748,7 @@ Args:
             return {
                 "status": "unavailable",
                 "note": "I have no way to check that right now. Say you "
-                        "couldn't check — never guess who is online, playing, "
+                        "couldn't check, and never guess who is online, playing, "
                         "or in voice.",
             }
         # The input domain (03-guards): the decide turn's supplied union WINS
@@ -4833,7 +4767,7 @@ Args:
                 return {
                     "status": "unavailable",
                     "note": "I couldn't work out who I may check just now. Say "
-                            "you couldn't check — do not guess.",
+                            "you couldn't check, and do not guess.",
                 }
         else:
             view = await room.scope()
@@ -4843,7 +4777,7 @@ Args:
                     "status": "unavailable",
                     "note": "I can't confirm who is in this conversation right "
                             "now, so I can't say who is online. Say you "
-                            "couldn't check — do not guess.",
+                            "couldn't check, and do not guess.",
                 }
             refs = _dedupe(view.people)
         # `names` bounds the question to the people actually on topic
@@ -4863,7 +4797,7 @@ Args:
             return {
                 "status": "nothing_found",
                 "note": "Nobody I may check here matches that. Say you're not "
-                        "sure who they mean — do not guess.",
+                        "sure who they mean, and do not guess.",
             }
 
         # The account ids, resolved once: SteamID64s ride the `pulse` platform
@@ -4892,8 +4826,8 @@ Args:
                 return {
                     "status": "unavailable",
                     "note": "I couldn't check Steam just now. Say you couldn't "
-                            "check — never say everyone is offline or that "
-                            "nobody is playing when you haven't looked.",
+                            "check; never say everyone is offline or nobody is "
+                            "playing when you haven't looked.",
                 }
 
         channels: dict[str, VoiceChannelRef] | None = None
@@ -4906,7 +4840,7 @@ Args:
                 return {
                     "status": "unavailable",
                     "note": "I couldn't check the voice channels just now. Say "
-                            "you couldn't check — never say nobody is in voice "
+                            "you couldn't check; never say nobody is in voice "
                             "when you haven't looked.",
                 }
             # In the `online` arm a failed voice read DEGRADES instead of
@@ -4970,6 +4904,45 @@ Args:
             if state.listening:
                 out["discord_listening"] = state.listening
             return out
+
+        def _online_ok_note(out: dict) -> str:
+            """How to report an `ok` (ADR 0015 §3): the honesty rules that used
+            to sit in the description on every call, each clause only when the
+            field it is about is in THIS answer."""
+            entries = out["people"]
+            parts = [
+                "This is live, so report it as right now and do not repeat it "
+                "later as still true."
+            ]
+            if what == "online":
+                parts.append(
+                    "Say someone is online on Discord only from discord_status, "
+                    "never from in_voice."
+                )
+                if not all(
+                    out.get(k, True)
+                    for k in ("steam_wired", "discord_wired", "voice_wired")
+                ):
+                    parts.append(
+                        "A *_wired flag that is false means that half was not "
+                        "checked, so this is not the whole picture."
+                    )
+            if any(e.get("state") in ("away", "snooze") for e in entries):
+                parts.append(
+                    "away and snooze are Steam's own words: report them as they "
+                    "are, not as online or offline."
+                )
+            if any(e.get("profile_hidden") for e in entries):
+                parts.append(
+                    "profile_hidden means Steam hides their game: say you cannot "
+                    "see it, not that they are offline or not playing."
+                )
+            if any(e.get("state") == "unknown" for e in entries):
+                parts.append(
+                    "state unknown means that person could not be checked "
+                    "(reason says why): do not fill the gap."
+                )
+            return " ".join(parts)
 
         people: list[dict] = []
         readable = 0
@@ -5099,7 +5072,7 @@ Args:
             return {
                 "status": "nothing_found",
                 "note": "There is no live state I can see for any of them. "
-                        "Say there's nothing to see — do not guess.",
+                        "Say there's nothing to see, and do not guess.",
             }
         out = {
             "status": "ok",
@@ -5112,6 +5085,7 @@ Args:
             # Whether the Discord per-person presence half could be checked
             # (the merged arm's own flag; the other arms are unchanged).
             out["discord_wired"] = presence_checked
+        out["note"] = _online_ok_note(out)
         _record(metrics, "online_now", "ok", what=what, people=len(people))
         return out
 
@@ -7300,67 +7274,48 @@ when somebody asks what song is on.
         return _music_result(outcome)
 
     async def remind(
-        when: str, text: str, repeat: str = "none",
+        when: str, text: str,
+        repeat: Literal[
+            "none", "minutely", "hourly", "daily", "weekly", "monthly", "yearly",
+        ] = "none",
         every_n: int | None = None,
         times: int | None = None, until: str | None = None,
         note: str | None = None,
     ) -> dict:
         """Hold something for later and say it back into this conversation when the
-        time comes — once, or on a repeat as fine as every few minutes.
+        time comes, once or on a repeat.
+        Call this when somebody asks you to remember a thing for them.
 
-        Call this when somebody asks you to remember a thing for them — 「等陣提我洗衫」,
-        「七點提我出門」. `text` is THEIR OWN WORDS, not a script for you to read out:
-        when it comes due you get the turn back and answer it as a fresh request.
+        `text` is their own words, not a script: when it comes due you get the
+        turn back and answer it as a fresh request.
 
-        `when` is an exact moment, ISO-8601 with an offset — «2026-08-08T21:00:00+08:00»
-        — and for a repeating one it is the FIRST time it should go off, not the date
-        it is about. Working out which moment they meant is your job, not theirs: you
-        were told the current time, so 「等陣」, 「七點」, 「前兩個星期」 and 「前一個禮拜」
-        are all yours to resolve into a date. Say back what you took it to mean, in
-        the register they asked in, so a wrong guess dies now.
+        `when` is one exact moment, ISO-8601 with an offset; for a repeat it is
+        the first time it goes off. Work that moment out yourself from the
+        current time rather than asking them to restate it. Lead time is
+        arithmetic on `when`: N daily reminders before a date start N days
+        before it, with `times=N`.
 
-        LEAD TIME IS JUST ARITHMETIC ON `when`. 「結婚日期係10月11日, 接近日期前兩個
-        星期每日提一提」 is `when` = 27 September, `repeat="daily"`, `times=14`.
-        「前一個禮拜講一次」 is `when` = the date minus seven days and no repeat at all.
-        Do not ask them to restate it as a time — you have the target date, so count.
+        One call sets a whole series: `repeat` is the unit and `every_n`
+        multiplies it. Never set several reminders to fake a repeat. Every series
+        ends: at `times`, at `until`, or at a cap the result reports in
+        `repeat_left`. Nothing repeats faster than every few minutes.
 
-        `repeat` is `none` (the default), `minutely`, `hourly`, `daily`, `weekly`,
-        `monthly` or `yearly`, and `every_n` multiplies it. 「每 10 分鐘」 is
-        `repeat="minutely", every_n=10`; 「隔個禮拜」 is `repeat="weekly",
-        every_n=2`. ONE call sets the whole series — never set twelve separate
-        reminders to fake a repeat.
+        SHOULD: say back the moment you took them to mean, and any repeat limit,
+        so a wrong guess is caught now.
 
-        THERE IS A FLOOR: I wake up to check periodically, so I cannot repeat
-        faster than every few minutes. Ask for quicker and I refuse and tell you
-        the fastest I do — offer them that instead, do not pretend.
-
-        A repeating reminder ALWAYS ends: give `times` (how many times in total,
-        counting the first) or `until` (the last date it may go off), and if you give
-        neither it runs for a limit I choose and I will tell you what it is. Say the
-        limit back to them — 「每日提到10月11號為止」 — because they cannot see it and
-        it is the part a person is most surprised by later.
-
-        A DAILY-or-longer reminder keeps its LOCAL time of day, so 「每朝八點」 stays
-        08:00 all year. A minutely/hourly one keeps its GAP instead — every 10
-        minutes is always 10 minutes, even across a clock change.
-
-        Outcomes: `ok` with the id (and, when it repeats, how many are left);
-        `refused` with a note saying what to fix (a time already gone, too soon, too
-        far off, too many already waiting, a repeat I don't know, a bound that makes
-        no sense, or you cannot set one on this turn); `unavailable` when reminders
-        are not configured — say you can't, do not pretend you did.
+        Returns `status`: ok, refused or unavailable. A refusal's `note` says
+        what to fix.
 
         Args:
             when: the FIRST moment it should go off, ISO-8601 with an offset.
             text: what they asked for, in their words.
-            repeat: none | minutely | hourly | daily | weekly | monthly | yearly.
-                Default none.
-            every_n: repeat every N of those units — 10 with `minutely` is every
+            repeat: the unit of a repeat, or "none" for a one-off (the default).
+            every_n: repeat every N of those units: 10 with `minutely` is every
                 ten minutes. Default 1. Repeats only.
             times: how many times in total, including the first. Repeats only.
             until: the last date/moment it may go off, ISO-8601. Repeats only.
-            note: the TITLE of the note this is about, exactly as listed in
-                <notes>, when the reminder is about one of them. Optional. It
+            note (str, optional): the TITLE of the note this is about, exactly
+                as listed in <notes>, when the reminder is about one of them. It
                 records the link; a reminder you set for yourself on your own
                 pass is dropped if the note is settled before it fires.
         """
@@ -7383,8 +7338,8 @@ when somebody asks what song is on.
             _record_created(metrics, "unavailable")
             return {
                 "status": "unavailable",
-                "note": "I can't hold anything for later — reminders aren't set up "
-                        "here. Say so plainly rather than promising.",
+                "note": "I can't hold anything for later because reminders aren't "
+                        "set up here. Say so plainly rather than promising.",
             }
         # THE DREAMER'S OWN PROVENANCE (design/dreamer-agent-loop/39 D3/D5,
         # DEC-162). Under it there is no tagger and there must not be one:
@@ -7416,7 +7371,7 @@ when somebody asks what song is on.
             return {
                 "status": "refused",
                 "note": "I don't know who you are well enough to hold something for "
-                        "you. Say you can't set it — do not guess.",
+                        "you. Say you can't set it, and do not guess.",
             }
         # D5 by PREDICATE, not by construction: under Dreamer provenance the
         # owner is the ai_peer whatever the room carries, so a Room that one
@@ -7460,7 +7415,7 @@ when somebody asks what song is on.
             return {
                 "status": "refused",
                 "note": f"That is less than {caps.min_lead_seconds // 60} minutes "
-                        "away — near enough that I'd be saying it now. Answer them "
+                        "away, near enough that I'd be saying it now. Answer them "
                         "now instead, or set it further out.",
             }
         # The recurrence, BEFORE the horizon check, because the rule is what
@@ -7514,7 +7469,7 @@ when somebody asks what song is on.
                 return {
                     "status": "refused",
                     "note": (
-                        "More than one note answers to that title — say which."
+                        "More than one note answers to that title. Say which."
                         if matches else
                         "No note in <notes> has that title. Give it exactly as "
                         "listed, or leave `note` out."
@@ -7581,7 +7536,7 @@ when somebody asks what song is on.
                 return {
                     "status": "refused",
                     "note": (
-                        "That note's room drifted outside this unit — I "
+                        "That note's room drifted outside this unit, and I "
                         "won't speak across the boundary. Leave it."
                     ),
                 }
@@ -7606,7 +7561,7 @@ when somebody asks what song is on.
                         "the ceiling. Let some fire before deciding more."
                         if proactive else
                         f"They already have {pending} waiting, which is my limit. "
-                        "Say so — list_reminders shows what is there, and one can "
+                        "Say so: list_reminders shows what is there, and one can "
                         "be cancelled to make room."
                     ),
                 }
@@ -7662,8 +7617,8 @@ when somebody asks what song is on.
             _record_created(metrics, "unavailable")
             return {
                 "status": "unavailable",
-                "note": "I couldn't write that down. Say you didn't manage to set it "
-                        "— never say you did.",
+                "note": "I couldn't write that down. Say you didn't manage to set "
+                        "it, never that you did.",
             }
         _record_created(
             metrics, "created", ahead_seconds=int((due_at - now).total_seconds()),
@@ -7674,6 +7629,10 @@ when somebody asks what song is on.
             "status": "ok", "id": str(row.id),
             "due_at": due_at.astimezone(_HKT).isoformat(),
         }
+        # `note` here is the LINKED NOTE's title, not a reporting note (ADR 0015
+        # §3's `note`). That is why `ok`'s reporting rule (say back the moment
+        # and any repeat limit) stays in the description as a SHOULD: putting
+        # guidance under this key would make it mean two things.
         if payload is not None and "note_title" in payload:
             result["note"] = payload["note_title"]
         # Added only when it repeats, so a one-shot's answer is byte-identical

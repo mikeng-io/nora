@@ -570,6 +570,75 @@ async def test_the_whereis_tool_refuses_when_no_wired_circle_contains_the_room(
     assert "Yoho" not in str(out)
 
 
+# ── ADR 0015 §3: how to report a status rides in the result ─────────────────
+
+PAT = frozenset({"+85268886688"})
+_WITH_PAT = IDENTITY + """
+[persons.pat_ho]
+first_name = "Pat"
+last_name  = "Ho"
+aliases = ["Miles"]
+[[persons.pat_ho.signal]]
+phone = "+85268886688"
+"""
+
+
+async def test_every_non_ok_status_carries_a_note(persons, store, tmp_path):
+    """ADR 0015 §3/§6: the description only NAMES the statuses; what to say
+    for each is the result's `note`. Every non-ok code path is driven here, so
+    a path that loses its note (the reporting rule for that status) goes red."""
+    tagger = persons.resolve("signal", "+85290000101")
+    path = tmp_path / "with_pat.toml"
+    path.write_text(_WITH_PAT)
+    with_pat = load_persons(path)
+    both = Circle(circle_id=CIRCLE_ID, person_ids=frozenset({"miles_novak", "grant_carver",
+                                                            "pat_ho"}))
+    cases = {
+        "unavailable/unwired": _whereis_tool(
+            persons, room=_room(persons, members=(MILES, NORA)),
+        ).call("Miles"),
+        "unavailable/room": _whereis(
+            persons, store, members=(MILES, NORA), fail=True,
+        ).locate("Miles", now_ms=NOW),
+        "unavailable/degraded": _whereis(
+            persons, store, members=(MILES, NORA), fail=True, tagger=tagger,
+        ).locate("Miles", now_ms=NOW),
+        "unavailable/no_fix": _whereis(
+            persons, store, members=(MILES, NORA),
+        ).locate("Miles", now_ms=NOW),
+        "refused": _whereis(
+            persons, store, members=(MILES, STRANGER, NORA),
+        ).locate("Miles", now_ms=NOW),
+        "not_found": _whereis(
+            persons, store, members=(MILES, NORA),
+        ).locate("Nobody", now_ms=NOW),
+        "ambiguous": Whereis(
+            room=_room(with_pat, members=(MILES, PAT, NORA)), circle=both,
+            presence=store,
+        ).locate("Miles", now_ms=NOW),
+    }
+    for case, pending in cases.items():
+        out = await pending
+        assert out["status"] == case.split("/")[0], (case, out)
+        assert isinstance(out.get("note"), str) and out["note"].strip(), case
+        assert "—" not in out["note"] and "–" not in out["note"], case
+
+
+async def test_an_ok_note_carries_the_rules_its_answer_needs(persons, store):
+    """The reporting rules that left the description (carry the age, never
+    read lat/lng aloud) arrive with the `ok` they are about, and the place
+    and movement clauses only when those fields are there."""
+    await _record(store, person="miles_novak", ts=NOW - 20 * 60_000)
+    out = await _whereis(persons, store, members=(MILES, GRANT, NORA)).locate(
+        "Miles", now_ms=NOW,
+    )
+    assert out["status"] == "ok"
+    assert "age_seconds" in out["note"]
+    assert "reverse_geocode" in out["note"]
+    assert "`place`" not in out["note"]           # no saved place in this answer
+    assert "promise" not in out["note"]           # and no movement either
+
+
 async def test_location_trust_threads_through_build_tool_specs_to_the_tool(persons, store):
     """DEC-74 middle-hop coverage (review 2026-08-08): the flag must survive the
     `build_tool_specs → Whereis` hop, NOT just the two endpoints. Same non-subset
@@ -671,6 +740,7 @@ async def test_whereis_names_the_saved_place_the_fix_sits_inside(persons, store)
     # DEC-156 follow-through: no address — the coordinate is the fetch surface.
     assert "address" not in out
     assert "lat" in out and "lng" in out
+    assert "`place`" in out["note"]      # ADR 0015 §3: prefer the household's name
 
 
 async def test_whereis_outside_every_geofence_answers_without_a_place(persons, store):
@@ -857,6 +927,7 @@ async def test_whereis_reports_speed_when_above_the_jitter_floor(persons, store)
     )
     assert out["status"] == "ok"
     assert out["speed_kmh"] == 62.3
+    assert "never promise" in out["note"]   # ADR 0015 §3: measured, not intent
 
 
 async def test_whereis_omits_speed_when_the_fix_carries_none(persons, store):

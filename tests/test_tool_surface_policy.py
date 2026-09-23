@@ -258,13 +258,13 @@ _NOT_YET_REWRITTEN = frozenset({
     "list_events", "list_reminders", "load_tools", "load_transcript",
     "lookup_person", "make_artifact", "media_fetch", "media_search",
     "media_send", "music_status", "note_create", "note_read", "note_search",
-    "note_update", "now", "online_now", "parking_status", "place_info",
-    "play_music", "recall_lookups", "remember", "remind", "reverse_geocode",
+    "note_update", "now", "parking_status", "place_info",
+    "play_music", "recall_lookups", "remember", "reverse_geocode",
     "route", "rsvp_event", "saved_places", "search_gifs", "search_memory",
     "search_memory_workspace", "send_gif", "send_reply", "send_to",
     "set_music_volume", "skills", "skip_music", "social_fetch", "stop_music",
     "suggest_venue", "top_music", "transit", "update_event", "version",
-    "weather", "web_fetch", "web_search", "where_been", "where_is", "who_said",
+    "weather", "web_fetch", "web_search", "who_said",
 })
 
 #: A run of CJK, kana or hangul. ADR 0015 §3's unit: a distinct maximal run,

@@ -333,6 +333,66 @@ async def test_remind_is_unavailable_rather_than_broken_without_a_store():
     assert result["note"]
 
 
+class _WriteFailingStore(FakeReminderStore):
+    async def create(self, reminder: Reminder) -> None:
+        raise ConnectionError("reminder store unreachable")
+
+
+async def test_every_non_ok_status_carries_a_note():
+    """ADR 0015 §3/§6: the description only NAMES `refused`/`unavailable`;
+    what to fix or say is the result's `note`. Every non-ok code path this
+    file's fakes can reach is driven here, so a path that loses its note goes
+    red. (`ok` carries no reporting note: its `note` key is the linked note's
+    title, pinned by `test_a_dreamer_provenance_stamps_the_row_in_code`.)"""
+    later = (T0 + timedelta(days=60)).isoformat()
+    full = FakeReminderStore()
+    await full.create(_row())
+    cases = {
+        "refused/fire_turn": (_tools(reminders=FakeReminderStore(), fire_turn=True), {}),
+        "unavailable/no_store": (_tools(reminders=None), {}),
+        "refused/unmapped": (_tools(reminders=FakeReminderStore(), tagger=None), {}),
+        "refused/proactive_repeat": (
+            _tools(reminders=FakeReminderStore(), tagger=None, dream_adaptor="proactive"),
+            {"repeat": "daily", "times": 3},
+        ),
+        "refused/unparseable": (_tools(reminders=FakeReminderStore()), {"when": "等陣"}),
+        "refused/past": (
+            _tools(reminders=FakeReminderStore()),
+            {"when": (T0 - timedelta(minutes=5)).isoformat()},
+        ),
+        "refused/too_soon": (
+            _tools(reminders=FakeReminderStore()),
+            {"when": (T0 + timedelta(seconds=30)).isoformat()},
+        ),
+        "refused/too_far": (
+            _tools(reminders=FakeReminderStore(), caps=ReminderCaps(max_horizon_days=30)),
+            {"when": later},
+        ),
+        "refused/bad_repeat": (
+            _tools(reminders=FakeReminderStore()), {"repeat": "fortnightly"},
+        ),
+        "refused/bad_bound": (_tools(reminders=FakeReminderStore()), {"times": 3}),
+        "refused/too_often": (
+            _tools(reminders=FakeReminderStore()), {"repeat": "minutely", "every_n": 1},
+        ),
+        "refused/too_many": (
+            _tools(reminders=full, caps=ReminderCaps(max_pending_per_requester=1)), {},
+        ),
+        "unavailable/write": (_tools(reminders=_WriteFailingStore()), {}),
+        "unavailable/notes_off": (
+            _tools(reminders=FakeReminderStore()), {"note": "AI Hackathon dinner plan"},
+        ),
+    }
+    # `notes_off` is shared with the note tools, which ADR 0015 has not reached.
+    shared = {"unavailable/notes_off"}
+    for case, (tools, kwargs) in cases.items():
+        result = await tools["remind"](**{"when": SOON, "text": "洗衫", **kwargs})
+        assert result["status"] == case.split("/")[0], (case, result)
+        assert isinstance(result.get("note"), str) and result["note"].strip(), case
+        if case not in shared:
+            assert "—" not in result["note"] and "–" not in result["note"], case
+
+
 # ---- what a written row actually holds ---------------------------------------
 
 async def test_a_created_row_carries_the_requesters_own_sentence_and_this_room():
