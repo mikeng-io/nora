@@ -159,8 +159,9 @@ type profileBody struct {
 	// HasStory is `latest_reel_media != 0` — a timestamp, not a count, and the
 	// only "is there a story up right now" signal on this query. Exposed so a
 	// caller can skip a story fetch entirely rather than fetch-then-find-empty,
-	// which matters because a story fetch is VISIBLE to its author and an
-	// unnecessary one cannot be taken back.
+	// which matters because Nora opens a story only when asked (a privacy
+	// choice; whether the author sees the view is unmeasured, design 04, 05
+	// §Reading a story), and an unnecessary fetch cannot be taken back.
 	HasStory bool `json:"has_story"`
 	// LatestReelMedia is the raw value behind HasStory, forwarded because it
 	// is a timestamp and a caller comparing it against

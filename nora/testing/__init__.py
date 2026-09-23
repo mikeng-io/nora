@@ -123,6 +123,7 @@ from nora.testing.fakes import (
     FakeSocialSubjectIndex,
     FakeToolCallLogStore,
     FakeTranscriber,
+    FakeVideoReadingStore,
     transcript_rows,
 )
 from nora.testing.note_store import InMemoryNoteStore, NoteCandidate
@@ -175,6 +176,7 @@ __all__ = [
     "FakeSteamPresenceProvider",
     "FakeToolCallLogStore",
     "FakeTranscriber",
+    "FakeVideoReadingStore",
     "FakeVoicePresenceSource",
     "InMemoryDecisionLogStore",
     "InMemoryDreamScheduleClock",

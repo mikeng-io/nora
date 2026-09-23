@@ -376,6 +376,15 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        raised=(
            "on an entry that has one, how many times you DECIDED to bring it "
            "up and got no reply, decisions of yours, not messages sent to them"
+       ),
+       room=(
+           "on an entry that has one, the room the note was born in, which is "
+           "the only room a reminder about it can go to"
+       ),
+       unprompted=(
+           "on an entry that has one, `not_allowed`: you do not speak in the "
+           "room it was born in unless someone there speaks first, so no "
+           "reminder about it can be set"
        )),
     _t("note",
        "one question you are still holding open, with what you wrote about it "

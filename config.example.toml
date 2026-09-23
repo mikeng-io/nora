@@ -601,7 +601,13 @@ vision_model = "ollamacloud/glm-5.3-flash"
 # `unavailable` (a truncated description reads like a complete one). This is a
 # PER-REQUEST allowance, not an aggregate budget, and it is shared: images,
 # audio, every video window and the text pass all get it.
-vision_max_tokens = 4096
+# 4096 → 16384 (2026-09-24, measured on the live deploy): 4096 still cut MiMo
+# off — 2 of 3 reads of one audible 35 s window ended `finish_reason=length`.
+# MiMo v2.6 Flash REASONS before it answers even at effort "low": 2,808 /
+# 4,154 / 6,159 completion tokens per window, of which 2,167 / 3,632 / 5,540
+# were reasoning and the answer ~600. 16384 is ~2.7x the worst of n=3 — a cap,
+# not a reservation, so the headroom costs nothing on a read that stops sooner.
+vision_max_tokens = 16384
 vision_reasoning_effort = "low"
 vision_max_bytes = 8388608   # 8 MiB → ~10.7 MiB base64 body
 # 20 → 40 (2026-08-30, operator): the per-call vision budget derives as
@@ -1059,10 +1065,10 @@ api_key_env = "STEAM_WEB_API_KEY"
 # timeout_seconds = 8.0
 
 [social]
-# social_fetch (DEC-151) — READ-ONLY X reads, and Instagram ACCOUNT search
-# until P11, via the host-side OpenCLI bridge (`python -m nora.infra.social`,
-# run as the systemd user service in deploy/social-bridge/). Instagram
-# profiles and stories are NOT here: they are instagram_read's, over
+# social_fetch (DEC-151) — READ-ONLY X reads, via the host-side OpenCLI bridge
+# (`python -m nora.infra.social`, run as the systemd user service in
+# deploy/social-bridge/). Nothing Instagram is here: profiles and stories are
+# instagram_read's, and account search is instagram_search's, both over
 # [social.instagram] below. KEYLESS, so `enabled` is the whole gate
 # (the [preview] shape). Off here for the "explicitly on" house rule; even on,
 # the tool can only construct allowlisted reads — the bridge re-enforces the
@@ -1080,11 +1086,11 @@ bridge_url = "http://127.0.0.1:19826"
 # content_max_chars = 4000                # retrieved-text clamp (bounds re-sent tokens)
 
 [social.instagram]
-# The Instagram backend for instagram_read: a person's profile and what is on
-# their story right now, over the instagram-bridge container
+# The Instagram backend for instagram_read and instagram_search: a person's
+# profile and what is on their story right now, and accounts matching a name
+# or handle, over the instagram-bridge container
 # (design/instagram-adoption/15, /18). Every Instagram read goes through the
-# bridge; account search is the one Instagram verb still on OpenCLI above,
-# until P11 moves it here too.
+# bridge; OpenCLI above serves X only.
 #
 # Its own `enabled` rather than riding [social] above, because the two are
 # provisioned and fail independently: that one needs a systemd service and a
@@ -1900,7 +1906,11 @@ timeout_seconds = 240.0
 # spends it, and the instrument that says whether it is being spent well is
 # `nora_dream_guard_vetoes_total{adaptor="proactive",rule="memory-budget"}`
 # against the decide suite's recall.
-max_memory_calls = 6
+#
+# 6 -> 16 (operator, 2026-09-24), with the per-verb ceilings below raised to
+# match: `ask_memory`, `search_memory_workspace` and `about` to 8 each. 6 was
+# below `lookup_person` alone, so it was the number every memory verb ran under.
+max_memory_calls = 16
 
 # **The per-tool call ceilings this pass overrides**, a tool name to how many
 # times ONE pass may call it. Applied OVER `NativeTool.budget` and over
@@ -1935,7 +1945,10 @@ max_memory_calls = 6
 # nothing would otherwise leave this file recording a bound the pass does not
 # actually run under, with nothing measuring the difference.
 [dreamer.budgets.proactive.tool_calls]
-note_read = 8
+# 8 -> 16 (operator, 2026-09-24): a unit's open-note count only grows between
+# curations, and a note decided from its index line alone is the silent shape
+# above.
+note_read = 16
 # `lookup_person` — the table says 4, another TAG TURN's number, sized for
 # "one message routinely names two people". TRIPLED to 12 (operator,
 # 2026-09-18). A decide pass is not answering one message: it is asked for a
@@ -1948,6 +1961,18 @@ note_read = 8
 # round trips and not by work. See `max_memory_calls = 6` above: that is the
 # ceiling that actually binds this verb, and 12 here is inert without it.
 lookup_person = 12
+# The other memory verbs, 4 -> 8 each (operator, 2026-09-24), and bound by
+# `max_memory_calls = 16` above, not by these numbers alone.
+ask_memory = 8
+search_memory_workspace = 8
+about = 8
+note_search = 4
+# `remind` — the table says 2, a tag turn's number: one reply rarely sets more.
+# This pass decides every open note of a unit at once, and a refused call is
+# still a spent one: Langfuse `42f7e8bd` (2026-09-23) spent both on refusals
+# and was stopped at the third. 6 (operator, 2026-09-24).
+# `reminders.max_pending_per_requester` still bounds what actually lands.
+remind = 6
 
 # THE CULTURE FOLD (design/culture-tier). Uncommented from 2026-09-17, when the
 # adaptor stopped being tool-free: it now holds nine read verbs through an

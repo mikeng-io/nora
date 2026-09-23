@@ -265,6 +265,7 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "reasoning_strip.py",
         "reminders.py", "tag_debounce.py",
         "standing.py", "tag_traces.py", "tool_call_log.py",
+        "video_readings.py",
     }
 )
 

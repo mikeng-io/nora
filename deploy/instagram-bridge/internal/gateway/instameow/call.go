@@ -224,6 +224,14 @@ func errorType(err error) string {
 	switch {
 	case needsHuman(err):
 		return "needs_human"
+	case errors.Is(err, domain.ErrNotFound):
+		// Reachable only from a wrapped function that classifies its own
+		// failure before returning it (posts.go does, so that a REST answer
+		// inside an HTTP 200 marks the span). No earlier call does.
+		return "not_found"
+	case errors.Is(err, domain.ErrUpstreamRejected):
+		// The same vocabulary the raw graphql() helper already writes.
+		return "upstream_rejected"
 	case errors.Is(err, domain.ErrUnavailable):
 		// Only reachable if a wrapped function returns an already-classified
 		// "not connected"; no library call does today. Kept so that one would

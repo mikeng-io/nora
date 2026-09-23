@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -282,6 +283,92 @@ func TestSearchQueryNeverLeaksOnFailure(t *testing.T) {
 	}
 	if strings.Contains(w.Body.String(), secret) {
 		t.Errorf("the error envelope carries the search query: %s", w.Body.String())
+	}
+}
+
+// The same rule for GET /accounts?username= (17 P10): a username is a name
+// typed about a person, exactly like a search query, and must never land in
+// a span — including instagram.accounts_by_username.match_count
+// (accounts_search.go), which must carry the COUNT and never the username
+// itself.
+func TestUsernameNeverEntersASpan(t *testing.T) {
+	rec := recordSpans(t)
+	const secret = "secret_username_9f2a1"
+	b := newTestBridge(t, &fakeIG{SearchResultsSet: true, SearchResults: []*slidetypes.SearchResult{
+		{PK: "900000010", Username: secret},
+	}})
+
+	w := getSearch(t, b, "?username="+secret)
+	if w.Code != http.StatusOK {
+		t.Fatalf("/accounts?username= answered %d: %s", w.Code, w.Body.String())
+	}
+	if len(rec.Ended()) < 2 {
+		t.Fatalf("expected a server span and an upstream span, got %d", len(rec.Ended()))
+	}
+	for _, s := range rec.Ended() {
+		for _, kv := range s.Attributes() {
+			if strings.Contains(kv.Value.String(), secret) {
+				t.Errorf("span %q attribute %s carries the username", s.Name(), kv.Key)
+			}
+		}
+		for _, ev := range s.Events() {
+			for _, kv := range ev.Attributes {
+				if strings.Contains(kv.Value.String(), secret) {
+					t.Errorf("span %q event %q carries the username", s.Name(), ev.Name)
+				}
+			}
+		}
+		if strings.Contains(s.Name(), secret) || strings.Contains(s.Status().Description, secret) {
+			t.Errorf("span %q name or status carries the username", s.Name())
+		}
+	}
+}
+
+// The harder half, mirroring TestSearchQueryNeverLeaksOnFailure: an upstream
+// error can echo bad input back in its own message, so the failure path
+// needs its own check across every surface — span attributes, span events
+// (RecordError writes err.Error() into an exception event), span name and
+// status, the log line, and the error envelope's own message.
+func TestUsernameLookupNeverLeaksOnFailure(t *testing.T) {
+	rec := recordSpans(t)
+	logs := captureLogs(t)
+	const secret = "secret_username_b7f31"
+
+	// The fake's error TEXT contains the secret, standing in for an upstream
+	// validation error that quotes the bad input it is complaining about.
+	b := newTestBridge(t, &fakeIG{SearchErr: fmt.Errorf("upstream rejected the username %q", secret)})
+
+	w := getSearch(t, b, "?username="+secret)
+	if w.Code == http.StatusOK {
+		t.Fatalf("expected a failure status for a synthetic upstream error, got 200: %s", w.Body.String())
+	}
+
+	for _, s := range rec.Ended() {
+		for _, kv := range s.Attributes() {
+			if strings.Contains(kv.Value.String(), secret) {
+				t.Errorf("span %q attribute %s carries the username", s.Name(), kv.Key)
+			}
+		}
+		for _, ev := range s.Events() {
+			if strings.Contains(ev.Name, secret) {
+				t.Errorf("span %q event name %q carries the username", s.Name(), ev.Name)
+			}
+			for _, kv := range ev.Attributes {
+				if strings.Contains(kv.Value.String(), secret) {
+					t.Errorf("span %q event %q attribute %s carries the username (RecordError)",
+						s.Name(), ev.Name, kv.Key)
+				}
+			}
+		}
+		if strings.Contains(s.Name(), secret) || strings.Contains(s.Status().Description, secret) {
+			t.Errorf("span %q name or status carries the username", s.Name())
+		}
+	}
+	if strings.Contains(logs.String(), secret) {
+		t.Errorf("a log line carries the username: %s", logs.String())
+	}
+	if strings.Contains(w.Body.String(), secret) {
+		t.Errorf("the error envelope carries the username: %s", w.Body.String())
 	}
 }
 

@@ -210,6 +210,7 @@ from nora.domain.media import MediaBlob as MediaBlob
 from nora.domain.media import MediaBytes as MediaBytes
 from nora.domain.media import MediaObject as MediaObject
 from nora.domain.media import MediaRef as MediaRef
+from nora.domain.media import VideoReadingKey as VideoReadingKey
 from nora.domain.models import (
     ConversationTarget,
     DeliveryStatus,
@@ -1124,6 +1125,25 @@ def speakable(text: str) -> bool:
 
 
 @runtime_checkable
+class VideoReadingStore(Protocol):
+    """Durable cache of question-less VIDEO readings, keyed on everything the
+    reading depends on (`VideoReadingKey`). Never raises.
+
+    Separate from `MediaDescriptionStore` on purpose: that one's durable tier
+    IS `media_objects`, whose row promises Nora holds the bytes — and a clip
+    read by URL has no blob. A reading keyed by more than a sha256 cannot live
+    in a table every handle lookup and search reads as a sha256 either.
+
+    A failure degrades to a MISS (one re-read), never the message: `get`
+    answers None, `put` swallows.
+    """
+
+    async def get(self, *, key: VideoReadingKey) -> str | None: ...
+
+    async def put(self, *, key: VideoReadingKey, reading: str) -> None: ...
+
+
+@runtime_checkable
 class MediaDescriptionStore(Protocol):
     """The durable half of media dedup (sticker spec §4.1). Never raises.
 
@@ -1606,7 +1626,7 @@ class SteamPresenceProvider(Protocol):
 @runtime_checkable
 class SocialProvider(Protocol):
     """`{platform, what, target, limit} -> {status, ...}` social reads, behind
-    the `social_fetch` (DEC-151) and `instagram_read`
+    the `social_fetch` (DEC-151), `instagram_read` and `instagram_search`
     (design/instagram-adoption/18) tools. NEVER raises — a transport failure of
     the bridge call is `{"status": "unavailable"}`, never an exception into
     the loop (R-5), and the R-27 three states apply end to end: an error is

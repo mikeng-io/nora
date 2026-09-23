@@ -1,0 +1,12 @@
+{
+  "type": "fix",
+  "summary": "Nora's daily look at open questions now knows which room each one came from, and whether she is allowed to speak there unprompted.",
+  "details": [
+    "Each open question in the daily pass names the room it was raised in. A follow-up about it can only go to that room.",
+    "A question raised in a room where Nora only answers when spoken to is marked as such, so she stops trying to set follow-ups that were always going to be refused.",
+    "The daily pass may now check memory, read notes and set follow-ups more times per run."
+  ],
+  "limitations": [
+    "Questions raised in a room without unprompted speech still get no follow-up anywhere; enabling that is a per-room setting."
+  ]
+}

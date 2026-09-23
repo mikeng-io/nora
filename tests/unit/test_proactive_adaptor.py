@@ -49,7 +49,10 @@ NOW = datetime(2026, 9, 8, 23, 0, tzinfo=UTC)
 NOW_MS = int(NOW.timestamp() * 1000)
 WS = "friends"
 ROOMS = (
-    UnitRoom(platform="signal", conversation_id="sig-1", label="Friends", home=True),
+    UnitRoom(
+        platform="signal", conversation_id="sig-1", label="Friends", home=True,
+        proactive=True,
+    ),
     UnitRoom(platform="discord", conversation_id="1/2", label="Zone 42"),
 )
 
@@ -101,12 +104,12 @@ async def _people(members):
 
 async def _note(
     store, *, title="AI Hackathon dinner plan", anchor=20260912,
-    now_ms=NOW_MS - 86_400_000, **kw,
+    now_ms=NOW_MS - 86_400_000, established_in="sig-1", **kw,
 ):
     return await store.create(
         unit=WS, title=title, description="where to eat is open",
         uncertainty="where", closing_condition="a place is picked",
-        established_in="sig-1", body="Cyberport Saturday; venue open.",
+        established_in=established_in, body="Cyberport Saturday; venue open.",
         established_by="tag:miles", now_ms=now_ms, anchor_date=anchor,
         **kw,
     )
@@ -240,7 +243,7 @@ async def test_inputs_renders_the_index_the_rooms_the_log_and_the_self_card():
     assert "You are on Signal right now." in text.split("</presence>")[0]
     assert (
         '<note n="1" title="AI Hackathon dinner plan" '
-        'about="Sat 12 Sep, in 3 days">where to eat is open</note>'
+        'about="Sat 12 Sep, in 3 days" room="Friends">where to eat is open</note>'
         in text
     )
     assert note.id not in text                      # the index, never the id
@@ -345,6 +348,46 @@ async def test_strikes_and_a_due_revisit_are_said_on_the_line():
     assert 'revisit="due"' in text
     assert 'raised="1"' in text
     assert "how many times you DECIDED to bring it up and got no reply" in text
+
+
+async def test_each_note_says_whether_its_birth_room_can_take_a_reminder():
+    """`remind` routes a note-linked row to the room the note was born in and
+    refuses one with no `proactive` grant (design/dreamer-agent-loop/40). The
+    list has to say so up front: Langfuse `42f7e8bd` spent two `remind` calls
+    and the ceiling discovering it, and guessed at which room the plans were
+    said in. Keyed on EVERY id a room has, as `origin_rooms` is."""
+    notes = InMemoryNoteStore()
+    await _note(notes, title="said at home")
+    await _note(notes, title="said in the quiet room", established_in="1/2")
+    await _note(notes, title="said under an alias", established_in="sig-alias")
+    await _note(notes, title="said somewhere else", established_in="elsewhere")
+    rooms = (
+        UnitRoom(
+            platform="signal", conversation_id="sig-1", label="Friends",
+            home=True, proactive=True, ids=("sig-1", "sig-alias"),
+        ),
+        UnitRoom(platform="discord", conversation_id="1/2", label="Zone 42"),
+    )
+    adaptor = _adaptor(notes=notes, rooms=rooms)
+
+    text = await adaptor.inputs(key=WS, batch=())
+    tags = {
+        line.split('title="')[1].split('"')[0]: line.split(">")[0]
+        for line in text.splitlines() if line.startswith("<note ")
+    }
+
+    assert 'room="Friends"' in tags["said at home"]
+    assert "unprompted=" not in tags["said at home"]
+    assert 'room="Friends"' in tags["said under an alias"]
+    assert "unprompted=" not in tags["said under an alias"]
+    assert 'room="Zone 42" unprompted="not_allowed"' in tags["said in the quiet room"]
+    # Not one of this unit's rooms: `remind` refuses it as unresolvable or
+    # cross-unit, and there is no label to name, never the id (R-18).
+    assert 'unprompted="not_allowed"' in tags["said somewhere else"]
+    assert "room=" not in tags["said somewhere else"]
+    assert "elsewhere" not in text
+    # The meaning travels with the block, not only the value.
+    assert "no reminder about it can be set" in text
 
 
 async def test_a_failed_standing_read_is_rendered_as_unread_not_as_no_position():
@@ -1382,6 +1425,40 @@ async def test_a_roster_index_that_never_answers_is_bounded_and_counted():
     assert "·" not in block
     assert metrics.get(
         "nora_errors_total", stage="proactive_roster_index", platform="signal") == 1
+
+
+async def test_the_birth_room_mark_reads_policy_as_remind_does(tmp_path):
+    """The `room`/`unprompted` mark is only as true as the composition root's
+    `UnitRoom`: built without `proactive`, every note would read closed; built
+    without `also_ids`, a note born under an alias would read as outside the
+    unit. `origin_rooms` keys `remind`'s refusal on both, so this pins them from
+    `policy.toml` to the rendered prompt."""
+    from nora.app.composition import _unit_rooms
+    from nora.policy import load_policy
+
+    path = tmp_path / "policy.toml"
+    path.write_text(
+        'default = "deny"\n'
+        "[[conversations]]\n"
+        'platform = "signal"\nid = "sig-1"\nalso_ids = ["sig-alias"]\n'
+        f'label = "Friends"\npersons = "*"\nunit = "{WS}"\n'
+        "home_room = true\nproactive = true\n"
+        "[[conversations]]\n"
+        'platform = "discord"\nid = "1/2"\nlabel = "Zone 42"\npersons = "*"\n'
+        f'unit = "{WS}"\n'
+    )
+    rooms = _unit_rooms(load_policy(path))[WS]
+    notes = InMemoryNoteStore()
+    await _note(notes, title="said under an alias", established_in="sig-alias")
+    await _note(notes, title="said in the quiet room", established_in="1/2")
+    adaptor = _adaptor(notes=notes, rooms=rooms)
+
+    text = await adaptor.inputs(key=WS, batch=())
+
+    alias = text.split('title="said under an alias"')[1].split(">")[0]
+    quiet = text.split('title="said in the quiet room"')[1].split(">")[0]
+    assert 'room="Friends"' in alias and "unprompted=" not in alias
+    assert 'room="Zone 42" unprompted="not_allowed"' in quiet
 
 
 async def test_an_unlabelled_room_never_puts_its_id_in_the_proactive_prompt(tmp_path):

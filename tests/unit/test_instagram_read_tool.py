@@ -258,8 +258,8 @@ async def test_a_name_two_people_answer_to_is_ambiguous_and_reads_nothing(world,
 
 @pytest.mark.parametrize("what", ["profile", "story"])
 async def test_a_person_with_two_accounts_is_ambiguous_never_a_pick(world, what):
-    """Nothing in «Robin» says which of her two accounts was meant, and a
-    story read is visible to its author. The positive control is the SAME
+    """Nothing in «Robin» says which of her two accounts was meant, and
+    reading the wrong one reads a different human. The positive control is the SAME
     call for a one-account person reaching the bridge."""
     fake, read = world()
     out = await read(what=what, person="Robin")
@@ -300,8 +300,9 @@ async def test_a_name_nobody_here_answers_to_is_nothing_found(world):
 
 async def test_a_story_for_someone_in_no_room_is_refused_and_never_requested(world):
     """River is in this group (the roster) but listed in no room's `persons`,
-    so not Tier 0. The story request must not be SENT — a story view lands in
-    its author's viewer list, so a read-then-refuse is already the harm."""
+    so not Tier 0. The story request must not be SENT: Nora does not open
+    the stories of people the operator has not listed, and a read-then-refuse
+    has already opened it."""
     fake, read = world()
     out = await read(what="story", person="River")
 
@@ -385,14 +386,16 @@ async def test_a_person_known_elsewhere_but_not_in_this_room_is_nothing_found(wo
     ids=["fire_turn", "dreamer"],
 )
 async def test_a_story_is_never_opened_in_a_turn_nobody_asked_for(world, turn):
-    """A story view lands in its author's viewer list, so a background pass —
-    a reminder or proactive fire turn, a Dreamer run with a home room — must
-    never open one: Quinn would see Nora looked, unprompted. `refused` before
-    anything is resolved or sent (design/instagram-adoption/18, 2026-09-24).
+    """Nora does not read people's stories unprompted (a privacy choice;
+    whether the author sees the view is unmeasured, design 04, 05 §Reading a
+    story), so a background pass (a reminder or proactive fire
+    turn, a Dreamer run with a home room) must never open one. `refused`
+    before anything is resolved or sent (design/instagram-adoption/18,
+    2026-09-24).
 
-    Positive control: the SAME turn reads Quinn's profile, which is invisible
-    to the account and stays allowed, so the empty story log is the rule and
-    not a turn that cannot reach the bridge at all."""
+    Positive control: the SAME turn reads Quinn's profile, which stays
+    allowed, so the empty story log is the rule and not a turn that cannot
+    reach the bridge at all."""
     fake, read = world(**turn)
     out = await read(what="story", person="Quinn")
 

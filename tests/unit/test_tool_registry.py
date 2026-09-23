@@ -99,11 +99,14 @@ def test_the_registry_exposes_every_declared_tool():
         "generate_image",
         "media_search", "media_send",
         "web_search", "web_fetch",
-        # social_fetch (DEC-151): READ-ONLY X/Instagram via the host bridge.
+        # social_fetch (DEC-151): READ-ONLY X via the host bridge.
         "social_fetch",
         # instagram_read (design/instagram-adoption/18): a person's Instagram
         # profile or story, over the instagram-bridge.
         "instagram_read",
+        # instagram_search (design/instagram-adoption/18, P11): Instagram
+        # accounts matching free text, over the instagram-bridge.
+        "instagram_search",
         "weather",
         # HK parking (2026-08-31): TD open-data vacancy for a named car park,
         # and Google Places nearby-search + street meters for «near X».
@@ -273,6 +276,9 @@ def test_budgets_match_todays_table():
         # instagram_read (design/instagram-adoption/18): one read, a second
         # for the other `what` or «no, the other one».
         "instagram_read": 2,
+        # instagram_search (P11): one search, and one refinement when the
+        # first list does not hold the person.
+        "instagram_search": 2,
         # One weather verb (DEC-72): current + warnings + outlook always, the
         # 9-day forecast on a flag. 2 — one HKO round usually answers, a second
         # covers a follow-up.
@@ -482,7 +488,7 @@ def test_the_confusable_retrieval_tools_all_declare_a_source_tier():
         "place_info": "confirmed", "where_is": "confirmed",
         "reverse_geocode": "confirmed",
         "saved_places": "remembered", "web_search": "web", "web_fetch": "web",
-        "social_fetch": "web", "instagram_read": "web",
+        "social_fetch": "web", "instagram_read": "web", "instagram_search": "web",
     }
     for name, tier in expected.items():
         assert NATIVE_TOOLS[name].source_tier == tier, name
@@ -631,7 +637,7 @@ def test_cacheable_tools_matches_the_declared_set():
     from nora.agent.registry import ToolRegistry
     assert ToolRegistry().cacheable_tools() == frozenset(
         {"place_info", "route", "web_search", "web_fetch", "weather", "transit",
-         "music_status", "social_fetch"}
+         "music_status", "social_fetch", "instagram_search"}
         # where_been is deliberately NOT cacheable (Kimi audit B1): the recall
         # log replays a persisted result verbatim with no guard re-check, so a
         # cached `ok` would outlive the roster it was authorized under.
@@ -719,6 +725,8 @@ READ_ONLY = frozenset({
     # R-86 extended (design/instagram-adoption/18): the same three layers,
     # with a client that only ever issues GET.
     "instagram_read",
+    # R-86 again (P11): a one-row vocabulary, and the same GET-only client.
+    "instagram_search",
 })
 
 

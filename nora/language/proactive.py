@@ -346,6 +346,18 @@ class UnitRoom:
     #: through; the other rooms appear as positions, not as batches to
     #: interpret.
     description: str | None = None
+    #: `policy.Conversation.proactive` — whether she may speak here unprompted.
+    #: Read by `_open_notes_block` only, to say on each note whether the room it
+    #: was born in can take a reminder about it. `remind` routes a note-linked
+    #: row to that room and refuses a closed one (design/dreamer-agent-loop/40),
+    #: and before this the pass could only find out by spending the call — see
+    #: `_note_origin`.
+    proactive: bool = False
+    #: Every id this room is known by (`policy.Conversation.ids`), because
+    #: `Note.established_in` holds whichever one the note was born under — the
+    #: same keying `remind`'s `origin_rooms` map uses. Empty means
+    #: `(conversation_id,)`.
+    ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -662,7 +674,9 @@ class ProactiveAdaptor:
         people = await self._people_block(home)
         if people:
             parts.append(people)
-        parts.append(_open_notes_block(shown_notes, now=now, tz=self._tz))
+        parts.append(_open_notes_block(
+            shown_notes, now=now, tz=self._tz, rooms=rooms,
+        ))
         rooms_order, rooms_key = _ROW["rooms"]
         parts.append(ContextBlock(
             name="rooms", order=rooms_order, key=rooms_key,
@@ -1476,8 +1490,39 @@ class ProactiveAdaptor:
 #: the next time somebody reads the diff.
 
 
+def _note_origin(
+    note: Note, rooms: Sequence[UnitRoom],
+) -> tuple[tuple[str, str | None], ...]:
+    """Where a note was born, and whether she may speak there unprompted.
+
+    **The pass was deciding WHERE-dependent questions with no where in its
+    input.** Langfuse `42f7e8bd` (2026-09-23 20:09 UTC): two plans Miles stated
+    in Instagram Ridgeline, a room with no `proactive` grant. The pass called
+    `remind` for both, both came back `refused_origin_not_proactive`, it tried
+    the duplicate note's title for a third and hit the `remind` ceiling — and
+    spent most of two minutes of reasoning guessing which room the plans were
+    said in, wrongly suspecting the test room it was served from. The refusal
+    is right (design/dreamer-agent-loop/40: a note-linked row goes to its
+    origin room and never falls back); what was missing is that the list never
+    said it would come.
+
+    `room` is the origin's label, and `unprompted="not_allowed"` rides only
+    where `remind` would refuse — no `proactive` grant, or an origin outside
+    this unit's rooms (refused as unresolvable or cross-unit). An origin this
+    unit does not hold carries no `room`, because there is no label to say.
+    """
+    for room in rooms:
+        if note.established_in in (room.ids or (room.conversation_id,)):
+            return (
+                ("room", _room_name(room)),
+                ("unprompted", None if room.proactive else "not_allowed"),
+            )
+    return (("unprompted", "not_allowed"),)
+
+
 def _open_notes_block(
-    notes: Sequence[Note], *, now: datetime, tz: ZoneInfo
+    notes: Sequence[Note], *, now: datetime, tz: ZoneInfo,
+    rooms: Sequence[UnitRoom],
 ) -> str:
     """The unit's open notes, through the ONE index renderer (#292).
 
@@ -1513,6 +1558,7 @@ def _open_notes_block(
         return (
             ("revisit", revisit),
             ("raised", str(note.strikes) if note.strikes else None),
+            *_note_origin(note, rooms),
         )
 
     order, key = _ROW["notes"]

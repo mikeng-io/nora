@@ -118,6 +118,7 @@ from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.tag_debounce import SqlTagDebounceStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
+from nora.infra.sql.video_readings import SqlVideoReadingStore
 from nora.infra.version import OK as VERSION_OK
 from nora.infra.version import VersionManifest
 from nora.infra.vision import MediaComprehender, VisionClient
@@ -222,6 +223,9 @@ def _unit_rooms(allowlist: Policy) -> dict[str, tuple[UnitRoom, ...]]:
                 # the SAME `policy.toml` field the note candidates pass reads,
                 # so the two passes cannot hold two ideas of what a room is.
                 description=conv.description,
+                # The same two facts `origin_rooms` keys `remind`'s refusal on,
+                # so the notes list and the refusal cannot disagree.
+                proactive=conv.proactive, ids=tuple(sorted(conv.ids)),
             ),
         )
     return rooms_by_unit
@@ -2067,9 +2071,9 @@ async def build_dependencies(
                 cfg.search.provider,
                 cfg.search.api_key_env,
             )
-    # `social_fetch` (DEC-151) and `instagram_read` (design/instagram-
-    # adoption/18) get ONE `SocialProvider` — `SocialRouter` — and the
-    # registry stays unaware that there are two backends under it
+    # `social_fetch` (DEC-151), `instagram_read` and `instagram_search`
+    # (design/instagram-adoption/18) get ONE `SocialProvider` — `SocialRouter`
+    # — and the registry stays unaware that there are two backends under it
     # (design/instagram-adoption/08). Each backend is wired independently and
     # there is NO credential on either, so `enabled` alone is the gate (the
     # `[preview]` shape); an unwired backend answers `unavailable` for ITS OWN
@@ -2089,8 +2093,10 @@ async def build_dependencies(
         )
     # The INSTAGRAM backend serves every Instagram read the bridge has a route
     # for — `instagram/story` and `instagram/profile`, `instagram_read`'s two
-    # (design/instagram-adoption/15, /18, P5). Both rows take a PERSON, so the
-    # router needs a `SocialSubjectIndex`: `PersonsSubjectIndex` resolves
+    # (design/instagram-adoption/15, /18, P5), and `instagram/search`,
+    # `instagram_search`'s (P11), which takes free text and needs no index.
+    # The two read rows take a PERSON, so the router needs a
+    # `SocialSubjectIndex`: `PersonsSubjectIndex` resolves
     # person -> igid off `identity.toml` (kind-aware; none or several is
     # `ambiguous`) and answers Tier 0 off `policy.toml`'s group rooms (a `*`
     # room and `[dm]` never count). `SocialRouter` refuses to be constructed
@@ -2506,7 +2512,8 @@ async def build_dependencies(
         video_max_chunks=cfg.media.describe.video.chunk_max,
         media_join=media_join,
         describe_max_bytes=_describe_max_bytes(cfg),
-        blobs=blobs, descriptions=media_descriptions, search=search_client,
+        blobs=blobs, descriptions=media_descriptions,
+        video_readings=SqlVideoReadingStore(engine), search=search_client,
         social=social_client,
         weather=weather_client,
         presence=presence_store, circles=presence_circles,

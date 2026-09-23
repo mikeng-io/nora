@@ -97,10 +97,15 @@ func (s *Server) Routes() http.Handler {
 	// given a path of their own. The response says which upstream halves
 	// answered.
 	mux.HandleFunc("GET /accounts/{igid}", observability.Route("GET /accounts/{igid}", s.handleProfile))
-	// The only path to a story anywhere, and the only read VISIBLE to the
-	// person being read. A sub-resource of the account, because that is what
-	// it is.
+	// The only path to a story anywhere. Whether the author sees the view
+	// is unmeasured (design 04, 05 §Reading a story); Nora opens one only
+	// when asked. A sub-resource of the account, because that is what it is.
 	mux.HandleFunc("GET /accounts/{igid}/story", observability.Route("GET /accounts/{igid}/story", s.handleStory))
+	// One post, every item in it (17 P12). A post is its own noun: a link
+	// names it by shortcode, with no account in the path. On the new
+	// conventions (posts.go), and traced by PATTERN ONLY: the shortcode names
+	// somebody's post and never becomes a span attribute value.
+	mux.HandleFunc("GET /posts/{shortcode}", observability.PatternOnlyRoute("GET /posts/{shortcode}", s.handlePost))
 	mux.HandleFunc("POST /send", observability.Route("POST /send", s.handleSend))
 	mux.HandleFunc("POST /send-media", observability.Route("POST /send-media", s.handleSendMedia))
 	mux.HandleFunc("POST /react", observability.Route("POST /react", s.handleReact))

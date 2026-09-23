@@ -74,25 +74,28 @@ def test_the_exception_list_has_exactly_the_rows_the_design_records():
     removes its OpenCLI row (the per-verb cutover). A row appearing here
     without that change should cost somebody an edit to this line and a
     reason."""
-    assert frozenset({("instagram", "story"), ("instagram", "profile")}) == EXCEPTION_ROUTES
+    assert frozenset({
+        ("instagram", "story"), ("instagram", "profile"), ("instagram", "search"),
+    }) == EXCEPTION_ROUTES
 
 
-async def test_x_and_instagram_search_go_to_the_default():
-    """`instagram/search` is the one Instagram verb still on OpenCLI (until
-    P11). "It is the same network" does not move it early: a verb moves when
-    its bridge route works, not when a sibling's does."""
+async def test_x_goes_to_the_default_and_instagram_search_to_the_bridge():
+    """P11: `instagram/search` moved to the bridge with its OpenCLI row
+    deleted, so OpenCLI serves X only. The default is offered an Instagram
+    search here and must never be asked: a router that still sent it there
+    would be two backends for one read."""
     default = FakeSocialProvider({
         ("instagram", "search"): {"status": "ok", "text": "accounts"},
         ("x", "post"): {"status": "ok", "text": "a post"},
     })
-    instagram = FakeSocialProvider({("instagram", "story"): {"status": "ok"}})
+    instagram = FakeSocialProvider({("instagram", "search"): {"status": "ok"}})
     router = _router(default=default, instagram=instagram)
 
     assert (await router.read(**_IG_SEARCH))["status"] == "ok"
     assert (await router.read(**_X_POST))["status"] == "ok"
 
-    assert [c[:2] for c in default.calls] == [("instagram", "search"), ("x", "post")]
-    assert instagram.calls == []
+    assert [c[:2] for c in default.calls] == [("x", "post")]
+    assert [c[:3] for c in instagram.calls] == [("instagram", "search", "hk hiking")]
 
 
 async def test_both_instagram_rows_go_to_the_bridge_backend():
@@ -174,13 +177,10 @@ async def test_an_unwired_default_does_not_reach_the_exception_backend():
     """And the mirror image, so the isolation is proved in both directions:
     `[social] enabled = false` must not turn the Instagram backend into a
     general-purpose social reader. It serves its own rows only."""
-    instagram = FakeSocialProvider({
-        ("x", "post"): {"status": "ok"}, ("instagram", "search"): {"status": "ok"},
-    })
+    instagram = FakeSocialProvider({("x", "post"): {"status": "ok"}})
     router = _router(default=None, instagram=instagram)
 
     assert (await router.read(**_X_POST))["status"] == "unavailable"
-    assert (await router.read(**_IG_SEARCH))["status"] == "unavailable"
     assert instagram.calls == []
 
 
@@ -211,7 +211,7 @@ def test_a_row_the_exception_list_does_not_carry_is_refused_at_construction():
     with pytest.raises(ValueError, match="exception list"):
         SocialRouter(
             default=None,
-            exceptions={("instagram", "search"): FakeSocialProvider()},
+            exceptions={("x", "post"): FakeSocialProvider()},
         )
 
 
@@ -235,12 +235,13 @@ def test_every_row_a_backend_can_serve_says_how_its_subject_resolves():
     servable = set(READ_ONLY_ALLOWLIST) | EXCEPTION_ROUTES
     assert {(platform, what) for platform, what, _kind in SUBJECT_INPUTS} == servable
     # And the split is the one 07 and 18 describe: every OpenCLI row takes a
-    # string a human typed, every bridge row takes a PERSON — until P10 adds
-    # the typed handle and the pasted link.
+    # string a human typed; every bridge READ takes a PERSON (until P10 adds
+    # the typed handle and the pasted link), and the bridge's SEARCH takes
+    # the free text a person typed (P11).
     named = {(p, w) for p, w, k in SUBJECT_INPUTS if k == TARGET_NAMED}
     person = {(p, w) for p, w, k in SUBJECT_INPUTS if k == TARGET_PERSON}
-    assert named == set(READ_ONLY_ALLOWLIST)
-    assert person == EXCEPTION_ROUTES
+    assert named == set(READ_ONLY_ALLOWLIST) | {("instagram", "search")}
+    assert person == EXCEPTION_ROUTES - {("instagram", "search")}
     # Reach is keyed on the read, and only a story has one.
     assert frozenset({("instagram", "story")}) == TIER_ZERO_READS
 
@@ -256,17 +257,16 @@ async def test_a_named_row_is_allowed_and_is_never_resolved_through_the_index():
     byte. A status-only assertion is blind to both.
     """
     subjects = FakeSocialSubjectIndex(_SUBJECTS)
-    default = FakeSocialProvider({
-        ("x", "post"): {"status": "ok"},
-        ("instagram", "search"): {"status": "ok"},
-    })
-    router = _router(default=default, subjects=subjects)
+    default = FakeSocialProvider({("x", "post"): {"status": "ok"}})
+    instagram = FakeSocialProvider({("instagram", "search"): {"status": "ok"}})
+    router = _router(default=default, instagram=instagram, subjects=subjects)
 
     assert (await router.read(**_X_POST))["status"] == "ok"
     assert (await router.read(**_IG_SEARCH))["status"] == "ok"
 
     assert subjects.asked == []
-    assert [c[2] for c in default.calls] == ["12345", "hk hiking"]
+    assert [c[2] for c in default.calls] == ["12345"]
+    assert [c[2] for c in instagram.calls] == ["hk hiking"]
 
 
 async def test_a_person_row_reaches_the_backend_as_the_RESOLVED_subject():
@@ -293,11 +293,12 @@ async def test_a_person_row_reaches_the_backend_as_the_RESOLVED_subject():
 
 
 async def test_a_profile_has_no_reach_check():
-    """Reach is keyed on the READ. A profile read is invisible to the account
-    it reads, so it needs resolution alone (15 §"Resolution is not
-    authorization"); refusing it for an out-of-reach person would be a
-    boundary nobody set. The same person's story is refused — the control
-    that says the index DID say «out of reach»."""
+    """Reach is keyed on the READ. Only a story has a reach check (a privacy
+    choice: Nora opens only listed people's stories), so a profile needs
+    resolution alone (15 §"Resolution is not authorization"); refusing it
+    for an out-of-reach person would be a boundary nobody set. The same
+    person's story is refused — the control that says the index DID say
+    «out of reach»."""
     instagram = FakeSocialProvider({
         ("instagram", "story"): {"status": "ok"},
         ("instagram", "profile"): {"status": "ok"},
@@ -468,7 +469,7 @@ async def test_a_row_with_no_resolution_is_not_served():
     assert default.calls == []   # it was not served, not merely not answered
 
 
-@pytest.mark.parametrize("row", sorted(EXCEPTION_ROUTES))
+@pytest.mark.parametrize("row", sorted(EXCEPTION_ROUTES - {("instagram", "search")}))
 def test_a_person_keyed_backend_cannot_be_wired_without_a_subject_index(row):
     """Boot-time, for the same reason the exception list is: the only two
     fallbacks for «person row, no index» are allow — an unauthorized read, or
@@ -482,6 +483,19 @@ def test_a_person_keyed_backend_cannot_be_wired_without_a_subject_index(row):
             exceptions={row: FakeSocialProvider()},
             subjects=None,
         )
+
+
+def test_the_search_row_alone_needs_no_index():
+    """`instagram/search` is a bridge row with a `named` input: free text, no
+    person resolved and no reach checked, so wiring it needs no index. The
+    constructor's check is DERIVED from the two tables; a hand-listed «every
+    bridge row needs an index» would refuse this and read as safe."""
+    router = SocialRouter(
+        default=None,
+        exceptions={("instagram", "search"): FakeSocialProvider()},
+        subjects=None,
+    )
+    assert isinstance(router, SocialRouter)
 
 
 def test_the_default_backend_alone_needs_no_index():

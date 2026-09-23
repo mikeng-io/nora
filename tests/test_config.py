@@ -1052,7 +1052,9 @@ def test_every_budget_block_the_template_declares_is_pinned_with_its_reasoning(
     # below reaches anything at all. A ceiling and not a reservation: the extra
     # four are equally available to `about`, `ask_memory` and
     # `search_memory_workspace`.
-    assert proactive.max_memory_calls == 6
+    # 6 -> 16 (operator, 2026-09-24): 6 sat below `lookup_person` alone, so it
+    # was the number every memory verb ran under.
+    assert proactive.max_memory_calls == 16
     # And its per-tool ceiling, pinned 2026-09-17. `note_read = 3` on the
     # NATIVE_TOOLS table is a TAG TURN's number — a reply that reads a note or
     # two before answering — while this pass is asked for one decision per
@@ -1073,7 +1075,15 @@ def test_every_budget_block_the_template_declares_is_pinned_with_its_reasoning(
     # `lookup_person` 4 -> 12 (operator, 2026-09-18). 4 is another TAG TURN's
     # number; a decide pass resolves a whole roster's nicknames against the
     # person index, which is the reason the verb was granted here (#145).
-    assert proactive.tool_calls == {"note_read": 8, "lookup_person": 12}
+    #
+    # 2026-09-24 (operator): `note_read` 8 -> 16; `ask_memory`,
+    # `search_memory_workspace`, `about` 4 -> 8; `note_search` 2 -> 4; `remind`
+    # 2 -> 6. `remind` because a refused call is still a spent one — Langfuse
+    # `42f7e8bd` spent both on origin refusals and was stopped at the third.
+    assert proactive.tool_calls == {
+        "note_read": 16, "lookup_person": 12, "ask_memory": 8,
+        "search_memory_workspace": 8, "about": 8, "note_search": 4, "remind": 6,
+    }
     # NOTE-CANDIDATES, pinned 2026-09-17 — declared in the template only
     # because the DEPLOYMENT sets it (it was set live while chasing #291 and
     # the template did not follow, which is the drift

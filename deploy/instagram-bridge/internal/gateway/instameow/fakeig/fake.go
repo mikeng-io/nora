@@ -114,9 +114,10 @@ type IG struct {
 	// --- the story read ----------------------------------------------------
 	//
 	// reelIDs records every CALL's id list, not a flattened set, so the "one
-	// igid, never a batch" rule can actually be asserted. A story read is
-	// visible to its author, and a batched one would put Nora in several
-	// people's viewer lists to answer a question about one.
+	// igid, never a batch" rule can actually be asserted. A batched read
+	// would open several people's stories to answer a question about one
+	// (whether the author sees the view is unmeasured, design 04, 05
+	// §Reading a story).
 	ReelIDs [][]string
 	// reelResp overrides the answer. nil means "the measured reel".
 	ReelResp *responses.ReelInfoResponse
@@ -134,6 +135,21 @@ type IG struct {
 	SearchResults    []*slidetypes.SearchResult
 	SearchResultsSet bool
 	SearchErr        error
+
+	// --- the post read (UNMEASURED; see posts.go) ----------------------------
+	//
+	// MediaIDs records every media id FetchMedia was addressed with, and
+	// MediaShortcodes the referer shortcode beside it, so the shortcode
+	// decode is asserted against what went out.
+	MediaIDs        []string
+	MediaShortcodes []string
+	// MediaResp overrides the answer for ANY id. Unset, the fake answers only
+	// the three synthetic posts below, by media id, and 404s every other id
+	// exactly as the library reports a 404, so a wrong decode fails here the
+	// way it would against Instagram.
+	MediaResp *responses.FetchMediaResponse
+	MediaSet  bool
+	MediaErr  error
 }
 
 // The measured three-person room, as `Users[]` actually returns it: TWO rows,

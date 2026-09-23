@@ -3,7 +3,7 @@ type: design
 title: "The Bridge Is the Only Way In — every Instagram read and write goes through instagram-bridge's HTTP API"
 description: "Nora's Python side talks to Instagram through exactly one thing: instagram-bridge's HTTP API. OpenCLI leaves the Instagram rows entirely. How the bridge obtains a fact is the bridge's business; that the bridge is the only door is the rule."
 tags: [nora, instagram, bridge, boundary, opencli, decision]
-timestamp: '2026-09-23'
+timestamp: '2026-09-24'
 edges:
   - {dst: 00-overview.md, rel: parent, provenance: asserted}
   - {dst: 07-social-boundary-and-scope.md, rel: supersedes, provenance: asserted}
@@ -78,11 +78,10 @@ in the file at all.
 |---|---|---|
 | `instagram.com/<username>/` | username → igid → `GET /accounts/{igid}` | named (Tier 2): any account a person pasted |
 | `instagram.com/p/<shortcode>/`, `/reel/<shortcode>/` | `GET /posts/{shortcode}` | named (Tier 2) |
-| `instagram.com/stories/<username>/…` | username → igid → person (`Persons.resolve("instagram", igid)`) → `GET /accounts/{igid}/story` | **the room (Tier 0) only.** A story view appears in its author's viewer list; a link to a stranger's story is `refused`, never read |
+| `instagram.com/stories/<username>/…` | username → igid → person (`Persons.resolve("instagram", igid)`) → `GET /accounts/{igid}/story` | **the room (Tier 0) only.** Nora opens only listed people's stories (a privacy choice; see the 2026-09-24 correction below); a link to a stranger's story is `refused`, never read |
 
 The username lookup is a search, invisible to the account it finds, so it may
-run before the Tier 0 decision; the story fetch, which is visible, runs only
-after it.
+run before the Tier 0 decision; the story fetch runs only after it.
 
 **A link's reach check runs on the igid the link named, never a re-derived
 one.** The forward path (`person_id` → `igid_for`) answers `ambiguous` for a
@@ -105,8 +104,15 @@ Two different questions, answered in two different places:
   `fbid`, which is the same decimal-string trap `02` records). A username or
   link resolves through the bridge.
 - **Authorization**: may Nora read it? Only `story` has a reach check (Tier
-  0), because only a story read is visible to the person read. `profile` and
-  `post` need resolution alone.
+  0). `profile` and `post` need resolution alone.
+
+  > **Reason corrected 2026-09-24 (P11 PR).** This line first said the
+  > reason was that only a story read is visible to the person read. That was
+  > never measured: whether the author sees the view is unmeasured (design
+  > 04, 05 §Reading a story). The rule stands for a different
+  > reason: Nora does not read the stories of people the operator has not
+  > listed, as a privacy choice (`18` §"A story is opened only when a person
+  > asks").
 
 **Tier 0's scope (operator, 2026-09-23).** "In a room Nora is in" means a
 person listed in the `persons` of at least one configured group room **on any
