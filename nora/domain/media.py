@@ -151,6 +151,19 @@ class MediaRef:
     # never rendered, never logged above debug, never fed to Honcho, and never
     # placed in model context. Only the adapter that wrote it reads it.
     fetch_token: str = ""
+    # READ ONLY WHEN ASKED. Custody is unchanged: the bytes are still copied
+    # and the handle is still rendered. What this turns off is the ingest
+    # comprehension pass (`nora/ingest/stages/media.py` schedules no subject
+    # for it), so no model looks at the bytes until `media_fetch` is called on
+    # the handle. Set by an adapter for an attachment that is a PREVIEW of
+    # something posted elsewhere rather than something a member sent: an
+    # Instagram reel, post or story shared into a room arrives with its
+    # thumbnail. The operator's rule (2026-09-24) is that Nora reads shared
+    # content only when tagged, never on every share. A property of the ref,
+    # never of the bytes: the same bytes later sent as a direct photo are
+    # read then, because the comprehension job keys on whether the ROW has
+    # been read, not on whether the bytes were ever seen.
+    on_demand: bool = False
 
 
 @dataclass(frozen=True)

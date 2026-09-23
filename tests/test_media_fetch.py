@@ -861,6 +861,69 @@ async def test_an_uncomprehended_medium_still_falls_through_to_a_live_read(wirin
     assert wiring["vision"].calls == 1
 
 
+async def test_a_shared_items_thumbnail_is_looked_at_only_when_asked(wiring):
+    """The on-demand half of the 2026-09-24 operator rule, end to end: an
+    Instagram share is parsed, its thumbnail goes through REAL custody with the
+    REAL comprehension job wired, and no model reads it at ingest. Then
+    `media_fetch` on the handle the transcript shows finds no stored reading
+    and does a fresh look — the one real cost, paid when somebody asked."""
+    from dataclasses import replace
+
+    from nora.ingest.comprehension import MediaComprehension
+    from nora.ingest.stages import media as media_stage
+    from nora.platform.instagram.parser import parse_event
+    from nora.platform.registry import MediaSourceRegistry
+    from nora.testing import FakeMediaInterpreter, FakeMediaSource
+
+    thumb_url = "https://cdn.example/thumb.png"
+    event = {
+        "kind": "message", "room_id": "1000000000000001",
+        "message_id": "mid.$synthetic", "from_me": False,
+        "sender": {"fbid": "2000000000000002", "username": "a_member"},
+        "timestamp_ms": 200, "text": "", "mentions": [], "reply_to": None,
+        "shared": {
+            "author": "someaccount",
+            "target_url": "https://www.instagram.com/reel/SynthReel01/?is_clips_ad=0",
+            "typename": "SlideMessagePortraitXMA",
+        },
+        "media": {"kind": "image", "url": thumb_url},
+    }
+    # Bound to this fixture's conversation, which is what `media_fetch`
+    # resolves handles within.
+    message = replace(parse_event(event), conversation_id="g1")
+    source = FakeMediaSource({f"attachment:{thumb_url}": RED_PNG})
+    source.platform = "instagram"
+    index = FakeMediaObjectStore()
+    interpreter = FakeMediaInterpreter()
+    spawned: list = []
+    job = MediaComprehension(
+        blobs=wiring["blobs"], store=index, interpreter=interpreter,
+        memory=FakeMemoryStore(), metrics=Metrics(), spawn=spawned.append,
+    )
+
+    staged = await media_stage.run(
+        message=message, sources=MediaSourceRegistry([source]),
+        blobs=wiring["blobs"], media_store=index, metrics=Metrics(),
+        comprehension=job,
+    )
+    for coro in spawned:
+        await coro
+    await wiring["store"].append(message=staged)
+    handle = staged.media_blobs[0].handle
+
+    # Nothing read it at ingest, and the index row claims nothing.
+    assert interpreter.calls == []
+    assert spawned == []
+    row = await index.get(sha256=staged.media_blobs[0].sha256)
+    assert row is not None and not row.comprehended
+    assert staged.body.endswith(f"[image {handle}]")
+
+    out = await _call(wiring["build"](media_store=index), code=handle)
+
+    assert out["status"] == "ok"
+    assert wiring["vision"].calls == 1, "asked, so it was looked at — once"
+
+
 async def test_layer_2_reads_again_with_the_question_and_bypasses_the_cache(wiring):
     """A question the stored reading does not answer. The cache is not consulted
     (a hit would answer somebody else's question) and the vision call carries

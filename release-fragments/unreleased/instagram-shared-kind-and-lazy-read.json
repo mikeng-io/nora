@@ -1,0 +1,14 @@
+{
+  "type": "change",
+  "summary": "An Instagram reel, post or story shared into a group now reads as what it is, with a clean link, and its thumbnail is looked at only when somebody asks Nora about it.",
+  "details": [
+    "The transcript line names the kind — shared reel, shared story or shared post — read from the link's path, because Instagram sends the same type name for a reel and a story. A story used to be called a post.",
+    "The link is carried in the line, rebuilt as a plain instagram.com address with no query string. The query held tracking flags and, on a story, the owner's account id; none of it reaches Nora's context.",
+    "The thumbnail that comes with a share is still kept, so Nora can look at it when tagged, but it is no longer described by the vision model the moment it arrives. Photos and videos people send directly are still read on arrival, as before."
+  ],
+  "limitations": [
+    "A share whose link is not one of the three recognised shapes, or fails validation, is labelled a shared post and carries no link. A story link is shown only when its username is the shared item's author.",
+    "An author that is not a plain Instagram handle is left out of the line, and square brackets in a caption are shown as round ones.",
+    "The first question about a shared thumbnail costs one vision call, where before the answer was already stored."
+  ]
+}
