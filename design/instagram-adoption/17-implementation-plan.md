@@ -120,13 +120,13 @@ decimal strings: the `02` trap again.
   committed once, read by **both** the Go handler tests and the Python client
   tests. A shape change on either side then fails on both.
 
-## P5: `instagram_fetch` (replaced 2026-09-23)
+## P5: `instagram_read` (replaced 2026-09-23)
 
-**Superseded by `18-instagram-fetch-tool.md`.** P5 originally rewired
+**Superseded by `18-instagram-read-and-search.md`.** P5 originally rewired
 `social_fetch`'s Instagram rows and docstring, and the operator then decided to
 split social reads per network. Changing `social_fetch` and then replacing it
 would have rewritten Nora's tool surface twice, so P5 is now: land
-`instagram_fetch` on the bridge path, and remove `social_fetch`'s Instagram
+`instagram_read` on the bridge path, and remove `social_fetch`'s Instagram
 rows in the same PR. It builds on P2–P4 and lands after the tool catalogue's
 #367 and #393. The routing-by-network, allowlist and `test_r86_…` changes this
 section used to list move into `18` §"Read-only, at three layers" unchanged
