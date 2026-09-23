@@ -831,9 +831,9 @@ async def test_describe_hands_its_window_count_to_the_ceiling(mimo, monkeypatch)
     seen: list[float] = []
     real_wait_for = asyncio.wait_for
 
-    async def spy(aw, timeout):
-        seen.append(timeout)
-        return await real_wait_for(aw, timeout)
+    async def spy(aw, **kwargs):
+        seen.append(kwargs["timeout"])
+        return await real_wait_for(aw, **kwargs)
 
     monkeypatch.setattr(client_module.asyncio, "wait_for", spy)
     client = _client(mimo, timeout_seconds=120.0, loop_timeout_seconds=360.0)
