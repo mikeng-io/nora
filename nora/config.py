@@ -784,18 +784,26 @@ class DescriberConfig(BaseModel):
     tokens 95 vs native 3164 for the same payload); Kimi's own endpoint accepts
     base64 video data-URIs and `ms://` file references.
 
+    `"opencode-go"` (DEC-197, 2026-09-24) builds a DIRECT client to OpenCode
+    Go's own endpoint, `opencode.ai/zen/go/v1`, for MiMo v2.6 Flash — which
+    reads video WITH its audio track and standalone audio, and which neither
+    OmniRoute (drops `video_url`) nor `api.kimi.com` (does not serve it) can
+    reach. That endpoint refuses any request without an `x-opencode-session`
+    header (`400 MissingSessionID`), so its client carries one per request.
+
     `api_key_env` NAMES the env var holding the direct lane's key (DEC-8):
-    the value never lands in config.toml. Empty with `provider="kimi"` falls
-    back to `KIMI_CODE_API_KEY`. A kimi provider whose key does not resolve is
-    a wiring gap — the modality answers `unavailable` («I couldn't check»),
-    never a half-built client call.
+    the value never lands in config.toml. Empty falls back to the provider's
+    own default — `KIMI_CODE_API_KEY` for `"kimi"`, `OPENCODE_GO_API_KEY` for
+    `"opencode-go"`. A direct provider whose key does not resolve is a wiring
+    gap — the modality answers `unavailable` («I couldn't check»), never a
+    half-built client call and never a silent fallback to OmniRoute.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
     model: str = ""
-    provider: Literal["omniroute", "kimi"] = "omniroute"
+    provider: Literal["omniroute", "kimi", "opencode-go"] = "omniroute"
     api_key_env: str = ""
     # ---- video chunking (issue #117) ---------------------------------------
     #

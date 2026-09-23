@@ -312,6 +312,11 @@ services:
       #   provider whose key is unset answers `unavailable`, never a silent
       #   omniroute fallback — but a deployment that enables video MUST set it.
       - KIMI_CODE_API_KEY=${KIMI_CODE_API_KEY:-}
+      #   OPENCODE_GO_API_KEY — the OpenCode Go DIRECT describer lane
+      #   (provider="opencode-go", DEC-197): MiMo v2.6 Flash for video with
+      #   sound and for audio. Same OPTIONAL posture: unset means those
+      #   modalities answer `unavailable`, never an omniroute fallback.
+      - OPENCODE_GO_API_KEY=${OPENCODE_GO_API_KEY:-}
       #   XAI_OAUTH_REFRESH_TOKEN — the xAI image-generation lane (DEC-137).
       #   Written by `nora xai-login` (device flow) into the host `.env`;
       #   passed through here so the container can refresh access tokens

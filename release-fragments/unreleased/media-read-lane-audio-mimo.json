@@ -1,0 +1,14 @@
+{
+  "type": "feature",
+  "summary": "Nora can hear video and audio now: a clip's sound reaches the describer, and speech in it is transcribed.",
+  "details": [
+    "Video is read with its audio track instead of silently stripped, so what people say in a clip or Reel is part of what Nora knows about it.",
+    "Audio files are described too, including a transcript of what is said, in the language it is spoken in.",
+    "Video and audio are read by MiMo v2.6 Flash through OpenCode Go directly, at far lower token cost and far more request headroom than the previous video model."
+  ],
+  "limitations": [
+    "Media Nora already read keeps its earlier, silent description; only media read from now on is heard.",
+    "The describer is asked to leave out phone, ID and account numbers it hears, but that is a request to the model, not a filter: a spoken number can still appear in a description.",
+    "A clip's windows are still read one after another, not in parallel."
+  ]
+}
