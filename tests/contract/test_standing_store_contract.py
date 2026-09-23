@@ -106,11 +106,9 @@ async def store(request: Any) -> AsyncIterator[_StandingStore]:
 def _standing(body: str = "They are picking a restaurant.", *,
               platform: str = PLATFORM, conversation_id: str = CONV,
               fold_count: int = 1, updated_at: int = NOW,
-              consumed_verdict_tag: str | None = None,
               last_folded_row_id: int | None = None) -> Standing:
     return Standing(platform=platform, conversation_id=conversation_id,
                     body=body, fold_count=fold_count, updated_at=updated_at,
-                    consumed_verdict_tag=consumed_verdict_tag,
                     last_folded_row_id=last_folded_row_id)
 
 
@@ -143,41 +141,13 @@ async def test_a_second_write_revises_rather_than_adding_a_second_row(store):
     assert row.updated_at == NOW + 1000
 
 
-async def test_the_watermark_round_trips_including_its_null(store):
-    """S2's acted-on watermark, both states. `None` is the ONLY "nothing
-    consumed" and must survive the round trip as itself: a null that read back
-    as an empty string would compare unequal to `None` and equal to another
-    empty string, which is a watermark satisfiable by accident.
-
-    A store that dropped the column entirely would still pass the write/read
-    tests above — it round-trips everything else — and the trigger would then
-    re-derive from the same verdict every turn against a watermark that is
-    always `None`. That is the latch, restored below the type.
-    """
-    await store.write(standing=_standing(consumed_verdict_tag=None))
-    row = await store.read(platform=PLATFORM, conversation_id=CONV)
-    assert row is not None and row.consumed_verdict_tag is None
-
-    await store.write(standing=_standing(consumed_verdict_tag="tag-consumed"))
-    row = await store.read(platform=PLATFORM, conversation_id=CONV)
-    assert row is not None and row.consumed_verdict_tag == "tag-consumed"
-
-    # And BACK to null. The upsert names the column in its `set_`, so a
-    # revision that consumed nothing clears it rather than silently keeping
-    # the previous row's value — "correct because the writer happens to agree
-    # with what is there" is what stops being true the first time it does not.
-    await store.write(standing=_standing(consumed_verdict_tag=None))
-    row = await store.read(platform=PLATFORM, conversation_id=CONV)
-    assert row is not None and row.consumed_verdict_tag is None
-
-
 async def test_the_row_id_watermark_round_trips_including_its_null(store):
     """The fold's row-id watermark (design/standing-watermark/20), both states.
     `None` is the ONLY "never folded" — the cold-start case, which reads from
     the beginning — and must survive the round trip as itself: a null that read
     back as `0` would compare unequal to `None` and equal to another `0`, which
     is a watermark satisfiable by accident (the same argument migration 0037
-    made for `consumed_verdict_tag`).
+    made for `consumed_verdict_tag`, a column nothing reads since 2026-09-24).
 
     A store that dropped the column would pass the write/read tests above —
     it round-trips everything else — and the event trigger would then re-read

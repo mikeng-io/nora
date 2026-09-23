@@ -160,7 +160,10 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   through `StandingStore`, and it passes the same egress screen a reply does
   before it is written. Standing is an **input** to a later turn, never an
   output of the current one — and it is rewritten each time and keeps
-  nothing, so anything that must survive belongs in a note.
+  nothing, so anything that must survive belongs in a note. Since
+  2026-09-24 it is also where she keeps what she found on a turn and has
+  not yet given the room — the compact of her work in that room
+  (design/standing-compact/) — folded by ONE model call.
 
   Do not read "standing" as status or as a queue position; it is a *stance*.
   And do not read `NoteStore.standing()` — the query for not-retired notes —
@@ -207,7 +210,10 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   `StandingStore`, and it passes the same egress screen a reply does before it
   is written — a screen applied before the write, not before the read, because
   a screen a cache hit skips is not a screen. Standing is an **input** to a
-  later turn, never an output of the current one.
+  later turn, never an output of the current one. Since 2026-09-24 it is also
+  where she keeps what she found on a turn and has not yet given the room —
+  the compact of her work in that room (design/standing-compact/) — folded by
+  ONE model call.
 
   Do not read "standing" as status or as a queue position; it is a *stance*.
 

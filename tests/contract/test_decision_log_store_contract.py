@@ -21,7 +21,8 @@ implementation, *including a test fake*, without a suite both pass.
     rows for the same input and a contract suite cannot see it.
 
 **And it goes AROUND the domain type where the database is the real guard**
-(`test_turn_verdict_store_contract`'s lesson): `object.__setattr__` builds a row
+(`test_turn_verdict_store_contract`'s lesson, a suite deleted 2026-09-24 with
+the verdict): `object.__setattr__` builds a row
 with an over-long reason and an unknown writer, because the CHECKs exist for a
 writer that got a value some other way and a fake without them is MORE
 PERMISSIVE than Postgres.

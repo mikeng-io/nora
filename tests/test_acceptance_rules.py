@@ -449,15 +449,10 @@ RULE_TESTS = {
     # store calls entirely), and this is the gate that now refuses exactly that
     # arithmetic. The hang tests and the window pair are named in the index row.
     "R-70": "test_the_standing_slot_hold_refuses_a_budget_the_timeouts_do_not_fit",
-    # R-71 names the never-rewritten test rather than the position-survives
-    # one: both are in the index row, but a rewritten verdict is the failure
-    # the SPLIT from `Standing` exists to prevent, and it is the one a future
-    # writer reintroduces by adding a convenient upsert.
-    "R-71": "test_a_second_verdict_for_one_turn_is_refused",
-    # R-72 names the PRECEDENCE test rather than either trigger: getting the
-    # order backwards is the failure that silently corrupts §6's own reading of
-    # whether the trigger has degraded into a clock.
-    "R-72": "test_ungrounded_wins_when_both_conditions_hold",
+    # R-71 and R-72 were removed 2026-09-24: their subjects — the per-turn
+    # `TurnVerdict` and the two re-derivation triggers it fed — were deleted
+    # with the debrief's grounding verdict (design/standing-compact/). The
+    # index rows carry the DEPRECATED banner; the rules are not renumbered.
     # R-73's debrief/standing-fold enforcement (this repo's own
     # `test_an_identifier_never_reaches_the_collector` /
     # `test_a_coordinate_in_the_answer_never_reaches_the_collector`) was
@@ -483,16 +478,10 @@ RULE_TESTS = {
     # `generation` root and requires it exported anyway; the two drop tests and
     # the two engagement ones are named in the index row.
     "R-76": "test_a_generation_root_keeps_the_plumbing_underneath_it",
-    # R-81 (DEC-145): attribution is SOURCING. The debrief's grounding rubric
-    # asked whether a claim was supported by «something someone said in the
-    # transcript» and said in as many words that it was «not about
-    # correctness» — so a reply that put one person's words in another
-    # person's mouth passed, because the words WERE said, by someone. The
-    # named test asserts on the prompt the fold was actually given rather
-    # than on the markdown, because the clause only does anything where the
-    # model can read it; its second half reads the same prompt back for the
-    # speaker labels the rule presupposes. Next free number after R-80.
-    "R-81": "test_r81_a_quote_is_grounded_only_against_the_person_who_said_it",
+    # R-81 was removed 2026-09-24: the attribution-aware grounding rubric it
+    # guarded lived in the verdict's objective (`standing-verdict.md`), deleted
+    # with the verdict (design/standing-compact/). The index row carries the
+    # DEPRECATED banner; the rule is not renumbered.
     # R-82 names the fail-closed branch rather than the happy path, because it
     # is the clause a future change is most likely to "simplify": an empty
     # window LOOKS like an empty room, and `nothing_found` reads as the more
@@ -1058,8 +1047,7 @@ async def write_prior(store) -> None:
 
     await store.write(standing=Standing(
         platform="signal", conversation_id="g1", body="the carried position",
-        fold_count=3, updated_at=100, consumed_verdict_tag=None,
-        last_folded_row_id=10))
+        fold_count=3, updated_at=100, last_folded_row_id=10))
 
 
 async def test_r87_the_standing_fold_reads_since_a_row_id_watermark():
@@ -1102,8 +1090,8 @@ async def test_r87_the_standing_fold_reads_since_a_row_id_watermark():
 
     class _Objective:
         def objective_body(self, name: str) -> str:
-            assert name in {debrief.OBJECTIVE, debrief.VERDICT_OBJECTIVE}
-            return "OBJECTIVE-TEXT" if name == debrief.OBJECTIVE else "VERDICT-TEXT"
+            assert name == debrief.OBJECTIVE, name
+            return "OBJECTIVE-TEXT"
 
     store = InMemoryStandingStore()
     await write_prior(store)
@@ -1122,11 +1110,10 @@ async def test_r87_the_standing_fold_reads_since_a_row_id_watermark():
     )
     await debrief.run(
         trace=trace, platform="signal", store=store,
-        store_verdict=None, notes_sink=None, unit_of=lambda p, c: "ws",
+        notes_sink=None, unit_of=lambda p, c: "ws",
         client=client, objective=_Objective(), metrics=Metrics(),
         display_name="Nora", record_store=record, max_chars=1200, fold_batch=200,
-        timeout_seconds=5.0, store_timeout_seconds=5.0,
-        rebuild_after_folds=20, now_ms=60,
+        timeout_seconds=5.0, store_timeout_seconds=5.0, now_ms=60,
     )
     # The prompt must reach back past any 40-row window: rows 11-20 are the
     # stretch a window fold clipped, and they are the whole point.

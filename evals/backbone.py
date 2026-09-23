@@ -151,6 +151,15 @@ NORA_ERROR_2 = "nora.error_2"
 NORA_CHANGED = "nora.changed"
 NORA_JUDGED = "nora.judged"
 NORA_CHECKS_FAILED = "nora.checks_failed"
+#: The standing corpus (`design/standing-compact/20-verification.md` §1).
+#: `NORA_POSITION` is the position a fold wrote (`Outcome.position`), what
+#: `MeetsGrader` needs for `expect: fold`. `NORA_SHOWN` is what the subject's
+#: model call was given, verbatim — `--print-input` prints it, so two arms are
+#: diffed before a model is paid for. `NORA_JUDGED_WHY` is the judge's own
+#: rationale, so a FAIL says why without another run.
+NORA_POSITION = "nora.position"
+NORA_SHOWN = "nora.shown"
+NORA_JUDGED_WHY = "nora.judged_why"
 
 #: The three verdicts, carried in `EvaluationOutput.label`.
 #:
@@ -547,6 +556,7 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
     ERROR here — never a skip, never a case quietly run in an empty room
     (`11-the-sandbox-rebuild.md` §7.1).
     """
+    from evals.rebuilt.domain import Moment
     from evals.rebuilt.entry import ENTRY_POINTS
 
     port = ENTRY_POINTS[spec.entry]
@@ -649,6 +659,12 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
             exporter = _prefill_capture()
             exporter.clear()
             nora_case = _as_nora_case(case, spec, trigger=subject.cfg.engagement.trigger.text)
+            # The moment, RESOLVED: where it was read from and how the
+            # sandbox renumbered it — for an entry point whose input is a
+            # record of the moment rather than the room it happened in.
+            nora_case = dataclasses.replace(
+                nora_case, moment=Moment(source_url=spec.source_url, rows=seeded.rows),
+            )
             outcome = await port.drive(subject, nora_case, now_ms=seeded.now_ms)
             blocks_empty = _blocks_empty(exporter)
             # BEFORE the judge: these describe what the SUBJECT spent, and a
@@ -664,10 +680,28 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
             _SPEND.append(spend)
             outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)
 
+            judged_why = ""
+            # The standing fold (`design/standing-compact/20-verification.md`
+            # §1): the judged thing is the POSITION a fold wrote, against the
+            # case's one stated property, read over the turn's RECORD — the
+            # same evidence on both arms of a comparison. Selected by the
+            # port's declared `judged_on`, not by its name.
+            if (
+                spec.judge is not None and port.judged_on == "position"
+                and outcome.position is not None and outcome.error is None
+            ):
+                judgement = await spec.judge.grade_position(
+                    position=outcome.position, evidence=outcome.evidence,
+                    kind=str(md.get("kind") or ""), prop=str(case.expected_output or ""),
+                )
+                judged_why = judgement.why
+                outcome = dataclasses.replace(
+                    outcome, judged=judgement.verdict, error=judgement.error,
+                )
             # S3/S9 (`10-the-scenario-map.md` §3) — judged HERE, while the
             # subject is alive, because the judge needs the doctrine she
             # actually ran ON, not a copy read off disk.
-            if spec.judge is not None and outcome.said and outcome.error is None:
+            elif spec.judge is not None and outcome.said and outcome.error is None:
                 from evals.rebuilt.grading import criteria_for
 
                 judgement = await spec.judge.grade(
@@ -718,6 +752,9 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                     EnvironmentState(name=NORA_JUDGED, state=outcome.judged),
                     EnvironmentState(name=NORA_CHECKS_FAILED, state=outcome.checks_failed),
                     EnvironmentState(name=NORA_TOOLS, state=tools_called),
+                    EnvironmentState(name=NORA_POSITION, state=outcome.position),
+                    EnvironmentState(name=NORA_SHOWN, state=outcome.shown),
+                    EnvironmentState(name=NORA_JUDGED_WHY, state=judged_why),
                     *repeat_state,
                 ],
             }
@@ -800,6 +837,9 @@ def nora_task(spec: Spec):
                     EnvironmentState(name=NORA_JUDGED, state=""),
                     EnvironmentState(name=NORA_CHECKS_FAILED, state=()),
                     EnvironmentState(name=NORA_TOOLS, state=None),
+                    EnvironmentState(name=NORA_POSITION, state=None),
+                    EnvironmentState(name=NORA_SHOWN, state=""),
+                    EnvironmentState(name=NORA_JUDGED_WHY, state=""),
                 ],
             }
 
@@ -1100,19 +1140,22 @@ class MeetsGrader(Evaluator):
             written=state_of(data, NORA_WRITTEN) or 0,
             checks_failed=tuple(state_of(data, NORA_CHECKS_FAILED) or ()),
             judged=state_of(data, NORA_JUDGED) or "",
+            position=state_of(data, NORA_POSITION),
             error=error or None,
         )
         verdict = outcome.meets(expect)
+        why = state_of(data, NORA_JUDGED_WHY) or ""
+        why = f" — judge: {why}" if why else ""
         if verdict is None:
             reason = (
                 f"the case did not run: {error}" if error
                 else f"ungradable: judged={outcome.judged!r}, expect={expect!r}"
             )
-            return [self._out(ERROR, 0.0, reason)]
+            return [self._out(ERROR, 0.0, reason + why)]
         return [
-            self._out(PASS, 1.0, f"met expect={expect!r}")
+            self._out(PASS, 1.0, f"met expect={expect!r}{why}")
             if verdict
-            else self._out(FAIL, 0.0, f"did not meet expect={expect!r}")
+            else self._out(FAIL, 0.0, f"did not meet expect={expect!r}{why}")
         ]
 
     async def evaluate_async(self, data: EvaluationData) -> list[EvaluationOutput]:

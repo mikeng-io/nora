@@ -59,4 +59,8 @@ def test_judged_corpora_are_reachable_by_class():
     otherwise `--class S3` silently runs nothing."""
     s3 = set(_corpora_for(_args(cls=["S3"])))
     s9 = set(_corpora_for(_args(cls=["S9"])))
-    assert s3 | s9 == JUDGED_CORPORA
+    # `standing` (the fold, design/standing-compact) is judged and sits in S6,
+    # the class of what a WRITE keeps.
+    s6 = set(_corpora_for(_args(cls=["S6"])))
+    assert s3 | s9 | (s6 & JUDGED_CORPORA) == JUDGED_CORPORA
+    assert "standing" in s6

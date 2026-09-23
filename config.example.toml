@@ -1525,20 +1525,6 @@ event_enabled = true
 # ceil(history / fold_batch) times across messages; this caps how many of those
 # happen per spawn, and the next message's check continues.
 rollup_max_folds = 5
-# S2's ceiling: rebuild the position from the window instead of revising it,
-# once this many folds have accumulated SINCE THE LAST REBUILD. The other,
-# stronger trigger needs no key — it fires when the previous turn's verdict
-# says that turn was not grounded.
-#
-# This is the WEAKER one deliberately. "Time alone re-derives healthy
-# conversations for nothing": the ungrounded case catches the turn that
-# actually went wrong, and this only bounds how far drift accumulates when
-# nothing does. If nora_standing_rederivations_total comes back dominated by
-# trigger="ceiling", the trigger has degraded into a clock wearing a condition
-# — look at why the ungrounded case is not firing rather than raising this.
-#
-# 20 is a starting point, not a measured value.
-rebuild_after_folds = 20
 # The fold's own timeout, and it bounds the MODEL CALL TWICE — the client is
 # built with it, and the fold is wrapped in it. The number that matters is the
 # SUM, checked at startup by max_slot_hold_seconds below rather than worked out
@@ -1547,8 +1533,8 @@ rebuild_after_folds = 20
 # store calls came to be unbounded — they were not in anyone's sum. Raise this
 # against nora_debrief_seconds, not against a hunch.
 timeout_seconds = 20.0
-# The bound on the stage's FIVE STORE CALLS: the trigger's verdict read, the
-# prior position, the revised position, the turn verdict, and the note
+# The bound on EACH of the stage's five store calls: the prior position, the
+# watermark batch, the media join, the revised position, and the note
 # proposals. It exists because they had none: the engine sets no
 # command_timeout and all of them run while the conversation's slot is HELD, so
 # a connection hanging mid-query during the post-reply fold wedged that
@@ -1581,8 +1567,10 @@ store_timeout_seconds = 5.0
 # new: 45, not over), which makes the merge safe in ANY order rather than only
 # in the intended one. It is a CEILING an operator sets, not a measurement — a
 # loose ceiling is true, and this comment is where the real bound is stated.
-# `StandingConfig`'s own default is already 45, so a config omitting this key
-# gets the tight value; only the shipped files are held.
+# `StandingConfig`'s own default is 60 (45 -> 60 on 2026-08-28, kept at 60 on
+# 2026-09-08 by the operator — see the default's own comment in
+# `nora/config.py`), so a config omitting this key gets that value; only the
+# shipped files are held at the tighter 45.
 #
 # The follow-up that drops both files to 45 is safe once the image carrying the
 # new validator is deployed and read back (cold review, 2026-08-28).

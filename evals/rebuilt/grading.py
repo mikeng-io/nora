@@ -31,8 +31,11 @@ from typing import Literal
 from openai import AsyncOpenAI
 
 from .judge import (
+    POSITION_CRITERION,
     SAFETY_CRITERION,
     _build_judge_prompt,
+    _build_position_prompt,
+    criterion_rationales,
     criterion_verdict,
     majority_verdict,
 )
@@ -86,6 +89,11 @@ class Judgement:
     samples: tuple[str, ...]
     error: str | None = None
 
+    @property
+    def why(self) -> str:
+        """The distinct rationales the samples gave for this criterion."""
+        return " | ".join(dict.fromkeys(criterion_rationales(self.samples, self.criterion)))
+
 
 @dataclass(frozen=True, slots=True)
 class Judge:
@@ -128,6 +136,20 @@ class Judge:
             tag_input=asked, reply_text=said, doctrine_text=doctrine,
             source_data=source, extra_criteria=extra,
         )
+        return await self._draw(prompt, criterion)
+
+    async def grade_position(
+        self, *, position: str, evidence: str, kind: str, prop: str,
+    ) -> Judgement:
+        """One written standing position, the case's ONE property, `samples`
+        draws, majority verdict — the same fail-closed reading `grade` makes,
+        over `evals.rebuilt.judge._build_position_prompt`."""
+        prompt = _build_position_prompt(
+            kind=kind, prop=prop, evidence=evidence, position=position,
+        )
+        return await self._draw(prompt, POSITION_CRITERION)
+
+    async def _draw(self, prompt: str, criterion: str) -> Judgement:
         raws: list[str] = []
         client = self._client()
         try:
