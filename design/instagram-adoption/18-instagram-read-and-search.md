@@ -41,6 +41,13 @@ tools for one network map onto one backend.
 > (27,044 → 26,965, against master at `4cc8f89b`). The split is still the
 > decision; what it costs is now measured rather than assumed away. 05 §3a
 > names this tool set's growth as a re-measure trigger.
+>
+> **P11 (2026-09-24), the same method:** `instagram_search` costs **186**
+> tokens resident, and `social_fetch` dropped 486 → 454 by losing its
+> Instagram clause, so the resident total moved **+154** (27,246 → 27,400,
+> against master at `71166ba5`). The text Strands sends for
+> `instagram_search` is 123 tokens (Level 3 ceiling 320), with no dash and no
+> non-Latin character in its spec.
 
 > **ADR 0015 (proposed 2026-09-24), met from the first commit.** Both tools
 > declare `level=3` on `NativeTool` (the field was added here, ADR 0015 §3).
