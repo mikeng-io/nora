@@ -376,6 +376,9 @@ class FakeAgentRunner:
         guard.register_hooks(hooks)
         if tool_call_log is not None:
             tool_call_log.register_hooks(hooks)
+        # After the guard, as `factory.create_agent` orders them.
+        for tool_hook in kwargs.get("tool_hooks") or ():
+            tool_hook.register_hooks(hooks)
         model = ScriptedModel()
         self.models.append(model)
         agent = _Agent(model)

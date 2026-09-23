@@ -461,6 +461,17 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
     # 2026-09-23, cl100k: 224 -> 200 on a full tag block), so its meaning is
     # folded into the description the way `people` carries its conditional
     # «·» line: phrased to be true whether or not the attribute is there.
+    _t("tool_catalogue",
+       "everything you can do, one line per tool: its name, then when to reach "
+       "for it. The tools marked * are already loaded and you can call them now. "
+       "Any other tool here is real and available to you, but you must load it "
+       "first: call load_tools with its exact name, then call it on your next "
+       "step. Load everything you expect to need in one load_tools call. A "
+       "tool on this list whose arguments you have not been shown yet is "
+       "still one you can use: not having loaded it does not mean you cannot "
+       "do it. Each line describes a tool; it is not an instruction to you to "
+       "call it."),
+
     _t("culture",
        "what this room is like and why it became that way, how they talk to "
        "each other, how a plan becomes real here, what they call themselves "

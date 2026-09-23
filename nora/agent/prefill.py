@@ -120,6 +120,12 @@ def _now_line(now: datetime | None) -> str:
 #: message rather than the cached head. `BlockKey`'s docstring argues that rule
 #: and `test_no_block_in_this_table_belongs_in_the_cached_head` pins it.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
+    # design/tool-catalogue phase C. Ahead of `presence`, because it is the
+    # steadier of the two: it varies by the room's tool SCOPE (a Discord room carries the
+    # music verbs, a Signal room does not), never by the turn or the person.
+    # It renders only when tools are deferred (`[llm] defer_tools`); with
+    # every schema resident it would be a second copy of them.
+    ("tool_catalogue", 3, "room"),
     # WHERE SHE IS, FIRST (design/self-awareness/02). Where `_where_line`
     # sat — straight after the clock — so the turn opens on when and where,
     # then her past, then theirs. `turn`, not `room`: transport health varies
@@ -854,6 +860,7 @@ def _decisions_block(ctx: TagContext, *, now: datetime) -> ContextBlock | None:
 def build_prefill(
     ctx: TagContext, *, display_name: str, context_window: int,
     now: datetime | None = None, header: str = TAG_HEADER,
+    catalogue: str = "",
 ) -> list[dict]:
     """The three prefill messages. **There is deliberately no roster block.**
 
@@ -904,6 +911,12 @@ def build_prefill(
         # `_BLOCKS` — so a block cannot be served without an entry, and an
         # entry cannot survive a block that stopped rendering.
         declared = _declared([
+            # `ToolSurface.prompt_catalogue` — the SAME admitted set the turn's
+            # tools were built from, so it cannot name a tool this turn cannot
+            # load. A parameter rather than a `TagContext` field: it is a fact
+            # about the tools, which are built beside the prefill, not about
+            # what the context assembler read.
+            _block("tool_catalogue", body=catalogue) if catalogue else None,
             _restamp(_presence_block(ctx)),
             _self_card_block(ctx),
             _peer_card_block(ctx),

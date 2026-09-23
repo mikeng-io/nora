@@ -1651,20 +1651,20 @@ async def test_the_granted_verbs_are_actually_BUILT_for_a_culture_key(cfg, tmp_p
     # `Room(platform="", roster_source=None)`, where every one of them answers
     # `unavailable` forever. A green name list IS the defect.
     captured: dict[str, object] = {}
-    real_build = source._registry.build
+    real_surface = source._registry.surface
 
     def _spy(**kw: object) -> object:
         captured.update(kw)
-        return real_build(**kw)
+        return real_surface(**kw)
 
-    source._registry.build = _spy
+    source._registry.surface = _spy
     try:
         built = source.build(
             key="g1", names=frozenset(culture.tools), unit=None,
             adaptor="culture", grant=deps.dreamer_runtime.grant_for("culture"),
         )
     finally:
-        del source._registry.build
+        del source._registry.surface
 
     names = {
         getattr(t, "tool_name", None) or getattr(t, "__name__", "") for t in built

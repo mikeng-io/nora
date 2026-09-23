@@ -14,6 +14,7 @@ tool and convert it.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -308,6 +309,13 @@ def adapt(spec: ToolSpec) -> Any:
     declaring no contract the two are the same object, so nothing is wrapped
     that has nothing to check.
     """
+    # A tool that must act on its OWN agent — `load_tools`, which registers
+    # shelf tools on the running agent's registry — declares a `tool_context`
+    # parameter, and Strands injects the context there (and leaves it out of
+    # the model-facing schema) only when told to. Read off the signature
+    # rather than declared on `ToolSpec` because the parameter IS the
+    # declaration: a closure without it could not use the context anyway.
+    wants_context = "tool_context" in inspect.signature(spec.call).parameters
     return _strands_tool(  # type: ignore[call-overload]
         # Strands' own stubs only declare `tool(func)` and `tool(**kwargs) ->
         # decorator` as overloads; calling it with BOTH a positional func and
@@ -318,4 +326,5 @@ def adapt(spec: ToolSpec) -> Any:
         name=spec.name,
         description=spec.description or None,
         inputSchema={"json": spec.schema} if spec.schema else None,
+        context=wants_context,
     )

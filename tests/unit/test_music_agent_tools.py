@@ -8,6 +8,7 @@ never reaching it on the wrong platform or with no tagger."""
 from __future__ import annotations
 
 from nora.agent.room import Room
+from nora.agent.surface import ToolScope
 from nora.agent.tools import build_tool_specs
 from nora.domain.models import PersonRef
 from nora.domain.ports import MusicToolOutcome
@@ -82,10 +83,14 @@ async def test_music_verbs_are_absent_off_discord():
     shipped on a non-Discord catalog — the body gate (`unavailable`) was
     the old shape; a Signal room never sees them now (token saving, decided
     with `set_music_volume`)."""
-    tools = _specs(platform="signal", music=_FakeBridge())
+    # The cut is `ToolScope`'s since design/tool-catalogue phase B — the one
+    # scope every loop's tools pass through; `build_tool_specs` builds every
+    # closure and the scope admits.
+    scope = ToolScope(platform="signal")
     for verb in ("play_music", "skip_music", "top_music", "stop_music",
                  "music_status", "set_music_volume"):
-        assert verb not in tools
+        assert not scope.admits(verb)
+        assert ToolScope(platform="discord").admits(verb)
 
 
 async def test_play_music_is_unavailable_with_no_bridge_wired():
@@ -154,8 +159,7 @@ async def test_skip_music_reports_nothing_found():
 
 
 async def test_top_music_is_absent_off_discord():
-    tools = _specs(platform="signal")
-    assert "top_music" not in tools
+    assert not ToolScope(platform="signal").admits("top_music")
 
 
 async def test_top_music_reports_nothing_found():

@@ -199,3 +199,40 @@ def test_style_guidance_is_labelled(tool: str, doc: str) -> None:
             "(SHOULD/MAY). Long descriptions must structure guidance behind "
             "register labels (ADR 0007 §2)."
         )
+
+
+#: A catalogue line's token ceiling — `tests/unit/test_tool_catalogue.py`'s
+#: `LINE_CEILING`, restated here because this is the test that holds the
+#: SOURCE of that line to it. The two must agree.
+L1_LINE_CEILING = 40
+
+
+@pytest.mark.parametrize(
+    ("tool", "doc"),
+    _model_facing_docstrings(),
+    ids=[t for t, _ in _model_facing_docstrings()],
+)
+def test_the_opening_paragraph_is_an_l1(tool: str, doc: str) -> None:
+    """Policy 4's L1 — «what + when» — is the docstring's FIRST PARAGRAPH, and
+    that paragraph is the tool's catalogue line (`nora.agent.registry.
+    _opening`, design/tool-catalogue/01). So it must carry the when-to-call
+    clause ITSELF, not somewhere in the next eight lines, and fit a line.
+
+    Measured when this was added (2026-09-23): 24 of 55 openings carried a
+    when-clause and one ran to 136 tokens. `test_opening_has_a_when_to_call_
+    clause` above passed all 55 because it reads eight lines, not the unit
+    the catalogue is cut from — a gate on the wrong span.
+    """
+    import tiktoken
+
+    opening = " ".join(doc.strip().split("\n\n")[0].split())
+    assert WHEN_TRIGGERS.search(opening), (
+        f"{tool}: the first paragraph (its catalogue line) says what the tool "
+        f"does but not when to call it: {opening!r}"
+    )
+    tokens = len(tiktoken.get_encoding("cl100k_base").encode(f"- {tool} — {opening}"))
+    assert tokens <= L1_LINE_CEILING, (
+        f"{tool}: the first paragraph is {tokens} tokens as a catalogue line "
+        f"(ceiling {L1_LINE_CEILING}). Split it: L1 first, the rest after a "
+        "blank line."
+    )

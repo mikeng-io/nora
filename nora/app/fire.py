@@ -784,6 +784,7 @@ class FirePath:
         limits: dict[str, Any],
         timeout_seconds: float,
         clock: Callable[[], datetime],
+        defer_tools: bool = False,
         media_join: MediaJoin | None = None,
         quote_window: QuoteWindow | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
@@ -934,6 +935,7 @@ class FirePath:
         self._ai_peer = ai_peer
         self._context_window = context_window
         self._limits = limits
+        self._defer_tools = defer_tools
         # `[heartbeat] timeout_seconds`, NOT `[llm] timeout_seconds`. A fire
         # turn has nobody waiting on it, so the tag path's 60s — chosen because
         # a human is staring at a group chat — is the wrong bound here.
@@ -1963,7 +1965,9 @@ class FirePath:
                 # the honest state (R-21), not a degraded one.
                 tagger=tagger, self_ids=self_ids,
             )
-            tools = self._registry.build(
+            surface = self._registry.surface(
+                # design/tool-catalogue phase C: `[llm] defer_tools`.
+                defer=self._defer_tools,
                 store=self._records, conversation_id=occasion.conversation_id,
                 conversation_type=occasion.conversation_type, persons=self._persons,
                 honcho=self._memory, deliverer=handle.deliverer, room=room,
@@ -1990,6 +1994,7 @@ class FirePath:
                 ctx, display_name=self._display_name,
                 context_window=self._context_window,
                 now=now, header=occasion.header(tagger, now),
+                catalogue=surface.prompt_catalogue,
             )
             # `tagger.name`, NOT `Persons.display_name(ctx.message)` — that reads
             # `sender_id`, which is blank here, and would attribute the request to
@@ -2005,7 +2010,9 @@ class FirePath:
             )
 
             failure, stop_reason, final_text = await self._invoke(
-                doctrine=doctrine, tools=tools, pre_fill=pre_fill,
+                doctrine=doctrine, tools=surface.tools, limits=surface.limits(self._limits),
+                tool_hooks=surface.hooks,
+                pre_fill=pre_fill,
                 guard=handle.guard, tool_call_log=handle.tool_call_log,
                 reasoning_watch=handle.reasoning_watch,
                 tag_message=tag_message, ctx=ctx,
@@ -2155,6 +2162,8 @@ class FirePath:
         *,
         doctrine: Any,
         tools: list[Any],
+        limits: dict[str, Any],
+        tool_hooks: tuple[Any, ...],
         pre_fill: list[dict[str, Any]],
         guard: ReplyGuard,
         tool_call_log: Any = None,
@@ -2236,7 +2245,8 @@ class FirePath:
                 runner.invoke(
                     doctrine=doctrine, tools=tools, pre_fill=pre_fill, guard=guard,
                     tool_call_log=tool_call_log, reasoning_watch=reasoning_watch,
-                    tag_message=tag_message, limits=self._limits, ctx=ctx,
+                    tool_hooks=tool_hooks,
+                    tag_message=tag_message, limits=limits, ctx=ctx,
                     trace_attributes=trace_attributes(ctx, doctrine),
                 ),
                 timeout=self._timeout_seconds,

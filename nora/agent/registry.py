@@ -26,7 +26,7 @@ policy) built once per process by the composition root.
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Container, Iterable, Mapping
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
@@ -66,7 +66,11 @@ from .mcp import McpToolGroup
 from .ports import ToolSpec, adapt
 from .relay import Relay
 from .room import Room
+from .shelf_hook import ShelfLoader
+from .surface import ToolScope, ToolShelf, ToolSurface
 from .tools import (
+    HOT_TOOLS,
+    LOADER_TOOL,
     NATIVE_TOOL_BUDGETS,
     NATIVE_TOOLS,
     EventsCollaborator,
@@ -81,26 +85,25 @@ from .whereis import Circle, PresenceReader
 log = logging.getLogger("nora.agent.registry")
 
 
-def _first_sentence(description: str) -> str:
-    """The first SENTENCE of a tool description, however it happens to wrap.
+def _opening(description: str) -> str:
+    """A tool description's OPENING — ADR 0007's L1: what it does and when to
+    call it — as one unwrapped line.
 
-    The obvious version — first line, then first sentence — is wrong, and was
-    wrong in production: a docstring whose opening sentence runs past the
-    column takes its line break mid-clause, so `search_memory` rendered as
-    «Find where something was actually SAID in this group's history — the» and
-    `search_memory_workspace` as «…across EVERY room of this». Five of
-    thirty-four lines were amputated that way, and two of them are the record
-    verbs the gate's «something settled here that nobody can now produce»
-    judgement depends on.
+    The opening is the description's FIRST PARAGRAPH, and that is a declared
+    unit, not a heuristic: `tests/test_tool_surface_policy.py::
+    test_the_opening_paragraph_is_an_l1` pins every tool's first paragraph to
+    carry a when-to-call clause and to fit a catalogue line. It replaced the
+    first SENTENCE (2026-09-23) because the first sentence held the «what» and
+    dropped the «when» — measured: 2 of 55 catalogue lines carried a
+    when-to-call clause, and a deferred turn then judged whether to call
+    `calculate` from «Work out a number exactly» without the «use this for ALL
+    arithmetic» that decides it.
 
-    So: unwrap first, then cut. A sentence is what ends the description or ends
-    at `. ` — the wrap is a typographic accident and must not be a boundary.
+    Unwrapped, because a line break inside the paragraph is a typographic
+    accident (`search_memory` once rendered cut mid-clause at the column).
     """
-    unwrapped = " ".join(description.split())
-    if not unwrapped:
-        return ""
-    head, sep, _ = unwrapped.partition(". ")
-    return (head if sep else unwrapped).strip().rstrip(".")
+    unwrapped = " ".join(description.strip().split("\n\n")[0].split())
+    return unwrapped.rstrip(".")
 
 
 class ToolRegistry:
@@ -421,6 +424,9 @@ class ToolRegistry:
         self._image_generator = image_generator
         self._image_refs_allowed = image_refs_allowed
         self._media_store = media_store
+        # `_descriptions()`'s memo — process-lifetime for the reason the
+        # transit catalogue is, and empty until the first catalogue renders.
+        self._described: dict[str, str] | None = None
 
     def budgets(self, *, allowed_mcp: frozenset[str] = frozenset()) -> Mapping[str, int]:
         """The per-tool call-count ceiling `ReplyGuard` enforces under R-7.
@@ -528,6 +534,12 @@ class ToolRegistry:
         return frozenset(
             name for name, spec in NATIVE_TOOLS.items()
             if spec.read_only and spec.output_contract == "three_state"
+            # The one named exception. `load_tools` is read-only and carries a
+            # status, so the derivation admits it — but what it reports is
+            # whether a SCHEMA loaded, and counting that as the turn having
+            # found something would let a successful load silence a reply
+            # after a lookup that came back empty (design/tool-catalogue/02).
+            and name != LOADER_TOOL
         )
 
     def read_only_tools(self) -> frozenset[str]:
@@ -595,15 +607,78 @@ class ToolRegistry:
         guidance; a reader deciding whether an answer could exist needs the
         verb and its subject, not its usage rules.
         """
-        described = {
-            entry["name"]: str(entry.get("description") or "")
-            for entry in self.catalog()
-        }
+        return "\n".join(self._digest_lines(self.read_only_tools() - {LOADER_TOOL}))
+
+    def _digest_lines(
+        self, names: Iterable[str], *, hot: Container[str] = frozenset()
+    ) -> list[str]:
+        """`- name — first sentence`, one line per name, sorted.
+
+        Extracted so `capability_digest` and `tool_catalogue` cannot drift into
+        two renderings of the same thing — the failure DEC-150 deleted the
+        capability block for. They differ only in WHICH names and whether a
+        name is marked resident; the line itself has one implementation.
+        """
+        described = self._descriptions()
         lines = []
-        for name in sorted(self.read_only_tools()):
-            first = _first_sentence(described.get(name, ""))
-            lines.append(f"- {name} — {first}" if first else f"- {name}")
-        return "\n".join(lines)
+        for name in sorted(names):
+            mark = "*" if name in hot else "-"
+            first = _opening(described.get(name, ""))
+            lines.append(f"{mark} {name} — {first}" if first else f"{mark} {name}")
+        return lines
+
+    def tool_catalogue(self, *, hot: Container[str] = HOT_TOOLS) -> str:
+        """EVERY tool, one line each — the index the model selects from.
+
+        The difference from `capability_digest` is the reader and therefore the
+        scope. The Relevance Gate asks «could an answer exist here?», so it
+        gets READ-ONLY tools: a verb that acts is never the reason a window is
+        worth a turn. This is read by the model that is about to CHOOSE, so it
+        gets all of them — leaving `send_reply` or `remind` out would be
+        leaving out a thing she can do.
+
+        A line answers ONE question: is this the tool I want, or not? It
+        carries the capability and, where a confusable sibling exists, the
+        discriminator against it — `where_is` says RIGHT NOW, `where_been` says
+        HAS BEEN. It carries no parameters, no arms, no `status` values and no
+        reporting rules; those are answered by the schema and by the result,
+        and a line that starts explaining how to CALL a tool has spent budget
+        belonging to the other 53 on a question nobody has asked yet.
+
+        DERIVED, like `capability_digest` and for the same reason: a tool added
+        to `NATIVE_TOOLS` appears here on the next start with nothing to edit.
+        An authored copy is a cache that goes stale in silence (DEC-150), which
+        is the whole argument for generating it.
+
+        FIRST SENTENCE, not a separate authored field. That was measured rather
+        than assumed: the existing first sentences already discriminate on
+        `find_parking`/`parking_status`, `search_memory`/
+        `search_memory_workspace` and `note_read`/`note_search`. Only
+        `where_is` needed repair, and it was repaired at the docstring rather
+        than worked around here — one source of truth per tool, not two.
+
+        `hot` marks the tools whose full schema is already resident, so the
+        model does not spend a round trip fetching what it already holds. It
+        defaults to the one declaration in `nora.agent.tools`; the parameter
+        exists so a test can render a catalogue without depending on today's
+        measured six.
+        """
+        names = set(self.tool_names()) - {LOADER_TOOL}
+        return "\n".join(self._digest_lines(names, hot=hot))
+
+    def _descriptions(self) -> Mapping[str, str]:
+        """Each tool's model-facing description, introspected once per process.
+
+        Docstrings are fixed by the code that shipped, so this cannot go stale
+        within a process — and `ToolSurface.catalogue` renders per turn, where
+        re-introspecting fifty-odd closures every tag would be pure waste.
+        """
+        if self._described is None:
+            self._described = {
+                entry["name"]: str(entry.get("description") or "")
+                for entry in self.catalog()
+            }
+        return self._described
 
     def catalog(self) -> tuple[dict, ...]:
         """Every built tool's public metadata — name, model-facing
@@ -717,6 +792,7 @@ class ToolRegistry:
         dream_adaptor: str = "",
         online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
         origin_rooms: Mapping[str, OriginRoom] | None = None,
+        shelf: ToolShelf | None = None,
     ) -> tuple[ToolSpec, ...]:
         """The registered tools as plain `ToolSpec`s, closed over this tag's
         dependencies — before any Strands adaptation.
@@ -820,6 +896,7 @@ class ToolRegistry:
             image_refs_allowed=self._image_refs_allowed,
             media_store=self._media_store,
             origin_rooms=origin_rooms,
+            shelf=shelf,
         )
 
     def build(
@@ -845,26 +922,76 @@ class ToolRegistry:
         online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
         origin_rooms: Mapping[str, OriginRoom] | None = None,
     ) -> list[Any]:
-        """The registered tools, adapted to what `Agent(tools=...)` wants —
-        what `nora.engagement.pipeline.EngagementPipeline` calls in place of
-        the old direct `nora.agent.tools.build_tools` import.
+        """`surface(...).tools`, for a caller that wants only the list.
 
-        `nora.app.fire.FirePath` is the other caller, and the only one that
-        passes `fire_turn=True`.
+        Every production loop calls `surface()` itself — it is the one builder
+        (see its docstring). This stays for the callers that ask «what tools
+        would this turn get» and nothing else: tests, and anything reading the
+        adapted objects without placing a catalogue. It takes no `grant` and
+        never defers, so it is exactly the resident-everything build it
+        always was."""
+        return self.surface(
+            store=store, conversation_id=conversation_id, conversation_type=conversation_type,
+            persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
+            room=room, question=question, context_window=context_window,
+            transcript=transcript, fire_turn=fire_turn, allowed_mcp=allowed_mcp,
+            location_trusted=location_trusted, links=links,
+            supplied_unit=supplied_unit, dream_adaptor=dream_adaptor,
+            online_scope=online_scope, origin_rooms=origin_rooms,
+        ).tools
 
-        `allowed_mcp` (spec §3) is the enforcement point for per-conversation
-        MCP scope: only tool groups whose server name is in this set are
-        appended, and they are appended AFTER `adapt()` runs over the native
-        specs — MCP tools are already Strands tool objects (`McpToolGroup.tools`,
-        Task 2), not `ToolSpec`s, so `specs()` cannot return them and `adapt()`
-        must not be called on them. Native tools are unaffected — this
-        codebase has no per-conversation gating for them today, and this
-        change does not add one.
+    def surface(
+        self,
+        *,
+        store: Any,
+        conversation_id: str,
+        conversation_type: str,
+        persons: Any,
+        honcho: Any,
+        deliverer: Any,
+        metrics: Any,
+        room: Room,
+        question: str = "",
+        context_window: int = 40,
+        transcript: tuple[TranscriptRow, ...] | None = None,
+        fire_turn: bool = False,
+        allowed_mcp: frozenset[str] = frozenset(),
+        location_trusted: bool = False,
+        links: LinkCarry | None = None,
+        supplied_unit: str | None = None,
+        dream_adaptor: str = "",
+        online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
+        origin_rooms: Mapping[str, OriginRoom] | None = None,
+        grant: frozenset[str] | None = None,
+        defer: bool = False,
+    ) -> ToolSurface:
+        """The ONE builder every loop takes its tools from.
 
-        `supplied_unit` passes straight through to `specs()` — see that
-        method's docstring; it exists for the Dreamer's unit-keyed build
-        and every other caller leaves it None. `online_scope` is the same
-        pass-through, for the same caller's home-room decide turn."""
+        A tag (`EngagementPipeline`), a fire turn (`FirePath`: participation,
+        proactive act, reminders) and every Dreamer adaptor
+        (`RegistryToolSource`) all call this, and nothing else decides which
+        tools an occasion sees. `ToolScope` (`nora.agent.surface`) admits by
+        platform, by whether the Dreamer built the set, and by `grant` — the
+        Dreamer's per-adaptor ceiling, which used to be a filter over
+        `build()`'s output.
+
+        `defer` (design/tool-catalogue/02): False keeps every admitted tool
+        resident, exactly as before this method existed. True keeps only
+        `HOT_TOOLS` resident, puts the rest on a per-turn `ToolShelf`, and adds
+        `load_tools` so the model can register what it names. `load_tools` is
+        in `tools` only when the shelf holds something, so a turn with nothing
+        deferred pays nothing for it.
+
+        `allowed_mcp` groups are appended resident, after the native tools,
+        for `build()`'s reason: they are already Strands objects, and
+        `adapt()` must not run on them. Every other parameter is `specs()`'s.
+        """
+        scope = ToolScope(
+            platform=None if room is None else room.platform,
+            dreamer=bool(dream_adaptor),
+            grant=grant,
+        )
+        shelf = ToolShelf()
         specs = self.specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
@@ -873,10 +1000,34 @@ class ToolRegistry:
             fire_turn=fire_turn, location_trusted=location_trusted, links=links,
             supplied_unit=supplied_unit, dream_adaptor=dream_adaptor,
             online_scope=online_scope, origin_rooms=origin_rooms,
+            shelf=shelf,
         )
-        tools = [adapt(spec) for spec in specs]
+        loader = next(spec for spec in specs if spec.name == LOADER_TOOL)
+        admitted = [
+            spec for spec in specs
+            if spec.name != LOADER_TOOL and scope.admits(spec.name)
+        ]
+        resident = [spec for spec in admitted if not defer or spec.name in HOT_TOOLS]
+        shelf.stock({
+            spec.name: adapt(spec) for spec in admitted
+            if defer and spec.name not in HOT_TOOLS
+        })
+        tools = [adapt(spec) for spec in resident]
+        if shelf:
+            tools.append(adapt(loader))
         for name in allowed_mcp:
             group = self._mcp_tools.get(name)
             if group is not None:
                 tools.extend(group.tools)
-        return tools
+        return ToolSurface(
+            scope=scope,
+            tools=tools,
+            resident=(spec.name for spec in resident),
+            shelf=shelf,
+            admitted=(spec.name for spec in admitted),
+            render=lambda names, hot: self._digest_lines(names, hot=hot),
+            # A shelved tool called by name loads on the spot (`ShelfLoader`'s
+            # docstring has the measurement): without it, every direct call
+            # cost a failed round trip and a cache miss.
+            hooks=(ShelfLoader(shelf),) if shelf else (),
+        )

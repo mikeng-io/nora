@@ -14,7 +14,7 @@ description: >
   observed max is 7. The third category (result-handling relocation) is
   PARKED by operator decision 2026-09-22 — its measurement is retained in
   03-result-handling.md, its implementation is not in scope.
-status: proposed-reviewed-parked-phase3
+status: built-switch-off-by-measurement
 governance: draft
 timestamp: '2026-09-22'
 revision: >
@@ -39,6 +39,16 @@ revision: >
   _executor.py:449; the mechanism was rewritten rather than the objection
   dismissed. Review #2 (Codex) abandoned — it explored the repo instead of the
   bundle, the failure mode the scenarios-not-code rule exists to prevent.
+revision_2: >
+  2026-09-23 phase B built (branch mikeng-io/tool-catalog-load-tool). Operator
+  direction: one builder for every loop. ToolRegistry.surface() + ToolScope +
+  ToolShelf + ToolSurface (nora/agent/surface.py); engagement, FirePath and
+  RegistryToolSource all call it; the three scattered filters became ToolScope.
+  Corrections absorbed: Nora's ToolRegistry is per-PROCESS (the per-turn object
+  is the Strands agent); load_tools returns names, not schemas; the catalogue is
+  a context-assembly block, not a doctrine tier (it varies per scope); the
+  relevance gate shares the renderer but stays off pending a 40-case re-run
+  (#144 was reversed on that suite 2026-09-10). Inert: defer=False everywhere.
 origin: >
   design conversation with miles, 2026-09-22 — opened as doctrine compression
   ("even the simplest conversation hits over 30,000 input tokens"), redirected
@@ -64,7 +74,8 @@ edges:
   - {src: 03-result-handling, dst: 05-measurement, rel: depends_on, provenance: asserted}
 scope:
   v1:
-    - "Generate a one-line catalogue for all 54 tools at doctrine order 35, reusing ToolRegistry.capability_digest() rather than writing a second renderer"
+    - "Generate a one-line catalogue per SCOPE (ToolSurface.catalogue), placed as a context-assembly block — not a doctrine tier — reusing capability_digest()'s line renderer rather than writing a second one"
+    - "One builder for every loop: ToolRegistry.surface(), with ToolScope replacing the platform cut, the Dreamer-only gate and the Dreamer's post-build name filter (BUILT phase B)"
     - "Repair where_is's first sentence (measured under-discrimination against where_been) and cap recall_lookups / set_music_volume"
     - "Gate every catalogue line at <=20 tokens and the block at <=1,400"
     - "Add the load_tools verb: budget 3, max 4 names per call (budget caps calls, not tokens), non-terminal, read_only, no source_tier; R-27 status shape with partial resolve as ok"

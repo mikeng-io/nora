@@ -380,6 +380,17 @@ class LLMConfig(BaseModel):
     # Replies stay short because the doctrine says so, not because the ceiling
     # forces it.
     reasoning_effort: str = "low"
+    # design/tool-catalogue phase C — deferred tool loading on the TAG and FIRE
+    # paths. True: only `HOT_TOOLS` ship with full schemas; every other tool
+    # the room's scope admits is a one-line `<tool_catalogue>` entry she loads
+    # with `load_tools`, and `[llm.limits] turns` rises by one for that call
+    # (`ToolSurface.limits`). False: every admitted schema is resident, exactly
+    # as before phase C. A config switch rather than a constant so the SAME
+    # build runs both arms of the selection-accuracy measurement
+    # (`05-measurement.md` §2c) and so turning it back off is an edit and a
+    # restart, not a deploy. The Dreamer never defers: its adaptors' grants
+    # are a handful of tools, which is below where deferring pays.
+    defer_tools: bool = False
     limits: LimitsConfig
     # Per-tool call-count overrides, applied OVER `NATIVE_TOOL_BUDGETS` by
     # `ToolRegistry.budgets()`. Empty by default: the table in
