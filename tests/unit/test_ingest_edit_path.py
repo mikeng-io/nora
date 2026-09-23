@@ -626,3 +626,31 @@ async def test_handles_are_not_reused_when_the_original_did_not_hold_every_attac
     await _pipeline(store).run(message=edit)
     rows = await store.recent(conversation_id="g1", limit=5)
     assert blob_b.handle not in (rows[0].body or ""), "b's handle given to a's placeholder"
+
+
+async def test_a_redelivery_at_the_newest_timestamp_is_caught_by_its_timestamp():
+    """Not older than the newest clock — it IS the newest clock — but already
+    on record, so a redelivery: a different text at a timestamp Nora holds
+    must not flip the fold."""
+    store = FakeRecordStore()
+    await store.append(message=_msg("v0", message_id="m1"), person_id="miles")
+    pipe = _pipeline(store)
+    await pipe.run(message=_edit("v1", ts=5000, target=EditTarget(message_id="m1")))
+    await pipe.run(message=_edit("v2", ts=6000, target=EditTarget(message_id="m1")))
+    await pipe.run(message=_edit("v1 again", ts=6000, target=EditTarget(message_id="m1")))
+    rows = await store.recent(conversation_id="g1", limit=5)
+    assert rows[0].body == "v2"
+
+
+async def test_an_out_of_order_edit_is_judged_against_the_newest_clock_not_the_shown_one():
+    """After a skewed desktop edit (800) of a phone edit (1000), an older
+    edit at 900 that names the ORIGINAL is out of order: older than the
+    newest clock on record, though newer than the version shown."""
+    store = FakeRecordStore()
+    await store.append(message=_msg("v0", ts=100), person_id="miles")
+    pipe = _pipeline(store)
+    await pipe.run(message=_edit("v1", ts=1000, target=EditTarget(sent_ts=100)))
+    await pipe.run(message=_edit("v2", ts=800, target=EditTarget(sent_ts=1000)))
+    await pipe.run(message=_edit("stale", ts=900, target=EditTarget(sent_ts=100)))
+    rows = await store.recent(conversation_id="g1", limit=5)
+    assert rows[0].body == "v2"
