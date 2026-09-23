@@ -289,5 +289,6 @@ Live read-back: one trace in Jaeger per case, containing Nora's tool span and
 the bridge's server and upstream spans. That needs tool spans in Jaeger: the
 collector's filter was changed on 2026-09-23 to stop dropping them (it had
 dropped every span carrying `gen_ai.operation.name`, which Strands also puts
-on tool spans). Not yet confirmed with a live trace; that confirmation is
-part of the tool's first PR.
+on tool spans). Confirmed live on 2026-09-23: Jaeger now holds Nora's
+`invoke_agent`, `execute_event_loop_cycle` and `execute_tool` spans, and no
+`chat` spans, which is the intended split.
