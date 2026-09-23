@@ -3,12 +3,13 @@
 The domain is a service (`web`, `instagram`, `x`) or a resource (`note`,
 `room`, `music`); the verb says what the tool takes or does. Today's names
 predate the rule and stay (ADR 0004: a rename is measured one at a time), so
-they are frozen below. The frozen list only shrinks: a tool renamed to the
-pattern leaves it, and its length is pinned.
+they are frozen in a snapshot whose digest is pinned. The exempt set only
+shrinks: a tool renamed to the pattern moves to `_RENAMED_SINCE`.
 """
 
 from __future__ import annotations
 
+import hashlib
 import re
 
 import pytest
@@ -33,8 +34,11 @@ def _shape(verbs: tuple[str, ...] = VERBS) -> re.Pattern[str]:
     return re.compile(rf"^[a-z][a-z0-9]*(_[a-z0-9]+)*_({'|'.join(verbs)})$")
 
 
-#: The names that predate ADR 0015 (2026-09-24). Frozen; never grown.
-_PREDATES_THE_RULE = frozenset({
+#: Every tool name that existed when ADR 0015 landed (2026-09-24). A SNAPSHOT,
+#: never edited: its digest is pinned below, so adding a name to it (exempting a
+#: new tool by hand) fails the build. A name leaves the exemption by being
+#: added to `_RENAMED_SINCE`, which is how the exempt set only shrinks.
+_SNAPSHOT_2026_09_24 = frozenset({
     "about", "ask_memory", "calculate", "cancel_event", "cancel_reminder",
     "create_event", "find_parking", "generate_image", "group_members",
     "list_events", "list_reminders", "load_tools", "load_transcript",
@@ -48,10 +52,19 @@ _PREDATES_THE_RULE = frozenset({
     "suggest_venue", "top_music", "transit", "update_event", "version",
     "weather", "web_fetch", "web_search", "where_been", "where_is", "who_said",
 })
+_SNAPSHOT_SHA256 = (
+    "51189c39c8934b8fe595bdad19f7bc0103c6da453706231f4b310aa2ff8789e3"
+)
 
-#: The frozen list's size when the rule landed. It may go DOWN (a rename or a
-#: removal), never up: raising this number is exempting a new tool by hand.
-_FROZEN_AT_MOST = 57
+#: Snapshot names renamed to the pattern or removed since. Grows; the exempt
+#: set below shrinks with it.
+_RENAMED_SINCE: frozenset[str] = frozenset()
+
+_PREDATES_THE_RULE = _SNAPSHOT_2026_09_24 - _RENAMED_SINCE
+
+
+def _digest(names: frozenset[str]) -> str:
+    return hashlib.sha256("\n".join(sorted(names)).encode()).hexdigest()
 
 
 def _misnamed(names) -> list[str]:
@@ -84,13 +97,21 @@ def test_a_misnamed_new_tool_is_actually_caught(monkeypatch: pytest.MonkeyPatch)
     assert _misnamed(tools_module.NATIVE_TOOLS) == ["read_instagram"]
 
 
-def test_the_frozen_list_only_shrinks() -> None:
-    assert len(_PREDATES_THE_RULE) <= _FROZEN_AT_MOST, (
-        "_PREDATES_THE_RULE grew: a new tool was exempted by hand instead of "
-        "being named <domain>_<verb>"
+def test_the_snapshot_is_never_edited() -> None:
+    """Pinning a LENGTH let a name be swapped in at the same size. The digest
+    pins the exact set: exempting a new tool now means changing this hash, a
+    diff nobody can make by accident."""
+    assert _digest(_SNAPSHOT_2026_09_24) == _SNAPSHOT_SHA256, (
+        "the 2026-09-24 snapshot changed. Do not add to it: name the new tool "
+        "<domain>_<verb>. A rename goes in _RENAMED_SINCE."
     )
+
+
+def test_every_exempt_name_is_still_a_tool() -> None:
+    """A tool removed or renamed must move to _RENAMED_SINCE, or the exempt
+    set quietly keeps a name nobody is using."""
     gone = sorted(_PREDATES_THE_RULE - set(NATIVE_TOOLS))
-    assert not gone, f"remove from _PREDATES_THE_RULE, no longer tools: {gone}"
+    assert not gone, f"add to _RENAMED_SINCE, no longer tools: {gone}"
 
 
 def test_the_shape_accepts_the_pattern_and_refuses_the_rest() -> None:

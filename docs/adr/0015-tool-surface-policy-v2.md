@@ -12,8 +12,7 @@
 - **Un-parks:** `design/tool-catalogue/03-result-handling.md` (parked
   2026-09-22). The operator reopened it on 2026-09-23 ("research first, then
   design", then "go write the ADR") after the descriptions were measured.
-- **Index:** DEC number taken at merge. Review: an adversarial audit of the
-  first draft (2026-09-24) found 9 major issues; this version answers each.
+- **Index:** DEC number taken at merge.
 
 ## Context
 
@@ -76,7 +75,7 @@ where a source argues against a rule here, it is stated.
 So the evidence does not say "shorter is better". It says a description should
 carry what the tool is, when to use it and what it returns, well enough to
 choose, and that more is not free. The ceilings below are set at Anthropic's
-floor (3–4 sentences is about 60–80 tokens), not below it. They are starting
+floor (3–4 sentences, estimated at 60–80 tokens), not below it. They are starting
 values, and the eval moves them.
 
 **Strands' extraction.** strands 1.50.2 (`tools/decorator.py:233-282`) sends the
@@ -114,6 +113,12 @@ docstring.) Counts in this ADR are over that extracted text.
   0004 measured was a shared token across two different domains. Cross-domain
   overlap stays forbidden. A new same-domain pair is added to
   `evals/corpora/tool_selection.yaml` so its routing is measured, not assumed.
+- **Planned names are renamed before they are built.** The self-awareness
+  bundle (`design/self-awareness/03-room-tools.md`) plans `my_rooms`,
+  `read_room` and `room_activity`, none of which fits. They are renamed (for
+  example `room_list`, `room_read`, and `room_activity` as an arm of
+  `room_read` or a verb added with a reason) before that bundle's step 4. Its
+  owner was told on 2026-09-24. The test above rejects them as written.
 - **Existing names stay.** A rename is measured one at a time (0004), and only
   when `tool_selection` shows the name causing a misroute.
 - **Split or unify is decided by a `tool_selection` arm**, and the numbers are
