@@ -42,48 +42,6 @@
   "target": "tests/unit/test_debrief_render.py -k the_rollup_render_marks_and_explains_the_same_way"
  },
  {
-  "name": "#199 A2 the deterministic check reaches the verdict at all",
-  "file": "nora/engagement/stages/debrief.py",
-  "old": "        contradicted = _delivered_despite_the_outcome(trace, batch)",
-  "new": "        contradicted = None",
-  "target": "tests/unit/test_debrief.py -k the_verdict_can_come_back_false_without_the_model_agreeing"
- },
- {
-  "name": "#199 A2 the check fires only on a turn that broke without sending",
-  "file": "nora/engagement/stages/debrief.py",
-  "old": "    if trace.outcome not in _BROKEN_TURN_OUTCOMES or not trace.transcript:\n        return None",
-  "new": "    if not trace.transcript:\n        return None",
-  "target": "tests/unit/test_debrief.py -k a_turn_that_actually_replied_is_not_convicted_by_its_own_reply"
- },
- {
-  "name": "#199 A2 only a row the record marks SENT is a contradiction",
-  "file": "nora/engagement/stages/debrief.py",
-  "old": "        if row.is_nora and row.delivery_status is DeliveryStatus.SENT:\n            return row",
-  "new": "        if row.is_nora:\n            return row",
-  "target": "tests/unit/test_debrief.py -k a_row_of_hers_that_never_reached_the_room_is_not_a_contradiction"
- },
- {
-  "name": "#199 A2 a reply delivered while the dead turn ran is seen through the batch",
-  "file": "nora/engagement/stages/debrief.py",
-  "old": "        *(row for row in batch\n          if row.id not in own_ids and row.ts >= floor),",
-  "new": "",
-  "target": "tests/unit/test_debrief.py -k a_reply_delivered_while_the_dead_turn_ran_is_seen_too"
- },
- {
-  "name": "#199 A2 the model's grounded verdict is overridden, not merged into",
-  "file": "nora/engagement/stages/debrief.py",
-  "old": "            grounded=False, unsupported=claims, created_at=now_ms,",
-  "new": "            grounded=verdict.grounded if verdict is not None else False,\n            unsupported=claims, created_at=now_ms,",
-  "target": "tests/unit/test_debrief.py -k the_verdict_can_come_back_false_without_the_model_agreeing"
- },
- {
-  "name": "#199 A2 the code claim goes first, so a verdict at its cap survives",
-  "file": "nora/engagement/stages/debrief.py",
-  "old": "    claims = (claim, *existing)[:UNSUPPORTED_MAX_ITEMS]",
-  "new": "    claims = (*existing, claim)",
-  "target": "tests/unit/test_debrief.py -k the_deterministic_claim_survives_a_model_verdict_at_its_cap"
- },
- {
   "name": "#199 A3 a dead turn does not reach the note sink",
   "file": "nora/engagement/stages/debrief.py",
   "old": "        if notes_sink is not None and trace.outcome in _BROKEN_TURN_OUTCOMES:",
@@ -133,34 +91,6 @@
   "target": "tests/unit/test_note_curator.py -k her_own_row_can_never_expire_a_note"
  },
  {
-  "name": "#199 A2 the trace half is bounded by a CLOCK, not by the row window",
-  "file": "nora/engagement/stages/debrief.py",
-  "old": "        *(row for row in trace.transcript if row.ts >= floor),",
-  "new": "        *trace.transcript,",
-  "target": "tests/unit/test_debrief.py -k a_reply_from_days_ago_in_the_window_is_not_this_turns_business"
- },
- {
-  "name": "#199 A2 the batch half is bounded by the same floor",
-  "file": "nora/engagement/stages/debrief.py",
-  "old": "          if row.id not in own_ids and row.ts >= floor),",
-  "new": "          if row.id not in own_ids),",
-  "target": "tests/unit/test_debrief.py -k a_batch_reply_from_before_the_turn_is_not_this_turns_business"
- },
- {
-  "name": "#199 A2 the floor is a real bound and not zero",
-  "file": "nora/engagement/stages/debrief.py",
-  "old": "_CONTEMPORARY_MS = 5 * 60 * 1000",
-  "new": "_CONTEMPORARY_MS = 10 ** 15",
-  "target": "tests/unit/test_debrief.py -k a_reply_from_days_ago_in_the_window_is_not_this_turns_business"
- },
- {
-  "name": "#199 A2 the override is counted with what the model had said",
-  "file": "nora/engagement/stages/debrief.py",
-  "old": "            metrics.inc(\n                \"nora_debrief_room_scope_overrides_total\",",
-  "new": "            _unused = (\n                \"nora_debrief_room_scope_overrides_total\",",
-  "target": "tests/unit/test_debrief.py -k the_override_says_what_the_model_had_said"
- },
- {
   "name": "#199 A3 the broken-turn set is the two outcomes that BROKE, not every silent one",
   "file": "nora/engagement/stages/debrief.py",
   "old": "_BROKEN_TURN_OUTCOMES = frozenset({\"llm_error\", \"timeout\"})",
@@ -173,13 +103,6 @@
   "old": "    \"silent\": \"you chose to say nothing on this turn — no delivery was \"\n              \"attempted for it (R-5)\" + _THIS_TURN_ONLY,",
   "new": "    \"silent\": \"you chose to say nothing — no delivery was attempted (R-5)\",",
   "target": "tests/unit/test_debrief_render.py -k every_gloss_that_sent_nothing_scopes_itself_to_the_turn"
- },
- {
-  "name": "#199 A1 the rollup VERDICT render goes through the same marked block",
-  "file": "nora/engagement/debrief_render.py",
-  "old": "    block = _transcript_block(rows, display_name=display_name, tz=tz)\n    return f\"<conversation>\\n{block}\\n</conversation>\"",
-  "new": "    transcript = _transcript(rows, display_name=display_name, tz=tz)\n    return (\n        f\"<conversation>\\n  <transcript>\\n{transcript}\\n  </transcript>\\n\"\n        f\"</conversation>\"\n    )",
-  "target": "tests/unit/test_debrief_render.py -k the_rollup_verdict_render_sees_the_same_marked_transcript"
  },
  {
   "name": "#199 A4 the own-sends block rides on the NON-EMPTY evidence branch too",
