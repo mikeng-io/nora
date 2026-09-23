@@ -16,6 +16,7 @@ other two contract legs.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -179,9 +180,21 @@ def _room(persons, *, members, fail=False, tagger=None):
     )
 
 
+class _FakeFixes:
+    """The raw-fix edge `where_been` reads through the SAME `latest_fix` seam
+    `where_is` uses: person_id -> the ts of their newest fix."""
+
+    def __init__(self, last_ts: dict[str, int]):
+        self._last_ts = last_ts
+
+    async def latest_fix(self, *, circle_id, person_id):
+        ts = self._last_ts.get(person_id)
+        return None if ts is None else SimpleNamespace(ts=ts)
+
+
 def _where_been(
     persons, mobility, *, members, fail=False, location_trusted=False,
-    now_ms=NOW_MS, metrics=None, with_pat=False, tagger=None,
+    now_ms=NOW_MS, metrics=None, with_pat=False, tagger=None, fixes=None,
 ):
     """The built `where_been` closure, through `build_tool_specs` — the same
     wiring the tag path uses (registry -> specs -> call), with the registry's
@@ -195,6 +208,7 @@ def _where_been(
         presence_circles=(_circle(persons, with_pat=with_pat),),
         location_trusted=location_trusted,
         mobility=mobility, clock=lambda: datetime.fromtimestamp(now_ms / 1000, tz=UTC),
+        presence_source=fixes,
     )
     return next(s for s in specs if s.name == "where_been").call
 
@@ -563,3 +577,76 @@ async def test_routes_carry_linkage_without_the_sequence(persons):
     assert payload["trips"][0]["corridor_id"] == 7
     assert payload["corridors"][0]["sample_count"] == 5
     assert "sequence" not in payload["corridors"][0]
+
+
+# ---- the record's edge (2026-09-24) ------------------------------------------
+#
+# The collector lost its Life360 login at 00:12; asked at 02:29, `where_been`
+# served a home stay ending 00:12 and then nothing, and the model read the
+# nothing as «stayed home» through a 1am ride. The derived facts stop where the
+# raw fixes stop, so the answer carries that edge.
+
+# The live shape, moved onto this file's clock: the last fix 00:12 today,
+# asked at noon — a home stay from yesterday evening ending exactly there.
+LAST_FIX_TS = int(datetime(2026, 9, 5, 0, 12, tzinfo=HK).timestamp() * 1000)
+STAY_TO_EDGE = [
+    {"started_ts": LAST_FIX_TS - 7 * 3_600_000, "ended_ts": LAST_FIX_TS,
+     "lat": 22.410, "lng": 114.124, "place_kind": "home", "place_label": "Home"},
+]
+
+
+def _iso(ts_ms):
+    return datetime.fromtimestamp(ts_ms / 1000, tz=HK).isoformat(timespec="seconds")
+
+
+async def test_day_says_where_the_record_stops(persons):
+    """The live case: history that ends at the last fix names that edge, so
+    an empty stretch after it cannot read as the person staying put."""
+    mobility = _FakeMobility(stays=[dict(s) for s in STAY_TO_EDGE])
+    fixes = _FakeFixes({"miles_novak": LAST_FIX_TS})
+    tool = _where_been(persons, mobility, members=(MILES,), fixes=fixes)
+    out = await tool("day", name="Miles")
+    assert out["status"] == "ok"
+    assert out["people"][0]["last_recorded_iso"] == _iso(LAST_FIX_TS)
+    assert out["recording_stopped"] == [
+        {"person": "Miles Novak", "last_recorded_iso": _iso(LAST_FIX_TS)},
+    ]
+    assert "missing" in out["recording_note"]
+
+
+async def test_nothing_found_still_says_where_the_record_stops(persons):
+    """`nothing_found` for today was the SECOND half of the live answer: with
+    no rows at all, the edge is the only thing that separates «stayed put»
+    from «nothing was recorded»."""
+    mobility = _FakeMobility()
+    fixes = _FakeFixes({"miles_novak": LAST_FIX_TS})
+    tool = _where_been(persons, mobility, members=(MILES,), fixes=fixes)
+    out = await tool("day", name="Miles")
+    assert out["status"] == "nothing_found"
+    assert out["recording_stopped"] == [
+        {"person": "Miles Novak", "last_recorded_iso": _iso(LAST_FIX_TS)},
+    ]
+
+
+async def test_a_current_record_carries_its_edge_but_no_stop(persons):
+    """A fix inside one missed heartbeat of now is a live record: the edge is
+    still carried, and nothing claims the recording stopped."""
+    recent = NOW_MS - 10 * 60_000
+    mobility = _FakeMobility(stays=[dict(s) for s in STAY_TO_EDGE])
+    fixes = _FakeFixes({"miles_novak": recent})
+    tool = _where_been(persons, mobility, members=(MILES,), fixes=fixes)
+    out = await tool("day", name="Miles")
+    assert out["status"] == "ok"
+    assert out["people"][0]["last_recorded_iso"] == _iso(recent)
+    assert "recording_stopped" not in out
+
+
+async def test_a_past_day_the_record_covers_is_not_stopped(persons):
+    """The edge is measured against the WINDOW's end: yesterday ends before
+    the last fix, so yesterday's history is whole."""
+    mobility = _FakeMobility(stays=[dict(s) for s in DAY_STAYS], trips=DAY_TRIPS)
+    fixes = _FakeFixes({"miles_novak": LAST_FIX_TS})
+    tool = _where_been(persons, mobility, members=(MILES,), fixes=fixes)
+    out = await tool("day", name="Miles", date="2026-09-04")
+    assert out["status"] == "ok"
+    assert "recording_stopped" not in out

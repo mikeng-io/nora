@@ -144,7 +144,13 @@ from .ports import ToolSpec, adapt
 from .relay import Relay
 from .room import Room, RoomView, _key, _names_of, find_by_name
 from .surface import ToolShelf, load_onto
-from .whereis import DisclosureGuard, Whereis, _dedupe, resolvable_places
+from .whereis import (
+    STALE_AFTER_MS,
+    DisclosureGuard,
+    Whereis,
+    _dedupe,
+    resolvable_places,
+)
 
 log = logging.getLogger("nora.tools")
 
@@ -4059,8 +4065,12 @@ Args:
           - `ok` — where they were last recorded. `age_seconds` says how OLD
             that fix is — ALWAYS carry the age into your reply («大概 20 分鐘前
             喺…»): a position said without its age reads as «right now», which
-            you do not know. `place` is this household's own name for the spot
-            («Home») — prefer it in your reply. There is NO street address
+            you do not know. `recorded_iso` is when it was recorded. When
+            `stale` is present, location tracking has recorded NOTHING for them
+            since that time — you are reading the last place anything saw
+            them, and whatever they did after it is unknown to you. `place`
+            is this household's own name for the spot («Home») — prefer it
+            in your reply. There is NO street address
             here by design: when the group wants one, pass `lat`/`lng` (always
             present — never read them aloud) to `reverse_geocode` and say the
             address THAT returns (DEC-156). You may also get MEASURED
@@ -4235,6 +4245,13 @@ Args:
         Mong Kok/Sham Shui Po from lat/lng, was wrong, the group caught it).
         No label is an ANSWER, not a gap to paper over.
 
+        Each person carries `last_recorded_iso` — the last time location
+        tracking recorded them at all. Stays and trips are built from those
+        recordings, so the history ENDS there. `recording_stopped` names
+        anyone whose recordings stop before the window does: after their
+        `last_recorded_iso` you are reading missing data, not a quiet stretch
+        — an empty evening after it is not them staying home.
+
         `label`/`kind`/`confidence`/`stay_count` and times may enter your
         reply. A raw coordinate (lat/lng) and a corridor's road `sequence`
         NEVER do — never read one aloud and never pass one to another tool,
@@ -4311,6 +4328,17 @@ Args:
             )
             day_end_ms = day_start_ms + _been_day_ms
             day_iso = day.isoformat()
+
+        async def _been_last_recorded(circle, ref) -> int | None:
+            """The ts of `ref`'s newest RAW fix — the edge of everything the
+            derived facts can know. Read from the same store `where_is` reads;
+            None when presence is not wired or nothing was ever recorded."""
+            if presence_source is None:
+                return None
+            fix = await presence_source.latest_fix(
+                circle_id=circle.circle_id, person_id=ref.person_id,
+            )
+            return fix.ts if fix is not None else None
 
         async def _been_read(subject_id: str) -> dict:
             """One arm's read for one subject, coordinates never selected and
@@ -4519,8 +4547,17 @@ Args:
                     }
                 refs = (matches[0],)
             # The reads — AFTER the guard passes, and only through the store.
+            # The record's EDGE (`STALE_AFTER_MS`, 2026-09-24): the derived facts
+            # stop where the raw fixes stop. Without it, a collector that lost
+            # its login at 00:12 served a home stay ending at 00:12 and then
+            # nothing, and the model read the nothing as «stayed home» through
+            # a 1am ride. The window's end is `now`, or the asked day's end.
+            window_end_ms = (
+                now_ms if day_end_ms is None else min(now_ms, day_end_ms)
+            )
             try:
                 people: list[dict] = []
+                stopped: list[dict] = []
                 seen_subjects: set[str] = set()
                 for ref in refs:
                     subject_id = persons.subject_id_for(ref.person_id)
@@ -4528,14 +4565,31 @@ Args:
                         continue
                     seen_subjects.add(subject_id)
                     payload = await _been_read(subject_id)
+                    last_ms = await _been_last_recorded(circle, ref)
+                    edge: dict = {}
+                    if last_ms is not None:
+                        edge["last_recorded_iso"] = _been_iso(last_ms)
+                        if window_end_ms - last_ms > STALE_AFTER_MS:
+                            stopped.append({"person": ref.name, **edge})
                     if payload:
-                        people.append({"person": ref.name, **payload})
+                        people.append({"person": ref.name, **payload, **edge})
             except Exception:
                 log.exception("where_been read failed")
                 return {
                     "status": "unavailable",
                     "note": "I couldn't check where they've been just now. Say you "
                             "couldn't look — don't say there's no pattern.",
+                }
+            coverage: dict = {}
+            if stopped:
+                coverage = {
+                    "recording_stopped": stopped,
+                    "recording_note": (
+                        "Location tracking recorded nothing for these people "
+                        "after their last_recorded_iso. Their history ends "
+                        "there: what came after is missing, not them staying "
+                        "put. Say where the record stops; do not fill it in."
+                    ),
                 }
             if not people:
                 # The read WORKED: «there is no derived pattern yet» is a real
@@ -4549,12 +4603,14 @@ Args:
                     "note": f"I have no derived pattern for {target} yet — nothing "
                             "recorded in this window. Say there's nothing yet; "
                             "do not invent one.",
+                    **coverage,
                 }
             return {
                 "status": "ok",
                 "what": what,
                 "window": {"date": day_iso} if what == "day" else {"days": window_days},
                 "people": people,
+                **coverage,
             }
 
         # The fold `where_is` runs: one gate per circle, first `ok` wins. With
