@@ -195,8 +195,8 @@ def test_the_image_skill_carries_every_anchor_and_rule_of_the_spec(store):
         "White wired earphones are permanent", "inline remote",
         "never by default",
         # rendering
-        "High-quality 3D / CGI rendering", "soft matte skin", "Not photorealism", "Pixar-style exaggeration",
-        "generic AI-girl",
+        "High-quality 3D / CGI rendering", "soft matte skin", "Not photorealism",
+        "Pixar-style exaggeration", "generic AI-girl",
         # the eight anchors
         "Eight anchors",
     ):

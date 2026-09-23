@@ -71,7 +71,7 @@ SKILL_PATH = Path("/app/nora/skills/image-generation/SKILL.md")
 _HANDLE_RE = re.compile(r"\[image ([0-9a-f]{64})\]")
 
 
-class IngestRefused(Exception):
+class IngestRefusedError(Exception):
     """The ingest could not establish the canonical row; nothing is claimed."""
 
 
@@ -79,7 +79,7 @@ def skill_self_handle(skill: Path) -> str:
     """The one full-sha `[image …]` handle the skill carries, or refuse."""
     found = set(_HANDLE_RE.findall(skill.read_text(encoding="utf-8")))
     if len(found) != 1:
-        raise IngestRefused(
+        raise IngestRefusedError(
             f"{skill} must carry exactly one full-sha [image …] handle, found "
             f"{len(found)}"
         )
@@ -92,13 +92,13 @@ async def ingest_self(
 ) -> MediaObject:
     sha256 = hashlib.sha256(data).hexdigest()
     if sha256 != expected_sha256:
-        raise IngestRefused(
+        raise IngestRefusedError(
             f"these bytes are {sha256}, the skill names {expected_sha256}: "
             "re-pin the skill or ingest the image it names"
         )
     key = await blob_store.put(data=data)
     if key != sha256:
-        raise IngestRefused(f"blob store wrote {key}, not {sha256}")
+        raise IngestRefusedError(f"blob store wrote {key}, not {sha256}")
     await media_store.save(obj=MediaObject(
         sha256=sha256, media_type="image/png", size=len(data), source="fetched",
         title=TITLE, description=DESCRIPTION, describe_model=DESCRIBE_MODEL,
@@ -111,7 +111,7 @@ async def ingest_self(
     )
     row = await media_store.get(sha256=sha256)
     if not marked or row is None or (row.provenance or {}).get("role") != "self":
-        raise IngestRefused(f"media index did not read back {sha256} as role=self")
+        raise IngestRefusedError(f"media index did not read back {sha256} as role=self")
     return row
 
 
@@ -145,7 +145,7 @@ async def _main(argv: list[str]) -> int:
             expected_sha256=skill_self_handle(args.skill),
             blob_store=blob_store, media_store=SqlMediaObjectStore(engine),
         )
-    except IngestRefused as exc:
+    except IngestRefusedError as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
         return 1
     finally:

@@ -18,7 +18,7 @@ from nora.domain.media import MediaObject
 from nora.testing import FakeBlobStore, FakeMediaObjectStore
 from scripts.ingest_self_asset import (
     SELF_PROVENANCE,
-    IngestRefused,
+    IngestRefusedError,
     ingest_self,
     skill_self_handle,
 )
@@ -60,7 +60,7 @@ async def test_ingest_marks_a_row_that_already_existed():
 
 async def test_ingest_refuses_bytes_the_skill_does_not_name_and_writes_nothing():
     media, blobs = FakeMediaObjectStore(), FakeBlobStore()
-    with pytest.raises(IngestRefused):
+    with pytest.raises(IngestRefusedError):
         await ingest_self(data=b"a different picture", expected_sha256=SHA,
                           blob_store=blobs, media_store=media)
     assert blobs.blobs == {}
@@ -70,7 +70,7 @@ async def test_ingest_refuses_bytes_the_skill_does_not_name_and_writes_nothing()
 async def test_ingest_refuses_when_the_store_cannot_be_read_back():
     """An unreachable index answers `False`/`None`; that is a failed ingest,
     never a quiet success."""
-    with pytest.raises(IngestRefused):
+    with pytest.raises(IngestRefusedError):
         await ingest_self(data=DATA, expected_sha256=SHA, blob_store=FakeBlobStore(),
                           media_store=FakeMediaObjectStore(fail=True))
 
@@ -94,5 +94,5 @@ def test_the_handle_is_read_from_the_skill(tmp_path: Path):
 def test_a_skill_with_no_single_handle_is_refused(tmp_path: Path, body: str):
     skill = tmp_path / "SKILL.md"
     skill.write_text(f"---\nname: x\n---\n{body}\n")
-    with pytest.raises(IngestRefused):
+    with pytest.raises(IngestRefusedError):
         skill_self_handle(skill)
