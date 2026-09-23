@@ -9,6 +9,7 @@
   ],
   "limitations": [
     "Deleted or unsent messages are still not captured.",
+    "An edit to a message Nora never recorded (older than her retention window, or from before she was in the room) is ignored.",
     "If someone edits a question Nora already answered, she does not answer again; she sees the corrected text on her next turn.",
     "Signal and WhatsApp edits received before this release stay in the transcript as separate messages until they age out of the window.",
     "An edit to a message sent before this release never opens a turn, because Nora has no record of whom that message mentioned."
