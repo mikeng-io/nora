@@ -23,6 +23,16 @@ private API answer and the failure that gets an account banned:
 The token is cached IN MEMORY for the life of the process (one long-running
 daemon holds it fine); it is dropped on a 403 and re-fetched on the next read.
 
+**Token mode** (`access_token`, 2026-09-24): Life360 refuses the password grant
+outright for some accounts — `403 "Invalid login and password"` with the right
+password, which pnbruckner/life360 attributes to a verified phone number on the
+account. The workaround is the bearer a life360.com browser login leaves in the
+`LIFE360_AUTH_TOKEN` cookie. Given one, the client uses it as THE token and never
+POSTs the credential at all: there is no grant to fall back to, so a 401/403 on a
+data call is a REJECTED TOKEN — `banned` with its own `token_rejected` alarm, the
+same `auth_failures` back-off, and no re-auth. Only the operator can mint a new
+one, so the loud, distinct signal is the whole recovery path.
+
 Everything degrades to a typed `CircleRead`, never an exception into the loop
 (R-5): transport failure, a non-200, an app-update challenge PAGE (a 200 whose
 body is not JSON — the canary in §4), and a ban are four distinct statuses that
@@ -153,6 +163,7 @@ class Life360Client:
         request_url: str = REQUEST_URL,
         timeout_seconds: float = TIMEOUT_SECONDS,
         metrics: Any = None,
+        access_token: str | None = None,
     ) -> None:
         self._client_credential = client_credential
         self._circles_url = circles_url
@@ -165,7 +176,11 @@ class Life360Client:
         self._request_url = request_url
         self._timeout_seconds = timeout_seconds
         self._metrics = metrics
-        self._token: str | None = None
+        # Token mode (module docstring): a static operator-supplied bearer. When
+        # set it IS the token for the life of the process — never dropped on a
+        # 403, never replaced by a password grant.
+        self._access_token = access_token or None
+        self._token: str | None = self._access_token
         self._auth_failures = 0
 
     @property
@@ -187,6 +202,8 @@ class Life360Client:
                 return self._banned("initial authentication failed")
 
         result = await self._get_members(circle_id, token)
+        if self._token_rejected(result):
+            return self._banned(self._TOKEN_REJECTED)
         # A stale-token 403: re-auth ONCE and retry the read ONCE. This is the
         # only place a second token POST can happen in a read, which is what
         # bounds the credential-POST rate the study warns about.
@@ -227,6 +244,8 @@ class Life360Client:
                 return False
         url = self._request_url.format(circle_id=circle_id, member_id=member_id)
         result = await self._post_request(url, token)
+        if self._token_rejected(result):
+            return False
         if result.status == 403:
             self._token = None
             token = await self._authenticate()
@@ -259,6 +278,8 @@ class Life360Client:
             if token is None:
                 return self._places_banned("initial authentication failed")
         result = await self._get(self._places_url.format(circle_id=circle_id), token)
+        if self._token_rejected(result):
+            return self._places_banned(self._TOKEN_REJECTED)
         if result.status == 403:
             self._token = None
             token = await self._authenticate()
@@ -285,11 +306,12 @@ class Life360Client:
         """Every circle this account can see, each with its members' id + name —
         the mapping `nora presence members` prints for identity.toml. One-shot
         operator call: RAISES `Life360DiscoveryError` on any failure (see it)."""
-        token = await self._authenticate()
+        token = self._access_token or await self._authenticate()
         if token is None:
             raise Life360DiscoveryError(
                 "authentication failed — check LIFE360_CLIENT_CREDENTIAL, "
-                "LIFE360_USERNAME and LIFE360_PASSWORD"
+                "LIFE360_USERNAME and LIFE360_PASSWORD (or set "
+                "LIFE360_ACCESS_TOKEN if Life360 refuses the password login)"
             )
         body = await self._get_json(self._circles_url, token)
         circles = body.get("circles") if isinstance(body, dict) else None
@@ -372,11 +394,27 @@ class Life360Client:
             timeout_seconds=self._timeout_seconds,
         )
 
+    _TOKEN_REJECTED = "access token rejected — replace LIFE360_ACCESS_TOKEN"  # noqa: S105 — a message, not a secret
+
+    def _token_rejected(self, result: HttpResult) -> bool:
+        """Token mode's refusal: a 401/403 on the operator's bearer. Alarmed as
+        `token_rejected` HERE, once per refused call, so the caller only has to
+        route it to its ban path. Always False in password mode, which keeps its
+        own 403 → re-auth-once discipline unchanged."""
+        if self._access_token is None or result.status not in (401, 403):
+            return False
+        self._alarm("token_rejected")
+        return True
+
     async def _authenticate(self) -> str | None:
         """POST the password grant with the Basic client credential and the app
         UA. Returns the access token, or None on any failure (transport, non-200
         including 403, or a body with no token). A 403 here is a refused
-        credential — alarmed, never retried in a tight loop."""
+        credential — alarmed, never retried in a tight loop. In token mode it
+        returns the static token WITHOUT a request: the credential is never
+        POSTed once the operator has handed over a bearer."""
+        if self._access_token is not None:
+            return self._access_token
         result = await request(
             "POST",
             self._token_url,
