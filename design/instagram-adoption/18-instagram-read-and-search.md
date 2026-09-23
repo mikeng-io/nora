@@ -256,7 +256,7 @@ Each item is an existing test that goes red, applied to both tools:
   from its confusable siblings (`social_fetch`, `web_fetch`, `media_fetch`,
   and each other). It is what she would call from if deferral were on
   (measured, porgy-58), and it opens the resident description either way.
-  - `instagram_read`, as shipped in P5 (33 tokens): *"Read someone's
+  - `instagram_read`, as shipped in P5 (34 tokens as the L1 gate counts it): *"Read someone's
     Instagram profile or current story, by their name. Call this when
     somebody asks about a person's Instagram or what is on their story."*
     From P10 it names handles and pasted links; `posts` joins the line only
@@ -311,7 +311,7 @@ It must name X only.
 > **As built in P5 (2026-09-24):** *"Read X (Twitter) posts, profiles and
 > searches, or search Instagram accounts. Call this when somebody links or
 > asks about something on X, or wants an Instagram account found."* (39
-> tokens). It names X for every read, and Instagram for the one verb it still
+> tokens as the L1 gate counts it). It names X for every read, and Instagram for the one verb it still
 > serves: the overlap with `instagram_read` is gone (no profile, no story),
 > and there is no `instagram_search` line to overlap until P11, when the
 > Instagram clause leaves with the row. Naming X only would have left
