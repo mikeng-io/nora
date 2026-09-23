@@ -8,6 +8,7 @@ this suite and the bridge is a contract failure rather than a judgment call.
 
 from __future__ import annotations
 
+from nora.domain.models import EditTarget
 from nora.platform.instagram.parser import parse_event
 
 ROOM = "1009543911792316"
@@ -82,9 +83,43 @@ def test_the_platform_message_id_is_carried_because_react_addresses_by_it():
 
 def test_a_non_message_kind_is_dropped():
     """`kind`, not WhatsApp's `type`. The parser stays total on its own even
-    though the listener swallows two of these."""
-    for kind in ("heartbeat", "dropped", "reaction", "edit", "unsend", "typing"):
+    though the listener swallows two of these. `edit` is not in the list: it
+    is an edit now (design/message-edits/03 §1), pinned below."""
+    for kind in ("heartbeat", "dropped", "reaction", "unsend", "typing"):
         assert parse_event(_event(kind=kind)) is None
+
+
+def test_an_edit_names_its_target_and_no_sender():
+    """The bridge's edit delta carries the target `message_id`, the new text
+    and a timestamp, and NO sender (`from_me` is null by contract). So the
+    edit names what it changes and leaves `sender_id` empty for ingest to take
+    from the message it edits — never the `sender` block a message would
+    carry, which an edit event does not have."""
+    msg = parse_event({
+        "kind": "edit", "room_id": "1009543911792316", "message_id": "mid.$m",
+        "text": "fixed", "timestamp_ms": 1_700_000_000_500, "from_me": None,
+    })
+    assert msg is not None
+    assert msg.edit_of == EditTarget(message_id="mid.$m")
+    assert msg.body == "fixed"
+    assert msg.sender_id == ""
+    assert msg.timestamp == 1_700_000_000_500
+
+
+def test_an_edit_without_a_timestamp_is_stamped_on_arrival_not_zero():
+    """Zero would sort before every other edit and render no `edited` age."""
+    msg = parse_event({
+        "kind": "edit", "room_id": "1009543911792316", "message_id": "mid.$m",
+        "text": "fixed", "from_me": None,
+    })
+    assert msg is not None and msg.timestamp > 1_700_000_000_000
+
+
+def test_an_edit_naming_no_target_is_dropped():
+    assert parse_event({
+        "kind": "edit", "room_id": "1009543911792316", "message_id": "",
+        "text": "fixed", "from_me": None,
+    }) is None
 
 
 def test_our_own_echo_is_dropped():

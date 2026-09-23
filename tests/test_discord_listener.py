@@ -181,3 +181,50 @@ async def test_on_ready_extra_is_not_called_again_on_resume():
     await client.handlers["on_resumed"]()
 
     assert calls == ["ready"]
+
+
+async def test_an_edit_is_heard_on_the_raw_event_and_forwards_the_edited_message(clock):
+    """design/message-edits/03 §1. `on_raw_message_edit`, not
+    `on_message_edit`: the cooked event fires only for a message still in
+    discord.py's cache, so an edit to anything older would vanish. The raw
+    payload's `.message` is the full edited message, and that is what the
+    callback receives."""
+    client = FakeClient()
+    listener = DiscordListener(client, "tok", clock=clock)
+    received = []
+
+    async def on_message(_message):
+        pass
+
+    async def on_edit(message):
+        received.append(message)
+
+    await listener.listen(on_message, on_edit)
+
+    assert "on_raw_message_edit" in client.handlers
+    assert "on_message_edit" not in client.handlers
+
+    class _Payload:
+        message = "edited-message-1"
+
+    await client.handlers["on_raw_message_edit"](_Payload())
+    assert received == ["edited-message-1"]
+    assert listener.last_event_at == 100.0
+
+
+async def test_a_raising_edit_callback_does_not_propagate():
+    client = FakeClient()
+    listener = DiscordListener(client, "tok")
+
+    async def on_message(_message):
+        pass
+
+    async def on_edit(_message):
+        raise RuntimeError("boom")
+
+    await listener.listen(on_message, on_edit)
+
+    class _Payload:
+        message = "edited-message-1"
+
+    await client.handlers["on_raw_message_edit"](_Payload())  # must not raise

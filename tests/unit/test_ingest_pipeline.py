@@ -19,7 +19,7 @@ import hashlib
 import pytest
 
 from nora.domain.media import MediaRef
-from nora.domain.models import NormalizedMessage, PersonRef
+from nora.domain.models import EditTarget, NormalizedMessage, PersonRef
 from nora.domain.ports import MemoryHealth
 from nora.ingest.pipeline import IngestPipeline, IngestResult
 from nora.ingest.policy import TriggerTextPolicy
@@ -589,6 +589,28 @@ async def _drive_sender_not_allowed(metrics=None):
     return await pipeline.run(message=_msg(body="nora.000 hi"))
 
 
+async def _drive_edit(metrics, *, edit_body: str, original_is_nora: bool = False,
+                      sender_id: str = "+852111", recorded: bool = True):
+    """An EDIT of a Signal message sent at ts=1 (design/message-edits/02 §4).
+    `recorded=False` leaves the original off the record — an orphan."""
+    store = FakeRecordStore()
+    if recorded:
+        await store.append(
+            message=_msg(body="dinner at 7"), is_nora=original_is_nora,
+            person_id=None if original_is_nora else "miles",
+        )
+    pipeline = _pipeline(
+        audit=store, memory=FakeMemory(), persons=_known_persons(),
+        policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
+        allowlist=_policy_of(), metrics=metrics,
+    )
+    edit = dataclasses.replace(
+        _msg(sender_id=sender_id, body=edit_body), timestamp=5,
+        edit_of=EditTarget(sent_ts=1),
+    )
+    return await pipeline.run(message=edit)
+
+
 #: Every exit, paired with the outcome it must count. `_OUTCOMES` is checked
 #: against the KEYS of this table rather than the table being written from the
 #: vocabulary, so an outcome added without a driver — or a driver added without
@@ -600,6 +622,15 @@ def _all_drivers(monkeypatch, metrics):
         "scope_refused": lambda: _drive_scope_refused(metrics),
         "sender_not_allowed": lambda: _drive_sender_not_allowed(metrics),
         "audit_refused": lambda: _drive_audit_refused(monkeypatch, metrics),
+        "edit_recorded": lambda: _drive_edit(metrics, edit_body="dinner at 8"),
+        "edit_engaged": lambda: _drive_edit(metrics, edit_body="nora.000 dinner at 8?"),
+        "edit_unchanged": lambda: _drive_edit(metrics, edit_body="dinner at 7"),
+        "edit_orphaned": lambda: _drive_edit(
+            metrics, edit_body="dinner at 8", sender_id="", recorded=False,
+        ),
+        "edit_refused": lambda: _drive_edit(
+            metrics, edit_body="dinner at 8", original_is_nora=True,
+        ),
     }
 
 

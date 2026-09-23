@@ -149,13 +149,26 @@ def _discovered_raw_message_readers(root: pathlib.Path | None = None) -> set[str
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except SyntaxError:                                # pragma: no cover
             continue
+        # OR a call of `transcript_select`, the store's own column set
+        # exported for the snapshot's as-of read (design/message-edits/01 §3).
+        # It selects `MESSAGES.c.body` INSIDE `audit.py`, so a module building
+        # a transcript through it reads bodies with its own SQL while naming
+        # no `body` column at all — the snapshot became exactly that, and
+        # without this clause it silently left the set it is still in.
         hit = any(
-            isinstance(node, ast.Attribute)
-            and node.attr == "body"
-            and isinstance(node.value, ast.Attribute)
-            and isinstance(node.value.value, ast.Name)
-            and node.value.value.id == "MESSAGES"
-            and node.value.attr == "c"
+            (
+                isinstance(node, ast.Attribute)
+                and node.attr == "body"
+                and isinstance(node.value, ast.Attribute)
+                and isinstance(node.value.value, ast.Name)
+                and node.value.value.id == "MESSAGES"
+                and node.value.attr == "c"
+            )
+            or (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "transcript_select"
+            )
             for node in ast.walk(tree)
         )
         if hit:
