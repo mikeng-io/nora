@@ -73,15 +73,38 @@ groups:
       # increment is a refused login (`auth_403`), a ban-class read (`banned`),
       # or the app-update challenge page (`challenge`) — never a stale token
       # that one re-auth fixed. A refused login does not heal on its own.
+      #
+      # `token_rejected` is left to its own rule below, which carries the fix.
       - alert: PresenceAuthRefused
-        expr: sum by (reason) (increase(nora_presence_auth_alarms_total[15m])) > 0
+        expr: sum by (reason) (increase(nora_presence_auth_alarms_total{reason!="token_rejected"}[15m])) > 0
         for: 5m
         labels: { severity: warning }
         annotations:
           summary: "Life360 is refusing the presence collector ({{ $labels.reason }})"
           description: >-
-            auth_403 means the stored login no longer works (password changed,
-            or the account signed out); it needs the operator, not a restart.
+            auth_403 means Life360 refused the password login. A verified phone
+            number on the account blocks the password grant for good, which is
+            what happened on 2026-09-24. It needs the operator, not a restart:
+            switch to token mode (LIFE360_AUTH_TOKEN, docs/runbook.md §4c).
+
+      # Token mode's dead token (2026-09-24). With LIFE360_AUTH_TOKEN set, the
+      # collector never falls back to the password, so a token Life360 stopped
+      # accepting stays dead until a person copies a new one. 2h, not 15m: the
+      # back-off caps at an hour between attempts, so a shorter window flaps.
+      - alert: Life360TokenRejected
+        expr: sum by (job) (increase(nora_presence_auth_alarms_total{reason="token_rejected"}[2h])) > 0
+        for: 0m
+        labels: { severity: critical }
+        annotations:
+          summary: "Life360 rejected LIFE360_AUTH_TOKEN — no locations are being recorded"
+          description: >-
+            Every where_is / where_been answer stops at the last fix until this
+            is fixed. Sign in at https://life360.com/login as Nora's Life360
+            account, open DevTools > Application > Cookies > life360.com, and
+            copy the LIFE360_AUTH_TOKEN value into LIFE360_AUTH_TOKEN= in
+            nora/.env on norty. Then run `docker compose up -d --force-recreate
+            presence` (a restart keeps the old environment). The full steps are
+            in docs/runbook.md §4c.
 
   - name: nora-r27
     rules:

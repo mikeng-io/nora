@@ -1196,6 +1196,10 @@ class PresenceConfig(BaseModel):
     the env var holding the Basic client credential (the study's auth), and
     `username_env`/`password_env` the account login. The collector reads the
     VALUES from the environment; a committed file never carries them.
+    `auth_token_env` names an OPTIONAL static bearer (the `LIFE360_AUTH_TOKEN`
+    cookie from a life360.com browser login) for an account Life360 refuses the
+    password grant to; when its value is set the client runs in token mode and
+    the three login vars are not required (nora/infra/life360/client.py).
 
     `cadence_seconds` is the per-circle poll interval - ~60-120 s, roughly what
     the Life360 app itself does (§1). `retention_days` is the prune window
@@ -1209,6 +1213,7 @@ class PresenceConfig(BaseModel):
     client_credential_env: str = "LIFE360_CLIENT_CREDENTIAL"
     username_env: str = "LIFE360_USERNAME"
     password_env: str = "LIFE360_PASSWORD"  # noqa: S105 — names an env var, not a secret
+    auth_token_env: str = "LIFE360_AUTH_TOKEN"  # noqa: S105 — names an env var, not a secret
     # ~60-120 s (§1). `ge=1` guards a zero/negative that would busy-loop; the
     # 60-120 band is guidance in config.example.toml, not a hard clamp, so an
     # operator can widen it deliberately without editing code.

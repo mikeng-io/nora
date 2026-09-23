@@ -150,3 +150,31 @@ def test_compose_passes_every_search_backend_key_into_the_container():
             f"not enough — compose does not inherit host .env into a service, so "
             f"selecting that backend would answer `unavailable` on every call."
         )
+
+
+def test_the_life360_token_alert_matches_the_reason_the_client_emits():
+    """The alert on a dead LIFE360_AUTH_TOKEN (2026-09-24) must name the SAME
+    `reason` label `Life360Client` increments: a rule on a label nobody emits is
+    silent forever and looks exactly like a healthy one. Derived from the
+    client's own `_alarm(...)` calls, not hand-copied. The generic
+    `PresenceAuthRefused` excludes that reason, so a dead token pages once, with
+    the fix in hand."""
+    import re
+
+    import yaml
+
+    client = (ROOT / "nora" / "infra" / "life360" / "client.py").read_text()
+    assert "token_rejected" in set(re.findall(r'_alarm\("([a-z_0-9]+)"\)', client))
+    rules = {
+        r["alert"]: r
+        for g in yaml.safe_load(
+            (DEPLOY / "prometheus" / "rules" / "nora.yml").read_text()
+        )["groups"]
+        for r in g["rules"]
+    }
+    token = rules["Life360TokenRejected"]
+    assert 'reason="token_rejected"' in token["expr"]
+    assert 'reason!="token_rejected"' in rules["PresenceAuthRefused"]["expr"]
+    # The annotation is the operator's whole recovery path at 3am.
+    assert "LIFE360_AUTH_TOKEN" in token["annotations"]["description"]
+    assert "--force-recreate" in token["annotations"]["description"]

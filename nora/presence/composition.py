@@ -105,6 +105,9 @@ def build_collector(cfg: Config) -> PresenceDependencies:
     credential = os.environ.get(presence.client_credential_env, "")
     username = os.environ.get(presence.username_env, "")
     password = os.environ.get(presence.password_env, "")
+    # Token mode: an operator-supplied bearer replaces the password grant, so
+    # the three login vars are no longer what the collector needs to start.
+    access_token = os.environ.get(presence.auth_token_env, "")
     missing = [
         name
         for name, value in (
@@ -112,7 +115,7 @@ def build_collector(cfg: Config) -> PresenceDependencies:
             (presence.username_env, username),
             (presence.password_env, password),
         )
-        if not value
+        if not value and not access_token
     ]
     if missing:
         raise PresenceStartupError(
@@ -144,7 +147,11 @@ def build_collector(cfg: Config) -> PresenceDependencies:
         username=username,
         password=password,
         metrics=metrics,
+        access_token=access_token or None,
     )
+    if access_token:
+        log.info("life360 auth: token mode (%s) — the password grant is never used",
+                 presence.auth_token_env)
     collector = PresenceCollector(
         client=client,
         store=store,
