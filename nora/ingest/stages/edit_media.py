@@ -21,7 +21,13 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Awaitable, Callable
 
-from nora.domain.media import blobs_from_media_json, body_with_handles, label_for
+from nora.domain.media import (
+    blobs_from_media_json,
+    body_with_handles,
+    label_for,
+    placeholders_in,
+    render_placeholder,
+)
 from nora.domain.models import EditedMessage, NormalizedMessage
 
 
@@ -32,9 +38,19 @@ async def run(
     if not message.media:
         return message
     held = blobs_from_media_json(original.media_json)
-    if len(held) != len(message.media):
-        return await custody(message)
+    # `media_json` lists only the blobs Nora HOLDS — a failed download is a
+    # gap, dropped — so it is positional only when the original held EVERY
+    # attachment: all its placeholders carry a handle, and there are as many
+    # as there are blobs. A bare placeholder (`[image]`, no handle) in the
+    # original IS such a gap — `placeholders_in` only sees handled ones, so
+    # it is looked for directly. Otherwise (review, 2026-09-24) a removed attachment
+    # could hand its neighbour's handle to the wrong placeholder.
     labels = tuple(label_for(ref) for ref in message.media)
+    first = original.first_body or ""
+    placed = placeholders_in(first)          # the placeholders that carry a handle
+    gap = any(render_placeholder(label) in first for label in set(labels))
+    if len(held) != len(message.media) or len(placed) != len(held) or gap:
+        return await custody(message)
     return dataclasses.replace(
         message,
         body=body_with_handles(message.body, labels, tuple(b.handle for b in held)),

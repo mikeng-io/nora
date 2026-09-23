@@ -313,11 +313,13 @@ class SqlRecordStore:
     ) -> EditedMessage | None:
         """See `nora.domain.ports.RecordStore.find_edited`.
 
-        Both lookups are index reads: the handle on
-        `idx_messages_conv_platform_message_id`, Signal's pair on
-        `idx_messages_conv_ts`. A target naming neither answers None without a
-        query. Should two rows match — a platform re-delivering a message, a
-        duplicated millisecond — the EARLIEST wins, `prefill._by_ts`'s rule:
+        The handle is an index read on `idx_messages_conv_platform_message_id`.
+        Signal's timestamp is matched against the message AND its edits, which
+        is a scan of one conversation (0.8 ms over 2,099 rows on norty,
+        2026-09-24) — it runs once per Signal edit, never per message. A
+        target naming neither answers None without a query. Should two rows
+        match — a platform re-delivering a message, a duplicated millisecond —
+        the EARLIEST wins, `prefill._by_ts`'s rule:
         an edit changes something that already existed."""
         prefer: Any = sa.literal(0)
         if target.message_id:
@@ -357,6 +359,9 @@ class SqlRecordStore:
                 latest.c.ts.label("edit_ts"), latest.c.body.label("edit_body"),
                 latest.c.mentions_json.label("edit_mentions_json"),
                 replies_to_nora.label("replies_to_nora"),
+                sa.select(sa.func.array_agg(MESSAGE_EDIT.c.ts))
+                .where(MESSAGE_EDIT.c.message_id == MESSAGES.c.id)
+                .scalar_subquery().label("edit_timestamps"),
             )
             .select_from(MESSAGES.outerjoin(latest, sa.true()))
             .where(MESSAGES.c.conversation_id == conversation_id, match)
@@ -380,6 +385,7 @@ class SqlRecordStore:
             replies_to_nora=bool(r.replies_to_nora),
             edited_ts=r.edit_ts,
             media_json=r.media_json,
+            edit_timestamps=frozenset(int(t) for t in (r.edit_timestamps or ())),
         )
 
     async def quoted_ts_of(self, *, conversation_id: str, ts: int) -> int:

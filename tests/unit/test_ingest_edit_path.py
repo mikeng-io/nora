@@ -162,7 +162,7 @@ async def test_an_exact_redelivery_writes_nothing():
     await pipe.run(message=_edit("dinner at 8", ts=5))
     await pipe.run(message=_edit("dinner at 8", ts=5))
     assert [e["body"] for e in store.edits] == ["dinner at 8"]
-    assert metrics.get("nora_ingest_outcomes_total", outcome="edit_unchanged") == 1
+    assert metrics.get("nora_ingest_outcomes_total", outcome="edit_stale") == 1
 
 
 async def test_a_mention_only_change_is_a_change():
@@ -180,16 +180,62 @@ async def test_a_mention_only_change_is_a_change():
     assert result.decision is not None and result.decision.engage
 
 
-async def test_a_same_second_edit_is_not_stale():
-    """WhatsApp stamps whole seconds when it has no millisecond clock: two
-    edits in one second tie, and the later must win."""
+async def test_an_edit_whose_timestamp_is_on_record_is_a_redelivery():
+    """On Signal an edit's timestamp IS its identity; on every network a
+    repeated one is a redelivery. Recording it again flipped the fold back to
+    older text (review, 2026-09-24)."""
     store = FakeRecordStore()
-    await store.append(message=_msg("dinner at 7"), person_id="miles")
-    pipe = _pipeline(store)
-    await pipe.run(message=_edit("dinner at 8", ts=5))
-    await pipe.run(message=_edit("dinner at 9", ts=5))
+    metrics = Metrics()
+    await store.append(message=_msg("v0", message_id="m1"), person_id="miles")
+    pipe = _pipeline(store, metrics=metrics)
+    await pipe.run(message=_edit("v1", ts=5000, target=EditTarget(message_id="m1")))
+    await pipe.run(message=_edit("v2", ts=6000, target=EditTarget(message_id="m1")))
+    await pipe.run(message=_edit("v1", ts=5000, target=EditTarget(message_id="m1")))
     rows = await store.recent(conversation_id="g1", limit=5)
-    assert rows[0].body == "dinner at 9"
+    assert rows[0].body == "v2"
+    assert metrics.get("nora_ingest_outcomes_total", outcome="edit_stale") == 1
+
+
+async def test_a_skewed_clock_edit_cannot_let_a_redelivery_bring_back_old_text():
+    """Phone edits at 1000 (v1); a desktop 200 ms behind edits v1 at 800
+    (v2, admitted by the waiver). Signal then redelivers the phone's edit.
+    Judged against the version SHOWN (800) it looked newer and resurrected
+    v1, fed to Honcho as a correction. Judged against the newest clock on
+    record, and by its timestamp already being there, it is stale."""
+    store = FakeRecordStore()
+    memory = RecordingMemory()
+    spawned: list = []
+    await store.append(message=_msg("v0", ts=100), person_id="miles")
+    pipe = _pipeline(store, memory=memory, spawned=spawned)
+    await pipe.run(message=_edit("v1", ts=1000, target=EditTarget(sent_ts=100)))
+    await pipe.run(message=_edit("v2", ts=800, target=EditTarget(sent_ts=1000)))
+    await _drain(spawned)
+    fed_before = len(memory.fed)
+    await pipe.run(message=_edit("v1", ts=1000, target=EditTarget(sent_ts=100)))
+    await _drain(spawned)
+    rows = await store.recent(conversation_id="g1", limit=5)
+    assert rows[0].body == "v2"
+    assert len(memory.fed) == fed_before, "a redelivery must not be fed as a correction"
+
+
+async def test_a_quote_on_another_platform_is_never_re_pointed():
+    """Only Signal quotes a revision. Elsewhere a quote carries its parent's
+    own timestamp, so a reply to a message Nora never recorded whose
+    timestamp collides with some edit must keep its pointer."""
+    store = FakeRecordStore()
+    wa = {"platform": "whatsapp"}
+    await store.append(
+        message=dataclasses.replace(_msg("alice", ts=100, message_id="m1"), **wa),
+        person_id="miles",
+    )
+    await _pipeline(store).run(message=dataclasses.replace(
+        _edit("alice fixed", ts=7000, target=EditTarget(message_id="m1")), **wa,
+    ))
+    reply = dataclasses.replace(
+        _msg("yes", ts=8000), quote=Quote(author_id="x", text="", quoted_ts=7000), **wa,
+    )
+    await _pipeline(store).run(message=reply)
+    assert store.rows[-1]["quoted_ts"] == 7000
 
 
 async def test_a_signal_edit_naming_the_latest_revision_wins_even_from_a_slow_clock():
@@ -557,3 +603,26 @@ async def test_an_edited_caption_keeps_the_attachment_handle_without_refetching(
     await _pipeline(store).run(message=edit)
     rows = await store.recent(conversation_id="g1", limit=5)
     assert rows[0].body == f"look here {render_placeholder(label_for(ref), blob.handle)}"
+
+
+async def test_handles_are_not_reused_when_the_original_did_not_hold_every_attachment():
+    """`media_json` lists only held blobs — a failed download is a gap — so
+    it is positional only when every placeholder in the original carried a
+    handle. Otherwise a removed attachment could hand its neighbour's handle
+    to the wrong placeholder; custody runs instead."""
+    from nora.domain.media import MediaBlob, MediaRef, label_for, render_placeholder
+
+    a = MediaRef(platform_id="a", media_type="image/png")
+    b = MediaRef(platform_id="b", media_type="image/png")
+    blob_b = MediaBlob(sha256="b" * 64, media_type="image/png", size=1)
+    bare_a = render_placeholder(label_for(a))
+    original_body = f"pics {bare_a} {render_placeholder(label_for(b), blob_b.handle)}"
+    store = FakeRecordStore()
+    await store.append(
+        message=dataclasses.replace(_msg(original_body), media=(a, b), media_blobs=(blob_b,)),
+        person_id="miles",
+    )
+    edit = dataclasses.replace(_edit(f"pics {render_placeholder(label_for(a))}"), media=(a,))
+    await _pipeline(store).run(message=edit)
+    rows = await store.recent(conversation_id="g1", limit=5)
+    assert blob_b.handle not in (rows[0].body or ""), "b's handle given to a's placeholder"

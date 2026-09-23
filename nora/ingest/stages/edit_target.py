@@ -113,13 +113,18 @@ def _is_stale(
     """Older than the newest edit on record: a redelivery, or out of order.
     Decided HERE, before custody, so a stale update fetches nothing.
 
-    Strictly older — an equal time is a same-second edit on WhatsApp, not a
-    duplicate; a true duplicate carries the same text and ends
-    `edit_unchanged` one stage later. And a Signal edit that names the latest
+    Older than the NEWEST CLOCK on record — the maximum, not the version
+    shown, which a skewed edit can make lower (review, 2026-09-24: judging
+    against it let a redelivered older edit bring old text back). An edit
+    whose timestamp is already on record is a redelivery. And a Signal edit that names the latest
     revision's own timestamp is newer BY DEFINITION, whatever its clock says:
     each device stamps its own sends, so a linked desktop running behind the
     phone would otherwise have every edit it makes thrown away."""
-    if original.edited_ts is None or message.timestamp >= original.edited_ts:
+    if message.timestamp in original.edit_timestamps:
+        # Already on record: a redelivery. Checked FIRST, because the waiver
+        # below must never re-admit an edit Nora already holds.
+        return True
+    if not original.edit_timestamps or message.timestamp >= max(original.edit_timestamps):
         return False
     return not (target.sent_ts is not None and target.sent_ts == original.edited_ts)
 

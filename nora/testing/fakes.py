@@ -224,6 +224,9 @@ class FakeRecordStore:
             ),
             edited_ts=latest["ts"] if latest else None,
             media_json=r["media_json"],
+            edit_timestamps=frozenset(
+                e["ts"] for e in self.edits if e["message_id"] == r["id"]
+            ),
         )
 
     async def quoted_ts_of(self, *, conversation_id: str, ts: int) -> int:

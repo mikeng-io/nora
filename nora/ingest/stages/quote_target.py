@@ -27,7 +27,11 @@ log = logging.getLogger("nora.ingest.quote_target")
 
 async def run(*, message: NormalizedMessage, audit: RecordStore, metrics: Any) -> NormalizedMessage:
     quote = message.quote
-    if quote is None or not quote.quoted_ts:
+    # SIGNAL ONLY. It is the one network that quotes a revision: WhatsApp,
+    # Instagram and Discord quote the parent's own timestamp, and running the
+    # lookup there could only move a reply whose parent Nora never recorded
+    # onto an unrelated message whose edit shares that millisecond.
+    if message.platform != "signal" or quote is None or not quote.quoted_ts:
         return message
     try:
         ts = await audit.quoted_ts_of(

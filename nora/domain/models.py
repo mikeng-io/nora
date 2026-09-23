@@ -293,6 +293,12 @@ class EditedMessage:
     platform_message_id: str = ""
     replies_to_nora: bool = False
     edited_ts: int | None = None
+    # Every edit's own timestamp on record for this message. `edited_ts` is
+    # the NEWEST BY ARRIVAL (the version shown), which a Signal edit from a
+    # slow-clocked device can make lower than an earlier edit's; staleness is
+    # judged against the MAXIMUM here, and an edit whose timestamp is already
+    # on record is a redelivery — on Signal a timestamp IS an edit's identity.
+    edit_timestamps: frozenset[int] = frozenset()
     # The `messages.media_json` of the original: the handles an edit's
     # attachment placeholders are given back, instead of re-fetching bytes
     # Nora already holds (`nora.ingest.stages.edit_media`).
