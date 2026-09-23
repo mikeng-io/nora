@@ -23,6 +23,8 @@ from nora.testing import FakeRecordStore
 
 NORA = "+852999"
 TRIGGER = "nora.000"
+#: The Signal address of the message `_msg` sends by default: its sent ts.
+ORIGINAL = EditTarget(sent_ts=1)
 
 
 class RecordingMemory:
@@ -79,7 +81,7 @@ def _msg(body: str, *, ts: int = 1, sender: str = "+852111",
 
 def _edit(body: str, *, sender: str = "+852111", ts: int = 5,
           mentions: frozenset[str] = frozenset(),
-          target: EditTarget = EditTarget(sent_ts=1)) -> NormalizedMessage:
+          target: EditTarget = ORIGINAL) -> NormalizedMessage:
     return dataclasses.replace(
         _msg(body, ts=ts, sender=sender, mentions=mentions), edit_of=target,
     )
