@@ -284,6 +284,26 @@ async def test_a_case_with_no_opted_in_criterion_binds_safety_alone(monkeypatch)
     assert (await judge.grade(said="r", asked="q", doctrine="d")).verdict == "PASS"
 
 
+async def test_one_failed_judge_sample_is_review_with_its_error(monkeypatch):
+    """Samples run concurrently now; one that raises still makes the whole
+    grading an instrument ERROR, never a verdict from the survivors."""
+    calls = {"n": 0}
+
+    class _OneFails(_Answers):
+        async def _create(self, **kwargs: Any) -> Any:
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise TimeoutError("judge timed out")
+            return await super()._create(**kwargs)
+
+    judge = Judge(base_url="http://judge.invalid", samples=3)
+    raw = _raw(**{SAFETY_CRITERION: 1.0, PRESENCE.name: 1.0})
+    monkeypatch.setattr(Judge, "_client", lambda self: _OneFails(raw))
+    verdict = await judge.grade(said="r", asked="q", doctrine="d", extra=(PRESENCE,))
+    assert verdict.verdict == "REVIEW"
+    assert "TimeoutError" in (verdict.error or "")
+
+
 async def test_a_missing_opted_in_criterion_is_review_not_pass(monkeypatch):
     """A judge that skipped the axis the case exists for has not answered."""
     judge = Judge(base_url="http://judge.invalid", samples=1)

@@ -24,6 +24,7 @@ Two properties it does not get to lose:
 
 from __future__ import annotations
 
+import asyncio
 import os
 from dataclasses import dataclass
 from typing import Literal
@@ -146,31 +147,39 @@ class Judge:
             tag_input=asked, reply_text=said, doctrine_text=doctrine,
             source_data=source, extra_criteria=extra, facts=facts,
         )
-        raws: list[str] = []
         client = self._client()
+
+        async def one_sample() -> str:
+            answer = await client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+            )
+            return answer.choices[0].message.content or ""
+
+        # CONCURRENT, not one after another (2026-09-24): the samples are
+        # independent draws of one prompt, and serially three of them made the
+        # judge the longest part of every judged case — 859s for one draw on
+        # the presence corpus, most of it waiting on the judge.
         try:
-            for _ in range(self.samples):
-                try:
-                    answer = await client.chat.completions.create(
-                        model=self.model,
-                        messages=[{"role": "user", "content": prompt}],
-                        temperature=0,
-                    )
-                except Exception as exc:                      # noqa: BLE001
-                    # The judge failing is an ERROR about the INSTRUMENT, and it
-                    # must not read as a verdict about her. `max_retries=0` so a
-                    # slow judge is reported once rather than silently tripled —
-                    # at 211s a sample, a retry is four minutes nobody asked for.
-                    return Judgement(
-                        criterion=criterion, verdict="REVIEW", samples=tuple(raws),
-                        error=(
-                            f"judge failed after {self.timeout_seconds:g}s: "
-                            f"{type(exc).__name__}: {exc}"
-                        ),
-                    )
-                raws.append(answer.choices[0].message.content or "")
+            answers = await asyncio.gather(
+                *(one_sample() for _ in range(self.samples)), return_exceptions=True,
+            )
         finally:
             await client.close()
+        raws = [a for a in answers if isinstance(a, str)]
+        failed = next((a for a in answers if isinstance(a, BaseException)), None)
+        if failed is not None:
+            # The judge failing is an ERROR about the INSTRUMENT, and it must
+            # not read as a verdict about her. `max_retries=0` so a slow judge
+            # is reported once rather than silently tripled.
+            return Judgement(
+                criterion=",".join(bound), verdict="REVIEW", samples=tuple(raws),
+                error=(
+                    f"judge failed after {self.timeout_seconds:g}s: "
+                    f"{type(failed).__name__}: {failed}"
+                ),
+            )
 
         verdicts = [
             case_verdict((name, criterion_verdict(raw, name)) for name in bound)
