@@ -19,9 +19,9 @@ Every name, handle and id here is synthetic.
 from __future__ import annotations
 
 import copy
-import inspect
 import json
 import re
+import typing
 from pathlib import Path
 
 import pytest
@@ -573,18 +573,64 @@ async def test_the_call_is_counted_under_its_status(persons):
 # ---- the surface ----------------------------------------------------------------
 
 
-def test_the_schema_takes_a_read_and_a_person_and_nothing_else():
+def test_the_schema_takes_a_read_and_a_person_and_nothing_else(persons):
     """18 §"Verbs join only when they work end to end": a parameter in the
     schema is a word advertising an input, so `link` and `handle` (P10) and
-    `limit`/`cursor` (P13's posts) are absent until they work — not present
-    and answering «not yet»."""
-    import nora.agent.tools as tools_module
+    `limit`/`cursor` (P13's posts) are absent until they work, not present
+    and answering «not yet». Read off the schema the model is actually SENT,
+    and `what` is an enum (ADR 0015 §3: allowed values are types)."""
+    from nora.agent.ports import adapt
 
-    source = inspect.getsource(tools_module.build_tool_specs)
-    match = re.search(r"async def instagram_read\(([^)]*)\)", source)
-    assert match is not None
-    params = [p.split(":")[0].strip() for p in match.group(1).split(",")]
-    assert params == ["what", "person"]
+    room = Room(platform="signal", conversation_id="g1", roster_source=None, persons=persons)
+    (spec,) = [
+        s for s in ToolRegistry().specs(
+            store=_NoStore(), conversation_id="g1", conversation_type="group",
+            persons=persons, honcho=FakeMemoryStore(), deliverer=SinkSender(),
+            metrics=Metrics(), room=room,
+        ) if s.name == "instagram_read"
+    ]
+    schema = adapt(spec).tool_spec["inputSchema"]["json"]
+    assert set(schema["properties"]) == {"what", "person"}
+    assert set(schema["required"]) == {"what", "person"}
+    assert schema["properties"]["what"]["enum"] == ["profile", "story"]
+
+
+def test_the_description_meets_adr_0015():
+    """ADR 0015 §3 for a NEW tool, from its first commit: a declared level,
+    the text Strands sends (the docstring minus `Args:`) within that level's
+    ceiling, no em or en dash, and no non-English string at all (it needs no
+    trigger word). The same checks for `social_fetch`, whose docstring this
+    branch edits. Counted over the whole sent spec for the dash and script
+    checks, so an `Args:` line cannot hide one."""
+    import tiktoken
+
+    from nora.agent.ports import adapt
+
+    enc = tiktoken.get_encoding("cl100k_base")
+    ceilings = {1: 80, 2: 160, 3: 320}
+    room = Room(platform="signal", conversation_id="g1", roster_source=None, persons=_NoPersons())
+    specs = {
+        s.name: s for s in ToolRegistry().specs(
+            store=_NoStore(), conversation_id="g1", conversation_type="group",
+            persons=_NoPersons(), honcho=FakeMemoryStore(), deliverer=SinkSender(),
+            metrics=Metrics(), room=room,
+        )
+    }
+    for name in ("instagram_read", "social_fetch"):
+        level = NATIVE_TOOLS[name].level
+        assert level in ceilings, name
+        sent = adapt(specs[name]).tool_spec
+        assert len(enc.encode(sent["description"])) <= ceilings[level], name
+        whole = json.dumps(sent, ensure_ascii=False)
+        assert not re.search("[\u2013\u2014]", whole), name
+        assert not re.search("[^\x00-\u024f]", whole), name
+
+
+class _NoPersons:
+    by_person: typing.ClassVar[dict] = {}
+
+    def resolve(self, platform, sender_id):
+        return None
 
 
 def test_posts_is_in_neither_the_vocabulary_nor_the_catalogue_line():

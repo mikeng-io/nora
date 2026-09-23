@@ -152,5 +152,19 @@
     "old": "    \"note\": \"I only open stories of people the operator has listed in one of \"\n            \"my rooms. Say it's a boundary.\",",
     "new": "    \"note\": \"I don't look up people outside the rooms I'm in. Say that \"\n            \"plainly — it's a boundary, not a failure.\",",
     "target": "tests/unit/test_instagram_read_tool.py::test_a_story_for_someone_in_no_room_is_refused_and_never_requested"
+  },
+  {
+    "name": "instagram_read declares no level (ADR 0015 §3)",
+    "file": "nora/agent/tools.py",
+    "old": "retry=\"safe\", output_contract=\"three_state\", level=3),",
+    "new": "retry=\"safe\", output_contract=\"three_state\"),",
+    "target": "tests/unit/test_instagram_read_tool.py::test_the_description_meets_adr_0015"
+  },
+  {
+    "name": "instagram_read's `what` goes back to a bare str (no enum in the schema)",
+    "file": "nora/agent/tools.py",
+    "old": "async def instagram_read(what: Literal[\"profile\", \"story\"], person: str) -> dict:",
+    "new": "async def instagram_read(what: str, person: str) -> dict:",
+    "target": "tests/unit/test_instagram_read_tool.py::test_the_schema_takes_a_read_and_a_person_and_nothing_else"
   }
 ]

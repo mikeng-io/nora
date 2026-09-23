@@ -35,11 +35,21 @@ tools for one network map onto one backend.
 > switch (`[llm] defer_tools`) measured worse per turn and stays `false`
 > (`../tool-catalogue/05-measurement.md` §3a), so every tool, these included,
 > ships RESIDENT with its full schema. `instagram_read` costs its schema on
-> every turn: 382 tokens (cl100k, `json.dumps` of its `tool_spec`, the 05 §1
-> method). The same PR cut `social_fetch`'s schema from 847 to 577 by removing
-> its Instagram rows, so the resident total moved +112 (27,044 → 27,156). The
-> split is still the decision; what it costs is now measured rather than
-> assumed away. 05 §3a names this tool set's growth as a re-measure trigger.
+> every turn: 282 tokens (cl100k, `json.dumps` of its `tool_spec`, the 05 §1
+> method). The same PR cut `social_fetch`'s schema from 847 to 486 by removing
+> its Instagram rows and meeting ADR 0015, so the resident total moved −79
+> (27,044 → 26,965, against master at `4cc8f89b`). The split is still the
+> decision; what it costs is now measured rather than assumed away. 05 §3a
+> names this tool set's growth as a re-measure trigger.
+
+> **ADR 0015 (proposed 2026-09-24), met from the first commit.** Both tools
+> declare `level=3` on `NativeTool` (the field was added here, ADR 0015 §3).
+> The text Strands sends is 183 tokens for `instagram_read` and 312 for
+> `social_fetch`, under the Level 3 ceiling of 320. Neither has an em or en
+> dash or any non-English string. `instagram_read`'s `what` is a `Literal`,
+> so the schema carries the enum. Its description names the statuses and
+> says each non-`ok` result carries a `note`; the notes say what to tell
+> them.
 
 ## The naming convention, for every network
 
