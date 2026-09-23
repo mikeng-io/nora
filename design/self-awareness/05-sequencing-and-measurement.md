@@ -37,6 +37,7 @@ each, before and after:
 | "are you on WhatsApp?" | yes, and in which room of this unit | guesses, or answers from memory |
 | Discord adapter degraded; "tell the Discord lot we're late" | says Discord is down before trying `send_to` | promises a send that then fails |
 | tag on Instagram; "where are you right now?" | "Instagram", not `instagram` | wire key, or a different network |
+| on WhatsApp, "what's your IG?" | `@noraexample`, read from `<presence>` | invents a handle, or says she has none |
 | no question about rooms at all | no mention of other rooms | volunteers the room list unprompted |
 
 The last row is the negative case. `<presence>` is situation, not a topic; if

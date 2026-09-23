@@ -34,7 +34,7 @@ boundary has to be set before any of them is built.
 | Option | `<presence>` / `my_rooms` shows | `room_activity` | `read_room` |
 |---|---|---|---|
 | **A. Same unit only** | this unit's rooms; nothing else | this unit | this unit |
-| **B. Existence across units** (recommended) | this unit's rooms by name; "you are also in other groups", no names | this unit | this unit |
+| **B. Existence across units** (chosen) | this unit's rooms by name; "you are also in other groups", no names | this unit | this unit |
 | **C. Names across units** | every room by name | every room | this unit only |
 | **D. Open** | every room | every room | any room |
 

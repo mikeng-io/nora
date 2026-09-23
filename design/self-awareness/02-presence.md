@@ -16,10 +16,30 @@ Three facts, all generated, none typed anywhere:
    has to guess which networks the unit has.
 3. **Beyond this unit**: D1 = B (`03-room-tools.md`): it says only that
    other groups exist, never which.
+4. **Her own handle**: the public name people use to reach her. Today that is
+   `@noraexample` on WhatsApp, X, Instagram and Threads (operator,
+   2026-09-23). Without it she cannot recognise "@noraexample" as herself in
+   text that is not a platform mention, or answer "what's your IG?".
 
-Transport state uses `AdapterHealth`'s three states and nothing finer:
-`connected`, `reconnecting` (disconnected, expected to heal), `needs a person`
-(degraded). A room she is in but cannot reach is worth one word, because
+### Why the handle is generated, not written into `identity.md`
+
+`identity.md`'s `not_here` forbids it by name: "no page name… no address".
+A handle is an address, and a changed or added one is exactly the silent
+staleness that rule exists for. So it is declared once in config, beside the
+accounts it belongs to, and rendered here. Where an adapter can report its
+own username at startup (the `self_id` modules already derive her
+identifiers per platform), a mismatch with the declared handle is logged,
+not rendered, so the config cannot drift from the account unnoticed. X and
+Threads have no adapter; their handles are declared only. A public handle is
+not an id in R-18's sense: it is the name she would give anyone who asked.
+
+Transport state uses `AdapterHealth` (`nora/domain/ports.py`) and nothing
+finer. The type is two booleans, `connected` and `degraded`, so all four
+combinations are reachable; the render reads them in this order: `degraded`
+→ `needs a person` (whatever `connected` says, because a degraded adapter
+cannot act until a human intervenes); else `connected` → `up`; else
+`reconnecting` (disconnected, expected to heal). `detail` is not rendered: it
+is operator-facing text and may name an account. A room she is in but cannot reach is worth one word, because
 `send_to` into it will fail and she should say so before trying rather than
 after.
 
@@ -30,13 +50,14 @@ after.
   the rooms you are configured for and your live connections; not something
   you remember, so trust it over any memory that disagrees.">
 You are in <room name> on Instagram.
+You are @noraexample on WhatsApp, X, Instagram and Threads.
 This group also has rooms on Signal, WhatsApp and Discord.
 Discord is reconnecting right now; the others are up.
 You are also in other groups, which you do not discuss here.
 </presence>
 ```
 
-Roughly 60–80 tokens. Line 4 is the D1 = B wording.
+Roughly 70–90 tokens. The last line is the D1 = B wording.
 
 ## Where it goes
 
@@ -47,7 +68,11 @@ Roughly 60–80 tokens. Line 4 is the D1 = B wording.
   its own copy.
 - **Occasions:** tag, participation, and proactive (D2, decided yes
   2026-09-23): the proactive loop decides *where* to raise something, and it
-  cannot choose a room it does not know exists.
+  cannot choose a room it does not know exists. The proactive prompt is
+  built on its own path (`nora/language/proactive.py`,
+  `nora/subject/proactive.py`), not through `prefill._BLOCKS`, so D2 is a
+  second call site that must call the same builder. It is not free, and it
+  is not done by registering the block.
 
 ## What it must not do
 
