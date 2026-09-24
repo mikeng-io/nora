@@ -373,6 +373,15 @@ instagram.com page and still downloads. `instagram_read`'s post result
 already says each item's url is what `media_fetch(url=...)` looks at
 (`_POST_FRAMING`), now pinned by a test.
 
+> **Later 2026-09-24 (18 §"Typed views, one renderer, and readings").** A
+> post or reel read now comes back with what each of its first 8 items
+> SHOWS, read through `media_fetch` itself, beside the caption, so the
+> per-item second hop this paragraph describes is no longer needed. The
+> framing above (`POST_FRAMING`, now in `nora/infra/social/render.py`) is
+> used only when no item was looked at. `media_fetch`'s page-link note still
+> ends «then look at the media it returns», one hop more than she now needs;
+> it was left alone because a concurrent branch is changing the same file.
+
 Two spellings of a page link are caught as well (#471 review). A link with
 no scheme (`instagram.com/reel/<code>/`) is read the way `instagram_read`
 reads a pasted one (`_with_scheme`) and gets the same note, rather than

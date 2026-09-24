@@ -37,8 +37,8 @@
   {
     "name": "the igid rides an ok profile result",
     "file": "nora/infra/social/instagram_client.py",
-    "old": "            \"source_kind\": PROFILE_SOURCE_KIND,",
-    "new": "            \"source_kind\": PROFILE_SOURCE_KIND, \"account\": igid,",
+    "old": "        # A profile reads no media: it is rendered, never looked at.\n        return await self._answer(view, None)",
+    "new": "        # A profile reads no media: it is rendered, never looked at.\n        return {**await self._answer(view, None), \"account\": igid}",
     "target": "tests/unit/test_instagram_read_links.py -k profile_by_handle_or_link"
   },
   {
@@ -78,9 +78,9 @@
   },
   {
     "name": "the caption rides the post result outside the wrap",
-    "file": "nora/infra/social/instagram_client.py",
-    "old": "            \"note\": _POST_FRAMING,",
-    "new": "            \"note\": _POST_FRAMING, \"caption\": caption,",
+    "file": "nora/infra/social/render.py",
+    "old": "        \"note\": _post_note(view),",
+    "new": "        \"note\": _post_note(view), \"caption\": view.caption,",
     "target": "tests/unit/test_instagram_read_links.py -k carousel_of_three"
   },
   {

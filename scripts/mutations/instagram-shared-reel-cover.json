@@ -114,8 +114,8 @@
   {
     "name": "the question path does not pass the cover flag",
     "file": "nora/agent/tools.py",
-    "old": "            return _serve_media(\n                sha256, description, cached=False, code=serve_code, cover=is_cover,\n            )\n        if video_key is not None and video_read_whole:",
-    "new": "            return _serve_media(\n                sha256, description, cached=False, code=serve_code,\n            )\n        if video_key is not None and video_read_whole:",
+    "old": "            return _serve_media(\n                sha256, description, cached=False, code=serve_code, cover=is_cover,\n            )\n        # A STORY frame read by",
+    "new": "            return _serve_media(\n                sha256, description, cached=False, code=serve_code,\n            )\n        # A STORY frame read by",
     "target": "tests/test_media_fetch.py::test_a_cover_asked_a_question_says_so_too"
   },
   {
