@@ -1,10 +1,8 @@
 {
   "type": "fix",
-  "summary": "A voice channel that Nora failed to join no longer stays stuck as a served guild in /health forever.",
+  "summary": "A voice channel that Nora failed to join no longer stays stuck as a served guild in /health.",
   "details": [
-    "A failed join is pruned the next time that guild is joined, so a stale error connection cannot be mistaken for a live one."
+    "A failed join is dropped the moment it fails, with no need for a retry — /health's guilds list stops naming it immediately."
   ],
-  "limitations": [
-    "A guild whose join failed and is never joined again keeps reporting in /health until the next join attempt for it, or a restart."
-  ]
+  "limitations": []
 }
