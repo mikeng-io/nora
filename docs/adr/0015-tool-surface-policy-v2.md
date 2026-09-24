@@ -1,6 +1,51 @@
 # 0015 — Tool names, descriptions and content: the policy, and which rule is checked how
 
 - **Status:** accepted (operator, 2026-09-24)
+- **Correction 2026-09-25:** the 2026-09-24 governance audit (PR #481, issue
+  #482) found §6 naming six tests that did not match the tree: five existed
+  under a different name, and one (`test_every_listed_status_returns_a_note`)
+  did not exist at all. The table's "exists"/"first batch" status was
+  otherwise accurate. The decision is unchanged; only the names were wrong,
+  mapped here to the test that actually covers each row rather than edited
+  into §6 itself (accepted ADRs are not rewritten, `docs/adr/README.md`):
+  - `test_every_tool_declares_a_level` →
+    `test_every_rewritten_tool_declares_a_level`
+  - `test_description_fits_its_level` →
+    `test_a_rewritten_description_fits_its_level`
+  - `test_no_text_after_args_is_lost` →
+    `test_no_text_after_args_is_silently_dropped`
+  - `test_at_most_one_non_english_string` →
+    `test_at_most_one_non_english_string_in_a_rewritten_tool_spec`
+  - `test_no_dash_in_any_description` → `test_no_dash_in_a_rewritten_tool_spec`
+  - `test_every_listed_status_returns_a_note` named a test that did not
+    exist at all (§6 called it "first batch", but no batch had written it).
+    It now does, added on the #482 branch:
+    `tests/test_tool_surface_policy.py::test_every_listed_status_returns_a_note`.
+    It reads every return path of a Level 3, `output_contract="three_state"`
+    tool statically and requires a non-empty `note` for every status the
+    tool's own docstring lists, independently per return, plus a per-tool
+    DECLARED set of statuses a delegated (backend-fed) return can carry,
+    checked against its own notes mapping and a small named allowlist of
+    verified external constants (twice reviewed 2026-09-25, Opus: the first
+    cut credited a status from ANY note-bearing dict anywhere in the tool,
+    missing a dropped note among several `unavailable` returns and letting
+    an unrelated local return excuse a delegated status; the second found a
+    bare returned variable trusted without checking its binding, and a
+    `result["note"] = ...` credited even when moved into a conditional
+    branch the `return` was not in -- both fixed). What it still cannot see
+    from `nora/agent/tools.py` alone: whether `SocialBridgeClient._read`
+    and `InstagramSocialClient._search`, in `nora/infra/social/`, actually
+    RETURN the note-bearing payload it trusts them to at their own call
+    sites. `bridge_client.py`'s non-ok path (both `nothing_found` and
+    `unavailable`) is now guarded by `tests/test_social_bridge_client.py`
+    (assertions added this round, proved by reverting the call site and
+    watching two tests go red); `instagram_client._search`'s `ok` note is
+    guarded by `tests/unit/test_instagram_search_tool.py`, unchanged and
+    still outside what this test itself checks. See the test's own module
+    docstring for the full account.
+  - `test_the_opening_paragraph_is_an_l1` and the RFC 2119 row's
+    `test_a_must_is_turn_correctness_not_style` /
+    `test_style_guidance_is_labelled` were already correct; not renamed here.
 - **Date:** 2026-09-24
 - **Supersedes, in part:** [0007](0007-tool-surface-policy.md)
   §3.5 (English only, replaced by §3 below), §5 (the length ladder, now a

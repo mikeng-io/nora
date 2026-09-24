@@ -494,7 +494,9 @@ async def test_a_bridge_note_never_reaches_the_model(bridge):
 async def test_bridge_unavailable_passes_through(bridge):
     fake, client = bridge
     fake.mode = "unavailable"
-    assert (await _read(client))["status"] == "unavailable"
+    out = await _read(client)
+    assert out["status"] == "unavailable"
+    assert out["note"].strip()  # #482: the unavailable path had no note guard
 
 
 async def test_a_400_refusal_is_unavailable_never_nothing_found(bridge):
@@ -503,25 +505,33 @@ async def test_a_400_refusal_is_unavailable_never_nothing_found(bridge):
     there»."""
     fake, client = bridge
     fake.mode = "refused"
-    assert (await _read(client))["status"] == "unavailable"
+    out = await _read(client)
+    assert out["status"] == "unavailable"
+    assert out["note"].strip()  # #482: the unavailable path had no note guard
 
 
 async def test_a_500_is_unavailable(bridge):
     fake, client = bridge
     fake.mode = "error"
-    assert (await _read(client))["status"] == "unavailable"
+    out = await _read(client)
+    assert out["status"] == "unavailable"
+    assert out["note"].strip()  # #482: the unavailable path had no note guard
 
 
 async def test_a_non_json_body_is_unavailable(bridge):
     fake, client = bridge
     fake.mode = "notjson"
-    assert (await _read(client))["status"] == "unavailable"
+    out = await _read(client)
+    assert out["status"] == "unavailable"
+    assert out["note"].strip()  # #482: the unavailable path had no note guard
 
 
 async def test_an_envelope_with_no_status_key_is_unavailable(bridge):
     fake, client = bridge
     fake.mode = "nostatus"
-    assert (await _read(client))["status"] == "unavailable"
+    out = await _read(client)
+    assert out["status"] == "unavailable"
+    assert out["note"].strip()  # #482: the unavailable path had no note guard
 
 
 async def test_an_unknown_status_value_is_unavailable(bridge):
@@ -529,19 +539,25 @@ async def test_an_unknown_status_value_is_unavailable(bridge):
     unavailable (R-27), never passed through to the model as-is."""
     fake, client = bridge
     fake.mode = "badstatus"
-    assert (await _read(client))["status"] == "unavailable"
+    out = await _read(client)
+    assert out["status"] == "unavailable"
+    assert out["note"].strip()  # #482: the unavailable path had no note guard
 
 
 async def test_an_ok_envelope_with_no_data_is_unavailable(bridge):
     fake, client = bridge
     fake.mode = "nodata"
-    assert (await _read(client))["status"] == "unavailable"
+    out = await _read(client)
+    assert out["status"] == "unavailable"
+    assert out["note"].strip()  # #482: the unavailable path had no note guard
 
 
 async def test_a_timeout_is_unavailable_never_raises(bridge):
     fake, client = bridge
     fake.mode = "slow"
-    assert (await _read(client))["status"] == "unavailable"
+    out = await _read(client)
+    assert out["status"] == "unavailable"
+    assert out["note"].strip()  # #482: the unavailable path had no note guard
 
 
 async def test_a_dead_host_is_unavailable_never_raises():
