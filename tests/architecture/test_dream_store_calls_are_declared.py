@@ -62,8 +62,9 @@ import ast
 import importlib
 import inspect
 import pkgutil
-import re
 import textwrap
+import types
+import typing
 
 import pytest
 
@@ -243,34 +244,51 @@ def _awaited_calls(cls: type, *, only: frozenset[str] | None = None):
     return out
 
 
-_SCALAR_ANNOTATION = re.compile(r"^(int|float|str|bool)( \| None)?$")
+def _is_scalar_hint(hint: object) -> bool:
+    """`int`, `float`, `str`, `bool`, a `Literal[...]`, or an `Optional` /
+    union of those — a value read, never a store."""
+    if hint in (int, float, str, bool, type(None)):
+        return True
+    origin = typing.get_origin(hint)
+    if origin is typing.Literal:
+        return True
+    if origin in (typing.Union, types.UnionType):
+        return all(_is_scalar_hint(a) for a in typing.get_args(hint))
+    return False
 
 
 def _scalar_attrs(cls: type) -> set[str]:
-    """`self.X` attributes assigned straight from a constructor parameter
-    ANNOTATED as a scalar (`max_expired_per_tick: int`) — a number read, not
-    a store handed away. Read off the annotation, so a store stays in scope
-    however it is named."""
-    sig = inspect.signature(cls.__init__)
-    scalar = {
-        name for name, p in sig.parameters.items()
-        if (isinstance(p.annotation, str) and _SCALAR_ANNOTATION.match(p.annotation))
-        or p.annotation in (int, float, str, bool)
-    }
+    """`self.X` attributes that hold a VALUE, not a store: assigned from an
+    expression whose only constructor parameters are scalar-typed
+    (`max_expired_per_tick: int`, `mode: MergeMode`, and
+    `self._pass_clock = pass_clock_name(mode)` derived from one). Read off the
+    resolved type hints, so a store stays in scope however it is named."""
+    try:
+        hints = typing.get_type_hints(cls.__init__)
+    except (NameError, TypeError):
+        # Unresolvable hints scope NOTHING out, which flags more rather than
+        # less: the safe direction for a refusal gate.
+        return set()
+    params = set(inspect.signature(cls.__init__).parameters) - {"self"}
+    scalar = {n for n in params if n in hints and _is_scalar_hint(hints[n])}
     tree = ast.parse(textwrap.dedent(inspect.getsource(cls.__init__)))
     out: set[str] = set()
     for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Assign) and isinstance(node.value, ast.Name)
-            and node.value.id in scalar
-        ):
-            for target in node.targets:
-                if (
-                    isinstance(target, ast.Attribute)
-                    and isinstance(target.value, ast.Name)
-                    and target.value.id == "self"
-                ):
-                    out.add(target.attr)
+        if not isinstance(node, ast.Assign):
+            continue
+        used = {
+            n.id for n in ast.walk(node.value)
+            if isinstance(n, ast.Name) and n.id in params
+        }
+        if not used or not used <= scalar:
+            continue
+        for target in node.targets:
+            if (
+                isinstance(target, ast.Attribute)
+                and isinstance(target.value, ast.Name)
+                and target.value.id == "self"
+            ):
+                out.add(target.attr)
     return out
 
 
