@@ -9,7 +9,17 @@ from aiohttp import web
 
 from nora.domain.models import ConversationTarget
 from nora.domain.ports import OutboundAttachment, SendResult
-from nora.platform.whatsapp.send import WhatsAppSender
+from nora.platform.whatsapp.send import WhatsAppSender, _bridge_media_kind
+
+# The bridge's OWN closed kind vocabulary for `/send-media`'s `media_type`
+# (`buildMediaPayload`'s `switch`, `deploy/whatsapp-bridge/bridge_helpers.js`;
+# pinned in `design/whatsapp-adoption/03-transport-contract.md`). Anything
+# outside this set is the bridge's 400
+# `{"error": "media_type must be image|video|audio|sticker|document"}` —
+# this is the oracle the contract-style tests below check against, kept
+# separate from `nora.platform.whatsapp.send._BRIDGE_MEDIA_KINDS` so a typo
+# in the production set cannot also hide from its own test.
+_BRIDGE_VALID_KINDS = frozenset({"image", "video", "audio", "sticker", "document"})
 
 TARGET = ConversationTarget("whatsapp", "176569000000000000@g.us", "group")
 
@@ -111,7 +121,9 @@ async def test_an_unreachable_bridge_is_ok_false_never_an_exception():
 
 async def test_attachments_route_through_send_media_with_the_caption_on_the_first(bridge):
     """The caption carries the message text on the FIRST attachment, and
-    `/send` is NOT also called — the group would hear the words twice."""
+    `/send` is NOT also called — the group would hear the words twice.
+    `media_type` is the bridge's KIND (`image`), never the raw MIME
+    (`image/gif`) — that travels separately as `mimetype`."""
     attachments = (
         OutboundAttachment(b"GIF89a", "image/gif", "reaction.gif"),
         OutboundAttachment(b"\xff\xd8\xff", "image/jpeg", "photo.jpg"),
@@ -124,12 +136,98 @@ async def test_attachments_route_through_send_media_with_the_caption_on_the_firs
     first, second = bridge.calls[0][1], bridge.calls[1][1]
     assert first == {
         "jid": TARGET.conversation_id,
-        "media_type": "image/gif",
+        "media_type": "image",
+        "mimetype": "image/gif",
         "data_base64": "R0lGODlh",
         "filename": "reaction.gif",
         "caption": "two things",
     }
+    assert second == {
+        "jid": TARGET.conversation_id,
+        "media_type": "image",
+        "mimetype": "image/jpeg",
+        "data_base64": "/9j/",
+        "filename": "photo.jpg",
+    }
     assert "caption" not in second
+
+
+# ── media_type is the bridge's KIND, never the raw MIME (2026-09-24 bug) ─────
+#
+# Reproduced live against the deployed bridge: posting the attachment's MIME
+# type verbatim in `media_type` (e.g. `"image/png"`) got HTTP 400
+# `{"error": "media_type must be image|video|audio|sticker|document"}` from
+# `handleSendMedia`/`buildMediaPayload` (`deploy/whatsapp-bridge/bridge.js`,
+# `bridge_helpers.js`). These tests pin the exact payload for the MIME types
+# Nora actually produces (`nora/infra/giphy.py`, `nora/agent/tools.py`) plus
+# `document`'s catch-all, and prove the 400 is now impossible for ANY MIME
+# input — not just the ones under test.
+
+
+@pytest.mark.parametrize(
+    ("mime", "expected_kind"),
+    [
+        ("image/png", "image"),
+        ("image/jpeg", "image"),
+        ("video/mp4", "video"),
+        ("audio/ogg", "audio"),
+        ("application/pdf", "document"),
+    ],
+)
+async def test_the_exact_payload_for_each_mime_the_bridge_must_accept(
+    bridge, mime, expected_kind,
+):
+    attachments = (OutboundAttachment(b"\x00\x01", mime, "attachment.bin"),)
+    result = await _sender(bridge).send(TARGET, "", attachments=attachments)
+    assert result.ok is True
+    assert bridge.calls == [(
+        "/send-media",
+        {
+            "jid": TARGET.conversation_id,
+            "media_type": expected_kind,
+            "mimetype": mime,
+            "data_base64": "AAE=",
+            "filename": "attachment.bin",
+        },
+    )]
+    # Every one of these is a real bridge kind — the contract-style oracle.
+    assert expected_kind in _BRIDGE_VALID_KINDS
+
+
+@pytest.mark.parametrize(
+    "mime",
+    [
+        "image/png", "image/jpeg", "image/gif", "image/webp",
+        "video/mp4", "video/quicktime",
+        "audio/ogg", "audio/mpeg", "audio/mp4",
+        "application/pdf", "application/octet-stream", "text/plain",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "",             # never declared / unparseable
+        "garbage",      # malformed, no "/"
+        "image/*",      # an undergrounded wildcard should never reach here,
+                         # but the mapping must still fail closed if it does
+    ],
+)
+def test_bridge_media_kind_never_produces_the_400_for_any_mime_input(mime):
+    """`_bridge_media_kind` is total and closed over the bridge's own
+    vocabulary — the contract-style oracle both sides must agree on
+    (`design/whatsapp-adoption/03-transport-contract.md`,
+    `deploy/whatsapp-bridge/bridge_helpers.js`'s `buildMediaPayload` switch).
+    A result outside this set is exactly what earns the 400 that started
+    this fix, for ANY MIME string, not only the cases enumerated above."""
+    kind = _bridge_media_kind(mime)
+    assert kind in _BRIDGE_VALID_KINDS
+    # And never the MIME itself passed through unmapped — the literal bug.
+    assert kind != mime
+
+
+def test_webp_maps_to_image_not_sticker():
+    """`image/webp` is an ordinary image MIME (Nora's GIF/generated-image
+    attachments never claim `sticker` — `OutboundAttachment` carries no
+    sticker flag to decide it from, the same reason `nora.domain.media`
+    keeps `sticker` a separate boolean axis rather than something a MIME type
+    alone can express)."""
+    assert _bridge_media_kind("image/webp") == "image"
 
 
 async def test_a_failed_attachment_send_stops_the_sequence(aiohttp_server):

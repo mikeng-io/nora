@@ -1,0 +1,14 @@
+{
+  "type": "fix",
+  "summary": "Nora can send images (and video/audio/documents) on WhatsApp again — attachment sends were failing with a bridge 400 on every MIME type.",
+  "details": [
+    "Measured live 2026-09-24: `WhatsAppSender.send` posted `/send-media` with `\"media_type\": a.media_type` — an attachment's MIME type, e.g. `\"image/png\"`. The bridge (`handleSendMedia`/`buildMediaPayload`, `deploy/whatsapp-bridge/bridge.js` + `bridge_helpers.js`) requires `media_type` to be a KIND — one of `image|video|audio|sticker|document` — and answers HTTP 400 `{\"error\": \"media_type must be image|video|audio|sticker|document\"}` for anything else, including every real MIME string. So no attachment could ever send.",
+    "Fixed in nora/platform/whatsapp/send.py: a new `_bridge_media_kind` maps the attachment's MIME top-level type (via `nora.domain.media.parse_media_type`) to the bridge's kind — image/video/audio map to themselves, everything else (application/*, text/*, unparseable) maps to `document`. The real MIME still travels, now under the bridge's separate `mimetype` field, which Baileys needs for codec/extension. `image/webp` maps to `image`, not `sticker` — nothing in this codebase builds an outbound sticker send, and `OutboundAttachment` carries no sticker flag to decide it from (the same reason `nora.domain.media.MediaRef.sticker` is a boolean axis separate from the MIME type).",
+    "The module docstring's wrong claim (\"The bridge derives the media kind from the MIME top-level type\") is corrected, and design/whatsapp-adoption/03-transport-contract.md's `/send-media` row now documents `media_type` as the KIND with an example 400, plus the optional `mimetype` field and which kinds honour `caption`.",
+    "Tests: the existing caption/sequencing test now asserts the real bridge-shaped payload (kind + mimetype, not raw MIME); new tests pin the exact payload for png/jpeg/mp4/ogg/pdf, and a contract-style test sourced from the bridge's own closed kind vocabulary proves the 400 is impossible for any MIME input, not just the cases enumerated. Reverting the fix (keeping the tests) turns the new tests red; restoring it turns them green again.",
+    "Audited Signal, Discord and Instagram senders for the same MIME/kind confusion: none share it. Signal's `media_type` rides inside a `data:` URI signal-cli itself expects to be MIME-typed; Discord's is a real per-part `Content-Type` on a multipart upload (no kind concept on that API); Instagram's bridge contract literally names the field `mimetype`."
+  ],
+  "limitations": [
+    "Not deployed or verified against the live bridge as part of this fix — proven by unit test against a contract-shaped stand-in and by revert, not by a second live 400/200 round-trip."
+  ]
+}
