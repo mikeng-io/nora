@@ -205,6 +205,12 @@ NORA_CHECKS_FAILED = "nora.checks_failed"
 #: `expect` applies unchanged.
 NORA_ABSENT_NOTE_CLASH = "nora.absent_note_clash"
 NORA_REMIND_MATCHED = "nora.remind_matched"
+#: The character length of every body a dream pass WROTE (a staged candidate
+#: whose status is `created`: a new note or an appended revision), one per
+#: body, in no particular order. Printed on the grader's reason so `--reasons` carries it per draw:
+#: the body is what every later reader gets instead of the room's messages,
+#: and a change to how the objective demonstrates one is measured on it.
+NORA_BODY_CHARS = "nora.body_chars"
 #: The standing corpus (`design/standing-compact/20-verification.md` §1).
 #: `NORA_POSITION` is the position a fold wrote (`Outcome.position`), what
 #: `MeetsGrader` needs for `expect: fold`. `NORA_SHOWN` is what the subject's
@@ -907,11 +913,81 @@ def substitute_trigger(text: str, trigger: str) -> str:
 SNAPSHOT_KEYS = frozenset({"platform", "conversation_id", "before_ms"})
 
 
+#: A staged candidate whose body reached the notebook (`nora.domain.notes.
+#: CANDIDATE_CREATED`: a new note or a revision appended to one).
+_WRITTEN = "created"
+
+
+def _written_bodies(outcome: Any) -> list[str]:
+    return [b for status, b in getattr(outcome, "bodies", ()) if status == _WRITTEN]
+
+
+def _names(name: str, text: str) -> bool:
+    """Whether casefolded `text` names `name` — see `_check_the_body`."""
+    for part in (name, *(w for w in name.split() if len(w) >= 2)):
+        folded = part.casefold()
+        if folded.isascii():
+            if re.search(rf"(?<!\w){re.escape(folded)}(?!\w)", text):
+                return True
+        elif folded in text:
+            return True
+    return False
+
+
+def _check_the_body(
+    meta: Mapping[str, Any], outcome: Any, rows: Mapping[Any, int],
+) -> list[str]:
+    """`body_names` and `body_mentions` — whether a WRITTEN body carries the
+    thread, checked as named facts rather than as a length.
+
+    `body_names` lists row LABELS (real row ids, as `must_cite` does); each
+    row's sender, by the name the model was SHOWN on that line, must be named
+    in a written body. The name is resolved at grade time from the batch, so a
+    fixture names a row and never a person. A shown name of several words
+    («given family») is met by any one word of two or more characters, since
+    a body that says «Ada» of «Ada Lovelace» has named her. A Latin-script
+    word must stand as a WORD (a two-letter given name is inside half the
+    words of an English sentence); a word in another script, where words are
+    not separated, is matched as written.
+
+    `body_mentions` lists facts; each is a string or a list of alternatives
+    (one fact in the several ways a body may write it, e.g. a weekday in two
+    languages), met when any alternative is a case-insensitive substring of a
+    written body.
+
+    No written body at all fails both: there is nothing to carry the thread.
+    """
+    names = meta.get("body_names") or ()
+    mentions = meta.get("body_mentions") or ()
+    if not names and not mentions:
+        return []
+    bodies = _written_bodies(outcome)
+    if not bodies:
+        return ["body_names/body_mentions: no body was written"]
+    text = "\n".join(bodies).casefold()
+    failed: list[str] = []
+    shown = dict(getattr(outcome, "speakers", ()))
+    for label in names:
+        row_id = rows.get(label)
+        name = shown.get(row_id) if row_id is not None else None
+        if name is None:
+            failed.append(f"body_names: row {label} was not in the batch")
+            continue
+        if not _names(name, text):
+            failed.append(f"body_names: the sender of row {label} is not named")
+    for fact in mentions:
+        alternatives = [fact] if isinstance(fact, str) else list(fact)
+        if not any(str(a).casefold() in text for a in alternatives):
+            failed.append(f"body_mentions: none of {alternatives}")
+    return failed
+
+
 def _check_the_corpus_assertions(
     case: Any, outcome: Any, rows: Mapping[Any, int],
 ) -> Any:
     """`must_cite`, `anchor_date`, `creates`, `updates` — the four the
-    note-candidates corpus states.
+    note-candidates corpus states — and `body_names`/`body_mentions`
+    (`_check_the_body`).
 
     `rows` translates a case's own message LABEL — the REAL row id in the
     source, under `snapshot:` — into the id the sandbox assigned. That
@@ -968,6 +1044,7 @@ def _check_the_corpus_assertions(
                 failed.append(f"{key}: the reply contains {present}")
             elif not negate and absent:
                 failed.append(f"{key}: the reply does not contain {absent}")
+    failed += _check_the_body(meta, outcome, rows)
 
     return dataclasses.replace(outcome, checks_failed=tuple(failed))
 
@@ -1444,6 +1521,10 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     EnvironmentState(name=NORA_CHANGED, state=outcome.changed),
                     EnvironmentState(name=NORA_JUDGED, state=outcome.judged),
                     EnvironmentState(name=NORA_CHECKS_FAILED, state=outcome.checks_failed),
+                    EnvironmentState(
+                        name=NORA_BODY_CHARS,
+                        state=tuple(len(b) for b in _written_bodies(outcome)),
+                    ),
                     EnvironmentState(name=NORA_TOOLS, state=tools_called),
                     EnvironmentState(name=NORA_TOOL_RESULTS, state=tool_results),
                     EnvironmentState(name=NORA_TOOL_INPUTS, state=tool_inputs),
@@ -1853,6 +1934,14 @@ class MeetsGrader(Evaluator):
         verdict = outcome.meets(expect)
         why = state_of(data, NORA_JUDGED_WHY) or ""
         why = f" — judge: {why}" if why else ""
+        # The written bodies' lengths ride on the reason, so `--reasons`
+        # prints them per draw (`NORA_BODY_CHARS`); only a pass that wrote one.
+        chars = state_of(data, NORA_BODY_CHARS)
+        if chars:
+            why += f" — body_chars={list(chars)}"
+        failed = outcome.checks_failed
+        if failed:
+            why += f" — checks: {list(failed)}"
         if verdict is None:
             reason = (
                 f"the case did not run: {error}" if error

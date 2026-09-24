@@ -731,6 +731,85 @@ async def test_drive_runs_the_corpus_assertions_on_the_outcome(monkeypatch, one_
     )
 
 
+def _bodied(*bodies: tuple[str, str], speakers=((7, "Ada Lovelace"), (8, "Ben"))) -> Outcome:
+    return Outcome(admitted=None, changed=(("create", "Dinner"),), bodies=bodies,
+                   speakers=speakers)
+
+
+def test_body_names_is_met_by_any_word_of_the_shown_name():
+    """A body that says «Ada» has named the sender shown as «Ada Lovelace»,
+    and the fixture names a ROW, never the person."""
+    out = _bodied(("created", "Ada proposed hotpot on Friday."))
+    assert backbone._check_the_body({"body_names": [101]}, out, {101: 7}) == []
+    failed = backbone._check_the_body({"body_names": [102]}, out, {102: 8})
+    assert failed == ["body_names: the sender of row 102 is not named"]
+
+
+def test_a_short_latin_name_word_counts_only_as_a_whole_word():
+    """«Ho» of a three-word name sits inside «holds» and «who»: a body that
+    names nobody must not pass. A name in a script with no word spaces is
+    matched as written."""
+    speakers = ((7, "Yat ho walsh"), (8, "張三"))
+    out = _bodied(("created", "Whoever holds the item should say so."), speakers=speakers)
+    assert backbone._check_the_body({"body_names": [1]}, out, {1: 7}) == [
+        "body_names: the sender of row 1 is not named"
+    ]
+    out = _bodied(("created", "Ho has it; 張三想禮拜六前拎。"), speakers=speakers)
+    assert backbone._check_the_body({"body_names": [1, 2]}, out, {1: 7, 2: 8}) == []
+
+
+def test_body_mentions_takes_any_of_a_fact_s_alternatives():
+    out = _bodied(("created", "Ben can do 禮拜五 only."))
+    meta = {"body_mentions": [["friday", "禮拜五"], "ben"]}
+    assert backbone._check_the_body(meta, out, {}) == []
+    assert backbone._check_the_body({"body_mentions": [["saturday", "禮拜六"]]}, out, {}) == [
+        "body_mentions: none of ['saturday', '禮拜六']"
+    ]
+
+
+def test_a_refused_body_carries_nothing():
+    """Only a body that reached the notebook counts: a refused duplicate that
+    happens to name everyone is not what a later reader gets."""
+    out = _bodied(("refused", "Ada and Ben, Friday."))
+    assert backbone._check_the_body({"body_mentions": ["friday"]}, out, {}) == [
+        "body_names/body_mentions: no body was written"
+    ]
+
+
+def test_a_row_outside_the_batch_is_a_failure_not_a_pass():
+    out = _bodied(("created", "anything"))
+    assert backbone._check_the_body({"body_names": [999]}, out, {}) == [
+        "body_names: row 999 was not in the batch"
+    ]
+
+
+async def test_drive_carries_the_written_body_lengths(monkeypatch, one_path):
+    """`NORA_BODY_CHARS` is the length of every WRITTEN body, and the body
+    checks run inside `_drive()` against the sandbox's row map."""
+    async def fake_drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
+        return Outcome(
+            admitted=None, changed=(("create", "Dinner"),), written=1,
+            bodies=(("created", "Ada: Friday."), ("refused", "x" * 50)),
+            speakers=((7, "Ada"),),
+        )
+
+    async def fake_sandbox(_subject: object, **kwargs: Any) -> Sandboxed:
+        return Sandboxed(now_ms=int(kwargs["before_ms"]), rows={4321: 7}, transcript=())
+
+    monkeypatch.setitem(ENTRY_POINTS, "dreamer", EntryPoint(drive=fake_drive))
+    monkeypatch.setattr(backbone, "sandbox_from_snapshot", fake_sandbox)
+
+    result = await backbone._drive(
+        _case("bodies", expect="create", body_names=[4321], body_mentions=["saturday"]),
+        _spec("dreamer"),
+    )
+    data = EvaluationData(input="x", actual_environment_state=result["environment_state"])
+    assert tuple(state_of(data, backbone.NORA_BODY_CHARS)) == (len("Ada: Friday."),)
+    assert tuple(state_of(data, NORA_CHECKS_FAILED)) == (
+        "body_mentions: none of ['saturday']",
+    )
+
+
 # `sampled()`/`sample_read()`: `09-the-backbone-measured.md` §3.1 measured two
 # model-dependent cases SWAP verdicts across two runs at `sample: 1` — the SDK
 # has no repeat parameter (`08-the-sdk-surface.md` §4.4), and `Case`/caching
