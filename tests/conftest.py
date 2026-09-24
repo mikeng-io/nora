@@ -432,7 +432,7 @@ def evaluation_config() -> Path:
     target = root / "config.evaluation.toml"
     example = root / "config.example.toml"
     deployment = Path(
-        os.environ.get("NORA_DEPLOYMENT_DIR", "/home/norty/workspace/nora")
+        os.environ.get("NORA_DEPLOYMENT_DIR") or str(Path.home() / "workspace" / "nora")
     ) / "config.toml"
 
     if deployment.is_file():
