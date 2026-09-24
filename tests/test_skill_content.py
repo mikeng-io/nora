@@ -106,8 +106,9 @@ _LINE_CEILINGS: dict[str, int] = {
     # same day after the live «a cat sleeping on a laptop» turn: she wrote
     # her own mascot rendering into a picture she was not in and invented a
     # scene that could not exist, and the prompt-writing judgement that
-    # covers both is new (74 lines). The rest is room for one more model
-    # section, which is how this skill is meant to grow.
+    # covers both is new (74 lines); 78 once «a picture of you is a new
+    # picture» joined the in-the-picture judgement. The rest is room for one
+    # more model section, which is how this skill is meant to grow.
     "image-generation": 80,
 }
 
@@ -183,6 +184,30 @@ def test_the_in_the_picture_judgement_knows_the_mascot_is_her(store):
     assert "not an empty room or an object standing in for you" in first
     # The section it points at exists, under that exact name.
     assert "\n## What you look like\n" in _image_skill(store).instructions
+
+
+def test_a_picture_of_her_is_a_new_picture_not_the_reference_again(store):
+    """Live 2026-09-24, #469 deployed: asked on WhatsApp to draw herself, she
+    passed her reference and wrote a prompt that restated its composition
+    (standing, facing the viewer, hand in the hoodie pocket, plain neutral
+    background). The provider's edit returned the reference itself, and the
+    room saw its canonical picture sent back. The judgement sits where she
+    decides she is in the picture, with its reason, and names the one case a
+    plain front view is right."""
+    first = _flat(_image_skill(store).instructions).split("## ", 2)[1]
+    for needle in (
+        "Someone who asks for a picture of you wants a new one, so give it a "
+        "setting, a pose or an expression that fits the room or the moment",
+        "The reference keeps you recognisable; it is not a composition to copy",
+        "a prompt that restates its pose and blank background gets the reference back",
+        "A plain front view is right only when someone asks for your standard look "
+        "or your reference sheet",
+    ):
+        assert needle in first, needle
+    # Still one reference, and still a judgement: no list of poses or settings.
+    assert len(set(re.findall(r"\[image ([0-9a-f]{64})\]", first))) == 1
+    for pose in ("sitting", "waving", "hoodie pocket", "sofa", "street"):
+        assert pose not in first.lower(), pose
 
 
 def test_the_image_skill_copies_dates_times_and_places_from_the_clock_line(store):
