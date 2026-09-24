@@ -1705,6 +1705,20 @@ async def build_dependencies(
     culture_reader: CultureReader | None = (
         SqlCultureStore(engine) if cfg.culture.enabled else None
     )
+    # The note curator's join from a note to its room's account (DEC-204):
+    # EVERY id a room is known by — `Note.established_in` holds whichever one
+    # the note was born under — within the note's UNIT, since ids are unique
+    # per platform and a note carries no platform.
+    note_rooms: dict[tuple[str, str], tuple[str, str | None]] = {
+        (cid, conv.unit): (conv.primary_id, conv.label or None)
+        for conv in allowlist.conversations
+        if conv.primary_id and conv.unit
+        for cid in conv.ids
+    }
+
+    def note_room_for(cid: str, unit: str) -> tuple[str, str | None] | None:
+        return note_rooms.get((cid, unit))
+
     assembler = build_assembler(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
         # `None` while `[notes] enabled = false`. `policy=allowlist` is the
@@ -3373,14 +3387,10 @@ async def build_dependencies(
                     # The accounts of the rooms its notes were raised in
                     # (DEC-204). `room_for` maps EVERY id a room is known by —
                     # `Note.established_in` holds whichever one the note was
-                    # born under — to `(primary_id, label)`.
+                    # born under — to `(primary_id, label)`, within the note's
+                    # UNIT: ids are unique per platform, not across platforms.
                     culture=culture_reader,
-                    room_for={
-                        cid: (conv.primary_id, conv.label or None)
-                        for conv in allowlist.conversations
-                        if conv.primary_id
-                        for cid in conv.ids
-                    }.get,
+                    room_for=note_room_for,
                     # The discharge pipeline (design/dreamer-agent-loop/33 §7,
                     # issue #101), on its OWN gate — see `NotesConfig.
                     # discharge_enabled`'s docstring for why it does not ride

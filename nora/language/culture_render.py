@@ -33,11 +33,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable
 from datetime import datetime
 
 from ..domain.blocks import ContextBlock
 from ..domain.culture import CultureRevision
-from ..domain.ports import CultureReader
 from ..domain.prompt import age as _age
 from ..domain.prompt import escape
 from ..obs.metrics import Metrics
@@ -51,9 +51,8 @@ DEFAULT_CULTURE_READ_TIMEOUT_SECONDS = 5.0
 
 
 async def read_culture(
-    reader: CultureReader | None,
+    head: Awaitable[CultureRevision | None] | None,
     *,
-    key: str | None,
     stage: str,
     platform: str,
     metrics: Metrics | None,
@@ -67,8 +66,12 @@ async def read_culture(
     count to go missing, so the read is here and each occasion only names its
     `stage`.
 
-    `key` is a `primary_id` (DEC-181), and `None` when the caller could not
-    resolve one — a room outside the policy, which is not an error.
+    `head` is the caller's own `reader.head(key=…)` call, or `None` when there
+    is no reader or no key — a room outside the policy, which is not an error.
+    The CALLER makes the call rather than handing the reader over, so every
+    Dreamer adaptor's store call stays on `self.<collaborator>` where
+    `tests/architecture/test_dream_store_calls_are_declared.py` can count it.
+    The key is a `primary_id` (DEC-181).
 
     `None` collapses four states the prompt cannot tell apart: no reader (the
     `[culture] enabled = false` default), no key, no account yet, and a failed
@@ -80,10 +83,10 @@ async def read_culture(
     otherwise holds the caller's slot — the defect fixed in `debrief.run` and
     then re-created on the fire path in the same change.
     """
-    if reader is None or not key:
+    if head is None:
         return None
     try:
-        return await asyncio.wait_for(reader.head(key=key), timeout=timeout_seconds)
+        return await asyncio.wait_for(head, timeout=timeout_seconds)
     except Exception:
         log.exception("%s: culture read failed; continuing without it", stage)
         if metrics is not None:

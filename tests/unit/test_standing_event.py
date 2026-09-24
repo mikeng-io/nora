@@ -429,3 +429,29 @@ async def test_the_rollups_prior_age_is_measured_from_the_last_write(monkeypatch
     assert "position 1" in second
     row = await harness.read_row()
     assert row is not None and row.updated_at == int((start + 2 * 3600) * 1000)
+
+
+async def test_the_event_fold_reads_the_rooms_account_by_primary_id():
+    """DEC-204 on the event path: the fold resolves `(platform, thread)` to
+    the room's `primary_id` through `culture_key` and renders the account in
+    its prompt."""
+    import dataclasses
+
+    from nora.testing import InMemoryCultureStore
+
+    culture = InMemoryCultureStore()
+    await culture.append(
+        key="room-primary", body="they decide by attrition", written_at=1,
+        established_by="dream:culture:test")
+    culture.reads.clear()
+    store = FakeRecordStore()
+    await _seed(store, 200)
+    harness = _Harness(record_store=store)
+    harness.wiring = dataclasses.replace(
+        harness.wiring, culture=culture,
+        culture_key=lambda p, c: "room-primary" if (p, c) == ("signal", "g1") else None,
+    )
+    await harness.run_one_spawn()
+
+    assert culture.reads == ["room-primary"]
+    assert "they decide by attrition" in harness.client.prompts[0]

@@ -293,7 +293,7 @@ async def test_read_culture_counts_a_failure_under_the_callers_stage():
 
     metrics = Metrics()
     got = await read_culture(
-        _Broken(), key="g1", stage="note_candidates_culture",
+        _Broken().head(key="g1"), stage="note_candidates_culture",
         platform="dreamer", metrics=metrics,
     )
     assert got is None
@@ -302,12 +302,14 @@ async def test_read_culture_counts_a_failure_under_the_callers_stage():
         platform="dreamer") == 1
 
 
-async def test_read_culture_without_a_key_does_not_touch_the_store():
-    culture = _culture()
+async def test_read_culture_with_no_read_to_make_returns_none_and_counts_nothing():
+    """`None` is no reader or no key — the dormant default and a room outside
+    the policy — and neither is an error."""
+    metrics = Metrics()
     assert await read_culture(
-        culture, key=None, stage="tag_culture", platform="discord",
-        metrics=None) is None
-    assert culture.reads == []
+        None, stage="tag_culture", platform="discord", metrics=metrics) is None
+    assert metrics.get(
+        "nora_errors_total", stage="tag_culture", platform="discord") == 0
 
 
 def test_a_room_label_rides_on_the_block_only_when_given():

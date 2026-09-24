@@ -2918,3 +2918,31 @@ async def test_a_tag_turn_that_faults_is_written_too():
     assert [(r.writer, r.verdict, r.reason) for r in rows] == [
         ("tag", "failed", "handler_error"),
     ]
+
+
+async def test_the_debrief_is_handed_the_account_the_turn_read(monkeypatch):
+    """DEC-204: `ctx.culture` from the turn's own `assemble` reaches the
+    debrief, so the fold reads the SAME account the reply did."""
+    import dataclasses
+
+    from nora.domain.culture import CultureRevision
+
+    account = CultureRevision(
+        id="r1", culture_key="g1", body="they decide by attrition",
+        written_at=1, established_by="dream:culture:test")
+    spy = _RecordingDebrief()
+    _patch_debrief(monkeypatch, spy)
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        runner=ScriptedRunner(_reply_turns()), debrief_wiring=_wiring(),
+    )
+    real = pipeline._context.assemble
+
+    async def _with_culture(*, request):
+        return dataclasses.replace(await real(request=request), culture=account)
+
+    monkeypatch.setattr(pipeline._context, "assemble", _with_culture)
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert len(spy.calls) == 1
+    assert spy.calls[0]["culture"] is account

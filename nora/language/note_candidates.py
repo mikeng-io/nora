@@ -329,7 +329,10 @@ _MIN_ANCHOR_DATE = 10_000_000
 #: 10 -> 12 on 2026-09-24 (design 41 §7.5-7.6): `merged_successor_by_title`
 #: when a named title resolves to no open note, and `successor` when the
 #: update's append is refused because the note retired.
-STORE_CALLS_PER_TICK = 12
+#:
+#: 12 -> 13 on 2026-09-25 (DEC-204): the room's `<culture>` head, one
+#: `self._culture.head` per tick, bounded by `read_culture`.
+STORE_CALLS_PER_TICK = 13
 
 #: Every value `nora_note_candidate_gate_total{action}` may carry, DERIVED
 #: rather than hand-copied into the metric's help text (`nora.obs.
@@ -1052,10 +1055,18 @@ class NoteCandidateAdaptor:
         # IS. A games room's 「2200」 is when people log on, and the account is
         # where that reading lives once the operator's one sentence runs out.
         # No block for a room never folded: `render_culture`'s reason.
-        culture = render_culture(await read_culture(
-            self._culture, key=key, stage="note_candidates_culture",
-            platform="dreamer", metrics=self._metrics,
-        ))
+        culture = render_culture(
+            await read_culture(
+                self._culture.head(key=key) if self._culture is not None
+                else None,
+                stage="note_candidates_culture", platform="dreamer",
+                metrics=self._metrics,
+            ),
+            # Aged against the batch's NEWEST row, the same «now» `<notes>`
+            # reads its today from, not the wall clock: a backlog batch is
+            # read as of when it was said.
+            now=_dt.datetime.fromtimestamp(batch[-1].ts / 1000, tz=_dt.UTC),
+        )
         if culture is not None:
             parts.append(restamp(culture, _ROW).render())
         parts += [

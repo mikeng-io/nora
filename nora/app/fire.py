@@ -1532,7 +1532,7 @@ class FirePath:
         if convo is None or not convo.primary_id:
             return None
         return await read_culture(
-            self._culture, key=convo.primary_id, stage="fire_culture",
+            self._culture.head(key=convo.primary_id), stage="fire_culture",
             platform=occasion.platform, metrics=self._metrics,
             timeout_seconds=self._standing_store_timeout_seconds,
         )

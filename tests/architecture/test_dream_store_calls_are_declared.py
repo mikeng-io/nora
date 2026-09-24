@@ -62,6 +62,7 @@ import ast
 import importlib
 import inspect
 import pkgutil
+import re
 import textwrap
 
 import pytest
@@ -241,6 +242,37 @@ def _awaited_calls(cls: type, *, only: frozenset[str] | None = None):
     return out
 
 
+_SCALAR_ANNOTATION = re.compile(r"^(int|float|str|bool)( \| None)?$")
+
+
+def _scalar_attrs(cls: type) -> set[str]:
+    """`self.X` attributes assigned straight from a constructor parameter
+    ANNOTATED as a scalar (`max_expired_per_tick: int`) — a number read, not
+    a store handed away. Read off the annotation, so a store stays in scope
+    however it is named."""
+    sig = inspect.signature(cls.__init__)
+    scalar = {
+        name for name, p in sig.parameters.items()
+        if (isinstance(p.annotation, str) and _SCALAR_ANNOTATION.match(p.annotation))
+        or p.annotation in (int, float, str, bool)
+    }
+    tree = ast.parse(textwrap.dedent(inspect.getsource(cls.__init__)))
+    out: set[str] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Assign) and isinstance(node.value, ast.Name)
+            and node.value.id in scalar
+        ):
+            for target in node.targets:
+                if (
+                    isinstance(target, ast.Attribute)
+                    and isinstance(target.value, ast.Name)
+                    and target.value.id == "self"
+                ):
+                    out.add(target.attr)
+    return out
+
+
 def _unfollowable_routes(cls: type) -> list[str]:
     """Places a collaborator escapes the counter's sight: bound to a local
     name, or handed to a call as an ARGUMENT rather than being the receiver.
@@ -256,6 +288,13 @@ def _unfollowable_routes(cls: type) -> list[str]:
     on three correct lines, and a noisy gate is a disabled gate.
     """
     receivers = _collaborators(cls)
+    # A constructor attribute handed WHOLE into an AWAITED call is a store
+    # escaping too, even when the class never calls a method on it itself —
+    # that is exactly how it becomes invisible to `_collaborators`. Found
+    # 2026-09-25 (PR #491 review): `read_culture(self._culture, …)` added a
+    # store await to three adaptors with every count here still green. An
+    # int handed to an awaited call is rare enough to be worth the noise.
+    awaited_receivers = _receivers(cls) - _scalar_attrs(cls)
     tree = _class_tree(cls)
     parents = {c: n for n in ast.walk(tree) for c in ast.iter_child_nodes(n)}
     found: list[str] = []
@@ -279,12 +318,16 @@ def _unfollowable_routes(cls: type) -> list[str]:
                     )
         # `_helper(self._record)` — the collaborator handed away whole.
         if isinstance(node, ast.Call):
+            watched = (
+                receivers | awaited_receivers
+                if _awaited(node, parents) else receivers
+            )
             for arg in node.args + [k.value for k in node.keywords]:
                 if (
                     isinstance(arg, ast.Attribute)
                     and isinstance(arg.value, ast.Name)
                     and arg.value.id == "self"
-                    and arg.attr in receivers
+                    and arg.attr in watched
                 ):
                     found.append(
                         f"{_enclosing(node, parents)}: "

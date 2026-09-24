@@ -264,9 +264,10 @@ class TranscriptInjection:
         if self._culture_reader is None or self._policy is None:
             return None
         convo = self._policy.conversation(msg.platform, msg.conversation_id)
+        if convo is None or not convo.primary_id:
+            return None
         return await read_culture(
-            self._culture_reader,
-            key=convo.primary_id if convo is not None else None,
+            self._culture_reader.head(key=convo.primary_id),
             stage="tag_culture", platform=msg.platform, metrics=self._metrics,
         )
 

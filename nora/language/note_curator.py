@@ -338,7 +338,11 @@ MAX_DISCHARGE_ITEMS_PER_NOTE = 5
 #: `tests/architecture/test_dream_store_calls_are_declared.py` counts them off
 #: this module's AST and reddens when a call is added without this number
 #: moving.
-STORE_CALLS_PER_TICK = 10
+#:
+#: 10 -> 11 on 2026-09-25 (DEC-204): `self._culture.head` once per distinct
+#: room the shown notes were raised in — the site `_standing.read` already is
+#: in proactive, over the unit's rooms (at most one per platform, DEC-105).
+STORE_CALLS_PER_TICK = 11
 
 #: A commitment's Event title — generous prose, capped the same way
 #: `nora.language.note_candidates` caps every model-authored field ahead of
@@ -690,13 +694,13 @@ class NoteCuratorAdaptor:
         conclusions: _ConclusionSink | None = None,
         ai_peer: str = "nora",
         # THE ROOMS' ACCOUNTS (design/culture-tier, DEC-204). `room_for` maps
-        # a note's `established_in` (a thread id) to its room's `primary_id` —
+        # a note's `(established_in, unit)` to its room's `primary_id` —
         # the key the culture fold writes under (DEC-181) — and the room's
         # label, which both the `<culture>` and the `<note>` carry so the
         # model can tell which account a note is read against. Both `None`
         # while `[culture] enabled = false`, and then neither renders.
         culture: CultureReader | None = None,
-        room_for: Callable[[str], tuple[str, str | None] | None] | None = None,
+        room_for: Callable[[str, str], tuple[str, str | None] | None] | None = None,
     ) -> None:
         self._notes = notes
         self._culture = culture
@@ -955,6 +959,12 @@ class NoteCuratorAdaptor:
         due_or_anchored: set[str] = set()
         ordinal = itertools.count(1)
         parts: list[str] = []
+        # The rooms' accounts FIRST, so each `<note>` names its room only when
+        # that room's `<culture>` actually renders — a label joining to no
+        # account is noise, and the prompt of a room never folded stays
+        # byte-identical to one with the tier off.
+        cultures, rendered_rooms = await self._cultures(
+            [n for n, _ in expired] + [n for n, _ in due])
 
         for note, body in expired:
             handle = str(next(ordinal))
@@ -966,7 +976,7 @@ class NoteCuratorAdaptor:
             due_or_anchored.add(note.id)
             parts.append(
                 _note_block(handle, note, body, ev_text, today=self._today(),
-                            room=self._room_label(note))
+                            room=self._room_label(note, rendered_rooms))
             )
 
         for note, body in due:
@@ -979,7 +989,7 @@ class NoteCuratorAdaptor:
             due_or_anchored.add(note.id)
             parts.append(
                 _note_block(handle, note, body, ev_text, today=self._today(),
-                            room=self._room_label(note))
+                            room=self._room_label(note, rendered_rooms))
             )
 
         self._shown[key] = _Shown(
@@ -1003,48 +1013,65 @@ class NoteCuratorAdaptor:
         # against the real clock) and nothing catches the other: an `open` on
         # a note whose anchor passed weeks ago is silent, and costs a
         # permanent index line injected on every tag.
-        cultures = await self._cultures(
-            [n for n, _ in expired] + [n for n, _ in due])
         return "\n".join([_now_block(self._today()), *cultures, *parts])
 
-    def _room_label(self, note: Note) -> str | None:
-        """The label of the room `note` was raised in, or `None` — only when
-        culture is wired, so a curator without it renders exactly as before."""
+    def _room(self, note: Note) -> tuple[str, str] | None:
+        """`(primary_id, label)` of the room `note` was raised in, or `None`
+        with no culture wired or a room outside the policy. Resolved by the
+        note's thread id AND its unit: ids are unique per platform, not across
+        them, and a note carries no platform — the unit is what makes the match
+        unambiguous."""
         if self._culture is None or self._room_for is None:
             return None
-        room = self._room_for(note.established_in)
-        return None if room is None else (room[1] or _UNNAMED_ROOM)
+        room = self._room_for(note.established_in, note.unit)
+        if room is None:
+            return None
+        # The label, NEVER the id — `note_candidates.UNNAMED_ROOM`'s rule: an
+        # identifier is not a name and must not reach a prompt.
+        return room[0], room[1] or _UNNAMED_ROOM
 
-    async def _cultures(self, notes: Sequence[Note]) -> list[str]:
+    def _room_label(
+        self, note: Note, rendered_rooms: frozenset[str],
+    ) -> str | None:
+        """The `room` a `<note>` carries: its room's label, only when that
+        room's `<culture>` rendered in this prompt."""
+        room = self._room(note)
+        return room[1] if room is not None and room[0] in rendered_rooms else None
+
+    async def _cultures(
+        self, notes: Sequence[Note],
+    ) -> tuple[list[str], frozenset[str]]:
         """One `<culture room=…>` per distinct room these notes were raised in
-        (DEC-204), in first-shown order.
+        (DEC-204), in first-shown order, and the rooms that rendered one.
 
         Per ROOM and not per note: two notes from one room read against one
         account, and repeating it would be the same paragraph twice in one
         prompt. A room outside the policy, or never folded, renders nothing.
+        Aged against this pass's own injected clock, never the wall clock.
         """
-        if self._culture is None or self._room_for is None:
-            return []
-        rooms: dict[str, str | None] = {}
+        if self._culture is None:
+            return [], frozenset()
+        rooms: dict[str, str] = {}
         for note in notes:
-            room = self._room_for(note.established_in)
+            room = self._room(note)
             if room is not None and room[0] not in rooms:
                 rooms[room[0]] = room[1]
+        now = datetime.fromtimestamp(self._clock() / 1000, tz=UTC)
         out: list[str] = []
+        rendered: set[str] = set()
         for primary_id, label in rooms.items():
             block = render_culture(
                 await read_culture(
-                    self._culture, key=primary_id,
+                    self._culture.head(key=primary_id),
                     stage="note_curator_culture", platform="dreamer",
                     metrics=self._metrics,
                 ),
-                # The label, NEVER the id — `note_candidates.UNNAMED_ROOM`'s
-                # rule: an identifier is not a name and must not reach a prompt.
-                room=label or _UNNAMED_ROOM,
+                now=now, room=label,
             )
             if block is not None:
                 out.append(restamp(block, _ROW).render())
-        return out
+                rendered.add(primary_id)
+        return out, frozenset(rendered)
 
     # -- accept -------------------------------------------------------------
 

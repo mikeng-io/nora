@@ -300,3 +300,42 @@ async def test_the_block_is_rendered_with_the_persons_name_and_a_hedge():
     assert "Blake Lindqvist" in blob
     assert "you may be wrong" in blob
     assert "dinner" in blob
+
+
+# --- `<culture>` on the tag path (DEC-204) ------------------------------------
+
+
+class _Policy:
+    """The one policy verb the assembler's culture read uses: the arriving
+    thread resolves to a room whose `primary_id` DIFFERS from it, so a read by
+    the thread id would miss (DEC-181)."""
+
+    def conversation(self, platform, conversation_id):
+        if (platform, conversation_id) != ("signal", "room"):
+            return None
+        return type("_Convo", (), {"primary_id": "room-primary", "unit": "u"})()
+
+
+async def test_a_tag_turn_carries_the_rooms_account_through_assemble_and_prefill():
+    """End to end on the tag path: `assemble` reads the account by the room's
+    `primary_id`, puts it on the `TagContext`, and the prefill renders it —
+    so dropping it at any of the three hops reddens this."""
+    from nora.testing import InMemoryCultureStore
+
+    culture = InMemoryCultureStore()
+    await culture.append(
+        key="room-primary", body="they decide by attrition",
+        written_at=1, established_by="dream:culture:test")
+    culture.reads.clear()
+    assembler = TranscriptInjection(
+        audit=_Audit(), memory=_Memory(), persons=_persons(), context_window=10,
+        metrics=_Metrics(), ai_peer="nora", policy=_Policy(),  # type: ignore[arg-type]
+        culture=culture,
+    )
+    ctx = await assembler.assemble(
+        request=EngagementRequest(message=_msg(), decision=None, tag_id="t"))
+
+    assert culture.reads == ["room-primary"]
+    assert ctx.culture is not None
+    blob = str(build_prefill(ctx, display_name="Nora", context_window=10))
+    assert "<culture" in blob and "they decide by attrition" in blob

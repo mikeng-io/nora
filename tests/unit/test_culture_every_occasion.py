@@ -1,12 +1,15 @@
 """`<culture>` reaches every runtime's prompt (design/culture-tier, DEC-204).
 
-One test per occasion that is not a turn path (those are in
-`test_culture_render.py`): the note-candidates pass, the note curator, the
-proactive decide pass, and both standing folds. Each asserts the RENDERED
-prompt, because the failure DEC-204 guards against is a row declared in a
-`_BLOCKS` table that never reaches the model — and each asserts the key the
-store was READ with, because DEC-181's failure is a read that matches nothing
-and renders as «no account yet», a real state nothing reports.
+The note-candidates pass and the note curator are asserted here through
+`inputs` — the RENDERED prompt — and by the key the store was READ with.
+Proactive's `_cultures` and the rollup renderer are unit-tested here; their
+end-to-end halves live beside their own harnesses:
+`test_proactive_adaptor.py::test_inputs_carries_each_folded_rooms_account_under_rooms`,
+`test_debrief.py::test_the_fold_reads_the_rooms_account_the_turn_read`,
+`test_standing_event.py::test_the_event_fold_reads_the_rooms_account_by_primary_id`,
+`test_engagement_pipeline.py::test_the_debrief_is_handed_the_account_the_turn_read`
+and, for the tag path, `tests/test_peer_history.py::
+test_a_tag_turn_carries_the_rooms_account_through_assemble_and_prefill`.
 
 Every occasion also renders byte-identically to before when the room has no
 account, which is the ordinary state for a while after the tier is enabled.
@@ -103,7 +106,9 @@ async def test_the_curator_reads_the_account_of_the_room_each_note_was_raised_in
     is how the model joins the two — never the id (R-18)."""
     culture = await _seeded(**{"room-primary": ACCOUNT})
     out = await _curator_prompt(
-        culture, {"thread-7": ("room-primary", "Friends")}.get)
+        culture,
+        lambda cid, unit: {("thread-7", WS): ("room-primary", "Friends")}.get(
+            (cid, unit)))
     assert ACCOUNT in out
     assert '<culture room="Friends"' in out
     assert 'room="Friends"' in out[out.index("<note"):]
@@ -116,6 +121,28 @@ async def test_the_curator_without_culture_is_unchanged():
     off = await _curator_prompt(None, None)
     assert "<culture" not in off
     assert "room=" not in off
+
+
+async def test_the_curator_with_a_reader_but_no_account_is_byte_identical():
+    """The tier ON and the room never folded: no `<culture>`, and no `room=`
+    on the note either — a label that joins to no account is noise, and the
+    ordinary state for a day after enabling must not change the prompt."""
+    off = await _curator_prompt(None, None)
+    on_empty = await _curator_prompt(
+        await _seeded(),
+        lambda cid, unit: ("room-primary", "Friends"))
+    assert on_empty == off
+
+
+async def test_the_curator_does_not_match_a_thread_id_from_another_unit():
+    """Thread ids are unique per platform, not across platforms, and a note
+    has no platform: the unit is what disambiguates."""
+    culture = await _seeded(**{"room-primary": ACCOUNT})
+    out = await _curator_prompt(
+        culture,
+        lambda cid, unit: {("thread-7", "another-unit"): ("room-primary", "X")}
+        .get((cid, unit)))
+    assert "<culture" not in out and culture.reads == []
 
 
 # --- proactive ----------------------------------------------------------------

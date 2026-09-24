@@ -56,12 +56,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Callable, Coroutine, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from dataclasses import dataclass
 from datetime import tzinfo
 from typing import Any
 
 from nora.agent.dream_screen import screen
+from nora.domain.culture import CultureRevision
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import NormalizedMessage, TranscriptRow
 from nora.domain.ports import CultureReader, RecordStore, StandingStore
@@ -323,6 +324,18 @@ async def _event_fold(*, key: Key, wiring: Wiring, metrics: Metrics) -> None:
         wiring.slots.release_and_dispatch(key)
 
 
+def _culture_head(
+    wiring: Wiring, platform: str, conversation_id: str,
+) -> Awaitable[CultureRevision | None] | None:
+    """The room's `head` read (DEC-204), or `None` with no reader wired or a
+    room outside the policy. Bounded by `read_culture`, under this fold's own
+    `store_timeout_seconds`."""
+    if wiring.culture is None or wiring.culture_key is None:
+        return None
+    key = wiring.culture_key(platform, conversation_id)
+    return None if not key else wiring.culture.head(key=key)
+
+
 async def _fold_batch(
     *,
     prior: Standing | None,
@@ -346,9 +359,7 @@ async def _fold_batch(
         prior=prior, rows=rows, display_name=wiring.display_name, tz=wiring.tz,
         now_ms=now_ms,
         culture=await read_culture(
-            wiring.culture,
-            key=(wiring.culture_key(platform, conversation_id)
-                 if wiring.culture_key is not None else None),
+            _culture_head(wiring, platform, conversation_id),
             stage="standing_event_culture", platform=platform, metrics=metrics,
             timeout_seconds=wiring.store_timeout_seconds,
         ),

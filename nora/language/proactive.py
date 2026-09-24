@@ -215,7 +215,11 @@ WAKE_CLOCK_NAME = "proactive:wake"
 #: `_roster_index`, not this number. A per-member `await` in a loop would be N
 #: sites and would have to be counted as N; that is the reading that moves this
 #: number again.
-STORE_CALLS_PER_TICK = 17
+#:
+#: 17 -> 18 on 2026-09-25 (DEC-204): `self._culture.head` per unit room,
+#: the same per-room site shape as `_standing.read` beside it (rooms are at
+#: most one per platform, DEC-105).
+STORE_CALLS_PER_TICK = 18
 
 PassReason = Literal[
     "daily", "changed", "held_quiet", "unchanged", "unclocked",
@@ -997,7 +1001,8 @@ class ProactiveAdaptor:
         for room in rooms:
             block = render_culture(
                 await read_culture(
-                    self._culture, key=room.conversation_id,
+                    self._culture.head(key=room.conversation_id)
+                    if self._culture is not None else None,
                     stage="proactive_culture", platform=room.platform,
                     metrics=self._metrics,
                     timeout_seconds=self._read_timeout_seconds,
