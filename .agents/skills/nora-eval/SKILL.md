@@ -128,8 +128,9 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
      participation, proactive_act, dreamer with memory tools) are correlated:
      call the result a direction, not a rate, and treat a "you already asked"
      FAIL as #462 before calling it a model defect.
-   - Judged corpora: the judge's source is the whole room history, not her window
-     (#459).
+   - Judged corpora: the judge's source is bound to the window her turn
+     rendered since #459 (fixed 2026-09-25) — re-baseline before comparing a
+     judged number against one measured on an older build.
    - A case that speaks (tag, participation, proactive_act) anchored in a Discord
      room ERRORs; Discord's adapter is off in the sandbox (2026-09-21).
    - Before paying for more samples on a FAIL, read the case's anchor: a wrong
