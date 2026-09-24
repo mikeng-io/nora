@@ -395,9 +395,38 @@ can, and ones that passed on an unlabelled line may not. Re-baseline each
 judged corpus on a build that has this before comparing an arm against it;
 never set a pre-#458 judged number beside a post-#458 one.
 
-**Residual, not closed here:** the source is still EVERY row up to the
-instant (`snapshot` is unbounded), while her turn is shown the newest
-`context_window`. So the judge can credit a line she was never shown (#459).
+**Residual, closed 2026-09-25 (#459).** The source WAS still EVERY row up to
+the instant (`snapshot` is unbounded), while her turn is shown only the
+newest `context_window`, plus the quote chase (`nora.domain.quote_window`).
+So the judge could credit a line she was never shown.
+
+Closed by binding the judge's source to the window her turn actually
+rendered, READ BACK FROM THE TURN rather than re-derived from
+`context_window`: `evals.backbone._shown_transcript` scans the driven turn's
+own captured `chat` spans — the same mechanism `_shown_now` already used for
+the clock line — for the `<group_transcript window="N">…</group_transcript>`
+block `nora.agent.prefill._transcript_block` puts in front of the model, and
+hands its exact body to `_judge_source` in place of `Sandboxed.transcript`.
+It is byte-identical to what she read (the renderer #458 already names),
+quote-chase growth included because the count comes off the real render
+rather than the configured default, and it needed no new seam through
+`nora.subject` or `nora.domain`: the render was already observable off the
+spend-capture exporter `_drive` builds for every other `NORA_SHOWN_*` value.
+Fail-closed: an entry point that renders no `<group_transcript>` (`gate`,
+`dreamer`) or a call `_prefill_capture()` did not capture reads as
+`source=None`, never as a silent fallback to the unbounded seed.
+
+`Sandboxed.transcript` itself is UNCHANGED and still unbounded — it is what
+`sandbox_from_snapshot` seeds the sandbox with, read back before the turn
+runs, and the turn has not happened yet at that point. The bound is applied
+downstream, in `evals.backbone._drive`, once the turn's own render exists to
+read back from.
+
+**Judged numbers from before and after this change are NOT comparable
+either**, for the same reason #458's were not: a source that no longer
+contains a line she was never shown changes which attribution checks can
+pass. Re-baseline each judged corpus again on a build that has this fix
+before comparing an arm against it.
 
 ### 1.9 Honcho is isolated per DRAW (2026-09-24, #462)
 
