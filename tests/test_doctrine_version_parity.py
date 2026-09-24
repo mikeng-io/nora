@@ -234,9 +234,12 @@ PINNED: dict[str, tuple[int, str]] = {
     # it) says when trading shots a GIF is usually right and lets selection
     # take the closest fit: 11 judged, 11 sent, all banter, about the room's
     # own one-sticker-in-ten rate. v3 (operator): «Hong Kong» dropped from
-    # the description of the chat it is reading; nothing else changed.
+    # the description of the chat it is reading; nothing else changed. v4
+    # (2026-09-24, #454): one clause saying a `[cover image …]` is the still of
+    # a shared reel, post or story, not somebody answering with a picture.
+    # Not re-measured on the 104 replies; none of them carries the label.
     "reaction": (
-        3, "df6960012a6c4610e80d1cbbbd0c597885853625d78d7a306c7c68321ffc41d2",
+        4, "b2d9dc64a3682e6943e4ec2775bccd10527f03de399ee662d9124b2f7a06d2f4",
     ),
     "participation-conduct": (
         1, "23d144d3431e9844d2688c13ad8228497a9db3ab8f6bcf7f86f269053f3e19b7",

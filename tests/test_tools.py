@@ -874,6 +874,31 @@ async def test_gif_tools_bind_turn_candidate_and_audit_a_gif_only_reply(wiring):
     assert wiring["deliverer"].sent_texts == ()
 
 
+async def test_a_gif_caption_is_stripped_of_media_markers_like_a_reply(wiring):
+    """A caption is text the room sees, so a quoted marker is stripped from it
+    exactly as `send_reply` strips one: from what is SENT and from what is
+    RECORDED as hers."""
+    source = _GifSource()
+    tools = {tool.tool_name: tool for tool in build_tools(
+        store=wiring["store"], conversation_id="g1", conversation_type="group",
+        persons=wiring["persons"], honcho=wiring["honcho"], deliverer=wiring["deliverer"],
+        metrics=wiring["metrics"], room=wiring["room"], transit_source=UNREACHABLE_TRANSIT,
+        giphy_source=source,
+    )}
+
+    await _call(tools["search_gifs"], query="happy dance")
+    out = await _call(
+        tools["send_gif"], candidate_id="happy-1",
+        caption="睇下呢個 [cover image c0de01] [image a3f2c1]",
+    )
+
+    assert out == {"status": "ok"}
+    assert wiring["sink"].texts == ["睇下呢個  "]
+    row = (await wiring["store"].recent(conversation_id="g1", limit=1))[0]
+    assert "c0de01" not in row.body and "a3f2c1" not in row.body
+    assert row.body == "睇下呢個 [GIF: happy dance]"
+
+
 async def test_gif_send_failure_raises_so_the_agent_can_send_a_text_reply(wiring):
     source = _GifSource(attachment=None)
     source.attachment = None

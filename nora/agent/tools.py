@@ -2634,10 +2634,15 @@ _MEDIA_MARKER_RE = re.compile(
 # was READ rather than listing what she could do next: the live failure
 # (2026-09-24) had `instagram_read` in the turn and a link in the line, and
 # what was missing was knowing that the picture was not the item.
+#
+# «if that line carries one»: the parser leaves the link OUT whenever it fails
+# validation (a foreign host, a story whose user segment is not the author),
+# so a note that promised a link would send her looking for one that is not
+# there.
 _COVER_NOTE = (
     "This is only the cover image of a shared reel, post or story: one still "
     "picture, not the item itself. What the item shows or says is behind the "
-    "link in that same line of the conversation."
+    "item's link, if that line carries one."
 )
 
 
@@ -9940,6 +9945,11 @@ Args:
         attachment = await giphy_source.fetch(candidate=candidate)
         if attachment is None:
             raise RuntimeError("GIF unavailable; reply in words instead.")
+        # A caption is visible reply text exactly as `send_reply`'s is, so it
+        # gets the same hard strip: a media marker the model quoted
+        # (`[image a3f2c1]`, `[cover image …]`) never reaches the room. It used
+        # to skip it, so a caption was the one reply surface that could leak one.
+        caption = _strip_media_markers(caption)
         record_text = f"{caption.strip()} [GIF: {gif_query[0] or candidate.title}]".strip()
         held_before = deliverer.held_count
         sent = await deliverer.deliver(

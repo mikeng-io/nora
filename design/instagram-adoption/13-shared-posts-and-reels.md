@@ -246,18 +246,35 @@ did not say what it had served. Three changes, input first:
   marker strip, now built from `LABELS`) handles it like any other label.
 - **The result says what it served.** Custody records the role on the blob
   (`MediaBlob.role = "cover"`, written into `media_json` only when set, so
-  every older row reads as an ordinary attachment). When `media_fetch` serves
-  a handle whose every sighting in view is a cover, its `note` says it is
-  only the cover of a shared reel, post or story and that the item is behind
-  the link in that line.
+  every older row reads as an ordinary attachment). The role is set on the
+  label's own predicate (`label_for(ref) == "cover image"`), so a preview
+  that is a video or a sticker carries neither. When `media_fetch` serves a
+  handle whose every sighting in view is a cover, its `note` says it is only
+  the cover of a shared reel, post or story and that the item is behind the
+  item's link, if that line carries one (the parser leaves an invalid link
+  out, so the note does not promise one).
 - **The when-clause names a share.** `instagram_read`'s L1 is now «Call this
   when somebody asks about someone's Instagram or a shared or linked post or
   reel» (39 tokens as the L1 gate counts it, was 38).
 
 The routing is measured by `route_instagram_read_shared_*` in
 `evals/corpora/tool_selection.yaml`; the shape those cases can and cannot
-carry is written beside them. Until they run on the deployed model, this is a
-fix to the input with no routing number behind it.
+carry is written beside them. They also carry an ORDER criterion
+(`metadata.before`): `media_fetch` running before `instagram_read` is a FAIL,
+because the live turn read the cover first and then stopped, and a typed
+handle that names no blob otherwise lets that order pass. Until they run on
+the deployed model, this is a fix to the input with no routing number behind
+it.
+
+**Known edge: a share recorded before this re-parses differently.** A share
+stored before this change says `[image x]`; the same delta parsed now says
+`[cover image x]`. Anything that compares a re-parse against the stored body
+would read that as a change to the message's content. Measured against the
+code as it stands, nothing does on Instagram: an Instagram edit
+(`_parse_edit`) carries only the new text, with no `media` and no `shared`,
+so `nora/ingest/stages/edit_media.py` returns before comparing placeholders.
+It would matter the day an edit re-delivers a share with its media, and then
+only for shares already in the record. Not fixed.
 
 ### Known gaps, recorded and not fixed here
 

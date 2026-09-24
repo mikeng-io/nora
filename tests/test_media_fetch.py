@@ -964,7 +964,7 @@ async def test_a_cover_served_from_a_fresh_look_says_it_is_only_the_cover(wiring
     assert out["status"] == "ok"
     assert out["description"] == "A red one-pixel square."
     assert out["note"] == _COVER_NOTE
-    assert "cover" in out["note"] and "link" in out["note"]
+    assert "cover" in out["note"] and "if that line carries one" in out["note"]
     assert not re.search("[–—]", out["note"]), "ADR 0015: no dash in a note"
 
 
@@ -979,6 +979,35 @@ async def test_a_cover_served_from_the_stored_reading_says_so_too(wiring):
 
     assert out["status"] == "ok"
     assert wiring["vision"].calls == 0
+    assert out["note"] == _COVER_NOTE
+
+
+async def test_a_cover_served_from_a_vision_cache_hit_says_so_too(wiring):
+    """The content-hash cache, with no media index wired at all: the bytes
+    were described once before (in any room), so no look is paid for, and it
+    is still only the cover of what this handle names here."""
+    await _append_shared_cover(wiring["store"], sha256=PNG_SHA)
+    wiring["cache"].put(PNG_SHA, "A beach at dusk.")
+
+    out = await _call(wiring["build"](media_store=None), code=PNG_SHA[:6])
+
+    assert out["status"] == "ok"
+    assert wiring["vision"].calls == 0
+    assert out["description"] == "A beach at dusk."
+    assert out["note"] == _COVER_NOTE
+
+
+async def test_a_cover_asked_a_question_says_so_too(wiring):
+    """Layer 2: a question looks again and writes nothing back, and the
+    answer is still about the cover, not the reel."""
+    await _append_shared_cover(wiring["store"], sha256=PNG_SHA)
+
+    out = await _call(
+        wiring["build"](), code=PNG_SHA[:6], question="what colour is the sky",
+    )
+
+    assert out["status"] == "ok"
+    assert wiring["vision"].calls == 1
     assert out["note"] == _COVER_NOTE
 
 

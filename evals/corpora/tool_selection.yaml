@@ -386,9 +386,12 @@ cases:
   # room A, a Signal room (no Instagram room is anchored in any corpus yet);
   # and the handle was typed, not held, so it names no blob and a
   # `media_fetch` on it answers `nothing_found` or `unavailable`, not the
-  # one-frame `ok` that ended the live turn. The grade is on what
-  # EXECUTED: `instagram_read` at any point passes, and `media_fetch` after it
-  # is fine; read the `ran` order in `--reasons` to see which came first.
+  # one-frame `ok` that ended the live turn. That difference is why these
+  # cases carry an ORDER criterion (`before`): with no blob behind the handle,
+  # a `media_fetch` finds nothing and she may then open the link, so
+  # "instagram_read ran" would pass the defect. `media_fetch` BEFORE
+  # `instagram_read` is a FAIL; after it (watching the video the read
+  # returned) is the intended chain. See `ToolRouteGrader`.
   #
   # `route_instagram_read_shared_reel_bare_image` keeps the PRE-FIX rendering
   # (`[image …]`) on purpose. The input is authored, so the label half of the
@@ -400,7 +403,10 @@ cases:
     expect: reply
     mention: true
     input: what is in this reel [shared reel by @synth.example https://www.instagram.com/reel/SynthReel02/] [cover image c0de01]
-    metadata: {tools: [instagram_read], not_tools: [web_fetch, social_fetch, instagram_search]}
+    metadata:
+      tools: [instagram_read]
+      not_tools: [web_fetch, social_fetch, instagram_search]
+      before: {instagram_read: [media_fetch]}
     snapshot: *room_a
 
   - name: route_instagram_read_shared_reel_yue
@@ -408,7 +414,10 @@ cases:
     expect: reply
     mention: true
     input: 呢條 reel 講咩 [shared reel by @synth.example https://www.instagram.com/reel/SynthReel02/] [cover image c0de01]
-    metadata: {tools: [instagram_read], not_tools: [web_fetch, social_fetch, instagram_search]}
+    metadata:
+      tools: [instagram_read]
+      not_tools: [web_fetch, social_fetch, instagram_search]
+      before: {instagram_read: [media_fetch]}
     snapshot: *room_a
 
   - name: route_instagram_read_shared_post
@@ -416,7 +425,10 @@ cases:
     expect: reply
     mention: true
     input: 呢個 post 啲相影咗咩 [shared post by @synth.example https://www.instagram.com/p/SynthPost02/] [cover image c0de02]
-    metadata: {tools: [instagram_read], not_tools: [web_fetch, social_fetch, instagram_search]}
+    metadata:
+      tools: [instagram_read]
+      not_tools: [web_fetch, social_fetch, instagram_search]
+      before: {instagram_read: [media_fetch]}
     snapshot: *room_a
 
   - name: route_instagram_read_shared_reel_bare_image
@@ -424,5 +436,8 @@ cases:
     expect: reply
     mention: true
     input: what is in this reel [shared reel by @synth.example https://www.instagram.com/reel/SynthReel02/] [image c0de01]
-    metadata: {tools: [instagram_read], not_tools: [web_fetch, social_fetch, instagram_search]}
+    metadata:
+      tools: [instagram_read]
+      not_tools: [web_fetch, social_fetch, instagram_search]
+      before: {instagram_read: [media_fetch]}
     snapshot: *room_a

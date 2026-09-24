@@ -245,8 +245,11 @@ async def run(
         # A shared item's still picture is RECORDED as one, not only rendered
         # as one (`[cover image …]`): `media_json` is all `media_fetch` has
         # when it serves the handle, and the ref's `on_demand` does not survive
-        # into it. Same predicate as the label, so the two cannot disagree.
-        if blob and ref.on_demand:
+        # into it. THE LABEL'S OWN PREDICATE, called rather than restated:
+        # `on_demand` alone also covers a preview that is a video or a
+        # sticker, which renders under its plain label, and a role the label
+        # never claimed would make `media_fetch` call it a cover anyway.
+        if blob and label_for(ref) == "cover image":
             blob = replace(blob, role=COVER_ROLE)
         # A gap is a real position, not a skipped one: handles are matched to
         # placeholders by INDEX, so a failed attachment must contribute an

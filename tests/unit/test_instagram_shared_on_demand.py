@@ -149,6 +149,25 @@ async def test_a_shared_thumbnail_is_held_but_never_sent_to_the_interpreter():
     assert wiring.store.comprehended == []
 
 
+async def test_a_shared_items_video_or_sticker_is_never_recorded_as_a_cover():
+    """The role rides on the LABEL's predicate, not on `on_demand` alone. A
+    preview that is a video or a sticker keeps its plain label, so it must
+    not carry a role the transcript never claimed, or `media_fetch` would
+    call it a cover. (Only images have been observed as previews; these are
+    the shapes the predicate has to refuse, not ones seen live.)"""
+    for kind, label in (("video", "video"), ("animated", "sticker")):
+        wiring = _Wiring()
+        event = _shared_reel_event()
+        event["media"] = {"kind": kind, "url": THUMB_URL}
+
+        staged = await wiring.ingest(event)
+
+        (blob,) = staged.media_blobs
+        assert staged.body.endswith(f"[{label} {blob.handle}]"), staged.body
+        assert blob.role == "", f"a {kind} preview was recorded as a cover"
+        assert '"role"' not in (_row(staged).media_json or "")
+
+
 async def test_an_unread_thumbnail_renders_a_bare_handle_that_claims_nothing():
     """What the model sees for the thumbnail until somebody asks: the kind, the
     author, the link, and `[cover image <handle>]` with nothing after the handle. The
