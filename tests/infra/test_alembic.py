@@ -184,6 +184,72 @@ def test_pre_0033_row_inserted_before_kind_columns_gets_the_reminder_default(pg_
     assert row.payload is None
 
 
+def test_0062_backfills_source_fold_on_a_pre_existing_revision(pg_url):
+    """design/dreamer-agent-loop/26-standing.md, dated section 2026-09-25: a
+    `standing_revision` row written before the `source` column existed is,
+    by construction, a fold — `SqlStandingStore.write` had exactly one
+    caller shape until this migration's sibling method landed. The server
+    default does the backfill in the same `ADD COLUMN` statement; no rewrite
+    pass is needed, mirroring `test_pre_0033_row_inserted_before_kind_
+    columns_gets_the_reminder_default` one migration family over.
+    """
+    from alembic import command as alembic_command
+
+    run_migrations(pg_url)
+    alembic_command.downgrade(alembic_config(pg_url), "0061_video_readings")
+
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn:
+            conn.execute(sa.text(
+                "INSERT INTO standing_revision "
+                "(platform, conversation_id, body, fold_count, updated_at) "
+                "VALUES ('signal', 'pre-0062', 'a position', 1, 1000)"
+            ))
+            conn.commit()
+    finally:
+        engine.dispose()
+
+    run_migrations(pg_url)
+
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn:
+            source = conn.execute(sa.text(
+                "SELECT source FROM standing_revision "
+                "WHERE conversation_id = 'pre-0062'"
+            )).scalar_one()
+    finally:
+        engine.dispose()
+    assert source == "fold"
+
+
+def test_0062_downgrade_drops_the_source_column_and_its_check(pg_url):
+    """The falsification side: downgrading past 0062 removes both the
+    constraint and the column, and the migration chain still reaches the
+    same head afterward when re-applied — `run_migrations` is idempotent
+    per `test_upgrade_is_idempotent`, so a downgrade/upgrade round trip
+    proves the pair is reversible rather than merely additive."""
+    from alembic import command as alembic_command
+
+    run_migrations(pg_url)
+    alembic_command.downgrade(alembic_config(pg_url), "0061_video_readings")
+
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn:
+            columns = conn.execute(sa.text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'standing_revision'"
+            )).scalars().all()
+    finally:
+        engine.dispose()
+    assert "source" not in columns
+
+    run_migrations(pg_url)
+    assert current_revision(pg_url) == head_revision()
+
+
 def test_0060_backfills_the_platform_handle_from_raw_json(pg_url):
     """design/message-edits/01 §2: an edit names its target by the platform's
     handle, and a message stored BEFORE 0060 had it only inside `raw_json`.
