@@ -260,14 +260,18 @@ frontmatter, missing required key, unparseable YAML) fails to parse.
 
 ## 3. "Rollback"
 
-Nora runs as a **Docker container**, not under systemd — the container is built from
-images tagged per phase (`nora:p0`, `nora:p1a`, …). Rolling back one phase is a
-two-command retag, no rebuild and no git checkout required:
+Nora runs as a **Docker container**, not under systemd. The per-phase tags this
+section used to retag (`nora:p0`, `nora:p1a`, …) no longer exist on the deploy
+host, which held only `nora:latest` on 2026-09-24. A deploy run through the
+`nora-deploy` agent skill tags every VERIFIED image `nora:sha-<sha>` and logs it
+to `~/nora-backups/deploys.log`, so rolling back one deploy is a retag of the
+previous logged line, no rebuild and no git checkout. The skill's step 6 is the
+procedure: it holds the deploy lock, and it refuses when a migration landed
+between the two commits (the image runs `alembic upgrade head` at start, so an
+older image cannot run on a newer schema; roll forward with a revert PR).
 
-```bash
-docker tag nora:p0 nora:latest
-docker compose up -d --no-build
-```
+A config key the older image does not know makes it crash-loop: revert those
+keys in `config.toml` first (section 3b).
 
 `OMNIROUTE_API_KEY` must be available for the container to start, but nothing needs to
 be exported by hand — it comes from the gitignored `.env` file in the repo root, which
@@ -275,7 +279,7 @@ be exported by hand — it comes from the gitignored `.env` file in the repo roo
 
 ### Rolling further back, to the pre-rewrite v1 codebase
 
-A phase retag only reaches back as far as the images that were built. Going all the way
+A retag only reaches back as far as the images that were kept. Going all the way
 back to the pre-Strands-rewrite v1 codebase means checking out the old source and
 rebuilding, not just swapping tags — this needs network access and takes minutes, not
 seconds:
@@ -326,9 +330,12 @@ docker compose exec db psql -U nora -d nora -c 'DROP TABLE alembic_version'
 
 ```bash
 scripts/build-image.sh
-docker compose up -d --force-recreate nora
+docker compose up -d --force-recreate nora presence analytics
 python3 scripts/verify-deploy.py        # LAST, and it must exit 0
 ```
+
+Run it under the deploy lock and with the rollback tag: the `nora-deploy`
+agent skill's step 3 is this block with both.
 
 **Three containers run `nora:latest`** — `nora`, `presence` and `analytics`,
 same image, different commands. `--force-recreate nora` recreates ONE of them.

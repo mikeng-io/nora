@@ -106,22 +106,24 @@ counting a module's responsibilities to counting its lines.
     it silently, while its own docstring named that exact shape as the one that
     must never happen (#166).
 
-    What it does now: walks every git OBJECT, every commit MESSAGE, and the
-    working tree — objects being what would be published and the working tree
-    what is about to become one. Undecodable content, and a tracked path that
-    is not a regular file, are ERRORS with a declared allowlist rather than
-    skips; there is no suffix skip list at all. Values are NORMALISED before
+    What it did by the time it was removed (it no longer runs; #283 tracks
+    the pre-commit detector that should replace it): walked every git OBJECT,
+    every commit MESSAGE, and the working tree — objects being what would be
+    published and the working tree what is about to become one. Undecodable content, and a tracked path that
+    is not a regular file, were ERRORS with a declared allowlist rather than
+    skips; there was no suffix skip list at all. Values were NORMALISED before
     matching, so a separator-formatted number and a dashless UUID collapse to
-    their declared form. The coordinate rule is shape-agnostic — comma-, tab-
+    their declared form. The coordinate rule was shape-agnostic — comma-, tab-
     and JSON-separated rows all count — and a location table must be DECLARED
     WITH A SIZE, never merely by path: exempting a path outright let the next
-    corpus be pasted into a file already on the list.
+    corpus be pasted into a file already on the list. Until #283 lands, nothing
+    enforces any of this.
 
     Falsified by attack, not by assertion: an undeclared identifier planted in
     the gate's OWN source, a table pasted into a declared path, a table at an
     undeclared path, and a payload renamed `.svg` — all four caught, all four
     having passed the version before. Its name half is only a
-    regression pin — there is no allowlist over English — and the file says so,
+    regression pin — there was no allowlist over English — and the file said so,
     because a green gate must not be read as «no real names in the tree».
 
 - **Never point signal-cli at a different account, re-register it, or unlink

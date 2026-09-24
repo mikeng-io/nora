@@ -169,24 +169,25 @@ branches:
 heads:
 	uv run alembic heads
 
-# Empty output under both headings is what clean looks like.
+# Empty output under both headings is what clean looks like. A sub-lettered
+# row (`R-6b`) is its own id: the trailing `\|` keeps it from reading as its
+# parent, and the optional letter keeps a duplicated `R-6b` from going unseen.
 decision-numbers:
 	@echo "== duplicate DEC numbers =="
-	@grep -oE '^\| DEC-[0-9]+ \|' design/09-decision-index.md | grep -oE '[0-9]+' | sort -n | uniq -d
+	@grep -oE '^\| DEC-[0-9]+[a-z]? \|' design/09-decision-index.md | grep -oE '[0-9]+[a-z]?' | sort -V | uniq -d
 	@echo "== duplicate R numbers =="
-	@grep -oE '^\| R-[0-9]+ \|' design/09-decision-index.md | grep -oE '[0-9]+' | sort -n | uniq -d
+	@grep -oE '^\| R-[0-9]+[a-z]? \|' design/09-decision-index.md | grep -oE '[0-9]+[a-z]?' | sort -V | uniq -d
 
 # The schema gate on its own (DEC-11: `alembic check` is blind to the CHECK
 # constraint and the `ts DESC` index ordering, so this is the real one).
 schema-parity:
 	uv run pytest -q tests/infra/test_schema_parity.py
 
-# --- evals, tier 2 (docs/eval-sop.md; network-marked, so excluded from `make
-# test` by pyproject's addopts and never part of the gate) ---
+# --- live evals (docs/eval-sop.md "What gates a change"; they need the model
+# and run on the deploy host, never part of the gate) ---
 
-# The ROUTING tier has no counterpart in the rebuilt layer (DEC-76 is marked
-# NOT ENFORCED). This target now runs the corpora that DO exist, so it is not a
-# command that lies about what it measures.
+# Routing is the `tool_selection` corpus (since 21e5405d); this target runs the
+# adversarial corpora, judged.
 eval-adversarial-corpora:
 	uv run python -m evals injections near_miss transcript_injection \
 	  identity_grounding source_scope being_contradicted --judge
