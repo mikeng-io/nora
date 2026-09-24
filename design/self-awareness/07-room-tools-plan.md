@@ -169,8 +169,24 @@ block doing its job.
 
 So the row was measuring the wrong question. It is now
 `route_room_list_busiest_today` («which of our groups has had the most
-talk today»), which no prompt block answers. It has not been run yet. The
-3 / 2 / 0 above belongs to the retired wording.
+talk today»), which no prompt block answers. The 3 / 2 / 0 above belongs to
+the retired wording.
+
+**The replacement row, measured 2026-09-24** on master `59366e33` (#432
+merged), same command with `--case route_room_list_busiest_today`, n = 5,
+uncontended (no other eval on the host), 16 calls over 5 turns:
+
+| row | n | pass / fail / error | reading |
+|---|---|---|---|
+| `route_room_list_busiest_today` | 5 | 5 / 0 / 0 | `room_list` on every draw; `group_members` never |
+
+Not graded, but visible in the draws: some turns went on past `room_list`
+to `room_read` on all three rooms (spending its whole budget of 3), and one
+added `load_transcript` and `calculate`. `messages_last_24h` already answers
+«busiest today», so these turns read transcripts to count messages the tool
+had counted for them. That is a cost to watch, not a routing error. If it
+persists, the likely fix is in the result, not the description: the
+busiest room could be stated, or the key named so it reads as the answer.
 
 ## What would change this plan
 

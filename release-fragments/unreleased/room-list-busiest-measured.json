@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Docs only. design/self-awareness/07 records the tool_selection result for the replacement room_list routing row (route_room_list_busiest_today, 5/5 on master 59366e33) and notes that some turns read every room's transcript after room_list had already counted the messages. Nothing a member of a room can observe."
+}
