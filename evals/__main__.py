@@ -9,7 +9,9 @@ reason a one-line change should cost that every time — `--corpus` /
 from __future__ import annotations
 
 import argparse
+import asyncio
 import os
+import statistics
 import sys
 from pathlib import Path
 from typing import Any
@@ -21,9 +23,11 @@ from evals.backbone import (
     NORA_POSITION,
     NORA_SHOWN,
     PASS,
+    RUN_ID,
     UNSTABLE,
     Spec,
     base_name,
+    drain_draws,
     drain_spend,
     nora_task,
     read,
@@ -39,6 +43,7 @@ from evals.scenarios import (
     load_corpus,
 )
 from evals.subject_config import materialise
+from nora.subject import sweep_stale_draw_workspaces
 
 #: Coarse S-class grouping for `--class`, per `10-the-scenario-map.md` §2/§15.
 #: Approximate on purpose where a corpus is not wholly one class (e.g. only
@@ -179,6 +184,44 @@ def _print_spend() -> None:
         )
 
 
+def _print_memory_overhead() -> None:
+    """What giving every draw its own Honcho workspace cost (issue #462):
+    the create and the delete, per draw, and any workspace left behind.
+
+    Printed on every run for `_print_spend`'s reason: it is free, and the
+    question it answers ("what does isolation cost, and did it clean up")
+    otherwise costs a second run.
+    """
+    draws = drain_draws()
+    if not draws:
+        return
+    create = sorted(d.create_ms for d in draws)
+    delete = sorted(d.delete_ms for d in draws if d.delete_ms is not None)
+    left = [d.id for d in draws if not d.deleted]
+    line = (
+        f"  honcho: {len(draws)} draw workspace(s), create median "
+        f"{statistics.median(create):.0f}ms (max {create[-1]:.0f}ms)"
+    )
+    if delete:
+        line += f", delete median {statistics.median(delete):.0f}ms (max {delete[-1]:.0f}ms)"
+    if left:
+        line += f"   NOT DELETED: {left}"
+    print(line)
+
+
+def _sweep_stale_workspaces() -> None:
+    """Delete draw workspaces a killed run left behind, before this run
+    starts. Never fatal: a sweep that cannot reach Honcho says so, and every
+    draw's own create will then fail and read ERROR."""
+    try:
+        swept = asyncio.run(sweep_stale_draw_workspaces())
+    except Exception as exc:  # noqa: BLE001 — reported, never a reading
+        print(f"honcho: stale draw-workspace sweep failed: {type(exc).__name__}: {exc}")
+        return
+    if swept:
+        print(f"honcho: swept {len(swept)} stale draw workspace(s) left by a killed run")
+
+
 def _case_state(case_row: dict[str, Any], name: str) -> Any:
     """One named value off a report row's `actual_environment_state`. A row
     IS the `EvaluationData` the grader saw (`model_dump()`), so the state the
@@ -221,6 +264,7 @@ def _run_one(
     scope = f" [{len(experiment.cases)} selected]" if only else ""
     print(f"--- {name}: {census(name)}{scope} ---")
     _print_spend()
+    _print_memory_overhead()
     if positions:
         _print_positions(report)
     if sample > 1:
@@ -442,6 +486,10 @@ def main() -> int:
         print(f"refusing to run: {exc}", file=sys.stderr)
         return 2
     print(f"subject config rebuilt from {args.deployment_config} -> {generated}")
+    # AFTER the rebuild: the sweep reads Honcho's address and the deployment's
+    # workspace off the config every subject composes.
+    print(f"run {RUN_ID}: every draw gets its own Honcho workspace")
+    _sweep_stale_workspaces()
 
     if args.print_input:
         return _print_input(names[0], args.print_input, source_url=source_url)

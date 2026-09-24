@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
+
+from aiohttp import web
+from aiohttp.test_utils import TestServer
 
 from nora.domain.models import ConversationTarget, NormalizedMessage
 from nora.domain.ports import (
@@ -108,3 +113,130 @@ class FixedModelSource:
     def create(self) -> object:
         self.creates += 1
         return self._model
+
+
+#: Honcho's own id rule (`WorkspaceCreate.id` in its OpenAPI).
+_HONCHO_ID = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+
+class FakeHoncho:
+    """A Honcho v3 server in-process, for the eval side's per-draw workspaces
+    (issue #462) and the subject's own memory traffic.
+
+    Shaped after the deploy host's `/openapi.json` (Honcho 3.1.2, read
+    2026-09-24), including its wrong-call answers, because a fake that answers
+    everything 200 cannot show a leak or a mis-ordered delete:
+
+    - a workspace id outside `^[a-zA-Z0-9_-]+$` (or over 512) is a 422;
+    - `DELETE /v3/workspaces/{id}` is a 409 while any session in it is active,
+      and 202 otherwise;
+    - `DELETE .../sessions/{id}` marks the session inactive, 202;
+    - list endpoints page, and a `size` over 100 is a 422;
+    - any call under a workspace that does not exist is a 404, so a write
+      after the delete, or into a workspace nobody created, is visible.
+
+    `requests` records `(method, path, workspace)` for every call, the
+    workspace being the path segment after `/v3/workspaces/` (or the created
+    id, for the create).
+    """
+
+    def __init__(self) -> None:
+        self.workspaces: dict[str, dict] = {}
+        self.sessions: dict[str, dict[str, dict]] = {}
+        self.writes: dict[str, list[str]] = {}
+        self.deleted: list[str] = []
+        self.requests: list[tuple[str, str, str | None]] = []
+        self._server: TestServer | None = None
+        self.url = ""
+
+    def seed(self, workspace: str, *, created_at: str, metadata: dict | None = None) -> None:
+        self.workspaces[workspace] = {
+            "id": workspace, "metadata": dict(metadata or {}), "configuration": {},
+            "created_at": created_at,
+        }
+        self.sessions.setdefault(workspace, {})
+
+    async def start(self) -> str:
+        app = web.Application()
+        app.router.add_route("*", "/{tail:.*}", self._handle)
+        self._server = TestServer(app)
+        await self._server.start_server()
+        self.url = str(self._server.make_url("/")).rstrip("/")
+        return self.url
+
+    async def close(self) -> None:
+        if self._server is not None:
+            await self._server.close()
+
+    @staticmethod
+    def _page(items: list, request: web.Request) -> web.Response:
+        size = int(request.query.get("size", 50))
+        page = int(request.query.get("page", 1))
+        if size > 100 or size < 1 or page < 1:
+            return web.json_response({"detail": "bad page"}, status=422)
+        return web.json_response({
+            "items": items[(page - 1) * size: page * size], "total": len(items),
+            "page": page, "size": size, "pages": (len(items) + size - 1) // size,
+        })
+
+    async def _handle(self, request: web.Request) -> web.Response:
+        path, method = request.path, request.method
+        body = await request.json() if request.can_read_body else None
+        parts = path.strip("/").split("/")
+        if parts[:2] != ["v3", "workspaces"]:
+            self.requests.append((method, path, None))
+            return web.json_response({"detail": "not found"}, status=404)
+        if len(parts) == 2 and method == "POST":
+            workspace = (body or {}).get("id", "")
+            self.requests.append((method, path, workspace))
+            legal = isinstance(workspace, str) and len(workspace) <= 512
+            if not legal or not _HONCHO_ID.match(workspace):
+                return web.json_response({"detail": "invalid id"}, status=422)
+            if workspace not in self.workspaces:
+                self.seed(
+                    workspace, created_at=datetime.now(UTC).isoformat(),
+                    metadata=(body or {}).get("metadata") or {},
+                )
+            return web.json_response(self.workspaces[workspace])
+        if parts[2:] == ["list"] and method == "POST":
+            self.requests.append((method, path, None))
+            return self._page(list(self.workspaces.values()), request)
+
+        workspace, rest = parts[2], parts[3:]
+        self.requests.append((method, path, workspace))
+        if workspace not in self.workspaces:
+            return web.json_response({"detail": "workspace not found"}, status=404)
+        sessions = self.sessions[workspace]
+        if not rest and method == "DELETE":
+            if any(s["is_active"] for s in sessions.values()):
+                return web.json_response({"detail": "active sessions"}, status=409)
+            del self.workspaces[workspace]
+            del self.sessions[workspace]
+            self.deleted.append(workspace)
+            return web.json_response({}, status=202)
+        if rest == ["sessions"] and method == "POST":
+            sid = (body or {}).get("id", "")
+            sessions.setdefault(sid, {"id": sid, "is_active": True, "workspace_id": workspace})
+            return web.json_response(sessions[sid])
+        if rest == ["sessions", "list"] and method == "POST":
+            return self._page(list(sessions.values()), request)
+        if len(rest) == 2 and rest[0] == "sessions" and method == "DELETE":
+            if rest[1] not in sessions:
+                return web.json_response({"detail": "session not found"}, status=404)
+            sessions[rest[1]]["is_active"] = False
+            return web.json_response({}, status=202)
+
+        # Every other verb the subject's client uses, recorded against THIS
+        # workspace and answered in the real shape.
+        self.writes.setdefault(workspace, []).append(f"{method} /{'/'.join(rest)}")
+        if rest[-1:] == ["representation"]:
+            return web.json_response({"representation": ""})
+        if rest[-1:] == ["card"]:
+            return web.json_response({"peer_card": None})
+        if rest[-1:] == ["chat"]:
+            return web.json_response({"content": ""})
+        if rest[-1:] == ["search"]:
+            return web.json_response([])
+        if rest == ["peers"]:
+            return web.json_response({"id": (body or {}).get("id"), "workspace_id": workspace})
+        return web.json_response({"ok": True})

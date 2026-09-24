@@ -64,7 +64,10 @@ from evals.situation import (
     varied_transport,
 )
 from nora.subject import (
+    DrawWorkspace,
     SubjectSpec,
+    draw_workspace,
+    new_run_id,
     obtain,
     sandbox_database,
     sandbox_from_snapshot,
@@ -198,6 +201,15 @@ NORA_CHECKS_FAILED = "nora.checks_failed"
 NORA_POSITION = "nora.position"
 NORA_SHOWN = "nora.shown"
 NORA_JUDGED_WHY = "nora.judged_why"
+#: The Honcho workspace this draw's subject read and wrote: a workspace of
+#: the draw's own, created empty and deleted after (issue #462). Carried so a
+#: reading names the memory it was taken against.
+NORA_MEMORY_WORKSPACE = "nora.memory_workspace"
+
+#: This process's run, the middle of every draw workspace's name
+#: (`<deployment>-eval-<RUN_ID>-<case>-<nonce>`). Two arms run as two
+#: processes and so never share one.
+RUN_ID = new_run_id()
 
 #: The three verdicts, carried in `EvaluationOutput.label`.
 #:
@@ -309,6 +321,17 @@ def _blocks_empty(exporter: InMemorySpanExporter) -> str | None:
 #: gives: `TracedHandler` forces `max_workers=1`, so cases are driven one at a
 #: time, in this process.
 _SPEND: list[dict[str, Any]] = []
+
+#: Every draw's Honcho workspace in this process, with what its create and
+#: delete cost (issue #462). Process state for `_SPEND`'s reason.
+_DRAWS: list[DrawWorkspace] = []
+
+
+def drain_draws() -> list[DrawWorkspace]:
+    """The draw workspaces since the last drain, and reset."""
+    out = list(_DRAWS)
+    _DRAWS.clear()
+    return out
 
 
 def drain_spend() -> dict[str, Any]:
@@ -781,6 +804,31 @@ def _check_the_corpus_assertions(
 
 
 async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
+    """One DRAW, in a Honcho workspace of its own. Raises; `nora_task` catches.
+
+    The sandbox database isolates what she knows in Postgres; Honcho is an
+    external service and needs its own isolation. Before issue #462 every
+    draw fed the one shared `<deployment>-eval` workspace and the tag path
+    read it back, so draw 3 read draws 1 and 2 as the tagger card.
+
+    The workspace is the OUTERMOST scope: created before the subject is
+    composed, and deleted only after `_drive_draw` has returned, by which
+    point its own `finally` has closed the subject and cancelled its
+    background work. A feed still running would otherwise write into a
+    workspace being deleted.
+    """
+    async with draw_workspace(case.name or "unnamed", run_id=RUN_ID) as memory:
+        # Held BEFORE the drive, so a draw that raises is still counted; its
+        # delete time is filled in when the context exits.
+        _DRAWS.append(memory)
+        result = await _drive_draw(case, spec, memory_workspace=memory.id)
+    result["environment_state"].append(
+        EnvironmentState(name=NORA_MEMORY_WORKSPACE, state=memory.id),
+    )
+    return result
+
+
+async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[str, Any]:
     """Obtain, sandbox, seed, drive, tear down. Raises; `nora_task` catches.
 
     ONE PATH. Every case names a real room at a real instant (`snapshot:`),
@@ -842,7 +890,12 @@ async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
                     database_url=database_url,
                     workdir=workdir,
                     room=room,
-                    overrides={**port.config, **(spec.overrides or {})},
+                    # LAST, so nothing a spec states can redirect it: THIS
+                    # DRAW'S Honcho workspace, created empty (issue #462).
+                    overrides={
+                        **port.config, **(spec.overrides or {}),
+                        "memory.workspace_id": memory_workspace,
+                    },
                     # The deployment's OWN roster and room set, verbatim.
                     # `_DEFAULT_IDENTITY` knows ONE person; a real room has
                     # ten, and a snapshot copies each row's real `person_id`

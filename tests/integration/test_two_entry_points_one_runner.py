@@ -30,6 +30,9 @@ from tests.sandbox_fixtures import seed_source
 #: Point the subject at a port nothing answers on, so the model call fails
 #: rather than reaching a real provider from a test run. Configuration, which
 #: is the legal seam — there is no way here to pass a collaborator.
+#: Every draw creates a Honcho workspace of its own (issue #462).
+pytestmark = pytest.mark.usefixtures("draw_honcho")
+
 _NO_PROVIDER = {"llm.base_url": "http://127.0.0.1:9/v1"}
 
 _HISTORY = {
