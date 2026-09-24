@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Governance only: ADR 0017 (agent skills carry the procedures) moves from proposed to accepted on the operator's approval. Nothing a member of a room can observe.",
+  "details": [],
+  "limitations": []
+}
