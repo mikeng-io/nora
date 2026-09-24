@@ -1569,20 +1569,23 @@ async def test_the_reply_does_not_wait_for_the_reaction():
     delivered by the time `run` returns while the reactions are still in
     flight — which is only true because they are spawned, not awaited.
 
+    No wall-clock bound (#430, precedent #180 "wait on the condition, not the
+    clock"): `react_delay` is set far above any plausible turn latency so that
+    even a loaded scheduler cannot let the reaction's sleep elapse before
+    `run` returns, and the load-bearing proof stays the CONDITION —
+    `adapter.emojis == []` plus the `background` assertion — not a timer.
+
     PROBE: `await` the coroutines in `indicate.begin`/`resolve` instead of
     spawning them, and the reply becomes hostage to the reaction's latency;
     the `background` assertion below fails."""
-    adapter = _ReactingAdapter(react_delay=0.2)
+    adapter = _ReactingAdapter(react_delay=2.0)
     pipeline, _metrics, _audit, _memory, background = _build_pipeline(adapter=adapter)
 
-    started = time.perf_counter()
     await pipeline.run(_request())
-    elapsed = time.perf_counter() - started
 
     assert adapter.texts == ["今晚七點半得"]   # replied already
     assert adapter.emojis == []                # reaction still in flight
     assert len(background) > 0
-    assert elapsed < 0.2
 
     await _drain(background)
     assert adapter.emojis == [indicate.ACK, indicate.DONE]
