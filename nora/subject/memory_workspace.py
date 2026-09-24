@@ -317,6 +317,8 @@ async def draw_workspace(
         try:
             await honcho.delete(workspace)
             draw.deleted = True
+        # A BaseException (KeyboardInterrupt, CancelledError) landing mid-delete
+        # is the startup sweep's job, not this block's.
         except Exception as exc:  # noqa: BLE001 — cleanup never decides a reading
             draw.error = f"{type(exc).__name__}: {exc}"
             log.warning("draw workspace %s was not deleted: %s", workspace, draw.error)

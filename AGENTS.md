@@ -10,7 +10,12 @@ This file is the terse, scannable rule set. The reasoning, the war-stories, and
 the specific values behind these rules live in **`docs/CONVENTIONS.md`** — read
 it when a rule needs its "why"; every terse rule below is only safe because that
 detail is preserved. **`CONTRIBUTING.md`** carries the branch, commit, PR and
-issue conventions.
+issue conventions. **`.agents/skills/`** carries the procedures: one skill per
+recurring task (landing a change, deploying, running the eval, proving a fix,
+recording a decision, writing a tool). **When a task matches a skill in the
+table under [Skills](#skills-the-procedures), load it before the first edit**,
+not after the first mistake: the rules below are what must hold, the skill is
+the order of the commands that make them hold.
 
 ## The spine: comprehend → measure → serialize
 
@@ -85,6 +90,30 @@ budget blown = FAIL; timeout = ERROR ≠ PASS), serialize a verdict bound to its
 Langfuse trace. Same three verbs, same mindset — that is how a new capability's
 evaluation reuses this framework instead of growing a bespoke one.
 
+## Skills: the procedures
+
+Each skill is a `SKILL.md` under `.agents/skills/` (the cross-tool location);
+`.claude/skills/<name>` is a symlink to it, so Claude Code reads the same
+files and there is one copy. A skill is the ORDER of the commands and the check after
+each one; the reasons stay in the documents it links. Load the skill when the
+task starts, not when it goes wrong: the audit behind them (ADR 0017) found the
+rules were written down and not read at the moment they applied.
+
+| when the task is | load |
+|---|---|
+| starting a change, running the gate, committing, opening or merging a PR | `nora-land` |
+| putting merged code or config live on `norty`, or checking it is live | `nora-deploy` |
+| reading a trace, a metric, a row or a log as evidence | `nora-readback` |
+| deciding a prompt, doctrine, tool-text or routing change with the eval suite | `nora-eval` |
+| proving a fix is guarded (revert, watch a named test go red, restore) | `nora-prove-fix` |
+| a new DEC or R row, an ADR, an issue, or citing a decision | `nora-decision` |
+| adding or changing one of Nora's tools (ADR 0015) | `nora-tool` |
+| adding or changing one of Nora's runtime skills in `nora/skills/` (ADR 0016) | `nora-runtime-skill` |
+
+`nora/skills/` holds NORA's skills, which she loads at runtime; `.agents/skills/`
+holds the skills of the agents that build her. `tests/architecture/test_agent_skills.py`
+keeps this table and that directory in step.
+
 ## Reporting to the operator
 
 **Two registers, and using the wrong one is the common failure.**
@@ -93,6 +122,13 @@ evaluation reuses this framework instead of growing a bespoke one.
 wrong*. **Full depth. Take the room you need.** Compressing an architectural
 argument damages it, and terse reporting must never bleed into design
 discussion.
+
+**Proceed unless blocked.** Before stopping to ask, answer two questions: is
+there a blocker, and is there a fact only the operator holds? If both are no,
+carry the work end to end (merge and deploy included, through the skills
+above). A decision you can make from the evidence is not input; asking for it
+is ping-pong: the operator restated this at the start of work more than a
+dozen times between 2026-09-08 and 09-22.
 
 **REPORTING** — work finished, a check ran, a peer replied. Terse:
 
@@ -157,6 +193,10 @@ the decision.
 6. `CONTRIBUTING.md` — branch, commit, PR and issue conventions, and the
    issue → ADR → decision-row flow.
 7. `docs/adr/` — Nygard-form ADRs: why a decision was made and what it cost.
+8. `docs/observability.md`, `docs/eval-sop.md`, `docs/runbook.md` — how to
+   read an instrument back, how a behavioural change is measured before it
+   ships, and what to do when production misbehaves. Read the one the task
+   touches; the matching skill (below) is the procedure, these are the reasons.
 
 **A `docs/superpowers/…` path is a historical citation, not a location.** That
 tree — 34 dated specs and 35 plans — was **removed 2026-09-08** along with
@@ -209,19 +249,22 @@ where there is no local `config.toml` (a fresh clone) and runs for real on the
 deployment machine, which is the one whose drift would stop a container
 booting under `extra = "forbid"`.
 
-**Config mutation goes through the CLI, not a hand edit** (deploy convention
-§4.5, implemented 2026-09-08): `nora config set/get/unset/validate/path --config
-<path>`. The subcommand validates against the schema, writes atomically
-(tmp + rename), prints what changed, and never touches `.env` — secrets stay
-there and are referenced by name. Hand-editing a 75KB TOML remains possible
-(`extra = "forbid"` still catches a broken file at boot) but is the last
-resort, because it bypasses the validation and the audit trail the CLI gives.
+**No config change reaches a process unvalidated** (deploy convention §4.5,
+implemented 2026-09-08): `nora config set/get/unset/validate/path --config
+<path>` validates against the schema, prints what changed, and never touches
+`.env` — secrets stay there and are referenced by name. On the deploy host the
+CLI cannot write the live file from inside the container (`EBUSY` on the file
+bind-mount, 2026-09-09), so the live procedure is `nora-deploy` step 5: edit a
+COPY, `nora config validate` the copy through the running container, `cp` it
+into place (in place, so the mount keeps its inode), recreate, and restore the
+backup on any failure. An unvalidated hand edit of the live file is never the
+procedure: `extra = "forbid"` catches a broken file only by crash-looping.
 
 `config.toml` is ALSO bind-mounted read-only into the two voice sidecars
 (`stt`, `voice-wake`): they read `[speech.stt]` / `[speech.wake]` with stdlib
 tomllib at boot (2026-09-17 — before that, the same knobs were env vars in
 compose and disagreed with this file). The last two are bind-mounted read-only and **loaded once at
-startup** — editing either without a restart changes nothing and warns you about
+startup** — editing either without a recreate changes nothing and warns you about
 nothing (`nora_unmapped_senders_total` is the tell). `identity.toml` takes one
 `[[persons.<id>.<platform>]]` block **per account**, all resolving to one
 `person_id` (their Honcho peer, A2/DEC-14). `policy.toml` is deny-by-default and
@@ -230,17 +273,13 @@ Nora **refuses to start** if it is missing or allows nothing (R-5).
 ## Reaching the deployment
 
 Nora runs on the `norty` host; development happens on the MacBook. The host is
-a **deploy target, not a dev checkout** — nothing is edited there, and no
-session runs there. Every read-back the "Never claim without reading back"
-rule demands is one `ssh` away:
-
-```bash
-ssh norty 'cd ~/workspace/nora && git log --oneline -1'          # what is checked out
-ssh norty 'cd ~/workspace/nora && docker compose ps'              # what is running
-ssh norty 'cd ~/workspace/nora && docker compose exec -T db psql -U nora -d nora -Atc "select count(*) from note"'
-ssh norty 'curl -s localhost:9100/metrics | grep ^nora_dream_'    # the metric that proves it
-ssh norty 'cd ~/workspace/nora && awk "/^\[notes\]/,/^\[/" config.toml'   # the LIVE config, untracked
-```
+a **deploy target, not a dev checkout**: nothing is developed there. Sessions
+do run commands on it (deploys, eval runs, read-backs), and its checkout has
+collected commits that were never pushed, so read `git status -sb` there before
+any pull and push what you find to a branch rather than resetting it. Deploys
+from different sessions must not overlap (`nora-deploy` takes a lock). Every
+read-back the "Never claim without reading back" rule demands is one `ssh`
+away; `nora-deploy` and `nora-readback` carry the commands.
 
 - **Key auth only.** `~/.ssh/norty` is a dedicated ed25519 key, installed once
   with `ssh-copy-id`; `Host norty` in `~/.ssh/config` binds user, host and key.
@@ -254,7 +293,8 @@ ssh norty 'cd ~/workspace/nora && awk "/^\[notes\]/,/^\[/" config.toml'   # the 
   never by grepping `docker ps` for a name — Komodo's own databases live on the
   same host and match the same patterns.
 - **Container logs ARE on the docker log driver, since 2026-09-09** — `docker
-  compose logs nora` gives JSON lines; pipe it through `jq`. It was a file
+  compose logs --no-log-prefix nora` gives JSON lines for `jq` (without the
+  flag every line starts `nora  | ` and `jq` rejects it). It was a file
   (`data/nora.log`) for five weeks because this module landed one day before
   the Dockerfile, and «`docker compose logs nora` is empty» was documented as
   a rule in three places instead of fixed. Anything still telling you to grep
@@ -266,7 +306,7 @@ ssh norty 'cd ~/workspace/nora && awk "/^\[notes\]/,/^\[/" config.toml'   # the 
 **While iterating**, use the fast loop — it is what the edit-run-edit cycle is for:
 
 ```bash
-make test-affected     # selects targets from what changed; -n 8; falls back to the full parallel suite
+make test-affected     # targets from the LAST COMMIT (base HEAD~1), not uncommitted edits; -n 8
 make test-fast         # the whole suite, -n 8
 ```
 
@@ -279,38 +319,19 @@ make gate              # all four, in order — or run them individually:
 
 uv run pytest -q                                         # tests green
 uv run ruff check nora/ evals/ tests/                    # lint clean
-uv run mypy nora/domain nora/config.py nora/app nora/infra nora/presence nora/engagement   # types clean (see the scope note)
+make typecheck                                           # types clean (see the scope note)
 uv run lint-imports                                      # import boundaries clean
 ```
 
-**What "types clean" actually covers.** The strict flags in `pyproject.toml`
-apply to `nora.domain`, `nora.config`, `nora.app`, `nora.infra` and
-`nora.presence` — five packages. `nora/engagement` and `nora/language` are on
-the mypy command line but NOT in that override, so they are checked without the
-strict flags. The rest of `nora/` is not type-checked at all.
-
-**Measure a package's own errors, not the run's.** An earlier version of this
-table was wrong by 2.5x overall and by 15x on `engagement`, and the reason is
-worth keeping: putting the strict flags on the COMMAND LINE applies them to
-every transitively imported module, so `nora/agent`'s errors were counted again
-in almost every row. `ingest` was recorded as 137 — its own count is **zero**;
-all 137 were `nora/agent` and the platform adapters seen through it. Scope the
-override in `pyproject.toml` and re-run, or the number measures the import
-graph rather than the package.
-
-Own-file strict errors, measured 2026-09-11 against a scoped override:
-
-| free (0 errors) | cheap | a project |
-|---|---|---|
-| `ingest`, `analytics`, `doctrine`, `language`, `skills` | `instructions` 2, `engagement` 9 | `web` 49, `compute` 66, `agent` 124 |
-
-Eight packages can join the strict override for **60 errors total**, and five of
-them for nothing. `platform` 34, `testing` 30 and `obs` 15 sit between.
-
-(`nora/dreamer` holds no Python at all — it is the objectives tree — so its
-absence from the scope was never a gap.) Do not read a green `make gate` as
-"this repo is type-safe"; read it as "five packages are, and the table above
-says what the rest would cost". Issue #121 tracks the expansion.
+**What "types clean" actually covers.** The `typecheck` target in the
+`Makefile` is the list: 13 packages, and the strict override in
+`pyproject.toml` (`[[tool.mypy.overrides]]`) names the same 13 (#121,
+re-measured 2026-09-17). Everything else under `nora/` (`agent`, `compute`,
+`platform`, `testing`, `obs` among them) is not type-checked, so a green gate
+means "those 13 are", not "this repo is". Measure a package's OWN errors by
+scoping the override to it, never by putting strict flags on the command line:
+those leak into every imported module and once inflated a count 15x
+(`pyproject.toml` carries the method).
 
 A fresh worktree needs `uv sync --extra evals` once, or pytest dies at
 COLLECTION on the eval modules — `strands-agents-evals` is a declared optional
@@ -323,19 +344,15 @@ mistake it produced (2026-08-21: eight full gate runs in one session).
 
 ## Release fragments
 
-Every branch with a user-observable change adds a JSON fragment under
-`release-fragments/unreleased/`: features, fixes, behaviour/security changes,
-and meaningful limitations all count. Internal-only work adds a `type: "none"`
-fragment with a reason. The fragment is the source for the next version tag's
-annotation; do not reconstruct product notes from commit subjects at release
-time. Validate the branch before merge:
-
-```bash
-uv run python scripts/check_release_fragments.py --base origin/master
-uv run python scripts/render_release_notes.py
-```
-
-See `release-fragments/README.md` for the schema. Fragments accumulate across
+Every branch ADDS a new JSON fragment under `release-fragments/unreleased/`
+(`scripts/check_release_fragments.py` refuses a branch without an added one;
+editing an existing fragment does not count). Features, fixes,
+behaviour/security changes and meaningful limitations get a rendering type;
+internal-only work, docs included, gets `type: "none"` with a reason. The
+fragment is the source for the next version tag's annotation; do not
+reconstruct product notes from commit subjects at release time. Schema:
+`release-fragments/README.md`; validation: `make release-check` (the
+`nora-land` skill has the step). Fragments accumulate across
 ordinary deployments and never create a tag or deploy a release themselves.
 
 The schema gate is `tests/infra/test_schema_parity.py`, **not** `alembic check`
@@ -356,47 +373,25 @@ summary — update-in-place, separate from the Dreamer and Honcho).
 ## Adding or changing a tool
 
 Read **`docs/adr/0015-tool-surface-policy-v2.md` before writing one line** of a
-tool's name, docstring or result, and 0004 and 0007, which it extends and
-partly supersedes. A tool's text is the model's routing surface on every call.
-0007's length and language rules had no test, and they were not met even on
-the day they were written. 0015 §6 lists which rule is checked how.
-
-Enforced today:
-
-- **Name:** `<domain>_<verb>`, with the verb from the list in
-  `tests/architecture/test_tool_names.py` (`instagram_read`, `room_list`). A
-  new verb goes into that list in a PR that says why. Never rename an existing
-  tool without a `tool_selection` measurement (0004).
-- **First paragraph:** what the tool does and when to call it, as a catalogue
-  line of at most 40 tokens (name included). Checked by
-  `tests/test_tool_surface_policy.py`.
-
-Policy now; its tests land with the first rewrite batch (0015 §5):
-
-- A `level` field on `NativeTool` with a token ceiling per level.
-- Result interpretation in the RESULT, not the description.
-- `Literal` types for fixed options.
-- At most one non-English string (a trigger word only).
-- No em or en dashes.
-
-Process: write, run the `humanizer` skill if the session has it, `make gate`,
-then measure before and after. Routing is
-`python -m evals tool_selection --sample 5 --reasons`; reporting needs the
-judged corpus 0015 §4 describes. Put the numbers in the PR.
+tool's name, docstring or result (DEC-200). A tool's text is the model's
+routing surface on every call, and 0007's rules, which had no test, were not
+met even on the day they were written. The **`nora-tool`** skill is the
+checklist with each rule's check; 0015 §6 says which rule is enforced how.
+The name is `<domain>_<verb>` from the verb list in
+`tests/architecture/test_tool_names.py`, and a tool is never renamed without a
+`tool_selection` measurement (0004). Put the before/after routing numbers in
+the PR.
 
 ## Adding or changing a skill
 
-Read **`docs/adr/0016-skill-policy.md`** (proposed) first. A skill is judgement
-for a domain most turns do not touch; a principle other domains also need is
-doctrine, and a rule about one tool is that tool's description. Placement is
-decided by reach (does it load when it should), then by cost, both read from
-Langfuse and put in the PR.
-
-Enforced today by `tests/test_skill_content.py`: a description of at most 80
-tokens that says what the skill covers, when to load it and what it is not
-for; no named scenario; a body under its token ceiling (1,500 unless argued
-there); no em or en dashes. Run the `humanizer` skill, then have a reviewer
-look for rules a rewrite lost.
+Two different things share the word. **Nora's runtime skills** (`nora/skills/`)
+follow **`docs/adr/0016-skill-policy.md`** (proposed): placement by reach, then
+cost, read from Langfuse and put in the PR; the **`nora-runtime-skill`** skill
+is the checklist, and `tests/test_skill_content.py` enforces the shape.
+**Agent skills** (`.agents/skills/`, the procedures above) follow ADR 0017 and
+`tests/architecture/test_agent_skills.py`; a new one adds its row to the
+[Skills](#skills-the-procedures) table and its `.claude/skills/<name>` link in
+the same commit.
 
 ## Never (one line each — the war-story behind each is in `docs/CONVENTIONS.md`)
 
@@ -416,20 +411,15 @@ look for rules a rewrite lost.
   rewrites in one night changed nothing or made it worse; rendering an age per
   transcript row cut the same gate's error rate by two thirds.
 - **Never paste production rows into a fixture** — not a slice, not "just six
-  people", not with a docstring explaining that it is real. `SELECT`ing out of
-  `nora-db-1` produces PII that outlives the branch, the test, and the decision
-  to delete it: `tests/fixtures/presence_corpus_sample.py` held 11,431 real GPS
-  fixes for six named people, and parsed back, every one of them has a
-  residence recoverable to an 11-metre cell from overnight fixes. It was
-  removed from the TREE in one commit and stayed reachable from `master` and
-  `origin/master` for three weeks, because deleting a file is not deleting an
-  object. Fixtures are GENERATED, or they are placeholders from
-  `identity.example.toml`. If a synthetic corpus cannot reproduce the property
-  under test, that is a finding about the property, not a licence to commit the
-  real one. `tests/architecture/test_no_real_identifiers_in_the_tree.py` is the
-  gate: every phone number, service id, platform snowflake and private address
-  in the tree must be DECLARED there, and its `_PENDING_REAL_*` inventories
-  only shrink.
+  people", not with a docstring saying it is real. Fixtures are GENERATED, or
+  placeholders from `identity.example.toml`; if a synthetic corpus cannot
+  reproduce the property under test, that is a finding about the property.
+  Deleting a file does not delete its object: a fixture of real GPS fixes stayed
+  reachable from `master` for three weeks after its removal
+  (`docs/CONVENTIONS.md` has the story). **No machine check enforces this
+  today**: the identifier gate left the suite 2026-09-16 and the pre-commit
+  detector meant to replace it was never built (#283), so the rule is yours to
+  keep until that lands.
 - **Never read an instrument's output as evidence without first checking it can
   measure the thing** — state what a positive result would look like before
   concluding from a null one.
@@ -439,6 +429,13 @@ look for rules a rewrite lost.
   fix is done when reverting the exact production line turns a NAMED test red,
   not when the gate is green. `CONTRIBUTING.md` «Proving a fix» carries it, with
   the two harness rules that otherwise turn "caught" into a lie.
+- **Never read a gate's success through a pipe.** `make gate | tail` returns
+  `tail`'s exit code, and a backgrounded `cmd; echo done` reports `echo`'s:
+  write the log, capture `RC=$?`, then read the log. Four incidents before it
+  was written down; one merged a red `master`.
+- **Never cite a file, test or function you have not opened** in this session.
+  A peer saying it will write one is not an opening, and finding a definition
+  is not finding a caller: grep for the call before repeating that it works.
 - **Never edit, commit, or merge on `master` in this checkout** — every change,
   including a one-line doc fix, starts in a worktree on its own branch and
   reaches `master` by merge, so the merge is the moment somebody decides rather
@@ -451,7 +448,7 @@ look for rules a rewrite lost.
   made one session sequence a deploy around a window that did not exist, and
   read while standing on `norty` it points at the wrong machine. What is
   unchanged: on `norty`'s checkout an edit to `nora/doctrine` IS a deploy (it
-  hot-reloads on mtime), and `config.toml` there is live at the next restart.
+  hot-reloads on mtime), and `config.toml` there is live once its services are recreated.
   **`nora/skills` is NOT** — it is `COPY`d into the image (`Dockerfile`) and the
   compose file binds only `nora/doctrine` and `nora/dreamer`, so a skill edit
   needs a rebuild. Editing one on the host the way you would edit doctrine
