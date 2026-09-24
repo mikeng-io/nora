@@ -1,7 +1,7 @@
 [
   {
     "name": "the detector counts the blocks the transport will drop",
-    "comment": "The predicate itself. Bound to the request SHAPE rather than to the SDK's warning string, so this is the anchor that would rot if the SDK reshaped a message — which is exactly what the contract test exists to say out loud.",
+    "comment": "The predicate itself. Bound to the request SHAPE rather than to the SDK's warning string, so this is the anchor that would rot if the SDK reshaped a message \u2014 which is exactly what the contract test exists to say out loud.",
     "file": "nora/agent/reasoning_strip.py",
     "old": "        total += sum(\n            1 for block in content\n            if isinstance(block, dict) and REASONING_BLOCK_KEY in block\n        )",
     "new": "        total += 0",
@@ -9,15 +9,15 @@
   },
   {
     "name": "a pass another hook cancelled is not an opportunity",
-    "comment": "The pass ReplyGuard refuses is never formatted, so it strips nothing — and on the tag path it is MOST turns, with a reasoning block sitting in agent.messages at exactly that moment.",
+    "comment": "The pass ReplyGuard refuses is never formatted, so it strips nothing \u2014 and on the tag path it is MOST turns, with a reasoning block sitting in agent.messages at exactly that moment.",
     "file": "nora/agent/reasoning_strip.py",
-    "old": "            if event.cancel:\n                # Another hook has already refused this pass — see the class\n                # docstring. Nothing will be formatted, so nothing is stripped.\n                self._pending = None\n                return",
+    "old": "            if event.cancel:\n                # Another hook has already refused this pass \u2014 see the class\n                # docstring. Nothing will be formatted, so nothing is stripped.\n                self._pending = None\n                return",
     "new": "            if False:\n                self._pending = None\n                return",
     "target": "tests/unit/test_reasoning_strip_probe.py -k test_a_cancelled_model_call_is_not_an_opportunity"
   },
   {
     "name": "the watch registers AFTER the guard, so it sees event.cancel",
-    "comment": "BeforeModelCallEvent dispatches in registration order. Registered first, the watch reads a cancel flag nobody has set yet and counts the refused pass — the same defect as the entry above, reached through the wiring instead of through the code.",
+    "comment": "BeforeModelCallEvent dispatches in registration order. Registered first, the watch reads a cancel flag nobody has set yet and counts the refused pass \u2014 the same defect as the entry above, reached through the wiring instead of through the code.",
     "file": "nora/agent/factory.py",
     "old": "    if reasoning_watch is not None:\n        hooks.append(reasoning_watch)",
     "new": "    if reasoning_watch is not None:\n        hooks.insert(0, reasoning_watch)",
@@ -63,7 +63,7 @@
   },
   {
     "name": "the counter carries its own denominator too",
-    "comment": "A numerator-only series cannot separate «no strips» from «no observation» — both read as absent, and this process restarts two or three times a day with labels created lazily.",
+    "comment": "A numerator-only series cannot separate \u00abno strips\u00bb from \u00abno observation\u00bb \u2014 both read as absent, and this process restarts two or three times a day with labels created lazily.",
     "file": "nora/agent/reasoning_strip.py",
     "old": "            if is_continuation:\n                self._metrics.inc(\n                    \"nora_reasoning_strip_total\",\n                    path=self._path,\n                    outcome=\"stripped\" if blocks else \"clean\",\n                )",
     "new": "            if is_continuation and blocks:\n                self._metrics.inc(\n                    \"nora_reasoning_strip_total\",\n                    path=self._path,\n                    outcome=\"stripped\",\n                )",
@@ -101,7 +101,7 @@
   },
   {
     "name": "the invoke stage flushes the watch",
-    "comment": "The line that turns a counted turn into a STORED one on the tag and participation paths — the half a Prometheus counter cannot give across a restart.",
+    "comment": "The line that turns a counted turn into a STORED one on the tag and participation paths \u2014 the half a Prometheus counter cannot give across a restart.",
     "file": "nora/engagement/stages/invoke.py",
     "old": "    if reasoning_watch is not None:\n        await reasoning_watch.flush()",
     "new": "    if False:\n        await reasoning_watch.flush()",
@@ -123,7 +123,7 @@
   },
   {
     "name": "the Dreamer's rows name the ADAPTOR",
-    "comment": "One run a day per adaptor, so «dreamer» alone is the wrong grain for the question «which path».",
+    "comment": "One run a day per adaptor, so \u00abdreamer\u00bb alone is the wrong grain for the question \u00abwhich path\u00bb.",
     "file": "nora/agent/dreamer.py",
     "old": "            path=dreamer_path(adaptor.name),",
     "new": "            path=\"dreamer\",",
@@ -139,7 +139,7 @@
   },
   {
     "name": "a naive created_at is refused before it reaches timestamptz",
-    "comment": "created_at is the column an operator groups by to ask «did this move when the model did». A naive value is stored under the session timezone — a real instant, silently the wrong one.",
+    "comment": "created_at is the column an operator groups by to ask \u00abdid this move when the model did\u00bb. A naive value is stored under the session timezone \u2014 a real instant, silently the wrong one.",
     "file": "nora/domain/reasoning_strip.py",
     "old": "    if value.tzinfo is None:\n        raise NaiveReasoningStripDatetimeError(\n            \"created_at must be timezone-aware; got a naive datetime\"\n        )\n    return value.astimezone(UTC)",
     "new": "    return value.astimezone(UTC)",
@@ -147,7 +147,7 @@
   },
   {
     "name": "THE BLOCKER: the row write is BOUNDED inside the held slot",
-    "comment": "Round four of a defect this repo has fixed twice. A wedged Postgres does not raise — it does not ANSWER — so `except Exception` is no defence and the conversation's slot is held until the await returns. The target's own outer `wait_for` is what makes this RED rather than a hang, which would stop the sweep instead of reporting on it.",
+    "comment": "Round four of a defect this repo has fixed twice. A wedged Postgres does not raise \u2014 it does not ANSWER \u2014 so `except Exception` is no defence and the conversation's slot is held until the await returns. The target's own outer `wait_for` is what makes this RED rather than a hang, which would stop the sweep instead of reporting on it.",
     "file": "nora/agent/reasoning_strip.py",
     "old": "            await asyncio.wait_for(\n                self._store.record_observation(observation),\n                timeout=self._write_timeout_seconds,\n            )",
     "new": "            await self._store.record_observation(observation)",
@@ -171,7 +171,7 @@
   },
   {
     "name": "an impossible row is refused under its own name, not as `failed`",
-    "comment": "`failed` is also what a database blip gives. Letting the CHECK refuse it instead surfaces as an IntegrityError counted `failed` — the one confusion this outcome exists to end.",
+    "comment": "`failed` is also what a database blip gives. Letting the CHECK refuse it instead surfaces as an IntegrityError counted `failed` \u2014 the one confusion this outcome exists to end.",
     "file": "nora/agent/reasoning_strip.py",
     "old": "                outcome = \"impossible\"\n                return",
     "new": "                return",
@@ -204,8 +204,8 @@
   {
     "name": "the tag path passes the NAMED audience, not a literal",
     "file": "nora/engagement/pipeline.py",
-    "old": "                terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,\n                audience=audience_names.TAG,",
-    "new": "                terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,\n                audience=\"tagg\",",
+    "old": "                terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,\n                param_names=self._tool_registry.tool_param_names(),\n                audience=audience_names.TAG,",
+    "new": "                terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,\n                param_names=self._tool_registry.tool_param_names(),\n                audience=\"tagg\",",
     "target": "tests/architecture/test_the_path_vocabulary_matches_the_call_sites.py -k test_every_audience_a_call_site_can_pass_is_declared",
     "comment": "Also GREEN first time round, against a test that called `deliver.build` with its own audiences and so could not see what the pipeline passes. The call-site walk resolves the real expression and refuses a value the declaration does not carry."
   },

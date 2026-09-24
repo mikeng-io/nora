@@ -1,0 +1,13 @@
+{
+  "type": "fix",
+  "summary": "A tool call carrying an argument that tool has never declared is now refused, naming what it does not accept and what it does, instead of running with that argument silently dropped.",
+  "details": [
+    "Strands validates every tool call against a pydantic model built from that tool's own signature, and pydantic's default behaviour is to ignore any key the model does not declare. Live traffic showed the cost: media_fetch was called twice with `file=`, a key it has never accepted, and both calls arrived empty and answered from nothing.",
+    "Nora's guards now check a call's arguments against each tool's own accepted names, derived from its signature, before Strands' own validation runs. A call naming an argument the tool does not declare is refused with a new status, `bad_arguments`, naming the unknown argument and the tool's real parameters so the model can retry correctly -- deliberately not `unavailable`, which claims the whole tool stayed broken for the rest of the turn and can fold a false 'I could not check' into her own self-knowledge, and not `refused`, since nothing vetoed disclosure. A refused call spends none of the tool's per-turn budget, so the model still has its full budget left to retry.",
+    "One check covers every tool from one place, not a per-tool alias, and covers a Dreamer background pass the same way it covers a live reply -- both run the identical native tools. instagram_read's own deliberate `url` alias (added earlier for the same class of defect) keeps working, because it is a real, declared parameter.",
+    "An invented `conversation_id` remains tolerated exactly as before (a separate, older decision) and is not affected by this change."
+  ],
+  "limitations": [
+    "A tool this registry does not build at all -- the skills plugin, or an MCP tool -- has no signature here to check a call against, so a call to one of those with an unknown argument is not covered by this guard."
+  ]
+}

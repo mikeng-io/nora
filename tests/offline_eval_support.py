@@ -1076,6 +1076,14 @@ class _NoDreamTools:
     def read_only(self) -> frozenset[str]:
         return frozenset()
 
+    def tool_param_names(self) -> Mapping[str, frozenset[str]]:
+        """R-99: this adaptor holds no tools (`read_only` above answers the
+        same way), so there is nothing for `DreamGuard` to check an input
+        against — the empty mapping the "rule off" state
+        (`nora.agent.guards.unknown_arguments_veto`) treats identically to
+        `None` for any name it is asked about."""
+        return {}
+
     def build(
         self, *, key: str, names: frozenset[str], unit: str | None = None,
         adaptor: str = "", grant: Any = None,
@@ -1382,6 +1390,15 @@ class EvalDreamTools:
 
     def read_only(self) -> frozenset[str]:
         return ToolRegistry().read_only_tools()
+
+    def tool_param_names(self) -> Mapping[str, frozenset[str]]:
+        """The FULL registry table, the same "always the global ceiling"
+        shape `read_only()` above already takes — a signature does not
+        depend on which stores THIS case bound, so a default-constructed
+        `ToolRegistry()` reads it exactly as `self._source`'s bound one
+        would (`nora.agent.registry.ToolRegistry.tool_param_names`'s own
+        docstring: it is derived purely from each callable's signature)."""
+        return ToolRegistry().tool_param_names()
 
     def build(
         self, *, key: str, names: frozenset[str], unit: str | None = None,
