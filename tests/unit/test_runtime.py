@@ -1617,6 +1617,95 @@ async def test_a_collaborators_own_timeout_error_is_an_ordinary_failure(caplog):
     )
 
 
+class _RecordThatSwallowsCancellationAndRaises:
+    """`record.since` hangs until `[dreamer] max_unit_hold_seconds` cancels
+    it, then raises `RuntimeError` from a `finally` instead of letting
+    `CancelledError` propagate — cleanup that fails AFTER the wall clock
+    genuinely fired (independent review, LOW #3).
+
+    `unit_deadline.expired()` is True here (the clock DID fire, and
+    `asyncio.timeout` records that regardless of what the body goes on to
+    raise). The exception reaching `_run_adaptor`, though, is a
+    `RuntimeError`, not a `TimeoutError` — the case the guard's `isinstance`
+    half exists to separate from an actual wedge, and the case neither
+    `test_a_hung_cursor_read_is_released_by_the_unit_wall_clock` (whose
+    exception IS a `TimeoutError`) nor
+    `test_a_collaborators_own_timeout_error_is_an_ordinary_failure` (whose
+    deadline never expires — the raise is immediate) exercises.
+    """
+
+    def __init__(self) -> None:
+        self.blocked = asyncio.Event()
+        self.calls = 0
+
+    async def since(
+        self, *, conversation_id: str, after_id: int, limit: int
+    ) -> list[TranscriptRow]:
+        self.calls += 1
+        self.blocked.set()
+        try:
+            await asyncio.Event().wait()   # never set; only cancellation ends this
+        finally:
+            # Cleanup that itself fails, AFTER the CancelledError our own
+            # wall clock delivered — the exact shape LOW #3 named. This
+            # REPLACES the propagating exception: what `_run_adaptor` sees
+            # is this RuntimeError, not the CancelledError underneath it.
+            raise RuntimeError("cleanup failed after the wall clock cancelled it")
+
+
+async def test_an_expired_deadline_whose_exception_is_not_a_timeout_is_ordinary(
+    caplog,
+):
+    """**The untested half of the guard** (independent review, LOW #3):
+    `isinstance(exc, TimeoutError) and unit_deadline.expired()` reddens on a
+    mutant that drops the `isinstance` half (`if unit_deadline.expired():`)
+    ONLY if some test exercises an expired deadline whose exception is NOT a
+    `TimeoutError`. Neither existing test does. This is that case.
+
+    PROOF: an ordinary failure — logged, counted, backed off — even though
+    the wall clock genuinely fired. The clock firing is not, by itself,
+    what makes an outcome a wedge; the exception it produced is.
+    """
+    record = _RecordThatSwallowsCancellationAndRaises()
+    language = _KeyedLanguage(lag=99)
+    runner = _RecordingRunner()
+    adaptor = _StubAdaptor("note-candidates")
+    metrics = Metrics()
+
+    async def _run() -> None:
+        task = asyncio.create_task(dream_loop(
+            record, language, metrics,
+            scopes=lambda: ["g1"], tick_seconds=0.02, safety_lag=0,
+            quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+            adaptors=[adaptor], runtime=runner,
+            max_unit_hold_seconds=0.05,
+        ))
+        await record.blocked.wait()
+        await asyncio.sleep(0.2)     # the deadline fires; backoff then holds
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    with caplog.at_level(logging.ERROR, logger="nora.app.runtime"):
+        await asyncio.wait_for(_run(), timeout=5)
+
+    assert record.calls == 1, (
+        f"record.since was entered {record.calls} times — a RuntimeError "
+        "from cleanup must be an ordinary (backed-off) failure, not a "
+        "wedge that retries on the very next tick"
+    )
+    assert metrics.get("nora_errors_total", stage="dream") == 1
+    assert metrics.get(
+        "nora_dream_unit_timeout_total", adaptor="note-candidates",
+    ) == 0, (
+        "the deadline expiring is not what makes an outcome a unit timeout "
+        "— a RuntimeError from cleanup must not be filed there"
+    )
+    assert any(
+        "dream cycle failed for" in r.getMessage() for r in caplog.records
+    )
+
+
 # ---- the additive guarantee, and the wiring mistake that is otherwise silent
 
 

@@ -863,11 +863,23 @@ async def dream_loop(
     # `clock.last_fired`/`record_fire`, every `language.*` cursor read,
     # `record.since`, `media_join.enrich` — was still a bare `await`, and any
     # one of them hanging left this loop holding `<adaptor>:<key>` in
-    # `running` forever. Defaulted to `DreamerConfig`'s own field default
-    # rather than left required: every existing caller in this test suite
-    # constructs a `dream_loop` with no opinion on it, and a default that
-    # matches production keeps them all honest rather than effectively
-    # unbounded by omission.
+    # `running` forever.
+    #
+    # **TEST-ONLY DEFAULT — this number is NOT what production runs.**
+    # `nora.app` may not read `Config` (this module's own docstring, top of
+    # file), so `dream_loop` cannot resolve `[dreamer]
+    # max_unit_hold_seconds` itself; `nora/__main__.py` is the one caller
+    # that matters in production and it ALWAYS passes
+    # `Config.dreamer_max_unit_hold_seconds()` explicitly — the resolver
+    # that derives a real number from this deployment's own budgets (issue
+    # #191 independent review, BLOCKER: an earlier version of this comment
+    # claimed the default here "matches production", which was already
+    # false the day it was written — the deployment derives roughly 1625s
+    # against a default of 1200 here). This default exists ONLY so the
+    # several dozen tests in this suite that construct a `dream_loop` with
+    # no opinion on the wall clock do not become effectively unbounded by
+    # omission; its one requirement is "comfortably larger than any test's
+    # own tick interval or sleep window", nothing more specific than that.
     max_unit_hold_seconds: float = 1200.0,
 ) -> None:
     """The Dreamer's clock. A sibling of `prune_loop`, with two differences

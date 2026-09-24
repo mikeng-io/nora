@@ -3559,17 +3559,53 @@ class Config(BaseModel):
           media.join_timeout_seconds                   `media_join.enrich`'s
                                                         own internal bound
                                                         (`MediaJoin._lookup`'s
-                                                        `wait_for`) — ONE call
-                                                        per unit cycle, not
-                                                        multiplied.
+                                                        `wait_for`) — PER
+                                                        QUERY, not per unit
+                                                        cycle. `enrich`
+                                                        chunks the batch's
+                                                        distinct media shas
+                                                        into groups of
+                                                        `DEFAULT_QUERY_BLOBS`
+                                                        (200) and calls
+                                                        `_lookup` once per
+                                                        chunk
+                                                        (`nora.domain.
+                                                        media_join._enrich`),
+                                                        so a batch whose rows
+                                                        reference more than
+                                                        200 distinct blobs
+                                                        makes MORE than one
+                                                        query. Counted ONCE
+                                                        here on purpose
+                                                        (review, issue #191):
+                                                        there is no declared
+                                                        ceiling on media
+                                                        blobs per row to
+                                                        multiply this by, and
+                                                        inventing one would
+                                                        be a number nobody
+                                                        chose wearing the
+                                                        shape of a bound.
+                                                        `dreamer_max_unit_
+                                                        hold_seconds`'s flat
+                                                        margin absorbs
+                                                        EXTRA queries the same
+                                                        way it absorbs the
+                                                        cursor reads below —
+                                                        each additional chunk
+                                                        costs at most another
+                                                        `join_timeout_seconds`
+                                                        (3s shipped), and the
+                                                        margin is 300s.
 
         **What this does NOT cover, stated rather than implied.** The cursor
         reads issue #191 is actually ABOUT — `clock.last_fired`/
         `record_fire`, every `language.*` watermark call, `record.since`
         itself — carry no bound of their own; that is the defect this whole
         mechanism exists to close, so there is no declared number to sum
-        here. `dreamer_max_unit_hold_seconds`'s flat margin, not this method,
-        is where their NORMAL (non-hung) running time is given room.
+        here. Same treatment as the media join's extra queries just above:
+        `dreamer_max_unit_hold_seconds`'s flat margin, not this method, is
+        where their NORMAL (non-hung) running time is given room.
         """
         from nora.agent.reasoning_strip import DEFAULT_WRITE_TIMEOUT_SECONDS
 
@@ -3607,16 +3643,22 @@ class Config(BaseModel):
         `x1.25` margin would scale with the model budget — `proactive` at
         720s buys 180s of margin, a hypothetical 2000s budget buys 500s —
         even though nothing about a SLOWER MODEL CALL makes a single-row
-        Postgres read slower. What the margin actually has to cover is the
-        cursor reads `_dream_unit_hold_known_minimum` cannot sum (see its own
-        docstring): `clock.last_fired`/`record_fire` and every `language.*`
-        watermark call, roughly eight single-row primary-key reads or
-        upserts against a LOCAL database with no cross-network hop. 300s is
-        several dozen times what any one of those takes even badly degraded
+        Postgres read slower. What the margin actually has to cover is
+        everything `_dream_unit_hold_known_minimum` counts once but that can
+        genuinely run more than once (see its own docstring): `clock.
+        last_fired`/`record_fire` and every `language.*` watermark call —
+        roughly eight single-row primary-key reads or upserts against a
+        LOCAL database with no cross-network hop — PLUS any `media_join.
+        enrich` query beyond the first, at up to `join_timeout_seconds` (3s
+        shipped) each, for a batch whose rows reference more than
+        `DEFAULT_QUERY_BLOBS` (200) distinct media blobs. 300s is several
+        dozen times what any one cursor read takes even badly degraded
         (`[standing] store_timeout_seconds = 5.0` bounds a comparable single-
-        row call one tier over), and it does not balloon on a deployment that
-        raises a model budget for reasons that have nothing to do with
-        Postgres latency.
+        row call one tier over) and, separately, room for roughly a hundred
+        extra media-join chunks — a batch several times any shipped
+        `batch_limit` would need before that ran out. It does not balloon on
+        a deployment that raises a model budget for reasons that have
+        nothing to do with either.
 
         Explicit (non-`None`) is passed through UNCHANGED — an operator who
         set a number made a deliberate judgement, and

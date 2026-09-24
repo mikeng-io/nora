@@ -1770,12 +1770,15 @@ store_timeout_seconds = 15.0
 # Unset (the shipped state), nora.config.Config.dreamer_max_unit_hold_seconds
 # DERIVES the value at every load: the known-bounded minimum (the model
 # budget — samples x (timeout_seconds + the reasoning-strip watch's own 2s
-# write bound) — plus both of #60's store bounds, plus the media join's own
-# bound; see Config._dream_unit_hold_known_minimum) PLUS a flat 300s margin
-# for the cursor reads that minimum cannot sum (clock.last_fired/record_fire,
-# every language.* watermark call, record.since itself — issue #191's own
-# subject, genuinely unbounded, so there is no declared number to add; 300s
-# is headroom for their NORMAL running time, not a bound on a hang). This
+# write bound) — plus both of #60's store bounds, plus ONE media-join query's
+# own bound; see Config._dream_unit_hold_known_minimum) PLUS a flat 300s
+# margin for what that minimum cannot sum: the cursor reads
+# (clock.last_fired/record_fire, every language.* watermark call,
+# record.since itself — issue #191's own subject, genuinely unbounded, so
+# there is no declared number to add) AND any media-join query beyond the
+# first (a batch whose rows reference more than 200 distinct blobs makes more
+# than one bounded query — nora.domain.media_join.DEFAULT_QUERY_BLOBS). 300s
+# is headroom for their NORMAL running time, not a bound on a hang. This
 # derivation moves with every future edit to a [dreamer.budgets.*]
 # timeout_seconds or to [notes] candidate_samples — a fixed literal here
 # would need a human to remember to raise it alongside either one, and
