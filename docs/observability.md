@@ -245,23 +245,28 @@ complementary: one is about what the *client* does, the other about how the
 
 ## Reading it back
 
-No claim about tracing is finished until the trace has been read back. Both
-stores are reachable **directly from a dev machine on the LAN** — no tunnel.
+No claim about tracing is finished until the trace has been read back. The
+Langfuse and Jaeger UIs answer from a dev machine on the LAN, but authenticated
+reads run ON the deploy host (`ssh norty`), so the key never leaves it.
 
 **Langfuse.** Credentials are the base64 blob inside `LANGFUSE_OTLP_HEADERS` in
-`/home/norty/workspace/nora/.env`; decode it to `pk-lf-…:sk-lf-…` and use it as
+the deploy host's `~/workspace/nora/.env`, URL-encoded (`%20` after `Basic`,
+`%3D` for each `=` of padding): decode the `%3D` or every call is 401. Use it as
 HTTP Basic auth. Other `workspace/*/.env` files hold keys for *different*
-Langfuse projects and will 401 against Nora's.
+Langfuse projects and will 401 against Nora's. Run authenticated reads on the
+deploy host, so the key never leaves it (the `nora-readback` agent skill has
+the full command):
 
 ```bash
-curl -s -u "$PK:$SK" "http://192.168.1.10:3100/api/public/traces?limit=50&page=1" -o traces.json
-curl -s -u "$PK:$SK" "http://192.168.1.10:3100/api/public/traces/<full-32-char-id>" -o one.json
+# on the deploy host; B64 is the header value after `Basic%20`, with %3D decoded to =
+curl -s -H "Authorization: Basic $B64" "127.0.0.1:3100/api/public/traces?limit=50&page=1" -o traces.json
+curl -s -H "Authorization: Basic $B64" "127.0.0.1:3100/api/public/traces/<full-32-char-id>" -o one.json
 ```
 
 Write to a file and parse the file: with `rtk` on the path, piping `curl` into a
 parser gets you a *schema summary* instead of JSON.
 
-**Jaeger.** `http://192.168.1.10:16686/api/services`, then
+**Jaeger.** `127.0.0.1:16686/api/services` on the deploy host, then
 `/api/services/nora/operations` — the fastest way to answer "does this span name
 reach a collector at all", remembering that Jaeger holds only the spans that are
 *not* generations.

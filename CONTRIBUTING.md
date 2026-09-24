@@ -33,14 +33,14 @@ Two earlier generations are still visible in `git log`. Don't imitate them:
 | generation | shape | status |
 |---|---|---|
 | current | `mikeng-io/<slug>` | use this |
-| second | `feat/`, `fix/`, `docs/`, `chore/` + `<slug>` | superseded |
+| second | `feat/`, `fix/`, `docs/`, `chore/`, `design/` + `<slug>` | superseded (still 14 of the 140 PRs to 2026-09-24) |
 | first | `worktree-<slug>` | superseded |
 
 Every change starts in its own worktree on its own branch and reaches `master`
-by merge — a one-line doc fix included. `master` in the primary checkout is a
-bind-mount source for the running container, so an edit there is a deploy;
-`AGENTS.md` and `docs/CONVENTIONS.md` carry that rule and the incident behind
-it. Landing a merge does not move you back in: the next change starts in a new
+by merge — a one-line doc fix included, so the merge is the moment somebody
+decides. The container's bind-mount source is the deploy host's own checkout,
+not this one: `nora/doctrine` and `nora/dreamer` go live when that host pulls
+`master` (`AGENTS.md` "Never" list has the topology and the incident). Landing a merge does not move you back in: the next change starts in a new
 worktree too.
 
 ## Commit messages
@@ -112,6 +112,19 @@ you bypass, name the reason in the commit body.
 A real merge commit — `git merge --no-ff`, or `gh pr merge --merge`. Never
 squash, never rebase-merge.
 
+**`gh pr merge --merge` alone writes GitHub's default message**, and the
+commit-msg hook never sees a merge made on GitHub, so nothing stops it. That is
+how 98 of the 136 PRs merged from #321 to #478 (2026-09-17 to 09-24) landed
+with the default
+against the rule below. Give the subject and body on the command line:
+
+```bash
+gh pr merge <N> --merge --match-head-commit <sha> \
+  --subject "merge: <the arc>" --body "<what shipped, what was measured>"
+```
+
+The `nora-land` skill carries this step in order.
+
 The merge commit's message is **authored**, not GitHub's default *"Merge pull
 request #N from …"*. Because the branch's own commits stay visible in
 `master`'s history (unlike squash), the merge commit's job is to summarize the
@@ -143,9 +156,10 @@ only in prose grows whatever headings the author remembers. Then:
 - **Gate on the merged tree** — the real `make gate` outcome. A pre-existing
   unrelated failure is named explicitly with its issue number, never absorbed
   into "tests pass".
-- **Deploy note** — only when the change touches something bind-mounted from
-  `master` (the doctrine hot-reloads on mtime), because that reaches production
-  on the next message rather than the next deploy.
+- **Deploy note** — only when the change touches `nora/doctrine` or
+  `nora/dreamer`, which the deploy host bind-mounts from its own checkout and
+  hot-reloads on mtime: it reaches production at that host's next pull, with no
+  image rebuild.
 - The `Claude-Session:` footer.
 
 `Summary` and `Test plan` are retired headings, not synonyms: `Summary` is the

@@ -23,7 +23,10 @@ not know what it replaced. Trivial decisions get an index line and nothing more.
 
 ## Convention
 
-- `NNNN-kebab-title.md`, numbered in order accepted.
+- `NNNN-kebab-title.md`, numbered in the order MERGED, whether `proposed` or
+  `accepted` (0014 and 0016 merged as `proposed`). Take the next free number
+  from `origin/master` at merge time: two ADRs numbered 0013 landed the same
+  day (#330, #331) because both branches took it from their own base.
 - Status: `proposed` → `accepted` → `superseded by NNNN`. Never delete.
 - **Consequences must include what got worse.** An ADR with only upside is
   marketing, and the next reader will not trust the rest of it.

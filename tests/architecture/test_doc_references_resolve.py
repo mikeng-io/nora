@@ -135,6 +135,8 @@ _HISTORICAL_MARKERS = ("RETIRED", "DEPRECATED", "SUPERSEDED", "deleted", "resolv
 #: the right grain: the banner scopes itself in prose, so the check should too.
 _DEPRECATED_BANNER = re.compile(r">\s*\*\*DEPRECATED")
 
+_LIST_ITEM = re.compile(r"\s*(?:[-*+]|\d+[.)])\s")
+
 _PATH_TOKEN = re.compile(r"`([A-Za-z0-9_./-]+/[A-Za-z0-9_./-]+\.[A-Za-z0-9]+)`")
 
 
@@ -152,11 +154,20 @@ def _paragraphs(markdown: str) -> list[tuple[int, list[str]]]:
     blank-line-delimited block, a whole table was one «paragraph», so a
     historical marker on ONE row exempted every other row in it: marking
     DEC-145 deprecated (2026-09-24) silently unguarded R-83's and DEC-146's
-    live references in `design/09-decision-index.md`."""
+    live references in `design/09-decision-index.md`.
+
+    A LIST ITEM starts a new paragraph for the same reason (2026-09-24): an
+    unbroken bulleted list was one block, so "deleted" in one bullet of
+    AGENTS.md's "Never" list exempted all 84 lines of it. Continuation lines
+    (indented, not themselves a bullet) stay with their item."""
     paragraphs: list[tuple[int, list[str]]] = []
     current: list[str] = []
     start = 1
     for lineno, line in enumerate(markdown.splitlines(), 1):
+        if _LIST_ITEM.match(line) and current:
+            paragraphs.append((start, current))
+            current = []
+            start = lineno
         if line.lstrip().startswith("|"):
             if current:
                 paragraphs.append((start, current))
@@ -279,6 +290,22 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "nora/infra/social/instagram_links.py",
     ): (
         "planned file, created by P10 (Instagram link parsing); drop this entry in that PR"
+    ),
+    # --- hidden by a NEIGHBOURING list item until 2026-09-24 ---
+    #
+    # A bulleted list was one «paragraph», so a marker in one bullet exempted
+    # every bullet in the list. Splitting items out (`_paragraphs`) surfaced
+    # these; each is a design record naming the code of its day.
+    ("design/evaluation/10-the-scenario-map.md", "evals/rebuilt/__main__.py"): (
+        "the old CLI, recorded as deleted in the same bullet (capitalized "
+        "'Deleted.', which the lowercase marker does not match)"
+    ),
+    ("design/evaluation/10-the-scenario-map.md", "evals/rebuilt/report.py"): (
+        "the old CLI's renderer, deleted in the same step"
+    ),
+    ("design/social-per-network/10-changes.md", "tests/test_social_fetch_tool.py"): (
+        "the plan names the file it replaces; DEC-201 PR 1 (abeab8e4) moved "
+        "those tests to per-tool tests under tests/unit/"
     ),
     # --- the self-reference bundle, DEC-193 ---
     #
@@ -415,10 +442,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
         "reference records where it lived"
     ),
-    ("docs/eval-sop.md", "evals/evaluators.py"): (
-        "re-homed to `tests/offline_eval_evaluators.py` 2026-09-18 (design/evaluation Step 5); "
-        "the reference records where it lived"
-    ),
     ("design/evaluation/04-the-convention.md", "nora/app/eval_support.py"): (
         "the convention names where it WAS while explaining where it went"
     ),
@@ -431,10 +454,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ),
     # The ROUTING tier, which has no counterpart — DEC-76 is NOT ENFORCED.
     # These two lines NAME that absence, so the reference is the point.
-    ("docs/eval-sop.md", "evals/journeys.py"): (
-        "the SOP's step 2 now states that this step has no instrument; the "
-        "reference is to the thing that no longer exists, deliberately"
-    ),
     ("voice-lab/docs/audit-brief-kimi-integration.md", "nora/platform/discord/voice_session.py"): (
         "a 2026-09 audit brief moved in from the voice-lab repo; it proposes where "
         "stage-1 TTS+ducking WOULD live. The file was never created (the voice "
@@ -636,6 +655,26 @@ def test_a_deprecated_table_row_does_not_exempt_the_live_row_beside_it() -> None
     assert (4, "nora/live_row_module_for_this_test.py") in found, found
     assert all(
         path != "nora/deprecated_row_module_for_this_test.py" for _, path in found
+    ), found
+
+
+def test_a_historical_list_item_does_not_exempt_the_live_item_beside_it() -> None:
+    """A list item is its own record, the same way a table row is. While an
+    unbroken bulleted list was one «paragraph», the word "deleted" in one
+    bullet of AGENTS.md's "Never" list (about GC-tracked objects) exempted the
+    whole 84-line list, and a citation of a test deleted 2026-09-16 sat in it
+    unflagged for eight days (found 2026-09-24). Two adjacent bullets: the
+    historical one's path is suppressed, the live one's is still reported."""
+    markdown = (
+        "- Never trust an attribute that was deleted: "
+        "`nora/historical_item_module_for_this_test.py`.\n"
+        "- Never skip the gate: `nora/live_item_module_for_this_test.py` is\n"
+        "  the check, and this continuation line belongs to its item.\n"
+    )
+    found = candidate_references(markdown)
+    assert (2, "nora/live_item_module_for_this_test.py") in found, found
+    assert all(
+        path != "nora/historical_item_module_for_this_test.py" for _, path in found
     ), found
 
 

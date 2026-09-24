@@ -24,9 +24,10 @@ not apply.
 
 ## Deploy note
 
-<!-- ONLY when this touches something bind-mounted from master (doctrine
-     hot-reloads on mtime) — that reaches production on the next message,
-     not the next deploy. Delete if not applicable. -->
+<!-- ONLY when this touches nora/doctrine or nora/dreamer: the deploy host
+     bind-mounts them from its own checkout and hot-reloads on mtime, so they
+     go live at its next pull, with no image rebuild. Delete if not
+     applicable. -->
 
 ## Closes
 
