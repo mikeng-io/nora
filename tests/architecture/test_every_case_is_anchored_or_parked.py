@@ -168,8 +168,9 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     (`instagram_search` twice, its `instagram_read` boundary pair, an X
     search) and P10/P12's 4 (a reel link, a profile link and a typed handle
     to `instagram_read`, a name to find to `instagram_search`), plus
-    `standing`'s 15 fold cases (13 anchored, 2 parked before the standing
-    chain; 2026-09-24, design/standing-compact/20-verification §1), plus
+    `standing`'s 15 fold cases (10 anchored, 1 counterfactual with its prior
+    declared absent, 4 parked — issue #445; design/standing-compact/
+    20-verification §1), plus
     `presence`'s 7 (2026-09-24, design/self-awareness/05); a change to it is
     a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""

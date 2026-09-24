@@ -441,7 +441,8 @@ async def standing(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     reads the same for a room that had never folded and for one whose position
     simply predates the chain. Folding the second against «no position yet»
     would grade a fold on an input it never had. Such a moment is parked in the
-    corpus; one reaching here is a mistake in the corpus, and says so.
+    corpus, or declared as the counterfactual above; one reaching here
+    undeclared is a mistake in the corpus, and says so.
 
     `metadata.print_input` renders the fold's whole input and stops — no model
     is reached — and returns it as `shown`. Always an ERROR: a run that called
@@ -459,17 +460,42 @@ async def standing(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
             admitted=None, source="fail_closed",
             error="the fold reads its turn from the source and the runner handed no moment",
         )
+    # THE ONE TIER A STANDING CASE MAY VARY: its prior, declared ABSENT, for a
+    # turn older than the standing chain. Named in the case, checked here
+    # against the source — never inferred from a read that came back empty.
+    varies = (case.metadata.get("counterfactual") or {}).get("varies")
+    if varies not in (None, "prior"):
+        return Outcome(
+            admitted=None, source="fail_closed",
+            error=f"a standing case may vary only its prior, not {varies!r}",
+        )
+    prior_absent = varies == "prior"
     try:
-        turn = await read_fold_turn(subject, source_url=moment.source_url, tag_id=tag_id)
+        turn = await read_fold_turn(
+            subject, source_url=moment.source_url, tag_id=tag_id,
+            prior_absent=prior_absent,
+        )
     except (LookupError, ValueError) as exc:
         return Outcome(admitted=None, source="fail_closed", error=str(exc))
+    stated = int((case.snapshot or {}).get("before_ms") or 0)
+    if prior_absent:
+        # No revision exists to date the fold, so the room is cut where her
+        # reply to the turn landed (`nora.subject.standing_fold`).
+        if turn.room_at != stated:
+            return Outcome(
+                admitted=None, source="fail_closed",
+                error=(
+                    f"the case's before_ms ({stated}) is not the instant her reply "
+                    f"to tag {tag_id!r} landed ({turn.room_at}); a counterfactual "
+                    "case is anchored there and nowhere else"
+                ),
+            )
     # THE FOLD'S INSTANT, not the turn's: production's fold ran after the
     # turn finished and read the room then, and on a `recovered` turn her
     # reply is written in between. The anchor is the first revision the room
     # got after the turn; a case anchored anywhere else seeds a different room
     # than the fold read.
-    stated = int((case.snapshot or {}).get("before_ms") or 0)
-    if turn.folded_at is None:
+    elif turn.folded_at is None:
         return Outcome(
             admitted=None, source="fail_closed",
             error=(
@@ -477,7 +503,7 @@ async def standing(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
                 "so the instant its fold read the room at is unrecorded"
             ),
         )
-    if turn.folded_at != stated:
+    elif turn.folded_at != stated:
         return Outcome(
             admitted=None, source="fail_closed",
             error=(
@@ -486,7 +512,7 @@ async def standing(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
                 "hold a different room than the fold read"
             ),
         )
-    if turn.prior is None:
+    if turn.prior is None and not prior_absent:
         return Outcome(
             admitted=None, source="fail_closed",
             error=(

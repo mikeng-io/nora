@@ -105,7 +105,15 @@ def render_evidence(turn: Any, *, display_name: str, tz: tzinfo) -> str:
     """
     trace = turn.trace
     prior = turn.prior
-    if prior is None:
+    if getattr(turn, "counterfactual_prior", False):
+        prior_block = (
+            "## Her position BEFORE this turn\n"
+            "(none given — COUNTERFACTUAL. This turn predates the standing "
+            "chain, so the position she held then is unrecoverable, and the "
+            "fold was told it had no position yet. Grade the new position as a "
+            "first position.)\n"
+        )
+    elif prior is None:
         prior_block = "## Her position BEFORE this turn\n(none held)\n"
     else:
         prior_block = (
