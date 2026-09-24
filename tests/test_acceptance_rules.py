@@ -503,12 +503,13 @@ RULE_TESTS = {
     # every string the table renders — a wording change to ANY music surface
     # now has to land there, so the diff shows it.
     "R-84": "test_now_playing_line_carries_title_and_url",
-    # R-86 (DEC-151): `social_fetch` is read-only at three layers, and the
+    # R-86 (DEC-151, DEC-201): every social read tool is read-only at three
+    # layers, and the
     # named test DERIVES all three from the code — the bridge's allowlist
     # against OpenCLI's write verbs, the tool's (platform, what) vocabulary
     # against that allowlist, and the NativeTool declaration — so a hand-edit
     # to any one layer that drifts from the others goes red.
-    "R-86": "test_r86_social_fetch_is_read_only_at_three_layers",
+    "R-86": "test_r86_social_reads_are_read_only_at_three_layers",
     # R-87 (design/standing-watermark): Standing folds read SINCE a row-id
     # watermark (`since_including_nora`, capped at [standing] fold_batch), not
     # the reply path's recency window — a conversation that passes 40 messages
@@ -957,10 +958,12 @@ def test_the_verdict_position_names_the_mechanism_that_performs_a_tag():
     )
 
 
-def test_r86_social_fetch_is_read_only_at_three_layers():
+def test_r86_social_reads_are_read_only_at_three_layers():
     """R-86 / DEC-151, extended to EVERY social tool by design/instagram-
-    adoption/18 §"Read-only, at three layers" (the name is kept so the
-    decision index and `RULE_TESTS` keep pointing at it). Social tools read
+    adoption/18 §"Read-only, at three layers", and renamed from
+    `test_r86_social_fetch_…` when DEC-201 retired `social_fetch` into
+    `x_read` and `x_search` (the decision index and `RULE_TESTS` name it by
+    this name). Social tools read
     content a model can be prompt-injected by, over backends that also serve
     writes — OpenCLI drives an AUTHENTICATED browser with `twitter post`/
     `like`/`follow`/`delete`; the instagram-bridge serves `/send`, `/react`, …
@@ -987,14 +990,14 @@ def test_r86_social_fetch_is_read_only_at_three_layers():
     exactly one backend, every pair a backend serves is constructed by exactly
     one tool (no Instagram read ever has two tools, 18 §"What happens to
     social_fetch"). Since P11 OpenCLI serves X only: no `instagram` key is
-    left in `READ_ONLY_ALLOWLIST`, and `social_fetch` constructs no Instagram
+    left in `READ_ONLY_ALLOWLIST`, and the X tools construct no Instagram
     pair at all.
     """
     from nora.agent import tools as tools_module
     from nora.infra.social import EXCEPTION_ROUTES, bridge_server
 
     vocabulary = tools_module.social_read_vocabulary()
-    assert set(vocabulary) == {"social_fetch", "instagram_read", "instagram_search"}
+    assert set(vocabulary) == {"x_read", "x_search", "instagram_read", "instagram_search"}
 
     # Layer 2: every command the bridge can spawn is disjoint from OpenCLI's
     # write verbs (the set in `bridge_server.OPENCLI_WRITE_VERBS`, verified
@@ -1010,12 +1013,15 @@ def test_r86_social_fetch_is_read_only_at_three_layers():
     constructed = set().union(*vocabulary.values())
     assert constructed == served
 
-    # One read, one tool, one backend.
-    fetch = vocabulary["social_fetch"]
+    # One read, one tool, one backend: every pair of tools is disjoint.
+    names = sorted(vocabulary)
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            assert not (vocabulary[a] & vocabulary[b]), (
+                f"a social read has two tools: {a} and {b}"
+            )
+    x_reads = vocabulary["x_read"] | vocabulary["x_search"]
     read, search = vocabulary["instagram_read"], vocabulary["instagram_search"]
-    assert not (fetch & read) and not (fetch & search) and not (read & search), (
-        "a social read has two tools"
-    )
     assert read | search == EXCEPTION_ROUTES, (
         "instagram_read and instagram_search read through the instagram-bridge "
         "only (design/instagram-adoption/15)"
@@ -1034,8 +1040,11 @@ def test_r86_social_fetch_is_read_only_at_three_layers():
     assert not [
         key for key in bridge_server.READ_ONLY_ALLOWLIST if key[0] == "instagram"
     ], "OpenCLI still serves an Instagram read"
-    assert all(platform == "x" for platform, _what in fetch), (
-        "social_fetch constructs an Instagram read"
+    assert all(platform == "x" for platform, _what in x_reads), (
+        "an X tool constructs a read on another network"
+    )
+    assert x_reads == set(bridge_server.READ_ONLY_ALLOWLIST), (
+        "x_read and x_search together are exactly what OpenCLI serves"
     )
 
     # Layer 3: the declaration the Dreamer's ceiling is derived from.

@@ -1,4 +1,4 @@
-"""`OpenCliBridgeClient` — the `social_fetch` tool's read path to X, over the
+"""`OpenCliBridgeClient` — the X tools' read path to X, over the
 host-side bridge (DEC-151). It served Instagram too until design/instagram-
 adoption/18 moved every Instagram read to the instagram-bridge (P5, P11).
 
@@ -47,7 +47,7 @@ class OpenCliBridgeClient(SocialProvider):
     """READ-ONLY X reads via the host bridge's `POST /read`.
     Constructed once per process at the composition root, only when
     `[social] enabled` (there is no credential — `enabled` is the whole gate);
-    unwired, `social_fetch` answers `unavailable`."""
+    unwired, `x_read` and `x_search` answer `unavailable`."""
 
     def __init__(
         self,

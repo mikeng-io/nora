@@ -1,4 +1,4 @@
-"""Social reads behind the `social_fetch` (DEC-151), `instagram_read` and
+"""Social reads behind the `x_read` and `x_search` (DEC-201), `instagram_read` and
 `instagram_search` (design/instagram-adoption/18) tools — X and Instagram,
 READ-ONLY, over two backends the model never learns the names of.
 

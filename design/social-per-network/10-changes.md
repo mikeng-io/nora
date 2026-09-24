@@ -58,9 +58,17 @@ Free text, at most 200 characters, `limit` 1 to 20. Router row `x/search`,
 
 ## What both X tools keep from `social_fetch`, unchanged
 
-The egress screen (`scan_identifiers` on the percent-decoded input) and the
-raw-coordinate screen run before anything leaves; both are `nothing_found`
-and never echo the value. `read_only=True`, `source_tier="web"`,
+The egress screen (`scan_identifiers`) and the raw-coordinate screen run
+before anything leaves, and never echo the value.
+
+> **As built (PR 1, 2026-09-24): two changes from `social_fetch`.** The
+> screen runs on exactly what LEAVES (a username, a post id, the decoded
+> query), not on the whole pasted link: the link's query and fragment are
+> dropped and never sent, so they are not what needs screening. And a
+> screened input is `refused`, not `nothing_found`, following
+> `instagram_search`: «nothing found» claims a read ran. A malformed input is
+> `unavailable` for the same reason, as in `instagram_read`. A leading `@` on
+> a handle is stripped rather than refused. `read_only=True`, `source_tier="web"`,
 `cacheable=True`, `output_contract="three_state"`, `level=3`. Budget: `x_read`
 3 (a post, then the author's profile or posts), `x_search` 2. Both stay in
 `UNIT_SAFE_TOOLS` (`nora/agent/dreamer.py`), replacing `social_fetch`'s entry;

@@ -47,7 +47,7 @@ The test for every sentence you write: **could someone who read the transcript w
 Two shapes of the SAME turn, to make the difference concrete. The turn: Miles asked you to read an X post; you tried several times, finally succeeded; he then asked how to install you in another Discord server; you gave the invite link and config changes; he sent an image you could not see.
 
 RECAP — wrong, this is a transcript summary:
-> Miles 問我讀 X post，我試咗好多次都讀唔到，最後 social_fetch 成功讀到。內容係 Ahmad Awais 鬧 Opus 5 差、讚 open models，167 likes。佢跟住問點裝我去另一個 Discord server，我俾咗 invite link 同 config 改法。佢 send 咗張相，我睇唔到叫佢再 send。
+> Miles 問我讀 X post，我試咗好多次都讀唔到，最後 x_read 成功讀到。內容係 Ahmad Awais 鬧 Opus 5 差、讚 open models，167 likes。佢跟住問點裝我去另一個 Discord server，我俾咗 invite link 同 config 改法。佢 send 咗張相，我睇唔到叫佢再 send。
 
 Every sentence here is an event. A reader of the transcript already knows all of it: the post's content and like count were given to Miles in the room, so the transcript carries them.
 

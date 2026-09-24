@@ -88,7 +88,7 @@ Signal / Discord / WhatsApp room
        people & places       group_members / lookup_person / where_is / saved_places / route / transit / weather / parking
        what the group holds  note_read / note_search / note_create / note_update / list_events / create_event / rsvp_event
        later                 remind / list_reminders / cancel_reminder / make_artifact
-       the world             web_search / web_fetch / social_fetch / media_fetch / generate_image
+       the world             web_search / web_fetch / x_read / x_search / instagram_read / media_fetch / generate_image
        speaking              send_reply / send_gif / send_to (relay to a sibling room)
    → reply → audit row (delivery_status=pending → sent/failed) → Honcho feed
 
@@ -288,7 +288,7 @@ operator playbook when a doctrine edit misbehaves.
 
 The host also runs a persistent desktop for browser-based social reads. It is
 deliberately separate from the Nora container, and Nora runs fine with all of
-it down — with it down, `social_fetch` simply answers `unavailable`.
+it down: with it down, `x_read` and `x_search` simply answer `unavailable`.
 
 - **Xtigervnc on display `:2`** (1920x1080, Openbox) as the systemd *user*
   service `~/.config/systemd/user/nora-social-desktop.service`, started at boot
@@ -314,14 +314,17 @@ viewer is for occasional visual access and login renewal, not for operation.
 The VNC password lives only in the service's private configuration; it is never
 committed.
 
-The Nora surface is one constrained, read-only tool, `social_fetch`, covering
-X and Instagram (DEC-151): a post (X only), a profile, an account's posts, and
-search — and no posting, liking, following, commenting or deleting, enforced
-by the tool's closed vocabulary and re-enforced by the bridge's own allowlist
-host-side, so a write verb is unreachable even under prompt injection. It
-ships inert behind `[social] enabled`. Instagram post-by-URL is still
-unsupported (OpenCLI 1.8.7 has no caption-by-URL command), and Threads support
-waits on a native OpenCLI adapter (1.8.7 has none). See `docs/runbook.md` §10
+The Nora surface on this runtime is two read-only X tools (DEC-201, which
+retired DEC-151's `social_fetch`): `x_read` (a post and its thread, a
+profile or an account's recent posts, from a pasted link or a typed handle)
+and `x_search` (posts matching free text). Neither can post, like, follow,
+reply or delete: that is enforced by the tools' closed vocabulary and
+re-enforced by the bridge's own allowlist host-side, so a write verb is
+unreachable even under prompt injection. They ship inert behind `[social]
+enabled`. Instagram is read through the instagram-bridge instead
+(`instagram_read`, `instagram_search`), LinkedIn is designed but not built
+(`design/social-per-network/`), and Threads waits on a backend (OpenCLI 1.8.7
+has none). See `docs/runbook.md` §10
 for operating the desktop.
 
 ## Inspecting the buffer

@@ -535,7 +535,7 @@ async def preprocess_media(
 
 
 # The generic URL surface of `media_fetch` (DEC-56 extension, 2026-08-31):
-# any tool that surfaces an image/video URL — social_fetch media rows,
+# any tool that surfaces an image/video URL — x_read media rows,
 # web_fetch page images, a future tool — funnels into the same read path.
 # This downloader is the bound on the FIRST byte hop, so a hostile or
 # enormous remote cannot silently blow the turn: a hard byte ceiling and a

@@ -189,7 +189,7 @@ async def test_an_image_in_the_conversation_is_described(wiring):
 
 # ---- the generic URL path (DEC-56 extension, 2026-08-31) --------------------
 # A `media_fetch(url=…)` ingestion is the cross-tool read path: ANY tool that
-# surfaces an image/video URL — social_fetch media rows, web_fetch page images,
+# surfaces an image/video URL — x_read media rows, web_fetch page images,
 # a future tool — funnels into the same describe pipeline. The downloader is a
 # real byte/time-bounded GET; these tests stub `_download_media` (the module's
 # own seam) so the URL-path LOGIC is pinned without a network dependency.

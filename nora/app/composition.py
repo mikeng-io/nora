@@ -2118,7 +2118,7 @@ async def build_dependencies(
                 cfg.search.provider,
                 cfg.search.api_key_env,
             )
-    # `social_fetch` (DEC-151), `instagram_read` and `instagram_search`
+    # `x_read`, `x_search` (DEC-201), `instagram_read` and `instagram_search`
     # (design/instagram-adoption/18) get ONE `SocialProvider` — `SocialRouter`
     # — and the registry stays unaware that there are two backends under it
     # (design/instagram-adoption/08). Each backend is wired independently and

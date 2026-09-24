@@ -574,10 +574,11 @@ class DreamToolSource(Protocol):
 # did.
 UNIT_SAFE_TOOLS: frozenset[str] = frozenset({
     "web_search", "web_fetch", "now", "calculate", "weather", "version",
-    # `social_fetch` (DEC-151): reads the open internet (public X content)
-    # with no room state anywhere in the answer — the same shape as
-    # `web_search`/`web_fetch`, and read-only at three layers besides (R-86).
-    "social_fetch",
+    # `x_read` and `x_search` (DEC-201, replacing DEC-151's `social_fetch`):
+    # read the open internet (public X content) with no room state anywhere in
+    # the answer, the same shape as `web_search`/`web_fetch`, and read-only at
+    # three layers besides (R-86).
+    "x_read", "x_search",
     # `instagram_search` (design/instagram-adoption/18, P11): free text in,
     # Instagram accounts out, with no name resolved against a roster and no
     # Tier 0 check, so no room state in the answer: the same shape as

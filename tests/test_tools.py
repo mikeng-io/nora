@@ -161,8 +161,9 @@ def test_every_declared_tool_is_built(wiring):
         "generate_image",
         "media_search", "media_send",
         "web_search", "web_fetch",
-        # social_fetch (DEC-151): READ-ONLY X via the host bridge.
-        "social_fetch",
+        # x_read and x_search (DEC-201, replacing DEC-151's social_fetch):
+        # READ-ONLY X via the host bridge.
+        "x_read", "x_search",
         # instagram_read (design/instagram-adoption/18): a person's Instagram
         # profile or story, over the instagram-bridge.
         "instagram_read",
@@ -213,15 +214,15 @@ def test_read_peer_card_is_gone_from_the_table():
     assert "read_peer_card" not in NATIVE_TOOL_BUDGETS
 
 
-def test_exactly_nine_tools_are_cacheable():
+def test_exactly_these_tools_are_cacheable():
     from nora.agent.tools import NATIVE_TOOLS
     cacheable = {name for name, spec in NATIVE_TOOLS.items() if spec.cacheable}
     assert cacheable == {
         "place_info", "route", "web_search", "web_fetch", "weather", "transit",
-        # social_fetch (DEC-151): a public social read carries no room/person
-        # disclosure decision baked into the moment it ran — same exemption
-        # shape as `web_search`/`web_fetch`.
-        "music_status", "social_fetch",
+        # x_read and x_search (DEC-201): a public social read carries no
+        # room/person disclosure decision baked into the moment it ran, the
+        # same exemption shape as `web_search`/`web_fetch`.
+        "music_status", "x_read", "x_search",
         # instagram_search (design/instagram-adoption/18, P11): free text in,
         # public accounts out, no roster or Tier 0 decision in the answer.
         "instagram_search",

@@ -1,6 +1,7 @@
-# deploy/social-bridge — the host side of `social_fetch`
+# deploy/social-bridge — the host side of `x_read` and `x_search`
 
-The `social_fetch` tool (DEC-151) reads X and Instagram through OpenCLI, which
+The `x_read` and `x_search` tools (DEC-201, which retired DEC-151's
+`social_fetch`) read X through OpenCLI, which
 exists only on the host (daemon on `localhost:19825`, driving the
 authenticated Chrome from `nora-social-chrome.service` via the Browser Bridge
 extension). Nora runs in a Docker container on the private compose `nora`

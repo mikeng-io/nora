@@ -8,7 +8,7 @@ because `SocialRouter` is itself a `SocialProvider` and is the one the
 composition root actually injects.
 
 **Why a contract rather than three unit files.** `nora.agent.tools`'
-`social_fetch` programs against the PORT: it branches on `status` and hands
+social tools program against the PORT: each branches on `status` and hands
 the result to the model with nothing between. Neither the tool nor the model
 knows which backend answered. So if the two backends disagreed about what
 `nothing_found` means, Nora would SAY a different thing — «there's nothing on
@@ -281,7 +281,7 @@ async def test_a_dead_backend_never_raises_into_the_loop(dead_arm):
 
 
 async def test_every_status_is_one_the_tool_vocabulary_declares(arm):
-    """Whatever comes back is handed to the model through `social_fetch`,
+    """Whatever comes back is handed to the model through a social tool,
     whose `three_state` output contract validates `status` against
     `OUTPUT_STATUSES` and replaces anything else with `MALFORMED_RESULT`. A
     backend inventing a word would therefore not reach the model as itself —
@@ -314,7 +314,7 @@ async def test_no_result_carries_a_content_key(arm):
 # `ambiguous` and `refused` are the ROUTER's now (design/instagram-
 # adoption/10 §"Who owns what"). They are asserted here rather than only in
 # `tests/unit/test_social_router.py` because the risk this file exists for is
-# a STATE risk: `social_fetch` branches on `status` with nothing between it
+# a STATE risk: each social tool branches on `status` with nothing between it
 # and the model, so whichever layer produces a word, it must be one the tool's
 # vocabulary declares and it must not collapse into R-27's three.
 

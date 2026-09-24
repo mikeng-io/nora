@@ -59,6 +59,15 @@ is committed, and no member of a room is named in it.
   first. Then one of each LinkedIn read and one search, the same way, and the
   bridge restarted on norty from the pulled checkout.
 
+## Resident cost, measured
+
+**PR 1 (2026-09-24):** built the registry for a Signal group room and
+cl100k-encoded `json.dumps` of each tool's `tool_spec` (05 §1's method).
+Against master at `0014c663`: `social_fetch` was 454 tokens; `x_read` is 336
+(description 163) and `x_search` is 188 (description 91). The resident total
+moved **12,544 → 12,614 (+70)** for one more tool. Both descriptions are well
+under the Level 3 ceiling of 320.
+
 ## Unmeasured, and what would measure it
 
 | Property | Why it matters | Reading |

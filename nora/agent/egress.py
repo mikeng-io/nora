@@ -11,8 +11,8 @@ answers:
 
 The reply predicate used to ALSO refuse the name of the model she runs on
 (`_MODELNAME`), and `Deliverer.deliver` failed closed on the WHOLE reply. That
-veto is DISABLED by operator decision (2026-08-31): `social_fetch` (DEC-151)
-legitimately relays third-party content that names models — the exact post she
+veto is DISABLED by operator decision (2026-08-31): `social_fetch` (DEC-151, now
+`x_read`) legitimately relays third-party content that names models — the exact post she
 was asked to read in the first live trace was about "Opus 5" — and refusing
 the whole reply for a quoted model name cost real answers. Identifiers remain
 the floor at every exit; a model name is no longer treated as one.
