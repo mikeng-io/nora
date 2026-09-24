@@ -4,7 +4,8 @@
   "details": [
     "A shared reel, post or story that comes with a valid link now appears in her conversation as who posted it and the link, with no picture attached. Before, the cover picture sat beside the link, and asked what was in a reel she looked at that one still and answered from it, even after being told it was only the cover.",
     "The cover picture of such a share is no longer downloaded or stored.",
-    "If she tries to look at an Instagram post, reel, story or profile link as if it were a picture, she is told straight away that it is an Instagram page and to open it with her Instagram reading tool, instead of the page being downloaded."
+    "If she tries to look at an Instagram post, reel, story or profile link as if it were a picture, she is told straight away that it is an Instagram page and to open it with her Instagram reading tool, instead of the page being downloaded.",
+    "Her Instagram reading tool now introduces itself by what it gives back: every item in a post or reel, videos included. It is for anything somebody shares or links."
   ],
   "limitations": [
     "A share whose link is missing or not a valid Instagram link still shows its cover picture, since that is all there is to look at.",

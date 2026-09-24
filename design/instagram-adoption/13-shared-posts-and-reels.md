@@ -275,7 +275,10 @@ did not say what it had served. Three changes, input first:
   out, so the note does not promise one).
 - **The when-clause names a share.** `instagram_read`'s L1 is now «Call this
   when somebody asks about someone's Instagram or a shared or linked post or
-  reel» (39 tokens as the L1 gate counts it, was 38).
+  reel» (39 tokens as the L1 gate counts it, was 38). *Replaced later that
+  day by an L1 naming what the read returns (every item, videos included);
+  measured on a replay of the live prompt, see `18` §«the tool-catalogue
+  contract».*
 
 The routing is measured by `route_instagram_read_shared_*` in
 `evals/corpora/tool_selection.yaml`; the shape those cases can and cannot

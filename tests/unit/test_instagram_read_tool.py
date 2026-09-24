@@ -595,20 +595,53 @@ def test_posts_is_in_neither_the_vocabulary_nor_the_catalogue_line():
     assert ("instagram", "posts") not in social_read_vocabulary()["instagram_read"]
 
 
-def test_the_catalogue_line_names_a_shared_post_or_reel():
-    """The when-clause covers a SHARED item, not only a pasted link
-    (2026-09-24). A reel shared into a room renders as a `[shared reel …]`
-    line with a link and a cover picture; the old clause («pastes an Instagram
-    link») described a member typing a link, and the model reached for
-    `media_fetch` on the cover instead. The eval cases
-    `route_instagram_read_shared_reel*` measure the routing; this pins the
-    words they measure."""
+def test_the_catalogue_line_names_every_item_and_a_share():
+    """The L1 says what the read RETURNS for a post or reel (every item,
+    videos included) and that a SHARE is a reason to call it (2026-09-24,
+    design 18 §«the tool-catalogue contract»). Replayed on the recorded
+    live prompt of trace ce094b70, n=12, `instagram_read` called first:
+    0/12 with the handle gone and the old L1 («Read an Instagram profile,
+    story, post or reel by name, handle or link…»), 7/12 with this L1 and
+    body sentence, 10/12 with the purged belief as well. The inputs moved
+    to the body; `test_the_description_body_names_person_handle_and_link`
+    holds them there."""
     line = next(
         ln for ln in ToolRegistry().tool_catalogue().splitlines()
         if ln.startswith("- instagram_read —")
     )
-    assert "a shared or linked post or reel" in line
-    assert "by name, handle or link" in line
+    assert "every item, videos included" in line
+    assert "shares, links" in line
+
+
+def test_the_description_body_names_person_handle_and_link():
+    """Design 18 requires the description to name the inputs the tool takes.
+    Since the L1 names what it returns instead, the BODY carries them: the
+    three parameters by name, and a person's name as the way to use
+    `person`. Read from the description Strands sends, not the docstring."""
+    description = ToolRegistry()._descriptions()["instagram_read"]
+    l1, _, body = description.partition("\n\n")
+    assert body, "the description has no body after its L1"
+    body = " ".join(body.split())
+    assert "Give exactly one of `person`, `handle` or `link`" in body
+    assert "Only people in this conversation can be named by `person`" in body
+    # And the body is where they are: the L1 no longer names them.
+    assert "handle" not in l1
+
+
+def test_the_body_says_every_item_goes_to_media_fetch():
+    """The measured body sentence (the same replay as the L1): a post or a
+    reel returns every item, videos included, and each item's link is what
+    `media_fetch(url=...)` describes. The sentence it replaced («returns its
+    media with a link each») said neither that a reel's video is among the
+    items nor that the link is the thing to describe."""
+    body = " ".join(
+        ToolRegistry()._descriptions()["instagram_read"].partition("\n\n")[2].split()
+    )
+    assert (
+        "A post or a reel returns every item in it, videos included, each with "
+        "a link that `media_fetch(url=...)` describes; a story returns its media "
+        "the same way."
+    ) in body
 
 
 def test_the_native_tool_row_is_complete_read_only_and_not_hot():

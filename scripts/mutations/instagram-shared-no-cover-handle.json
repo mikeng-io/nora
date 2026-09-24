@@ -61,5 +61,19 @@
     "old": "    \"nothing about what the media shows: call media_fetch(url=...) on each \"\n    \"item you need to see. The caption is the author's own words.\"",
     "new": "    \"nothing about what the media shows. The caption is the author's own words.\"",
     "target": "tests/unit/test_instagram_social_client.py -k media_fetch_looks_at"
+  },
+  {
+    "name": "instagram_read's L1 is restored to #454's (0/12 on the live replay)",
+    "file": "nora/agent/tools.py",
+    "old": "        \"\"\"Show what an Instagram post or reel contains, every item, videos\n        included, or read a profile or story. Call this when somebody shares,\n        links or asks about one.\n",
+    "new": "        \"\"\"Read an Instagram profile, story, post or reel by name, handle or\n        link. Call this when somebody asks about someone's Instagram or a\n        shared or linked post or reel.\n",
+    "target": "tests/unit/test_instagram_read_tool.py -k catalogue_line_names_every_item"
+  },
+  {
+    "name": "instagram_read's body sentence is restored to «returns its media with a link each»",
+    "file": "nora/agent/tools.py",
+    "old": "        the counts. A post or a reel returns every item in it, videos\n        included, each with a link that `media_fetch(url=...)` describes; a\n        story returns its media the same way. What comes back is written",
+    "new": "        the counts. A\n        story or a post returns its media with a link each; to see what one\n        shows, call `media_fetch(url=...)` on it. What comes back is written",
+    "target": "tests/unit/test_instagram_read_tool.py -k body_says_every_item"
   }
 ]
