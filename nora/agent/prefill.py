@@ -32,6 +32,7 @@ from ..language.presence_render import render_presence
 from ..language.self_card_render import render_self_card
 from ..language.standing_render import render_standing
 from ..obs.tracing import annotate, span
+from .clock import local_now, state_time
 
 _CLOSING_LINE = "Understood. I'll read the conversation and reply as myself."
 
@@ -85,10 +86,17 @@ def _now_line(now: datetime | None) -> str:
     costs ~15 tokens and cannot fail.
 
     Injected rather than read from the clock here so a test can pin it.
+
+    It names the zone and the place the zone is named for (2026-09-24),
+    because «HKT» alone is an abbreviation she has to decode, and a picture
+    that needs a place («Hong Kong» on a poster) had nothing in her input to
+    copy it from. The wording is `nora.agent.clock.state_time`, the same
+    formatter the `now` tool answers with, so a mid-turn `now()` states
+    exactly this line's facts.
     """
     if now is None:
-        now = datetime.now().astimezone()
-    return f"Right now it is {now.strftime('%A %-d %B %Y, %H:%M')} ({now.tzname()}).\n"
+        now = local_now()
+    return f"Right now it is {state_time(now)}.\n"
 
 
 
@@ -927,7 +935,7 @@ def build_prefill(
         # measured against came from two different reads of the same clock.
         # Sub-millisecond in effect, and exactly the «interpret once» the
         # spine asks for: everything below computes on one fixed model of now.
-        clock = now or datetime.now().astimezone()
+        clock = now or local_now()
         # RENDER first, DECLARE second, ASSEMBLE third. The order the blocks
         # reach her, and the catalogue that introduces them, both come from
         # `_BLOCKS` — so a block cannot be served without an entry, and an
