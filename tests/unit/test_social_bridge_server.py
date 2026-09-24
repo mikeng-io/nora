@@ -258,6 +258,14 @@ async def test_every_allowlisted_pair_is_covered_by_the_argv_test():
         ("linkedin", "company", "nvidia corp"),
         ("linkedin", "search", "a\nb"),                     # control character
         ("linkedin", "search", "q" * 201),
+        # A target that starts with a dash would reach OpenCLI's argv as a
+        # FLAG (Sonnet review, 2026-09-24): `/company/-f/` collided with the
+        # bridge's own `-f json`.
+        ("linkedin", "company", "-f"),
+        ("linkedin", "company", "--evil"),
+        ("linkedin", "search", "--limit"),
+        ("linkedin", "search", "-f json"),
+        ("x", "search", "--help"),
     ],
 )
 async def test_a_bad_target_is_refused_without_spawning(bridge, platform, what, target):

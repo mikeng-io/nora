@@ -64,6 +64,10 @@ def test_a_person_company_or_post_link_is_recognized(url, expected):
         "https://www.linkedin.com/in/%E5%BC%A0%E4%B8%89/",
         "https://www.linkedin.com/in/william.gates/",
         "https://www.linkedin.com/company/nvidia%20corp/",
+        # A leading dash would read as a command-line flag downstream.
+        "https://www.linkedin.com/company/-f/",
+        "https://www.linkedin.com/company/--evil/",
+        "https://www.linkedin.com/in/-abc/",
         # Not a link at all.
         "",
         None,

@@ -152,7 +152,7 @@ async def test_a_search_sends_the_trimmed_query(social):
     assert social.calls == [("x", "search", "nasa launch", 3)]
 
 
-@pytest.mark.parametrize("query", ["", "   ", "q" * 201])
+@pytest.mark.parametrize("query", ["", "   ", "q" * 201, "--help", "-f json"])
 async def test_an_empty_or_overlong_query_is_unavailable_and_not_sent(social, query):
     out = await _tools(social)["x_search"](query=query)
     assert out["status"] == "unavailable"

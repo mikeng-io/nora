@@ -122,6 +122,9 @@ async def test_the_input_decides_the_read(social, kwargs, sent):
         {"link": "https://www.instagram.com/p/SynthPost01/"},
         # One post cannot be read from its link.
         {"link": "https://www.linkedin.com/posts/williamhgates_ai-activity-1-a/"},
+        # A leading dash would reach OpenCLI as a flag.
+        {"link": "https://www.linkedin.com/company/-f/"},
+        {"handle": "-f", "what": "profile"},
     ],
 )
 async def test_a_bad_input_is_unavailable_and_nothing_is_sent(social, kwargs):
@@ -205,8 +208,8 @@ async def test_search_limit_is_clamped_to_people_search_s_range(social, given, s
     assert social.calls[0][3] == sent
 
 
-@pytest.mark.parametrize("query", ["", "  ", "q" * 201])
-async def test_an_empty_or_overlong_query_is_unavailable_and_not_sent(social, query):
+@pytest.mark.parametrize("query", ["", "  ", "q" * 201, "--limit", "-f json"])
+async def test_an_empty_overlong_or_flag_shaped_query_is_unavailable_and_not_sent(social, query):
     out = await _tools(social)["linkedin_search"](query=query)
     assert out["status"] == "unavailable"
     assert social.calls == []

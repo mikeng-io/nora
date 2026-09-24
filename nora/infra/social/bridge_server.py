@@ -142,8 +142,8 @@ _LIMIT_MIN, _LIMIT_MAX = 1, 20
 # A LinkedIn person's public id (the `<id>` in `/in/<id>/`) and a company's
 # universal name (the `<slug>` in `/company/<slug>/`). ASCII only: an id
 # LinkedIn percent-encodes (a non-Latin name) is refused, not decoded.
-_LINKEDIN_PERSON_RE = re.compile(r"[A-Za-z0-9-]{3,100}")
-_LINKEDIN_COMPANY_RE = re.compile(r"[A-Za-z0-9-]{1,100}")
+_LINKEDIN_PERSON_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{2,99}")
+_LINKEDIN_COMPANY_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,99}")
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 # The subprocess runner seam: argv in, (returncode, stdout, stderr) out,
@@ -231,9 +231,16 @@ _VALIDATORS: MappingProxyType[tuple[str, str], Callable[[str], str | None]] = Ma
 
 def _validate_target(site: str, command: str, target: str) -> str | None:
     """The argument to hand `opencli`, or None to refuse WITHOUT spawning. A
-    command with no validator is refused: nothing is validated by default."""
+    command with no validator is refused: nothing is validated by default.
+
+    **A target that starts with `-` is refused for every command.** It sits
+    in the argv as a bare word, so OpenCLI would read it as a FLAG: a company
+    link `/company/-f/` produced `linkedin company -f -f json`, and a search
+    for `--limit` collided with the bridge's own `--limit` (Sonnet review,
+    2026-09-24). The X search path had the same exposure before LinkedIn."""
     validator = _VALIDATORS.get((site, command))
-    return None if validator is None else validator(target)
+    value = None if validator is None else validator(target)
+    return None if value is None or value.startswith("-") else value
 
 
 def _linkedin_profile_url(person_id: str) -> str:

@@ -34,8 +34,10 @@ from urllib.parse import SplitResult, urlsplit
 #: What a link can name.
 LinkedInLinkKind = Literal["person", "company", "post"]
 
-PERSON_ID_RE = re.compile(r"[A-Za-z0-9-]{3,100}")
-COMPANY_SLUG_RE = re.compile(r"[A-Za-z0-9-]{1,100}")
+# Never a leading `-`: the id or slug becomes a command-line word on the host,
+# where a leading dash would read as a flag.
+PERSON_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{2,99}")
+COMPANY_SLUG_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,99}")
 _COUNTRY_SUBDOMAIN_RE = re.compile(r"[a-z]{2}")
 
 #: First path segments that name one post (or article). Recognized, never read.

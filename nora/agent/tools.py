@@ -7402,7 +7402,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             limit: how many posts to return (1 to 20, default 5).
         """
         text = query.strip() if isinstance(query, str) else ""
-        if not text or len(text) > _SOCIAL_QUERY_MAX_CHARS:
+        # A leading dash is refused as the bridge refuses it: the query is a
+        # bare command-line word on the host, where it would read as a flag.
+        if not text or len(text) > _SOCIAL_QUERY_MAX_CHARS or text.startswith("-"):
             # Refused HERE, so nothing is sent. `unavailable` («I couldn't
             # search that»), never `nothing_found`, which would claim nothing
             # matched. The query is not echoed back.
@@ -7626,7 +7628,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             _record(metrics, "linkedin_search", "refused", reason="unasked")
             return dict(_LINKEDIN_UNASKED)
         text = query.strip() if isinstance(query, str) else ""
-        if not text or len(text) > _SOCIAL_QUERY_MAX_CHARS:
+        # A leading dash is refused as the bridge refuses it: the query is a
+        # bare command-line word on the host, where it would read as a flag.
+        if not text or len(text) > _SOCIAL_QUERY_MAX_CHARS or text.startswith("-"):
             _record(metrics, "linkedin_search", "unavailable", reason="query")
             return {
                 "status": "unavailable",
