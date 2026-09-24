@@ -3203,9 +3203,11 @@ class NoteCollaborator(Protocol):
     can only name the SHAPE. There is no port in `nora.domain.ports` to import
     instead; the two implementations already share
     `tests/contract/test_note_store_contract.py`, which is what actually holds
-    them to one behaviour. This declares the four verbs the tool layer calls
+    them to one behaviour. This declares the verbs the tool layer calls
     and no more: `standing` (title resolution, §16.1), `read`, `search`,
-    `create`, `append_revision`, `record_miss`.
+    `create`, `append_revision`, `record_miss`, and
+    `merged_successor_by_title` (a merged note's title forwards, design 41
+    §7.5).
 
     `StaleNoteHeadError` lives in `nora.domain.notes` for the identical reason
     `GatheringNotFoundError` lives in `nora.domain.gatherings` — an exception TYPE has
@@ -3237,6 +3239,10 @@ class NoteCollaborator(Protocol):
     async def record_miss(
         self, *, unit: str, probe: str, conversation_id: str, now_ms: int,
     ) -> int: ...
+
+    async def merged_successor_by_title(
+        self, *, unit: str, title: str,
+    ) -> Note | None: ...
 
 
 #: NOT DEFINED HERE — an ordinary import, used by `note_read`/`note_update`
@@ -9173,10 +9179,19 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         a stable, plausible, wrong answer.
         """
         wanted = note_handle(title)
-        return [
-            n for n in await book.standing(unit=_unit() or "")
+        unit = _unit() or ""
+        found = [
+            n for n in await book.standing(unit=unit)
             if note_handle(n.title) == wanted
         ]
+        if found:
+            return found
+        # A MERGED NOTE FORWARDS (design 41 §7.5). The turn's `<notes>` was
+        # rendered before the merge, so the model can name the duplicate's
+        # title after it retired; «no note by that title» would then be false
+        # of the question, which lives on in the survivor.
+        survivor = await book.merged_successor_by_title(unit=unit, title=title)
+        return [survivor] if survivor is not None else []
 
     def _ambiguous(candidates: list[Note]) -> dict:
         _record(metrics, "note_read", "refused", reason="ambiguous")

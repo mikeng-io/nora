@@ -259,6 +259,7 @@ from nora.domain.notes import (
     NoteCreationProposal,
     NoteRevision,
     NoteRevisionProposal,
+    RetiredNoteError,
     StaleNoteHeadError,
     default_revisit_at,
     note_handle,
@@ -434,6 +435,12 @@ class _NoteStore(DreamSink, Protocol):
     async def read(
         self, *, unit: str, note_id: str,
     ) -> tuple[Note, NoteRevision] | None: ...
+
+    async def successor(self, *, unit: str, note_id: str) -> Note | None: ...
+
+    async def merged_successor_by_title(
+        self, *, unit: str, title: str,
+    ) -> Note | None: ...
 
 
 class _CandidateStore(Protocol):
@@ -1186,6 +1193,20 @@ class NoteCandidateAdaptor:
         matches = _resolve_updates(
             updates=candidate.updates, standing=standing,
         )
+        if not matches and candidate.updates is not None:
+            # A MERGED NOTE FORWARDS (design 41 §7.5). This pass rendered its
+            # notebook before a merge retired the note it names; without the
+            # forward the title resolves to nothing and the question is
+            # created AGAIN, undoing the merge.
+            survivor = await self._notes.merged_successor_by_title(
+                unit=unit, title=candidate.updates,
+            )
+            if survivor is not None:
+                log.info(
+                    "note-candidates: %r was merged; updating its survivor "
+                    "%r (unit=%s)", candidate.updates, survivor.title, unit,
+                )
+                matches = (survivor,)
         if len(matches) == 1:
             return await self._update(
                 unit=unit, row=row, match=matches[0],
@@ -1306,13 +1327,15 @@ class NoteCandidateAdaptor:
 
     async def _update(
         self, *, unit: str, row: NoteCreateCandidate, match: Note,
-        proposal: Proposal, now_ms: int,
+        proposal: Proposal, now_ms: int, forwarded: bool = False,
     ) -> int:
         current = await self._notes.read(unit=unit, note_id=match.id)
         if current is None:
-            # The matched note retired or moved out of reach between the
-            # gate's read and this one. Left pending: the next tick's
-            # `standing()` read reflects whatever is true then.
+            # The matched note moved out of reach between the gate's read and
+            # this one. Left pending: the next tick's `standing()` read
+            # reflects whatever is true then. (`read` returns RETIRED notes,
+            # so a retirement does not land here — the append's own guard
+            # refuses it below, `RetiredNoteError`.)
             log.info(
                 "note-candidates: matched note %s vanished before the "
                 "update landed (unit=%s)", match.id, unit,
@@ -1364,6 +1387,26 @@ class NoteCandidateAdaptor:
                 ),
                 now_ms=now_ms,
             )
+        except RetiredNoteError:
+            # The note was retired between the gate's read and this write
+            # (design 41 §7.6, guard 1). A MERGED note forwards once to its
+            # survivor; anything else — closed, expired, or a forward that
+            # already happened — is left pending, as a stale head is.
+            survivor = (
+                None if forwarded
+                else await self._notes.successor(unit=unit, note_id=match.id)
+            )
+            if survivor is not None:
+                return await self._update(
+                    unit=unit, row=row, match=survivor,
+                    proposal=proposal, now_ms=now_ms, forwarded=True,
+                )
+            log.info(
+                "note-candidates: note %s was retired before the update "
+                "landed (unit=%s)", match.id, unit,
+            )
+            self._inc("nora_note_candidate_gate_total", action="deferred")
+            return 0
         except StaleNoteHeadError:
             # The tag path (or another candidate this same tick) revised the
             # note between the gate's read and this write. NOT an error —

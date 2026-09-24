@@ -66,14 +66,17 @@ from nora.domain.notes import (
     CANDIDATE_CREATED,
     CANDIDATE_PENDING,
     CANDIDATE_REFUSED,
+    MERGE_FORWARD_HOPS,
     Note,
     NoteCreateCandidate,
     NoteCreationProposal,
     NoteRevision,
     NoteRevisionProposal,
     NoteSupersedeReason,
+    RetiredNoteError,
     StaleNoteHeadError,
     WakeOutcome,
+    note_handle,
     tag_path_progressed_since_wake,
 )
 from nora.domain.ports import Proposal
@@ -113,6 +116,19 @@ def _looks_like_an_id(value: str) -> bool:
     than one that states the gap.
     """
     return bool(value and value.strip())
+
+
+def _refuse_if_retired(note: Note) -> None:
+    """Guard 1 of design 41 §7.6, as `SqlNoteStore._append_on_conn` enforces
+    it: an append requires an open note."""
+    if note.retired_at is not None:
+        raise RetiredNoteError(
+            f"note {note.id} was retired ({note.retire_reason}) — read the "
+            f"notebook again",
+            observed_head=note.head_revision_id,
+            retire_reason=note.retire_reason,
+            replaced_by=note.replaced_by,
+        )
 
 
 @dataclass
@@ -206,6 +222,39 @@ class InMemoryNoteStore:
         live.sort(key=lambda n: (n.created_at, n.id))
         return tuple(live)
 
+    async def successor(self, *, unit: str, note_id: str) -> Note | None:
+        """`SqlNoteStore.successor`: the open note a `retired-merged` chain
+        ends on, or `None`."""
+        current = note_id
+        for _ in range(MERGE_FORWARD_HOPS):
+            note = self.notes.get(current)
+            if note is None or note.unit != unit:
+                return None
+            if note.retired_at is None:
+                return note if current != note_id else None
+            if (note.retire_reason != NoteSupersedeReason.RETIRED_MERGED
+                    or note.replaced_by is None):
+                return None
+            current = note.replaced_by
+        return None
+
+    async def merged_successor_by_title(
+        self, *, unit: str, title: str,
+    ) -> Note | None:
+        """`SqlNoteStore.merged_successor_by_title`: exactly one open note the
+        merged notes of this title forward to, or `None`."""
+        wanted = note_handle(title)
+        found: dict[str, Note] = {}
+        for note in list(self.notes.values()):
+            if (note.unit != unit
+                    or note.retire_reason != NoteSupersedeReason.RETIRED_MERGED
+                    or note_handle(note.title) != wanted):
+                continue
+            survivor = await self.successor(unit=unit, note_id=note.id)
+            if survivor is not None:
+                found[survivor.id] = survivor
+        return next(iter(found.values())) if len(found) == 1 else None
+
     async def read(
         self, *, unit: str, note_id: str,
     ) -> tuple[Note, NoteRevision] | None:
@@ -243,6 +292,7 @@ class InMemoryNoteStore:
                 f"read it again",
                 observed_head=None,
             )
+        _refuse_if_retired(note)
         if note.head_revision_id != parent_revision_id:
             raise StaleNoteHeadError(
                 f"note {note_id} changed under you: this revision was written "
@@ -481,6 +531,8 @@ class InMemoryNoteStore:
                 not reachable
                 or head_now != payload.parent_revision_id
             )
+            if reachable and existing is not None:
+                _refuse_if_retired(existing)
             if not reachable or stale:
                 raise StaleNoteHeadError(
                     f"note {payload.note_id} changed under you or is not in "
