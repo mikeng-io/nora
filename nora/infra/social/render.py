@@ -79,7 +79,7 @@ STORY_FRAMING = (
 STORY_READ_FRAMING = (
     "Each shows line is what a vision model saw in that frame, and a "
     "caption is what they wrote; the two can disagree. A frame with no "
-    "shows line was not seen."
+    "shows line says why, and where it can be read."
 )
 
 #: Added to the story framing when no frame was seen because they were not
@@ -89,6 +89,14 @@ STORY_NOT_READ_FRAMING = (
     "Its frames were not read here (each says why): call media_fetch(url=...) "
     "on a frame's link in items to see it, and don't describe a frame from "
     "its caption alone."
+)
+
+#: Added to the story framing when every look that ran failed and some
+#: frames were not read here: only those can still be opened.
+STORY_MIXED_FRAMING = (
+    "None of the frames was seen. The ones that were looked at could not be "
+    "seen just now; only the ones marked not read here can be opened with "
+    "media_fetch(url=...). Don't describe a frame from its caption alone."
 )
 
 #: Added to the story framing when every look at a frame failed.
@@ -114,9 +122,9 @@ POST_READ_FRAMING = (
     "One Instagram post, item by item. The caption is what the poster wrote; "
     "each shows line is what a vision model saw in that item. The two can "
     "disagree, so read them side by side, and report what an item shows as "
-    "how it looks, not as fact. An item with no shows line was not seen; "
-    "every item's link is in items, in the same order, for "
-    "media_fetch(url=...)."
+    "how it looks, not as fact. An item with no shows line says why, and "
+    "where it can be read; every item's link is in items, in the same order, "
+    "for media_fetch(url=...)."
 )
 
 #: No item was seen because none was read HERE: a reel longer than one
@@ -129,6 +137,18 @@ POST_NOT_READ_FRAMING = (
     "what they show is not in front of you yet: call media_fetch(url=...) on "
     "an item's link in items to see it. The caption is only what the poster "
     "wrote; don't describe the post from it alone."
+)
+
+#: Every look that RAN failed, and some items were not read here (past the
+#: cap, the video cap, unknown length). Sending her to `media_fetch` on
+#: every item would invite a retry of the ones that just failed, so the note
+#: says which can still be opened (#486 final review).
+POST_MIXED_FRAMING = (
+    "One Instagram post. None of its items was seen: the ones that were "
+    "looked at could not be seen just now, and only the ones marked not read "
+    "here can be opened with media_fetch(url=...) on their link in items. "
+    "The caption is only what the poster wrote; don't describe the post from "
+    "it alone."
 )
 
 #: Every look failed. The post WAS read, so the status stays `ok`; what
@@ -192,10 +212,7 @@ _NOT_SEEN: dict[str, str] = {
 }
 
 #: The line an item past the item cap says, when the others were read.
-_PAST_THE_CAP = (
-    f"not read here: only the first {MAX_READ_ITEMS} items are read; "
-    "media_fetch(url=...) on its link reads it"
-)
+_PAST_THE_CAP = f"not read here (past the first {MAX_READ_ITEMS}); media_fetch reads it"
 
 
 def render(result: Result, *, max_chars: int) -> dict[str, Any]:
@@ -373,7 +390,8 @@ def _post_blocks(view: PostView, now: int) -> list[_Block]:
 def _post_note(view: PostView) -> str:
     return {
         "none": POST_FRAMING, "read": POST_READ_FRAMING,
-        "not_read": POST_NOT_READ_FRAMING, "unseen": POST_UNSEEN_FRAMING,
+        "not_read": POST_NOT_READ_FRAMING, "mixed": POST_MIXED_FRAMING,
+        "unseen": POST_UNSEEN_FRAMING,
     }[_outcome(view.items)]
 
 
@@ -386,16 +404,22 @@ def _outcome(items: tuple[ItemView, ...]) -> str:
 
     * `none` — nothing was looked at (no media reading was asked for);
     * `read` — at least one item was seen (or looked at and withheld);
-    * `not_read` — none was seen, and at least one was not read HERE by
-      design (`NOT_READ_HERE`, or past the item cap): it can be read on
-      request, so she is never told she could not see it;
-    * `unseen` — every look that was made failed."""
+    * `not_read` — none was seen, no look failed, and at least one was not
+      read HERE by design (`NOT_READ_HERE`, or past the item cap): it can be
+      read on request, so she is never told she could not see it;
+    * `mixed` — none was seen, the looks that ran all failed, and some were
+      not read here: only those can still be opened;
+    * `unseen` — every look that was made failed, and nothing is left."""
     if not _looked(items):
         return "none"
     readings = [item.reading for item in items]
     if any(r is not None and r.state in ("seen", "withheld") for r in readings):
         return "read"
-    if any(r is None or r.state in NOT_READ_HERE for r in readings):
+    not_read = any(r is None or r.state in NOT_READ_HERE for r in readings)
+    failed = any(r is not None and r.state not in NOT_READ_HERE for r in readings)
+    if not_read and failed:
+        return "mixed"
+    if not_read:
         return "not_read"
     return "unseen"
 
@@ -444,7 +468,8 @@ def _story_blocks(view: StoryView, now: int) -> list[_Block]:
 def _story_note(view: StoryView) -> str:
     added = {
         "none": "", "read": STORY_READ_FRAMING,
-        "not_read": STORY_NOT_READ_FRAMING, "unseen": STORY_UNSEEN_FRAMING,
+        "not_read": STORY_NOT_READ_FRAMING, "mixed": STORY_MIXED_FRAMING,
+        "unseen": STORY_UNSEEN_FRAMING,
     }[_outcome(view.items)]
     return f"{STORY_FRAMING} {added}" if added else STORY_FRAMING
 

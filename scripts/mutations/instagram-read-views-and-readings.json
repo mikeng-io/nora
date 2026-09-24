@@ -247,22 +247,22 @@
   {
     "name": "a reel not read HERE by design gets the «say you couldn't see it» note (round 1's regression)",
     "file": "nora/infra/social/render.py",
-    "old": "    if any(r is None or r.state in NOT_READ_HERE for r in readings):\n        return \"not_read\"",
-    "new": "    if False:\n        return \"not_read\"",
+    "old": "    not_read = any(r is None or r.state in NOT_READ_HERE for r in readings)",
+    "new": "    not_read = False",
     "target": "tests/unit/test_instagram_views.py -k not_read_here"
   },
   {
     "name": "a single long reel is sent to the unseen note",
     "file": "nora/infra/social/render.py",
-    "old": "        \"not_read\": POST_NOT_READ_FRAMING, \"unseen\": POST_UNSEEN_FRAMING,",
-    "new": "        \"not_read\": POST_UNSEEN_FRAMING, \"unseen\": POST_UNSEEN_FRAMING,",
+    "old": "        \"not_read\": POST_NOT_READ_FRAMING, \"mixed\": POST_MIXED_FRAMING,",
+    "new": "        \"not_read\": POST_UNSEEN_FRAMING, \"mixed\": POST_MIXED_FRAMING,",
     "target": "tests/unit/test_instagram_views.py -k single_long_reel"
   },
   {
     "name": "a story not read here by design gets the unseen framing",
     "file": "nora/infra/social/render.py",
-    "old": "        \"not_read\": STORY_NOT_READ_FRAMING, \"unseen\": STORY_UNSEEN_FRAMING,",
-    "new": "        \"not_read\": STORY_UNSEEN_FRAMING, \"unseen\": STORY_UNSEEN_FRAMING,",
+    "old": "        \"not_read\": STORY_NOT_READ_FRAMING, \"mixed\": STORY_MIXED_FRAMING,",
+    "new": "        \"not_read\": STORY_UNSEEN_FRAMING, \"mixed\": STORY_MIXED_FRAMING,",
     "target": "tests/unit/test_instagram_views.py -k story_whose_frames_were_not_read_here"
   },
   {
@@ -369,5 +369,26 @@
     "old": "        if read == \"story\" and out.get(\"status\") == \"ok\":\n            _instagram_story_urls.update(",
     "new": "        if False:\n            _instagram_story_urls.update(",
     "target": "tests/unit/test_instagram_read_readings.py -k opens_itself"
+  },
+  {
+    "name": "every failed look beside a capped item is sent to media_fetch (no mixed outcome)",
+    "file": "nora/infra/social/render.py",
+    "old": "    if not_read and failed:\n        return \"mixed\"",
+    "new": "    if False:\n        return \"mixed\"",
+    "target": "tests/unit/test_instagram_views.py -k mixed_note"
+  },
+  {
+    "name": "the post read note says an item with no shows line was not seen",
+    "file": "nora/infra/social/render.py",
+    "old": "    \"how it looks, not as fact. An item with no shows line says why, and \"\n    \"where it can be read; every item's link is in items, in the same order, \"",
+    "new": "    \"how it looks, not as fact. An item with no shows line was not seen, and \"\n    \"where it can be read; every item's link is in items, in the same order, \"",
+    "target": "tests/unit/test_instagram_views.py -k does_not_contradict"
+  },
+  {
+    "name": "the past-cap line grows back to the long form",
+    "file": "nora/infra/social/render.py",
+    "old": "_PAST_THE_CAP = f\"not read here (past the first {MAX_READ_ITEMS}); media_fetch reads it\"",
+    "new": "_PAST_THE_CAP = f\"not read here: only the first {MAX_READ_ITEMS} items are read; media_fetch(url=...) on its link reads it\"",
+    "target": "tests/unit/test_instagram_views.py -k own_line"
   }
 ]

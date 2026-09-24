@@ -108,6 +108,11 @@ def _shared_payloads() -> dict[str, object]:
         "render.POST_FRAMING": {"note": render.POST_FRAMING},
         "render.POST_READ_FRAMING": {"note": render.POST_READ_FRAMING},
         "render.POST_UNSEEN_FRAMING": {"note": render.POST_UNSEEN_FRAMING},
+        "render.POST_NOT_READ_FRAMING": {"note": render.POST_NOT_READ_FRAMING},
+        "render.POST_MIXED_FRAMING": {"note": render.POST_MIXED_FRAMING},
+        "render.STORY_NOT_READ_FRAMING": {"note": render.STORY_NOT_READ_FRAMING},
+        "render.STORY_MIXED_FRAMING": {"note": render.STORY_MIXED_FRAMING},
+        "render._PAST_THE_CAP": {"note": render._PAST_THE_CAP},
         # What an item line says when it was not seen: inside the wrap, but
         # text the model reads all the same.
         **{f"render._NOT_SEEN[{k}]": {"note": v} for k, v in render._NOT_SEEN.items()},

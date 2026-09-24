@@ -800,7 +800,7 @@ async def test_two_batched_calls_share_one_turns_four_slots(world):
     the turn's four slots: six looks, never more than four at once. (A
     look that waits for a slot may then be a cache hit, so fewer than six
     reach the vision client; four at once is the positive control.)"""
-    world.vision.delay = 0.05
+    world.vision.delay = 0.3
     read = world.make()
     await asyncio.gather(
         read(link=_POST_LINK), read(link="https://www.instagram.com/p/SynthPost02/"),

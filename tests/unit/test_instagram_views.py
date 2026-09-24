@@ -28,10 +28,12 @@ from nora.infra.social import instagram_client
 from nora.infra.social.instagram_client import post_view, profile_view, search_view, story_view
 from nora.infra.social.render import (
     POST_FRAMING,
+    POST_MIXED_FRAMING,
     POST_NOT_READ_FRAMING,
     POST_READ_FRAMING,
     POST_UNSEEN_FRAMING,
     STORY_FRAMING,
+    STORY_MIXED_FRAMING,
     STORY_NOT_READ_FRAMING,
     STORY_READ_FRAMING,
     STORY_UNSEEN_FRAMING,
@@ -315,7 +317,7 @@ def test_the_caption_always_survives_a_large_carousel(n):
 
     assert len(body) <= 4000
     assert body.splitlines()[-1].startswith("caption: the poster wrote this")
-    assert body.count("not read here: only the first 8 items are read") == n - 8
+    assert body.count("not read here (past the first 8); media_fetch reads it") == n - 8
     assert all(f"\n{k}. image" in "\n" + body for k in range(1, n + 1))
     assert body.count("shows: ") == 8
 
@@ -408,10 +410,7 @@ def test_past_the_cap_each_item_says_on_its_own_line_that_it_was_not_read():
     out = render(Result("ok", view=ten), max_chars=4000)
     body = _inside(out["text"])
 
-    past = (
-        "not read here: only the first 8 items are read; "
-        "media_fetch(url=...) on its link reads it"
-    )
+    past = "not read here (past the first 8); media_fetch reads it"
     assert body.count("shows: a photo") == 8
     assert f"\n\n9. image\n{past}\n\n10. image\n{past}\n\n" in body
     assert len(out["items"]) == 10
@@ -505,10 +504,8 @@ def test_a_single_long_reel_is_not_read_here_and_is_never_called_unseen():
     assert "media_fetch(url=...)" in out["note"]
 
 
-@pytest.mark.parametrize(
-    "states", [("unknown_length",), ("over_video_cap", "failed"), ("failed", "too_long")],
-)
-def test_not_read_here_outranks_a_failure_in_the_note(states):
+@pytest.mark.parametrize("states", [("unknown_length",), ("too_long", "over_video_cap")])
+def test_nothing_read_here_and_nothing_failed_is_the_not_read_note(states):
     view = _read(post_view(_body("posts_carousel_ok.json")), *states)
     assert render(Result("ok", view=view), max_chars=4000)["note"] == POST_NOT_READ_FRAMING
 
@@ -560,12 +557,12 @@ def test_the_backstop_shortens_the_caption_rather_than_dropping_it():
     """A budget smaller than Nora's own lines plus a floor per run: the
     caption is shortened, down to a character and « …», before any block is
     cut; every item line is still there."""
-    out = render(Result("ok", view=_twenty_with_three_videos("(music)")), max_chars=1650)
+    out = render(Result("ok", view=_twenty_with_three_videos("(music)")), max_chars=1220)
     body = _inside(out["text"]).strip()
 
-    assert len(body) <= 1650
+    assert len(body) <= 1220
     caption = body.splitlines()[-1]
-    assert caption.startswith("caption: the poster") and caption.endswith(" …")
+    assert caption.startswith("caption: the pos") and caption.endswith(" …")
     assert len(caption) < len("caption: ") + 26   # below its floor: the backstop ran
     assert all(f"\n{k}. " in "\n" + body for k in range(1, 21))
 
@@ -573,8 +570,51 @@ def test_the_backstop_shortens_the_caption_rather_than_dropping_it():
 def test_the_last_resort_keeps_the_caption_block():
     """Nora's own lines alone over budget: the blocks before the caption are
     cut, and the caption's block is kept."""
-    out = render(Result("ok", view=_twenty_with_three_videos("(music)")), max_chars=1500)
+    out = render(Result("ok", view=_twenty_with_three_videos("(music)")), max_chars=1100)
     body = _inside(out["text"]).strip()
 
-    assert len(body) <= 1500
+    assert len(body) <= 1100
     assert body.splitlines()[-1].startswith("caption: ")
+    # Positive control: this budget is below Nora's own lines, so the last
+    # resort ran and cut item lines before the caption.
+    assert not all(f"\n{k}. " in "\n" + body for k in range(1, 21))
+
+
+# ---- #486 final review ---------------------------------------------------------
+
+
+def test_ten_failed_images_with_two_past_the_cap_get_the_mixed_note():
+    """Every look that ran failed; items 9 and 10 were only capped. The note
+    must not send her to retry the eight that just failed."""
+    base = post_view(_body("posts_carousel_ok.json"))
+    items = tuple(
+        dataclasses.replace(base.items[0], reading=Reading("failed") if n < 8 else None)
+        for n in range(10)
+    )
+    note = render(Result("ok", view=dataclasses.replace(base, items=items)), max_chars=4000)["note"]
+    assert note == POST_MIXED_FRAMING
+    assert "only the ones marked not read here can be opened" in note
+
+
+def test_failed_videos_beside_capped_and_unknown_ones_get_the_mixed_note():
+    """Three videos errored, one was past the video cap, one had no length."""
+    base = post_view(_body("posts_carousel_ok.json"))
+    video = base.items[1]
+    states = ("failed", "timed_out", "failed", "over_video_cap", "unknown_length")
+    items = tuple(dataclasses.replace(video, reading=Reading(state)) for state in states)
+    note = render(Result("ok", view=dataclasses.replace(base, items=items)), max_chars=4000)["note"]
+    assert note == POST_MIXED_FRAMING
+
+
+def test_a_story_with_failed_and_not_read_frames_gets_the_mixed_note():
+    view = _read(story_view(_body("story_found.json"), limit=20), "failed", "too_long")
+    note = render(Result("ok", view=view), max_chars=4000)["note"]
+    assert note == f"{STORY_FRAMING} {STORY_MIXED_FRAMING}"
+
+
+def test_the_read_note_does_not_contradict_the_not_read_here_lines():
+    """An item without a shows line may be one «media_fetch reads»; the read
+    note must not call every such item unseen."""
+    for note in (POST_READ_FRAMING, STORY_READ_FRAMING):
+        assert "was not seen" not in note
+        assert "says why, and where it can be read" in note

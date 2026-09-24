@@ -328,9 +328,9 @@ caption: <the poster's own words>
 ```
 
 Past the cap, each unread item keeps its numbered line and says, on its
-own line under it, `not read here: only the first 8 items are read;
-media_fetch(url=...) on its link reads it` (#486 re-review: one line per
-item, not one shared line after them).
+own line under it, `not read here (past the first 8); media_fetch reads
+it` (#486 re-review: one line per item, not one shared line after them;
+short, so a small budget keeps more items).
 
 - **The item urls leave the text** and stay in `items`, in the same order as
   the numbers. A CDN url is 150 to 400 characters of signature; with readings
@@ -451,6 +451,13 @@ question.
   to say she could not see it. The first fix round sent a single 140 s reel
   to the «say you couldn't see the post» note, a reel the first build had
   read.
+- **Mixed: every look that ran failed, and some items were not read here**
+  (#486 final review). Sending her to `media_fetch` on every item would
+  invite a retry of the ones that just failed, so the note is its own
+  (`POST_MIXED_FRAMING`, `STORY_MIXED_FRAMING`): the items looked at could
+  not be seen, and only those marked not read here can be opened with
+  `media_fetch`. And the read note no longer says an item with no shows
+  line «was not seen»: it says why, and where it can be read.
 - **Media reading not configured** (no vision client or custody) is the same
   shape: each item says it could not be looked at, because that is what
   `media_fetch` answers.
