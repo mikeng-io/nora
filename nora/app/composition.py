@@ -2572,6 +2572,10 @@ async def build_dependencies(
         blobs=blobs, descriptions=media_descriptions,
         video_readings=SqlVideoReadingStore(engine), search=search_client,
         social=social_client,
+        # The same router, for the two LinkedIn tools, only when LinkedIn is
+        # switched on (design/social-per-network/10 §Config). The config
+        # refuses `[social.linkedin]` without `[social]`, so a router exists.
+        linkedin=social_client if cfg.social.linkedin.enabled else None,
         weather=weather_client,
         presence=presence_store, circles=presence_circles,
         # `where_been`'s read seam (DEC-155): the SAME `SqlMobilityStore` the

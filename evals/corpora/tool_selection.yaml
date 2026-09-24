@@ -334,6 +334,34 @@ cases:
     metadata: {tools: [x_read], not_tools: [x_search, instagram_read, web_search]}
     snapshot: *room_a
 
+  # DEC-201, PR 2: LinkedIn. A pasted profile or company link is
+  # `linkedin_read`; finding a person by name is `linkedin_search`. The names
+  # and ids are synthetic, so an honest `nothing_found` is still a correct
+  # route: these rows grade the tool choice, not the answer.
+  - name: route_linkedin_read_profile_link
+    entry: tag
+    expect: reply
+    mention: true
+    input: https://www.linkedin.com/in/synth-example-person/ 呢個人做咩㗎？
+    metadata: {tools: [linkedin_read], not_tools: [web_fetch, linkedin_search, x_read]}
+    snapshot: *room_a
+
+  - name: route_linkedin_read_company_link
+    entry: tag
+    expect: reply
+    mention: true
+    input: what does this company do? https://www.linkedin.com/company/synth-example-corp/
+    metadata: {tools: [linkedin_read], not_tools: [web_fetch, web_search, linkedin_search]}
+    snapshot: *room_a
+
+  - name: route_linkedin_search_find_person
+    entry: tag
+    expect: reply
+    mention: true
+    input: can you find Taylor Synthexample on LinkedIn?
+    metadata: {tools: [linkedin_search], not_tools: [linkedin_read, instagram_search, web_search]}
+    snapshot: *room_a
+
   # --- what the call carried: the image-generation skill (2026-09-24) ---------
   # Routing alone passes all three of these on the failure they exist for: a
   # «draw yourself» answered with an empty room and no reference was one

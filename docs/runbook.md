@@ -1035,7 +1035,7 @@ back to 0.14.4.1.
 
 ## 10. "The social desktop: VNC, Chrome, OpenCLI"
 
-The browser runtime behind `x_read` and `x_search` (DEC-201) is four pieces on the
+The browser runtime behind the X and LinkedIn tools (DEC-201) is four pieces on the
 host, all systemd **user** services or user installs — none of them is the
 Nora container, and Nora runs fine with all of them down (the tool answers
 `unavailable`). See `ARCHITECTURE.md` §1's browser-boundary note.
