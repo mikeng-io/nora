@@ -23,15 +23,15 @@
   {
     "name": "profile 404 (errNoProfile) is not a miss",
     "file": "nora/infra/social/instagram_client.py",
-    "old": "            if isinstance(payload, dict) and payload.get(\"ok\") is False:\n                return dict(NOTHING_FOUND)",
-    "new": "            if isinstance(payload, dict) and payload.get(\"ok\") is False:\n                return dict(UNAVAILABLE)",
+    "old": "            if isinstance(payload, dict) and _error_code(payload) == \"not_found\":\n                return dict(NOTHING_FOUND)",
+    "new": "            if isinstance(payload, dict) and _error_code(payload) == \"not_found\":\n                return dict(UNAVAILABLE)",
     "target": "tests/unit/test_instagram_social_client.py::test_the_account_routes_404_is_nothing_found"
   },
   {
     "name": "any 404 on the account route reads as no such account",
     "file": "nora/infra/social/instagram_client.py",
-    "old": "            if isinstance(payload, dict) and payload.get(\"ok\") is False:\n",
-    "new": "            if True:\n",
+    "old": "            if isinstance(payload, dict) and _error_code(payload) == \"not_found\":\n                return dict(NOTHING_FOUND)",
+    "new": "            if True:\n                return dict(NOTHING_FOUND)",
     "target": "tests/unit/test_instagram_social_client.py::test_a_404_that_is_not_the_handlers_is_unavailable"
   },
   {
@@ -44,8 +44,8 @@
   {
     "name": "posts joins the served set",
     "file": "nora/infra/social/instagram_client.py",
-    "old": "    (\"instagram\", \"profile\"),\n})",
-    "new": "    (\"instagram\", \"profile\"),\n    (\"instagram\", \"posts\"),\n})",
+    "old": "    (\"instagram\", \"post\"),\n})",
+    "new": "    (\"instagram\", \"post\"),\n    (\"instagram\", \"posts\"),\n})",
     "target": "tests/unit/test_instagram_social_client.py::test_posts_is_unserved_and_never_reaches_the_bridge"
   },
   {

@@ -28,7 +28,10 @@ bound to `nora.platform.signal.roster.SignalRoster` by
 of them — by `tests/contract/test_social_provider_contract.py`, which also
 drives `FakeSocialSubjectIndex` (`SocialSubjectIndex`, bound to
 `nora.infra.social.PersonsSubjectIndex` by
-`tests/contract/test_social_subject_index_contract.py`). Adding such a
+`tests/contract/test_social_subject_index_contract.py`) and
+`FakeInstagramAccountLookup` (`InstagramAccountLookup`, bound to
+`nora.infra.social.InstagramSocialClient` by
+`tests/contract/test_instagram_account_lookup_contract.py`). Adding such a
 fake without one is a project rule violation, not a shortcut.
 
 `FakeArtifactIngest` is still also exercised on its own by
@@ -110,6 +113,7 @@ from nora.testing.fakes import (
     FakeComputeBackend,
     FakeComputeJobStore,
     FakeGeocodeCacheStore,
+    FakeInstagramAccountLookup,
     FakeLinkPreviewSource,
     FakeMediaDescriptionStore,
     FakeMediaInterpreter,
@@ -123,6 +127,7 @@ from nora.testing.fakes import (
     FakeSocialSubjectIndex,
     FakeToolCallLogStore,
     FakeTranscriber,
+    FakeVideoReadingStore,
     transcript_rows,
 )
 from nora.testing.note_store import InMemoryNoteStore, NoteCandidate
@@ -140,10 +145,6 @@ from nora.testing.scripted_agent import (
     limit_stop_reason,
 )
 from nora.testing.standing_store import InMemoryStandingStore
-from nora.testing.turn_verdict_store import (
-    DuplicateVerdictError,
-    InMemoryTurnVerdictStore,
-)
 
 __all__ = [
     "BACKED_TOOLS",
@@ -157,7 +158,6 @@ __all__ = [
     "CannedTransitSource",
     "CannedWeatherProvider",
     "DuplicateDecisionError",
-    "DuplicateVerdictError",
     "FakeAdapter",
     "FakeAgentRunner",
     "FakeArtifactIngest",
@@ -166,6 +166,7 @@ __all__ = [
     "FakeComputeJobStore",
     "FakeDiscordPresenceSource",
     "FakeGeocodeCacheStore",
+    "FakeInstagramAccountLookup",
     "FakeLinkPreviewSource",
     "FakeMediaDescriptionStore",
     "FakeMediaInterpreter",
@@ -180,12 +181,12 @@ __all__ = [
     "FakeSteamPresenceProvider",
     "FakeToolCallLogStore",
     "FakeTranscriber",
+    "FakeVideoReadingStore",
     "FakeVoicePresenceSource",
     "InMemoryDecisionLogStore",
     "InMemoryDreamScheduleClock",
     "InMemoryNoteStore",
     "InMemoryStandingStore",
-    "InMemoryTurnVerdictStore",
     "NoteCandidate",
     "ScriptedModel",
     "ScriptedTurn",

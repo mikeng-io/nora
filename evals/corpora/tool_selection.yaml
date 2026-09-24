@@ -204,3 +204,114 @@ cases:
     input: 幫我search下iPhone 17 Pro香港幾錢
     metadata: {tools: [web_search]}
     snapshot: *room_a
+
+  # --- per-network social reads (design/instagram-adoption/18, P5, P11) -------
+  # `instagram_read` takes a PERSON by name; `instagram_search` finds ACCOUNTS
+  # from free text (P11); `social_fetch` is X only. The names are synthetic and
+  # need not be in the room: an honest `nothing_found` is still a correctly
+  # routed call.
+  - name: route_instagram_read_story
+    entry: tag
+    expect: reply
+    mention: true
+    input: Quinn個IG story而家有咩？
+    metadata: {tools: [instagram_read], not_tools: [social_fetch, web_search]}
+    snapshot: *room_a
+
+  - name: route_instagram_read_posted
+    entry: tag
+    expect: reply
+    mention: true
+    input: Quinn最近喺IG post咗啲咩？
+    metadata: {tools: [instagram_read], not_tools: [social_fetch, web_search]}
+    snapshot: *room_a
+
+  # Was `route_social_fetch_instagram_search` (P5): the same message, which
+  # routes to `instagram_search` since P11 moved the verb off `social_fetch`.
+  - name: route_instagram_search_account
+    entry: tag
+    expect: reply
+    mention: true
+    input: 幫我喺IG search下有冇香港行山嘅account
+    metadata: {tools: [instagram_search], not_tools: [social_fetch, instagram_read]}
+    snapshot: *room_a
+
+  - name: route_instagram_search_find_person
+    entry: tag
+    expect: reply
+    mention: true
+    input: 幫我搵下Robin個Instagram
+    metadata: {tools: [instagram_search], not_tools: [social_fetch, web_search]}
+    snapshot: *room_a
+
+  # The boundary with the row above, pinned as a pair: the same request about
+  # someone who IS in the room is a read of that person's profile by name,
+  # not a search. `Miles` is the one name this corpus already uses for a
+  # member of room A (`route_where_is_now`); every other name here is
+  # synthetic and in no room.
+  - name: route_instagram_read_find_member
+    entry: tag
+    expect: reply
+    mention: true
+    input: 幫我搵下Miles個Instagram
+    metadata: {tools: [instagram_read], not_tools: [instagram_search, social_fetch]}
+    snapshot: *room_a
+
+  - name: route_instagram_search_handle
+    entry: tag
+    expect: reply
+    mention: true
+    input: Sky個IG handle係咩？
+    metadata: {tools: [instagram_search], not_tools: [social_fetch, web_search]}
+    snapshot: *room_a
+
+  # P10 and P12: a pasted link and a typed handle are read by `instagram_read`
+  # (the link decides the read); finding an account from a name stays
+  # `instagram_search`. Every handle and shortcode here is synthetic.
+  - name: route_instagram_read_reel_link
+    entry: tag
+    expect: reply
+    mention: true
+    input: https://www.instagram.com/reel/SynthReel01/ 呢條reel入面有咩？
+    metadata: {tools: [instagram_read], not_tools: [web_fetch, social_fetch, instagram_search]}
+    snapshot: *room_a
+
+  - name: route_instagram_read_profile_link
+    entry: tag
+    expect: reply
+    mention: true
+    input: https://www.instagram.com/synth.example/ 呢個係邊個？
+    metadata: {tools: [instagram_read], not_tools: [web_fetch, social_fetch]}
+    snapshot: *room_a
+
+  - name: route_instagram_read_handle
+    entry: tag
+    expect: reply
+    mention: true
+    input: who is @synth.example on IG?
+    metadata: {tools: [instagram_read], not_tools: [social_fetch, web_search]}
+    snapshot: *room_a
+
+  - name: route_instagram_search_find_name_en
+    entry: tag
+    expect: reply
+    mention: true
+    input: find Taylor Example on Instagram
+    metadata: {tools: [instagram_search], not_tools: [instagram_read, social_fetch]}
+    snapshot: *room_a
+
+  - name: route_social_fetch_x_search
+    entry: tag
+    expect: reply
+    mention: true
+    input: 幫我喺X search下大家點講個颱風
+    metadata: {tools: [social_fetch], not_tools: [instagram_search, instagram_read]}
+    snapshot: *room_a
+
+  - name: route_social_fetch_x_link
+    entry: tag
+    expect: reply
+    mention: true
+    input: https://x.com/example/status/1234567890 呢個post講咩？
+    metadata: {tools: [social_fetch], not_tools: [instagram_read, instagram_search, web_fetch]}
+    snapshot: *room_a

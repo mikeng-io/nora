@@ -14,7 +14,7 @@ edges: []
 | network | edit arrives as | `edit_of` | sender | edit time |
 |---|---|---|---|---|
 | Signal | `envelope.editMessage` | `sent_ts = targetSentTimestamp` | envelope `source` | envelope `timestamp` |
-| WhatsApp | `message` event with `edit_of` | `message_id = edit_of` | `sender_phone`/lid, as today | `timestamp_ms` |
+| WhatsApp | `message` event with `edit_of`. A phone sends the edit as `secretEncryptedMessage` (encrypted with the original's `messageSecret`); the bridge decrypts it (whatsmeow's scheme, pinned by its vectors) when it still holds the secret | `message_id = edit_of` | `sender_phone`/lid, as today | `timestamp_ms` |
 | Instagram | `kind: "edit"` | `message_id` | none — `from_me` is null by contract | `timestamp_ms` when present, else arrival |
 | Discord | `on_raw_message_edit` | `message_id = snowflake` | `payload.message.author` | `edited_at`; an update with none is not an edit and is dropped |
 

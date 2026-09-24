@@ -3,7 +3,6 @@
   "path": "/accounts/10000001/story",
   "status": 200,
   "body": {
-    "ok": true,
     "igid": "10000001",
     "found": true,
     "username": "example_friend",
@@ -25,6 +24,14 @@
         "url": "https://instagram.fxxx1-1.fbcdn.net/v/t50/synthetic-2.mp4?oh=00_C\u0026oe=0",
         "thumbnail_url": "https://scontent.cdninstagram.com/v/t51/synthetic-2-cover.jpg?oh=00_B\u0026oe=0",
         "taken_at": 1700003600,
+        "expiring_at": 1700086400
+      },
+      {
+        "id": "900000000000000003_10000001",
+        "kind": "image",
+        "url": "https://scontent.cdninstagram.com/v/t51/synthetic-3.jpg?oh=00_D\u0026oe=0",
+        "thumbnail_url": "https://scontent.cdninstagram.com/v/t51/synthetic-3.jpg?oh=00_D\u0026oe=0",
+        "taken_at": 1700007200,
         "expiring_at": 1700086400
       }
     ]

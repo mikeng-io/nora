@@ -47,7 +47,9 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Protocol
+from zoneinfo import ZoneInfo
 
 from ..domain.models import PersonRef
 from ..domain.ports import ReverseGeocoder
@@ -130,6 +132,23 @@ _MOVEMENT_FLOOR_M = 150.0
 # slow-walking phone, not a measurement worth relaying (operator ask
 # 2026-08-16) — below brisk-walking pace. Omitted, never rendered as `0`.
 _SPEED_FLOOR_KMH = 3.0
+
+# How old a person's NEWEST fix may be before it stops meaning «now». Measured
+# 2026-09-24 over 14 days of every tracked person: a stationary phone still
+# reports on Life360's ~30-minute heartbeat (p99 inter-fix gap 30.2 min, all
+# eight people), and every gap above an hour was shared by everyone at once —
+# the collector down, not a phone asleep. 45 minutes is one missed heartbeat.
+# Past it, the record has an EDGE the model must be shown: on 2026-09-24 the
+# collector lost its Life360 login at 00:12, and a 1am ride was answered as
+# «at home all along» off a two-hour-old fix and a history that simply stopped.
+STALE_AFTER_MS = 45 * 60_000
+_TZ = ZoneInfo("Asia/Hong_Kong")
+
+
+def recorded_iso(ts_ms: int) -> str:
+    """RFC 3339 in the household's timezone — the form a model can read a
+    time in (DEC-156: raw unix-ms sent it to `calculate` to convert)."""
+    return datetime.fromtimestamp(ts_ms / 1000, tz=_TZ).isoformat(timespec="seconds")
 
 
 def movement_view(
@@ -360,8 +379,9 @@ class Whereis:
         """Where `person` was last recorded, or why Nora cannot say. NEVER raises.
 
         Statuses, each a different answer:
-          - `ok` — a position with its AGE (`age_seconds`), the address if the
-            fix carried one, and the `wire_state` that fix was in.
+          - `ok` — a position with its AGE (`age_seconds`, and `recorded_iso`),
+            and the `wire_state` that fix was in. Past `STALE_AFTER_MS` it also
+            carries `stale` and a note: the record ends there.
           - `not_found` — nobody in this conversation goes by that name (says
             nothing about whether they exist elsewhere — the same R-21 shape the
             other room tools draw).
@@ -501,8 +521,9 @@ class Whereis:
         # battery-saved report. Runs only after disclosure passed and the person
         # resolved — never for someone the room may not ask about. Best-effort: a
         # timeout or failure leaves the stored fix, which the read still returns.
+        refreshed = False
         if self._refresher is not None:
-            await self._refresher.refresh(person_id=ref.person_id)
+            refreshed = await self._refresher.refresh(person_id=ref.person_id)
         try:
             fix = await self._presence.latest_fix(
                 circle_id=self._circle.circle_id, person_id=ref.person_id
@@ -545,6 +566,25 @@ class Whereis:
             log.exception("whereis derivation read failed — answering without it")
         if fix.is_driving:
             movement["driving"] = True
+        # The record's EDGE (see `STALE_AFTER_MS`): past it, this is the last
+        # position anything recorded, not a position — say what the model is
+        # reading, because `age_seconds` alone was read as «still there».
+        stale: dict[str, Any] = {}
+        if now - fix.ts > STALE_AFTER_MS:
+            tried = (
+                " and a live refresh just now got no answer"
+                if self._refresher is not None and not refreshed else ""
+            )
+            stale = {
+                "stale": True,
+                "note": (
+                    f"This is the LAST RECORDED position, from {recorded_iso(fix.ts)}: "
+                    f"location tracking has recorded nothing for {ref.name} since"
+                    f"{tried}. Where they went after that is unknown — it is not "
+                    "where they are now. Say when it is from; do not say they are "
+                    "still there."
+                ),
+            }
         # Life360's own reported ground speed for THIS fix's instant — not a
         # 2-fix derivation, so unlike `moving`/`towards` it needs no window
         # read and is available on a person's very first recorded fix.
@@ -574,6 +614,7 @@ class Whereis:
             # not intent). A stale fix is honest and better than `unavailable`;
             # the model is told how old it is so it can say «20 分鐘前».
             "age_seconds": int(age_seconds),
+            "recorded_iso": recorded_iso(fix.ts),
             "wire_state": fix.wire_state.value,
             # DEC-156: lat/lng ALWAYS carried — the model may pass them to
             # `reverse_geocode` for a street address (Miles's request
@@ -583,6 +624,7 @@ class Whereis:
             "lat": fix.lat,
             "lng": fix.lng,
             **movement,
+            **stale,
         }
 
     def _unavailable(self, note: str, **extra: Any) -> dict[str, Any]:

@@ -229,3 +229,32 @@ no behaviour Nora can see, except step 5, which moves Python in the same PR.
    the Python adapter moves in the same PR; old verb paths removed there.
 6. **New capabilities** (`15`'s migration steps 2–3) are built only after
    step 4, on the gateway and app layers, never on the flat code.
+
+**Step 5, built 2026-09-24** (17 §P14, branch
+`mikeng-io/instagram-bridge-rest-writes`, not merged, not deployed). The four
+write routes are on §Resources' paths and the verb paths are deleted. Every
+route answers one envelope from one status table
+(`internal/transport/http/errors.go`); the legacy `statusForError` is gone, so
+`ErrUpstreamRejected` is 502 on the old routes too. Every path id parses at the
+edge, before the session gate. The Python sender, reactor and roster read, and
+the social client's not-found check, moved in the same change, and both sides
+read the same generated fixtures, requests included. What did not fit this
+document as written:
+
+- **A failed room lookup has no code of its own.** The old body's
+  `"error": "thread_lookup_failed"` distinguished it; the closed set has no
+  member for it, and a checkpoint found during the lookup must still be
+  `needs_human`. The envelope carries it as a third, optional field,
+  `"stage": "thread_lookup"`, beside the kind's own code.
+- **The closed set has no kind for a malformed body.** Every 400 answers
+  `invalid_id`, as `GET /accounts?query=` already did for a blank query.
+- **Removing a reaction is not a DELETE.** Instagram's mutation must name the
+  emoji it retracts, and a DELETE has no body, so a removal is
+  `{"emoji", "remove": true}` on the same PUT.
+- **"Success is the resource" gives the mutations thin bodies.** A sent
+  message is `{id, timestamp_ms}`; an unsend and a reaction are
+  `{confirmed}`, always present now that no `ok` stands beside it; typing
+  echoes `{typing}`.
+- **Two paths are not "the bridge talking about itself" but keep their old
+  bodies:** `/health` keeps `ok` (the container healthcheck and Nora's identity
+  read depend on it), and `/events` is unchanged.

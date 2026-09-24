@@ -1,0 +1,324 @@
+[
+ {
+  "name": "standing-compact §2: <standing_prior> carries written (the_prior_carries_when_it_was_written_against_the_turns_time)",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "    if prior is None or not prior.body.strip():\n        return ContextBlock(\n            name=\"standing_prior\",\n            body=\"(no position yet — this is the first fold for this conversation)\",\n        ).render()\n    return ContextBlock(\n        name=\"standing_prior\",\n        attrs=((\"written\", age(\n            prior.updated_at, datetime.fromtimestamp(now_ms / 1000, tz=UTC),\n        )),),\n        body=escape(prior.body.strip()),\n    ).render()",
+  "new": "    body = prior.body.strip() if prior is not None and prior.body.strip() else \"\"\n    return ContextBlock(\n        name=\"standing_prior\", body=escape(body) if body else (\n            \"(no position yet — this is the first fold for this conversation)\"\n        ),\n    ).render()",
+  "target": "tests/unit/test_debrief_render.py -k the_prior_carries_when_it_was_written_against_the_turns_time"
+ },
+ {
+  "name": "standing-compact §2: <standing_prior> carries written (the_rollup_prior_carries_when_it_was_written_against_now_ms)",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "    if prior is None or not prior.body.strip():\n        return ContextBlock(\n            name=\"standing_prior\",\n            body=\"(no position yet — this is the first fold for this conversation)\",\n        ).render()\n    return ContextBlock(\n        name=\"standing_prior\",\n        attrs=((\"written\", age(\n            prior.updated_at, datetime.fromtimestamp(now_ms / 1000, tz=UTC),\n        )),),\n        body=escape(prior.body.strip()),\n    ).render()",
+  "new": "    body = prior.body.strip() if prior is not None and prior.body.strip() else \"\"\n    return ContextBlock(\n        name=\"standing_prior\", body=escape(body) if body else (\n            \"(no position yet — this is the first fold for this conversation)\"\n        ),\n    ).render()",
+  "target": "tests/unit/test_debrief_render.py -k the_rollup_prior_carries_when_it_was_written_against_now_ms"
+ },
+ {
+  "name": "standing-compact §2: the rollup's prior age reaches the event fold's prompt",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "    if prior is None or not prior.body.strip():\n        return ContextBlock(\n            name=\"standing_prior\",\n            body=\"(no position yet — this is the first fold for this conversation)\",\n        ).render()\n    return ContextBlock(\n        name=\"standing_prior\",\n        attrs=((\"written\", age(\n            prior.updated_at, datetime.fromtimestamp(now_ms / 1000, tz=UTC),\n        )),),\n        body=escape(prior.body.strip()),\n    ).render()",
+  "new": "    body = prior.body.strip() if prior is not None and prior.body.strip() else \"\"\n    return ContextBlock(\n        name=\"standing_prior\", body=escape(body) if body else (\n            \"(no position yet — this is the first fold for this conversation)\"\n        ),\n    ).render()",
+  "target": "tests/unit/test_standing_event.py -k the_rollup_shows_a_prior_past_the_old_ceiling_with_its_age"
+ },
+ {
+  "name": "standing-compact §2: the tag path's age is against the TURN, not the wall clock",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "    prior_block = _standing_prior(prior, now_ms=trace.created_at)",
+  "new": "    prior_block = _standing_prior(\n        prior, now_ms=int(datetime.now(UTC).timestamp() * 1000))",
+  "target": "tests/unit/test_debrief_render.py -k the_prior_carries_when_it_was_written_against_the_turns_time"
+ },
+ {
+  "name": "standing-compact §3: a reasoningContent step is kind=thinking, not a (thinking) prefix",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "            return _clip(\n                raw, kind=\"thinking\", metrics=metrics, limit=_CARRIED_CHARS,\n            ), \"thinking\"",
+  "new": "            return f\"(thinking) {_clip(raw, kind='thinking', metrics=metrics, limit=_CARRIED_CHARS)}\", None",
+  "target": "tests/unit/test_debrief_render.py -k the_steps_block_replaces_reasoning_and_marks_a_thinking_step"
+ },
+ {
+  "name": "standing-compact §3: a turn with no reasoning carries no kind attribute",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "        return _clip(text, kind=\"reasoning\", metrics=metrics), None",
+  "new": "        return _clip(text, kind=\"reasoning\", metrics=metrics), \"text\"",
+  "target": "tests/unit/test_debrief_render.py -k a_turn_with_no_reasoning_renders_no_kind_attribute_anywhere"
+ },
+ {
+  "name": "standing-compact §3: a tool result carries at 4000, not 600",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "            str(result.get(\"content\")), kind=\"tool_result\", metrics=metrics,\n            limit=_CARRIED_CHARS,",
+  "new": "            str(result.get(\"content\")), kind=\"tool_result\", metrics=metrics,",
+  "target": "tests/unit/test_debrief_render.py -k a_tool_result_at_the_carried_bound_renders_whole"
+ },
+ {
+  "name": "standing-compact §3: the bound is inclusive",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "    if len(text) <= limit:",
+  "new": "    if len(text) < limit:",
+  "target": "tests/unit/test_debrief_render.py -k a_tool_result_at_the_carried_bound_renders_whole"
+ },
+ {
+  "name": "#189 on the carried bound: a clip past 4000 is counted",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "    metrics.inc(_CLIPS_METRIC, block=kind)\n",
+  "new": "",
+  "target": "tests/unit/test_debrief_render.py -k a_tool_result_one_past_the_carried_bound_is_clipped_marked_and_counted"
+ },
+ {
+  "name": "standing-compact §3: a tool result past 4000 is still cut",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "            str(result.get(\"content\")), kind=\"tool_result\", metrics=metrics,\n            limit=_CARRIED_CHARS,",
+  "new": "            str(result.get(\"content\")), kind=\"tool_result\", metrics=metrics,\n            limit=_CARRIED_CHARS + 1,",
+  "target": "tests/unit/test_debrief_render.py -k a_tool_result_one_past_the_carried_bound_is_clipped_marked_and_counted"
+ },
+ {
+  "name": "standing-compact §3: narration keeps 600",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "        return _clip(text, kind=\"reasoning\", metrics=metrics), None",
+  "new": "        return _clip(\n            text, kind=\"reasoning\", metrics=metrics, limit=_CARRIED_CHARS), None",
+  "target": "tests/unit/test_debrief_render.py -k narration_and_tool_calls_still_clip_at_the_block_bound"
+ },
+ {
+  "name": "standing-compact §3: tool calls keep 600",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "        clipped = _clip(str(use.get(\"input\")), kind=\"tool_call\", metrics=metrics)",
+  "new": "        clipped = _clip(\n            str(use.get(\"input\")), kind=\"tool_call\", metrics=metrics,\n            limit=_CARRIED_CHARS)",
+  "target": "tests/unit/test_debrief_render.py -k narration_and_tool_calls_still_clip_at_the_block_bound"
+ },
+ {
+  "name": "standing-compact §1: the tag fold is shown its prior past the old ceiling",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "            trace=trace, prior=prior,",
+  "new": "            trace=trace, prior=None if prior is not None and prior.fold_count >= 20 else prior,",
+  "target": "tests/unit/test_debrief.py -k the_prior_reaches_the_fold_on_every_turn_including_past_the_old_ceiling"
+ },
+ {
+  "name": "standing-compact §1: the tag fold is shown its prior far past the old ceiling",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "            trace=trace, prior=prior,",
+  "new": "            trace=trace, prior=None if prior is not None and prior.fold_count >= 100 else prior,",
+  "target": "tests/unit/test_debrief.py -k a_prior_far_past_the_old_ceiling_is_still_shown"
+ },
+ {
+  "name": "standing-compact §1: the render never says 'no position yet' over a prior",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "    if prior is None or not prior.body.strip():",
+  "new": "    if prior is None or not prior.body.strip() or prior.fold_count >= 20:",
+  "target": "tests/unit/test_debrief.py -k the_prior_reaches_the_fold_on_every_turn_including_past_the_old_ceiling"
+ },
+ {
+  "name": "standing-compact §1: the render never says 'no position yet' over a prior (render test)",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "    if prior is None or not prior.body.strip():",
+  "new": "    if prior is None or not prior.body.strip() or prior.fold_count >= 20:",
+  "target": "tests/unit/test_debrief_render.py -k no_prior_renders_no_age_and_a_prior_renders_no_first_fold_sentence"
+ },
+ {
+  "name": "standing-compact §1: the rollup is shown its prior past the old ceiling",
+  "file": "nora/ingest/stages/standing_event.py",
+  "old": "        prior=prior, rows=rows, display_name=wiring.display_name, tz=wiring.tz,",
+  "new": "        prior=None if prior is not None and prior.fold_count >= 20 else prior,\n        rows=rows, display_name=wiring.display_name, tz=wiring.tz,",
+  "target": "tests/unit/test_standing_event.py -k the_rollup_shows_a_prior_past_the_old_ceiling_with_its_age"
+ },
+ {
+  "name": "standing-compact §1: one model call per tag fold",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "            first = _check(reply, trace.tag_id)",
+  "new": "            first = _check(reply, trace.tag_id)\n            await _complete(\n                client, call=\"verdict\", tag_id=trace.tag_id,\n                conversation_id=trace.conversation_id,\n                prompt=(\"VERDICT-TEXT\", rendered),\n            )",
+  "target": "tests/unit/test_debrief.py -k a_tag_fold_makes_exactly_one_model_call"
+ },
+ {
+  "name": "standing-compact §1: two calls only on a consolidate retry",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "            first = _check(reply, trace.tag_id)",
+  "new": "            first = _check(reply, trace.tag_id)\n            await _complete(\n                client, call=\"verdict\", tag_id=trace.tag_id,\n                conversation_id=trace.conversation_id,\n                prompt=(\"VERDICT-TEXT\", rendered),\n            )",
+  "target": "tests/unit/test_debrief.py -k a_tag_fold_makes_two_calls_only_on_a_consolidate_retry"
+ },
+ {
+  "name": "standing-compact §1: one model call per rollup fold",
+  "file": "nora/ingest/stages/standing_event.py",
+  "old": "        body, refusal = await asyncio.wait_for(\n            _standing(), timeout=wiring.timeout_seconds,\n        )",
+  "new": "        (body, refusal), _verdict = await asyncio.wait_for(\n            asyncio.gather(_standing(), _debrief_complete(\n                wiring.client, call=\"verdict\", tag_id=\"\",\n                conversation_id=conversation_id, prompt=(\"VERDICT-TEXT\", rendered),\n            )),\n            timeout=wiring.timeout_seconds,\n        )",
+  "target": "tests/unit/test_standing_event.py -k a_rollup_fold_makes_exactly_one_model_call"
+ },
+ {
+  "name": "standing-compact §1: fold_count is never reset",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "            fold_count=(prior.fold_count + 1) if prior is not None else 1,",
+  "new": "            fold_count=(prior.fold_count + 1) if prior is not None and prior.fold_count < 20 else 1,",
+  "target": "tests/unit/test_debrief.py -k fold_count_increments_by_one_per_tag_fold_and_is_never_reset"
+ },
+ {
+  "name": "standing-compact §1: fold_count increments per tag fold",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "            fold_count=(prior.fold_count + 1) if prior is not None else 1,",
+  "new": "            fold_count=prior.fold_count if prior is not None else 1,",
+  "target": "tests/unit/test_debrief.py -k fold_count_increments_by_one_per_tag_fold_and_is_never_reset"
+ },
+ {
+  "name": "standing-compact §5: every transcript/stretch row carries its date",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "    return datetime.fromtimestamp(ts_ms / 1000, tz=tz).strftime(\"%Y-%m-%d %H:%M\")",
+  "new": "    return datetime.fromtimestamp(ts_ms / 1000, tz=tz).strftime(\"%H:%M\")",
+  "target": "tests/unit/test_debrief_render.py -k test_every_row_carries_its_date_on_the_tag_and_the_rollup_render"
+ },
+ {
+  "name": "standing-compact §5: the rollup's <conversation> carries at",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "        name=\"conversation\", attrs=((\"at\", at),), body=block,",
+  "new": "        name=\"conversation\", body=block,",
+  "target": "tests/unit/test_debrief_render.py -k test_the_rollups_conversation_carries_the_folds_own_time_and_declares_it"
+ },
+ {
+  "name": "standing-compact §5: the rollup's at is the fold's own now_ms, not the last row's time",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "    at = datetime.fromtimestamp(now_ms / 1000, tz=tz).strftime(",
+  "new": "    at = datetime.fromtimestamp(\n        (rows[-1].ts if rows else now_ms) / 1000, tz=tz).strftime(",
+  "target": "tests/unit/test_debrief_render.py -k test_the_rollups_conversation_carries_the_folds_own_time_and_declares_it"
+ },
+ {
+  "name": "standing-compact §5: the conversation block type declares at",
+  "file": "nora/domain/block_types.py",
+  "old": "       \"is; this block is only the boundary around it.\",\n       at=\"when you are folding it: now, for everything inside\"),",
+  "new": "       \"is; this block is only the boundary around it.\"),",
+  "target": "tests/unit/test_debrief_render.py -k test_the_rollups_conversation_carries_the_folds_own_time_and_declares_it"
+ },
+ {
+  "name": "standing-compact §5: a thinking clip is counted on its own label",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "                raw, kind=\"thinking\", metrics=metrics, limit=_CARRIED_CHARS,",
+  "new": "                raw, kind=\"reasoning\", metrics=metrics, limit=_CARRIED_CHARS,",
+  "target": "tests/unit/test_debrief_render.py -k test_a_thinking_clip_is_counted_on_its_own_label_and_narration_on_reasoning"
+ },
+ {
+  "name": "standing-compact M1: a thinking step between 600 and 4000 renders whole",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "                raw, kind=\"thinking\", metrics=metrics, limit=_CARRIED_CHARS,",
+  "new": "                raw, kind=\"thinking\", metrics=metrics,",
+  "target": "tests/unit/test_debrief_render.py -k test_a_thinking_step_between_the_two_bounds_renders_whole"
+ },
+ {
+  "name": "standing-compact §5: a tool result is escaped once",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "        return f\"(tool result: {clipped})\", None",
+  "new": "        return f\"(tool result: {escape(clipped)})\", None",
+  "target": "tests/unit/test_debrief_render.py -k test_step_text_is_escaped_exactly_once"
+ },
+ {
+  "name": "standing-compact §5: a tool call is escaped once",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "        return f\"(called {name} with {clipped})\", None",
+  "new": "        return f\"(called {escape(name)} with {escape(clipped)})\", None",
+  "target": "tests/unit/test_debrief_render.py -k test_step_text_is_escaped_exactly_once"
+ },
+ {
+  "name": "standing-compact §5: narration is escaped once",
+  "file": "nora/engagement/debrief_render.py",
+  "old": "        return _clip(text, kind=\"reasoning\", metrics=metrics), None",
+  "new": "        return escape(_clip(text, kind=\"reasoning\", metrics=metrics)), None",
+  "target": "tests/unit/test_debrief_render.py -k test_step_text_is_escaped_exactly_once"
+ },
+ {
+  "name": "standing-compact §5: the one escape left is render_elements', and it stops a forged step",
+  "file": "nora/domain/blocks.py",
+  "old": "        out.append(f\"<{tag} {rendered}>{escape(body(row) or '')}</{tag}>\")",
+  "new": "        out.append(f\"<{tag} {rendered}>{body(row) or ''}</{tag}>\")",
+  "target": "tests/unit/test_debrief_render.py -k test_a_tool_result_still_cannot_forge_a_step_after_the_single_escape"
+ },
+ {
+  "name": "standing-compact §5 screen: an email is an identifier",
+  "file": "nora/agent/dream_screen.py",
+  "old": "    return bool(_EMAIL.search(text) or _LONG_ID.search(text))",
+  "new": "    return bool(_LONG_ID.search(text))",
+  "target": "tests/unit/test_dream_screen.py::test_the_sink_screen_refuses_what_the_reply_floor_does_not[email]"
+ },
+ {
+  "name": "standing-compact §5 screen: a 15+-digit id is an identifier",
+  "file": "nora/agent/dream_screen.py",
+  "old": "    return bool(_EMAIL.search(text) or _LONG_ID.search(text))",
+  "new": "    return bool(_EMAIL.search(text))",
+  "target": "tests/unit/test_dream_screen.py::test_the_sink_screen_refuses_what_the_reply_floor_does_not[18-digit-id]"
+ },
+ {
+  "name": "standing-compact §5 screen: a labelled lat/lng pair is a coordinate",
+  "file": "nora/agent/dream_screen.py",
+  "old": "        if looks_like_coordinate(text) or _LABELLED_COORD.search(text):",
+  "new": "        if looks_like_coordinate(text):",
+  "target": "tests/unit/test_dream_screen.py::test_the_sink_screen_refuses_what_the_reply_floor_does_not[labelled-lat-lng]"
+ },
+ {
+  "name": "standing-compact §5 screen: a where_is dict's quoted keys are a coordinate",
+  "file": "nora/agent/dream_screen.py",
+  "old": "    r\"\\b(?:lat|latitude)\\b['\\\"]?\\s*[:=]?\\s*-?\\d{1,2}\\.\\d{3,}\"",
+  "new": "    r\"\\b(?:lat|latitude)\\b\\s*[:=]?\\s*-?\\d{1,2}\\.\\d{3,}\"",
+  "target": "tests/unit/test_dream_screen.py::test_the_sink_screen_refuses_what_the_reply_floor_does_not[where_is-dict]"
+ },
+ {
+  "name": "standing-compact §5 screen positive control: a 7-digit price is not an id",
+  "file": "nora/agent/dream_screen.py",
+  "old": "_LONG_ID = re.compile(r\"(?<![\\d.])\\d{15,}(?![\\d.])\")",
+  "new": "_LONG_ID = re.compile(r\"\\d{7,}\")",
+  "target": "tests/unit/test_dream_screen.py::test_ordinary_position_prose_numbers_and_dates_are_kept[price]"
+ },
+ {
+  "name": "standing-compact §5: the consolidate retry states the three-rank order",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "        f\"What you CONCLUDED or COMMITTED to outranks what you FOUND and have \"\n        f\"not shared, and what you found outranks what the room SAID: drop in \"\n        f\"the reverse of that order, even when the thing you drop is the more \"\n        f\"recent. Recency decides only between two things of the same \"\n        f\"kind.\\n\\n\"",
+  "new": "        f\"What you CONCLUDED outranks what the room SAID: if the choice is \"\n        f\"between dropping a judgement of your own and dropping something \"\n        f\"someone actually said, drop what they said — even when their words \"\n        f\"are the more recent of the two. Recency decides only between two \"\n        f\"things of the same kind.\\n\\n\"",
+  "target": "tests/unit/test_debrief.py -k test_the_tiebreak_is_reversed_and_recency_scoped_in_the_retry"
+ },
+ {
+  "name": "standing-compact M6: the tag fold rewrites updated_at",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "            updated_at=now_ms,\n            # The ROW-ID watermark",
+  "new": "            updated_at=prior.updated_at if prior is not None else now_ms,\n            # The ROW-ID watermark",
+  "target": "tests/unit/test_debrief.py -k test_the_priors_age_is_measured_from_the_last_write_on_the_tag_path"
+ },
+ {
+  "name": "standing-compact M7: the rollup fold rewrites updated_at",
+  "file": "nora/ingest/stages/standing_event.py",
+  "old": "        updated_at=now_ms,\n",
+  "new": "        updated_at=prior.updated_at if prior is not None else now_ms,\n",
+  "target": "tests/unit/test_standing_event.py -k test_the_rollups_prior_age_is_measured_from_the_last_write"
+ },
+ {
+  "name": "standing-compact M5: an empty batch carries the prior's watermark forward",
+  "file": "nora/engagement/stages/debrief.py",
+  "old": "                    prior.last_folded_row_id if prior is not None else None)",
+  "new": "                    None)",
+  "target": "tests/unit/test_debrief.py -k test_a_fold_with_an_empty_batch_carries_the_watermark_forward"
+ },
+ {
+  "name": "standing-compact objective v6: a finding is never something she committed to",
+  "file": "nora/dreamer/objectives/standing-debrief.md",
+  "old": " What a page, a search or any tool says is a finding and nothing more: it is never something I committed to or concluded, and what I owe is only what I said to the room.",
+  "new": "",
+  "target": "tests/unit/test_debrief.py -k test_the_objective_says_a_finding_is_never_a_commitment"
+ },
+ {
+  "name": "standing-compact objective v6: the date rule is scoped to a day-dependent clause",
+  "file": "nora/dreamer/objectives/standing-debrief.md",
+  "old": "When a clause depends on a day — something due tomorrow, a plan for tonight — write the date, not the relative word: the next fold reads this paragraph days later, and «tomorrow» is then wrong without looking wrong.",
+  "new": "Write every time as a date, never as today, tomorrow or tonight: the next fold reads this paragraph days later, and a relative word is then wrong without looking wrong.",
+  "target": "tests/unit/test_debrief.py -k test_the_objective_scopes_the_date_rule_to_a_day_dependent_clause"
+ },
+ {
+  "name": "standing-compact objective v6: the rollup framing (<conversation>, no steps)",
+  "file": "nora/dreamer/objectives/standing-debrief.md",
+  "old": " When you are folding a stretch of the room nobody addressed you in, you get that stretch (`<conversation>`, with the time you are folding at) and no steps.",
+  "new": "",
+  "target": "tests/unit/test_debrief.py -k test_the_objective_describes_the_rollups_input"
+ },
+ {
+  "name": "standing-compact objective v6: the three-rank consolidation",
+  "file": "nora/dreamer/objectives/standing-debrief.md",
+  "old": "What you CONCLUDED or COMMITTED to outranks what you FOUND and have not shared, and what you found outranks what the room SAID: drop in the reverse of that order, even when the thing you drop is the more recent.",
+  "new": "What you CONCLUDED outranks what the room SAID: if the choice is between dropping a judgement of your own and dropping something someone actually said, drop what they said — even when their words are the more recent of the two.",
+  "target": "tests/unit/test_debrief.py -k test_the_objective_ranks_a_finding_between_a_commitment_and_the_room"
+ },
+ {
+  "name": "standing-compact doc gate: a table row is its own paragraph",
+  "file": "tests/architecture/test_doc_references_resolve.py",
+  "old": "        if line.lstrip().startswith(\"|\"):",
+  "new": "        if False:",
+  "target": "tests/architecture/test_doc_references_resolve.py -k test_a_deprecated_table_row_does_not_exempt_the_live_row_beside_it"
+ }
+]

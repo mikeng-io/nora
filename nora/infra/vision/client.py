@@ -36,11 +36,15 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 
-from openai import AsyncOpenAI
+import httpx
+from openai import AsyncOpenAI, DefaultAsyncHttpxClient
 
 from nora.domain.media import parse_media_type
+from nora.domain.turn_deadline import seconds_left
 
 log = logging.getLogger("nora.vision")
 
@@ -92,34 +96,67 @@ _PROMPT = "Describe this image. If it contains text in it, transcribe that text.
 # exact behaviour through this split.
 DESCRIBE_PROMPTS = {
     "image": _PROMPT,
-    # DELIBERATELY NOT a transcription prompt, and this is the load-bearing
-    # line of the table. The first cut asked «Transcribe what is said in this
-    # audio» — which IS speech-to-text, the capability this change excludes on
-    # the grounds that a verbatim transcript is a materially larger R-18/R-28
-    # egress surface than a caption. The only screen is `scan_identifiers`, and
-    # `_serve_media`'s own docstring records that it does NOT catch a bare local
-    # number; people say addresses and phone numbers aloud. Shipping the
-    # transcription prompt while deferring the transcription safety pass would
-    # have defeated the deferral in the same commit that made it.
+    # SPEECH IS TRANSCRIBED NOW (DEC-197, operator 2026-09-22: «audio 亦都
+    # enable 佢啦 直接啟動佢 override 之前個 decision»). This line used to be
+    # the load-bearing refusal of the table — the GIST, never the words —
+    # because DEC-114 clause (3) judged a verbatim transcript a materially
+    # larger R-18/R-28 egress surface than a caption: the only screen is
+    # `scan_identifiers`, which does NOT catch a bare local number, a spaced
+    # E.164 number, an address, or a number said as words, and people say all
+    # four aloud. That clause is SUPERSEDED, not refuted, and the exposure it
+    # named is still real and still unscreened (design/media-read-lane/02 §5;
+    # the operator parked the screen's coverage, 2026-09-23).
     #
-    # So: the GIST, explicitly not the words. When STT lands as
-    # `[media.transcribe]` with its own egress analysis, that is where a
-    # verbatim transcript belongs.
+    # What stands in for it is the sentence below, and it is a REQUEST to the
+    # model, not a guarantee: the identity-bearing values the operator named —
+    # phone, ID and account numbers — are asked to be left out. Addresses are
+    # not, by the same operator direction («呢啲 group 都係 trusted 嘅 content»).
     "audio": (
-        "Say briefly what this audio is about — the gist, the tone, and who is "
-        "speaking if that is clear. Do NOT write out a word-for-word transcript, "
-        "and do not repeat any phone number, address or account number you hear. "
+        "Say what this audio is about — the tone, and who is speaking if that "
+        "is clear — and transcribe what is said, in the language it is spoken "
+        "in. Leave out any phone number, ID number or account number you hear. "
         "If nothing is audible, say so."
     ),
-    # What HAPPENS, plus on-screen text — the video analogue of `_PROMPT`'s
-    # second clause, which already ships for images. Speech is deliberately
-    # summarised rather than transcribed, for the audio reason above.
+    # What HAPPENS, plus on-screen text, plus — since the video path stopped
+    # stripping the audio track (DEC-197) — what is SAID, under the same
+    # identity-number request as `audio` above.
     "video": (
         "Describe what happens in this video, and transcribe any text on screen. "
-        "If people speak, say briefly what it is about rather than writing out "
-        "what was said."
+        "If people speak, transcribe what they say, in the language they speak "
+        "it, and leave out any phone number, ID number or account number."
     ),
 }
+
+
+# OpenCode Go's own endpoint refuses a request without this header:
+# `400 {"type":"MissingSessionID", ...}` (probed 2026-09-22 and again
+# 2026-09-24). The value is an opaque per-request routing id — NOT a secret and
+# NOT a conversation id, so nothing about the room leaks into it.
+OPENCODE_SESSION_HEADER = "x-opencode-session"
+
+
+async def _stamp_opencode_session(request: httpx.Request) -> None:
+    """A FRESH session id on every request, unless one is already set.
+
+    Fresh-per-request is the only shape that was measured (`ses_<uuid4hex>`, one
+    per call, no penalty observed); whether a stable id would buy routing
+    affinity is unverified, so this does not guess at it. A retry is a new
+    request and gets a new id, which is the measured shape too.
+    """
+    if OPENCODE_SESSION_HEADER not in request.headers:
+        request.headers[OPENCODE_SESSION_HEADER] = f"ses_{uuid.uuid4().hex}"
+
+
+def opencode_go_http_client() -> httpx.AsyncClient:
+    """The transport OpenCode Go's direct describer lane is built on.
+
+    A request hook rather than a `describe()` argument, deliberately: the header
+    is a property of the TRANSPORT, and `describe`'s whole design is that the
+    modality picks the transport (design/media-read-lane/03 §3). Built on the
+    SDK's own default client so its timeouts and connection limits are the ones
+    every other lane has.
+    """
+    return DefaultAsyncHttpxClient(event_hooks={"request": [_stamp_opencode_session]})
 
 
 # MIME subtype → the token `input_audio.format` takes. NOT the same vocabulary:
@@ -309,10 +346,13 @@ class VisionClient:
         max_bytes: int,
         timeout_seconds: float,
         loop_timeout_seconds: float,
-        direct_client: AsyncOpenAI | None = None,
+        direct_clients: Mapping[str, AsyncOpenAI] | None = None,
     ) -> None:
         self._client = client
-        self._direct_client = direct_client
+        # Provider name → its DIRECT client (`"kimi"`, `"opencode-go"`). Only
+        # the lanes some describer selects AND whose key resolved are here —
+        # an absent provider is the wiring gap `_create` refuses on.
+        self._direct_clients = dict(direct_clients or {})
         self._model = model
         self._max_tokens = max_tokens
         self._reasoning_effort = reasoning_effort
@@ -324,6 +364,12 @@ class VisionClient:
         self._configured = timeout_seconds
         self._loop_timeout = loop_timeout_seconds
 
+    @property
+    def reasoning_effort(self) -> str:
+        """The effort every describe call is made at — part of what a cached
+        video reading depends on (`VideoReadingKey.reading_digest`)."""
+        return self._reasoning_effort
+
     def _call_timeout(self, windows: int | None) -> float:
         """This call's ceiling, derived HERE and nowhere else.
 
@@ -334,12 +380,29 @@ class VisionClient:
 
         `windows is None` is every single-view read — an image, a voice note,
         the text pass — and `vision_waves` resolves it to one wave.
+
+        **And never more than `VISION_LOOP_SHARE` of what is LEFT of the
+        enclosing turn** (DEC-197 review, 2026-09-24). The derivation bounds
+        ONE invocation; reads the model issues in SEPARATE turns of the loop
+        run one after another and add up — three one-window reads at 120 s
+        each are the whole of a 360 s loop, and the loop dying is silent. And a
+        fire turn runs under `[heartbeat].timeout_seconds` (120 in production),
+        not the `[llm]` loop this client was built from. Taking the share of
+        the REMAINING time bounds every sequence of reads geometrically — each
+        leaves at least 40 % of what it found for the model to answer in — and
+        it counts whatever else the turn already spent, ffmpeg included,
+        without having to name it. Outside a turn (`seconds_left()` is `None`:
+        ingest comprehension) the derivation alone applies, as before.
         """
-        return derive_vision_timeout(
+        derived = derive_vision_timeout(
             loop_timeout_seconds=self._loop_timeout,
             configured=self._configured,
             waves=vision_waves(windows=1 if windows is None else windows),
         )
+        left = seconds_left()
+        if left is None:
+            return derived
+        return min(derived, left * VISION_LOOP_SHARE)
 
     async def describe(
         self, *, data: bytes, media_type: str, prompt: str = "", model: str = "",
@@ -371,9 +434,10 @@ class VisionClient:
 
         `provider` selects the transport: `"omniroute"` (default; the process-
         wide gateway client, `_client` — every pre-provider caller keeps its
-        exact behaviour) or `"kimi"` (the direct `_direct_client`, when one
-        was injected). A `"kimi"` provider with no direct client is a WIRING
-        GAP and answers `unavailable` — never a silent fallback to OmniRoute,
+        exact behaviour) or a DIRECT lane — `"kimi"`, `"opencode-go"` — out of
+        `_direct_clients`, when one was injected. A direct provider with no
+        client is a WIRING GAP and answers `unavailable` — never a silent
+        fallback to OmniRoute,
         which would send the video bytes to a router that drops `video_url`
         and answer with a model claiming it saw no video (R-27: an ERROR is
         never a PASS).
@@ -473,7 +537,7 @@ class VisionClient:
             try:
                 return await self._create(block, prompt, model, provider)
             except ValueError as exc:  # deterministic wiring gap — retrying
-                last_exc = exc          # cannot heal it (kimi without a direct
+                last_exc = exc          # cannot heal it (a direct lane with no
                 log.warning("vision attempt %d failed: %s", attempt + 1, exc)
                 break
             except Exception as exc:  # noqa: BLE001 — retried once, then re-raised
@@ -485,19 +549,22 @@ class VisionClient:
         self, block: dict[str, object], prompt: str, model: str = "",
         provider: str = "omniroute",
     ) -> str:
-        # `provider` picks the TRANSPORT, not the model. A kimi request whose
-        # direct client was not injected is a wiring gap — the caller has
-        # asked for a provider the composition root did not build — and
-        # answering `unavailable` is the honest fail-closed shape (R-27).
-        # Falling back to `_client` here would be silent: the request would
-        # travel through OmniRoute, which drops `video_url` content blocks
-        # (probe 2026-08-30), and the model would answer about the text it
-        # DID receive. An ERROR reported as a PASS.
+        # `provider` picks the TRANSPORT, not the model. A direct-lane request
+        # whose client was not injected is a wiring gap — the caller has asked
+        # for a provider the composition root did not build (or whose key did
+        # not resolve) — and answering `unavailable` is the honest fail-closed
+        # shape (R-27). Falling back to `_client` here would be silent: the
+        # request would travel through OmniRoute, which drops `video_url`
+        # content blocks (probe 2026-08-30), and the model would answer about
+        # the text it DID receive. An ERROR reported as a PASS.
         client = self._client
-        if provider == "kimi":
-            if self._direct_client is None:
-                raise ValueError("provider 'kimi' requested but no direct client injected")
-            client = self._direct_client
+        if provider != "omniroute":
+            direct = self._direct_clients.get(provider)
+            if direct is None:
+                raise ValueError(
+                    f"provider {provider!r} requested but no direct client injected"
+                )
+            client = direct
         response = await client.chat.completions.create(
             model=model or self._model,
             max_tokens=self._max_tokens,

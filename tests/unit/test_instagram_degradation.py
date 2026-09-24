@@ -78,7 +78,7 @@ async def bridge():
     """`(box, base_url)` — an instagram-bridge whose `/health` says whatever
     the test needs, including the 200-with-a-checkpoint the real one serves.
 
-    It also serves `/send` and `/react` **successfully**, and records every
+    It also serves the message and reaction routes **successfully**, and records every
     call. That is what makes the refusal tests below bite: pointed at a dead
     port, a degraded adapter that had LOST its refusal would still answer
     `ok=False` — from the connection error — and the assertion would pass
@@ -99,13 +99,14 @@ async def bridge():
 
     async def accept(request: web.Request) -> web.Response:
         box["calls"].append(request.path)
-        return web.json_response({"ok": True, "id": "mid.$x", "timestamp_ms": 1})
+        if request.path.endswith("/reaction"):
+            return web.json_response({"confirmed": True})
+        return web.json_response({"id": "mid.$x", "timestamp_ms": 1})
 
     app = web.Application()
     app.router.add_get("/health", health)
-    app.router.add_post("/send", accept)
-    app.router.add_post("/send-media", accept)
-    app.router.add_post("/react", accept)
+    app.router.add_post("/threads/{thread_fbid}/messages", accept)
+    app.router.add_put("/threads/{thread_fbid}/messages/{message_id}/reaction", accept)
     server = TestServer(app)
     await server.start_server()
     yield box, str(server.make_url("")).rstrip("/")

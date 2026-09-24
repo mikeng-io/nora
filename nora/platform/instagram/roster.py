@@ -1,6 +1,13 @@
 """`InstagramRoster` — who is in one Instagram group, over the bridge's
 `GET /threads/{thread_fbid}/members`.
 
+A 200 is `{room_id, title, is_group, members: [{fbid, igid, username,
+full_name}]}` with no `ok` field (P14, 2026-09-24): the status says the read
+succeeded. Only `members[].fbid` is read. Any other status is the bridge's
+error envelope and reads as `available=False`; 409 gets its own log line. The
+bodies are pinned by `tests/fixtures/instagram_bridge/members_*`, which the
+bridge's handlers generate.
+
 `nora.domain.ports.RosterSource`'s fourth implementation. Closer to
 `nora.platform.discord.roster.DiscordRoster` than to Signal's, because the read
 is an HTTP call against a service that can be down rather than a wrapper over a
@@ -82,6 +89,7 @@ this module strict, not a licence to relax it.
 from __future__ import annotations
 
 import logging
+import urllib.parse
 
 import aiohttp
 
@@ -148,7 +156,7 @@ class InstagramRoster:
             async with (
                 aiohttp.ClientSession(timeout=self._timeout) as session,
                 session.get(
-                    f"{self._base_url}/threads/{room_id}/members",
+                    f"{self._base_url}/threads/{urllib.parse.quote(room_id, safe='')}/members",
                     headers=propagation_headers(),
                 ) as resp,
             ):

@@ -16,7 +16,14 @@ from nora.domain.compute import (
     ensure_utc_job,
     normalise_compute_job,
 )
-from nora.domain.media import MediaBlob, MediaBytes, MediaObject, MediaRef, media_json
+from nora.domain.media import (
+    MediaBlob,
+    MediaBytes,
+    MediaObject,
+    MediaRef,
+    VideoReadingKey,
+    media_json,
+)
 from nora.domain.models import (
     ConversationTarget,
     DeliveryStatus,
@@ -49,6 +56,7 @@ from nora.domain.ports import (
     SendResult,
     SttResult,
     TextStyle,
+    UsernameLookup,
 )
 from nora.domain.presence import haversine_distance_m
 from nora.domain.tool_call_log import (
@@ -889,6 +897,35 @@ class FakeMediaDescriptionStore:
         self.descriptions[blob.sha256] = description
 
 
+class FakeVideoReadingStore:
+    """In-memory `VideoReadingStore`, bound to `SqlVideoReadingStore` by
+    `tests/contract/test_video_reading_store_contract.py`.
+
+    Keyed on the WHOLE `VideoReadingKey`, exactly as the table is, so a caller
+    that builds the key from the wrong geometry or model misses here as it
+    would against Postgres. `unavailable` is the store being down: `get`
+    misses and `put` swallows.
+    """
+
+    def __init__(self, *, unavailable: bool = False) -> None:
+        self.unavailable = unavailable
+        self.readings: dict[VideoReadingKey, str] = {}
+        self.gets: list[VideoReadingKey] = []
+        self.puts: list[tuple[VideoReadingKey, str]] = []
+
+    async def get(self, *, key: VideoReadingKey) -> str | None:
+        self.gets.append(key)
+        if self.unavailable:
+            return None
+        return self.readings.get(key) or None
+
+    async def put(self, *, key: VideoReadingKey, reading: str) -> None:
+        self.puts.append((key, reading))
+        if self.unavailable or not reading:
+            return
+        self.readings[key] = reading
+
+
 class FakeMediaObjectStore:
     """In-memory `MediaObjectStore`, bound to `SqlMediaObjectStore` by
     `tests/contract/test_media_object_store_contract.py`.
@@ -1605,14 +1642,17 @@ class FakeSocialSubjectIndex:
     can produce are the three the tier ladder produces, and collapsing any two
     of them is the defect the port exists to prevent:
 
-    * a person it holds an igid for, in reach → that igid, Tier 0 true;
-    * a person it holds an igid for, out of reach → the igid, Tier 0 false,
+    * a person it holds one igid for, in reach → `{igid}`, Tier 0 true;
+    * a person it holds one igid for, out of reach → `{igid}`, Tier 0 false,
       which is `refused` at the router — a boundary, not an outage;
-    * a person it has never heard of → `None`, which is `ambiguous` — and
-      NEVER a handle derived from the id, because a wrong binding does not
-      degrade the answer, it reads a different human's stories silently.
+    * a person it holds several igids for (a `frozenset` value) → all of
+      them, which is `ambiguous` at the router — never a pick;
+    * a person it has never heard of → the EMPTY set, which is «no account on
+      file» (`nothing_found`) — and NEVER a handle derived from the id,
+      because a wrong binding does not degrade the answer, it reads a
+      different human's stories silently.
 
-    Both methods fail CLOSED and neither raises, exactly as the port requires:
+    Every method fails CLOSED and none raises, exactly as the port requires:
     `unavailable=True` models an index that cannot be read at all and answers
     `None` / `False`, which costs a read that should have happened rather than
     granting one that should not have.
@@ -1623,21 +1663,26 @@ class FakeSocialSubjectIndex:
 
     def __init__(
         self,
-        igids: dict[str, str] | None = None,
+        igids: dict[str, str | frozenset[str]] | None = None,
         *,
         out_of_reach: frozenset[str] = frozenset(),
         unavailable: bool = False,
     ) -> None:
-        self.igids = dict(igids or {})
+        # One igid (a str) or several (a frozenset) per person, normalised to
+        # sets so every method reads one shape.
+        self.igids: dict[str, frozenset[str]] = {
+            pid: frozenset({held}) if isinstance(held, str) else frozenset(held)
+            for pid, held in (igids or {}).items()
+        }
         self.out_of_reach = out_of_reach
         self.unavailable = unavailable
         self.asked: list[str] = []
 
-    async def igid_for(self, *, person_id: str) -> str | None:
+    async def igids_for(self, *, person_id: str) -> frozenset[str] | None:
         self.asked.append(person_id)
         if self.unavailable:
             return None
-        return self.igids.get(person_id)
+        return self.igids.get(person_id, frozenset())
 
     async def is_tier_zero(self, *, person_id: str) -> bool:
         if self.unavailable:
@@ -1650,4 +1695,39 @@ class FakeSocialSubjectIndex:
         closed)."""
         if self.unavailable:
             return None
-        return next((pid for pid, held in self.igids.items() if held == igid), None)
+        return next((pid for pid, held in self.igids.items() if igid in held), None)
+
+
+class FakeInstagramAccountLookup:
+    """In-memory `InstagramAccountLookup` (design/instagram-adoption/15
+    §Links, P10), held to the SAME answers as the production
+    `nora.infra.social.InstagramSocialClient` by
+    `tests/contract/test_instagram_account_lookup_contract.py`.
+
+    **It does not answer every request the same way.** Its three answers are
+    the port's three:
+
+    * a username it holds, matched exactly and ASCII case-insensitively, with
+      one leading `@` ignored (the bridge's own rule) → `found` with its igid;
+    * a username it does not hold → `none`, «no such account»;
+    * `unavailable=True` → `unavailable` for everything, the bridge that
+      cannot be reached or answered a body nobody can trust.
+
+    It never picks a near match: `example_friend2` is not `example_friend`.
+    `asked` records every username, so a test can prove a refusal happened
+    before any lookup, or that no lookup was made at all.
+    """
+
+    def __init__(
+        self, accounts: dict[str, str] | None = None, *, unavailable: bool = False,
+    ) -> None:
+        self.accounts = {name.lower(): igid for name, igid in (accounts or {}).items()}
+        self.unavailable = unavailable
+        self.asked: list[str] = []
+
+    async def igid_for_username(self, *, username: str) -> UsernameLookup:
+        self.asked.append(username)
+        if self.unavailable:
+            return UsernameLookup("unavailable")
+        igid = self.accounts.get(username.strip().removeprefix("@").lower())
+        return UsernameLookup("found", igid) if igid else UsernameLookup("none")

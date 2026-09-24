@@ -1,16 +1,29 @@
 package main
 
-// The account and story routes' response bodies, pinned as files BOTH sides
-// read (design/instagram-adoption/17 P4).
+// Every response body Nora reads, pinned as files BOTH sides read
+// (design/instagram-adoption/17 P4, P14).
 //
-// Nora's Python client (`nora/infra/social/instagram_client.py`) is tested
-// against `tests/fixtures/instagram_bridge/*.json`, and this file is what
-// makes those bytes the bridge's: each fixture is GENERATED here by the real
-// handler, through the real router, over the same fakes the rest of this
-// package's tests use. A change to `profileBody`, `storyBody`, a status
-// mapping or an error envelope therefore fails here first, and the committed
-// fixture it forces is what the Python tests then read. Neither side can
-// drift alone.
+// Nora's Python side is tested against `tests/fixtures/instagram_bridge/*.json`:
+// the social client (`nora/infra/social/instagram_client.py`) for the account,
+// story and search routes, and the platform adapter (`nora/platform/instagram/`:
+// send, react, roster) for the thread routes, whose fake bridge serves exactly
+// the routes these fixtures name. This file is what makes those bytes the
+// bridge's: each fixture is GENERATED here by the real handler, through the
+// real router, over the same fakes the rest of this package's tests use. A
+// change to a body, a status mapping or the error envelope therefore fails
+// here first, and the committed fixture it forces is what the Python tests
+// then read. Neither side can drift alone.
+//
+// A write route's fixture also carries the REQUEST it was generated from
+// (`request`), and what that request made the bridge hand INSTAGRAM
+// (`upstream`: the calls the fake Instagram client received, with the fields
+// the bridge read out of the request, and never the message text). The Python
+// adapter's tests assert the adapter sends exactly `request`; this file
+// asserts the handler turns `request` into exactly `upstream`. A renamed
+// request field therefore fails here even when the response is unchanged: a
+// `remove` the handler no longer reads still answers 200 {"confirmed": true},
+// but places a reaction where one was meant to be retracted, and `upstream`
+// says `created` instead of `deleted`.
 //
 // Every value is SYNTHETIC — made-up igids, usernames, bios and CDN paths in
 // the placeholder ranges `identity.example.toml` uses. Nothing is copied
@@ -37,10 +50,12 @@ import (
 	"testing"
 
 	gateway "instagram-bridge/internal/gateway/instameow"
+	"instagram-bridge/internal/gateway/instameow/fakeig"
 
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
 	"go.mau.fi/mautrix-meta/pkg/messagix/responses"
+	"go.mau.fi/mautrix-meta/pkg/messagix/types"
 )
 
 var updateFixtures = flag.Bool("update", false,
@@ -64,20 +79,118 @@ func skipOutsideTheRepo(t *testing.T) {
 	}
 }
 
-// contractFixture is the on-disk shape. `route` and `path` document what was
-// asked; `status` and `body` are what the bridge answered.
+// contractFixture is the on-disk shape. `route`, `path` and `request` (a
+// write route's JSON body, absent on a read) document what was asked;
+// `status` and `body` are what the bridge answered.
 type contractFixture struct {
-	Route  string          `json:"route"`
-	Path   string          `json:"path"`
-	Status int             `json:"status"`
-	Body   json.RawMessage `json:"body"`
+	Route    string          `json:"route"`
+	Path     string          `json:"path"`
+	Request  json.RawMessage `json:"request,omitempty"`
+	Upstream json.RawMessage `json:"upstream,omitempty"`
+	Status   int             `json:"status"`
+	Body     json.RawMessage `json:"body"`
+}
+
+// upstreamCall is one call the fake Instagram client received, with the
+// fields the bridge filled from the caller's request. Text is recorded only as
+// its length: message text never enters a fixture any more than a span.
+type upstreamCall struct {
+	Call           string            `json:"call"`
+	ThreadID       string            `json:"thread_id,omitempty"`
+	TextLength     *int              `json:"text_length,omitempty"`
+	Mentions       []upstreamMention `json:"mentions,omitempty"`
+	ReplyTo        string            `json:"reply_to_message_id,omitempty"`
+	MessageID      string            `json:"message_id,omitempty"`
+	Emoji          string            `json:"emoji,omitempty"`
+	ReactionStatus string            `json:"reaction_status,omitempty"`
+	Filename       string            `json:"filename,omitempty"`
+	MimeType       string            `json:"mimetype,omitempty"`
+	Bytes          *int              `json:"bytes,omitempty"`
+	VoiceClip      *bool             `json:"voice_clip,omitempty"`
+	Typing         *bool             `json:"typing,omitempty"`
+}
+
+type upstreamMention struct {
+	FBID   int64 `json:"fbid"`
+	Offset int   `json:"offset"`
+	Length int   `json:"length"`
+}
+
+// upstreamOf is what a request made the bridge send Instagram, in a FIXED
+// call order (the fake records per call kind, not a timeline). An empty list
+// is a fact too: nothing reached Instagram, which is what every refusal
+// before the session gate, and the gate itself, must produce.
+func upstreamOf(f *fakeIG) []upstreamCall {
+	calls := []upstreamCall{}
+	for _, id := range f.GetThreadIDs {
+		calls = append(calls, upstreamCall{Call: "GetThread", ThreadID: id})
+	}
+	if f.TextReq != nil {
+		n := len([]rune(f.TextReq.Text.Value))
+		c := upstreamCall{Call: "SendMessage", TextLength: &n}
+		if f.TextReq.IGThreadIGID != nil {
+			c.ThreadID = *f.TextReq.IGThreadIGID
+		}
+		for _, m := range f.TextReq.Mentions {
+			c.Mentions = append(c.Mentions, upstreamMention{FBID: m.FBID, Offset: m.Offset, Length: m.Length})
+		}
+		if f.TextReq.ReplyToMessageID != nil {
+			c.ReplyTo = *f.TextReq.ReplyToMessageID
+		}
+		calls = append(calls, c)
+	}
+	for _, u := range f.Uploads {
+		n, voice := len(u.MediaData), u.IsVoiceClip
+		calls = append(calls, upstreamCall{
+			Call: "Upload", Filename: u.Filename, MimeType: u.MimeType, Bytes: &n, VoiceClip: &voice,
+		})
+	}
+	if f.MediaReq != nil {
+		c := upstreamCall{Call: "SendMedia", ThreadID: f.MediaReq.ThreadID}
+		if f.MediaReq.ReplyToMessageID != nil {
+			c.ReplyTo = *f.MediaReq.ReplyToMessageID
+		}
+		calls = append(calls, c)
+	}
+	if f.ReactReq != nil {
+		in := f.ReactReq.Input
+		calls = append(calls, upstreamCall{
+			Call: "SendReaction", ThreadID: in.ThreadID, MessageID: in.MessageID,
+			Emoji: in.Emoji, ReactionStatus: string(in.ReactionStatus),
+		})
+	}
+	if f.Unsend != nil {
+		calls = append(calls, upstreamCall{
+			Call: "UnsendMessage", ThreadID: f.Unsend.SendData.ThreadID, MessageID: f.Unsend.MessageID,
+		})
+	}
+	for i, id := range f.Typing {
+		typing := f.TypingValues[i]
+		calls = append(calls, upstreamCall{Call: "SetTyping", ThreadID: id, Typing: &typing})
+	}
+	return calls
 }
 
 const (
 	synthIGID     = "10000001"
 	synthFBID     = 100000000000001
 	synthUsername = "example_friend"
+	// The thread routes' synthetic room and message (fakeig treats this
+	// thread exactly like the measured one).
+	synthThread  = fakeig.SynthThreadShort
+	synthMessage = "mid.$synthetic0001"
+	synthSentMS  = 1700000000123
 )
+
+// synthMembers is the synthetic room's two other accounts, in both id spaces.
+func synthMembers() []*slidetypes.User {
+	return []*slidetypes.User{
+		{InteropMessagingUserFBID: synthFBID, ID: synthIGID, Username: synthUsername, FullName: "Example Friend"},
+		{InteropMessagingUserFBID: 100000000000002, ID: "10000002", Username: "example_second_member"},
+	}
+}
+
+func threadPath(suffix string) string { return "/threads/" + synthThread + suffix }
 
 func synthProfileUser() *slidetypes.User {
 	return &slidetypes.User{
@@ -126,6 +239,28 @@ func synthSearchResults() []*slidetypes.SearchResult {
 	}
 }
 
+// synthUsernameLookupResults is GET /accounts?username='s raw hits BEFORE the
+// exact-match filter (app.LookupAccountByUsername): a fuzzy hit ranks ahead
+// of the exact one, the P9 shape (17 §P9: "one exact match was not the first
+// result"). A route that ever took items[0] would answer the wrong account
+// against this fixture.
+func synthUsernameLookupResults() []*slidetypes.SearchResult {
+	return []*slidetypes.SearchResult{
+		{PK: "10000010", Username: "example_friendlier", FullName: "Not The One"},
+		{PK: synthIGID, Username: synthUsername, FullName: "Example Friend", InteropMessagingUserFBID: synthFBID},
+	}
+}
+
+// synthUsernameLookupAmbiguous is two hits that both match synthUsername
+// case-insensitively — data Instagram would never really produce (usernames
+// are unique), which is exactly what makes it the ErrUpstreamRejected case.
+func synthUsernameLookupAmbiguous() []*slidetypes.SearchResult {
+	return []*slidetypes.SearchResult{
+		{PK: synthIGID, Username: synthUsername},
+		{PK: "10000099", Username: strings.ToUpper(synthUsername)},
+	}
+}
+
 func synthReel() *responses.ReelInfoResponse {
 	image := &responses.ReelItem{ExpiringAt: 1700086400}
 	image.Pk = "900000000000000001"
@@ -151,6 +286,19 @@ func synthReel() *responses.ReelInfoResponse {
 		{Width: 1080, URL: "https://instagram.fxxx1-1.fbcdn.net/v/t50/synthetic-2.mp4?oh=00_C&oe=0"},
 	}
 
+	// A frame with NO `pk`. `storyFrame` then falls back to `item.ID`, which
+	// Instagram shapes as `<pk>_<owner igid>` — so the frame's `id` carries
+	// the story OWNER's igid. The Python client must never hand that to the
+	// model (design/instagram-adoption/18, R-18); this row is what it is
+	// tested against.
+	fallback := &responses.ReelItem{ExpiringAt: 1700086400}
+	fallback.ID = "900000000000000003_" + synthIGID
+	fallback.TakenAt = 1700007200
+	fallback.MediaType = 1
+	fallback.ImageVersions2.Candidates = []responses.Candidates{
+		{Width: 1080, Height: 1920, URL: "https://scontent.cdninstagram.com/v/t51/synthetic-3.jpg?oh=00_D&oe=0"},
+	}
+
 	return &responses.ReelInfoResponse{
 		Reels: map[string]responses.ReelInfo{
 			synthIGID: {
@@ -158,23 +306,182 @@ func synthReel() *responses.ReelInfoResponse {
 				ExpiringAt: 1700086400,
 				Seen:       0,
 				User:       &responses.User{Username: synthUsername},
-				Items:      []*responses.ReelItem{image, video},
+				Items:      []*responses.ReelItem{image, video, fallback},
 			},
 		},
 	}
 }
 
 // contractCase is one fixture: how to set the bridge up, and what to ask.
+// `method` defaults to GET; `request` is a write route's JSON body.
 type contractCase struct {
-	file   string
-	route  string
-	path   string
-	fake   func() *fakeIG
-	social func() gateway.GraphQLIssuer // nil: the default issuer resolution
-	opts   []bridgeOpt                  // optional session adjustments
+	file    string
+	route   string
+	path    string
+	method  string
+	request any
+	// upstream records what reached the fake Instagram client into the
+	// fixture. Set for every thread route (writeContractCases).
+	upstream bool
+	fake     func() *fakeIG
+	social   func() gateway.GraphQLIssuer // nil: the default issuer resolution
+	opts     []bridgeOpt                  // optional session adjustments
+}
+
+// The request bodies the write fixtures are generated from. The Python
+// adapter's tests build the same message and assert it sends exactly these.
+var (
+	synthTextRequest = map[string]any{
+		"text":     "@example_friend synthetic message text",
+		"mentions": []map[string]any{{"fbid": "100000000000001", "offset": 0, "length": 15}},
+		"reply_to": "mid.$syntheticparent",
+	}
+	synthMediaRequest = map[string]any{
+		"media": map[string]any{
+			"data_base64": "c3ludGhldGljIGJ5dGVz", // "synthetic bytes"
+			"filename":    "synthetic.png",
+			"mimetype":    "image/png",
+		},
+	}
+	synthReactionRequest = map[string]any{"emoji": "❤️", "remove": false}
+	synthRemoveRequest   = map[string]any{"emoji": "❤️", "remove": true}
+	synthTypingRequest   = map[string]any{"typing": true}
+)
+
+// writeContractCases are the thread routes (17 §P14): members, and the four
+// writes, each with the success shapes and the failure envelopes Nora's
+// adapter decides on.
+func writeContractCases() []contractCase {
+	sendOK := func() *fakeIG { return &fakeIG{SentTimestampMS: synthSentMS} }
+	return []contractCase{
+		// --- GET /threads/{thread_fbid}/members ---
+		{
+			file: "members_ok.json", route: "GET /threads/{thread_fbid}/members", path: threadPath("/members"),
+			fake: func() *fakeIG { return &fakeIG{ThreadUsersSet: true, ThreadUsers: synthMembers()} },
+		},
+		{
+			file: "members_checkpointed_409.json", route: "GET /threads/{thread_fbid}/members", path: threadPath("/members"),
+			fake: func() *fakeIG { return &fakeIG{} },
+			opts: []bridgeOpt{withState("checkpointed", "challenge required")},
+		},
+		{
+			// The room's route lookup failed against Instagram: the kind's
+			// status and code, and `stage: thread_lookup`.
+			file: "members_thread_lookup_failed_409.json", route: "GET /threads/{thread_fbid}/members", path: threadPath("/members"),
+			fake: func() *fakeIG { return &fakeIG{FetchErr: httpclient.ErrCheckpointRequired} },
+		},
+		{
+			file: "members_bad_thread_400.json", route: "GET /threads/{thread_fbid}/members", path: "/threads/not-a-thread/members",
+			fake: func() *fakeIG { return &fakeIG{} },
+		},
+		// --- POST /threads/{thread_fbid}/messages ---
+		{
+			file: "messages_text_ok.json", route: "POST /threads/{thread_fbid}/messages", path: threadPath("/messages"),
+			method: http.MethodPost, request: synthTextRequest, fake: sendOK,
+		},
+		{
+			file: "messages_media_ok.json", route: "POST /threads/{thread_fbid}/messages", path: threadPath("/messages"),
+			method: http.MethodPost, request: synthMediaRequest, fake: sendOK,
+		},
+		{
+			// Instagram refused the text as too long: 413, never retried.
+			file: "messages_too_long_413.json", route: "POST /threads/{thread_fbid}/messages", path: threadPath("/messages"),
+			method: http.MethodPost, request: synthTextRequest,
+			fake: func() *fakeIG { return &fakeIG{SendErr: errorString("Message Too Long")} },
+		},
+		{
+			file: "messages_checkpointed_409.json", route: "POST /threads/{thread_fbid}/messages", path: threadPath("/messages"),
+			method: http.MethodPost, request: synthTextRequest, fake: sendOK,
+			opts: []bridgeOpt{withState("checkpointed", "challenge required")},
+		},
+		{
+			file: "messages_thread_lookup_failed_409.json", route: "POST /threads/{thread_fbid}/messages", path: threadPath("/messages"),
+			method: http.MethodPost, request: synthTextRequest,
+			fake: func() *fakeIG { return &fakeIG{FetchErr: httpclient.ErrCheckpointRequired} },
+		},
+		{
+			file: "messages_reconnecting_503.json", route: "POST /threads/{thread_fbid}/messages", path: threadPath("/messages"),
+			method: http.MethodPost, request: synthTextRequest, fake: sendOK,
+			opts: []bridgeOpt{withNoClient()},
+		},
+		{
+			// Accepted without a message id: 502, never a 200 Nora cannot name.
+			file: "messages_no_message_id_502.json", route: "POST /threads/{thread_fbid}/messages", path: threadPath("/messages"),
+			method: http.MethodPost, request: synthTextRequest,
+			fake: func() *fakeIG { return &fakeIG{EmptySend: true} },
+		},
+		{
+			file: "messages_internal_500.json", route: "POST /threads/{thread_fbid}/messages", path: threadPath("/messages"),
+			method: http.MethodPost, request: synthTextRequest,
+			fake: func() *fakeIG { return &fakeIG{SendErr: errorString("synthetic unnamed failure")} },
+		},
+		{
+			file: "messages_bad_thread_400.json", route: "POST /threads/{thread_fbid}/messages", path: "/threads/not-a-thread/messages",
+			method: http.MethodPost, request: synthTextRequest, fake: sendOK,
+		},
+		// --- PUT /threads/{thread_fbid}/messages/{message_id}/reaction ---
+		{
+			file: "reaction_ok.json", route: "PUT /threads/{thread_fbid}/messages/{message_id}/reaction",
+			path: threadPath("/messages/" + synthMessage + "/reaction"), method: http.MethodPut,
+			request: synthReactionRequest, fake: func() *fakeIG { return &fakeIG{} },
+		},
+		{
+			file: "reaction_remove_ok.json", route: "PUT /threads/{thread_fbid}/messages/{message_id}/reaction",
+			path: threadPath("/messages/" + synthMessage + "/reaction"), method: http.MethodPut,
+			request: synthRemoveRequest, fake: func() *fakeIG { return &fakeIG{} },
+		},
+		{
+			// Accepted, and this response's post-state silent about it: the
+			// production shape. 200, reported, not failed.
+			file: "reaction_unconfirmed.json", route: "PUT /threads/{thread_fbid}/messages/{message_id}/reaction",
+			path: threadPath("/messages/" + synthMessage + "/reaction"), method: http.MethodPut,
+			request: synthReactionRequest, fake: func() *fakeIG { return &fakeIG{ReactPostStateSilent: true} },
+		},
+		{
+			file: "reaction_checkpointed_409.json", route: "PUT /threads/{thread_fbid}/messages/{message_id}/reaction",
+			path: threadPath("/messages/" + synthMessage + "/reaction"), method: http.MethodPut,
+			request: synthReactionRequest, fake: func() *fakeIG { return &fakeIG{} },
+			opts: []bridgeOpt{withState("checkpointed", "challenge required")},
+		},
+		{
+			file: "reaction_no_emoji_400.json", route: "PUT /threads/{thread_fbid}/messages/{message_id}/reaction",
+			path: threadPath("/messages/" + synthMessage + "/reaction"), method: http.MethodPut,
+			request: map[string]any{"remove": true}, fake: func() *fakeIG { return &fakeIG{} },
+		},
+		// --- DELETE /threads/{thread_fbid}/messages/{message_id} ---
+		{
+			file: "unsend_ok.json", route: "DELETE /threads/{thread_fbid}/messages/{message_id}",
+			path: threadPath("/messages/" + synthMessage), method: http.MethodDelete,
+			fake: func() *fakeIG { return &fakeIG{} },
+		},
+		{
+			file: "unsend_unconfirmed.json", route: "DELETE /threads/{thread_fbid}/messages/{message_id}",
+			path: threadPath("/messages/" + synthMessage), method: http.MethodDelete,
+			fake: func() *fakeIG { return &fakeIG{UnconfirmedUnsend: true} },
+		},
+		// --- PUT /threads/{thread_fbid}/typing ---
+		{
+			file: "typing_ok.json", route: "PUT /threads/{thread_fbid}/typing", path: threadPath("/typing"),
+			method: http.MethodPut, request: synthTypingRequest, fake: func() *fakeIG { return &fakeIG{} },
+		},
+		{
+			// The one route that needs the realtime socket.
+			file: "typing_socket_down_503.json", route: "PUT /threads/{thread_fbid}/typing", path: threadPath("/typing"),
+			method: http.MethodPut, request: synthTypingRequest, fake: func() *fakeIG { return &fakeIG{} },
+			opts: []bridgeOpt{withConnected(false)},
+		},
+	}
 }
 
 func contractCases() []contractCase {
+	writes := writeContractCases()
+	for i := range writes {
+		writes[i].upstream = true
+	}
+	return append(readContractCases(), writes...)
+}
+
+func readContractCases() []contractCase {
 	return []contractCase{
 		{
 			file: "account_ok.json", route: "GET /accounts/{igid}", path: "/accounts/" + synthIGID,
@@ -239,8 +546,92 @@ func contractCases() []contractCase {
 			fake: func() *fakeIG { return &fakeIG{} },
 		},
 		{
-			file: "accounts_search_username_not_built_501.json", route: "GET /accounts", path: "/accounts?username=example",
+			// The exact-match rule (app.LookupAccountByUsername, 17 P9/P10):
+			// a fuzzy hit ranks first, and this route must still answer the
+			// exact one rather than items[0] — the P9 case where "one exact
+			// match was not the first result".
+			file: "accounts_by_username_found.json", route: "GET /accounts", path: "/accounts?username=" + synthUsername,
+			fake: func() *fakeIG {
+				return &fakeIG{SearchResultsSet: true, SearchResults: synthUsernameLookupResults()}
+			},
+		},
+		{
+			// No hit equals the input exactly: an empty list, the same
+			// "search found nobody" convention ?query= already uses.
+			file: "accounts_by_username_not_found.json", route: "GET /accounts", path: "/accounts?username=nonexistent_handle",
+			fake: func() *fakeIG {
+				return &fakeIG{SearchResultsSet: true, SearchResults: synthUsernameLookupResults()}
+			},
+		},
+		{
+			// Malformed input never reaches the use case: 400 before the
+			// session gate, and domain.ParseUsername's own text (which
+			// embeds the raw input) never reaches this envelope.
+			file: "accounts_by_username_bad_username_400.json", route: "GET /accounts", path: "/accounts?username=bad-username",
 			fake: func() *fakeIG { return &fakeIG{} },
+		},
+		{
+			// Two exact, case-insensitive matches for one username cannot
+			// happen for real data (usernames are unique): 502
+			// upstream_rejected, never a silent items[0] pick.
+			file: "accounts_by_username_ambiguous_502.json", route: "GET /accounts", path: "/accounts?username=" + synthUsername,
+			fake: func() *fakeIG {
+				return &fakeIG{SearchResultsSet: true, SearchResults: synthUsernameLookupAmbiguous()}
+			},
+		},
+		// GET /posts/{shortcode} (17 P12), on the new conventions. The
+		// upstream bytes behind these are UNMEASURED and synthetic
+		// (fakeig/posts.go): a carousel of three, mixed, in order.
+		{
+			file: "posts_carousel_ok.json", route: "GET /posts/{shortcode}", path: "/posts/" + fakeig.CarouselShortcode,
+			fake: func() *fakeIG { return &fakeIG{} },
+		},
+		{
+			// A shortcode outside base64url: refused at the edge.
+			file: "posts_bad_shortcode_400.json", route: "GET /posts/{shortcode}", path: "/posts/not.a.shortcode",
+			fake: func() *fakeIG { return &fakeIG{} },
+		},
+		{
+			// Instagram answered 404 for the decoded id.
+			file: "posts_not_found_404.json", route: "GET /posts/{shortcode}", path: "/posts/C3L9IQOygAE",
+			fake: func() *fakeIG { return &fakeIG{} },
+		},
+		{
+			// Any other refusal, including a failure inside an HTTP 200. A
+			// deleted post and a private one Nora does not follow are
+			// expected to land here or at 404; which, is the live probe's.
+			file: "posts_upstream_rejected_502.json", route: "GET /posts/{shortcode}", path: "/posts/" + fakeig.CarouselShortcode,
+			fake: func() *fakeIG {
+				return &fakeIG{MediaErr: fakeig.LibraryStatusError(fakeig.CarouselMediaID, 400)}
+			},
+		},
+		{
+			// Longer than 11 characters: well formed, no decoding known.
+			file: "posts_long_shortcode_501.json", route: "GET /posts/{shortcode}", path: "/posts/" + fakeig.CarouselShortcode + "xyz",
+			fake: func() *fakeIG { return &fakeIG{} },
+		},
+		// The three failure envelopes Nora's `instagram_search` reads as
+		// `unavailable` (design/instagram-adoption/17 P11): the session
+		// needs a human (409), Instagram rejected the search (502), and no
+		// session to search with (503). Each is the envelope, never the old
+		// `{"ok": false}` body, so the Python client is tested against the
+		// shape this route actually answers.
+		{
+			file: "accounts_search_checkpointed_409.json", route: "GET /accounts", path: "/accounts?query=example",
+			fake: func() *fakeIG { return &fakeIG{SearchErr: httpclient.ErrCheckpointRequired} },
+		},
+		{
+			file: "accounts_search_upstream_rejected_502.json", route: "GET /accounts", path: "/accounts?query=example",
+			fake: func() *fakeIG {
+				return &fakeIG{SearchErr: (&types.ErrorResponse{Errors: []*types.GraphQLError{
+					{Message: "synthetic field exception", Summary: "Query error", Code: 1675030},
+				}}).AsError()}
+			},
+		},
+		{
+			file: "accounts_search_reconnecting_503.json", route: "GET /accounts", path: "/accounts?query=example",
+			fake: func() *fakeIG { return &fakeIG{} },
+			opts: []bridgeOpt{withNoClient()},
 		},
 	}
 }
@@ -251,12 +642,33 @@ func runContractCase(t *testing.T, tc contractCase) contractFixture {
 	if tc.social != nil {
 		opts = append(opts, withIssuer(tc.social()))
 	}
-	b := newTestBridge(t, tc.fake(), opts...)
-	req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+	f := tc.fake()
+	b := newTestBridge(t, f, opts...)
+	method := tc.method
+	if method == "" {
+		method = http.MethodGet
+	}
+	var reqBody json.RawMessage
+	if tc.request != nil {
+		blob, err := json.Marshal(tc.request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reqBody = blob
+	}
+	req := httptest.NewRequest(method, tc.path, bytes.NewReader(reqBody))
 	rec := httptest.NewRecorder()
 	b.routes().ServeHTTP(rec, req)
+	var upstream json.RawMessage
+	if tc.upstream {
+		blob, err := json.Marshal(upstreamOf(f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		upstream = blob
+	}
 	return contractFixture{
-		Route: tc.route, Path: tc.path, Status: rec.Code,
+		Route: tc.route, Path: tc.path, Request: reqBody, Upstream: upstream, Status: rec.Code,
 		Body: json.RawMessage(bytes.TrimSpace(rec.Body.Bytes())),
 	}
 }
@@ -294,6 +706,15 @@ func TestContractFixtures(t *testing.T) {
 				t.Fatalf("%s: route/path/status = %s %s %d, fixture has %s %s %d",
 					tc.file, got.Route, got.Path, got.Status, want.Route, want.Path, want.Status)
 			}
+			if !jsonEqual(t, got.Request, want.Request) {
+				t.Errorf("%s: the request no longer matches the fixture's: got %s, want %s",
+					tc.file, got.Request, want.Request)
+			}
+			if !jsonEqual(t, got.Upstream, want.Upstream) {
+				t.Errorf("%s: the request no longer reaches Instagram as the fixture says — "+
+					"the handler reads the request differently (a renamed field?).\n got: %s\nwant: %s",
+					tc.file, got.Upstream, want.Upstream)
+			}
 			// Compared as decoded JSON, not bytes: indentation is the
 			// fixture's, key order and spacing are the encoder's.
 			var gotBody, wantBody any
@@ -309,6 +730,70 @@ func TestContractFixtures(t *testing.T) {
 					"change on both sides.\n got: %s\nwant: %s", tc.file, got.Body, want.Body)
 			}
 		})
+	}
+}
+
+// jsonEqual compares two JSON values decoded, treating absent as absent.
+func jsonEqual(t *testing.T, a, b json.RawMessage) bool {
+	t.Helper()
+	if len(a) == 0 || len(b) == 0 {
+		return len(a) == len(b)
+	}
+	var av, bv any
+	if err := json.Unmarshal(a, &av); err != nil {
+		t.Fatalf("not JSON: %s", a)
+	}
+	if err := json.Unmarshal(b, &bv); err != nil {
+		t.Fatalf("not JSON: %s", b)
+	}
+	return reflect.DeepEqual(av, bv)
+}
+
+// No fixture body carries the `ok` field (P14): success is the resource and
+// the status says it succeeded; failure is the envelope. A body that kept
+// `ok` would be a shape Nora's side no longer reads, still pinned as if it did.
+func TestNoContractFixtureCarriesOk(t *testing.T) {
+	for _, tc := range contractCases() {
+		got := runContractCase(t, tc)
+		var body map[string]any
+		if err := json.Unmarshal(got.Body, &body); err != nil {
+			t.Fatalf("%s: body is not a JSON object: %s", tc.file, got.Body)
+		}
+		if _, has := body["ok"]; has {
+			t.Errorf("%s: the body carries `ok`: %s", tc.file, got.Body)
+		}
+		if got.Status != http.StatusOK {
+			env, _ := body["error"].(map[string]any)
+			if len(body) != 1 || env["code"] == nil || env["message"] == nil {
+				t.Errorf("%s: a %d is not the error envelope: %s", tc.file, got.Status, got.Body)
+			}
+		}
+	}
+}
+
+// Every write route has a fixture, success and failure both, so the Python
+// adapter can be tested against every route it calls.
+func TestEveryThreadRouteHasAFixture(t *testing.T) {
+	have := map[string]map[bool]bool{}
+	for _, tc := range writeContractCases() {
+		if have[tc.route] == nil {
+			have[tc.route] = map[bool]bool{}
+		}
+		have[tc.route][runContractCase(t, tc).Status == http.StatusOK] = true
+	}
+	for _, route := range []string{
+		"GET /threads/{thread_fbid}/members",
+		"POST /threads/{thread_fbid}/messages",
+		"DELETE /threads/{thread_fbid}/messages/{message_id}",
+		"PUT /threads/{thread_fbid}/messages/{message_id}/reaction",
+		"PUT /threads/{thread_fbid}/typing",
+	} {
+		if !have[route][true] {
+			t.Errorf("%s has no success fixture", route)
+		}
+		if route != "DELETE /threads/{thread_fbid}/messages/{message_id}" && !have[route][false] {
+			t.Errorf("%s has no failure fixture", route)
+		}
 	}
 }
 

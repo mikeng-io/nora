@@ -3,7 +3,6 @@
   "path": "/accounts/10000001",
   "status": 200,
   "body": {
-    "ok": true,
     "igid": "10000001",
     "username": "example_friend",
     "full_name": "Example Friend",

@@ -132,6 +132,25 @@ async def test_whereis_returns_the_latest_fix_with_its_age(persons, store):
     assert "address" not in out
     assert out["lat"] == 22.44 and out["lng"] == 114.02
     assert out["wire_state"] == "live"
+    # Twenty minutes is inside one Life360 heartbeat: a live record.
+    assert "stale" not in out
+    assert out["recorded_iso"].startswith("2001-09-09T")
+
+
+async def test_a_fix_past_the_record_edge_says_the_record_stopped(persons, store):
+    """2026-09-24: the collector lost its login at 00:12 and `where_is`
+    answered «Home» off a 2h17m-old fix with the refresh silently failing;
+    the model said «at home all along». Past `STALE_AFTER_MS` the answer says
+    what it is — the last recorded position, and that nothing came after."""
+    await _record(store, person="miles_novak", ts=NOW - 2 * 3_600_000)
+    refresher = _FakeRefresher(ok=False)
+    w = _whereis(persons, store, members=(MILES, GRANT, NORA), refresher=refresher)
+    out = await w.locate("Miles", now_ms=NOW)
+    assert out["status"] == "ok"
+    assert out["stale"] is True
+    assert out["recorded_iso"] in out["note"]
+    assert "LAST RECORDED" in out["note"]
+    assert "live refresh just now got no answer" in out["note"]
 
 
 async def test_whereis_forces_a_live_refresh_before_reading(persons, store):

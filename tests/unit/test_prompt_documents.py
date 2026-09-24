@@ -69,8 +69,6 @@ from nora.engagement.debrief_render import (
     render_debrief_input,
     render_debrief_turn,
     render_rollup_input,
-    render_rollup_verdict_input,
-    render_verdict_input,
 )
 from nora.infra.transit.arrivals import Answer, Departure, Direction, describe
 from nora.ingest.relevance_gate import render_context
@@ -425,19 +423,12 @@ BUILDERS = {
     "debrief.turn": lambda body="去邊食", *, name="Grant": render_debrief_turn(
         trace=trace(body, name=name), display_name="Nora", metrics=Metrics(),
         tz=UTC),
-    "debrief.verdict": lambda body="去邊食", *, name="Grant": render_verdict_input(
-        trace=trace(body, name=name), display_name="Nora", metrics=Metrics(),
-        tz=UTC),
     "debrief.fold": lambda body="去邊食", *, name="Grant": render_debrief_input(
         trace=trace(body, name=name), prior=standing(), display_name="Nora",
         metrics=Metrics(), tz=UTC),
     "debrief.rollup": lambda body="去邊食", *, name="Grant": render_rollup_input(
         prior=standing(), rows=(row(body, name=name),), display_name="Nora",
-        tz=UTC),
-    "debrief.rollup_verdict": (
-        lambda body="去邊食", *, name="Grant": render_rollup_verdict_input(
-            rows=(row(body, name=name),), display_name="Nora", tz=UTC)
-    ),
+        tz=UTC, now_ms=NOW_MS),
     "relevance_gate": lambda body="去邊食", *, name="Grant": render_context(
         (row(body, name=name),), (standing().body, TS), now=NOW),
     "proactive": proactive,
@@ -450,7 +441,7 @@ BUILDERS = {
 
 
 async def render(name: str, body: str = "去邊食", *, who: str = "Grant") -> str:
-    """One builder's bytes. `await`s the five adaptors and calls the ten pure
+    """One builder's bytes. `await`s the five adaptors and calls the eight pure
     functions, so a caller never has to know which is which."""
     result = BUILDERS[name](body, name=who)
     return await result if hasattr(result, "__await__") else result
@@ -480,21 +471,17 @@ SHAPES = {
 <room_messages description fields>
   <m from n>""",
     "debrief.fold": """
-<standing_prior description>
+<standing_prior description fields written>
 <turn at description fields outcome>
   <what_happened description>
   <transcript description fields>
     <m at from>
     <m at delivery from>
-  <reasoning description fields>
+  <steps description fields>
     <step role>""",
     "debrief.rollup": """
-<standing_prior description>
-<conversation description>
-  <stretch description fields>
-    <m at from>""",
-    "debrief.rollup_verdict": """
-<conversation description>
+<standing_prior description fields written>
+<conversation at description fields>
   <stretch description fields>
     <m at from>""",
     "debrief.turn": """
@@ -503,15 +490,7 @@ SHAPES = {
   <transcript description fields>
     <m at from>
     <m at delivery from>
-  <reasoning description fields>
-    <step role>""",
-    "debrief.verdict": """
-<turn at description fields outcome>
-  <what_happened description>
-  <transcript description fields>
-    <m at from>
-    <m at delivery from>
-  <reasoning description fields>
+  <steps description fields>
     <step role>""",
     "note_candidates": """
 <room description fields label>
@@ -545,7 +524,7 @@ SHAPES = {
 <now description>
 <presence description>
 <notes description fields>
-  <note about n title>
+  <note about n room title unprompted>
 <rooms description>
 <decisions days description fields>""",
     "relevance_gate": """

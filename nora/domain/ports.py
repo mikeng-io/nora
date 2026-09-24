@@ -210,6 +210,7 @@ from nora.domain.media import MediaBlob as MediaBlob
 from nora.domain.media import MediaBytes as MediaBytes
 from nora.domain.media import MediaObject as MediaObject
 from nora.domain.media import MediaRef as MediaRef
+from nora.domain.media import VideoReadingKey as VideoReadingKey
 from nora.domain.models import (
     ConversationTarget,
     DeliveryStatus,
@@ -223,7 +224,6 @@ from nora.domain.models import (
 )
 from nora.domain.parking import StreetParking as StreetParking
 from nora.domain.standing import Standing as Standing
-from nora.domain.turn_verdict import TurnVerdict as TurnVerdict
 from nora.domain.utf16 import utf16_len
 
 # `PlatformIdentity` is re-exported, not declared here — it moved next to
@@ -1148,6 +1148,25 @@ def speakable(text: str) -> bool:
 
 
 @runtime_checkable
+class VideoReadingStore(Protocol):
+    """Durable cache of question-less VIDEO readings, keyed on everything the
+    reading depends on (`VideoReadingKey`). Never raises.
+
+    Separate from `MediaDescriptionStore` on purpose: that one's durable tier
+    IS `media_objects`, whose row promises Nora holds the bytes — and a clip
+    read by URL has no blob. A reading keyed by more than a sha256 cannot live
+    in a table every handle lookup and search reads as a sha256 either.
+
+    A failure degrades to a MISS (one re-read), never the message: `get`
+    answers None, `put` swallows.
+    """
+
+    async def get(self, *, key: VideoReadingKey) -> str | None: ...
+
+    async def put(self, *, key: VideoReadingKey, reading: str) -> None: ...
+
+
+@runtime_checkable
 class MediaDescriptionStore(Protocol):
     """The durable half of media dedup (sticker spec §4.1). Never raises.
 
@@ -1630,7 +1649,8 @@ class SteamPresenceProvider(Protocol):
 @runtime_checkable
 class SocialProvider(Protocol):
     """`{platform, what, target, limit} -> {status, ...}` social reads, behind
-    the `social_fetch` tool (DEC-151). NEVER raises — a transport failure of
+    the `social_fetch` (DEC-151), `instagram_read` and `instagram_search`
+    (design/instagram-adoption/18) tools. NEVER raises — a transport failure of
     the bridge call is `{"status": "unavailable"}`, never an exception into
     the loop (R-5), and the R-27 three states apply end to end: an error is
     never a `nothing_found`.
@@ -1644,8 +1664,9 @@ class SocialProvider(Protocol):
     `tests/contract/test_social_provider_contract.py`, and all three pass it.
 
     Two DECLARED status extensions ride beside the core three on this port,
-    both of them only reachable on the Instagram story row, and both named
-    here so they cannot arrive silently (`nora.agent.ports
+    both of them produced by `SocialRouter` on a PERSON-keyed Instagram read
+    (`ambiguous` on profile and story, `refused` on story only), and both
+    named here so they cannot arrive silently (`nora.agent.ports
     .DECLARED_STATUS_EXTENSIONS` is where the vocabulary is declared):
 
       * `ambiguous` — the subject did not resolve. `target` is a `person_id`
@@ -1702,19 +1723,25 @@ class SocialSubjectIndex(Protocol):
     revocable — a human reads one file and deletes one line — which inferred
     memory supports neither of.
 
-    Two methods rather than one fused answer, because the two failures are
-    different claims the model must not conflate: an unresolved subject is
-    `ambiguous` («I don't know who that is on there»), an out-of-tier one is
-    `refused` («I'm not going to look»).
+    Separate methods rather than one fused answer, because the failures are
+    different claims the model must not conflate. `igids_for` returns EVERY
+    igid on file for the person, and its caller tells three states apart
+    (design/instagram-adoption/18, 2026-09-24): none on file is
+    `nothing_found` («no account on file, so I didn't look»), several is
+    `ambiguous` («I can't tell which, so I didn't look»), and `None` — the
+    index could not be read — is `unavailable`. An out-of-tier person is
+    `refused` («I'm not going to look»). The earlier `igid_for -> str | None`
+    folded all three unresolved cases into one `None`, and the router had to
+    call every one of them `ambiguous`.
 
-    **Neither method raises**, and both fail CLOSED: an index that cannot be
-    read answers `None` / `False`, which costs a read that should have
-    happened and never grants one that should not have.
+    **No method raises**, and all fail CLOSED: an index that cannot be read
+    answers `None` / `False`, which costs a read that should have happened
+    and never grants one that should not have.
 
     `person_for_igid` is the REVERSE lookup, and it exists for links
     (design/instagram-adoption/15 §Links): a link names ONE account, so its
     reach check runs `igid -> person -> is_tier_zero` on the igid the link
-    named. Re-deriving through `igid_for` would turn a friend with two
+    named. Re-deriving through `igids_for` would turn a friend with two
     accounts into `ambiguous` although the link said which one. An igid that
     maps to no person is `None`, which the link path answers `refused`.
 
@@ -1724,11 +1751,54 @@ class SocialSubjectIndex(Protocol):
     holds it and `nora.testing.FakeSocialSubjectIndex` to the same answers.
     """
 
-    async def igid_for(self, *, person_id: str) -> str | None: ...
+    async def igids_for(self, *, person_id: str) -> frozenset[str] | None: ...
 
     async def is_tier_zero(self, *, person_id: str) -> bool: ...
 
     async def person_for_igid(self, *, igid: str) -> str | None: ...
+
+
+@dataclass(frozen=True)
+class UsernameLookup:
+    """The answer to «which igid holds this Instagram username?»
+    (design/instagram-adoption/15 §Links, /17 P9, P10).
+
+    Three states, kept apart because each is a different sentence:
+
+    * `found`: exactly one account holds the username, exactly (ASCII,
+      case-insensitive); `igid` is its id, and it never leaves the router;
+    * `none`: the lookup ran and no account holds it, which is `nothing_found`;
+    * `unavailable`: the lookup could not be made or answered in a shape
+      nothing can trust, which is `unavailable`, never «no such account».
+    """
+
+    status: Literal["found", "none", "unavailable"]
+    igid: str = ""
+
+
+@runtime_checkable
+class InstagramAccountLookup(Protocol):
+    """`username -> igid`, over the instagram-bridge's exact lookup
+    (`GET /accounts?username=`, design/instagram-adoption/15 §Links).
+
+    The RESOLUTION half of a typed handle or a pasted link. It is not the
+    person index: `identity.toml`'s `username` is display metadata, read and
+    never matched, because handles rename, and a link usually names someone
+    who is not in the file at all (15). Only `SocialRouter` calls it, and the
+    igid it answers is handed to a backend or to
+    `SocialSubjectIndex.person_for_igid`, never to the model (R-18).
+
+    **Never raises**, and fails closed: anything it cannot answer is
+    `unavailable`. **Never re-picks**: an answer is `found` only for an
+    account whose username IS the one asked for, whatever order the bridge
+    listed accounts in (17 P9 measured an exact match that was not first).
+
+    The production implementation is
+    `nora.infra.social.InstagramSocialClient`; `nora.testing
+    .FakeInstagramAccountLookup` is the fake.
+    """
+
+    async def igid_for_username(self, *, username: str) -> UsernameLookup: ...
 
 
 @runtime_checkable
@@ -2541,73 +2611,6 @@ class StandingStore(Protocol):
 
 
 @runtime_checkable
-class TurnVerdictStore(Protocol):
-    """Where the debrief's per-turn judgement is written (26 §3).
-
-    **One verb, and the absent one is the point.** There is no `write`, no
-    upsert and no `supersede`: a `TurnVerdict` is written ONCE and never
-    rewritten, so the port offers no path that could rewrite it — the same
-    move `DreamSink` makes by having no delete. A rule expressed as a type
-    cannot be forgotten by either side; the same rule in a docstring is
-    remembered until the night someone is tired.
-
-    That matters more here than it looks, because the split between this and
-    `Standing` was found by a bug: per-turn fields lived on the
-    per-conversation row, and the re-derivation trigger read a `grounded` flag
-    the NEXT TURN had already overwritten. Making the rewrite unrepresentable
-    is what stops that returning.
-
-    `read` exists for the re-derivation path and for the contract suite.
-    Nothing on the reply path calls it — a verdict is written and forgotten
-    until something rebuilds a position from it.
-    """
-
-    async def save(self, *, verdict: TurnVerdict) -> None:
-        """Write this turn's verdict. Raises if the turn already has one —
-        that means it was debriefed twice, and silently overwriting would hide
-        it."""
-        ...
-
-    async def read(self, *, tag_id: str) -> TurnVerdict | None:
-        """One turn's verdict, or `None`."""
-        ...
-
-    async def latest_ungrounded(
-        self, *, conversation_id: str
-    ) -> TurnVerdict | None:
-        """The newest UNGROUNDED verdict in this conversation, or `None`.
-
-        The read S2's trigger needs, and a DIFFERENT question from `read`: the
-        trigger asks "is there an ungrounded verdict this position has not been
-        re-derived from", not "how did this turn go". Keyed on
-        `conversation_id` alone because `turn_verdict` has no platform column —
-        a `tag_id` is already globally unique, so the row needs no second axis.
-
-        **Ungrounded-only, and a `latest` of EITHER kind is deliberately NOT on
-        this port** — this replaced one rather than joining it. That read
-        answers a question which coincides with the right one most of the time,
-        and the gap is the ORDINARY shape of a successful turn: an ungrounded
-        verdict goes unconsumed for a turn (the trigger declines because the
-        read failed — R-27's «I could not check»), that turn's own fold
-        succeeds and saves a GROUNDED verdict, and from then on the newest
-        verdict is grounded and the older ungrounded one is buried. Never acted
-        on, and the by-trigger counter reads zero — which §6 interprets as the
-        trigger having degraded into a clock. Measured over three turns before
-        this method existed.
-
-        So the wrong read is made UNREPRESENTABLE rather than documented — the
-        same move this port already makes by having no `write`. A rule
-        expressed as a type cannot be forgotten by either side; the same rule
-        in a docstring is remembered until the night someone is tired (cold
-        review, 2026-08-28).
-
-        `None` when nothing here has been judged ungrounded, which is the
-        ordinary state and is not a reason to re-derive.
-        """
-        ...
-
-
-@runtime_checkable
 class DecisionLogStore(Protocol):
     """Where every ambient decision is written, and where the NEXT decider
     reads what the others already did (issue #199).
@@ -2615,8 +2618,8 @@ class DecisionLogStore(Protocol):
     **Append-only, and the absent verbs are the point.** There is no `update`,
     no `delete` and no upsert: a decision happened, and a log whose rows can be
     rewritten is not a record of what happened — it is a record of what somebody
-    later wanted to have happened. The same move `TurnVerdictStore` makes by
-    having no `write` and `DreamSink` by having no delete. `id` is the primary
+    later wanted to have happened. The same move `DreamSink` makes by having no
+    delete. `id` is the primary
     key, so a duplicate is a caller reusing an id rather than a second decision,
     and Postgres says so.
 

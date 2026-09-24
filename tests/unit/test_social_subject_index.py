@@ -59,20 +59,29 @@ async def test_a_policy_with_only_star_rooms_has_no_tier_zero_at_all(tmp_path):
     assert await index.is_tier_zero(person_id="jordan") is False
 
 
-async def test_two_accounts_are_ambiguous_never_a_pick(tmp_path):
+async def test_two_accounts_are_returned_as_two_never_a_pick(tmp_path):
     """Nothing in a `person_id` says which of a friend's accounts was meant,
-    and a story read is visible to its author."""
+    and reading the wrong one reads a different human, so the index hands back BOTH
+    and the router answers `ambiguous`. Collapsing them to one here, or to
+    `None`, is what this pins against."""
     index = PersonsSubjectIndex(
         _persons(tmp_path), _policy(_room(frozenset({"jordan", "robin"}), "g")),
     )
-    assert await index.igid_for(person_id="robin") is None
-    assert await index.igid_for(person_id="jordan") == "10000001"   # positive control
+    assert await index.igids_for(person_id="robin") == frozenset({"10000002", "10000003"})
+    assert await index.igids_for(person_id="jordan") == frozenset({"10000001"})
+
+
+async def test_no_account_on_file_is_the_empty_set_not_none(tmp_path):
+    """Empty is «no account on file» (`nothing_found`); `None` is «I could not
+    read the index» (`unavailable`). They are different sentences."""
+    index = PersonsSubjectIndex(_persons(tmp_path), _policy())
+    assert await index.igids_for(person_id="nobody") == frozenset()
 
 
 async def test_the_forward_lookup_never_answers_the_fbid(tmp_path):
     index = PersonsSubjectIndex(_persons(tmp_path), _policy())
-    assert await index.igid_for(person_id="jordan") == "10000001"
-    assert await index.igid_for(person_id="jordan") != "100000000000001"
+    assert await index.igids_for(person_id="jordan") == frozenset({"10000001"})
+    assert "100000000000001" not in (await index.igids_for(person_id="jordan") or ())
 
 
 async def test_each_of_two_accounts_maps_back_to_its_owner(tmp_path):

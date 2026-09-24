@@ -316,3 +316,16 @@ def test_the_online_now_ports_conform_in_both_implementations():
         DiscordVoicePresence(adapter=DiscordAdapter("tok")), VoicePresenceSource,
     )
     assert isinstance(FakeVoicePresenceSource(), VoicePresenceSource)
+
+
+def test_the_video_reading_stores_conform_to_the_port():
+    """`VideoReadingStore`'s two implementations, at the name level; behaviour
+    is `tests/contract/test_video_reading_store_contract.py`'s for both."""
+    from nora.domain.ports import VideoReadingStore
+    from nora.infra.sql.engine import create_sql_engine
+    from nora.infra.sql.video_readings import SqlVideoReadingStore
+    from nora.testing import FakeVideoReadingStore
+
+    engine = create_sql_engine("postgresql+asyncpg://u:p@127.0.0.1:1/db")
+    assert isinstance(SqlVideoReadingStore(engine), VideoReadingStore)
+    assert isinstance(FakeVideoReadingStore(), VideoReadingStore)

@@ -26,6 +26,8 @@ defined; drift is a contract-test failure, not a judgment call.
 > single error envelope in `16-bridge-architecture-and-observability.md`
 > §Resources (migrated in `17-implementation-plan.md` P14). The id
 > normalization, inbound event shapes and status meanings below still hold.
+> **2026-09-24: P14 is built** (not yet deployed): the verb paths are deleted
+> from the bridge, and 16 §Migration step 5 is the as-built record.
 
 | Route | Purpose |
 |---|---|

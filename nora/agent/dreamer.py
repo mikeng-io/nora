@@ -92,6 +92,7 @@ from ..domain.ports import (
     RosterSource,
 )
 from ..domain.reasoning_strip import dreamer_path
+from ..domain.turn_deadline import turn_deadline
 from ..obs.metrics import Metrics
 from ..obs.tracing import TRACE_KIND, annotate, span
 from . import factory
@@ -573,10 +574,17 @@ class DreamToolSource(Protocol):
 # did.
 UNIT_SAFE_TOOLS: frozenset[str] = frozenset({
     "web_search", "web_fetch", "now", "calculate", "weather", "version",
-    # `social_fetch` (DEC-151): reads the open internet (public X/Instagram
-    # content) with no room state anywhere in the answer — the same shape as
+    # `social_fetch` (DEC-151): reads the open internet (public X content)
+    # with no room state anywhere in the answer — the same shape as
     # `web_search`/`web_fetch`, and read-only at three layers besides (R-86).
     "social_fetch",
+    # `instagram_search` (design/instagram-adoption/18, P11): free text in,
+    # Instagram accounts out, with no name resolved against a roster and no
+    # Tier 0 check, so no room state in the answer: the same shape as
+    # `web_search`. Being here makes it grantable, not granted: no adaptor
+    # declares it today, and whether Nora may look people up unprompted in a
+    # Dreamer or fire turn is an open operator decision (18, 2026-09-24).
+    "instagram_search",
     # Nora's OWN generated-image library — reads her library across every
     # conversation (the store records platform/conversation as provenance,
     # but a lookup is a global search of her own creations, never
@@ -1726,17 +1734,20 @@ class DreamerRuntime:
                 retry=self._retry,
                 agent_name=f"dreamer:{adaptor.name}",
             )
-            result = await asyncio.wait_for(
-                factory.invoke(
-                    agent, prompt, invocation_state={},
-                    limits=factory.build_limits(
-                        output_tokens=budget.output_tokens,
-                        turns=budget.turns,
-                        total_tokens=budget.total_tokens,
+            # A room-scoped pass can replay `media_fetch`; its describer must
+            # see THIS pass's ceiling, not the `[llm]` loop it was built from.
+            with turn_deadline(budget.timeout_seconds):
+                result = await asyncio.wait_for(
+                    factory.invoke(
+                        agent, prompt, invocation_state={},
+                        limits=factory.build_limits(
+                            output_tokens=budget.output_tokens,
+                            turns=budget.turns,
+                            total_tokens=budget.total_tokens,
+                        ),
                     ),
-                ),
-                timeout=budget.timeout_seconds,
-            )
+                    timeout=budget.timeout_seconds,
+                )
         except TimeoutError:
             log.error(
                 "dream run timed out after %.0fs (adaptor=%s key=%s)",

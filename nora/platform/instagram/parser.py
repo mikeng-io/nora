@@ -65,7 +65,9 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import replace
 
+from ...domain.instagram_links import is_handle, link_shape, parse_link
 from ...domain.media import MediaRef, label_for, render_placeholder
 from ...domain.models import EditTarget, NormalizedMessage, Quote
 from .ids import conversation_id_for, fbid_form, is_person_mention
@@ -158,21 +160,89 @@ def _media_ref(media: dict) -> MediaRef | None:
     )
 
 
+# The link rules (#435) live in ONE module, `nora.domain.instagram_links`, which
+# `instagram_read` reads too, so the transcript and the tool cannot disagree
+# about what a valid Instagram link is. `_is_handle` stays this module's name
+# for the shared predicate.
+_is_handle = is_handle
+
+
+def _shared_target(target_url: object, author: str = "") -> tuple[str, str]:
+    """`(kind, link)` for a shared item, both read off `target_url`'s PATH.
+
+    **The kind comes from the url, because nothing else on the wire carries
+    it.** Measured 2026-09-24 on a live shared reel and a live shared story:
+    `typename` was `SlideMessagePortraitXMA` for BOTH, and `caption`, `title`,
+    `subtitle` and `layout` were empty or absent. The path is the only field
+    that told them apart: `/reel/<code>/` (or `/reels/<code>/`) is a reel,
+    `/p/<code>/` a post, `/stories/<user>/<pk>` a story. Anything else is
+    `post`, which is what every share was called before this — no new word is
+    invented for a shape nobody has measured.
+
+    **The link is REBUILT, never passed through.** The raw url's query is
+    tracking flags plus, on a story, `reel_owner_id`: the owner's igid, an
+    identifier R-18 keeps off every surface a model reads. So the link is
+    assembled from validated path segments onto a fixed origin with no query
+    and no fragment, and any segment outside its charset, a host that is not
+    Instagram's, a port, or credentials in the netloc leave the link out
+    entirely (`""`) rather than render anything raw. The kind survives a
+    rejected link: it is a label about the path's shape, not a claim about
+    where it points.
+
+    **A story's username segment must BE the author.** The segment is the
+    one place in any of the three shapes where a path carries a name, and the
+    charset alone admits an all-digit one — which is what an igid looks like.
+    So the segment must hold a non-digit AND match `author` (the bridge's
+    `shared.author`, `@` stripped) case-insensitively; anything else leaves
+    no link. That binds the rendered name to a value the delta already
+    carries, rather than to whatever the url's path happens to say.
+    """
+    if not isinstance(target_url, str) or not target_url.strip():
+        return "post", ""
+    kind = link_shape(target_url, story_ring=False)
+    if kind not in ("reel", "post", "story"):
+        # A profile link, an unknown path, or no path at all: the label this
+        # renders has always been `post` for those, with no link.
+        return "post", ""
+    link = parse_link(target_url)
+    if link is None or link.kind != kind:
+        return kind, ""
+    if kind == "story" and link.key.lower() != author.strip().lstrip("@").lower():
+        return kind, ""
+    return kind, link.url
+
+
 def _shared_line(shared: object) -> str:
-    """A SHARED reel or post, rendered as text the model can read for free.
+    """A SHARED reel, post or story, rendered as text the model can read for
+    free.
 
     The bridge's `shared` object (`deploy/instagram-bridge/inbound.go`'s
-    `eventShared`) is the caption and the author of something posted elsewhere
-    on Instagram and sent into the room. It is the FREE depth of
-    `design/instagram-adoption/13`: both values are already in the delta, so a
-    room where people share reels all day costs nothing extra to follow — no
-    fetch, no model call, no vision pass. Only a direct question about one
-    particular post reaches for the thumbnail or the video.
+    `eventShared`) names something posted elsewhere on Instagram and sent into
+    the room. What it renders — the kind, the author, a clean link, and the
+    caption when there is one — is already in the delta, so a room where
+    people share reels all day costs nothing extra to follow: no fetch, no
+    model call, no vision pass. Only a direct question about one particular
+    item reaches for the thumbnail (`media_fetch`) or the item itself.
+
+    **The caption is usually absent.** `design/instagram-adoption/13` called
+    it the free depth; measured 2026-09-24, a live shared reel and a live
+    shared story each carried only `author`, `target_url` and `typename`. So
+    the line that is actually free is «somebody shared a reel by @x, here is
+    the link», and the caption is rendered when a delta carries one.
 
     Until this existed, a shared reel arrived with no text and no media and was
     dropped for having neither, so Nora never learned anything had been posted
     at all. That is why this renders even when there is no caption: «somebody
     shared a reel» is a fact about the room, and it was previously invisible.
+
+    ## Where the link goes
+
+    INSIDE the bracket, after the author and before the caption. Inside,
+    because it belongs to the shared item and not to the sharer's own words;
+    before the caption, because the caption is a stranger's free text and a
+    link after it would read as part of it. And never after the placeholder
+    run: `body_with_handles` rewrites the TRAILING `[image]` once custody has
+    the bytes, and a link after it would leave the thumbnail with no handle.
 
     ## The author is NOT the sender, and the wording has to keep them apart
 
@@ -204,23 +274,39 @@ def _shared_line(shared: object) -> str:
     # the rare one this function was written for.
     if not isinstance(shared, dict) or not shared:
         return ""
-    author = str(shared.get("author") or "").strip()
+    raw_author = str(shared.get("author") or "").strip().lstrip("@")
+    kind, link = _shared_target(shared.get("target_url"), raw_author)
+    # THE AUTHOR RENDERS ONLY AS A HANDLE. It is a stranger's string inside a
+    # bracket the transcript join parses, so anything outside the username
+    # charset — a `]`, a space, `The Site Title` from a link-preview XMA, or
+    # an all-digit string shaped like an igid — is dropped rather than
+    # escaped: an author that is not a handle is not worth an `@`. One `@`,
+    # however the bridge spelled it.
+    author = raw_author if _is_handle(raw_author) else ""
     caption = str(shared.get("caption") or "").strip()
     if not caption:
         # `title` is sometimes the only text on the delta — the library
         # declares both and no probe has shown which a live one populates.
         caption = str(shared.get("title") or "").strip()
-    if not author and not caption:
-        # The bridge answers `null` rather than an empty object for an XMA it
-        # could not read, so reaching here means a shape it read but that
-        # carried neither name nor words. Still worth a line: something WAS
-        # shared, and silence is what this whole function exists to end.
-        return "[shared post]"
-    if not author:
-        return f"[shared post — {caption}]"
-    if not caption:
-        return f"[shared post by {author}]"
-    return f"[shared post by {author} — {caption}]"
+    # NO SQUARE BRACKETS FROM A STRANGER. A caption of `x] [image 0a1b2c] [y`
+    # closes this bracket and opens a forged placeholder, and
+    # `enrich_placeholders` would then hang whatever reading `0a1b2c` resolves
+    # to off it. Round brackets read the same to a model and parse as nothing.
+    caption = caption.replace("[", "(").replace("]", ")")
+    # The bridge answers `null` rather than an empty object for an XMA it
+    # could not read, so a dict with nothing readable in it is a shape it read
+    # that carried neither name nor words nor link. It still renders
+    # `[shared post]`: something WAS shared, and silence is what this whole
+    # function exists to end.
+    line = f"shared {kind}"
+    if author:
+        line += f" by @{author}"
+    if link:
+        line += f" {link}"
+    if caption:
+        line += f" — {caption}"
+    return f"[{line}]"
+
 
 
 def _mentioned_ids(entries: object) -> frozenset[str]:
@@ -320,8 +406,17 @@ def parse_event(event: dict) -> NormalizedMessage | None:
         if not room_id:
             return None
 
+        shared = _shared_line(event.get("shared"))
         media = event.get("media")
         ref = _media_ref(media) if isinstance(media, dict) else None
+        if ref is not None and shared:
+            # The media on a shared item is its THUMBNAIL (`fromXMAPreview`),
+            # not something a member sent. Held like any photo, read only when
+            # `media_fetch` asks: the operator's rule is that Nora reads shared
+            # content when tagged, never on every share (see
+            # `MediaRef.on_demand`). Keyed on the SAME predicate that wrote the
+            # shared line, so the flag and the line cannot disagree.
+            ref = replace(ref, on_demand=True)
         refs = (ref,) if ref is not None else ()
 
         parts = []
@@ -333,7 +428,6 @@ def parse_event(event: dict) -> NormalizedMessage | None:
         # a post, which carries a thumbnail. The placeholder run has to stay
         # TRAILING (`body_with_handles` rewrites it in place), so this cannot
         # go after it.
-        shared = _shared_line(event.get("shared"))
         if shared:
             parts.append(shared)
         # Placeholders LAST — the same load-bearing trailing run
@@ -374,8 +468,10 @@ def parse_event(event: dict) -> NormalizedMessage | None:
             mentions=_mentioned_ids(event.get("mentions")),
             quote=_quoted(event.get("reply_to")),
             media=refs,
-            # `mid.$…` — what `POST /react` and `POST /unsend` address a
-            # message by. `(author, timestamp)` means nothing to either.
+            # `mid.$…` — what a reaction and an unsend address a message by
+            # (`/threads/{thread_fbid}/messages/{message_id}`, and its
+            # `/reaction`), and what a reply's `reply_to` names.
+            # `(author, timestamp)` means nothing to any of them.
             message_id=str(event.get("message_id") or ""),
         )
     except Exception:

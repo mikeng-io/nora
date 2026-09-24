@@ -12,6 +12,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	"instagram-bridge/internal/domain"
@@ -43,6 +44,8 @@ type Social interface {
 	SocialProfile(ctx context.Context, igid domain.IGID) domain.SocialRead
 	Story(ctx context.Context, igid domain.IGID) (domain.Story, error)
 	SearchAccounts(ctx context.Context, query string) ([]domain.AccountSummary, error)
+	// Post reads one post by its shortcode, with every carousel item.
+	Post(ctx context.Context, code domain.Shortcode) (domain.Post, error)
 }
 
 // --- stage errors -------------------------------------------------------------
@@ -109,17 +112,18 @@ func (s *Service) ready() (domain.Session, error) {
 	return snap, nil
 }
 
-// thread parses the room key and resolves both thread ids.
+// thread resolves both thread ids for a room key the HTTP edge has ALREADY
+// parsed.
 //
-// The parse comes AFTER the session gate: a checkpointed session answers
-// "a human must act" ahead of "your id is malformed", as these routes always
-// have. A malformed key never becomes a route lookup against Instagram.
-func (s *Service) thread(ctx context.Context, room string) (domain.ThreadRef, error) {
-	short, err := domain.ParseThreadFBID(room)
-	if err != nil {
-		return domain.ThreadRef{}, err
-	}
-	thread, err := s.messaging.ResolveThread(ctx, short)
+// The parse moved out of here in P14 (design/instagram-adoption/17 §P14):
+// every route now parses its path ids before any use case runs, so a
+// malformed id is 400 whatever the session's state (16 §Resources: "a
+// malformed id is 400 before any use case runs"). Before P14 the parse sat
+// after the session gate and a checkpointed session answered 409 ahead of a
+// malformed id's 400. A malformed key still never becomes a route lookup
+// against Instagram: it cannot reach this function as a value at all.
+func (s *Service) thread(ctx context.Context, room domain.ThreadFBID) (domain.ThreadRef, error) {
+	thread, err := s.messaging.ResolveThread(ctx, room)
 	if err != nil {
 		return domain.ThreadRef{}, &ThreadLookupError{Err: err}
 	}
@@ -128,7 +132,7 @@ func (s *Service) thread(ctx context.Context, room string) (domain.ThreadRef, er
 
 // SendText posts a text message. No length cap: 20,000 characters were
 // measured accepted on this wire, and mautrix-meta's 1000 is its own policy.
-func (s *Service) SendText(ctx context.Context, room, text string, mentions []domain.Mention, replyTo string) (domain.Sent, error) {
+func (s *Service) SendText(ctx context.Context, room domain.ThreadFBID, text string, mentions []domain.Mention, replyTo string) (domain.Sent, error) {
 	if _, err := s.ready(); err != nil {
 		return domain.Sent{}, err
 	}
@@ -141,7 +145,7 @@ func (s *Service) SendText(ctx context.Context, room, text string, mentions []do
 
 // SendMedia sends one attachment. It carries NO text: the wire has no
 // caption field, so the caller sends the text first, then the media.
-func (s *Service) SendMedia(ctx context.Context, room string, media domain.Upload, replyTo string) (domain.Sent, error) {
+func (s *Service) SendMedia(ctx context.Context, room domain.ThreadFBID, media domain.Upload, replyTo string) (domain.Sent, error) {
 	if _, err := s.ready(); err != nil {
 		return domain.Sent{}, err
 	}
@@ -154,7 +158,7 @@ func (s *Service) SendMedia(ctx context.Context, room string, media domain.Uploa
 
 // React posts or retracts a reaction. `confirmed` false is a degraded
 // success: the mutation was accepted and only its post-state stayed silent.
-func (s *Service) React(ctx context.Context, room, messageID, emoji string, remove bool) (bool, error) {
+func (s *Service) React(ctx context.Context, room domain.ThreadFBID, messageID domain.MessageID, emoji string, remove bool) (bool, error) {
 	if _, err := s.ready(); err != nil {
 		return false, err
 	}
@@ -162,12 +166,12 @@ func (s *Service) React(ctx context.Context, room, messageID, emoji string, remo
 	if err != nil {
 		return false, err
 	}
-	return s.messaging.React(ctx, thread, messageID, emoji, remove)
+	return s.messaging.React(ctx, thread, messageID.String(), emoji, remove)
 }
 
 // Typing is the one use case that needs the realtime socket: SetTyping
 // publishes over the MQTT-bypass stream.
-func (s *Service) Typing(ctx context.Context, room string, typing bool) error {
+func (s *Service) Typing(ctx context.Context, room domain.ThreadFBID, typing bool) error {
 	snap, err := s.ready()
 	if err != nil {
 		return err
@@ -186,7 +190,7 @@ func (s *Service) Typing(ctx context.Context, room string, typing bool) error {
 // mutation said: `direct_unsend_message` has never been observed against an
 // unsend known to have failed, and a false failure strands probe messages in
 // a real group.
-func (s *Service) Unsend(ctx context.Context, room, messageID string) (bool, error) {
+func (s *Service) Unsend(ctx context.Context, room domain.ThreadFBID, messageID domain.MessageID) (bool, error) {
 	if _, err := s.ready(); err != nil {
 		return false, err
 	}
@@ -194,26 +198,26 @@ func (s *Service) Unsend(ctx context.Context, room, messageID string) (bool, err
 	if err != nil {
 		return false, err
 	}
-	confirmed, err := s.messaging.Unsend(ctx, thread, messageID)
+	confirmed, err := s.messaging.Unsend(ctx, thread, messageID.String())
 	if err == nil && !confirmed {
 		slog.WarnContext(ctx, "unsend returned direct_unsend_message=false; "+
-			"the message may still be in the thread", "room", room)
+			"the message may still be in the thread", "room", room.String())
 	}
 	return confirmed, err
 }
 
-// Members reads who is in one thread, never short and never empty. It
-// returns the canonical room key the answer is about.
-func (s *Service) Members(ctx context.Context, room string) (domain.ThreadFBID, domain.Thread, error) {
+// Members reads who is in one thread, never short and never empty. The room
+// key arrives parsed, and so already canonical: it is the key the answer is
+// about.
+func (s *Service) Members(ctx context.Context, room domain.ThreadFBID) (domain.Thread, error) {
 	if _, err := s.ready(); err != nil {
-		return domain.ThreadFBID{}, domain.Thread{}, err
+		return domain.Thread{}, err
 	}
 	thread, err := s.thread(ctx, room)
 	if err != nil {
-		return domain.ThreadFBID{}, domain.Thread{}, err
+		return domain.Thread{}, err
 	}
-	members, err := s.messaging.Members(ctx, thread)
-	return thread.Short, members, err
+	return s.messaging.Members(ctx, thread)
 }
 
 // AccountRead is one account and the outcome of its second, independent read.
@@ -225,12 +229,11 @@ type AccountRead struct {
 // ReadAccount reads one account by igid, then its social half keyed on the
 // SAME parsed igid. The social half fails on its own: GetProfile has already
 // answered, so a social failure degrades the read rather than losing it.
-func (s *Service) ReadAccount(ctx context.Context, igid string) (AccountRead, error) {
+//
+// It takes the PARSED igid (P14): the HTTP edge parses it, so a malformed one
+// is 400 before the session gate.
+func (s *Service) ReadAccount(ctx context.Context, id domain.IGID) (AccountRead, error) {
 	if _, err := s.ready(); err != nil {
-		return AccountRead{}, err
-	}
-	id, err := domain.ParseIGID(igid)
-	if err != nil {
 		return AccountRead{}, err
 	}
 	acct, err := s.social.Account(ctx, id)
@@ -240,14 +243,13 @@ func (s *Service) ReadAccount(ctx context.Context, igid string) (AccountRead, er
 	return AccountRead{Account: acct, Social: s.social.SocialProfile(ctx, id)}, nil
 }
 
-// ReadStory reads one account's current story — ONE igid, because a story
-// read is visible to its author.
-func (s *Service) ReadStory(ctx context.Context, igid string) (domain.Story, error) {
+// ReadStory reads one account's current story — ONE igid, because a batch
+// would open stories nobody asked about (a privacy choice; whether the author
+// sees the view is unmeasured, design 04, 05 §Reading a story).
+//
+// Like ReadAccount, it takes the igid already parsed at the edge.
+func (s *Service) ReadStory(ctx context.Context, id domain.IGID) (domain.Story, error) {
 	if _, err := s.ready(); err != nil {
-		return domain.Story{}, err
-	}
-	id, err := domain.ParseIGID(igid)
-	if err != nil {
 		return domain.Story{}, err
 	}
 	return s.social.Story(ctx, id)
@@ -262,4 +264,109 @@ func (s *Service) SearchAccounts(ctx context.Context, query string) ([]domain.Ac
 		return nil, err
 	}
 	return s.social.SearchAccounts(ctx, query)
+}
+
+// LookupAccountByUsername resolves a username to at most one account
+// (design/instagram-adoption/16 §Resources, 17 P9, P10).
+//
+// It calls the SAME search port `SearchAccounts` uses (SearchUsers, over the
+// DM contact picker's search), then filters the raw hits to an exact,
+// case-insensitive username match. `items[0]` is never taken: P9 measured a
+// real case where the exact match was not the first result (17 §P9), so
+// ranking cannot stand in for identity here. The filter runs HERE, in the
+// use case, not in the transport layer, so the rule is provable independent
+// of the HTTP shape around it.
+//
+// # The match is pattern-checked before it is ever fold-compared
+//
+// A hit whose username does not itself parse as a `domain.Username`
+// (`ParseUsername`'s `[A-Za-z0-9._]{1,30}` pattern) is skipped, never
+// compared. This is load-bearing, not a defensive extra: `strings.EqualFold`
+// folds by full Unicode case-folding rules, which fold characters OUTSIDE
+// that pattern onto ones inside it — U+212A KELVIN SIGN folds to `k`, U+017F
+// LATIN SMALL LETTER LONG S folds to `s`. An upstream hit spelled with one of
+// those would read as an exact, case-insensitive match for an ASCII `k` or
+// `s` username it is not, which is a spoofable identity check, not a
+// case-insensitive one. Checking the pattern first rules that out
+// categorically: `asciiEqualFold`, which runs afterward, only ever sees two
+// strings already known to contain nothing but `[A-Za-z0-9._]`.
+//
+// Zero matches is a normal empty answer, not ErrNotFound: P9 also measured
+// zero items for a username that does not exist, and the search returning
+// nothing for a real one it simply missed would look identical, so there is
+// no way to tell "no such account" from "the search didn't surface it" —
+// answering ErrNotFound would claim a certainty the mechanism does not have.
+// More than one match cannot happen for a genuine username, since usernames
+// are unique on Instagram, so it means the upstream data disagreed with
+// itself: ErrUpstreamRejected, which the transport maps to 502.
+func (s *Service) LookupAccountByUsername(ctx context.Context, username domain.Username) ([]domain.AccountSummary, error) {
+	if _, err := s.ready(); err != nil {
+		return nil, err
+	}
+	hits, err := s.social.SearchAccounts(ctx, username.String())
+	if err != nil {
+		return nil, err
+	}
+	want := username.String()
+	matches := make([]domain.AccountSummary, 0, 1)
+	for _, hit := range hits {
+		hitUsername, err := domain.ParseUsername(hit.Username)
+		if err != nil {
+			// Not a pattern-conforming username: never an exact match,
+			// whatever a Unicode-aware fold would say about it. See this
+			// function's doc comment.
+			continue
+		}
+		if asciiEqualFold(hitUsername.String(), want) {
+			matches = append(matches, hit)
+		}
+	}
+	if len(matches) > 1 {
+		// The count is safe to say; the username is not (it is never put in
+		// this error's text, by construction — `want` never appears above).
+		return nil, domain.Classify(domain.ErrUpstreamRejected,
+			fmt.Errorf("username search matched %d accounts, want at most 1", len(matches)))
+	}
+	return matches, nil
+}
+
+// asciiEqualFold reports whether a and b are equal under ASCII-only case
+// folding: it upper/lower-cases only the byte range `A`-`Z`/`a`-`z` and
+// compares byte for byte. LookupAccountByUsername calls it ONLY after both
+// strings have already passed `domain.ParseUsername`'s pattern
+// (`[A-Za-z0-9._]{1,30}`), so both are already known to be pure ASCII —
+// but the point of this function, rather than `strings.EqualFold`, is that
+// it makes that safe even if that invariant is ever weakened: it has no
+// Unicode fold table to exploit, so a homoglyph can never make it answer
+// true for two strings that are not the same ASCII bytes up to case.
+func asciiEqualFold(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		ca, cb := a[i], b[i]
+		if 'A' <= ca && ca <= 'Z' {
+			ca += 'a' - 'A'
+		}
+		if 'A' <= cb && cb <= 'Z' {
+			cb += 'a' - 'A'
+		}
+		if ca != cb {
+			return false
+		}
+	}
+	return true
+}
+
+// ReadPost reads one post by its shortcode (17 P12).
+//
+// It takes the PARSED shortcode: the HTTP layer parses it at the edge, so a
+// malformed one is 400 before this runs, whatever the session's state, as
+// `GET /accounts?query=` does. The session gate comes next, before anything
+// reaches Instagram.
+func (s *Service) ReadPost(ctx context.Context, code domain.Shortcode) (domain.Post, error) {
+	if _, err := s.ready(); err != nil {
+		return domain.Post{}, err
+	}
+	return s.social.Post(ctx, code)
 }

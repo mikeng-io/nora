@@ -66,6 +66,7 @@ from strands.models.openai import OpenAIModel
 from strands.types.exceptions import MaxTokensReachedException
 
 from .factory import MAX_TOKENS_NOTICE_INFIX, MAX_TOKENS_NOTICE_PREFIX
+from .punctuation import DashFreeOpenAIModel
 from .tool_choice import FIRST_CALL
 
 T = TypeVar("T", bound=BaseModel)
@@ -123,8 +124,11 @@ def build_structured_model(
     of a combo able to serve it. `factory.create_model_provider` carries the
     same argument for the tag path: a setting left to the route is a setting
     nobody chose.
+    Dash-free for the same reason as the tag path: what these calls write
+    (notes, the standing position, a reaction pick) is read back into her
+    prompt, so a dash here reappears there (`nora.agent.punctuation`).
     """
-    return OpenAIModel(
+    return DashFreeOpenAIModel(
         client_args={"api_key": api_key, "base_url": base_url,
                      **({"default_headers": default_headers} if default_headers else {})},
         model_id=model_id,
@@ -208,7 +212,7 @@ async def ask_text(
     translated into the raw-completion vocabulary its callers already check.
 
     `agent_name` means what it means in `ask_structured`: the span the call
-    traces under, so the debrief's fold/verdict calls are distinguishable
+    traces under, so the debrief's fold/consolidate calls are distinguishable
     from the event fold's in Langfuse instead of all reading
     `invoke_agent Strands Agents`.
 

@@ -15,6 +15,8 @@ edges:
 > The evidence that decided it is in [20-knowledge-tier.md](20-knowledge-tier.md) §0. See issue #115.
 
 
+> **PARTLY SUPERSEDED 2026-09-24 by [design/standing-compact/](../standing-compact/00-intent.md).** The verdict call (§3's call B and `TurnVerdict`), both re-derivation triggers (§4's ungrounded watermark and the fold-count ceiling), and the §6 readings that counted them are deleted. The fold is one call, the prior is always shown and carries its age, and the turn's steps render as `<steps>`. Everything below about them is retained as the record of the reasoning; none of it describes code that exists.
+
 # Standing
 
 ## 1. It is a stage, not an adaptor — and that is the whole shape
@@ -35,7 +37,8 @@ reply mid-turn is judging under social pressure, with the reply still to write.
 in-turn tools, and the reply guard cancels the next model call once the terminal
 budget is spent — **nothing in her own loop runs after the reply.** Standing has
 an after-the-reply path by construction; that is why the note tier's proposals
-ride on it rather than getting a stage of their own.
+ride on it rather than getting a stage of their own. *(Reversed 2026-09-24 —
+see §7: the debrief no longer proposes notes.)*
 
 **And it holds the slot.** Which makes latency a first-class design constraint
 rather than an operational detail — §5.
@@ -56,6 +59,11 @@ A debrief that only reviews successful replies measures the path that already
 works.
 
 ## 3. Four outputs, two calls under one gather
+
+> **As of 2026-09-24 the stage produces ONE output, `Standing`, from one call.**
+> The verdict call and `TurnVerdict` were deleted with `design/standing-compact/`,
+> and note proposals were removed the same day (see §7). Fact proposals were
+> never built.
 
 | output | cardinality | rewritten? | call |
 |---|---|---|---|
@@ -406,6 +414,8 @@ turn into a false alarm:
 the only one that does.
 
 ## 7. The two sub-decisions the plan left open
+
+> **Reversed 2026-09-24: the debrief creates no notes.** Its proposals were 52 of the 64 live notes; it never saw the unit's open notes and could only create, so every rewording became a new note that was never revised, and it wrote notes about Nora's own turns into the group's notebook (#199's class). Notes are created by people on a tag and by the `note-candidates` pass (#228), and Standing writes the position only. The text below is the original design, kept as a record.
 
 **The note proposal payload: two shapes with a discriminant, not one shape with
 optional fields.** A new note needs title, description, uncertainty, closing

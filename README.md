@@ -216,8 +216,8 @@ decline the floor get `silence.md`'s may-speak half.
 The Dreamer has its own corpus under `nora/dreamer/` — `doctrine/dreamer.md`
 (who it is on every run) and `objectives/*.md`, one per adaptor
 (`note-candidates`, `note-curation`, `proactive`, plus the tag path's
-`standing-debrief`/`standing-verdict`). Same hot-reload, same bind mount;
-none of the doctrine loader's gates run on it.
+`standing-debrief`). Same hot-reload, same bind mount; none of the doctrine
+loader's gates run on it.
 
 Each file has YAML frontmatter (`name`, `description`, `order`, `applies_to`, `version`,
 `kind`, `authority_above`, `authority_below`, `not_here`, `change_policy`) in roughly the

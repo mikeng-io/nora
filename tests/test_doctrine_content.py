@@ -37,6 +37,9 @@ EXPECTED = {
     "conduct": ("conduct", 30, ("tag", "heartbeat", "participation", "proactive")),
     # NOT hers: the gate's system prompt, isolated on its own audience.
     "participation": ("instrument", 5, ("relevance_gate",)),
+    # NOT hers either: the reaction picker's instruction (`nora.agent.reaction`),
+    # read after she has written a reply and never shown to her.
+    "reaction": ("instrument", 6, ("reaction",)),
     # HERS, and ambient-only: the one thing an offered floor has that a tag
     # never does — several things worth answering at once, none addressed to
     # her. `conduct.md` is occasion-neutral and must not carry it.

@@ -383,7 +383,7 @@ async def test_the_REAL_instagram_roster_is_what_lets_a_mention_resolve(aiohttp_
 
     async def handler(request):
         assert request.match_info["thread_fbid"] == IG_CONVERSATION
-        return web.json_response({"ok": True, "members": [
+        return web.json_response({"members": [
             {"fbid": IG_FBID, "igid": "60739041440", "username": "nka_bpumvg"},
         ]})
 

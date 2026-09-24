@@ -205,7 +205,7 @@ def test_the_audited_body_is_the_composed_text_or_an_explicit_override():
     ever notice.
 
     THERE IS NOW ONE DELIBERATE EXCEPTION, and this test admits exactly it and
-    nothing else. `send_gif` audits `"<caption> [GIF via giphy]"` while the
+    nothing else. `send_gif` audits `"<caption> [GIF: <reaction>]"` while the
     wire carries the caption alone, because the row has to record that a GIF
     was sent — the bytes are not in the transcript and the caption by itself
     would read as a bare remark. So the body is `<composed>.text` UNLESS the

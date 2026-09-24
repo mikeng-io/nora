@@ -7,6 +7,7 @@ here needs an import from `nora`, it is not domain.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -36,16 +37,41 @@ from typing import Any, Literal
 #: only whether the loop completed. A pass can return `ok` having written
 #: nothing, and a corpus expecting `none` would then pass for a reason it is not
 #: about.
+#:
+#: `fold` is the standing fold's (`design/standing-compact/20-verification.md`
+#: §1): a position was written AND a judge found the case's one property held
+#: in it. It has no structural half worth grading on its own — "the fold wrote
+#: something" is true of every fold that did not fail — so a `fold` case that
+#: was never judged is UNGRADABLE, not a pass.
 Expectation = Literal[
     "go", "no_go", "speak", "silence", "reply", "no_reply",
-    "create", "update", "none", "either", "remind",
+    "create", "update", "none", "either", "remind", "fold",
 ]
 
 #: Which entry point the input enters at. A SELECTION ON A CASE, not a branch
 #: in the runner (`01-boundaries` §3.1). Adding a suite that uses one of these
 #: adds no code; adding a new entry point adds one adapter, which is the line
 #: this design draws rather than hides.
-Entry = Literal["gate", "participation", "tag", "dreamer", "proactive_act"]
+Entry = Literal["gate", "participation", "tag", "dreamer", "proactive_act", "standing"]
+
+
+@dataclass(frozen=True, slots=True)
+class Moment:
+    """Where a case's moment was read from, and how its copy was renumbered.
+
+    Set on the case by the runner, after the sandbox is seeded. Most entry
+    points never read it: their input IS the seeded window. An entry point whose
+    input is a RECORD of the moment rather than the room it happened in — the
+    standing fold's input is a finished turn's `tag_trace` row, which the
+    sandbox does not copy — reads that record from `source_url`, and translates
+    any row id it names through `rows`, because the sandbox gave every row a
+    new one.
+    """
+
+    #: The deployment's CLONE the sandbox was seeded from. Read, never written.
+    source_url: str
+    #: Source row id -> the id the sandbox gave its copy.
+    rows: Mapping[int | str, int]
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +136,10 @@ class Case:
     #: since 2026-09-01 this is how a line engages her, so a case that expects
     #: a reply from the inbound path states it.
     mention: bool = False
+
+    #: The moment `snapshot` names, RESOLVED — set by the runner once the
+    #: sandbox is seeded, never by a corpus. `None` until then. See `Moment`.
+    moment: Moment | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,6 +226,21 @@ class Outcome:
     #: §2.7). This is that gap closed going forward, not backwards.
     elapsed_seconds: float = 0.0
 
+    #: The standing position a fold WROTE, verbatim; `None` for every entry
+    #: point that does not fold, and for a fold that wrote nothing.
+    position: str | None = None
+
+    #: What a judge grades a written position AGAINST: the prior, the turn and
+    #: its steps, rendered from the RECORD rather than from what the fold was
+    #: shown — so both arms of a comparison are judged on the same evidence,
+    #: and a fold shown a fragment cannot also make its judge read one.
+    evidence: str = ""
+
+    #: What the subject's model call was actually given, verbatim — the fold's
+    #: system and user prompt. Carried so two arms can be diffed before any
+    #: model call is spent (`--print-input`).
+    shown: str = ""
+
     #: Provenance that must not be read as behaviour. `delivery` is what the
     #: transport did with what she wrote: with no platform daemon in front of
     #: a case it is `failed`, and that is expected — the grading is on what she
@@ -240,6 +285,14 @@ class Outcome:
             return any(kind == expect for kind, _ in self.changed)
         if expect == "remind":
             return self.written > 0
+        if expect == "fold":
+            # Nothing written is not a verdict about the position; and a
+            # position no judge read has not been measured against the case's
+            # property. Both are the third answer. (A judge FAIL/REVIEW was
+            # already handled above.)
+            if self.position is None or self.judged != "PASS":
+                return None
+            return True
         if expect == "either":
             # NOT `True`. `either` says both ANSWERS are acceptable; it does not
             # say that not answering is. The old suite had `UNMEASURED` as a

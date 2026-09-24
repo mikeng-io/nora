@@ -1736,3 +1736,35 @@ async def test_a_home_room_keeps_the_proactive_runner_even_with_the_dreamer_off(
         assert path._proactive_runner is not None
     finally:
         await deps.background.cancel_all()
+
+
+async def test_the_instagram_backend_is_composed_with_the_person_index(cfg):
+    """design/instagram-adoption/18, P5. `[social.instagram] enabled` composes
+    the bridge client behind BOTH Instagram rows, with `PersonsSubjectIndex`
+    beside it. The router refuses to be built with a person-keyed backend and
+    no index, so a composition that forgot the index would not boot — and one
+    that wired only the story row would leave profiles `unavailable` forever
+    while the flag read as on."""
+    from nora.infra.social import (
+        EXCEPTION_ROUTES,
+        InstagramSocialClient,
+        PersonsSubjectIndex,
+        SocialRouter,
+    )
+
+    deps = await build_dependencies(override_config(cfg, {"social.instagram.enabled": True}))
+    try:
+        router = deps.engagement._tool_registry._social
+        assert isinstance(router, SocialRouter)
+        assert isinstance(router._subjects, PersonsSubjectIndex)
+        assert set(router._exceptions) == EXCEPTION_ROUTES
+        assert all(
+            isinstance(client, InstagramSocialClient)
+            for client in router._exceptions.values()
+        )
+        # P10: a handle or a link resolves through the SAME client's exact
+        # username lookup. Without it every handle and link would answer
+        # `unavailable` while the flag read as on.
+        assert isinstance(router._accounts, InstagramSocialClient)
+    finally:
+        await deps.background.cancel_all()

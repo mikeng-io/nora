@@ -1,11 +1,12 @@
-"""Social reads behind the `social_fetch` tool (DEC-151) — X and Instagram,
+"""Social reads behind the `social_fetch` (DEC-151), `instagram_read` and
+`instagram_search` (design/instagram-adoption/18) tools — X and Instagram,
 READ-ONLY, over two backends the model never learns the names of.
 
 `SocialRouter` is what the composition root injects; it is itself a
-`SocialProvider`, so `nora.agent.registry` and the tool are unchanged and
-unaware. Below it, the DEFAULT is OpenCLI and the exception list has exactly
-one row (`instagram/story`) — see `router.py` for the rule that keeps it short
-(design/instagram-adoption/08-social-adapter-architecture.md).
+`SocialProvider`, so `nora.agent.registry` is unchanged and unaware. Below it,
+X goes to OpenCLI and Instagram to the instagram-bridge (`15`): the bridge's
+rows are `instagram/story`, `instagram/profile`, `instagram/search` (P11) and
+`instagram/post` (P12). OpenCLI serves X only. See `router.py`.
 
 The OpenCLI half has a loopback HTTP seam between two halves of THIS package:
 
@@ -20,8 +21,11 @@ The OpenCLI half has a loopback HTTP seam between two halves of THIS package:
 
 The Instagram half has no host-side half here at all:
 
-* `instagram_client.py::InstagramSocialClient` — `GET /accounts/{igid}` and
-  `GET /accounts/{igid}/story` on the instagram-bridge container, over the
+* `instagram_client.py::InstagramSocialClient` — `GET /accounts/{igid}`,
+  `GET /accounts/{igid}/story`, `GET /accounts?query=` and
+  `GET /posts/{shortcode}` on the instagram-bridge container, and the
+  username lookup `GET /accounts?username=` the router resolves a handle or
+  a link with (P10), over the
   private `nora` network. The bodies are pinned by shared fixtures the Go
   handlers generate (`tests/fixtures/instagram_bridge/`).
 
@@ -29,12 +33,13 @@ The Instagram half has no host-side half here at all:
   `person_id -> igid` off `identity.toml` (kind-aware), Tier 0 off the rooms'
   `persons` lists, and the reverse `igid -> person_id` a link needs.
 
-`SocialRouter` also owns the TIER LADDER (`SUBJECT_TIERS`), which is the
-other thing every social read passes through and the reason the router is
-more than a dispatch table: subject resolution and the reach check used to
-sit in `instagram_client.py`, where they could only govern that file's one
-row while the seven OpenCLI rows ran with no subject authorization at all
-(design/instagram-adoption/07 §tiers, /10 §"Who owns what").
+`SocialRouter` also owns subject RESOLUTION (`SUBJECT_INPUTS`, keyed on
+platform, read and input kind) and the REACH check (`TIER_ZERO_READS`, keyed
+on the read), which is the other thing every social read passes through and
+the reason the router is more than a dispatch table: both used to sit in
+`instagram_client.py`, where they could only govern that file's one row while
+the OpenCLI rows ran with no subject authorization at all
+(design/instagram-adoption/07 §tiers, /10 §"Who owns what", /18).
 
 **The invariant is the same across both and is what survives a backend that
 is not a host subprocess**: every social read is re-authorized against a
@@ -49,20 +54,26 @@ from .bridge_client import OpenCliBridgeClient
 from .instagram_client import InstagramSocialClient
 from .router import (
     EXCEPTION_ROUTES,
-    SUBJECT_TIERS,
-    TIER_NAMED,
-    TIER_ROOM,
+    SUBJECT_INPUTS,
+    TARGET_HANDLE,
+    TARGET_NAMED,
+    TARGET_PERSON,
+    TIER_ZERO_READS,
     SocialRouter,
+    TargetKind,
 )
 from .subjects import PersonsSubjectIndex
 
 __all__ = [
     "EXCEPTION_ROUTES",
-    "SUBJECT_TIERS",
-    "TIER_NAMED",
-    "TIER_ROOM",
+    "SUBJECT_INPUTS",
+    "TARGET_HANDLE",
+    "TARGET_NAMED",
+    "TARGET_PERSON",
+    "TIER_ZERO_READS",
     "InstagramSocialClient",
     "OpenCliBridgeClient",
     "PersonsSubjectIndex",
     "SocialRouter",
+    "TargetKind",
 ]

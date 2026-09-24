@@ -33,7 +33,7 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
     """Same type, same builder, same field count as `nora/__main__.py` gets."""
     subject = await obtain(spec)
     assert isinstance(subject.deps, Dependencies)
-    assert len(dataclasses.fields(Dependencies)) == 43, (
+    assert len(dataclasses.fields(Dependencies)) == 44, (
         "Dependencies changed shape; the subject follows it automatically, but "
         "this number is here so a change is noticed rather than absorbed. "
         "38 -> 40 on 2026-09-17: `relevance_gate` and `fire_path`, the two "
@@ -50,7 +50,11 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
         "41 -> 42: `clock`. The composition root wrote "
         "`lambda: datetime.now(UTC)` at NINE sites while nine components "
         "already took an injectable one, so the graph had the dependency and "
-        "no name for it."
+        "no name for it. "
+        "43 -> 44 on 2026-09-24: `self_presence`, the one `<presence>` reader "
+        "the tag path, the fire path and the proactive pass share — held "
+        "three times, reachable only through privates, and what the sandbox "
+        "has to stand transport health in on (`nora.subject.transport`)."
     )
 
 

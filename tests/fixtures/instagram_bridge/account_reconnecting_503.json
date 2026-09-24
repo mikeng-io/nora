@@ -3,7 +3,9 @@
   "path": "/accounts/10000001",
   "status": 503,
   "body": {
-    "error": "session is being re-established",
-    "ok": false
+    "error": {
+      "code": "unavailable",
+      "message": "session is being re-established"
+    }
   }
 }

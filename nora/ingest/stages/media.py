@@ -252,9 +252,21 @@ async def run(
             # `render_placeholder`'s reason: reading bytes Nora does not hold
             # is not something that can happen, and scheduling a read for one
             # would be a job that can only ever answer `unavailable`.
-            subjects.append(Subject(
-                blob=blob, label=label_for(ref), transcript=raw,
-            ))
+            #
+            # And NOT for an `on_demand` ref (2026-09-24): the thumbnail of a
+            # reel, post or story somebody shared is held and handled like any
+            # photo, and read only when `media_fetch` asks. Measured before
+            # this line existed: every shared thumbnail was described by the
+            # vision model at ingest with nobody tagging Nora, which the
+            # operator's rule forbids. Skipping the SUBJECT, not the custody,
+            # is what keeps both halves true — the handle still names bytes
+            # Nora holds, and the row stays unread, so `media_fetch` does a
+            # fresh look and the same bytes sent later as a direct photo are
+            # still read then.
+            if not ref.on_demand:
+                subjects.append(Subject(
+                    blob=blob, label=label_for(ref), transcript=raw,
+                ))
             # DEC-138 §3 M4 (inbound write path): every byte Nora takes
             # custody of gains a `source='inbound'` row in the unified media
             # index — the index is "one row per byte Nora holds", not only

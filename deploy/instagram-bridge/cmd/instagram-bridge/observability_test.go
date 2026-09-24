@@ -7,7 +7,9 @@ package main
 //  2. a GraphQL document that fails inside an HTTP 200 marks its upstream span
 //     ERROR (the shape that hid a real bug for a day on 2026-09-22);
 //  3. a message's TEXT never lands in a span, anywhere: attributes, events or
-//     status (the negative, which a span that "looks fine" cannot show);
+//     status, nor in a log line or an error envelope, on every write route
+//     and on every failure path of a send (the negative, which a span that
+//     "looks fine" cannot show);
 //  4. the healthcheck and the SSE stream are not traced;
 //  5. a log line carries the trace id of the context it was logged in.
 
@@ -21,7 +23,11 @@ import (
 	"strings"
 	"testing"
 
+	"instagram-bridge/internal/domain"
+
+	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
 	"go.mau.fi/mautrix-meta/pkg/messagix/httpclient"
+	"go.mau.fi/mautrix-meta/pkg/messagix/types"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -152,48 +158,226 @@ func TestAColdRoomsThreadLookupIsASpanUnderTheRequest(t *testing.T) {
 	rec := recordSpans(t)
 	b := newTestBridge(t, &fakeIG{})
 
-	w := post(t, b, "/send", map[string]any{"room_id": threadShort, "text": "hi"})
+	w := sendMessage(t, b, threadShort, map[string]any{"text": "hi"})
 	if w.Code != http.StatusOK {
-		t.Fatalf("/send answered %d: %s", w.Code, w.Body.String())
+		t.Fatalf("send answered %d: %s", w.Code, w.Body.String())
 	}
-	server := spanNamed(t, rec, "POST /send")
+	server := spanNamed(t, rec, "POST /threads/{thread_fbid}/messages")
 	lookup := spanNamed(t, rec, "instagram.FetchThreadID")
 	if lookup.Parent().SpanID() != server.SpanContext().SpanID() {
 		t.Error("the thread lookup is not a child of the request's server span")
 	}
 }
 
-// The negative: what people write never enters a span. Checked across every
-// place a span carries text, because a span that "looks fine" in Jaeger
-// cannot show what it should not contain.
-func TestMessageTextNeverEntersASpan(t *testing.T) {
-	rec := recordSpans(t)
-	b := newTestBridge(t, &fakeIG{})
-	const secret = "the-words-somebody-wrote-3f9c1"
+// writeCase is one write route, called on a COLD room (a fresh bridge), with
+// the server span it must produce and the upstream spans beneath it: exactly
+// one per instameow call (17 P1), the room's route lookup first.
+type writeCase struct {
+	name     string
+	pattern  string
+	call     func(t *testing.T, b *testBridge) *httptest.ResponseRecorder
+	upstream []string
+}
 
-	w := post(t, b, "/send", map[string]any{"room_id": threadShort, "text": secret})
-	if w.Code != http.StatusOK {
-		t.Fatalf("/send answered %d: %s", w.Code, w.Body.String())
+func writeCases() []writeCase {
+	return []writeCase{
+		{
+			name: "send text", pattern: "POST /threads/{thread_fbid}/messages",
+			call: func(t *testing.T, b *testBridge) *httptest.ResponseRecorder {
+				return sendMessage(t, b, threadShort, map[string]any{"text": "hi"})
+			},
+			upstream: []string{"instagram.FetchThreadID", "instagram.SendMessage"},
+		},
+		{
+			name: "send media", pattern: "POST /threads/{thread_fbid}/messages",
+			call: func(t *testing.T, b *testBridge) *httptest.ResponseRecorder {
+				return sendMessage(t, b, threadShort, mediaOf([]byte("x"), "x.png", "image/png"))
+			},
+			upstream: []string{"instagram.FetchThreadID", "instagram.Upload", "instagram.SendMedia"},
+		},
+		{
+			name: "unsend", pattern: "DELETE /threads/{thread_fbid}/messages/{message_id}",
+			call: func(t *testing.T, b *testBridge) *httptest.ResponseRecorder {
+				return unsendMessage(t, b, threadShort, "mid.$x")
+			},
+			upstream: []string{"instagram.FetchThreadID", "instagram.UnsendMessage"},
+		},
+		{
+			name: "reaction", pattern: "PUT /threads/{thread_fbid}/messages/{message_id}/reaction",
+			call: func(t *testing.T, b *testBridge) *httptest.ResponseRecorder {
+				return putReaction(t, b, threadShort, "mid.$x", map[string]any{"emoji": "👍"})
+			},
+			upstream: []string{"instagram.FetchThreadID", "instagram.SendReaction"},
+		},
+		{
+			name: "typing", pattern: "PUT /threads/{thread_fbid}/typing",
+			call: func(t *testing.T, b *testBridge) *httptest.ResponseRecorder {
+				return putTyping(t, b, threadShort, map[string]any{"typing": true})
+			},
+			upstream: []string{"instagram.FetchThreadID", "instagram.SetTyping"},
+		},
 	}
-	if len(rec.Ended()) < 2 {
-		t.Fatalf("expected a server span and an upstream span, got %d", len(rec.Ended()))
+}
+
+// Every write route: its server span is named by its PATTERN, continues the
+// caller's trace (Nora sends `traceparent` on every write), carries
+// `http.route`, and has exactly one upstream span per instameow call as its
+// children. A raw-path span name would put a thread and message id into the
+// NAME, where Jaeger indexes it, and split one route into a series per room.
+func TestEveryWriteRouteIsOneTracedRequestWithOneSpanPerUpstreamCall(t *testing.T) {
+	for _, wc := range writeCases() {
+		t.Run(wc.name, func(t *testing.T) {
+			rec := recordSpans(t)
+			b := newTestBridge(t, &fakeIG{})
+
+			w := wc.call(t, withTraceparent(b))
+			if w.Code != http.StatusOK {
+				t.Fatalf("answered %d: %s", w.Code, w.Body.String())
+			}
+			server := spanNamed(t, rec, wc.pattern)
+			if got := server.SpanContext().TraceID().String(); got != incomingTraceID {
+				t.Errorf("server span trace id = %s, want the caller's %s", got, incomingTraceID)
+			}
+			if server.SpanKind() != trace.SpanKindServer {
+				t.Errorf("span kind = %v, want server", server.SpanKind())
+			}
+			_, path, _ := strings.Cut(wc.pattern, " ")
+			if v, ok := attrOf(server, "http.route"); !ok || v.AsString() != path {
+				t.Errorf("http.route = %q (present=%v), want %q", v.AsString(), ok, path)
+			}
+			var children []string
+			for _, s := range rec.Ended() {
+				if s.Parent().SpanID() == server.SpanContext().SpanID() {
+					children = append(children, s.Name())
+					if s.SpanKind() != trace.SpanKindClient {
+						t.Errorf("upstream span %q kind = %v, want client", s.Name(), s.SpanKind())
+					}
+				}
+			}
+			if strings.Join(children, ",") != strings.Join(wc.upstream, ",") {
+				t.Errorf("upstream spans = %v, want exactly %v", children, wc.upstream)
+			}
+			if n := len(rec.Ended()); n != 1+len(wc.upstream) {
+				t.Errorf("%d spans in all, want %d: one server span and one per upstream call", n, 1+len(wc.upstream))
+			}
+		})
 	}
+}
+
+// tracedBridge wraps a test bridge so every request it serves carries Nora's
+// `traceparent`, the header her adapter sends on every write.
+type tracedBridge struct{ inner http.Handler }
+
+func (h tracedBridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	r.Header.Set("traceparent", "00-"+incomingTraceID+"-"+incomingParent+"-01")
+	h.inner.ServeHTTP(w, r)
+}
+
+func withTraceparent(b *testBridge) *testBridge {
+	return &testBridge{gw: b.gw, hub: b.hub, h: tracedBridge{inner: b.h}}
+}
+
+// assertNothingCarries fails if `secret` is in any span (attribute, event name
+// or attribute, name, status), any log line, or the response body.
+func assertNothingCarries(t *testing.T, rec *tracetest.SpanRecorder, logs *bytes.Buffer, body, secret, what string) {
+	t.Helper()
 	for _, s := range rec.Ended() {
 		for _, kv := range s.Attributes() {
-			if strings.Contains(kv.Value.String(), secret) {
-				t.Errorf("span %q attribute %s carries the message text", s.Name(), kv.Key)
+			if strings.Contains(kv.Value.Emit(), secret) {
+				t.Errorf("span %q attribute %s carries the %s", s.Name(), kv.Key, what)
 			}
 		}
 		for _, ev := range s.Events() {
+			if strings.Contains(ev.Name, secret) {
+				t.Errorf("span %q event name %q carries the %s", s.Name(), ev.Name, what)
+			}
 			for _, kv := range ev.Attributes {
-				if strings.Contains(kv.Value.String(), secret) {
-					t.Errorf("span %q event %q carries the message text", s.Name(), ev.Name)
+				if strings.Contains(kv.Value.Emit(), secret) {
+					t.Errorf("span %q event %q attribute %s carries the %s (RecordError)",
+						s.Name(), ev.Name, kv.Key, what)
 				}
 			}
 		}
 		if strings.Contains(s.Name(), secret) || strings.Contains(s.Status().Description, secret) {
-			t.Errorf("span %q name or status carries the message text", s.Name())
+			t.Errorf("span %q name or status carries the %s", s.Name(), what)
 		}
+	}
+	if logs != nil && strings.Contains(logs.String(), secret) {
+		t.Errorf("a log line carries the %s: %s", what, logs.String())
+	}
+	if strings.Contains(body, secret) {
+		t.Errorf("the response body carries the %s: %s", what, body)
+	}
+}
+
+// The negative: what people write never enters a span, a log line or an
+// envelope. Checked across every place a span carries text, on the success
+// path of EVERY write route in one conversation (the text is sent, then the
+// message is reacted to, unsent, and the room shown typing), because a span
+// that "looks fine" in Jaeger cannot show what it should not contain.
+func TestMessageTextNeverEntersASpan(t *testing.T) {
+	rec := recordSpans(t)
+	logs := captureLogs(t)
+	b := newTestBridge(t, &fakeIG{})
+	const secret = "the-words-somebody-wrote-3f9c1"
+
+	var bodies strings.Builder
+	for name, w := range map[string]*httptest.ResponseRecorder{
+		"send text":  sendMessage(t, b, threadShort, map[string]any{"text": secret}),
+		"send media": sendMessage(t, b, threadShort, mediaOf([]byte(secret), secret+".png", "image/png")),
+		"reaction":   putReaction(t, b, threadShort, "mid.$sent", map[string]any{"emoji": "👍"}),
+		"unsend":     unsendMessage(t, b, threadShort, "mid.$sent"),
+		"typing":     putTyping(t, b, threadShort, map[string]any{"typing": false}),
+	} {
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s answered %d: %s", name, w.Code, w.Body.String())
+		}
+		bodies.WriteString(w.Body.String())
+	}
+	if len(rec.Ended()) < 10 {
+		t.Fatalf("expected server and upstream spans for five routes, got %d", len(rec.Ended()))
+	}
+	assertNothingCarries(t, rec, logs, bodies.String(), secret, "message text")
+}
+
+// The harder half: every FAILURE path of a text send. An upstream refusal can
+// quote what it refused (the fake's error text carries the words, standing in
+// for that), and span.RecordError writes err.Error() into the span, the
+// envelope's message is the error's text, and the failure is logged. Each
+// failure here is a different path through the gateway's classification: too
+// long (413), a checkpoint found during the send (409), a GraphQL refusal
+// (502), an unnamed failure (500), a checkpoint in the room lookup (409 at the
+// lookup stage), and a checkpointed session (409 at the gate).
+func TestMessageTextNeverLeaksOnFailure(t *testing.T) {
+	const secret = "the-words-somebody-wrote-8a2d4"
+	for _, tc := range []struct {
+		name string
+		fake *fakeIG
+		opts []bridgeOpt
+		want int
+	}{
+		{"too long", &fakeIG{SendErr: fmt.Errorf("Message Too Long: %s", secret)}, nil, http.StatusRequestEntityTooLarge},
+		{"checkpoint during the send", &fakeIG{SendErr: fmt.Errorf("%w: %s", httpclient.ErrCheckpointRequired, secret)}, nil, http.StatusConflict},
+		{"graphql refusal", &fakeIG{SendErr: (&types.ErrorResponse{Errors: []*types.GraphQLError{
+			{Message: "refused " + secret, Summary: "Query error", Code: 1675030},
+		}}).AsError()}, nil, http.StatusBadGateway},
+		{"unnamed", &fakeIG{SendErr: fmt.Errorf("upstream said %q", secret)}, nil, http.StatusInternalServerError},
+		{"no message id", &fakeIG{EmptySend: true}, nil, http.StatusBadGateway},
+		{"room lookup", &fakeIG{FetchErr: httpclient.ErrCheckpointRequired}, nil, http.StatusConflict},
+		{"checkpointed session", &fakeIG{}, []bridgeOpt{withState(domain.StateCheckpointed, "captcha")}, http.StatusConflict},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := recordSpans(t)
+			logs := captureLogs(t)
+			b := newTestBridge(t, tc.fake, tc.opts...)
+
+			w := sendMessage(t, b, threadShort, map[string]any{"text": secret})
+			if w.Code != tc.want {
+				t.Fatalf("answered %d, want %d: %s", w.Code, tc.want, w.Body.String())
+			}
+			decodeEnvelope(t, w)
+			assertNothingCarries(t, rec, logs, w.Body.String(), secret, "message text")
+		})
 	}
 }
 
@@ -282,6 +466,92 @@ func TestSearchQueryNeverLeaksOnFailure(t *testing.T) {
 	}
 	if strings.Contains(w.Body.String(), secret) {
 		t.Errorf("the error envelope carries the search query: %s", w.Body.String())
+	}
+}
+
+// The same rule for GET /accounts?username= (17 P10): a username is a name
+// typed about a person, exactly like a search query, and must never land in
+// a span — including instagram.accounts_by_username.match_count
+// (accounts_search.go), which must carry the COUNT and never the username
+// itself.
+func TestUsernameNeverEntersASpan(t *testing.T) {
+	rec := recordSpans(t)
+	const secret = "secret_username_9f2a1"
+	b := newTestBridge(t, &fakeIG{SearchResultsSet: true, SearchResults: []*slidetypes.SearchResult{
+		{PK: "900000010", Username: secret},
+	}})
+
+	w := getSearch(t, b, "?username="+secret)
+	if w.Code != http.StatusOK {
+		t.Fatalf("/accounts?username= answered %d: %s", w.Code, w.Body.String())
+	}
+	if len(rec.Ended()) < 2 {
+		t.Fatalf("expected a server span and an upstream span, got %d", len(rec.Ended()))
+	}
+	for _, s := range rec.Ended() {
+		for _, kv := range s.Attributes() {
+			if strings.Contains(kv.Value.String(), secret) {
+				t.Errorf("span %q attribute %s carries the username", s.Name(), kv.Key)
+			}
+		}
+		for _, ev := range s.Events() {
+			for _, kv := range ev.Attributes {
+				if strings.Contains(kv.Value.String(), secret) {
+					t.Errorf("span %q event %q carries the username", s.Name(), ev.Name)
+				}
+			}
+		}
+		if strings.Contains(s.Name(), secret) || strings.Contains(s.Status().Description, secret) {
+			t.Errorf("span %q name or status carries the username", s.Name())
+		}
+	}
+}
+
+// The harder half, mirroring TestSearchQueryNeverLeaksOnFailure: an upstream
+// error can echo bad input back in its own message, so the failure path
+// needs its own check across every surface — span attributes, span events
+// (RecordError writes err.Error() into an exception event), span name and
+// status, the log line, and the error envelope's own message.
+func TestUsernameLookupNeverLeaksOnFailure(t *testing.T) {
+	rec := recordSpans(t)
+	logs := captureLogs(t)
+	const secret = "secret_username_b7f31"
+
+	// The fake's error TEXT contains the secret, standing in for an upstream
+	// validation error that quotes the bad input it is complaining about.
+	b := newTestBridge(t, &fakeIG{SearchErr: fmt.Errorf("upstream rejected the username %q", secret)})
+
+	w := getSearch(t, b, "?username="+secret)
+	if w.Code == http.StatusOK {
+		t.Fatalf("expected a failure status for a synthetic upstream error, got 200: %s", w.Body.String())
+	}
+
+	for _, s := range rec.Ended() {
+		for _, kv := range s.Attributes() {
+			if strings.Contains(kv.Value.String(), secret) {
+				t.Errorf("span %q attribute %s carries the username", s.Name(), kv.Key)
+			}
+		}
+		for _, ev := range s.Events() {
+			if strings.Contains(ev.Name, secret) {
+				t.Errorf("span %q event name %q carries the username", s.Name(), ev.Name)
+			}
+			for _, kv := range ev.Attributes {
+				if strings.Contains(kv.Value.String(), secret) {
+					t.Errorf("span %q event %q attribute %s carries the username (RecordError)",
+						s.Name(), ev.Name, kv.Key)
+				}
+			}
+		}
+		if strings.Contains(s.Name(), secret) || strings.Contains(s.Status().Description, secret) {
+			t.Errorf("span %q name or status carries the username", s.Name())
+		}
+	}
+	if strings.Contains(logs.String(), secret) {
+		t.Errorf("a log line carries the username: %s", logs.String())
+	}
+	if strings.Contains(w.Body.String(), secret) {
+		t.Errorf("the error envelope carries the username: %s", w.Body.String())
 	}
 }
 
