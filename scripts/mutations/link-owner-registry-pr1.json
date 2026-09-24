@@ -1,0 +1,23 @@
+[
+  {
+    "name": "the post-pass lookup is skipped: build_tool_specs wraps nothing, both fetchers reach their provider/downloader unrouted",
+    "file": "nora/agent/tools.py",
+    "old": "        if not link_inputs:\n",
+    "new": "        if True:\n",
+    "target": "tests/test_web_fetch_tool.py::test_an_instagram_page_link_is_routed_to_instagram_read_and_never_fetched tests/test_web_fetch_tool.py::test_a_mobile_instagram_page_link_asks_for_the_www_link tests/test_media_fetch.py::test_an_instagram_page_link_is_sent_to_instagram_read_without_a_download tests/test_media_fetch.py::test_a_mobile_page_link_is_refused_and_asks_for_the_www_link"
+  },
+  {
+    "name": "media_fetch's link_inputs declaration is dropped: an Instagram page (or a mobile one) downloads",
+    "file": "nora/agent/tools.py",
+    "old": "                              link_inputs=(\n                                  LinkInput(\n                                      \"url\", unless=\"code\",\n                                      page_note=_INSTAGRAM_PAGE_LINK,\n                                      mobile_note=_INSTAGRAM_MOBILE_PAGE_LINK,\n                                  ),\n                              )),\n",
+    "new": "                              link_inputs=()),\n",
+    "target": "tests/test_media_fetch.py::test_an_instagram_page_link_is_sent_to_instagram_read_without_a_download tests/test_media_fetch.py::test_a_mobile_page_link_is_refused_and_asks_for_the_www_link"
+  },
+  {
+    "name": "web_fetch's link_inputs declaration is dropped: an Instagram page reaches the provider",
+    "file": "nora/agent/tools.py",
+    "old": "                            link_inputs=(\n                                LinkInput(\n                                    \"url\",\n                                    page_note=_WEB_FETCH_INSTAGRAM_PAGE,\n                                    mobile_note=_WEB_FETCH_INSTAGRAM_MOBILE_PAGE,\n                                ),\n                            )),\n",
+    "new": "                            link_inputs=()),\n",
+    "target": "tests/test_web_fetch_tool.py -k instagram"
+  }
+]

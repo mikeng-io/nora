@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Internal refactor only (design/social-per-network/30-link-owner-registry.md, PR 1): web_fetch and media_fetch's Instagram-page guard moves from an inline check in each tool into a new nora.agent.link_owners registry, applied once by build_tool_specs. Behaviour is identical -- same notes, same status, same routing -- so nobody using Nora sees a change. X and LinkedIn are not registered yet (PRs 2/3).",
+  "details": [],
+  "limitations": []
+}

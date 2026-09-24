@@ -464,6 +464,13 @@ cites this node.
    (7 X, 1 Instagram, 0 LinkedIn), the round trip costs nothing
    measurable.
 
+**2026-09-25, operator: all three accepted as recommended.** `nothing_found`
+is the one redirect status; `x_read`/`linkedin_read` get no `url` alias yet;
+a claimed link redirects, it is never rewritten to the owner's call. PR 1
+(this commit) builds only the Instagram row under decision 1 — the
+owners' cross-network branches (decision 1's other half) and the alias
+(decision 2) are PRs 2 and 3's work, not built here.
+
 ## Non-goals
 
 - **Resolving shorteners.** Following `t.co` or `lnkd.in` is a request to
