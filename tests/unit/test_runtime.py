@@ -1548,6 +1548,75 @@ async def test_a_hung_cursor_read_is_released_by_the_unit_wall_clock():
     )
 
 
+class _RaisingRecord:
+    """`_SinceReadable`'s own RAISE, as opposed to `_HangingRecord`'s hang.
+
+    `record.since` raising `TimeoutError` directly — an asyncpg
+    `command_timeout`, a raw socket timeout, exactly the class
+    `_bounded_store_call`'s own docstring names — is NOT `[dreamer]
+    max_unit_hold_seconds` firing, and must not be treated as though it
+    were (issue #191 independent review, HIGH). It is an ORDINARY failure
+    and must feed the exponential backoff the same way any other exception
+    does.
+    """
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def since(
+        self, *, conversation_id: str, after_id: int, limit: int
+    ) -> list[TranscriptRow]:
+        self.calls += 1
+        raise TimeoutError("simulated asyncpg command_timeout")
+
+
+async def test_a_collaborators_own_timeout_error_is_an_ordinary_failure(caplog):
+    """**The regression the independent review caught.** A prior shape split
+    the timeout handling into `except TimeoutError: ... if not
+    unit_deadline.expired(): raise` followed by a sibling `except
+    Exception:`. Python does not chain except clauses on one try: the
+    `raise` propagated PAST the sibling entirely, out of `_run_adaptor`
+    itself — no `log.exception`, no `nora_errors_total`, no
+    `_count_failure`, and the exponential backoff never engaged. Measured
+    live on the review's own probe: 14 calls in 0.3s with 0 errors counted,
+    against 1 call / 1 error / backoff on the pre-#191 tree.
+
+    PROOF: exactly ONE call despite many ticks (backoff DID engage), the
+    ordinary-failure series moved, and the wedge series — which this was
+    never an instance of — did not.
+    """
+    record = _RaisingRecord()
+    language = _KeyedLanguage(lag=99)
+    runner = _RecordingRunner()
+    adaptor = _StubAdaptor("note-candidates")
+    metrics = Metrics()
+
+    with caplog.at_level(logging.ERROR, logger="nora.app.runtime"):
+        await _tick(dream_loop(
+            record, language, metrics,
+            scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+            quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+            adaptors=[adaptor], runtime=runner,
+            # Large and deliberate: this proves the failure is ORDINARY —
+            # counted and backed off — not a case of the wall clock itself
+            # being too tight to observe the wedge path by accident.
+            max_unit_hold_seconds=5.0,
+        ), ticks=0.3)
+
+    assert record.calls == 1, (
+        f"record.since was entered {record.calls} times in 0.3s with no "
+        "backoff engaged — a collaborator's own TimeoutError was treated "
+        "as a wedge instead of an ordinary failure"
+    )
+    assert metrics.get("nora_errors_total", stage="dream") == 1
+    assert metrics.get(
+        "nora_dream_unit_timeout_total", adaptor="note-candidates",
+    ) == 0, "this was never [dreamer] max_unit_hold_seconds firing"
+    assert any(
+        "dream cycle failed for" in r.getMessage() for r in caplog.records
+    )
+
+
 # ---- the additive guarantee, and the wiring mistake that is otherwise silent
 
 

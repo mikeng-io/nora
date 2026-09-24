@@ -1759,15 +1759,36 @@ store_timeout_seconds = 15.0
 # call nobody has written yet; the cost is it can only say WHICH ADAPTOR
 # wedged, never which await.
 #
-# 1200s (20 min) is checked at startup (nora.config's
-# `_the_dream_unit_hold_exceeds_its_components`) against the model budget
-# (samples x [dreamer.budgets.*] timeout_seconds) plus both store bounds
-# (2 x store_calls_per_tick x store_timeout_seconds) — it must PROVABLY
-# exceed that sum or Nora refuses to start. Clears the shipped defaults
-# (720s) and this file's own [dreamer.budgets.proactive] timeout_seconds =
-# 240 (840s) with real room. Raise it only against a reading that the wall
-# clock is cutting off a legitimate run, never to quiet the startup refusal.
-max_unit_hold_seconds = 1200.0
+# COMMENTED OUT ON PURPOSE (issue #191 independent review, BLOCKER). The
+# first shipped version of this key was a fixed 1200.0, argued against THIS
+# FILE's own [dreamer.budgets.proactive] timeout_seconds = 240 below. The
+# DEPLOYMENT runs 720, not 240 — a number this template never carried — and
+# 1 x 720 + 2 x DREAM_MAX_STORE_CALLS_PER_TICK(20) x 15 = 1320 > 1200: the
+# rebuilt image would have refused to boot the first time it was checked
+# against the real config rather than the example.
+#
+# Unset (the shipped state), nora.config.Config.dreamer_max_unit_hold_seconds
+# DERIVES the value at every load: the known-bounded minimum (the model
+# budget — samples x (timeout_seconds + the reasoning-strip watch's own 2s
+# write bound) — plus both of #60's store bounds, plus the media join's own
+# bound; see Config._dream_unit_hold_known_minimum) PLUS a flat 300s margin
+# for the cursor reads that minimum cannot sum (clock.last_fired/record_fire,
+# every language.* watermark call, record.since itself — issue #191's own
+# subject, genuinely unbounded, so there is no declared number to add; 300s
+# is headroom for their NORMAL running time, not a bound on a hang). This
+# derivation moves with every future edit to a [dreamer.budgets.*]
+# timeout_seconds or to [notes] candidate_samples — a fixed literal here
+# would need a human to remember to raise it alongside either one, and
+# forgetting is either a refused boot (too low) or a silently thinner margin
+# (an old literal that still happens to validate).
+#
+# Set this explicitly only to require MORE headroom than the derivation
+# gives, or to pin one number for a reading — nora.config still refuses to
+# start if the explicit value does not exceed the known-bounded minimum
+# above (`_the_dream_unit_hold_exceeds_its_components`). Raise it only
+# against a reading that the wall clock is cutting off a legitimate run,
+# never to quiet that startup refusal.
+# max_unit_hold_seconds = 1200.0
 # NONE, and it is the fix for the knowledge tier's first production failure.
 # Reasoning is billed as COMPLETION on this model family, so the effort is a
 # budget spent BEFORE any answer text — and at "low" the extractor spends all

@@ -1069,48 +1069,65 @@ async def dream_loop(
             else:
                 failures.pop(unit, None)
                 last_failure_at.pop(unit, None)
-        except TimeoutError:
-            # `[dreamer] max_unit_hold_seconds` fired — issue #191, the wall
-            # clock declared above. `not unit_deadline.expired()` would mean
-            # some OTHER `TimeoutError` reached here uncaught, which today it
-            # cannot: `DreamerRuntime`'s own inner timeouts (the model budget,
-            # `#60`'s store bounds) each convert to a status or a counted,
-            # re-raised timeout that `_dream_adaptor_once`'s caller — this
-            # function, via `DreamerRuntime.run` — turns into `unavailable`
-            # before it ever returns, so nothing inner should surface here as
-            # a bare escape. Re-raised rather than silently swallowed if it
-            # ever does, the same refusal `_bounded_store_call` makes for a
-            # collaborator's own clock.
-            if not unit_deadline.expired():
-                raise
-            metrics.inc("nora_dream_unit_timeout_total", adaptor=adaptor.name)
-            log.error(
-                "dream unit timed out after %.0fs (adaptor=%s key=%s) — "
-                "[dreamer] max_unit_hold_seconds fired and the whole cycle "
-                "did not return; the unit is released rather than held "
-                "forever (issue #191)",
-                max_unit_hold_seconds, adaptor.name, key,
-            )
-            # DELIBERATELY NOT `_count_failure(unit)`. The exponential backoff
-            # exists for a provider outage, where retrying at full cadence
-            # burns quota against something that is genuinely down (2026-08-21,
-            # `_run_adaptor`'s own docstring above). A wedge is a different
-            # claim: THIS unit's clock fired, which says nothing about whether
-            # a retry right now would wedge again — `record.since` hanging
-            # once is not evidence the store is down, only that one call
-            # didn't return. Backing it off at `_DREAM_BACKOFF_BASE_SECONDS =
-            # 60s` would also fail the property this fix exists for: a unit
-            # released by the wall clock must be tickable on the VERY NEXT
-            # tick, not an hour's climb away from it. Existing backoff state is
-            # left untouched either way — this outcome is neither a success
-            # (clearing it) nor a new failure (extending it).
-        except Exception:
-            # Something OUTSIDE the model call broke — the cursor store, the
-            # record read, an adaptor raising out of `inputs`. Counted against
-            # this adaptor's own backoff, never its siblings'.
-            log.exception("dream cycle failed for %s", unit)
-            metrics.inc("nora_errors_total", stage="dream")
-            _count_failure(unit)
+        except Exception as exc:
+            # **ONE `except`, not two — issue #191 review, HIGH.** A prior
+            # version split this into `except TimeoutError: ... if not
+            # unit_deadline.expired(): raise` followed by a sibling `except
+            # Exception:`. Python does not chain except clauses on the same
+            # try: a `raise` inside the first one propagates PAST the second
+            # entirely, out of `_run_adaptor` itself. A collaborator's own
+            # `TimeoutError` — `record.since` hitting an asyncpg
+            # `command_timeout` or a raw socket timeout, exactly the class
+            # `_bounded_store_call`'s own docstring names — is not `asyncio.
+            # timeout`'s cancellation, so it is not caught by the `async
+            # with` above and lands here uncaught by our OWN clock. The old
+            # shape re-raised it: no `log.exception`, no `nora_errors_total`,
+            # no `_count_failure` — silently unmetered, and the exponential
+            # backoff never engaged. Measured live on the review's probe:
+            # `record.since` raising `TimeoutError` produced 14 calls in
+            # 0.3s and 0 errors counted, against 1 call / 1 error / backoff
+            # on the pre-#191 tree. A single clause with an `isinstance`
+            # branch cannot skip a sibling, because there is no sibling to
+            # skip.
+            if isinstance(exc, TimeoutError) and unit_deadline.expired():
+                # `[dreamer] max_unit_hold_seconds` fired — OUR wall clock,
+                # declared above. `unit_deadline.expired()` is what tells
+                # this apart from the `else` branch below: a `TimeoutError`
+                # that is not ours is an ORDINARY failure, not a wedge.
+                metrics.inc(
+                    "nora_dream_unit_timeout_total", adaptor=adaptor.name)
+                log.error(
+                    "dream unit timed out after %.0fs (adaptor=%s key=%s) — "
+                    "[dreamer] max_unit_hold_seconds fired and the whole "
+                    "cycle did not return; the unit is released rather than "
+                    "held forever (issue #191)",
+                    max_unit_hold_seconds, adaptor.name, key,
+                )
+                # DELIBERATELY NOT `_count_failure(unit)`. The exponential
+                # backoff exists for a provider outage, where retrying at
+                # full cadence burns quota against something that is
+                # genuinely down (2026-08-21, `_run_adaptor`'s own docstring
+                # above). A wedge is a different claim: THIS unit's clock
+                # fired, which says nothing about whether a retry right now
+                # would wedge again — `record.since` hanging once is not
+                # evidence the store is down, only that one call didn't
+                # return. Backing it off at `_DREAM_BACKOFF_BASE_SECONDS =
+                # 60s` would also fail the property this fix exists for: a
+                # unit released by the wall clock must be tickable on the
+                # VERY NEXT tick, not an hour's climb away from it. Existing
+                # backoff state is left untouched either way — this outcome
+                # is neither a success (clearing it) nor a new failure
+                # (extending it).
+            else:
+                # Everything else: an ordinary exception from the cursor
+                # store, the record read, an adaptor raising out of
+                # `inputs` — OR a collaborator's own `TimeoutError` that is
+                # not `unit_deadline` expiring. Counted against this
+                # adaptor's own backoff, never its siblings', and never
+                # silently dropped (issue #191 review).
+                log.exception("dream cycle failed for %s", unit)
+                metrics.inc("nora_errors_total", stage="dream")
+                _count_failure(unit)
         finally:
             running.discard(unit)
 
