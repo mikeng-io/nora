@@ -122,6 +122,9 @@ Signal group
    bounded research loop ONLY when that read rendered something.
    note-candidates (hourly, per room) → stages notes from new messages
    note-curation   (daily, per unit, off by default) → retires notes
+   note-merge      (hourly, per unit, [notes] merge_mode, off by default)
+                    → folds a duplicate note into the oldest of its group;
+                      in shadow, only records the fold it would make
    proactive       (hourly tick, renders on change or a daily floor) → may
                     write ONE kind of row: a `kind="proactive"` reminder for ③
 ```
@@ -320,7 +323,9 @@ not ask" never collapses into "there is nothing".
 memory in its sense.** The **note tier** (`design/dreamer-agent-loop/27`, `33`;
 tables `note`/`note_revision`/`note_candidate`) holds the group's OPEN
 QUESTIONS per unit — written by people on a tag and by the
-`note-candidates` adaptor, retired by the curator, and never by anything Nora
+`note-candidates` adaptor, retired by the curator, folded together by
+`note-merge` when two ask the same question (design 41 §7; `[notes]
+merge_mode`, off by default, `shadow` first), and never by anything Nora
 herself says (her rows are excluded from what the tier reads: the one
 structural brake on her talking to herself, 39 §1). **Standing** (`design/
 dreamer-agent-loop/26`; table `standing`) is her own one-paragraph position
@@ -423,7 +428,9 @@ the language tier were **deprecated 2026-09-07** and their code deleted (issue
 #115), and the note tier's entity-resolution chain and the curator's merge half
 were **deprecated 2026-09-08** — with the create gate's anchor-date match, which
 had taken duplicate-handling over from merge, deleted in turn on **2026-09-13**
-(#228), so nothing merges a duplicate in that tier at all (#236). Their database
+(#228), so nothing merged a duplicate in that tier at all (#236) — *until
+2026-09-25, when a separate `note-merge` pass was built (DEC-202, design 41 §7;
+`[notes] merge_mode`, off by default, `shadow` first)*. Their database
 tables are deliberately not dropped. Design documents describing them carry
 `DEPRECATED` banners, and their decision-index rows are marked rather than
 renumbered.

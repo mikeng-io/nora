@@ -349,8 +349,9 @@ class Note:
     # `DreamSink.supersede`. A closed vocabulary rather than free text because
     # "how many notes did the curator retire this week, and on what ground"
     # is the reading that justifies the curator existing, and prose does not
-    # aggregate. (It was written as "how many did it merge"; merge was
-    # deleted 2026-09-08 and `NoteSupersedeReason.ALL` no longer names it.)
+    # aggregate. (It was written as "how many did it merge"; the curator's
+    # merge was deleted 2026-09-08, and a fold is `retired-merged`, written by
+    # the `note-merge` pass since 2026-09-25, never by the curator.)
     # `None` until retired; the `retired_at is None` invariant below is what
     # pairs them.
     retire_reason: str | None = None
@@ -579,8 +580,9 @@ class NoteCreationProposal:
 
     **A create proposal never names a note, so it cannot collide with one — and
     the sink does NOT check whether a similar note already exists.** That is
-    deliberate. Deduplication is anchor-keyed and belongs to the curator (§7.1),
-    which is the only thing permitted to act across notes; a sink that
+    deliberate. Deduplication acts across notes and belongs to the pass built
+    for it — the `note-merge` adaptor since 2026-09-25 (design 41 §7), the
+    anchor-keyed curator merge before 2026-09-08; a sink that
     reinterpreted a create as a revision because it found a plausible match
     would be doing cross-note reasoning at the storage boundary, silently, on
     a guess. Two notes about the same occasion is a state the curator is built
@@ -826,8 +828,9 @@ class NoteSupersedeReason:
     RETIRED_EXPIRED = "retired-expired"
     RETIRED_CLOSED = "retired-closed"
     #: Folded into another open note, which `replaced_by` names (design 41
-    #: §7.6, DEC-202). A lookup that lands here FORWARDS to that note rather
-    #: than reporting nothing — see `NoteStore.successor`.
+    #: §7.6, DEC-202). Written by `merge_into` — the `note-merge` pass in
+    #: `on` — and by operator triage. A lookup that lands here FORWARDS to
+    #: that note rather than reporting nothing — see `NoteStore.successor`.
     RETIRED_MERGED = "retired-merged"
     #: Never an open question of the group — an entry about Nora's own turn,
     #: or one nobody raised. For operator triage only; no pass writes it
@@ -849,6 +852,146 @@ class NoteSupersedeReason:
 #: itself merged later; a loop is impossible through `merge_into` and bounded
 #: here anyway, because a hand-edited row must not hang a lookup.
 MERGE_FORWARD_HOPS = 8
+
+
+# --- note-merge (design 41 §7.3-7.8, DEC-202) --------------------------------
+
+#: What `[notes] merge_mode` may be once the adaptor is wired at all. `off`
+#: is not here: an adaptor that is off is not built (the composition root's
+#: gate), so it never records a decision.
+NOTE_MERGE_MODES: tuple[str, ...] = ("shadow", "on")
+
+#: What one considered fold came to, recorded per (survivor, duplicate) pair
+#: on `note_merge_decision` and counted on `nora_note_merge_total{outcome}`.
+#: The CHECK constraint and the metric's help text both read this tuple.
+#:
+#: - `would_merge` — `shadow` only: every code check passed and nothing was
+#:   written. The row the operator labels.
+#: - `merged` — `on` only: `merge_into` committed.
+#: - `stale` — a head moved between the render and the fold (or the
+#:   transaction's own compare-and-swap refused); retried on the next change.
+#: - `too_long` — the folded body would pass `BODY_MAX_CHARS`; refused, never
+#:   truncated.
+#: - `not_open` — one of the two was retired between the render and the fold.
+#: - `overlap` — the note is in two groups of one answer; every such group is
+#:   refused whole and no transitive closure is taken.
+#: - `cross_room` — the group's notes were born in different rooms (v1 folds
+#:   same-room groups only).
+#: - `not_changed` — no note in the group changed since the last pass, so the
+#:   group was already judged; re-judging it every pass would turn one sample
+#:   into a union over passes, which fails toward merging.
+NOTE_MERGE_OUTCOMES: tuple[str, ...] = (
+    "would_merge", "merged", "stale", "too_long", "not_open", "overlap",
+    "cross_room", "not_changed",
+)
+
+#: The line an appended merge revision starts its folded-in half with. A
+#: marked line rather than a blank one (unlike `note_candidates._appended`)
+#: because this half is ANOTHER note's question, and a reader of the body
+#: needs to see where the one note ends and the folded one begins.
+MERGE_MARKER = "--- folded in from another note ---"
+
+#: The model's `why` as kept on a decision row. A sentence, not a document.
+MERGE_REASON_MAX_CHARS = 500
+
+
+@dataclass(frozen=True, slots=True)
+class NoteMergeDecision:
+    """One fold the `note-merge` pass considered, as `note_merge_decision`
+    stores it — the row the operator labels in `shadow` and the audit of a
+    fold in `on`.
+
+    **Not the shared decision log** (`nora.domain.decision_log`), though
+    design 41 §7.8 called these «decision-log rows». That table is the ambient
+    deciders' shared state: its rows render into the participation and
+    proactive prompts, its `reason` is a code label capped at 80 characters,
+    and it refuses model text and note titles by its own rule. A merge row
+    needs both titles and the model's reason, and must never reach a prompt.
+
+    Titles are stored beside the ids so a row reads on its own; a note's title
+    never changes, so the two cannot disagree.
+    """
+
+    id: str
+    unit: str
+    mode: str
+    outcome: str
+    survivor_id: str
+    duplicate_id: str
+    survivor_title: str
+    duplicate_title: str
+    reason: str
+    established_by: str
+    ts: int
+
+    def __post_init__(self) -> None:
+        if self.mode not in NOTE_MERGE_MODES:
+            raise ValueError(
+                f"merge mode {self.mode!r} is not one of {NOTE_MERGE_MODES}"
+            )
+        if self.outcome not in NOTE_MERGE_OUTCOMES:
+            raise ValueError(
+                f"merge outcome {self.outcome!r} is not one of "
+                f"{NOTE_MERGE_OUTCOMES}"
+            )
+        if self.survivor_id == self.duplicate_id:
+            raise ValueError("a note cannot be folded into itself")
+        if len(self.reason) > MERGE_REASON_MAX_CHARS:
+            raise ValueError(
+                f"a merge reason is at most {MERGE_REASON_MAX_CHARS} "
+                f"characters (got {len(self.reason)}); clip it at the caller"
+            )
+
+
+def latest_anchor(first: int | None, second: int | None) -> int | None:
+    """The later of two anchor days, a dated one over a dateless one (§7.7).
+
+    A survivor that kept its own earlier anchor would be selected by
+    `anchored_before` on that day and could be expired with the later question
+    folded inside it.
+    """
+    if first is None:
+        return second
+    if second is None:
+        return first
+    return max(first, second)
+
+
+def merged_body(
+    *, survivor_body: str, duplicate: Note, duplicate_body: str,
+) -> str:
+    """The survivor's next head after folding `duplicate` into it (§7.7): the
+    survivor's body, then — under `MERGE_MARKER` — the duplicate's title,
+    uncertainty and closing condition, and only the paragraphs of its body the
+    survivor does not already contain.
+
+    Paragraph-level and syntactic, `note_candidates._adds_information`'s
+    reading one grain finer: a paragraph whose whitespace-collapsed, casefolded
+    text is already inside the survivor's body is left out. A paraphrase is
+    kept, which is the direction that loses no text.
+
+    The caller refuses a result over `BODY_MAX_CHARS` (`too_long`); this never
+    truncates.
+    """
+    def _norm(text: str) -> str:
+        return " ".join(text.split()).casefold()
+
+    have = _norm(survivor_body)
+    fresh = [
+        p.strip() for p in duplicate_body.split("\n\n")
+        if p.strip() and _norm(p) not in have
+    ]
+    lines = [
+        survivor_body.rstrip(),
+        "",
+        MERGE_MARKER,
+        f"title: {duplicate.title}",
+        f"uncertainty: {duplicate.uncertainty}",
+        f"closing condition: {duplicate.closing_condition}",
+    ]
+    if fresh:
+        lines += ["", *fresh]
+    return "\n".join(lines)
 
 
 class StaleNoteHeadError(Exception):

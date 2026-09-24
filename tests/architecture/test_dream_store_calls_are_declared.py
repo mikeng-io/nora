@@ -357,6 +357,12 @@ _MUST_SEE: dict[str, frozenset[str]] = {
     "CultureAdaptor": frozenset({
         "self._culture.head", "self._culture.append",
     }),
+    # note-merge (design 41 §7): the change check's two reads, the fold's
+    # transaction, and the stamp that must come last.
+    "NoteMergeAdaptor": frozenset({
+        "self._clock_store.last_fired", "self._notes.revision_chain",
+        "self._notes.merge_into", "self._clock_store.record_fire",
+    }),
 }
 
 

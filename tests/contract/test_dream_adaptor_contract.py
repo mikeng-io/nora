@@ -69,9 +69,10 @@ from nora.domain.notes import anchor_bounds_ms
 from nora.domain.ports import DreamAdaptor, Proposal
 from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.language.note_curator import NoteCuratorAdaptor
+from nora.language.note_merge import NoteMergeAdaptor
 from nora.language.proactive import ProactiveAdaptor, UnitRoom
 from nora.obs.metrics import Metrics
-from nora.testing import InMemoryNoteStore
+from nora.testing import InMemoryDreamScheduleClock, InMemoryNoteStore
 from nora.testing.fakes import FakeRecordStore
 from nora.testing.reminders import FakeReminderStore
 
@@ -461,6 +462,53 @@ def _note_curator_written(_adaptor: object, store: object) -> int:
     return sum(1 for n in store.notes.values() if not n.is_standing)
 
 
+# -- note-merge ---------------------------------------------------------------
+
+
+def _build_note_merge() -> tuple[NoteMergeAdaptor, InMemoryNoteStore]:
+    """`on`, not `shadow`: the suite asserts a legal batch WRITES, and a
+    shadow pass writes no note by design (it records a decision row)."""
+    store = InMemoryNoteStore()
+    return (
+        NoteMergeAdaptor(
+            notes=store, clock_store=InMemoryDreamScheduleClock(), mode="on",
+            timezone=ZoneInfo("Asia/Hong_Kong"), metrics=Metrics(),
+            clock=lambda: 10_000,
+        ),
+        store,
+    )
+
+
+async def _prepare_note_merge(adaptor: object) -> None:
+    """Two open notes of one room, then the render that hands them ordinal
+    handles — the handles `make_items` speaks."""
+    assert isinstance(adaptor, NoteMergeAdaptor)
+    notes = adaptor._notes
+    assert isinstance(notes, InMemoryNoteStore)
+    for n, title in enumerate(("Saturday dinner", "Neway booking")):
+        await notes.create(
+            unit=_NOTE_WS, title=title, description="one line",
+            uncertainty="where", closing_condition="somebody books it",
+            established_in=_NOTE_ROOM, body="as it stands",
+            established_by="tag:miles", now_ms=1_000 + n, anchor_date=20260927,
+        )
+    await adaptor.inputs(key=_NOTE_WS, batch=())
+
+
+def _note_merge_items() -> tuple[Mapping[str, object], ...]:
+    return ({"notes": ["1", "2"], "why": "both ask where Saturday's dinner is"},)
+
+
+def _note_merge_malformed_item() -> Mapping[str, object]:
+    # `notes` is not a list, and `why` is not a string.
+    return {"notes": "1,2", "why": 7}
+
+
+def _note_merge_written(_adaptor: object, store: object) -> int:
+    assert isinstance(store, InMemoryNoteStore)
+    return sum(1 for n in store.notes.values() if not n.is_standing)
+
+
 IMPLEMENTATIONS: dict[str, _Impl] = {
     "fake": _Impl(
         build=_build_fake,
@@ -502,6 +550,16 @@ IMPLEMENTATIONS: dict[str, _Impl] = {
         # empty-propose counter to read.
         empty_commits=None,
         prepare=_prepare_note_curator,
+    ),
+    "note-merge": _Impl(
+        build=_build_note_merge,
+        make_items=_note_merge_items,
+        make_malformed_item=_note_merge_malformed_item,
+        written=_note_merge_written,
+        # An empty commit stamps the pass clock and reaches no `DreamSink`;
+        # there is no empty-propose counter to read.
+        empty_commits=None,
+        prepare=_prepare_note_merge,
     ),
 }
 
@@ -915,5 +973,5 @@ def test_every_registered_implementation_is_exercised():
     state. A silently shrinking map makes every test in this file vacuous, and
     the shrink is invisible: the suite stays green, faster."""
     assert set(IMPLEMENTATIONS) >= {
-        "fake", "proactive", "note-candidates", "note-curation",
+        "fake", "proactive", "note-candidates", "note-curation", "note-merge",
     }, sorted(IMPLEMENTATIONS)
