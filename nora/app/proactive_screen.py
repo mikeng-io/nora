@@ -20,7 +20,11 @@ row was written hours ago by a decide turn reading the world as it was then.
    If the note has since been RETIRED, or the TAG PATH has revised it past
    that revision, the premise of the row is gone — a human settled the
    thing at 11:00, so Nora does not raise it at 14:00. Refused:
-   `CANCELLED` / `cancelled_note_retired` or `cancelled_note_moved`. Not
+   `CANCELLED` / `cancelled_note_retired` or `cancelled_note_moved`. A
+   note retired `retired-merged` is not gone: its question was folded into
+   another open note (design 41 §7.5), so the row FOLLOWS that survivor —
+   it fires unless the survivor was revised on the tag path after the row
+   was written, or the chain ends on no open note. Not
    «any head move»: the debrief's note sink appends revisions with a run-id
    `established_by` on ordinary tag turns, so a row cancelled by a
    paraphrase would cancel on every tag. `tag_path_progressed_since_wake`
@@ -47,6 +51,8 @@ from typing import Protocol
 from nora.domain.notes import (
     Note,
     NoteRevision,
+    NoteSupersedeReason,
+    is_tag_path_revision,
     tag_path_progressed_since_wake,
 )
 from nora.domain.reminders import Reminder, ReminderState
@@ -85,6 +91,8 @@ class _Notes(Protocol):
     async def revision_chain(
         self, *, unit: str, note_id: str,
     ) -> tuple[NoteRevision, ...]: ...
+
+    async def successor(self, *, unit: str, note_id: str) -> Note | None: ...
 
 
 class ProactiveScreen:
@@ -144,7 +152,8 @@ class ProactiveScreen:
                 row.id, note_id, convo.unit,
             )
             return ReminderState.FAILED, FAILED_ERROR
-        if current[0].retired_at is not None:
+        merged = current[0].retire_reason == NoteSupersedeReason.RETIRED_MERGED
+        if current[0].retired_at is not None and not merged:
             return ReminderState.CANCELLED, CANCELLED_NOTE_RETIRED
         moved = tag_path_progressed_since_wake(
             head_revision_id=current[0].head_revision_id,
@@ -152,5 +161,40 @@ class ProactiveScreen:
             chain={r.id: (r.parent_revision_id, r.established_by) for r in chain},
         )
         if moved:
+            return ReminderState.CANCELLED, CANCELLED_NOTE_MOVED
+        if current[0].retired_at is None:
+            return None
+        return await self._follow_survivor(row, unit=convo.unit, note_id=note_id)
+
+    async def _follow_survivor(
+        self, row: Reminder, *, unit: str, note_id: str,
+    ) -> tuple[ReminderState, str] | None:
+        """A row on a `retired-merged` note is screened against the open note
+        its question was folded into (design 41 §7.5): re-pointed in effect,
+        not cancelled. The row's own `revision_id` names a revision of the
+        DUPLICATE, so on the survivor «moved» is a tag-path revision written
+        after the row was — the same premise D11 checks, read by time because
+        no revision of the survivor was ever linked."""
+        if self._notes is None:     # pragma: no cover — checked by the caller
+            return ReminderState.FAILED, FAILED_ERROR
+        try:
+            survivor = await self._notes.successor(unit=unit, note_id=note_id)
+            chain = () if survivor is None else await self._notes.revision_chain(
+                unit=unit, note_id=survivor.id,
+            )
+        except Exception:
+            log.exception(
+                "proactive reminder %s: the survivor of merged note %s could "
+                "not be read; not firing on an unverified premise",
+                row.id, note_id,
+            )
+            return ReminderState.FAILED, FAILED_ERROR
+        if survivor is None:
+            return ReminderState.CANCELLED, CANCELLED_NOTE_RETIRED
+        linked_ms = int(row.created_at.timestamp() * 1000)
+        if any(
+            is_tag_path_revision(r.established_by) and r.written_at > linked_ms
+            for r in chain
+        ):
             return ReminderState.CANCELLED, CANCELLED_NOTE_MOVED
         return None

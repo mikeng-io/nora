@@ -2573,6 +2573,21 @@ class NotesConfig(BaseModel):
     #: the create gate; the run is unavailable only when every sample was.
     candidate_samples: int = Field(default=1, ge=1, le=10)
 
+    #: The `note-merge` pass (design/dreamer-agent-loop/41 §7, DEC-202) — the
+    #: back-stop for two open notes asking the same question, and a FIFTH
+    #: switch on the two-risks argument above: this is the one pass that
+    #: folds one note INTO another.
+    #:
+    #: `"off"` builds nothing. `"shadow"` runs the pass and writes no note:
+    #: every fold it would make is a `note_merge_decision` row for the
+    #: operator to label. `"on"` folds through `SqlNoteStore.merge_into`, and
+    #: is for after 41 §7.8's eval passes (a full-unit eval with 20+ near-miss
+    #: negatives, k >= 5, zero false merges, operator-signed labels).
+    #:
+    #: Default **"off"** for `candidates_enabled`'s reason: landing the code
+    #: must not change what any deployed `config.toml` does.
+    merge_mode: Literal["off", "shadow", "on"] = "off"
+
     # NO `max_body_chars`, and its absence is the decision. The field existed
     # here with a twelve-line docstring and a range validator and NOTHING READ
     # IT — the cap was `nora.domain.notes.BODY_MAX_CHARS` in four places the

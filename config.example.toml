@@ -1365,8 +1365,8 @@ enabled = false
 #             unrelated occasions both times, so a date is no longer
 #             identity. The gate now asks the model which standing note a
 #             proposal updates; anything it cannot name is written as a NEW
-#             note. Nothing merges a duplicate anywhere in this tier now —
-#             a known, recorded limitation, bounded by issue #236.)
+#             note. Folding duplicates came back on 2026-09-25 as its OWN
+#             pass, merge_mode below (DEC-202); this one stays retire-only.)
 #   RETIRE  — a note whose anchor date has passed, where the model reading the
 #             body says the question is answered ("closed") or can no longer be
 #             answered ("moot"). "Open" is the common answer and writes nothing.
@@ -1418,9 +1418,12 @@ candidates_enabled = false
 # recognised in about 30% of single samples at the dreamer tier's temperature,
 # while no negative batch ever produced a note across every prompt variant
 # tried. N samples recognise it with probability 1 - 0.7^N (3 -> 0.66,
-# 5 -> 0.83) and stay empty on a negative batch; duplicates across samples
-# collapse in the staging key and the create gate. Cost is N calls per fire on
-# a pass that fires at most hourly per room and only when the room spoke.
+# 5 -> 0.83) and stay empty on a negative batch. Duplicates across samples
+# collapse only when they are the same item, or share a title, day and people
+# (the staging key since DEC-189); two samples naming one arrangement under two
+# titles stage twice and can become two notes, which merge_mode below is the
+# back-stop for. Cost is N calls per fire on a pass that fires at most hourly
+# per room and only when the room spoke.
 # candidate_samples = 1
 
 # The DISCHARGE PIPELINE (design/dreamer-agent-loop/33-note-dreamer-
@@ -1448,6 +1451,35 @@ candidates_enabled = false
 # lane. "Nothing to discharge" is the ordinary, common answer and
 # is not an error.
 discharge_enabled = false
+
+# NOTE-MERGE (design/dreamer-agent-loop/41 §7, DEC-202) — the back-stop for
+# two open notes asking the same open question. Behind [dreamer] and [notes]
+# enabled like the passes above, and its own switch for the same two-risks
+# reason: this is the one pass that folds one note INTO another.
+#
+#   "off"    — not built; nothing runs.
+#   "shadow" — an hourly, unit-keyed, tool-free pass reads every open note of
+#              the unit side by side whenever one was created or revised since
+#              its last read, asks the model which are the same question, and
+#              writes NOTHING to the notes: each fold it would make becomes a
+#              note_merge_decision row (both titles and the model's reason) for
+#              the operator to label.
+#   "on"     — the same pass folds: the duplicate's question is appended to
+#              the OLDEST note of the group, which takes the later anchor, and
+#              the duplicate is retired "retired-merged" and forwards to it.
+#              Nothing is deleted; clearing the duplicate's retired_at restores
+#              it. Set only after the eval in design 41 §7.8 passes.
+#
+# Each mode keeps its OWN "last read" clock (note-merge:pass:shadow and
+# note-merge:pass:on), so the first "on" pass after a shadow run reconsiders
+# every pair once. With one shared clock, a pair shadow had already judged
+# counted as "unchanged" and was never folded after the flip.
+#
+# Whatever the mode, two things are live as soon as this code is deployed:
+# a pending proactive reminder about a note retired "retired-merged" follows
+# the note it was folded into instead of being cancelled, and the curator's
+# retirement is a no-op when the note's head moved under it.
+merge_mode = "off"
 
 [culture]
 # The culture tier (design/culture-tier). ON, a background pass reads each
