@@ -79,6 +79,68 @@ def test_a_name_that_is_not_a_slug_is_an_error(tmp_path):
         parse_skill(p)
 
 
+# --- issue #187 finding 3: authority frontmatter reaches nothing, so it is --
+# --- refused rather than silently kept in `metadata` ------------------------
+
+@pytest.mark.parametrize("key,value", [
+    ("authority_above", "[situation]"),
+    ("authority_below", "[message-content, tool-output]"),
+    ("change_policy", "operator-only"),
+])
+def test_a_skill_carrying_an_authority_key_is_refused(tmp_path, key, value):
+    """`nora.doctrine.loader` reads `authority_above`/`authority_below`/
+    `change_policy` off DOCTRINE sections only. A skill is a different
+    authority item (design/12 §2 item 5) and nothing reads any of the three
+    off one — `parse_skill` used to pop `name`/`description` and leave the
+    rest in `metadata` silently, so a skill could declare `authority_above:
+    [situation]`, as `navigation` and `image-generation` both shipped doing,
+    and read as though it were arbitrated against doctrine when nothing wired
+    it in (was #241 part 2). Each key is refused on its own, not only in
+    combination with the other two."""
+    p = tmp_path / "SKILL.md"
+    p.write_text(f"---\nname: x\ndescription: d\n{key}: {value}\n---\nbody")
+    with pytest.raises(SkillError, match="authority key"):
+        parse_skill(p)
+
+
+def test_the_error_names_every_carried_authority_key_at_once(tmp_path):
+    """A clear error names what is wrong, not just that something is —
+    somebody removing keys one submit at a time should not have to."""
+    p = tmp_path / "SKILL.md"
+    p.write_text(
+        "---\nname: x\ndescription: d\n"
+        "authority_above: [situation]\n"
+        "authority_below: [message-content]\n"
+        "change_policy: operator-only\n"
+        "---\nbody"
+    )
+    with pytest.raises(SkillError) as exc:
+        parse_skill(p)
+    message = str(exc.value)
+    for key in ("authority_above", "authority_below", "change_policy"):
+        assert key in message
+
+
+def test_every_shipped_skill_is_free_of_authority_keys():
+    """The shipped side of the fix: `navigation` and `image-generation` both
+    carried `authority_above`/`authority_below`/`change_policy` (verified
+    2026-09-17, issue #187 finding 3) and would now fail to load at all. This
+    reads the real files, not a fixture, so a re-added key here is caught the
+    same way an operator's own edit would be."""
+    from pathlib import Path
+
+    skills_dir = Path(__file__).resolve().parents[1] / "nora" / "skills"
+    checked = 0
+    for skill_dir in sorted(p for p in skills_dir.iterdir() if p.is_dir()):
+        md = skill_dir / "SKILL.md"
+        if not md.is_file():
+            continue  # e.g. `__pycache__`, which is not a skill directory
+        skill = parse_skill(md)  # raises if an authority key survived
+        assert skill.name == skill_dir.name
+        checked += 1
+    assert checked >= 2, "expected at least navigation and image-generation"
+
+
 # --- scanning ----------------------------------------------------------------
 
 def test_the_store_loads_skills_from_its_directory(skills_dir):

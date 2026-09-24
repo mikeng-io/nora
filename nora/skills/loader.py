@@ -66,6 +66,26 @@ _MAX_NAME = 64
 _FRONTMATTER_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n?(.*)\Z", re.DOTALL)
 _REQUIRED = ("name", "description")
 
+# The authority vocabulary `nora.doctrine.loader` reads off a DOCTRINE
+# section's frontmatter — `authority_above`/`authority_below` (design/17 §4's
+# authority graph between doctrine sections) and `change_policy` (who may edit
+# one without asking). A skill is a DIFFERENT authority item (design/12 §2,
+# item 5 — below a doctrine section, above a message) and nothing anywhere
+# reads any of the three off a skill's frontmatter: `nora.doctrine.loader`
+# only ever opens files under `nora/doctrine/`. Before this refusal,
+# `parse_skill` popped `name` and `description` and left the rest —
+# these three included — in `metadata`, silently: a skill file could declare
+# `authority_above: [situation]`, as `navigation` and `image-generation` both
+# did, and read as though it placed the skill in that graph while nothing
+# wired it in (issue #187 finding 3, was #241 part 2).
+#
+# REJECTED rather than honoured. Honouring them would mean this loader
+# participating in the doctrine authority graph — a bigger change with its own
+# evidence, and still open. Refusing is the smaller one: it stops a file
+# carrying a claim nothing enforces, which is the correctness-of-the-record
+# bug #241 named, not a behaviour bug.
+_FORBIDDEN_AUTHORITY_KEYS = ("authority_above", "authority_below", "change_policy")
+
 
 class SkillError(Exception):
     """A skill problem that stops the process (strict) or skips the file (lenient)."""
@@ -97,6 +117,14 @@ def parse_skill(path: Path) -> Skill:
     if missing:
         keys = ", ".join(repr(k) for k in missing)
         raise SkillError(f"{path.name}: missing or empty required key(s): {keys}")
+    carried = [k for k in _FORBIDDEN_AUTHORITY_KEYS if k in meta]
+    if carried:
+        keys = ", ".join(repr(k) for k in carried)
+        raise SkillError(
+            f"{path.name}: carries authority key(s) {keys} — a skill is not "
+            "in the doctrine authority graph and nothing here reads them; "
+            "remove from front matter (issue #187 finding 3)"
+        )
     name = str(meta.pop("name")).strip()
     if len(name) > _MAX_NAME or not _NAME_RE.match(name):
         raise SkillError(
