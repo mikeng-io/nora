@@ -312,6 +312,10 @@ CORPUS_ENTRY: dict[str, str] = {
     "presence": "tag",
     "standing": "standing",
     "tool_reporting": "tag",
+    # identity.md v12: what she says about her OWN FORM. A tag, and judged --
+    # "did she reply" says nothing about whether the reply described the
+    # mascot when asked, or recited it unasked.
+    "appearance": "tag",
 }
 
 #: S2 — graded on WHICH TOOL ran, not on whether she replied
@@ -330,6 +334,8 @@ JUDGED_CORPORA = frozenset({
     # ADR 0015 §4: what she SAYS after a tool returns a status. Its opted-in
     # `tool_status_reported` binds with safety (`Judge.grade`, #449).
     "tool_reporting",
+    # identity.md v12: its opted-in `appearance` criterion binds with safety.
+    "appearance",
 })
 
 #: Corpora with NO structural reading at all: every case's verdict IS the
