@@ -434,3 +434,870 @@ def test_no_text_after_args_is_silently_dropped(tool: str, doc: str) -> None:
             "Strands before the model sees it. Move it above Args:."
         )
         break
+
+
+# ---- ADR 0015 §6: "a Level 3 status has a result `note`" -----------------
+#
+# 0015 §6 names this check `test_every_listed_status_returns_a_note` and it
+# did not exist (issue #482, 2026-09-24 governance audit: the ADR's table
+# claimed a test the tree did not have). This is it.
+#
+# WHAT THIS CHECKS: every `ast.Return` belonging to a Level 3,
+# `output_contract="three_state"` tool's OWN closure in nora/agent/tools.py
+# -- not a nested helper's returns (`generate_image`'s `_made_note`/
+# `_canonical_self`/`resolve` return bytes, a marker, `str | None`, never the
+# tool's own status dict). This read every OWN return and classifies its
+# value into one of five shapes, drawn from what these eight tools actually
+# do, TWICE REVISED after review (Opus, issue #482 follow-up, 2026-09-25 and
+# a same-day second pass) -- what each pass found is recorded beside the
+# shape it broke, because the fixes are the spec:
+#
+#   (a) a dict literal, `{"status": "X", ..., "note": ...}`. Pass 1: a
+#       `status` that is not itself a literal (`remind`'s `{"status": rule.
+#       outcome, "note": rule.note}`, built from a rate-limit rule object)
+#       was SKIPPED entirely, including its `note`. Pass 2: it is still
+#       skipped for matching against the listed statuses (nobody can say
+#       which status this is), but it must still carry a `note` key whose
+#       value is not a literal empty string or `None` -- dropping the key
+#       entirely, as a mutation, is caught; a dynamic value (`rule.note`)
+#       that cannot be proven non-empty either way is not blamed for that.
+#   (b) `dict(NAME)` / bare `NAME`, where NAME is a module-level (or
+#       `build_tool_specs`-body-level, `remind`'s `notes_off`) constant dict.
+#   (c) `_with_note(out, NOTES)`, where NOTES is a notes mapping naming what
+#       it covers. Pass 2: `out` (its first argument) is now ALSO required
+#       to be a verified pass-through (see (e)) -- previously nothing read
+#       it at all, so stripping `out`'s `note` before the call passed.
+#   (d) a bare `NAME` whose dict was built with no `note`, later given one
+#       by `NAME["note"] = ...` (`remind`'s `result`). Pass 2: that
+#       assignment now has to be a DIRECT SIBLING of the `return`, in the
+#       same block, before it -- not merely present somewhere earlier in the
+#       function regardless of which `if` it is nested in. A mutant that
+#       moved `remind`'s `result["note"] = ...` inside `if rule is not
+#       None:` while `return result` stayed unconditional passed under pass
+#       1's "anywhere in the function" search; it does not now.
+#   (e) a named PASS-THROUGH: a bare `NAME` bound to an opaque external call
+#       (`out` from `social_source.read(...)`), or a dict literal spreading
+#       one (`instagram_read`'s `{**out, "person": name}`). Pass 1 trusted
+#       ANY bare name that was not a recognised constant or local dict --
+#       `instagram_read`'s `return read` (a plain STRING) passed as a
+#       "pass-through", and `out = {k: v for k, v in out.items() if k !=
+#       "note"}` immediately before `return out` / `return _with_note(out,
+#       ...)` passed too, because nothing re-checked `out`'s binding once it
+#       stopped being the awaited call. Pass 2: a bare name is trusted as a
+#       pass-through only if EVERY assignment to it in the tool is either an
+#       awaited `*.read(...)` call or an already-classifiable note-bearing
+#       value (a literal dict with a note, or `dict(CONST)` with one); any
+#       other binding -- a comprehension, a subscript, a plain string --
+#       fails closed, naming the offending binding.
+#
+# For (a)/(b)/(d), whose literal status is one the docstring lists, the
+# return's `note` must be present and PROVABLY a non-empty string (a
+# `Constant`, an f-string, string concatenation, an `if`/`else` expression,
+# or a `{...}.get(key, default)` lookup resolved through local assignments
+# and same-tool nested closures -- `generate_image`'s `note = {...}.get(
+# reason, "...")` and `note = _made_note("...")`), checked on EVERY such
+# return INDEPENDENTLY, never "at least one covers it".
+#
+# For (c)/(e), whose status is not statically known, the REACHABLE set is a
+# per-tool declaration (`_DELEGATE_REACHABLE_STATUSES`, hand-verified
+# against each backend's own status vocabulary, e.g. `SocialBridgeClient.
+# _read` never answers `refused`), never "whatever some unrelated return
+# happens to prove" -- an EARLIER pass subtracted every status already
+# proven ANYWHERE in the tool from what the delegate still had to answer
+# for, so removing `"unavailable"` from `_backend_notes()["x_read"]` still
+# passed: `unavailable` was "proven" by input-validation returns that have
+# nothing to do with what the backend can send back. The notes mapping ((c)
+# only) covers whatever keys it names; anything left in the reachable set
+# must be in `_backend_notes()` -- see its own docstring for exactly what
+# that does and does not verify, and for what is still NOT checked (a
+# genuine, stated limit of static analysis, not an oversight).
+#
+# A `return` whose value fits none of the five shapes -- or a bare `return`
+# with no value, or a helper call this cannot resolve, or a pass-through
+# binding this cannot verify -- is a FAILURE naming the shape, not a skip
+# (fail-closed): the property this enforces is "every return path has a
+# note", so a return this test cannot read is one it cannot vouch for. A
+# call to a module-level helper function taking no arguments
+# (`_x_egress_refused()`) is followed ONE level -- read as if its own
+# return(s) stood in the caller's place -- because that is a pure refactor
+# of an existing literal return, not a new shape.
+#
+# `send_reply` is excluded: its `output_contract` is `None`, ADR 0015 §3's
+# own documented exception (it returns a bare string, not a dict, so it has
+# no `note` to carry).
+#
+# WHAT THIS STILL DOES NOT CATCH, on the current tree: whether
+# `nora.infra.social.bridge_client.SocialBridgeClient._read` or
+# `nora.infra.social.render._search` (the Instagram search `ok` result, moved
+# there from `InstagramSocialClient._search` by #486)
+# actually RETURN the note-bearing payload this test trusts them to -- that
+# is a claim about a call site in a DIFFERENT module, which this test does
+# not read (it only verifies, in `_backend_notes()`, that the named
+# constants those call sites are supposed to use still carry a note
+# themselves). `bridge_client.py`'s non-`ok` path (both `nothing_found` and
+# `unavailable`) is guarded instead by `tests/test_social_bridge_client.py`
+# (`test_a_bridge_note_never_reaches_the_model`,
+# `test_bridge_unavailable_passes_through` and six sibling tests, all
+# asserting `out["note"].strip()` since issue #482 -- proved 2026-09-25 by
+# reverting `SocialBridgeClient._read`'s shared-constant return to a bare
+# `{"status": status}` and watching `test_bridge_unavailable_passes_through`
+# and `test_a_bridge_note_never_reaches_the_model` go red, then restoring).
+# `render._search` dropping `"note": SEARCH_FRAMING` from its OWN
+# return is guarded by `tests/unit/test_instagram_search_tool.py`; that gap
+# was not touched this round and remains a genuine, stated limit -- fixing
+# it would mean reading a second module's control flow, which this static
+# pass over `nora/agent/tools.py` deliberately does not do.
+
+
+#: Per tool, the statuses its DELEGATE return(s) -- (c)/(e) -- can actually
+#: carry, independent of what any OTHER, unrelated return in the same tool
+#: proves. Hand-verified against each backend's own vocabulary:
+#: `SocialBridgeClient._read` (x/LinkedIn) only ever answers `ok`/
+#: `nothing_found`/`unavailable` (its own status check restricts to exactly
+#: these three); `refused`, where a docstring lists it, is raised
+#: EXCLUSIVELY by the tool's own local egress check, never by this call.
+#: `instagram_read`'s router can additionally answer `ambiguous`/`refused`
+#: for a handle or link input, not only through the tool's own
+#: person-resolution branch. A tool absent here has no delegate return.
+_DELEGATE_REACHABLE_STATUSES: dict[str, frozenset[str]] = {
+    "x_read": frozenset({"ok", "nothing_found", "unavailable"}),
+    "x_search": frozenset({"ok", "nothing_found", "unavailable"}),
+    "linkedin_read": frozenset({"ok", "nothing_found", "unavailable"}),
+    "linkedin_search": frozenset({"ok", "nothing_found", "unavailable"}),
+    "instagram_search": frozenset({"ok", "nothing_found", "unavailable"}),
+    "instagram_read": frozenset({"nothing_found", "unavailable", "ambiguous", "refused"}),
+}
+
+
+def _level3_three_state_tools() -> list[str]:
+    from nora.agent.tools import NATIVE_TOOLS
+
+    return sorted(
+        n for n, spec in NATIVE_TOOLS.items()
+        if spec.level == 3 and spec.output_contract == "three_state"
+    )
+
+
+def _tool_function_node(name: str) -> ast.AsyncFunctionDef:
+    src = TOOLS_PATH.read_text()
+    tree = ast.parse(src)
+    spec_targets = dict(re.findall(r'_spec\("([^"]+)",\s*([a-z_]+)', src))
+    fname = spec_targets[name]
+    return next(
+        node for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == fname
+    )
+
+
+#: A tool's own hedge on its note contract: "Anything but `X` carries a
+#: note" narrows the universal claim to every listed status except `X`.
+_EXCEPTION_RE = re.compile(r"Anything but `(\w+)` carries a")
+
+
+def _required_statuses(doc: str) -> set[str]:
+    """The statuses the tool's OWN docstring says its result carries a note
+    for. Grounded in the closed status vocabulary (`nora.agent.ports.
+    OUTPUT_STATUSES`) rather than a hand-picked word list, so a status added
+    to that vocabulary is picked up here too. Most tools claim every listed
+    status ("Every result carries a `note`..." / "... with a `note` on how
+    to report it."); a tool that narrows its own claim (`instagram_read`) is
+    honoured, not overridden, because that hedge IS the tool's contract with
+    the model, stated once above `Args:` and paid on every call.
+    """
+    from nora.agent.ports import OUTPUT_STATUSES
+
+    idx = doc.find("`status`")
+    assert idx != -1, f"no `status` contract sentence in: {doc[:200]!r}"
+    window = doc[idx:]
+    end = window.find("\n\n")
+    if end != -1:
+        window = window[:end]
+    bare_anchor = re.match(r"`status`:\s*", window)
+    if bare_anchor:
+        # The "Returns `status`: ok, refused or unavailable, with a `note`"
+        # shape (`remind`): the words are BARE, not backtick-quoted, so a
+        # backtick-only scan would miss them. Scoped to the clause before
+        # ", with a `note`" specifically so it cannot swallow prose from the
+        # rest of the paragraph the way a plain word scan over the whole
+        # window did (it once read `nothing_found`'s "the prompt was
+        # `refused`" as a fourth status of `generate_image`, which lists
+        # only three besides `ok`).
+        clause = window[bare_anchor.end():]
+        clause = clause.split(", with a")[0].split(".")[0]
+        listed = {w for w in re.findall(r"[a-z_]+", clause) if w in OUTPUT_STATUSES}
+    else:
+        # The backtick-quoted shapes: "`status` is `ok`, `nothing_found`...
+        # or `refused`." and generate_image's bulleted "`status` is one of:
+        # \n- `ok`: ...". Only a BACKTICKED word counts as a listed status,
+        # so a status word used in ordinary prose ("the prompt was refused")
+        # is not read as a fourth status.
+        listed = {
+            w for w in re.findall(r"`([a-z_]+)`", window) if w in OUTPUT_STATUSES
+        }
+    assert listed, f"no status words (of {sorted(OUTPUT_STATUSES)}) found in {window!r}"
+    excepted = set(_EXCEPTION_RE.findall(doc))
+    return listed - excepted
+
+
+def _scan_dict_constants(container: ast.AST) -> dict[str, ast.Dict]:
+    """name -> its `ast.Dict` literal, for every `NAME = {...}`, `NAME: T =
+    {...}` or `NAME: T = MappingProxyType({...})` assignment DIRECTLY in
+    `container`'s own body (module level, or one function's own top-level
+    body -- not recursing into a nested `if`/`try`, matching how these are
+    actually declared). Most of this file's shared payload constants carry a
+    type annotation, e.g. `_X_NOTES: Mapping[str, str] =
+    MappingProxyType({...})`, so both `ast.Assign` and `ast.AnnAssign` must
+    be read."""
+    out: dict[str, ast.Dict] = {}
+    for node in ast.iter_child_nodes(container):
+        target: ast.expr | None
+        value: ast.expr | None
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target, value = node.targets[0], node.value
+        elif isinstance(node, ast.AnnAssign):
+            target, value = node.target, node.value
+        else:
+            continue
+        if not isinstance(target, ast.Name) or value is None:
+            continue
+        if (isinstance(value, ast.Call) and isinstance(value.func, ast.Name)
+                and value.func.id == "MappingProxyType" and value.args
+                and isinstance(value.args[0], ast.Dict)):
+            value = value.args[0]
+        if isinstance(value, ast.Dict):
+            out[target.id] = value
+    return out
+
+
+def _all_dict_constants(tree: ast.Module, functions: dict[str, ast.AST]) -> dict[str, ast.Dict]:
+    """Module-level constants PLUS `build_tool_specs`'s OWN body-level ones.
+    Every Level 3 tool is a closure nested inside `build_tool_specs`, and a
+    few shared payloads are declared once there rather than at module scope
+    -- `notes_off` (`remind`'s `dict(notes_off)`), visible to `remind` the
+    same way `_X_OFF` is visible at module scope: Python closures see both."""
+    out = _scan_dict_constants(tree)
+    outer = functions.get("build_tool_specs")
+    if outer is not None:
+        for name, node in _scan_dict_constants(outer).items():
+            out.setdefault(name, node)
+    return out
+
+
+def _module_functions(tree: ast.Module) -> dict[str, ast.AST]:
+    """name -> node, for every module-level `def`/`async def` in tools.py --
+    the one-level helper-following rule (see the module comment above)."""
+    return {
+        node.name: node for node in ast.iter_child_nodes(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+
+def _local_closures(fn: ast.AST) -> dict[str, ast.AST]:
+    """Nested `def`/`async def`s declared directly in `fn`'s OWN top-level
+    body (`generate_image`'s `_made_note`, `_canonical_self`, `resolve`) --
+    used only to follow a call to one when resolving whether a `note` value
+    is provably non-empty (`note = _made_note("...")`)."""
+    return {
+        node.name: node for node in ast.iter_child_nodes(fn)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+
+def _dict_has_note(node: ast.Dict) -> bool:
+    return any(isinstance(k, ast.Constant) and k.value == "note" for k in node.keys)
+
+
+def _dict_has_status_key(node: ast.Dict) -> bool:
+    return any(isinstance(k, ast.Constant) and k.value == "status" for k in node.keys)
+
+
+def _dict_status_literal(node: ast.Dict) -> str | None:
+    for key, value in zip(node.keys, node.values, strict=True):
+        if (isinstance(key, ast.Constant) and key.value == "status"
+                and isinstance(value, ast.Constant) and isinstance(value.value, str)):
+            return value.value
+    return None
+
+
+def _dict_is_passthrough(node: ast.Dict) -> bool:
+    """A `**expr` spread among the keys (AST marks one with a `None` key) --
+    `instagram_read`'s `{**out, "person": name}`: its status is whatever the
+    spread carries, never a literal this file can read."""
+    return any(k is None for k in node.keys)
+
+
+def _spread_source(node: ast.Dict) -> ast.expr | None:
+    """The `**expr` operand of a passthrough dict (`{**out, "person":
+    name}` -> `out`'s `ast.Name`), or `None` if there is none."""
+    for k, v in zip(node.keys, node.values, strict=True):
+        if k is None:
+            return v
+    return None
+
+
+def _notes_mapping_keys(node: ast.Dict) -> frozenset[str] | None:
+    """`_X_NOTES`-shaped: keys are status words, used as `_with_note`'s
+    second argument, not a single record with one literal `status` field.
+    `None` when `node` is not that shape at all (a single-record dict, e.g.
+    a mismatched call). Does NOT require every key to be a real status: a
+    key that stops being one (a rename, a typo) simply drops out of the
+    returned set, which is exactly the regression this exists to catch, not
+    a reason to call the whole dict unreadable."""
+    from nora.agent.ports import OUTPUT_STATUSES
+
+    if _dict_has_status_key(node):
+        return None
+    return frozenset(
+        k.value for k in node.keys
+        if isinstance(k, ast.Constant) and isinstance(k.value, str) and k.value in OUTPUT_STATUSES
+    )
+
+
+def _resolve_nonempty_str(
+    expr: ast.expr, assigns: dict[str, ast.expr], depth: int = 0,
+    local_funcs: dict[str, ast.AST] | None = None,
+) -> bool | None:
+    """`True`: provably a non-empty string. `False`: provably empty or not a
+    string (`None`). `None`: cannot tell statically -- a caller must treat
+    that as "not proven", never as a pass. `local_funcs` (nested closures in
+    the SAME tool, from `_local_closures`) lets a note value that calls one
+    of them (`generate_image`'s `note = _made_note("...")`) be followed, with
+    its parameters substituted by the actual arguments at the call site."""
+    if depth > 5:
+        return None
+    if isinstance(expr, ast.Constant):
+        if isinstance(expr.value, str):
+            return expr.value != ""
+        return False
+    if isinstance(expr, ast.JoinedStr):  # an f-string
+        return True
+    if isinstance(expr, ast.BinOp) and isinstance(expr.op, ast.Add):
+        # String concatenation only ever ADDS length, so one side provably
+        # non-empty is enough -- needed for `remind`'s note, "Say back the
+        # moment..." + (" Say the limit too..." if rule is not None else
+        # ""), whose right side is a conditional this does not evaluate.
+        left = _resolve_nonempty_str(expr.left, assigns, depth + 1, local_funcs)
+        right = _resolve_nonempty_str(expr.right, assigns, depth + 1, local_funcs)
+        if left is True or right is True:
+            return True
+        if left is False and right is False:
+            return False
+        return None
+    if isinstance(expr, ast.IfExp):
+        body = _resolve_nonempty_str(expr.body, assigns, depth + 1, local_funcs)
+        orelse = _resolve_nonempty_str(expr.orelse, assigns, depth + 1, local_funcs)
+        if body is True and orelse is True:
+            return True
+        if body is False and orelse is False:
+            return False
+        return None
+    if isinstance(expr, ast.Name):
+        rhs = assigns.get(expr.id)
+        if rhs is None:
+            return None
+        return _resolve_nonempty_str(rhs, assigns, depth + 1, local_funcs)
+    if (isinstance(expr, ast.Call) and isinstance(expr.func, ast.Attribute)
+            and expr.func.attr == "get" and len(expr.args) == 2):
+        # `{...}.get(key, default)` -- generate_image's `note = {"quota":
+        # "...", ...}.get(reason, "I can't make images right now...")`.
+        mapping = expr.func.value
+        if isinstance(mapping, ast.Name):
+            mapping = assigns.get(mapping.id)
+        if isinstance(mapping, ast.Dict) and not _dict_is_passthrough(mapping):
+            values = [
+                _resolve_nonempty_str(v, assigns, depth + 1, local_funcs) for v in mapping.values
+            ]
+            default = _resolve_nonempty_str(expr.args[1], assigns, depth + 1, local_funcs)
+            if all(v is True for v in values) and default is True:
+                return True
+            if default is False:
+                return False
+        return None
+    if (isinstance(expr, ast.Call) and isinstance(expr.func, ast.Name)
+            and local_funcs and expr.func.id in local_funcs and not expr.keywords):
+        # A call to a NESTED closure of the same tool (`generate_image`'s
+        # `note = _made_note("The picture is already in this chat...")`):
+        # followed with its parameters substituted by the actual arguments,
+        # then every one of ITS OWN return values resolved the same way.
+        # `True` only if EVERY return path is provably non-empty (we do not
+        # know which branch runs); `False` only if every one is provably
+        # empty; otherwise unproven.
+        target = expr.func.id
+        fn = local_funcs[target]
+        params = [a.arg for a in fn.args.args]
+        if len(params) == len(expr.args) and not fn.args.kwonlyargs:
+            subst = {**assigns, **dict(zip(params, expr.args, strict=True))}
+            returns = [r for r in _own_returns(fn) if r.value is not None]
+            if returns:
+                results = [
+                    _resolve_nonempty_str(r.value, subst, depth + 1, local_funcs)
+                    for r in returns
+                ]
+                if all(r is True for r in results):
+                    return True
+                if all(r is False for r in results):
+                    return False
+        return None
+    return None
+
+
+def _dict_note_status(
+    node: ast.Dict, assigns: dict[str, ast.expr], local_funcs: dict[str, ast.AST] | None = None,
+) -> bool | None:
+    """`False`: no `note` key at all, or one provably empty. `True`:
+    provably non-empty. `None`: a `note` key is present but its value cannot
+    be resolved either way (e.g. `rule.note`, an attribute of an object this
+    file does not trace) -- NOT the same as `False`, and a caller checking a
+    dynamic-status dict (which cannot be matched against the listed statuses
+    regardless) treats only `False` as a problem."""
+    if not _dict_has_note(node):
+        return False
+    note_expr = next(
+        v for k, v in zip(node.keys, node.values, strict=True)
+        if isinstance(k, ast.Constant) and k.value == "note"
+    )
+    return _resolve_nonempty_str(note_expr, assigns, 0, local_funcs)
+
+
+def _resolve_dict_note_ok(
+    node: ast.Dict, assigns: dict[str, ast.expr], local_funcs: dict[str, ast.AST] | None = None,
+) -> bool:
+    return _dict_note_status(node, assigns, local_funcs) is True
+
+
+def _own_returns(fn: ast.AST) -> list[ast.Return]:
+    """Every `ast.Return` belonging to `fn` ITSELF, never a nested closure's
+    (`generate_image`'s `_made_note`/`_canonical_self`/`resolve` return
+    unrelated things entirely)."""
+    out: list[ast.Return] = []
+
+    def visit(node: ast.AST) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.Return):
+                out.append(child)
+                continue
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                continue
+            visit(child)
+
+    visit(fn)
+    return out
+
+
+def _local_assigns(fn: ast.AST) -> dict[str, ast.expr]:
+    """name -> its most recent own-body RHS (a plain `ast.Assign` or
+    `ast.AnnAssign` to a bare `Name`, not into a nested closure) -- resolves
+    a `note` value that is itself a variable back to the expression that
+    built it (`generate_image`'s `note = {...}.get(reason, "...")`,
+    `remind`'s `result: dict[str, object] = {...}`)."""
+    out: dict[str, ast.expr] = {}
+
+    def visit(node: ast.AST) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                continue
+            if (isinstance(child, ast.Assign) and len(child.targets) == 1
+                    and isinstance(child.targets[0], ast.Name)):
+                out[child.targets[0].id] = child.value
+            elif (isinstance(child, ast.AnnAssign) and isinstance(child.target, ast.Name)
+                    and child.value is not None):
+                out[child.target.id] = child.value
+            visit(child)
+
+    visit(fn)
+    return out
+
+
+def _all_assigns(fn: ast.AST) -> dict[str, list[ast.expr]]:
+    """name -> EVERY own-body RHS ever assigned to it (not just the most
+    recent), in source order -- used to verify a pass-through binding (e):
+    a name trusted as an opaque backend result must never, ANYWHERE in the
+    tool, be bound to something else (a dict comprehension that strips
+    `"note"`, a plain string)."""
+    out: dict[str, list[ast.expr]] = {}
+
+    def visit(node: ast.AST) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                continue
+            if (isinstance(child, ast.Assign) and len(child.targets) == 1
+                    and isinstance(child.targets[0], ast.Name)):
+                out.setdefault(child.targets[0].id, []).append(child.value)
+            elif (isinstance(child, ast.AnnAssign) and isinstance(child.target, ast.Name)
+                    and child.value is not None):
+                out.setdefault(child.target.id, []).append(child.value)
+            visit(child)
+
+    visit(fn)
+    return out
+
+
+def _enclosing_blocks(fn: ast.AST) -> dict[int, list[ast.stmt]]:
+    """id(stmt) -> the exact statement list `stmt` is a DIRECT member of (the
+    function body, an `if`'s body/orelse, a `try`'s body/handler/orelse/
+    finalbody, a `for`/`while`'s body/orelse) -- so a `var["note"] = ...`
+    assignment can be required to be a SIBLING of the `return` it is meant
+    to cover, in the SAME block, not merely present somewhere earlier in the
+    function regardless of which conditional branch it sits in."""
+    out: dict[int, list[ast.stmt]] = {}
+
+    def walk(body: list[ast.stmt]) -> None:
+        for stmt in body:
+            out[id(stmt)] = body
+            if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                continue
+            for field in ("body", "orelse", "finalbody"):
+                child = getattr(stmt, field, None)
+                if isinstance(child, list) and child:
+                    walk(child)
+            for h in getattr(stmt, "handlers", None) or []:
+                walk(h.body)
+
+    body = getattr(fn, "body", None)
+    if isinstance(body, list):
+        walk(body)
+    return out
+
+
+def _note_assigned_before(
+    var: str, ret: ast.Return, blocks: dict[int, list[ast.stmt]],
+) -> list[ast.expr]:
+    """Every RHS assigned to `var["note"]` as a DIRECT STATEMENT in the SAME
+    block as `ret`, textually before it (`remind`'s `result["note"] =
+    (...)`, a sibling of `return result` at the top level of the function
+    body). A mutant that nests the assignment inside `if rule is not None:`
+    while the `return` stays unconditional is a DIFFERENT block, so it is
+    not found here."""
+    block = blocks.get(id(ret))
+    if block is None:
+        return []
+    idx = block.index(ret)
+    out: list[ast.expr] = []
+    for stmt in block[:idx]:
+        if isinstance(stmt, ast.Assign):
+            for t in stmt.targets:
+                if (isinstance(t, ast.Subscript) and isinstance(t.value, ast.Name)
+                        and t.value.id == var and isinstance(t.slice, ast.Constant)
+                        and t.slice.value == "note"):
+                    out.append(stmt.value)
+    return out
+
+
+def _is_backend_read_call(expr: ast.expr) -> bool:
+    """`await X.read(...)` -- the one shape a genuine backend call takes in
+    these tools (`social_source.read(...)`, `linkedin_source.read(...)`)."""
+    if isinstance(expr, ast.Await):
+        expr = expr.value
+    return (isinstance(expr, ast.Call) and isinstance(expr.func, ast.Attribute)
+            and expr.func.attr == "read")
+
+
+def _verify_passthrough_binding(
+    var: str, *, all_assigns: dict[str, list[ast.expr]], constants: dict[str, ast.Dict],
+    assigns: dict[str, ast.expr], local_funcs: dict[str, ast.AST] | None,
+) -> str | None:
+    """`None`: every assignment to `var` in the tool is either a genuine
+    backend call (`await X.read(...)`) or an already-classifiable
+    note-bearing value (a literal dict with a note, or `dict(CONST)` with
+    one), so trusting `var` as an opaque pass-through (shape (e)) is
+    grounded. Otherwise, the reason the binding could not be verified --
+    `instagram_read`'s `read` (a plain string, never a backend call), and a
+    dict comprehension that strips `"note"` before the return, both land
+    here."""
+    bindings = all_assigns.get(var)
+    if not bindings:
+        return f"{var!r} has no local assignment this test can verify (a parameter?)"
+    for b in bindings:
+        if _is_backend_read_call(b):
+            continue
+        if (isinstance(b, ast.Dict) and not _dict_is_passthrough(b)
+                and _dict_status_literal(b) is not None):
+            if _resolve_dict_note_ok(b, assigns, local_funcs):
+                continue
+            return f"bound to a dict literal with no non-empty note: {ast.unparse(b)[:60]}"
+        if (isinstance(b, ast.Call) and isinstance(b.func, ast.Name) and b.func.id == "dict"
+                and len(b.args) == 1 and isinstance(b.args[0], ast.Name)):
+            const = constants.get(b.args[0].id)
+            if (const is not None and _dict_status_literal(const) is not None
+                    and _resolve_dict_note_ok(const, assigns, local_funcs)):
+                continue
+            return f"bound to dict(...) of an unresolved name: {ast.unparse(b)[:60]}"
+        return f"bound to an unverified expression: {ast.unparse(b)[:60]}"
+    return None
+
+
+def _backend_notes() -> dict[str, set[str]]:
+    """A FIXED, NAMED map: for each of the six social tools, the statuses
+    (of the ones in `_DELEGATE_REACHABLE_STATUSES`) whose note this file
+    cannot prove locally, because the tool hands an opaque backend result
+    through, wrapped by at most a notes mapping that does not cover that
+    status. Each named constant below is asserted HERE to carry a `note`
+    itself -- that much this test can and does check, and a mutation to one
+    of these constants (`results.AMBIGUOUS`/`REFUSED`/`NOTHING_FOUND`/
+    `UNAVAILABLE`/`NO_ACCOUNT`/`NO_SUCH_HANDLE`, `instagram_client.
+    SEARCH_NOTHING_FOUND`) fails every test that calls this function,
+    immediately, on the assert.
+
+    What it does NOT check, and cannot from this file alone: that the
+    backend actually RETURNS the named constant for that status at its own
+    call site. That is a claim about `nora/infra/social/bridge_client.py`
+    and `nora/infra/social/instagram_client.py`'s own control flow, neither
+    of which this test reads. `bridge_client.py`'s non-ok path (both
+    `nothing_found` and `unavailable`) is guarded by `tests/test_social_
+    bridge_client.py` (proved 2026-09-25: reverting its shared-constant
+    return to a bare `{"status": status}` turns `test_bridge_unavailable_
+    passes_through` and `test_a_bridge_note_never_reaches_the_model` red;
+    restored, green). `render._search` dropping `SEARCH_FRAMING`
+    from its own return is guarded by `tests/unit/
+    test_instagram_search_tool.py`, a gap this round did not close.
+    """
+    from nora.infra.social import instagram_client, render, results
+
+    assert results.NOTHING_FOUND.get("note")
+    assert results.UNAVAILABLE.get("note")
+    assert results.AMBIGUOUS.get("note")
+    assert results.REFUSED.get("note")
+    assert results.NO_ACCOUNT.get("note")
+    assert results.NO_SUCH_HANDLE.get("note")
+    assert instagram_client.SEARCH_NOTHING_FOUND.get("note")
+    assert render.SEARCH_FRAMING
+
+    # `x_read`/`x_search`/`linkedin_read`/`linkedin_search` all go through
+    # `SocialBridgeClient._read`, which answers `nothing_found`/
+    # `unavailable` from these two shared constants for every platform it
+    # serves; `ok` is covered locally (shape (c): `_X_NOTES` /
+    # `_LINKEDIN_READ_NOTES` / `_LINKEDIN_SEARCH_NOTES` via `_with_note`).
+    bridge = {"nothing_found", "unavailable"}
+    return {
+        "x_read": set(bridge),
+        "x_search": set(bridge),
+        "linkedin_read": set(bridge),
+        "linkedin_search": set(bridge),
+        # `instagram_search` hands `social_source.read(...)`'s result
+        # through unwrapped (no `_with_note`): `ok` carries `SEARCH_
+        # FRAMING` inline in `render._search`, `nothing_
+        # found` is its own `SEARCH_NOTHING_FOUND`, `unavailable` is
+        # `results.UNAVAILABLE`.
+        "instagram_search": {"ok", "nothing_found", "unavailable"},
+        # `instagram_read` also hands `out` through bare (`return out` /
+        # `return {**out, "person": name}`, no `_with_note`), and the
+        # ROUTER can answer `nothing_found` (`NO_ACCOUNT`/`NO_SUCH_
+        # HANDLE`), `unavailable`, `ambiguous` or `refused` for a HANDLE or
+        # LINK input too, not only through the tool's own person-
+        # resolution branch. `ok` is excepted by the tool's own docstring
+        # hedge ("Anything but `ok` carries a note"), see the module
+        # comment above.
+        "instagram_read": {"nothing_found", "unavailable", "ambiguous", "refused"},
+    }
+
+
+def _classify_value(
+    value: ast.expr, *, constants: dict[str, ast.Dict], functions: dict[str, ast.AST],
+    assigns: dict[str, ast.expr], all_assigns: dict[str, list[ast.expr]],
+    ret: ast.Return, blocks: dict[int, list[ast.stmt]],
+    local_funcs: dict[str, ast.AST] | None = None, allow_helper: bool = True,
+) -> list[tuple]:
+    """Classify one `ast.Return`'s value into the five shapes (see the
+    module comment): `("literal", status, ok)` for (a)/(b)/(d) -- a known
+    status and whether its note is provably non-empty; `("delegate",
+    mapping_keys)` for (c)/(e) -- status unknown, `mapping_keys` is what a
+    (c)-shaped `_with_note` mapping covers (empty for (e)); `("skip",)` for
+    a dict literal whose `status` key is present but not a literal and DOES
+    carry a note key that is not provably empty (`remind`'s `rule.
+    outcome`); `("bad", why)` for anything else -- fail-closed."""
+    # (a) a dict literal carrying a LITERAL `status` key, whether or not it
+    # also spreads something alongside it (`instagram_read`'s
+    # `{"status": "ambiguous", **_asked_about(spoken), "note": ...}`: the
+    # spread adds a field, the status is still the tool's own literal).
+    if isinstance(value, ast.Dict):
+        status = _dict_status_literal(value)
+        if status is not None:
+            return [("literal", status, _resolve_dict_note_ok(value, assigns, local_funcs))]
+    # (e) a dict literal with NO literal `status`, spreading one in instead
+    # (`instagram_read`'s `{**out, "person": name}`) -- a passthrough.
+    if isinstance(value, ast.Dict) and _dict_is_passthrough(value):
+        source = _spread_source(value)
+        if isinstance(source, ast.Name):
+            reason = _verify_passthrough_binding(
+                source.id, all_assigns=all_assigns, constants=constants,
+                assigns=assigns, local_funcs=local_funcs,
+            )
+            if reason is not None:
+                return [("bad", f"passthrough spread of {source.id!r}, {reason}")]
+            return [("delegate", frozenset())]
+        return [("bad", f"passthrough spread of a non-name expression: {ast.unparse(value)[:80]}")]
+    # A dict literal with neither a literal nor a spread `status`: a
+    # DYNAMIC status this file cannot match against the listed statuses
+    # either way (`remind`'s `{"status": rule.outcome, "note": rule.note}`),
+    # still required to carry a `note` key that is not provably empty.
+    if isinstance(value, ast.Dict):
+        if _dict_has_status_key(value):
+            note_status = _dict_note_status(value, assigns, local_funcs)
+            if note_status is False:
+                return [(
+                    "bad",
+                    f"dynamic-status dict has no non-empty note: {ast.unparse(value)[:80]}",
+                )]
+            return [("skip",)]
+        return [("bad", f"dict literal with no `status` key: {ast.unparse(value)[:80]}")]
+    # (c) `_with_note(x, MAPPING)`.
+    if (isinstance(value, ast.Call) and isinstance(value.func, ast.Name)
+            and value.func.id == "_with_note" and len(value.args) == 2):
+        out_arg = value.args[0]
+        if isinstance(out_arg, ast.Name):
+            reason = _verify_passthrough_binding(
+                out_arg.id, all_assigns=all_assigns, constants=constants,
+                assigns=assigns, local_funcs=local_funcs,
+            )
+            if reason is not None:
+                return [("bad", f"_with_note(...)'s first argument {out_arg.id!r}, {reason}")]
+        mapping_arg = value.args[1]
+        mapping = constants.get(mapping_arg.id) if isinstance(mapping_arg, ast.Name) else None
+        keys = _notes_mapping_keys(mapping) if mapping is not None else None
+        if keys is not None:
+            return [("delegate", keys)]
+        return [("bad", f"_with_note(...) with an unresolved mapping: {ast.unparse(value)[:80]}")]
+    # (b) `dict(NAME)`.
+    if (isinstance(value, ast.Call) and isinstance(value.func, ast.Name)
+            and value.func.id == "dict" and len(value.args) == 1
+            and isinstance(value.args[0], ast.Name)):
+        const = constants.get(value.args[0].id)
+        if const is not None:
+            status = _dict_status_literal(const)
+            if status is not None:
+                return [("literal", status, _resolve_dict_note_ok(const, assigns, local_funcs))]
+        return [("bad", f"dict(...) of an unresolved name: {ast.unparse(value)[:80]}")]
+    # (b)/(d)/(e) a bare `Name`.
+    if isinstance(value, ast.Name):
+        const = constants.get(value.id)
+        if const is not None:
+            status = _dict_status_literal(const)
+            if status is not None:
+                return [("literal", status, _resolve_dict_note_ok(const, assigns, local_funcs))]
+            return [("bad", f"bare name {value.id!r} is a constant with no literal `status`")]
+        rhs = assigns.get(value.id)
+        if isinstance(rhs, ast.Dict) and not _dict_is_passthrough(rhs):
+            status = _dict_status_literal(rhs)
+            if status is not None:
+                if _dict_has_note(rhs):
+                    return [("literal", status, _resolve_dict_note_ok(rhs, assigns, local_funcs))]
+                noted = any(
+                    _resolve_nonempty_str(n, assigns, 0, local_funcs) is True
+                    for n in _note_assigned_before(value.id, ret, blocks)
+                )
+                return [("literal", status, noted)]  # shape (d)
+            if _dict_has_status_key(rhs):
+                note_status = _dict_note_status(rhs, assigns, local_funcs)
+                if note_status is False:
+                    return [(
+                        "bad",
+                        f"bare name {value.id!r}: dynamic-status dict has no non-empty note",
+                    )]
+                return [("skip",)]
+        # An opaque local: a function parameter, or the result of an
+        # `await ...read(...)` call -- shape (e). Every binding must verify.
+        reason = _verify_passthrough_binding(
+            value.id, all_assigns=all_assigns, constants=constants,
+            assigns=assigns, local_funcs=local_funcs,
+        )
+        if reason is not None:
+            return [("bad", f"bare name {value.id!r}, {reason}")]
+        return [("delegate", frozenset())]
+    # A module-level helper taking no arguments, followed ONE level.
+    if (allow_helper and isinstance(value, ast.Call) and isinstance(value.func, ast.Name)
+            and value.func.id in functions and not value.args and not value.keywords):
+        inner = functions[value.func.id]
+        inner_returns = _own_returns(inner)
+        if not inner_returns:
+            return [("bad", f"helper {value.func.id}() has no return this test can read")]
+        inner_blocks = _enclosing_blocks(inner)
+        inner_assigns = _local_assigns(inner)
+        inner_all_assigns = _all_assigns(inner)
+        inner_local_funcs = _local_closures(inner)
+        out: list[tuple] = []
+        for r in inner_returns:
+            if r.value is None:
+                return [("bad", f"helper {value.func.id}() has a bare `return`")]
+            out.extend(_classify_value(
+                r.value, constants=constants, functions=functions,
+                assigns=inner_assigns, all_assigns=inner_all_assigns,
+                ret=r, blocks=inner_blocks, local_funcs=inner_local_funcs,
+                allow_helper=False,
+            ))
+        return out
+    return [("bad", f"unrecognised return shape: {ast.unparse(value)[:80]}")]
+
+
+def _check_tool(tool: str, doc: str) -> list[str]:
+    """Every problem found for `tool` (empty = every return whose status is
+    one this tool's docstring lists carries a note). See the module comment
+    above for the five shapes and what is and is not verified."""
+    src = TOOLS_PATH.read_text()
+    tree = ast.parse(src)
+    fn = _tool_function_node(tool)
+    functions = _module_functions(tree)
+    constants = _all_dict_constants(tree, functions)
+    assigns = _local_assigns(fn)
+    all_assigns = _all_assigns(fn)
+    blocks = _enclosing_blocks(fn)
+    local_funcs = _local_closures(fn)
+    required = _required_statuses(doc)
+    backend = _backend_notes().get(tool, set())
+    reachable = _DELEGATE_REACHABLE_STATUSES.get(tool, frozenset())
+
+    problems: list[str] = []
+    delegate_mapping_keys: list[frozenset[str]] = []
+
+    for i, ret in enumerate(_own_returns(fn)):
+        if ret.value is None:
+            problems.append(f"return #{i}: bare `return` with no value")
+            continue
+        for item in _classify_value(
+            ret.value, constants=constants, functions=functions,
+            assigns=assigns, all_assigns=all_assigns, ret=ret, blocks=blocks,
+            local_funcs=local_funcs,
+        ):
+            kind = item[0]
+            if kind == "bad":
+                problems.append(f"return #{i}: {item[1]}")
+            elif kind == "literal":
+                _, status, ok = item
+                if status in required and not ok:
+                    problems.append(f"return #{i}: status {status!r} has no non-empty note")
+            elif kind == "delegate":
+                _, mapping_keys = item
+                delegate_mapping_keys.append(mapping_keys)
+            elif kind == "skip":
+                continue
+            else:  # pragma: no cover - every branch above sets a known kind
+                problems.append(f"return #{i}: unhandled classification {item!r}")
+
+    for mapping_keys in delegate_mapping_keys:
+        # Checked ONLY against the declared reachable set and the named
+        # backend allowlist -- NEVER against a status some unrelated,
+        # locally-proven return also happens to carry (dropped 2026-09-25:
+        # that let removing "unavailable" from `_backend_notes()["x_read"]`
+        # still pass, "proven" by input-validation returns that have
+        # nothing to do with what the backend can send back).
+        missing = sorted((required & reachable) - mapping_keys - backend)
+        if missing:
+            problems.append(
+                f"a delegated return can carry {missing} with no covered note "
+                f"(not in its own notes mapping, not in "
+                f"_backend_notes()[{tool!r}] = {sorted(backend)})"
+            )
+    return problems
+
+
+@pytest.mark.parametrize("tool", _level3_three_state_tools())
+def test_every_listed_status_returns_a_note(tool: str) -> None:
+    """ADR 0015 §6: "a Level 3 status has a result `note`", named there as
+    `test_every_listed_status_returns_a_note` (issue #482: the name existed
+    in the ADR's table before the test did). See the module comment above
+    this function for the five return shapes this reads, what "every
+    return, not at least one" means, and what it still cannot see (two
+    backend call sites, guarded by other named tests instead).
+    """
+    doc = dict(_model_facing_docstrings())[tool]
+    problems = _check_tool(tool, doc)
+    assert not problems, f"{tool}: " + "; ".join(problems)
