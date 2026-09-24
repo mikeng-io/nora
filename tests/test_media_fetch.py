@@ -386,6 +386,10 @@ async def test_a_url_that_is_not_an_instagram_page_still_downloads(wiring, monke
     "https://mobile.x.com/synth_user03/status/9000000000000000003",
     "https://mobile.twitter.com/synth_user04",
     "x.com/synth_user01/status/9000000000000000001",  # no scheme
+    "https://x.com/i/web/status/9000000000000000006",  # id-only post link
+    "https://x.com/synth_user01/status/9000000000000000001/photo/1",  # trailing segment ignored
+    "https://x.com/synth_user01/status/9000000000000000001?s=20",  # share junk in the query
+    "https://X.COM/synth_user06",  # urlsplit().hostname lowercases the host
 ])
 async def test_an_x_link_is_sent_to_x_read_without_a_download(wiring, monkeypatch, url):
     calls: list[str] = []

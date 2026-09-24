@@ -300,15 +300,40 @@ def redirect(owner: LinkOwner, claim: LinkClaim, link_input: LinkInput) -> dict:
   `parse_link` after `_with_scheme`. Instagram's also claims the
   `m.instagram.com` form as `readable=False`, with its own
   `unreadable_template` asking for the www.instagram.com link — what
-  `_instagram_page_kind` does today.
-  LinkedIn's claims `person` and `company` only: a LinkedIn `post` is
-  **not claimed**, because `linkedin_read` cannot read one and a public
-  LinkedIn post page is something `web_fetch` may be able to read. Refusing
-  it in `web_fetch` would route her to a tool that says «I can't».
+  `_instagram_page_kind` does today. X's needs no such shape: `x_links.
+  X_HOSTS` already accepts every mobile/alternate spelling
+  (`mobile.x.com`, `mobile.twitter.com`, bare `x.com`/`twitter.com`) as
+  fully readable, so `_x_claim` is a plain wrap with every claim
+  `readable=True`.
+  **Shipped, PR 2.** LinkedIn's claims `person` and `company` as
+  `readable=True`, and — the same shape as Instagram's mobile host —
+  `m.linkedin.com` as `readable=False`: a real `linkedin.com` subdomain
+  the parser's own host charset refuses on purpose (`_host_ok`'s country
+  code is exactly two letters, and `m` is one), judged on the www spelling
+  of the same path, with its own `unreadable_template` asking for the
+  `www.linkedin.com` link. A LinkedIn `post` is **not claimed at all** (on
+  `linkedin.com`, `www.linkedin.com` or `m.linkedin.com` alike), because
+  `linkedin_read` cannot read one and a public LinkedIn post page is
+  something `web_fetch` may be able to read. Refusing it in `web_fetch`
+  would route her to a tool that says «I can't».
 - **Shorteners and CDN hosts are never claimed** (`t.co`, `lnkd.in`,
-  `*.cdninstagram.com`, `*.fbcdn.net`, `pbs.twimg.com`). The live `lnkd.in`
-  turn and the six CDN reads are the evidence. The matrix test carries each
-  as a negative row.
+  `*.cdninstagram.com`, `*.fbcdn.net`, `pbs.twimg.com`, `*.twimg.com`,
+  `media.licdn.com`). The live `lnkd.in` turn and the six CDN reads are the
+  evidence. The matrix test carries each as a negative row.
+- **Every other LinkedIn page shape stays unclaimed, PR 2's own scope
+  reading.** `/posts/`, `/feed/`, `/pulse/` are the parser's own `post`
+  kind (never claimed, above); `/school/`, `/showcase/` and `/jobs/` are
+  real LinkedIn page types the parser does not recognise at all (`parse_link`
+  returns `None`: no `in`/`company`/post-first-segment matches), so they
+  reach `web_fetch` unclaimed, same as any page no owner can read — adding
+  them is a parser change, not a registry one, the day `linkedin_read`
+  grows a page-type it can read for them. Only `m.linkedin.com` gets the
+  special unreadable treatment; a non-canonical subdomain the parser
+  doesn't otherwise special-case (a historical mobile alias such as
+  `touch.www.linkedin.com`) is simply unclaimed and reaches `web_fetch` as
+  an ordinary page, exactly like `x.com.evil.example` — claiming every
+  lookalike or legacy subdomain by name is the «claim a whole host»
+  anti-pattern this node's non-goals reject.
 - **Order is explicit and the claims are disjoint.** The hosts do not
   overlap, and a test asserts that no URL in the matrix is claimed by two
   owners, so «first match wins» never has to decide anything.

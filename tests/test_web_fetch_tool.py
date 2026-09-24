@@ -226,6 +226,15 @@ _X_PAGES = {
     "mobile_profile": "https://mobile.twitter.com/synth_user04",
     "www": "https://www.x.com/synth_user05",
     "no_scheme": "x.com/synth_user01/status/9000000000000000001",
+    # An id-only post link (no username segment).
+    "id_only_post": "https://x.com/i/web/status/9000000000000000006",
+    # Anything after the post id is ignored (a photo index).
+    "post_with_photo_segment": "https://x.com/synth_user01/status/9000000000000000001/photo/1",
+    # Share junk in the query is dropped, never sent on.
+    "post_with_query": "https://x.com/synth_user01/status/9000000000000000001?s=20",
+    # `urlsplit().hostname` lowercases the host, so an upper-case paste reads
+    # the same as the lower-case spelling.
+    "uppercase_host": "https://X.COM/synth_user06",
 }
 
 
