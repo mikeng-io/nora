@@ -20,6 +20,19 @@ and is untouched by this read-only metadata endpoint.
 
 `strict=False`: a malformed skill file must not take the whole endpoint
 down — skip it, same R-27 posture every other web/* module holds.
+
+**A skill refused for carrying an authority key drops here too, silently**
+(issue #187 finding 3). `parse_skill` now refuses `authority_above`,
+`authority_below` or `change_policy` in a skill's frontmatter, and this
+module's `strict=False` catches that `SkillError` the same as any other
+parse failure — the skill is simply absent from the payload, with nothing
+logged or counted for THIS reason specifically. That is deliberate rather
+than an oversight: every other malformed-skill case here is already silent
+in the same way, and singling this one out for a log line or a metric would
+be the inconsistency, not the gap. It is the `strict=True` build (the
+default — `tests/test_skill_content.py`, `tests/test_skill_loader.py`, and
+`nora-land`'s gate) where a carried key actually stops something, before a
+skill with one ever ships.
 """
 
 from __future__ import annotations
