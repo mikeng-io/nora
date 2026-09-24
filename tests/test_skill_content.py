@@ -88,24 +88,45 @@ def test_every_skill_names_no_scenario(skills):
                 f"{skill.name} names a scenario: {scenario!r}")
 
 
-#: ADR 0016 §4: a skill body's ceiling in cl100k tokens, not lines (the old
-#: 30 line ceiling measured neither cost nor reach, and lines are not tokens).
-#: The default is 1,500; a skill above it is listed here with its reason,
-#: where the number is. The published hard limit is 5,000 (agentskills.io).
-_TOKEN_CEILING = 1_500
-_TOKEN_CEILINGS: dict[str, int] = {
-    # DEC-193 (operator, 2026-09-23). Her whole visual spec lives here and
-    # nowhere else: it is not doctrine (needed only when she makes an image)
-    # and not the tool schema (it is about HER, not the tool). The operator
-    # ruled completeness over brevity, and no rule of the spec may be
-    # dropped. It was allowed 80 lines (measured 74) when the ceiling was
-    # lines; on 2026-09-24 it measured 1,449 tokens, and 1,534 once «a picture
-    # of you is a new picture» joined the in-the-picture judgement (the live
-    # WhatsApp turn that sent her reference back). It is meant to grow by one
-    # section per configured model, so it keeps room for that.
-    "image-generation": 2_000,
+#: ADR 0016 §4 replaced the old 30-non-blank-line ceiling with a cl100k TOKEN
+#: ceiling, reasoned "lines are not tokens" — true, but a token count turns out
+#: to share the flaw it was meant to fix. `skill.instructions` is markdown
+#: whose line-wrapping is cosmetic, and tiktoken's cl100k encoder is NOT
+#: insensitive to where a line breaks: the same 60 words, wrapped at three
+#: widths with nothing added or removed, measured 72 / 81 / 71 tokens
+#: (2026-09-25) — an over 12% swing from rewrapping alone, the same shape PR
+#: #233 measured for the line ceiling it replaced (30 lines pinned at both 402
+#: and 421 words). Issue #187 finding 4 (was #244); filed against ADR 0016 §4
+#: itself rather than the line ceiling it already superseded.
+#:
+#: A WORD count does not have that flaw, by construction:
+#: `test_word_count_does_not_move_when_the_same_text_is_reflowed` below proves
+#: it directly. `str.split()` collapses every run of whitespace, wrapped or
+#: not, so nothing about HOW the markdown is laid out can move the count.
+#:
+#: Measured 2026-09-25, the two shipped skills: `navigation` 519 words,
+#: `image-generation` 1,124 words (the largest). 800 is the default —
+#: comfortable room over `navigation`'s current size without trying to cover
+#: `image-generation`, which keeps its own override below for the same reason
+#: ADR 0016 §4 gave it one.
+_WORD_CEILING = 800
+_WORD_CEILINGS: dict[str, int] = {
+    # DEC-193 (operator, 2026-09-23), carried over from the token ceiling this
+    # replaces. Her whole visual spec lives here and nowhere else: it is not
+    # doctrine (needed only when she makes an image) and not the tool schema
+    # (it is about HER, not the tool). The operator ruled completeness over
+    # brevity, and no rule of the spec may be dropped. It is meant to grow by
+    # one section per configured model, so it keeps room for that. Measured
+    # 2026-09-25: 1,124 words. 1,600 leaves about 42% headroom, roughly the
+    # margin the token ceiling it replaces gave (2,000 over a measured 1,449).
+    "image-generation": 1_600,
 }
-_HARD_LIMIT = 5_000
+#: agentskills.io's published hard limit is 5,000 cl100k tokens. The two
+#: shipped skills measure 1.22-1.37 tokens per word (2026-09-25), which puts a
+#: word-equivalent hard limit between about 3,650 and 4,100; 3,650 sits at the
+#: conservative (fewer-words) end of that range rather than the middle, so
+#: this stays inside the published limit under either skill's own ratio.
+_WORD_HARD_LIMIT = 3_650
 _DESCRIPTION_CEILING = 80
 
 
@@ -115,14 +136,66 @@ def _tokens(text: str) -> int:
     return len(tiktoken.get_encoding("cl100k_base").encode(text))
 
 
+def _words(text: str) -> int:
+    return len(text.split())
+
+
 def test_every_skill_stays_small(skills):
     """Most of what looks like skill content belongs a layer up or down; what is
-    left is judgement, and it is sized in tokens (ADR 0016 §4)."""
+    left is judgement, sized in WORDS (issue #187 finding 4, refining ADR
+    0016 §4's token ceiling).
+
+    Answers "how much is here", nothing about whether it reads well — the same
+    scope a line or token count ever had. Words rather than tokens
+    specifically because a word count cannot be moved by wrapping the same
+    prose differently; see `_WORD_CEILING`'s comment and the reflow test
+    below for the measurement."""
     for skill in skills:
-        ceiling = _TOKEN_CEILINGS.get(skill.name, _TOKEN_CEILING)
-        assert ceiling <= _HARD_LIMIT, skill.name
-        n = _tokens(skill.instructions)
-        assert n <= ceiling, f"{skill.name} skill body is {n} tokens (ceiling {ceiling})"
+        ceiling = _WORD_CEILINGS.get(skill.name, _WORD_CEILING)
+        assert ceiling <= _WORD_HARD_LIMIT, skill.name
+        n = _words(skill.instructions)
+        assert n <= ceiling, f"{skill.name} skill body is {n} words (ceiling {ceiling})"
+
+
+def test_word_count_does_not_move_when_the_same_text_is_reflowed():
+    """The property `test_every_skill_stays_small` needs in order to mean
+    anything: a skill body is markdown, and rewrapping it onto a different
+    line width with no word added, changed or removed is a purely cosmetic
+    edit. It must not change what the ceiling measures.
+
+    Falsifies the token-based alternative in the same breath: the identical
+    prose, wrapped at three different widths, does NOT tokenize to the same
+    cl100k count (measured below), which is exactly the gap ADR 0016 §4
+    opened when "lines are not tokens" was taken to mean tokens have no such
+    gap. Word count is immune by construction — `str.split()` sees only the
+    words, never where a line happened to break."""
+    import textwrap
+
+    words = (
+        "Judgement that other domains also need is doctrine not a skill "
+        "a skill cannot rely on another skill being loaded in the same "
+        "turn this is longer sample prose meant to simulate a real skill "
+        "body paragraph that wraps across several lines of markdown text "
+        "testing whether wrapping the same words differently changes what "
+        "is measured under two different units of account here"
+    ).split()
+    prose = " ".join(words)
+    narrow = textwrap.fill(prose, width=20)
+    wide = textwrap.fill(prose, width=100)
+    assert narrow != wide, "the two reflows must actually differ byte-for-byte"
+
+    assert _words(narrow) == _words(wide) == len(words)
+
+    # The contrast: the token count DOES move, which is the residual gap a
+    # word ceiling closes and a token ceiling does not.
+    assert _tokens(narrow) != _tokens(wide)
+
+
+def test_a_skill_ceiling_is_argued_not_bumped():
+    """A raised ceiling is a claim that no lower layer owns the content; it is
+    argued in `_WORD_CEILINGS`, and it never passes the published limit."""
+    assert all(v <= _WORD_HARD_LIMIT for v in _WORD_CEILINGS.values())
+    assert _WORD_CEILING < _WORD_HARD_LIMIT
 
 
 def test_every_description_fits(skills):
@@ -139,13 +212,6 @@ def test_no_dash_in_any_skill(skills):
     for skill in skills:
         for text in (skill.description, skill.instructions):
             assert "\u2014" not in text and "\u2013" not in text, skill.name
-
-
-def test_a_skill_ceiling_is_argued_not_bumped():
-    """A raised ceiling is a claim that no lower layer owns the content; it is
-    argued in `_TOKEN_CEILINGS`, and it never passes the published limit."""
-    assert all(v <= _HARD_LIMIT for v in _TOKEN_CEILINGS.values())
-    assert _TOKEN_CEILING < _HARD_LIMIT
 
 
 # --- image-generation (DEC-193): her canonical self, her look, the models -------
