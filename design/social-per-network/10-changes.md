@@ -124,6 +124,15 @@ linkedin_search(query: str, limit: int = 5)
   below is how that would be seen.
 - Not in `UNIT_SAFE_TOOLS`.
 
+## Both LinkedIn tools keep the X tools' screens
+
+The egress screen (`scan_identifiers` on the percent-decoded handle, link or
+query) and the raw-coordinate screen run in both LinkedIn tools before
+anything leaves, exactly as in the X tools and `instagram_search`, with the
+same `nothing_found` and no echo. It matters most in `linkedin_search`, whose
+free text goes to a PEOPLE search: a phone number pasted into it would be
+looked up against real people.
+
 ## What `SocialRouter` learns
 
 `SUBJECT_INPUTS` gains five rows, all `named`:
@@ -197,11 +206,23 @@ It gains the LinkedIn keys, and:
 ## Config
 
 - `[social] enabled` stays the flag for the OpenCLI backend, and so for X.
-- `[social.linkedin] enabled` (default `false`) is new. When it is false,
-  `linkedin_read` and `linkedin_search` are **not registered at all**, so a
-  deployment without LinkedIn pays no resident tokens for them. That differs
-  from `social_fetch`'s «registered and inert»: two tools that can only ever
-  answer `unavailable` cost every turn about 500 tokens for nothing.
+- `[social.linkedin] enabled` (default `false`) is new. It follows the
+  pattern every backend flag here follows (DEC-151, `[social.instagram]`):
+  when it is false the tools stay **registered and inert**, and answer one
+  stable `unavailable` («LinkedIn isn't set up») without sending anything.
+  The router has one `default` backend for every non-Instagram row, so the
+  gate is not in the router: the composition root hands the two LinkedIn
+  tools the router only when the flag is on, and `None` otherwise, the way
+  `social_fetch` is handed `None` when `[social]` is off. `[social.linkedin]`
+  without `[social]` is a config error at boot, since there would be no
+  OpenCLI backend behind it.
+- Not registering them when off was the first draft (audit, 2026-09-24) and
+  is not done. Nothing in Nora admits a tool by config: `ToolScope.admits`
+  (`nora/agent/surface.py`) filters by platform, Dreamer and grant only,
+  `build_tool_specs` builds every tool, and the declared table
+  (`platform=None`) admits everything. Adding config-keyed admission is a
+  separate decision, and it saves nothing in production, where LinkedIn is
+  meant to be on. The cost when off is the two schemas, measured in PR 2.
 - `config.example.toml` documents it and says private profile viewing is a
   precondition.
 
@@ -222,11 +243,37 @@ every tool) merges, because both change the same descriptions in
   comments, `nora/infra/social/*` docstrings, `deploy/social-bridge/README.md`,
   `docs/runbook.md`, `ARCHITECTURE.md`, `README.md`, and the specimen line in
   `nora/dreamer/objectives/standing-debrief.md` (a prompt that names a tool
-  she no longer has is a prompt that tells her to call it).
+  she no longer has is a prompt that tells her to call it). Comments outside
+  `nora/infra/social/` that name it too: `nora/domain/ports.py`,
+  `nora/platform/instagram/parser.py`, `nora/infra/vision/preprocess.py`.
+  PR 1 ends with `grep -rn social_fetch nora/` returning only
+  decision-history comments.
 - Tests: `tests/test_social_fetch_tool.py` becomes per-tool tests under
   `tests/unit/` (the tests root takes no new files), and the eval corpus rows
   `route_social_fetch_x_link` and `route_social_fetch_x_search` become
-  `route_x_read_link` and `route_x_search`.
+  `route_x_read_link` and `route_x_search`. Also, each of which goes red
+  otherwise (audit, 2026-09-24):
+  - `tests/architecture/test_tool_names.py`: `social_fetch` is in the
+    digest-pinned ADR 0015 snapshot, so it goes into `_RENAMED_SINCE`; the
+    snapshot itself is never edited.
+  - `tests/unit/test_social_tool_notes.py` calls `social_fetch` directly
+    (its `_TOOLS` tuple and six calls); the X calls move to the new tools.
+  - `tests/test_tools.py`: two exact-set assertions list `social_fetch`.
+  - `tests/architecture/test_port_fakes_live_in_nora_testing.py` and
+    `tests/architecture/test_tests_root_takes_no_new_files.py` name the file
+    `test_social_fetch_tool.py`; its entries leave with it.
+  - `scripts/mutations/instagram-p5-read-tool.json` and
+    `instagram-p11-search-tool.json` target the R-86 test by its old name and
+    three `test_social_fetch_tool.py` tests that are deleted. A mutant whose
+    target is gone reports as «survived» and `make gate` never runs them, so
+    each entry is either re-pointed at the test that now pins the same
+    property or removed with a line saying the property left with the tool.
+- A model that still names `social_fetch` after this (an old note, a stale
+  habit) gets Strands' unknown-tool error, not the three-state redirect
+  `social_fetch` gave for Instagram (18 §"What happens to `social_fetch`").
+  Accepted: keeping a stub tool to redirect costs its schema on every turn
+  forever. The routing rows in 20 are what show whether she still reaches
+  for it.
 - The metric label changes from `social_fetch` to the two new names. The old
   series stops, which is expected and says nothing about use: Nora restarts
   several times a day and a rare tool's series reads empty between uses.

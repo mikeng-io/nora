@@ -17,10 +17,12 @@ edges:
 | The four tools' vocabularies, the bridge allowlist and `read_only=True` agree, and no `instagram` or write verb is reachable | `test_r86_…` in `tests/test_acceptance_rules.py`, derived from `social_read_vocabulary()` |
 | No read has two tools | the disjointness check on `social_read_vocabulary()` |
 | `social_fetch` is gone from the registry, the Dreamer lists and every prompt | a registry test, and a grep of `nora/` for the name that expects no hit outside decision-history comments |
+| no mutation spec targets a test that no longer exists | a check over `scripts/mutations/*.json` targets, run once in PR 1 |
 | Every bridge allowlist value has a validator, and an unknown `(site, command)` spawns nothing | new, `tests/unit/test_social_bridge_server.py` |
 | No LinkedIn profile argv is built without `--profile-url` | new, same file |
 | A LinkedIn tool in a fire turn or a Dreamer pass is `refused` before any parse or call | new, modelled on `test_a_background_turn_is_refused_a_story_post_or_reel_before_any_call` |
-| `linkedin_read` and `linkedin_search` are absent from the registry when `[social.linkedin] enabled` is false | new |
+| with `[social.linkedin] enabled` false, both LinkedIn tools answer `unavailable` and nothing reaches the bridge | new |
+| the egress and coordinate screens run in both LinkedIn tools before any call | new, per tool |
 | Each `_read` tool refuses another network's link with a note naming the right tool, and sends nothing | new, per tool |
 | A LinkedIn post link is `unavailable`, not a read of the author's activity | new |
 | The L1 opening paragraph, ADR 0015 Level 3 ceilings, a note on every non-`ok` status | the existing policy gates in `tests/test_tool_surface_policy.py` |
