@@ -276,6 +276,16 @@ so `nora/ingest/stages/edit_media.py` returns before comparing placeholders.
 It would matter the day an edit re-delivers a share with its media, and then
 only for shares already in the record. Not fixed.
 
+**Possible follow-up: the reaction picker's reading of the label.**
+`nora/doctrine/reaction.md` tells the GIF picker that `[sticker …]` and
+`[image …]` lines are «people answering with a picture instead of words». A
+`[cover image …]` is not that; it is the still of something shared. One clause
+saying so was drafted in #454 and taken back out: it is a doctrine change,
+live on the next checkout pull, and unmeasured. It lands only with a run of
+the reaction replay set (the 104 replayed replies its version history is
+measured on) before and after, and a version bump with the served-section sha
+repinned in `tests/test_doctrine_version_parity.py`.
+
 ### Known gaps, recorded and not fixed here
 
 - **A shortcode can look like a key to the egress screen.** The shortcode
