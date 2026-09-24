@@ -8,8 +8,10 @@ for its own injected XML, with the label replaced by the sentence (#314).
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..domain.blocks import (
     BlockKey,
@@ -85,10 +87,77 @@ def _now_line(now: datetime | None) -> str:
     costs ~15 tokens and cannot fail.
 
     Injected rather than read from the clock here so a test can pin it.
+
+    It names the zone and the place the zone is named for (2026-09-24),
+    because «HKT» alone is an abbreviation she has to decode, and a picture
+    that needs a place («Hong Kong» on a poster) had nothing in her input to
+    copy it from: the image model has no clock and no location, so she is
+    the only source, and a place she is not given is one she makes up. The
+    place is the zone's own city (`Asia/Hong_Kong` is Hong Kong), not a
+    location feed: it is where the clock is, which is what the deployment's
+    zone was set to for (`docker-compose.yml`'s `TZ`, «The group is in Hong
+    Kong»). A zone that names no place (`UTC`, `Etc/GMT+8`) or cannot be
+    named renders no place, never a guessed one.
     """
     if now is None:
         now = datetime.now().astimezone()
-    return f"Right now it is {now.strftime('%A %-d %B %Y, %H:%M')} ({now.tzname()}).\n"
+    stamp = f"Right now it is {now.strftime('%A %-d %B %Y, %H:%M')}"
+    key = _zone_key(now)
+    if key is None:
+        return f"{stamp} ({now.tzname()}).\n"
+    place = _zone_place(key)
+    where = f", {place} time" if place else ""
+    return f"{stamp}{where} ({now.tzname()}, {key}).\n"
+
+
+#: The IANA areas whose zones are named for a city (`Asia/Hong_Kong`). The rest
+#: (`UTC`, `Etc/GMT+8`) name an offset, and an offset is not a place.
+_PLACE_AREAS = frozenset({
+    "Africa", "America", "Antarctica", "Asia", "Atlantic", "Australia",
+    "Europe", "Indian", "Pacific",
+})
+
+
+def _local_zone() -> ZoneInfo | None:
+    """The process's own IANA zone: `TZ` (the container sets it), else the zone
+    `/etc/localtime` links to (a developer machine), else None. The same source
+    `datetime.now().astimezone()` reads, so the zone named and the time stated
+    cannot come from two different places."""
+    name = os.environ.get("TZ", "").lstrip(":")
+    if not name:
+        _, found, name = os.path.realpath("/etc/localtime").partition("zoneinfo/")
+        if not found:
+            return None
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return None
+
+
+def _zone_key(now: datetime) -> str | None:
+    """The IANA name of the zone `now` is stated in, or None.
+
+    A `ZoneInfo`-aware clock carries its own key. `datetime.now().astimezone()`
+    (both prefill callers) carries only an offset and an abbreviation, so the
+    process's own zone is named for it, and only when that zone's offset at
+    `now` IS `now`'s offset: a clock stated in some other zone gets no name
+    rather than the wrong one."""
+    key = getattr(now.tzinfo, "key", None)
+    if isinstance(key, str) and key:
+        return key
+    zone = _local_zone()
+    if zone is None or zone.utcoffset(now) != now.utcoffset():
+        return None
+    return zone.key
+
+
+def _zone_place(key: str) -> str | None:
+    """The city an IANA zone is named for (`America/Argentina/Buenos_Aires` is
+    Buenos Aires), or None for a zone that names an offset."""
+    area, _, rest = key.partition("/")
+    if area not in _PLACE_AREAS or not rest:
+        return None
+    return rest.rsplit("/", 1)[-1].replace("_", " ")
 
 
 

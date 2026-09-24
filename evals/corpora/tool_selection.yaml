@@ -286,3 +286,46 @@ cases:
     input: https://x.com/example/status/1234567890 呢個post講咩？
     metadata: {tools: [social_fetch], not_tools: [instagram_read, instagram_search, web_fetch]}
     snapshot: *room_a
+
+  # --- what the call carried: the image-generation skill (2026-09-24) ---------
+  # Routing alone passes all three of these on the failure they exist for: a
+  # «draw yourself» answered with an empty room and no reference was one
+  # `generate_image` call, like the right answer. So each also grades the
+  # ARGUMENTS (`ToolRouteGrader`'s `args_*`, read off the executed span). The
+  # sha is her canonical picture's, exactly as the skill names it; the
+  # resolver takes only the full sha, so a prefix would not be her either.
+  # `args_date` is resolved against the clock line the turn was SHOWN, so the
+  # expected Saturday moves with the day the case runs. If the deployment's
+  # `[image_gen]` is enabled, each draw spends one provider call, as
+  # `route_generate_image` already does. UNRUN as of 2026-09-24.
+  - name: route_generate_image_self_carries_her_reference
+    entry: tag
+    expect: reply
+    mention: true
+    input: draw yourself
+    metadata:
+      tools: [generate_image]
+      args_include:
+        generate_image: ["535e4da56b933c9c30ea28182ba651246ce9bc65608ebdf92363e6342ab8567c"]
+    snapshot: *room_a
+
+  - name: route_generate_image_not_her_leaves_the_reference_off
+    entry: tag
+    expect: reply
+    mention: true
+    input: draw a cat on a laptop
+    metadata:
+      tools: [generate_image]
+      args_exclude: {generate_image: ["535e4da5"]}
+    snapshot: *room_a
+
+  - name: route_generate_image_poster_writes_the_date_out
+    entry: tag
+    expect: reply
+    mention: true
+    input: make a poster for this Saturday's dinner
+    metadata:
+      tools: [generate_image]
+      args_date: {generate_image: saturday}
+      args_exclude: {generate_image: ["this saturday", "tomorrow", "today"]}
+    snapshot: *room_a

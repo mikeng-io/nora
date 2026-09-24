@@ -1645,14 +1645,15 @@ def _parse_when(raw: str) -> datetime | None:
     (R-5), and `Reminder(due_at="等陣")` would reach the port and raise there.
 
     A value with no offset is read as `_HKT`, not refused. The prefill states
-    the time as prose — «Right now it is Saturday 8 August 2026, 19:00 (HKT)»
-    — so a model asked for ISO-8601 will sometimes hand back `2026-08-08T21:00`,
-    and `_HKT` is the zone that header itself named. Refusing would spend a
-    model round trip on punctuation; GUESSING a different zone would invent an
-    instant, which is why the answer is this one specific zone and not
-    `astimezone()` of whatever the host happens to be set to. What must never
-    happen is a naive value reaching the store — the port raises
-    `NaiveDatetimeError` on one, deliberately.
+    the time as prose — «Right now it is Saturday 8 August 2026, 19:00, Hong
+    Kong time (HKT, Asia/Hong_Kong)» — so a model asked for ISO-8601 will
+    sometimes hand back `2026-08-08T21:00`, and `_HKT` is the zone that
+    header itself named. Refusing would spend a model round trip on
+    punctuation; GUESSING a different zone would invent an instant, which is
+    why the answer is this one specific zone and not `astimezone()` of
+    whatever the host happens to be set to. What must never happen is a naive
+    value reaching the store — the port raises `NaiveDatetimeError` on one,
+    deliberately.
     """
     try:
         parsed = datetime.fromisoformat(str(raw).strip())
@@ -5893,79 +5894,52 @@ Args:
         reference: str | None = None,
         reference_2: str | None = None,
         reference_3: str | None = None,
-        size: str | None = None,
-        aspect: str | None = None,
-        quality: str | None = None,
+        size: Literal["small", "medium", "large"] | None = None,
+        aspect: Literal["1:1", "16:9", "9:16", "3:2", "2:3"] | None = None,
+        quality: Literal["standard", "quality"] | None = None,
     ) -> dict:
-        """Make an image from a text prompt, and optionally from photos already
-        in this conversation. Call this when somebody asks you to make, draw, or
-        generate a picture.
+        """Make an image from a prompt, optionally from photos in this
+        conversation, and post it to this chat. Call this when somebody asks
+        you to make, draw or edit a picture.
 
-        Call this when somebody asks you to make, draw, or generate a picture —
-        an illustration, a logo, a birthday card, a meme, "turn this photo
-        into a watercolour". The provider is chosen for you; the prompt is
-        what matters.
+        `reference`, `reference_2` and `reference_3` each take the marker code
+        of one photo (`a3f2c1` from `[image a3f2c1]`), up to 3 in one call.
+        Each must already be in this conversation, except your own canonical
+        picture, which works in any room. With references and no `aspect`, the
+        first one sets the picture's shape. With neither `size` nor `aspect`
+        the shape is the provider's choice; set one and the other defaults to
+        medium or 1:1.
 
-        Reference photos: pass their marker codes (`a3f2c1` from
-        `[image a3f2c1]`) in `reference` (one photo), `reference_2` (a
-        second) and `reference_3` (a third) — UP TO 3 PHOTOS in one call,
-        in any order: no slot is required, but the FIRST photo you pass
-        sets the picture's shape unless you name an `aspect`. Multi-photo
-        edits combine subjects, transfer styles, and compose scenes. Each
-        photo must ALREADY be in this conversation — you cannot fetch an
-        image from elsewhere to edit it; the one exception is your own
-        canonical picture, which works in any room. Say plainly in your
-        reply when a generated image used reference photos. When the
-        transformation depends on what the photos show, call `media_fetch`
-        on each marker FIRST and read its description, then write the prompt
-        as: [what the photos show] + [what to change] + [what to keep].
-        Never guess what is in a photo you cannot see; if the change needs
-        content you don't know, call `media_fetch` or say you can't.
-        Do NOT put names, phone numbers, addresses or other identifiers into
-        the prompt — it goes to an outside service.
+        MUST: the prompt goes to an outside service, so it never carries a
+        name, phone number, address or other identifier.
 
-        `size` is one of "small", "medium", "large". `aspect` is "1:1",
-        "16:9", "9:16", "3:2", "2:3". Leave both unset and the shape is the
-        provider's choice (with photos, the first photo's shape); set either
-        one and the other is filled in, `aspect` as 1:1 and `size` as
-        medium. `quality` is "standard" or "quality" (default provider
-        standard).
-
-        `status` tells you what happened:
-          - `ok` — the image was already sent to this chat as an attachment;
-            there is NO url and NO link to share. The transcript shows
-            `[image <handle>]` — that handle is Nora's internal record of
-            the image, NEVER a thing to quote in your reply, and never a
-            thing to paste anywhere: the group already has the picture.
-            Do not paste any URL, and never re-use a drop/upload link from
-            an earlier message — those links are stale.
-          - `nothing_found` — the provider refused the prompt, or a
-            reference code is not in view here. Do not guess why; say it
-            could not be made.
-          - `unavailable` — could not make it right now; `note` says why
-            (quota used up, auth expired, service down). Never report this
-            as "there's nothing".
+        `status` is one of:
+        - `ok`: made, and posted here unless the result carries a `url`.
+        - `held_for_review`: made, and held by review or this room's cooldown.
+        - `nothing_found`: the prompt was refused, or a reference is not a photo held here.
+        - `unavailable`: it cannot be made or sent right now.
+        Every result carries a `note` saying how to report it.
 
         Args:
-            prompt: The image you are asked to make, with the conventions above.
-            reference: Optional marker code of a photo already in this conversation.
-            reference_2: Optional second marker code, for multi-photo edits (up to 3).
-            reference_3: Optional third marker code, for multi-photo edits (up to 3).
-            size: Optional "small" | "medium" | "large".
-            aspect: Optional "1:1" | "16:9" | "9:16" | "3:2" | "2:3".
-            quality: Optional "standard" | "quality".
+            prompt: What the picture shows, written for the image model.
+            reference: Optional marker code of a photo, or your canonical picture.
+            reference_2: Optional second marker code.
+            reference_3: Optional third marker code.
+            size: Optional size tier.
+            aspect: Optional aspect ratio.
+            quality: Optional model tier; "quality" is the costlier one.
         """
         if image_generator is None:
             return {
                 "status": "unavailable",
-                "note": "I can't make images right now. Say so — do not invent "
+                "note": "I can't make images right now. Say so; do not invent "
                         "one and do not say there is no such thing.",
             }
         wanted_refs = [r for r in (reference, reference_2, reference_3) if r is not None]
         if wanted_refs and not image_refs_allowed:
             return {
                 "status": "unavailable",
-                "note": "I can't edit a photo you send me right now — that "
+                "note": "I can't use reference photos right now: that "
                         "feature is switched off. I can still make an image "
                         "from text alone.",
             }
@@ -5996,19 +5970,26 @@ Args:
 
         image_size = None
         if size is not None or aspect is not None:
-            tier: Literal["small", "medium", "large"] = cast(
-                Literal["small", "medium", "large"],
-                size if size in ("small", "medium", "large") else "medium",
-            )
-            ratio: Literal["1:1", "16:9", "9:16", "3:2", "2:3"] = cast(
-                Literal["1:1", "16:9", "9:16", "3:2", "2:3"],
-                aspect if aspect in ("1:1", "16:9", "9:16", "3:2", "2:3") else "1:1",
-            )
-            image_size = ImageSize(tier=tier, aspect_ratio=ratio)
+            # The parameters are `Literal`s now (ADR 0015 §3), and Strands
+            # validates a call against them before this body runs, so an
+            # unset one is the only case left to fill.
+            image_size = ImageSize(tier=size or "medium", aspect_ratio=aspect or "1:1")
 
         quality_kind: Literal["standard", "quality"] | None = None
         if quality == "quality":
             quality_kind = "quality"
+
+        # The references that resolved to a photo sent in THIS conversation,
+        # as opposed to her own canonical picture. Only those are somebody's
+        # photo going to an outside service, which is what her reply has to
+        # say; it was a line of the description until 2026-09-24 (ADR 0015 §3:
+        # how to report a result belongs in the result).
+        room_photos: list[str] = []
+
+        def _made_note(what: str) -> str:
+            if room_photos:
+                return f"{what} Say in your reply that it was made from photos sent here."
+            return what
 
         async def _canonical_self(marker: str) -> str | None:
             """DEC-193's narrow custody exemption: the sha of her canonical self
@@ -6068,6 +6049,7 @@ Args:
                 return None
             if matches:
                 sha256 = next(iter(matches))
+                room_photos.append(sha256)
             else:
                 canonical = await _canonical_self(hex_handle)
                 if canonical is None:
@@ -6094,7 +6076,7 @@ Args:
             log.exception("generate_image raised")
             return {
                 "status": "unavailable",
-                "note": "I couldn't make that image just now. Say so — do not "
+                "note": "I couldn't make that image just now. Say so; do not "
                         "describe an image that wasn't made.",
             }
 
@@ -6197,7 +6179,7 @@ Args:
                 if status == HELD:
                     return {
                         "status": "held_for_review",
-                        "note": "I made the image and my part is DONE — a "
+                        "note": "I made the image and my part is DONE: a "
                                 "review mode or this room's cooldown held the "
                                 "send. Do not make it again.",
                     }
@@ -6205,13 +6187,18 @@ Args:
                     return {
                         "status": "unavailable",
                         "note": "I made the image but couldn't send it to this "
-                                "chat. Say so plainly — do not pretend it "
+                                "chat. Say so plainly; do not pretend it "
                                 "arrived.",
                     }
                 return {
                     "status": "ok",
                     "handle": sha256[:HANDLE_CHARS] if sha256 else "",
                     "sent": True,
+                    "note": _made_note(
+                        "The picture is already in this chat. The handle is "
+                        "your own record of it: never quote it, and paste no "
+                        "link, including one from an earlier message."
+                    ),
                 }
             artifact = result.artifact or ""
             # M2 (audit): a data-URI fallback (provider answered `url`, or
@@ -6221,23 +6208,27 @@ Args:
             if artifact.startswith("data:image/"):
                 return {
                     "status": "unavailable",
-                    "note": "I made the image but couldn't host it — say "
+                    "note": "I made the image but couldn't host it. Say "
                             "so plainly rather than describing it.",
                 }
             return {
                 "status": "ok",
                 "url": artifact,
+                "note": _made_note(
+                    "The picture was not attached here; this link is the "
+                    "picture, so share it."
+                ),
             }
         if result.status == "nothing_found":
             return {
                 "status": "nothing_found",
-                "note": "I couldn't make that image — the provider turned the "
+                "note": "I couldn't make that image: the provider turned the "
                         "prompt away. Try changing the wording.",
             }
         reason = result.reason or "unavailable"
         note = {
             "quota": "I've used up today's image quota. Say so plainly.",
-            "auth": "My image generation login has expired — Miles needs to "
+            "auth": "My image generation login has expired; Miles needs to "
                     "re-authorise before I can make more.",
             "rate_limited": "I'm making too many right now; try again in a bit.",
             "down": "The image service is having trouble right now; try again "

@@ -126,6 +126,24 @@ async def test_the_canonical_self_resolves_in_a_room_that_never_held_it(persons,
     assert world["gen"].resolved == [SELF_BYTES]
 
 
+async def test_only_a_photo_sent_here_asks_the_reply_to_say_so(persons, world):
+    """The reply says a picture was made from photos when somebody's photo
+    went to the provider: that is what the rule is for. It was one line of the
+    description, read on every call and unable to tell the two cases apart;
+    it is now in the result, and only when a photo from THIS conversation
+    resolved. Her own canonical picture is nobody's photo."""
+    own = await _call(persons, world)(prompt="you, in the rain", reference=SELF_SHA)
+    assert own["status"] == "ok"
+    assert "photos sent here" not in own["note"]
+
+    local = "ab" * 32
+    world["blobs"].blobs[local] = b"LOCAL"
+    await _post(world["store"], HERE, MediaBlob(sha256=local, media_type="image/png", size=5))
+    theirs = await _call(persons, world)(prompt="edit", reference=local[:6])
+    assert theirs["status"] == "ok"
+    assert "Say in your reply that it was made from photos sent here." in theirs["note"]
+
+
 async def test_the_marker_form_of_the_canonical_self_resolves_too(persons, world):
     """The skill writes it as `[image <sha>]`; she may pass it back in that form."""
     result = await _call(persons, world)(prompt="you", reference=f"[image {SELF_SHA}]")
