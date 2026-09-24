@@ -31,6 +31,12 @@ The Instagram half has no host-side half here at all:
   private `nora` network. The bodies are pinned by shared fixtures the Go
   handlers generate (`tests/fixtures/instagram_bridge/`).
 
+* `views.py`, `render.py`, `readings.py` — what that client builds a body
+  into (typed views, no id field anywhere), the ONE renderer that turns a
+  view into what the model reads, and the readings that fill in what each
+  item of a post or story shows through the caller's own `media_fetch`
+  (design/instagram-adoption/18 §"Typed views, one renderer, and readings").
+
 * `subjects.py::PersonsSubjectIndex` — the production `SocialSubjectIndex`:
   `person_id -> igid` off `identity.toml` (kind-aware), Tier 0 off the rooms'
   `persons` lists, and the reverse `igid -> person_id` a link needs.

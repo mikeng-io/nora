@@ -6,7 +6,7 @@
 |---|---|
 | `evals/**/*.py` | **5,629** |
 | `evals/**/*.yaml` (13 corpora) | data — **survives** |
-| `nora/app/eval_support.py` | **1,739** — five of the seven composition sites |
+| `nora/app/eval_support.py` | **1,739** — five of the seven composition sites (deleted 2026-09-18, re-homed to `tests/offline_eval_support.py`, R098) |
 | `nora/app/offline.py` | **335** |
 | **deleted or re-homed** | **~7,700** |
 
