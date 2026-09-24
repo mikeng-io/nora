@@ -360,11 +360,18 @@ cases:
       args_exclude: {generate_image: ["535e4da5", "mascot", "collectible"]}
     snapshot: *room_a
 
+  # Was «make a poster for this Saturday's dinner» until 2026-09-24. Run on
+  # norty at n=5 per arm, it collided with the room's REAL calendar: room A
+  # has a dinner planned on another day that week, and 8 of 10 draws on #469
+  # wrote that event's date instead of «this Saturday», absolutely and
+  # correctly per the event, and were graded FAIL. The case measured which
+  # dinner she believed, not whether she writes a date out. A picnic is
+  # nothing the room has planned, so «this Saturday» has one reading.
   - name: route_generate_image_poster_writes_the_date_out
     entry: tag
     expect: reply
     mention: true
-    input: make a poster for this Saturday's dinner
+    input: make a poster for a picnic this Saturday
     metadata:
       tools: [generate_image]
       args_date: {generate_image: saturday}

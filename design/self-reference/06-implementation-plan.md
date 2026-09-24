@@ -306,5 +306,45 @@ it in `tests/test_skill_content.py`.
 
 **Evals.** `route_generate_image_not_her_leaves_the_reference_off` now uses
 the live wording and also fails on «mascot» or «collectible» in the prompt,
-words only her appearance section supplies. Unrun.
+words only her appearance section supplies.
+
+**Measured, 2026-09-24, on norty** (`python -m evals tool_selection --case …
+--sample 5 --reasons`, the deploy host's `.env`). No `--deployment-config`,
+so the subject was built from production's `config.toml`, which has had
+`[llm] defer_tools = true` since 16:32 HKT: this measures production's
+deferred-tools mode. Two arms, identical except for `SKILL.md`: the #469 tree
+(«after»), and the same tree with master's skill («before»). Both arms run the
+same corpus and the same grader. Master itself was not the before arm,
+because it has moved on by 60 files unrelated to this change, and its cat
+case had a different input and no style check. Draws share Honcho (#462), so
+read this as a direction, not a rate.
+
+| case | before (master skill) | after (#469) |
+|---|---|---|
+| «draw yourself», full canonical sha passed | 5/5 | 5/5, 5/5 |
+| «draw a cat sleeping on a laptop», no sha, no «mascot»/«collectible» | 5/5, 4/5 | 5/5, 5/5 |
+| poster, «this Saturday's dinner» (retired, see below) | 3/5 | 1/5, 1/5 |
+| poster, «a picnic this Saturday» | 5/5 | 5/5 |
+
+- **Style bleed reproduced on the before arm, 1 in 5**: «a stylized
+  3d-rendered orange tabby … cozy, tactile collectible-character render
+  quality, soft matte fur texture, gentle ambient shadow». None in 10 on #469,
+  where every quoted cat prompt asks for a photographic look. Every #469 cat
+  prompt also says there is no text; none of the before arm's quoted ones did.
+- **Invented text on the poster**: the before arm added lettering nobody asked
+  for in 2 of 5 (a time, «3pm», and a line «bring snacks, drinks, a mat»);
+  #469 in 0 of 5. Both arms wrote «saturday 26 september 2026» and «hong
+  kong» every time: #456's date rule holds on both.
+- **Still invented on #469**: the cat prompts keep adding a lamp, a mug or
+  papers. They are now physically coherent (the cat on the keyboard of an
+  open laptop), so the model has nothing to «fix», but the "only when it
+  serves the request" half of the rule is only partly followed.
+- **The dinner poster case was confounded and is retired.** Room A has a
+  dinner planned on another day of that week, and 8 of 10 #469 draws wrote
+  that event's date, absolutely and consistently. The case measured which
+  dinner she believed, not whether she writes a date out. It now asks for a
+  picnic, which nothing in the room matches. The first run also exposed that
+  a FAIL named the expected date and quoted nothing she wrote, so every
+  argument verdict now quotes the call's input (`_seen`, pinned in
+  `tests/unit/test_tool_route_grader.py`).
 

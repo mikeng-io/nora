@@ -1422,6 +1422,23 @@ class MeetsGrader(Evaluator):
         )
 
 
+#: How much of a call's input an argument verdict quotes, PASS or FAIL. A
+#: failure that names what was expected and not what was PASSED cannot be
+#: read: the first run of the poster case (2026-09-24) said «no call wrote out
+#: Saturday 26 September» four times and showed none of the prompts. A PASS
+#: is quoted too, because a pass on an exclusion («no «mascot»») says nothing
+#: about whether the case can separate two arms until the prompt is read. 900
+#: characters, because a poster prompt states its date near the end.
+_SEEN_CHARS = 900
+
+
+def _seen(texts: list[str]) -> str:
+    """What the call actually carried, quoted for a FAIL reason."""
+    if not texts:
+        return "(no call)"
+    return " | ".join(f"«{t[:_SEEN_CHARS]}»" for t in texts)
+
+
 class ToolRouteGrader(Evaluator):
     """S2 — did the turn reach for the RIGHT tool? (`design/tool-catalogue/
     05-measurement.md` §2c.)
@@ -1488,11 +1505,15 @@ class ToolRouteGrader(Evaluator):
             for text in calls.get(tool, ()):
                 hit = [n for n in needles if str(n).lower() in text]
                 if hit:
-                    return self._out(FAIL, 0.0, f"{tool} was called with {hit}")
+                    return self._out(
+                        FAIL, 0.0, f"{tool} was called with {hit}: {_seen([text])}")
         for tool, needles in include.items():
             if not any(all(str(n).lower() in text for n in needles)
                        for text in calls.get(tool, ())):
-                return self._out(FAIL, 0.0, f"no {tool} call carried all of {list(needles)}")
+                return self._out(
+                    FAIL, 0.0,
+                    f"no {tool} call carried all of {list(needles)}: {_seen(calls.get(tool, []))}",
+                )
         if dated:
             clock = state_of(data, NORA_SHOWN_NOW)
             today = date_shown(clock) if clock else None
@@ -1503,9 +1524,11 @@ class ToolRouteGrader(Evaluator):
                 if not any(states_the_date(text, day) for text in calls.get(tool, ())):
                     return self._out(
                         FAIL, 0.0,
-                        f"no {tool} call wrote out {day:%A %-d %B %Y} (from {clock!r})",
+                        f"no {tool} call wrote out {day:%A %-d %B %Y} (from {clock!r}): "
+                        f"{_seen(calls.get(tool, []))}",
                     )
-        return self._out(PASS, 1.0, "the call carried what the case asks")
+        carried = [t for tool in {*include, *exclude, *dated} for t in calls.get(tool, [])]
+        return self._out(PASS, 1.0, f"the call carried what the case asks: {_seen(carried)}")
 
     def evaluate(self, data: EvaluationData) -> list[EvaluationOutput]:
         error = state_of(data, NORA_ERROR)
@@ -1542,7 +1565,10 @@ class ToolRouteGrader(Evaluator):
             carried = self._args(data, md)
             if carried is not None and carried.label != PASS:
                 return [carried]
-            return [self._out(PASS, 1.0, f"called {sorted(want & set(ran))}; ran {ran}")]
+            routed = f"called {sorted(want & set(ran))}; ran {ran}"
+            if carried is not None:
+                routed = f"{routed}; {carried.reason}"
+            return [self._out(PASS, 1.0, routed)]
         return [self._out(FAIL, 0.0, f"expected one of {sorted(want)}; ran {ran}")]
 
     async def evaluate_async(self, data: EvaluationData) -> list[EvaluationOutput]:
