@@ -1,24 +1,25 @@
 // The mint/reuse/discard decisions createCoreRegistry makes (#345): a failed
 // join leaves its core in `voice: error` with no session, and service.mjs
 // imports discord.js so nothing about it was reachable from a test —
-// controller.mjs (createCoreRegistry, and createCore itself) has no such
+// controller.mjs (createCoreRegistry, createCore and buildCore) has no such
 // seam, so everything here runs against fakes or the real wiring, with no
 // discord.js in sight.
 //
 // THE ACTUAL FIX for #345's reported symptom is `discardIfFailed`, called the
 // moment a join fails (wired from lifecycle.mjs's join() catch, through
-// createCore, into service.mjs's makeCore). The mint-time prune in
-// `controllerFor` is a backstop only: it never runs for a guild that fails
-// once and is never joined again, which is exactly the case #345 reports
-// live — a review of the first version of this fix caught that the mint-time
-// prune alone does not touch that case, since re-joining a `voice: error`
-// core was already harmless (lifecycle.join treats it like idle and retries
-// on the SAME core) and nothing ever forced a re-mint.
+// `buildCore`, into service.mjs's makeCore — and the end-to-end test below
+// calls that SAME `buildCore`, not a copy of its wiring). The mint-time
+// prune in `controllerFor` is a backstop only: it never runs for a guild
+// that fails once and is never joined again, which is exactly the case #345
+// reports live — a review of the first version of this fix caught that the
+// mint-time prune alone does not touch that case, since re-joining a
+// `voice: error` core was already harmless (lifecycle.join treats it like
+// idle and retries on the SAME core) and nothing ever forced a re-mint.
 
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 
-import { createCoreRegistry, createCore } from '../src/controller.mjs';
+import { createCoreRegistry, buildCore } from '../src/controller.mjs';
 
 function fakeCore(guildId, { voice = 'connected', session = {} } = {}) {
   return {
@@ -209,16 +210,18 @@ test('mint() registers directly (the boot-restore seam), independent of controll
 // --- end-to-end: the REAL wiring, no fakeCore stand-in ----------------------
 //
 // Everything above drives createCoreRegistry against a scripted fake core.
-// This one wires the actual createCore/createLifecycle (controller.mjs +
-// lifecycle.mjs) through a real createCoreRegistry, with only the
-// Discord/network/process seams faked — the same seam pattern
-// test/helpers.mjs uses — so it proves the hook is actually connected, not
-// just that the registry method works in isolation.
+// This one wires the actual createLifecycle (via controller.mjs's
+// `buildCore`, THE SAME FUNCTION service.mjs's makeCore calls — not a
+// second copy of its forward-ref/onJoinFailed wiring) through a real
+// createCoreRegistry, with only the Discord/network/process seams faked —
+// the same seam pattern test/helpers.mjs uses. A re-review of the first cut
+// of this test found it built its own wiring, so a service.mjs regression
+// (dropping the forward-ref assignment, or forgetting to pass
+// `onJoinFailed`) could not have turned it red; pointing it at `buildCore`
+// closes that gap — see `buildCore`'s own comment in controller.mjs.
 test('end-to-end: a real join failure removes the guild from /health with no retry, and canonical minting still works', async () => {
-  let thisCore;
   const makeCore = (guildId) =>
-    (thisCore = createCore({
-      guildId,
+    buildCore(registry, guildId, {
       joinVoice: async () => {
         throw new Error('discord unreachable');
       },
@@ -242,9 +245,7 @@ test('end-to-end: a real join failure removes the guild from /health with no ret
       getWakeStats: () => ({}),
       pumpInfo: () => ({}),
       log: () => {},
-      // The exact wiring service.mjs's makeCore uses.
-      onJoinFailed: () => registry.discardIfFailed(guildId, thisCore),
-    }));
+    });
   const registry = createCoreRegistry({ makeCore, log: () => {} });
 
   const controller = registry.controllerFor('g-e2e', { create: true });

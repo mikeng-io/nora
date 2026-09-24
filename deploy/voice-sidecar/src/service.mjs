@@ -36,7 +36,7 @@ import { readdir } from 'node:fs/promises';
 import { appendFileSync, renameSync, statSync } from 'node:fs';
 import path from 'node:path';
 
-import { createCore, createCoreRegistry, createFrontDoor } from './controller.mjs';
+import { buildCore, createCoreRegistry, createFrontDoor } from './controller.mjs';
 import { bootChannel } from './lifecycle.mjs';
 import { realClock } from './outbox.mjs';
 import { join, createPump } from './recv.js';
@@ -198,8 +198,13 @@ async function main() {
   // the socket out front.
   //
   // The map itself, and the mint-vs-reuse-vs-prune decision every lookup
-  // makes, live in controller.mjs's createCoreRegistry (#345) — this file
-  // only supplies the seam that builds a core.
+  // makes, live in controller.mjs's createCoreRegistry (#345); the
+  // forward-ref + `onJoinFailed` wiring THE FIX depends on lives in
+  // controller.mjs's `buildCore` (shared with test/core_registry.test.mjs's
+  // end-to-end test, so a break here — dropping this call, or the registry/
+  // guildId it's given — cannot pass silently: that test drives this exact
+  // function, not a copy of its wiring). This file only supplies the
+  // discord.js-dependent seams `buildCore` needs to build one core.
   function makeCore(guildId) {
     // Each guild gets its OWN pump, so its own wake-seam connection: the
     // hello frame on that connection is what tells the gate which guild the
@@ -214,15 +219,7 @@ async function main() {
       log: (event, fields = {}) => log(event, { guild_id: guildId, ...fields }),
     });
 
-    // Forward reference (same pattern createCore itself uses for `lifecycle`,
-    // controller.mjs): `onJoinFailed` is wired into lifecycle BEFORE `core`
-    // exists, but it is only ever CALLED after a join attempt, by which time
-    // `thisCore` is assigned — so the registry always discards the exact
-    // core object it minted here, never a guess reconstructed from `guildId`
-    // alone (which a concurrent re-mint could already have replaced).
-    let thisCore;
-    const core = createCore({
-      guildId,
+    return buildCore(registry, guildId, {
       joinVoice,
       entersStateFn: (connection, status, timeoutMs) => entersState(connection, status, timeoutMs),
       stateStore: createStateStore({ path: path.join(STATE_DIR, `${guildId}.json`) }),
@@ -245,14 +242,8 @@ async function main() {
         port: PUMP_PORT,
         ...(currentPump() ? { drops: currentPump().stats() } : {}),
       }),
-      // THE FIX (#345): the moment this guild's join fails, drop it from the
-      // registry so /health stops naming it — not just on the next mint
-      // attempt, which never comes for a guild nobody retries.
-      onJoinFailed: () => registry.discardIfFailed(guildId, thisCore),
       log: (event, fields = {}) => log(event, { guild_id: guildId, ...fields }),
     });
-    thisCore = core;
-    return core;
   }
 
   // Without a token there is nothing to join with, so nothing is created —

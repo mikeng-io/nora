@@ -410,6 +410,34 @@ export function createCoreRegistry({ makeCore, canCreate = () => true, log = () 
   };
 }
 
+// The forward-ref + `onJoinFailed` wiring every `makeCore` needs to use
+// `discardIfFailed` (#345): `onJoinFailed` has to be passed into `createCore`
+// before the core it will act on exists, but it can never fire before this
+// function returns (a join cannot fail before its own `createCore` call has
+// finished), so the forward reference is always resolved by the time the
+// hook is actually called.
+//
+// Pulled out of service.mjs and imported by BOTH it and
+// test/core_registry.test.mjs's end-to-end test — a re-review of the first
+// cut of this fix found that test built its OWN copy of this wiring, so a
+// service.mjs regression (service.mjs dropping the forward-ref assignment,
+// or forgetting to pass `onJoinFailed` at all) would leave `discardIfFailed`
+// silently returning `false` in production while every test stayed green.
+// Sharing this function closes that gap: the test now exercises the exact
+// code service.mjs runs, and service.mjs's own remaining surface — calling
+// this function with the right `registry`/`guildId` — is small enough that a
+// mistake there would be a one-line, hard-to-miss diff.
+export function buildCore(registry, guildId, coreOptions) {
+  let thisCore;
+  const core = createCore({
+    ...coreOptions,
+    guildId,
+    onJoinFailed: () => registry.discardIfFailed(guildId, thisCore),
+  });
+  thisCore = core;
+  return core;
+}
+
 // The ONE socket, in front of N per-guild controllers (multi-guild,
 // 2026-09-17). It owns everything that must happen BEFORE a guild is known —
 // reading the body is how the guild becomes known at all — and nothing else.
