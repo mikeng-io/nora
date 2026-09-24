@@ -59,7 +59,8 @@ deleted the last generated capability block for exactly that reason.
 
 **Out:**
 - rewriting `identity.md`. Its rule is kept, not relaxed.
-- any tool built before the tool catalogue lands (`05` says why)
+- nothing waits for the tool catalogue any more: it was measured and stays
+  off (`05`, withdrawn 2026-09-24)
 - social fetching (`social_fetch` and any split of it). That is a separate
   topic, in `design/instagram-adoption/`.
 

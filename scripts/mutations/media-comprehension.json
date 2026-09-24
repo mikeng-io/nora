@@ -72,8 +72,8 @@
   {
     "name": "K9c label_agrees' sticker branch",
     "file": "nora/domain/media.py",
-    "old": "    if label == \"sticker\":\n        return derived == \"image\"",
-    "new": "    if label == \"sticker\":\n        return True",
+    "old": "    if label in (\"sticker\", \"cover image\"):\n        return derived == \"image\"",
+    "new": "    if label in (\"sticker\", \"cover image\"):\n        return True",
     "target": "tests/unit/test_media_join.py -k label_agrees_refines"
   },
   {
@@ -128,8 +128,8 @@
   {
     "name": "R3 load_transcript joins",
     "file": "nora/agent/tools.py",
-    "old": "            rows = list(await media_join.enrich(rows, path=\"load_transcript\"))",
-    "new": "            pass",
+    "old": "        if media_join is not None:\n            rows = list(await media_join.enrich(rows, path=\"load_transcript\"))",
+    "new": "        if media_join is not None:\n            pass",
     "target": "tests/test_media_fetch.py -k load_transcript_renders_media"
   },
   {

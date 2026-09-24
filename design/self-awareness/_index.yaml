@@ -28,6 +28,7 @@ members:
   - 03-room-tools.md
   - 05-sequencing-and-measurement.md
   - 06-implementation-plan.md
+  - 07-room-tools-plan.md
 edges:
   - {src: 01-three-layers, dst: 00-overview, rel: realizes, provenance: asserted}
   - {src: 02-presence, dst: 01-three-layers, rel: realizes, provenance: asserted}
@@ -35,6 +36,7 @@ edges:
   - {src: 05-sequencing-and-measurement, dst: 00-overview, rel: verifies, provenance: asserted}
   - {src: 03-room-tools, dst: 02-presence, rel: depends_on, provenance: asserted}
   - {src: 06-implementation-plan, dst: 02-presence, rel: realizes, provenance: asserted}
+  - {src: 07-room-tools-plan, dst: 03-room-tools, rel: realizes, provenance: asserted}
 scope:
   v1:
     - "<presence>: generated per-turn block replacing _where_line; this room, this unit's other rooms with transport state, and other units per D1"
@@ -45,7 +47,6 @@ scope:
   not_in_scope:
     - "Editing identity.md. Its not_here rule is kept, not relaxed"
     - "A generated capability block — the tool catalogue is that layer (DEC-150)"
-    - "Any new tool before the tool catalogue lands"
     - "Social fetching (social_fetch, its per-network split, Instagram wiring) — design/instagram-adoption/"
     - "Her profile on each network (avatar, display name, bio) — a separate bundle; appearance for drawing herself is design/self-reference/ (DEC-193)"
 operator_decisions:

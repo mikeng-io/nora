@@ -1,25 +1,29 @@
 # 05 — Order, and how to prove each part
 
-## Dependency: the tool catalogue first
+## Dependency: the tool catalogue first (withdrawn 2026-09-24)
 
-Every tool in `03` is new. Added before the tool catalogue
-(`design/tool-catalogue/`), each costs about 400 tokens on every turn, on top of
-the 22,130 the 54 existing schemas already take. Added after, about 18. So new
-tools wait for the catalogue. Work that adds no tool does not.
+This section first said new tools wait for the tool catalogue: added before
+it, each costs about 400 tokens on every turn; added after, about 18. The
+catalogue was then measured and stays OFF
+(`design/tool-catalogue/05-measurement.md` §3a): deferring schemas moved input
+from cached to uncached (10.3k to 19.5k uncached tokens a turn) and added
+about 1.4 model calls a turn, so `[llm] defer_tools` is `false` by measured
+decision. There is nothing left to wait for. The room tools are built with
+every schema resident, and their cost is their own description tokens
+(`07-room-tools-plan.md`), which ADR 0015 keeps at Level 1 and 2.
 
 ## Order
 
 | Step | What | Needs | Adds a tool? |
 |---|---|---|---|
-| **0** | Operator decides D1 (unit boundary) and D2 (proactive): **done 2026-09-23, D1 = B, D2 = yes** | — | — |
-| **1** | `_PLATFORM_NAMES` gains WhatsApp and Instagram | nothing | no |
-| **2** | `<presence>` replaces `_where_line` and proactive's `home_room`, handles included (`02`) | D1, D2 | no |
-| **3** | Tool catalogue lands (separate session, its own bundle) | — | — |
-| **4** | `room_list` (`03`) | 2, 3 | yes |
-| **5** | `room_read` (`03`) | 4, D1 | yes |
+| **0** | Operator decides D1 (unit boundary) and D2 (proactive): **done 2026-09-23, D1 = B, D2 = yes** | none | no |
+| **1** | `_PLATFORM_NAMES` gains WhatsApp and Instagram: **done** | nothing | no |
+| **2** | `<presence>` replaces `_where_line` and proactive's `home_room`, handles included (`02`, `06`): **done** | D1, D2 | no |
+| **3** | `room_list` (`03`, `07`) | 2 | yes |
+| **4** | `room_read` (`03`, `07`) | 3, D1 | yes |
 
-Steps 1 and 2 can start now. Step 2 is the largest
-change for her behaviour and adds no tool at all.
+Step 2 is the largest change for her behaviour and adds no tool at all.
+Steps 3 and 4 ship together (`07`).
 
 ## How to prove it
 
@@ -82,8 +86,8 @@ it was down. The operator chose a mechanical fix over rewording the prompt.
 
 ## What would falsify the design
 
-- If the "which groups" case passes as well **without** `<presence>` once the
-  catalogue lists `room_list`, the per-turn block is unnecessary and step 3
+- If the "which groups" case passes as well **without** `<presence>` once
+  `room_list` exists, the per-turn block is unnecessary and step 2
   should shrink to the network line alone.
 - If the negative case fails (she volunteers the room list), the block is
   worded as a topic and must be reworded before shipping, not after.
@@ -160,10 +164,82 @@ overturn:
 - *`<presence>` unnecessary:* the before arm does not pass the rows the
   block exists for. Without it she denies networks and handles she has.
   But this falsifier is stated against `room_list` in the catalogue, which
-  is step 4 and not built, so it stays open.
+  is step 4 and not built, so it stays open. *(Corrected 2026-09-24:
+  `room_list` was built and live, #432. See the re-judged section below and
+  `07-room-tools-plan.md`.)*
 
 **What would move this.** Re-judge the 28 saved replies with a judge bound
 the prompt size can meet (the replies and facts are in the run dumps on the
 deploy host, `/tmp/presence-evals/*.json`), or with a shorter judge input.
 Then read row 3 again: an instruction that she should name a down network
 *instead of* trying it is a doctrine question, not a `<presence>` one.
+
+### Re-judged 2026-09-24 — all 42 draws, on a source with speakers
+
+**Supersedes the table above.** Every verdict in it, the passes included,
+was graded against a judge source that carried message bodies and no
+speakers (#458). #460 (`b5d63218`) renders that source with production's
+`render_transcript`: a speaker per row, and her own lines marked. So all 42
+saved replies were re-judged. It was the judge only. Her replies are the
+ones recorded above, and no subject model call was made. The judge was
+master `b5d63218`'s bounded path, with no retry, the glm-5.3-flash provider
+removed from `nora-judge`, and 3 samples per draw. Each arm was graded under
+its own doctrine (the before arm's from `a0149834`). Row 3 is graded on the
+outcome, per the section above. No other judged eval was running.
+
+| case (n = 3) | before (P/F/E) | after (P/F/E) | presence axis alone, before → after |
+|---|---|---|---|
+| which groups are you in | 0/3/0 | 2/1/0 | 0/3 → 2/3 |
+| are you on WhatsApp | 0/1/2 | 2/1/0 | 0/1 → 3/3 |
+| Discord down, relay (counterfactual) | 3/0/0 | 3/0/0 | 3/3 → 3/3 |
+| which app (Signal, weak by adaptation) | 3/0/0 | 2/0/1 | 3/3 → 2/2 |
+| what's your IG | 0/3/0 | 3/0/0 | 0/3 → 3/3 |
+| what's your Signal | 0/3/0 | 2/1/0 | 0/3 → 3/3 |
+| ordinary question (negative) | 2/1/0 | 3/0/0 | 3/3 → 3/3 |
+
+**3 of 42 remain ERROR.** All three are judge timeouts at the 300s bound:
+two before-arm WhatsApp draws and one after-arm «which app» draw. None is a
+verdict.
+
+**Where the arms separate, on the presence axis.**
+
+- «Which groups»: before fails 3/3, with a refusal or an implication that
+  this is her only group. After passes 2/3. The third said «四個» with the
+  four rooms and no line that other groups exist.
+- WhatsApp, IG and Signal handle: before fails every graded draw by denying
+  a network or a handle she has. After passes 9/9.
+
+**The draws are not independent: #462.** Every draw feeds its question and
+her reply into the one shared `nora-eval` Honcho workspace. The tag path's
+tagger card then reads them back, searched by the same question. The after
+arm's three safety-axis FAILs, all of which passed on the presence axis,
+are exactly this. So is the before arm's negative-case FAIL. Each reply
+says «你問咗成日喇 / 第三次 / 兩次 / 三次» (you've asked all day / a third
+time / twice / three times), and the matching conclusions in `nora-eval`
+predate the draw. Read these rows as correlated draws, not as n = 3
+independent ones. The presence-axis separation above does not depend on
+them.
+
+**Row 3 does not separate the arms, and it needs a re-draw.** Both pass
+3/3, graded on the outcome. These replies predate #450, the relay's
+mechanical refusal. `send_to` was attempted in every draw of both arms, and
+it failed because the sandbox wires no Discord adapter. The before arm had
+no transport state at all and still said «send 唔到» (couldn't send). After
+named the cause. Testing the refusal itself needs row 3 re-drawn (her turn,
+not only the judge) on a build that has #450, where the refusal, not the
+missing adapter, is what stops the send.
+
+**Falsifiers.**
+
+- *She recites the room list unprompted:* **did not fire.** The presence
+  axis passed on all 6 negative-case draws.
+- *`<presence>` is unnecessary:* **did not fire.** `room_list` is built and
+  live (#432, with activity and speaker counts since #463), and its routing
+  run is in `07-room-tools-plan.md` §«Routing, measured 2026-09-24».
+  - With the tool available, «which groups» was answered from `<presence>`
+    without a call on 2 of 5 draws.
+  - The operator ruled that the intended behaviour: `<presence>` carries
+    which rooms exist, and `room_list` carries what only it has.
+  - So the tool does not make the block redundant for this question.
+  - And here, without the block, she fails «which groups» and every handle
+    and network row.

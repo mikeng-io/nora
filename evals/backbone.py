@@ -1438,6 +1438,16 @@ class ToolRouteGrader(Evaluator):
     dropped before either check, so a deferred turn and a resident one are
     graded on the same question.
 
+    `metadata.before` is an ORDER criterion: `{instagram_read: [media_fetch]}`
+    says `media_fetch` must not run before the first `instagram_read`, and
+    may run after it. Some errors are an order, not a choice: the shared-reel
+    failure (2026-09-24) called `media_fetch` on the cover, read one frame and
+    stopped, and a case whose `media_fetch` finds nothing then points her at
+    the link, so without the order the defect grades PASS. `NORA_TOOLS` is in
+    start order (`_tools_called`), which is what makes this readable at all. A
+    `before` that is not a mapping of tool to a list of tools is an ERROR: a
+    criterion the grader cannot read is not one it applied.
+
     ERROR, never FAIL, when the case did not run or recorded no tools state:
     a broken instrument is not a wrong answer.
 
@@ -1503,16 +1513,31 @@ class ToolRouteGrader(Evaluator):
         md = data.metadata or {}
         want = frozenset(md.get("tools") or ())
         avoid = frozenset(md.get("not_tools") or ())
+        before = md.get("before") or {}
         if error:
             return [self._out(ERROR, 0.0, f"the case did not run: {error}")]
         if called is None:
             return [self._out(ERROR, 0.0, "no tools state recorded")]
         if not want:
             return [self._out(ERROR, 0.0, "case names no metadata.tools to expect")]
+        if not isinstance(before, dict) or not all(
+            isinstance(v, (list, tuple)) for v in before.values()
+        ):
+            return [self._out(
+                ERROR, 0.0, f"metadata.before must map a tool to a list, got {before!r}",
+            )]
         ran = [name for name in called if name not in self._PLUMBING]
         wrong = sorted(avoid & set(ran))
         if wrong:
             return [self._out(FAIL, 0.0, f"called the sibling {wrong}; ran {ran}")]
+        for first, not_before in before.items():
+            if first not in ran:
+                continue
+            early = sorted(set(ran[:ran.index(first)]) & set(not_before))
+            if early:
+                return [self._out(
+                    FAIL, 0.0, f"called {early} before {first}; ran {ran}",
+                )]
         if want & set(ran):
             carried = self._args(data, md)
             if carried is not None and carried.label != PASS:

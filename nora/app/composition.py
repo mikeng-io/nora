@@ -233,6 +233,7 @@ def _unit_rooms(allowlist: Policy) -> dict[str, tuple[UnitRoom, ...]]:
 
 def _presence_reader(
     cfg: Config, allowlist: Policy, registry: AdapterRegistry,
+    rosters: Mapping[str, RosterSource] | None = None,
 ) -> PresenceReader:
     """The one `PresenceReader` (design/self-awareness/02).
 
@@ -256,6 +257,10 @@ def _presence_reader(
     return PresenceReader(
         policy=allowlist, adapters=dict(registry.adapters),
         handles=cfg.agent.handles, live_handles=live,
+        # The room tools' member counts (design/self-awareness/07): the SAME
+        # roster map `Room` reads, and her own ids so she is never counted as
+        # a member of a room she is in. `<presence>` reads neither.
+        rosters=rosters, self_ids=registry.self_aliases(),
     )
 
 
@@ -1648,12 +1653,48 @@ async def build_dependencies(
     if cfg.relevance_gate.enabled:
         engage_policies.append(RelevanceGatePolicy(allowlist))
     policy = CompositePolicy(tuple(engage_policies))
+    # The room-scoped tools' one platform dependency, built BEFORE the presence
+    # reader because the room tools read member counts through it
+    # (design/self-awareness/07). Built here rather than
+    # taken off the adapter because membership is a read-only DIRECTORY query
+    # (`nora.platform.signal.directory`'s two-method allowlist), not part of the
+    # send/receive/react lifecycle — see `nora.domain.ports.RosterSource`.
+    # ONE PER PLATFORM, not one for all of them. A single `SignalRoster` used
+    # to serve every platform, so a Discord room was looked up in signal-cli —
+    # which has never heard of that conversation id — and came back
+    # `available=False`. `where_is` and every other room-scoped tool then
+    # answered «I could not look», forever, on Discord. Fail-closed and
+    # therefore harmless, but invisible: nothing errored and the honest refusal
+    # is indistinguishable from the guard doing its job.
+    #
+    # Keyed the same way the adapter map is (DEC-102), and built only for
+    # platforms that are actually enabled — a roster for a platform with no
+    # adapter would be a client nothing can use.
+    rosters: dict[str, RosterSource] = {}
+    if "signal" in registry:
+        rosters["signal"] = SignalRoster(
+            base_url=cfg.platforms.signal.base_url, account=cfg.platforms.signal.account,
+        )
+    if "discord" in registry:
+        from nora.platform.discord.roster import DiscordRoster
+        rosters["discord"] = DiscordRoster(discord_token)
+    if "instagram" in registry:
+        # Built for a DEGRADED adapter too, and that is deliberate: M0 registers
+        # an Instagram adapter that could not authenticate rather than refusing
+        # to start (`nora.platform.registry`), and a checkpoint clears without a
+        # restart. A roster withheld on the startup state would then stay
+        # withheld for the life of the process — the room-scoped tools silently
+        # unavailable long after the session came back. The read itself is what
+        # fails closed: a checkpointed bridge answers 409 and the roster is
+        # `available=False` for exactly as long as that is true.
+        from nora.platform.instagram.roster import InstagramRoster
+        rosters["instagram"] = InstagramRoster(cfg.platforms.instagram.base_url)
     # `<presence>` (design/self-awareness/02): ONE reader, handed to the tag
     # path's assembler, the fire path and the proactive pass, so none of the
     # three holds its own idea of which rooms exist or which networks are up.
     # Over the SAME allowlist ingest admits against and the SAME adapter map
     # the tag path sends through.
-    presence_reader = _presence_reader(cfg, allowlist, registry)
+    presence_reader = _presence_reader(cfg, allowlist, registry, rosters)
     assembler = build_assembler(
         cfg, audit=audit, memory=memory, persons=persons, metrics=metrics,
         # `None` while `[notes] enabled = false`. `policy=allowlist` is the
@@ -2538,6 +2579,10 @@ async def build_dependencies(
         # no second store, no new lifecycle (one pool, one lifecycle).
         mobility=mobility,
         relay=relay,
+        # `room_list`/`room_read` (design/self-awareness/07) read through the
+        # SAME presence reader `<presence>` renders from: one model of which
+        # rooms exist, not a second one for the tools.
+        rooms=presence_reader,
         refresher=refresher,
         geocoder=geocoder,
         shortener=shortener_client,
@@ -2618,40 +2663,6 @@ async def build_dependencies(
         # is a tool that exists.
         budget_overrides=cfg.llm.budgets,
     )
-    # The room-scoped tools' one platform dependency. Built here rather than
-    # taken off the adapter because membership is a read-only DIRECTORY query
-    # (`nora.platform.signal.directory`'s two-method allowlist), not part of the
-    # send/receive/react lifecycle — see `nora.domain.ports.RosterSource`.
-    # ONE PER PLATFORM, not one for all of them. A single `SignalRoster` used
-    # to serve every platform, so a Discord room was looked up in signal-cli —
-    # which has never heard of that conversation id — and came back
-    # `available=False`. `where_is` and every other room-scoped tool then
-    # answered «I could not look», forever, on Discord. Fail-closed and
-    # therefore harmless, but invisible: nothing errored and the honest refusal
-    # is indistinguishable from the guard doing its job.
-    #
-    # Keyed the same way the adapter map is (DEC-102), and built only for
-    # platforms that are actually enabled — a roster for a platform with no
-    # adapter would be a client nothing can use.
-    rosters: dict[str, RosterSource] = {}
-    if "signal" in registry:
-        rosters["signal"] = SignalRoster(
-            base_url=cfg.platforms.signal.base_url, account=cfg.platforms.signal.account,
-        )
-    if "discord" in registry:
-        from nora.platform.discord.roster import DiscordRoster
-        rosters["discord"] = DiscordRoster(discord_token)
-    if "instagram" in registry:
-        # Built for a DEGRADED adapter too, and that is deliberate: M0 registers
-        # an Instagram adapter that could not authenticate rather than refusing
-        # to start (`nora.platform.registry`), and a checkpoint clears without a
-        # restart. A roster withheld on the startup state would then stay
-        # withheld for the life of the process — the room-scoped tools silently
-        # unavailable long after the session came back. The read itself is what
-        # fails closed: a checkpointed bridge answers 409 and the roster is
-        # `available=False` for exactly as long as that is true.
-        from nora.platform.instagram.roster import InstagramRoster
-        rosters["instagram"] = InstagramRoster(cfg.platforms.instagram.base_url)
     if presence_store is not None:
         # The R-21/R-31 startup invariant (design/19 §7.7, wired with `whereis`
         # per DEC-54(4)): alarm the day a policy conversation is no longer a
