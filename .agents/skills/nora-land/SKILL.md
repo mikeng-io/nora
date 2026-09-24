@@ -156,7 +156,7 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
 
 ```bash
 git status -sb     # nothing ahead: pushed head == reviewed head
-git fetch origin; test "$(git rev-list --count HEAD..origin/master)" = 0 && echo NOT_BEHIND   # else step 6 again
+git fetch origin && test "$(git rev-list --count HEAD..origin/master)" = 0 && echo NOT_BEHIND &&
 gh pr merge <N> --merge --match-head-commit "$(git rev-parse HEAD)" \
   --subject "merge: <the arc> (#N)" --body-file "$LOG/merge-body.md"
 ```
@@ -164,7 +164,8 @@ gh pr merge <N> --merge --match-head-commit "$(git rev-parse HEAD)" \
 - `NOT_BEHIND` is read right before the merge, not at the gate: master
   moves during a 6-minute gate, and the merge commit then combines a tree
   nobody gated (2026-09-25, #495 merged 3 behind; the landed tree was gated
-  afterwards and was green). Behind: bring master in, gate, push, re-check.
+  afterwards and was green). Chained, so a failed fetch or a behind branch
+  never reaches the merge. Behind: bring master in, gate, push, re-check.
 - Without `--subject`, `gh pr merge --merge` writes GitHub's default `Merge pull
   request #N from ...` (99 of the 137 PRs merged #321 to #478). No hook sees a server-side
   merge: the subject is `merge: ` plus the arc, the body says what the branch
