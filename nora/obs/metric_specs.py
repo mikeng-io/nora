@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
+from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
 from nora.domain.reasoning_strip import (
     PATHS_HELP,
@@ -723,9 +724,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_media_fetch_total",
         "media_fetch calls, by outcome (ok / nothing_found / ambiguous / "
-        "not_an_image / unavailable) and whether the description was served "
-        "from the content-hash cache (cached=true/false).",
-        ("status", "cached"),
+        "not_an_image / unavailable), whether the description was served "
+        "from the content-hash cache (cached=true/false), and who asked "
+        f"(caller={' / '.join(MEDIA_FETCH_CALLERS)}).",
+        ("status", "cached", "caller"),
     ),
     # DEC-73 (was DEC-57/R-34, retired). A person's alias appearing in a
     # `web_search` query — COUNTED, not blocked (design/14 §2.2: unlike a routing
@@ -1631,7 +1633,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_note_curator_total",
         "Curator actions by what it did: retire_failed, retire_stale, closed, "
-        "moot, expired, dateless_stale. **retire_stale is NOT an error** — "
+        "moot, expired, lapsed, dateless_stale. **retire_stale is NOT an error** — "
         "the note moved under the pass, which is the tag path winning a race "
         "the head check exists to arbitrate, and the work is re-selected "
         "next tick because the selection read is live state rather than a "
@@ -1643,7 +1645,15 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "now grounded the same way moot is. dateless_stale is OBSERVED, not a "
         "retirement: a dateless note's strikes crossed the ceiling after a "
         "wake with no tag-path progress, which makes it ELIGIBLE for dateless "
-        "retirement without this merge acting on it (issue #101's job). The "
+        "retirement without this merge acting on it (issue #101's job). lapsed "
+        "is counted at grounding, before commit, so it can exceed the "
+        "retirements it led to (a stale head, a conflicting verdict): an "
+        "expired/moot verdict accepted only because the anchor ended more "
+        "than ANCHOR_LAPSE_MS ago and a human spoke after it, while the "
+        "evidence window did not reach back to the note (a busy room), so an "
+        "answer older than the window reads as expired rather than closed, "
+        "and a change of plan older than the window can retire a live note. "
+        "The "
         "vocabulary is derived from nora.language.note_curator.CURATOR_ACTIONS "
         "and a test asserts this text names exactly that set.",
         ("action",),
@@ -1673,7 +1683,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "has not gone by, or has none at all — the clock decides that, not "
         "the model), anchor_not_covered (the anchor HAS passed but the "
         "evidence window does not span it — the room fell silent before the "
-        "anchor, or is busier than the window), or discharge_malformed (a "
+        "anchor, or is busier than the window, until ANCHOR_LAPSE_MS after the "
+        "anchor, when a human speaking after it is enough), or discharge_malformed (a "
         "closed verdict's discharge field, or one entry in it, did not fit "
         "the three warrant shapes issue #101's discharge step accepts).",
         ("reason",),
