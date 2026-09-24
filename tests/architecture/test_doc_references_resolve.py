@@ -264,44 +264,26 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     # historical marker exempted every row in its table. Splitting rows out
     # (`_paragraphs`) surfaced these 15; each was checked with `git log
     # --follow` / `git log -S` for whether the code moved, was renamed, or
-    # was deleted. Nine resolved (a `deleted 2026-...` reference note added to
-    # the ROW that cited them, never a neighbour — the decision-index header
-    # says a row is MARKED, not rewritten — so those rows now carry their own
-    # `_HISTORICAL_MARKERS` hit and are dropped from this dict). The six below
-    # remain pinned: five sit in `design/09-decision-index.md`'s DEC-76 row
-    # (and one also in DEC-84), both being edited concurrently on
-    # `mikeng-io/governance-claims-482` — marking either row here would race
-    # that merge, so they stay pinned until that branch lands and the row is
-    # free to touch. `nora/agent/disclosure.py` (DEC-124) was never built at
-    # all — a prospective path name, not a deleted one — so it is not a
-    # "deleted" reference and gets no marker either.
-    **dict.fromkeys(
-        (
-            ("design/09-decision-index.md", "evals/evaluators.py"),
-            ("design/09-decision-index.md", "evals/journeys.py"),
-            ("design/09-decision-index.md", "tests/test_evals_intent.py"),
-            ("design/09-decision-index.md", "tests/test_evals_live_runner.py"),
-        ),
-        "DEC-76's row (`evals/journeys.py` deleted 778a617e 2026-09-18, "
-        "`evals/evaluators.py` deleted 00beda19 2026-09-18/re-homed to "
-        "tests/offline_eval_evaluators.py, `tests/test_evals_intent.py` and "
-        "`tests/test_evals_live_runner.py` deleted 778a617e 2026-09-18) is "
-        "being edited on mikeng-io/governance-claims-482 (acornworm); do not "
-        "touch DEC-76 here — re-triage once that branch merges (#422)",
-    ),
-    ("design/09-decision-index.md", "tests/test_evals_journeys.py"): (
-        "cited by DEC-76 (being edited on mikeng-io/governance-claims-482, "
-        "do not touch here) and by DEC-84 (also off-limits per this PR's "
-        "conflict avoidance); deleted 778a617e 2026-09-18 — re-triage once "
-        "governance-claims-482 merges and DEC-84 is safe to touch (#422)"
-    ),
+    # was deleted. Fourteen resolved (a `deleted 2026-...` reference note
+    # added to the ROW that cited them, never a neighbour — the
+    # decision-index header says a row is MARKED, not rewritten — so those
+    # rows now carry their own `_HISTORICAL_MARKERS` hit and are dropped from
+    # this dict); the last five of those fourteen sat in DEC-76 and DEC-84,
+    # left pinned by #494 while `mikeng-io/governance-claims-482` was editing
+    # those same rows concurrently, and triaged the same way once that branch
+    # merged (#497, 2026-09-25). `nora/agent/disclosure.py` (DEC-124) stays
+    # pinned: it was never built — DEC-124's own row names it as a
+    # prospective housekeeping move, not a path that ever existed, so no
+    # "deleted" marker fits it.
     ("design/09-decision-index.md", "nora/agent/disclosure.py"): (
-        "DEC-124's own prose says moving `DisclosureGuard` out of "
-        "`nora/agent/whereis.py` into `nora/agent/disclosure.py` is 'a "
-        "housekeeping step for whoever builds the first tool that imports it "
-        "from outside whereis' — the file was never built, so this is a "
-        "prospective path, not a deleted one; drop this entry the day that "
-        "tool ships (#422)"
+        "never built; DEC-124's row names `nora/agent/disclosure.py` "
+        "prospectively — 'a housekeeping step for whoever builds the first "
+        "tool that imports it from outside whereis' — as a place "
+        "`DisclosureGuard` could move to, not a file it ever created; "
+        "`DisclosureGuard` still lives in `nora/agent/whereis.py` today. "
+        "checked 2026-09-25 (`git log -S disclosure.py` finds it only in "
+        "this decision-index prose, never as a real file); drop this entry "
+        "the day that move ships"
     ),
     (
         "design/instagram-adoption/17-implementation-plan.md",
