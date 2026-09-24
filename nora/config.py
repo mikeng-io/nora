@@ -22,7 +22,10 @@ from pydantic import (
     model_validator,
 )
 
-from nora.domain.ports import DEFAULT_DREAM_STORE_TIMEOUT_SECONDS
+from nora.domain.ports import (
+    DEFAULT_DREAM_STORE_TIMEOUT_SECONDS,
+    DREAM_MAX_STORE_CALLS_PER_TICK,
+)
 from nora.domain.standing import (
     DEFAULT_STANDING_MAX_CHARS,
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
@@ -3024,6 +3027,74 @@ class DreamerConfig(BaseModel):
         "", "none", "minimal", "low", "medium", "high", "xhigh", "max"
     ] = ""
     budgets: dict[str, DreamBudgetConfig] = Field(default_factory=dict)
+    # The WHOLE hold one (adaptor, key) unit may add to `running`, asserted at
+    # startup rather than reasoned about in prose (issue #191, `[standing]
+    # max_slot_hold_seconds`' own shape, `Config.
+    # _the_dream_unit_hold_exceeds_its_components` below).
+    #
+    # **It exists because `#60` bounded two of the unit's phases and left the
+    # rest bare `await`s.** `_run_adaptor` (`nora/app/runtime.py`) wraps its
+    # WHOLE call to `_dream_adaptor_once` in ONE `asyncio.timeout` at this
+    # number — the model budget, both bounded store phases (`inputs`,
+    # `commit`), AND every cursor read around them that `#60` left unbounded:
+    # `clock.last_fired`/`record_fire`, `language.watermark_for`/
+    # `watermark_is_behind_the_record`/`lag`/`seconds_since_last_message`/
+    # `watermark_age_seconds`/`advance_watermark`, `record.since`,
+    # `media_join.enrich`. Before this, any ONE of those hanging left
+    # `dream_loop` holding `<adaptor>:<key>` in `running` forever — the unit
+    # never ticked again, and the only symptom was
+    # `nora_dream_skipped_total{reason="in_flight_adaptor"}`, which cannot
+    # tell a long run from a wedge (`nora_dream_unit_timeout_total` is the
+    # series that now can).
+    #
+    # **This is the shape `#60`'s issue named as the one that "cannot be
+    # defeated by adding a call"**: a per-call bound (shape 1) would need a
+    # new `wait_for` for every future cursor read; ONE wall clock around the
+    # whole unit covers a call nobody has written yet too. The cost is that it
+    # cannot say WHICH call wedged — `nora_dream_unit_timeout_total{adaptor}`
+    # answers "which adaptor", not "which await", and that is the trade
+    # (issue #191) makes deliberately.
+    #
+    # **The number must provably exceed every bounded piece it wraps, or the
+    # wall clock would fire before a legitimate run finishes** — the same
+    # argument `max_slot_hold_seconds` makes, checked the same way (a startup
+    # `model_validator`, not a comment doing arithmetic by hand). The pieces:
+    #
+    #   samples x timeout_seconds                        the model budget —
+    #                                                      `AdaptorSchedule.
+    #                                                      samples` x this
+    #                                                      adaptor's own
+    #                                                      `DreamBudgetConfig.
+    #                                                      timeout_seconds`.
+    #   store_calls_per_tick x store_timeout_seconds      `inputs`'s bound.
+    #   store_calls_per_tick x store_timeout_seconds      `commit`'s bound,
+    #                                                      the SAME multiplier
+    #                                                      again — `#60`
+    #                                                      bounds the two
+    #                                                      phases separately.
+    #
+    # `samples` is only configurable through `[notes] candidate_samples`
+    # today (every other adaptor's schedule fixes it at 1 in code), so the
+    # startup check reads that field rather than importing `nora.language` to
+    # re-derive it — the same cross-section shape
+    # `_the_reminder_interval_fits_the_heartbeat` already uses across
+    # `[reminders]`/`[heartbeat]`. `store_calls_per_tick` has no config
+    # equivalent at all — it is a class attribute in `nora.language`, four
+    # layers above `nora.config` — so the check uses
+    # `DREAM_MAX_STORE_CALLS_PER_TICK` (`nora.domain.ports`), a documented
+    # ceiling with headroom over the widest shipped adaptor
+    # (`ProactiveAdaptor` at 17) and pinned there against every adaptor by
+    # `tests/architecture/test_dream_store_calls_are_declared.py`.
+    #
+    # **1200s (20 minutes) clears both the shipped defaults (120 + 2 x 20 x 15
+    # = 720s) and this deployment's own numbers (`[dreamer.budgets.proactive]
+    # timeout_seconds = 240`, `[notes] candidate_samples` unset -> 1: 240 + 2
+    # x 20 x 15 = 840s) with real room, not a fit to either one.** Raise it
+    # only against a reading that the wall clock itself is firing on a
+    # legitimate run (`nora_dream_unit_timeout_total` rising alongside
+    # `nora_dream_run_total{status="ok"}` for the same adaptor, never in place
+    # of it) — never to quiet the startup refusal, which is doing its job.
+    max_unit_hold_seconds: float = Field(default=1200.0, gt=0)
 
     def budget_for(self, adaptor: str) -> DreamBudgetConfig:
         """The budget one adaptor runs under, ALWAYS bounded.
@@ -3580,6 +3651,84 @@ class Config(BaseModel):
                 f"[standing] max_slot_hold_seconds "
                 f"({self.standing.max_slot_hold_seconds:g}). Lower a timeout or "
                 f"raise the budget deliberately; do not leave them disagreeing."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _the_dream_unit_hold_exceeds_its_components(self) -> Config:
+        """`[dreamer] max_unit_hold_seconds` must PROVABLY exceed every
+        bounded piece the wall clock in `_run_adaptor` (`nora/app/
+        runtime.py`) wraps, or the wall clock could fire before a legitimate
+        run finishes — `_the_standing_slot_hold_fits_its_budget`'s own
+        argument, one tier over (issue #191).
+
+        The wall clock covers the WHOLE unit: the model budget (`samples x
+        timeout_seconds`) plus both of `#60`'s bounded store phases
+        (`store_calls_per_tick x store_timeout_seconds`, once for `inputs`
+        and again for `commit`) plus every cursor read `#60` left bare —
+        `clock.last_fired`/`record_fire`, `language.watermark_for` and its
+        siblings, `record.since`, `media_join.enrich`. Those last awaits are
+        NOT named individually below: the whole point of one wall clock
+        (shape 2 of the issue, chosen over a `wait_for` per call) is that it
+        bounds a call nobody has written yet too, so nothing about THIS sum
+        depends on today's list of them.
+
+        **Both factors of the model-budget term are a conservative MAX, not a
+        per-adaptor figure**, and that is deliberate: `samples` is per
+        schedule and `timeout_seconds` is per adaptor, so the real worst case
+        is `max_i(samples_i x timeout_i)` — but every `samples_i <=
+        max_samples` and every `timeout_i <= max_timeout` (both non-negative),
+        so `max_samples x max_timeout` is >= that real worst case for any
+        adaptor, present or future, without this validator having to know
+        which adaptor pairs which schedule.
+
+        `max_timeout` reads every configured `[dreamer.budgets.*]
+        timeout_seconds` plus the field default `DreamBudgetConfig()
+        .timeout_seconds` — the ceiling an unlisted or partially-configured
+        adaptor gets (`DreamerConfig.budget_for`). `max_samples` reads
+        `[notes] candidate_samples`, the ONLY per-adaptor sample count this
+        deployment can configure — every other schedule fixes `samples = 1` in
+        `nora.app.composition`, which `nora.config` may not import to check
+        directly (the layer contract's own direction is `nora.config ->
+        nora.domain`, not through `nora.language`). A future adaptor whose
+        code declares more than 1 sample without a config knob would not be
+        seen here; `AdaptorSchedule.samples`'s own docstring is where that
+        limit is recorded.
+
+        `store_calls_per_tick` has no config form at all — it is a class
+        attribute on each adaptor in `nora.language`, four layers above
+        `nora.config` — so this reads `DREAM_MAX_STORE_CALLS_PER_TICK`
+        (`nora.domain.ports`), the ceiling `tests/architecture/
+        test_dream_store_calls_are_declared.py` pins every shipped adaptor
+        under, rather than importing `nora.language` at every boot to
+        re-derive it live.
+        """
+        max_timeout = max([
+            # `DreamBudgetConfig()`'s own field default — the ceiling an
+            # adaptor with no `[dreamer.budgets.<name>]` block, or a partial
+            # one that leaves `timeout_seconds` unset, actually runs under
+            # (`DreamerConfig.budget_for`).
+            DreamBudgetConfig().timeout_seconds,
+            *(b.timeout_seconds for b in self.dreamer.budgets.values()),
+        ])
+        max_samples = self.notes.candidate_samples
+        model_budget = max_samples * max_timeout
+        store_budget = (
+            2 * DREAM_MAX_STORE_CALLS_PER_TICK * self.dreamer.store_timeout_seconds
+        )
+        minimum = model_budget + store_budget
+        if self.dreamer.max_unit_hold_seconds <= minimum:
+            raise ValueError(
+                f"[dreamer] max_unit_hold_seconds "
+                f"({self.dreamer.max_unit_hold_seconds:g}) does not exceed "
+                f"the unit it must wrap: {max_samples} x {max_timeout:g} "
+                f"(worst-case samples x [dreamer.budgets.*] timeout_seconds) "
+                f"+ 2 x {DREAM_MAX_STORE_CALLS_PER_TICK} x "
+                f"{self.dreamer.store_timeout_seconds:g} "
+                f"(store_calls_per_tick x store_timeout_seconds, inputs and "
+                f"commit) = {minimum:g}s. Lower a timeout/sample count or "
+                f"raise max_unit_hold_seconds deliberately; do not leave them "
+                f"disagreeing."
             )
         return self
 

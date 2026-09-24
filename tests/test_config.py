@@ -19,6 +19,7 @@ from nora.config import (
     SpeechConfig,
     load,
 )
+from nora.domain.ports import DREAM_MAX_STORE_CALLS_PER_TICK
 from nora.domain.standing import STANDING_STORE_CALLS_PER_FOLD
 from tests.builders import copy_example_config
 
@@ -863,6 +864,9 @@ def test_a_config_written_before_the_dreamer_section_existed_still_loads(toml_pa
     assert cfg.dreamer.quiet_seconds == 1800.0
     assert cfg.dreamer.max_age_seconds == 86_400.0
     assert cfg.dreamer.batch_limit == 400
+    # The wall clock around a whole unit (issue #191): a config predating it
+    # still gets a bounded `_run_adaptor`, not an unbounded one.
+    assert cfg.dreamer.max_unit_hold_seconds == 1200.0
 
 
 def test_two_configs_do_not_share_one_defaulted_dreamer_section(tmp_path, monkeypatch):
@@ -1393,6 +1397,63 @@ def _real_slot_hold(toml_path) -> float:
     return (
         cfg.standing.timeout_seconds
         + STANDING_STORE_CALLS_PER_FOLD * cfg.standing.store_timeout_seconds
+    )
+
+
+def _real_dream_unit_hold_minimum(toml_path) -> float:
+    """The minimum `Config._the_dream_unit_hold_exceeds_its_components`
+    (issue #191) actually computes, DERIVED from the same config fields and
+    the same ceiling constant it uses — `_real_slot_hold`'s own reason: a
+    hand-computed literal cannot notice a term leaving the formula."""
+    cfg = load(toml_path)
+    max_timeout = max([
+        DreamBudgetConfig().timeout_seconds,
+        *(b.timeout_seconds for b in cfg.dreamer.budgets.values()),
+    ])
+    max_samples = cfg.notes.candidate_samples
+    return (
+        max_samples * max_timeout
+        + 2 * DREAM_MAX_STORE_CALLS_PER_TICK * cfg.dreamer.store_timeout_seconds
+    )
+
+
+def test_the_dream_unit_hold_refuses_a_budget_the_timeouts_do_not_fit(toml_path):
+    """`[dreamer] max_unit_hold_seconds` must PROVABLY exceed the model budget
+    (samples x [dreamer.budgets.*] timeout_seconds) plus both store bounds
+    (2 x store_calls_per_tick x store_timeout_seconds), the same shape
+    `[standing] max_slot_hold_seconds` checks one tier over (issue #191).
+
+    Set one second UNDER the real minimum, DERIVED rather than a literal, so
+    this stays a real probe of the formula rather than of whatever number was
+    typed the day it was written."""
+    text = _set_key(
+        toml_path.read_text(), "max_unit_hold_seconds",
+        f"{_real_dream_unit_hold_minimum(toml_path) - 1:g}",
+    )
+    toml_path.write_text(text)
+    with pytest.raises(ConfigError, match="max_unit_hold_seconds"):
+        load(toml_path)
+
+
+def test_the_dream_unit_hold_check_fires_even_while_the_dreamer_is_off(toml_path):
+    """**Not gated on `[dreamer] enabled`** — `[standing]`'s own sibling check
+    settled on this after review (2026-08-27): a number that lies about the
+    deployment is wrong on the page whether or not the loop is running, and
+    the moment `enabled` flips to `true` is the worst one to discover an
+    impossible budget."""
+    toml_path.write_text(
+        _set_key(toml_path.read_text(), "max_unit_hold_seconds", "1.0"))
+    with pytest.raises(ConfigError, match="max_unit_hold_seconds"):
+        load(toml_path)
+
+
+def test_the_shipped_dream_unit_hold_clears_the_real_minimum(toml_path):
+    """The POSITIVE control: the shipped config must actually pass its own
+    gate, with the real minimum computed by the same formula the validator
+    uses — not a round number asserted to be "big enough" by eye."""
+    cfg = load(toml_path)
+    assert cfg.dreamer.max_unit_hold_seconds > _real_dream_unit_hold_minimum(
+        toml_path
     )
 
 

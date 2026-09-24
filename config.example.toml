@@ -1744,6 +1744,30 @@ batch_limit = 400
 # for a daily adaptor, a lost day. Raise it only against a reading of that
 # kind, never to quiet an alarm.
 store_timeout_seconds = 15.0
+# The ONE wall clock around a WHOLE (adaptor, key) unit's cycle (issue #191).
+# `store_timeout_seconds` above bounds two of the unit's phases — `inputs`
+# and `commit` — but the cursor reads AROUND them were still bare `await`s:
+# clock.last_fired/record_fire, every language.* watermark call, record.since,
+# media_join.enrich. Any one of those hanging reproduced #60 exactly: the
+# unit's task never returns, dream_loop holds `<adaptor>:<key>` in `running`
+# FOREVER, and the only symptom was nora_dream_skipped_total
+# {reason="in_flight_adaptor"}, which cannot tell a long run from a wedge.
+# A timeout here releases the unit, lands on
+# nora_dream_unit_timeout_total{adaptor} — a series distinct from that skip
+# reason and from nora_dream_store_timeout_total — and logs. Chosen over a
+# `wait_for` per cursor read (issue #191's shape (1)) because it also covers a
+# call nobody has written yet; the cost is it can only say WHICH ADAPTOR
+# wedged, never which await.
+#
+# 1200s (20 min) is checked at startup (nora.config's
+# `_the_dream_unit_hold_exceeds_its_components`) against the model budget
+# (samples x [dreamer.budgets.*] timeout_seconds) plus both store bounds
+# (2 x store_calls_per_tick x store_timeout_seconds) — it must PROVABLY
+# exceed that sum or Nora refuses to start. Clears the shipped defaults
+# (720s) and this file's own [dreamer.budgets.proactive] timeout_seconds =
+# 240 (840s) with real room. Raise it only against a reading that the wall
+# clock is cutting off a legitimate run, never to quiet the startup refusal.
+max_unit_hold_seconds = 1200.0
 # NONE, and it is the fix for the knowledge tier's first production failure.
 # Reasoning is billed as COMPLETION on this model family, so the effort is a
 # budget spent BEFORE any answer text — and at "low" the extractor spends all
