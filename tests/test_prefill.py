@@ -1089,7 +1089,9 @@ def test_the_prefill_reads_the_clock_once():
     import nora.agent.prefill as prefill_module
 
     source = inspect.getsource(prefill_module.build_prefill)
-    assert source.count("datetime.now()") == 1
+    # `local_now()` (`nora.agent.clock`, 2026-09-24) is the read the `now`
+    # tool shares; a bare `datetime.now()` beside it would be a second read.
+    assert source.count("datetime.now()") + source.count("local_now()") == 1
 
 
 

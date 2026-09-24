@@ -55,10 +55,11 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
 from types import MappingProxyType
-from typing import Any, Literal, Protocol, cast
+from typing import Any, Literal, Protocol, cast, get_args, get_type_hints
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from nora.agent.clock import local_now, state_time
 from nora.agent.reaction import ReactionPicker, render_recent
 from nora.agent.security import _names_a_person, scan_identifiers
 from nora.agent.security import looks_like_coordinate as _looks_like_coordinate
@@ -3653,22 +3654,26 @@ cannot tell you about anyone outside it."""
         )
 
     async def now() -> str:
-        """The current date and time, in Hong Kong time. Call this before
-        answering anything that depends on when it is.
+        """The current date and time, in this deployment's time zone. Call this
+        before answering anything that depends on when it is.
 
         Call this before answering anything that depends on when it is — how
         long until something, whether a place is still open, what "tonight" or
         "yesterday" refers to, or how long ago a message was sent.
 
-        Returns: the weekday, date, time and timezone.
+        Returns: the weekday, date, time, timezone and the zone's city.
         """
-        moment = datetime.now(_HKT)
+        # The SAME clock read and formatter as the turn's clock line
+        # (`nora.agent.clock`), so a mid-turn answer states exactly its facts.
+        # It read a fixed `+08:00` labelled HKT until 2026-09-24, and said
+        # «(HKT)» after the clock line had gained its zone name and place.
+        moment = local_now()
         # The clock reading stays in the line — it is a fact about Nora's own
         # host, not about the group, and it is the one thing that tells an
         # operator the container's timezone is what they think it is. It was
         # this module's only pre-existing log line.
         _record(metrics, "now", "ok", at=moment.isoformat(timespec="seconds"))
-        return moment.strftime("%A %-d %B %Y, %H:%M (%Z)")
+        return state_time(moment)
 
     async def calculate(expression: str) -> dict:
         """Work out a number exactly. Use this for ALL arithmetic, however easy
@@ -5970,10 +5975,20 @@ Args:
 
         image_size = None
         if size is not None or aspect is not None:
-            # The parameters are `Literal`s now (ADR 0015 §3), and Strands
-            # validates a call against them before this body runs, so an
-            # unset one is the only case left to fill.
-            image_size = ImageSize(tier=size or "medium", aspect_ratio=aspect or "1:1")
+            # The parameters are `Literal`s (ADR 0015 §3) and Strands validates
+            # a model's call against them, but `ImageSize` is a plain dataclass
+            # and a caller that bypasses the schema reaches here unchecked. So
+            # the tool keeps its own fail-safe: an unset or unknown value is the
+            # documented default, as it was before the types existed.
+            tier: Literal["small", "medium", "large"] = "medium"
+            for option_t in get_args(get_type_hints(ImageSize)["tier"]):
+                if size == option_t:
+                    tier = option_t
+            ratio: Literal["1:1", "16:9", "9:16", "3:2", "2:3"] = "1:1"
+            for option_r in get_args(get_type_hints(ImageSize)["aspect_ratio"]):
+                if aspect == option_r:
+                    ratio = option_r
+            image_size = ImageSize(tier=tier, aspect_ratio=ratio)
 
         quality_kind: Literal["standard", "quality"] | None = None
         if quality == "quality":

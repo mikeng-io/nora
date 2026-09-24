@@ -280,3 +280,16 @@ async def test_with_no_size_or_aspect_the_shape_is_left_to_the_provider(persons,
     assert unset is None
     assert (size_only.tier, size_only.aspect_ratio) == ("large", "1:1")
     assert (aspect_only.tier, aspect_only.aspect_ratio) == ("medium", "16:9")
+
+
+async def test_an_unknown_size_or_aspect_falls_back_to_the_documented_default(persons, world):
+    """The parameters are `Literal`s and Strands validates a model's call, but
+    `ImageSize` is a plain dataclass: a caller that bypasses the schema must
+    not carry an unknown value to the provider. It gets the default the
+    docstring names (medium, 1:1), as it did before the types existed."""
+    tool = _call(persons, world)
+    await tool(prompt="you", reference=SELF_SHA, size="huge", aspect="4:3")
+    await tool(prompt="you", reference=SELF_SHA, size="small", aspect="bogus")
+    both_bad, aspect_bad = world["gen"].sizes
+    assert (both_bad.tier, both_bad.aspect_ratio) == ("medium", "1:1")
+    assert (aspect_bad.tier, aspect_bad.aspect_ratio) == ("small", "1:1")
