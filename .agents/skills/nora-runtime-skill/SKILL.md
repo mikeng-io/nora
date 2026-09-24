@@ -65,9 +65,14 @@ numbers in 0016's own table are dated and are never an input:
 ## 4. Write it
 
 Copy the frontmatter of an existing skill (`nora/skills/navigation/SKILL.md`):
-`name`, `description`, `authority_above`, `authority_below`,
-`change_policy: operator-only`. A skill ranks below doctrine and above message
-content, may add procedure, and never relaxes a rule above it (0016 §6).
+`name` and `description` only. `authority_above`, `authority_below` and
+`change_policy` FAIL THE GATE (`nora/skills/loader.py::parse_skill` raises
+`SkillError`, issue #187 finding 3) — nothing reads any of the three for a
+skill the way `nora/doctrine/loader.py` reads the first two for a doctrine
+section, and nothing reads a skill's `change_policy` anywhere either. A
+skill still ranks below doctrine and above message content, may add
+procedure, and never relaxes a rule above it (0016 §6) — by convention and
+review now, not by a frontmatter key.
 
 1. **Name**: a noun phrase for the domain, lowercase words and single hyphens,
    at most 64 characters, equal to its directory (the loader refuses a mismatch).
@@ -82,9 +87,12 @@ content, may add procedure, and never relaxes a rule above it (0016 §6).
 4. **Body**: judgement only. It does not describe how a tool works (that is the
    tool's description) and does not restate doctrine (it may point to it). One
    rule per section, and the heading states the rule.
-5. **Body ceiling**: under 1,500 cl100k tokens. A skill above that gets its own
-   number and reason in `_TOKEN_CEILINGS` in `tests/test_skill_content.py`; 5,000
-   is the hard limit. Argue a raise there; never bump it silently.
+5. **Body ceiling**: under 1,500 cl100k tokens, measured on the body with
+   whitespace collapsed to single spaces before encoding (issue #187 finding
+   4 — a raw count is not reflow-invariant; see `_body_tokens` in
+   `tests/test_skill_content.py`). A skill above that gets its own number and
+   reason in `_TOKEN_CEILINGS` there; 5,000 is the hard limit. Argue a raise
+   there; never bump it silently.
 6. **Writing**: RFC 2119 words only for what is required, plain prose for
    judgement; English except quoted speech and at most one non-English trigger;
    no em or en dash.
@@ -98,20 +106,27 @@ content, may add procedure, and never relaxes a rule above it (0016 §6).
 uv run python -c "
 import tiktoken; from pathlib import Path; from nora.skills.loader import SkillStore
 e=tiktoken.get_encoding('cl100k_base')
-for s in SkillStore(Path('nora/skills')).available(): print(s.name, 'description', len(e.encode(s.description)), 'body', len(e.encode(s.instructions)))"
+for s in SkillStore(Path('nora/skills')).available():
+    body = ' '.join(s.instructions.split())  # the ceiling's own measure
+    print(s.name, 'description', len(e.encode(s.description)), 'body', len(e.encode(body)))"
 uv run pytest -q tests/test_skill_content.py tests/test_skill_loader.py > "${TMPDIR:-/tmp}/skill-tests.log" 2>&1; RC=$?
 echo "RC=$RC"; grep -E 'passed|failed|error' "${TMPDIR:-/tmp}/skill-tests.log"
 ```
 
 PASS is `RC=0` and a passed count. Then `make gate` through `nora-land`.
 
-What is enforced today: the name matches the directory (`nora/skills/loader.py`);
-the not-for half, the 80-token description, no listed scenario, the body ceiling,
-no dashes (`tests/test_skill_content.py`); a message can name a skill but never
-load one (`tests/test_skill_loader.py`). Review only: the description says what
-the skill covers, second person, judgement only, RFC 2119 register. Not checked
-by anything: that `authority_above` and `authority_below` agree (the loader
-passes them through unread).
+What is enforced today: the name matches the directory, and no
+`authority_above`/`authority_below`/`change_policy` survives load
+(`nora/skills/loader.py`) — a GATE refusal, live wherever `SkillStore` runs
+strict (this check, and `nora-land`'s gate), not a runtime one: the live
+agent loads skills through Strands' own `AgentSkills(strict=False)`
+(`nora/agent/factory.py`), which never calls this loader, and the portal's
+`SkillStore(strict=False)` (`nora/web/skills.py`) drops a keyed skill from
+its listing silently rather than raising. The not-for half, the 80-token
+description, no listed scenario, the body ceiling, no dashes
+(`tests/test_skill_content.py`); a message can name a skill but never load
+one (`tests/test_skill_loader.py`). Review only: the description says what
+the skill covers, second person, judgement only, RFC 2119 register.
 
 ## 6. Measure after, and write the PR
 

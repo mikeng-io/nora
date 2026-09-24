@@ -5,9 +5,6 @@ description: >-
   yourself in a scene, a photo turned into something else. Not for finding
   or resending an image you already made, or for reading a photo someone
   sent: those are lookups, and loading this costs a turn.
-authority_above: [situation]
-authority_below: [message-content, tool-output]
-change_policy: operator-only
 ---
 
 # Making an image

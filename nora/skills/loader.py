@@ -35,14 +35,30 @@ This is enforced structurally, not by inspection:
   argument the way `strands...Skill.from_file`/`from_url` do is exactly the
   violation R-29's probe turns red.
 
-**Shipped INERT (2026-08-07, DEC-48).** Nothing constructs a `SkillStore` in
-`nora.app.composition` yet, and no skill body reaches the model, because
-activation needs a model-facing tool with an R-7 budget and that budget table is
-`nora.agent.tools.NATIVE_TOOLS` — one number the operator adds to turn this on,
-the same DEC-42 shape multi-message shipped in. The file format is the
-AgentSkills.io SKILL.md shape (`name` + `description` frontmatter, markdown
-body), so the day the operator wires `strands.vended_plugins.skills.AgentSkills`
-at these same files, nothing here is rewritten.
+**This module is not on the live agent's path (DEC-50 activated it elsewhere).**
+`nora.agent.factory.build_agent` wires Strands' own vended
+`AgentSkills(str(skills_dir), strict=False)` directly at `nora/skills/`
+(the day DEC-48's docstring here used to describe as future — it arrived,
+and nothing in THIS file was rewritten, exactly as planned) — that plugin
+never calls `parse_skill` or `SkillStore`. This module is still used in two
+places: `nora/web/skills.py` builds its OWN `SkillStore(skills_dir,
+strict=False)` over the same directory to read the identical on-disk
+metadata for the private portal, and the test suite (`tests/test_skill_
+content.py`, `tests/test_skill_loader.py`) and `nora-land`'s gate build one
+`strict=True` (the default), which is where a malformed or refused file
+actually stops something.
+
+**So a refusal `parse_skill` raises is a GATE check, not a runtime one**
+(issue #187 finding 3, sharpened on review). `SkillError` here — including
+`_FORBIDDEN_AUTHORITY_KEYS` below — is caught wherever `SkillStore` runs
+strict, and nothing else: the live agent's own loader (Strands'
+`AgentSkills`) has no idea this module's rules exist and would load a
+keyed skill's body into a turn regardless, and the portal's non-strict
+`SkillStore` in `nora/web/skills.py` drops a keyed skill from its listing
+silently (the same R-27 "skip it" posture every malformed-skill case there
+already gets — not logged or counted differently for this one reason than
+any other parse failure, and that consistency is deliberate: singling this
+failure out for extra visibility would be the inconsistency, not the gap).
 """
 
 from __future__ import annotations
@@ -65,6 +81,40 @@ _NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
 _MAX_NAME = 64
 _FRONTMATTER_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n?(.*)\Z", re.DOTALL)
 _REQUIRED = ("name", "description")
+
+# The authority vocabulary `nora.doctrine.loader` reads off a DOCTRINE
+# section's frontmatter — `authority_above`/`authority_below` (design/17 §4's
+# authority graph between doctrine sections) and `change_policy` (who may edit
+# one without asking). A skill is a DIFFERENT authority item (design/12 §2,
+# item 5 — below a doctrine section, above a message) and nothing anywhere
+# reads any of the three off a skill's frontmatter: `nora.doctrine.loader`
+# only ever opens files under `nora/doctrine/`. Before this refusal,
+# `parse_skill` popped `name` and `description` and left the rest —
+# these three included — in `metadata`, silently: a skill file could declare
+# `authority_above: [situation]`, as `navigation` and `image-generation` both
+# did, and read as though it placed the skill in that graph while nothing
+# wired it in (issue #187 finding 3, was #241 part 2).
+#
+# REJECTED rather than honoured. Honouring them would mean this loader
+# participating in the doctrine authority graph — a bigger change with its own
+# evidence, and still open. Refusing is the smaller one: it stops a file
+# carrying a claim nothing enforces, which is the correctness-of-the-record
+# bug #241 named, not a behaviour bug.
+#
+# **`change_policy` checked separately, and it belongs here too** (review,
+# issue #187 finding 3). Unlike the other two it IS read and enforced —
+# `nora.doctrine.loader` and `nora.instructions.dreamer` both validate and
+# store it — but neither ever opens a file under `nora/skills/`; both read
+# only their own directories. Checked directly for a SKILL specifically:
+# `nora/web/skills.py::build_skills_payload` is the only place that reads a
+# skill's parsed metadata at all, and its payload carries `name`,
+# `description` and `instructions` only — no `change_policy`, and the portal
+# route it feeds (`app/src/app/api/skills/route.ts`) is GET-only with no
+# skill-editing surface for a policy to gate in the first place. No script or
+# git hook reads it either. So a skill's `change_policy` is exactly as
+# unenforced as its `authority_above`/`authority_below` were, and stays in
+# this tuple for the same reason.
+_FORBIDDEN_AUTHORITY_KEYS = ("authority_above", "authority_below", "change_policy")
 
 
 class SkillError(Exception):
@@ -97,6 +147,14 @@ def parse_skill(path: Path) -> Skill:
     if missing:
         keys = ", ".join(repr(k) for k in missing)
         raise SkillError(f"{path.name}: missing or empty required key(s): {keys}")
+    carried = [k for k in _FORBIDDEN_AUTHORITY_KEYS if k in meta]
+    if carried:
+        keys = ", ".join(repr(k) for k in carried)
+        raise SkillError(
+            f"{path.name}: carries authority key(s) {keys} — a skill is not "
+            "in the doctrine authority graph and nothing here reads them; "
+            "remove from front matter (issue #187 finding 3)"
+        )
     name = str(meta.pop("name")).strip()
     if len(name) > _MAX_NAME or not _NAME_RE.match(name):
         raise SkillError(
