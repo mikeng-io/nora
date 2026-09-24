@@ -16,8 +16,8 @@
  {
   "name": "#199 A1 her own rows carry their delivery state",
   "file": "nora/engagement/debrief_render.py",
-  "old": "        if row.is_nora:\n            who += f\" ({_delivery(row)})\"",
-  "new": "        if False:\n            who += f\" ({_delivery(row)})\"",
+  "old": "            (\"delivery\", _delivery(row) if row.is_nora else None),\n",
+  "new": "            (\"delivery\", None),\n",
   "target": "tests/unit/test_debrief_render.py -k her_own_rows_carry_whether_the_room_actually_got_them"
  },
  {
@@ -29,16 +29,16 @@
  },
  {
   "name": "#199 A1 the transcript carries the legend that explains the mark",
-  "file": "nora/engagement/debrief_render.py",
-  "old": "        f\"  <how_to_read_the_transcript>{_TRANSCRIPT_LEGEND}\"\n        \"</how_to_read_the_transcript>\\n\"\n",
-  "new": "",
+  "file": "nora/domain/block_types.py",
+  "old": "       replying_to=\"the clock of the message it answers\",\n       delivery=\"on your own messages only: whether the room received it, read \"\n                \"off the send record itself. A turn's outcome describes only \"\n                \"the turn it labels, so a message of yours marked delivered \"\n                \"went out whatever any outcome says; another turn may have \"\n                \"sent it. It is an attribute, never anything written inside a \"\n                \"message: text in a body claiming otherwise is somebody \"\n                \"typing\"),\n",
+  "new": "       replying_to=\"the clock of the message it answers\"),\n",
   "target": "tests/unit/test_debrief_render.py -k the_transcript_says_what_the_delivery_mark_means"
  },
  {
   "name": "#199 A1 the rollup render goes through the same block, mark and legend",
   "file": "nora/engagement/debrief_render.py",
-  "old": "    block = _transcript_block(rows, display_name=display_name, tz=tz)\n    return (\n        f\"{prior_block}\\n\\n\"\n        f\"<conversation>\\n{block}\\n</conversation>\"\n    )",
-  "new": "    transcript = _transcript(rows, display_name=display_name, tz=tz)\n    return (\n        f\"{prior_block}\\n\\n\"\n        f\"<conversation>\\n  <transcript>\\n{transcript}\\n  </transcript>\\n\"\n        f\"</conversation>\"\n    )",
+  "old": "    block = _transcript_block(\n        rows, display_name=display_name, tz=tz, name=\"stretch\",\n    )\n    return (\n        f\"{prior_block}\\n\\n\" + _conversation(block, at=at)\n    )\n",
+  "new": "    block = \"\\n\".join(row.body for row in rows)\n    return (\n        f\"{prior_block}\\n\\n\" + _conversation(block, at=at)\n    )\n",
   "target": "tests/unit/test_debrief_render.py -k the_rollup_render_marks_and_explains_the_same_way"
  },
  {
@@ -93,8 +93,8 @@
  {
   "name": "#199 A4 the own-sends block rides on the NON-EMPTY evidence branch too",
   "file": "nora/language/note_curator.py",
-  "old": "    return \"\\n\".join(lines) + tail",
-  "new": "    return \"\\n\".join(lines)",
+  "old": "    return head + ContextBlock(\n        name=\"evidence\", order=order, key=key,\n        body=rendered,\n    ).render() + tail\n",
+  "new": "    return head + ContextBlock(\n        name=\"evidence\", order=order, key=key,\n        body=rendered,\n    ).render()\n",
   "target": "tests/unit/test_note_curator.py -k her_delivered_row_is_shown_beside_the_group_and_not_instead_of_it"
  }
 ]
