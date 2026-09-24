@@ -188,6 +188,30 @@ had counted for them. That is a cost to watch, not a routing error. If it
 persists, the likely fix is in the result, not the description: the
 busiest room could be stated, or the key named so it reads as the answer.
 
+**Stating the busiest room did not remove the reads (measured 2026-09-24).**
+`room_list` now sorts rooms busiest first and its `note` names the busiest
+room (or a tie, or none). Same row, same command, n = 5, on the fix
+(`45efa579`), uncontended:
+
+| arm | pass / fail / error | model calls a turn | distinct tool traces (the suite prints each once) |
+|---|---|---|---|
+| before (`59366e33`) | 5 / 0 / 0 | 3.20 (16 over 5) | `room_list`, then `room_read` ×3, `load_transcript`, `calculate`; `room_list`, then `room_read` ×3; `room_list` alone |
+| after (`45efa579`) | 5 / 0 / 0 | 3.20 (16 over 5) | `room_list`, then `room_read` ×3 (twice, once with `send_reply`); `now`, `room_list`, then `room_read` ×3; `room_list` alone |
+
+Five further single draws on the fix, run one at a time, cost 2, 7, 3, 2 and
+3 model calls. `room_read` did not disappear. The only change is that
+`load_transcript` and `calculate` no longer showed up.
+
+**Read the input before the instruction.** The row asks 「邊個最多人講嘢」:
+which group has the most **people** talking, not the most messages. Nothing
+in `room_list` counts distinct speakers. The member count says who is in a
+room, and the message count lets one person account for twenty lines. So
+reading each room is how she answers the question as asked. The note answers
+a question she was not asked. Two readings would test this, one variable
+each: a `speakers_last_24h` count in `room_activity` (people, not rows), or
+the row reworded to ask for messages (「邊個group今日最多訊息」). The sort and
+the note stay: they are correct for the message reading and cost nothing.
+
 ## What would change this plan
 
 - If `tool_selection` shows «who is in this group» moving from
