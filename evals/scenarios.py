@@ -59,7 +59,17 @@ COUNTERFACTUAL_KEYS = frozenset({"varies", "why"})
 #: `nora.subject.transport`) — so «Discord is down right now» cannot be a real
 #: moment and can only be a varied one. The varied states ride in
 #: `metadata.transport`, which no other case may state.
-COUNTERFACTUAL_TIERS = frozenset({"culture", "transport"})
+#:
+#: `prior` joined 2026-09-24 (issue #445): the standing fold's position before
+#: the turn, declared ABSENT for a turn older than the standing chain
+#: (2026-09-20). The chain did not backfill, so no position that old is
+#: recoverable, and the operator's own residue moment (a search found several
+#: restaurants, the reply sent two) predates it. The harness refuses the
+#: declaration wherever the chain DOES hold a revision at or before the turn.
+COUNTERFACTUAL_TIERS = frozenset({"culture", "transport", "prior"})
+#: Tiers that mean something in one corpus only. `prior` is the standing
+#: fold's; that corpus varies nothing else.
+_TIER_CORPORA = {"prior": frozenset({"standing"})}
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,6 +162,17 @@ def _check(name: str, row: dict[str, Any]) -> None:
                 f"exactly {sorted(COUNTERFACTUAL_KEYS)}"
             )
         varies = counterfactual.get("varies")
+        allowed = _TIER_CORPORA.get(varies)
+        if allowed is not None and name not in allowed:
+            raise ValueError(
+                f"{name}: case {row['name']!r} varies {varies!r}, which only "
+                f"{sorted(allowed)} may vary"
+            )
+        if CORPUS_ENTRY.get(name) == "standing" and varies != "prior":
+            raise ValueError(
+                f"{name}: case {row['name']!r} varies {varies!r}; a standing "
+                "case may vary only its prior"
+            )
         if varies not in COUNTERFACTUAL_TIERS:
             raise ValueError(
                 f"{name}: case {row['name']!r} varies {varies!r}; only "

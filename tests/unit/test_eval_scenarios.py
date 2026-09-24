@@ -433,7 +433,12 @@ def test_a_counterfactual_varying_an_unlisted_tier_is_refused(tmp_path, monkeypa
     """The set is CLOSED on purpose — a general override is what this state
     exists INSTEAD of, so widening it has to be a decision in this file."""
     body = _COUNTERFACTUAL.replace("varies: culture", "varies: transcript")
-    with pytest.raises(ValueError, match="only \\['culture', 'transport'\\] may be varied"):
+    # `prior` joined 2026-09-24 (issue #445): the standing fold's
+    # position-before-the-turn, declared absent for a pre-chain turn, and
+    # valid in the standing corpus only (`evals.scenarios._TIER_CORPORA`).
+    with pytest.raises(
+        ValueError, match="only \\['culture', 'prior', 'transport'\\] may be varied",
+    ):
         load_all(_corpus(tmp_path, monkeypatch, body, "participation"))
 
 

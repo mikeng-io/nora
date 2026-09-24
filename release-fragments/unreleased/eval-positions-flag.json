@@ -1,0 +1,4 @@
+{
+  "type": "none",
+  "reason": "Eval tooling only: `python -m evals standing --positions` prints each draw's written standing position and its length (issue #445)."
+}

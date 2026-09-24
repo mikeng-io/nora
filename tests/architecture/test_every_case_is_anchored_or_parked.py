@@ -171,8 +171,9 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     shared-item cases (a shared reel in English and Cantonese, a shared post,
     and the reel with its pre-fix `[image …]` rendering; 2026-09-24,
     design/instagram-adoption/13 «the cover says it is one»), plus
-    `standing`'s 15 fold cases (13 anchored, 2 parked before the standing
-    chain; 2026-09-24, design/standing-compact/20-verification §1), plus
+    `standing`'s 15 fold cases (10 anchored, 1 counterfactual with its prior
+    declared absent, 4 parked — issue #445; design/standing-compact/
+    20-verification §1), plus
     `presence`'s 7 (2026-09-24, design/self-awareness/05), plus
     `tool_reporting`'s 8 (2026-09-24, ADR 0015 §4), plus `tool_selection`'s 3
     room-tool rows (2026-09-24, design/self-awareness/07), plus its 3
