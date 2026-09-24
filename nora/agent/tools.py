@@ -6697,6 +6697,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         conversation, and post it to this chat. Call this when somebody asks
         you to make, draw or edit a picture.
 
+        MUST: load the image-generation skill before calling this tool. It
+        holds the canonical reference and the appearance rules, which this
+        tool does not repeat.
+
         `reference`, `reference_2` and `reference_3` each take the marker code
         of one photo (`a3f2c1` from `[image a3f2c1]`), up to 3 in one call.
         Each must already be in this conversation, except your own canonical

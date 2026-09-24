@@ -139,3 +139,33 @@ def test_fixed_options_are_types_not_prose():
         assert "Literal[" in ast.unparse(args[name].annotation), name
     for listed in ('"small"', '"16:9"', '"standard"'):
         assert listed not in _description(), listed
+
+
+#: The live failure (2026-09-24, WhatsApp): the operator asked "draw yourself
+#: again", the model called `generate_image` straight from memory with no
+#: `reference` and never loaded the skill that holds the canonical handle and
+#: the appearance rules. The fix points the tool AT the skill rather than
+#: copying the skill's content into the tool (single source of truth); these
+#: two tests pin the pointer and that it cannot dangle.
+_SKILL_NAME_RE = re.compile(r"\bthe ([a-z][a-z0-9-]*) skill\b")
+
+
+def test_description_points_to_the_image_generation_skill():
+    """MUST: the docstring sends her to the skill before she calls this tool.
+    The reference handle and the appearance rules stay in the skill only
+    (0015 §3, `test_the_description_carries_no_judgement_the_skill_owns`)."""
+    desc = _description()
+    assert "MUST: load the image-generation skill before calling this tool" in desc, desc
+    match = _SKILL_NAME_RE.search(desc)
+    assert match is not None, desc
+    assert match.group(1) == "image-generation", match.group(1)
+
+
+def test_the_named_skill_exists():
+    """The name the docstring points at must resolve to a real skill on disk,
+    read the same way the description names it, so a skill rename or removal
+    cannot leave this pointer dangling without turning a test red."""
+    match = _SKILL_NAME_RE.search(_description())
+    assert match is not None
+    skill_path = TOOLS.resolve().parents[2] / "nora" / "skills" / match.group(1) / "SKILL.md"
+    assert skill_path.is_file(), skill_path
