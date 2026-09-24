@@ -765,6 +765,43 @@ pairs asking the same question, exact-title pairs, and staging rows left
 pending as `ambiguous`. Duplicates getting through → step 3 in `shadow`;
 almost none → the adaptor keeps waiting.
 
+**2026-09-25 — build step 3 built, in `shadow`; the 2026-10-01 re-count
+skipped by operator decision.** The operator chose on 2026-09-25 to build
+`note-merge` now rather than wait for the week's count above; the count
+still decides when `shadow` becomes `on`, together with the eval (step 4).
+What landed: `merge_into` on both stores (one transaction, compare-and-swap
+on both heads and `retired_at IS NULL`), guard 3 (`supersede` takes an
+optional expected head and the curator passes the head it judged), the
+`note-merge` adaptor (`nora/language/note_merge.py`, objective
+`nora/dreamer/objectives/note-merge.md`), `[notes] merge_mode = "off" |
+"shadow" | "on"` defaulting to `"off"`, `nora_note_merge_total{outcome}`,
+`nora_note_merge_pass_total{reason}`, `nora_note_merge_prompt_chars`, and a
+fire-time screen that follows a `retired-merged` note's survivor. Where it
+differs from §7.3-7.8, and why:
+
+- **The «decision-log row» is a `note_merge_decision` table** (migration
+  `0062`), not the shared `decision_log`. That table's rows render into the
+  participation and proactive prompts, its `reason` is an 80-character code
+  label, and it refuses note titles and model text by its own rule; adding a
+  writer to it would also have changed the `<loop_decisions>` gloss every
+  ambient prompt carries. The new table holds both ids, both titles and the
+  model's reason, and no prompt reads it.
+- **Prompt TOKENS per pass are on the Langfuse trace**, not a metric: the
+  adaptor never sees the call's usage, so it records the rendered prompt's
+  size in characters.
+- **More refusal outcomes than §7.8 lists**: `would_merge` (shadow),
+  `not_changed` (a group none of whose notes changed since the last pass —
+  re-asking a pair every pass would turn one sample into a union over
+  passes), and the counted-only `singleton` and `malformed`.
+- **Strikes reset when the duplicate was added to more recently than the
+  survivor** (head revision times). With the survivor fixed as the OLDEST
+  note, «a duplicate newer than the survivor» read by creation time would
+  always hold.
+- **The fire-time screen follows the survivor rather than re-pointing the
+  row**: a row on a merged note fires unless the survivor was revised on the
+  tag path after the row was written. `remind` and the per-note wake limit do
+  not forward yet; neither can meet a merged note until `on`.
+
 Related: #118 (the build), #159 (follow-on), #236 (duplicate bound), #101
 (discharge, shipped, off), #103 (proactive adapter). The design lineage is
 27 → 33 → 34 → 37 → this node; 36 is the review draft that first recorded

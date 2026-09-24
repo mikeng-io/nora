@@ -1276,6 +1276,27 @@ async def test_the_curator_is_scheduled_as_a_true_cron_daily(cfg):
     assert schedule.phase_offset_seconds == 16 * 3600, "HK midnight, not 08:00"
 
 
+async def test_note_merge_is_built_only_off_its_own_switch_and_samples_once(cfg):
+    """Design 41 §7.3/§7.8: `[notes] merge_mode = "off"` (the default) builds
+    nothing; `"shadow"` builds the pass, and its schedule PINS one sample —
+    the runtime unions samples, so a second one could only add folds, the
+    direction this pass must not fail in."""
+    off = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True, "notes.enabled": True,
+    }))
+    assert "note-merge" not in [a.name for a in off.dream_adaptors]
+
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True, "notes.enabled": True,
+        "notes.merge_mode": "shadow",
+    }))
+    merge = next(a for a in deps.dream_adaptors if a.name == "note-merge")
+    assert merge.key_kind == "unit" and merge.uses_watermark is False
+    assert merge.tools == frozenset()
+    assert merge._mode == "shadow"
+    assert deps.dream_schedules["note-merge"].samples == 1
+
+
 async def test_every_watermark_free_adaptor_that_is_wired_has_a_schedule(cfg):
     """**The control that would have caught the bug this branch fixes.**
 

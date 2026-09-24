@@ -2006,6 +2006,34 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "blip also produces.",
         ("outcome",),
     ),
+    # The `note-merge` adaptor (design/dreamer-agent-loop/41 §7.8, DEC-202).
+    # A rare counter on a process that restarts several times a day, so the
+    # DURABLE count is the table, not this series: `note_merge_decision` rows
+    # (shadow) and `note.retire_reason = 'retired-merged'` (on).
+    _CounterSpec(
+        "nora_note_merge_total",
+        "Folds the note-merge pass considered, by outcome — one sample per "
+        "(survivor, duplicate) pair, or per group when the group names no pair. "
+        "would_merge: shadow mode, every check passed, nothing written. "
+        "merged: on mode, folded. stale: a head moved between the render and "
+        "the fold. too_long: the folded body would pass the body cap. "
+        "not_open: one of the two was retired first. overlap: the note was in "
+        "two groups, every such group refused whole. cross_room: the group's "
+        "notes were born in different rooms. not_changed: no note in the group "
+        "changed since the last pass, so it was already judged. "
+        "unknown_ordinal: a handle the pass did not show. singleton: fewer than "
+        "two distinct notes. malformed: an item that did not parse. Every value "
+        "but the last three is also a note_merge_decision row.",
+        ("outcome",),
+    ),
+    _CounterSpec(
+        "nora_note_merge_pass_total",
+        "note-merge ticks by whether they rendered: changed (a note was "
+        "created, or revised by anything but this pass, since the last "
+        "rendered pass — a model call follows), unchanged (nothing moved, no "
+        "call), nothing_open (fewer than two open notes, no call).",
+        ("reason",),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
@@ -2390,6 +2418,16 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
         "RIGHT-CENSORED at [relevance_gate] timeout_seconds — a timed-out call "
         "is recorded at the ceiling, so read the top bucket against "
         "nora_relevance_gate_errors_total{kind=\"timeout\"}.",
+    ),
+    # 41 §7.4 asks for prompt TOKENS per pass. The adaptor never sees the
+    # model call's usage — that is on the pass's Langfuse trace — so this
+    # records the rendered prompt's size in characters, which it does see.
+    _HistogramSpec(
+        "nora_note_merge_prompt_chars",
+        "Characters in one rendered note-merge prompt (every open note of the "
+        "unit, side by side). Tokens per pass are the model call's usage on "
+        "the dream:note-merge Langfuse trace.",
+        (1000, 2500, 5000, 10000, 20000, 40000, 80000),
     ),
 )
 

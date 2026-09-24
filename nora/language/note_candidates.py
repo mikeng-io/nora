@@ -105,6 +105,14 @@ distinct gate actions precisely so the two ways this gate deliberately
 writes a duplicate are counted apart from an ordinary create. #236 carries
 the bound itself and is not decided here.
 
+**The bound arrived, and not here (2026-09-24/25, DEC-202, design 41 §7).**
+An `ambiguous` candidate now stays pending instead of creating a third note,
+and a separate adaptor, `nora.language.note_merge`, folds two open notes
+that ask the same question — `[notes] merge_mode`, off by default and run in
+`shadow` first. The two paragraphs above describe this gate as it stands,
+which still writes a duplicate where it cannot name a note; the back-stop is
+that pass, and an update aimed at a note it folded forwards to the survivor.
+
 **`uncertainty` is set equal to `description`, a judgement call this module
 records rather than hides.** Design 33 §3 widens the note field convention —
 `description` becomes "what this entry is + why it is not finished + what
@@ -225,8 +233,8 @@ for the NOTE (a note stays findable by one name across revisions) and
 reversed for the staging row, which is a one-shot dedupe slot for one
 sighting rather than an identity. What that buys is a silent, subtractive
 failure traded for a visible, additive one: a re-described occasion now
-stages twice and the gate may write a duplicate, which nothing merges
-(#236). `displaced` survives in the vocabulary because a loss counter that
+stages twice and the gate may write a duplicate, which `note-merge` is
+now the back-stop for (#236, DEC-202). `displaced` survives in the vocabulary because a loss counter that
 cannot fire is the right state for a loss that no longer happens — deleting
 it would let a re-widening of the key land silent.
 """

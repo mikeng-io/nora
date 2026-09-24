@@ -122,6 +122,9 @@ Signal group
    bounded research loop ONLY when that read rendered something.
    note-candidates (hourly, per room) → stages notes from new messages
    note-curation   (daily, per unit, off by default) → retires notes
+   note-merge      (hourly, per unit, [notes] merge_mode, off by default)
+                    → folds a duplicate note into the oldest of its group;
+                      in shadow, only records the fold it would make
    proactive       (hourly tick, renders on change or a daily floor) → may
                     write ONE kind of row: a `kind="proactive"` reminder for ③
 ```
@@ -320,7 +323,9 @@ not ask" never collapses into "there is nothing".
 memory in its sense.** The **note tier** (`design/dreamer-agent-loop/27`, `33`;
 tables `note`/`note_revision`/`note_candidate`) holds the group's OPEN
 QUESTIONS per unit — written by people on a tag and by the
-`note-candidates` adaptor, retired by the curator, and never by anything Nora
+`note-candidates` adaptor, retired by the curator, folded together by
+`note-merge` when two ask the same question (design 41 §7; `[notes]
+merge_mode`, off by default, `shadow` first), and never by anything Nora
 herself says (her rows are excluded from what the tier reads: the one
 structural brake on her talking to herself, 39 §1). **Standing** (`design/
 dreamer-agent-loop/26`; table `standing`) is her own one-paragraph position

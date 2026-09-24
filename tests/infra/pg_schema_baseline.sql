@@ -64,6 +64,7 @@
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -107,6 +108,9 @@ ADD CONSTRAINT note_candidate_probe_key UNIQUE (unit, probe);
 ADD CONSTRAINT note_entity_entity_id_fkey FOREIGN KEY (entity_id) REFERENCES public.fact_entity(id);
 ADD CONSTRAINT note_entity_note_id_fkey FOREIGN KEY (note_id) REFERENCES public.note(id);
 ADD CONSTRAINT note_entity_pkey PRIMARY KEY (note_id, entity_id);
+ADD CONSTRAINT note_merge_decision_duplicate_fkey FOREIGN KEY (duplicate_id) REFERENCES public.note(id);
+ADD CONSTRAINT note_merge_decision_pkey PRIMARY KEY (id);
+ADD CONSTRAINT note_merge_decision_survivor_fkey FOREIGN KEY (survivor_id) REFERENCES public.note(id);
 ADD CONSTRAINT note_pkey PRIMARY KEY (id);
 ADD CONSTRAINT note_replaced_by_fkey FOREIGN KEY (replaced_by) REFERENCES public.note(id);
 ADD CONSTRAINT note_revision_note_id_fkey FOREIGN KEY (note_id) REFERENCES public.note(id);
@@ -184,6 +188,9 @@ ALTER TABLE ONLY public.note_candidate
 ALTER TABLE ONLY public.note_entity
 ALTER TABLE ONLY public.note_entity
 ALTER TABLE ONLY public.note_entity
+ALTER TABLE ONLY public.note_merge_decision
+ALTER TABLE ONLY public.note_merge_decision
+ALTER TABLE ONLY public.note_merge_decision
 ALTER TABLE ONLY public.note_revision
 ALTER TABLE ONLY public.note_revision
 ALTER TABLE ONLY public.participation_window_state
@@ -300,6 +307,9 @@ CONSTRAINT note_candidate_title_fits_the_index_check CHECK (((title IS NULL) OR 
 CONSTRAINT note_description_fits_the_index_check CHECK (((length(btrim(description)) > 0) AND (length(description) <= 200))),
 CONSTRAINT note_has_a_closing_condition_check CHECK ((length(btrim(closing_condition)) > 0)),
 CONSTRAINT note_has_an_anchor_check CHECK (((anchor_date IS NOT NULL) OR (cardinality(anchor_entity_ids) > 0))),
+CONSTRAINT note_merge_decision_mode_is_known_check CHECK ((mode = ANY (ARRAY['shadow'::text, 'on'::text]))),
+CONSTRAINT note_merge_decision_outcome_is_known_check CHECK ((outcome = ANY (ARRAY['would_merge'::text, 'merged'::text, 'stale'::text, 'too_long'::text, 'not_open'::text, 'overlap'::text, 'cross_room'::text, 'not_changed'::text]))),
+CONSTRAINT note_merge_decision_reason_is_a_sentence_check CHECK ((length(reason) <= 500))
 CONSTRAINT note_replacement_implies_retirement_check CHECK (((replaced_by IS NULL) OR (retired_at IS NOT NULL))),
 CONSTRAINT note_revision_body_fits_the_ceiling_check CHECK ((length(body) <= 32000)),
 CONSTRAINT note_revision_has_a_body_check CHECK ((length(btrim(body)) > 0)),
@@ -345,6 +355,7 @@ CREATE INDEX idx_messages_conv_ts ON public.messages USING btree (conversation_i
 CREATE INDEX idx_messages_dream_lag ON public.messages USING btree (conversation_id, id) WHERE (is_nora = 0);
 CREATE INDEX idx_messages_is_nora ON public.messages USING btree (is_nora);
 CREATE INDEX idx_note_anchor ON public.note USING btree (unit, anchor_date) WHERE (retired_at IS NULL);
+CREATE INDEX idx_note_merge_decision_unit_ts ON public.note_merge_decision USING btree (unit, ts);
 CREATE INDEX idx_note_revision_body_trgm ON public.note_revision USING gin (body public.gin_trgm_ops);
 CREATE INDEX idx_note_revision_note_id ON public.note_revision USING btree (note_id);
 CREATE INDEX idx_note_standing ON public.note USING btree (unit) WHERE (retired_at IS NULL);
@@ -388,6 +399,7 @@ CREATE TABLE public.music_session (
 CREATE TABLE public.note (
 CREATE TABLE public.note_candidate (
 CREATE TABLE public.note_entity (
+CREATE TABLE public.note_merge_decision (
 CREATE TABLE public.note_revision (
 CREATE TABLE public.participation_window_state (
 CREATE TABLE public.presence_corridor_speed (
@@ -575,6 +587,8 @@ disputed_tag_id text,
 distance_m double precision NOT NULL,
 distinct_speakers integer DEFAULT 0 NOT NULL,
 due_at timestamp with time zone NOT NULL,
+duplicate_id uuid NOT NULL,
+duplicate_title text NOT NULL,
 duration_mad_ms bigint,
 duration_median_ms bigint,
 dwell_ms bigint DEFAULT 0 NOT NULL,
@@ -583,6 +597,7 @@ ended_ts bigint NOT NULL,
 ended_ts bigint NOT NULL,
 entity_id uuid NOT NULL
 error text,
+established_by text NOT NULL,
 established_by text NOT NULL,
 established_by text NOT NULL,
 established_by text NOT NULL,
@@ -642,6 +657,7 @@ id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
+id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
@@ -713,6 +729,7 @@ message_id integer NOT NULL,
 message_ids integer[] DEFAULT '{}'::integer[] NOT NULL,
 message_ids integer[] NOT NULL,
 messages jsonb NOT NULL,
+mode text NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
@@ -746,6 +763,7 @@ occurrence_count integer DEFAULT 0 NOT NULL,
 occurrence_count integer DEFAULT 0 NOT NULL,
 occurrence_count integer DEFAULT 1 NOT NULL,
 occurrence_count integer DEFAULT 1 NOT NULL,
+outcome text NOT NULL,
 outcome text NOT NULL,
 outcome text,
 outcome text,
@@ -795,6 +813,7 @@ raw_json text,
 raw_json text,
 reading text NOT NULL,
 reading_digest text NOT NULL,
+reason text DEFAULT ''::text NOT NULL,
 reason text DEFAULT ''::text NOT NULL,
 reasoning_effort text NOT NULL,
 recognition_score double precision DEFAULT 0 NOT NULL,
@@ -881,6 +900,8 @@ superseded_at bigint,
 superseded_by uuid,
 surface text NOT NULL,
 surface_form text NOT NULL,
+survivor_id uuid NOT NULL,
+survivor_title text NOT NULL,
 synthesized_at bigint NOT NULL
 tag_id text NOT NULL,
 tag_id text NOT NULL,
@@ -904,8 +925,10 @@ ts bigint NOT NULL,
 ts bigint NOT NULL,
 ts bigint NOT NULL,
 ts bigint NOT NULL,
+ts bigint NOT NULL,
 uncertainty text NOT NULL,
 unit text DEFAULT ''::text NOT NULL,
+unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
