@@ -534,6 +534,11 @@ def test_strip_media_markers_covers_all_marker_shapes():
         ("[audio] [voice note] [document abc123] [file] 其他種類", "    其他種類"),
         ("正常文字", "正常文字"),
         ("[image a3f2c1][image bbccdd] 連續", " 連續"),
+        # A shared item's still picture (2026-09-24). The alternation is built
+        # from `LABELS`, so a label the transcript can carry is one a reply
+        # cannot leak.
+        ("[cover image c0de01] 封面", " 封面"),
+        ("[Cover Image c0de01: a beach at dusk] 封面", " 封面"),
     )
     for raw, expected in cases:
         assert strip(raw) == expected, f"{raw!r} -> {strip(raw)!r}"

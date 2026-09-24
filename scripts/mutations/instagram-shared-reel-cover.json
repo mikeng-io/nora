@@ -1,0 +1,100 @@
+[
+  {
+    "name": "the cover label is dropped: a shared item's picture renders as a plain [image]",
+    "file": "nora/domain/media.py",
+    "old": "    if ref.on_demand and label == \"image\":\n        return \"cover image\"\n",
+    "new": "",
+    "target": "tests/unit/test_media_cover_label.py::test_a_preview_image_is_labelled_a_cover_and_nothing_else_is tests/unit/test_instagram_shared_on_demand.py::test_a_shared_thumbnail_is_held_but_never_sent_to_the_interpreter tests/unit/test_instagram_shared_on_demand.py::test_an_unread_thumbnail_renders_a_bare_handle_that_claims_nothing tests/unit/test_instagram_parser.py::test_the_link_sits_before_the_caption_and_the_placeholder_stays_trailing tests/unit/test_instagram_parser.py::test_a_caption_cannot_forge_a_media_handle"
+  },
+  {
+    "name": "cover image is not in LABELS, so no reader finds the placeholder",
+    "file": "nora/domain/media.py",
+    "old": "    \"image\", \"cover image\", \"video\", \"audio\", \"voice note\", \"document\", \"file\",",
+    "new": "    \"image\", \"video\", \"audio\", \"voice note\", \"document\", \"file\",",
+    "target": "tests/unit/test_media_cover_label.py::test_the_cover_placeholder_is_rendered_found_and_rewritten_like_any_other tests/unit/test_media_cover_label.py::test_the_cover_label_is_not_read_as_a_bare_image_placeholder"
+  },
+  {
+    "name": "cover image is not accepted as a refinement of image/* by the join",
+    "file": "nora/domain/media.py",
+    "old": "    if label in (\"sticker\", \"cover image\"):",
+    "new": "    if label == \"sticker\":",
+    "target": "tests/unit/test_media_cover_label.py -k refines_an_image"
+  },
+  {
+    "name": "custody never records the cover role",
+    "file": "nora/ingest/stages/media.py",
+    "old": "        if blob and ref.on_demand:\n            blob = replace(blob, role=COVER_ROLE)\n",
+    "new": "",
+    "target": "tests/unit/test_instagram_shared_on_demand.py::test_a_shared_thumbnail_is_held_but_never_sent_to_the_interpreter tests/test_media_fetch.py::test_a_shared_items_thumbnail_is_looked_at_only_when_asked"
+  },
+  {
+    "name": "media_json does not write the role",
+    "file": "nora/domain/media.py",
+    "old": "            **({\"role\": blob.role} if blob.role else {}),\n",
+    "new": "",
+    "target": "tests/unit/test_media_cover_label.py::test_the_role_round_trips_through_media_json tests/test_media_fetch.py::test_a_shared_items_thumbnail_is_looked_at_only_when_asked tests/test_media_fetch.py::test_a_cover_served_from_a_fresh_look_says_it_is_only_the_cover"
+  },
+  {
+    "name": "media_json always writes a role key, changing every ordinary row",
+    "file": "nora/domain/media.py",
+    "old": "            **({\"role\": blob.role} if blob.role else {}),\n",
+    "new": "            \"role\": blob.role,\n",
+    "target": "tests/unit/test_media_cover_label.py::test_an_ordinary_blob_writes_exactly_the_four_keys_it_always_did tests/unit/test_media_custody.py::test_media_json_records_the_four_fields_and_no_bytes"
+  },
+  {
+    "name": "the role is not read back out of media_json",
+    "file": "nora/domain/media.py",
+    "old": "            role=str(item.get(\"role\") or \"\"),\n",
+    "new": "",
+    "target": "tests/unit/test_media_cover_label.py -k round_trips"
+  },
+  {
+    "name": "the cover note is dropped from the ok result",
+    "file": "nora/agent/tools.py",
+    "old": "        if cover:\n            served[\"note\"] = _COVER_NOTE\n",
+    "new": "",
+    "target": "tests/test_media_fetch.py::test_a_cover_served_from_a_fresh_look_says_it_is_only_the_cover tests/test_media_fetch.py::test_a_shared_items_thumbnail_is_looked_at_only_when_asked"
+  },
+  {
+    "name": "the withheld path drops the cover sentence",
+    "file": "nora/agent/tools.py",
+    "old": "                \"note\": f\"{withheld} {_COVER_NOTE}\" if cover else withheld,",
+    "new": "                \"note\": withheld,",
+    "target": "tests/test_media_fetch.py -k withheld_cover"
+  },
+  {
+    "name": "the stored-reading path does not pass the cover flag",
+    "file": "nora/agent/tools.py",
+    "old": "                    _stored_reading(stored),\n                    cached=True, code=serve_code, cover=is_cover,",
+    "new": "                    _stored_reading(stored),\n                    cached=True, code=serve_code,",
+    "target": "tests/test_media_fetch.py -k stored_reading_says_so"
+  },
+  {
+    "name": "any cover sighting marks the handle, not every sighting",
+    "file": "nora/agent/tools.py",
+    "old": "                        covers[sha] = covers.get(sha, True) and (",
+    "new": "                        covers[sha] = covers.get(sha, False) or (",
+    "target": "tests/test_media_fetch.py -k also_sent_as_a_photo"
+  },
+  {
+    "name": "an ordinary photo is called a cover (role check dropped)",
+    "file": "nora/agent/tools.py",
+    "old": "                            blob.get(\"role\") == COVER_ROLE\n",
+    "new": "                            True\n",
+    "target": "tests/test_media_fetch.py -k ordinary_photo_carries_no_cover_note"
+  },
+  {
+    "name": "the outbound marker strip is a hand-written list again, without cover image",
+    "file": "nora/agent/tools.py",
+    "old": "    + \"|\".join(re.escape(x) for x in sorted(MEDIA_LABELS, key=len, reverse=True))\n",
+    "new": "    + \"image|sticker|video|audio|voice note|document|file\"\n",
+    "target": "tests/test_tools.py -k strip_media_markers_covers_all_marker_shapes"
+  },
+  {
+    "name": "the instagram_read when-clause is reverted to a pasted link only",
+    "file": "nora/agent/tools.py",
+    "old": "        \"\"\"Read an Instagram profile, story, post or reel by name, handle or\n        link. Call this when somebody asks about someone's Instagram or a\n        shared or linked post or reel.\n",
+    "new": "        \"\"\"Read an Instagram profile, story, post or reel, by name, handle or\n        link. Call this when somebody asks about someone's Instagram or pastes\n        an Instagram link.\n",
+    "target": "tests/unit/test_instagram_read_tool.py -k shared_post_or_reel"
+  }
+]

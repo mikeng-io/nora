@@ -212,7 +212,8 @@ every share or forward.** The parser marks the thumbnail of a shared item
 on-demand ref. Custody itself is unchanged — the bytes are fetched at ingest,
 because the CDN url expires, and the handle is rendered — so:
 
-- the transcript shows `[image <handle>]` with no description, claiming
+- the transcript shows `[cover image <handle>]` (it said `[image <handle>]`
+  until the later 2026-09-24 section below) with no description, claiming
   nothing (the render join adds a reading only for a row that has one);
 - `media_fetch` on that handle finds no stored reading and does a fresh look,
   at a real cost, when somebody asks;
@@ -222,6 +223,41 @@ because the CDN url expires, and the handle is rendered — so:
   nothing.
 
 Photos and videos people send directly are read at ingest exactly as before.
+
+### 2026-09-24, later: the cover says it is one
+
+**Measured live**, once, the same day: a reel shared into a group rendered as
+`[shared reel by @x <link>] [image <handle>]`, and a member asked Nora what
+was in it. She called `media_fetch` on the handle and nothing else, read the
+one still frame the cover is, and told the room she could see one frame and
+not the clip. `instagram_read` was in the turn and reads a reel by its link;
+the link was in the line she was answering about.
+
+Following AGENTS.md («read the input before rewriting the instruction»), the
+input was what could not ground the judgement: the line called the cover an
+`image`, the same word a member's own photo gets, and `media_fetch`'s answer
+did not say what it had served. Three changes, input first:
+
+- **The transcript names the role.** An on-demand preview image renders as
+  `[cover image <handle>]` (`nora.domain.media.label_for`). `cover image` is a
+  member of `LABELS`, so every reader of the placeholder grammar
+  (`placeholders_in`, `enrich_placeholders`, `body_with_handles`, the join's
+  `label_agrees`, which accepts it only over `image/*`, and the outbound
+  marker strip, now built from `LABELS`) handles it like any other label.
+- **The result says what it served.** Custody records the role on the blob
+  (`MediaBlob.role = "cover"`, written into `media_json` only when set, so
+  every older row reads as an ordinary attachment). When `media_fetch` serves
+  a handle whose every sighting in view is a cover, its `note` says it is
+  only the cover of a shared reel, post or story and that the item is behind
+  the link in that line.
+- **The when-clause names a share.** `instagram_read`'s L1 is now «Call this
+  when somebody asks about someone's Instagram or a shared or linked post or
+  reel» (39 tokens as the L1 gate counts it, was 38).
+
+The routing is measured by `route_instagram_read_shared_*` in
+`evals/corpora/tool_selection.yaml`; the shape those cases can and cannot
+carry is written beside them. Until they run on the deployed model, this is a
+fix to the input with no routing number behind it.
 
 ### Known gaps, recorded and not fixed here
 

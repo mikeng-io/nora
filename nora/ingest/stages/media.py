@@ -72,6 +72,7 @@ from dataclasses import replace
 from typing import Any
 
 from nora.domain.media import (
+    COVER_ROLE,
     MediaBlob,
     MediaObject,
     MediaRef,
@@ -241,6 +242,12 @@ async def run(
                         platform=message.platform,
                         status=stt_outcome.reason or "unavailable",
                     )
+        # A shared item's still picture is RECORDED as one, not only rendered
+        # as one (`[cover image …]`): `media_json` is all `media_fetch` has
+        # when it serves the handle, and the ref's `on_demand` does not survive
+        # into it. Same predicate as the label, so the two cannot disagree.
+        if blob and ref.on_demand:
+            blob = replace(blob, role=COVER_ROLE)
         # A gap is a real position, not a skipped one: handles are matched to
         # placeholders by INDEX, so a failed attachment must contribute an
         # empty handle rather than shifting every later one onto the wrong
