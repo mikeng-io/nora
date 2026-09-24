@@ -1920,6 +1920,28 @@ class Proposal:
 DEFAULT_DREAM_STORE_TIMEOUT_SECONDS = 15.0
 
 
+#: The ceiling every `DreamAdaptor.store_calls_per_tick` may declare (issue
+#: #191). Today's four are 5 (`CultureAdaptor`), 10 (`NoteCuratorAdaptor`), 12
+#: (`NoteCandidateAdaptor`) and 17 (`ProactiveAdaptor`) — this is headroom over
+#: the widest of those, not a measurement of any one of them.
+#:
+#: **It exists so `[dreamer] max_unit_hold_seconds`'s startup gate
+#: (`nora.config`) can PROVE its number against `2 x
+#: DREAM_MAX_STORE_CALLS_PER_TICK x store_timeout_seconds` without importing
+#: `nora.language`.** `nora.config` may import `nora.domain` — the forbidden
+#: direction is the other one — but the adaptors live four layers up, and a
+#: startup validator that imported them to re-derive this number every boot
+#: would be the heavy, cycle-risking route to a number this module can just
+#: state. `tests/architecture/test_dream_store_calls_are_declared.py`'s
+#: `test_no_adaptor_declares_more_store_calls_than_the_wall_clock_assumes` is
+#: what keeps the two honest: every shipped adaptor's declared count is
+#: checked against this ceiling there, so a new adaptor that needs more sites
+#: fails LOUD, at test time, rather than making the wall clock's own proof
+#: silently wrong. Raise it, and `[dreamer] max_unit_hold_seconds`'s default,
+#: together.
+DREAM_MAX_STORE_CALLS_PER_TICK = 20
+
+
 #: The wall-clock bound on the participation turn's Honcho reads
 #: (`FirePath._read_memory`, issue #210), and the default for
 #: `[memory] read_timeout_seconds`.

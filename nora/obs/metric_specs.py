@@ -2019,6 +2019,30 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "blip also produces.",
         ("outcome",),
     ),
+    # `[dreamer] max_unit_hold_seconds` fired (issue #191): `_run_adaptor`'s
+    # own wall clock around the WHOLE call to `_dream_adaptor_once`, covering
+    # the model budget, `#60`'s two bounded store phases AND the cursor reads
+    # around them that `#60` left bare (`clock.last_fired`/`record_fire`,
+    # every `language.*` watermark call, `record.since`, `media_join.enrich`).
+    # A DISTINCT series from `nora_dream_skipped_total
+    # {reason="in_flight_adaptor"}` on purpose: that one counts a tick that
+    # found the unit still running and cannot say whether the run in progress
+    # is long or wedged; this one fires only when the wall clock itself cuts a
+    # unit off, so a wedge is now separable from an ordinary long run. Also
+    # distinct from `nora_dream_store_timeout_total`, which is `#60`'s OWN
+    # timeout on one store phase — this fires only when the OUTER clock
+    # expires, which for a store-phase hang means the inner one somehow did
+    # not (a collaborator swallowing `CancelledError`, or a synchronous
+    # blocking call).
+    _CounterSpec(
+        "nora_dream_unit_timeout_total",
+        "Dreamer (adaptor, key) units released by [dreamer] "
+        "max_unit_hold_seconds rather than by the run finishing — the unit "
+        "is a WEDGE, distinct from an ordinary long run that "
+        "nora_dream_skipped_total{reason=\"in_flight_adaptor\"} alone cannot "
+        "tell apart from one wedged since Tuesday.",
+        ("adaptor",),
+    ),
     # The `note-merge` adaptor (design/dreamer-agent-loop/41 §7.8, DEC-202).
     # A rare counter on a process that restarts several times a day, so the
     # DURABLE count is the table, not this series: `note_merge_decision` rows
