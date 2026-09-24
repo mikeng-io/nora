@@ -138,16 +138,38 @@ def reasoning_text(block: Any) -> str:
     return text if isinstance(text, str) else ""
 
 
+def _carried_field(format_request: Callable[..., Any], message: Any) -> str:
+    """The `reasoning` field of THIS message as the model formats it, or `""`.
+
+    The message is formatted on its own, through the same `format_request`
+    the model's `stream` calls. The SDK's formatter handles each message
+    independently (its loop only appends), so this is the entry this message
+    produces in the full request, paired to it by construction rather than by
+    matching text across entries. An assistant message the formatter drops
+    whole (nothing but reasoning) produces no assistant entry and so no field.
+    """
+    request = format_request([message])
+    fields = [
+        entry.get(CARRIED_REASONING_FIELD) for entry in request.get("messages") or ()
+        if isinstance(entry, dict) and entry.get("role") == "assistant"
+    ]
+    return fields[0] if len(fields) == 1 and isinstance(fields[0], str) else ""
+
+
 def dropped_reasoning_blocks(model: Any, messages: Iterable[Any] | None) -> int:
     """How many reasoning blocks the request THIS model builds will drop,
-    judged against that request rather than predicted from the messages.
+    judged against what the model formats rather than predicted from the
+    messages.
 
-    ADR 0013 decision 1 applied to the fix: the model is asked to FORMAT the
-    pending message list (`format_request`, the method its `stream` calls),
-    and a `reasoningContent` block counts as carried only when its text is
-    found in a `reasoning` field of the formatted request. A Strands release
-    that stops routing through `nora.agent.reasoning_carry`'s override, or a
-    model that never had it, therefore reads as a strip, not as a fix.
+    ADR 0013 decision 1 applied to the fix: each message holding reasoning is
+    FORMATTED by the model (`format_request`, the method its `stream` calls),
+    and a `reasoningContent` block counts as carried only when its text is in
+    the `reasoning` field of ITS OWN message's formatted entry. A Strands
+    release that stops routing through `nora.agent.reasoning_carry`'s
+    override, or a model that never had it, therefore reads as a strip, not as
+    a fix. Pairing per message, never «found in any carried field», is what
+    keeps a dropped short reasoning from being vouched for by a longer carried
+    one that happens to contain it (review of #506).
 
     No block, no formatting: a turn at `reasoning_effort = "none"` pays one
     walk of the list and nothing else. A model with no `format_request`, or
@@ -162,29 +184,23 @@ def dropped_reasoning_blocks(model: Any, messages: Iterable[Any] | None) -> int:
     format_request = getattr(model, "format_request", None)
     if not callable(format_request):
         return blocks
+    reached = 0
     try:
-        request = format_request(messages)
-        carried = [
-            field for message in request.get("messages") or ()
-            if isinstance(message, dict)
-            and isinstance(field := message.get(CARRIED_REASONING_FIELD), str)
-        ]
+        for message in messages:
+            if not reasoning_blocks([message]):
+                continue
+            field = _carried_field(format_request, message)
+            if not field:
+                continue
+            for block in message["content"]:
+                text = reasoning_text(block)
+                # `undash`, because the dash-free model rewrites the request
+                # after formatting it and the carried text is what she READS.
+                if text and (text in field or undash(text) in field):
+                    reached += 1
     except Exception:  # noqa: BLE001 — on the reply path, inside a hook
         log.warning("reasoning_strip: could not format the pending request")
         return blocks
-    if not carried:
-        return blocks
-    reached = 0
-    for message in messages:
-        content = message.get("content") if isinstance(message, dict) else None
-        if not isinstance(content, list):
-            continue
-        for block in content:
-            text = reasoning_text(block)
-            # `undash`, because the dash-free model rewrites the request after
-            # formatting it and the carried text is what she READS.
-            if text and any(text in f or undash(text) in f for f in carried):
-                reached += 1
     return max(blocks - reached, 0)
 
 

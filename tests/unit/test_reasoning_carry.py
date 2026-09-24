@@ -135,6 +135,18 @@ def test_one_carried_message_does_not_vouch_for_another() -> None:
     assert dropped_reasoning_blocks(_provider(), mixed) == 1
 
 
+def test_a_dropped_block_is_not_vouched_for_by_a_longer_carried_one() -> None:
+    """Each block is judged against ITS OWN message's carried field. Found by
+    review: a reasoning-only message whose short text is a substring of
+    another message's carried reasoning was counted as carried, an
+    undercount, which is the worse error."""
+    messages = copy.deepcopy(MULTI_TURN)
+    messages[1]["content"][0][REASONING_BLOCK_KEY]["reasoningText"]["text"] = "I will call f."
+    messages.append({"role": "assistant", "content": [
+        {REASONING_BLOCK_KEY: {"reasoningText": {"text": "call f"}}}]})
+    assert dropped_reasoning_blocks(_provider(), messages) == 1
+
+
 def test_a_model_whose_formatting_raises_is_recorded_as_dropping_everything() -> None:
     class _Broken:
         def format_request(self, messages: Any) -> dict:
