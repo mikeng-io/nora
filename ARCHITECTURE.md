@@ -348,10 +348,13 @@ host runs a persistent virtual desktop — Xtigervnc on display `:2` with Openbo
 headed Chrome on that display, and OpenCLI 1.8.7 (`localhost:19825`) driving it
 through the Browser Bridge extension, all as systemd *user* services (see
 `docs/runbook.md` §10). None of it is ambient ingest: it writes nothing to the
-record. The surface is two constrained, read-only X tools, `x_read` and `x_search`
-(DEC-201, which retired DEC-151's `social_fetch`; Instagram is read through the
-instagram-bridge instead): a post, a profile, an account's posts, a search,
-never posting, liking, following, replying or deleting. The boundary is
+record. The surface is four constrained, read-only tools (DEC-201, which
+retired DEC-151's `social_fetch`; Instagram is read through the
+instagram-bridge instead): `x_read` and `x_search` for X (a post, a profile,
+an account's posts, a search), and `linkedin_read` and `linkedin_search` for
+LinkedIn (a profile, its roles or posts, a company page, a people search),
+the LinkedIn pair behind `[social.linkedin] enabled` and only on a turn a
+person asked for. None can post, like, follow, reply, connect or delete. The boundary is
 enforced at the tools' closed `(platform, what)` vocabulary AND
 re-enforced by the host-side bridge's own allowlist (`nora/infra/social/
 bridge_server.py`, bound to loopback + the docker0 gateway so the container —

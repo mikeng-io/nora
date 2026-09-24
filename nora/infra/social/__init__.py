@@ -1,12 +1,14 @@
-"""Social reads behind the `x_read` and `x_search` (DEC-201), `instagram_read` and
-`instagram_search` (design/instagram-adoption/18) tools — X and Instagram,
-READ-ONLY, over two backends the model never learns the names of.
+"""Social reads behind the `x_read`, `x_search`, `linkedin_read` and
+`linkedin_search` (DEC-201), `instagram_read` and `instagram_search`
+(design/instagram-adoption/18) tools — X, LinkedIn and Instagram, READ-ONLY,
+over two backends the model never learns the names of.
 
 `SocialRouter` is what the composition root injects; it is itself a
 `SocialProvider`, so `nora.agent.registry` is unchanged and unaware. Below it,
-X goes to OpenCLI and Instagram to the instagram-bridge (`15`): the bridge's
-rows are `instagram/story`, `instagram/profile`, `instagram/search` (P11) and
-`instagram/post` (P12). OpenCLI serves X only. See `router.py`.
+X and LinkedIn go to OpenCLI and Instagram to the instagram-bridge (`15`):
+the bridge's rows are `instagram/story`, `instagram/profile`,
+`instagram/search` (P11) and `instagram/post` (P12). OpenCLI serves X and
+LinkedIn, and no Instagram read. See `router.py`.
 
 The OpenCLI half has a loopback HTTP seam between two halves of THIS package:
 
