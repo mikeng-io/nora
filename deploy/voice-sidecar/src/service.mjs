@@ -36,7 +36,7 @@ import { readdir } from 'node:fs/promises';
 import { appendFileSync, renameSync, statSync } from 'node:fs';
 import path from 'node:path';
 
-import { createCore, createFrontDoor } from './controller.mjs';
+import { createCore, createCoreRegistry, createFrontDoor } from './controller.mjs';
 import { bootChannel } from './lifecycle.mjs';
 import { realClock } from './outbox.mjs';
 import { join, createPump } from './recv.js';
@@ -196,8 +196,10 @@ async function main() {
   // counter, an outbox, a desired-state file — instantiated per guild rather
   // than keyed by one. Nothing is shared between them but the bot token and
   // the socket out front.
-  const cores = new Map();
-
+  //
+  // The map itself, and the mint-vs-reuse-vs-prune decision every lookup
+  // makes, live in controller.mjs's createCoreRegistry (#345) — this file
+  // only supplies the seam that builds a core.
   function makeCore(guildId) {
     // Each guild gets its OWN pump, so its own wake-seam connection: the
     // hello frame on that connection is what tells the gate which guild the
@@ -238,38 +240,21 @@ async function main() {
       }),
       log: (event, fields = {}) => log(event, { guild_id: guildId, ...fields }),
     });
-    cores.set(guildId, core);
-    log('core_created', { guild_id: guildId });
     return core;
   }
 
-  function controllerFor(guildId, { create = false, any = false } = {}) {
-    // `any` answers "is this even a route we serve", before a guild is known.
-    // Route knowledge is identical across cores, so any core answers it; when
-    // there are none yet, a throwaway is not built — the front door falls
-    // through to 404, which is the right answer for an unknown route anyway.
-    if (any) {
-      const first = cores.values().next();
-      return first.done ? null : first.value.controller;
-    }
-    const existing = cores.get(guildId);
-    if (existing) return existing.controller;
-    // Minted ONLY on a join. Every other verb addresses a connection that
-    // must already exist, so creating one for them would make an unbounded
-    // map keyed by whatever a caller put in `guild_id`. Without a token there
-    // is nothing to join with, so nothing is created either.
-    if (!create || !TOKEN) return null;
-    return makeCore(guildId).controller;
-  }
+  // Without a token there is nothing to join with, so nothing is created —
+  // same posture as before this was `!TOKEN` inline in `controllerFor`.
+  const registry = createCoreRegistry({ makeCore, canCreate: () => Boolean(TOKEN), log });
 
   const server = createFrontDoor({
-    controllerFor,
+    controllerFor: registry.controllerFor,
     // Process-level liveness, not a guild's. The compose HEALTHCHECK curls
     // this and it must answer 200 while idle with no guild at all.
     health: () => ({
       status: 'ok',
-      guilds: [...cores.keys()],
-      connections: [...cores.entries()].map(([guildId, c]) => ({
+      guilds: registry.guildIds(),
+      connections: registry.entries().map(([guildId, c]) => ({
         guild_id: guildId,
         voice: c.lifecycle.voice(),
         channel_id: c.lifecycle.channelId(),
@@ -335,7 +320,7 @@ async function main() {
         log('boot_idle', { guild_id: guildId, reason: stored.state?.desired === 'idle' ? 'desired_state_idle' : 'no_channel' });
         continue;
       }
-      makeCore(guildId).lifecycle.join(channel).catch(() => {
+      registry.mint(guildId).lifecycle.join(channel).catch(() => {
         // Join failed: state is `error`, /health stays live, compose's
         // restart policy gives the retry. Already logged by the lifecycle.
       });
@@ -347,7 +332,7 @@ async function main() {
 
   async function shutdown(signal) {
     log('shutdown', { signal });
-    await Promise.allSettled([...cores.values()].map((c) => c.lifecycle.shutdown()));
+    await Promise.allSettled(registry.values().map((c) => c.lifecycle.shutdown()));
     server.close(() => process.exit(0));
     // Don't hang on a half-open voice socket.
     setTimeout(() => process.exit(0), 3000).unref();

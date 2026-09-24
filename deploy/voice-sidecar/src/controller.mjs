@@ -320,6 +320,74 @@ export function createController({
   };
 }
 
+// The per-guild core map and the mint-vs-reuse decision every request makes
+// before it can be handled (#345). Pulled out of service.mjs so it is
+// testable without discord.js: this module already has none of those seams,
+// only the ones `makeCore` itself needs.
+//
+// A join that fails leaves its core in `voice: error` with no `session`
+// (lifecycle.join's catch sets `voice = 'error'` before `session` is ever
+// assigned — see lifecycle.mjs). Left in the map, that core answers every
+// later `/health` as a guild Nora holds a connection for and never did.
+//
+// Shape chosen over "drop the core the instant its join fails": that drop
+// happens from inside the join's OWN async continuation, by which time a
+// concurrent second request may already have looked the guild up and be
+// mid-join on the very core about to be deleted out from under it — the
+// issue's own warning. Pruning here instead, at the single synchronous
+// lookup every mint goes through, has no such window: `controllerFor` never
+// awaits between reading `cores` and deciding, so no other request's code can
+// run in between. It is lazy (a guild nobody re-joins keeps its stale error
+// core until someone tries again) rather than instant, which is the
+// trade the issue itself calls out as the safe one.
+//
+// The test (`voice === 'error' && !session`) mirrors lifecycle.teardown's own
+// guard for "nothing here worth tearing down" — the same fact, read the other
+// way round, for "nothing here worth reusing".
+export function createCoreRegistry({ makeCore, canCreate = () => true, log = () => {} }) {
+  const cores = new Map();
+
+  function mint(guildId) {
+    const core = makeCore(guildId);
+    cores.set(guildId, core);
+    log('core_created', { guild_id: guildId });
+    return core;
+  }
+
+  function controllerFor(guildId, { create = false, any = false } = {}) {
+    // `any` answers "is this even a route we serve", before a guild is
+    // known. Route knowledge is identical across cores, so any core answers
+    // it; when there are none yet, a throwaway is not built — the front door
+    // falls through to 404, which is the right answer for an unknown route
+    // anyway.
+    if (any) {
+      const first = cores.values().next();
+      return first.done ? null : first.value.controller;
+    }
+    let existing = cores.get(guildId);
+    if (existing && create && existing.lifecycle.voice() === 'error' && !existing.lifecycle.session()) {
+      cores.delete(guildId);
+      log('core_pruned', { guild_id: guildId, reason: 'stale_error_core' });
+      existing = undefined;
+    }
+    if (existing) return existing.controller;
+    // Minted ONLY on a join (or a caller-supplied `canCreate`, e.g. a
+    // configured bot token). Every other verb addresses a connection that
+    // must already exist, so creating one for them would make an unbounded
+    // map keyed by whatever a caller put in `guild_id`.
+    if (!create || !canCreate()) return null;
+    return mint(guildId).controller;
+  }
+
+  return {
+    mint,
+    controllerFor,
+    guildIds: () => [...cores.keys()],
+    entries: () => [...cores.entries()],
+    values: () => [...cores.values()],
+  };
+}
+
 // The ONE socket, in front of N per-guild controllers (multi-guild,
 // 2026-09-17). It owns everything that must happen BEFORE a guild is known —
 // reading the body is how the guild becomes known at all — and nothing else.
