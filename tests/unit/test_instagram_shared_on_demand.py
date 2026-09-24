@@ -1,5 +1,7 @@
 """A shared reel's, post's or story's thumbnail is HELD at ingest and READ only
-when asked (operator rule, 2026-09-24).
+when asked (operator rule, 2026-09-24), and only when the share has no link:
+a share whose link validated carries no thumbnail at all (later the same day,
+after #454), so it is neither held nor read.
 
 Measured before this: a live shared reel and a live shared story, with nobody
 tagging Nora, each had its thumbnail described by the vision model at ingest
@@ -72,11 +74,18 @@ def _event(**over) -> dict:
     return base
 
 
-def _shared_reel_event() -> dict:
+# The share with NO link: a story url whose user segment is not the author,
+# so the kind renders and the link does not. It keeps its thumbnail, as a
+# linked story does; a linked post or reel carries none.
+UNLINKED_URL = "https://www.instagram.com/stories/other.account/3000000000000000001"
+LINKED_URL = "https://www.instagram.com/reel/SynthReel01/?is_clips_ad=0"
+
+
+def _shared_reel_event(target_url: str = UNLINKED_URL) -> dict:
     return _event(
         shared={
             "author": "someaccount",
-            "target_url": "https://www.instagram.com/reel/SynthReel01/?is_clips_ad=0",
+            "target_url": target_url,
             "typename": "SlideMessagePortraitXMA",
         },
         media={"kind": "image", "url": THUMB_URL},
@@ -113,6 +122,7 @@ class _Wiring:
             f"attachment:{PHOTO_URL}": PIXELS,
         })
         source.platform = "instagram"
+        self.source = source
         self.sources = MediaSourceRegistry([source])
 
     async def ingest(self, event: dict):
@@ -170,7 +180,7 @@ async def test_a_shared_items_video_or_sticker_is_never_recorded_as_a_cover():
 
 async def test_an_unread_thumbnail_renders_a_bare_handle_that_claims_nothing():
     """What the model sees for the thumbnail until somebody asks: the kind, the
-    author, the link, and `[cover image <handle>]` with nothing after the handle. The
+    author, and `[cover image <handle>]` with nothing after the handle. The
     render join adds a description only for a row that has been read, so an
     on-demand thumbnail cannot be rendered as if it had been looked at.
 
@@ -187,10 +197,7 @@ async def test_an_unread_thumbnail_renders_a_bare_handle_that_claims_nothing():
     (rendered,) = await join.enrich([_row(shared)])
 
     handle = shared.media_blobs[0].handle
-    assert rendered.body == (
-        "[shared reel by @someaccount https://www.instagram.com/reel/SynthReel01/]"
-        f" [cover image {handle}]"
-    )
+    assert rendered.body == f"[shared story by @someaccount] [cover image {handle}]"
 
     direct = await wiring.ingest(_direct_photo_event())
     (read,) = await join.enrich([_row(direct)])
@@ -242,3 +249,38 @@ async def test_a_share_of_bytes_already_read_renders_the_existing_reading():
     assert len(wiring.interpreter.calls) == 1
     row = await wiring.store.get(sha256=shared.media_blobs[0].sha256)
     assert isinstance(row, MediaObject) and row.comprehended
+
+
+async def test_a_share_with_a_link_takes_nothing_into_custody():
+    """The linked share, through the same real chain: no blob fetched or
+    stored, no index row, no read, and a transcript line with no handle in it
+    before or after the render join. Nothing downstream can reference a
+    handle the body does not carry.
+
+    Positive control: the unlinked share in the same wiring IS held, so the
+    empty custody here is the link and not the wiring."""
+    wiring = _Wiring()
+
+    staged = await wiring.ingest(_shared_reel_event(LINKED_URL))
+
+    line = "[shared reel by @someaccount https://www.instagram.com/reel/SynthReel01/]"
+    assert staged.body == line
+    assert staged.media == ()
+    assert staged.media_blobs == ()
+    assert wiring.source.fetched == [], "the thumbnail was downloaded"
+    assert wiring.blobs.blobs == {}
+    assert wiring.store.objs == {} and wiring.store.saved == []
+    assert wiring.store.comprehended == []
+    assert wiring.interpreter.calls == []
+    assert _row(staged).media_json is None
+    join = MediaJoin(
+        store=wiring.store, screen=scan_identifiers, metrics=Metrics(),
+        render_chars=240,
+    )
+    (rendered,) = await join.enrich([_row(staged)])
+    assert rendered.body == line
+
+    unlinked = await wiring.ingest(_shared_reel_event())
+    assert len(unlinked.media_blobs) == 1
+    assert wiring.source.fetched != []
+    assert wiring.blobs.blobs != {}

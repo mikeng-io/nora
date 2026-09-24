@@ -72,8 +72,8 @@
   {
     "name": "the instagram/search OpenCLI allowlist row is restored",
     "file": "nora/infra/social/bridge_server.py",
-    "old": "        (\"x\", \"search\"): (\"twitter\", \"search\"),\n    })",
-    "new": "        (\"x\", \"search\"): (\"twitter\", \"search\"),\n        (\"instagram\", \"search\"): (\"instagram\", \"search\"),\n    })",
+    "old": "        (\"x\", \"search\"): (\"twitter\", \"search\"),\n        # LinkedIn (design/social-per-network/10, DEC-201)",
+    "new": "        (\"x\", \"search\"): (\"twitter\", \"search\"),\n        (\"instagram\", \"search\"): (\"instagram\", \"search\"),\n        # LinkedIn (design/social-per-network/10, DEC-201)",
     "target": "tests/test_acceptance_rules.py::test_r86_social_reads_are_read_only_at_three_layers"
   },
   {
@@ -128,8 +128,8 @@
   {
     "name": "a dash comes back into an x_read note",
     "file": "nora/agent/tools.py",
-    "old": "\"note\": \"Give exactly one of handle or link, then ask again.\",",
-    "new": "\"note\": \"Give exactly one of handle or link \\u2014 then ask again.\",",
+    "old": "            _record(metrics, \"x_read\", \"unavailable\", reason=\"input\")\n            return {\n                \"status\": \"unavailable\",\n                \"note\": \"Give exactly one of handle or link, then ask again.\",",
+    "new": "            _record(metrics, \"x_read\", \"unavailable\", reason=\"input\")\n            return {\n                \"status\": \"unavailable\",\n                \"note\": \"Give exactly one of handle or link — then ask again.\",",
     "target": "tests/unit/test_social_tool_notes.py"
   }
 ]
