@@ -1110,7 +1110,6 @@ async def test_r87_the_standing_fold_reads_since_a_row_id_watermark():
     )
     await debrief.run(
         trace=trace, platform="signal", store=store,
-        notes_sink=None, unit_of=lambda p, c: "ws",
         client=client, objective=_Objective(), metrics=Metrics(),
         display_name="Nora", record_store=record, max_chars=1200, fold_batch=200,
         timeout_seconds=5.0, store_timeout_seconds=5.0, now_ms=60,

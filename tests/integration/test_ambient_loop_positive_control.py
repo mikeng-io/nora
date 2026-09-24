@@ -499,8 +499,7 @@ async def _drive(tmp_path: Path) -> _Journey:
         ),
     )
     debrief_wiring = debrief.Wiring(
-        store=standing_store, notes_sink=note_store,
-        unit_of=lambda _platform, _conversation_id: UNIT,
+        store=standing_store,
         client=debrief_client, objective=shipped_objectives(), record_store=audit,
         max_chars=cfg.standing.max_chars, fold_batch=cfg.standing.fold_batch,
         timeout_seconds=cfg.standing.timeout_seconds,
@@ -934,6 +933,10 @@ async def test_3c_no_note_is_proposed_from_a_dead_turn(journey: _Journey) -> Non
 
     Decidable on the notebook, not on the note's language: an `llm_error` fold
     must leave the unit with no new note and no staged create-candidate.
+
+    Since 2026-09-24 the debrief creates no notes on ANY outcome, so this
+    holds by construction: the fold is still scripted to answer with the
+    note, and the stray field reaches nothing.
     """
     assert await journey.notes.standing(unit=UNIT) == (), (
         "an llm_error fold must not create a note: "

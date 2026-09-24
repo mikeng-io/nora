@@ -9,7 +9,7 @@ that turn, and the deployed pipeline's own `_debrief` run against them.
 **Why `EngagementPipeline._debrief` and not `debrief.run`.** The two arms the
 corpus compares are master's fold and the branch's, and `run` has a different
 signature on each (master's takes a verdict store and a rebuild ceiling). The
-pipeline's `_debrief(trace=, platform=, notes_read=)` is the same on both, and
+pipeline's `_debrief(trace=, platform=)` is the same on both, and
 it is the exact call production makes: it reads the composed `Wiring` — the
 deployment's model client, objective source, `max_chars`, `fold_batch`,
 timeouts — and passes it the way the live turn does. Reaching a private method

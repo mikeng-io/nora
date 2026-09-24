@@ -1,0 +1,14 @@
+{
+  "type": "fix",
+  "summary": "The step that updates Nora's view of a room after each reply no longer creates notes, which stops the flood of duplicate notes that never got updated.",
+  "details": [
+    "After each tagged turn, a second model rewrites Nora's short position for that room. It was also allowed to open notes, and it wrote most of them: 52 of the 64 notes in use.",
+    "It never saw the notes already open, so the same question asked in new words became a new note each time, and it could only create notes, never update them.",
+    "It also opened notes about Nora's own failures, such as an image that would not send, as if they were questions the group had left open.",
+    "Notes are now created only when someone asks Nora on a tag, and by the separate pass that reads the room, checks what is already open and updates instead of duplicating."
+  ],
+  "limitations": [
+    "Notes it already created stay open until they are retired; this change does not clean them up.",
+    "Nora's own failures are no longer tracked as notes anywhere; they belong in logs and error reports."
+  ]
+}

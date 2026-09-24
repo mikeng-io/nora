@@ -259,13 +259,6 @@
   "target": "tests/unit/test_dream_screen.py::test_ordinary_position_prose_numbers_and_dates_are_kept[price]"
  },
  {
-  "name": "standing-compact §5: a note carrying an identifier is screened, its sibling proposed",
-  "file": "nora/engagement/stages/debrief.py",
-  "old": "        if not kept:\n            metrics.inc(\"nora_debrief_note_proposals_total\", outcome=\"screened\")",
-  "new": "        if False:\n            metrics.inc(\"nora_debrief_note_proposals_total\", outcome=\"screened\")",
-  "target": "tests/unit/test_debrief.py -k test_a_note_carrying_an_identifier_is_screened_and_its_sibling_still_proposed"
- },
- {
   "name": "standing-compact §5: the consolidate retry states the three-rank order",
   "file": "nora/engagement/stages/debrief.py",
   "old": "        f\"What you CONCLUDED or COMMITTED to outranks what you FOUND and have \"\n        f\"not shared, and what you found outranks what the room SAID: drop in \"\n        f\"the reverse of that order, even when the thing you drop is the more \"\n        f\"recent. Recency decides only between two things of the same \"\n        f\"kind.\\n\\n\"",
@@ -285,20 +278,6 @@
   "old": "        updated_at=now_ms,\n",
   "new": "        updated_at=prior.updated_at if prior is not None else now_ms,\n",
   "target": "tests/unit/test_standing_event.py -k test_the_rollups_prior_age_is_measured_from_the_last_write"
- },
- {
-  "name": "standing-compact M3: a timeout turn refuses note proposals",
-  "file": "nora/engagement/stages/debrief.py",
-  "old": "_BROKEN_TURN_OUTCOMES = frozenset({\"llm_error\", \"timeout\"})",
-  "new": "_BROKEN_TURN_OUTCOMES = frozenset({\"llm_error\"})",
-  "target": "tests/unit/test_debrief.py::test_a_turn_that_broke_either_way_raises_no_notes[timeout]"
- },
- {
-  "name": "standing-compact M4: a consolidate retry parses notes from the accepted answer",
-  "file": "nora/engagement/stages/debrief.py",
-  "old": "            return second[0], second[1], retry.content",
-  "new": "            return second[0], second[1], reply.content",
-  "target": "tests/unit/test_debrief.py -k test_a_consolidated_fold_proposes_the_notes_of_the_accepted_answer"
  },
  {
   "name": "standing-compact M5: an empty batch carries the prior's watermark forward",
