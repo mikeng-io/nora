@@ -171,15 +171,15 @@ def test_word_count_does_not_move_when_the_same_text_is_reflowed():
     words, never where a line happened to break."""
     import textwrap
 
-    words = (
+    prose = (
         "Judgement that other domains also need is doctrine not a skill "
         "a skill cannot rely on another skill being loaded in the same "
         "turn this is longer sample prose meant to simulate a real skill "
         "body paragraph that wraps across several lines of markdown text "
         "testing whether wrapping the same words differently changes what "
         "is measured under two different units of account here"
-    ).split()
-    prose = " ".join(words)
+    )
+    words = prose.split()
     narrow = textwrap.fill(prose, width=20)
     wide = textwrap.fill(prose, width=100)
     assert narrow != wide, "the two reflows must actually differ byte-for-byte"
