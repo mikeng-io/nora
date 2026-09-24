@@ -1,0 +1,13 @@
+{
+  "type": "fix",
+  "summary": "Pictures Nora is not in no longer take on her own 3D mascot look, and her image prompts stick to what was asked.",
+  "details": [
+    "Her appearance and rendering rules now apply only when she is in the picture. Otherwise the style comes from the request, or from the room when the request names none.",
+    "She adds setting, props or lighting only when they serve the request, and describes the scene so it could physically exist. Before this, «a cat sleeping on a laptop» gained a desk, a lamp and a night room, and the laptop came out closed.",
+    "She tells the image model there is no text unless the picture needs words, so captions nobody asked for (like «Hello Nora!» on a screen) stay out."
+  ],
+  "limitations": [
+    "The updated eval case (no mascot styling on a picture she is not in) has not been run yet.",
+    "The skill ships in the image: a rebuild is needed for it to reach production."
+  ]
+}

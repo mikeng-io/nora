@@ -102,9 +102,13 @@ _LINE_CEILINGS: dict[str, int] = {
     # where a compression had softened it (review of #410). Raised to 70 on
     # 2026-09-24 (operator): the dates-and-places section is new, and the
     # photo-to-prompt recipe moved here from `generate_image`'s docstring,
-    # which now describes the tool only. Measured at 65; the rest is room for
-    # one more model section, which is how this skill is meant to grow.
-    "image-generation": 70,
+    # which now describes the tool only. Measured at 65. Raised to 80 the
+    # same day after the live «a cat sleeping on a laptop» turn: she wrote
+    # her own mascot rendering into a picture she was not in and invented a
+    # scene that could not exist, and the prompt-writing judgement that
+    # covers both is new (74 lines). The rest is room for one more model
+    # section, which is how this skill is meant to grow.
+    "image-generation": 80,
 }
 
 
@@ -199,6 +203,43 @@ def test_the_image_skill_copies_dates_times_and_places_from_the_clock_line(store
         "resolve it against the clock line first",
     ):
         assert needle in section, needle
+
+
+def test_her_look_is_not_the_house_style_and_the_prompt_writes_what_was_asked(store):
+    """Live 2026-09-24, after #456: asked for a cat asleep on a laptop, she
+    wrote her own rendering («stylized 3D mascot», «collectible-character
+    quality») into a picture she was not in, and added a desk, a lamp, a
+    night room and an open laptop with light under the cat. That cannot
+    exist, and the model drew a closed laptop. The skill has to say, with
+    the reason, that her look is hers only, that the style comes from the
+    request or the room, that detail is added only when it serves the
+    request, that the arrangement must be physically possible, and that an
+    unwanted caption is ruled out in the prompt.
+
+    Pinned as a judgement: each rule carries its reason, and the section
+    names none of the props that went wrong, because a list of forbidden
+    props is the menu shape the operator ruled out."""
+    body = _flat(_image_skill(store).instructions)
+    section = body.split("## Writing what was asked", 1)[1].split("## ", 1)[0]
+    for needle in (
+        "Write the picture that was asked for",
+        "add a setting, props or light only when they serve what was asked",
+        "Describe the arrangement so it could physically exist, because the model "
+        "resolves a contradiction on its own",
+        "The style comes from the request, or from the room's context when the "
+        "request names none",
+        "your own rendering below is how you look, not a house style for pictures "
+        "you are not in",
+        "say there is no text unless the picture needs words",
+    ):
+        assert needle in section, needle
+    for prop in ("laptop", "lamp", "desk", "night", "orange"):
+        assert prop not in section.lower(), prop
+    look = body.split("## What you look like", 1)[1]
+    assert look.lstrip().startswith(
+        "This is how you look when you are in the picture, and it applies only then.")
+    # The writing judgement comes before the look it limits.
+    assert body.index("## Writing what was asked") < body.index("## What you look like")
 
 
 def test_the_skill_quotes_the_clock_line_as_the_prefill_renders_it(store):

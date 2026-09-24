@@ -252,6 +252,33 @@ def test_this_saturday_is_graded_against_the_clock_she_was_shown():
     assert _label(wrong_week) == FAIL
 
 
+def test_a_failure_quotes_what_the_call_carried():
+    """A FAIL that names only what was expected cannot be read: the first live
+    run of the poster case reported four misses and showed none of the
+    prompts. Every argument FAIL quotes the input it judged."""
+    wrong_week = _carried((("generate_image", '{"prompt": "Dinner, 3 October"}'),),
+                          clock=_CLOCK, args_date={"generate_image": "saturday"})
+    missing = _carried((("generate_image", '{"prompt": "an empty room"}'),),
+                       args_include={"generate_image": [_SELF]})
+    styled = _carried((("generate_image", '{"prompt": "a stylized 3D mascot pet"}'),),
+                      args_exclude={"generate_image": ["mascot"]})
+    for data, quoted in ((wrong_week, "dinner, 3 october"), (missing, "an empty room"),
+                         (styled, "a stylized 3d mascot pet")):
+        reason = ToolRouteGrader().evaluate(data)[0].reason
+        assert quoted in reason, reason
+
+
+def test_a_pass_on_an_argument_case_quotes_it_too():
+    """A pass on an exclusion says nothing about whether the case separates two
+    arms until the prompt is read: the before arm of #469 passed the cat case
+    5/5, and only the prompts can say whether that is a fix or a blind case."""
+    plain = _carried((("generate_image", '{"prompt": "a sleeping pet, watercolour"}'),),
+                     args_exclude={"generate_image": ["mascot"]})
+    out = ToolRouteGrader().evaluate(plain)[0]
+    assert out.label == PASS
+    assert "a sleeping pet, watercolour" in out.reason
+
+
 def test_a_date_case_with_no_clock_line_is_an_error():
     data = _carried((("generate_image", '{"prompt": "26 September"}'),),
                     args_date={"generate_image": "saturday"})
