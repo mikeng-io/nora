@@ -2092,6 +2092,51 @@ def _find_room(rooms: Sequence[KnownRoom], asked: str) -> KnownRoom | None:
     return on_network[0] if len(on_network) == 1 else None
 
 
+_ACTIVITY_KEY = f"messages_last_{ROOM_ACTIVITY_WINDOW_HOURS}h"
+
+
+def _by_activity(entry: Mapping[str, object]) -> tuple[int, int]:
+    """Sort key for `room_list`: most messages first, unchecked rooms last."""
+    count = entry[_ACTIVITY_KEY]
+    return (0, -count) if isinstance(count, int) else (1, 0)
+
+
+def _busiest_sentence(listed: Sequence[Mapping[str, object]]) -> str:
+    """The activity comparison `room_list` states in its `note`, so she does
+    not re-derive it by reading every room (design/self-awareness/07).
+
+    Names rooms only by the name `room_list` already hands out, never an id.
+    A room whose activity could not be read is never counted as quiet: if
+    none could be read the sentence says so, and if some could not, it says
+    which, so «busiest» is never claimed over rooms nobody looked at.
+    """
+    window = f"the last {ROOM_ACTIVITY_WINDOW_HOURS} hours"
+    counted: list[tuple[str, int]] = []
+    for e in listed:
+        count = e[_ACTIVITY_KEY]
+        if isinstance(count, int):
+            counted.append((str(e["room"]), count))
+    unchecked = [str(e["room"]) for e in listed
+                 if not isinstance(e[_ACTIVITY_KEY], int)]
+    if not counted:
+        return "Activity could not be checked for any room."
+    top = max(c for _, c in counted)
+    if top == 0:
+        sentence = f"No room of this group had messages in {window}."
+    else:
+        names = [f'"{name}"' for name, c in counted if c == top]
+        noun = "message" if top == 1 else "messages"
+        if len(names) == 1:
+            sentence = f"{names[0]} was the busiest in {window}, with {top} {noun}."
+        else:
+            joined = ", ".join(names[:-1]) + " and " + names[-1]
+            sentence = f"{joined} were the busiest in {window}, with {top} {noun} each."
+    if unchecked:
+        sentence += " Activity could not be checked for " + ", ".join(
+            f'"{name}"' for name in unchecked) + "."
+    return sentence
+
+
 def _ago(delta: timedelta) -> str:
     """A span a reader can use without arithmetic. Coarse on purpose: this is
     «is the room busy», not a timestamp to reason on (the absolute time rides
@@ -3389,20 +3434,27 @@ def build_tool_specs(
                 # A COUNT and never the names: who is in a room is
                 # `group_members`' question, and only for this one.
                 "members": _UNCHECKED if r.members is None else r.members,
-                f"messages_last_{ROOM_ACTIVITY_WINDOW_HOURS}h": count,
+                _ACTIVITY_KEY: count,
                 "last_message": last,
             }
             for r, (count, last) in zip(unit.rooms, activity, strict=True)
         ]
+        # Busiest first, and the comparison SAID. Measured 2026-09-24
+        # (design/self-awareness/07): asked «which group has been busiest
+        # today», she called `room_list` and then `room_read` on every room
+        # to count what the counts already said. The answer is stated here
+        # so she reads it instead of re-deriving it. A room whose activity
+        # could not be read sorts last and is never called quiet; ties keep
+        # policy order (`sorted` is stable).
+        listed.sort(key=_by_activity)
         _record(metrics, "room_list", "ok", rooms=len(listed))
         result: dict[str, object] = {
             "status": "ok",
             "rooms": listed,
             # D1 = B: THAT other groups exist, never which, never how many.
             "also_in_other_groups": unit.other_groups,
+            "note": (_busiest_sentence(listed) + others).strip(),
         }
-        if others:
-            result["note"] = others.strip()
         return result
 
     async def room_read(room: str, limit: int = LOAD_TRANSCRIPT_DEFAULT) -> dict:

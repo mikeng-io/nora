@@ -218,7 +218,68 @@ async def test_room_list_says_no_other_groups_when_there_are_none(tmp_path, pers
     result = await _call(_tools(load_policy(path), persons, store)["room_list"])
 
     assert result["also_in_other_groups"] is False
-    assert "note" not in result
+    assert "other groups" not in result["note"]
+
+
+# ---- the activity comparison, stated (design/self-awareness/07) -------------
+
+
+async def test_room_list_puts_the_busiest_room_first_and_names_it_in_the_note(
+    policy, persons, store,
+):
+    """Measured 2026-09-24: asked which group was busiest, she called
+    room_list and then read every room with room_read to count messages the
+    counts already held. The comparison is now stated, so there is nothing
+    left to re-derive."""
+    result = await _call(_tools(policy, persons, store)["room_list"])
+
+    assert [r["room"] for r in result["rooms"]] == ["Friends WA", "Friends", "Zone 42"]
+    assert result["note"].startswith(
+        '"Friends WA" was the busiest in the last 24 hours, with 2 messages.'
+    )
+
+
+async def test_the_busiest_note_never_names_another_unit(policy, persons, store):
+    """The ridgeline room had the newest message of all (10 minutes ago). It
+    still exists only as «other groups», never as the busiest room."""
+    note = (await _call(_tools(policy, persons, store)["room_list"]))["note"]
+
+    assert "Ridgeline" not in note
+    assert "Instagram" not in note
+
+
+async def test_a_group_with_no_messages_today_says_so(policy, persons):
+    quiet = FakeRecordStore()
+    await quiet.append(message=_msg("whatsapp", "WA-FRIENDS-ID", "wa-b", "Bobby",
+                                    _ms(timedelta(hours=40)), "last week"))
+    result = await _call(_tools(policy, persons, quiet)["room_list"])
+
+    assert result["note"].startswith(
+        "No room of this group had messages in the last 24 hours."
+    )
+
+
+async def test_a_tie_names_every_busiest_room(policy, persons):
+    tied = FakeRecordStore()
+    for conv, platform in (("SIGNAL-FRIENDS-ID", "signal"), ("WA-FRIENDS-ID", "whatsapp")):
+        await tied.append(message=_msg(platform, conv, "x", "X",
+                                       _ms(timedelta(hours=1)), "hi"))
+    result = await _call(_tools(policy, persons, tied)["room_list"])
+
+    assert result["note"].startswith(
+        '"Friends" and "Friends WA" were the busiest in the last 24 hours, '
+        "with 1 message each."
+    )
+
+
+async def test_unread_activity_is_never_reported_as_a_quiet_group(policy, persons, store):
+    """R-27: a store that could not be read is «could not check», never «no
+    messages today»."""
+    store.fail_on_recent = True
+    result = await _call(_tools(policy, persons, store)["room_list"])
+
+    assert result["note"].startswith("Activity could not be checked for any room.")
+    assert "No room" not in result["note"]
 
 
 async def test_room_list_carries_no_member_name_and_no_id(policy, persons, store):

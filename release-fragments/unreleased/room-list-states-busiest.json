@@ -1,0 +1,9 @@
+{
+  "type": "change",
+  "summary": "Asked which of the group's rooms has been busiest, Nora now reads the answer straight from her room list instead of opening every room's messages to count them.",
+  "details": [
+    "room_list now puts the group's rooms busiest first, by messages in the last 24 hours, and says in one sentence which room was busiest, that several tied, or that none had any messages.",
+    "A room whose messages could not be read is listed last and named as unchecked. It is never counted as quiet.",
+    "Other groups are still mentioned only as existing, never named, even when one of them was the busiest."
+  ]
+}
